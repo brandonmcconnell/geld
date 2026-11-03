@@ -396,3 +396,63 @@ test('the restack label guards both public jobs while preserving their original 
     assert.equal(new vm.Script(condition('bitbucket-static-source')).runInNewContext(globals), !deferred && run === 'true' && focus === 'bitbucket-whitespace-source');
   }
 });
+
+const cooldownJob = workflow.slice(workflow.indexOf('      - name: Find prior provider cooldown evidence'), workflow.indexOf('      - name: Restore prior provider cooldown evidence'));
+const cooldownScript = cooldownJob.split('          script: |\n')[1].replace(/^ {12}/gm, '');
+async function discoverCooldown({ pages = [{ artifacts: [], total_count: 0 }], runs = {}, error } = {}) {
+  const calls = [], outputs = {}, logs = [];
+  const current = { id: 99999, workflow_id: 42, head_repository: { full_name: repository } };
+  const github = { rest: { actions: {
+    getWorkflowRun: async ({ run_id }) => { calls.push(['run', run_id]);return { data: run_id === current.id ? current : runs[run_id] }; },
+    listArtifactsForRepo: async args => { calls.push(['artifacts', args.page]);assert.equal(args.name, 'geld-installed-browser-e2e');assert.equal(args.per_page, 100);if (error) throw error;return { data: pages[args.page - 1] ?? pages.at(-1) }; },
+    listWorkflowRuns: () => assert.fail('Skipped workflow runs must not hide artifacts'),
+  } } };
+  await new vm.Script(`(async () => {${cooldownScript}})()`).runInNewContext({ github, context: { repo: { owner: 'brandonmcconnell', repo: 'geld' }, runId: current.id }, core: { setOutput: (key, value) => { outputs[key] = value; }, info: message => logs.push(message) } });
+  return { outputs, calls, logs };
+}
+const cooldownArtifact = (id = 123, runId = 5, created = '2026-11-01T10:00:00Z') => ({ id, name: 'geld-installed-browser-e2e', expired: false, created_at: created, workflow_run: { id: runId } });
+const cooldownRun = (id = 5, extra = {}) => ({ id, workflow_id: 42, status: 'completed', conclusion: 'failure', head_repository: { full_name: repository }, ...extra });
+
+test('artifact discovery finds a failed provider run even behind more than30 skipped workflow runs', async () => {
+  // The run listing is deliberately unusable: these 70 newer skipped runs produced no named artifact.
+  const skipped = Object.fromEntries(Array.from({ length: 70 }, (_, i) => [100 + i, cooldownRun(100 + i, { conclusion: 'skipped' })]));
+  const result = await discoverCooldown({ pages: [{ artifacts: [cooldownArtifact()], total_count: 1 }], runs: { ...skipped, 5: cooldownRun() } });
+  assert.equal(result.outputs['run-id'], '5');assert.deepEqual(result.calls, [['run', 99999], ['artifacts', 1], ['run', 5]]);
+});
+test('artifact discovery paginates the named history and accepts a genuine empty history', async () => {
+  const old = Array.from({ length: 100 }, (_, i) => cooldownArtifact(1000 + i, 200 + i, '2026-10-01T10:00:00Z'));
+  for (const artifact of old) artifact.expired = true;
+  const result = await discoverCooldown({ pages: [{ artifacts: old, total_count: 101 }, { artifacts: [cooldownArtifact()], total_count: 101 }], runs: { 5: cooldownRun() } });
+  assert.equal(result.outputs['run-id'], '5');assert.equal(result.calls.filter(call => call[0] === 'artifacts').length, 2);
+  assert.deepEqual((await discoverCooldown()).outputs, {});
+});
+test('cooldown history rejects truncation, API errors and duplicate pagination instead of pretending no history', async () => {
+  const full = Array.from({ length: 100 }, (_, i) => cooldownArtifact(i + 1));
+  await assert.rejects(discoverCooldown({ pages: Array.from({ length: 5 }, (_, page) => ({ artifacts: full.map(a => ({ ...a, id: a.id + page * 100 })), total_count: 501 })) }), /bounded scan/);
+  await assert.rejects(discoverCooldown({ error: Error('service unavailable') }), /service unavailable/);
+  await assert.rejects(discoverCooldown({ pages: [{ artifacts: [cooldownArtifact(), cooldownArtifact()], total_count: 2 }] }), /Ambiguous cooldown artifact/);
+});
+test('cooldown provenance skips unrelated workflow/fork artifacts and rejects ambiguous or active trusted runs', async () => {
+  const result = await discoverCooldown({ pages: [{ artifacts: [cooldownArtifact(1, 1), cooldownArtifact(2, 2), cooldownArtifact(3, 3, '2026-11-01T09:00:00Z')], total_count: 3 }], runs: { 1: cooldownRun(1, { workflow_id: 100 }), 2: cooldownRun(2, { head_repository: { full_name: 'other/fork' } }), 3: cooldownRun(3) } });
+  assert.equal(result.outputs['run-id'], '3');
+  await assert.rejects(discoverCooldown({ pages: [{ artifacts: [cooldownArtifact(1, 1), cooldownArtifact(2, 2)], total_count: 2 }], runs: { 1: cooldownRun(1), 2: cooldownRun(2) } }), /Ambiguous latest/);
+  await assert.rejects(discoverCooldown({ pages: [{ artifacts: [cooldownArtifact()], total_count: 1 }], runs: { 5: cooldownRun(5, { status: 'in_progress' }) } }), /still running/);
+});
+
+
+test('cooldown discovery rejects incomplete or changing advertised artifact history', async () => {
+  await assert.rejects(discoverCooldown({ pages: [{ artifacts: [cooldownArtifact()], total_count: 5 }] }), /Incomplete cooldown artifact page/);
+  const page = Array.from({ length: 100 }, (_, i) => cooldownArtifact(1000 + i));
+  await assert.rejects(discoverCooldown({ pages: [{ artifacts: page, total_count: 101 }, { artifacts: [cooldownArtifact()], total_count: 102 }] }), /history changed/);
+  await assert.rejects(discoverCooldown({ pages: [{ artifacts: [cooldownArtifact()], total_count: 1 }], runs: { 5: { id: 5 } } }), /identity mismatch/);
+});
+
+
+test('cooldown discovery orders by artifact time and refuses unavailable recent evidence', async () => {
+  const older = cooldownArtifact(7, 7, '2026-10-30T10:00:00Z');
+  const newer = cooldownArtifact(5, 5, '2026-11-01T10:00:00Z');
+  const result = await discoverCooldown({ pages: [{ artifacts: [older, newer], total_count: 2 }], runs: { 5: cooldownRun(5), 7: cooldownRun(7) } });
+  assert.equal(result.outputs['run-id'], '5');assert.equal(result.calls.some(call => call[0] === 'run' && call[1] === 7), false);
+  const expired = { ...cooldownArtifact(), expired: true, created_at: new Date().toISOString() };
+  await assert.rejects(discoverCooldown({ pages: [{ artifacts: [expired], total_count: 1 }] }), /Recent cooldown evidence is unavailable/);
+});

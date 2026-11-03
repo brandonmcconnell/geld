@@ -133,15 +133,57 @@ jobs:
         with:
           script: |
             const repository = context.repo;
-            const current = await github.rest.actions.getWorkflowRun({ ...repository, run_id: context.runId });
-            const runs = await github.rest.actions.listWorkflowRuns({ ...repository, workflow_id: current.data.workflow_id, status: 'completed', per_page: 30 });
-            for (const run of runs.data.workflow_runs) {
-              if (run.id === context.runId || run.head_repository?.full_name !== `${repository.owner}/${repository.repo}`) continue;
-              const result = await github.rest.actions.listWorkflowRunArtifacts({ ...repository, run_id: run.id, per_page: 20 });
-              if (!result.data.artifacts.some((artifact) => artifact.name === 'geld-installed-browser-e2e' && !artifact.expired)) continue;
-              core.setOutput('run-id', String(run.id));
-              core.info(`Loading provider cooldown evidence from installed run ${run.id}.`);
-              break;
+            const artifactName = 'geld-installed-browser-e2e';
+            const current = (await github.rest.actions.getWorkflowRun({ ...repository, run_id: context.runId })).data;
+            const expectedRepository = `${repository.owner}/${repository.repo}`;
+            if (current.id !== context.runId || !Number.isSafeInteger(current.workflow_id) || current.head_repository?.full_name !== expectedRepository) throw Error('Current cooldown history repository is unqualified');
+            // https://docs.github.com/en/rest/actions/artifacts#list-artifacts-for-a-repository
+            // The exact name filter skips unrelated artifacts and skip-only workflow runs.
+            const artifacts = [];
+            let exhausted = false;
+            let total = null;
+            for (let page = 1; page <= 5; page++) {
+              const result = await github.rest.actions.listArtifactsForRepo({ ...repository, name: artifactName, per_page: 100, page });
+              if (!Array.isArray(result.data.artifacts) || !Number.isSafeInteger(result.data.total_count) || result.data.total_count < 0) throw Error('Malformed cooldown artifact history');
+              if (total !== null && total !== result.data.total_count) throw Error('Cooldown artifact history changed during discovery');
+              total = result.data.total_count;
+              if (result.data.artifacts.length > 100) throw Error('Oversized cooldown artifact page');
+              artifacts.push(...result.data.artifacts);
+              if (artifacts.length > total || (result.data.artifacts.length < 100 && artifacts.length < total)) throw Error('Incomplete cooldown artifact page');
+              if (artifacts.length === total) { exhausted = true;break; }
+            }
+            if (!exhausted) throw Error('Cooldown artifact history exceeded its bounded scan; no provider navigation allowed');
+            const ids = new Set();
+            const candidates = [];
+            for (const artifact of artifacts) {
+              if (artifact.name !== artifactName) throw Error('Cooldown artifact name filter was not respected');
+              if (!Number.isSafeInteger(artifact.id) || ids.has(artifact.id)) throw Error('Ambiguous cooldown artifact pagination');
+              ids.add(artifact.id);
+              const created = Date.parse(artifact.created_at);
+              if (!Number.isFinite(created) || !Number.isSafeInteger(artifact.workflow_run?.id)) throw Error('Malformed cooldown artifact provenance');
+              if (artifact.expired) {
+                if (created > Date.now() - 60 * 60 * 1000) throw Error('Recent cooldown evidence is unavailable; no provider navigation allowed');
+                continue;
+              }
+              if (artifact.workflow_run.id !== context.runId) candidates.push({ artifact, created });
+            }
+            candidates.sort((left, right) => right.created - left.created || right.artifact.id - left.artifact.id);
+            let selected = null;
+            let inspected = 0;
+            for (const candidate of candidates) {
+              if (selected !== null && candidate.created < selected.created) break;
+              if (++inspected > 100) throw Error('Cooldown provenance exceeded its bounded scan; no provider navigation allowed');
+              const run = (await github.rest.actions.getWorkflowRun({ ...repository, run_id: candidate.artifact.workflow_run.id })).data;
+              if (!Number.isSafeInteger(run.workflow_id) || run.id !== candidate.artifact.workflow_run.id) throw Error('Cooldown run identity mismatch');
+              if (run.head_repository?.full_name !== expectedRepository || run.workflow_id !== current.workflow_id) continue;
+              if (run.status !== 'completed') throw Error('Prior provider verification is still running; no provider navigation allowed');
+              if (selected !== null) throw Error('Ambiguous latest cooldown evidence; no provider navigation allowed');
+              selected = candidate;
+            }
+            if (selected === null) core.info('No retained matching provider cooldown history exists; initial verification is permitted.');
+            else {
+              core.setOutput('run-id', String(selected.artifact.workflow_run.id));
+              core.info(`Loading provider cooldown evidence from installed run ${selected.artifact.workflow_run.id}.`);
             }
       - name: Restore prior provider cooldown evidence
         if: steps.cooldowns.outputs.run-id != ''
