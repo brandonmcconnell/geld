@@ -197,8 +197,13 @@
 
 /* The logo reel's window: logos fade in and out at both edges while they move. */
 @utility logo-reel {
-  overflow: hidden;
+  /* Clip, not hidden: a hidden overflow scrolls itself to a focused link, which the track's transform then throws off. */
+  overflow: clip;
   mask-image: linear-gradient(to right, transparent, #000 4rem, #000 calc(100% - 4rem), transparent);
+  /* A logo with keyboard focus shows whole, its focus ring included, even at the window's edge. */
+  &:has(:focus-visible) {
+    mask-image: none;
+  }
   @media (prefers-reduced-motion: reduce) {
     mask-image: none;
   }

@@ -32,7 +32,9 @@ export function LogoReel({ className }: { readonly className?: string }) {
   useReelSpeed(track, paused || focused, hovered);
 
   const onFocus = (event: FocusEvent<HTMLDivElement>): void => {
-    if (event.target.matches(':focus-visible')) setFocused(true);
+    if (!event.target.matches(':focus-visible')) return;
+    setFocused(true);
+    if (track.current) bringIntoView(track.current, event.currentTarget, event.target);
   };
   const onBlur = (event: FocusEvent<HTMLDivElement>): void => {
     if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setFocused(false);
@@ -65,6 +67,24 @@ export function LogoReel({ className }: { readonly className?: string }) {
       </div>
     </section>
   );
+}
+
+/**
+ * Only the first copy of the list takes keyboard focus, and it may have slid
+ * out of the window, so a focused logo the window does not show whole moves
+ * the track (the animation's time) until it stands in the middle, or as near
+ * as the track's travel allows.
+ */
+function bringIntoView(track: HTMLElement, view: HTMLElement, target: Element): void {
+  const animation = track.getAnimations()[0];
+  const duration = animation?.effect?.getComputedTiming().duration;
+  if (animation === undefined || typeof duration !== 'number') return;
+  const frame = view.getBoundingClientRect();
+  const box = target.getBoundingClientRect();
+  if (box.left >= frame.left && box.right <= frame.right) return;
+  const half = track.offsetWidth / 2;
+  const offset = track.getBoundingClientRect().left - frame.left + (frame.left + frame.width / 2 - (box.left + box.width / 2));
+  animation.currentTime = (Math.min(half, Math.max(0, -offset)) / half) * duration;
 }
 
 /**
