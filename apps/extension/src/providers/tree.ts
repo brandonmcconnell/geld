@@ -24,6 +24,10 @@ interface LiveRow { readonly root: HTMLElement; readonly link: HTMLAnchorElement
 interface Managed { readonly original: string | null; last: string }
 interface Panel { readonly section: HTMLElement; readonly button: HTMLButtonElement; readonly content: HTMLElement; signature: string }
 interface Directory { name: string; readonly path: string; readonly dirs: Map<string, Directory>; readonly files: string[] }
+type FocusTarget = { readonly kind: 'file'; readonly category: string; readonly path: string; readonly role: string | null; readonly tag: string }
+  | { readonly kind: 'folder'; readonly category: string; readonly path: string; readonly role: string | null }
+  | { readonly kind: 'action'; readonly category: string; readonly path: string; readonly role: string | null; readonly index: number; readonly source: HTMLButtonElement };
+interface FocusedControl { readonly control: HTMLElement; readonly target: FocusTarget; readonly subject: string; readonly provider: ReviewProvider; readonly active: string }
 
 function directory(paths: readonly string[]): Directory {
   const root: Directory = { name: '', path: '', dirs: new Map(), files: [] };
@@ -69,10 +73,12 @@ export class ProviderCategoryTree {
   private readonly collapsed = new Set<string>();
   private readonly paths = new Set<string>();
   private readonly managed = new Map<HTMLElement, Map<string, Managed>>();
+  private readonly focusTargets = new WeakMap<HTMLElement, FocusTarget>();
   private readonly bodies = new Set<HTMLElement>();
   private actions: ProviderCategoryActions = { revealPath: () => undefined, setExpanded: () => undefined };
 
   update(view: ProviderDiffView, hidden: HiddenBreakdown, all: ChangeTotals, files: readonly FileStats[], actions: ProviderCategoryActions): void {
+    const focus = this.captureFocus();
     const host = view.treeHost;
     const subjectKey = actions.subjectKey ?? null;
     const provider = (host?.ownerDocument ?? view.container.ownerDocument).documentElement.getAttribute('data-geld-provider');
@@ -170,15 +176,42 @@ export class ProviderCategoryTree {
       // Source markup changes carry native comment/status/selection updates, even without path changes.
       const signature = JSON.stringify([this.folderClass, group.paths.map((path) => [path, this.presentations.get(path)?.markup ?? null, stats.get(path)])]);
       if (signature !== panel.signature) {
-        const focusedPath = panel.content.contains(document.activeElement) ? document.activeElement?.closest<HTMLElement>('[data-geld-category-path]')?.dataset.geldCategoryPath : undefined;
         panel.content.replaceChildren(this.render(directory(group.paths), group.category.id, stats));
         panel.signature = signature;
-        if (focusedPath !== undefined) [...panel.content.querySelectorAll<HTMLElement>('[data-geld-category-path]')].find((row) => row.dataset.geldCategoryPath === focusedPath)?.querySelector<HTMLElement>('a,button')?.focus();
       }
     }
     this.applyActive();
+    this.restoreFocus(focus);
     this.essential?.addEventListener('keydown', this.keys);
     this.nav?.addEventListener('keydown', this.keys);
+  }
+
+  private focusable(control: HTMLElement): boolean {
+    return control.isConnected && control.tabIndex >= 0 && !control.matches(':disabled, [readonly]')
+      && control.closest('[hidden], [inert], [aria-hidden="true"], [aria-disabled="true"], [aria-readonly="true"], fieldset[disabled]') === null;
+  }
+
+  private captureFocus(): FocusedControl | null {
+    const control = this.host?.ownerDocument.activeElement;
+    if (!(control instanceof HTMLElement) || this.host?.contains(control) !== true || this.subjectKey === null || this.provider === null || !this.focusable(control)) return null;
+    const target = this.focusTargets.get(control);
+    return target === undefined || target.category !== this.active || control.getAttribute('role') !== target.role ? null : { control, target, subject: this.subjectKey, provider: this.provider, active: this.active };
+  }
+
+  private restoreFocus(focus: FocusedControl | null): void {
+    if (focus === null || focus.control.isConnected || this.subjectKey !== focus.subject || this.provider !== focus.provider || this.active !== focus.active || this.host === null) return;
+    const doc = this.host.ownerDocument;
+    if (doc.activeElement !== doc.body && doc.activeElement !== focus.control) return;
+    const target = focus.target;
+    if (target.kind === 'action' && (this.liveControl(target.path, target.index) !== target.source || target.source.getAttribute('role') !== target.role || !this.focusable(target.source))) return;
+    const region = target.category === 'essential' ? this.essentialContent : this.panels.get(target.category)?.content;
+    const controls = [...region?.querySelectorAll<HTMLElement>('a,button') ?? []].filter((control) => {
+      const current = this.focusTargets.get(control);
+      return current !== undefined && current.kind === target.kind && current.category === target.category && current.path === target.path && current.role === target.role && control.getAttribute('role') === target.role && this.focusable(control)
+        && (current.kind !== 'file' || target.kind === 'file' && current.tag === target.tag)
+        && (current.kind !== 'action' || target.kind === 'action' && current.index === target.index && current.source === target.source);
+    });
+    if (controls.length === 1) controls[0]?.focus({ preventScroll: true });
   }
 
   selectCategory(id: string): void {
@@ -334,6 +367,7 @@ export class ProviderCategoryTree {
       if (this.provider === 'gitlab' && this.folderClass !== null) { label.prepend(visual); button.append(label); }
       else button.append(visual, label);
       const key = `${category}:${folder.path}`;
+      this.focusTargets.set(button, { kind: 'folder', category, path: folder.path, role: button.getAttribute('role') });
       const children = this.render(folder, category, stats, depth + 1);
       const setOpen = (open: boolean): void => {
         button.setAttribute('aria-expanded', String(open));
@@ -358,10 +392,16 @@ export class ProviderCategoryTree {
       row.style.setProperty('--geld-category-depth', String(depth));
       const control = row.matches('a,button') ? row : row.querySelector<HTMLElement>('a,button');
       if (control !== null) {
+        this.focusTargets.set(control, { kind: 'file', category, path, role: control.getAttribute('role'), tag: control.tagName });
         if (this.selected === path) control.setAttribute('aria-current', 'true');
         const annotation = control.getAttribute('aria-label');
         const label = [path, annotation === null || path.includes(annotation) ? '' : annotation, stats.get(path)?.status ?? ''].filter((part) => part !== '').join(', ');
         control.setAttribute('aria-label', label);
+      }
+      for (const [index, button] of [...row.querySelectorAll<HTMLButtonElement>('button')].entries()) {
+        if (button === control) continue;
+        const source = this.liveControl(path, index);
+        if (source !== undefined) this.focusTargets.set(button, { kind: 'action', category, path, role: button.getAttribute('role'), index, source });
       }
       row.addEventListener('click', (event) => {
         if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
