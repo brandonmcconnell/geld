@@ -13,7 +13,6 @@ const config: NextConfig = {
     '@geld/ui',
     '@geld/relay',
   ],
-  output: 'standalone',
   serverExternalPackages: ['posthog-js'],
   outputFileTracingExcludes: {
     '*': ['../../.private/**', '../../.git/**', './.env*'],
@@ -34,4 +33,5 @@ const config: NextConfig = {
     ];
   },
 };
+if (process.env.VERCEL !== '1') config.output = 'standalone';
 export default config;
