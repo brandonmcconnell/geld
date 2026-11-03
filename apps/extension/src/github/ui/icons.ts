@@ -360,6 +360,10 @@ export const ICON_GIT_COMPARE = octicon(
   'octicon-git-compare',
 );
 
+/** Lucide's workflow: two boxes joined by an elbow, the Flow diagram's mark (24-unit grid). */
+export const ICON_WORKFLOW =
+  '<svg aria-hidden="true" focusable="false" class="octicon geld-lucide" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:text-bottom;overflow:visible"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg>';
+
 /** Lucide's list-filter: lines narrowing downward, the one mark for filtering, sorting and grouping alike (24-unit grid). */
 export const ICON_LIST_FILTER =
   '<svg aria-hidden="true" focusable="false" class="octicon geld-lucide" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:text-bottom;overflow:visible"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>';

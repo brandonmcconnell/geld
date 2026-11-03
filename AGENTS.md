@@ -550,6 +550,23 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `loginOfLink` (`review/login.ts`) reads a person from where the link leads (the profile path, the `/users/<login>/hovercard` URL, else the parenthesis after the name), for `authorOf` and the events headline's actor;
   An App is read from its `/apps/<slug>` path as `<slug>[bot]` (`appLoginOf`), whatever name it shows ("Copilot"), as the API and the Action's payload spell it.
   The panel's name spans carry `whoAttributes` as its avatars do (GitHub's user hovercard, Geld's identity card for an App), and GitHub's own links on loan to the panel (an events list, a comment's author line) show the login too (`showLogins` in the dress phase: a text node "Name (login)" inside a link to that person becomes "login", put back by `onRestore`), so a loaned node still reads the same to the crawl.
+- **Flow: the changed files as a diagram of what imports what** (`review/flow.ts`, `@geld/core/file-flow.ts`).
+  A "Flow" button (Lucide's `workflow` mark, `ICON_WORKFLOW`) stands in the Geld row just left of the grouping control whenever the pull request's diff is in with more than one file (`PanelModel.flow` from `flowAvailable()`).
+  The controller hands the digest its source each conversation pass (`setFlowSource`, `pageFlowSource`: the diff's `FileStats` with each file's hidden category from the reader's matcher).
+  Opening it reads every changed file whole at the head from the page's own `raw` route (same origin, so private repositories work;
+  six at a time, at most 160, 400 KB each), and for a pull request that removes files also the base (`baseRefOid` / `baseRefName` from the embedded payload, else `.base-ref`) for the removed files and the files that may have imported them.
+  Imports are read by `importSpecifiers` (scripts: `import`, `export … from`, `import()`, `require`;
+  styles: `@import`/`@use`/`@forward` with Sass partials;
+  Python `from`/`import`;
+  Rust `mod`), resolved by `resolveImport` against the changed files only (relative paths with extension, `index` and compiled-extension fallbacks, `@/`-style aliases by a unique tail), and a link found only at the base is `removed` (dashed, danger).
+  `layoutFlow` draws each connected group on its own, importers above imports: longest-path rows with every file then pulled down beside the nearest file it imports, links another path already implies left undrawn (`implied`, said in the subtitle as "N of M links drawn";
+  a removed link is always drawn), bend points for links that skip rows so they pass between cards, barycentre ordering sweeps, and rows placed by pool-adjacent-violators (`closestSpaced`) so a crowded row spreads around where it wants to be instead of drifting right.
+  Files no link touches sit below under "Not linked to other changes".
+  The dialog is a `<dialog>` with Primer's `Overlay` frame: cards (status dot and word, the nearest two folders, file name, +/−;
+  a hidden file dashed with its category's tag), an SVG layer of rounded orthogonal links whose ends are spread per side, hover lighting a card's links, a legend, zoom (−, the level, which fits, +;
+  CSS `zoom` on the canvas, fitted to the width once the reading ends and again when hidden files are toggled), and a toggle for hidden files (essential files only by default).
+  A card is a link to its file in Files changed (`#diff-<sha256 of the path>` on the page's own Files tab URL, so `?w=1` stays): the click closes the dialog and GitHub's own navigation goes there.
+  The diagram is drawn by hand on purpose, with no graph library.
 - **Comment text keeps its inline formatting, everywhere it is shortened to a line.**
   The crawler's `blockText` writes GitHub's rendered `<code>`, `<strong>`/`<b>`, `<em>`/`<i>` and `<del>` back as Markdown marks (never inside `<pre>`), `firstSentence` (`@geld/review/cluster.ts`) keeps them and ends a sentence only outside a code span, and `@geld/review/inline-markdown.ts` (`parseInlineMarkdown`, `stripInlineMarkdown`) is the one reader of that inline subset — code, bold, italic, strikethrough;
   nothing block-level.

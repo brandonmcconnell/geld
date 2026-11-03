@@ -59,6 +59,7 @@ import { fitChips, stopFittingChips } from './fit-chips';
 import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrphanedLoans, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 import { pageFetch } from '../page-fetch';
+import { flowAvailable, openFlowDialog } from './flow';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
@@ -3088,6 +3089,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     previews: latestPreviews(allPreviews),
     reports,
     grouping: settings.reviewGrouping,
+    flow: flowAvailable(),
     openCommits: visit.openCommits,
     openPreviews: visit.openPreviews,
     ai: aiStateFor(meta, rawComments, settings),
@@ -3283,6 +3285,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       // Persisted like any setting; the controller's settings watch re-applies with the new value, in place.
       persist(settingsItem.patch({ reviewGrouping: grouping }));
     },
+    onFlow: () => openFlowDialog(),
     onToggleCommits: (batchKey) => {
       keepInPlace(`commits:${batchKey}`, () => {
         if (visit.openCommits.has(batchKey)) visit.openCommits.delete(batchKey);
