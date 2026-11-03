@@ -200,6 +200,31 @@ export function qualifyStandaloneRaw(sample, response) {
   return { ...result, provenance: { runtimeRawHead: F.head, oracleBodyAcquiredHead: F.oracleBodyAcquiredHead, retainedStandaloneDiffNewGitBlob: F.gitBlob, runtimeGitBlob: response.gitBlob, scope: 'Fresh runtime response at13215…; the independently retained8a… body supplies the byte oracle only through identical full Git blob identity.' } };
 }
 
+/** A ready intent precedes the controller's scheduled fold paint; only missing controls may wait. */
+export function standaloneWholeCandidatesReady(sample) {
+  for (const key of ['sameOriginal', 'frameCurrent', 'unchangedViewed', 'themeUnchanged', 'absentAppOwner', 'visible']) assert.equal(sample?.[key], true, `Whole-control readiness lost ${key}`);
+  assert.equal(sample.headSha, F.head);assert.equal(sample.path, F.path);assert.equal(sample.rawPath, `/${PROJECT}/-/raw/${F.head}/${F.path}`);assert.equal(sample.intent?.status, 'ready');assert.equal(sample.intent.disabled, true);assert.deepEqual(sample.events, [], 'Find must never activate original context');assert.ok(Array.isArray(sample.folds));
+  let complete = true;
+  for (const [start, title] of [[96, 'generates an error'], [125, 'moves and repositions issue']]) {
+    const found = sample.folds.filter((fold) => fold.start === start);assert.ok(found.length <= 1, 'Whole-control source identity is ambiguous');if (found.length === 0) { complete = false;continue; }
+    const fold = found[0];assert.equal(fold.key, `test:new:R${start}`);assert.equal(fold.title, title);assert.equal(fold.kind, 'test');assert.equal(fold.status, 'unchanged');assert.equal(fold.expanded, 'false');assert.match(fold.label, /Only displayed lines are available/);
+  }
+  assert.equal(sample.controls.filter((control) => control.direction === 'up' && control.beforeNew === null && control.afterNew === 100).length, 1);assert.equal(sample.controls.filter((control) => control.direction === 'both' && control.beforeNew === 115 && control.afterNew === 131).length, 1);
+  return complete;
+}
+
+export async function waitStandaloneWholeCandidates({ read, poll, progress }) {
+  progress.status = 'waiting';progress.samples = [];progress.attempts = 0;
+  try {
+    const sample = await poll(async () => {
+      const value = await read();progress.attempts++;
+      progress.samples.push({ attempt: progress.attempts, frameCurrent: value?.frameCurrent, sameOriginal: value?.sameOriginal, headSha: value?.headSha, intent: value?.intent, folds: value?.folds });if (progress.samples.length > 8) progress.samples.shift();
+      return value;
+    }, standaloneWholeCandidatesReady, 'Both exact whole-test controls after ready with current original source', 8000);
+    progress.status = 'ready';return sample;
+  } catch (error) { progress.status = 'failed';progress.error = error.message;throw error; }
+}
+
 /** Trusted owned intent and Show only; no native direct click, provider fetch, fake row or runtime injection. */
 export async function verifyStandaloneWhole(page, progress, { kind, observer, poll, capture, readSettings, writeSettings, readState }) {
   progress.status = 'running';progress.kind = kind;progress.actions = [];let original, setup = false, prepared = false, confirmed = false, failure;
@@ -228,7 +253,7 @@ export async function verifyStandaloneWhole(page, progress, { kind, observer, po
           progress.beforeIntent = await poll(read, (sample) => { intact(sample);return sample.folds.length === 3 && sample.intent !== null; }, 'New absent-owner standalone branch mounts idle Find', 8000);assert.equal(progress.beforeIntent.intent.status, 'idle');assert.equal(progress.beforeIntent.intent.disabled, false);assert.equal((await observer.raw()).length, 0);
           progress.find = await click('intent');progress.found = await poll(read, (sample) => { intact(sample);if (sample.intent?.status === 'failed') throw Error('Installed standalone whole-file source failed');return sample.intent?.status === 'ready'; }, 'Actual standalone immutable whole-body acquisition', 20_000);
           const responses = await observer.raw();assert.equal(responses.length, 1);progress.source = qualifyStandaloneRaw(progress.beforeIntent, responses[0]);const body = responses[0];progress.find.status = 'complete';
-          progress.beforeUnfold = await checked();for (const [start, title] of [[96, 'generates an error'], [125, 'moves and repositions issue']]) { const fold = progress.beforeUnfold.folds.find((row) => row.start === start);assert.equal(fold?.title, title);assert.equal(fold.expanded, 'false');assert.match(fold.label, /Only displayed lines are available/); }assert.deepEqual(progress.beforeUnfold.events, [], 'Find must never activate original context');
+          progress.controlReadiness = {};progress.beforeUnfold = await waitStandaloneWholeCandidates({ read: checked, poll, progress: progress.controlReadiness });
           progress.boundariesCapture = await captureChecked('boundaries', (sample) => { assert.deepEqual(sample.events, []); });
           progress.keyboardLeaf = progress.beforeUnfold.folds.find((fold) => fold.start === 96);progress.first = await click(96, true);progress.firstMounted = await poll(read, (sample) => { intact(sample);try { assertStandaloneFirstMounted(sample, body, progress.keyboardLeaf);return true; } catch { return false; } }, 'First original standalone test mounted with its own retained keyboard focus', 30_000);assertStandaloneFirstMounted(progress.firstMounted, body, progress.keyboardLeaf);progress.first.postInputFocus = 'current owned leaf96';progress.first.status = 'complete';progress.firstLeafStatus = 'passed';progress.firstCapture = await captureChecked('first-test', (sample) => assertStandaloneFirstMounted(sample, body, progress.keyboardLeaf));
           progress.firstCheckpoint = await page.evaluate(standaloneWholeProbe, 'retain-first');assertWholeTestMounted(progress.firstCheckpoint, body);progress.beforeSecond = await checked();assert.equal(progress.beforeSecond.controls.filter((control) => control.direction === 'both' && control.beforeNew === 115 && control.afterNew === 131).length, 1);

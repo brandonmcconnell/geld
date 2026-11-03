@@ -1966,6 +1966,10 @@ A trusted Show action may relay only the original verified Rapid expandLines con
 No-progress, changed source, canceled input, stale controls, text disagreement and exhausted bounds leave the displayed-only disclosure intact without creating source rows or writing Viewed/count/server state.
 The shown-lines disclosure remains until every required new-side line exists on the native page, and an original fragment reveals only mounted native content without initiating raw acquisition or context expansion.
 Owned outline keyboard focus can follow its exact control across a native TBODY remount only while the same test/revision remains open and no unrelated reader focus or new trusted input intervenes.
+Native context insertion can also move an already connected owned fold row within the same original TBODY, where ordinary before insertion blurs its focused button without disconnecting it.
+Use a supported state-preserving move for that owned row, with a synchronous fallback that restores only the exact button focused immediately before our ordinary move while its current document, URL, ownership, placement and source root remain intact, never a later arbitrary BODY focus or another reader control.
+The whole-source ready label precedes a scheduled controller repaint, so installed acceptance waits at most eight seconds for both exact current whole-test controls while rechecking original source, counts, Viewed, settings and theme on every sample.
+Only missing controls may wait, while present contradictory controls or source drift fail immediately and completed Find and immutable-response stages remain recorded.
 The installed whole-context phase requalifies the complete observed immutable response against its retained fixture digest and actual current native head, records unavailable authority explicitly, and never turns a retained D03 snapshot into proof about an unseen target.
 
 
