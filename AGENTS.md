@@ -2321,3 +2321,9 @@ a description does not supply identity.
 Keep provider code-link evidence guards when sharing the refusal parser, and retain Bitbucket build-status descriptions in both extension and CI normalization without inventing a bot author.
 GitLab pipeline jobs do not provide an equivalent free-text check description;
 do not substitute job names or failure enums.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
