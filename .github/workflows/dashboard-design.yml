@@ -1,0 +1,68 @@
+name: Dashboard design verification
+
+on:
+  push:
+    branches: [dashboard/sharp-interface]
+  workflow_dispatch:
+
+concurrency:
+  group: dashboard-design-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gallery:
+    if: github.ref == 'refs/heads/dashboard/sharp-interface'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 1
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          FONTAWESOME_PACKAGE_TOKEN: ${{ secrets.FONTAWESOME_PACKAGE_TOKEN }}
+      - run: pnpm --filter @geld/dashboard verify:icons && pnpm --filter @geld/dashboard check
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      - name: Install browser verification tools
+        working-directory: ${{ runner.temp }}
+        run: |
+          npm install --prefix "$RUNNER_TEMP/geld-browser-tools" --no-save --package-lock=false playwright@1.57.0
+          node "$RUNNER_TEMP/geld-browser-tools/node_modules/playwright/cli.js" install --with-deps chromium
+          echo "GELD_PLAYWRIGHT_MODULE=$RUNNER_TEMP/geld-browser-tools/node_modules/playwright" >> "$GITHUB_ENV"
+          chromium_path=$(node -e "console.log(require(process.env.RUNNER_TEMP + '/geld-browser-tools/node_modules/playwright').chromium.executablePath())")
+          echo "GELD_CHROMIUM_PATH=$chromium_path" >> "$GITHUB_ENV"
+      - name: Verify interactions and capture every view
+        run: |
+          pnpm --filter @geld/dashboard exec next start -p 3001 > "$RUNNER_TEMP/geld-dashboard-server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://localhost:3001/api/health >/dev/null; then break; fi
+            sleep 1
+          done
+          node apps/dashboard/scripts/design-icons-verify.mjs
+          node apps/dashboard/scripts/design-verify.mjs
+          node apps/dashboard/scripts/design-capture.mjs
+          node apps/dashboard/scripts/design-gallery.mjs
+      - name: Save verified gallery on the design branch
+        run: |
+          git add docs/dashboard/design
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Refresh verified Sharp dashboard gallery [skip ci]'
+          git push origin "HEAD:$GITHUB_REF_NAME"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: geld-dashboard-design
+          path: docs/dashboard/design
+          if-no-files-found: error

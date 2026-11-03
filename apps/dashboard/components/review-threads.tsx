@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Check, MessageSquare, Send } from '@/components/icons';
+import { Check, MessageSquare, MessagesSquare, Send } from '@/components/icons';
 import { z } from 'zod';
 import type { ProviderThread, PullRef } from '@geld/domain';
 import { Button } from '@/components/button';
@@ -91,7 +91,13 @@ function Thread({
     <details className="review-thread" open={!thread.resolved}>
       <summary>
         <span className="flex items-center gap-2">
-          {thread.resolved ? <Check size={14} /> : <MessageSquare size={14} />}
+          {thread.resolved ? (
+            <Check size={14} />
+          ) : thread.comments.length > 1 ? (
+            <MessagesSquare size={14} />
+          ) : (
+            <MessageSquare size={14} />
+          )}
           <strong>
             {thread.path ?? 'Discussion'}
             {thread.line ? `:${thread.line}` : ''}

@@ -1,111 +1,200 @@
-import type { ComponentType } from 'react';
-import { HugeiconsIcon } from '@hugeicons/react';
-import type { HugeiconsProps, IconSvgElement } from '@hugeicons/react';
-import Add01Icon from '@hugeicons/core-free-icons/Add01Icon';
-import AiMagicIcon from '@hugeicons/core-free-icons/AiMagicIcon';
-import ArrowDown01Icon from '@hugeicons/core-free-icons/ArrowDown01Icon';
-import ArrowLeft01Icon from '@hugeicons/core-free-icons/ArrowLeft01Icon';
-import ArrowRight01Icon from '@hugeicons/core-free-icons/ArrowRight01Icon';
-import ArrowUp01Icon from '@hugeicons/core-free-icons/ArrowUp01Icon';
-import ArrowUpRight01Icon from '@hugeicons/core-free-icons/ArrowUpRight01Icon';
-import BookOpen01Icon from '@hugeicons/core-free-icons/BookOpen01Icon';
-import BubbleChatIcon from '@hugeicons/core-free-icons/BubbleChatIcon';
-import Building03Icon from '@hugeicons/core-free-icons/Building03Icon';
-import Cancel01Icon from '@hugeicons/core-free-icons/Cancel01Icon';
-import CheckCheckIcon from '@hugeicons/core-free-icons/CheckCheckIcon';
-import CodeXmlIcon from '@hugeicons/core-free-icons/CodeXmlIcon';
-import Copy01Icon from '@hugeicons/core-free-icons/Copy01Icon';
-import CreditCardIcon from '@hugeicons/core-free-icons/CreditCardIcon';
-import Delete02Icon from '@hugeicons/core-free-icons/Delete02Icon';
-import FileCodeIcon from '@hugeicons/core-free-icons/FileCodeIcon';
-import FilterHorizontalIcon from '@hugeicons/core-free-icons/FilterHorizontalIcon';
-import Flag02Icon from '@hugeicons/core-free-icons/Flag02Icon';
-import Folder01Icon from '@hugeicons/core-free-icons/Folder01Icon';
-import FolderGitIcon from '@hugeicons/core-free-icons/FolderGitIcon';
-import GitForkIcon from '@hugeicons/core-free-icons/GitForkIcon';
-import GitMergeIcon from '@hugeicons/core-free-icons/GitMergeIcon';
-import GitPullRequestClosedIcon from '@hugeicons/core-free-icons/GitPullRequestClosedIcon';
-import GitPullRequestDraftIcon from '@hugeicons/core-free-icons/GitPullRequestDraftIcon';
-import GitPullRequestIcon from '@hugeicons/core-free-icons/GitPullRequestIcon';
-import HelpCircleIcon from '@hugeicons/core-free-icons/HelpCircleIcon';
-import Key01Icon from '@hugeicons/core-free-icons/Key01Icon';
-import Layers01Icon from '@hugeicons/core-free-icons/Layers01Icon';
-import Link01Icon from '@hugeicons/core-free-icons/Link01Icon';
-import ListTreeIcon from '@hugeicons/core-free-icons/ListTreeIcon';
-import Logout01Icon from '@hugeicons/core-free-icons/Logout01Icon';
-import Mail01Icon from '@hugeicons/core-free-icons/Mail01Icon';
-import Menu01Icon from '@hugeicons/core-free-icons/Menu01Icon';
-import MoreHorizontalIcon from '@hugeicons/core-free-icons/MoreHorizontalIcon';
-import Notification02Icon from '@hugeicons/core-free-icons/Notification02Icon';
-import RefreshIcon from '@hugeicons/core-free-icons/RefreshIcon';
-import Search01Icon from '@hugeicons/core-free-icons/Search01Icon';
-import SentIcon from '@hugeicons/core-free-icons/SentIcon';
-import Settings01Icon from '@hugeicons/core-free-icons/Settings01Icon';
-import Settings02Icon from '@hugeicons/core-free-icons/Settings02Icon';
-import Shield01Icon from '@hugeicons/core-free-icons/Shield01Icon';
-import SidebarLeft01Icon from '@hugeicons/core-free-icons/SidebarLeft01Icon';
-import SortByDown02Icon from '@hugeicons/core-free-icons/SortByDown02Icon';
-import SquareIcon from '@hugeicons/core-free-icons/SquareIcon';
-import StarIcon from '@hugeicons/core-free-icons/StarIcon';
-import Tick02Icon from '@hugeicons/core-free-icons/Tick02Icon';
-import UnfoldMoreIcon from '@hugeicons/core-free-icons/UnfoldMoreIcon';
-import UserGroupIcon from '@hugeicons/core-free-icons/UserGroupIcon';
-import UserIcon from '@hugeicons/core-free-icons/UserIcon';
+import type { ComponentType, SVGProps } from 'react';
+import { cn } from 'cn';
+import {
+  faArrowDownWideShort as regularArrowDownWideNarrow,
+  faArrowLeft as regularArrowLeft,
+  faArrowRight as regularArrowRight,
+  faArrowUp as regularArrowUp,
+  faArrowUpRight as regularArrowUpRight,
+  faBell as regularBell,
+  faBookOpen as regularBookOpen,
+  faBuilding as regularBuilding2,
+  faCheck as regularCheck,
+  faCheckDouble as regularCheckCheck,
+  faChevronDown as regularChevronDown,
+  faCircleQuestion as regularCircleHelp,
+  faCode as regularCodeXml,
+  faCopy as regularCopy,
+  faCreditCard as regularCreditCard,
+  faFileCode as regularFileCode2,
+  faFilter as regularFilter,
+  faFlag as regularFlag,
+  faBook as regularFolderGit2,
+  faCodeFork as regularGitFork,
+  faCodePullRequest as regularGitPullRequest,
+  faCodePullRequestDraft as regularGitPullRequestDraft,
+  faCodePullRequestClosed as regularGitPullRequestClosed,
+  faCodeMerge as regularGitMerge,
+  faKey as regularKeyRound,
+  faLayerGroup as regularLayers,
+  faLink as regularLink2,
+  faListTree as regularListTree,
+  faLock as regularLock,
+  faEnvelope as regularMail,
+  faBars as regularMenu,
+  faMessage as regularMessageSquare,
+  faMessages as regularMessagesSquare,
+  faSidebar as regularPanelLeftClose,
+  faPlus as regularPlus,
+  faArrowsRotate as regularRefreshCw,
+  faMagnifyingGlass as regularSearch,
+  faPaperPlane as regularSend,
+  faGear as regularSettings,
+  faSliders as regularSettings2,
+  faShieldCheck as regularShieldCheck,
+  faSparkles as regularSparkles,
+  faSquare as regularSquare,
+  faStar as regularStar,
+  faTrashCan as regularTrash2,
+  faUser as regularUserRound,
+  faUsers as regularUsers,
+  faXmark as regularX,
+  faFolder as regularFolder,
+  faEllipsis as regularMoreHorizontal,
+  faChevronsUpDown as regularChevronsUpDown,
+  faArrowRightFromBracket as regularLogOut,
+} from '@awesome.me/kit-2e791c163e/icons/sharp/regular';
+import {
+  faArrowDownWideShort as solidArrowDownWideNarrow,
+  faArrowLeft as solidArrowLeft,
+  faArrowRight as solidArrowRight,
+  faArrowUp as solidArrowUp,
+  faArrowUpRight as solidArrowUpRight,
+  faBell as solidBell,
+  faBookOpen as solidBookOpen,
+  faBuilding as solidBuilding2,
+  faCheck as solidCheck,
+  faCheckDouble as solidCheckCheck,
+  faChevronDown as solidChevronDown,
+  faCircleQuestion as solidCircleHelp,
+  faCode as solidCodeXml,
+  faCopy as solidCopy,
+  faCreditCard as solidCreditCard,
+  faFileCode as solidFileCode2,
+  faFilter as solidFilter,
+  faFlag as solidFlag,
+  faBook as solidFolderGit2,
+  faCodeFork as solidGitFork,
+  faCodePullRequest as solidGitPullRequest,
+  faCodePullRequestDraft as solidGitPullRequestDraft,
+  faCodePullRequestClosed as solidGitPullRequestClosed,
+  faCodeMerge as solidGitMerge,
+  faKey as solidKeyRound,
+  faLayerGroup as solidLayers,
+  faLink as solidLink2,
+  faListTree as solidListTree,
+  faLock as solidLock,
+  faEnvelope as solidMail,
+  faBars as solidMenu,
+  faMessage as solidMessageSquare,
+  faMessages as solidMessagesSquare,
+  faSidebar as solidPanelLeftClose,
+  faPlus as solidPlus,
+  faArrowsRotate as solidRefreshCw,
+  faMagnifyingGlass as solidSearch,
+  faPaperPlane as solidSend,
+  faGear as solidSettings,
+  faSliders as solidSettings2,
+  faShieldCheck as solidShieldCheck,
+  faSparkles as solidSparkles,
+  faSquare as solidSquare,
+  faStar as solidStar,
+  faTrashCan as solidTrash2,
+  faUser as solidUserRound,
+  faUsers as solidUsers,
+  faXmark as solidX,
+  faFolder as solidFolder,
+  faEllipsis as solidMoreHorizontal,
+  faChevronsUpDown as solidChevronsUpDown,
+  faArrowRightFromBracket as solidLogOut,
+} from '@awesome.me/kit-2e791c163e/icons/sharp/solid';
 
-export type AppIcon = ComponentType<HugeiconsProps>;
-function glyph(icon: IconSvgElement): AppIcon {
-  return function Glyph(props: HugeiconsProps) {
-    return <HugeiconsIcon icon={icon} size={16} strokeWidth={1.7} aria-hidden="true" {...props} />;
+export type AppIconProps = Omit<SVGProps<SVGSVGElement>, 'children' | 'width' | 'height'> & {
+  readonly size?: number | string;
+  readonly active?: boolean;
+};
+export type AppIcon = ComponentType<AppIconProps>;
+type IconDefinition = typeof regularArrowLeft;
+
+function paths(definition: IconDefinition) {
+  const data = definition.icon[4];
+  return (typeof data === 'string' ? [data] : data).map((d, index) => <path key={index} d={d} />);
+}
+
+function glyph(regular: IconDefinition, solid: IconDefinition): AppIcon {
+  return function Glyph({ size = 16, active, className, ...props }: AppIconProps) {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        focusable="false"
+        className={cn('app-icon', className)}
+        {...props}
+        data-icon={regular.iconName}
+        data-icon-active={active}
+      >
+        <svg width="24" height="24" viewBox={`0 0 ${regular.icon[0]} ${regular.icon[1]}`} data-icon-weight="regular">
+          {paths(regular)}
+        </svg>
+        <svg width="24" height="24" viewBox={`0 0 ${solid.icon[0]} ${solid.icon[1]}`} data-icon-weight="solid">
+          {paths(solid)}
+        </svg>
+      </svg>
+    );
   };
 }
 
-export const ArrowDownWideNarrow = glyph(SortByDown02Icon);
-export const ArrowLeft = glyph(ArrowLeft01Icon);
-export const ArrowRight = glyph(ArrowRight01Icon);
-export const ArrowUp = glyph(ArrowUp01Icon);
-export const ArrowUpRight = glyph(ArrowUpRight01Icon);
-export const Bell = glyph(Notification02Icon);
-export const BookOpen = glyph(BookOpen01Icon);
-export const Building2 = glyph(Building03Icon);
-export const Check = glyph(Tick02Icon);
-export const CheckCheck = glyph(CheckCheckIcon);
-export const ChevronDown = glyph(ArrowDown01Icon);
-export const CircleHelp = glyph(HelpCircleIcon);
-export const CodeXml = glyph(CodeXmlIcon);
-export const Copy = glyph(Copy01Icon);
-export const CreditCard = glyph(CreditCardIcon);
-export const FileCode2 = glyph(FileCodeIcon);
-export const Filter = glyph(FilterHorizontalIcon);
-export const Flag = glyph(Flag02Icon);
-export const FolderGit2 = glyph(FolderGitIcon);
-export const GitFork = glyph(GitForkIcon);
-export const GitPullRequest = glyph(GitPullRequestIcon);
-export const GitPullRequestDraft = glyph(GitPullRequestDraftIcon);
-export const GitPullRequestClosed = glyph(GitPullRequestClosedIcon);
-export const GitMerge = glyph(GitMergeIcon);
-export const KeyRound = glyph(Key01Icon);
-export const Layers = glyph(Layers01Icon);
-export const Link2 = glyph(Link01Icon);
-export const ListTree = glyph(ListTreeIcon);
-export const Mail = glyph(Mail01Icon);
-export const Menu = glyph(Menu01Icon);
-export const MessageSquare = glyph(BubbleChatIcon);
-export const PanelLeftClose = glyph(SidebarLeft01Icon);
-export const Plus = glyph(Add01Icon);
-export const RefreshCw = glyph(RefreshIcon);
-export const Search = glyph(Search01Icon);
-export const Send = glyph(SentIcon);
-export const Settings = glyph(Settings01Icon);
-export const Settings2 = glyph(Settings02Icon);
-export const ShieldCheck = glyph(Shield01Icon);
-export const Sparkles = glyph(AiMagicIcon);
-export const Square = glyph(SquareIcon);
-export const Star = glyph(StarIcon);
-export const Trash2 = glyph(Delete02Icon);
-export const UserRound = glyph(UserIcon);
-export const Users = glyph(UserGroupIcon);
-export const X = glyph(Cancel01Icon);
-export const Folder = glyph(Folder01Icon);
-export const MoreHorizontal = glyph(MoreHorizontalIcon);
-export const ChevronsUpDown = glyph(UnfoldMoreIcon);
-export const LogOut = glyph(Logout01Icon);
+export const ArrowDownWideNarrow = glyph(regularArrowDownWideNarrow, solidArrowDownWideNarrow);
+export const ArrowLeft = glyph(regularArrowLeft, solidArrowLeft);
+export const ArrowRight = glyph(regularArrowRight, solidArrowRight);
+export const ArrowUp = glyph(regularArrowUp, solidArrowUp);
+export const ArrowUpRight = glyph(regularArrowUpRight, solidArrowUpRight);
+export const Bell = glyph(regularBell, solidBell);
+export const BookOpen = glyph(regularBookOpen, solidBookOpen);
+export const Building2 = glyph(regularBuilding2, solidBuilding2);
+export const Check = glyph(regularCheck, solidCheck);
+export const CheckCheck = glyph(regularCheckCheck, solidCheckCheck);
+export const ChevronDown = glyph(regularChevronDown, solidChevronDown);
+export const CircleHelp = glyph(regularCircleHelp, solidCircleHelp);
+export const CodeXml = glyph(regularCodeXml, solidCodeXml);
+export const Copy = glyph(regularCopy, solidCopy);
+export const CreditCard = glyph(regularCreditCard, solidCreditCard);
+export const FileCode2 = glyph(regularFileCode2, solidFileCode2);
+export const Filter = glyph(regularFilter, solidFilter);
+export const Flag = glyph(regularFlag, solidFlag);
+export const FolderGit2 = glyph(regularFolderGit2, solidFolderGit2);
+export const GitFork = glyph(regularGitFork, solidGitFork);
+export const GitPullRequest = glyph(regularGitPullRequest, solidGitPullRequest);
+export const GitPullRequestDraft = glyph(regularGitPullRequestDraft, solidGitPullRequestDraft);
+export const GitPullRequestClosed = glyph(regularGitPullRequestClosed, solidGitPullRequestClosed);
+export const GitMerge = glyph(regularGitMerge, solidGitMerge);
+export const KeyRound = glyph(regularKeyRound, solidKeyRound);
+export const Layers = glyph(regularLayers, solidLayers);
+export const Link2 = glyph(regularLink2, solidLink2);
+export const ListTree = glyph(regularListTree, solidListTree);
+export const Lock = glyph(regularLock, solidLock);
+export const Mail = glyph(regularMail, solidMail);
+export const Menu = glyph(regularMenu, solidMenu);
+export const MessageSquare = glyph(regularMessageSquare, solidMessageSquare);
+export const MessagesSquare = glyph(regularMessagesSquare, solidMessagesSquare);
+export const PanelLeftClose = glyph(regularPanelLeftClose, solidPanelLeftClose);
+export const Plus = glyph(regularPlus, solidPlus);
+export const RefreshCw = glyph(regularRefreshCw, solidRefreshCw);
+export const Search = glyph(regularSearch, solidSearch);
+export const Send = glyph(regularSend, solidSend);
+export const Settings = glyph(regularSettings, solidSettings);
+export const Settings2 = glyph(regularSettings2, solidSettings2);
+export const ShieldCheck = glyph(regularShieldCheck, solidShieldCheck);
+export const Sparkles = glyph(regularSparkles, solidSparkles);
+export const Square = glyph(regularSquare, solidSquare);
+export const Star = glyph(regularStar, solidStar);
+export const Trash2 = glyph(regularTrash2, solidTrash2);
+export const UserRound = glyph(regularUserRound, solidUserRound);
+export const Users = glyph(regularUsers, solidUsers);
+export const X = glyph(regularX, solidX);
+export const Folder = glyph(regularFolder, solidFolder);
+export const MoreHorizontal = glyph(regularMoreHorizontal, solidMoreHorizontal);
+export const ChevronsUpDown = glyph(regularChevronsUpDown, solidChevronsUpDown);
+export const LogOut = glyph(regularLogOut, solidLogOut);

@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { ArrowUpRight, FolderGit2, Settings } from '@/components/icons';
+import { ArrowUpRight, FolderGit2, Lock, Settings } from '@/components/icons';
 import { organisationPath, repositoryPath, type Provider } from '@geld/domain';
 import { Button, buttonVariants } from '@/components/button';
 import { EmptyState, useDashboard } from './app-shell';
@@ -47,7 +47,7 @@ export function Repositories({
         <div className="settings-card">
           {repositories.map((repo) => (
             <Link href={repositoryPath(repo.ref)} className="settings-row" key={repositoryPath(repo.ref)}>
-              <FolderGit2 size={20} />
+              {repo.private ? <Lock size={20} /> : <FolderGit2 size={20} />}
               <div>
                 <h3>
                   {repo.ref.owner} / {repo.ref.repo}
