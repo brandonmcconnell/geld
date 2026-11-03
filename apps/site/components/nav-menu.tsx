@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from 'cn';
-import { MenuIcon } from 'lucide-react';
+import { TextAlignStartIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -20,7 +20,7 @@ export function NavMenu({ links, className }: { readonly links: readonly NavLink
           className,
         )}
       >
-        <MenuIcon aria-hidden="true" className="size-4" />
+        <TextAlignStartIcon aria-hidden="true" className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent className="min-w-48">
         {links.map((link) => (
