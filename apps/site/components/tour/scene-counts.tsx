@@ -1,10 +1,9 @@
 'use client';
 
 import type { ChangeTotals, CategoryId } from '@geld/core';
-import { categoryById, formatCount, formatDiffstat, pluralize, subtractTotals } from '@geld/core';
-import { cn } from 'cn';
-import { GitPullRequestIcon } from 'lucide-react';
-import { useState } from 'react';
+import { categoryById, formatCount, pluralize, subtractTotals } from '@geld/core';
+import { FileCodeIcon, GitPullRequestIcon } from 'lucide-react';
+import { useLayoutEffect, useRef, useState } from 'react';
 
 import { Diffstat } from '@/components/demo/diffstat';
 import { totalsOf } from '@/components/tour/data';
@@ -26,29 +25,65 @@ export function CountsScene() {
   const all = totalsOf(files);
   const shown = subtractTotals(all, totalsOf(hidden));
   const rows = TOGGLES.map((id) => ({ id, totals: totalsOf(hidden.filter((file) => file.category?.id === id)) })).filter((row) => row.totals.files > 0);
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [caret, setCaret] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const label = labelRef.current;
+    const box = boxRef.current;
+    if (!label || !box) return;
+    const measure = (): void => {
+      const labelRect = label.getBoundingClientRect();
+      setCaret(labelRect.left + labelRect.width / 2 - box.getBoundingClientRect().left);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    observer.observe(label);
+    return () => observer.disconnect();
+  }, [geld]);
 
   return (
     <PrWindow
       tab="files"
       filesCount={geld ? shown.files : all.files}
       tabsEnd={
-        <>
-          {geld ? <span className="border-b border-dotted border-muted-foreground/60 text-xs font-semibold text-muted-foreground">{hiddenLabel(hidden)}</span> : null}
+        <span className="relative flex items-center gap-2">
+          {geld ? (
+            <span ref={labelRef} className="text-xs font-semibold text-muted-foreground underline decoration-muted-foreground/55 decoration-dotted underline-offset-3">
+              {hiddenLabel(hidden)}
+            </span>
+          ) : null}
           <Diffstat totals={geld ? shown : all} />
-        </>
+          {geld ? (
+            <div ref={boxRef} role="tooltip" className="geld-breakdown absolute top-[calc(100%+0.375rem)] right-0 z-20">
+              <span aria-hidden="true" className="geld-breakdown__caret" style={{ left: caret ?? '50%' }} />
+              <BreakdownRow label="Essential" totals={shown} />
+              {rows.map((row) => (
+                <BreakdownRow key={row.id} label={categoryById(row.id).title} totals={row.totals} />
+              ))}
+              <span role="separator" className="col-span-full my-[3px] border-t" />
+              <BreakdownRow label="Total" totals={all} />
+            </div>
+          ) : null}
+        </span>
       }
     >
-      <div className="px-4 pt-3">
-        <p className="mb-2 text-xs text-muted-foreground">Rest on the label in the header and the counts split by category:</p>
-        <div className="rounded-lg border bg-popover text-popover-foreground shadow-sm" aria-label="Line counts" role="group">
-          <p className="border-b px-3 py-1.5 font-mono text-[0.625rem] font-medium tracking-[0.12em] text-muted-foreground uppercase">Line counts</p>
-          <Breakdown label="Essential" totals={shown} strong />
-          {rows.map((row) => (
-            <Breakdown key={row.id} label={categoryById(row.id).title} totals={row.totals} />
+      <ul aria-label="Files to review">
+        {files
+          .filter((file) => !geld || file.category === null)
+          .slice(0, 5)
+          .map((file) => (
+            <li key={file.path} className="flex items-center gap-2 border-b px-4 py-1.5 font-mono text-xs">
+              <FileCodeIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate">{file.path}</span>
+              <span className="shrink-0 tabular-nums">
+                <span className="text-addition">+{formatCount(file.additions)}</span> <span className="text-deletion">&minus;{formatCount(file.deletions)}</span>
+              </span>
+            </li>
           ))}
-          <Breakdown label="Total" totals={all} className="border-t" />
-        </div>
-      </div>
+      </ul>
 
       <div className="mt-4 border-t">
         <div className="flex items-center justify-between gap-3 bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
@@ -69,15 +104,15 @@ export function CountsScene() {
   );
 }
 
-function Breakdown({ label, totals, strong = false, className }: { readonly label: string; readonly totals: ChangeTotals; readonly strong?: boolean; readonly className?: string }) {
+/** One line of the extension's tooltip (ui/tooltip.ts `row`): label, files, additions, deletions, as grid cells. */
+function BreakdownRow({ label, totals }: { readonly label: string; readonly totals: ChangeTotals }) {
   return (
-    <div className={cn('flex items-center justify-between gap-4 px-3 py-1.5 text-xs', className)}>
-      <span className={strong ? 'font-semibold' : 'text-muted-foreground'}>{label}</span>
-      <span className="tabular-nums">
-        <span className="mr-2 text-muted-foreground">{pluralize(totals.files, 'file', 'files')}</span>
-        <span className="font-semibold">{formatDiffstat(totals)}</span>
-      </span>
-    </div>
+    <span className="contents">
+      <span className="font-medium">{label}</span>{' '}
+      <span className="font-semibold text-muted-foreground tabular-nums">{pluralize(totals.files, 'file', 'files')}</span>{' '}
+      <span className="text-right font-semibold text-addition tabular-nums">+{formatCount(totals.additions)}</span>{' '}
+      <span className="text-right font-semibold text-deletion tabular-nums">&minus;{formatCount(totals.deletions)}</span>
+    </span>
   );
 }
 
