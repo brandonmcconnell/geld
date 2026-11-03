@@ -9,6 +9,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
 import { commentBodyPresentationProbe, compareCommentBodyPresentation } from './comment-body-branding.mjs';
+import { BITBUCKET_LOCAL_REVIEW, localReviewStorageScope, observeLocalReview, verifyBitbucketLocalReview } from './bitbucket-local-reviewed.mjs';
 import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-list-row.mjs';
 import { bitbucketColdChipVisibilityProbe, bitbucketCountIntentRequests } from './bitbucket-cold-chip.mjs';
 import { verifyBitbucketHiddenAuthors } from './bitbucket-hidden-authors.mjs';
@@ -61,6 +62,7 @@ const FOCUSED_CASES = {
   'bitbucket-native-settings-diagnostic': ['bitbucket-native-settings-diagnostic'],
   'bitbucket-native-file-menu': ['bitbucket-native-file-menu'],
   'bitbucket-comment': ['bitbucket-comment-digest'],
+  'bitbucket-local-reviewed': ['bitbucket-local-reviewed'],
   'bitbucket-commit': ['bitbucket-commit-counts'],
   'bitbucket-commit-links': ['bitbucket-commit-links'],
   'bitbucket-list-commit': ['bitbucket-list-counts', 'bitbucket-commit-counts'],
@@ -92,6 +94,7 @@ const nativeFileMenuScopes = new WeakMap();
 const gitLabComparisonSources = new WeakMap();
 const gitLabStandaloneSources = new WeakMap();
 const gitLabWhitespaceCases = new WeakMap();
+const localReviewCases = new WeakMap();
 const gitLabShellCases = new WeakMap();
 const GL_MIXED = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs?diff_id=2158520123';
 const GL_OVERVIEW = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334';
@@ -355,6 +358,7 @@ function observeBitbucketBudget(page, item, abort) {
 async function runCase(name, url, body, discovery = false) {
   const whitespacePrivacy = ['gitlab-whitespace-viewed', 'gitlab-whitespace-session'].includes(name);
   const fileMenuPrivacy = name === 'bitbucket-native-file-menu';
+  const localReviewOnly = name === 'bitbucket-local-reviewed';
   const shellPrivacy = name === 'gitlab-shell';
   const item = { name, url, startedAt: new Date().toISOString(), status: 'running', ...(discovery ? { purpose: 'Read-only native surface discovery. No feature parity assertion.' } : {}), console: [], pageErrors: [], requestFailures: [], sourceFailures: [] };
   report.cases.push(item);
@@ -374,11 +378,14 @@ async function runCase(name, url, body, discovery = false) {
   let whitespaceSettings;
   let whitespaceObserver;
   let whitespaceComparisons;
+  let localReviewSettings;
+  let localReviewObserver;
   let shellSettings;
   let shellObserver;
   const abort = new AbortController();
   try {
     if (shellPrivacy && focus !== 'gitlab-shell') { item.status = 'not_selected';item.reason = 'GitLab shell acceptance is literal-only. No native source navigation or master change.';return; }
+    if (localReviewOnly && focus !== 'bitbucket-local-reviewed') { item.status = 'not_selected';item.reason = 'Local review persistence is a dedicated two-visit case, excluded from all/default/regression.';return; }
     if (fileMenuPrivacy && focus !== 'bitbucket-native-file-menu') { item.status = 'not_selected';item.reason = 'Native file-menu diagnosis is literal-only. No navigation or input.';return; }
     if (whitespacePrivacy && focus !== 'gitlab-whitespace-viewed' && name !== 'gitlab-whitespace-session') { item.status = 'not_selected';item.reason = 'Anonymous native whitespace characterization is literal-only, excluded from all/default/regression. No navigation or preference action.';return; }
     if (name === 'gitlab-whitespace-session' && focus !== 'gitlab-whitespace-session') { item.status = 'not_selected';item.reason = 'Native whitespace session is literal-only, excluded from all/default/regression. No navigation or native preference action.';return; }
@@ -430,6 +437,21 @@ async function runCase(name, url, body, discovery = false) {
       throw new Error(`Provider rate limited until ${item.rateLimitedUntil}; no navigation attempted`);
     }
     currentCaseAbort = abort;
+    if (localReviewOnly) {
+      item.localReviewStorage = {};
+      const readStorage = () => options.evaluate(async () => {
+        const sync = await chrome.storage.sync.get(['settings', 'providerReviewedItems']);const local = await chrome.storage.local.get('providerReviewedItems');
+        const field = (value, key) => Object.hasOwn(value, key) ? { present: true, value: value[key] } : { present: false };
+        return { settings: field(sync, 'settings'), marks: field(local, 'providerReviewedItems'), synchronizedMarks: field(sync, 'providerReviewedItems') };
+      });
+      const writeStorage = (value) => options.evaluate(async (saved) => {
+        if (saved.settings.present) await chrome.storage.sync.set({ settings: saved.settings.value });else await chrome.storage.sync.remove('settings');
+        if (saved.marks.present) await chrome.storage.local.set({ providerReviewedItems: saved.marks.value });else await chrome.storage.local.remove('providerReviewedItems');
+      }, value);
+      localReviewSettings = localReviewStorageScope({ read: readStorage, write: writeStorage, progress: item.localReviewStorage });
+      localReviewSettings.read = readStorage;
+      await localReviewSettings.prepare();
+    }
     if (shellPrivacy) {
       item.gitLabShellSettings = {};
       shellSettings = gitLabShellSettings({ progress: item.gitLabShellSettings,
@@ -529,21 +551,21 @@ async function runCase(name, url, body, discovery = false) {
     await page.bringToFront();
     page.on('close', () => { if (!abort.signal.aborted) abort.abort(new Error('Browser case page closed; polling stopped immediately')); });
     observeBitbucketBudget(page, item, abort);
-    page.on('console', (message) => { if (name === 'bitbucket-native-settings-diagnostic' || whitespacePrivacy || fileMenuPrivacy || shellPrivacy) { item.suppressedNativeConsoleCount = (item.suppressedNativeConsoleCount ?? 0) + 1;return; }if (item.console.length < 100) item.console.push({ type: message.type(), text: message.text().slice(0, 2000) }); });
-    page.on('pageerror', (error) => { if (name === 'bitbucket-native-settings-diagnostic' || whitespacePrivacy || fileMenuPrivacy || shellPrivacy) { item.suppressedNativePageErrorCount = (item.suppressedNativePageErrorCount ?? 0) + 1;return; }if (item.pageErrors.length < 100) item.pageErrors.push(errorText(error)); });
+    page.on('console', (message) => { if (name === 'bitbucket-native-settings-diagnostic' || whitespacePrivacy || fileMenuPrivacy || shellPrivacy || localReviewOnly) { item.suppressedNativeConsoleCount = (item.suppressedNativeConsoleCount ?? 0) + 1;return; }if (item.console.length < 100) item.console.push({ type: message.type(), text: message.text().slice(0, 2000) }); });
+    page.on('pageerror', (error) => { if (name === 'bitbucket-native-settings-diagnostic' || whitespacePrivacy || fileMenuPrivacy || shellPrivacy || localReviewOnly) { item.suppressedNativePageErrorCount = (item.suppressedNativePageErrorCount ?? 0) + 1;return; }if (item.pageErrors.length < 100) item.pageErrors.push(errorText(error)); });
     page.on('requestfailed', (request) => {
-      if (item.requestFailures.length < 100) item.requestFailures.push({ url: (fileMenuPrivacy || shellPrivacy) ? '[native_resource_omitted]' : whitespacePrivacy ? whitespaceReceiptURL(request.url()) : safeUrl(request.url()), method: (fileMenuPrivacy || shellPrivacy) ? (['GET','HEAD','OPTIONS','POST','PUT','PATCH','DELETE'].includes(request.method()) ? request.method() : 'other') : request.method(), error: name === 'bitbucket-native-settings-diagnostic' || whitespacePrivacy || fileMenuPrivacy || shellPrivacy ? 'native_request_error_text_suppressed' : request.failure()?.errorText });
+      if (item.requestFailures.length < 100) item.requestFailures.push({ url: (fileMenuPrivacy || shellPrivacy || localReviewOnly) ? '[native_resource_omitted]' : whitespacePrivacy ? whitespaceReceiptURL(request.url()) : safeUrl(request.url()), method: (fileMenuPrivacy || shellPrivacy || localReviewOnly) ? (['GET','HEAD','OPTIONS','POST','PUT','PATCH','DELETE'].includes(request.method()) ? request.method() : 'other') : request.method(), error: name === 'bitbucket-native-settings-diagnostic' || whitespacePrivacy || fileMenuPrivacy || shellPrivacy || localReviewOnly ? 'native_request_error_text_suppressed' : request.failure()?.errorText });
     });
     page.on('response', (response) => {
       const headers = response.headers();
       const quota = quotaHeaders(headers);
-      if (!whitespacePrivacy && !fileMenuPrivacy && !shellPrivacy && providerOf(response.url()) !== null && Object.keys(quota).length > 0) {
+      if (!whitespacePrivacy && !fileMenuPrivacy && !shellPrivacy && !localReviewOnly && providerOf(response.url()) !== null && Object.keys(quota).length > 0) {
         item.quotaObservations ??= [];
         if (item.quotaObservations.length < 60) item.quotaObservations.push({ url: safeUrl(response.url()), status: response.status(), observedAt: new Date().toISOString(), headers: quota });
       }
       if (response.status() < 400) return;
       const resourceProvider = providerOf(response.url());
-      const failure = (fileMenuPrivacy || shellPrivacy) ? { url: '[native_resource_omitted]', provider: ['bitbucket','gitlab','github'].includes(resourceProvider) ? resourceProvider : 'unclassified', api: bitbucketApi(response.url()) ? 'bitbucket_standard' : 'not_bitbucket_standard', status: response.status(), observedAt: new Date().toISOString(), expectedAnonymousRestriction: response.status() === 401 || response.status() === 403 } : whitespacePrivacy ? { url: whitespaceReceiptURL(response.url()), status: response.status(), observedAt: new Date().toISOString(), expectedAnonymousRestriction: response.status() === 401 || response.status() === 403 }
+      const failure = (fileMenuPrivacy || shellPrivacy || localReviewOnly) ? { url: '[native_resource_omitted]', provider: ['bitbucket','gitlab','github'].includes(resourceProvider) ? resourceProvider : 'unclassified', api: bitbucketApi(response.url()) ? 'bitbucket_standard' : 'not_bitbucket_standard', status: response.status(), observedAt: new Date().toISOString(), expectedAnonymousRestriction: response.status() === 401 || response.status() === 403 } : whitespacePrivacy ? { url: whitespaceReceiptURL(response.url()), status: response.status(), observedAt: new Date().toISOString(), expectedAnonymousRestriction: response.status() === 401 || response.status() === 403 }
         : { url: safeUrl(response.url()), status: response.status(), retryAfter: headers['retry-after'] ?? null, quotaHeaders: quota, observedAt: new Date().toISOString(), expectedAnonymousRestriction: response.status() === 401 || response.status() === 403 };
       if (item.sourceFailures.length < 100) item.sourceFailures.push(failure);
       if (response.status() === 429 && resourceProvider !== null) {
@@ -603,6 +625,11 @@ async function runCase(name, url, body, discovery = false) {
         if (item.nativeFileMenuTraffic.forbiddenWrites || item.nativeFileMenuTraffic.positiveExtensionRequests) { abort.abort(new Error('Native file-menu read-only demand guard failed'));void page.close().catch(() => undefined); }
       });
     }
+    if (localReviewOnly) {
+      item.localReviewTraffic = {};
+      localReviewObserver = observeLocalReview(page, item.localReviewTraffic, abort);
+      localReviewCases.set(page, { observer: localReviewObserver, readStorage: localReviewSettings.read });
+    }
     const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     abort.signal.throwIfAborted();
     const finalNativeURL = fileMenuPrivacy ? page.url() : null;
@@ -614,21 +641,22 @@ async function runCase(name, url, body, discovery = false) {
     } else Object.assign(item, result);
     if (fileMenuPrivacy) { assert.equal(item.nativeFileMenuTraffic.forbiddenWrites, 0);assert.equal(item.nativeFileMenuTraffic.positiveExtensionRequests, 0); }
     item.auth = shellPrivacy ? { status: 'scoped_native_identity', anonymousAtBaseline: item.gitLabShell?.baseline?.available === true, scope: 'Original public native source and sign-in witnesses; no generic form capture.' } : fileMenuPrivacy ? { status: 'report_only', anonymousSourceLease: item.nativeFileMenu?.setup?.same === true, scope: 'Original anonymous native file/menu lease only; no raw bootstrap or generic auth observation.' } : whitespacePrivacy ? { status: 'scoped_native_identity', anonymousAtBaseline: item.nativeWhitespace?.baseline?.anonymous === true, scope: 'Known scalar identity and original sign-in controls only.' } : name === 'bitbucket-native-settings-diagnostic' ? { status: 'report_only', anonymousSourceLease: item.nativeSettingsDiagnostic?.setup?.same === true, scope: 'No generic authentication observation or form serialization' } : name === 'bitbucket-pipeline-initial-on' ? { status: 'scoped_native_bootstrap', anonymousAtBaseline: item.initialNativeOn?.setup?.same === true ? true : null, scope: 'Same-visit source-backed anonymous actor, no private capability getter' } : name === 'bitbucket-native-bash-on' ? { status: 'scoped_native_bootstrap', anonymousAtBaseline: item.nativeBashOn?.setup?.same === true ? true : null, scope: 'Same-visit original anonymous bootstrap, not a durable actor or authenticated acceptance' } : await authObservation(page, provider);
-    item.artifacts = shellPrivacy ? item.gitLabShell?.artifacts ?? { suppressed: 'No unqualified source capture. Report only unless the exact original code row qualifies.' } : fileMenuPrivacy ? { suppressed: 'Always report only. No HTML, AX, PNG, arbitrary labels/URLs or native field values.' } : whitespacePrivacy ? { suppressed: 'Always report only. No HTML, AX, PNG, raw bootstrap or arbitrary native field values.' } : name === 'bitbucket-native-settings-diagnostic' ? { suppressed: 'Always report only. No HTML, AX, PNG or form serialization.' } : name === 'bitbucket-pipeline-initial-on' ? item.initialNativeOn?.artifacts ?? { suppressed: 'No safe first-use stage artifact. Unknown form DOM/AX must never be captured.' } : name === 'bitbucket-native-bash-on' ? item.nativeBashOn?.artifacts ?? { suppressed: 'No safe native Bash stage artifact. Generic DOM/AX capture is prohibited for an unknown form.' } : name === 'bitbucket-native-bash-style' ? item.nativeBashStyle.artifacts : await capture(page, name, { fullPage: !['bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'].includes(name) });
+    item.artifacts = localReviewOnly ? { suppressed: 'Report only for local review persistence. No generic DOM, AX or image capture.' } : shellPrivacy ? item.gitLabShell?.artifacts ?? { suppressed: 'No unqualified source capture. Report only unless the exact original code row qualifies.' } : fileMenuPrivacy ? { suppressed: 'Always report only. No HTML, AX, PNG, arbitrary labels/URLs or native field values.' } : whitespacePrivacy ? { suppressed: 'Always report only. No HTML, AX, PNG, raw bootstrap or arbitrary native field values.' } : name === 'bitbucket-native-settings-diagnostic' ? { suppressed: 'Always report only. No HTML, AX, PNG or form serialization.' } : name === 'bitbucket-pipeline-initial-on' ? item.initialNativeOn?.artifacts ?? { suppressed: 'No safe first-use stage artifact. Unknown form DOM/AX must never be captured.' } : name === 'bitbucket-native-bash-on' ? item.nativeBashOn?.artifacts ?? { suppressed: 'No safe native Bash stage artifact. Generic DOM/AX capture is prohibited for an unknown form.' } : name === 'bitbucket-native-bash-style' ? item.nativeBashStyle.artifacts : await capture(page, name, { fullPage: !['bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'].includes(name) });
     item.status = result?.status ?? (discovery ? 'discovery' : 'passed');
   } catch (error) {
     item.status = shellPrivacy ? (item.gitLabShell?.status === 'failed' ? 'failed' : item.rateLimitedUntil !== undefined ? 'rate_limited' : 'unavailable') : fileMenuPrivacy && item.rateLimitedUntil !== undefined ? 'rate_limited' : fileMenuPrivacy && (item.nativeFileMenu?.status === 'failed' || item.nativeFileMenuContract === 'invalid_result' || item.nativeFileMenuTraffic?.forbiddenWrites > 0 || item.nativeFileMenuTraffic?.positiveExtensionRequests > 0) ? 'failed' : whitespacePrivacy && item.nativeWhitespace?.status === 'failed' ? 'failed' : name === 'bitbucket-native-settings-diagnostic' && item.nativeSettingsDiagnostic?.status === 'failed' ? 'failed' : name === 'bitbucket-native-bash-on' && item.nativeBashOn?.status === 'failed' ? 'failed' : discovery ? item.rateLimitedUntil === undefined ? 'unavailable' : 'rate_limited' : 'failed';
-    item.error = shellPrivacy ? 'GitLab shell acceptance unavailable or failed. See fixed phase and cleanup diagnostics.' : fileMenuPrivacy ? 'Native file-menu diagnostic unavailable or guard failed. See fixed progress and cleanup codes.' : whitespacePrivacy ? 'Native whitespace characterization unavailable or failed. See fixed stage and cleanup codes.' : errorText(error);
+    item.error = localReviewOnly ? 'Bitbucket local review acceptance failed. See bounded stage evidence.' : shellPrivacy ? 'GitLab shell acceptance unavailable or failed. See fixed phase and cleanup diagnostics.' : fileMenuPrivacy ? 'Native file-menu diagnostic unavailable or guard failed. See fixed progress and cleanup codes.' : whitespacePrivacy ? 'Native whitespace characterization unavailable or failed. See fixed stage and cleanup codes.' : errorText(error);
     if (item.rateLimitedUntil !== undefined) {
       item.interruptedError = item.error;
       item.error = `${item.holdReason === 'conservative_anonymous_api_budget' ? 'Conservative anonymous API budget hold' : item.navigationSuppressedByCooldown ? 'Inherited provider cooldown' : 'Provider HTTP429 cooldown'} until ${item.rateLimitedUntil}. Native demand stopped and no retry was attempted.`;
     }
+    if (localReviewOnly) item.artifacts = { suppressed: 'Report only for local review persistence, including failures.' };
     if (fileMenuPrivacy) item.artifacts = { suppressed: 'Always report only, including unknown popup and failure. No HTML, AX or PNG.' };
     if (name === 'bitbucket-native-settings-diagnostic') item.artifacts = { suppressed: 'Always report only, including failures. No HTML, AX or PNG.' };
     if (name === 'bitbucket-pipeline-initial-on') item.artifacts = item.initialNativeOn?.artifacts ?? { suppressed: 'Generic failed-case DOM/AX capture is prohibited for the first-use native form.' };
     if (name === 'bitbucket-native-bash-on') item.artifacts = item.nativeBashOn?.artifacts ?? { suppressed: 'Generic failed-case DOM/AX capture is prohibited for the native Bash form.' };
     if (whitespacePrivacy) item.artifacts = { suppressed: 'Always report only, including failures. No HTML, AX, PNG or unknown field values.' };
-    if (page !== undefined && !page.isClosed() && !fileMenuPrivacy && !whitespacePrivacy && !shellPrivacy && !['bitbucket-native-bash-on', 'bitbucket-pipeline-initial-on', 'bitbucket-native-settings-diagnostic'].includes(name)) {
+    if (page !== undefined && !page.isClosed() && !localReviewOnly && !fileMenuPrivacy && !whitespacePrivacy && !shellPrivacy && !['bitbucket-native-bash-on', 'bitbucket-pipeline-initial-on', 'bitbucket-native-settings-diagnostic'].includes(name)) {
       try { item.artifacts = await capture(page, `${name}-failed`, { fullPage: !['bitbucket-native-bash-style', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'].includes(name) }); } catch (captureError) { item.captureError = errorText(captureError); }
     }
   } finally {
@@ -665,6 +693,15 @@ async function runCase(name, url, body, discovery = false) {
         item.cleanupObservation = shellPrivacy ? 'gitlab_shell_page_close_failed' : fileMenuPrivacy ? 'native_file_menu_page_close_failed' : name === 'gitlab-whitespace-session' ? 'native_whitespace_session_page_close_failed' : errorText(error);
         if (!closedTarget(error)) { item.status = 'failed';item.cleanupError = shellPrivacy ? 'gitlab_shell_page_close_failed' : fileMenuPrivacy ? 'native_file_menu_page_close_failed' : name === 'gitlab-whitespace-session' ? 'native_whitespace_session_page_close_failed' : errorText(error); }
       }
+    }
+    if (localReviewObserver !== undefined) {
+      try { await localReviewObserver.dispose();assert.equal(item.localReviewTraffic.providerWrites, 0); }
+      catch { item.status = 'failed';item.cleanupError = 'Local review response cleanup failed'; }
+      if (page !== undefined) localReviewCases.delete(page);
+    }
+    if (localReviewSettings !== undefined) {
+      try { await localReviewSettings.restore(page === undefined || page.isClosed()); }
+      catch { item.status = 'failed';item.cleanupError = 'Local review raw storage restoration failed';report.infrastructureErrors.push(item.cleanupError); }
     }
     if (syntaxOnTraffic !== undefined) {
       try { const evidence = name === 'bitbucket-native-bash-on' ? item.nativeBashRequests : item.shellNativeSources;const traffic = name === 'bitbucket-native-bash-on' ? item.nativeBashOnTraffic : item.syntaxOnTraffic;assert.ok(evidence && Array.isArray(evidence.mutations), 'Native source observer evidence unavailable');(name === 'bitbucket-pipeline-initial-on' ? assertInitialNativeOnTraffic : assertSyntaxOnTraffic)(traffic, evidence.mutations);traffic.finalCheckedAfterPageClose = page.isClosed(); }
@@ -3089,6 +3126,13 @@ try {
     item.state = await tabState(page);
     item.featureParity = 'partial';
     return { status: 'passed', verified: 'One observed state-bound UUID/name projection supports author hiding and keyboard Show recovery on the real native list with stats off. No count intent, oracle GET or provider write.' };
+  });
+  await runCase('bitbucket-local-reviewed', BITBUCKET_LOCAL_REVIEW, async (page, item) => {
+    const context = localReviewCases.get(page);assert.ok(context !== undefined);
+    return verifyBitbucketLocalReview(page, item, { ...context, poll, openReviewAncestors, budget: () => {
+      const remaining = report.quotaPolicy.conservativeObservedRequestBudget - bitbucketRequestTimes.filter((time) => time > Date.now() - 60 * 60 * 1000).length;
+      return { available: remaining >= 16, remaining };
+    } });
   });
   await runCase('bitbucket-comment-digest', BB_COMMENT_PR, async (page, item) => {
     item.commentDigest = await bitbucketCommentDigest(page);
