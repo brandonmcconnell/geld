@@ -97,10 +97,24 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     for (const stale of promptHost.querySelectorAll('.geld-account__prompt, .geld-account__error, .geld-alert')) stale.remove();
 
     renderDialog();
-    const shared=el('div','geld-account__shared');
-    if(dashboard.user){shared.append(button([dashboard.user.name],'geld-button--small',()=>{void browser.tabs.create({url:`${DASHBOARD_ORIGIN}/settings/account`});}));if(options.variant==='full'){const select=el('select','geld-input');select.setAttribute('aria-label','Geld team');const personal=el('option','',['Personal view']);personal.value='';select.append(personal);for(const team of dashboard.teams){const option=el('option','',[team.name]);option.value=team.id;select.append(option);}select.value=teamId;select.addEventListener('change',()=>{teamId=select.value;void selectDashboardTeam(teamId).then(()=>refreshDashboardSession());});shared.append(select);}}
-    else shared.append(button(['Sign in to Geld'],'geld-button--small geld-button--primary',()=>{void connectDashboard().catch(()=>{localError='The Geld connection could not be opened.';render();});}));
-    host.append(shared);
+    // The popup's header has room for one control: whoever is signed in, or a single sign-in button. The other
+    // account is reached from that control's menu, or from the options page.
+    const compact = options.variant === 'compact';
+    const connectGeld = (): void => {
+      void connectDashboard().catch(() => {
+        localError = 'The Geld connection could not be opened.';
+        render();
+      });
+    };
+    const openGeldAccount = (): void => {
+      void browser.tabs.create({ url: `${DASHBOARD_ORIGIN}/settings/account` });
+    };
+    if (!compact || (account === null && flow.status !== 'pending')) {
+      const shared=el('div','geld-account__shared');
+      if(dashboard.user){shared.append(button([dashboard.user.name],'geld-button--small',openGeldAccount));if(!compact){const select=el('select','geld-input');select.setAttribute('aria-label','Geld team');const personal=el('option','',['Personal view']);personal.value='';select.append(personal);for(const team of dashboard.teams){const option=el('option','',[team.name]);option.value=team.id;select.append(option);}select.value=teamId;select.addEventListener('change',()=>{teamId=select.value;void selectDashboardTeam(teamId).then(()=>refreshDashboardSession());});shared.append(select);}}
+      else shared.append(button(['Sign in to Geld'],'geld-button--small geld-button--primary',connectGeld));
+      host.append(shared);
+    }
 
     if (account === null) {
       if (flow.status === 'pending') {
@@ -112,13 +126,14 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
         );
         return;
       }
-      const label = options.variant === 'compact' ? 'GitHub sync' : 'Sync settings with GitHub';
-      const signIn = button([svg(GITHUB_MARK), label], 'geld-button--small geld-account__signin', () => {
-        dialogWanted = true;
-        void act('sign-in');
-      });
-      signIn.title = 'Sign in with GitHub to sync your settings';
-      host.append(signIn);
+      if (!compact) {
+        const signIn = button([svg(GITHUB_MARK), 'Sync settings with GitHub'], 'geld-button--small geld-account__signin', () => {
+          dialogWanted = true;
+          void act('sign-in');
+        });
+        signIn.title = 'Sign in with GitHub to sync your settings';
+        host.append(signIn);
+      }
       if (localError !== null && flow.status !== 'error') promptHost.append(el('p', 'geld-status geld-account__error', [localError]));
       return;
     }
@@ -152,9 +167,15 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     } else {
       summary.title = statusText;
     }
+    const geldItem = !compact
+      ? null
+      : dashboard.user === null
+        ? button(['Sign in to Geld'], 'geld-account__menu-item', connectGeld)
+        : button([`Geld account: ${dashboard.user.name}`], 'geld-account__menu-item', openGeldAccount);
     const menu = el('div', 'geld-account__menu-body', [
       status,
       button(['Sync now'], 'geld-account__menu-item', () => void act('sync-now')),
+      ...(geldItem === null ? [] : [geldItem]),
       button(['Sign out'], 'geld-account__menu-item', () => void act('sign-out')),
     ]);
     details.append(summary, menu);
