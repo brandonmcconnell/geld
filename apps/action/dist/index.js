@@ -2473,7 +2473,7 @@ var init_settings = __esm({
       prOverview: true,
       compactTimeline: "compact",
       reviewGrouping: "type",
-      collapseDescription: false,
+      collapseDescription: true,
       quickReview: true,
       reviewBots: [],
       aiEnabled: false,
@@ -11147,8 +11147,8 @@ var init_settings_schema = __esm({
           {
             kind: "toggle",
             key: "collapseDescription",
-            label: "Collapse the description",
-            description: "In Minimal mode, show the first paragraph of the pull request body and a control to expand the rest.",
+            label: "Shorten the description",
+            description: "Fold each section of the pull request description under its heading. A long description with no headings is cut to 500px with a control to show the rest.",
             popup: false
           },
           {
@@ -31997,6 +31997,12 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     }
     const parsed = parseBotBody(comment.body, id.startsWith("custom:") ? "" : id);
     if (botById(id)?.conversational === true && !isReviewShaped(parsed)) continue;
+    if (!isReviewShaped(parsed) && threadRuns.has(id)) {
+      reported(id, comment);
+      statusOnly.delete(id);
+      runsBeforeAsk.delete(id);
+      continue;
+    }
     reported(id, comment);
     if (parsed.count !== null) countedSummaries.add(comment.anchor);
     if (parsed.unthreaded !== void 0) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor });

@@ -902,6 +902,19 @@ describe('bots + prompts', () => {
     expect(verdictsFrom([], rerun, 'aaa')[0]).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'discussion_r3' });
   });
 
+  it('keeps a thread run standing over a later comment with nothing to count', () => {
+    // geld#352: Greptile's summary counts one finding, its one thread is resolved, and seconds later it posts the
+    // findings it could not place inline as a top-level comment with no count, score or verdict of its own.
+    const summary = { author: 'greptile-apps[bot]', body: 'Confidence Score: 4/5\n\nFindings\n\n1. **Info buttons omit spoken help** ▶\n\nSummary\n\nThe popup uses compact switches.', anchor: 'issuecomment-1', createdAt: '2026-11-03T09:10:24Z' };
+    const thread = { author: 'greptile-apps[bot]', body: 'Info buttons omit spoken help', anchor: 'discussion_r1', resolved: true, createdAt: '2026-11-03T09:10:36Z' };
+    const outside = { author: 'greptile-apps[bot]', body: 'Comments Outside Diff\n\nThese findings could not be posted inline.\n\n**Old team settings stay active** `apps/extension/src/ui/account-widget.ts:320` ▶', anchor: 'issuecomment-2', createdAt: '2026-11-03T09:10:39Z' };
+    expect(verdictsFrom([], [summary, thread, outside], 'aaa')[0]).toMatchObject({ verdict: 'findings', count: 0, score: 4, sourceId: 'discussion_r1' });
+    // The thread still open: that is the outstanding finding, and where the chip points.
+    expect(verdictsFrom([], [summary, { ...thread, resolved: false }, outside], 'aaa')[0]).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'discussion_r1' });
+    // With no thread before it, the comment is still the bot's word, as before.
+    expect(verdictsFrom([], [summary, outside], 'aaa')[0]).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'issuecomment-2' });
+  });
+
   it('reads a summary rewritten well after a resolved thread run as the latest word', () => {
     const now = Date.UTC(2026, 9, 8, 18, 0);
     const at = (minutesAgo: number): string => new Date(now - minutesAgo * 60_000).toISOString();
