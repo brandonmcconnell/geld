@@ -2072,3 +2072,9 @@ The harness labels this prior-success requirement ROOT-MANUAL and unverified by 
 - **An ARIA-blocked tab field is not automatically a read-only combobox**: opener-only diagnostics split self and ancestor aria-disabled/aria-readonly booleans and exact tab id/name/type/role/inputmode/listbox matches without relaxing any eligibility guard.
   Fixed label association and hidden-companion ancestry checks contain only booleans/counts, with no arbitrary attributes, label text, field values or checkbox state.
   Historical native13-field PR captures show a self aria-readonly non-searchable tab combobox, but the later12-field standalone rejection reports only a combined ARIA blocker until its own precise diagnostics are observed.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
