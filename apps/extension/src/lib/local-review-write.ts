@@ -23,7 +23,7 @@ export function createLocalReviewClient(transport: Transport): (mutation: LocalR
   transport.subscribe((message) => {
     if (!record(message) || message.type !== 'geld:local-review-validate' || typeof message.token !== 'string') return undefined;
     const validate = pending.get(message.token);
-    return validate === undefined ? Promise.resolve({ ok: false }) : validate().then(() => ({ ok: true }), () => ({ ok: false }));
+    return validate === undefined ? undefined : validate().then(() => ({ ok: true }), () => ({ ok: false }));
   });
   return async (mutation, validate) => {
     await validate();
