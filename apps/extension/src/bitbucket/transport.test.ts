@@ -44,6 +44,24 @@ it('uses only the observed fixed same-origin proxy with native session credentia
   expect(backing.listeners.size).toBe(0);
 });
 
+it.each([null, 'https://bitbucket.org'])('forwards explicit revalidation and preserves validator responses through transport %s', async (origin) => {
+  const transport = createBitbucketTransport({ origin: () => origin, now: () => NOW, store: memory().store });
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => response({ id: 42 }, 200, { etag: '"identity-a"', 'cache-control': 'private, max-age=600' }));
+  const result = await transport.fetch(URL, { cache: 'no-cache', headers: { Accept: 'application/json' } }, fetcher);
+  const [target, init] = fetcher.mock.calls[0] ?? [];
+  expect(target).toBe(origin === null ? URL : NATIVE);
+  expect(init?.cache).toBe('no-cache');
+  expect(new Headers(init?.headers).get('accept')).toBe('application/json');
+  expect(new Headers(init?.headers).has('if-none-match')).toBe(false);
+  expect(await result.json()).toEqual({ id: 42 });
+  expect(result.headers.get('etag')).toBe('"identity-a"');
+  expect(result.headers.get('cache-control')).toBe('private, max-age=600');
+  await transport.fetch(URL, {}, fetcher);
+  expect(fetcher.mock.calls[1]?.[1]?.cache).toBeUndefined();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  transport.dispose();
+});
+
 it.each([null, 'https://example.com', 'http://bitbucket.org', 'https://bitbucket.org.evil.example', 'https://bitbucket.org:8443'])('retains the public canonical API with omitted credentials outside the exact native origin %s', async (origin) => {
   const transport = createBitbucketTransport({ origin: () => origin, store: memory().store });
   const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response());

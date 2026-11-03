@@ -314,9 +314,9 @@ export class BitbucketClient {
     return url;
   }
 
-  private async response(url: URL, signal: AbortSignal, raw = false): Promise<Response> {
+  private async response(url: URL, signal: AbortSignal, raw = false, cache?: RequestCache): Promise<Response> {
     let response: Response;
-    try { response = await this.transport.fetch(url, { signal, headers: { Accept: raw ? 'text/plain' : 'application/json' } }, this.fetcher); }
+    try { response = await this.transport.fetch(url, { signal, headers: { Accept: raw ? 'text/plain' : 'application/json' }, ...(cache === undefined ? {} : { cache }) }, this.fetcher); }
     catch (error) { if (error instanceof BitbucketTransportError) throw new BitbucketApiError(error.reason, error.message, error.retryAfterMs); throw error; }
     if (response.type === 'opaqueredirect' || response.status >= 300 && response.status < 400) throw new BitbucketApiError('invalid-response', 'Bitbucket unexpectedly redirected a pinned review source.');
     if (response.url !== '') this.trustedUrl(response.url, url);
@@ -326,8 +326,8 @@ export class BitbucketClient {
     return response;
   }
 
-  private async json(url: URL, signal: AbortSignal): Promise<unknown> {
-    const response = await this.response(url, signal);
+  private async json(url: URL, signal: AbortSignal, cache?: RequestCache): Promise<unknown> {
+    const response = await this.response(url, signal, false, cache);
     const type = response.headers.get('content-type');
     const text = await boundedText(response, MAX_JSON_BYTES);
     if (looksLikeHtml(type, text) || type === null || !/^application\/(?:[\w.+-]*\+)?json\b/i.test(type)) throw new BitbucketApiError('invalid-response', 'Bitbucket did not return review data.');
@@ -365,7 +365,7 @@ export class BitbucketClient {
 
   async pullRequest(signal: AbortSignal): Promise<BitbucketPullRequest> {
     const page = this.reviewPage();
-    const value = record(await this.json(new URL(`${API_ORIGIN}${this.pullPath}`), signal));
+    const value = record(await this.json(new URL(`${API_ORIGIN}${this.pullPath}`), signal, 'no-cache'));
     if (String(integer(value.id)) !== page.number) return invalid('Bitbucket returned a different pull request.');
     const destination = record(value.destination);
     if (isRecord(destination.repository) && destination.repository.full_name !== this.page.repository.path) return invalid('Bitbucket returned a different destination repository.');
@@ -390,7 +390,7 @@ export class BitbucketClient {
     }
     url.searchParams.set('fields', 'hash');
     // Resolve every snapshot separately so an ambiguous or reused prefix never becomes an immutable revision.
-    const resolved = record(await this.json(url, signal));
+    const resolved = record(await this.json(url, signal, 'no-cache'));
     const full = string(resolved.hash);
     if (resolved.repository !== undefined && apiRepositoryPath(string(record(resolved.repository).full_name)) !== path) return invalid('Bitbucket resolved the commit in a different repository.');
     if (!FULL_COMMIT.test(full) || !full.toLowerCase().startsWith(prefix.toLowerCase())) return invalid('Bitbucket returned a different commit for the abbreviated ref.');
@@ -436,7 +436,7 @@ export class BitbucketClient {
     const resolve = async (): Promise<string> => {
       const url = new URL(`${API_ORIGIN}${this.repositoryPath}/commit/${page.ref}`);
       url.searchParams.set('fields', 'hash,repository.full_name');
-      const value = record(await this.json(url, signal));
+      const value = record(await this.json(url, signal, FULL_COMMIT.test(page.ref) ? undefined : 'no-cache'));
       const hash = string(value.hash).toLowerCase();
       if (!FULL_COMMIT.test(hash) || !hash.startsWith(page.ref.toLowerCase()) || (value.repository !== undefined && apiRepositoryPath(string(record(value.repository).full_name)) !== this.repositoryPath)) return invalid('Bitbucket returned a different standalone commit.');
       return hash;
