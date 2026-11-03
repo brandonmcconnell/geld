@@ -2107,6 +2107,9 @@ Bounded native file diagnostics compare the current validated bootstrap selectio
 Missing or malformed refs remain explicitly incomplete, unknown paths retain no refs or URLs, and an original owner or snapshot change makes the observation unavailable or inconsistent rather than granting source authority.
 The installed-browser workflow path filter excludes Action-only packaging, root package and scripts changes, so normal CI or local image validation may run without an installed artifact and imply neither browser failure nor browser acceptance.
 The `Installed browser tests` workflow uses a separate standard GitHub-hosted runner, read-only repository permissions and no provider credentials or publishing steps.
+The explicit `gitlab-ui` and `bitbucket-ui` acceptance slices reuse the existing mixed-diff and conversation fixtures without broadening default visits or provider request budgets.
+Their assertions require visible adjusted line totals, compact count popovers, custom dashboard controls with native typography, explicit original-conversation restoration and discoverable category controls, including a real GitLab file-browser close and reopen.
+Custom dashboard controls are inspected through their button and region relationships while authored native details remain supported, and a passing overview slice alone does not establish category or full-provider parity.
 Set `GELD_BROWSER_EXECUTABLE` to the Chrome executable and `GELD_BROWSER_ARTIFACTS` to the evidence directory when running it in an extension-enabled test environment.
 The harness requires the installed service worker, real extension storage and tab messaging, and records browser/manifest identity with screenshots, DOM and a JSON report.
 Standalone Bitbucket commit counts use already-issued exact-revision metadata and complete diffstat responses as their independent oracle, retaining only Cache-Control, ETag, Age, Date and Vary response headers.

@@ -30,6 +30,10 @@ test('actual-shaped native source/version DOM yields original source provenance 
     const panel = document.createElement('section');panel.className = 'geld-provider-review';panel.setAttribute('data-geld-review-head', headSha);panel.innerHTML = '<details data-geld-item="ri_one" data-state="open"><article data-geld-source="note_4118584957" data-geld-source-id="4118584957"><div class="geld-provider-review__body">Source words</div></article></details>';document.body.append(panel);
     const result = gitLabRoundSnapshot();assertGitLabRoundScope(result, scope);
     assert.equal(result.items[0].sources[0].native.id, native.id);assert.equal(result.items[0].sources[0].native.body, 'Actual-shaped source words');assert.equal(document.getElementById(native.id), native);
+    panel.innerHTML = '<section data-geld-review-attention><button data-geld-review-toggle aria-expanded="true">Needs attention</button><section data-geld-item="ri_one" data-state="open"><button id="custom-item" data-geld-review-toggle aria-expanded="true">Concern</button><article data-geld-source="note_4118584957"><div class="geld-provider-review__body">Source words</div></article></section></section>';
+    document.querySelector('#custom-item').focus();
+    const custom = gitLabRoundSnapshot();assert.equal(custom.attention, true);assert.equal(custom.items[0].open, true);assert.equal(custom.items[0].focused, true);
+    document.querySelector('#custom-item').setAttribute('aria-expanded', 'false');assert.equal(gitLabRoundSnapshot().items[0].open, false);
   } finally { for (const [name, descriptor] of Object.entries(previous)) { if (descriptor === undefined) delete globalThis[name];else Object.defineProperty(globalThis, name, descriptor); }w.happyDOM.abort(); }
 });
 
