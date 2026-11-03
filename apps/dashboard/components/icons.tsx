@@ -51,7 +51,7 @@ import {
   faXmark as regularX,
   faFolder as regularFolder,
   faEllipsis as regularMoreHorizontal,
-  faChevronsUpDown as regularChevronsUpDown,
+  faSort as regularChevronsUpDown,
   faArrowRightFromBracket as regularLogOut,
 } from '@awesome.me/kit-2e791c163e/icons/sharp/regular';
 import {
@@ -105,7 +105,7 @@ import {
   faXmark as solidX,
   faFolder as solidFolder,
   faEllipsis as solidMoreHorizontal,
-  faChevronsUpDown as solidChevronsUpDown,
+  faSort as solidChevronsUpDown,
   faArrowRightFromBracket as solidLogOut,
 } from '@awesome.me/kit-2e791c163e/icons/sharp/solid';
 
