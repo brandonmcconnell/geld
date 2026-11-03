@@ -2490,6 +2490,10 @@ Keep that limit and its carried history intact when arranging focused UI checks,
 GNU tar can finish extracting a requested member before Node has written a full repository archive into its stdin.
 The malicious PAX license fixture uses a temporary archive file to avoid an EPIPE race while preserving its exact extracted-size, hash and verifier-rejection assertions.
 
+Restack and description-only workflow runs can bury the last actual browser result beyond a fixed page of completed runs.
+Cooldown restoration discovers named browser artifacts with bounded pagination and verifies their workflow and repository before selecting the latest retained result.
+Incomplete or ambiguous history must stop provider navigation instead of silently resetting the request budget.
+
 The bounded Bitbucket UI continuity case starts on public PR22, checkpoints its real comment digest, then clicks the original native Files tab once on the same document.
 Earlier independent PR27 diff and PR22 overview runs each observed 26 standard API requests, so combining two fresh page bootstraps does not fit the unchanged 40-request budget.
 The continuity case corroborates public tab-state totals with the read-only complete-result cache and actual native file inventory, without writing cache entries or issuing an oracle request.
