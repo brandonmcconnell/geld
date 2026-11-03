@@ -775,12 +775,6 @@ summary::-webkit-details-marker {
   color: var(--muted-foreground);
 }
 
-.geld-account__shared .geld-button > svg {
-  flex: none;
-  width: 12px;
-  height: 12px;
-}
-
 .geld-account__menu-item:hover {
   border-radius: 0 !important;
   background: var(--muted);

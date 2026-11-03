@@ -1,5 +1,3 @@
-import { connectDashboard,selectDashboardTeam,dashboardSessionItem,dashboardTeamItem,refreshDashboardSession,DASHBOARD_ORIGIN } from '../lib/dashboard-session';
-import type { DashboardSession } from '../lib/dashboard-session';
 import { CORRUPTED_SETTINGS_COPY } from '@geld/core';
 import { RECONNECT_COPY } from '@geld/github';
 import { browser } from 'wxt/browser';
@@ -8,7 +6,7 @@ import { accountItem, authFlowItem, EMPTY_SYNC_STATE, syncStateItem } from '../l
 import type { AccountActionMessage } from '../lib/messages';
 import { isAccountActionResponse } from '../lib/messages';
 import { formatSyncAge } from './sync-age';
-import { ICON_LINK_EXTERNAL, ICON_SIGN_OUT, ICON_SYNC } from '../github/ui/icons';
+import { ICON_SIGN_OUT, ICON_SYNC } from '../github/ui/icons';
 
 /**
  * The account control shown top-right in the popup and options page:
@@ -64,8 +62,6 @@ function menuItem(label: string, icon: string, onClick: () => void): HTMLButtonE
 
 export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOptions): () => void {
   const promptHost = options.promptHost ?? host;
-  let dashboard:DashboardSession={user:null,teams:[]};
-  let teamId='';
   let account: GitHubAccount | null = null;
   let flow: AuthFlowState = { status: 'idle' };
   let sync: SyncState = EMPTY_SYNC_STATE;
@@ -103,24 +99,6 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     for (const stale of promptHost.querySelectorAll('.geld-account__prompt, .geld-account__error, .geld-alert')) stale.remove();
 
     renderDialog();
-    // The popup's header has room for one control: whoever is signed in, or a single sign-in button. The other
-    // account is reached from that control's menu, or from the options page.
-    const compact = options.variant === 'compact';
-    const connectGeld = (): void => {
-      void connectDashboard().catch(() => {
-        localError = 'The Geld connection could not be opened.';
-        render();
-      });
-    };
-    const openGeldAccount = (): void => {
-      void browser.tabs.create({ url: `${DASHBOARD_ORIGIN}/settings/account` });
-    };
-    if (!compact || (account === null && flow.status !== 'pending')) {
-      const shared=el('div','geld-account__shared');
-      if(dashboard.user){shared.append(button([dashboard.user.name],'geld-button--small',openGeldAccount));if(!compact){const select=el('select','geld-input');select.setAttribute('aria-label','Geld team');const personal=el('option','',['Personal view']);personal.value='';select.append(personal);for(const team of dashboard.teams){const option=el('option','',[team.name]);option.value=team.id;select.append(option);}select.value=teamId;select.addEventListener('change',()=>{teamId=select.value;void selectDashboardTeam(teamId).then(()=>refreshDashboardSession());});shared.append(select);}}
-      else shared.append(button(['Sign in to Geld', svg(ICON_LINK_EXTERNAL)],'geld-button--small geld-button--primary',connectGeld));
-      host.append(shared);
-    }
 
     if (account === null) {
       if (flow.status === 'pending') {
@@ -132,14 +110,12 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
         );
         return;
       }
-      if (!compact) {
-        const signIn = button([svg(GITHUB_MARK), 'Sync settings with GitHub'], 'geld-button--small geld-account__signin', () => {
-          dialogWanted = true;
-          void act('sign-in');
-        });
-        signIn.title = 'Sign in with GitHub to sync your settings';
-        host.append(signIn);
-      }
+      const signIn = button([svg(GITHUB_MARK), options.variant === 'compact' ? 'Sign in' : 'Sign in with GitHub'], 'geld-button--small geld-account__signin', () => {
+        dialogWanted = true;
+        void act('sign-in');
+      });
+      signIn.title = 'Sign in with GitHub to sync your settings';
+      host.append(signIn);
       if (localError !== null && flow.status !== 'error') promptHost.append(el('p', 'geld-status geld-account__error', [localError]));
       return;
     }
@@ -173,11 +149,9 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     } else {
       summary.title = statusText;
     }
-    const geldItem = compact && dashboard.user !== null ? menuItem(`Geld account: ${dashboard.user.name}`, ICON_LINK_EXTERNAL, openGeldAccount) : null;
     const menu = el('div', 'geld-account__menu-body', [
       status,
       menuItem('Sync now', ICON_SYNC, () => void act('sync-now')),
-      ...(geldItem === null ? [] : [geldItem]),
       menuItem('Sign out', ICON_SIGN_OUT, () => void act('sign-out')),
     ]);
     details.append(summary, menu);
@@ -323,13 +297,7 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     if (!node.open) node.showModal();
   }
 
-  const refreshOnFocus=()=>{if(!closed)void refreshDashboardSession().catch(()=>undefined);};
-  const refreshOnVisible=()=>{if(document.visibilityState==='visible')refreshOnFocus();};
-  window.addEventListener('focus',refreshOnFocus);
-  document.addEventListener('visibilitychange',refreshOnVisible);
   const unwatchers = [
-    dashboardSessionItem.watch(value=>{dashboard=value;render();}),
-    dashboardTeamItem.watch(value=>{teamId=value;render();}),
     accountItem.watch((value) => {
       account = value;
       render();
@@ -343,7 +311,6 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
       render();
     }),
   ];
-  void Promise.all([dashboardSessionItem.getValue(),dashboardTeamItem.getValue()]).then(([value,selected])=>{if(closed)return;dashboard=value;teamId=selected;render();void refreshDashboardSession();});
   void Promise.all([accountItem.getValue(), authFlowItem.getValue(), syncStateItem.getValue()]).then(([a, f, s]) => {
     if(closed)return;
     account = a;
@@ -358,8 +325,6 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
 
   return () => {
     closed=true;
-    window.removeEventListener('focus',refreshOnFocus);
-    document.removeEventListener('visibilitychange',refreshOnVisible);
     dialog?.remove();
     stopSyncClock();
     unwatchers.forEach((unwatch) => unwatch());
