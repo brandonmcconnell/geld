@@ -1,13 +1,14 @@
 import { describeBitbucketProviderPage } from './page';
 import { providerFullSha, providerSourceSubject, providerSourceSubjectKey, providerNativeSourceElement } from '../providers/source-facts';
 import type { ProviderNativeSourceFrame } from '../providers/source-facts';
+import { bitbucketReferenceFrame } from './source-reference';
 
 function native<T extends Element>(nodes: Iterable<T>): T[] { return [...nodes].filter(providerNativeSourceElement); }
 
 export function readBitbucketSourceFrame(doc: Document, container: HTMLElement): ProviderNativeSourceFrame | null {
   const url = doc.URL;
   const page = describeBitbucketProviderPage(new URL(url));
-  if (page?.kind !== 'commit' || !providerFullSha(page.ref)) return null;
+  if (page?.kind !== 'commit' || !providerFullSha(page.ref)) return bitbucketReferenceFrame(doc, container);
   const main = container.closest('[role="main"]');
   if (main === null || !providerNativeSourceElement(container) || !providerNativeSourceElement(main) || native(main.querySelectorAll('[role="region"][aria-label="Diff"]')).length !== 1) return null;
   const headings = native(main.querySelectorAll('h1[data-qa="page-header"]'));

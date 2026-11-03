@@ -7,6 +7,7 @@ import { readProviderWholeSource } from '../providers/whole-source';
 import type { ProviderNativeContextStep, ProviderWholeTestAdapter } from '../providers/whole-test-context';
 import { bitbucketTransport, BitbucketTransportError } from './transport';
 import type { BitbucketTransport } from './transport';
+import { bitbucketPrepareSource } from './source-reference';
 
 const headerSelector = '.diff-chunk > .diff-chunk-inner > .chunk-heading-wrapper';
 const controlSelector = 'button[data-qa="pr-diff-show-more-lines-above"], button[data-qa="pr-diff-show-more-lines-below"]';
@@ -59,6 +60,8 @@ export function bitbucketNextTestContext(entry: ProviderDiffEntry, missing: read
 
 export function createBitbucketWholeTestAdapter(admission = new ProviderHttpAdmission(), transport: BitbucketTransport = bitbucketTransport, fetcher: typeof fetch = (...args) => fetch(...args)): ProviderWholeTestAdapter {
   return {
+    keepIntentFocusable: true,
+    prepareSource: bitbucketPrepareSource,
     createIntent: (doc) => { const button = doc.createElement('button');button.className = 'geld-provider-toggle';const text = doc.createElement('span');button.append(text);return { button, text }; },
     readSource: (revision, signal, current) => {
       const url = bitbucketWholeSourceURL(revision);

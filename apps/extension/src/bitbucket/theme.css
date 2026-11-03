@@ -76,8 +76,14 @@ html[data-geld-provider="bitbucket"] :is(.geld-provider-toggle, .geld-provider-r
   border-radius: inherit;
   pointer-events: none;
 }
-html[data-geld-provider="bitbucket"] :is(.geld-provider-toggle, .geld-provider-review__copy, .geld-provider-actions button, .geld-provider-review__source-actions button):disabled::after {
+html[data-geld-provider="bitbucket"] :is(.geld-provider-toggle, .geld-provider-review__copy, .geld-provider-actions button, .geld-provider-review__source-actions button):disabled::after,
+html[data-geld-provider="bitbucket"] .geld-provider-test-boundaries[aria-disabled="true"]::after {
   border-color: var(--geld-provider-button-disabled-border);
+}
+html[data-geld-provider="bitbucket"] .geld-provider-test-boundaries[aria-disabled="true"] {
+  background: var(--geld-provider-button-disabled-bg);
+  color: var(--geld-provider-button-disabled-text);
+  cursor: default;
 }
 
 /* The native renderer's typography carrier sits outside its sanitized document. */
