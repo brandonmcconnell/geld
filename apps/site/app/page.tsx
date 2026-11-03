@@ -51,10 +51,11 @@ export default function HomePage() {
         </div>
         <div className="container-site mt-20 flex flex-col items-center text-center stage:mt-12">
           <h3 className="text-xl font-semibold tracking-tight sm:text-2xl">Plus the parts you set once</h3>
-          <p className="mt-3 max-w-xl text-base text-muted-foreground text-balance">
+          <p className="mt-3 max-w-2xl text-base text-muted-foreground text-balance">
             Categories of your own, rules per repository or organisation, a <code className="code-chip">.github/geld.yml</code> everyone who reviews
-            shares, and GitHub Enterprise Server. How it works covers every change Geld makes, and what it leaves alone.
+            shares, and GitHub Enterprise Server.
           </p>
+          <p className="mt-2 max-w-2xl text-base text-muted-foreground text-balance">How it works covers every change Geld makes, and what it leaves alone.</p>
           <Link href="/how-it-works" className={buttonVariants({ variant: 'outline', className: 'mt-6' })}>
             Everything Geld changes
             <ArrowRightIcon aria-hidden="true" />
