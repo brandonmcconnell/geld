@@ -2456,3 +2456,6 @@ This keeps fold controls outside the native code-row layout and includes each ro
 
 Bitbucket's relatively positioned native code row contains a fixed-height PRE with an inline-block after pseudo-element whose overflow can paint and hit-test over the following fold, even without a trailing line feed.
 The Bitbucket-scoped Geld fold is relatively positioned so normal DOM paint order keeps its full visible button clickable without changing native styles, source text or z-index.
+
+A maintainer-applied `geld:restack` label defers only public browser and static-provider verification while each PR still runs normal CI and packaging.
+Deferred jobs do not claim a public feature pass, and final-tip public verification runs explicitly after removing the label within the carried provider budget.
