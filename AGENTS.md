@@ -1508,3 +1508,5 @@ The full launch recipe, with a service-worker sanity check, is in `.claude/skill
 
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
+
+Provider configuration caching is best-effort when local storage fails, but aborted or cleared generations still reject before applying fetched rules.
