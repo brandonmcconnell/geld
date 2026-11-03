@@ -2373,3 +2373,9 @@ A concurrent page-close error is harmless only when the provider page is actuall
 
 The four native startup POST exceptions require the exact audited app source, fixed public paths and bounded endpoint-specific read payloads;
 any other payload records only known schema facts and counts before the existing abort.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
