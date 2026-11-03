@@ -2157,3 +2157,9 @@ The default raw collector remains pinned to its original exact URL, and no eligi
   Standard no-newline EOF annotations follow actual hunk content without adding code rows or advancing line coordinates, and orphan or duplicate annotations decline.
   Only this case redacts passive response-parser failures to fixed text while retaining error entries and the unchanged identity refusal.
   These API facts never authorize product PR whole-file source, promote an abbreviated native ref or substitute for the installed product's own counts, source demand and paint.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
