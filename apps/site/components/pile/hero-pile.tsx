@@ -16,13 +16,13 @@ import { PileCard } from './pile-card';
 const AUTO_GELD_AFTER = 2.4;
 /** Gaps between lines of the hero's words narrower than this are filled, so no card wedges into one. */
 const LINE_GAP = 44;
-const CARD_WIDTH = 400;
+const CARD_WIDTH = 440;
 const ROW_HEIGHT = 50;
 const CARD_CHROME = 48;
 const CHIP_LINE = 34;
 const GAP_ABOVE_SWITCH = 12;
 /** How much of the free space the pile fills; cards overlap at their edges, so it can be most of it. */
-const FILL = 0.75;
+const FILL = 0.6;
 /** No arc peaks higher than this, so nothing is flung up under the header. */
 const HIGHEST = 70;
 
@@ -94,6 +94,8 @@ export function HeroPile() {
   const pours = useRef<number[]>([]);
   /** Where an exploding card may land. */
   const landing = useRef<{ readonly regions: readonly Region[] } | null>(null);
+  /** The invisible walls the pile falls and explodes within; a card someone drags leaves them. */
+  const fence = useRef<{ readonly left: number; readonly right: number } | undefined>(undefined);
   const world = useRef<World | null>(null);
   const frame = useRef<number | null>(null);
   const last = useRef(0);
@@ -231,21 +233,13 @@ export function HeroPile() {
       const { words, world: w } = current;
       const sizes = els.current.map((el) => ({ w: el?.offsetWidth ?? 200, h: el?.offsetHeight ?? 44 }));
       const average = sizes.reduce((sum, size) => sum + size.w * size.h, 0) / Math.max(1, sizes.length);
-      // Beside the words cards fall to the floor; over the words they land on them; with no room beside (a phone), the band under the words too.
-      const beside: Region[] = [
-        { left: 0, right: words.left - 8, depth: w.floor },
-        { left: words.right + 8, right: w.width, depth: w.floor },
-      ].filter((region) => region.right - region.left > 160);
-      const useBeside = beside.reduce((sum, region) => sum + region.right - region.left, 0) > w.width * 0.25;
+      // Only the column right of the words, so nothing falls on the heading or beside and under it; with no room there (a phone), the band under the words.
+      const right: Region = { left: words.right + 8, right: w.width, depth: w.floor };
       const band = w.floor - words.bottom;
-      const regions: Region[] = [
-        ...(useBeside ? beside : []),
-        { left: useBeside ? words.left : 0, right: useBeside ? words.right : w.width, depth: words.top },
-        ...(useBeside || band < 60 ? [] : [{ left: 0, right: w.width, depth: band, at: words.bottom + 30 }]),
-      ].filter((region) => region.depth > 40);
+      const regions: Region[] = right.right - right.left > 220 ? [right] : band >= 60 ? [{ left: 0, right: w.width, depth: band, at: words.bottom + 30 }] : [];
       const area = regions.reduce((sum, region) => sum + (region.right - region.left) * region.depth, 0);
-      // An exploding card cannot pass through the words, so with them spanning the page (a phone) it lands only in the band under them.
-      landing.current = { regions: useBeside ? regions : regions.filter((region) => region.at !== undefined) };
+      landing.current = { regions };
+      fence.current = regions[0] ? { left: regions[0].left, right: regions[0].right } : undefined;
       const room = Math.min(PILE_ITEMS.length, Math.max(8, Math.floor((area * FILL) / average)));
       const keep = new Set(PILE_ITEMS.slice(0, room).map((_, index) => index));
       const random = seeded(17);
@@ -286,6 +280,7 @@ export function HeroPile() {
             body.vy = region.at === undefined ? speed : speed * 0.3;
             body.angle = tilt;
             body.spin = spin;
+            body.fence = fence.current;
             body.still = 0;
             body.mode = 'free';
             run();
@@ -423,8 +418,9 @@ export function HeroPile() {
             body.vy = vy;
             body.angle = (random() - 0.5) * 0.8;
             body.spin = (random() < 0.5 ? -1 : 1) * (6 + random() * 14);
-            // Through the others for most of the flight, so the arcs are not knocked off course mid-air.
-            body.ghost = flight * 0.8;
+            // Through the others still in flight, so the arcs are not knocked off course; onto those already down, and solid once it lands.
+            body.ghost = flight * 1.5;
+            body.fence = fence.current;
             body.still = 0;
             run();
           }, random() * 50),
@@ -446,6 +442,7 @@ export function HeroPile() {
     const x = event.clientX - (origin?.left ?? 0);
     const y = event.clientY - (origin?.top ?? 0);
     body.held = true;
+    body.fence = undefined;
     body.still = 0;
     drag.current = { index, dx: body.x - x, dy: body.y - y, x, y, t: performance.now(), vx: 0, vy: 0 };
     run();

@@ -82,6 +82,19 @@ describe('the pile', () => {
     expect(bodies.some((b) => Math.abs(b.angle ?? 0) > 0.1)).toBe(true);
   });
 
+  it('eases a heap that landed tangled apart, instead of erupting, once its boxes stop passing through each other', () => {
+    const random = seeded(5);
+    const bodies = Array.from({ length: 12 }, () => ({ ...body(300 + random() * 300, 540 + random() * 50, 150, 40), ghost: 0.05 }));
+    let fastest = 0;
+    for (let t = 0; t < 2; t += 1 / 60) {
+      step(bodies, { ...world, obstacles: [] }, 1 / 60);
+      for (const b of bodies) fastest = Math.max(fastest, -b.vy);
+    }
+    expect(fastest).toBeLessThan(400);
+    run(bodies, { ...world, obstacles: [] }, 6);
+    expect(settled(bodies)).toBe(true);
+  });
+
   it('never moves a held box, and pushes the others out of its way', () => {
     const held = body(450, 580);
     held.held = true;

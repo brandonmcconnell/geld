@@ -16,7 +16,7 @@ export type PileItem =
   | { readonly kind: 'agent'; readonly id: string; readonly score: number; readonly findings: number }
   | { readonly kind: 'check'; readonly id: string; readonly name: string; readonly state: 'passed' | 'failed' | 'running' }
   | { readonly kind: 'preview'; readonly id: string; readonly name: string }
-  | { readonly kind: 'security'; readonly id: string; readonly text: string }
+  | { readonly kind: 'security'; readonly id: string; readonly text: string; readonly short: string }
   | { readonly kind: 'coverage'; readonly id: string; readonly percent: number; readonly change: number }
   | { readonly kind: 'review'; readonly id: string; readonly who: Person; readonly verdict: 'approved' | 'changes' };
 
@@ -32,7 +32,7 @@ export const PILE_ITEMS: readonly PileItem[] = [
   { kind: 'preview', id: 'p1', name: 'widgets-docs' },
   { kind: 'comment', id: 'c2', who: 'octocat', text: 'Fixed, mind another look?', needsYou: true },
   { kind: 'file', id: 'btest', path: 'src/Button.test.tsx', additions: 38, deletions: 12 },
-  { kind: 'security', id: 's1', text: '2 vulnerable deps' },
+  { kind: 'security', id: 's1', text: '2 vulnerable deps', short: '2 deps' },
   { kind: 'comment', id: 'c3', who: 'hubot', text: 'This breaks the uncontrolled case.' },
   { kind: 'review', id: 'r2', who: 'mona', verdict: 'approved' },
   { kind: 'file', id: 'schema', path: 'src/api/__generated__/schema.ts', additions: 64, deletions: 20 },
@@ -95,7 +95,8 @@ export interface Digest {
   readonly agent: { readonly score: number; readonly findings: number } | null;
   readonly checks: { readonly passed: number; readonly failed: number; readonly running: number };
   readonly previews: number;
-  readonly security: readonly string[];
+  /** Each report in full, and as few words as say it where the card is narrow. */
+  readonly security: readonly { readonly text: string; readonly short: string }[];
 }
 
 /** What the items gathered so far add up to. */
@@ -111,7 +112,7 @@ export function digestOf(items: readonly PileItem[]): Digest {
   let agent: Digest['agent'] = null;
   const checks = { passed: 0, failed: 0, running: 0 };
   let previews = 0;
-  const security: string[] = [];
+  const security: { text: string; short: string }[] = [];
   for (const item of items) {
     switch (item.kind) {
       case 'file':
@@ -139,10 +140,10 @@ export function digestOf(items: readonly PileItem[]): Digest {
         previews += 1;
         break;
       case 'security':
-        security.push(item.text);
+        security.push({ text: item.text, short: item.short });
         break;
       case 'coverage':
-        security.push(`Coverage ${item.percent}% (${item.change > 0 ? '+' : ''}${item.change}%)`);
+        security.push({ text: `Coverage ${item.percent}% (${item.change > 0 ? '+' : ''}${item.change}%)`, short: `Coverage ${item.percent}%` });
         break;
     }
   }

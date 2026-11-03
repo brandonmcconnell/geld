@@ -37,8 +37,14 @@ export interface Body {
   /** Tilt in radians, and how fast it is turning; a box that lands stops turning. */
   angle?: number;
   spin?: number;
-  /** Seconds it still passes through other bodies: a burst of cards from one spot flies apart instead of being shoved upward. */
+  /** Seconds it may still pass through other bodies in flight: a burst of cards from one spot flies apart instead of being shoved upward. It lands on what has already landed, and ends on landing. */
   ghost?: number;
+  /** Seconds after passing through others in which overlaps come apart gently, so a heap that landed tangled eases apart instead of erupting. */
+  settle?: number;
+  /** How much longer a tangle can keep it settling, so a heap that never quite comes apart still comes to rest. */
+  settleFor?: number;
+  /** Side walls of its own, inside the world's: where it falls is kept to a part of the page until someone moves it. */
+  fence?: { readonly left: number; readonly right: number } | undefined;
 }
 
 export interface World {
@@ -56,6 +62,11 @@ const ITERATIONS = 6;
 const MAX_SPEED = 3200;
 /** The most speed a body takes from being pushed out of an overlap, so untangling a heap never launches it. */
 const CORRECTION_SPEED = 900;
+const SETTLE_SPEED = 90;
+const SETTLE_AFTER_GHOST = 1;
+const SETTLE_AT_MOST = 2;
+/** The share of an overlap resolved per iteration while settling. */
+const SETTLE_SHARE = 0.15;
 const SLEEP_SPEED = 12;
 const SLEEP_AFTER = 24;
 /** How far per substep a body overhanging the edge of what it rests on slides off it. */
@@ -113,7 +124,16 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
     }
     free.push(body);
     before.set(body, { x: body.x, y: body.y });
-    if (body.ghost !== undefined && body.ghost > 0) body.ghost = Math.max(0, body.ghost - dt);
+    if (body.ghost !== undefined && body.ghost > 0) {
+      body.ghost = Math.max(0, body.ghost - dt);
+      if (body.ghost === 0) {
+        body.settle = SETTLE_AFTER_GHOST;
+        body.settleFor = SETTLE_AT_MOST;
+      }
+    } else if (body.settle !== undefined && body.settle > 0) {
+      body.settle = Math.max(0, body.settle - dt);
+      body.settleFor = Math.max(0, (body.settleFor ?? 0) - dt);
+    }
     body.scale += (1 - body.scale) * Math.min(1, 10 * dt);
     if (body.held || body.still >= SLEEP_AFTER) continue;
     body.vy += GRAVITY * dt;
@@ -155,15 +175,26 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
     const own = moved.get(body) ?? start;
     let cx = (body.x - own.x) / dt;
     let cy = (body.y - own.y) / dt;
-    const correction = Math.hypot(cx, cy);
-    if (correction > CORRECTION_SPEED) {
-      cx *= CORRECTION_SPEED / correction;
-      cy *= CORRECTION_SPEED / correction;
+    if ((body.settle ?? 0) > 0) {
+      // Settling: what holding it up took cancels its fall, but nothing lifts it faster than a drift, sideways or up.
+      body.vx = (own.x - start.x) / dt + Math.max(-SETTLE_SPEED, Math.min(SETTLE_SPEED, cx));
+      body.vy = Math.max(-SETTLE_SPEED, (body.y - start.y) / dt);
+    } else {
+      const correction = Math.hypot(cx, cy);
+      if (correction > CORRECTION_SPEED) {
+        cx *= CORRECTION_SPEED / correction;
+        cy *= CORRECTION_SPEED / correction;
+      }
+      body.vx = (own.x - start.x) / dt + cx;
+      body.vy = (own.y - start.y) / dt + cy;
     }
-    body.vx = (own.x - start.x) / dt + cx;
-    body.vy = (own.y - start.y) / dt + cy;
     if (grounded.has(body)) {
       body.vx *= FRICTION;
+      if ((body.ghost ?? 0) > 0) {
+        body.ghost = 0;
+        body.settle = SETTLE_AFTER_GHOST;
+        body.settleFor = SETTLE_AT_MOST;
+      }
       if (body.spin !== undefined) body.spin *= 0.5;
     }
     if (body.spin !== undefined && Math.abs(body.spin) < 0.05) body.spin = 0;
@@ -182,8 +213,10 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
 /** Keep a body inside the side walls and above the floor. */
 function bound(body: Body, world: World, grounded: Set<Body>): void {
   const r = rectOf(body);
-  if (r.left < 0) body.x -= r.left;
-  else if (r.right > world.width) body.x -= r.right - world.width;
+  const left = body.fence?.left ?? 0;
+  const right = body.fence?.right ?? world.width;
+  if (r.left < left) body.x += left - r.left;
+  else if (r.right > right) body.x -= r.right - right;
   if (r.bottom > world.floor) {
     body.y -= r.bottom - world.floor;
     grounded.add(body);
@@ -225,19 +258,34 @@ function separate(a: Body, b: Body, grounded: Set<Body>): void {
   const oy = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
   if (ox <= 0 || oy <= 0) return;
   if (a.held && b.held) return;
-  if ((a.ghost ?? 0) > 0 || (b.ghost ?? 0) > 0) return;
+  if ((a.ghost ?? 0) > 0 && (b.ghost ?? 0) > 0) return;
+  // A card in flight that meets one already down comes to rest on it the gentle way.
+  for (const body of [a, b]) {
+    if ((body.ghost ?? 0) > 0) {
+      body.ghost = 0;
+      body.settle = SETTLE_AFTER_GHOST;
+      body.settleFor = SETTLE_AT_MOST;
+    }
+  }
+  const settling = (a.settle ?? 0) > 0 || (b.settle ?? 0) > 0;
+  const gentle = settling ? SETTLE_SHARE : 1;
+  // Still tangled: both keep settling until they are apart, so the last of a heap never comes apart at full strength.
+  if (settling && Math.min(ox, oy) > 4) {
+    if (!a.held && (a.settleFor ?? 0) > 0) a.settle = Math.max(a.settle ?? 0, 0.25);
+    if (!b.held && (b.settleFor ?? 0) > 0) b.settle = Math.max(b.settle ?? 0, 0.25);
+  }
   // A resting body pushed by a moving one takes the whole push, so a pile stays put under a single landing.
   const aRests = a.held || a.still >= SLEEP_AFTER;
   const bRests = b.held || b.still >= SLEEP_AFTER;
   const share = a.held ? 0 : b.held ? 1 : aRests && !bRests ? 0 : bRests && !aRests ? 1 : 0.5;
   if (ox < oy) {
     const sign = a.x < b.x ? -1 : 1;
-    a.x += sign * ox * share;
-    b.x -= sign * ox * (1 - share);
+    a.x += sign * ox * share * gentle;
+    b.x -= sign * ox * (1 - share) * gentle;
   } else {
     const sign = a.y < b.y ? -1 : 1;
-    a.y += sign * oy * share;
-    b.y -= sign * oy * (1 - share);
+    a.y += sign * oy * share * gentle;
+    b.y -= sign * oy * (1 - share) * gentle;
     const upper = sign < 0 ? a : b;
     const lower = sign < 0 ? b : a;
     grounded.add(upper);
