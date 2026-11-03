@@ -1737,7 +1737,9 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Already-issued clipboard writes cannot be revoked, so a stale completion never patches a replacement review or shows a success on another visit.
   Native provider button tokens and accessible pending, failure and retry feedback apply to both actions.
   The existing GitLab bot acceptance requires genuine pointer and keyboard clipboard readback from already fetched source facts with temporary browser permissions, preserving original bodies and restoring permission overrides without another source GET, provider mutation or AI call.
-  Fresh queued reads preserve unrelated review records within a runtime, without claiming cross-tab compare-and-swap.
+  Device-local review marks and AI runs now send entry-level mutations through one background-owned queue, so separate provider tabs cannot replace one another's records.
+  The worker asks the initiating content runtime to revalidate its live source before the queued read and again immediately before persistence, with a bounded negative result for closed, navigated or unresponsive tabs.
+  GitHub AI uses the same authority because its records share the provider AI map, including explicit per-review clearing and the existing forty-run cap.
   Reviewed on this device never resolves the native thread, changes bot findings or CI standing, edits source text or triggers AI.
   AI wording is excluded from local mark fingerprints so an explicit triage rewrite cannot invalidate unchanged original evidence.
 - **Native source context and comment bodies have different owners.**

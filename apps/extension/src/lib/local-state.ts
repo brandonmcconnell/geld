@@ -1,5 +1,6 @@
 import type { ConsolidateOutputItem, ModelInfo, ReviewSummary } from '@geld/review';
 import { storage } from 'wxt/utils/storage';
+import { writeLocalReview } from './local-review-write';
 
 /**
  * Device-local, non-user-facing state (as opposed to synced settings).
@@ -136,9 +137,10 @@ export async function readProviderReviewedItems(reviewKey: string, headSha: stri
   return normalizeProviderReviewedItems(await source.getValue())[reviewedBucket(reviewKey, headSha)]?.items ?? {};
 }
 
-/** Queued fresh reads preserve other review edits in this runtime; storage has no cross-tab CAS. */
-export function saveProviderReviewedItem(reviewKey: string, headSha: string, itemId: string, fingerprint: string, reviewed: boolean, validate: () => Promise<void>, source: ProviderReviewedStorage = providerReviewedItemsItem): Promise<void> {
+/** Explicit stores support isolated tests; production writes share the background authority. */
+export function saveProviderReviewedItem(reviewKey: string, headSha: string, itemId: string, fingerprint: string, reviewed: boolean, validate: () => Promise<void>, source?: ProviderReviewedStorage): Promise<void> {
   if (!reviewedIdentity(reviewKey, headSha) || !reviewedItemId(itemId) || !REVIEWED_HASH.test(fingerprint)) return Promise.reject(new Error('Invalid reviewed-item identity.'));
+  if (source === undefined) return writeLocalReview({ kind: 'reviewed', reviewKey, headSha, itemId, fingerprint, reviewed }, validate);
   const write = async (): Promise<void> => {
     await validate();
     const current = { ...normalizeProviderReviewedItems(await source.getValue()) };

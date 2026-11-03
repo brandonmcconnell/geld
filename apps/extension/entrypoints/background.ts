@@ -1,3 +1,4 @@
+import { createLocalReviewAuthority, isLocalReviewWrite, validateLocalReviewOrigin } from '../src/lib/local-review-service';
 import { isTrackerStatusRequest,readTrackerStatuses } from '../src/lib/tracker-service';
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
@@ -519,7 +520,15 @@ async function toggleHiddenInActiveTab(): Promise<void> {
 export default defineBackground(() => {
   // Each start is a previous stop: a run of these around failing fetches says the worker is being killed mid-request.
   recordDiagnostic({ kind: 'worker-start' });
+  const writeLocalReview = createLocalReviewAuthority();
   browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+    if (isLocalReviewWrite(message)) {
+      const tabId = sender.tab?.id;
+      if (sender.id !== browser.runtime.id || tabId === undefined) { sendResponse({ ok: false }); return undefined; }
+      const validate = () => validateLocalReviewOrigin(() => browser.tabs.sendMessage(tabId, { type: 'geld:local-review-validate', token: message.token }, { frameId: sender.frameId ?? 0 }));
+      void writeLocalReview(message.mutation, validate).then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
+      return true;
+    }
     if(isTrackerStatusRequest(message)){void readTrackerStatuses(message,sender.url??sender.tab?.url).then(sendResponse);return true;}
     if (isColorSchemeMessage(message)) {
       applyToolbarIcon(message.dark);

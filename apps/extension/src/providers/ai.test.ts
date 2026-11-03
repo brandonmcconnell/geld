@@ -6,6 +6,7 @@ import type { ProviderReviewComment, ProviderReviewInput, ProviderReviewSubject 
 import type { AiRunRecord } from '../lib/local-state';
 import type { AiCompleteRequest, AiEvaluateRequest } from '../lib/messages';
 import { ProviderAiTriage } from './ai';
+import { createLocalReviewAuthority } from '../lib/local-review-service';
 import type { ProviderAiDependencies, ProviderAiState } from './ai';
 
 vi.mock('wxt/browser', () => ({ browser: { runtime: { sendMessage: vi.fn(() => { throw new Error('Unexpected real transport'); }) } } }));
@@ -47,8 +48,9 @@ function fixture(overrides: Partial<ProviderAiDependencies> = {}, initial: Reado
   let runs = initial;
   const send = vi.fn(async (message: AiCompleteRequest | AiEvaluateRequest): Promise<unknown> => response(message));
   const write = vi.fn(async (value: Readonly<Record<string, AiRunRecord>>) => { runs = value; });
+  const save = createLocalReviewAuthority({ ai: { getValue: async () => runs, setValue: write }, reviewed: { getValue: async () => ({}), setValue: async () => undefined } });
   const states: ProviderAiState[] = [];
-  const dependencies: ProviderAiDependencies = { readKey: async () => 'device-only-key', permission: async () => null, readRuns: async () => runs, writeRuns: write, send, jevRoute: async () => null, now: () => '2026-11-01T13:00:00Z', ...overrides };
+  const dependencies: ProviderAiDependencies = { readKey: async () => 'device-only-key', permission: async () => null, readRuns: async () => runs, saveRun: (key, record, current) => save({ kind: 'ai', key, record }, async () => { if (!current()) throw new Error('Changed source'); }), send, jevRoute: async () => null, now: () => '2026-11-01T13:00:00Z', ...overrides };
   const triage = new ProviderAiTriage((state) => { states.push(state); }, dependencies);
   return { triage, send, write, states, dependencies, runs: () => runs };
 }

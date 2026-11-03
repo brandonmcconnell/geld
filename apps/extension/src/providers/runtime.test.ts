@@ -168,7 +168,7 @@ function reviewedFixture(initial = reviewedSource(), storage?: ProviderReviewedS
   let active: ProviderPage | null = page;
   let observed: ProviderReviewSnapshot | null = initial;
   let retired = false;
-  const services = createProviderReviewedServices({ page: () => active, snapshot: () => observed, retired: () => retired, ...(storage === undefined ? {} : { storage }) });
+  const services = createProviderReviewedServices({ page: () => active, snapshot: () => observed, retired: () => retired, storage: storage ?? providerReviewedItemsItem });
   const read = services.readReviewed;
   const save = services.saveReviewed;
   if (read === undefined || save === undefined) throw new Error('Reviewed services missing');

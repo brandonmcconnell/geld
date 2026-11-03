@@ -108,7 +108,7 @@ function fixture(source = snapshot(), services: ProviderConversationServices = {
   const fetchReview = vi.fn(async () => source);
   const adapter: ProviderAdapter = { id: 'gitlab', describe: () => currentPage, readDiff: () => null, headerTargets: () => [], listRows: () => [], fetchDiff: async () => ({ files: [], revision: sha, complete: true }), reviewHost: () => host, fetchReview, ...adapterOverrides };
   const changed = vi.fn(() => { queueMicrotask(() => { if (active) conversation.apply(currentPage, currentSettings); }); });
-  const conversation = new ProviderConversation(adapter, changed, { nativeFindEnvironment: unitNativeFind, ...services, aiDependencies: { readKey: async () => 'device-only-key', permission: async () => null, readRuns: async () => runs, writeRuns: async (next) => { runs = next; }, jevRoute: async () => null, send, now: () => '2026-11-01T13:00:00Z', ...services.aiDependencies } });
+  const conversation = new ProviderConversation(adapter, changed, { nativeFindEnvironment: unitNativeFind, ...services, aiDependencies: { readKey: async () => 'device-only-key', permission: async () => null, readRuns: async () => runs, saveRun: async (key, record, current) => { if (current()) runs = { ...runs, [key]: record }; }, jevRoute: async () => null, send, now: () => '2026-11-01T13:00:00Z', ...services.aiDependencies } });
   cleanup.push(() => { active = false; conversation.clear(); });
   conversation.apply(currentPage, currentSettings);
   return { host, conversation, send, changed, fetchReview, runs: () => runs,
