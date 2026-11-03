@@ -4,7 +4,7 @@
 export const SITE_URL = 'https://www.geld.sh';
 export const SITE_NAME = 'Geld';
 /** The hero's two lines, each kept on one line at every width. */
-export const HEADLINE = ['Code review’s broken.', 'Geld fixes it.'] as const;
+export const HEADLINE = ['Code review is broken.', 'Geld fixes it.'] as const;
 export const TAGLINE = HEADLINE.join(' ');
 export const DESCRIPTION =
   'Geld is a browser extension that fixes code review on GitHub: one digest of the threads, bot verdicts and reviews on a pull request, a diff with the noise set aside, and review controls on every tab. Chrome, Edge, Firefox and Safari.';

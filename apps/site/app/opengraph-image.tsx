@@ -55,7 +55,7 @@ export default async function OpenGraphImage() {
           </svg>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', fontSize: 48, fontWeight: 600, letterSpacing: -1.6, lineHeight: 1.08 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', fontSize: 46, fontWeight: 600, letterSpacing: -1.5, lineHeight: 1.08 }}>
               {HEADLINE.map((line) => (
                 <span key={line}>{line}</span>
               ))}

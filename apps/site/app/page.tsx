@@ -22,7 +22,7 @@ export default function HomePage() {
             <Wordmark height={44} alt="Geld" priority />
           </div>
           {/* Sized to the column, not the viewport, so each line fills it at most and never wraps. */}
-          <h1 id="hero-heading" className="text-[min(9.6cqi,4.5rem)] leading-[1.04] font-semibold tracking-tight whitespace-nowrap">
+          <h1 id="hero-heading" className="text-[min(9.4cqi,4.5rem)] leading-[1.04] font-semibold tracking-tight whitespace-nowrap">
             <span className="block">{firstLine}</span> <span className="block">{secondLine}</span>
           </h1>
           <p className="mt-6 max-w-2xl text-lg text-muted-foreground text-pretty sm:text-xl">
