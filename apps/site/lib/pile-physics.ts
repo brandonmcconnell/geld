@@ -2,9 +2,10 @@
  * A small physics world for the home page's file pile: axis-aligned boxes that
  * fall, stack, slide and get thrown, around fixed obstacles (the hero's words),
  * and that can be drawn into a sink and swallowed. Pure, so it is tested
- * without a DOM. Boxes tilt and spin as they tumble, but collide as boxes
- * that grow only partway with the tilt, so a tilted card's corners overlap its
- * neighbours like a heap of papers rather than standing it off them.
+ * without a DOM. Boxes tilt and spin as they tumble, and against each other
+ * they collide a little smaller than they are drawn, growing only partway with
+ * the tilt, so a pile overlaps at its edges like a heap of papers rather than
+ * stacking like bricks. Against obstacles and the walls they are their full size.
  */
 
 export interface Rect {
@@ -49,7 +50,7 @@ export interface World {
   readonly sink: { readonly x: number; readonly y: number };
 }
 
-const GRAVITY = 2400;
+export const GRAVITY = 2400;
 const FRICTION = 0.8;
 const ITERATIONS = 6;
 const MAX_SPEED = 3200;
@@ -61,7 +62,10 @@ const SLEEP_AFTER = 24;
 const SPILL = 0.7;
 const ABSORBED_SCALE = 0.25;
 const SWALLOW_DISTANCE = 10;
-const MAX_TILT = 0.3;
+const MAX_TILT = 0.45;
+/** How much of its size a body takes up against other bodies. */
+const NESTLE_X = 0.82;
+const NESTLE_Y = 0.78;
 /** How much of a tilted box's true bounding height it collides with. */
 const TILT_HEIGHT = 0.45;
 
@@ -205,10 +209,18 @@ function pushOut(body: Body, obstacle: Rect, grounded: Set<Body>): void {
   }
 }
 
+/** The part of a body other bodies cannot overlap. */
+export function coreOf(body: Body): Rect {
+  const r = rectOf(body);
+  const dx = ((r.right - r.left) * (1 - NESTLE_X)) / 2;
+  const dy = ((r.bottom - r.top) * (1 - NESTLE_Y)) / 2;
+  return { left: r.left + dx, top: r.top + dy, right: r.right - dx, bottom: r.bottom - dy };
+}
+
 /** Separate two overlapping bodies; a held body does not move, so the other takes all of it. */
 function separate(a: Body, b: Body, grounded: Set<Body>): void {
-  const ra = rectOf(a);
-  const rb = rectOf(b);
+  const ra = coreOf(a);
+  const rb = coreOf(b);
   const ox = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
   const oy = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
   if (ox <= 0 || oy <= 0) return;

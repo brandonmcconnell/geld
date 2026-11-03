@@ -31,7 +31,6 @@ export function DigestCard({
   width,
   compact,
   maxHeight,
-  minHeight,
 }: {
   readonly digest: Digest;
   readonly rows: readonly DigestRow[];
@@ -43,13 +42,11 @@ export function DigestCard({
   readonly compact: boolean;
   /** The room it has; never more, so it never covers the hero's words. */
   readonly maxHeight: number;
-  /** The cup it fills, so turning Geld on fills the outline exactly. */
-  readonly minHeight: number;
 }) {
   return (
     <div
       ref={cardRef}
-      style={{ width, maxHeight, minHeight }}
+      style={{ width, maxHeight }}
       className={cn(
         'pointer-events-auto flex origin-bottom-right flex-col overflow-hidden rounded-xl border bg-card text-[0.8125rem] shadow-xl transition-[opacity,scale] duration-300',
         open ? 'scale-100 opacity-100' : 'pointer-events-none scale-95 opacity-0',

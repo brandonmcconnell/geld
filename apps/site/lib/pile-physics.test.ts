@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Body, Rect, World } from './pile-physics';
-import { rectOf, seeded, settled, step } from './pile-physics';
+import { coreOf, rectOf, seeded, settled, step } from './pile-physics';
 
 function body(x: number, y: number, w = 120, h = 24): Body {
   return { x, y, vx: 0, vy: 0, w, h, scale: 1, mode: 'free', held: false, still: 0 };
@@ -19,7 +19,7 @@ const headline: Rect = { left: 200, top: 300, right: 700, bottom: 360 };
 const world: World = { width: 900, floor: 600, obstacles: [headline], sink: { x: 850, y: 580 } };
 
 describe('the pile', () => {
-  it('drops a crowd of boxes into a resting pile above the floor, clear of the obstacles and of each other', () => {
+  it('drops a crowd of boxes into a resting pile above the floor, clear of the obstacles, overlapping each other only at their edges', () => {
     const random = seeded(7);
     const bodies = Array.from({ length: 28 }, () => body(60 + random() * 780, -40 - random() * 600, 80 + random() * 80));
     run(bodies, world, 6);
@@ -36,7 +36,7 @@ describe('the pile', () => {
       for (let c = a + 1; c < bodies.length; c++) {
         const first = bodies[a];
         const second = bodies[c];
-        if (first && second && overlaps(rectOf(first), rectOf(second))) crossings++;
+        if (first && second && overlaps(coreOf(first), coreOf(second))) crossings++;
       }
     }
     expect(crossings).toBe(0);
@@ -64,32 +64,22 @@ describe('the pile', () => {
     expect(Math.hypot(b.x - 300, b.y - 200)).toBeLessThan(12);
   });
 
-  it('pours tumbling boxes into an open cup, where they come to rest inside its walls', () => {
-    const cup = { left: 500, top: 250, right: 860, bottom: 560 };
-    const walls: Rect[] = [
-      { left: cup.left - 18, top: cup.top, right: cup.left + 1, bottom: cup.bottom + 18 },
-      { left: cup.right - 1, top: cup.top, right: cup.right + 18, bottom: cup.bottom + 18 },
-      { left: cup.left - 18, top: cup.bottom - 1, right: cup.right + 18, bottom: cup.bottom + 18 },
-    ];
-    const cupWorld: World = { ...world, obstacles: walls };
+  it('lets tumbling boxes land tilted, and stop turning once they rest', () => {
     const random = seeded(11);
-    const bodies = Array.from({ length: 6 }, (_, i) => ({
-      ...body(cup.left + 90 + random() * 180, -60 - i * 90, 150, 40),
-      vx: (random() - 0.5) * 300,
+    const bodies = Array.from({ length: 10 }, (_, i) => ({
+      ...body(100 + random() * 700, -60 - i * 70, 150, 40),
+      vx: (random() - 0.5) * 400,
       vy: 400,
-      angle: (random() - 0.5) * 0.5,
-      spin: (random() - 0.5) * 8,
+      angle: (random() - 0.5) * 0.8,
+      spin: (random() - 0.5) * 10,
     }));
-    run(bodies, cupWorld, 8);
+    run(bodies, { ...world, obstacles: [] }, 8);
     expect(settled(bodies)).toBe(true);
     for (const b of bodies) {
-      const r = rectOf(b);
-      expect(r.left).toBeGreaterThanOrEqual(cup.left - 0.5);
-      expect(r.right).toBeLessThanOrEqual(cup.right + 0.5);
-      expect(r.bottom).toBeLessThanOrEqual(cup.bottom + 0.5);
       expect(b.spin).toBe(0);
-      expect(Math.abs(b.angle ?? 0)).toBeLessThanOrEqual(0.3);
+      expect(Math.abs(b.angle ?? 0)).toBeLessThanOrEqual(0.45);
     }
+    expect(bodies.some((b) => Math.abs(b.angle ?? 0) > 0.1)).toBe(true);
   });
 
   it('never moves a held box, and pushes the others out of its way', () => {
@@ -99,7 +89,7 @@ describe('the pile', () => {
     run([held, other], world, 1);
     expect(held.x).toBe(450);
     expect(held.y).toBe(580);
-    expect(overlaps(rectOf(held), rectOf(other))).toBe(false);
+    expect(overlaps(coreOf(held), coreOf(other))).toBe(false);
   });
 
   it('slides a box off a ledge it overhangs, rather than balancing it there', () => {
