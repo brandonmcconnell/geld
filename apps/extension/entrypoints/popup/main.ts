@@ -165,6 +165,19 @@ async function main(): Promise<void> {
     tip.hidden = true;
   }
 
+  // The tooltip is shared, so it follows the hovered icon, else the focused one, and hides only when neither exists.
+  interface TipSource {
+    readonly anchor: HTMLElement;
+    readonly text: string;
+  }
+  let hoveredTip: TipSource | null = null;
+  let focusedTip: TipSource | null = null;
+  function refreshTip(): void {
+    const active = hoveredTip ?? focusedTip;
+    if (active === null) hideTip();
+    else showTip(active.anchor, active.text);
+  }
+
   /** A setting on one line: its title, an info icon whose tooltip carries the description, and a small switch. */
   function renderSwitch(field: ToggleField): HTMLElement {
     const description = plainText(field.popupDescription ?? field.description);
@@ -178,28 +191,22 @@ async function main(): Promise<void> {
     info.className = 'popup__info';
     info.setAttribute('aria-label', `About ${field.label}`);
     info.append(svgFromString(ICON_INFO));
-    // Shown while the icon is hovered or focused, hidden once it is neither.
-    let hovered = false;
-    let focused = false;
-    const sync = (): void => {
-      if (hovered || focused) showTip(info, description);
-      else hideTip();
-    };
+    const source: TipSource = { anchor: info, text: description };
     info.addEventListener('pointerenter', () => {
-      hovered = true;
-      sync();
+      hoveredTip = source;
+      refreshTip();
     });
     info.addEventListener('pointerleave', () => {
-      hovered = false;
-      sync();
+      if (hoveredTip === source) hoveredTip = null;
+      refreshTip();
     });
     info.addEventListener('focus', () => {
-      focused = true;
-      sync();
+      focusedTip = source;
+      refreshTip();
     });
     info.addEventListener('blur', () => {
-      focused = false;
-      sync();
+      if (focusedTip === source) focusedTip = null;
+      refreshTip();
     });
     const help = document.createElement('span');
     help.className = 'popup__sr-only';
