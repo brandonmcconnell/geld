@@ -2548,3 +2548,5 @@ Replying false wins the extension message race against the owning client and rej
 
 GitLab created, pending, preparing, scheduled and waiting_for_resource jobs remain queued in trusted CI input.
 Published CI totals count both queued and manual jobs as waiting, and only native running jobs as in progress.
+
+Provider configuration caching is best-effort when local storage fails, but aborted or cleared generations still reject before applying fetched rules.
