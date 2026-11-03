@@ -24,6 +24,16 @@ function shown(node: HTMLElement): boolean {
   }
   const box = node.getBoundingClientRect();return box.width > 0 && box.height > 0;
 }
+// Native ActionsWrapper hides the offscreen branch metadata when CompactHeader takes over.
+// These original closed controls identify the comparison; they are never click targets here.
+function branchMetadata(node: HTMLElement): boolean {
+  if (!native(node) || node.closest('[hidden],[inert],[aria-hidden="true"]') !== null) return false;
+  for (let item: HTMLElement | null = node; item !== null; item = item.parentElement) {
+    const style = item.ownerDocument.defaultView?.getComputedStyle(item);
+    if (style === undefined || style.display === 'none' || style.visibility === 'collapse' || style.opacity === '0' || style.contentVisibility === 'hidden') return false;
+  }
+  return true;
+}
 function popups(doc: Document): HTMLElement[] {
   const roots = [...doc.querySelectorAll<HTMLElement>(popupSelector)].filter(shown);
   return roots.filter((node) => !roots.some((other) => other !== node && other.contains(node)));
@@ -36,28 +46,31 @@ function globalFrame(doc: Document, page: ProviderPage, epoch: number): GlobalFr
   const headers = [...doc.querySelectorAll<HTMLElement>('[data-testid="pr-header"]')].filter(native), header = headers[0];
   const regions = [...doc.querySelectorAll<HTMLElement>('[role="region"][aria-label="Diff"]')].filter(native), region = regions[0];
   if (headers.length !== 1 || header === undefined || regions.length !== 1 || region === undefined) return null;
+  const panels = [...doc.querySelectorAll<HTMLElement>('#pull-request-tabs-1-tab[role="tabpanel"]')].filter(native), panel = panels[0];
+  if (panels.length !== 1 || panel === undefined || !panel.contains(region)) return null;
   const branches = header.querySelector<HTMLElement>('[data-qa="pr-branches-and-state-styles"]'), metadata = branches?.nextElementSibling;
   if (branches === null || branches === undefined || !(metadata instanceof HTMLElement) || !native(branches) || !native(metadata)
     || /^#([1-9]\d*)\s*•/.exec(metadata.textContent?.trim() ?? '')?.[1] !== page.number) return null;
-  const selections = [...doc.querySelectorAll<HTMLElement>('button[aria-haspopup="true"],[role="button"][aria-haspopup="true"]')].filter((node) => shown(node) && node.textContent?.trim() === 'All changes' && node.getAttribute('aria-expanded') === 'false');
+  const selections = [...panel.querySelectorAll<HTMLElement>('button[aria-haspopup="true"],[role="button"][aria-haspopup="true"]')].filter((node) => shown(node) && node.textContent?.trim() === 'All changes' && node.getAttribute('aria-expanded') === 'false');
   const selection = selections[0];
-  const controls = [...branches.querySelectorAll<HTMLElement>('[role="button"][aria-haspopup="true"]')].filter(shown);
+  const controls = [...branches.querySelectorAll<HTMLElement>('[role="button"][aria-haspopup="true"]')].filter(branchMetadata);
   if (selections.length !== 1 || selection === undefined || controls.length !== 2 || controls.some((node) => node.getAttribute('aria-expanded') !== 'false')) return null;
   const links = [...header.querySelectorAll<HTMLAnchorElement>('a[href]')].filter((link) => {
     try { const value = new URL(link.href);return native(link) && value.origin === page.repository.origin && value.pathname.replace(/\/$/, '') === `/${page.repository.path}/src` && value.search === '' && value.hash === '' && value.username === '' && value.password === ''; } catch { return false; }
   });
   if (links.length === 0) return null;
   const originalRoute = route(doc), originalMeta = metadata.textContent, branchText = controls.map((node) => node.textContent), hrefs = links.map((link) => link.getAttribute('href'));
-  const parents = [header, region, branches, metadata, selection, ...controls, ...links].map((node) => node.parentElement);
-  const nodes = [header, region, branches, metadata, selection, ...controls, ...links];
+  const parents = [header, region, panel, branches, metadata, selection, ...controls, ...links].map((node) => node.parentElement);
+  const nodes = [header, region, panel, branches, metadata, selection, ...controls, ...links];
   return {
     key: JSON.stringify([providerSourceSubjectKey(providerSourceSubject(page)), epoch]), region, watched: [branches, metadata, selection, ...links],
     current: () => page.diffMode?.current() !== false && route(doc) === originalRoute && nodes.every((node, index) => native(node) && node.parentElement === parents[index])
       && doc.querySelectorAll('[data-testid="pr-header"]').length === 1 && doc.querySelectorAll('[role="region"][aria-label="Diff"]').length === 1
-      && [...doc.querySelectorAll<HTMLElement>('button[aria-haspopup="true"],[role="button"][aria-haspopup="true"]')].filter((node) => shown(node) && node.textContent?.trim() === 'All changes').length === 1
+      && [...doc.querySelectorAll<HTMLElement>('#pull-request-tabs-1-tab[role="tabpanel"]')].filter(native).length === 1 && panel.contains(region)
+      && [...panel.querySelectorAll<HTMLElement>('button[aria-haspopup="true"],[role="button"][aria-haspopup="true"]')].filter((node) => shown(node) && node.textContent?.trim() === 'All changes').length === 1
       && branches.querySelectorAll('[role="button"][aria-haspopup="true"]').length === 2
       && metadata.textContent === originalMeta && shown(selection) && selection.textContent?.trim() === 'All changes' && selection.getAttribute('aria-expanded') === 'false'
-      && controls.every((node, index) => shown(node) && node.textContent === branchText[index] && node.getAttribute('aria-expanded') === 'false')
+      && controls.every((node, index) => branchMetadata(node) && node.textContent === branchText[index] && node.getAttribute('aria-expanded') === 'false')
       && links.every((link, index) => link.getAttribute('href') === hrefs[index]),
   };
 }
