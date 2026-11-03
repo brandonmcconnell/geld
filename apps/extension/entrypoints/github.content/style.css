@@ -7742,10 +7742,23 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));
 }
 
+/* Primer's header leaves its bottom padding to the body below, which here is the diagram: even it out so the title and the buttons share one centre line. */
+.geld-flow__header > .Overlay-headerContentWrap {
+  align-items: center;
+  padding: 8px;
+}
+
+.geld-flow__header .Overlay-titleWrap {
+  align-self: center;
+  padding: 0 0 0 8px;
+}
+
 .geld-flow__title {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin: 0;
+  line-height: 20px;
 }
 
 .geld-flow__title .octicon {
@@ -8005,20 +8018,19 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   right: 12px;
   bottom: 12px;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
 }
 
 .geld-flow__ctl {
   box-sizing: border-box;
   height: 24px;
   padding: 0 8px;
-  border: 1px solid var(--borderColor-default, var(--color-border-default));
-  border-radius: 6px;
-  background: var(--bgColor-default, var(--color-canvas-default));
-  box-shadow: var(--shadow-resting-small, 0 1px 1px rgba(31, 35, 40, 0.04));
-  color: var(--fgColor-default, var(--color-fg-default));
+  border: 1px solid var(--button-default-borderColor-rest, var(--color-btn-border));
+  border-radius: var(--borderRadius-medium, 6px);
+  background: var(--button-default-bgColor-rest, var(--color-btn-bg));
+  box-shadow: var(--button-default-shadow-resting, var(--color-btn-shadow));
+  color: var(--button-default-fgColor-rest, var(--color-btn-text));
   font: inherit;
   font-size: 12px;
   font-weight: 500;
@@ -8028,7 +8040,12 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 }
 
 .geld-flow__ctl:hover:not(:disabled) {
-  background: var(--bgColor-neutral-muted, var(--color-neutral-subtle));
+  border-color: var(--button-default-borderColor-hover, var(--color-btn-hover-border));
+  background: var(--button-default-bgColor-hover, var(--color-btn-hover-bg));
+}
+
+.geld-flow__ctl:active:not(:disabled) {
+  background: var(--button-default-bgColor-active, var(--color-btn-active-bg));
 }
 
 .geld-flow__ctl:disabled {
@@ -8082,19 +8099,18 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   position: relative;
 }
 
-/* The legend opens upward from its button, in two columns. */
+/* The legend opens upward from its button, in two columns, as one of GitHub's small overlays. */
 .geld-flow__legend {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% + 8px);
   display: grid;
   grid-template-columns: repeat(2, max-content);
-  gap: 6px 16px;
-  padding: 8px 10px;
-  border: 1px solid var(--borderColor-default, var(--color-border-default));
-  border-radius: 6px;
-  background: var(--bgColor-default, var(--color-canvas-default));
-  box-shadow: var(--shadow-floating-small, 0 3px 6px rgba(140, 149, 159, 0.15));
+  gap: 8px 16px;
+  padding: 8px 12px;
+  border-radius: var(--borderRadius-large, 12px);
+  background: var(--overlay-bgColor, var(--color-canvas-overlay));
+  box-shadow: var(--shadow-floating-small, 0 0 0 1px rgba(209, 217, 224, 0.5), 0 6px 12px -3px rgba(37, 41, 46, 0.04), 0 6px 18px 0 rgba(37, 41, 46, 0.12));
   color: var(--fgColor-default, var(--color-fg-default));
   font-size: 12px;
   line-height: 16px;
@@ -8111,8 +8127,10 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   gap: 6px;
 }
 
-.geld-flow__legend-btn[aria-expanded='true'] {
-  background: var(--bgColor-neutral-muted, var(--color-neutral-subtle));
+/* Open, only the border says so: the button keeps GitHub's own face. */
+.geld-flow__legend-btn[aria-expanded='true'],
+.geld-flow__legend-btn[aria-expanded='true']:hover {
+  border-color: var(--borderColor-accent-emphasis, var(--color-accent-emphasis));
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -378,7 +378,7 @@ export function openFlowDialog(): void {
   const toggle = createElement('button', { type: 'button', class: 'btn btn-sm geld-flow__toggle', 'aria-pressed': String(showHidden) });
   const actions = createElement('div', { class: 'Overlay-actionWrap geld-flow__actions' }, [...(hiddenCount > 0 && essentialCount > 0 ? [toggle] : []), close]);
 
-  // The diagram scrolls inside the stage; the controls float over its lower right corner and stay put.
+  // The diagram scrolls inside the stage; the controls (the legend, then zoom) float over its lower right corner and stay put.
   const scroller = createElement('div', { class: 'geld-flow__scroll' });
   const canvas = createElement('div', { class: 'geld-flow__canvas' });
   scroller.append(canvas);
