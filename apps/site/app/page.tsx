@@ -50,11 +50,16 @@ export default function HomePage() {
           </div>
         </div>
         {/* Wider than the page's column: the scenes need a GitHub-sized window beside their words. */}
-        <div className="mx-auto mt-12 w-full max-w-7xl px-5 sm:px-8 lg:mt-0">
+        <div className="mx-auto mt-12 w-full max-w-7xl px-5 sm:px-8 lg:mt-24">
           <Tour />
         </div>
-        <div className="container-site">
-          <Link href="/how-it-works" className={buttonVariants({ variant: 'outline', className: 'mt-16 lg:mt-4' })}>
+        <div className="container-site mt-20 flex flex-col items-center text-center lg:mt-12">
+          <h3 className="text-xl font-semibold tracking-tight text-balance sm:text-2xl">Plus the parts you set once</h3>
+          <p className="mt-3 max-w-xl text-base text-muted-foreground text-pretty">
+            Categories of your own, rules per repository or organisation, a <code className="code-chip">.github/geld.yml</code> everyone who reviews
+            shares, and GitHub Enterprise Server. How it works covers every change Geld makes, and what it leaves alone.
+          </p>
+          <Link href="/how-it-works" className={buttonVariants({ variant: 'outline', className: 'mt-6' })}>
             Everything Geld changes
             <ArrowRightIcon aria-hidden="true" />
           </Link>
