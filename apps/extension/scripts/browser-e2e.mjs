@@ -26,6 +26,7 @@ import { BITBUCKET_COMMIT_LIST, commitLinkSettingsScope, verifyBitbucketCommitLi
 import { GITLAB_FILE_SEARCH, verifyGitLabFileSearch } from './gitlab-file-search.mjs';
 import { cleanupGitLabWhitespace, gitLabWhitespaceSettings, observeGitLabWhitespace, verifyGitLabWhitespace, whitespaceReceiptURL } from './gitlab-whitespace-viewed.mjs';
 import { GITLAB_WHITESPACE_SESSION, gitLabWhitespaceSessionSettings, verifyGitLabWhitespaceSession, verifyGitLabWhitespaceSessionProduct } from './gitlab-whitespace-session.mjs';
+import { bitbucketPrWholeURL, observeBitbucketPrWhole, verifyBitbucketPrWhole } from './bitbucket-pr-whole-context.mjs';
 import { BITBUCKET_WHOLE, bitbucketWholeURL, bitbucketWholeSettings, observeBitbucketWhole, verifyBitbucketWhole } from './bitbucket-whole-context.mjs';
 import { GITLAB_SHELL, gitLabShellProbe, gitLabShellSettings, observeGitLabShell, verifyGitLabShell } from './gitlab-shell-acceptance.mjs';
 import { verifyGitLabDisplayedOutline } from './gitlab-displayed-outline.mjs';
@@ -74,6 +75,7 @@ const FOCUSED_CASES = {
   'gitlab-whitespace-session': ['gitlab-whitespace-session'],
   'gitlab-shell': ['gitlab-shell'],
   'bitbucket-whole-context': ['bitbucket-whole-context'],
+  'bitbucket-pr-whole-context': ['bitbucket-pr-whole-context'],
   'gitlab-standalone-whole': ['gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'],
   'gitlab-review': ['gitlab-overview-digest'],
   'gitlab-bot': ['gitlab-bot-digest'],
@@ -363,7 +365,8 @@ async function runCase(name, url, body, discovery = false) {
   const fileMenuPrivacy = name === 'bitbucket-native-file-menu';
   const localReviewOnly = name === 'bitbucket-local-reviewed';
   const shellPrivacy = name === 'gitlab-shell';
-  const wholePrivacy = name === 'bitbucket-whole-context';
+  const wholePrivacy = name === 'bitbucket-whole-context' || name === 'bitbucket-pr-whole-context';
+  const prWhole = name === 'bitbucket-pr-whole-context';
   const item = { name, url, startedAt: new Date().toISOString(), status: 'running', ...(discovery ? { purpose: 'Read-only native surface discovery. No feature parity assertion.' } : {}), console: [], pageErrors: [], requestFailures: [], sourceFailures: [] };
   report.cases.push(item);
   let page;
@@ -390,7 +393,8 @@ async function runCase(name, url, body, discovery = false) {
   let wholeObserver;
   const abort = new AbortController();
   try {
-    if (wholePrivacy && focus !== 'bitbucket-whole-context') { item.status = 'not_selected';item.reason = 'Bitbucket whole-context acceptance is literal-only. No source navigation or settings change.';return; }
+    if (prWhole && focus !== 'bitbucket-pr-whole-context') { item.status='not_selected';item.reason='PR whole context is literal-only; no navigation or settings change.';return; }
+    if (wholePrivacy && focus !== 'bitbucket-whole-context' && !prWhole) { item.status = 'not_selected';item.reason = 'Bitbucket whole-context acceptance is literal-only. No source navigation or settings change.';return; }
     if (shellPrivacy && focus !== 'gitlab-shell') { item.status = 'not_selected';item.reason = 'GitLab shell acceptance is literal-only. No native source navigation or master change.';return; }
     if (localReviewOnly && focus !== 'bitbucket-local-reviewed') { item.status = 'not_selected';item.reason = 'Local review persistence is a dedicated two-visit case, excluded from all/default/regression.';return; }
     if (fileMenuPrivacy && focus !== 'bitbucket-native-file-menu') { item.status = 'not_selected';item.reason = 'Native file-menu diagnosis is literal-only. No navigation or input.';return; }
@@ -462,6 +466,7 @@ async function runCase(name, url, body, discovery = false) {
     if (wholePrivacy) {
       item.bitbucketWholeSettings = {};
       wholeSettings = bitbucketWholeSettings({ progress:item.bitbucketWholeSettings,
+        preparePatch:prWhole?{prOverview:false,showListStats:false,repoConfigs:'never',aiEnabled:false}:undefined,
         read:() => options.evaluate(async key => { const v=await chrome.storage.sync.get(key);return Object.hasOwn(v,key)?{present:true,value:v[key]}:{present:false}; }, SETTINGS_KEY),
         write:v => options.evaluate(async (key,saved) => { if(saved.present)await chrome.storage.sync.set({[key]:saved.value});else await chrome.storage.sync.remove(key); }, SETTINGS_KEY,v),
       });await wholeSettings.prepare();
@@ -592,7 +597,7 @@ async function runCase(name, url, body, discovery = false) {
         void page.close().catch(() => undefined);
       }
     });
-    if (wholePrivacy) { item.bitbucketWhole = {};item.bitbucketWholeTraffic = {};wholeObserver=observeBitbucketWhole(page,item.bitbucketWholeTraffic,extensionId);bitbucketWholeCases.set(page,{settings:wholeSettings,observer:wholeObserver}); }
+    if (wholePrivacy) { item.bitbucketWhole = {};item.bitbucketWholeTraffic = {};wholeObserver=(prWhole?observeBitbucketPrWhole:observeBitbucketWhole)(page,item.bitbucketWholeTraffic,extensionId);bitbucketWholeCases.set(page,{settings:wholeSettings,observer:wholeObserver}); }
     if (shellPrivacy) {
       item.gitLabShell = {};item.gitLabShellTraffic = {};
       shellObserver = observeGitLabShell(page, item.gitLabShellTraffic, extensionId);
@@ -2919,6 +2924,11 @@ try {
     const context = gitLabWhitespaceCases.get(page);
     assert.ok(context, 'Dedicated whitespace session context unavailable');
     return verifyGitLabWhitespaceSession(page, { ...context, acquisition: () => item.gitLabComparisonObservations, poll, progress: item.nativeWhitespace, totals: (phase) => verifyGitLabWhitespaceSessionProduct(page, { phase, progress: item.nativeWhitespace, readState: () => tabState(page), poll }) });
+  }, true);
+
+  await runCase('bitbucket-pr-whole-context', bitbucketPrWholeURL, async (page,item) => {
+    const context=bitbucketWholeCases.get(page);assert.ok(context,'Dedicated PR whole-context scope unavailable');
+    return verifyBitbucketPrWhole(page,{...context,poll,progress:item.bitbucketWhole,guardBudget:guardBitbucketShellBudget,readCounters:async()=>({state:await tabState(page),native:await bitbucketDom(page)})});
   }, true);
 
   await runCase('bitbucket-whole-context', bitbucketWholeURL, async (page,item) => {

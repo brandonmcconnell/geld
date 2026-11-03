@@ -1524,6 +1524,10 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Shell ranges retain the original Text nodes and exclude that verified terminal LF from their offsets.
   The literal `bitbucket-whole-context` browser case tests one full-hash public standalone commit using original native source, one observed raw response, real boundary/fold clicks and both context directions.
   It preserves original source and Viewed/count state, restores settings after closing, and never grants Bitbucket PR source authority.
+  The separate `bitbucket-pr-whole-context` case observes current API refs and native All changes/menu provenance independently;
+  native abbreviated source refs remain distinct from full API hashes.
+  Its PR-only preparation disables unrelated overview/list/config/AI reads, preserves test-category counts, and restores the exact raw settings after the page closes.
+  PR whole-context acceptance opens Tests and hydrates the original target placeholder through its existing file control or anchor before binding native source rows.
 
 
 - **Selected GitLab diffs require immutable comparisons.**
@@ -2271,6 +2275,9 @@ Native GitLab target-version metadata may omit `base_sha` while retaining exact 
 source-version and file diff refs still provide the required full base.
 The shell acceptance permits that missing target field but rejects any contradictory present target base.
 Its single initial native URL includes the known unchanged `file_path`, matching retained native file links, so an unmounted virtual tree entry is not a prerequisite for loading that file.
+
+Puppeteer25 passes media-feature reset values to Chromium CDP, which requires an empty array rather than null.
+The shell acceptance uses `emulateMediaFeatures([])` on both normal and failure cleanup paths to restore the browser's baseline light or dark media.
 
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
