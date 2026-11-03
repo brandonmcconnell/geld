@@ -304,9 +304,23 @@ function attributeJson(doc: Document, selector: string, attribute: string): Json
   }
 }
 
+export function gitLabReviewIdentity(doc: Document): string | null {
+  const sources = [...doc.querySelectorAll('#js-vue-mr-discussions[data-current-user-data]')].filter((node) => node.closest('[data-geld-ui], .note-body, [data-testid="description-content"]') === null);
+  if (sources.length > 1) return null;
+  const source = sources[0];
+  if (source !== undefined) {
+    try {
+      const value: unknown = JSON.parse(source.getAttribute('data-current-user-data') ?? 'null');
+      const id = record(value) ? nativeId(value.id) : null;
+      return id === null ? null : `user:${id}`;
+    } catch { return null; }
+  }
+  const headers = [...doc.querySelectorAll('.js-mr-title-actions[data-is-signed-in]')].filter((node) => node.closest('[data-geld-ui], .note-body, [data-testid="description-content"]') === null);
+  return headers.length === 1 && headers[0]?.getAttribute('data-is-signed-in') === 'true' ? 'signed-in' : null;
+}
+
 export function gitLabReviewCapabilities(doc: Document, approvals: unknown = null): GitLabReviewCapabilities {
-  const current = attributeJson(doc, '#js-vue-mr-discussions', 'data-current-user-data');
-  const signedIn = nativeId(current?.id) !== null || doc.querySelector('.js-mr-title-actions[data-is-signed-in="true"]') !== null;
+  const signedIn = gitLabReviewIdentity(doc) !== null;
   const drawer = doc.querySelector<HTMLButtonElement>('button[data-testid="review-drawer-toggle"]');
   const canReview = signedIn && drawer !== null;
   const comment = doc.querySelector<HTMLTextAreaElement>('textarea[data-testid="comment-textarea"], textarea#note-body');
