@@ -397,14 +397,15 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
   const unknownThreadState = parsed.threads.some((thread) => thread.stateKnown !== true);
   if (unknownThreadState) unavailable.push({ area: 'thread state', reason: 'GitLab did not supply the native resolution or active state of every discussion.' });
   const areaError = (area: string, reason: unknown): void => {
-    unavailable.push({ area, reason: reason instanceof Error ? reason.message : 'GitLab source unavailable.' });
+    unavailable.push({ area, reason: reason instanceof Error ? reason.message : typeof reason === 'string' ? reason : 'GitLab source unavailable.' });
   };
   const approvalResult = results[1];
   const approvals = approvalResult?.status === 'fulfilled' && record(approvalResult.value.value) ? approvalResult.value.value : null;
-  if (approvals === null) areaError('reviews', approvalResult?.status === 'rejected' ? approvalResult.reason : 'Invalid approval data.');
+  const approvers: readonly unknown[] | null = approvals !== null && Array.isArray(approvals.approved_by) ? approvals.approved_by : null;
+  if (approvers === null) areaError('reviews', approvalResult?.status === 'rejected' ? approvalResult.reason : 'GitLab did not return an approval list.');
   const reviewerMap = new Map<string, ProviderReviewReviewer>();
-  if (approvals !== null && Array.isArray(approvals.approved_by)) {
-    for (const item of approvals.approved_by) {
+  if (approvers !== null) {
+    for (const item of approvers) {
       if (!record(item)) throw new GitLabReviewError('GitLab returned invalid approver data.');
       const author = authorOf(item.user);
       reviewerMap.set(author.id, { author, state: 'approved', reviewRequest: 'unknown' });
@@ -467,7 +468,7 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
   const state = mergeRequestState(latest.state);
   const complete = unavailable.length === 0;
   return {
-    input: { subject, threads: parsed.threads, reviewers: [...reviewerMap.values()], checks, checksCoverage, complete, closed: state === 'closed' || state === 'merged' },
+    input: { subject, threads: parsed.threads, ...(approvers !== null || reviewerResult?.status === 'fulfilled' ? { reviewers: [...reviewerMap.values()] } : {}), checks, checksCoverage, complete, closed: state === 'closed' || state === 'merged' },
     comments: parsed.comments,
     sourceCoverage: { comments: 'complete', threads: unknownThreadState ? 'partial' : 'complete' },
     events: parsed.events,

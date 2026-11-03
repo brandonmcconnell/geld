@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import type { ProviderReviewSubject } from '@geld/review';
 import type { ProviderReviewPage } from '../providers/types';
+import { renderProviderReviewPanel } from '../providers/review-panel';
 import { fetchGitLabReview, gitLabReviewCapabilities, parseGitLabDiscussions } from './review';
 
 const SHA = 'a'.repeat(40);
@@ -479,4 +480,42 @@ it('matches a real CI adapter publication against web-normalized GitLab discussi
   expect(read.matchedItemIds.size).toBe(1);
   expect(read.comments).toEqual([]);
   expect(read.input.threads[0]?.comments).toHaveLength(2);
+});
+
+describe('review availability from independent native endpoints', () => {
+  it.each([
+    { name: 'both endpoints unread', approvalStatus: 401, approvalBody: {}, reviewerStatus: 403, reviewerBody: [], known: false, summary: 'Reviews · Unavailable', complete: false },
+    { name: 'approvals unread and reviewers known empty', approvalStatus: 401, approvalBody: {}, reviewerStatus: 200, reviewerBody: [], known: true, summary: 'Reviews · Partial', complete: false },
+    { name: 'reviewers unread and approvals known empty', approvalStatus: 200, approvalBody: { approved_by: [] }, reviewerStatus: 403, reviewerBody: [], known: true, summary: 'Reviews · Partial', complete: false },
+    { name: 'both endpoints known empty', approvalStatus: 200, approvalBody: { approved_by: [] }, reviewerStatus: 200, reviewerBody: [], known: true, summary: 'Reviews · 0 approvals', complete: true },
+    { name: 'known approver survives missing reviewers', approvalStatus: 200, approvalBody: { approved_by: [{ user: { id: 10, username: 'approver' } }] }, reviewerStatus: 403, reviewerBody: [], known: true, summary: 'Reviews · Partial · 1 observed approval', complete: false },
+    { name: 'known change request survives missing approvals', approvalStatus: 401, approvalBody: {}, reviewerStatus: 200, reviewerBody: [{ user: { id: 11, username: 'changes' }, state: 'requested_changes' }], known: true, summary: 'Reviews · Partial · 1 observed change request', complete: false },
+    { name: 'malformed approval list is not empty', approvalStatus: 200, approvalBody: { approved_by: null }, reviewerStatus: 200, reviewerBody: [], known: true, summary: 'Reviews · Partial', complete: false },
+    { name: 'absent approval list and unread reviewers', approvalStatus: 200, approvalBody: {}, reviewerStatus: 403, reviewerBody: [], known: false, summary: 'Reviews · Unavailable', complete: false },
+  ])('$name', async ({ approvalStatus, approvalBody, reviewerStatus, reviewerBody, known, summary, complete }) => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith('/approvals')) return json(approvalBody, approvalStatus);
+      if (url.pathname.endsWith('/reviewers')) return json(reviewerBody, reviewerStatus);
+      if (url.pathname.endsWith('/discussions.json') || url.pathname.endsWith('/pipelines')) return json([]);
+      return json({ iid: 7, sha: SHA, state: 'opened' });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const snapshot = await fetchGitLabReview(page, new AbortController().signal);
+    expect(Object.hasOwn(snapshot.input, 'reviewers')).toBe(known);
+    expect(snapshot.complete).toBe(complete);
+    expect(snapshot.input.checksCoverage).toBe('complete');
+    expect(fetcher).toHaveBeenCalledTimes(6);
+    const host = document.createElement('div'); document.body.append(host);
+    const panel = renderProviderReviewPanel(host, snapshot.input, { unavailable: snapshot.unavailable, complete: snapshot.complete, approvalsRequired: snapshot.approvalsRequired, approvalsLeft: snapshot.approvalsLeft });
+    const section = panel.element.querySelector('[data-geld-review-key="reviewers"]');
+    expect(section?.querySelector('summary')?.textContent).toBe(summary);
+    if (!complete) {
+      expect(section?.textContent).not.toContain('0 approvals');
+      expect(section?.textContent).not.toContain('No reviewer standings.');
+      expect(snapshot.unavailable.some((source) => source.area === 'reviews')).toBe(true);
+    } else expect(section?.textContent).toContain('No reviewer standings.');
+    for (const reviewer of snapshot.input.reviewers ?? []) expect(section?.textContent).toContain(reviewer.author.login);
+    panel.destroy(); host.remove();
+  });
 });
