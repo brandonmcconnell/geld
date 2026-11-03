@@ -16,7 +16,7 @@ import { count, phase, phaseSince } from '../../lib/perf';
 import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
-import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, reviewCommentOf, revisionMarker, THREAD_SELECTOR } from './crawler';
+import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
@@ -25,8 +25,8 @@ import { threadFragmentOf } from './thread-fragment';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
 import { editedAt, editsVersion, editTimesOf, refreshEditTimes, resetEditTimes, revisionAsOf, revisionTimesOf } from './edit-times';
-import { sameRunAnchor } from './revisions';
 import type { SameRunCandidate } from './revisions';
+import { RUN_SETTLE_MS, threadHeadOf } from './thread-head';
 import { headChecks, nextCheckRefresh, resetHeadChecks } from './check-source';
 import { absoluteTimeText, relativeTimeText } from './time';
 import { stickyHeaderBottomAt } from './sticky';
@@ -1834,10 +1834,6 @@ let latestPush: { readonly anchors: ReadonlySet<string>; readonly row: HTMLEleme
  * run's.
  */
 const SUMMARY_LAG_MS = 10 * 60 * 1000;
-/** A bot finishes writing its summary in the moments after it posts the run's threads; edits this soon after count as the run's reading. */
-const RUN_SETTLE_MS = 5 * 60 * 1000;
-/** How long before a thread a bot's summary, posted or rewritten, still counts as that run's: a summary that leads its threads leads by seconds. */
-const SAME_RUN_BEFORE_MS = 2 * 60 * 1000;
 
 /**
  * The bot's latest summary written by `threadAt` (give or take the lag
@@ -1855,51 +1851,26 @@ function botSummaryFor(botId: string, threadAt: number): { readonly anchor: stri
   return best;
 }
 
-/** The review timeline item holding `node`, at its outermost copy: GitHub repeats the review's id on nested wrappers (a minimized review, its permalink). */
-function outermostReviewOf(node: Element): HTMLElement | null {
-  let review = closestAtHome(node, '[id^="pullrequestreview-"]');
-  while (review !== null && review.parentElement !== null) {
-    const outer = closestAtHome(review.parentElement, '[id^="pullrequestreview-"]');
-    if (outer === null || outer.id !== review.id) break;
-    review = outer;
-  }
-  return review;
-}
-
 /** A thread's opening comment, from the anchor of any comment in it. */
 function threadOpenerOf(anchor: string): HTMLElement | null {
   return threadRootOf(anchor)?.querySelector<HTMLElement>('[id^="discussion_r"], [data-testid="review-thread-comment"]') ?? document.getElementById(anchor);
 }
 
-/**
- * The comment a thread was posted under: the review holding it when that
- * review has a comment of its own, else, for a bot's thread, the bot's
- * summary from the same run (`sameRunAnchor`: posted or rewritten from just
- * before the thread to `RUN_SETTLE_MS` after it, since Greptile posts its
- * summary as a comment and its threads in a review with no words). Null when
- * nothing heads it. The one rule behind a round line's thread count, the
- * Review bots row's chips and a thread's pinned strip: linking by author, or
- * by the bot's latest summary at the thread's time, gave every comment of a
- * bot's every thread of the bot's in its round (geld#349).
- */
-function threadHeadOf(thread: Element, at: number, botId: string | null | undefined): { readonly anchor: string; readonly review: HTMLElement | null } | null {
-  const review = outermostReviewOf(thread);
-  const reviewNode = review === null ? null : reviewCommentOf(review);
-  if (review !== null && reviewNode !== null && !reviewNode.contains(thread)) return { anchor: review.id, review: reviewNode };
+/** The bot's summaries with every time each was written, for `threadHeadOf`; null for no bot. */
+function summariesOf(botId: string | null | undefined): SameRunCandidate[] | null {
   if (botId === null || botId === undefined) return null;
   const candidates: SameRunCandidate[] = [];
   for (const [anchor, facts] of sourceFacts) {
     if (facts.botId !== botId || !facts.summary) continue;
     candidates.push({ anchor, times: [facts.createdAt, ...(revisionTimesOf(anchor, reapplySoon) ?? [])] });
   }
-  const anchor = sameRunAnchor(candidates, at, SAME_RUN_BEFORE_MS, RUN_SETTLE_MS);
-  return anchor === null ? null : { anchor, review: null };
+  return candidates;
 }
 
 /** The anchor heading the thread `anchor` belongs to (`threadHeadOf`, read from the thread's opening comment). */
 function threadHeadAnchorOf(anchor: string, botId: string | null | undefined): string | null {
   const opener = threadOpenerOf(anchor);
-  return opener === null ? null : (threadHeadOf(opener, Date.parse(createdAtOf(opener)), botId)?.anchor ?? null);
+  return opener === null ? null : (threadHeadOf(opener, Date.parse(createdAtOf(opener)), summariesOf(botId))?.anchor ?? null);
 }
 
 /**
@@ -2023,7 +1994,7 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
     };
   };
   // Read from the DOM, not a map keyed by the review's id: GitHub repeats that id, and such a map flips as nodes move.
-  const head = threadHeadOf(thread, threadAt, bot);
+  const head = threadHeadOf(thread, threadAt, summariesOf(bot));
   if (head === null) return null;
   if (head.review !== null) return describe(head.review, head.anchor, (who) => `${who}'s review`);
   // The bot's summary from the same run. A bot that writes no review body may have a thread comment for its
