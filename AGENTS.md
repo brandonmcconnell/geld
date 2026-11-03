@@ -2555,3 +2555,7 @@ an empty dialog scan cannot prove a product permission failure.
 Dashboard pointer acceptance completes source-custody reads before stabilizing the original control's hit box across animation frames.
 It follows the same section key and ID rather than its array position, and records the trusted target plus immediate and microtask expansion state so a missed click is distinct from a later state reset.
 A missed, replaced or persistently moving target fails before result polling without retrying pointer input.
+
+Installed dashboard custody failures include bounded structural diagnostics for the first mismatched native payloads.
+The record names only a validated public note ID, child-node path, change kind, attribute name, and text or HTML lengths and fingerprints.
+Original comment text and attribute values remain in the page, and exact preservation assertions are unchanged.

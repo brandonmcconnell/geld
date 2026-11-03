@@ -174,6 +174,18 @@ test('native timestamps and status/control labels may update while the original 
   const changed = providerDashboardProbe();assert.equal(changed.custody.bodyMismatches, 1);assert.equal(changed.sameOriginals, false);
   assert.throws(() => assertProviderDashboard(changed), /bodyMismatches/);assert.doesNotMatch(JSON.stringify(changed), /PRIVATE_CHANGED_BODY/);
 });
+test('body mismatch diagnostics identify bounded structural changes without exposing source values', () => {
+  semanticDashboard();providerDashboardProbe('bind');
+  document.querySelector('.note-text p').setAttribute('data-rendered', 'PRIVATE_ATTRIBUTE_VALUE');
+  const changed = providerDashboardProbe();
+  assert.equal(changed.sameOriginals, false);
+  assert.equal(changed.bodyChanges.length, 1);
+  assert.equal(changed.bodyChanges[0].source, 'note_1');
+  assert.equal(changed.bodyChanges[0].difference.kind, 'attribute');
+  assert.equal(changed.bodyChanges[0].difference.name, 'data-rendered');
+  assert.deepEqual(changed.bodyChanges[0].beforeText, changed.bodyChanges[0].afterText);
+  assert.doesNotMatch(JSON.stringify(changed), /PRIVATE_ATTRIBUTE_VALUE|Native stable comment body/);
+});
 test('native root replacement, reparenting, id changes and semantic body changes still fail custody', () => {
   for (const [kind, mutate] of [
     ['identityMismatches', node => node.replaceWith(node.cloneNode(true))],

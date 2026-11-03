@@ -236,6 +236,27 @@ export function providerDashboardProbe(mode = 'read') {
   const sections = [...panel?.querySelectorAll('[data-geld-review-key]') ?? []];
   const bound = state?.panel === panel && state?.url === location.href;
   const custody = { identityMismatches: 0, parentMismatches: 0, idMismatches: 0, bodyMismatches: 0, payloadOrderMismatches: 0, unqualifiedPayloads: 0 };
+  const bodyChanges = [];
+  const fingerprint = value => {
+    let hash = 2166136261;
+    for (let index = 0; index < value.length; index++) hash = Math.imul(hash ^ value.charCodeAt(index), 16777619);
+    return { length: value.length, hash: (hash >>> 0).toString(16) };
+  };
+  const difference = (before, after, path = [], budget = { remaining: 20000 }) => {
+    if (--budget.remaining < 0) return { kind: 'scan-limit', path };
+    if (!before || !after || before.nodeType !== after.nodeType || before.nodeName !== after.nodeName) return { kind: 'node-shape', path, beforeType: before?.nodeType ?? null, afterType: after?.nodeType ?? null };
+    if (before.nodeType === 3 && before.textContent !== after.textContent) return { kind: 'text', path, before: fingerprint(before.textContent), after: fingerprint(after.textContent) };
+    if (before.nodeType === 1) {
+      const names = new Set([...before.attributes, ...after.attributes].map(attribute => attribute.name));
+      for (const name of names) if (before.getAttribute(name) !== after.getAttribute(name)) return { kind: 'attribute', path, name: /^[a-z][a-z0-9:_-]{0,79}$/.test(name) ? name : 'other', before: fingerprint(before.getAttribute(name) ?? ''), after: fingerprint(after.getAttribute(name) ?? '') };
+    }
+    if (path.length >= 40) return { kind: 'depth-limit', path };
+    for (let index = 0; index < Math.max(before.childNodes.length, after.childNodes.length); index++) {
+      const result = difference(before.childNodes[index], after.childNodes[index], [...path, index], budget);
+      if (result !== null) return result;
+    }
+    return null;
+  };
   for (const entry of native) {
     if (!entry.node.isConnected || entry.node.ownerDocument !== document || entry.id !== '' && document.getElementById(entry.id) !== entry.node) custody.identityMismatches++;
     if (entry.node.parentElement !== entry.parent) custody.parentMismatches++;
@@ -253,7 +274,19 @@ export function providerDashboardProbe(mode = 'read') {
       if (found?.owner !== saved.owner) custody.payloadOrderMismatches++;
       // Native hydration can replace equivalent inner wrappers. The original note/event
       // identity and its exact semantic content remain the authority, not that wrapper.
-      if (found === undefined || found.body.textContent !== saved.text || saved.html !== null && found.body.innerHTML !== saved.html) custody.bodyMismatches++;
+      if (found === undefined || found.body.textContent !== saved.text || saved.html !== null && found.body.innerHTML !== saved.html) {
+        custody.bodyMismatches++;
+        if (bodyChanges.length < 8) {
+          const before = document.createElement('template');
+          const after = document.createElement('template');
+          if (saved.html !== null) before.innerHTML = saved.html;
+          if (found !== undefined) after.innerHTML = found.body.innerHTML;
+          bodyChanges.push({ source: /^(?:note_[1-9]\d*|comment-[1-9]\d*)$/.test(saved.id) ? saved.id : null, index,
+            beforeText: fingerprint(saved.text ?? ''), afterText: fingerprint(found?.body.textContent ?? ''),
+            beforeHtml: saved.html === null ? null : fingerprint(saved.html), afterHtml: found === undefined ? null : fingerprint(found.body.innerHTML),
+            difference: saved.html === null || found === undefined ? { kind: 'unavailable' } : difference(before.content, after.content) });
+        }
+      }
     }
   }
   const sameOriginals = bound && custody.identityMismatches === 0 && custody.parentMismatches === 0 && custody.idMismatches === 0 && custody.bodyMismatches === 0 && custody.payloadOrderMismatches === 0;
@@ -268,7 +301,7 @@ export function providerDashboardProbe(mode = 'read') {
   const nativeBodyAppearance = appearance(document.body);
   const nativeSurfaceAppearance = appearance(nativeSurface);
   return {
-    panelCount: panels.length, panelVisible: visible(panel), bound, sameOriginals, custody,
+    panelCount: panels.length, panelVisible: visible(panel), bound, sameOriginals, custody, bodyChanges,
     overviewVisible: visible(panel?.querySelector('[data-geld-review-overview]')),
     metrics: ['open', 'comments', 'activity'].map((name) => ({ name, visible: visible(panel?.querySelector(`[data-geld-review-metric="${name}"]`)) })),
     sectionBindings: sectionBindings.slice(0, 40), truncated: sectionBindings.length > 40 || native.length > 1000,
@@ -310,7 +343,7 @@ export async function verifyProviderDashboardUi(page, progress, { poll, capture,
     try {
       await handle.evaluate((node) => node.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'nearest' }));
       const custody = await read();
-      assert.equal(custody.sameOriginals, true, `Original conversation changed before the real pointer input: ${JSON.stringify(custody.custody)}`);
+      assert.equal(custody.sameOriginals, true, `Original conversation changed before the real pointer input: ${JSON.stringify({ custody: custody.custody, bodyChanges: custody.bodyChanges })}`);
       const point = await handle.evaluate(async (node) => {
         let previous = null;
         let stable = 0;
