@@ -20,6 +20,8 @@ const EASE_MS = 3000;
  *
  * The button beside the heading pauses it (WCAG 2.2.2), and so does keyboard
  * focus on a logo, both at once; under the mouse it eases to a stop instead.
+ * The button shows while the section is hovered or it has keyboard focus, and
+ * always on a touch screen, which has no hover to reveal it.
  */
 export function LogoReel({ className }: { readonly className?: string }) {
   const track = useRef<HTMLDivElement | null>(null);
@@ -39,7 +41,7 @@ export function LogoReel({ className }: { readonly className?: string }) {
   };
 
   return (
-    <section aria-labelledby="customers-heading" className={cn('container-wide', className)}>
+    <section aria-labelledby="customers-heading" className={cn('group/reel container-wide', className)}>
       <div className="relative mx-auto w-fit">
         <h2 id="customers-heading" className="text-center text-sm text-muted-foreground">
           Used by founders and engineers at
@@ -49,9 +51,9 @@ export function LogoReel({ className }: { readonly className?: string }) {
           onClick={() => setPaused((was) => !was)}
           aria-label={paused ? 'Play logos' : 'Pause logos'}
           title={paused ? 'Play' : 'Pause'}
-          className="absolute top-1/2 left-full ml-1 grid size-6 -translate-y-1/2 place-items-center text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 motion-reduce:hidden"
+          className="absolute top-1/2 left-full ml-1 grid size-6 -translate-y-1/2 place-items-center text-muted-foreground opacity-0 outline-none transition-opacity duration-150 ease-out group-hover/reel:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/60 [@media(hover:none)]:opacity-100 motion-reduce:hidden"
         >
-          {paused ? <PlayIcon aria-hidden="true" className="size-3.5" /> : <PauseIcon aria-hidden="true" className="size-3.5" />}
+          {paused ? <PlayIcon aria-hidden="true" className="size-3.5 fill-current" /> : <PauseIcon aria-hidden="true" className="size-3.5 fill-current" />}
         </button>
       </div>
       <div className="logo-reel mt-6" onFocus={onFocus} onBlur={onBlur} onPointerEnter={onPointer} onPointerLeave={onPointer}>
