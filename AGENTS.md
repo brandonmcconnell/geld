@@ -1387,8 +1387,9 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
   the OG image (`app/opengraph-image.tsx`) combines the wordmark with a real 2× screenshot from `assets/screenshots/` (embedded as a data URL, `loadScreenshot`).
   Re-capture that screenshot with the extension on a public PR when the header UI changes;
   the Vercel ignore script watches the folder.
-  The logo reel (`components/logo-reel.tsx`) lists `lib/customers.ts` twice on one track that slides by half, so the loop has no seam, and never pauses;
+  The logo reel (`components/logo-reel.tsx`) lists `lib/customers.ts` twice on one track that slides by half, so the loop has no seam;
   with reduced motion it is one still, wrapping row.
+  Moving content that runs on beside the page needs a way to stop it (WCAG 2.2.2), so a pause button stands beside the reel's heading, and keyboard focus on a logo stops it too, both at once, while the mouse resting on it eases it to a stop and leaving eases it back over three seconds (`useReelSpeed`, through the CSS animation's `playbackRate`, so it stops where it is).
   The reel and the tour share `container-wide` (globals.css), wider than the page's column, and one copy of the list must stay wider than it, or a logo would show twice at once.
   Each logo is a single-colour SVG in `public/logos/` drawn as a CSS mask in the text colour, so it follows both schemes;
   a company whose logo is a mark alone gets its name set beside it, as its own site does.
