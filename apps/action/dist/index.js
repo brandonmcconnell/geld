@@ -33070,7 +33070,7 @@ function fixVisible(fix, mode) {
 }
 
 // ../../packages/review/src/summary-render.ts
-init_src();
+init_trackers();
 
 // ../../packages/review/src/inline-markdown.ts
 var DELIMITERS = [
