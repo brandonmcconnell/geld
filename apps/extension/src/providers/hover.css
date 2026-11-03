@@ -2,7 +2,8 @@
   position: fixed;
   z-index: var(--geld-provider-overlay-z-index, 1000);
   box-sizing: border-box;
-  container-type: inline-size;
+  width: max-content;
+  max-width: min(360px, calc(100vw - 16px));
   padding: var(--geld-provider-overlay-padding, var(--geld-provider-space-3) var(--geld-provider-space-4));
   overflow: auto;
   overscroll-behavior: contain;
@@ -33,8 +34,6 @@
 .geld-provider-hover__rule { grid-column: 1 / -1; border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); margin-block: var(--geld-provider-space-1); }
 .geld-provider-hover-anchor { cursor: help; }
 .geld-provider-hover-anchor:focus-visible { outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); box-shadow: var(--geld-provider-focus-ring); }
-@container (max-width: 280px) {
-  .geld-provider-hover__rows { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .geld-provider-hover__label { grid-column: 1 / -1; }
-  .geld-provider-hover__files { text-align: start; }
-}
+.geld-provider-hover[data-compact] .geld-provider-hover__rows { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.geld-provider-hover[data-compact] .geld-provider-hover__label { grid-column: 1 / -1; }
+.geld-provider-hover[data-compact] .geld-provider-hover__files { text-align: start; }

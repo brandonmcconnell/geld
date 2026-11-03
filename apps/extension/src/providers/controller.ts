@@ -433,7 +433,7 @@ export class ProviderController {
     this.setExpanded(this.expansionChoices.get(expansionKey) ?? (effective.groupHidden && hidden.totals.files > 0 && visible.files === 0 || effective.expandedByDefault), false);
     const activeCategories = allCategories(effective, this.catalog).filter((category) => isCategoryEnabled(effective, category.id));
     const hintLabel = activeCategories.length === 0 ? null : hiddenLabel(hidden, activeCategories);
-    if (!nativeSuspended) this.headerHints.update(targets, hintLabel);
+    if (!nativeSuspended) this.headerHints.update(targets, hintLabel, visible);
     this.bindHeaders(targets, {
       stats: statsBreakdown(all, hidden, hiddenNounPlural(activeCategories, hidden), activeCategories),
       status: result.provisional === true ? 'provisional' : 'ready',
@@ -480,7 +480,7 @@ export class ProviderController {
       const view = this.adapter.readDiff(document);
       const filtered = view === null ? null : JSON.stringify([...view.filteredPaths].sort());
       if (filtered !== settled.filtered) return;
-      this.headerHints.update(targets, settled.hintLabel);
+      this.headerHints.update(targets, settled.hintLabel, settled.visible);
       this.writeHeaderCounts(targets, settled.visible);
       this.settledHeader = { ...settled, headers: this.snapshotHeaders(targets) };
     } catch { /* Native SPA markup may be between subjects; wait for the normal validated pass. */ }

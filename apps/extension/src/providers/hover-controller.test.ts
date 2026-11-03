@@ -90,7 +90,8 @@ describe('provider controller count hover integration', () => {
     const controller = start({ ...base, headerTargets: () => [{ additions: node('#add'), deletions: node('#del'), files: node('#files'), hintHost: header, hintBefore: node('#add') }] });
     await vi.advanceTimersByTimeAsync(300);
     const label = node('.geld-provider-header-hidden-count');
-    vi.spyOn(label, 'getBoundingClientRect').mockReturnValue(new DOMRect(300, 60, 50, 20));
+    const hint = node('.geld-provider-header-stats');
+    vi.spyOn(hint, 'getBoundingClientRect').mockReturnValue(new DOMRect(300, 60, 50, 20));
     expect(label.textContent).toBe('1 test');
     expect(node('#add').textContent).toBe('4 additions');
     hover(node('#add'));
@@ -98,14 +99,33 @@ describe('provider controller count hover integration', () => {
     expect(node('#add').getAttribute('aria-describedby')).toBe('geld-provider-count-tooltip');
     expect(label.hasAttribute('aria-describedby')).toBe(false);
     expect(tooltip()?.textContent).toContain('Tests 1 file +3 −0');
-    label.focus();
+    hint.focus();
     await vi.advanceTimersByTimeAsync(150);
-    expect(label.getAttribute('aria-describedby')).toBe('geld-provider-count-tooltip');
+    expect(hint.getAttribute('aria-describedby')).toBe('geld-provider-count-tooltip');
+    expect(label.tabIndex).toBe(-1);
     controller.updateSettings({ ...DEFAULT_SETTINGS, categories: { tests: false } });
     await vi.advanceTimersByTimeAsync(120);
     expect(document.querySelector('.geld-provider-header-hidden-count')).toBeNull();
     expect(node('#add').textContent).toBe('7 additions');
     expect(label.hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it('renders and restores visible filtered totals when native signed counts are hidden', async () => {
+    const base = fixture();
+    node('#add').hidden = true;
+    node('#del').hidden = true;
+    const header = node('header');
+    const controller = start({ ...base, headerTargets: () => [{ additions: node('#add'), deletions: node('#del'), files: node('#files'), hintHost: header }] });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(node('.geld-provider-header-line-counts__add').textContent).toBe('+4');
+    expect(node('.geld-provider-header-line-counts__del').textContent).toBe('−1');
+    expect(node('.geld-provider-header-line-counts').getAttribute('aria-label')).toBe('Added 4 lines. Removed 1 line.');
+    expect(node('.geld-provider-header-stats').hidden).toBe(false);
+    controller.updateSettings({ ...DEFAULT_SETTINGS, enabled: false });
+    await vi.advanceTimersByTimeAsync(120);
+    expect(document.querySelector('.geld-provider-header-stats')).toBeNull();
+    expect(node('#add').textContent).toBe('7 additions');
+    expect(node('#add').hidden).toBe(true);
   });
 
   it('defers anonymous Bitbucket list and repository requests until sustained intent on one review', async () => {
