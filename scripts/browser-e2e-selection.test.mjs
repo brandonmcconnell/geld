@@ -523,7 +523,7 @@ test('installed permission verification uses a headed accessibility session with
   assert.match(workflow, /GELD_BROWSER_NATIVE_DIALOGS: '1'/);
   assert.match(workflow, /env -u NO_AT_BRIDGE dbus-run-session/);
   assert.match(workflow, /dbus-run-session -- xvfb-run -a --server-args='-screen 0 2000x1400x24' pnpm --filter @geld\/extension test:browser/);
-  assert.match(harness, /headless: process\.env\.GELD_BROWSER_NATIVE_DIALOGS !== '1'/);
+  assert.match(harness, /headless: !nativeAccessibility/);
   assert.doesNotMatch(harness, /auto-accept|autoaccept|Browser\.grantPermissions|Browser\.setPermission/);
 });
 
@@ -541,4 +541,15 @@ test('optional-provider evidence selects only its distinct artifact and cannot s
   for (const command of ['pnpm install --frozen-lockfile', 'pnpm --filter @geld/extension build:chrome']) {
     const before = job.slice(0, job.indexOf('run: ' + command));assert.match(before.slice(before.lastIndexOf('      - ')), /focus != 'provider-access-evidence'/);
   }
+});
+
+
+test('owned Chrome native accessibility is enabled and checked before any permission request', () => {
+  const bootstrap = harness.indexOf('report.nativeAccessibilityBus = await prepareNativeAccessibilityBus()');
+  const launch = harness.indexOf('browser = await puppeteer.launch(');
+  const preflight = harness.indexOf('report.nativeAccessibilityProbe = await probeNativeChromeAccessibility(');
+  const permission = harness.indexOf('await enableOptionalProviders(options,');
+  assert.ok(bootstrap > 0 && bootstrap < launch && launch < preflight && preflight < permission);
+  assert.match(harness, /env: nativeAccessibility \? nativeAccessibilityEnvironment\(process\.env\)/);
+  assert.match(harness, /nativeAccessibilityProbe.status, 'ready'/);
 });

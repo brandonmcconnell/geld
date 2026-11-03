@@ -49,32 +49,60 @@ def owned_process(pid, browser_pid):
 def native_dialogs(atspi, browser_pid):
     found = []
     truncated = False
-    desktop = atspi.Registry.getDesktop(0)
-    applications = list(islice(iter(desktop), 65))
+    counters = {'applications': 0, 'ownedApplications': 0, 'rootApplications': 0, 'descendantApplications': 0,
+                'unrelatedApplications': 0, 'processIdErrors': 0, 'desktopErrors': 0, 'desktopReadable': False, 'nativeNodes': 0, 'webSubtreesSkipped': 0,
+                'nativeDialogs': 0, 'nodeErrors': 0, 'nativeWindows': 0, 'activeNativeWindows': 0,
+                'showingNativeWindows': 0, 'showingActiveNativeControls': 0,
+                'roles': {role: 0 for role in ['application', 'frame', 'window', 'dialog', 'alert', 'panel', 'push button', 'tool bar', 'entry', 'other']}}
+    try:
+        desktop = atspi.Registry.getDesktop(0)
+        applications = list(islice(iter(desktop), 65))
+        counters['desktopReadable'] = True
+    except Exception:
+        counters['desktopErrors'] += 1
+        return {'dialogs': [], 'truncated': False, 'counters': counters}
+    counters['applications'] = min(len(applications), 64)
     if len(applications) > 64:
-        return {'dialogs': [], 'truncated': True}
+        return {'dialogs': [], 'truncated': True, 'counters': counters}
     for app in applications:
         try:
-            if not owned_process(app.get_process_id(), browser_pid):
+            pid = app.get_process_id()
+            if not owned_process(pid, browser_pid):
+                counters['unrelatedApplications'] += 1
                 continue
+            counters['ownedApplications'] += 1
+            counters['rootApplications' if pid == browser_pid else 'descendantApplications'] += 1
         except Exception:
+            counters['processIdErrors'] += 1
             continue
         pending = [(app, False, False, 0)]
         inspected = 0
         while pending and inspected < 4096:
             node, web, active, depth = pending.pop()
             inspected += 1
+            counters['nativeNodes'] += 1
             try:
                 role = node.getRoleName()
+                counters['roles'][role if role in counters['roles'] else 'other'] += 1
                 web = web or role in WEB_ROLES
                 if web:
+                    counters['webSubtreesSkipped'] += 1
                     continue
                 if depth > 24:
                     truncated = True
                     continue
                 states = node.getState()
                 active = active or states.contains(atspi.STATE_ACTIVE)
+                if role in {'frame', 'window', 'dialog'}:
+                    counters['nativeWindows'] += 1
+                    if active:
+                        counters['activeNativeWindows'] += 1
+                    if states.contains(atspi.STATE_SHOWING):
+                        counters['showingNativeWindows'] += 1
+                if role in {'push button', 'tool bar', 'entry'} and active and states.contains(atspi.STATE_SHOWING):
+                    counters['showingActiveNativeControls'] += 1
                 if role in {'dialog', 'alert'}:
+                    counters['nativeDialogs'] += 1
                     text, buttons, handles = [], [], []
                     children = [(node, 0)]
                     visited = 0
@@ -116,11 +144,12 @@ def native_dialogs(atspi, browser_pid):
                     truncated = True
                 pending.extend((child, web, active, depth + 1) for child in descendants[:64])
             except Exception:
+                counters['nodeErrors'] += 1
                 truncated = True
                 continue
         if pending:
             truncated = True
-    return {'dialogs': found, 'truncated': truncated}
+    return {'dialogs': found, 'truncated': truncated, 'counters': counters}
 
 
 def diagnostic(record, provider):
@@ -142,15 +171,19 @@ def confirm(provider, browser_pid, deadline):
     end = time.monotonic() + deadline
     previous = None
     last = []
+    counters = {}
+    scans = 0
     while time.monotonic() < end:
         scan = native_dialogs(pyatspi, browser_pid)
+        scans += 1
+        counters = {**scan['counters'], 'scans': scans, 'truncated': scan['truncated']}
         dialogs = scan['dialogs']
         last = [diagnostic(record, provider) for record, _ in dialogs if re.search(r'\bGeld\b', record.get('text', ''))][:8]
         if scan['truncated'] or any(record.get('truncated') for record, _ in dialogs):
-            return {'status': 'unavailable', 'reason': 'native_tree_truncated', 'dialogs': last}
+            return {'status': 'unavailable', 'reason': 'native_tree_truncated', 'dialogs': last, 'scan': counters}
         candidates = [(record, handles) for record, handles in dialogs if qualifies(record, provider, browser_pid)]
         if len(candidates) > 1:
-            return {'status': 'unavailable', 'reason': 'ambiguous_native_dialog', 'dialogs': last}
+            return {'status': 'unavailable', 'reason': 'ambiguous_native_dialog', 'dialogs': last, 'scan': counters}
         if len(candidates) == 1:
             record, handles = candidates[0]
             signature = json.dumps(record, sort_keys=True)
@@ -159,26 +192,44 @@ def confirm(provider, browser_pid, deadline):
                 action = allow.queryAction()
                 indexes = [index for index in range(action.nActions) if action.getName(index) in ACTION_NAMES]
                 if len(indexes) != 1 or not action.doAction(indexes[0]):
-                    return {'status': 'unavailable', 'reason': 'native_allow_action_failed', 'dialogs': last}
+                    return {'status': 'unavailable', 'reason': 'native_allow_action_failed', 'dialogs': last, 'scan': counters}
                 return {'status': 'confirmed', 'provider': provider, 'method': 'owned_native_atspi_allow',
-                        'dialog': diagnostic(record, provider)}
+                        'dialog': diagnostic(record, provider), 'scan': counters}
             previous = signature
         else:
             previous = None
         time.sleep(0.1)
-    return {'status': 'unavailable', 'reason': 'qualified_native_dialog_not_found', 'dialogs': last}
+    return {'status': 'unavailable', 'reason': 'qualified_native_dialog_not_found', 'dialogs': last, 'scan': counters}
+
+
+def probe_native(browser_pid, deadline):
+    import pyatspi
+    end = time.monotonic() + deadline
+    counters = {}
+    scans = 0
+    while time.monotonic() < end:
+        scan = native_dialogs(pyatspi, browser_pid)
+        scans += 1
+        counters = {**scan['counters'], 'scans': scans, 'truncated': scan['truncated']}
+        if (not scan['truncated'] and counters['ownedApplications'] > 0
+                and counters['showingNativeWindows'] > 0 and counters['activeNativeWindows'] > 0
+                and counters['showingActiveNativeControls'] > 0):
+            return {'status': 'ready', 'scan': counters}
+        time.sleep(0.1)
+    return {'status': 'unavailable', 'reason': 'native_ax_not_ready', 'scan': counters}
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--provider', required=True, choices=HOSTS)
+    parser.add_argument('--provider', choices=HOSTS)
+    parser.add_argument('--probe', action='store_true')
     parser.add_argument('--browser-pid', required=True, type=int)
     parser.add_argument('--seconds', default=10, type=int)
     args = parser.parse_args()
-    if args.browser_pid <= 1 or not 1 <= args.seconds <= 15:
+    if args.browser_pid <= 1 or not 1 <= args.seconds <= 15 or (not args.probe and args.provider is None):
         parser.error('Invalid owned browser or deadline')
     try:
-        result = confirm(args.provider, args.browser_pid, args.seconds)
+        result = probe_native(args.browser_pid, args.seconds) if args.probe else confirm(args.provider, args.browser_pid, args.seconds)
     except Exception:
         result = {'status': 'unavailable', 'reason': 'atspi_unavailable'}
     print(json.dumps(result))

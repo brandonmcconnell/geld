@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { confirmNativeProviderPermission } from './provider-native-permission.mjs';
+import { confirmNativeProviderPermission, prepareNativeAccessibilityBus, nativeAccessibilityEnvironment, probeNativeChromeAccessibility } from './provider-native-permission.mjs';
 
 const python = fileURLToPath(new URL('./provider-native-permission.py', import.meta.url));
 const button = name => ({ name, enabled: true, showing: true, actions: ['click'] });
@@ -79,4 +79,100 @@ long_name=module.confirm('gitlab',123,1)
 print(json.dumps({'nativeCount':count,'status':receipt['status'],'clicked':clicked,'truncatedReason':truncated.get('reason'),'outerReason':outer.get('reason'),'longNameReason':long_name.get('reason')}))
 `, python], { encoding: 'utf8' }));
   assert.deepEqual(result, { nativeCount: 1, status: 'confirmed', clicked: ['Allow'], truncatedReason: 'native_tree_truncated', outerReason: 'native_tree_truncated', longNameReason: 'native_tree_truncated' });
+});
+
+test('scanner diagnostics distinguish registry, process ownership and native role gaps without labels', () => {
+  const result = JSON.parse(execFileSync('/usr/bin/python3', ['-B', '-c', `
+import importlib.util,json,sys,types
+spec=importlib.util.spec_from_file_location('dialog',sys.argv[1]);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+class States:
+ def contains(self,value): return True
+class Node:
+ def __init__(self,role,name='PRIVATE_CANARY',children=(),pid=123): self.role=role;self.name=name;self.children=children;self.pid=pid
+ def __iter__(self): return iter(self.children)
+ def getRoleName(self): return self.role
+ def getState(self): return States()
+ def get_process_id(self): return self.pid
+class BadPid(Node):
+ def get_process_id(self): raise RuntimeError('PRIVATE_ERROR')
+module.owned_process=lambda pid,owner:pid==owner
+scenarios=[[],[Node('application',pid=999)],[BadPid('application')],[Node('application',children=[Node('frame',children=[Node('document web',children=[Node('dialog')])])])],[Node('application',children=[Node('dialog')])]]
+output=[]
+for desktop in scenarios:
+ api=types.SimpleNamespace(STATE_ACTIVE='ACTIVE',STATE_SHOWING='SHOWING',STATE_ENABLED='ENABLED',Registry=types.SimpleNamespace(getDesktop=lambda index:desktop))
+ scan=module.native_dialogs(api,123);c=scan['counters']
+ output.append({'apps':c['applications'],'owned':c['ownedApplications'],'pidErrors':c['processIdErrors'],'web':c['webSubtreesSkipped'],'dialogs':c['nativeDialogs'],'truncated':scan['truncated'],'counters':c})
+print(json.dumps(output))
+`, python], { encoding: 'utf8' }));
+  assert.deepEqual(result.map(({ counters, ...summary }) => summary), [
+    { apps: 0, owned: 0, pidErrors: 0, web: 0, dialogs: 0, truncated: false },
+    { apps: 1, owned: 0, pidErrors: 0, web: 0, dialogs: 0, truncated: false },
+    { apps: 1, owned: 0, pidErrors: 1, web: 0, dialogs: 0, truncated: false },
+    { apps: 1, owned: 1, pidErrors: 0, web: 1, dialogs: 0, truncated: false },
+    { apps: 1, owned: 1, pidErrors: 0, web: 0, dialogs: 1, truncated: false },
+  ]);
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE_/);
+});
+
+
+test('accessibility bus bootstrap sets and verifies IsEnabled and activates the same registry bus', async () => {
+  const calls = [];
+  const run = async (command, args, options) => {
+    assert.equal(command, '/usr/bin/gdbus');assert.equal(options.timeout, 3000);calls.push(args);
+    if (args.includes('org.freedesktop.DBus.Properties.Get')) return { stdout: '(<true>,)\n' };
+    if (args.includes('org.a11y.Bus.GetAddress')) return { stdout: "('unix:path=/private/test-bus',)\n" };
+    return { stdout: '()\n' };
+  };
+  assert.deepEqual(await prepareNativeAccessibilityBus(run), { status: 'ready', enabled: true, registryReachable: true });
+  assert.deepEqual(calls[0].slice(-4), ['org.freedesktop.DBus.Properties.Set', 'org.a11y.Status', 'IsEnabled', '<true>']);
+  assert.ok(calls[3].includes('--address') && calls[3].includes('unix:path=/private/test-bus'));
+  for (const fail of ['disabled', 'no-address', 'registry']) {
+    await assert.rejects(prepareNativeAccessibilityBus(async (_command, args) => {
+      if (args.includes('org.freedesktop.DBus.Properties.Get')) return { stdout: fail === 'disabled' ? '(<false>,)' : '(<true>,)' };
+      if (args.includes('org.a11y.Bus.GetAddress')) return { stdout: fail === 'no-address' ? '()' : "('unix:path=/private/test-bus',)" };
+      if (args.includes('--address') && fail === 'registry') throw Error('private diagnostic');
+      return { stdout: '()' };
+    }), /NATIVE_ACCESSIBILITY_BUS_UNAVAILABLE/);
+  }
+});
+
+test('only owned Chrome receives the native accessibility override without inherited headless suppression', () => {
+  const original = { ACCESSIBILITY_ENABLED: '0', CHROME_HEADLESS: '1', OTHER: 'preserved' };
+  assert.deepEqual(nativeAccessibilityEnvironment(original), { ACCESSIBILITY_ENABLED: '1', OTHER: 'preserved' });
+  assert.equal(original.CHROME_HEADLESS, '1');assert.equal(original.ACCESSIBILITY_ENABLED, '0');
+});
+
+test('preflight reads native accessibility without invoking a permission action', async () => {
+  const result = await probeNativeChromeAccessibility(123, async (command, args, options) => {
+    assert.equal(command, '/usr/bin/python3');assert.ok(args.includes('--probe'));assert.equal(args.includes('--provider'), false);
+    assert.equal(options.timeout, 7000);return { stdout: '{"status":"unavailable","reason":"native_ax_not_ready","scan":{"ownedApplications":0}}' };
+  });
+  assert.equal(result.status, 'unavailable');assert.equal(result.scan.ownedApplications, 0);
+});
+
+test('native preflight requires an owned active window and a showing non-web control', () => {
+  const result = JSON.parse(execFileSync('/usr/bin/python3', ['-B', '-c', `
+import importlib.util,json,sys,types
+spec=importlib.util.spec_from_file_location('dialog',sys.argv[1]);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+clock=[0.0];module.time.monotonic=lambda:clock[0];module.time.sleep=lambda seconds:clock.__setitem__(0,clock[0]+seconds)
+class States:
+ def __init__(self,active):self.active=active
+ def contains(self,value):return value!='ACTIVE' or self.active
+class Node:
+ def __init__(self,role,children=(),active=True,pid=123):self.role=role;self.children=children;self.active=active;self.pid=pid;self.name=''
+ def __iter__(self):return iter(self.children)
+ def getRoleName(self):return self.role
+ def getState(self):return States(self.active)
+ def get_process_id(self):return self.pid
+module.owned_process=lambda pid,owner:pid==owner
+scenarios=[Node('application',[Node('frame',[Node('push button')])]),Node('application',[Node('frame',[Node('document web',[Node('push button')])])]),Node('application',[Node('frame',[Node('push button',active=False)],active=False)],active=False),Node('application',[Node('frame',[Node('push button')])],pid=999)]
+results=[]
+for app in scenarios:
+ clock[0]=0
+ api=types.SimpleNamespace(STATE_ACTIVE='ACTIVE',STATE_SHOWING='SHOWING',STATE_ENABLED='ENABLED',Registry=types.SimpleNamespace(getDesktop=lambda index:[app]))
+ sys.modules['pyatspi']=api
+ results.append(module.probe_native(123,1)['status'])
+print(json.dumps(results))
+`, python], { encoding: 'utf8' }));
+  assert.deepEqual(result, ['ready', 'unavailable', 'unavailable', 'unavailable']);
 });

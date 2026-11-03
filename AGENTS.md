@@ -2538,3 +2538,9 @@ Installed provider opt-in verification reads worker permissions before and after
 The CI browser runs headed under Xvfb for the native permission prompt, while the existing page viewport sizes remain unchanged inside a larger desktop window.
 Native confirmation is limited to an active dialog owned by the launched Chrome process tree, outside web documents, naming Geld and the exact requested provider hosts with one enabled Allow action.
 Unknown, ambiguous or inaccessible dialogs remain unconfirmed, and no direct permission grant API or blind keyboard input substitutes for that native confirmation.
+
+The read-only provider-evidence exporter accepts only the fixed GitLab captures and Bitbucket dashboard hidden/dark or named UI-failure captures emitted by the installed runner.
+It preserves the existing per-file, compressed-total and chunk limits and reports fixed Bitbucket UI status/custody fields without opening a browser or requesting provider data.
+Chrome's native ATK bridge is separate from renderer accessibility: the owned CI process sets `ACCESSIBILITY_ENABLED=1` and removes `CHROME_HEADLESS`, then uses the same isolated D-Bus session whose `org.a11y.Status.IsEnabled` is explicitly set and read back before Chrome starts.
+The accessibility preflight verifies that the real registry exposes an owned, showing, active native Chrome window with a showing native control outside web-document subtrees before requesting optional provider access.
+Missing native accessibility stops before the options click and records only bounded ownership, role and window-state counters; an empty dialog scan cannot prove a product permission failure.
