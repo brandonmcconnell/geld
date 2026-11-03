@@ -15,6 +15,24 @@ export function gitLabDisplayedOutlineProbe(action = 'read', target = null) {
   const KEY = '__geldGitLabDisplayedOutline';let store = globalThis[KEY];
   if (action === 'cleanup') { store?.cleanup();delete globalThis[KEY];return null; }
   const path = 'spec/graphql/mutations/boards/issues/issue_move_list_spec.rb';
+  const view = document.defaultView;
+  const metric = (value) => Number.isFinite(value) ? value : null;
+  const bounds = (rect) => Object.fromEntries(['left', 'right', 'top', 'bottom', 'width', 'height'].map((key) => [key, metric(rect[key])]));
+  const safeAttribute = (node, name) => { const value = node.getAttribute(name);return value !== null && /^[a-zA-Z0-9_!@:/ .-]{1,128}$/.test(value) ? value : null; };
+  const inspectChain = (start, button) => {
+    const nodes = [];let node = start;
+    while (node instanceof Element && nodes.length < 8) {
+      const style = getComputedStyle(node);const classes = [...node.classList];
+      nodes.push({ tag: node.tagName.toLowerCase(), id: safeAttribute(node, 'id'), classes: classes.filter((name) => /^[a-zA-Z0-9_!@:/.-]{1,96}$/.test(name)).slice(0, 16), classesTruncated: classes.length > 16,
+        testid: safeAttribute(node, 'data-testid'), qa: safeAttribute(node, 'data-qa'), role: safeAttribute(node, 'role'),
+        owned: node.hasAttribute('data-geld-ui'), ownedAncestor: node.closest('[data-geld-ui]') !== null, isButton: node === button, containsButton: node.contains(button),
+        style: Object.fromEntries(['position', 'zIndex', 'pointerEvents', 'display', 'visibility', 'overflowX', 'overflowY', 'clipPath', 'contain', 'transform', 'scrollMarginTop', 'scrollPaddingTop'].map((key) => [key, typeof style[key] === 'string' ? style[key].slice(0, 256) : null])),
+        bounds: bounds(node.getBoundingClientRect()), scroll: Object.fromEntries(['scrollTop', 'scrollLeft', 'scrollHeight', 'scrollWidth', 'clientHeight', 'clientWidth'].map((key) => [key, metric(node[key])])) });
+      node = node.parentElement;
+    }
+    return { nodes, truncated: node instanceof Element, maxNodes: 8 };
+  };
+
   const url = new URL(location.href);
   if (url.origin !== 'https://gitlab.com' || url.pathname !== '/gitlab-org/gitlab/-/merge_requests/266334/diffs' || url.search !== '?diff_id=2158520123' || url.username || url.password) return null;
   const native = (node) => node !== null && node.closest('[data-geld-ui]') === null;
@@ -66,7 +84,7 @@ export function gitLabDisplayedOutlineProbe(action = 'read', target = null) {
   const folds = [...root.querySelectorAll('[data-geld-provider-fold-row^="test:"]')].map((row) => {
     const button = row.querySelector('button');const next = row.nextElementSibling;const source = reading.find((line) => line.row === next);
     const rect = button?.getBoundingClientRect();const hit = rect ? document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) : null;
-    const control = rect ? { bounds: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height }, inViewport: rect.width > 0 && rect.height > 0 && rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight, unobscured: hit !== null && button.contains(hit) } : null;
+    const control = rect ? { bounds: bounds(rect), point: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }, inViewport: rect.width > 0 && rect.height > 0 && rect.left >= 0 && rect.top >= 0 && rect.right <= (view?.innerWidth ?? 0) && rect.bottom <= (view?.innerHeight ?? 0), unobscured: hit !== null && button.contains(hit), hitChain: inspectChain(hit, button), buttonChain: inspectChain(button, button) } : null;
     return { row, button, source, control, text: row.textContent, kind: row.dataset.kind, status: row.dataset.status, label: button?.getAttribute('aria-label') ?? '', title: row.querySelector('.geld-provider-line-fold__title')?.textContent ?? '', expanded: button?.getAttribute('aria-expanded') ?? null };
   });
   if (action === 'fold-button') return same ? folds.find((fold) => Number(fold.source?.next) === target)?.button ?? null : null;
@@ -78,6 +96,7 @@ export function gitLabDisplayedOutlineProbe(action = 'read', target = null) {
     controls: controls.map((node) => ({ direction: node.dataset.expandDirection, label: node.getAttribute('aria-label') })), viewed: viewed.map((node) => ({ checked: node.checked, disabled: node.disabled })), events: [...store.events],
     headers: headers.map((node) => ({ text: node.textContent.trim(), expanded: node.getAttribute('aria-expanded') })),
     visible: getComputedStyle(root).display !== 'none' && rectangle.width > 0 && rectangle.height > 0,
+    viewport: { width: metric(view?.innerWidth), height: metric(view?.innerHeight), scrollX: metric(view?.scrollX), scrollY: metric(view?.scrollY), documentScroll: document.scrollingElement == null ? null : Object.fromEntries(['scrollTop', 'scrollLeft', 'scrollHeight', 'scrollWidth', 'clientHeight', 'clientWidth'].map((key) => [key, metric(document.scrollingElement?.[key])])) },
     folds: folds.map(({ source, ...fold }) => ({ text: fold.text, kind: fold.kind, status: fold.status, label: fold.label, title: fold.title, expanded: fold.expanded, control: fold.control, sourceLine: source?.next ?? null })) };
 }
 
@@ -105,7 +124,7 @@ export function assertDisplayedOutlineRows(sample) {
 export function assertDisplayedOutlineControl(sample) {
   const control = sample.folds.find((fold) => fold.sourceLine === '103')?.control;
   assert.equal(control?.inViewport, true, 'The actual first outline control must be visible in the viewport');
-  assert.equal(control?.unobscured, true, 'Native overlays must not cover the actual outline control');
+  assert.equal(control?.unobscured, true, 'The actual outline control is covered at its click point.');
 }
 
 export async function verifyGitLabDisplayedOutline(page, { progress, poll, pollStable, capture, readSettings, writeSettings, readState, safeUrl, extensionId }) {
@@ -140,8 +159,9 @@ export async function verifyGitLabDisplayedOutline(page, { progress, poll, pollS
     assertDisplayedOutlineRows(progress.outlined);progress.outlinedCounts = await readState();assertDisplayedOutlineCounts(progress.beforeCounts, progress.outlinedCounts);
     const visibleHandle = await page.evaluateHandle(gitLabDisplayedOutlineProbe, 'fold-button', 103);
     try { const button = visibleHandle.asElement();assert.ok(button !== null);await button.scrollIntoView(); } finally { await visibleHandle.dispose(); }
-    progress.beforeCapture = await read();assertDisplayedOutlineRows(progress.beforeCapture);assertDisplayedOutlineControl(progress.beforeCapture);
-    progress.outlinedArtifacts = await capture(page, 'gitlab-displayed-outline', { fullPage: false });progress.afterCapture = await read();assertDisplayedOutlineRows(progress.afterCapture);assertDisplayedOutlineControl(progress.afterCapture);
+    progress.beforeCapture = await read();assertDisplayedOutlineRows(progress.beforeCapture);
+    progress.outlinedArtifacts = await capture(page, 'gitlab-displayed-outline', { fullPage: false });progress.afterCapture = await read();assertDisplayedOutlineRows(progress.afterCapture);
+    assertDisplayedOutlineControl(progress.beforeCapture);assertDisplayedOutlineControl(progress.afterCapture);
     progress.openFoldInput = await click('fold-button', 103);
     progress.opened = await poll(read, (sample) => sample?.sameSource && sample.folds.find((fold) => fold.sourceLine === '103')?.expanded === 'true', 'Trusted Show opens currently mounted original suite rows', 8000);
     assertDisplayedOutlineRows(progress.opened);assert.equal(progress.opened.sourceRows.find((row) => row.next === '104')?.hidden, false);

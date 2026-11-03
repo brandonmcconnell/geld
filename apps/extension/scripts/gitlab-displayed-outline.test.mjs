@@ -40,14 +40,14 @@ function counts() { return { runtime: { hasDiff: true, onDiffPage: true, reposit
 test('independent native/runtime count guards reject adjusted or missing totals', () => { const before = counts();assertDisplayedOutlineCounts(before, counts());const after = counts();after.native.headers[0].additions = 36;assert.throws(() => assertDisplayedOutlineCounts(before, after));after.native = before.native;after.runtime.visible.files = 3;assert.throws(() => assertDisplayedOutlineCounts(before, after)); });
 
 // Protocol-only state transitions exercise cleanup and trust refusal, never browser acceptance.
-function runner({ failClick = false, restoreFailure = false, countsFailure = false } = {}) {
+function runner({ failClick = false, restoreFailure = false, countsFailure = false, coveredControl = false, captureFailure = false } = {}) {
  const progress = {};const original = { testOutline: false, enabled: true, future: { retained: true } };let settings = structuredClone(original);let tests = false;let opened = false;let expected;const order = [];const listeners = new Map();
  const rows = Array.from({ length: 44 }, (_, index) => ({ next: String(index + 1), hidden: false, newText: 'other' }));for (const d of GITLAB_DISPLAYED_OUTLINE.declarations) rows[rows.length - GITLAB_DISPLAYED_OUTLINE.declarations.indexOf(d) - 1] = { next: String(d.line), hidden: false, newText: `context '${d.title}' do\n` };rows[0] = { next: '104', hidden: false, newText: 'body' };
- const read = () => ({ ...sample(), sourceRows: rows, controls: [{}, {}, {}], visible: tests, headers: [{ text: 'Essential 2', expanded: String(!tests) }, { text: 'Tests 1', expanded: String(tests) }], folds: settings.testOutline ? sample().folds.map((fold) => ({ ...fold, expanded: fold.sourceLine === '103' ? String(opened) : 'false' })) : [] });
+ const read = () => ({ ...sample(), sourceRows: rows, controls: [{}, {}, {}], visible: tests, headers: [{ text: 'Essential 2', expanded: String(!tests) }, { text: 'Tests 1', expanded: String(tests) }], folds: settings.testOutline ? sample().folds.map((fold) => ({ ...fold, expanded: fold.sourceLine === '103' ? String(opened) : 'false', control: { ...fold.control, unobscured: fold.sourceLine === '103' ? !coveredControl : fold.control.unobscured } })) : [] });
  const page = { isClosed: () => false, on: (name, fn) => listeners.set(name, fn), off: (name) => listeners.delete(name), evaluate: async (fn, action, target) => {
    if (action === 'cleanup') return null;if (action === 'arm') { expected = target;return true; }if (action === 'click-result') return { trusted: !failClick };return read();
   }, evaluateHandle: async (fn, action, target) => ({ asElement: () => ({ scrollIntoView: async () => {}, click: async () => { order.push(['input', action, target]);if (!failClick) { if (action === 'category-button') tests = target === 'Tests';else opened = true; } } }), dispose: async () => {} }) };
- const dependencies = { progress, poll: async (fn, accepts) => { const value = await fn();assert.ok(accepts(value), 'Synthetic protocol refused current phase');return value; }, pollStable: async (fn, accepts) => { const value = await fn();assert.ok(accepts(value));return value; }, capture: async (p, name, config) => { assert.equal(config.fullPage, false);order.push(['capture', name]);return {}; }, readSettings: async () => structuredClone(settings), writeSettings: async (value) => { if (value.testOutline === false && restoreFailure) throw Error('Synthetic settings restore failed');settings = structuredClone(value);order.push(['settings', value.testOutline]); }, readState: async () => { const value = counts();if (countsFailure && settings.testOutline) value.native.headers[0].additions = 36;return value; }, safeUrl: (value) => value, extensionId: 'synthetic' };
+ const dependencies = { progress, poll: async (fn, accepts) => { const value = await fn();assert.ok(accepts(value), 'Synthetic protocol refused current phase');return value; }, pollStable: async (fn, accepts) => { const value = await fn();assert.ok(accepts(value));return value; }, capture: async (p, name, config) => { assert.equal(config.fullPage, false);order.push(['capture', name]);if (captureFailure) throw Error('Synthetic outlined capture failed');return {}; }, readSettings: async () => structuredClone(settings), writeSettings: async (value) => { if (value.testOutline === false && restoreFailure) throw Error('Synthetic settings restore failed');settings = structuredClone(value);order.push(['settings', value.testOutline]); }, readState: async () => { const value = counts();if (countsFailure && settings.testOutline) value.native.headers[0].additions = 36;return value; }, safeUrl: (value) => value, extensionId: 'synthetic' };
  return { progress, original, current: () => settings, order, listeners, run: () => verifyGitLabDisplayedOutline(page, dependencies) };
 }
 test('protocol restores settings/category and records viewport artifacts after trusted outline flow', async () => { const r = runner();await r.run();assert.equal(r.progress.status, 'passed');assert.deepEqual(r.current(), r.original);assert.equal(r.progress.closed.visible, false);assert.equal(r.listeners.size, 0);assert.equal(r.progress.openedAfterCapture.folds[0].expanded, 'true'); });
@@ -62,4 +62,49 @@ test('unexpected owned-looking row metadata is not exempted from native preserva
 test('wrapping an original text node or changing its native number text fails preservation', () => {
  fixture();probe('setup');const text = document.querySelector('.rd-line-text').firstChild;const wrapper = document.createElement('span');text.parentElement.append(wrapper);wrapper.append(text);assert.equal(probe().sameSource, false);probe('cleanup');
  fixture();probe('setup');document.getElementById('native-line').textContent = '999';assert.equal(probe().sameSource, false);
+});
+
+
+function diagnosticFold() {
+ const root = fixture();probe('setup');
+ const row = document.createElement('tr');row.dataset.geldUi = '';row.dataset.geldProviderFoldRow = 'test:103';
+ const cell = document.createElement('td');const button = document.createElement('button');button.type = 'button';button.textContent = 'Owned outline';button.setAttribute('aria-expanded', 'false');
+ cell.append(button);row.append(cell);root.querySelector('tbody').prepend(row);
+ // Explicit synthetic protocol geometry. No native layout or actual occluder is inferred here.
+ button.getBoundingClientRect = () => new window.DOMRect(10, 20, 150, 30);
+ return { root, row, cell, button };
+}
+test('serialized hit proof records the actual returned node and separate button ancestry without text/application data or source writes', () => {
+ const { root, button, cell } = diagnosticFold();
+ const overlay = document.createElement('div');overlay.id = 'returned-hit';overlay.className = 'native-layer safe-class';overlay.dataset.testid = 'native-layer';overlay.dataset.qa = 'native-layout';overlay.setAttribute('role', 'presentation');overlay.dataset.applicationState = 'not-for-evidence';overlay.textContent = 'private-body-not-for-evidence';overlay.style.position = 'sticky';overlay.style.zIndex = '99';overlay.style.pointerEvents = 'auto';overlay.getBoundingClientRect = () => new window.DOMRect(5, 5, 300, 300);document.body.append(overlay);
+ cell.style.overflowY = 'hidden';cell.scrollTop = 13;const html = root.innerHTML;let calls = 0;
+ document.elementFromPoint = (x,y) => { calls++;assert.equal(x,85);assert.equal(y,35);return overlay; };
+ button.scrollIntoView = () => { throw Error('The diagnostic probe must not scroll'); };
+ const value = probe();const control = JSON.parse(JSON.stringify(value.folds[0].control));
+ assert.equal(value.sameSource,true);assert.equal(root.innerHTML,html);assert.equal(calls,1);assert.deepEqual(control.point,{x:85,y:35});assert.equal(control.inViewport,true);assert.equal(control.unobscured,false);
+ const hit = control.hitChain.nodes[0];assert.equal(hit.tag,'div');assert.equal(hit.id,'returned-hit');assert.deepEqual(hit.classes,['native-layer','safe-class']);assert.equal(hit.testid,'native-layer');assert.equal(hit.qa,'native-layout');assert.equal(hit.role,'presentation');assert.equal(hit.style.position,'sticky');assert.equal(hit.style.zIndex,'99');assert.equal(hit.style.pointerEvents,'auto');assert.equal(hit.owned,false);assert.equal(hit.containsButton,false);
+ assert.equal(control.buttonChain.nodes[0].isButton,true);assert.equal(control.buttonChain.nodes[0].ownedAncestor,true);assert.equal(control.buttonChain.nodes[1].style.overflowY,'hidden');assert.equal(control.buttonChain.nodes[1].scroll.scrollTop,13);
+ assert.ok(control.hitChain.nodes.length<=8&&control.buttonChain.nodes.length<=8);assert.doesNotMatch(JSON.stringify(control),/not-for-evidence|applicationState|innerHTML/);assert.equal(value.viewport.width,window.innerWidth);assert.equal(value.viewport.height,window.innerHeight);
+});
+test('hit metadata preserves null hits and genuine button descendants without claiming an unrelated ancestor as clickable', () => {
+ const { button } = diagnosticFold();document.elementFromPoint=()=>null;
+ let control=probe().folds[0].control;assert.equal(control.unobscured,false);assert.deepEqual(control.hitChain.nodes,[]);
+ const span=document.createElement('span');span.textContent='Visual label';button.append(span);document.elementFromPoint=()=>span;
+ control=JSON.parse(JSON.stringify(probe().folds[0].control));assert.equal(control.unobscured,true);assert.equal(control.hitChain.nodes[0].tag,'span');assert.equal(control.hitChain.nodes[1].isButton,true);
+ document.elementFromPoint=()=>button.parentElement;assert.equal(probe().folds[0].control.unobscured,false);
+});
+test('hit and button chains stay bounded, with explicit truncation and unsafe or oversized metadata omitted', () => {
+ const { button,cell }=diagnosticFold();let holder=document.createElement('div');document.body.append(holder);
+ for(let index=0;index<12;index++){const child=document.createElement('div');holder.append(child);holder=child;}
+ holder.id='x'.repeat(200);holder.className=Array.from({length:25},(_,i)=>`native-${i}`).join(' ');holder.dataset.testid='unsafe<markup>';document.elementFromPoint=()=>holder;
+ let parent=cell;for(let index=0;index<12;index++){const child=document.createElement('div');parent.append(child);parent=child;}parent.append(button);
+ const control=JSON.parse(JSON.stringify(probe().folds[0].control));assert.equal(control.hitChain.nodes.length,8);assert.equal(control.buttonChain.nodes.length,8);assert.equal(control.hitChain.truncated,true);assert.equal(control.buttonChain.truncated,true);assert.equal(control.hitChain.nodes[0].id,null);assert.equal(control.hitChain.nodes[0].testid,null);assert.equal(control.hitChain.nodes[0].classes.length,16);assert.equal(control.hitChain.nodes[0].classesTruncated,true);
+});
+test('covered line103 is captured before the unchanged strict assertion fails, with no substitute click and complete cleanup', async () => {
+ const r=runner({coveredControl:true});await assert.rejects(r.run(),/covered at its click point/);assert.equal(r.progress.status,'failed');assert.equal(r.progress.beforeCapture.folds[0].control.unobscured,false);assert.equal(r.progress.afterCapture.folds[0].control.unobscured,false);
+ const capture=r.order.findIndex(([kind,name])=>kind==='capture'&&name==='gitlab-displayed-outline');const restore=r.order.findIndex(([kind,value])=>kind==='settings'&&value===false);assert.ok(capture>=0&&capture<restore);assert.equal(r.order.some(([kind,action])=>kind==='input'&&action==='fold-button'),false);
+ assert.deepEqual(r.current(),r.original);assert.equal(r.progress.settings.restoration,'restored');assert.equal(r.progress.closed.visible,false);assert.equal(r.listeners.size,0);
+});
+test('a diagnostic capture failure restores settings, category and listeners without a feature pass', async () => {
+ const r=runner({captureFailure:true});await assert.rejects(r.run(),/capture failed/);assert.equal(r.progress.status,'failed');assert.deepEqual(r.current(),r.original);assert.equal(r.progress.closed.visible,false);assert.equal(r.listeners.size,0);
 });
