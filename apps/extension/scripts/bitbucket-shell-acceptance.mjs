@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
+import { prepareBitbucketPipelineConsent } from './bitbucket-pipeline-consent.mjs';
 import { observeBitbucketSyntaxSettings } from './bitbucket-syntax-settings.mjs';
 import { assertBitbucketPipelineURL, bitbucketPipelineVisitProbe, prepareBitbucketPipelineVisit } from './bitbucket-pipeline-visit.mjs';
 
@@ -99,7 +100,7 @@ export function observeBitbucketShellFixture(page, item, { safeUrl, extensionId 
   };
   const cleanup = () => { page.off('request', request);page.off('response', response);sessions.delete(page); };
   page.on('request', request);page.on('response', response);page.once('close', cleanup);
-  sessions.set(page, { evidence, flush: async () => { await Promise.all([...pending]); }, cleanup });
+  sessions.set(page, { evidence, safeUrl, flush: async () => { await Promise.all([...pending]); }, cleanup });
   item.shellNativeSources = evidence;
 }
 
@@ -239,6 +240,7 @@ export function verifyBitbucketShellContext(probe, expectedURL = REVIEW) {
   assert.equal(script.items.length, 1);const command = script.items[0];
   assert.ok(isScalar(command) && command.type === 'PLAIN');assert.equal(command.value, COMMAND);
   assert.equal(probe.rows.find((row) => row.next === 34)?.text, '    - ' + COMMAND);
+  return source;
 }
 
 export function assertBitbucketShellPreference(preference, probe) {
@@ -246,7 +248,7 @@ export function assertBitbucketShellPreference(preference, probe) {
 }
 
 export function verifyBitbucketShellSource(probe, expectedURL = REVIEW) {
-  verifyBitbucketShellContext(probe, expectedURL);
+  const source = verifyBitbucketShellContext(probe, expectedURL);
   assert.deepEqual(probe.invalidRanges, []);assert.equal(probe.prePaintSeen, true);assert.equal(probe.preserved, true, 'Syntax painting changed actual native source references/text/IDs/links/fonts');
   assert.ok(probe.nativeIds.includes('Lbitbucket-pipelines.ymlT34'));
   const row = probe.rows.find((value) => value.next === 34);assert.ok(row.links.some((link) => link[0] === '#Lbitbucket-pipelines.ymlT34' && link[1] === 'To line 34'));const ranges = probe.ranges.filter((range) => range.rowId === row.rowId);
@@ -303,7 +305,7 @@ export function assertBitbucketShellCounts(beforeCounts, beforeState, afterCount
   for (const key of ['all', 'visible', 'hiddenCount', 'repository', 'repo']) assert.deepEqual(afterState[key], beforeState[key], `Real tab ${key} changed during shell verification`);
 }
 
-export async function verifyBitbucketShell(page, item, { poll, pause, tabState, bitbucketDom, capture, guardBudget }) {
+export async function verifyBitbucketShell(page, item, { poll, pause, tabState, bitbucketDom, capture, guardBudget, prepareConsent = false, freshAnonymousProfile = false }) {
   const session = sessions.get(page);assert.ok(session !== undefined, 'Shell native observer must start before actual navigation');
   const { evidence } = session;const proof = { status: 'running', clicks: [], default: null, expanded: null, selection: null, mutations: evidence.mutations };
   item.shellSyntax = proof;
@@ -314,6 +316,19 @@ export async function verifyBitbucketShell(page, item, { poll, pause, tabState, 
     proof.visit = { requestStart: evidence.requests.length };evidence.phase = 'native_pipeline_selection';
     const visitURL = await prepareBitbucketPipelineVisit(page, { poll, progress: proof.visit, guardBudget, assertHead: () => assertHead(head) });
     await session.flush();assertHead(head);proof.visit.apiRequests = evidence.requests.slice(proof.visit.requestStart);
+    if (prepareConsent) {
+      proof.consent = {};evidence.phase = 'native_cookie_consent';
+      await prepareBitbucketPipelineConsent(page, { progress: proof.consent, poll, guardBudget, flush: session.flush, freshAnonymousProfile, safeUrl: session.safeUrl,
+        assertCurrent: () => { assertBitbucketPipelineURL(page.url(), visitURL);return assertHead(head); },
+        readState: async () => ({ counts: await bitbucketDom(page), state: await tabState(page), visit: await page.evaluate(bitbucketPipelineVisitProbe) }),
+        assertState: (before, after) => {
+          assertBitbucketShellCounts(before.counts, before.state, after.counts, after.state);
+          for (const value of [before.visit, after.visit]) { assert.equal(value?.sameSource, true);assert.equal(value.selected, true);assert.equal(value.pinned, visitURL); }
+          assert.deepEqual(after.visit, before.visit, 'Original native Pipeline tree link or selection changed during consent');
+        },
+      });
+    }
+    evidence.phase = 'native_pipeline_baseline';
     const baseline = await poll(() => page.evaluate(bitbucketShellProbe), (value) => value !== null && value.heading === FILE && value.rows.some((row) => row.next === 34), 'Actual native Pipelines file context');
     assertBitbucketPipelineURL(baseline.url, visitURL);
     assert.equal(baseline.rows.find((row) => row.old === 18 && row.next === 16)?.text, '          - docker');
@@ -361,6 +376,7 @@ export async function verifyBitbucketShell(page, item, { poll, pause, tabState, 
       proof.status = 'native_disabled';proof.limitations = ['Native context mechanics and absence of owned colors while native highlighting is disabled; no positive coloring or palette pass.'];return proof;
     }
     const painted = await poll(() => page.evaluate(bitbucketShellProbe), (value) => value !== null && value.actualStep && value.ownedCount > 0 && value.prePaintSeen && value.preserved, 'Actual original source gets shell ranges after native context expansion');
+    proof.expandedCandidate = painted;
     proof.expanded = verifyBitbucketShellSource(painted, visitURL);
     assert.deepEqual(painted.viewed, baseline.viewed, 'Native Viewed state changed during shell coloring');
     evidence.phase = 'native_source_selection';
