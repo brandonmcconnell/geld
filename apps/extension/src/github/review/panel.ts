@@ -616,6 +616,7 @@ function pointerChevron(onGo: () => void): HTMLElement {
 
 
 let approveIds = 0;
+const APPROVE_RETRY_MS = 5000;
 
 /**
  * "Run" on the CI row: GitHub's "Approve workflows to run", whose section the
@@ -634,6 +635,11 @@ function approveWorkflowsControl(label: string, onApprove: () => void): HTMLElem
     if (button.disabled) return;
     button.disabled = true;
     onApprove();
+    // An approval that went through takes GitHub's button away and the rebuilt panel drops this control; one that did
+    // not leaves both, and the panel's signature unchanged, so the control is offered again here.
+    window.setTimeout(() => {
+      if (button.isConnected) button.disabled = false;
+    }, APPROVE_RETRY_MS);
   });
   return createElement('span', { class: `${PANEL_CLASS}__approve-run-wrap` }, [button, tip]);
 }
@@ -1958,7 +1964,11 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     const health = checksHealth(counts);
     const open = model.openKey === CHECKS_KEY;
     // The breakdown is the information; the total and a second overall glyph on the right only repeated it.
-    const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${CHECKS_KEY}`, 'aria-label': checksSummary(counts) }, [checksBreakdown(counts)]);
+    // With nothing but waiting workflows there are no counts to show or name the row by: GitHub's heading does both.
+    const waitingOnly = model.checks === null ? model.workflowApproval : null;
+    const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${CHECKS_KEY}`, 'aria-label': waitingOnly ?? checksSummary(counts) }, [
+      waitingOnly === null ? checksBreakdown(counts) : createElement('span', { class: `${PANEL_CLASS}__detail` }, [waitingOnly]),
+    ]);
     mainClickToggles(main, () => handlers.onToggle(CHECKS_KEY));
     const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(checksTone(counts, model.requiredFailing) === 'bad' ? 'bad' : null) }, [
       createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [model.checksRing ?? checksRing(counts)]),
