@@ -2489,3 +2489,9 @@ Keep that limit and its carried history intact when arranging focused UI checks,
 
 GNU tar can finish extracting a requested member before Node has written a full repository archive into its stdin.
 The malicious PAX license fixture uses a temporary archive file to avoid an EPIPE race while preserving its exact extracted-size, hash and verifier-rejection assertions.
+
+The bounded Bitbucket UI continuity case starts on public PR22, checkpoints its real comment digest, then clicks the original native Files tab once on the same document.
+Earlier independent PR27 diff and PR22 overview runs each observed 26 standard API requests, so combining two fresh page bootstraps does not fit the unchanged 40-request budget.
+The continuity case corroborates public tab-state totals with the read-only complete-result cache and actual native file inventory, without writing cache entries or issuing an oracle request.
+A changed cache identity, untrusted input, full document navigation, missing native file or exhausted budget leaves the combined case incomplete while preserving its earlier digest checkpoint.
+The independent `bitbucket-diff` and `bitbucket-comment` focuses remain available to verify the unfinished half in a later eligible window.
