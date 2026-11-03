@@ -46,7 +46,7 @@ export default function HomePage() {
           </div>
         </div>
         {/* Wider than the page's column: the scenes need a GitHub-sized window beside their words. */}
-        <div className="mx-auto mt-12 w-full max-w-7xl px-5 sm:px-8 stage:mt-24">
+        <div className="container-wide mt-12 stage:mt-24">
           <Tour />
         </div>
         <div className="container-site mt-20 flex flex-col items-center text-center stage:mt-12">

@@ -1389,6 +1389,7 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
   the Vercel ignore script watches the folder.
   The logo reel (`components/logo-reel.tsx`) lists `lib/customers.ts` twice on one track that slides by half, so the loop has no seam, and never pauses;
   with reduced motion it is one still, wrapping row.
+  The reel and the tour share `container-wide` (globals.css), wider than the page's column, and one copy of the list must stay wider than it, or a logo would show twice at once.
   Each logo is a single-colour SVG in `public/logos/` drawn as a CSS mask in the text colour, so it follows both schemes;
   a company whose logo is a mark alone gets its name set beside it, as its own site does.
   The feature tour (`components/tour/`) walks nine features in three chapters, each a live scene in a trimmed GitHub window (`PrWindow`): categories, counts, test titles, workflow shell highlighting, the description outline, the digest, Request a review, the review group and the status pill.

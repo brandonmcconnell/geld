@@ -190,6 +190,11 @@
   @apply mx-auto w-full max-w-5xl px-5 sm:px-8;
 }
 
+/* A wider column for what needs the room beside the page's text: the tour's windows, the logo reel. */
+@utility container-wide {
+  @apply mx-auto w-full max-w-7xl px-5 sm:px-8;
+}
+
 /* The logo reel's window: logos fade in and out at both edges while they move. */
 @utility logo-reel {
   overflow: hidden;

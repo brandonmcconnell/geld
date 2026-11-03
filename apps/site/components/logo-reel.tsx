@@ -5,13 +5,15 @@ import type { Customer } from '@/lib/customers';
 import { CUSTOMERS } from '@/lib/customers';
 
 /**
- * An endless, non-interactive reel of customer logos. The list is rendered
+ * An endless reel of customer logos that never pauses. The list is rendered
  * twice and the track slides by exactly one copy, so the loop has no seam.
- * With reduced motion it is one still, wrapping row instead.
+ * With reduced motion it is one still, wrapping row instead. One copy must
+ * stay wider than `container-wide` (1216px of content), or a logo would show
+ * twice at once.
  */
 export function LogoReel({ className }: { readonly className?: string }) {
   return (
-    <section aria-labelledby="customers-heading" className={cn('container-site', className)}>
+    <section aria-labelledby="customers-heading" className={cn('container-wide', className)}>
       <h2 id="customers-heading" className="text-center text-sm text-muted-foreground">
         Used by founders and engineers at
       </h2>
