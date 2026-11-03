@@ -2,6 +2,7 @@ import { cn } from 'cn';
 import { GitMergeIcon, GitPullRequestClosedIcon, GitPullRequestDraftIcon, GitPullRequestIcon } from 'lucide-react';
 
 import type { PrState } from '@/components/tour/bits';
+import { TOUR_FILES } from '@/components/tour/data';
 import { STATE_COLOR } from '@/components/tour/bits';
 
 export type PrTab = 'conversation' | 'commits' | 'checks' | 'files';
@@ -10,7 +11,7 @@ const TABS: readonly { readonly id: PrTab; readonly label: string; readonly coun
   { id: 'conversation', label: 'Conversation', count: 6, path: '' },
   { id: 'commits', label: 'Commits', count: 4, path: '/commits' },
   { id: 'checks', label: 'Checks', count: 18, path: '/checks' },
-  { id: 'files', label: 'Files changed', count: 14, path: '/files' },
+  { id: 'files', label: 'Files changed', count: TOUR_FILES.length, path: '/files' },
 ];
 
 const STATE_WORD: Record<PrState, string> = { open: 'Open', draft: 'Draft', merged: 'Merged', closed: 'Closed' };
@@ -88,7 +89,11 @@ export function PrWindow({
         </div>
       </div>
       <div className="mt-2 flex shrink-0 items-end justify-between gap-3 border-b px-2">
-        <ul className="-mb-px flex min-w-0 items-end overflow-hidden text-[0.8125rem] text-muted-foreground" aria-label="Pull request tabs">
+        {/* Clickable tabs all stay, scrolling sideways when they do not fit; a static bar drops the ones nobody needs on a narrow window. */}
+        <ul
+          className={cn('-mb-px flex min-w-0 items-end text-[0.8125rem] text-muted-foreground', onTab ? 'overflow-x-auto [scrollbar-width:none]' : 'overflow-hidden')}
+          aria-label="Pull request tabs"
+        >
           {TABS.map((entry) => {
             const active = entry.id === tab;
             const count = entry.id === 'files' && filesCount !== undefined ? filesCount : entry.count;
@@ -105,7 +110,7 @@ export function PrWindow({
               active ? 'border-[#fd8c73] font-medium text-foreground' : 'border-transparent',
             );
             return (
-              <li key={entry.id} className={cn(entry.id !== 'files' && entry.id !== tab && '@max-xl:hidden')}>
+              <li key={entry.id} className={cn('shrink-0', !onTab && entry.id !== 'files' && entry.id !== tab && '@max-xl:hidden')}>
                 {onTab ? (
                   <button type="button" aria-current={active ? 'page' : undefined} onClick={() => onTab(entry.id)} className={cn(classes, 'outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50')}>
                     {content}

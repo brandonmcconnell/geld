@@ -99,7 +99,7 @@ const STEPS: readonly Step[] = [
 ];
 
 /**
- * The home page's feature tour. On wide screens the steps scroll past a
+ * The home page's feature tour. On wide, tall screens the steps scroll past a
  * sticky window that shows the last step whose top has passed the middle of the viewport; on
  * narrow ones each step carries its own window. Every scene is live.
  */
@@ -133,8 +133,8 @@ export function Tour() {
   }, []);
 
   return (
-    <div className="lg:grid lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] lg:gap-12 xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] xl:gap-20">
-      <ol className="flex flex-col gap-16 lg:gap-0">
+    <div className="stage:grid stage:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] stage:gap-12 stage-xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] stage-xl:gap-20">
+      <ol className="flex flex-col gap-16 stage:gap-0">
         {STEPS.map((step, index) => {
           const chapterStart = index === 0 || STEPS[index - 1]?.chapter !== step.chapter;
           const isActive = index === active;
@@ -144,9 +144,9 @@ export function Tour() {
               ref={(element) => {
                 steps.current[index] = element;
               }}
-              className="flex flex-col justify-center lg:min-h-[78vh]"
+              className="flex flex-col justify-center stage:min-h-[78vh]"
             >
-              <div className={cn('transition-opacity duration-500 lg:max-w-sm', !isActive && 'lg:opacity-35')}>
+              <div className={cn('transition-opacity duration-500 stage:max-w-sm', !isActive && 'stage:opacity-35')}>
                 {chapterStart ? <p className="mb-5 font-mono text-[0.8125rem] font-medium tracking-[0.12em] text-muted-foreground uppercase">{step.chapter}</p> : null}
                 <p className="flex items-center gap-3 font-mono text-sm text-muted-foreground tabular-nums">
                   {String(index + 1).padStart(2, '0')}
@@ -161,7 +161,7 @@ export function Tour() {
                   {step.hint}
                 </p>
               </div>
-              <div className="mt-6 lg:hidden">
+              <div className="mt-6 stage:hidden">
                 <Plate>
                   <step.Scene />
                 </Plate>
@@ -171,7 +171,7 @@ export function Tour() {
         })}
       </ol>
 
-      <div className="hidden lg:block">
+      <div className="hidden stage:block" data-tour-stage>
         <div className="sticky top-[max(4.5rem,calc(50vh-18.25rem))]">
           <Plate className="h-[40rem]">
             <div className="grid h-full grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]">

@@ -51,7 +51,7 @@ export function RequestScene() {
 
   const run = (): void => {
     const picked = lines.filter((line) => ticked.has(line.bot));
-    setPosted((current) => [...current, ...picked.map((line) => line.trigger)]);
+    setPosted((current) => [...current, ...picked.map((line) => line.trigger)].slice(-START.length));
     setLines((current) => current.map((line) => (ticked.has(line.bot) ? { ...line, state: 'running' } : line)));
     setMenuOpen(false);
     setTicked(new Set());

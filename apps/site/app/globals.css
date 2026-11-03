@@ -70,6 +70,14 @@
   --animate-logo-reel: logo-reel 50s linear infinite;
 }
 
+/*
+ * Where the feature tour uses its sticky stage: wide, and tall enough for the
+ * 40rem stage under its 4.5rem sticky offset with a little room below.
+ * Anywhere shorter the tour keeps the inline layout phones get.
+ */
+@custom-variant stage (@media (width >= 64rem) and (height >= 46rem));
+@custom-variant stage-xl (@media (width >= 80rem) and (height >= 46rem));
+
 /* Base UI exposes open/closed state as bare data attributes. */
 @custom-variant data-open (&:where([data-open]:not([data-open="false"])));
 @custom-variant data-closed (&:where([data-closed]:not([data-closed="false"])));

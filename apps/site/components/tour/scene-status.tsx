@@ -65,7 +65,7 @@ export function StatusScene() {
 
   const change = (to: PrState): void => {
     setState(to);
-    setEvents((current) => [...current, to]);
+    setEvents((current) => [...current, to].slice(-2));
     setMenuOpen(false);
   };
 
@@ -80,7 +80,6 @@ export function StatusScene() {
         <button
           ref={pillRef}
           type="button"
-          aria-haspopup="menu"
           aria-expanded={menuOpen}
           aria-label={oneClick ? 'Merge now: Squash and merge' : `${stateWord(state)}. Change the status`}
           onClick={(event) => (event.metaKey || event.ctrlKey) && state === 'open' ? change('merged') : setMenuOpen((value) => !value)}
@@ -94,7 +93,6 @@ export function StatusScene() {
           <ChevronDownIcon aria-hidden="true" strokeWidth={2.5} className={cn('-mr-1 size-3 opacity-80 transition-transform', menuOpen && 'rotate-180')} />
         </button>
         <span
-          role="menu"
           className={cn(
             'absolute top-full left-0 z-20 mt-1.5 flex w-60 origin-top-left flex-col rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl transition-[opacity,transform] duration-200',
             menuOpen ? 'scale-100 opacity-100' : 'pointer-events-none scale-95 opacity-0',
@@ -105,7 +103,6 @@ export function StatusScene() {
             <button
               key={option.to}
               type="button"
-              role="menuitem"
               onClick={() => change(option.to)}
               className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[0.8125rem] font-medium text-foreground outline-none hover:bg-muted focus-visible:bg-muted"
             >

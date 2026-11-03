@@ -4,6 +4,7 @@ import { cn } from 'cn';
 import { ChevronRightIcon, FileCodeIcon } from 'lucide-react';
 import { useState } from 'react';
 
+import { TOUR_FILES } from '@/components/tour/data';
 import { PrWindow } from '@/components/tour/pr-window';
 
 type Kind = 'add' | 'del' | 'ctx';
@@ -69,7 +70,8 @@ export function TestsScene() {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set(['calls onChange when controlled']));
   // One test open at a time keeps the file inside the window.
   const toggle = (title: string): void => setOpen((previous) => (previous.has(title) ? new Set() : new Set([title])));
-  const total = countsOf(TESTS.flatMap((test) => test.lines));
+  // The whole file's count, as every other scene shows it; the tests below are only the hunks that changed most.
+  const total = TOUR_FILES.find((file) => file.path === 'src/Button.test.tsx') ?? countsOf(TESTS.flatMap((test) => test.lines));
 
   return (
     <PrWindow tab="files" filesCount={6}>
