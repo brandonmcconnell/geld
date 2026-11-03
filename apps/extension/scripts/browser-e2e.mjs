@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
 import { commentBodyPresentationProbe, compareCommentBodyPresentation } from './comment-body-branding.mjs';
 import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-list-row.mjs';
+import { bitbucketColdChipVisibilityProbe, bitbucketCountIntentRequests } from './bitbucket-cold-chip.mjs';
 import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-shell-acceptance.mjs';
 
 const extensionRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -1946,7 +1947,9 @@ async function bitbucketListCounts(page, item) {
   const fixture = BB_PR27_DIFF_FIXTURE;
   const selector = 'tr[data-qa="pull-request-row"]:has(a[data-qa="pull-request-row-link"][href="/atlassian/bitbucket-upload-file/pull-requests/27"]) .geld-provider-list-counts';
   const requests = [];
+  let observedRequestCount = 0;
   const request = (request) => {
+    observedRequestCount += 1;
     if (!bitbucketApi(request.url())) return;
     const url = new URL(request.url());
     const initiator = request.initiator?.();
@@ -1978,6 +1981,17 @@ async function bitbucketListCounts(page, item) {
     const coldLabel = await poll(targetLabel, (value) => value !== null && value !== '', 'Visible native-row chip is available for actual anonymous pointer intent');
     await poll(passive, (value) => value.otherChips.length > 0, 'Other actual native list rows expose passive anonymous chips');
     const passiveBeforeIntent = await assertPassive();
+    const requestsBeforeVisibility = requests.length;
+    const allRequestsBeforeVisibility = observedRequestCount;
+    const coldChipVisibility = await page.evaluate(bitbucketColdChipVisibilityProbe);
+    const passiveAfterVisibility = await assertPassive();
+    const coldChipRequestDelta = { all: observedRequestCount - allRequestsBeforeVisibility, api: requests.length - requestsBeforeVisibility };
+    const countIntentRequests = bitbucketCountIntentRequests(requests.slice(requestsBeforeVisibility));
+    identityEvidence.coldChipVisibility = { ...coldChipVisibility, requestDelta: coldChipRequestDelta, passiveAfterVisibility, countIntentRequests };
+    assert.deepEqual(countIntentRequests, [], 'Read-only cold-chip geometry must not acquire extension-attributed sources, diffs or Geld configuration');
+    assert.equal(coldChipVisibility.truncated, false, 'Cold-chip coverage must not silently exceed its bounded source limit');
+    assert.ok(coldChipVisibility.rows.some((row) => row.href === '/atlassian/bitbucket-upload-file/pull-requests/25'), 'The actual long-title PR25 cold chip must be covered before any count intent');
+    assert.equal(coldChipVisibility.allVisible, true, `Every fully on-screen cold instruction must fit and remain unobscured: ${JSON.stringify(coldChipVisibility)}`);
     const beforeIntentLabel = await targetLabel();
     if (focus === 'bitbucket-list') {
       assert.equal(coldLabel, 'Hover to count changes', 'Isolated list verification must start with a cold source');
@@ -2041,8 +2055,8 @@ async function bitbucketListCounts(page, item) {
     assert.deepEqual(statsRestored.nativeIds, initial.nativeIds);assert.deepEqual(statsRestored.nativeLinks, initial.nativeLinks);
     await poll(passive, (value) => value.otherChips.length > 0, 'Other native rows restore their cold chips');
     const passiveAfterRestore = await assertPassive();
-    return { selection: 'Actual native multi-row list is retained without search dependency or DOM hiding. Only PR27 receives explicit count intent; other anonymous chips remain cold.', nativeList, nativeFilter, coldLabel, sourceDemand, passiveBeforeIntent, initial, pointer, keyboard, priorInstalledFixture: fixture, visible, filtered, filteredHover, restored, passiveAfterCounts, statsOff, statsRestored, passiveAfterRestore,
-      requestEvidence: { requests, extension: requests.filter((item) => item.extensionInitiator), nativeOrUnattributed: requests.filter((item) => !item.extensionInitiator), basis: 'Actual browser request initiator stacks identify extension frames when supplied; diff/diffstat immutable comparisons additionally retain from_pullrequest_id. Known native deployment400 responses are not count failures.' },
+    return { selection: 'Actual native multi-row list is retained without search dependency or DOM hiding. Only PR27 receives explicit count intent; other anonymous chips remain cold.', nativeList, nativeFilter, coldLabel, sourceDemand, passiveBeforeIntent, coldChipVisibility, passiveAfterVisibility, initial, pointer, keyboard, priorInstalledFixture: fixture, visible, filtered, filteredHover, restored, passiveAfterCounts, statsOff, statsRestored, passiveAfterRestore,
+      requestEvidence: { requests, coldChipRequestDelta, extension: requests.filter((item) => item.extensionInitiator), nativeOrUnattributed: requests.filter((item) => !item.extensionInitiator), basis: 'Actual browser request initiator stacks identify extension frames when supplied; diff/diffstat immutable comparisons additionally retain from_pullrequest_id. Known native deployment400 responses are not count failures.' },
       nativeFingerprint: createHash('sha256').update(JSON.stringify({ ids: initial.nativeIds, links: initial.nativeLinks })).digest('hex') };
   } finally {
     page.off('request', request);
