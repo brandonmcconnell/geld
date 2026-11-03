@@ -127,7 +127,7 @@ export class ProviderHttp {
 
   async bitbucketValues(path: string): Promise<readonly unknown[]> {
     const initial = this.url(path);
-    initial.searchParams.set('pagelen', '100');
+    initial.searchParams.set('pagelen', initial.pathname.endsWith('/activity') ? '50' : '100');
     const values: unknown[] = [];
     let next: URL | null = initial;
     const visited = new Set<string>();
