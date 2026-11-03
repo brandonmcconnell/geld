@@ -25,11 +25,7 @@ export default function HomePage() {
           <h1 id="hero-heading" className="text-[min(9.4cqi,4.5rem)] leading-[1.04] font-semibold tracking-tight whitespace-nowrap">
             <span className="block">{firstLine}</span> <span className="block">{secondLine}</span>
           </h1>
-          <p className="mt-6 max-w-2xl text-lg text-muted-foreground text-pretty sm:text-xl">
-            Review agents write the first pass now, yet reading a pull request still means scrolling a long timeline of comments and walking{' '}
-            <em>Files changed</em> one file at a time. Geld turns that into one digest of what needs you, a diff that starts with the code, and review
-            controls on every tab.
-          </p>
+          <p className="mt-6 text-xl tracking-tight text-muted-foreground text-balance sm:text-2xl">Less noise. More shipping.</p>
           <InstallButtons className="mt-8" size="lg" />
         </div>
       </section>
