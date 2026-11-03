@@ -2436,6 +2436,10 @@ That observer initializes before source intent, bounds every stream and never ch
 Native source-menu closure follows its original opener and captured popup, including closed popovers that remain connected during exit animation.
 Unrelated later popups are reported separately rather than counted as a leaked source menu.
 
+The installed Bitbucket context checks scroll original controls and source selection targets instantly before bounded hit testing.
+An inherited smooth-scroll policy can leave their old coordinates immediately after scrollIntoView returns, so a ready source alone does not prove pointer readiness.
+Source ownership is checked again after the hit-test wait and before the trusted click or drag.
+
 Bitbucket's native context reducer replaces its diff array even when the idle comparison's whitespace mode is unchanged, so an already-ready receipt retains the same store, panel, subject and exact boolean-or-unset value across that update.
 Native unified rows and chunks use array-index React keys, so prepending or merging context can legitimately replace previously displayed row nodes.
 A sealed PR source permits one eight-second continuation only when Geld activates the qualified original native gap control using the verified full-source lease.
