@@ -6391,6 +6391,12 @@ a.geld-review__rerun {
   margin-right: 4px;
 }
 
+/* The row's other controls (⋯, the gear, the chevron) are 28px squares; Run stands as tall, not at Rerun's 24px. */
+.geld-review__approve-run {
+  height: 28px;
+  padding: 0 8px;
+}
+
 .geld-review__approve-run .octicon {
   color: var(--fgColor-attention, var(--color-attention-fg));
 }
