@@ -4,13 +4,16 @@ import { readBitbucketDiff } from './diff';
 import { describeBitbucketProviderPage } from './page';
 import { bitbucketAdapter } from './index';
 import { BitbucketSourceReferences } from './source-reference';
-import { createBitbucketWholeTestAdapter } from './whole-test-context';
+import { bitbucketNextTestContext, createBitbucketWholeTestAdapter } from './whole-test-context';
 import { createBitbucketTransport } from './transport';
 import { ProviderHttpAdmission } from '../providers/http-admission';
 import { providerDiffSourceFacts, providerOutlineContext } from '../providers/source-facts';
 import type { ProviderDiffSourceFacts } from '../providers/source-facts';
 import { ProviderWholeTestContext } from '../providers/whole-test-context';
-import type { ProviderDiffResult } from '../providers/types';
+import type { ProviderDiffResult, ProviderPage } from '../providers/types';
+import { applyProviderLineFolds, clearProviderLineFolds } from '../providers/line-folds';
+import { BitbucketWhitespaceLease } from './whitespace-lease';
+import type { NativeWhitespaceSnapshot } from './whitespace-lease';
 
 vi.mock('wxt/utils/storage', () => ({ storage: { getItem: async () => null, setItem: async () => undefined, watch: () => () => undefined,
   defineItem: () => ({ getValue: async () => ({}), setValue: async () => undefined, watch: () => () => undefined }) } }));
@@ -19,7 +22,7 @@ const H = 'a'.repeat(40), B = 'b'.repeat(40), REF = H.slice(0, 12), PATH = 'test
 const source = ['def test_example():', '    first()', '    last()', ''];
 const sessions: (() => void)[] = [];
 function trustedClick(target: Element): void { const event = new MouseEvent('click', { bubbles: true });Object.defineProperty(event, 'isTrusted', { value: true });target.dispatchEvent(event); }
-function fixture(options: { popup?: 'valid' | 'absent' | 'duplicate' | 'foreign' | 'form' | 'wrong-ref' | 'wrong-path' | 'existing'; sourceRef?: string; source?: string; focus?: 'native' | 'external'; hiddenHeader?: boolean } = {}) {
+function fixture(options: { popup?: 'valid' | 'absent' | 'duplicate' | 'foreign' | 'form' | 'wrong-ref' | 'wrong-path' | 'existing'; sourceRef?: string; source?: string; focus?: 'native' | 'external'; hiddenHeader?: boolean; content?: string; diffMode?: ProviderPage['diffMode'] } = {}) {
   window.location.href = 'https://bitbucket.org/team/repo/pull-requests/27/diff';
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => new DOMRect(10, 10, 200, 24));
   document.body.innerHTML = `<div data-testid="pr-header"><div data-qa="pr-branches-and-state-styles"><div role="button" aria-haspopup="true" aria-expanded="false">source</div><div role="button" aria-haspopup="true" aria-expanded="false">main</div></div><div>#27 • updated</div><a href="/team/repo/src">repo</a></div><button data-selection aria-haspopup="true" aria-expanded="false">All changes</button>
@@ -33,7 +36,9 @@ function fixture(options: { popup?: 'valid' | 'absent' | 'duplicate' | 'foreign'
   const info = document.createElement('div');info.className = 'e1q0qh513';
   branches.before(wrapper);info.append(branches, metadata);author.append(info);wrapper.append(author);
   if (options.hiddenHeader) wrapper.style.visibility = 'hidden';
-  const page = describeBitbucketProviderPage(new URL(document.URL))!, entry = readBitbucketDiff(document)!.entries[0]!;
+  if (options.content !== undefined) document.querySelector('[data-qa="bk-file__content"]')!.innerHTML = options.content;
+  const originalPage = describeBitbucketProviderPage(new URL(document.URL))!;
+  const page = options.diffMode === undefined ? originalPage : { ...originalPage, diffMode: options.diffMode }, entry = readBitbucketDiff(document)!.entries[0]!;
   const facts = providerDiffSourceFacts(page, { kind: 'bitbucket-review', headSha: H, baseSha: B, sourceRepository: 'team/repo', sourceRef: options.sourceRef ?? REF, topic: true }, [{ path: PATH, newPath: PATH }])!;
   const result: ProviderDiffResult = { files: [{ path: PATH, additions: 1, deletions: 0, status: 'modified' }], revision: `${B}..${H}`, complete: true, sourceFacts: facts };
   const changed = vi.fn(), native = new BitbucketSourceReferences(document, changed);native.update(page, result);
@@ -56,14 +61,120 @@ function fixture(options: { popup?: 'valid' | 'absent' | 'duplicate' | 'foreign'
   const transport = createBitbucketTransport({ origin: () => 'https://bitbucket.org', store: { read: async () => 0, write: async () => undefined } });
   const fetcher = vi.fn(async () => new Response(options.source ?? source.join('\n'), { headers: { 'content-type': 'text/plain' } }));
   const feature = createBitbucketWholeTestAdapter(new ProviderHttpAdmission(undefined, 0), transport, fetcher);
-  const refresh = vi.fn(), manager = new ProviderWholeTestContext(bitbucketAdapter, feature, refresh);
+  let onRefresh: (() => void) | undefined;
+  const refresh = vi.fn(() => onRefresh?.()), manager = new ProviderWholeTestContext(bitbucketAdapter, feature, refresh);
   const update = (enabled = true): void => { const view = readBitbucketDiff(document)!;manager.update(page, result, view, { ...DEFAULT_SETTINGS, enabled }, providerOutlineContext(page, result, view));manager.mount(entry); };
   update();
   sessions.push(() => { manager.destroy();native.stop();transport.dispose(); });
   const click = (): void => { const button = entry.root.querySelector('[data-geld-test-boundaries]');if (button === null) throw new Error('Missing Find control');trustedClick(button); };
-  return { page, entry, facts, result, native, changed, opener, outside, clicks, ownedPopups, fetcher, manager, update, click };
+  return { page, entry, facts, result, native, changed, opener, outside, clicks, ownedPopups, fetcher, manager, update, click, onRefresh: (callback: () => void) => { onRefresh = callback; } };
 }
-afterEach(() => { for (const stop of sessions.splice(0)) stop();document.body.replaceChildren();vi.useRealTimers();vi.restoreAllMocks(); });
+afterEach(() => { clearProviderLineFolds();for (const stop of sessions.splice(0)) stop();document.body.replaceChildren();vi.useRealTimers();vi.restoreAllMocks(); });
+
+function nativeRow(n: number, text: string, old = n, kind = ' '): string {
+  const code = document.createElement('span');code.textContent = text;
+  return `<div class="lines-wrapper" role="row" data-key="code-line"><div data-qa="code-line"><div data-key="code-line-number" data-old-line-number="${old}" data-new-line-number="${n}"></div><pre><span data-line-type="${kind}">${code.innerHTML}</span></pre></div></div>`;
+}
+function nativeGap(): string { return '<div class="chunk-heading-wrapper"><div><button data-qa="pr-diff-show-more-lines-above">Above</button><button data-qa="pr-diff-show-more-lines-below">Below</button></div></div>'; }
+function nativeChunk(content: string): string { return `<div class="diff-chunk"><div class="diff-chunk-inner">${content}</div></div>`; }
+function highlightRows(root: HTMLElement): void {
+  for (const chunk of root.querySelectorAll<HTMLElement>('.diff-chunk')) {
+    chunk.setAttribute('role', 'rowgroup');const codes = [...chunk.querySelectorAll<HTMLElement>('[data-line-type]')];
+    for (const [i, code] of codes.entries()) {
+      const text = code.textContent ?? '';code.className = 'code-diff syntax-highlighted __rbb_syntax_highlight';code.setAttribute('role', 'gridcell');code.setAttribute('aria-label', `Unchanged: ${text}`);
+      if (i < codes.length - 1) code.append('\n');
+    }
+  }
+}
+async function prepared(highlighted = false) {
+  const f = fixture();if (highlighted) highlightRows(f.entry.root);f.click();await vi.waitFor(() => expect(f.fetcher).toHaveBeenCalledTimes(1));f.update();
+  const view = readBitbucketDiff(document)!, context = providerOutlineContext(f.page, f.result, view), revision = context.newSources.get(f.entry.root)!, body = f.manager.source(f.entry)!;
+  const step = bitbucketNextTestContext(f.entry, [1], { revision, source: body })!;
+  return { ...f, revision, body, step };
+}
+
+it.each([false, true])('accepts one source-proven index-key prepend with Syntax On %s', async highlighted => {
+  const f = await prepared(highlighted), content = f.entry.root.querySelector('[data-qa="bk-file__content"]')!;
+  expect(f.step.current()).toBe(true);f.step.activate();
+  content.innerHTML = nativeChunk(source.slice(0, 3).map((text, i) => nativeRow(i + 1, text)).join(''));
+  if (highlighted) highlightRows(f.entry.root);
+  expect(providerOutlineContext(f.page, f.result, readBitbucketDiff(document)!).newSources.size).toBe(1);
+  expect(f.manager.source(f.entry)?.lines).toEqual(source);
+  const row = content.querySelector('[data-qa="code-line"]')!;row.replaceWith(row.cloneNode(true));
+  expect(providerOutlineContext(f.page, f.result, readBitbucketDiff(document)!).newSources.size).toBe(0);
+});
+
+it('protects newly inserted context even when the previous native row survives', async () => {
+  const f = await prepared(), group = f.entry.root.querySelector('.diff-chunk-inner')!, row = group.querySelector('[data-qa="code-line"]')!;
+  f.step.activate();const holder = document.createElement('div');holder.innerHTML = nativeRow(1, source[0]!) + nativeRow(2, source[1]!);group.querySelector('.chunk-heading-wrapper')!.after(...holder.childNodes);
+  expect(providerOutlineContext(f.page, f.result, readBitbucketDiff(document)!).newSources.size).toBe(1);expect(row.isConnected).toBe(true);
+  group.querySelector('[data-line-type]')!.textContent = 'changed newly added row';
+  expect(providerOutlineContext(f.page, f.result, readBitbucketDiff(document)!).newSources.size).toBe(0);
+});
+
+it.each(['old tuple', 'duplicate', 'wrong gap', 'wrong old gap', 'source mismatch', 'no additions', 'expired', 'head'] as const)('rejects a native-context continuation with %s', async fault => {
+  const f = await prepared(), content = f.entry.root.querySelector('[data-qa="bk-file__content"]')!;
+  if (fault === 'expired') vi.useFakeTimers();
+  f.step.activate();
+  if (fault === 'expired') await vi.advanceTimersByTimeAsync(8001);
+  let rows = source.slice(0, 3).map((text, i) => nativeRow(i + 1, text));
+  if (fault === 'old tuple') rows[2] = nativeRow(3, 'changed');
+  if (fault === 'duplicate') rows.push(rows[0]!);
+  if (fault === 'wrong gap') rows.push(nativeRow(4, source[3]!));
+  if (fault === 'wrong old gap') rows[0] = nativeRow(1, source[0]!, 4);
+  if (fault === 'source mismatch') rows[0] = nativeRow(1, 'wrong new source');
+  if (fault === 'no additions') rows = [nativeRow(3, source[2]!)];
+  if (fault === 'head') f.native.update(f.page, { ...f.result, revision: 'other', sourceFacts: { ...f.facts, comparison: { ...f.facts.comparison, headSha: 'c'.repeat(40) } } });
+  content.innerHTML = nativeChunk(rows.join(''));
+  expect(providerOutlineContext(f.page, f.result, readBitbucketDiff(document)!).newSources.size).toBe(0);
+});
+
+it('does not arm a continuation from a wrong full revision or before native activation', async () => {
+  const f = await prepared(), content = f.entry.root.querySelector('[data-qa="bk-file__content"]')!, button = content.querySelector<HTMLButtonElement>('button')!, click = vi.fn();button.addEventListener('click', click);
+  const step = bitbucketNextTestContext(f.entry, [1], { revision: { ...f.revision, headSha: B }, source: f.body })!;step.activate();expect(click).not.toHaveBeenCalled();
+  content.innerHTML = nativeChunk(source.slice(0, 3).map((text, i) => nativeRow(i + 1, text)).join(''));
+  expect(providerOutlineContext(f.page, f.result, readBitbucketDiff(document)!).newSources.size).toBe(0);
+});
+
+it.each([false, true])('completes two native gap remounts and restores focus/selection with terminal expansion %s', async terminal => {
+  const full = ['def test_example():', '    first()', '    middle()', '    more()', '    last()', ''];
+  let state: NativeWhitespaceSnapshot = { owner: {}, settings: {}, subject: 'same-head', current: true, panel: {}, loadingCurrent: false, detached: false, value: false, unset: true, open: false, loading: false, busy: false, failed: false, diffLoading: false, statsLoading: false, diff: [], stats: [] };
+  let now = 0;const dispatch = vi.fn(), mode = new BitbucketWhitespaceLease(() => state, dispatch, () => undefined, () => now);
+  mode.update(true, false);now = 200;mode.tick();const ready = mode.state();expect(ready.status).toBe('ready');
+  const f = fixture({ source: full.join('\n'), diffMode: { ignoreWhitespace: false, current: () => mode.state() === ready }, content: nativeChunk(nativeGap() + nativeRow(3, full[2]!)) + nativeChunk(nativeGap() + nativeRow(5, full[4]!)) });
+  f.click();await vi.waitFor(() => expect(f.fetcher).toHaveBeenCalledTimes(1));f.update();
+  const paint = (): void => {
+    f.update();const view = readBitbucketDiff(document)!;
+    applyProviderLineFolds(view, f.result.files, DEFAULT_SETTINGS, providerOutlineContext(f.page, f.result, view), f.manager);
+  };
+  f.onRefresh(paint);paint();
+  const fold = f.entry.root.querySelector<HTMLButtonElement>('[data-geld-provider-fold-row^="test:"] button')!;
+  expect(fold).not.toBeNull();fold.focus();
+  const content = f.entry.root.querySelector('[data-qa="bk-file__content"]')!, clicks: string[] = [];
+  content.addEventListener('click', event => {
+    const target = event.target;if (!(target instanceof HTMLButtonElement) || !target.dataset.qa?.startsWith('pr-diff-show-more-lines-')) return;
+    clicks.push(target.dataset.qa);
+    state = { ...state, diff: [] };mode.tick();expect(mode.state()).toBe(ready);
+    // Native React keys include current chunk/row indices. Prepend and then merge
+    // recreate original rows and remove Geld's inserted fold note with the chunk.
+    if (clicks.length === 1) content.innerHTML = nativeChunk(full.slice(0, 3).map((text, i) => nativeRow(i + 1, text)).join('')) + nativeChunk(nativeGap() + nativeRow(5, full[4]!));
+    else content.innerHTML = nativeChunk(full.slice(0, 5).map((text, i) => nativeRow(i + 1, text)).join('') + (terminal ? '' : nativeGap()));
+  });
+  trustedClick(fold);
+  await vi.waitFor(() => expect(clicks).toHaveLength(2));paint();
+  const replacement = f.entry.root.querySelector<HTMLButtonElement>('[data-geld-provider-fold-row^="test:"] button')!;
+  expect(clicks).toEqual(['pr-diff-show-more-lines-above', 'pr-diff-show-more-lines-below']);
+  expect(fold.isConnected).toBe(false);expect(replacement).not.toBe(fold);expect(document.activeElement).toBe(replacement);
+  expect(replacement.getAttribute('aria-expanded')).toBe('true');expect(f.manager.source(f.entry)?.lines).toEqual(full);
+  expect(f.fetcher).toHaveBeenCalledTimes(1);expect(f.clicks).toEqual([false, false]);
+  const selection = document.querySelector('[data-selection]')!.outerHTML, viewed = f.entry.root.querySelector('input')!;
+  const selected = content.querySelector('[data-new-line-number="3"]')!.parentElement!.querySelector('[data-line-type]')!.firstChild!;
+  const range = document.createRange();range.selectNodeContents(selected);window.getSelection()!.removeAllRanges();window.getSelection()!.addRange(range);
+  clearProviderLineFolds();expect(content.querySelector('[data-geld-provider-fold-row]')).toBeNull();expect(content.querySelector('[data-geld-provider-line-hidden]')).toBeNull();
+  expect(document.querySelector('[data-selection]')!.outerHTML).toBe(selection);expect(viewed.checked).toBe(false);expect(f.manager.source(f.entry)).not.toBeNull();
+  expect(window.getSelection()!.anchorNode).toBe(selected);expect(window.getSelection()!.toString()).toBe(full[2]);
+  expect(dispatch).not.toHaveBeenCalled();mode.stop();
+});
 
 it('offers Find before a source grant and mediates one original open/close only after genuine intent', async () => {
   const f = fixture(), original = f.entry.root.querySelector('[data-qa="code-line"]')!, originalText = original.textContent;

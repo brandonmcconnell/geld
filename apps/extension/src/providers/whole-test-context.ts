@@ -18,12 +18,16 @@ export interface ProviderWholeSourcePreparation {
   current(): boolean;
   run(signal: AbortSignal, focus?: HTMLButtonElement): Promise<void>;
 }
+export interface ProviderNativeContextSource {
+  readonly revision: ProviderNewFileRevision;
+  readonly source: ProviderWholeSourceValue;
+}
 export interface ProviderWholeTestAdapter {
   readonly readSource: ProviderWholeSourceReader;
   createIntent(doc: Document): { readonly button: HTMLButtonElement; readonly text: HTMLElement };
   intentHost(entry: ProviderDiffEntry): HTMLElement | null;
   contextOmitted(entry: ProviderDiffEntry): boolean;
-  nextContext(entry: ProviderDiffEntry, missing: readonly number[]): ProviderNativeContextStep | null;
+  nextContext(entry: ProviderDiffEntry, missing: readonly number[], source?: ProviderNativeContextSource): ProviderNativeContextStep | null;
   paused(origin: string): boolean;
   prepareSource?(entry: ProviderDiffEntry): ProviderWholeSourcePreparation | null;
   readonly keepIntentFocusable?: boolean;
@@ -76,10 +80,12 @@ export class ProviderWholeTestContext implements ProviderWholeTestSession {
   mount(entry: ProviderDiffEntry): void {
     const latest = this.latest;const revision = latest?.context.newSources.get(entry.root);const host = this.feature.intentHost(entry);
     const preparation = revision === undefined ? this.feature.prepareSource?.(entry) ?? null : null;const key = revision?.key ?? preparation?.key;
-    if (!latest?.settings.enabled || !latest.settings.testOutline || key === undefined || host === null || latest.view.filteredPaths.has(entry.path) || !this.feature.contextOmitted(entry)) { this.remove(entry.root);return; }
+    if (!latest?.settings.enabled || !latest.settings.testOutline || key === undefined || host === null || latest.view.filteredPaths.has(entry.path)) { this.remove(entry.root);return; }
     let intent = this.files.get(entry.root);
     if (intent !== undefined && (intent.key !== key || intent.subject !== latest.context.subjectKey || intent.host !== host || intent.button.parentElement !== host
       || intent.status === 'idle' && intent.preparation !== null && !intent.preparation.current())) { this.remove(entry.root);intent = undefined; }
+    // The final native expansion may remove every gap; retain its proven source and fold focus.
+    if (!this.feature.contextOmitted(entry) && (intent?.status !== 'ready' || this.source(entry) === null)) { this.remove(entry.root);return; }
     if (intent === undefined) {
       const { button, text } = this.feature.createIntent(this.doc);button.type = 'button';button.classList.add('geld-provider-test-boundaries');button.setAttribute('data-geld-ui', '');button.setAttribute('data-geld-test-boundaries', '');
       intent = { text, root: entry.root, path: entry.path, key, subject: latest.context.subjectKey, host, button, preparation, preparing: false, status: this.attempted.has(key) || this.attempted.size >= 16 ? 'failed' : 'idle', abort: null, reveal: null };
@@ -184,7 +190,7 @@ export class ProviderWholeTestContext implements ProviderWholeTestSession {
         const bound = this.lease(intent);if (bound === null || this.feature.paused(bound.lease.revision.repository.origin)) return;
         const body = this.source(bound.entry);if (body === null) return;
         const missing = providerMissingNewLines(fold, bound.entry.readLines?.() ?? []);if (missing.length === 0) return;
-        const step = this.feature.nextContext(bound.entry, missing);
+        const step = this.feature.nextContext(bound.entry, missing, { revision: bound.lease.revision, source: body });
         if (step === null || !step.current() || !bound.lease.current() || signal.aborted || !open()) return;
         const stepDeadline = Math.min(deadline, Date.now() + 8000), control = focus?.current(), url = this.doc.URL;
         const canHandOff = !handedOff && step.insertedFocus !== undefined && control !== undefined && control !== null && this.doc.activeElement === control && control.isConnected && intent.root.contains(control);
