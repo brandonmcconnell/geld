@@ -7,7 +7,7 @@ import { ProviderPublishedReview } from './publication';
 import type { ProviderAiDependencies } from './ai';
 import { element } from './dom';
 import { renderProviderReviewPanel } from './review-panel';
-import type { ProviderReviewPanel } from './review-panel';
+import type { ProviderReviewPanel, ProviderSourceActionContext } from './review-panel';
 import type { ProviderAdapter, ProviderReviewPage, ProviderReviewSnapshot } from './types';
 import { isProviderReviewPage } from './types';
 import { ProviderNativeFind } from './native-find';
@@ -157,11 +157,28 @@ export class ProviderConversation {
       const repository = { provider: input.subject.provider, origin: input.subject.origin, path: input.subject.repository };
       const saveTrustedBot = this.services.saveTrustedBot;
       const saveTrustedPublisher = this.services.saveTrustedPublisher;
+      const actionGeneration = this.generation;
+      const actionKey = this.key;
+      const actionHead = input.subject.headSha;
       this.status?.remove(); this.status = null;
       const options = {
         updating: this.abort !== null,
         version: this.snapshotVersion,
-        ...(snapshot.sourceActions === undefined ? {} : { actionsForSource: (comment: ProviderReviewComment) => snapshot.sourceActions?.(comment).map((action) => ({ ...action, activate: (): Promise<boolean> => { this.revealOriginal(comment.anchor); return action.activate(); } })) ?? [] }),
+        ...(snapshot.sourceActions === undefined ? {} : { actionsForSource: (comment: ProviderReviewComment) => snapshot.sourceActions?.(comment).map((action) => ({ ...action, activate: async (context?: ProviderSourceActionContext): Promise<boolean> => {
+          const current = (): boolean => {
+            if (context?.current?.() === false || this.generation !== actionGeneration || this.key !== actionKey || this.snapshot !== snapshot
+              || snapshot.input.subject.headSha !== actionHead || action.kind === 'quote' && !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(actionHead)) return false;
+            const active = this.adapter.describe(new URL(window.location.href), document);
+            if (active === null || !isProviderReviewPage(active) || active.number !== input.subject.id || repositoryKey(active.repository) !== repositoryKey(repository)
+              || active.headSha !== null && active.headSha !== actionHead) return false;
+            const native = [...snapshot.comments, ...snapshot.input.threads.flatMap((thread) => thread.comments)].find((source) => source.id === comment.id && source.anchor === comment.anchor && source.url === comment.url);
+            return native !== undefined && JSON.stringify(native) === JSON.stringify(comment);
+          };
+          if (!current()) return false;
+          this.revealOriginal(comment.anchor);
+          if (!current()) return false;
+          return action.activate({ ...context, current });
+        } })) ?? [] }),
         ...(snapshot.renderComment === undefined ? {} : { renderComment: snapshot.renderComment }),
         ...(snapshot.authorPresentation === undefined ? {} : { authorPresentation: snapshot.authorPresentation }),
         onActionComplete: (): void => {
