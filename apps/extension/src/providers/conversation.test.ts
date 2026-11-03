@@ -117,6 +117,35 @@ function fixture(source = snapshot(), services: ProviderConversationServices = {
 }
 
 describe('provider conversation integrations', () => {
+  it('binds reviewer focus handoffs to current review, full native head, snapshot and enabled overview settings', async () => {
+    let context: ProviderSourceActionContext | undefined;
+    const activate = vi.fn(async (next?: ProviderSourceActionContext) => { context = next;return next?.current?.() === true; });
+    let described: ProviderReviewPage = page;
+    const source: ProviderReviewSnapshot = { ...snapshot(), reviewerControls: { kind: 'reviewer-controls', label: 'Reviewer controls', available: true, activate } };
+    const f = fixture(source, {}, { aiEnabled: false }, { describe: () => described });
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-reviewer-controls]')).not.toBeNull());
+    const button = f.host.querySelector<HTMLButtonElement>('[data-geld-reviewer-controls]');
+    button?.click();await vi.waitFor(() => expect(activate).toHaveBeenCalledOnce());expect(context?.current?.()).toBe(true);
+    described = { ...page, headSha: null };expect(context?.current?.()).toBe(false);
+    described = { ...page, number: '43', url: url.replace('/42', '/43') };expect(context?.current?.()).toBe(false);
+    described = { ...page, version: 'changed-selection' };expect(context?.current?.()).toBe(false);
+    described = page;expect(context?.current?.()).toBe(true);
+    f.apply(page, { ...DEFAULT_SETTINGS, enabled: false, prOverview: true });expect(context?.current?.()).toBe(false);
+    button?.click();expect(activate).toHaveBeenCalledOnce();
+  });
+
+  it('refreshes live reviewer control availability without fetching again or retaining a detached source capability', async () => {
+    let available = false;
+    const first = vi.fn(async () => true);const second = vi.fn(async () => true);let activate = first;
+    const source: ProviderReviewSnapshot = { ...snapshot(), get reviewerControls() { return { kind: 'reviewer-controls', label: 'Reviewer controls', available, activate }; } };
+    const f = fixture(source, {}, { aiEnabled: false });await vi.waitFor(() => expect(f.fetchReview).toHaveBeenCalledOnce());
+    expect(f.host.querySelector('[data-geld-reviewer-controls]')).toBeNull();
+    available = true;f.apply();expect(f.host.querySelector('[data-geld-reviewer-controls]')).not.toBeNull();
+    activate = second;f.apply();f.host.querySelector<HTMLButtonElement>('[data-geld-reviewer-controls]')?.click();
+    await vi.waitFor(() => expect(second).toHaveBeenCalledOnce());expect(first).not.toHaveBeenCalled();
+    available = false;f.apply();expect(f.host.querySelector('[data-geld-reviewer-controls]')).toBeNull();expect(f.fetchReview).toHaveBeenCalledOnce();
+  });
+
   it('relays an overview quote with no DOM head using the captured full API head and rejects changed API snapshots', async () => {
     const overview = { ...page, headSha: null };
     let context: ProviderSourceActionContext | undefined;

@@ -145,6 +145,7 @@ export interface ProviderReviewAction {
 }
 
 export interface ProviderReviewSnapshot {
+  readonly reviewerControls?: ProviderReviewSourceAction;
   readonly botRequests?: (input: ProviderReviewInput, comments: readonly ProviderReviewComment[], current: () => boolean) => readonly ProviderBotRequest[];
   readonly sourceCoverage?: ProviderSourceCoverage;
   readonly sourceActions?: (comment: ProviderReviewComment) => readonly ProviderReviewSourceAction[];

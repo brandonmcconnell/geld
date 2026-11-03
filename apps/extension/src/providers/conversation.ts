@@ -165,7 +165,18 @@ export class ProviderConversation {
       const actionHead = input.subject.headSha;
       this.status?.remove(); this.status = null;
       const references = this.adapter.readReferences?.(page, document, snapshot.events) ?? [];
+      const reviewerControls = snapshot.reviewerControls;
       const options = {
+        ...(reviewerControls === undefined ? {} : { reviewerControls: { ...reviewerControls, activate: async (context?: ProviderSourceActionContext): Promise<boolean> => {
+          const current = (): boolean => {
+            if (context?.current?.() === false || this.generation !== actionGeneration || this.key !== actionKey || this.snapshot !== snapshot || !snapshot.complete
+              || snapshot.input.subject.headSha !== actionHead || this.latestSettings?.enabled !== true || !this.latestSettings.prOverview) return false;
+            const active = this.adapter.describe(new URL(window.location.href), document);
+            return active !== null && isProviderReviewPage(active) && active.url === page.url && active.kind === page.kind && active.version === page.version
+              && active.diffPageUrl === page.diffPageUrl && active.headSha === actionHead;
+          };
+          return current() && reviewerControls.available ? reviewerControls.activate({ current }) : false;
+        } } }),
         botRequests: snapshot.botRequests?.(native, snapshot.comments, () => {
           if (this.generation !== actionGeneration || this.key !== actionKey || this.snapshot !== snapshot || this.latestSettings === null
             || snapshot.input.subject.headSha !== actionHead || !this.latestSettings.enabled || !this.latestSettings.prOverview) return false;
