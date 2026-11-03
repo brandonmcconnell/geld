@@ -8,7 +8,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
-import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, openProviderReviewAncestors, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
+import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, providerHeaderHintTarget, openProviderReviewAncestors, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
 import { commentBodyPresentationProbe, compareCommentBodyPresentation } from './comment-body-branding.mjs';
 import { BITBUCKET_LOCAL_REVIEW, localReviewStorageScope, observeLocalReview, verifyBitbucketLocalReview } from './bitbucket-local-reviewed.mjs';
 import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-list-row.mjs';
@@ -196,6 +196,24 @@ async function saveReport() {
     report.coverage = { focus, completeParity: false, passed: report.cases.filter((item) => item.status === 'passed').map((item) => item.name), notSelected: report.cases.filter((item) => item.status === 'not_selected').map((item) => item.name), failed: report.cases.filter((item) => item.status === 'failed').map((item) => item.name) };
     const failed = report.infrastructureErrors.length > 0 || report.cases.some((item) => item.status === 'failed');
     report.status = running ? 'running' : failed ? 'failed' : 'completed_with_unsupported_features';
+    const active = bitbucketRequestTimes.filter(at => at > Date.now() - 60 * 60 * 1000).sort((left, right) => left - right);
+    const limit = report.quotaPolicy?.conservativeObservedRequestBudget ?? null;
+    const stamp = value => Number.isFinite(value) ? new Date(value).toISOString() : null;
+    const summary = {
+      limit, externalReserve: report.quotaPolicy?.externalRequestReserve ?? 0,
+      inheritedAtStart: report.previousEvidence?.inheritedAnonymousRequestsWithinRollingHour ?? 0,
+      observedThisRun: report.observedBitbucketApiRequests ?? 0, activeWithinHour: active.length,
+      oldestActiveAt: stamp(active[0]), latestActiveAt: stamp(active.at(-1)),
+      availableBelowLimitAt: limit !== null && active.length >= limit ? stamp(active[active.length - limit] + 60 * 60 * 1000 + 1) : null,
+      inheritedCooldowns: Object.fromEntries(['github', 'gitlab', 'bitbucket'].map(provider => [provider, stamp(Date.parse(report.previousEvidence?.inheritedCooldowns?.[provider] ?? ''))])),
+      currentCooldowns: Object.fromEntries(['github', 'gitlab', 'bitbucket'].map(provider => [provider, stamp(cooldowns.get(provider))])),
+      cases: report.cases.slice(0, 100).map((item, index) => ({ index, observed: item.observedBitbucketApiRequests ?? 0, budgetHeld: item.budgetHold != null, serverRateLimited: item.holdReason === 'provider_http429', navigationSuppressed: item.navigationSuppressedByBudget === true || item.navigationSuppressedByCooldown === true })),
+    };
+    const signature = JSON.stringify(summary);
+    if (signature !== saveReport.lastQuotaSignature) {
+      console.log(`QUOTA_SUMMARY: ${JSON.stringify({ observedAt: new Date().toISOString(), ...summary })}`);
+      saveReport.lastQuotaSignature = signature;
+    }
     await writeFile(resolve(artifacts, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
   });
   return reportWrite;
@@ -1190,7 +1208,7 @@ async function installedHover(page, selector, interaction, artifactName, anchorS
   let keyboardNavigation;
   if (interaction === 'keyboard') {
     const previous = await page.evaluate((target) => {
-      const anchor = [...document.querySelectorAll(target)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
+      const anchor = [...(typeof target === 'string' ? document.querySelectorAll(target) : [target])].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
       const order = [...document.querySelectorAll('a[href], button, input, select, textarea, [tabindex]')].filter((node) => node.tabIndex >= 0 && !node.disabled && node.closest('[inert]') === null && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
       const at = order.indexOf(anchor);
       const describe = (node) => node == null ? null : { tag: node.tagName, id: node.id, testid: node.getAttribute('data-testid'), href: node.getAttribute('href'), tabindex: node.getAttribute('tabindex'), label: node.getAttribute('aria-label'), text: node.textContent.trim().slice(0, 120) };
@@ -1217,26 +1235,26 @@ async function installedHover(page, selector, interaction, artifactName, anchorS
       } else await page.keyboard.press('Tab');
       const stop = await page.evaluate((target) => {
         const node = document.activeElement;
-        return { target: [...document.querySelectorAll(target)].some((value) => value === node), tag: node?.tagName, id: node?.id, href: node?.getAttribute('href'), testid: node?.getAttribute('data-testid'), label: node?.getAttribute('aria-label'), text: node?.textContent.trim().slice(0, 120) };
+        return { target: [...(typeof target === 'string' ? document.querySelectorAll(target) : [target])].some((value) => value === node), tag: node?.tagName, id: node?.id, href: node?.getAttribute('href'), testid: node?.getAttribute('data-testid'), label: node?.getAttribute('aria-label'), text: node?.textContent.trim().slice(0, 120) };
       }, selector);
       keyboardNavigation.stops.push(stop);
       if (stop.target) break;
     }
     assert.equal(keyboardNavigation.stops.at(-1)?.target, true, `Real Tab traversal did not reach the count owner: ${JSON.stringify(keyboardNavigation)}`);
   } else {
-    const handle = await page.evaluateHandle((target) => [...document.querySelectorAll(target)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden') ?? null, selector);
+    const handle = await page.evaluateHandle((target) => [...(typeof target === 'string' ? document.querySelectorAll(target) : [target])].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden') ?? null, selector);
     const control = handle.asElement();
     assert.ok(control !== null, 'Visible count hover host is missing');
     await control.hover();
     await discardHandle(handle);
   }
   const snapshot = await poll(() => page.evaluate((target, anchorSelector) => {
-    const host = [...document.querySelectorAll(target)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
+    const host = [...(typeof target === 'string' ? document.querySelectorAll(target) : [target])].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
     const tip = document.querySelector('#geld-provider-count-tooltip[role="tooltip"]');
     if (tip === null || tip.hidden || getComputedStyle(tip).display === 'none') return null;
     const style = getComputedStyle(tip);
     const bounds = tip.getBoundingClientRect();
-    const anchor = anchorSelector === undefined ? null : [...document.querySelectorAll(anchorSelector)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0);
+    const anchor = anchorSelector === undefined ? null : [...(typeof anchorSelector === 'string' ? document.querySelectorAll(anchorSelector) : [anchorSelector])].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0);
     const anchorRect = anchor?.getBoundingClientRect();
     return { text: tip.textContent.replace(/\s+/g, ' ').trim(), fontFamily: style.fontFamily, fontSize: style.fontSize, lineHeight: style.lineHeight, color: style.color, background: style.backgroundColor, filter: style.filter,
       anchor: anchorRect === undefined ? null : { left: anchorRect.left, right: anchorRect.right, top: anchorRect.top, bottom: anchorRect.bottom }, caret: Number.parseFloat(style.getPropertyValue('--geld-provider-hover-caret')), placement: tip.getAttribute('data-placement'),
@@ -1293,12 +1311,15 @@ async function headerHintsEvidence(page, expectedLabel, groupSelector, name, int
     assert.deepEqual(hint.font, hint.nativeParentFont, 'Header hint does not inherit the native header typography');
   }
   if (!interactions) return measurement;
-  const anchorSelector = measurement.hints[0].wrapper ? '.geld-provider-header-stats' : hintSelector;
-  const pointer = await installedHover(page, groupSelector, 'pointer', `${name}-group-pointer`, anchorSelector);
-  const keyboardSelector = measurement.hints[0].nativeKeyboardAncestor ? groupSelector : measurement.hints[0].wrapperKeyboard ? '.geld-provider-header-stats' : hintSelector;
-  const keyboard = await installedHover(page, keyboardSelector, 'keyboard', `${name}-hint-keyboard`, anchorSelector);
-  assert.equal(pointer.text, keyboard.text, 'Native group and correctly selected keyboard hint/group totals disagree');
-  return { ...measurement, pointer, keyboard, keyboardSelector };
+  const anchor = await page.evaluateHandle(providerHeaderHintTarget, groupSelector, 'anchor');
+  const keyboardTarget = await page.evaluateHandle(providerHeaderHintTarget, groupSelector, 'keyboard');
+  try {
+    assert.ok(anchor.asElement() !== null && keyboardTarget.asElement() !== null, 'The actual native count group needs one associated visible hint and keyboard owner');
+    const pointer = await installedHover(page, groupSelector, 'pointer', `${name}-group-pointer`, anchor);
+    const keyboard = await installedHover(page, keyboardTarget, 'keyboard', `${name}-hint-keyboard`, anchor);
+    assert.equal(pointer.text, keyboard.text, 'Native group and correctly selected keyboard hint/group totals disagree');
+    return { ...measurement, pointer, keyboard, keyboardSelector: 'associated_native_group_hint_owner' };
+  } finally { await discardHandle(keyboardTarget);await discardHandle(anchor); }
 }
 
 async function browserZoom(page, factor) {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
 import { Window } from 'happy-dom';
-import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertProviderDashboard, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, openProviderReviewAncestors, providerDashboardProbe, providerUiProbe, verifyGitLabCategoryFallback } from './provider-ui-acceptance.mjs';
+import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertProviderDashboard, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, providerHeaderHintTarget, openProviderReviewAncestors, providerDashboardProbe, providerUiProbe, verifyGitLabCategoryFallback } from './provider-ui-acceptance.mjs';
 
 let window;
 let saved;
@@ -32,6 +32,25 @@ function reviewCandidates(states) {
     document.body.insertAdjacentHTML('beforeend', `<article id="note_${index + 1}"><div class="note-header"><a class="author-name-link" data-user-id="${index + 1}">Human</a></div></article>`);
   }
 }
+test('header hover uses the triggered tree hint even when an earlier NAV hint is visible', () => {
+  document.body.innerHTML = '<nav><a>Diff</a><span class="geld-provider-header-stats" tabindex="0" data-geld-hover-bound data-left="900"><span class="geld-provider-header-hidden-count">1 test</span></span></nav><div id="file-tree"><section tabindex="0" data-geld-hover-bound><h5>Lines updated</h5><div class="stats"><span class="geld-provider-header-stats" tabindex="-1" data-geld-hover-bound data-left="30"><span class="geld-provider-header-hidden-count">1 test</span></span><span class="native-add">+41</span></div><span class="geld-provider-accessible-counts">counts</span></section></div>';
+  const group = '#file-tree :has(> .geld-provider-accessible-counts)';
+  const anchor = providerHeaderHintTarget(group);
+  assert.equal(anchor, document.querySelector('#file-tree .geld-provider-header-stats'));
+  assert.notEqual(anchor, document.querySelector('.geld-provider-header-stats'));
+  assert.equal(providerHeaderHintTarget(group, 'keyboard'), document.querySelector('#file-tree section'));
+  assert.equal(providerHeaderHintTarget('.native-add'), anchor, 'native signed leaf resolves its own surrounding statistics hint');
+  document.querySelector('#file-tree .stats').insertAdjacentHTML('beforeend', '<span class="geld-provider-header-stats" data-geld-hover-bound tabindex="0">ambiguous</span>');
+  assert.equal(providerHeaderHintTarget(group), null, 'duplicate associated anchors fail closed');
+});
+test('a keyboard-owned wrapper resolves itself, and hidden unrelated hints never become anchors', () => {
+  document.body.innerHTML = '<div class="geld-provider-header-stats" hidden>old</div><section id="group"><span class="geld-provider-header-stats" tabindex="0" data-geld-hover-bound><span class="geld-provider-header-hidden-count">1 test</span></span></section>';
+  const anchor = document.querySelector('#group .geld-provider-header-stats');
+  assert.equal(providerHeaderHintTarget('#group'), anchor);
+  assert.equal(providerHeaderHintTarget('#group', 'keyboard'), anchor);
+  assert.equal(providerHeaderHintTarget('#group .geld-provider-header-stats'), anchor);
+  anchor.hidden = true;assert.equal(providerHeaderHintTarget('#group'), null);
+});
 test('local-review selection skips earlier resolved and outdated humans before choosing actual actionable work', () => {
   reviewCandidates(['resolved', 'outdated', 'needs-reply']);
   assert.deepEqual(gitLabLocalReviewedCandidate().candidate, { id: 'item-2', humanAnchor: 'note_3', pressed: 'false', disabled: false });

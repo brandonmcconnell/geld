@@ -1,5 +1,36 @@
 import assert from 'node:assert/strict';
 
+/** Resolve the hint belonging to the actual native count group, never a different header. */
+export function providerHeaderHintTarget(groupSelector, kind = 'anchor') {
+  const visible = node => {
+    if (!node?.isConnected || node.closest('[hidden],[inert],[aria-hidden="true"]')) return false;
+    const box = node.getBoundingClientRect();
+    for (let current = node; current; current = current.parentElement) {
+      const style = getComputedStyle(current);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+    }
+    return box.width > 0 && box.height > 0;
+  };
+  const group = [...document.querySelectorAll(groupSelector)].find(visible);
+  if (!group) return null;
+  let anchor = null;
+  for (let scope = group; scope && scope !== document.body; scope = scope.parentElement) {
+    const hints = [...scope.querySelectorAll('.geld-provider-header-stats, .geld-provider-header-hidden-count')]
+      .filter(node => !node.matches('.geld-provider-header-hidden-count') || !node.closest('.geld-provider-header-stats'))
+      .filter(visible);
+    if (scope.matches('.geld-provider-header-stats, .geld-provider-header-hidden-count') && visible(scope)) hints.unshift(scope);
+    if (hints.length > 1) return null;
+    if (hints.length === 1) { anchor = hints[0];break; }
+  }
+  if (!anchor || kind === 'anchor') return anchor;
+  if (kind !== 'keyboard') return null;
+  if (anchor.tabIndex >= 0 && anchor.hasAttribute('data-geld-hover-bound')) return anchor;
+  for (let owner = anchor.parentElement; owner && owner !== document.body; owner = owner.parentElement) {
+    if (owner.tabIndex >= 0 && owner.hasAttribute('data-geld-hover-bound') && !owner.closest('[data-geld-ui]')) return owner;
+  }
+  return null;
+}
+
 /** Select a real actionable human item before any local-review interaction. */
 export function gitLabLocalReviewedCandidate() {
   const buttons = [...document.querySelectorAll('.geld-provider-review [data-geld-local-reviewed]')];

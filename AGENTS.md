@@ -2481,3 +2481,11 @@ Bitbucket activity cards without native anchors require one uniquely matching ex
 GitLab discussion wrappers are eligible only when every native note anchor is represented and no editor is inside them.
 A provider digest rerender restores focus to its original-conversation or section button only within the same review subject and when no other control has taken focus.
 Batch-history attention pointers retain each section's initial ID so its disclosure button and content region keep reciprocal accessible references.
+
+Bitbucket's navigation bar and file tree can expose separate owned count hints at the same time.
+Browser acceptance resolves the hint associated with the hovered native group for its pointer, keyboard and caret checks, without depending on global DOM order.
+Two full Bitbucket page visits have each used 26 observed anonymous API requests in retained runs, so combining them cannot fit the conservative 40-request window.
+Keep that limit and its carried history intact when arranging focused UI checks, and never report a budget-suppressed case as verified.
+
+GNU tar can finish extracting a requested member before Node has written a full repository archive into its stdin.
+The malicious PAX license fixture uses a temporary archive file to avoid an EPIPE race while preserving its exact extracted-size, hash and verifier-rejection assertions.
