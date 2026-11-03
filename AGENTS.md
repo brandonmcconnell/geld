@@ -2435,3 +2435,9 @@ Chromium can re-encode charset-less text resource bodies when DevTools returns t
 That observer initializes before source intent, bounds every stream and never changes responses or fetches another copy.
 Native source-menu closure follows its original opener and captured popup, including closed popovers that remain connected during exit animation.
 Unrelated later popups are reported separately rather than counted as a leaked source menu.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
