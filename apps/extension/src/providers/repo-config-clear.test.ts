@@ -81,3 +81,14 @@ it.each(['read', 'write'])('clears after an already queued storage %s without re
   await loadProviderConfig(page.repository, ref, new AbortController().signal, async () => null, fileUrl);
   expect(Object.keys(store.value)).toHaveLength(2);
 });
+
+it.each(['read', 'write'])('keeps fetched repository rules when the cache %s fails', async phase => {
+  if (phase === 'read') store.get.mockImplementationOnce(async () => store.value).mockRejectedValueOnce(new Error('Cache read failed'));
+  else store.set.mockRejectedValueOnce(new Error('Storage quota exceeded'));
+  const source = new ProviderRepoConfigSource((request, signal) => loadProviderConfig(request.repository, ref, signal, async path => path === '.github/geld.yml' ? 'categories:\n  tests: false' : null, fileUrl), () => undefined);
+  sources.push(source);
+  const settings = { ...DEFAULT_SETTINGS, repoConfigs: 'always' as const };
+  source.get(page, settings);
+  await vi.waitFor(() => expect(source.get(page, settings).status).toBe('ready'));
+  expect(source.get(page, settings).settings.categories.tests).toBe(false);
+});
