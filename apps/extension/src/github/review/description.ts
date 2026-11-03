@@ -302,7 +302,8 @@ function applyTo(body: HTMLElement): void {
     const element = block === undefined ? null : headingElementOf(block);
     if (!(block instanceof HTMLElement) || element === null) continue;
     const key = keyOf(heading, element);
-    const open = state.open.get(key) ?? heading.hasSubheadings;
+    // The first section is nearly always the description proper, whatever its title says.
+    const open = state.open.get(key) ?? (heading === outline[0] || heading.hasSubheadings);
     openNow.set(heading.index, open);
     setFlag(block, ATTR_KEY, key);
     setFlag(block, ATTR_HEADING, open ? 'open' : 'closed');
@@ -365,7 +366,8 @@ function clear(): void {
 
 /**
  * Shorten the pull request's description so the digest under it is in reach: every section folds under its
- * heading (sections with headings of their own start open, the innermost start closed, so the outline shows).
+ * heading (the first section and sections with headings of their own start open, the innermost start closed, so
+ * the outline shows).
  * A description with no headings to fold that is taller than {@link DESCRIPTION_CAP_PX} is cut there behind a
  * fade and "Show full description", until the reader clicks that or opens anything collapsible in it.
  * Only attributes and Geld's own controls are added, GitHub's nodes stay where they are.
