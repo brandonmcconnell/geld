@@ -74,10 +74,9 @@ export interface ChatSource {
   readonly revision?: RevisionView;
   /**
    * The time said on the strip after the label, ISO, when it is worth saying:
-   * the comment is from an earlier run than the thread (the bot posted no
-   * summary with this one), or the live node has been rewritten since it
-   * was posted (then this is the rewrite's time — the reading's own). A
-   * revision shown instead of the live node carries its own time.
+   * the live node has been rewritten since it was posted (then this is the
+   * rewrite's time — the reading's own). A revision shown instead of the
+   * live node carries its own time.
    */
   readonly at?: string;
   /** A review bot's summary that is its latest word: Geld's Rerun stands on the open strip's right. */
