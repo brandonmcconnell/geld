@@ -39,7 +39,8 @@ scripts/             catalog-build.ts (generate/check), catalog-sign.mjs, catalo
                      on now is easy to find later. Current: a Security row beside Reports; a person's
                      top-level comment that is waiting on the reader (needs-reply items for comments);
                      a Review tab that walks a PR in AI-planned steps with an assistant beside it;
-                     a Scope map of what a PR or its stack touches in the repository.
+                     a Scope map of what a PR or its stack touches in the repository; counting Greptile's
+                     "Comments Outside Diff" as open findings.
 ```
 
 Store publishing (`.github/workflows/publish.yml`) runs after every CI release on `main`, every six hours and on demand: it submits the latest release to Chrome, Edge, Firefox and Safari, skipping a store that already has that version or has a submission under review (Chrome/Edge cannot cancel reviews via API;
@@ -205,6 +206,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   mint#12992 read as findings and pre-ticked Greptile in the request menu over a 5/5 with nothing to rerun for);
   the section's items are the count, and a section whose items cannot be read leaves the count unknown rather than claiming a clean run.
   Open threads still outrank a clean summary (`threadRuns`).
+  A later comment with nothing to count (no count, score, clean word or verdict: `isReviewShaped` false) is more of the run whose threads stand, not a new run: Greptile posts its "Comments Outside Diff" seconds after its threads, and read as a report it dropped them and carried the summary's count over a run whose every thread was resolved (geld#352 read "1 issue" over its one resolved thread). Those outside findings are not counted yet (`.cursor/ideas/greptile-outside-diff.md`).
   The other bots' clean and refused words were surveyed on public pull requests at the same time (Oct 2026) and `parseBotBody` / `refusalReason` read them: HTML comments go before any words are weighed (Cursor's automation markers lead its reviews);
   up to two qualifiers stand between a count and its noun ("1 new potential issue", Devin), and a number that is a reference (`#9377`, `GH-123`) is never a count — "I checked both #9377 findings" read as 9,377 issues on server#9385 until the threads settled;
   "Didn't find any major issues" (Codex), "Verdict: approve" and a leading "Approved" (Cursor's automations under the Bugbot login) are clean, and "Verdict: request changes" is a stated verdict (`changes-requested`); **Bugbot is `conversational` too**, since the same `cursor[bot]` login is Cursor's cloud agents', which reply in other bots' threads and address them ("@greptileai Both P1 findings are addressed… Please re-review" read as Bugbot's findings over its own clean review, mint#13111) — its own summaries are always review-shaped, so nothing of Bugbot's is lost;
