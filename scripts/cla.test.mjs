@@ -324,6 +324,25 @@ describe('a pull request', () => {
     assert.equal(fake.statuses.filter((status) => status.sha === 'head-153').length, 1);
   });
 
+  it('leads the status to the run that set it, except on the pull requests a signature elsewhere rechecked', async () => {
+    const withRun = (context, runId) => ({ ...context, runId, serverUrl: 'https://github.com' });
+    const run1 = 'https://github.com/brandonmcconnell/geld/actions/runs/1';
+    const run3 = 'https://github.com/brandonmcconnell/geld/actions/runs/3';
+    const agreement = 'https://github.com/brandonmcconnell/geld/blob/main/CLA.md';
+    const waiting = pullRequest(154, { by: hunter });
+    const signed = pullRequest(155, { by: hunter });
+    const fake = fakeGitHub({ commits: { 154: [[actor(hunter)]], 155: [[actor(hunter)]] }, pulls: { 154: waiting, 155: signed }, signatures: [] });
+    await run({ github: fake.github, context: withRun(prEvent(waiting), 1), core });
+    assert.equal(fake.statuses.at(-1).target_url, run1);
+    await run({ github: fake.github, context: prEvent(signed), core });
+    assert.equal(fake.statuses.at(-1).target_url, agreement);
+    const comment = { ...signing(hunter, 512), html_url: 'https://github.com/brandonmcconnell/geld/pull/155#issuecomment-512' };
+    await run({ github: fake.github, context: withRun(commentEvent({ number: 155, pull_request: {} }, comment), 3), core });
+    const latest = (sha) => fake.statuses.filter((status) => status.sha === sha).at(-1);
+    assert.deepEqual([latest('head-155').state, latest('head-155').target_url], ['success', run3]);
+    assert.deepEqual([latest('head-154').state, latest('head-154').target_url], ['success', agreement]);
+  });
+
   it('does not leave a stale failure over a signature another run recorded meanwhile', async () => {
     // Another run (a signature on an issue) records @hunterchen7 and writes success while this run, which read the
     // record before that, is about to write its failure: this run's failure lands last.

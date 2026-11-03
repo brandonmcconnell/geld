@@ -291,7 +291,7 @@ async function acknowledge(github, repo, fresh, trigger = []) {
   }
 }
 
-async function checkPullRequest({ github, repo, pull, defaultBranch, agreementUrl, extraSignatures }) {
+async function checkPullRequest({ github, repo, pull, defaultBranch, agreementUrl, detailsUrl = agreementUrl, extraSignatures }) {
   const { accounts, unlinked } = signersOf(await commitActors(github, repo, pull.number), pull.user);
   let { signatures } = await readSignatures(github, repo);
   const comments = await github.paginate(github.rest.issues.listComments, { ...repo, issue_number: pull.number, per_page: 100 });
@@ -324,7 +324,7 @@ async function checkPullRequest({ github, repo, pull, defaultBranch, agreementUr
       state: pending.length === 0 && unlinked.length === 0 ? 'success' : 'failure',
       context: STATUS_CONTEXT,
       description: statusDescription({ pending, unlinked }),
-      target_url: agreementUrl,
+      target_url: detailsUrl,
     });
     if (pending.length === 0 || attempt >= 4) break;
     const now = pendingAccounts(accounts, (await readSignatures(github, repo)).signatures);
@@ -372,10 +372,13 @@ export async function run({ github, context, core }) {
   const { payload } = context;
   const defaultBranch = payload.repository.default_branch;
   const agreementUrl = `${payload.repository.html_url}/blob/${defaultBranch}/${AGREEMENT_PATH}`;
+  // The status's Details lead to this run, where it can be re-run, and only for the pull request the run is about: a
+  // re-run replays its event, which never rechecks the other pull requests a signature reached. The comment links CLA.md.
+  const detailsUrl = context.runId ? `${context.serverUrl}/${repo.owner}/${repo.repo}/actions/runs/${context.runId}` : agreementUrl;
 
   if (context.eventName === 'pull_request_target') {
     const pull = payload.pull_request;
-    const fresh = await checkPullRequest({ github, repo, pull, defaultBranch, agreementUrl, extraSignatures: [] });
+    const fresh = await checkPullRequest({ github, repo, pull, defaultBranch, agreementUrl, detailsUrl, extraSignatures: [] });
     await recheckWaiting({ github, repo, signers: fresh, skip: pull.number, defaultBranch, agreementUrl });
     return;
   }
@@ -400,7 +403,7 @@ export async function run({ github, context, core }) {
   let fresh = [];
   if (issue.pull_request) {
     const { data: pull } = await github.rest.pulls.get({ ...repo, pull_number: issue.number });
-    fresh = await checkPullRequest({ github, repo, pull, defaultBranch, agreementUrl, extraSignatures });
+    fresh = await checkPullRequest({ github, repo, pull, defaultBranch, agreementUrl, detailsUrl, extraSignatures });
   } else if (signature !== null) {
     await ensureSignaturesBranch(github, repo);
     ({ fresh } = await recordSignatures(github, repo, extraSignatures));
