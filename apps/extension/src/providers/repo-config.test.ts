@@ -6,7 +6,7 @@ const stored = vi.hoisted(() => {
   let value: unknown = {};
   return { get: () => value, set: (next: unknown) => { value = next; }, reset: () => { value = {}; } };
 });
-vi.mock('wxt/utils/storage', () => ({ storage: { defineItem: () => ({ getValue: async () => stored.get(), setValue: async (value: unknown) => stored.set(value) }) } }));
+vi.mock('wxt/utils/storage', () => ({ storage: { defineItem: () => ({ getValue: async () => stored.get(), setValue: async (value: unknown) => stored.set(value), removeValue: async () => stored.reset() }) } }));
 
 import { loadProviderConfig, MAX_CONFIG_BYTES, ProviderRepoConfigSource, readConfigResource, repositoryConfigChoiceKey } from './repo-config';
 import type { ProviderConfigFetcher, ProviderConfigPath, ProviderRepositoryConfig } from './repo-config';
