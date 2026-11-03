@@ -7312,6 +7312,15 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   text-wrap-style: auto;
 }
 
+/*
+ * GitHub sets inline code to `white-space: break-spaces`, and Chrome turns `pretty` off for any paragraph holding
+ * one, which is most of them. `pre-wrap` keeps the code's spaces as `break-spaces` does and leaves `pretty` working.
+ */
+:is(.comment-body, .js-comment-body, [data-testid='comment-body'], [data-testid='issue-body'], [data-testid='review-thread-comment'])
+  :is(code, tt):not(pre *) {
+  white-space: pre-wrap;
+}
+
 /* ---- description outline and cap (description.ts) ------------------------- */
 
 /*
