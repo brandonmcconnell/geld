@@ -34,6 +34,9 @@ it('shows separate reference groups with canonical native labels, titles and sou
   const links = [...panel.element.querySelectorAll<HTMLAnchorElement>('.geld-provider-review__reference-link')];
   expect(links.map((link) => link.href)).toEqual([target.url, target.url]);
   expect(links[0]?.textContent).toBe(`${outgoing.label}${outgoing.title}`);
+  const row = panel.element.querySelector('[data-geld-reference]');
+  expect(row?.getAttribute('data-geld-reference-native-id')).toBe(target.nativeId);expect(row?.getAttribute('data-geld-reference-project')).toBe(target.projectId);
+  expect(row?.hasAttribute('data-geld-reference-identity')).toBe(false);
   expect(panel.element.querySelector('[data-state="merged"],.gl-badge,svg,[data-reference-type],[data-popover-mounted]')).toBeNull();
   expect(panel.element.querySelector('time')?.dateTime).toBe(event.createdAt);
   expect(panel.element.textContent).toContain('avilabss');
@@ -164,13 +167,20 @@ it('does not carry a reference focus target into another review or head even whe
 });
 
 
-it('keeps shared URL safety independent of native route syntax, ID formats and fragment prefixes', () => {
+it('represents Bitbucket outgoing destinations by canonical URL without fabricated project or resource IDs', () => {
   const otherSubject = { ...subject, provider: 'bitbucket', origin: 'https://bitbucket.org', repository: 'workspace/repository' } as const;
-  const reference: ProviderReviewReference = { ...incoming,
-    target: { ...target, provider: 'bitbucket', origin: otherSubject.origin, repository: 'other/repository', projectId: '{project-uuid}', nativeId: '{resource-uuid}', number: '34', kind: 'pull-request', url: 'https://bitbucket.org/other/repository/pull-requests/34/?tab=overview#native-reference' },
-    source: { reviewUrl: 'https://bitbucket.org/workspace/repository/pull-requests/272', anchor: 'comment-source-id', eventId: 'event-source-id' } };
+  const reference: ProviderReviewReference = { ...outgoing,
+    target: { provider: 'bitbucket', identityBasis: 'canonical-url', origin: otherSubject.origin, repository: 'other/repository', number: '34', kind: 'pull-request', url: 'https://bitbucket.org/other/repository/pull-requests/34' },
+    source: { reviewUrl: 'https://bitbucket.org/workspace/repository/pull-requests/272', anchor: null } };
   expect(referenceForSubject(reference, otherSubject)).toBe(true);
-  expect(referenceForSubject({ ...reference, target: { ...reference.target, url: 'https://user:password@bitbucket.org/other/repository/pull-requests/34/' } }, otherSubject)).toBe(false);
-  expect(referenceForSubject({ ...reference, target: { ...reference.target, url: 'javascript:alert(1)' } }, otherSubject)).toBe(false);
-  expect(referenceForSubject({ ...reference, target: { ...reference.target, url: 'https://other.example/other/repository/pull-requests/34/' } }, otherSubject)).toBe(false);
+  const invented = { ...reference, target: { ...reference.target, projectId: '{project-uuid}', nativeId: '{resource-uuid}' } };
+  expect(referenceForSubject(invented, otherSubject)).toBe(false);
+  for (const url of ['https://user:password@bitbucket.org/other/repository/pull-requests/34', 'javascript:alert(1)', 'https://other.example/other/repository/pull-requests/34', 'https://bitbucket.org/other/repository/pull-requests/34?tab=overview', 'https://bitbucket.org/other/repository/pull-requests/34#native-reference', 'https://bitbucket.org/other/repository/pull-requests/35', 'https://bitbucket.org/other/repository/pull-requests/34/']) {
+    expect(referenceForSubject({ ...reference, target: { ...reference.target, url } }, otherSubject)).toBe(false);
+  }
+  expect(referenceForSubject({ ...reference, direction: 'incoming', source: { ...reference.source, anchor: 'comment-123', eventId: 'event-source-id' } }, otherSubject)).toBe(false);
+  const panel = renderProviderReviewPanel(host(), { ...input, subject: otherSubject }, { references: [reference] });
+  const row = panel.element.querySelector('[data-geld-reference]');
+  expect(row?.getAttribute('data-geld-reference-identity')).toBe('canonical-url');
+  expect(row?.hasAttribute('data-geld-reference-native-id')).toBe(false);expect(row?.hasAttribute('data-geld-reference-project')).toBe(false);
 });
