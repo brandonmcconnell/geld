@@ -91,6 +91,14 @@ test('visually presented native aria-hidden counter wrappers remain valid withou
   document.body.innerHTML = '<div id="file-tree"><div><span><h5>Lines updated</h5></span><div><span aria-hidden="true"><span>+41</span></span><span aria-hidden="true"><span>−28</span></span></div><span data-geld-ui>Added 46 lines Removed 29 lines</span></div></div>';
   assertVisibleProviderCounts(providerUiProbe('bitbucket'), { additions: 41, deletions: 28 });
 });
+test('GitLab native numeric leaves use their separate visible sibling signs', () => {
+  document.body.innerHTML = '<div class="diff-stats inline-parallel-buttons"><div class="diff-stats-contents"><div aria-label="Added 4 lines." class="gl-flex"><div class="diff-stats-group gl-flex gl-items-center gl-text-success gl-font-bold"><span>+</span> <span data-testid="js-file-addition-line">4</span></div></div></div></div><span class="geld-provider-header-line-counts"><span class="geld-provider-header-line-counts__del">−0</span></span>';
+  assertVisibleProviderCounts(providerUiProbe('gitlab'), { additions: 4, deletions: 0 });
+  const sign = document.querySelector('.diff-stats-group > span');
+  sign.style.visibility = 'hidden';assert.equal(providerUiProbe('gitlab').counts.additions.length, 0);
+  sign.style.visibility = '';sign.textContent = '−';assert.equal(providerUiProbe('gitlab').counts.additions.length, 0);
+  sign.textContent = '+';sign.parentElement.insertAdjacentHTML('afterbegin', '<span>+</span>');assert.equal(providerUiProbe('gitlab').counts.additions.length, 0);
+});
 test('native and fallback signs may independently complete the visible pair', () => {
   document.body.innerHTML = '<div class="diff-stats inline-parallel-buttons"><div class="diff-stats-contents"><span data-testid="js-file-addition-line">+4</span><span data-testid="js-file-deletion-line" hidden>−10</span></div></div><div class="geld-provider-header-line-counts"><span class="geld-provider-header-line-counts__del">−0</span></div>';
   assertVisibleProviderCounts(providerUiProbe('gitlab'), { additions: 4, deletions: 0 });
@@ -143,6 +151,34 @@ test('dashboard proof includes actual native suppression and exact original-node
   native.setAttribute('hidden', 'until-found');assertProviderDashboard(providerDashboardProbe());
   native.replaceWith(native.cloneNode(true));
   assert.throws(() => assertProviderDashboard(providerDashboardProbe()), /retained/);
+});
+function semanticDashboard() {
+  dashboard();
+  document.querySelector('.timeline-content').innerHTML = '<div class="note-header"><div class="note-header-info"><a class="author-name-link">Author</a><a class="note-timestamp"><time datetime="2026-11-01T10:00:00Z">2 days ago</time></a></div><button>More actions</button><span role="status">Loading</span></div><div class="note-body"><div class="note-text md"><p>Native stable comment body</p></div></div>';
+}
+test('native timestamps and status/control labels may update while the original comment body remains pinned', () => {
+  semanticDashboard();assertProviderDashboard(providerDashboardProbe('bind'));
+  document.querySelector('time').textContent = '3 days ago';document.querySelector('.note-header button').textContent = 'Actions';document.querySelector('[role="status"]').textContent = '';
+  const value = providerDashboardProbe();assertProviderDashboard(value);assert.equal(value.custody.unqualifiedPayloads, 0);
+  document.querySelector('.note-text p').textContent = 'PRIVATE_CHANGED_BODY';
+  const changed = providerDashboardProbe();assert.equal(changed.custody.bodyMismatches, 1);assert.equal(changed.sameOriginals, false);
+  assert.throws(() => assertProviderDashboard(changed), /bodyMismatches/);assert.doesNotMatch(JSON.stringify(changed), /PRIVATE_CHANGED_BODY/);
+});
+test('native root replacement, reparenting, id changes and semantic body replacement still fail custody', () => {
+  for (const [kind, mutate] of [
+    ['identityMismatches', node => node.replaceWith(node.cloneNode(true))],
+    ['parentMismatches', node => { const parent = document.createElement('div');node.parentElement.append(parent);parent.append(node); }],
+    ['idMismatches', node => { node.id = 'note_2'; }],
+    ['bodyMismatches', node => { const body = node.querySelector('.note-text');body.replaceWith(body.cloneNode(true)); }],
+  ]) {
+    providerDashboardProbe('cleanup');semanticDashboard();providerDashboardProbe('bind');mutate(document.querySelector('#note_1'));
+    const value = providerDashboardProbe();assert.equal(value.sameOriginals, false, kind);assert.equal(value.custody[kind], 1, kind);
+  }
+});
+test('native system-event payload is pinned independently from its separate timestamp', () => {
+  semanticDashboard();document.querySelector('.issuable-discussion').insertAdjacentHTML('beforeend', '<li class="js-timeline-entry system-note" id="note_2" data-geld-provider-native-find="folded" hidden="until-found"><div class="note-header-info"><span data-testid="system-note-content" class="system-note-message">approved this merge request</span><a class="note-timestamp"><time>2 days ago</time></a></div></li>');
+  providerDashboardProbe('bind');document.querySelector('#note_2 time').textContent = '3 days ago';assertProviderDashboard(providerDashboardProbe());
+  document.querySelector('[data-testid="system-note-content"]').textContent = 'unapproved this merge request';assert.equal(providerDashboardProbe().custody.bodyMismatches, 1);
 });
 test('legacy details-only UI and missing metrics cannot pass as a dashboard', () => {
   dashboard();document.querySelector('[data-geld-review-key]').outerHTML = '<details data-geld-review-key="reviewers"><summary>Reviews</summary></details>';

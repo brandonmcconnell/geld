@@ -2494,6 +2494,10 @@ Restack and description-only workflow runs can bury the last actual browser resu
 Cooldown restoration discovers named browser artifacts with bounded pagination and verifies their workflow and repository before selecting the latest retained result.
 Incomplete or ambiguous history must stop provider navigation instead of silently resetting the request budget.
 
+GitLab can render a diff-stat sign separately from its numeric leaf, so visible-count acceptance requires both parts in the same native group.
+Conversation preservation checks retain exact native roots, parents, IDs and semantic body nodes while allowing unrelated live timestamp labels to update.
+Unknown native shapes retain strict whole-root comparison, and changed bodies or replaced source nodes still fail the check.
+
 The bounded Bitbucket UI continuity case starts on public PR22, checkpoints its real comment digest, then clicks the original native Files tab once on the same document.
 Earlier independent PR27 diff and PR22 overview runs each observed 26 standard API requests, so combining two fresh page bootstraps does not fit the unchanged 40-request budget.
 The continuity case corroborates public tab-state totals with the read-only complete-result cache and actual native file inventory, without writing cache entries or issuing an oracle request.

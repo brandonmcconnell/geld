@@ -88,6 +88,17 @@ export function providerUiProbe(provider) {
     const value = Number(match[1].replaceAll(',', ''));
     return Number.isSafeInteger(value) && value >= 0 ? value : null;
   };
+  const nativeGitLabSigned = (node, sign) => {
+    const direct = signed(node, sign);
+    if (direct !== null) return direct;
+    if (!onScreen(node) || !/^[\d,]+$/.test((node.textContent ?? '').trim())) return null;
+    const group = node.parentElement;
+    if (!group?.matches('.diff-stats-group') || group.querySelectorAll('[data-testid="js-file-addition-line"], [data-testid="js-file-deletion-line"]').length !== 1) return null;
+    const signs = [...group.children].filter(sibling => sibling !== node && onScreen(sibling) && (sign === '+' ? sibling.textContent?.trim() === '+' : /^[−-]$/.test(sibling.textContent?.trim() ?? '')));
+    if (signs.length !== 1) return null;
+    const value = Number(node.textContent.trim().replaceAll(',', ''));
+    return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  };
   const countPairs = [];
   const counts = { additions: [], deletions: [] };
   for (const host of document.querySelectorAll('.geld-provider-header-line-counts')) {
@@ -98,8 +109,8 @@ export function providerUiProbe(provider) {
     if (additions !== null && deletions !== null) countPairs.push({ kind: 'owned-header', additions, deletions, rect: rect(host) });
   }
   if (provider === 'gitlab') for (const host of document.querySelectorAll('.diff-stats.inline-parallel-buttons .diff-stats-contents')) {
-    const additions = signed(host.querySelector('[data-testid="js-file-addition-line"]'), '+');
-    const deletions = signed(host.querySelector('[data-testid="js-file-deletion-line"]'), '-');
+    const additions = nativeGitLabSigned(host.querySelector('[data-testid="js-file-addition-line"]'), '+');
+    const deletions = nativeGitLabSigned(host.querySelector('[data-testid="js-file-deletion-line"]'), '-');
     if (additions !== null) counts.additions.push(additions);
     if (deletions !== null) counts.deletions.push(deletions);
     if (additions !== null && deletions !== null) countPairs.push({ kind: 'native-header', additions, deletions, rect: rect(host) });
@@ -191,15 +202,42 @@ export function providerDashboardProbe(mode = 'read') {
     }
     return { fontFamily: style.fontFamily, fontSize: style.fontSize, color: style.color, background };
   };
+  const payloads = root => {
+    const provider = panel?.getAttribute('data-provider');
+    const selector = provider === 'gitlab' ? '[data-testid="noteable-note-container"], li.js-timeline-entry.system-note' : provider === 'bitbucket' ? '[data-testid="comment"][id]' : null;
+    if (selector === null) return null;
+    const entries = [...(root.matches(selector) ? [root] : []), ...root.querySelectorAll(selector)].filter(node => node.closest('[data-geld-ui]') === null);
+    if (entries.length === 0) return null;
+    const result = [];
+    for (const entry of entries) {
+      const bodySelector = provider === 'gitlab' ? entry.matches('li.js-timeline-entry.system-note') ? '[data-testid="system-note-content"]' : '.note-body .note-text' : '[data-testid="comment-content"] .ak-renderer-document';
+      const bodies = [...entry.querySelectorAll(bodySelector)].filter(node => node.closest(selector) === entry && node.closest('[data-geld-ui]') === null);
+      if (bodies.length !== 1) return null;
+      result.push(bodies[0]);
+    }
+    return result;
+  };
   if (mode === 'bind' && panel && globalThis[key] === undefined) {
     const roots = [...document.querySelectorAll('[data-geld-provider-native-find="folded"]')].filter((node) => !panel.contains(node));
-    if (roots.length > 0) globalThis[key] = { panel, url: location.href, roots: roots.map((node) => ({ node, parent: node.parentElement, text: node.textContent, id: node.id })) };
+    if (roots.length > 0) globalThis[key] = { panel, url: location.href, roots: roots.map((node) => {
+      const known = payloads(node);
+      return { node, parent: node.parentElement, id: node.id, qualified: known !== null, payloads: (known ?? [node]).map(body => ({ node: body, parent: body.parentElement, text: body.textContent })) };
+    }) };
   }
   const state = globalThis[key];
   const native = state?.roots ?? [];
   const sections = [...panel?.querySelectorAll('[data-geld-review-key]') ?? []];
   const bound = state?.panel === panel && state?.url === location.href;
-  const sameOriginals = bound && native.every((entry) => entry.node.isConnected && entry.node.parentElement === entry.parent && entry.node.id === entry.id && entry.node.textContent === entry.text);
+  const custody = { identityMismatches: 0, parentMismatches: 0, idMismatches: 0, bodyMismatches: 0, unqualifiedPayloads: 0 };
+  for (const entry of native) {
+    if (!entry.node.isConnected || entry.node.ownerDocument !== document || entry.id !== '' && document.getElementById(entry.id) !== entry.node) custody.identityMismatches++;
+    if (entry.node.parentElement !== entry.parent) custody.parentMismatches++;
+    if (entry.node.id !== entry.id) custody.idMismatches++;
+    if (!entry.qualified) custody.unqualifiedPayloads++;
+    const current = entry.qualified ? payloads(entry.node) : [entry.node];
+    if (current === null || current.length !== entry.payloads.length || entry.payloads.some((body, index) => current[index] !== body.node || !body.node.isConnected || body.node.parentElement !== body.parent || body.node.textContent !== body.text)) custody.bodyMismatches++;
+  }
+  const sameOriginals = bound && custody.identityMismatches === 0 && custody.parentMismatches === 0 && custody.idMismatches === 0 && custody.bodyMismatches === 0;
   const sectionBindings = sections.map((section) => {
     const control = section.querySelector(':scope > button[data-geld-review-toggle]');
     const target = document.getElementById(control?.getAttribute('aria-controls') ?? '');
@@ -211,7 +249,7 @@ export function providerDashboardProbe(mode = 'read') {
   const nativeBodyAppearance = appearance(document.body);
   const nativeSurfaceAppearance = appearance(nativeSurface);
   return {
-    panelCount: panels.length, panelVisible: visible(panel), bound, sameOriginals,
+    panelCount: panels.length, panelVisible: visible(panel), bound, sameOriginals, custody,
     overviewVisible: visible(panel?.querySelector('[data-geld-review-overview]')),
     metrics: ['open', 'comments', 'activity'].map((name) => ({ name, visible: visible(panel?.querySelector(`[data-geld-review-metric="${name}"]`)) })),
     sectionBindings: sectionBindings.slice(0, 40), truncated: sectionBindings.length > 40 || native.length > 1000,
@@ -235,7 +273,7 @@ export function assertProviderDashboard(snapshot, originalsVisible = false) {
   assert.ok(snapshot.sectionBindings.filter((section) => section.primary).length >= 2 && snapshot.sectionBindings.filter((section) => section.primary).every((section) => section.toggle), 'Primary dashboard controls must be visible');
   assert.equal(snapshot.originalToggleCount, 1, 'Original conversation must have one explicit restore control');
   assert.equal(snapshot.bound, true, 'Dashboard evidence must stay on its original page');
-  assert.equal(snapshot.sameOriginals, true, 'Original conversation nodes and content must be retained');
+  assert.equal(snapshot.sameOriginals, true, `Original conversation nodes and content must be retained: ${JSON.stringify(snapshot.custody)}`);
   assert.ok(snapshot.originalCount > 0, 'At least one represented original conversation entry must be exercised');
   assert.equal(snapshot.originalVisible, originalsVisible ? snapshot.originalCount : 0, 'Original conversation visibility must follow its explicit control');
   assert.ok(snapshot.representedMounted > 0, 'Mounted digest sources must have real native counterparts');
@@ -259,7 +297,8 @@ export async function verifyProviderDashboardUi(page, progress, { poll, capture,
         return box.width > 0 && box.height > 0 && x > 0 && y > 0 && x < innerWidth && y < innerHeight && hit !== null && node.contains(hit) ? { x, y } : null;
       });
       assert.ok(point, 'The original dashboard control must have an unobscured visible click point');
-      assert.equal((await read()).sameOriginals, true, 'Original conversation changed before the real pointer input');
+      const custody = await read();
+      assert.equal(custody.sameOriginals, true, `Original conversation changed before the real pointer input: ${JSON.stringify(custody.custody)}`);
       await page.mouse.click(point.x, point.y);
     } finally { await Promise.all(handles.map((entry) => entry.dispose())); }
   };
