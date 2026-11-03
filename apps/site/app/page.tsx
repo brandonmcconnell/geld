@@ -30,7 +30,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <LogoReel className="pb-16 sm:pb-24" />
+      <LogoReel className="pb-10 sm:pb-12" />
 
       <section id="tour" aria-labelledby="tour-heading" className="pb-16 sm:pb-20">
         <div className="container-site border-t pt-16 sm:pt-20">

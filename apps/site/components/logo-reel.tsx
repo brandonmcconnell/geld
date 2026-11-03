@@ -12,7 +12,7 @@ import { CUSTOMERS } from '@/lib/customers';
 export function LogoReel({ className }: { readonly className?: string }) {
   return (
     <section aria-labelledby="customers-heading" className={cn('container-site', className)}>
-      <h2 id="customers-heading" className="text-sm text-muted-foreground">
+      <h2 id="customers-heading" className="text-center text-sm text-muted-foreground">
         Used by founders and engineers at
       </h2>
       <div className="logo-reel mt-6">
@@ -28,7 +28,7 @@ export function LogoReel({ className }: { readonly className?: string }) {
 function LogoList({ copy = false }: { readonly copy?: boolean }) {
   return (
     <ul
-      className={cn('flex shrink-0 items-center', 'motion-reduce:w-full motion-reduce:shrink motion-reduce:flex-wrap motion-reduce:gap-y-6', copy && 'motion-reduce:hidden')}
+      className={cn('flex shrink-0 items-center', 'motion-reduce:w-full motion-reduce:shrink motion-reduce:flex-wrap motion-reduce:justify-center motion-reduce:gap-y-6', copy && 'motion-reduce:hidden')}
       // The copy is half of what passes under the pointer, so its links work too; readers and the keyboard meet the list once.
       aria-hidden={copy || undefined}
     >
