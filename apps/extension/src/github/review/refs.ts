@@ -8,6 +8,7 @@
  */
 
 import { fragmentHeaders } from './deeplink';
+import { pageFetch } from '../page-fetch';
 
 export type RefState = 'open' | 'closed' | 'merged' | 'draft' | 'issue-open' | 'issue-closed' | 'unknown';
 
@@ -56,7 +57,7 @@ export function refDetails(href: string, onChange: () => void): RefDetails | nul
 
 async function fetchDetails(key: string): Promise<RefDetails | null> {
   try {
-    const response = await fetch(new URL(`${key}/hovercard`, location.href), { headers: fragmentHeaders(), credentials: 'same-origin' });
+    const response = await pageFetch(`${key}/hovercard`, { headers: fragmentHeaders(), credentials: 'same-origin' });
     if (!response.ok) return null;
     const parsed = new DOMParser().parseFromString(await response.text(), 'text/html');
     return parseHovercard(parsed, key);

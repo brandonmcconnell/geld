@@ -10,6 +10,7 @@ import { THREAD_SELECTOR, timelineRootOf as rowOf } from './crawler';
 import { closestAtHome, wornPiecesOf } from './teleport';
 import { catchUpAfterPost } from './timeline-catchup';
 import { fetchNonce, pullPathOf, timelineCommentRequest } from '../timeline-comment';
+import { pageFetch } from '../page-fetch';
 
 export function timelineRootOf(anchor: string): HTMLElement | null {
   const node = document.getElementById(anchor);
@@ -142,7 +143,7 @@ export async function postTopLevelComments(bodies: readonly string[]): Promise<n
   for (const body of bodies) {
     const { url, init } = timelineCommentRequest(pullPath, body, fetchNonce());
     try {
-      const response = await fetch(new URL(url, location.href), init);
+      const response = await pageFetch(url, init);
       if (!response.ok) break;
     } catch {
       break;

@@ -1,3 +1,5 @@
+import { pageFetch } from './page-fetch';
+
 /**
  * GitHub's own comment writer (the conversation's "Add a comment" box:
  * Write and Preview, the Markdown toolbar, mentions, references, saved
@@ -28,7 +30,7 @@ let copies = 0;
 
 async function fetchTemplate(pullPath: string): Promise<Element | null> {
   try {
-    const response = await fetch(new URL(pullPath, location.href), { credentials: 'same-origin', headers: { Accept: 'text/html' } });
+    const response = await pageFetch(pullPath, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
     if (!response.ok) return null;
     return new DOMParser().parseFromString(await response.text(), 'text/html').querySelector(WRITER);
   } catch {

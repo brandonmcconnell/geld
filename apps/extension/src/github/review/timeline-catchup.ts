@@ -1,4 +1,5 @@
 import { fragmentHeaders } from './deeplink';
+import { pageFetch } from '../page-fetch';
 
 /**
  * The classic conversation's live marker: GitHub's socket handler replaces it
@@ -23,7 +24,7 @@ export function catchUpTimeline(): Promise<boolean> {
   const token = {};
   const promise = (async (): Promise<boolean> => {
     try {
-      const response = await fetch(new URL(src, location.href), { headers: fragmentHeaders(), credentials: 'same-origin', cache: 'no-store' });
+      const response = await pageFetch(src, { headers: fragmentHeaders(), credentials: 'same-origin', cache: 'no-store' });
       if (!response.ok) return false;
       const html = await response.text();
       // GitHub's own refresh replaced the marker meanwhile: its answer is at least as new as this one, so nothing is lost.

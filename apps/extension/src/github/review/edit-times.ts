@@ -23,6 +23,7 @@
 import { fragmentHeaders } from './deeplink';
 import { revisionIndexAt } from './revisions';
 import type { Revision } from './revisions';
+import { pageFetch } from '../page-fetch';
 
 export type { Revision } from './revisions';
 
@@ -73,7 +74,7 @@ function logUrlOf(node: Element, anchor = node.id): string | null {
 /** Reads the log into `log`; true when it says something it did not before. */
 async function fetchLog(url: string, log: EditLog): Promise<boolean> {
   try {
-    const response = await fetch(new URL(url, location.href), { headers: fragmentHeaders(), credentials: 'same-origin' });
+    const response = await pageFetch(url, { headers: fragmentHeaders(), credentials: 'same-origin' });
     if (!response.ok) return false;
     const parsed = new DOMParser().parseFromString(await response.text(), 'text/html');
     // Newest first: "edited <time> (most recent)" leads the list, "created <time>" ends it.
@@ -157,7 +158,7 @@ function contentOf(parsed: Document): HTMLElement | null {
 
 async function fetchRevision(url: string, entry: RevisionBody): Promise<void> {
   try {
-    const response = await fetch(new URL(url, location.href), { headers: fragmentHeaders(), credentials: 'same-origin' });
+    const response = await pageFetch(url, { headers: fragmentHeaders(), credentials: 'same-origin' });
     if (!response.ok) {
       entry.failed = true;
       return;

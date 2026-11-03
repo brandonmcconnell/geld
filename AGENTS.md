@@ -77,9 +77,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
 - Extension imports shared logic only from `@geld/core` (never `../../packages/core/...`).
   Anything that could be reused by the site belongs in core;
   anything touching `browser.*`, the DOM or WXT stays in the extension.
-- **A content script's `fetch` takes an absolute URL**: `fetch(new URL(path, location.href), …)`, never a bare `/owner/repo/…` path.
-  Firefox (MV2) runs a content script's `fetch` in the extension's sandbox, which has no page base URL, so a relative path throws before any request goes out.
-  Chrome resolves it against the page, so the break only shows in Firefox and its forks (Zen, Floorp).
+- **A content script's request to GitHub goes through `pageFetch(path, init)`** (`src/github/page-fetch.ts`), never a bare `fetch`.
+  Firefox (MV2) runs a content script's `fetch` in the extension's sandbox: a relative path throws before any request goes out, and an absolute one goes out with no Origin or Referer, which GitHub's CSRF check refuses on every write (a 422 reading "Your browser did something unexpected", seen in Firefox 159 in Nov 2026).
+  `pageFetch` resolves the path against the page and, for the page's own host, sends it with Firefox's `content.fetch`, the page's own, then reads the answer into a Response of the content script's (what it parses would otherwise belong to the page, and `instanceof` fails).
+  Chrome and Safari have no `content.fetch` and their `fetch` already acts as the page, so the break only shows in Firefox and its forks (Zen, Floorp).
   A test that stubs `location` keeps `href` and `origin`: they are getters, which `{ ...window.location }` drops.
 - UI copy is short and specific, with no em or en dashes and no semicolons (a plain sentence break, a comma or a middle dot instead);
   commit messages explain *why*.
