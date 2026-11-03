@@ -52,7 +52,7 @@ export const bitbucketAdapter: ProviderAdapter = {
       const snapshot = await fetchBitbucketReview(page, signal);
       return { ...snapshot, get input() { return syncBitbucketNativeReviewState(snapshot.input, doc); }, get actions() { const pending = readBitbucketPendingReview(doc, page, snapshot.input.subject);return [...readBitbucketActions(doc, page), ...(pending === null ? [] : [pending])]; },
         get requirements() { return readBitbucketRequirements(page, doc); },
-        renderComment: (comment, host) => renderBitbucketComment(comment, host, doc),
+        renderComment: (comment, host, context) => renderBitbucketComment(comment, host, doc, context),
         commentSignature: (comment) => bitbucketCommentSignature(comment, doc),
         sourceActions: (comment) => bitbucketThreadActions(comment, doc),
         authorPresentation: presentation.bind(snapshot),

@@ -214,6 +214,21 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   let commentFocusFrame: number | null = null;
   let mountCallbacks: Array<() => void> = [];
   let disposeCallbacks: Array<() => void> = [];
+  let refreshCallbacks: Array<() => void> = [];
+  let refreshListening = false;
+
+  function refreshComments(): void {
+    if (destroyed || !panel.isConnected) return;
+    for (const callback of refreshCallbacks) callback();
+  }
+
+  function onCommentRefresh(callback: () => void): void {
+    refreshCallbacks.push(callback);
+    if (refreshListening) return;
+    refreshListening = true;
+    doc.defaultView?.addEventListener('resize', refreshComments);
+    doc.defaultView?.visualViewport?.addEventListener('resize', refreshComments);
+  }
 
   function clearRenderStates(): void {
     for (const memo of renderStates.values()) memo.state.clear();
@@ -226,6 +241,12 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     commentFocusFrame = null;
     for (const callback of disposeCallbacks.splice(0)) callback();
     mountCallbacks = [];
+    refreshCallbacks = [];
+    if (refreshListening) {
+      doc.defaultView?.removeEventListener('resize', refreshComments);
+      doc.defaultView?.visualViewport?.removeEventListener('resize', refreshComments);
+      refreshListening = false;
+    }
     sourceOccurrences.clear();activeRenderSources.clear();activeSourceKeys.clear();
   }
 
@@ -420,6 +441,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       current: () => !destroyed && generation === renderGeneration && body.isConnected && panel.contains(body),
       onMount: (callback) => mountCallbacks.push(callback),
       onDispose: (callback) => disposeCallbacks.push(callback),
+      onRefresh: onCommentRefresh,
     };
     if (options.renderComment?.(comment, body, context) === true) {
       body.style.whiteSpace = 'normal';
@@ -1144,6 +1166,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     });
     const signature = JSON.stringify([input, options.reviewerControls?.available, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature, commentSignatures]);
     if (signature === lastSignature) {
+      refreshComments();
       for (const time of panel.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
         const native = nativeTimes.get(Date.parse(time.dateTime));
         if (native !== undefined && time.textContent !== native) time.textContent = native;

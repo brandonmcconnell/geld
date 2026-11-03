@@ -1687,6 +1687,7 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   GitLab's live comment body uses GitLab Sans at 14px/21px and native author headers use 14px/20px, while native medium buttons use 14px/16px, weight 400 and an 8px radius.
   Native body and author typography use `--font-family-sans-serif`, while `--gl-font-family-regular` can repeat GitLab Sans in its computed stack.
   Bitbucket's native comment bodies can mount or edit independently of the fetched review snapshot, so the digest's render signature includes the verified original body rather than waiting for another API refresh.
+  Existing Bitbucket comment typography bindings refresh independently of the panel's data signature and on viewport resize, preserving the rendered body and releasing refresh listeners with its lifetime.
   GitLab's rendered Markdown table headers can put their visible labels inside generated `markdown-table-<id>-col_<index>-sort` buttons, as the public Greptile summary note3381334808 does.
   Preserve only the inert label of that verified sortable column-header shape, including its native table ownership and column index, while dropping the control, IDs, action attributes and icons.
   Its marked inert span keeps only the observed `gl-font-bold gl-text-inherit` typography classes, and body comparison samples the actual native button's label span rather than assuming the enclosing TH has the same font weight.

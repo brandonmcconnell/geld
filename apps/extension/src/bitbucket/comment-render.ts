@@ -1,6 +1,7 @@
 import type { ProviderReviewComment } from '@geld/review';
 import { nativeBitbucketComment } from './conversation';
 import { bindBitbucketCommentTypography } from './comment-typography';
+import type { ProviderCommentRenderContext } from '../providers/comment-render';
 
 const ELEMENTS = new Set(['a', 'abbr', 'b', 'bdi', 'blockquote', 'br', 'code', 'dd', 'del', 'details', 'div', 'dl', 'dt', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'kbd', 'li', 'ol', 'p', 'pre', 's', 'small', 'span', 'strong', 'sub', 'summary', 'sup', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'u', 'ul']);
 const DROP = new Set(['script', 'style', 'iframe', 'object', 'embed', 'link', 'meta', 'base', 'form', 'button', 'input', 'select', 'textarea', 'audio', 'video', 'canvas', 'svg', 'math']);
@@ -14,7 +15,7 @@ export function bitbucketCommentSignature(comment: ProviderReviewComment, doc: D
   return nativeBitbucketComment(comment, doc)?.querySelector<HTMLElement>('[data-testid="comment-content"] .ak-renderer-document')?.innerHTML ?? null;
 }
 
-export function renderBitbucketComment(comment: ProviderReviewComment, host: HTMLElement, doc: Document): boolean {
+export function renderBitbucketComment(comment: ProviderReviewComment, host: HTMLElement, doc: Document, context?: ProviderCommentRenderContext): boolean {
   const source = nativeBitbucketComment(comment, doc)?.querySelector<HTMLElement>('[data-testid="comment-content"] .ak-renderer-document');
   if (source === null || source === undefined) { bindBitbucketCommentTypography(null, host); return false; }
   let remaining = 10_000;
@@ -42,6 +43,9 @@ export function renderBitbucketComment(comment: ProviderReviewComment, host: HTM
   if (rendered === null || exceeded) { bindBitbucketCommentTypography(null, host); return false; }
   if (rendered instanceof HTMLElement) rendered.dataset.geldUi = '';
   bindBitbucketCommentTypography(source, host);
+  context?.onRefresh?.(() => {
+    if (context.current()) bindBitbucketCommentTypography(nativeBitbucketComment(comment, doc)?.querySelector<HTMLElement>('[data-testid="comment-content"] .ak-renderer-document') ?? null, host);
+  });
   host.replaceChildren(rendered);
   return true;
 }
