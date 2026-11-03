@@ -2612,3 +2612,6 @@ A refreshed complete provider cache entry receives a new storedAt timestamp even
 Bitbucket UI continuity compares the exact semantic cache snapshot while recording storage times separately, so a legitimate refresh does not masquerade as source mutation.
 Schema, cache key, revision, source facts, file metadata and unknown extra fields remain compared, with bounded changed-field diagnostics.
 The retained evidence summary exports fixed continuity checkpoint flags, native identity mismatch counts and cache storage times without emitting file paths or source content.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
