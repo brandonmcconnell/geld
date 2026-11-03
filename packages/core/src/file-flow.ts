@@ -100,6 +100,69 @@ function blank(text: string): string {
   return text.replace(/[^\n]/g, ' ');
 }
 
+/** Where the template literal opening at `start` ends (just past its closing backtick, or the end of the text). */
+function templateEnd(text: string, start: number): number {
+  let index = start + 1;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === '\\') index += 2;
+    else if (char === '`') return index + 1;
+    else if (char === '$' && text[index + 1] === '{') index = expressionEnd(text, index + 2) + 1;
+    else index += 1;
+  }
+  return text.length;
+}
+
+/** The index of the `}` closing a template expression that starts at `start`, past nested braces, strings and templates. */
+function expressionEnd(text: string, start: number): number {
+  let depth = 0;
+  let index = start;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === '`') {
+      index = templateEnd(text, index);
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      index += 1;
+      while (index < text.length && text[index] !== char && text[index] !== '\n') index += text[index] === '\\' ? 2 : 1;
+      index += 1;
+      continue;
+    }
+    if (char === '{') depth += 1;
+    else if (char === '}') {
+      if (depth === 0) return index;
+      depth -= 1;
+    }
+    index += 1;
+  }
+  return text.length;
+}
+
+/** A template literal with its text blanked and its `${…}` expressions scrubbed as code, so an import inside one still counts. */
+function scrubTemplate(literal: string): string {
+  const out: string[] = ['`'];
+  let index = 1;
+  while (index < literal.length) {
+    const char = literal[index] ?? '';
+    if (char === '\\') {
+      out.push(blank(literal.slice(index, index + 2)));
+      index += 2;
+    } else if (char === '`') {
+      out.push('`');
+      index += 1;
+    } else if (char === '$' && literal[index + 1] === '{') {
+      const end = expressionEnd(literal, index + 2);
+      out.push('${', scrub('script', literal.slice(index + 2, end)), end < literal.length ? '}' : '');
+      index = end + 1;
+    } else {
+      out.push(blank(char));
+      index += 1;
+    }
+  }
+  return out.join('');
+}
+
 /** What an import's own string follows: the string after these is kept, any other is blanked. */
 const SCRIPT_IMPORT_LEAD = /(?:\bfrom|\bimport|\brequire\s*\(|\bimport\s*\()\s*$/;
 
@@ -135,6 +198,12 @@ function scrub(language: Language, text: string): string {
       const stop = end < 0 ? text.length : end + 2;
       push(blank(text.slice(index, stop)));
       index = stop;
+      continue;
+    }
+    if (language === 'script' && char === '`') {
+      const end = templateEnd(text, index);
+      push(scrubTemplate(text.slice(index, end)));
+      index = end;
       continue;
     }
     if (strings && (char === '"' || char === "'" || char === '`')) {
@@ -297,12 +366,21 @@ export interface FlowEdge {
  * imports.
  */
 export function flowEdges(paths: readonly string[], after: ReadonlyMap<string, string>, before: ReadonlyMap<string, string> = new Map(), deleted: ReadonlySet<string> = new Set()): FlowEdge[] {
+  const imports = (texts: ReadonlyMap<string, string>): Map<string, readonly string[]> => new Map([...texts].map(([path, text]) => [path, importSpecifiers(path, text)]));
+  return flowLinks(paths, imports(after), imports(before), deleted);
+}
+
+/**
+ * {@link flowEdges} from each file's import specifiers ({@link importSpecifiers}) rather than its text: what a
+ * caller keeps between reads, since a file's imports are a few strings and its text may be hundreds of kilobytes.
+ */
+export function flowLinks(paths: readonly string[], after: ReadonlyMap<string, readonly string[]>, before: ReadonlyMap<string, readonly string[]> = new Map(), deleted: ReadonlySet<string> = new Set()): FlowEdge[] {
   const known = new Set(paths);
-  const links = (texts: ReadonlyMap<string, string>): Set<string> => {
+  const links = (specifiersOf: ReadonlyMap<string, readonly string[]>): Set<string> => {
     const found = new Set<string>();
-    for (const [from, text] of texts) {
+    for (const [from, specifiers] of specifiersOf) {
       if (!known.has(from)) continue;
-      for (const specifier of importSpecifiers(from, text)) {
+      for (const specifier of specifiers) {
         const to = resolveImport(from, specifier, known);
         if (to !== null && to !== from) found.add(`${from}\n${to}`);
       }

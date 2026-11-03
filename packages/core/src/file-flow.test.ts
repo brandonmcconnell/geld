@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canReadImports, closestSpaced, flowEdges, importSpecifiers, layoutFlow, resolveImport } from './file-flow';
+import { canReadImports, closestSpaced, flowEdges, flowLinks, importSpecifiers, layoutFlow, resolveImport } from './file-flow';
 
 describe('importSpecifiers', () => {
   it('reads every way a script names a module', () => {
@@ -38,6 +38,11 @@ describe('importSpecifiers', () => {
     expect(importSpecifiers('src/x.ts', text)).toEqual(['./real', './lazy']);
     expect(importSpecifiers('a.scss', "// @import 'old';\n/* @use 'gone'; */\n@import url(https://fonts.example/x.css);\n@use 'kept';")).toEqual(['https://fonts.example/x.css', 'kept']);
     expect(importSpecifiers('pkg/x.py', '# from .old import a\n"""\nfrom .doc import b\n"""\nfrom .real import c\n')).toEqual(['.real', '.real.c']);
+  });
+
+  it('keeps imports inside template expressions', () => {
+    const text = "const label = `${await import('./b')}`;\nconst nested = `a ${`b ${require('./c')}`} \\` import('./not')`;\nconst plain = `import x from './text'`;";
+    expect(importSpecifiers('src/a.ts', text)).toEqual(['./b', './c']);
   });
 
   it('reads the modules a Python relative import lists', () => {
@@ -107,6 +112,12 @@ describe('closestSpaced', () => {
 
   it('spreads a crowd around where it wanted to be, not to one side', () => {
     expect(closestSpaced([3, 3, 3], [1, 1])).toEqual([2, 3, 4]);
+  });
+});
+
+describe('flowLinks', () => {
+  it('links from import lists as flowEdges does from text', () => {
+    expect(flowLinks(['src/a.ts', 'src/b.ts'], new Map([['src/a.ts', ['./b', 'react']]]))).toEqual([{ from: 'src/a.ts', to: 'src/b.ts' }]);
   });
 });
 

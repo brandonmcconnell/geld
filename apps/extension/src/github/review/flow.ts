@@ -1,4 +1,4 @@
-import { canReadImports, flowEdges, layoutFlow } from '@geld/core/file-flow';
+import { canReadImports, flowLinks, importSpecifiers, layoutFlow } from '@geld/core/file-flow';
 import type { FlowComponent, FlowEdge, FlowRoute } from '@geld/core/file-flow';
 import { formatCount } from '@geld/core/format';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
@@ -46,8 +46,6 @@ const MAX_READS = 160;
 const MAX_BYTES = 400_000;
 const CONCURRENT_READS = 6;
 const RENDER_DEBOUNCE_MS = 120;
-/** Source text kept across dialogs on one pull request head, in characters; the oldest reads go first past it. */
-const MAX_CACHED_CHARS = 12_000_000;
 const ZOOM_MIN = 0.3;
 const ZOOM_MAX = 1.5;
 const ZOOM_STEP = 0.1;
@@ -83,12 +81,12 @@ export function flowAvailable(): boolean {
   return source !== null && source.files.length > 1;
 }
 
-type Read = { readonly state: 'pending' } | { readonly state: 'ready'; readonly text: string } | { readonly state: 'failed' };
+/** A file's read, kept as the imports it names: a few strings each, so a whole diagram's worth stays in memory and nothing is read twice. */
+type Read = { readonly state: 'pending' } | { readonly state: 'ready'; readonly imports: readonly string[] } | { readonly state: 'failed' };
 
 const reads = new Map<string, Read>();
-const queue: Array<{ readonly key: string; readonly url: string }> = [];
+const queue: Array<{ readonly key: string; readonly url: string; readonly path: string }> = [];
 let active = 0;
-let cachedChars = 0;
 /** Bumped whenever the cache is dropped, so an answer to a read from before is thrown away. */
 let readGeneration = 0;
 let onReadLanded: (() => void) | null = null;
@@ -97,22 +95,7 @@ let openDialog: HTMLDialogElement | null = null;
 function forgetReads(): void {
   reads.clear();
   queue.length = 0;
-  cachedChars = 0;
   readGeneration += 1;
-}
-
-function remember(key: string, read: Read): void {
-  const previous = reads.get(key);
-  if (previous?.state === 'ready') cachedChars -= previous.text.length;
-  reads.set(key, read);
-  if (read.state !== 'ready') return;
-  cachedChars += read.text.length;
-  for (const [oldKey, old] of reads) {
-    if (cachedChars <= MAX_CACHED_CHARS) break;
-    if (oldKey === key || old.state !== 'ready') continue;
-    cachedChars -= old.text.length;
-    reads.delete(oldKey);
-  }
 }
 
 function rawUrl(origin: string, repo: string, revision: string, path: string): string {
@@ -124,8 +107,8 @@ function request(origin: string, repo: string, revision: string, path: string): 
   const known = reads.get(key);
   if (known !== undefined) return known;
   const pending: Read = { state: 'pending' };
-  remember(key, pending);
-  queue.push({ key, url: rawUrl(origin, repo, revision, path) });
+  reads.set(key, pending);
+  queue.push({ key, url: rawUrl(origin, repo, revision, path), path });
   pump();
   return pending;
 }
@@ -137,10 +120,10 @@ function pump(): void {
     active += 1;
     const generation = readGeneration;
     const land = (read: Read): void => {
-      if (generation === readGeneration) remember(job.key, read);
+      if (generation === readGeneration) reads.set(job.key, read);
     };
     void fetchText(job.url)
-      .then((text) => land(text === null ? { state: 'failed' } : { state: 'ready', text }))
+      .then((text) => land(text === null ? { state: 'failed' } : { state: 'ready', imports: importSpecifiers(job.path, text) }))
       .catch(() => land({ state: 'failed' }))
       .finally(() => {
         active -= 1;
@@ -174,8 +157,8 @@ function baseRevision(): string | null {
 }
 
 interface Reading {
-  readonly after: ReadonlyMap<string, string>;
-  readonly before: ReadonlyMap<string, string>;
+  readonly after: ReadonlyMap<string, readonly string[]>;
+  readonly before: ReadonlyMap<string, readonly string[]>;
   readonly deleted: ReadonlySet<string>;
   readonly wanted: number;
   readonly landed: number;
@@ -183,8 +166,8 @@ interface Reading {
 }
 
 function readFiles(current: FlowSource, files: readonly FlowFile[]): Reading {
-  const after = new Map<string, string>();
-  const before = new Map<string, string>();
+  const after = new Map<string, readonly string[]>();
+  const before = new Map<string, readonly string[]>();
   const readable = files.filter((file) => canReadImports(file.path));
   const deleted = new Set(files.filter((file) => file.status === 'deleted').map((file) => file.path));
   if (current.headSha === null) return { after, before, deleted, wanted: 0, landed: 0, unreadable: readable.length > 0 };
@@ -192,12 +175,12 @@ function readFiles(current: FlowSource, files: readonly FlowFile[]): Reading {
   const base = removed.length > 0 ? baseRevision() : null;
   let wanted = 0;
   let landed = 0;
-  const take = (revision: string, path: string, into: Map<string, string>): void => {
+  const take = (revision: string, path: string, into: Map<string, readonly string[]>): void => {
     if (wanted >= MAX_READS) return;
     wanted += 1;
     const read = request(current.origin, current.repo, revision, path);
     if (read.state !== 'pending') landed += 1;
-    if (read.state === 'ready') into.set(path, read.text);
+    if (read.state === 'ready') into.set(path, read.imports);
   };
   const ordered = [...readable].sort((a, b) => Number(a.hiddenAs !== null) - Number(b.hiddenAs !== null));
   for (const file of ordered) {
@@ -490,7 +473,7 @@ export function openFlowDialog(): void {
     toggle.textContent = showHidden ? `Hide ${plural(hiddenCount, 'hidden file')}` : `Show ${plural(hiddenCount, 'hidden file')}`;
     toggle.setAttribute('aria-pressed', String(showHidden));
     const reading = readFiles(current, files);
-    const edges: FlowEdge[] = flowEdges(
+    const edges: FlowEdge[] = flowLinks(
       files.map((file) => file.path),
       reading.after,
       reading.before,
