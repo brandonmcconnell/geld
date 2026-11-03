@@ -47,10 +47,41 @@ export function assertRoundSingleHomes(before, after) {
   assert.deepEqual(after.items.filter((item) => item.attention).map((item) => item.id).sort(), before.items.filter((item) => OPEN.has(item.state)).map((item) => item.id).sort());
 }
 
-export async function verifyGitLabRoundAttention(page, item, { readSettings, patchSettings, poll, openReviewAncestors, capture, headSha, diffPageUrl }) {
-  const proof = { status: 'running', sourceGets: [], scope: 'Grouping over the already fetched current review, native selected version/head and explicit commit event. No historical edited-body or inferred bot-run claim.' };item.roundAttention = proof;
+// Audited callsites: gitlab/review.ts (MR, discussions, approval/reviewer/pipeline jobs),
+// gitlab/source.ts (selected metadata and immutable diff), gitlab/config.ts (repository config).
+export function isOwnedGitLabRoundEndpoint(url) {
+  if (url.origin !== 'https://gitlab.com' || url.username || url.password || url.hash) return false;
+  const project = /^\/api\/v4\/projects\/(?:gitlab-org%2fgitlab|278964)(.*)$/i.exec(url.pathname);
+  if (project !== null) return project[1] === '' || /^\/merge_requests\/266334(?:\/(?:approvals|pipelines|reviewers))?$/.test(project[1])
+    || /^\/pipelines\/[1-9]\d*\/jobs$/.test(project[1])
+    || /^\/repository\/(?:branches\/[^/]+|tree|files\/[^/]+\/raw|commits\/[^/]+)$/.test(project[1]);
+  return /^\/gitlab-org\/gitlab\/-\/merge_requests\/266334\/(?:discussions|diffs_metadata)\.json$/.test(url.pathname)
+    || /^\/gitlab-org\/gitlab\/-\/(?:commit\/[a-f0-9]{40,64}\.diff|compare\/[a-f0-9]{40,64}\.\.\.[a-f0-9]{40,64})$/.test(url.pathname);
+}
+
+/** Positive extension frames or exact owned source signatures fail acquisition checks.
+ * Missing frames remain unattributed; unrelated MR JSON never becomes native by default. */
+export function observeGitLabRoundRequest(value, extensionId) {
+  let url;try { url = new URL(value.url()); } catch { return null; }
+  if (url.origin !== 'https://gitlab.com' || value.method() !== 'GET') return null;
+  const frames = [];let initiator;try { initiator = value.initiator?.(); } catch { /* Missing evidence stays unknown. */ }
+  let stack = initiator?.stack;
+  for (let level = 0; stack != null && level < 8; level += 1) { frames.push(...(stack.callFrames ?? []).slice(0, 20).map((frame) => frame.url));stack = stack.parent; }
+  const extension = frames.some((frame) => typeof frame === 'string' && frame.startsWith(`chrome-extension://${extensionId}/`));
+  const firstParty = frames.some((frame) => { try { const source = new URL(frame);return source.origin === url.origin && source.pathname.startsWith('/assets/'); } catch { return false; } });
+  const ownedEndpoint = isOwnedGitLabRoundEndpoint(url);
+  if (!extension && !ownedEndpoint && !url.pathname.startsWith('/api/') && !/\/-\/merge_requests\/266334\/.*\.json$/.test(url.pathname)) return null;
+  return { url: url.origin + url.pathname, method: 'GET', observedAt: new Date().toISOString(), ownedEndpoint,
+    attribution: extension ? 'extension_frame_observed' : firstParty ? 'first_party_frame_observed' : 'native_or_unattributed',
+    frameSources: [...new Set(frames.flatMap((frame) => { try { const source = new URL(frame);return ['https:', 'http:', 'chrome-extension:'].includes(source.protocol) ? [`${source.protocol}//${source.host}${source.pathname}`] : []; } catch { return []; } }))].slice(0, 12),
+  };
+}
+
+export async function verifyGitLabRoundAttention(page, item, { readSettings, patchSettings, poll, openReviewAncestors, capture, headSha, diffPageUrl, extensionId }) {
+  assert.match(extensionId, /^[a-p]{32}$/, 'Request attribution needs the actual installed extension ID');
+  const proof = { status: 'running', sourceGets: [], otherGets: [], requests: [], scope: 'Grouping over the current loaded review and native selected version/head. Forbid observed extension frames and exact audited source endpoints. Other GETs retain first-party or unknown attribution; no claim of zero provider traffic or historical edited bodies.' };item.roundAttention = proof;
   const original = await readSettings();
-  const request = (value) => { const url = new URL(value.url());if (value.method() === 'GET' && url.origin === 'https://gitlab.com' && (url.pathname.startsWith('/api/') || /\/-\/merge_requests\/266334\/.*\.json$/.test(url.pathname))) proof.sourceGets.push(url.origin + url.pathname); };
+  const request = (value) => { const observed = observeGitLabRoundRequest(value, extensionId);if (observed === null) return;proof.requests.push(observed);if (observed.ownedEndpoint || observed.attribution === 'extension_frame_observed') proof.sourceGets.push(observed);else proof.otherGets.push(observed); };
   page.on('request', request);
   const read = () => page.evaluate(gitLabRoundSnapshot);
   let completed = false;
@@ -81,7 +112,7 @@ export async function verifyGitLabRoundAttention(page, item, { readSettings, pat
     proof.opened = await poll(read, (value) => value.attention === true && value.items.some((item) => item.id === candidate.id && item.open && item.focused), 'Trusted Enter opens and focuses the one real attention home');
     assert.deepEqual(proof.opened.input, { trusted: true, detail: 0 });assertRoundSingleHomes(proof.before, proof.opened);assertGitLabRoundScope(proof.opened, { headSha, diffPageUrl });
     proof.artifacts = await capture(page, 'gitlab-round-attention');proof.afterCapture = await read();assertRoundSingleHomes(proof.before, proof.afterCapture);assertGitLabRoundScope(proof.afterCapture, { headSha, diffPageUrl });
-    assert.deepEqual(proof.sourceGets, [], 'Grouping must not acquire another source');completed = true;return proof;
+    assert.deepEqual(proof.sourceGets, [], 'Grouping must not acquire an extension-attributed or recognized review source');completed = true;return proof;
   } catch (error) { proof.status = 'failed';proof.error = String(error);throw error; }
   finally {
     try {
