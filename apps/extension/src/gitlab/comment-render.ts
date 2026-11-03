@@ -199,6 +199,16 @@ export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLEl
   if (rendered instanceof HTMLElement) { rendered.dataset.geldUi = '';if (api) rendered.dataset.geldRenderedSource = 'api'; }
   host.replaceChildren(rendered);
   host.style.whiteSpace = '';
-  if (!api && context !== undefined) mountGitLabTableHeights(source, comment, host, targets, context);
+  if (!api && context !== undefined) {
+    const root = source.closest(`[id="${comment.anchor}"]`);const parent = source.parentElement;
+    mountGitLabTableHeights(source, comment, host, targets, {
+      ...context,
+      current: () => {
+        if (!context.current()) return false;
+        const current = nativeBody(comment, doc);
+        return current.kind === 'native' && current.body === source && source.parentElement === parent && source.closest(`[id="${comment.anchor}"]`) === root;
+      },
+    });
+  }
   return true;
 }
