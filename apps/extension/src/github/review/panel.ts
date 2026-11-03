@@ -27,7 +27,6 @@ import { ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import type { ReviewerCandidate } from './reviewers';
 import { shapeMark } from './mark-shape';
 import { inlineText } from './inline-text';
-import { editedMark } from './edited-mark';
 import { relativeTimeElement } from './time';
 
 export const PANEL_CLASS = 'geld-review';
@@ -67,12 +66,12 @@ function timeCell(model: PanelModel, anchor: string): HTMLElement | null {
 }
 
 /**
- * A comment's time in a row: for an edited one the edit's, live, with the clock that says when it was first posted
- * and opens GitHub's edit history (`editedMark`); else the page's words, which the time refresh keeps current.
+ * A comment's time in a row: for an edited one the edit's, live, else the page's words, which the time refresh keeps
+ * current. The clock that says when it was first posted is the opened comment's byline's alone (`editedMark`).
  */
 function commentTime(model: PanelModel, anchor: string, text: string): HTMLElement | null {
   const edited = model.editedFor(anchor);
-  if (edited !== null) return createElement('span', { class: `${PANEL_CLASS}__time ${PANEL_CLASS}__time--edited`, [ATTR_EDITED_FOR]: anchor }, [relativeTimeElement(edited.editedAt, `${PANEL_CLASS}__time-text`), editedMark(edited.editedAt, edited.postedAt, edited.log)]);
+  if (edited !== null) return createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_EDITED_FOR]: anchor }, [relativeTimeElement(edited.editedAt, `${PANEL_CLASS}__time-text`)]);
   return text === '' ? null : createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: anchor }, [text]);
 }
 
