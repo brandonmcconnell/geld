@@ -23,7 +23,7 @@ describe('the pile and its digest', () => {
     expect(digest.agent).toEqual({ score: 3, findings: 4 });
     expect(digest.checks).toEqual({ passed: 2, failed: 1, running: 1 });
     expect(digest.previews).toBe(1);
-    expect(digest.security).toEqual(['2 vulnerable dependencies', 'Coverage 84.2% (-1.3%)']);
+    expect(digest.security).toEqual(['2 vulnerable deps', 'Coverage 84.2% (-1.3%)']);
   });
 
   it('tallies only what has been gathered so far', () => {

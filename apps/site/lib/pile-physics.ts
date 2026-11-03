@@ -2,7 +2,9 @@
  * A small physics world for the home page's file pile: axis-aligned boxes that
  * fall, stack, slide and get thrown, around fixed obstacles (the hero's words),
  * and that can be drawn into a sink and swallowed. Pure, so it is tested
- * without a DOM. Boxes never rotate; the pile reads as physical without it.
+ * without a DOM. Boxes tilt and spin as they tumble, but collide as boxes
+ * that grow only partway with the tilt, so a tilted card's corners overlap its
+ * neighbours like a heap of papers rather than standing it off them.
  */
 
 export interface Rect {
@@ -31,6 +33,9 @@ export interface Body {
   still: number;
   /** Where it is drawn to while absorbing; the world's sink when unset. */
   target?: { readonly x: number; readonly y: number };
+  /** Tilt in radians, and how fast it is turning; a box that lands stops turning. */
+  angle?: number;
+  spin?: number;
 }
 
 export interface World {
@@ -52,10 +57,15 @@ const SLEEP_AFTER = 24;
 const SPILL = 0.7;
 const ABSORBED_SCALE = 0.25;
 const SWALLOW_DISTANCE = 10;
+const MAX_TILT = 0.3;
+/** How much of a tilted box's true bounding height it collides with. */
+const TILT_HEIGHT = 0.45;
 
 export function rectOf(body: Body): Rect {
-  const hw = (body.w * body.scale) / 2;
-  const hh = (body.h * body.scale) / 2;
+  const sin = Math.abs(Math.sin(body.angle ?? 0));
+  const cos = Math.abs(Math.cos(body.angle ?? 0));
+  const hw = ((body.w * cos + body.h * sin) * body.scale) / 2;
+  const hh = ((body.h * cos + body.w * sin * TILT_HEIGHT) * body.scale) / 2;
   return { left: body.x - hw, top: body.y - hh, right: body.x + hw, bottom: body.y + hh };
 }
 
@@ -88,6 +98,7 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
       body.x += body.vx * dt;
       body.y += body.vy * dt;
       body.scale += (ABSORBED_SCALE - body.scale) * Math.min(1, 7 * dt);
+      if (body.angle !== undefined) body.angle *= Math.exp(-8 * dt);
       if (Math.hypot(dx, dy) < SWALLOW_DISTANCE) body.mode = 'hidden';
       continue;
     }
@@ -103,6 +114,10 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
     }
     body.x += body.vx * dt;
     body.y += body.vy * dt;
+    if (body.spin !== undefined && body.spin !== 0) {
+      body.angle = Math.max(-MAX_TILT, Math.min(MAX_TILT, (body.angle ?? 0) + body.spin * dt));
+      if (Math.abs(body.angle) >= MAX_TILT) body.spin *= -0.4;
+    }
   }
 
   for (let i = 0; i < ITERATIONS; i++) {
@@ -127,7 +142,11 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
     if (start === undefined) continue;
     body.vx = (body.x - start.x) / dt;
     body.vy = (body.y - start.y) / dt;
-    if (grounded.has(body)) body.vx *= FRICTION;
+    if (grounded.has(body)) {
+      body.vx *= FRICTION;
+      if (body.spin !== undefined) body.spin *= 0.5;
+    }
+    if (body.spin !== undefined && Math.abs(body.spin) < 0.05) body.spin = 0;
     if (Math.hypot(body.vx, body.vy) < SLEEP_SPEED) {
       body.still += 1;
       if (body.still >= SLEEP_AFTER) {

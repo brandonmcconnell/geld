@@ -31,6 +31,7 @@ export function DigestCard({
   width,
   compact,
   maxHeight,
+  minHeight,
 }: {
   readonly digest: Digest;
   readonly rows: readonly DigestRow[];
@@ -42,13 +43,15 @@ export function DigestCard({
   readonly compact: boolean;
   /** The room it has; never more, so it never covers the hero's words. */
   readonly maxHeight: number;
+  /** The cup it fills, so turning Geld on fills the outline exactly. */
+  readonly minHeight: number;
 }) {
   return (
     <div
       ref={cardRef}
-      style={{ width, maxHeight }}
+      style={{ width, maxHeight, minHeight }}
       className={cn(
-        'pointer-events-auto origin-bottom-right overflow-hidden rounded-xl border bg-card text-[0.8125rem] shadow-xl transition-[opacity,scale] duration-300',
+        'pointer-events-auto flex origin-bottom-right flex-col overflow-hidden rounded-xl border bg-card text-[0.8125rem] shadow-xl transition-[opacity,scale] duration-300',
         open ? 'scale-100 opacity-100' : 'pointer-events-none scale-95 opacity-0',
       )}
     >
@@ -60,7 +63,7 @@ export function DigestCard({
         </div>
       )}
       {compact ? (
-        <div className="flex flex-wrap gap-1.5 p-2">
+        <div className="flex flex-1 flex-wrap content-start gap-1.5 p-2">
           {rows.map((row) => (
             <span
               key={row}
@@ -74,7 +77,7 @@ export function DigestCard({
         </div>
       ) : (
         rows.map((row) => (
-          <div key={row} ref={rowRef(row)} className={cn('flex min-h-11 items-center gap-3 border-t px-4 py-2 transition-opacity duration-300', !filled(digest, row) && 'opacity-30')}>
+          <div key={row} ref={rowRef(row)} className={cn('flex min-h-11 flex-1 items-center gap-3 border-t px-4 py-2 transition-opacity duration-300', !filled(digest, row) && 'opacity-30')}>
             <span className="w-[5.5rem] shrink-0 text-[0.75rem] text-muted-foreground">{LABEL[row]}</span>
             <span className="flex min-w-0 flex-1 items-center gap-2">
               <RowValue digest={digest} row={row} />

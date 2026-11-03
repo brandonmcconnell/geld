@@ -42,7 +42,7 @@ export function PileCard({ item }: { readonly item: PileItem }) {
       return (
         <Shell>
           <FileCodeIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-          <span className={cn('font-mono text-[0.75rem]', aside && 'text-muted-foreground')}>{item.path}</span>
+          <span className={cn('font-mono text-[0.6875rem]', aside && 'text-muted-foreground')}>{item.path.split('/').pop()}</span>
           {aside ? (
             <span className="rounded-sm border px-1.5 text-[0.6875rem] text-muted-foreground">{aside.shortNoun}</span>
           ) : (
@@ -57,7 +57,7 @@ export function PileCard({ item }: { readonly item: PileItem }) {
       return (
         <Shell tall>
           <Face who={item.who} />
-          <span className="flex max-w-[13rem] flex-col whitespace-normal">
+          <span className="flex w-[8.5rem] flex-col whitespace-normal">
             <span className="flex items-center gap-1 text-[0.75rem] font-semibold">
               {item.who}
               <MessageSquareIcon aria-hidden="true" className="size-3 text-muted-foreground" />
@@ -72,7 +72,7 @@ export function PileCard({ item }: { readonly item: PileItem }) {
           <span className="grid size-[22px] shrink-0 place-items-center rounded-[5px] bg-muted text-muted-foreground">
             <BotIcon aria-hidden="true" className="size-3.5" />
           </span>
-          <span className="flex max-w-[13rem] flex-col whitespace-normal">
+          <span className="flex w-[8.5rem] flex-col whitespace-normal">
             <span className="text-[0.75rem] font-semibold">{item.name}</span>
             <span className="leading-snug text-muted-foreground">{item.text}</span>
           </span>
@@ -109,7 +109,6 @@ export function PileCard({ item }: { readonly item: PileItem }) {
         <Shell>
           <RocketIcon aria-hidden="true" className="size-4 text-muted-foreground" />
           <span className="font-semibold">Preview ready</span>
-          <span className="font-mono text-[0.75rem] text-muted-foreground">{item.name}</span>
         </Shell>
       );
     case 'security':
@@ -123,7 +122,7 @@ export function PileCard({ item }: { readonly item: PileItem }) {
       return (
         <Shell>
           <ChartNoAxesColumnIcon aria-hidden="true" className="size-4 text-muted-foreground" />
-          <span>Coverage {item.percent}%</span>
+          <span>{item.percent}%</span>
           <span className="font-semibold text-deletion tabular-nums">{item.change}%</span>
         </Shell>
       );
@@ -132,7 +131,7 @@ export function PileCard({ item }: { readonly item: PileItem }) {
         <Shell>
           <Face who={item.who} />
           <span>
-            <span className="font-semibold">{item.who}</span> {item.verdict === 'approved' ? 'approved' : 'requested changes'}
+            <span className="font-semibold">{item.who}</span> {item.verdict === 'approved' ? 'approved' : 'wants changes'}
           </span>
           {item.verdict === 'approved' ? (
             <CheckIcon aria-hidden="true" className="size-4 text-addition" strokeWidth={2.5} />
@@ -145,5 +144,5 @@ export function PileCard({ item }: { readonly item: PileItem }) {
 }
 
 function Shell({ children, tall = false }: { readonly children: React.ReactNode; readonly tall?: boolean }) {
-  return <span className={cn('flex items-center gap-2 px-3 text-[0.8125rem] whitespace-nowrap', tall ? 'py-2' : 'h-10')}>{children}</span>;
+  return <span className={cn('flex items-center gap-2 px-2.5 text-[0.75rem] whitespace-nowrap', tall ? 'py-2' : 'h-9')}>{children}</span>;
 }

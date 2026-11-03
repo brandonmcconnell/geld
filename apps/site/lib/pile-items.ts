@@ -20,34 +20,34 @@ export type PileItem =
   | { readonly kind: 'coverage'; readonly id: string; readonly percent: number; readonly change: number }
   | { readonly kind: 'review'; readonly id: string; readonly who: Person; readonly verdict: 'approved' | 'changes' };
 
-/** In the order they fall: kinds interleaved, so a short pile still holds a bit of everything. */
+/** In the order they fall: tall cards between thin ones and every kind early, so even a short pile is a mixed mess. */
 export const PILE_ITEMS: readonly PileItem[] = [
   { kind: 'file', id: 'lock', path: 'pnpm-lock.yaml', additions: 1204, deletions: 811 },
-  { kind: 'comment', id: 'c1', who: 'mona', text: 'Nit: could this prop be called pressed?' },
+  { kind: 'comment', id: 'c1', who: 'mona', text: 'Nit: call this prop pressed?' },
   { kind: 'check', id: 'k1', name: 'test · node 22', state: 'failed' },
   { kind: 'file', id: 'button', path: 'src/Button.tsx', additions: 18, deletions: 9 },
   { kind: 'agent', id: 'agent', score: 3, findings: 4 },
-  { kind: 'bot', id: 'b1', name: 'deploy-bot', text: 'Deployed 3f2a91c to staging' },
-  { kind: 'file', id: 'btest', path: 'src/Button.test.tsx', additions: 38, deletions: 12 },
   { kind: 'review', id: 'r1', who: 'hubot', verdict: 'changes' },
-  { kind: 'security', id: 's1', text: '2 vulnerable dependencies' },
-  { kind: 'comment', id: 'c2', who: 'octocat', text: 'Fixed in 3f2a91c, mind another look?', needsYou: true },
-  { kind: 'file', id: 'snap', path: 'src/__snapshots__/Button.test.tsx.snap', additions: 6, deletions: 8 },
-  { kind: 'check', id: 'k2', name: 'lint', state: 'passed' },
+  { kind: 'bot', id: 'b1', name: 'deploy-bot', text: 'Deployed to staging' },
   { kind: 'preview', id: 'p1', name: 'widgets-docs' },
-  { kind: 'file', id: 'schema', path: 'src/api/__generated__/schema.ts', additions: 64, deletions: 20 },
+  { kind: 'comment', id: 'c2', who: 'octocat', text: 'Fixed, mind another look?', needsYou: true },
+  { kind: 'file', id: 'btest', path: 'src/Button.test.tsx', additions: 38, deletions: 12 },
+  { kind: 'security', id: 's1', text: '2 vulnerable deps' },
   { kind: 'comment', id: 'c3', who: 'hubot', text: 'This breaks the uncontrolled case.' },
+  { kind: 'review', id: 'r2', who: 'mona', verdict: 'approved' },
+  { kind: 'file', id: 'schema', path: 'src/api/__generated__/schema.ts', additions: 64, deletions: 20 },
+  { kind: 'bot', id: 'b2', name: 'lint-bot', text: '3 lint warnings' },
+  { kind: 'check', id: 'k2', name: 'lint', state: 'passed' },
   { kind: 'coverage', id: 'cov', percent: 84.2, change: -1.3 },
+  { kind: 'comment', id: 'c4', who: 'nadia', text: 'Should Switch get the same API?', needsYou: true },
+  { kind: 'file', id: 'snap', path: 'src/__snapshots__/Button.test.tsx.snap', additions: 6, deletions: 8 },
   { kind: 'file', id: 'toggle', path: 'src/hooks/useToggle.ts', additions: 8, deletions: 7 },
   { kind: 'check', id: 'k3', name: 'build', state: 'passed' },
-  { kind: 'review', id: 'r2', who: 'mona', verdict: 'approved' },
   { kind: 'file', id: 'docs', path: 'docs/button.mdx', additions: 22, deletions: 4 },
-  { kind: 'bot', id: 'b2', name: 'lint-bot', text: '3 warnings in src/Button.tsx' },
-  { kind: 'comment', id: 'c4', who: 'nadia', text: 'Should Switch get the same API?', needsYou: true },
+  { kind: 'bot', id: 'b3', name: 'size-bot', text: 'Bundle +1.2 kB (gzip)' },
   { kind: 'file', id: 'index', path: 'src/index.ts', additions: 2, deletions: 1 },
   { kind: 'file', id: 'ci', path: '.github/workflows/ci.yml', additions: 3, deletions: 1 },
   { kind: 'check', id: 'k4', name: 'e2e', state: 'running' },
-  { kind: 'bot', id: 'b3', name: 'size-bot', text: 'Bundle +1.2 kB (gzip)' },
 ];
 
 const matcher = createMatcher({ ...DEFAULT_SETTINGS, categories: { tests: true, generated: true, docs: true, tooling: true } });

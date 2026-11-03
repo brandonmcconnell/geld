@@ -64,6 +64,34 @@ describe('the pile', () => {
     expect(Math.hypot(b.x - 300, b.y - 200)).toBeLessThan(12);
   });
 
+  it('pours tumbling boxes into an open cup, where they come to rest inside its walls', () => {
+    const cup = { left: 500, top: 250, right: 860, bottom: 560 };
+    const walls: Rect[] = [
+      { left: cup.left - 18, top: cup.top, right: cup.left + 1, bottom: cup.bottom + 18 },
+      { left: cup.right - 1, top: cup.top, right: cup.right + 18, bottom: cup.bottom + 18 },
+      { left: cup.left - 18, top: cup.bottom - 1, right: cup.right + 18, bottom: cup.bottom + 18 },
+    ];
+    const cupWorld: World = { ...world, obstacles: walls };
+    const random = seeded(11);
+    const bodies = Array.from({ length: 6 }, (_, i) => ({
+      ...body(cup.left + 90 + random() * 180, -60 - i * 90, 150, 40),
+      vx: (random() - 0.5) * 300,
+      vy: 400,
+      angle: (random() - 0.5) * 0.5,
+      spin: (random() - 0.5) * 8,
+    }));
+    run(bodies, cupWorld, 8);
+    expect(settled(bodies)).toBe(true);
+    for (const b of bodies) {
+      const r = rectOf(b);
+      expect(r.left).toBeGreaterThanOrEqual(cup.left - 0.5);
+      expect(r.right).toBeLessThanOrEqual(cup.right + 0.5);
+      expect(r.bottom).toBeLessThanOrEqual(cup.bottom + 0.5);
+      expect(b.spin).toBe(0);
+      expect(Math.abs(b.angle ?? 0)).toBeLessThanOrEqual(0.3);
+    }
+  });
+
   it('never moves a held box, and pushes the others out of its way', () => {
     const held = body(450, 580);
     held.held = true;

@@ -1,13 +1,13 @@
 'use client';
 
 import { cn } from 'cn';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { useMediaQuery } from '@/components/use-media-query';
-import type { Body, Rect, World } from '@/lib/pile-physics';
-import { seeded, settled, step, wake } from '@/lib/pile-physics';
 import type { DigestRow } from '@/lib/pile-items';
 import { DIGEST_ROWS, digestOf, PILE_ITEMS, rowOf } from '@/lib/pile-items';
+import type { Body, Rect, World } from '@/lib/pile-physics';
+import { seeded, settled, step, wake } from '@/lib/pile-physics';
 
 import { DigestCard } from './digest-card';
 import { PileCard } from './pile-card';
@@ -16,28 +16,34 @@ import { PileCard } from './pile-card';
 const AUTO_GELD_AFTER = 2.4;
 /** Gaps between lines of the hero's words narrower than this are filled, so no card wedges into one. */
 const LINE_GAP = 44;
-const CARD_WIDTH = 360;
+const CARD_WIDTH = 400;
 const ROW_HEIGHT = 50;
 const CARD_CHROME = 48;
 const CHIP_LINE = 34;
+/** How deep the cup is where there is room; the card's lines stretch to fill it. */
+const CUP_DEPTH = 440;
+/** Thick on the outside, so a card falling fast cannot pass through a wall in one step. */
+const WALL = 18;
+const GAP_ABOVE_SWITCH = 12;
 
 interface Layout {
   readonly world: World;
+  readonly width: number;
   readonly height: number;
   /** Anchored by its right edge, so the label changing never moves it. */
   readonly toggle: { readonly right: number; readonly top: number };
   readonly card: { readonly width: number; readonly maxHeight: number };
-  readonly words: Rect;
 }
 
 /**
  * The hero's pile: everything a pull request asks of its reviewer at once
  * (files, comments, bot notes, an agent's score, checks, previews, reports,
- * verdicts) rains into the space around the hero's words. Turning Geld on
- * gathers each into its line of a digest card that fills in as they land;
- * off, they burst back out. Every card can be dragged and thrown. Lives on a
- * layer over the hero that takes no room, with the hero's words as obstacles;
- * with reduced motion there is no pile at all.
+ * verdicts) is poured, tumbling, into an open cup that stands on Geld's
+ * switch. The cup is the digest card's outline: turning Geld on fills it in,
+ * each card drawn into its line of the digest as it lands; off, they burst
+ * back out into the cup. Every card can be dragged and thrown. Lives on a
+ * layer over the hero that takes no room, with the hero's words as
+ * obstacles; with reduced motion there is no pile at all.
  */
 export function HeroPile() {
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
@@ -48,19 +54,24 @@ export function HeroPile() {
   const rowEls = useRef(new Map<DigestRow, HTMLElement>());
   const els = useRef<(HTMLDivElement | null)[]>([]);
   const bodies = useRef<Body[]>([]);
-  /** The items in play: as many as the free space holds, in the order they fall. */
+  /** The items in play: about as many as the cup holds, in the order they fall. */
   const kept = useRef<ReadonlySet<number>>(new Set());
+  /** Items still waiting to be poured. */
+  const pending = useRef(new Set<number>());
+  const pours = useRef<number[]>([]);
+  const base = useRef<World | null>(null);
   const world = useRef<World | null>(null);
+  const cupRef = useRef<Rect | null>(null);
   const frame = useRef<number | null>(null);
   const last = useRef(0);
   const interacted = useRef(false);
   const landedAt = useRef<number | null>(null);
-  const startedAt = useRef<number | null>(null);
   const drag = useRef<{ index: number; dx: number; dy: number; x: number; y: number; t: number; vx: number; vy: number } | null>(null);
 
   const [geld, setGeld] = useState(false);
   const [used, setUsed] = useState(false);
   const [layout, setLayout] = useState<Layout | null>(null);
+  const [cup, setCup] = useState<Rect | null>(null);
   const [inPlay, setInPlay] = useState<readonly number[]>([]);
   const [gathered, setGathered] = useState('');
 
@@ -79,12 +90,12 @@ export function HeroPile() {
       if (!el) return;
       if (body.mode === 'hidden') {
         el.style.visibility = 'hidden';
-        if (kept.current.has(index)) hidden.push(index);
+        if (kept.current.has(index) && !pending.current.has(index)) hidden.push(index);
         return;
       }
       el.style.visibility = 'visible';
       el.style.opacity = body.mode === 'absorbing' ? String(Math.min(1, (body.scale - 0.25) / 0.5)) : '1';
-      el.style.transform = `translate3d(${body.x - body.w / 2}px, ${body.y - body.h / 2}px, 0) scale(${body.scale})`;
+      el.style.transform = `translate3d(${body.x - body.w / 2}px, ${body.y - body.h / 2}px, 0) rotate(${body.angle ?? 0}rad) scale(${body.scale})`;
     });
     const signature = hidden.join(',');
     setGathered((previous) => (previous === signature ? previous : signature));
@@ -101,9 +112,7 @@ export function HeroPile() {
       last.current = now;
       step(bodies.current, current, dt);
       paint();
-      // Landed: at rest, or long enough after the drop that the reader has seen the pile.
-      const since = startedAt.current === null ? 0 : now - startedAt.current;
-      if (landedAt.current === null && (settled(bodies.current) || since > 3000)) landedAt.current = now;
+      if (landedAt.current === null && pending.current.size === 0 && bodies.current.length > 0 && settled(bodies.current)) landedAt.current = now;
       if (!settled(bodies.current) || drag.current !== null) frame.current = requestAnimationFrame(loop);
     };
     frame.current = requestAnimationFrame(loop);
@@ -136,12 +145,8 @@ export function HeroPile() {
         if (gap > 0 && gap < LINE_GAP && across > 0) Object.assign(upper, { bottom: lower.top });
       }
     }
-    const words: Rect = {
-      left: Math.min(...obstacles.map((r) => r.left)),
-      top: Math.max(0, Math.min(...obstacles.map((r) => r.top))),
-      right: Math.max(...obstacles.map((r) => r.right)),
-      bottom: Math.max(...obstacles.map((r) => r.bottom)),
-    };
+    const wordsRight = Math.max(...obstacles.map((r) => r.right));
+    const wordsBottom = Math.max(...obstacles.map((r) => r.bottom));
     const floor = reel.getBoundingClientRect().top - origin.top - 8;
     const heroBox = hero.getBoundingClientRect();
     const padRight = parseFloat(getComputedStyle(hero).paddingRight);
@@ -151,19 +156,64 @@ export function HeroPile() {
     const top = floor - th;
     obstacles.push({ left: right - tw - 4, top: top - 4, right: right + 4, bottom: floor + 8 });
     // Beside the words when there is room for the card there, else in the band under them.
-    const beside = right - words.right - 12;
+    const beside = right - wordsRight - 12;
     const width = Math.min(CARD_WIDTH, beside >= 300 ? beside : right - 8);
-    const ceiling = beside >= 300 ? 8 : words.bottom + 8;
+    const ceiling = beside >= 300 ? 8 : wordsBottom + 8;
     return {
       world: { width: origin.width, floor, obstacles, sink: { x: right - tw / 2, y: top + th / 2 } },
+      width: origin.width,
       height: origin.height,
       toggle: { right: origin.width - right, top },
-      card: { width, maxHeight: Math.max(0, top - 12 - ceiling) },
-      words,
+      card: { width, maxHeight: Math.max(0, top - GAP_ABOVE_SWITCH - ceiling) },
     };
   }, []);
 
-  // Lay the world out, drop the pile once it is in view, and keep up with resizes.
+  // The digest's lines: only kinds in the pile, as many as the room holds, the ones that matter first.
+  const rows = useMemo(() => {
+    const present = new Set(
+      inPlay.flatMap((index) => {
+        const item = PILE_ITEMS[index];
+        return item ? [rowOf(item)] : [];
+      }),
+    );
+    const lines = layout === null ? DIGEST_ROWS.length : Math.floor((layout.card.maxHeight - CARD_CHROME) / ROW_HEIGHT);
+    const compact = lines < 4;
+    // As chips: as many lines of them as the room holds, about three to a line.
+    const fit = compact && layout !== null ? Math.max(2, Math.floor((layout.card.maxHeight - 16) / CHIP_LINE) * Math.max(2, Math.floor(layout.card.width / 130))) : lines;
+    // Before anything is poured, every kind that could fall: the cup is sized from the card.
+    const shown = present.size > 0 ? DIGEST_ROWS.filter((row) => present.has(row)) : DIGEST_ROWS;
+    return { compact, rows: shown.slice(0, fit) };
+  }, [inPlay, layout]);
+
+  // The cup is the card's own box, standing on the switch: `CUP_DEPTH` deep where there is room, never shallower than the card's lines.
+  useLayoutEffect(() => {
+    const el = card.current;
+    const at = layout;
+    if (el === null || at === null) return;
+    const natural = [...el.children].reduce((sum, child) => sum + (child instanceof HTMLElement ? child.offsetHeight : 0), 2);
+    const depth = Math.min(at.card.maxHeight, Math.max(natural, CUP_DEPTH));
+    const right = at.width - at.toggle.right;
+    const bottom = at.toggle.top - GAP_ABOVE_SWITCH;
+    const next: Rect = { left: right - at.card.width, top: bottom - depth, right, bottom };
+    const previous = cupRef.current;
+    if (previous && previous.left === next.left && previous.top === next.top && previous.right === next.right && previous.bottom === next.bottom) return;
+    cupRef.current = next;
+    setCup(next);
+    const current = base.current;
+    if (current === null) return;
+    const walls: Rect[] = [
+      { left: next.left - WALL, top: next.top, right: next.left + 1, bottom: next.bottom + WALL },
+      { left: next.right - 1, top: next.top, right: next.right + WALL, bottom: next.bottom + WALL },
+      { left: next.left - WALL, top: next.bottom - 1, right: next.right + WALL, bottom: next.bottom + WALL },
+    ];
+    world.current = { ...current, obstacles: [...current.obstacles, ...walls] };
+    if (bodies.current.length > 0) {
+      wake(bodies.current);
+      run();
+    }
+  }, [layout, rows, run]);
+
+  // Lay the world out, pour the pile once it is in view, and keep up with resizes.
   useEffect(() => {
     if (reduced) return;
     const root = layer.current;
@@ -173,62 +223,65 @@ export function HeroPile() {
     const relayout = (): void => {
       const next = measure();
       if (next === null) return;
-      world.current = next.world;
+      base.current = next.world;
+      if (world.current === null) world.current = next.world;
       setLayout(next);
-      if (bodies.current.length > 0) {
-        wake(bodies.current);
-        run();
-      }
     };
 
     const start = (): void => {
-      const current = world.current;
-      const at = measure();
-      if (started || current === null || at === null) return;
+      const into = cupRef.current;
+      if (started) return;
+      if (into === null || world.current === null) {
+        requestAnimationFrame(start);
+        return;
+      }
       started = true;
-      startedAt.current = performance.now();
       const sizes = els.current.map((el) => ({ w: el?.offsetWidth ?? 200, h: el?.offsetHeight ?? 44 }));
-      const { words } = at;
-      // Where cards fall: the columns beside the words reach the floor; over the words, they land on them.
-      const regions = [
-        { left: 0, right: words.left - 8, depth: current.floor },
-        { left: words.right + 8, right: current.width, depth: current.floor },
-        { left: words.left, right: words.right, depth: words.top },
-      ].filter((region) => region.right - region.left > 160 && region.depth > 40);
-      const beside = regions.filter((region) => region.depth === current.floor);
-      const useColumns = beside.reduce((sum, region) => sum + region.right - region.left, 0) > current.width * 0.25;
-      const band = Math.max(0, current.floor - words.bottom);
-      const freeArea = useColumns ? regions.reduce((sum, region) => sum + (region.right - region.left) * region.depth, 0) : current.width * (words.top + band);
       const average = sizes.reduce((sum, size) => sum + size.w * size.h, 0) / Math.max(1, sizes.length);
-      const room = Math.min(PILE_ITEMS.length, Math.max(8, Math.floor((freeArea * 0.5) / average)));
+      const width = into.right - into.left;
+      // About what the cup holds: tumbled cards leave gaps, so a pile fills a bit over half of it.
+      const room = Math.min(PILE_ITEMS.length, Math.max(5, Math.floor((width * (into.bottom - into.top) * 0.6) / average)));
       const keep = new Set(PILE_ITEMS.slice(0, room).map((_, index) => index));
+      // Where the words stand over the cup (a phone), cards appear at its mouth instead of landing on the words.
+      const covered = (base.current?.obstacles ?? []).some((r) => r.bottom <= into.top + 1 && r.right > into.left && r.left < into.right);
       const random = seeded(17);
       bodies.current = PILE_ITEMS.map((_, index) => {
         const size = sizes[index] ?? { w: 200, h: 44 };
-        const place = index;
-        let x = size.w / 2 + random() * Math.max(1, current.width - size.w);
-        let y = -size.h - place * 30 - random() * 50;
-        const fits = regions.filter((region) => region.right - region.left >= size.w + 4);
-        if (useColumns && fits.length > 0) {
-          const total = fits.reduce((sum, region) => sum + (region.right - region.left - size.w) * region.depth, 0);
-          let pick = random() * total;
-          for (const region of fits) {
-            const span = (region.right - region.left - size.w) * region.depth;
-            if (pick <= span) {
-              x = region.left + size.w / 2 + pick / region.depth;
-              break;
-            }
-            pick -= span;
-          }
-        } else if (!useColumns && random() * (words.top + band) < band) {
-          y = words.bottom + size.h / 2 + 2 + random() * Math.max(0, band - size.h - 4) - place * 4;
-        }
-        return { x, y, vx: (random() - 0.5) * 120, vy: 200 + random() * 300, w: size.w, h: size.h, scale: 1, mode: keep.has(index) ? 'free' : 'hidden', held: false, still: 0 };
+        return { x: 0, y: -size.h, vx: 0, vy: 0, w: size.w, h: size.h, scale: 1, mode: 'hidden', held: false, still: 0 };
       });
       kept.current = keep;
+      pending.current = new Set(keep);
       setInPlay([...keep]);
+      // Poured one at a time at uneven intervals, each into a random spot across the cup, tumbling.
+      let delay = 0;
+      for (const index of keep) {
+        delay += 70 + random() * 230;
+        const x = random();
+        const tilt = (random() - 0.5) * 0.5;
+        const spin = (random() - 0.5) * 9;
+        const drift = (random() - 0.5) * 520;
+        const speed = 250 + random() * 350;
+        pours.current.push(
+          window.setTimeout(() => {
+            const body = bodies.current[index];
+            const cupNow = cupRef.current;
+            if (!body || cupNow === null || !pending.current.has(index)) return;
+            pending.current.delete(index);
+            const span = cupNow.right - cupNow.left - body.w;
+            body.x = cupNow.left + body.w / 2 + (span > 0 ? x * span : span / 2);
+            body.y = covered ? cupNow.top + body.h / 2 : -body.h;
+            body.scale = covered ? 0.6 : 1;
+            body.vx = drift;
+            body.vy = covered ? speed * 0.3 : speed;
+            body.angle = tilt;
+            body.spin = spin;
+            body.still = 0;
+            body.mode = 'free';
+            run();
+          }, delay),
+        );
+      }
       paint();
-      run();
     };
 
     const observer = new IntersectionObserver(([entry]) => {
@@ -246,9 +299,11 @@ export function HeroPile() {
       observer.observe(root);
       if (root.parentElement) resize.observe(root.parentElement);
     });
+    const timers = pours.current;
     return () => {
       observer.disconnect();
       resize.disconnect();
+      timers.forEach((timer) => window.clearTimeout(timer));
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       frame.current = null;
     };
@@ -268,28 +323,17 @@ export function HeroPile() {
     return () => window.clearInterval(timer);
   }, [reduced]);
 
-  // The digest's lines: only kinds that fell, as many as the room holds, the ones that matter first.
-  const rows = useMemo(() => {
-    const present = new Set(inPlay.flatMap((index) => {
-      const item = PILE_ITEMS[index];
-      return item ? [rowOf(item)] : [];
-    }));
-    const lines = layout === null ? DIGEST_ROWS.length : Math.floor((layout.card.maxHeight - CARD_CHROME) / ROW_HEIGHT);
-    const compact = lines < 4;
-    // As chips: as many lines of them as the room holds, about three to a line.
-    const fit = compact && layout !== null ? Math.max(2, Math.floor((layout.card.maxHeight - 16) / CHIP_LINE) * Math.max(2, Math.floor(layout.card.width / 130))) : lines;
-    return { compact, rows: DIGEST_ROWS.filter((row) => present.has(row)).slice(0, fit) };
-  }, [inPlay, layout]);
-
   const digest = useMemo(() => {
     const indices = gathered === '' ? [] : gathered.split(',').map(Number);
-    return digestOf(indices.flatMap((index) => {
-      const item = PILE_ITEMS[index];
-      return item ? [item] : [];
-    }));
+    return digestOf(
+      indices.flatMap((index) => {
+        const item = PILE_ITEMS[index];
+        return item ? [item] : [];
+      }),
+    );
   }, [gathered]);
 
-  // Geld on: each item is drawn into its line of the card, one after another. Off: they burst back out.
+  // Geld on: each item is drawn into its line of the card, one after another. Off: they burst back out into the cup.
   useEffect(() => {
     const current = world.current;
     const root = layer.current;
@@ -297,6 +341,11 @@ export function HeroPile() {
     const random = seeded(geld ? 3 : 5);
     const timers: number[] = [];
     drag.current = null;
+    // Anything not yet poured goes straight into the card.
+    if (geld) {
+      pours.current.forEach((timer) => window.clearTimeout(timer));
+      pending.current.clear();
+    }
     const origin = root.getBoundingClientRect();
     const head = card.current?.getBoundingClientRect();
     let delay = geld ? 220 : 0;
@@ -305,29 +354,37 @@ export function HeroPile() {
       if (!item || !kept.current.has(index)) return;
       if (geld && body.mode === 'free') {
         body.held = false;
-        timers.push(window.setTimeout(() => {
-          const line = rowEls.current.get(rowOf(item))?.getBoundingClientRect();
-          const into = line ?? head;
-          body.target = into
-            ? { x: into.left - origin.left + Math.min(into.width * 0.5, 150), y: (line ? into.top + into.height / 2 : into.top + 22) - origin.top }
-            : current.sink;
-          body.mode = 'absorbing';
-          run();
-        }, delay));
+        timers.push(
+          window.setTimeout(() => {
+            const line = rowEls.current.get(rowOf(item))?.getBoundingClientRect();
+            const into = line ?? head;
+            body.target = into ? { x: into.left - origin.left + Math.min(into.width * 0.5, 150), y: (line ? into.top + into.height / 2 : into.top + 22) - origin.top } : current.sink;
+            body.mode = 'absorbing';
+            body.spin = 0;
+            run();
+          }, delay),
+        );
         delay += 70;
       } else if (!geld && body.mode !== 'free') {
-        timers.push(window.setTimeout(() => {
-          const from = body.target ?? current.sink;
-          body.mode = 'free';
-          body.scale = 1;
-          body.x = from.x;
-          body.y = from.y;
-          body.vx = (random() - 0.6) * 1300;
-          body.vy = -700 - random() * 700;
-          body.still = 0;
-          run();
-        }, delay));
-        delay += 30;
+        timers.push(
+          window.setTimeout(() => {
+            const into = cupRef.current;
+            const from = body.target ?? (into ? { x: (into.left + into.right) / 2, y: into.bottom - 40 } : current.sink);
+            // From anywhere across the cup at its line's height, so they fall back in as a heap, not a column.
+            const span = into ? into.right - into.left - body.w : 0;
+            body.mode = 'free';
+            body.scale = 1;
+            body.x = into && span > 0 ? into.left + body.w / 2 + random() * span : from.x;
+            body.y = from.y;
+            body.vx = (random() - 0.5) * 700;
+            body.vy = -500 - random() * 600;
+            body.angle = (random() - 0.5) * 0.4;
+            body.spin = (random() - 0.5) * 10;
+            body.still = 0;
+            run();
+          }, delay),
+        );
+        delay += 45;
       }
     });
     wake(bodies.current);
@@ -378,6 +435,7 @@ export function HeroPile() {
       body.held = false;
       body.vx = Math.max(-2400, Math.min(2400, held.vx));
       body.vy = Math.max(-2400, Math.min(2400, held.vy));
+      body.spin = Math.max(-8, Math.min(8, body.vx * 0.004));
       body.still = 0;
     }
     drag.current = null;
@@ -388,6 +446,13 @@ export function HeroPile() {
 
   return (
     <div ref={layer} className="pointer-events-none absolute inset-0 z-10 [overflow-x:clip]">
+      {cup !== null && (
+        <div
+          aria-hidden="true"
+          className={cn('absolute rounded-b-xl border-2 border-t-0 border-foreground/20 transition-opacity duration-300', geld && 'opacity-0')}
+          style={{ left: cup.left, top: cup.top, width: cup.right - cup.left, height: cup.bottom - cup.top }}
+        />
+      )}
       <div aria-hidden="true">
         {PILE_ITEMS.map((item, index) => (
           <div
@@ -407,8 +472,18 @@ export function HeroPile() {
         ))}
       </div>
       {layout !== null && (
-        <div aria-hidden="true" className="absolute" style={{ right: layout.toggle.right, bottom: layout.height - layout.toggle.top + 12 }}>
-          <DigestCard digest={digest} rows={rows.rows} compact={rows.compact} maxHeight={layout.card.maxHeight} open={geld} rowRef={rowRef} cardRef={card} width={layout.card.width} />
+        <div aria-hidden="true" className="absolute" style={{ right: layout.toggle.right, bottom: layout.height - layout.toggle.top + GAP_ABOVE_SWITCH }}>
+          <DigestCard
+            digest={digest}
+            rows={rows.rows}
+            compact={rows.compact}
+            maxHeight={layout.card.maxHeight}
+            minHeight={cup === null ? 0 : cup.bottom - cup.top}
+            open={geld}
+            rowRef={rowRef}
+            cardRef={card}
+            width={layout.card.width}
+          />
         </div>
       )}
       <button
