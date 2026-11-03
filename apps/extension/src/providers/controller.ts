@@ -17,6 +17,7 @@ import { ProviderHeaderHints } from './header-hints';
 import { applyProviderLineFolds, clearProviderLineFolds, PROVIDER_LINE_FOLDS_CHANGED } from './line-folds';
 import { immutableProviderPage, isProviderReviewPage } from './types';
 import { providerOutlineContext } from './source-facts';
+import { ProviderWholeTestContext } from './whole-test-context';
 import type { ProviderAdapter, ProviderDiffEntry, ProviderDiffView, ProviderHeaderTarget, ProviderListRow, ProviderPage } from './types';
 import type { ProviderRepoConfigSource } from './repo-config';
 import type { RepoConfigChoices } from '../lib/local-state';
@@ -91,6 +92,7 @@ export class ProviderController {
   private grouped = false;
   private readonly flowWrappers = new Map<HTMLElement, string | null>();
   private signature = '';
+  private readonly wholeTests: ProviderWholeTestContext | null;
   private readonly touched = new Set<HTMLElement>();
   private readonly chips = new Set<HTMLElement>();
   private readonly collapsed = new Map<string, ProviderDiffEntry>();
@@ -112,6 +114,7 @@ export class ProviderController {
     services: ProviderConversationServices = {},
   ) {
     this.settings = settings;
+    this.wholeTests = adapter.wholeTests === undefined ? null : new ProviderWholeTestContext(adapter, adapter.wholeTests, () => this.requestRefresh());
     this.catalog = catalog;
     this.expanded = settings.expandedByDefault;
     this.hiddenAuthors = new ProviderHiddenAuthors(adapter.id, () => this.requestRefresh());
@@ -216,6 +219,7 @@ export class ProviderController {
   }
 
   updateSettings(settings: GeldSettings): void {
+    if (!settingsEqual(this.settings, settings)) this.wholeTests?.retire();
     if (settings.enabled !== this.settings.enabled || JSON.stringify([settings.hiddenAuthors, settings.repoRules]) !== JSON.stringify([this.settings.hiddenAuthors, this.settings.repoRules])) this.listAuthors.clear();
     const layoutChanged = settings.groupHidden !== this.settings.groupHidden;
     const defaultChanged = settings.expandedByDefault !== this.settings.expandedByDefault;
@@ -278,6 +282,7 @@ export class ProviderController {
     document.removeEventListener('keydown', this.nativeInlineActivate, true);
     document.removeEventListener('DiffFileMounted', this.refreshEvent);
     document.removeEventListener(PROVIDER_LINE_FOLDS_CHANGED, this.refreshEvent);
+    this.wholeTests?.destroy();
     this.hover.stop();
     this.reveal.stop();
     this.source.stop();
@@ -291,6 +296,7 @@ export class ProviderController {
   }
 
   private restorePage(preserveHeaderHover = false, preserveDiffSyntax = false): void {
+    this.wholeTests?.retire();
     this.settledHeader = null;
     this.effectiveSettings = null;
     for (const host of [...this.hoverCounts.keys()]) {
@@ -401,12 +407,16 @@ export class ProviderController {
     }
     const files = result.result.files;
     const { all, hidden } = breakdownFromFiles(files, matcher, effective.hideCommentLines, view?.filteredPaths);
-    if (view !== null) applyProviderLineFolds(view, files.map((file) => {
-      if (matcher.categorizeFile(file) === null && view.filteredPaths.has(file.path) === false) return file;
-      const { commentLines, ...withoutComments } = file;
-      void commentLines;
-      return withoutComments;
-    }), effective, effective.enabled && (effective.hideCommentLines || effective.testOutline) ? providerOutlineContext(page, result.result, view) : undefined);
+    if (view !== null) {
+      const outline = effective.enabled && (effective.hideCommentLines || effective.testOutline) ? providerOutlineContext(page, result.result, view) : undefined;
+      if (outline !== undefined) this.wholeTests?.update(page, result.result, view, effective, outline);else this.wholeTests?.retire();
+      applyProviderLineFolds(view, files.map((file) => {
+        if (matcher.categorizeFile(file) === null && view.filteredPaths.has(file.path) === false) return file;
+        const { commentLines, ...withoutComments } = file;
+        void commentLines;
+        return withoutComments;
+      }), effective, outline, this.wholeTests ?? undefined);
+    } else this.wholeTests?.retire();
     const visible = subtractTotals(subtractTotals(all, hidden.totals), hidden.filtered);
     const expansionKey = JSON.stringify([key, result.result.revision]);
     if (this.expansionKey !== expansionKey) this.activeCategory = null;

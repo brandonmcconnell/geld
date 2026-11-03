@@ -1,4 +1,5 @@
 import { parseUnifiedDiff } from '@geld/core';
+import type { ProviderHttpAdmission } from '../providers/http-admission';
 import type { FileStats } from '@geld/core';
 import type { ProviderDiffResult, ProviderReviewPage } from '../providers/types';
 import { record, selection, SHA } from './page';
@@ -7,14 +8,16 @@ import type { ProviderGitLabTarget } from '../providers/source-facts';
 
 const MAX_BYTES = 20 * 1024 * 1024;
 
-export async function readGitLabDiffResource(url: URL, signal: AbortSignal, cache?: RequestCache): Promise<string> {
-  const response = await fetch(url, { credentials: 'same-origin', signal, ...(cache === undefined ? {} : { cache }), headers: { Accept: url.searchParams.get('format') === 'diff' || url.pathname.endsWith('.diff') ? 'text/plain' : 'application/json' } });
+export async function readGitLabDiffResource(url: URL, signal: AbortSignal, cache?: RequestCache, admission?: ProviderHttpAdmission): Promise<string> {
+  const read = async (): Promise<string> => {
+  const response = await fetch(url, { credentials: 'same-origin', signal, ...(admission === undefined ? {} : { redirect: 'error' as const }), ...(cache === undefined ? {} : { cache }), headers: { Accept: url.searchParams.get('format') === 'diff' || url.pathname.endsWith('.diff') ? 'text/plain' : 'application/json' } });
   if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
     const error = new Error(response.status === 401 || response.status === 403 ? 'Sign in to GitLab to read these changes' : `GitLab answered HTTP ${response.status}`);
-    throw Object.assign(error, { retryAfter: response.headers.get('retry-after') });
+    throw Object.assign(error, { status: response.status, retryAfter: response.headers.get('retry-after') });
   }
   if (response.url && /\/users\/sign_in(?:[/?#]|$)/.test(new URL(response.url).pathname)) throw new Error('Sign in to GitLab to read these changes');
-  if (Number(response.headers.get('content-length') ?? 0) > MAX_BYTES) throw new Error('GitLab diff too large');
+  if (Number(response.headers.get('content-length') ?? 0) > MAX_BYTES) { await response.body?.cancel().catch(() => undefined);throw new Error('GitLab diff too large'); }
   const reader = response.body?.getReader();
   let text = '';
   if (reader === undefined) text = await response.text();
@@ -37,10 +40,12 @@ export async function readGitLabDiffResource(url: URL, signal: AbortSignal, cach
   if (text.length > MAX_BYTES) throw new Error('GitLab diff too large');
   if (/text\/html/i.test(response.headers.get('content-type') ?? '') || /^\s*<(?:!doctype|html|head|body)\b/i.test(text)) throw new Error('GitLab returned a page instead of changes');
   return text;
+  };
+  return admission === undefined ? read() : admission.run(url.origin, { signal, priority: 1 }, read);
 }
 
-export async function readGitLabDiffJson(url: URL, signal: AbortSignal, cache?: RequestCache): Promise<unknown> {
-  const text = await readGitLabDiffResource(url, signal, cache);
+export async function readGitLabDiffJson(url: URL, signal: AbortSignal, cache?: RequestCache, admission?: ProviderHttpAdmission): Promise<unknown> {
+  const text = await readGitLabDiffResource(url, signal, cache, admission);
   try { return JSON.parse(text); } catch { throw new Error('GitLab returned invalid change metadata'); }
 }
 
@@ -78,10 +83,10 @@ export function gitLabMetadataFiles(value: unknown): readonly FileStats[] | null
   return result;
 }
 
-export async function fetchGitLabDiff(page: ProviderReviewPage, signal: AbortSignal): Promise<ProviderDiffResult> {
+export async function fetchGitLabDiff(page: ProviderReviewPage, signal: AbortSignal, admission?: ProviderHttpAdmission): Promise<ProviderDiffResult> {
   const params = selection(new URL(page.diffPageUrl));
   if (params.has('only_context_commits')) throw new Error('GitLab context-only comparisons are unavailable');
-  const metadata = await readGitLabDiffJson(endpoint(page, 'diffs_metadata.json', params), signal);
+  const metadata = await readGitLabDiffJson(endpoint(page, 'diffs_metadata.json', params), signal, undefined, admission);
   if (!record(metadata)) throw new Error('GitLab change metadata is unavailable');
   const summaries = gitLabMetadataFiles(metadata.diff_files);
   if (summaries === null) throw new Error('GitLab change metadata is incomplete');
@@ -102,7 +107,7 @@ export async function fetchGitLabDiff(page: ProviderReviewPage, signal: AbortSig
     head = commit;
     base = typeof parent === 'string' && SHA.test(parent) ? parent : commit;
   } else {
-    const versions = await readGitLabDiffJson(endpoint(page, 'versions', params), signal);
+    const versions = await readGitLabDiffJson(endpoint(page, 'versions', params), signal, undefined, admission);
     const source = chosen(versions, 'source_versions');
     const target = chosen(versions, 'target_versions');
     const candidateHead = source?.head_sha;
@@ -124,7 +129,7 @@ export async function fetchGitLabDiff(page: ProviderReviewPage, signal: AbortSig
     rawUrl.searchParams.set('straight', 'true');
   }
   if (params.has('w')) rawUrl.searchParams.set('w', params.get('w') ?? '0');
-  const raw = await readGitLabDiffResource(rawUrl, signal);
+  const raw = await readGitLabDiffResource(rawUrl, signal, undefined, admission);
   if (raw.trim() !== '' && !/^diff --git /m.test(raw)) throw new Error('GitLab returned invalid diff content');
   const files = parseUnifiedDiff(raw);
   const expected = new Map(summaries.map((file) => [file.path, file]));

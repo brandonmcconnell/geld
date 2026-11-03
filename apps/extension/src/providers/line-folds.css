@@ -10,3 +10,5 @@ table.rd-text-view-root > tbody.rd-text-view-content > tr.geld-provider-line-fol
 .geld-provider-line-fold__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .geld-provider-line-fold__changes { margin-inline-start: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .geld-provider-line-fold__status, .geld-provider-line-fold__partial, .geld-provider-line-fold__chevron { white-space: nowrap; }
+
+.geld-provider-test-boundaries { margin-inline-start: var(--geld-provider-space-2); }

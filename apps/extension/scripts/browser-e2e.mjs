@@ -23,6 +23,7 @@ import { verifyGitLabAuthorReuseThemes } from './gitlab-author-reuse-acceptance.
 import { BITBUCKET_COMMIT_LIST, commitLinkSettingsScope, verifyBitbucketCommitLinks } from './bitbucket-commit-links.mjs';
 import { GITLAB_FILE_SEARCH, verifyGitLabFileSearch } from './gitlab-file-search.mjs';
 import { verifyGitLabDisplayedOutline } from './gitlab-displayed-outline.mjs';
+import { verifyGitLabWholeTestContext } from './gitlab-whole-test-context.mjs';
 import { CODERABBIT_FIXTURE, observeCodeRabbitFixture, verifyCodeRabbitCommands } from './gitlab-coderabbit-acceptance.mjs';
 import { verifyGitLabTableHeights } from './gitlab-table-height-acceptance.mjs';
 import { verifyGitLabRoundAttention } from './round-attention-acceptance.mjs';
@@ -2691,6 +2692,12 @@ try {
       item.darkPreferenceProbe.artifacts = await capture(page, 'gitlab-os-dark');
     }
     await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }]);
+    item.wholeTestContext = {};
+    await verifyGitLabWholeTestContext(page, { progress: item.wholeTestContext, poll, capture, safeUrl, extensionId,
+      readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY),
+      writeSettings: (value) => options.evaluate(async (key, saved) => { await chrome.storage.sync.set({ [key]: saved }); }, SETTINGS_KEY, value),
+      readState: async () => ({ runtime: await tabState(page), native: await gitLabDom(page) }),
+    });
     return {};
   });
   // A failed assertion while disabled must not invalidate the following independent fixture.
