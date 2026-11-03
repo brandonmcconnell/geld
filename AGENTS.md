@@ -21,7 +21,9 @@ packages/github/     @geld/github — pure TypeScript, no browser APIs. Geld Git
 apps/extension/      @geld/extension — the WXT extension (Chrome, Edge, Firefox, Safari).
 apps/action/         @geld/action — GitHub Action that upserts one review-summary comment per PR
                      (`pull_request_target`, GraphQL, never checks out PR code). `dist/` is a
-                     committed esbuild bundle; Actions require built JS.
+                     committed esbuild bundle; Actions require built JS. Its example workflow
+                     (`examples/geld.yml`) also has a `trigger` job: `/geld run greptile|bugbot|devin` from
+                     a writer starts the bot through its API with a repository secret, unqueued and in parallel.
 apps/site/           @geld/site — Next.js site for geld.sh (see "Website" below).
 apps/dashboard/      @geld/dashboard — independent Next.js review workspace, Better Auth accounts
                      and Postgres team metadata. Provider authority and privacy are mandatory.

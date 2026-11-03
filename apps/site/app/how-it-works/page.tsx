@@ -374,6 +374,14 @@ reviewBots:                     # offered in Request a review on every PR
                 comments that belong to finished items. Task-list checkboxes on the digest are a feedback channel: ticking one marks that finding
                 done without the extension.
               </p>
+              <p>
+                The same workflow can start review bots through their own APIs, for when a bot is not answering its tag comment. Comment{' '}
+                <code>/geld run greptile</code> on a pull request (or <code>bugbot</code>, <code>devin</code>, several at once) and the workflow asks
+                each bot to review it, in parallel, with a key you store as a repository secret: <code>GREPTILE_API_KEY</code>,{' '}
+                <code>CURSOR_API_KEY</code>, or <code>DEVIN_API_KEY</code> with <code>DEVIN_ORG_ID</code>. Only people with write access to the
+                repository can start a bot this way. The workflow reacts to the comment with 🚀 when every bot was queued and 😕 when one was not,
+                and the run&apos;s log says why.
+              </p>
             </Prose>
           </Step>
 
