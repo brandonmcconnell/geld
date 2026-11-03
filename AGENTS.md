@@ -2468,3 +2468,11 @@ Deferred jobs do not claim a public feature pass, and final-tip public verificat
 Provider overview headers can expose a file count without visible signed line totals, and responsive layouts can hide an otherwise valid native counter.
 The owned header hint supplies filtered additions and deletions only where the native sign is not visibly rendered, keeps one keyboard and hover anchor, and restores without changing native visibility.
 Count popovers use intrinsic width bounded by their native column and the viewport, without inline-size containment that would discard their content width.
+
+Provider conversation digests render owned dashboard sections with button disclosures, rather than unstyled native details controls.
+Each disclosure keeps its expanded state across refreshed source snapshots and binds an accessible button to one owned content region.
+Digest replacement follows the overview setting independently of timeline compaction, so represented human comments and push or state events do not remain duplicated below the dashboard.
+Unknown sources, active editors and unsupported native-find layouts remain native until their content can be represented safely.
+The dashboard's explicit original-conversation control and source links reveal retained native nodes without moving them, and disabling the overview restores their original presentation.
+Bitbucket activity cards without native anchors require one uniquely matching exact native timestamp and matching event wording or commit prefix before they can be folded.
+GitLab discussion wrappers are eligible only when every native note anchor is represented and no editor is inside them.

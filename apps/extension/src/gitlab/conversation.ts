@@ -4,11 +4,19 @@ const NOTES = '[data-testid="noteable-note-container"], li.js-timeline-entry.sys
 
 export function gitLabConversationRoots(doc: Document): readonly ProviderConversationRoot[] {
   const roots: ProviderConversationRoot[] = [];
-  for (const root of doc.querySelectorAll<HTMLElement>(NOTES)) {
-    if (root.closest('.issuable-discussion') === null || root.closest('[data-geld-ui]') !== null || !/^note_(?:[1-9]\d*|[a-f0-9]{8,64})$/.test(root.id)
-      || root.querySelector('textarea, form, [contenteditable="true"]') !== null || root.querySelector(NOTES) !== null) continue;
-    roots.push({ root, anchors: [root.id], kind: root.classList.contains('system-note') ? 'activity' : 'comment' });
+  const seen = new Set<HTMLElement>();
+  for (const note of doc.querySelectorAll<HTMLElement>(NOTES)) {
+    if (note.closest('.issuable-discussion') === null || note.closest('[data-geld-ui]') !== null || !/^note_(?:[1-9]\d*|[a-f0-9]{8,64})$/.test(note.id)
+      || note.querySelector('textarea, form, [contenteditable="true"]') !== null || note.querySelector(NOTES) !== null) continue;
+    const discussion = note.closest<HTMLElement>('li.note-discussion');
+    const root = discussion !== null && discussion.querySelector('textarea, form, [contenteditable="true"]') === null ? discussion : note;
+    if (seen.has(root)) continue;
+    const anchors = root === note ? [note.id] : [...root.querySelectorAll<HTMLElement>(NOTES)].map((entry) => entry.id);
+    if (anchors.some((anchor) => !/^note_(?:[1-9]\d*|[a-f0-9]{8,64})$/.test(anchor))) continue;
+    seen.add(root);
+    roots.push({ root, anchors, kind: note.classList.contains('system-note') ? 'activity' : 'comment' });
   }
+
   return roots;
 }
 

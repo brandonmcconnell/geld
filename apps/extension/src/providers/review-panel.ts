@@ -7,6 +7,8 @@ import { captureProviderSourceSelection } from './source-selection';
 import type { ProviderSourceActionContext, ProviderSourceSelection } from './source-selection';
 
 export type { ProviderSourceActionContext } from './source-selection';
+import './review-dashboard.css';
+
 import { renderReviewerIdentity } from './reviewer-identity';
 import { referenceForSubject } from './references';
 import type { ProviderReviewReference } from './references';
@@ -56,6 +58,8 @@ export interface ProviderReviewRequirement {
 }
 
 export interface ProviderReviewPanelOptions {
+  readonly originalConversation?: { readonly shown: boolean; readonly toggle: () => void };
+
   readonly reviewerControls?: ProviderReviewSourceAction;
   readonly botRequests?: readonly ProviderBotRequest[];
   readonly updating?: boolean;
@@ -175,6 +179,8 @@ function authorPresentationKey(comment: ProviderReviewComment): string {
   return JSON.stringify([comment.id, comment.anchor, comment.author.id, comment.url]);
 }
 
+type ReviewDisclosure = HTMLElement & { open: boolean };
+
 let nextPanelId = 0;
 
 export function renderProviderReviewPanel(host: HTMLElement, initialInput: ProviderReviewInput, initialOptions: ProviderReviewPanelOptions = {}): ProviderReviewPanel {
@@ -232,15 +238,32 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
 
   const panel = node('section', '', 'geld-provider-review');
   panel.setAttribute('aria-label', 'Geld review digest');
-  host.append(panel);
+  host.prepend(panel);
 
-  function disclosure(key: string, label: string, open: boolean): HTMLDetailsElement {
-    const details = node('details', '', 'geld-provider-review__section');
-    details.dataset.geldReviewKey = key;
-    details.open = expanded.get(key) ?? open;
-    details.append(node('summary', label));
-    details.addEventListener('toggle', () => expanded.set(key, details.open));
-    return details;
+  function disclosure(key: string, label: string, initiallyOpen: boolean): ReviewDisclosure {
+    const section = Object.assign(node('section', '', 'geld-provider-review__section'), { open: false });
+    section.dataset.geldReviewKey = key;
+    const toggle = node('button', '', 'geld-provider-review__section-toggle');
+    toggle.type = 'button';
+    toggle.dataset.geldReviewToggle = '';
+    const id = `${panelId}-section-${encodeURIComponent(key)}`;
+    section.id = id;
+    toggle.id = `${id}-toggle`;
+    toggle.setAttribute('aria-controls', `${id}-content`);
+    toggle.append(node('span', label, 'geld-provider-review__section-label'));
+    const setOpen = (open: boolean): void => {
+      section.dataset.geldReviewOpen = String(open);
+      toggle.setAttribute('aria-expanded', String(open));
+      expanded.set(key, open);
+    };
+    Object.defineProperty(section, 'open', {
+      get: () => section.dataset.geldReviewOpen === 'true',
+      set: setOpen,
+    });
+    toggle.addEventListener('click', () => { section.open = !section.open; });
+    section.append(toggle);
+    section.open = expanded.get(key) ?? initiallyOpen;
+    return section;
   }
 
   function link(label: string, url: string, anchor = '', external = false): HTMLAnchorElement {
@@ -473,7 +496,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const reviewers = input.reviewers;
     const summary = reviewStandingSummary();
     const section = disclosure('reviewers', summary.label, false);
-    const summaryElement = section.querySelector('summary');
+    const summaryElement = section.querySelector('[data-geld-review-toggle]');
     if (summaryElement !== null) {
       summaryElement.textContent = '';
       summaryElement.append(node('span', summary.label, 'geld-provider-review__reviewer-summary'));
@@ -554,7 +577,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       }
       row.prepend(chip);list.append(row);
     }
-    summaryElement?.append(list);
+    list.dataset.geldReviewPreview = '';
+    summaryElement?.after(list);
     return section;
   }
 
@@ -571,7 +595,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const summaryText = coverage === 'unavailable' ? 'Unavailable' : coverage === 'partial' ? `Partial${tally === '' ? '' : ` · ${tally}`}` : current.length === 0 ? 'None on this commit' : tally;
     const section = disclosure('checks', `CI checks · ${summaryText}`, false);
     section.dataset.geldChecksCoverage = coverage;
-    const summary = section.querySelector('summary');
+    const summary = section.querySelector('[data-geld-review-toggle]');
     if (summary !== null && coverage !== 'unavailable' && current.length > 0) {
       summary.replaceChildren(doc.createTextNode(`CI checks · ${coverage === 'partial' ? 'Partial · ' : ''}`));
       let first = true;
@@ -675,16 +699,16 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return section;
   }
 
-  function itemSection(item: ReviewItem, comments: ReadonlyMap<string, ProviderReviewComment>): HTMLDetailsElement {
+  function itemSection(item: ReviewItem, comments: ReadonlyMap<string, ProviderReviewComment>): ReviewDisclosure {
     const anchors = new Set(item.sources.map((source) => source.anchor));
     const threads = input.threads.filter((thread) => thread.comments.some((comment) => anchors.has(comment.anchor))).map((thread) => thread.id).sort();
     const details = disclosure(`item:${threads.join(':') || item.id}`, '', false);
     details.classList.add('geld-provider-review__item');
     details.dataset.geldItem = item.id;
     details.dataset.state = item.status;
-    const summary = details.querySelector('summary');
+    const summary = details.querySelector('[data-geld-review-toggle]');
     if (summary !== null) {
-      const title = node('span');
+      const title = node('span', '', 'geld-provider-review__item-title');
       inline(title, item.title);
       summary.append(title, node('span', STATUS[item.status], 'geld-provider-review__item-state'));
       const metadata = [item.path === undefined ? '' : `${item.path}${item.line === undefined ? '' : `:${item.line}`}`, [...new Set(item.sources.map((source) => source.author))].join(', '), countLabel(item.sources.length, 'comment')].filter((value) => value !== '').join(' · ');
@@ -822,7 +846,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
 
   function historySections(comments: ReadonlyMap<string, ProviderReviewComment>, ordinary: readonly ProviderReviewComment[]): readonly HTMLElement[] {
     const sections: HTMLElement[] = [];
-    const homes = new Map<string, HTMLDetailsElement>();
+    const homes = new Map<string, ReviewDisclosure>();
     const openItems = items.filter((item) => isOpenStatus(item.status));
     const attention = openItems.length === 0 ? null : disclosure('history:attention', `Needs attention · ${countLabel(openItems.length, 'open thread')}`, true);
     if (attention !== null) {
@@ -854,7 +878,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         home.open = true;
         const key = home.dataset.geldReviewKey;
         if (key !== undefined) expanded.set(key, true);
-        const summary = home.querySelector('summary');
+        const summary = home.querySelector<HTMLElement>('[data-geld-review-toggle]');
         if (summary !== null) { summary.focus();summary.scrollIntoView?.({ block: 'center', behavior: 'auto' }); }
       });
       pointer.append(open);return pointer;
@@ -1056,6 +1080,26 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return lines.join('\n');
   }
 
+  function dashboardSummary(): HTMLElement {
+    const summary = node('div', '', 'geld-provider-review__overview');
+    summary.dataset.geldReviewOverview = '';
+    summary.setAttribute('aria-label', 'Conversation overview');
+    const comments = new Set([...input.threads.flatMap((thread) => thread.comments), ...(options.comments ?? [])].map((comment) => comment.anchor));
+    const open = items.filter((item) => isOpenStatus(item.status)).length;
+    const metrics = [
+      { key: 'open', label: 'Open items', value: open },
+      { key: 'comments', label: 'Comments', value: comments.size },
+      { key: 'activity', label: 'Activity', value: (options.events ?? []).length },
+    ];
+    for (const metric of metrics) {
+      const tile = node('div', '', 'geld-provider-review__metric');
+      tile.dataset.geldReviewMetric = metric.key;
+      tile.append(node('strong', String(metric.value)), node('span', metric.label));
+      summary.append(tile);
+    }
+    return summary;
+  }
+
   function render(): void {
     if (destroyed) return;
     const focused = doc.activeElement;
@@ -1087,7 +1131,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const publicationSignature = publication === undefined ? null : [publication.status, publication.candidate?.comment, publication.candidate?.generatedAt, publication.issues, [...publication.matchedItemIds], options.publication?.save !== undefined];
     for (const request of options.botRequests ?? []) botRequests.get(request.key)?.update(request);
     const requestSignature = options.botRequests?.map((request) => [request.key, request.current(), request.comment.available, request.comment.reason]);
-    const signature = JSON.stringify([input, options.reviewerControls?.available, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature]);
+    const signature = JSON.stringify([input, options.reviewerControls?.available, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature]);
     if (signature === lastSignature) {
       for (const time of panel.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
         const native = nativeTimes.get(Date.parse(time.dateTime));
@@ -1103,9 +1147,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const key = details.dataset.geldBodyDisclosure;
       if (key !== undefined) sourceDetails.set(key, details.open);
     }
-    for (const details of panel.querySelectorAll<HTMLDetailsElement>('details[data-geld-review-key]')) {
-      const key = details.dataset.geldReviewKey;
-      if (key !== undefined) expanded.set(key, details.open);
+    for (const section of panel.querySelectorAll<HTMLElement>('[data-geld-review-key]')) {
+      const key = section.dataset.geldReviewKey;
+      if (key !== undefined) expanded.set(key, section.dataset.geldReviewOpen === 'true');
     }
     for (const control of identities) control.destroy();
     identities = [];
@@ -1143,6 +1187,15 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const text = digestText();
       Promise.resolve().then(() => write(text)).then(() => { copy.textContent = 'Copied'; }, () => { copy.textContent = 'Could not copy'; }).finally(() => { copy.disabled = false; });
     });
+    if (options.originalConversation !== undefined) {
+      const original = options.originalConversation;
+      const toggle = node('button', original.shown ? 'Hide original conversation' : 'Show original conversation', 'geld-provider-toggle');
+      toggle.type = 'button';
+      toggle.dataset.geldOriginalConversation = '';
+      toggle.setAttribute('aria-pressed', String(original.shown));
+      toggle.addEventListener('click', () => { if (!destroyed && toggle.isConnected) original.toggle(); });
+      header.append(toggle);
+    }
     header.append(copy);
     if (activeAi?.enabled === true) {
       const controls = node('div', '', 'geld-provider-review__source-actions');
@@ -1162,7 +1215,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       }
       header.append(controls);
     }
-    const children: HTMLElement[] = [header];
+    const children: HTMLElement[] = [header, dashboardSummary()];
     const published = publicationSection();
     if (published !== null) children.push(published);
     if (options.localReviewed?.error !== undefined) {
@@ -1229,6 +1282,20 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       }
       children.push(section);
     }
+    for (const child of children) {
+      const sections = [child, ...child.querySelectorAll<HTMLElement>('[data-geld-review-key]')].filter((section) => section.hasAttribute('data-geld-review-key'));
+      for (const section of sections) {
+        const content = node('div', '', 'geld-provider-review__section-content');
+        content.id = `${section.id}-content`;
+        content.setAttribute('role', 'region');
+        content.setAttribute('aria-labelledby', `${section.id}-toggle`);
+        for (const entry of [...section.childNodes]) {
+          if (entry instanceof Element && (entry.hasAttribute('data-geld-review-toggle') || entry.hasAttribute('data-geld-review-preview'))) continue;
+          content.append(entry);
+        }
+        section.append(content);
+      }
+    }
     panel.replaceChildren(...children);
     for (const request of options.botRequests ?? []) botRequests.get(request.key)?.update(request);
     for (const [key, control] of botRequests) {
@@ -1238,13 +1305,13 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     if (checkFocus !== null && checksScope === nextChecksScope && (doc.activeElement === doc.body || doc.activeElement === focused)) {
       const targets = [...panel.querySelectorAll<HTMLAnchorElement>('[data-geld-check-key] a[href]')].filter((target) => target.closest<HTMLElement>('[data-geld-check-key]')?.dataset.geldCheckKey === checkFocus.key && target.getAttribute('href') === checkFocus.href);
       const target = targets.length === 1 ? targets[0] : undefined;
-      if (target !== undefined && target.closest('[hidden], [inert], [aria-hidden="true"], details:not([open])') === null) target.focus({ preventScroll: true });
+      if (target !== undefined && target.closest('[hidden], [inert], [aria-hidden="true"], details:not([open]), [data-geld-review-open="false"]') === null) target.focus({ preventScroll: true });
     }
     checksScope = nextChecksScope;
     if (referenceFocus?.id != null && referenceScope === nextReferenceScope && (doc.activeElement === doc.body || doc.activeElement === focused) && (referenceFocus.role === 'target' || referenceFocus.role === 'source')) {
       const row = [...panel.querySelectorAll<HTMLElement>('[data-geld-reference]')].find((entry) => entry.dataset.geldReference === referenceFocus.id);
       const control = row?.querySelector<HTMLElement>(`[data-geld-reference-role="${referenceFocus.role}"]`);
-      if (control !== null && control !== undefined && control.closest('[hidden], [inert], [aria-hidden="true"], details:not([open])') === null) control.focus({ preventScroll: true });
+      if (control !== null && control !== undefined && control.closest('[hidden], [inert], [aria-hidden="true"], details:not([open]), [data-geld-review-open="false"]') === null) control.focus({ preventScroll: true });
     }
     referenceScope = nextReferenceScope;
     for (const key of sourceSlots.keys()) if (!activeSourceKeys.has(key)) sourceSlots.delete(key);
@@ -1256,21 +1323,23 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         commentFocusFrame = null;
         const control = doc.getElementById(commentControlId);
         if (!destroyed && generation === renderGeneration && control instanceof HTMLElement && panel.contains(control) && !control.matches(':disabled')
-          && control.closest('[hidden], [inert], [aria-hidden="true"], details:not([open])') === null) control.focus({ preventScroll: true });
+          && control.closest('[hidden], [inert], [aria-hidden="true"], details:not([open]), [data-geld-review-open="false"]') === null) control.focus({ preventScroll: true });
       });
     }
     if (reviewedFocus !== null) {
       const button = [...panel.querySelectorAll<HTMLButtonElement>('[data-geld-local-reviewed]')].find((candidate) => candidate.dataset.geldLocalReviewed === reviewedFocus);
       if (button !== undefined) {
         for (let parent = button.parentElement; parent !== null && parent !== panel; parent = parent.parentElement) {
-          if (!(parent instanceof HTMLDetailsElement)) continue;
-          parent.open = true;
           const key = parent.dataset.geldReviewKey;
-          if (key !== undefined) expanded.set(key, true);
+          if (key !== undefined) {
+            parent.dataset.geldReviewOpen = 'true';
+            parent.querySelector(':scope > [data-geld-review-toggle]')?.setAttribute('aria-expanded', 'true');
+            expanded.set(key, true);
+          } else if (parent instanceof HTMLDetailsElement) parent.open = true;
         }
         if (!button.disabled) button.focus({ preventScroll: true });
         else {
-          const summary = button.closest('details[data-geld-item]')?.querySelector<HTMLElement>(':scope > summary');
+          const summary = button.closest('[data-geld-item]')?.querySelector<HTMLElement>(':scope > [data-geld-review-toggle]');
           if (summary !== null && summary !== undefined) {
             summary.dataset.geldLocalReviewFocus = reviewedFocus;
             summary.focus({ preventScroll: true });

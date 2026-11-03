@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { ProviderNativeFind } from './native-find';
+import { ProviderNativeFind, providerNativeHidden } from './native-find';
 import type { ProviderNativeFindEntry, ProviderNativeFindEnvironment, ProviderNativeFindOptions } from './native-find';
 
 const owners: ProviderNativeFind[] = [];
@@ -284,4 +284,30 @@ it.each(['height', 'padding-top', 'margin-block-start', 'border-bottom-width'])(
   root().setAttribute('data-geld-provider-compact-hidden', '');root().style.setProperty(property, '120px', 'important');
   const find = owner();expect(find.sync([entry()])[0]?.status).toBe('native-owned');find.destroy();
   expect(root().hasAttribute('data-geld-provider-compact-hidden')).toBe(true);expect(root().style.getPropertyValue(property)).toBe('120px');expect(root().hasAttribute('hidden')).toBe(false);
+});
+
+it('supports an explicitly represented anchorless event while keeping unknown empty-anchor roots invalid', () => {
+  const find = owner();
+  expect(find.sync([entry({ anchors: [] })])[0]?.status).toBe('invalid');
+  const represented = entry({ key: 'activity:approval:2026-11-01T12:00:00Z', anchors: [], eventIds: ['approval:2026-11-01T12:00:00Z'] });
+  expect(find.sync([represented])[0]?.status).toBe('folded');
+  expect(root().getAttribute('hidden')).toBe('until-found');
+  expect(find.sync([{ ...represented, shown: true }])[0]?.status).toBe('shown');
+  expect(root().hasAttribute('hidden')).toBe(false);
+  expect(find.sync([{ ...represented, eventIds: [] }])[0]?.status).toBe('invalid');
+});
+
+
+it('allows only currently owned folds to count as revealable when reading action availability', () => {
+  const find = owner();
+  find.sync([entry()]);
+  const child = document.getElementById('note_10');
+  if (child === null) throw new Error('Missing source');
+  expect(providerNativeHidden(child)).toBe(true);
+  expect(providerNativeHidden(child, true)).toBe(false);
+  root().style.setProperty('display', 'none');
+  expect(providerNativeHidden(child, true)).toBe(true);
+  find.destroy();
+  root().setAttribute('hidden', 'until-found');root().setAttribute('data-geld-provider-native-find', 'folded');
+  expect(providerNativeHidden(child, true)).toBe(true);
 });

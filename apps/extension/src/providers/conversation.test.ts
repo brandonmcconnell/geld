@@ -301,7 +301,7 @@ describe('provider conversation integrations', () => {
     f.host.querySelector<HTMLButtonElement>('[data-geld-ai-run]')?.click();
     await vi.waitFor(() => expect(f.host.querySelector('[data-geld-ai-summary]')?.textContent).toContain('Credential handling needs attention.'));
     expect(f.send).toHaveBeenCalledTimes(2);
-    expect(f.host.querySelector('[data-geld-item] > summary')?.textContent).toContain('Isolate the credential cache');
+    expect(f.host.querySelector('[data-geld-item] > [data-geld-review-toggle]')?.textContent).toContain('Isolate the credential cache');
     expect(f.host.querySelector('.geld-provider-review__body')?.textContent).toBe(comment().body);
     expect(f.fetchReview).toHaveBeenCalledTimes(1);
   });
@@ -347,7 +347,7 @@ describe('provider conversation integrations', () => {
     const activeSettings = { ...DEFAULT_SETTINGS, prOverview: true, aiEnabled: true, aiModel: 'writer', aiBaseUrl: 'https://gateway.example/v1', aiJev: false, trustedReviewAccounts };
     f.apply(page, { ...activeSettings, aiEnabled: false });
     expect(f.host.querySelector('[data-geld-ai-summary]')).toBeNull();
-    expect(f.host.querySelector('[data-geld-item] > summary')?.textContent).toContain('The credentials can leak');
+    expect(f.host.querySelector('[data-geld-item] > [data-geld-review-toggle]')?.textContent).toContain('The credentials can leak');
     f.apply(page, activeSettings);
     await vi.waitFor(() => expect(f.host.querySelector('[data-geld-ai-summary]')).not.toBeNull());
     expect(f.send).toHaveBeenCalledTimes(2);
@@ -416,7 +416,7 @@ describe('provider conversation integrations', () => {
     f.apply();
     expect(native.getAttribute('data-geld-provider-native-find') === 'folded').toBe(false);
     expect(document.querySelectorAll('.geld-provider-original')).toHaveLength(1);
-    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, compactTimeline: 'off' });
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, prOverview: false });
     expect(document.querySelector('.geld-provider-original')).toBeNull();
     expect(native.getAttribute('data-geld-provider-native-find') === 'folded').toBe(false);
   });
@@ -463,13 +463,13 @@ describe('provider conversation integrations', () => {
     } finally { window.location.href = previous; }
   });
 
-  it('keeps push/state activity visible and only folds explicitly low-signal represented activity', async () => {
+  it('replaces all represented activity including pushes and state changes while the digest is enabled', async () => {
     const roots = ['99', '100', '101'].map((id) => { const root = document.createElement('article'); root.id = `note_${id}`; document.body.append(root); return root; });
     const source: ProviderReviewSnapshot = { ...snapshot(), events: roots.map((root, index) => ({ id: root.id, url: `${url}#${root.id}`, author: comment().author, createdAt: comment().createdAt, body: 'Native activity', kind: index === 0 ? 'activity' : index === 1 ? 'push' : 'state', lowSignal: true })) };
     fixture(source, {}, { aiEnabled: false }, { conversationRoots: () => roots.map((root) => ({ root, anchors: [root.id], kind: 'activity' })) });
     await vi.waitFor(() => expect(roots[0]?.getAttribute('data-geld-provider-native-find') === 'folded').toBe(true));
-    expect(roots[1]?.getAttribute('data-geld-provider-native-find') === 'folded').toBe(false);
-    expect(roots[2]?.getAttribute('data-geld-provider-native-find') === 'folded').toBe(false);
+    expect(roots[1]?.getAttribute('data-geld-provider-native-find') === 'folded').toBe(true);
+    expect(roots[2]?.getAttribute('data-geld-provider-native-find') === 'folded').toBe(true);
   });
 
   it('honors synthetic beforematch protocol through repeated reapplies, remounts and explicit Hide', async () => {
@@ -569,7 +569,7 @@ describe('provider conversation integrations', () => {
     expect(native.style.getPropertyPriority('--geld-provider-native-find-display')).toBe('important');
   });
 
-  it('collapses the native description after its first paragraph only in minimal mode and restores every node', async () => {
+  it('keeps the digest near the description by honoring collapseDescription outside minimal mode and restoring every node', async () => {
     const description = document.createElement('div');
     description.innerHTML = '<h2>Description</h2><p>First native paragraph.</p><section><p>More native content.</p></section>';
     document.body.append(description);
@@ -578,7 +578,7 @@ describe('provider conversation integrations', () => {
     const more = description.querySelector('section');
     const f = fixture(snapshot(), {}, { aiEnabled: false, compactTimeline: 'compact', collapseDescription: true }, { descriptionHost: () => description });
     await vi.waitFor(() => expect(f.host.querySelector('.geld-provider-review')).not.toBeNull());
-    expect(more?.hasAttribute('data-geld-provider-description-hidden')).toBe(false);
+    expect(more?.hasAttribute('data-geld-provider-description-hidden')).toBe(true);
     f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, compactTimeline: 'minimal', collapseDescription: true });
     expect(more?.hasAttribute('data-geld-provider-description-hidden')).toBe(true);
     expect(first?.hasAttribute('data-geld-provider-description-hidden')).toBe(false);
@@ -586,7 +586,7 @@ describe('provider conversation integrations', () => {
     document.querySelector<HTMLButtonElement>('.geld-provider-description-toggle')?.click();
     expect(more?.hasAttribute('data-geld-provider-description-hidden')).toBe(false);
     expect(document.querySelector('.geld-provider-description-toggle')?.getAttribute('aria-expanded')).toBe('true');
-    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, compactTimeline: 'off', collapseDescription: true });
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, compactTimeline: 'off', collapseDescription: false });
     expect(document.querySelector('.geld-provider-description-toggle')).toBeNull();
     expect(description.querySelector('[data-geld-provider-description-hidden]')).toBeNull();
     expect(description.firstElementChild).toBe(heading);
@@ -780,4 +780,32 @@ describe('scoped native review opener lifetime', () => {
       expect(context.current()).toBe(false);f.conversation.clear();
     }
   });
+});
+
+
+it('replaces represented human comments even with timeline compaction off and restores originals on request', async () => {
+  const human = { ...comment('A human question'), author: { id: 'human', login: 'person' } };
+  const native = document.createElement('article');native.id = human.anchor;
+  const originalText = document.createTextNode(human.body);native.append(originalText);
+  const unknown = document.createElement('article');unknown.id = 'note_999';unknown.textContent = 'New unread comment';
+  document.body.append(native, unknown);
+  const source = { ...snapshot([human]), input: { ...snapshot().input, threads: [] } };
+  const f = fixture(source, {}, { aiEnabled: false, compactTimeline: 'off' }, { conversationRoots: () => [
+    { root: native, anchors: [native.id], kind: 'comment' }, { root: unknown, anchors: [unknown.id], kind: 'comment' },
+  ] });
+  await vi.waitFor(() => expect(native.getAttribute('hidden')).toBe('until-found'));
+  expect(unknown.hasAttribute('hidden')).toBe(false);
+  expect(document.querySelector<HTMLElement>('.geld-provider-original')?.hidden).toBe(true);
+  const toggle = (): HTMLButtonElement | null => f.host.querySelector('[data-geld-original-conversation]');
+  toggle()?.click();
+  await vi.waitFor(() => expect(native.hasAttribute('hidden')).toBe(false));
+  expect(toggle()?.getAttribute('aria-pressed')).toBe('true');
+  expect(native.firstChild).toBe(originalText);
+  toggle()?.click();
+  await vi.waitFor(() => expect(native.getAttribute('hidden')).toBe('until-found'));
+  expect(toggle()?.getAttribute('aria-pressed')).toBe('false');
+  f.apply(page, { ...DEFAULT_SETTINGS, prOverview: false, quickReview: false });
+  expect(native.hasAttribute('hidden')).toBe(false);
+  expect(unknown.hasAttribute('hidden')).toBe(false);
+  expect(native.firstChild).toBe(originalText);
 });

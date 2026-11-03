@@ -190,6 +190,7 @@ export interface ProviderConversationRoot {
   readonly root: HTMLElement;
   readonly anchors: readonly string[];
   readonly kind: 'comment' | 'activity';
+  readonly eventIds?: readonly string[];
 }
 
 /** Optional provider-native syntax overlay. Never replaces source nodes or requests data. */
@@ -223,7 +224,7 @@ export interface ProviderAdapter {
   reviewHost?(doc: Document): HTMLElement | null;
   readReferences?(page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[]): readonly ProviderReviewReference[];
   referenceAnchor?(reference: ProviderReviewReference, page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[]): HTMLAnchorElement | null;
-  conversationRoots?(doc: Document): readonly ProviderConversationRoot[];
+  conversationRoots?(doc: Document, snapshot?: ProviderReviewSnapshot): readonly ProviderConversationRoot[];
   descriptionHost?(doc: Document): HTMLElement | null;
   actionHost?(doc: Document): HTMLElement | null;
   fetchReview?(page: ProviderReviewPage, signal: AbortSignal, doc: Document): Promise<ProviderReviewSnapshot>;

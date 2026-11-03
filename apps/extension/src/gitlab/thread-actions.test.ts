@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { ProviderNativeFind } from '../providers/native-find';
 import type { GitLabNativeThreadCapabilities } from './review';
 import { activateGitLabThreadAction, readGitLabThreadActions, syncGitLabNativeReviewState } from './thread-actions';
 import type { ProviderReviewInput } from '@geld/review';
@@ -287,4 +288,18 @@ describe('GitLab native thread action relay', () => {
     document.querySelector('[data-discussion-id]')?.setAttribute('data-geld-ui', '');
     expect(syncGitLabNativeReviewState(input, document)).toBe(input);
   });
+});
+
+
+it('keeps a managed folded action available and requires exact native reveal before activating', async () => {
+  mount(false, '<button data-testid="note-emoji-button">React</button>');
+  const root = document.getElementById('note_11');
+  if (root === null) throw new Error('Missing native source');
+  const find = new ProviderNativeFind(document, { onReveal: () => undefined }, { supported: true, display: () => 'block' });
+  try {
+    find.sync([{ root, key: 'note_11', anchors: ['note_11'], compact: true, shown: false }]);
+    expect(readGitLabThreadActions(document, target, permissions, { signedIn: true }).find((action) => action.kind === 'react')?.available).toBe(true);
+    expect(await activateGitLabThreadAction('react', document, target, permissions, { signedIn: true })).toBe(false);
+    expect(await activateGitLabThreadAction('react', document, target, permissions, { signedIn: true, onReveal: () => find.reveal('note_11') })).toBe(true);
+  } finally { find.destroy(); }
 });
