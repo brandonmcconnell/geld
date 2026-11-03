@@ -1,7 +1,6 @@
 'use client';
 
 import { cn } from 'cn';
-import { TextAlignStartIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -17,11 +16,11 @@ export function NavMenu({ links, className }: { readonly links: readonly NavLink
       <DropdownMenuTrigger
         aria-label="Menu"
         className={cn(
-          '-ml-3 inline-grid size-11 shrink-0 place-items-center text-foreground/75 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset aria-expanded:text-foreground',
+          'menu-trigger -ml-3 inline-grid size-11 shrink-0 place-items-center text-foreground/75 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset aria-expanded:text-foreground',
           className,
         )}
       >
-        <TextAlignStartIcon aria-hidden="true" className="size-5" />
+        <MenuGlyph />
       </DropdownMenuTrigger>
       <DropdownMenuContent alignOffset={12} className="min-w-48">
         {links.map((link) => (
@@ -31,5 +30,24 @@ export function NavMenu({ links, className }: { readonly links: readonly NavLink
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * Three bars whose outer ends are bent like the site's cut corners (top left,
+ * bottom right). Hover flattens the bends part-way and stretches the middle
+ * bar, and open unbends them into a cross (`menu-glyph` in globals.css). Every
+ * state moves the same five segments by transforms only, so any state turns
+ * into any other, even mid-way.
+ */
+function MenuGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="menu-glyph size-5">
+      <path className="menu-glyph__top" d="M6 6H21" />
+      <path className="menu-glyph__top-bend" d="M6 6L3 9" />
+      <path className="menu-glyph__middle" d="M3 12H15" />
+      <path className="menu-glyph__bottom" d="M3 18H18" />
+      <path className="menu-glyph__bottom-bend" d="M18 18L21 15" />
+    </svg>
   );
 }
