@@ -15,6 +15,7 @@ export interface ProviderCategoryActions {
   readonly revealPath: (path: string) => void;
   readonly setExpanded: (expanded: boolean) => void;
   readonly selectCategory?: (id: string) => void;
+  readonly refresh?: () => void;
   /** Current controller choice; native framework remounts must not reset it independently. */
   readonly selectedCategoryId?: string;
   /** Exact provider subject/version/head key; prevents presentation reuse across selected revisions. */
@@ -51,6 +52,8 @@ export class ProviderCategoryTree {
   private readonly id = `geld-provider-tree-${++sequence}`;
   private host: HTMLElement | null = null;
   private sourceHost: HTMLElement | null = null;
+  private nativeProjectionAllowed = false;
+  private refreshQueued = false;
   private fallbackHost: HTMLElement | null = null;
   private fallbackContainer: HTMLElement | null = null;
   private provider: ReviewProvider | null = null;
@@ -132,7 +135,11 @@ export class ProviderCategoryTree {
       this.mark(host, HOST, '');
     }
     this.actions = actions;
+    this.refreshQueued = false;
+    this.nativeProjectionAllowed = !view.virtualized || view.treeContainer != null;
+    if (this.sourceHost !== view.treeHost && this.sourceHost !== null && this.sourceHost !== host) this.geometryObserver?.unobserve(this.sourceHost);
     this.sourceHost = view.treeHost;
+    if (this.sourceHost !== null && this.sourceHost !== host) this.geometryObserver?.observe(this.sourceHost);
     this.subjectKey = subjectKey;
     this.provider = nativeProvider;
     const folderSelector = nativeProvider === 'gitlab' ? 'button[data-testid="file-row"][aria-expanded]' : nativeProvider === 'bitbucket' ? 'button[aria-expanded]:has([aria-label="Directory"])' : null;
@@ -285,7 +292,7 @@ export class ProviderCategoryTree {
     }
     this.essential = null; this.essentialContent = null; this.essentialSignature = ''; this.heightLast = ''; this.heightOriginal = ''; this.heightOriginalPriority = ''; this.nav = null;
     for (const node of [...this.managed.keys()]) this.restoreNode(node);
-    this.host = null; this.sourceHost = null; this.bodies.clear(); this.panels.clear();
+    this.host = null; this.sourceHost = null; this.nativeProjectionAllowed = false; this.refreshQueued = false; this.bodies.clear(); this.panels.clear();
     if (!preservePresentation) { this.folderClass = null; this.presentations.clear(); }
     this.liveRows.clear();
   }
@@ -309,6 +316,7 @@ export class ProviderCategoryTree {
     window.addEventListener('resize', this.resize);
     if (typeof ResizeObserver !== 'undefined') {
       this.geometryObserver = new ResizeObserver((entries) => {
+        if (entries.some((entry) => entry.target === this.host || entry.target === this.sourceHost)) this.refreshPresentation();
         const entry = entries.find((item) => item.target === this.host);
         if (entry === undefined) return;
         const changed = this.geometryWidth !== null && this.geometryWidth !== entry.contentRect.width;
@@ -321,10 +329,18 @@ export class ProviderCategoryTree {
     this.measureSoon();
   }
   private readonly resize = (): void => {
+    this.refreshPresentation();
     if (this.viewportWidth === window.innerWidth && this.viewportHeight === window.innerHeight) return;
     this.viewportWidth = window.innerWidth; this.viewportHeight = window.innerHeight;
     this.measureSoon();
   };
+  private refreshPresentation(): void {
+    if (this.refreshQueued || this.actions.refresh === undefined) return;
+    const native = this.nativeProjectionAllowed && this.sourceHost !== null && this.presented(this.sourceHost);
+    if (native === (this.fallbackHost === null)) return;
+    this.refreshQueued = true;
+    this.actions.refresh();
+  }
   private measureSoon(): void {
     if (this.host === null || this.geometryFrame !== null) return;
     const host = this.host;

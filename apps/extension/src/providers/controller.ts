@@ -579,6 +579,7 @@ export class ProviderController {
       selectedCategoryId: this.expanded ? this.activeCategory ?? 'essential' : 'essential',
       revealPath: (path) => this.revealPath(path),
       selectCategory: (id) => { this.activeCategory = id === 'essential' ? null : id; },
+      refresh: () => this.requestRefresh(false),
       setExpanded: (expanded) => { this.setExpanded(expanded); this.apply(); },
       });
     } else {

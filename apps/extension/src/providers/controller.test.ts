@@ -137,6 +137,64 @@ it('reopens a category selected again during partial-stream layout while preserv
   expect(view.container.classList.contains('geld-provider-diffs')).toBe(false);
 });
 
+it.each(['resize', 'observer'] as const)('switches category placement on a CSS-only sidebar change signaled by %s before the periodic refresh', async (signal) => {
+  const { adapter, fetchDiff } = fixture('gitlab', FILES);
+  const sidebar = node('#tree');
+  const presentation = document.createElement('div').style;
+  presentation.display = 'block';
+  const computed = window.getComputedStyle.bind(window);
+  vi.spyOn(window, 'getComputedStyle').mockImplementation((target, pseudo) => target === sidebar ? presentation : computed(target, pseudo));
+  const observers: Observer[] = [];
+  class Observer implements ResizeObserver {
+    readonly targets = new Set<Element>();
+    constructor(private readonly callback: ResizeObserverCallback) { observers.push(this); }
+    observe(target: Element): void { this.targets.add(target); }
+    unobserve(target: Element): void { this.targets.delete(target); }
+    disconnect(): void { this.targets.clear(); }
+    notify(target: Element): void {
+      if (!this.targets.has(target)) return;
+      const entry: ResizeObserverEntry = { target, contentRect: new DOMRectReadOnly(0, 0, presentation.display === 'none' ? 0 : 250, 500), borderBoxSize: [], contentBoxSize: [], devicePixelContentBoxSize: [] };
+      this.callback([entry], this);
+    }
+  }
+  vi.stubGlobal('ResizeObserver', Observer);
+  const { controller } = start(adapter);
+  await settle();
+  const select = [...sidebar.querySelectorAll<HTMLButtonElement>('.geld-provider-category-header')].find((button) => button.textContent?.startsWith('Tests'));
+  if (select === undefined) throw new Error('Missing Tests category');
+  select.click();
+  const notify = (): void => {
+    if (signal === 'resize') window.dispatchEvent(new Event('resize'));
+    else for (const observer of [...observers]) observer.notify(sidebar);
+  };
+  const refresh = vi.spyOn(controller, 'requestRefresh');
+  notify();
+  expect(refresh).not.toHaveBeenCalled();
+  presentation.display = 'none';
+  notify(); notify();
+  expect(refresh).toHaveBeenCalledTimes(1);
+  await settle();
+  const fallback = document.querySelector<HTMLElement>('[data-geld-provider-category-placement="fallback"]');
+  expect(fallback).not.toBeNull();
+  expect(sidebar.querySelector('.geld-provider-category-header')).toBeNull();
+  expect(fallback?.querySelector('.geld-provider-category-header[aria-expanded="true"]')?.textContent).toContain('Tests');
+  refresh.mockClear();
+  notify();
+  expect(refresh).not.toHaveBeenCalled();
+  presentation.display = 'block';
+  notify();
+  expect(refresh).toHaveBeenCalledTimes(1);
+  await settle();
+  expect(document.querySelector('[data-geld-provider-category-placement="fallback"]')).toBeNull();
+  expect(sidebar.querySelector('.geld-provider-category-header[aria-expanded="true"]')?.textContent).toContain('Tests');
+  expect(fetchDiff).toHaveBeenCalledOnce();
+  expect(controller.getTabState().expanded).toBe(true);
+  controller.stop();
+  presentation.display = 'none'; notify();
+  await settle();
+  expect(document.querySelector('[data-geld-provider-category-placement="fallback"]')).toBeNull();
+});
+
 describe('provider controller behavior', () => {
   it('withdraws native projections during a reload, preserves category/folder choices and retires only source-dependent work', async () => {
     const { adapter, view, fetchDiff } = fixture('gitlab', FILES);

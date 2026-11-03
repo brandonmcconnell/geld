@@ -1752,6 +1752,7 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   A nonempty native tree search temporarily restores the native list rather than guessing its wildcard or filter syntax.
   Temporary search releases owned DOM, layout markers and native action bindings while preserving collapsed folders, category and current file only for the exact provider, review and selected revision.
   A closed, absent or unverifiable native tree uses an owned category accordion immediately before the verified diff container, restoring the native tree's markers and retaining the same subject's category, folder and current-file choices when the sidebar returns.
+  Window and native-tree resize observations request one debounced projection refresh only when sidebar visibility disagrees with the current placement, so responsive CSS changes do not wait for the periodic refresh or cause sizing loops.
   Same-subject fallback rows may retain inert native presentation, but unavailable original comment controls are disabled and never fall back to a file-navigation action.
   Category navigation remains available while a native diff stream is incomplete or cannot safely be grouped, without granting permission to flatten, reorder or hide unsupported source wrappers.
   The explicit `gitlab-file-search` installed slice uses GitLab's original file-tree search, trusted typing and native result activation on the immutable mixed MR, requiring custom collapsed-folder and current-file recovery after clearing the query.
