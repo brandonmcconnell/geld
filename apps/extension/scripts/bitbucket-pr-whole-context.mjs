@@ -57,7 +57,7 @@ export async function verifyBitbucketPrWhole(page,context){const {observer,poll,
  const api=async()=>{await observer.checkpoint();const value=qualifyBitbucketPrApi(observer.evidence);progress.api=value;requireBitbucketPrFixture(value);validFixture=true;return value;};
  const native=()=>page.evaluate(bitbucketPrWholeProbe,'read',BITBUCKET_PR_WHOLE);
  const source=(sample,traffic)=>{const refs=qualifyBitbucketPrApi(traffic);requireValue(refs.head===BITBUCKET_WHOLE.head,'FIXTURE_HEAD_UNAVAILABLE');return qualifyBitbucketWhole(sample,traffic);};
- try{progress.targetPreparation={};await prepareBitbucketPrTarget(page,{poll,guardBudget:context.guardBudget,progress:progress.targetPreparation});await poll(()=>page.evaluate(bitbucketPrWholeProbe,'setup',BITBUCKET_PR_WHOLE),v=>v?.same,'Original PR All changes/source owners');prepared=true;
+ try{progress.targetPreparation={};await prepareBitbucketPrTarget(page,{poll,guardBudget:context.guardBudget,progress:progress.targetPreparation,captureDiagnostic:context.captureDiagnostic});await poll(()=>page.evaluate(bitbucketPrWholeProbe,'setup',BITBUCKET_PR_WHOLE),v=>v?.same,'Original PR All changes/source owners');prepared=true;
   const result=await verifyBitbucketWhole(page,{...context,fixture:BITBUCKET_PR_WHOLE,beforeIntent:async()=>{try{await api();}catch(e){e.unavailable=true;throw e;}await counts('before-intent');progress.nativeBefore=await native();requireValue(progress.nativeBefore?.same&&progress.nativeBefore.menuClosed&&!progress.nativeBefore.source,'PR_BASELINE_UNQUALIFIED');},afterReady:async()=>{await api();await counts('after-ready');const v=await native();progress.preparation=v;const refs=progress.api;requireValue(observer.evidence.rawNative?.length===1&&observer.evidence.rawNative.every(n=>n.same&&n.findTrusted&&n.menuClosed&&n.literal===v?.source?.literal),'RAW_CALLBACK_NATIVE_STATE');requireValue(v?.same&&v.findTrusted&&(!v.findFocused||v.focusReturned)&&v.openerEvents.length===2&&v.openerEvents[0].before==='false'&&v.openerEvents[1].before==='true'&&v.menuClosed&&v.sourceClicks===0&&v.source,'NATIVE_PREPARATION_UNQUALIFIED');requireValue(refs.head.startsWith(v.source.literal),'NATIVE_API_REF_MISMATCH');progress.preparation.referenceBinding=v.source.literal===refs.sourceRef?'api_literal_ref':'full_head_prefix';},beforeClose:async()=>{await counts('cleanup');const v=await native();progress.nativeFinal=v;requireValue(v?.same&&v.menuClosed&&v.sourceClicks===0,'NATIVE_MENU_NOT_RESTORED');const result=await page.evaluate(bitbucketPrWholeProbe,'cleanup',BITBUCKET_PR_WHOLE);requireValue(result?.closed&&result.released,'PR_OBSERVER_RELEASE');prepared=false;},qualify:source});
   return{...result,verified:'PR All changes native source reference matched to observed full API H/B; real Find mediates original menu without navigating, then one whole source and native test context. Native full hash remains unknown.'};
  }catch(error){if(!progress.status){progress.status='unavailable';progress.failure=progress.targetPreparation?.failure?.code??'PR_CONTEXT_PREPARATION_FAILED';}throw error;}finally{if(prepared&&!page.isClosed())await page.evaluate(bitbucketPrWholeProbe,'cleanup',BITBUCKET_PR_WHOLE);}
@@ -86,12 +86,28 @@ export function bitbucketPrTargetProbe(action='read',f=BITBUCKET_PR_WHOLE){
  const originalLinks=[...document.querySelectorAll('#file-tree a[href]')].filter(n=>native(n)&&exactLink(n));
  if(action==='category-start'){const headers=[...document.querySelectorAll('.geld-provider-category-header')];if(!headers.includes(category)||!headers[0]?.isConnected||categoryOpen)return null;p.armed=category;p.clicked=false;return headers[0];}
  if(action.endsWith('-target')){let target=null;if(action==='category-target'&&!categoryOpen)target=category;if(action==='file-target'&&visible)target=cloneControl??(originalLinks.length===1?originalLinks[0]:null);if(action==='header-target'&&visible&&fileHeader&&(!expanded||!codeLines)&&fileHeader.querySelector('[aria-label="Expand/collapse file"]')&&fileHeader.getAttribute('aria-disabled')!=='true')target=fileHeader;if(!target?.isConnected)return null;p.armed=target;p.clicked=false;return target;}
- if(action==='scroll'){if(!visible)return null;root.scrollIntoView({block:'center',inline:'nearest',behavior:'auto'});return{originalAnchor:true};}
+ if(action==='geometry'||action==='diagnostic'){
+  const rect=n=>{if(!n)return null;const b=n.getBoundingClientRect();return{top:b.top,bottom:b.bottom,left:b.left,right:b.right,width:b.width,height:b.height,inViewport:(b.width>0||b.height>0)&&b.bottom>=0&&b.top<=innerHeight&&b.right>=0&&b.left<=innerWidth};};
+  const style=n=>{const c=getComputedStyle(n);return{display:c.display,visibility:c.visibility,opacity:c.opacity,overflowX:c.overflowX,overflowY:c.overflowY,position:c.position};};
+  const placeholders=[...root.querySelectorAll('pre[data-testid="pr-diff-placeholder-wrapper"]')],text=(placeholders[0]?.textContent??'').trim();
+  const classify=value=>!value?'empty':/error|fail|unable/i.test(value)?'error':/large|limit|big/i.test(value)?'limited':/load|render/i.test(value)?'loading':'other';
+  const errors=[...root.querySelectorAll('[role="alert"],[data-testid*="error"],[data-qa*="error"]')].slice(0,8).map(n=>classify(n.textContent?.trim()??''));
+  const ancestors=[];for(let n=root.parentElement;n&&ancestors.length<8;n=n.parentElement)ancestors.push({tag:n.tagName,rect:rect(n),style:style(n)});
+  const summary={root:{rect:rect(root),style:style(root)},anchor:{rect:rect(anchor),style:style(anchor)},placeholder:{count:placeholders.length,rect:rect(placeholders[0]),state:classify(text)},mount:article.length?(expanded&&codeLines?'source_ready':expanded?'article_empty':'article_collapsed'):placeholders.length?'placeholder':'missing',nativeErrors:errors,ancestors};
+  if(action==='geometry')return{summary};
+  const copy=root.cloneNode(true);for(const node of copy.querySelectorAll('script,style,noscript,form,input,textarea,select,iframe,object,embed,[contenteditable],.ak-renderer-document,[data-testid="comment"],[data-qa="pr-activity"]'))node.remove();
+  const allowed=new Set(['class','id','role','data-testid','data-qa','data-line-type','data-old-line-number','data-new-line-number','aria-hidden','aria-expanded','hidden','inert']);
+  for(const node of [copy,...copy.querySelectorAll('*')])for(const attr of [...node.attributes])if(!allowed.has(attr.name))node.removeAttribute(attr.name);
+  const comments=document.createTreeWalker(copy,NodeFilter.SHOW_COMMENT);const removed=[];for(let n=comments.nextNode();n;n=comments.nextNode())removed.push(n);for(const node of removed)node.remove();
+  const html=copy.outerHTML;return{summary,html:html.length<=65536?html:null,htmlUnavailable:html.length>65536?'size_bound':null};
+ }
+ if(action==='scroll'){if(!visible)return null;root.scrollIntoView({block:'start',behavior:'smooth'});return{originalAnchor:true,target:'native_file_wrapper',block:'start',behavior:'smooth'};}
  return{same:true,visible,categoryOriginal:category===p.category,categoryFocused:document.activeElement===p.category,categoryOpen:category===null?null:categoryOpen,hasArticle:article.length===1,hasHeader:fileHeader!==null,expanded,codeLines,fileTarget:!!cloneControl||originalLinks.length===1,clicked:p.clicked};
 }
-export async function prepareBitbucketPrTarget(page,{poll,guardBudget,progress}) {
+export async function prepareBitbucketPrTarget(page,{poll,guardBudget,progress,captureDiagnostic}) {
  const read=()=>page.evaluate(bitbucketPrTargetProbe,'read',BITBUCKET_PR_WHOLE);
- progress.status='running';progress.phase='bind_target';progress.actions=[];progress.attempts=[];
+ progress.status='running';progress.phase='bind_target';progress.actions=[];progress.attempts=[];progress.geometry=[];
+ const recordGeometry=async label=>{try{const value=await page.evaluate(bitbucketPrTargetProbe,'geometry',BITBUCKET_PR_WHOLE);if(progress.geometry.length<8)progress.geometry.push({label,...(value?.summary??{unavailable:'scope_changed'})});}catch{if(progress.geometry.length<8)progress.geometry.push({label,unavailable:'read_failed'});}};
  let primary;
  const click=async action=>{
   const attempt={action,method:'pointer',located:false};progress.attempts.push(attempt);
@@ -123,19 +139,19 @@ export async function prepareBitbucketPrTarget(page,{poll,guardBudget,progress})
   } finally {await h.dispose();}
  };
  try {
-  let state=await poll(()=>page.evaluate(bitbucketPrTargetProbe,'bind',BITBUCKET_PR_WHOLE),v=>v?.same,'Original PR target anchor/placeholder before source binding');progress.before=state;
+  let state=await poll(()=>page.evaluate(bitbucketPrTargetProbe,'bind',BITBUCKET_PR_WHOLE),v=>v?.same,'Original PR target anchor/placeholder before source binding');progress.before=state;await recordGeometry('before_reveal');
   if(state.categoryOpen===false)state=await openCategory();
   progress.phase='target_visible';requireValue(state.visible,'PR_TARGET_NOT_VISIBLE');
-  if(!state.hasArticle&&state.fileTarget){await click('file-target');state=await read();}
+  if(!state.hasArticle&&state.fileTarget){await click('file-target');await recordGeometry('after_file_click');state=await read();}
   if(!state.hasArticle||!state.expanded||!state.codeLines){
-   progress.phase='anchor_scroll';requireValue((await page.evaluate(bitbucketPrTargetProbe,'scroll',BITBUCKET_PR_WHOLE))?.originalAnchor,'PR_TARGET_SCROLL');progress.actions.push('original-anchor-scroll');
+   progress.phase='native_start_scroll';await recordGeometry('before_native_start_scroll');const scroll=await page.evaluate(bitbucketPrTargetProbe,'scroll',BITBUCKET_PR_WHOLE);requireValue(scroll?.originalAnchor,'PR_TARGET_SCROLL');progress.scroll={target:scroll.target,block:scroll.block,behavior:scroll.behavior};progress.actions.push('native-file-start-scroll');await recordGeometry('after_native_start_scroll');
    progress.phase='article_wait';state=await poll(read,v=>v?.same&&v.hasArticle&&v.hasHeader,'Original placeholder hydrates after bounded native reveal');
   }
   if(!state.expanded||!state.codeLines){await click('header-target');progress.phase='source_wait';state=await poll(read,v=>v?.same&&v.expanded&&v.codeLines>0,'Original file header expands native source');}
-  progress.phase='source_ready';requireValue(state.same&&state.visible&&state.hasArticle&&state.hasHeader&&state.expanded&&state.codeLines>0,'PR_TARGET_UNAVAILABLE');progress.after=state;progress.status='prepared';
+  progress.phase='source_ready';requireValue(state.same&&state.visible&&state.hasArticle&&state.hasHeader&&state.expanded&&state.codeLines>0,'PR_TARGET_UNAVAILABLE');progress.after=state;await recordGeometry('source_ready');progress.status='prepared';
  } catch(error) {
   const known=new Set(['PR_REVEAL_CONTROL_UNAVAILABLE','PR_REVEAL_CONTROL_OCCLUDED','PR_REVEAL_UNTRUSTED','PR_CATEGORY_CONTROL_UNAVAILABLE','PR_CATEGORY_FOCUS_MISMATCH','PR_CATEGORY_UNTRUSTED','PR_TARGET_NOT_VISIBLE','PR_TARGET_SCROLL','PR_TARGET_UNAVAILABLE']);
-  const code=known.has(error?.code)?error.code:'PR_PREBIND_OPERATION_FAILED';progress.status='unavailable';progress.failure={phase:progress.phase,code};primary=Object.assign(new Error(code),{code});
+  const code=known.has(error?.code)?error.code:'PR_PREBIND_OPERATION_FAILED';await recordGeometry('failure');try{const diagnostic=await page.evaluate(bitbucketPrTargetProbe,'diagnostic',BITBUCKET_PR_WHOLE);if(diagnostic?.html&&captureDiagnostic)progress.diagnosticArtifact=await captureDiagnostic(diagnostic.html);else progress.diagnosticArtifact={unavailable:diagnostic?.htmlUnavailable??'capture_unavailable'};}catch{progress.diagnosticArtifact={unavailable:'capture_failed'};}progress.status='unavailable';progress.failure={phase:progress.phase,code};primary=Object.assign(new Error(code),{code});
  } finally {
   progress.cleanup={attempted:!page.isClosed(),pageClosed:page.isClosed(),released:false};
   if(!page.isClosed())try{const result=await page.evaluate(bitbucketPrTargetProbe,'cleanup',BITBUCKET_PR_WHOLE);progress.cleanup.released=result?.released===true;if(!progress.cleanup.released)throw Error();}

@@ -1529,6 +1529,9 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Its PR-only preparation disables unrelated overview/list/config/AI reads, preserves test-category counts, and restores the exact raw settings after the page closes.
   PR whole-context acceptance opens Tests with actual End/Enter keyboard navigation and hydrates the original target placeholder through its existing file control or anchor before binding native source rows.
   Fixed preparation phases, boolean file/header hit checks and independent cleanup codes remain in the private receipt even if the outer runner suppresses exception text.
+  Pre-bind placeholder scrolling matches the native file-wrapper start/smooth reveal;
+  centering a tall wrapper can leave its top anchor outside the viewport.
+  Known-target geometry and mount/error enums bracket that scroll, with a sanitized detached target snapshot available as a failure artifact.
   Browser-decoded PR API304 responses count as revalidation only after an earlier successful200 for the same URL/query fingerprint and body hash in that visit;
   response-event order is preserved before reading bodies.
 
@@ -2199,7 +2202,9 @@ The installed-browser worker keeps its6MiB source,256MiB old-generation and2s pa
 AST traversal uses an explicit stack so deeply nested minified comma chains do not exhaust JavaScript recursion, and known worker memory exhaustion and parser depth failures receive fixed diagnostics without raw error text.
 Reports retain the valid declared byte length and a streamed bytes-seen count capped at the body limit plus one, with a separate capped flag, without retaining an oversized body.
 The bounded worker extracts only `fozrM` and `h43l2` function registrations, independently recording absent or ambiguous modules, source offsets and SHA256 hashes without executing fetched code.
-Each selected factory is limited to256KiB and written under a fixed filename, while the full app body is not saved.
+Each selected factory is limited to256KiB and written under a fixed filename.
+The static-only job explicitly enables --retain-asset to save the same validated public app body as a bounded gzip under a fixed filename in its private CI artifact, with compressed and uncompressed byte counts and SHA256 receipts.
+The full app body never goes to stdout or a committed fixture, and ordinary browser captures retain their prior limits and output policy.
 Static source capture does not establish native source authority, live preference state or feature acceptance.
 
 
@@ -2278,7 +2283,7 @@ Keep the complete original raw settings vector, change only the master flag, rem
 Missing native source, original controls or usable native palettes is unavailable rather than a substitute source pass, and failure reporting omits unknown fields, raw bootstrap, console, exception and URL details.
 
 The literal Bitbucket local-reviewed acceptance uses the existing public PR22 outdated human comment and already-issued review/commit responses, with no helper request or fabricated source identity.
-A local mark on an already-outdated item preserves its native Outdated state and group while its explicit device-local notice survives a real reload and Undo removes only that mark.
+A local mark moves an outdated item to the owned Reviewed on this device group while preserving its separate native Outdated status, and Undo restores the outdated item.
 The case closes its provider page before restoring exact raw settings and local storage presence, and any observed review API write fails acceptance.
 
 A GitLab Rapid Diff page can report idle before its client-side target file and native file tree have hydrated.
