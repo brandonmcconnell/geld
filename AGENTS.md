@@ -1970,6 +1970,9 @@ Native context insertion can also move an already connected owned fold row withi
 Use a supported state-preserving move for that owned row, with a synchronous fallback that restores only the exact button focused immediately before our ordinary move while its current document, URL, ownership, placement and source root remain intact, never a later arbitrary BODY focus or another reader control.
 The whole-source ready label precedes a scheduled controller repaint, so installed acceptance waits at most eight seconds for both exact current whole-test controls while rechecking original source, counts, Viewed, settings and theme on every sample.
 Only missing controls may wait, while present contradictory controls or source drift fail immediately and completed Find and immutable-response stages remain recorded.
+The standalone first-Enter diagnostic keeps only the latest128 focus, trusted-input, object-identity, ancestor-mutation, native-relay, render and viewport records with explicit drops, bounded node IDs and unconditional listener, observer and frame disposal.
+This read-only trace records neither stacks, text, HTML, URLs, input values nor arbitrary IDs or classes, and neither restores focus nor assigns a cause from mutation delivery order.
+A missing native Viewed control is preserved absence and supplies no proof about checkbox state or Viewed-toggle behavior.
 The installed whole-context phase requalifies the complete observed immutable response against its retained fixture digest and actual current native head, records unavailable authority explicitly, and never turns a retained D03 snapshot into proof about an unseen target.
 
 
