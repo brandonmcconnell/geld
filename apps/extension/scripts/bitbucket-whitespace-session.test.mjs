@@ -628,7 +628,7 @@ ${checkpointCode}
 test('whitespace step deadline leaves the job time to upload checkpoint evidence', async () => {
   const { readFileSync } = await import('node:fs');
   const workflow = readFileSync(new globalThis.URL('../../../.github/workflows/browser-e2e.yml', import.meta.url), 'utf8');
-  assert.match(workflow, /timeout-minutes: \$\{\{ needs\.select-public-verification\.outputs\.focus == 'bitbucket-whitespace-session' && 5 \|\| 15 \}\}/);
+  assert.match(workflow, /timeout-minutes: \$\{\{ needs\.select-public-verification\.outputs\.focus == 'provider-access' && 3 \|\| needs\.select-public-verification\.outputs\.focus == 'bitbucket-whitespace-session' && 5 \|\| 15 \}\}/);
 });
 
 async function installedLifecycle(context) {

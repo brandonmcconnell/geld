@@ -498,3 +498,21 @@ test('dedicated local-review receipt retains mark reload Undo while legacy fragm
   assert.match(harness, /item.nativeFragment = await nativeFragmentEvidence\(page, 'note_4118584957'/);
   assert.match(harness, /localReviewedFlag\(page, GITLAB_LOCAL_REVIEW\)/);
 });
+
+test('provider-access builds and loads the extension but selects no public cases and preserves the canonical ledger artifact', () => {
+  assert.deepEqual(select({ event: 'workflow_dispatch', input: 'provider-access' }), { focus: 'provider-access', run: 'true', failures: [] });
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];
+  const cases = new vm.Script(`(${literal})`).runInNewContext();assert.deepEqual(Array.from(cases['provider-access']), []);
+  const start = harness.indexOf("  if (focus === 'provider-access') {");
+  const access = harness.slice(start, harness.indexOf('  const selected =', start));
+  assert.match(access, /verifyOptionalProviderRegistration\(options, runtime, \{ poll \}\)/);
+  assert.doesNotMatch(access, /runCase|fetch\(|\.goto\(/);
+  assert.match(harness, /focus === 'provider-access' \? \['--host-resolver-rules=MAP \* ~NOTFOUND'\] : \[\]/);
+  assert.match(workflow, /name: \$\{\{ needs\.select-public-verification\.outputs\.focus == 'provider-access' && 'geld-provider-access' \|\| 'geld-installed-browser-e2e' \}\}/);
+  const job = workflow.slice(workflow.indexOf('  installed-extension:'), workflow.indexOf('  bitbucket-static-source:'));
+  for (const command of ['pnpm install --frozen-lockfile', 'pnpm --filter @geld/extension build:chrome']) {
+    const step = job.slice(0, job.indexOf('run: ' + command)).split('      - ').at(-1);
+    assert.match(step, /focus != 'provider-evidence'/);assert.doesNotMatch(step, /focus != 'provider-access'/);
+  }
+  assert.match(job, /const artifactName = 'geld-installed-browser-e2e'/);
+});

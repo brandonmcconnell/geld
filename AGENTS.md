@@ -2530,3 +2530,6 @@ The GitLab UI corpus MR266334 currently exposes only resolved local-review items
 The dedicated `gitlab-local-reviewed` focus uses the previously observed open human note3412014628 by user9249395 on public MR2117 and must renew that exact source identity and actionability before marking.
 Legacy `gitlab-review`, regression and all-case runs retain local-review coverage separately, and MR266334 round history remains guarded by its native selected Rapid Diff head.
 The ancillary native-fragment check remains with MR266334 legacy round history rather than becoming an undocumented requirement of the independent local-review persistence fixture.
+
+The `provider-access` installed-browser focus grants optional sites through genuine options-page pointer clicks and verifies worker-registered GitLab, Bitbucket and Bitbucket MAIN scripts before opening any public provider page.
+This focus blocks external DNS, skips all public cases and uploads only `geld-provider-access`, so its options-only receipt cannot replace the canonical provider cooldown artifact.

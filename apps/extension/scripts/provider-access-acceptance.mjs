@@ -59,3 +59,33 @@ export async function enableOptionalProviders(page, providers, { poll }) {
   }
   return result;
 }
+
+export function assertOptionalProviderRegistrations(snapshot) {
+  const origins = ['https://gitlab.com/*', 'https://bitbucket.org/*', 'https://api.bitbucket.org/*'];
+  for (const origin of origins) assert.ok(snapshot.permissions.origins.includes(origin), 'The worker must observe each granted provider origin');
+  const expected = [
+    { id: 'geld-gitlab', host: 'https://gitlab.com/*', file: 'gitlab', main: false },
+    { id: 'geld-bitbucket', host: 'https://bitbucket.org/*', file: 'bitbucket', main: false },
+    { id: 'geld-bitbucket-main', host: 'https://bitbucket.org/*', file: 'bitbucket-whitespace', main: true },
+  ];
+  for (const entry of expected) {
+    const matches = snapshot.scripts.filter(script => script.id === entry.id);
+    assert.equal(matches.length, 1, 'Each provider needs exactly one worker-registered script');
+    const script = matches[0];
+    assert.deepEqual(script.matches, [entry.host]);
+    assert.deepEqual(script.js, [`content-scripts/${entry.file}.js`]);
+    assert.equal(script.runAt, 'document_start');
+    assert.equal(script.persistAcrossSessions, true);
+    assert.equal(script.world ?? 'ISOLATED', entry.main ? 'MAIN' : 'ISOLATED');
+    if (!entry.main) assert.deepEqual(script.css, [`content-scripts/${entry.file}.css`]);
+  }
+  return { origins, scripts: expected.map(entry => ({ id: entry.id, world: entry.main ? 'MAIN' : 'ISOLATED', runAt: 'document_start' })) };
+}
+
+/** Only the original installed options controls can grant; the worker is observed read-only afterward. */
+export async function verifyOptionalProviderRegistration(page, worker, { poll }) {
+  const clicks = await enableOptionalProviders(page, ['gitlab', 'bitbucket'], { poll });
+  const snapshot = await worker.evaluate(async () => ({ permissions: await chrome.permissions.getAll(), scripts: await chrome.scripting.getRegisteredContentScripts() }));
+  const registration = assertOptionalProviderRegistrations(snapshot);
+  return { status: 'passed', clicks, ...registration, scope: 'Installed options and worker only. No public provider page is opened. External DNS is blocked for this focus.' };
+}

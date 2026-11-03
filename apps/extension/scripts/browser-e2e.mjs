@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { enableOptionalProviders, optionalProvidersForCases } from './provider-access-acceptance.mjs';
+import { enableOptionalProviders, optionalProvidersForCases, verifyOptionalProviderRegistration } from './provider-access-acceptance.mjs';
 import { BITBUCKET_UI_PR, BITBUCKET_UI_PATH, bitbucketUiSourceCache, verifyBitbucketUiContinuity } from './bitbucket-ui-continuity.mjs';
 /** Live installed-extension smoke. Run only where unpacked extensions are permitted by policy. */
 import assert from 'node:assert/strict';
@@ -57,6 +57,7 @@ const SETTINGS_KEY = 'settings'; // @geld/core SETTINGS_STORAGE_KEY = sync:setti
 const WAIT_MS = 90_000;
 const BITBUCKET_ANONYMOUS_COOLDOWN_MS = 62 * 60 * 1000; // Documented rolling-hour quota, plus a conservative two-minute margin.
 const FOCUSED_CASES = {
+  'provider-access': [],
   regression: ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'gitlab-local-reviewed', 'github-regression', 'bitbucket-diff'],
   'bitbucket-diff': ['bitbucket-diff'],
   'bitbucket-ui': ['bitbucket-ui-continuity'],
@@ -138,7 +139,7 @@ const BB_PR_LIST = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-r
 const BB_COMMENT_PR = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22';
 const BB_COMMIT = 'https://bitbucket.org/atlassian/bitbucket-upload-file/commits/9777bca47119';
 const report = {
-  schema: 1, startedAt: new Date().toISOString(), mode: 'actual installed unpacked extension on live anonymous public pages',
+  schema: 1, startedAt: new Date().toISOString(), mode: focus === 'provider-access' ? 'actual installed options and worker registration only' : 'actual installed unpacked extension on live anonymous public pages',
   parity: 'incomplete', executablePath, extensionPath, artifacts,
   auth: { freshTemporaryBrowserProfile: true, credentialsProvided: false, authenticatedProviderWrites: false },
   limitations: ['Bitbucket routing and native surface discovery do not establish feature parity.', 'No authenticated review, Viewed, merge or AI-gateway operation is exercised.', 'Computed style probes describe the tested viewport/theme only. Discovery cases report observations or explicit unavailability, never a feature pass.'],
@@ -3094,7 +3095,7 @@ try {
   const manifest = JSON.parse(manifestText);
   try { report.gitHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: extensionRoot, encoding: 'utf8' }).trim(); } catch { report.gitHead = null; }
   report.manifest = { sha256: createHash('sha256').update(manifestText).digest('hex'), version: manifest.version, manifestVersion: manifest.manifest_version };
-  browser = await puppeteer.launch({ executablePath, headless: true, enableExtensions: true, pipe: true, args: ['--enable-unsafe-extension-debugging', '--no-sandbox'] });
+  browser = await puppeteer.launch({ executablePath, headless: true, enableExtensions: true, pipe: true, args: ['--enable-unsafe-extension-debugging', '--no-sandbox', ...(focus === 'provider-access' ? ['--host-resolver-rules=MAP * ~NOTFOUND'] : [])] });
   report.browserVersion = await browser.version();
   report.browserUserAgent = await browser.userAgent();
   extensionId = await browser.installExtension(extensionPath);
@@ -3109,6 +3110,12 @@ try {
   assert.equal(installed.storageAvailable, true);
   console.log(`INSTALLED: ${extensionId}, ${report.browserVersion}, service worker ${worker.url()}`);
   report.installation = { extensionId, serviceWorker: worker.url(), optionsUrl: options.url(), verifiedActualChromeStorage: true, installedManifestVersion: installed.manifest.version };
+  if (focus === 'provider-access') {
+    const runtime = await worker.worker();
+    assert.ok(runtime !== null, 'The installed extension worker is required for registration evidence');
+    report.providerAccessVerification = await verifyOptionalProviderRegistration(options, runtime, { poll });
+    console.log(`PROVIDER_ACCESS: ${JSON.stringify(report.providerAccessVerification)}`);
+  } else {
   const selected = focus === 'all' ? Object.values(FOCUSED_CASES).flat() : FOCUSED_CASES[focus] ?? [];
   report.providerAccess = await enableOptionalProviders(options, optionalProvidersForCases(selected), { poll });
   await prepareInstalledBrowserSettings();
@@ -3667,6 +3674,7 @@ try {
       return { status: 'discovery', reason: 'Actual native commit link discovered from a public PR/list response. Captures commit header, files and counts without claiming commit adapter parity.' };
     }, true);
   } else await unavailableDiscovery('bitbucket-native-commit-discovery', 'No native/public-response commit URL was observed. No commit URL or SHA was invented.');
+  }
 } catch (error) {
   report.infrastructureErrors.push(errorText(error));
   console.error(`INSTALLED EXTENSION INFRASTRUCTURE FAILURE: ${errorText(error)}`);

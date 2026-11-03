@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
-import { enableOptionalProviders, optionalProvidersForCases } from './provider-access-acceptance.mjs';
+import { enableOptionalProviders, optionalProvidersForCases, assertOptionalProviderRegistrations, verifyOptionalProviderRegistration } from './provider-access-acceptance.mjs';
 
 const OPTIONS = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/options.html';
 function protocol({ trusted = true, acknowledge = true, obstructed = false, navigate = false } = {}) {
@@ -58,4 +58,28 @@ for (const [name, options] of [['synthetic input', { trusted: false }], ['pendin
 });
 test('GitHub-only setup makes no clicks and has no permission API dependency', async () => {
   const f = protocol();assert.deepEqual(await f.run([]), []);assert.deepEqual(f.clicks, []);
+});
+
+
+function registered() {
+  return { permissions: { origins: ['https://gitlab.com/*', 'https://bitbucket.org/*', 'https://api.bitbucket.org/*'] }, scripts: [
+    { id: 'geld-gitlab', matches: ['https://gitlab.com/*'], js: ['content-scripts/gitlab.js'], css: ['content-scripts/gitlab.css'], runAt: 'document_start', persistAcrossSessions: true, world: 'ISOLATED' },
+    { id: 'geld-bitbucket', matches: ['https://bitbucket.org/*'], js: ['content-scripts/bitbucket.js'], css: ['content-scripts/bitbucket.css'], runAt: 'document_start', persistAcrossSessions: true, world: 'ISOLATED' },
+    { id: 'geld-bitbucket-main', matches: ['https://bitbucket.org/*'], js: ['content-scripts/bitbucket-whitespace.js'], runAt: 'document_start', persistAcrossSessions: true, world: 'MAIN' },
+  ] };
+}
+test('registered provider receipt requires both grants, isolated scripts and the Bitbucket MAIN hook', () => {
+  assert.equal(assertOptionalProviderRegistrations(registered()).scripts.length, 3);
+  for (const mutate of [value => value.permissions.origins.pop(), value => value.scripts.pop(), value => { value.scripts[2].world = 'ISOLATED'; }, value => { value.scripts[0].matches = ['https://other.invalid/*']; }, value => { value.scripts[2].runAt = 'document_idle'; }]) {
+    const value = registered();mutate(value);assert.throws(() => assertOptionalProviderRegistrations(value));
+  }
+});
+test('options-only verification observes the actual worker with read-only APIs after genuine clicks', async () => {
+  const f = protocol();const calls = [];
+  const worker = { evaluate: async fn => vm.runInNewContext(`(${fn})()`, { chrome: {
+    permissions: { getAll: async () => { calls.push('permissions');return registered().permissions; } },
+    scripting: { getRegisteredContentScripts: async () => { calls.push('scripts');return registered().scripts; } },
+  } }) };
+  const value = await verifyOptionalProviderRegistration(f.page, worker, { poll: async (read, accepts) => { const result = await read();assert.ok(accepts(result));return result; } });
+  assert.equal(value.status, 'passed');assert.deepEqual(f.clicks, ['gitlab', 'bitbucket']);assert.deepEqual(calls, ['permissions', 'scripts']);
 });
