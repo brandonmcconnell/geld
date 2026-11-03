@@ -12,6 +12,22 @@ import { loginOfLink } from './login';
 import { isTeleported } from './teleport';
 
 export const ATTR_FOLDED = 'data-geld-folded';
+/**
+ * On a folded node only where the browser treats `hidden="until-found"` as findable (Chrome, Firefox 139+): the
+ * stylesheet's override of Primer's `[hidden] { display: none }` keys on it. Without that support the attribute
+ * is plain `hidden`, and the override (which relies on the UA's `content-visibility: hidden`) would show the node.
+ */
+export const ATTR_FINDABLE = 'data-geld-findable';
+const untilFoundSupported = typeof document !== 'undefined' && 'onbeforematch' in document.documentElement;
+
+/** Mark (or unmark) a node Geld hides with `hidden="until-found"` as findable, where the browser can find it. */
+export function setFindable(node: Element, folded: boolean): void {
+  if (folded && untilFoundSupported) {
+    if (!node.hasAttribute(ATTR_FINDABLE)) node.setAttribute(ATTR_FINDABLE, '');
+  } else if (node.hasAttribute(ATTR_FINDABLE)) {
+    node.removeAttribute(ATTR_FINDABLE);
+  }
+}
 const ATTR_VISIT = 'data-geld-timeline';
 const ATTR_SEEN = 'data-geld-seen';
 const TIMELINE_ITEM = '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]';
@@ -158,9 +174,11 @@ function setFolded(node: HTMLElement, hidden: boolean): void {
   if (hidden) {
     if (node.getAttribute(ATTR_FOLDED) !== 'hidden') node.setAttribute(ATTR_FOLDED, 'hidden');
     if (node.getAttribute('hidden') !== 'until-found') node.setAttribute('hidden', 'until-found');
+    setFindable(node, true);
   } else if (node.hasAttribute(ATTR_FOLDED)) {
     node.removeAttribute(ATTR_FOLDED);
     if (node.getAttribute('hidden') === 'until-found') node.removeAttribute('hidden');
+    setFindable(node, false);
   }
 }
 

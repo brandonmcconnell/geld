@@ -113,6 +113,14 @@ describe('shortenDescription', () => {
     expect(needle?.hasAttribute('hidden')).toBe(false);
   });
 
+  it('marks a fold findable only where the browser can find until-found text, so elsewhere it stays plain hidden', () => {
+    const body = mountDescription(`${h(2, 'A')}<p>a</p>`);
+    shortenDescription(true);
+    expect(body.children[1]?.hasAttribute('data-geld-findable')).toBe('onbeforematch' in document.documentElement);
+    shortenDescription(false);
+    expect(body.children[1]?.hasAttribute('data-geld-findable')).toBe(false);
+  });
+
   it('keeps what the reader opened when shortening is turned off and on again on the same page', () => {
     const body = mountDescription(`${h(2, 'One')}<p>a</p>`);
     shortenDescription(true);

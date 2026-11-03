@@ -1,5 +1,6 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { ICON_CHEVRON_DOWN } from '../ui/icons';
+import { ATTR_FINDABLE, setFindable } from './fold';
 
 /** A long description with no headings to fold is cut to this height, behind a fade and "Show full description". */
 export const DESCRIPTION_CAP_PX = 500;
@@ -310,9 +311,11 @@ function applyTo(body: HTMLElement): void {
     if (hidden.has(index)) {
       setFlag(block, ATTR_FOLD, '');
       setFlag(block, 'hidden', 'until-found');
+      setFindable(block, true);
     } else if (block.hasAttribute(ATTR_FOLD)) {
       block.removeAttribute(ATTR_FOLD);
       if (block.getAttribute('hidden') === 'until-found') block.removeAttribute('hidden');
+      setFindable(block, false);
     }
     if (folding.has(index)) return;
     // A block that no longer heads a section (the description was edited) gives up its control.
@@ -344,7 +347,10 @@ function clear(): void {
   for (const element of document.querySelectorAll(`[${ATTR_DEPTH}]`)) {
     if (element instanceof HTMLElement) for (const name of RAIL_PROPERTIES) element.style.removeProperty(name);
   }
-  for (const element of document.querySelectorAll(`[${ATTR_FOLD}][hidden='until-found']`)) element.removeAttribute('hidden');
+  for (const element of document.querySelectorAll(`[${ATTR_FOLD}]`)) {
+    if (element.getAttribute('hidden') === 'until-found') element.removeAttribute('hidden');
+    element.removeAttribute(ATTR_FINDABLE);
+  }
   for (const name of [ATTR_FOLD, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH]) {
     for (const element of document.querySelectorAll(`[${name}]`)) element.removeAttribute(name);
   }

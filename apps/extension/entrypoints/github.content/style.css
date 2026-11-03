@@ -2436,8 +2436,8 @@ tr[data-geld-test-fold='hidden'] {
  * more specific rule wins, and should the layer go, a layered !important still beats an unlayered one.
  */
 @layer primer-css-base {
-  /* One attribute more than Primer's `[hidden][hidden]`, which comes later in the layer. */
-  [data-geld-folded][data-geld-folded='hidden'][hidden='until-found'] {
+  /* Only where `until-found` is findable (`data-geld-findable`, fold.ts): elsewhere it is plain hidden and must stay so. */
+  [data-geld-folded='hidden'][data-geld-findable][hidden='until-found'] {
     display: block !important;
     min-height: 0 !important;
     margin: 0 !important;
@@ -7300,7 +7300,7 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
  * `content-visibility: hidden` skips the contents, and with no margin, padding or border nothing of the block remains.
  */
 @layer primer-css-base {
-  [data-geld-desc] > [data-geld-desc-fold][hidden='until-found'] {
+  [data-geld-desc] > [data-geld-desc-fold][data-geld-findable][hidden='until-found'] {
     display: block !important;
     min-height: 0 !important;
     margin: 0 !important;
@@ -7377,8 +7377,9 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 }
 
 /* The heading's own text, links and code stay in GitHub's inline flow. The chevron stands in the indent beside it. */
-[data-geld-desc] > :is(h1, h2, h3, h4, h5, h6),
-[data-geld-desc] > .markdown-heading > :is(h1, h2, h3, h4, h5, h6) {
+/* Every top-level heading, foldable or not, so titles line up: but only in a description that has a chevron at all. */
+[data-geld-desc]:has(> [data-geld-desc-heading]) > :is(h1, h2, h3, h4, h5, h6),
+[data-geld-desc]:has(> [data-geld-desc-heading]) > .markdown-heading > :is(h1, h2, h3, h4, h5, h6) {
   position: relative;
   padding-left: 24px !important;
 }
