@@ -63,11 +63,11 @@ test('duplicate DiffLoader factory remains ambiguous even beside one valid setti
   const loader='r("h43l2",function(e,r){})';assert.deepEqual(await extract(body(registration+';'+loader+';'+loader),{moduleId:'h43l2'}),{status:'unavailable',reason:'registration'});
 });
 
-test('explicit larger source allowance selects only the fixed 512MiB worker budget',async()=>{
+test('explicit larger source allowance selects only the fixed1GiB worker budget',async()=>{
   const worker=pendingWorker();let config;
   const result=extract(body(),{sourceLimitBytes:BITBUCKET_MAX_SOURCE_LIMIT,workerFactory:(options)=>{config=options;return worker;}});
   assert.equal(config.workerData.sourceLimitBytes,16*1024*1024);assert.deepEqual(config.resourceLimits,BITBUCKET_LARGE_SOURCE_WORKER_LIMITS);
-  assert.equal(config.resourceLimits.maxOldGenerationSizeMb,512);assert.equal(config.resourceLimits.stackSizeMb,BITBUCKET_WORKER_LIMITS.stackSizeMb);
+  assert.equal(config.resourceLimits.maxOldGenerationSizeMb,1024);assert.equal(config.resourceLimits.stackSizeMb,BITBUCKET_WORKER_LIMITS.stackSizeMb);
   worker.emit('error',new Error('private'));assert.deepEqual(await result,{status:'unavailable',reason:'worker_failed'});
 });
 for(const sourceLimitBytes of [0,-1,1.5,NaN,Infinity,BITBUCKET_MAX_SOURCE_LIMIT+1,'16777216',null])test('invalid explicit source allowance cannot start a worker: '+String(sourceLimitBytes),async()=>{
@@ -83,4 +83,26 @@ test('actual larger worker parses over6MiB without executing the fetched registr
   const padding='/*'+' '.repeat(BITBUCKET_SOURCE_LIMIT)+'*/';const bytes=body(padding+registration+';throw Error("never execute large source");');
   const result=await extract(bytes,{sourceLimitBytes:BITBUCKET_MAX_SOURCE_LIMIT,deadlineMs:10_000});
   assert.equal(result.status,'extracted');assert.deepEqual(Buffer.from(result.bytes),body(registration));assert.equal(result.byteStart,Buffer.byteLength(padding));
+});
+
+for(const [error,reason] of [[Object.assign(Error('PRIVATE memory text'),{code:'ERR_WORKER_OUT_OF_MEMORY'}),'worker_memory'],[new RangeError('PRIVATE parser text'),'parser_depth'],[Object.assign(Error('PRIVATE unknown text'),{code:'OTHER'}),'worker_failed']])test('worker failure exposes only fixed '+reason+' classification',async()=>{
+  const worker=pendingWorker();const pending=extract(body(),{workerFactory:()=>worker});worker.emit('error',error);const result=await pending;
+  assert.deepEqual(result,{status:'unavailable',reason});assert.equal(JSON.stringify(result).includes('PRIVATE'),false);assert.equal(worker.terminated,1);
+});
+test('constructor memory failure is classified without publishing its message',async()=>{
+  assert.deepEqual(await extract(body(),{workerFactory:()=>{throw Object.assign(Error('PRIVATE'),{code:'ERR_WORKER_OUT_OF_MEMORY'});}}),{status:'unavailable',reason:'worker_memory'});
+});
+test('parser depth result remains fixed while unknown worker reasons are suppressed',async()=>{
+  for(const reason of ['parser_depth','PRIVATE']){const worker=pendingWorker();const pending=extract(body(),{workerFactory:()=>worker});worker.emit('message',{status:'unavailable',reason});assert.deepEqual(await pending,{status:'unavailable',reason:reason==='parser_depth'?'parser_depth':'worker_result'});}
+});
+test('actual worker traverses12MB deep comma syntax without recursion or evaluation',async()=>{
+  const term='state.shouldIgnoreWhitespace,';
+  const loader='r("h43l2",function(e,r){e.exports={DiffLoader:()=>{throw Error("never execute")}};})';
+  const tail='0);'+registration+';'+loader+';throw Error("never evaluate app");';
+  const bytes=body('('+term.repeat(Math.floor((12_145_413-tail.length-1)/term.length))+tail);
+  assert.ok(bytes.length>=12_145_380&&bytes.length<=12_145_413);
+  for(const [moduleId,expected] of [['fozrM',registration],['h43l2',loader]]){
+    const result=await extract(bytes,{sourceLimitBytes:BITBUCKET_MAX_SOURCE_LIMIT,deadlineMs:10_000,moduleId});
+    assert.equal(result.status,'extracted');assert.deepEqual(Buffer.from(result.bytes),body(expected));assert.deepEqual(bytes.subarray(result.byteStart,result.byteEnd),body(expected));
+  }
 });

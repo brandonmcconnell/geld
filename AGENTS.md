@@ -2194,8 +2194,9 @@ The default raw collector remains pinned to its original exact URL, and no eligi
 The separate literal `bitbucket-whitespace-source` workflow focus performs exactly one anonymous GET of the retained public app.6ea3303b1b2659fcb5ca5dc82e17933a815f4108.js CDN asset.
 It skips installed-browser execution entirely, has no provider API request or native preference action, and saves a separate source-research artifact that cannot replace browser cooldown evidence.
 Redirects, wrong MIME/final URL, empty/invalid bodies and declared or streamed bodies above16MiB are refused, with no retries or fallback endpoints.
-Only this static collector opts into the larger worker source allowance and its512MiB old-generation and10s parser bounds, under the existing30s total wall deadline.
+Only this static collector opts into the larger worker source allowance and its1GiB old-generation and10s parser bounds, under the existing30s total wall deadline.
 The installed-browser worker keeps its6MiB source,256MiB old-generation and2s parser defaults.
+AST traversal uses an explicit stack so deeply nested minified comma chains do not exhaust JavaScript recursion, and known worker memory exhaustion and parser depth failures receive fixed diagnostics without raw error text.
 Reports retain the valid declared byte length and a streamed bytes-seen count capped at the body limit plus one, with a separate capped flag, without retaining an oversized body.
 The bounded worker extracts only `fozrM` and `h43l2` function registrations, independently recording absent or ambiguous modules, source offsets and SHA256 hashes without executing fetched code.
 Each selected factory is limited to256KiB and written under a fixed filename, while the full app body is not saved.
