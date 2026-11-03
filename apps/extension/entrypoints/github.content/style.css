@@ -7289,6 +7289,23 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   text-decoration: underline;
 }
 
+/* ---- comment text wraps pretty ------------------------------------------- */
+
+/*
+ * Rendered comment text (the description, comments, review threads, and the same nodes on loan to the digest's chats)
+ * avoids a lone last word. The longhand only: the `text-wrap` shorthand also sets the wrap mode, which a code cell
+ * matched here would lose. The style is inherited, so code keeps its own wrapping. Browsers without `pretty` ignore it.
+ */
+:is(.comment-body, .js-comment-body, [data-testid='comment-body'], [data-testid='issue-body'], [data-testid='review-thread-comment'])
+  :is(p, h1, h2, h3, h4, h5, h6, li, blockquote, td, th, dt, dd, summary, figcaption) {
+  text-wrap-style: pretty;
+}
+
+:is(.comment-body, .js-comment-body, [data-testid='comment-body'], [data-testid='issue-body'], [data-testid='review-thread-comment'])
+  :is(pre, .highlight, .blob-code, .blob-num) {
+  text-wrap-style: auto;
+}
+
 /* ---- description outline and cap (description.ts) ------------------------- */
 
 /*
