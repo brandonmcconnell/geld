@@ -11,7 +11,7 @@ The shared navigation uses [shadcn/ui’s Base UI sidebar](https://ui.shadcn.com
 Drag the sidebar edge to resize or collapse it. The team picker opens from its chevrons, the repository picker lives in the top bar, and Inbox sits beside the account menu.
 Controls, panels and navigation states use square corners. Brand buttons retain two beveled corners. The 404 uses tabular numerals, centers within the available workspace and scrolls naturally on short screens.
 
-Compare the unchanged icon set with [three alternatives](./icon-options.html), or view the [comparison image](./icon-options.png).
+The dashboard uses Font Awesome Sharp Regular. Selected controls and navigation switch to Sharp Solid. Private repositories use a lock, and discussion threads use square message icons. The earlier [icon comparison](./icon-options.html) is retained as design history.
 
 Queue rows show current Digest findings, replies needed, approvals and bot results. Earlier summaries are marked outdated, and partial summaries use lower-bound counts.
 
@@ -52,6 +52,7 @@ Queue rows show current Digest findings, replies needed, approvals and bot resul
 | Page not found on a short screen | `/not-a-dashboard-page` | [View](./screenshots/desktop/not-found-short.png) | [View](./screenshots/mobile/not-found-short.png) | — |
 | Wider workspace navigation | `/` | [View](./screenshots/desktop/sidebar-resized.png) | — | — |
 | Collapsed workspace navigation | `/` | [View](./screenshots/desktop/sidebar-collapsed.png) | — | — |
+| Selected and unselected Sharp icons | `/` | [View](./screenshots/desktop/queue-starred.png) | [View](./screenshots/mobile/queue-starred.png) | [View](./screenshots/dark/queue-starred.png) |
 | Selected review and indeterminate checkbox | `/` | [View](./screenshots/desktop/queue-selection.png) | — | [View](./screenshots/dark/queue-selection.png) |
 | Review requests received | `/` | [View](./screenshots/desktop/queue-incoming.png) | [View](./screenshots/mobile/queue-incoming.png) | — |
 | Review requests sent | `/` | [View](./screenshots/desktop/queue-outgoing.png) | [View](./screenshots/mobile/queue-outgoing.png) | — |
