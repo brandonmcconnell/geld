@@ -1,11 +1,12 @@
 'use client';
 
+import { faPause, faPlay } from '@awesome.me/kit-2e791c163e/icons/sharp/solid';
 import { cn } from 'cn';
-import { PauseIcon, PlayIcon } from 'lucide-react';
 import type { FocusEvent, PointerEvent, RefObject } from 'react';
 import { useEffect, useRef, useState } from 'react';
 
 import { ExternalLink } from '@/components/external-link';
+import { FaIcon } from '@/components/fa-icon';
 import type { Customer } from '@/lib/customers';
 import { CUSTOMERS } from '@/lib/customers';
 
@@ -53,7 +54,7 @@ export function LogoReel({ className }: { readonly className?: string }) {
           title={paused ? 'Play' : 'Pause'}
           className="absolute top-1/2 left-full ml-1 grid size-6 -translate-y-1/2 place-items-center text-muted-foreground opacity-0 outline-none transition-opacity duration-150 ease-out group-hover/reel:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/60 [@media(hover:none)]:opacity-100 motion-reduce:hidden"
         >
-          {paused ? <PlayIcon aria-hidden="true" className="size-3.5 fill-current" /> : <PauseIcon aria-hidden="true" className="size-3.5 fill-current" />}
+          <FaIcon icon={paused ? faPlay : faPause} className="size-3" />
         </button>
       </div>
       <div className="logo-reel mt-6" onFocus={onFocus} onBlur={onBlur} onPointerEnter={onPointer} onPointerLeave={onPointer}>
