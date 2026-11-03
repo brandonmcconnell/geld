@@ -2106,3 +2106,9 @@ The preparer does not copy host credential/config files or serialize environment
 
 - **Browser workflow path filters can exclude packaging-only pull requests**: apps/action-only packaging, root package and scripts changes may run normal CI and local image checks without matching the installed-browser pull_request paths.
   Such a boundary has no expected installed Test start or artifact and must not be reported as either native acceptance or an installed-test failure.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
