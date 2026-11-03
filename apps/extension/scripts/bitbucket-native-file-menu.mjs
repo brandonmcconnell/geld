@@ -12,6 +12,19 @@ export function nativeFileMenuPreflight(active, budget) {
 export function nativeFileMenuProbe(action = 'read', target = null, environment = {}) {
   const key = '__geldNativeFileMenu';let store = globalThis[key];
   if (action === 'cleanup') { if (store) { for (const type of ['click', 'input', 'change', 'submit', 'keydown']) document.removeEventListener(type, store.listen, true);for (const type of ['popstate', 'hashchange', 'wxt:locationchange', 'pagehide']) document.defaultView?.removeEventListener(type, store.navigation); }delete globalThis[key];return { removed: true }; }
+  if (action === 'control-result') return store?.controlResult ?? null;
+  if (store && ['arm','hit'].includes(action)) store.controlResult = { operation:action,sourceCurrent:null,targetOriginal:null,presented:null,eligible:null,hit:null };
+  // Self-contained read-only geometry; the private offline Chromium regression extracts this exact helper.
+  const hitSummary = (button) => {
+    const r = button.getBoundingClientRect();const finite = [r.left,r.right,r.top,r.bottom,r.width,r.height].every((n)=>Number.isFinite(n)&&Math.abs(n)<=1000000);
+    const positive = finite && r.width>0 && r.height>0;const inViewport = positive&&r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;
+    const x=(r.left+r.right)/2,y=(r.top+r.bottom)/2;const ix=positive?Math.min(4,r.width/4):0,iy=positive?Math.min(4,r.height/4):0;
+    const owned=(px,py)=>positive?button.contains(document.elementFromPoint(px,py)):null;
+    const center=owned(x,y);const cardinal={left:owned(r.left+ix,y),right:owned(r.right-ix,y),top:owned(x,r.top+iy),bottom:owned(x,r.bottom-iy)};
+    const legacyCorners={topLeft:owned(r.left+1,r.top+1),bottomRight:owned(r.right-1,r.bottom-1)};
+    let radiusPixels=null;try { const style=getComputedStyle(button);radiusPixels=['borderTopLeftRadius','borderTopRightRadius','borderBottomRightRadius','borderBottomLeftRadius'].map((key)=>{const match=/^(\d+(?:\.\d+)?)px(?: (\d+(?:\.\d+)?)px)?$/.exec(style[key]);if(!match)return null;const pair=[Number(match[1]),Number(match[2]??match[1])];return pair.every(n=>Number.isFinite(n)&&n<=1000000)?pair:null;}); }catch { /* Optional native geometry only; unknown CSS never leaves the probe. */ }
+    return {positiveDimensions:positive,inViewport,width:finite?r.width:null,height:finite?r.height:null,insetX:positive?ix:null,insetY:positive?iy:null,radiusPixels,centerOwned:center,cardinalOwned:cardinal,legacyCornersOwned:legacyCorners,eligible:inViewport&&center===true&&Object.values(cardinal).every(Boolean)};
+  };
   const path = 'bitbucket-pipelines.yml';const route = '/atlassian/bitbucket-upload-file/pull-requests/27/diff';
   const forbidden = '[data-geld-ui],.ak-renderer-document,[data-testid="comment"],[data-testid="comment-content"],[data-qa="pr-activity"],[data-qa="pull-request-description"]';
   const native = (node) => node?.isConnected === true && node.closest(forbidden) === null;
@@ -60,17 +73,20 @@ export function nativeFileMenuProbe(action = 'read', target = null, environment 
     const now = read();
     if (action === 'setup') {
       if (store || !now || now.button.getAttribute('aria-expanded') !== 'false') return { same:false, failure:store?'binding_already_held':!now?refusal:'opener_not_closed' };
-      store = { before: now, previousPopups: new Set(popups()), clicks: 0, scrolls: 0, forbidden: 0, invalid: false, armed: null, event: null, trusted: environment.unitOnly?.trusted };
+      store = { before: now, previousPopups: new Set(popups()), clicks: 0, scrolls: 0, forbidden: 0, invalid: false, armed: null, event: null, controlResult:null, trusted: environment.unitOnly?.trusted };
       store.navigation = () => { store.invalid = true; };
       store.listen = (event) => { const trusted = store.trusted?.(event) ?? event.isTrusted === true;const target = event.target;let permitted = false;try { permitted = event.type === 'click' && target instanceof Element && now.button.contains(target) && store.armed === now.button && store.clicks === 0 && same(read()) && trusted; } catch { permitted = false; }if (permitted) { store.clicks++;store.event = { trusted: true, kind: 'original_diff_actions_opener' }; }else store.forbidden++; };
       for (const type of ['click','input','change','submit','keydown']) document.addEventListener(type, store.listen, true);for (const type of ['popstate','hashchange','wxt:locationchange','pagehide']) document.defaultView?.addEventListener(type, store.navigation);globalThis[key] = store;
     }
-    const current = same(now);if (!current) return action === 'read' ? { same:false, failure:!now?refusal:store?.invalid?'native_navigation_changed':store?.forbidden>0?'unexpected_input':'native_source_or_owner_changed', clicks:store?.clicks??0, forbiddenEvents:store?.forbidden??0, event:store?.event??null } : null;
+    const current = same(now);
+    if (['arm','hit'].includes(action) && store) {
+      const targetOriginal=current?target===now.button:false;const shown=current?presented(now.button,true):null;const hit=current?hitSummary(now.button):null;
+      const eligible=current&&targetOriginal&&shown===true&&hit?.eligible===true&&(action!=='arm'||store.clicks===0);
+      store.controlResult={operation:action,sourceCurrent:current,targetOriginal,presented:shown,eligible:current?eligible:null,hit};if(action==='arm')store.armed=eligible?now.button:null;return current?eligible:null;
+    }
+    if (!current) return action === 'read' ? { same:false, failure:!now?refusal:store?.invalid?'native_navigation_changed':store?.forbidden>0?'unexpected_input':'native_source_or_owner_changed', clicks:store?.clicks??0, forbiddenEvents:store?.forbidden??0, event:store?.event??null } : null;
     if (action === 'opener') return store.clicks === 0 ? now.button : null;
     if (action === 'claim-scroll') { if (target !== now.button || store.clicks || store.scrolls) return false;store.scrolls++;return true; }
-    const hit = () => { if (!presented(now.button, true)) return false;const r = now.button.getBoundingClientRect();return [[(r.left+r.right)/2,(r.top+r.bottom)/2],[r.left+1,r.top+1],[r.right-1,r.bottom-1]].every(([x,y]) => now.button.contains(document.elementFromPoint(x,y))); };
-    if (action === 'arm') { store.armed = target === now.button && store.clicks === 0 && hit() ? now.button : null;return store.armed !== null; }
-    if (action === 'hit') return target === now.button && hit();
     const roots = popups().filter((n) => !store.previousPopups.has(n));const observations = [];
     for (const popup of roots.slice(0,8)) {
       const controls = now.button.getAttribute('aria-controls');const labelled = popup.getAttribute('aria-labelledby');const controlIds = controls?.trim().split(/\s+/) ?? [];const labelIds = labelled?.trim().split(/\s+/) ?? [];
@@ -91,15 +107,23 @@ export async function diagnoseNativeFileMenu(page, item, { settings, poll, pause
   const p = { status: 'running', featureParity: 'not_evaluated', authority: 'not_granted', actions: [], samples: [], sampleCount: 0, limits: { milliseconds: 2000, maxSamples: 20, retainedSamples: 8 }, limitations: ['Original opener-only report, not native full-head, source-frame or whole-file authority.', 'No menu item, source navigation, Escape, Viewed, consent or preference input; no HTML, AX, PNG or arbitrary text/URL capture.'] };item.nativeFileMenu = p;let installed = false;
   const now = unitOnly?.now ?? Date.now;
   const current = async () => { assert.equal(page.isClosed(),false);await settings.current();const tab = await tabState(page);assert.equal(tab?.allowed,false);assert.equal(tab?.hasDiff,false);const v = await page.evaluate(nativeFileMenuProbe);p.lastGuard={same:v?.same===true,failure:v?.failure??null,clicks:v?.clicks??null,event:v?.event??null};assert.equal(v?.same,true);assert.equal(v.ownUi,0);assert.equal(v.ownHighlights,0);assert.equal(v.forbiddenEvents,0);return v; };
+  p.phase='initial_settings';p.handle={received:false,asElement:null};p.handleCleanup={status:'not_acquired'};p.controlResults={};
+  const control=async(operation,opener)=>{p.phase=operation;p.controlResults[operation]={boolean:null,summary:null};const value=await page.evaluate(nativeFileMenuProbe,operation,opener);p.controlResults[operation].boolean=typeof value==='boolean'?value:null;p.phase=`${operation}_diagnostics`;p.controlResults[operation].summary=await page.evaluate(nativeFileMenuProbe,'control-result');p.phase=`${operation}_assert`;assert.equal(p.controlResults[operation].summary?.operation,operation);assert.equal(p.controlResults[operation].boolean,true);};
   try {
-    await settings.current();p.bindingSamples=[];const setup = await poll(async()=>{const v=await page.evaluate(nativeFileMenuProbe,'setup');p.bindingSamples.push({same:v?.same===true,failure:v?.failure??null});if(p.bindingSamples.length>8)p.bindingSamples.shift();return v;}, (v) => v?.same === true, 'Already mounted original native Pipeline file menu', 10000);installed = true;p.setup = setup;await current();
-    const handle = await page.evaluateHandle(nativeFileMenuProbe,'opener');
-    try { const opener = handle.asElement();assert.ok(opener);if (!setup.inViewport) { assert.equal(await page.evaluate(nativeFileMenuProbe,'claim-scroll',opener),true);await opener.evaluate((n) => n.scrollIntoView({ block:'center', inline:'nearest', behavior:'instant' }));p.scrolledOriginal = true; }await current();assert.equal(await page.evaluate(nativeFileMenuProbe,'arm',opener),true);assert.equal(await page.evaluate(nativeFileMenuProbe,'hit',opener),true);await current();const immediateBudget = guardBudget();const action={kind:'original_diff_actions_opener',immediateBudget,status:'input_attempted'};p.actions.push(action);await opener.click();action.status='input_sent';const after = await current();assert.equal(after.event?.trusted,true);assert.equal(after.clicks,1);action.status='observed';action.event=after.event; }finally { await handle.dispose(); }
+    await settings.current();p.phase='binding';p.bindingSamples=[];const setup = await poll(async()=>{const v=await page.evaluate(nativeFileMenuProbe,'setup');p.bindingSamples.push({same:v?.same===true,failure:v?.failure??null});if(p.bindingSamples.length>8)p.bindingSamples.shift();return v;}, (v) => v?.same === true, 'Already mounted original native Pipeline file menu', 10000);installed = true;p.setup = setup;p.phase='source_after_binding';await current();
+    p.phase='handle_acquisition';const handle = await page.evaluateHandle(nativeFileMenuProbe,'opener');p.handle.received=handle!==null&&handle!==undefined;
+    try {
+      p.phase='handle_type';const opener = handle?.asElement?.()??null;p.handle.asElement=opener!==null;assert.ok(opener);
+      if (!setup.inViewport) { p.phase='scroll_claim';p.scrollClaim=null;const claim=await page.evaluate(nativeFileMenuProbe,'claim-scroll',opener);p.scrollClaim=typeof claim==='boolean'?claim:null;assert.equal(p.scrollClaim,true);p.phase='original_scroll';await opener.evaluate((n) => n.scrollIntoView({ block:'center', inline:'nearest', behavior:'instant' }));p.scrolledOriginal = true; }
+      p.phase='source_before_arm';await current();await control('arm',opener);await control('hit',opener);p.phase='source_before_input';await current();p.phase='input_budget';const immediateBudget = guardBudget();const action={kind:'original_diff_actions_opener',immediateBudget,status:'input_attempted'};p.actions.push(action);p.phase='input_attempted';await opener.click();action.status='input_sent';p.phase='source_after_input';const after = await current();assert.equal(after.event?.trusted,true);assert.equal(after.clicks,1);action.status='observed';action.event=after.event;
+    }catch { p.failureStage??=p.phase;throw new Error('Native file-menu control boundary failed'); }
+    finally { if(handle!==null&&handle!==undefined){p.handleCleanup={status:'pending'};try{await handle.dispose();p.handleCleanup.status='released';}catch{p.handleCleanup.status='failed';p.failureStage??='handle_disposal';throw new Error('Native file-menu handle cleanup failed');}} }
+    p.phase='observations';
     const deadline = now()+p.limits.milliseconds;
     let timer;const expired = new Error('Native file-menu observation deadline');
     const bounded = async (operation) => { const remaining=deadline-now();if(remaining<=0)throw expired;try{return await Promise.race([Promise.resolve().then(operation),new Promise((_,reject)=>{timer=setTimeout(()=>reject(expired),remaining);})]);}finally{clearTimeout(timer);} };
     try { for (let i=0;i<p.limits.maxSamples&&now()<deadline;i++) { const v = await bounded(current);p.sampleCount++;p.samples.push(v);if(p.samples.length>p.limits.retainedSamples)p.samples.shift();if(i+1<p.limits.maxSamples)await bounded(()=>pause(Math.min(100,Math.max(1,deadline-now())))); } }catch(error){if(error!==expired)throw error;p.deadlineReached=true;}
-    p.final = await current();p.status = 'diagnostic_complete';return { status:'discovery',featureParity:'not_evaluated',reason:'One original native file-menu opener observed. Safe candidates and actual association signals grant no native head or source authority.' };
-  } catch { p.status=installed?'failed':'unavailable';p.failure='native_file_menu_guard_failed';throw new Error('Native file-menu diagnostic unavailable or guard failed'); }
-  finally { if(installed&&!page.isClosed())try { assert.equal((await page.evaluate(nativeFileMenuProbe,'cleanup'))?.removed,true);p.cleanup='removed'; }catch { p.status='failed';p.cleanup='failed';throw new Error('Native file-menu diagnostic cleanup failed'); } }
+    p.phase='final_source';p.final = await current();p.phase='complete';p.status = 'diagnostic_complete';return { status:'discovery',featureParity:'not_evaluated',reason:'One original native file-menu opener observed. Safe candidates and actual association signals grant no native head or source authority.' };
+  } catch { p.failureStage??=p.phase;p.status=installed?'failed':'unavailable';p.failure='native_file_menu_guard_failed';throw new Error('Native file-menu diagnostic unavailable or guard failed'); }
+  finally { if(installed&&!page.isClosed())try { p.cleanup='pending';p.cleanupResult=null;const result=await page.evaluate(nativeFileMenuProbe,'cleanup');p.cleanupResult=typeof result?.removed==='boolean'?result.removed:null;assert.equal(p.cleanupResult,true);p.cleanup='removed'; }catch { p.failureStage??='probe_cleanup';p.status='failed';p.cleanup='failed';throw new Error('Native file-menu diagnostic cleanup failed'); }else p.cleanup=page.isClosed()?'page_closed':'not_installed'; }
 }
