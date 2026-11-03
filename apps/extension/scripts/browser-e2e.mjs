@@ -962,13 +962,21 @@ async function crossSettingsDom(page, provider) {
   return page.evaluate((site) => {
     const numeric = (node, absentIsZero = false) => { if (node === null) return absentIsZero ? 0 : null; const value = node.textContent?.replace(/[,\s]/g, '').match(/\d+/)?.[0]; return value === undefined ? null : Number(value); };
     const native = (node) => node.closest('[data-geld-ui]') === null;
+    const visible = (node) => {
+      if (!node) return false;
+      for (let current = node; current; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (current.hidden || style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+      }
+      return true;
+    };
     let headers; let files; let headerIdentity; let groups;
     if (site === 'gitlab') {
       const statsGroups = [...document.querySelectorAll('.diff-stats.inline-parallel-buttons .diff-stats-contents')].filter(native);
       headers = statsGroups.map((root) => ({ files: numeric(root.querySelector(':scope > .diff-stats-group > span')), additions: numeric(root.querySelector('[data-testid="js-file-addition-line"]'), true), deletions: numeric(root.querySelector('[data-testid="js-file-deletion-line"]'), true) }));
       files = [...document.querySelectorAll('diff-file[data-file-data], .diff-file[data-file-data]')].filter(native).map((root) => {
         let data = null; try { data = JSON.parse(root.getAttribute('data-file-data') ?? 'null'); } catch { /* Incomplete native metadata fails below. */ }
-        return { path: data?.new_path ?? data?.old_path ?? null, id: root.id, anchor: null, head: data?.diff_refs?.head_sha ?? null, hidden: root.getAttribute('data-geld-provider-hidden') };
+        return { path: data?.new_path ?? data?.old_path ?? null, id: root.id, anchor: null, head: data?.diff_refs?.head_sha ?? null, hidden: root.getAttribute('data-geld-provider-hidden'), visible: visible(root) };
       });
       const tab = document.querySelector('[data-testid="diffs-tab"]');
       headerIdentity = { id: tab?.id ?? null, testid: tab?.getAttribute('data-testid') ?? null, href: tab?.querySelector('a[href]')?.getAttribute('href') ?? null };
@@ -985,7 +993,7 @@ async function crossSettingsDom(page, provider) {
         // The legacy adapter orders/classifies the native copilot wrapper, preserving the inner file ID.
         // Installed run41347605877 has all 18 wrappers marked hidden and their inner .file markers absent.
         const owner = root?.closest('copilot-diff-entry') ?? root;
-        return { path: header.getAttribute('data-path'), id: root?.id ?? null, anchor: header.getAttribute('data-anchor'), head: null, ownerTag: owner?.tagName ?? null, ownerPath: owner?.getAttribute('data-file-path') ?? root?.getAttribute('data-tagsearch-path') ?? null, hidden: owner?.getAttribute('data-geld') ?? null };
+        return { path: header.getAttribute('data-path'), id: root?.id ?? null, anchor: header.getAttribute('data-anchor'), head: null, ownerTag: owner?.tagName ?? null, ownerPath: owner?.getAttribute('data-file-path') ?? root?.getAttribute('data-tagsearch-path') ?? null, hidden: owner?.getAttribute('data-geld') ?? null, visible: visible(owner) };
       });
       headerIdentity = { id: stats?.id ?? null, counterId: counter?.id ?? null, href: counter?.closest('a[href]')?.getAttribute('href') ?? null, repository: document.querySelector('meta[name="octolytics-dimension-repository_nwo"]')?.getAttribute('content') ?? null };
       groups = [...document.querySelectorAll('#files[data-geld-container="legacy"]')].map((root) => {

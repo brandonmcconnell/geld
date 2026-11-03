@@ -9,10 +9,10 @@ const oracles = { ...Object.fromEntries(Object.entries(SHARED_SETTINGS_NATIVE_OR
 function sample(provider, mode = 'baseline') {
   const oracle = oracles[provider]; const all = mode === 'all'; const totals = all ? { files: 0, additions: 0, deletions: 0 } : oracle.visible;
   // Offline protocol fixtures use actual retained totals/marker conventions; they are not a rendered/native browser proof.
-  return { state: { repo: oracle.repo, ...(provider === 'github' ? {} : { repository: { provider, origin: provider === 'gitlab' ? 'https://gitlab.com' : 'https://bitbucket.org', path: oracle.repo } }), allowed: true, hasDiff: true, onDiffPage: true, all: oracle.all, visible: totals, hiddenCount: all ? oracle.all.files : oracle.hidden, expanded: all, categories: all ? [{ id: 'tests', count: oracle.all.files }] : [] },
+  return { state: { repo: oracle.repo, ...(provider === 'github' ? {} : { repository: { provider, origin: provider === 'gitlab' ? 'https://gitlab.com' : 'https://bitbucket.org', path: oracle.repo } }), allowed: true, hasDiff: true, onDiffPage: true, all: oracle.all, visible: totals, hiddenCount: all ? oracle.all.files : oracle.hidden, expanded: all, categories: [{ id: 'tests', count: all ? oracle.all.files : oracle.hidden, paths: Array.from({ length: all ? oracle.all.files : oracle.hidden }, (_, index) => `file${index}`) }] },
     dom: { provider, url: `https://${provider === 'bitbucket' ? 'bitbucket.org' : provider + '.com'}/${oracle.repo}`, hidden: false, headerIdentity: { id: 'native-header' }, nativeLinks: ['/original/source'], nativeCheckboxes: [{ id: 'viewed', name: 'viewed', checked: false }],
       headers: provider === 'bitbucket' ? [{ files: totals.files }, { files: totals.files }] : [{ ...totals }],
-      files: Array.from({ length: oracle.all.files }, (_, index) => ({ id: `native-${index}`, path: `file${index}`, head: provider === 'gitlab' ? SHA : null, hidden: all ? provider === 'github' ? 'hidden' : 'open' : null, display: 'block' })),
+      files: Array.from({ length: oracle.all.files }, (_, index) => ({ id: `native-${index}`, path: `file${index}`, head: provider === 'gitlab' ? SHA : null, hidden: all || index < oracle.hidden ? provider === 'github' ? 'hidden' : all ? 'open' : 'closed' : null, visible: all || index >= oracle.hidden, display: 'block' })),
       groups: all ? [{ expanded: true, toggleExpanded: 'true', toggleLabel: 'Hide tests', ...(provider === 'github' ? { sectionExpanded: 'true' } : {}) }] : [] },
     ...(provider === 'bitbucket' ? { source: { status: 'ready', sha: SHA, totals: BB.all } } : {}) };
 }
@@ -180,4 +180,17 @@ test('the existing rolling40 guard counts main and counterpart traffic together 
   assert.equal(abort.signal.aborted, true); assert.equal(counterpart.closed, true); assert.equal(main.closed, false);
   assert.equal(item.holdReason, 'conservative_anonymous_api_budget'); assert.equal(cooldowns.size, 0); assert.equal(item.budgetHold.observedLimit, 40); assert.equal(item.rateLimitedUntil, undefined);
   stopMain(); stopCounterpart(); assert.equal(main.listenerCount('request'), 0); assert.equal(counterpart.listenerCount('request'), 0);
+});
+
+for (const provider of ['gitlab', 'github']) test(`${provider} restored counters cannot hide stale markers or invisible essential files`, () => {
+  for (const mode of ['baseline', 'restored']) {
+    const stale = sample(provider, mode);
+    for (const file of stale.dom.files) { file.hidden = provider === 'github' ? 'hidden' : 'open';file.visible = true; }
+    assert.equal(sharedSettingsSampleValid(provider, stale, oracles[provider], mode), false);
+    const invisible = sample(provider, mode);invisible.dom.files.at(-1).visible = false;
+    assert.equal(sharedSettingsSampleValid(provider, invisible, oracles[provider], mode), false);
+    const wrongFile = sample(provider, mode);
+    [wrongFile.dom.files[0].hidden, wrongFile.dom.files.at(-1).hidden] = [wrongFile.dom.files.at(-1).hidden, wrongFile.dom.files[0].hidden];
+    assert.equal(sharedSettingsSampleValid(provider, wrongFile, oracles[provider], mode), false);
+  }
 });

@@ -67,6 +67,15 @@ export function sharedSettingsSampleValid(provider, sample, oracle, mode) {
       || dom.headers.length !== 2 || !dom.headers.every((header) => header.files === visible.files)
       || !dom.files.every((file) => file.display !== 'none' && file.hidden === (allHidden ? 'open' : null))) return false;
   } else if (dom.headers.length === 0 || !dom.headers.every((header) => equal(header, visible))) return false;
+  if (provider !== 'bitbucket') {
+    const classified = new Set(state.categories.flatMap(category => category.paths ?? []));
+    if (classified.size !== hidden || [...classified].some(path => !dom.files.some(file => file.path === path))) return false;
+    if (!dom.files.every(file => {
+      const categorized = classified.has(file.path);
+      const marker = categorized ? provider === 'github' ? 'hidden' : allHidden ? 'open' : 'closed' : null;
+      return file.hidden === marker && file.visible === (allHidden || !categorized);
+    })) return false;
+  }
   if (allHidden && (state.expanded !== true || !state.categories.some((category) => category.id === 'tests' && category.count === oracle.all.files)
     || !dom.files.every((file) => file.hidden === (provider === 'github' ? 'hidden' : 'open'))
     || dom.groups.length !== 1 || !dom.groups.every((group) => group.expanded && group.toggleExpanded === 'true' && /^Hide\b/.test(group.toggleLabel ?? '') && (provider !== 'github' || group.sectionExpanded === 'true')))) return false;
