@@ -3,6 +3,8 @@ export interface NativeWhitespaceSnapshot {
   readonly settings: object;
   readonly subject: string;
   readonly current: boolean;
+  readonly panel: object | null;
+  readonly loadingCurrent: boolean;
   readonly detached: boolean;
   readonly value: boolean;
   readonly unset: boolean;
@@ -16,7 +18,7 @@ export interface NativeWhitespaceSnapshot {
   readonly stats: object;
 }
 export interface WhitespaceReceipt { readonly status: 'legacy' | 'pending' | 'ready'; readonly value: boolean | null; readonly epoch: number }
-interface Owned { readonly owner: object; readonly subject: string; readonly baseline: boolean | undefined; readonly value: boolean; settings: object }
+interface Owned { readonly owner: object; readonly subject: string; readonly panel: object | null; readonly baseline: boolean | undefined; readonly value: boolean; settings: object }
 interface Waiting { readonly diff: object; readonly stats: object; readonly value: boolean; readonly unset: boolean; readonly after: 'ready' | 'legacy'; diffStarted: boolean; statsStarted: boolean }
 interface Editing { readonly subject: string; opened: boolean; submitted: boolean; loading: boolean; intent: boolean | null }
 
@@ -67,7 +69,8 @@ export class BitbucketWhitespaceLease {
       this.subject = snapshot.subject;
       this.receipt = { status: 'pending', value: null, epoch: ++this.epoch };this.changed(this.receipt);
     }
-    if (!snapshot.current || !this.enabled) {
+    const retainedLoading = this.retainsLoading(snapshot);
+    if ((!snapshot.current && !retainedLoading) || !this.enabled) {
       this.release(snapshot);
       if (snapshot.detached && this.waiting?.after === 'legacy' && snapshot.value === this.waiting.value && snapshot.unset === this.waiting.unset) this.waiting = null;
       if (this.waiting !== null) this.settle(snapshot);else this.publish('legacy', null);
@@ -84,11 +87,12 @@ export class BitbucketWhitespaceLease {
       } else { this.publish('pending', null);return; }
     }
     if (snapshot.open || snapshot.loading) { this.blocked = snapshot.subject;this.release(snapshot);this.publish(this.waiting === null ? 'legacy' : 'pending', null);return; }
-    if (this.owned !== null && (snapshot.subject !== this.owned.subject || !this.owns(snapshot, this.owned))) {
+    if (this.owned !== null && (snapshot.subject !== this.owned.subject || snapshot.panel !== this.owned.panel || !this.owns(snapshot, this.owned))) {
       if (this.owns(snapshot, this.owned)) { this.release(snapshot);return; }
       this.blocked = snapshot.subject;this.owned = null;this.waiting = null;this.publish('pending', null);
     }
     if (this.owned !== null) this.owned.settings = snapshot.settings;
+    if (retainedLoading) { this.observeLoading(snapshot);this.publish('pending', null);return; }
     if (this.waiting !== null) { if (!this.settle(snapshot)) return;if (this.receipt.status === 'legacy') this.tick();return; }
     if (snapshot.busy) { this.stable = null;this.publish('pending', null);return; }
     const desired = !this.force || this.blocked === snapshot.subject ? snapshot.value : this.choice?.subject === snapshot.subject ? this.choice.value : true;
@@ -98,8 +102,12 @@ export class BitbucketWhitespaceLease {
       if (this.now() - stable.at >= 150) this.publish('ready', snapshot.value);return;
     }
     this.stable = null;
-    this.owned = { owner: snapshot.owner, subject: snapshot.subject, baseline: snapshot.unset ? undefined : snapshot.value, value: desired, settings: snapshot.settings };
+    this.owned = { owner: snapshot.owner, subject: snapshot.subject, panel: snapshot.panel, baseline: snapshot.unset ? undefined : snapshot.value, value: desired, settings: snapshot.settings };
     this.set(snapshot, desired, 'ready');
+  }
+  private retainsLoading(snapshot: NativeWhitespaceSnapshot): boolean {
+    return snapshot.loadingCurrent && !snapshot.failed && this.owned !== null && this.waiting?.after === 'ready'
+      && snapshot.owner === this.owned.owner && snapshot.subject === this.owned.subject && snapshot.panel === this.owned.panel;
   }
   private observeLoading(snapshot: NativeWhitespaceSnapshot): void {
     if (this.waiting !== null) { this.waiting.diffStarted ||= snapshot.diffLoading;this.waiting.statsStarted ||= snapshot.statsLoading; }
@@ -115,7 +123,7 @@ export class BitbucketWhitespaceLease {
     this.blocked = snapshot.subject;this.release(snapshot);this.publish(this.waiting === null ? 'legacy' : 'pending', null);
   }
   beforePreferences(): boolean {
-    const snapshot = this.read();if (snapshot === null || !snapshot.current || snapshot.open || snapshot.loading) return false;
+    const snapshot = this.read();if (snapshot === null || (!snapshot.current && !this.retainsLoading(snapshot)) || snapshot.open || snapshot.loading) return false;
     this.editing = { subject: snapshot.subject, opened: false, submitted: false, loading: false, intent: null };
     this.release(snapshot);this.publish('pending', null);return true;
   }

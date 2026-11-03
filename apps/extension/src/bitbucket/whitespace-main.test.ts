@@ -7,7 +7,7 @@ import { startBitbucketNativeWhitespace, WHITESPACE_REQUEST, WHITESPACE_RESPONSE
 const HEAD = 'a'.repeat(40);
 let cleanup = (): void => undefined;
 afterEach(() => { cleanup();Reflect.deleteProperty(window, 'parcelRequirecbf3');document.body.innerHTML = '';vi.useRealTimers(); });
-function nativeFixture(options: { raw?: unknown; present?: boolean } = {}) {
+function nativeFixture(options: { raw?: unknown; present?: boolean; loaderRemovesRegion?: boolean } = {}) {
   window.history.replaceState(null, '', 'https://bitbucket.org/acme/repo/pull-requests/42/diff');
   document.body.innerHTML = '<section data-testid="pr-header"><div data-qa="pr-branches-and-state-styles"></div><div>#42 • Updated</div></section><section id="pull-request-tabs-1-tab" role="tabpanel"><button aria-live="polite" type="button">Global diff settings</button><button aria-haspopup="true" aria-expanded="false">All changes</button><section role="region" aria-label="Diff"></section></section>';
   let head = HEAD, base = 'b'.repeat(40);
@@ -15,8 +15,13 @@ function nativeFixture(options: { raw?: unknown; present?: boolean } = {}) {
   let state = { global: { locale: 'en' }, diffSettings: { globalShouldIgnoreWhitespace: raw, isDialogOpen: false, isDialogLoading: false }, repository: { pullRequest: { isDiffsLoading: false, isDiffStatLoading: false, diffErrorCode: null, diffStatErrorCode: null, diff: [], diffStat: [] } } };
   if (options.present === false) Reflect.deleteProperty(state.diffSettings, 'globalShouldIgnoreWhitespace');
   const listeners = new Set<() => void>();const actions: unknown[] = [];
+  const panel = document.querySelector('#pull-request-tabs-1-tab')!, region = panel.querySelector('[role="region"]')!;
+  const spinner = document.createElement('div');spinner.innerHTML = '<span data-testid="diff-loading-spinner-wrapper"><svg data-testid="diff-loading-spinner" role="none" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7"></circle></svg></span>';
+  const beginLoading = (): void => {
+    region.remove();panel.append(spinner);state = { ...state, repository: { pullRequest: { ...state.repository.pullRequest, isDiffsLoading: true, isDiffStatLoading: true } } };
+  };
   const store = { getState: () => state, subscribe: (callback: () => void) => { listeners.add(callback);return () => listeners.delete(callback); }, dispatch: (action: { type: string; payload: { shouldIgnoreWhitespace: boolean | undefined } }) => {
-    actions.push(action);state = { ...state, diffSettings: { ...state.diffSettings, globalShouldIgnoreWhitespace: action.payload.shouldIgnoreWhitespace } };listeners.forEach(run => run());
+    actions.push(action);state = { ...state, diffSettings: { ...state.diffSettings, globalShouldIgnoreWhitespace: action.payload.shouldIgnoreWhitespace } };if (options.loaderRemovesRegion) beginLoading();listeners.forEach(run => run());
   } };
   const lookup = (id: string): unknown => id === 'jSBTO' ? { bitbucketStore: store } : id === 'fozrM' ? { UPDATE_GLOBAL_SHOULD_IGNORE_WHITESPACE_SUCCESS: 'diffSettings/UPDATE_GLOBAL_SHOULD_IGNORE_WHITESPACE_SUCCESS' } : id === 'cZORy' ? { getCurrentPullRequestId: () => 42, getCurrentPullRequestUrlPieces: () => ({ owner: 'acme', slug: 'repo' }), getPullRequestSourceHash: () => head, getPullRequestDestinationHash: () => base, getPullRequestSourceRepo: () => ({ full_name: 'acme/repo' }) } : null;
   const modules = new Map(['jSBTO', 'fozrM', 'cZORy'].map(id => [id, lookup(id)]));
@@ -27,9 +32,65 @@ function nativeFixture(options: { raw?: unknown; present?: boolean } = {}) {
   const stop = startBitbucketNativeWhitespace(document, window);
   cleanup = () => { stop();document.removeEventListener(WHITESPACE_RESPONSE, response); };
   const request = (active = true, hide = true): void => { document.dispatchEvent(new CustomEvent(WHITESPACE_REQUEST, { detail: JSON.stringify({ id: 'test', active, hide }) })); };
-  return { actions, received, loader, modules, request, stop, raw: () => Object.getOwnPropertyDescriptor(state.diffSettings, 'globalShouldIgnoreWhitespace'), outside: (value: boolean | undefined) => store.dispatch({ type: 'diffSettings/UPDATE_GLOBAL_SHOULD_IGNORE_WHITESPACE_SUCCESS', payload: { shouldIgnoreWhitespace: value } }), getter: (get: () => unknown) => Object.defineProperty(state.diffSettings, 'globalShouldIgnoreWhitespace', { configurable: true, get }), refs(nextHead: string, nextBase: string) { head = nextHead;base = nextBase;listeners.forEach(run => run()); }, unhydrate() { Reflect.deleteProperty(state.global, 'locale'); }, settle() { state = { ...state, repository: { pullRequest: { ...state.repository.pullRequest, isDiffsLoading: true, isDiffStatLoading: true } } };listeners.forEach(run => run());state = { ...state, repository: { pullRequest: { ...state.repository.pullRequest, isDiffsLoading: false, isDiffStatLoading: false, diff: [], diffStat: [] } } };listeners.forEach(run => run()); } };
+  return { actions, received, loader, modules, request, stop, beginLoading, startFlags: () => { state = { ...state, repository: { pullRequest: { ...state.repository.pullRequest, isDiffsLoading: true, isDiffStatLoading: true } } };listeners.forEach(run => run()); }, mountLoader: () => { region.remove();panel.append(spinner); }, mountRegion: () => { spinner.remove();panel.append(region); }, notify: () => listeners.forEach(run => run()), completeSources: () => { state = { ...state, repository: { pullRequest: { ...state.repository.pullRequest, isDiffsLoading: false, isDiffStatLoading: false, diff: [], diffStat: [] } } };listeners.forEach(run => run()); }, finishLoading: () => { spinner.remove();panel.append(region);state = { ...state, repository: { pullRequest: { ...state.repository.pullRequest, isDiffsLoading: false, isDiffStatLoading: false, diff: [], diffStat: [] } } };listeners.forEach(run => run()); }, fail: () => { Reflect.set(state.repository.pullRequest, 'diffErrorCode', 'unknown');listeners.forEach(run => run()); }, raw: () => Object.getOwnPropertyDescriptor(state.diffSettings, 'globalShouldIgnoreWhitespace'), outside: (value: boolean | undefined) => store.dispatch({ type: 'diffSettings/UPDATE_GLOBAL_SHOULD_IGNORE_WHITESPACE_SUCCESS', payload: { shouldIgnoreWhitespace: value } }), getter: (get: () => unknown) => Object.defineProperty(state.diffSettings, 'globalShouldIgnoreWhitespace', { configurable: true, get }), refs(nextHead: string, nextBase: string) { head = nextHead;base = nextBase;listeners.forEach(run => run()); }, unhydrate() { Reflect.deleteProperty(state.global, 'locale'); }, settle() { state = { ...state, repository: { pullRequest: { ...state.repository.pullRequest, isDiffsLoading: true, isDiffStatLoading: true } } };listeners.forEach(run => run());state = { ...state, repository: { pullRequest: { ...state.repository.pullRequest, isDiffsLoading: false, isDiffStatLoading: false, diff: [], diffStat: [] } } };listeners.forEach(run => run()); } };
 }
 describe('fixed native Bitbucket whitespace bridge', () => {
+  it('retains the owned mode when native DiffLoader unmounts the region until both replacement sources settle', () => {
+    vi.useFakeTimers();const f = nativeFixture({ raw: undefined, loaderRemovesRegion: true });
+    f.request();expect(document.querySelector('[role="region"]')).toBeNull();expect(f.actions).toHaveLength(1);
+    vi.advanceTimersByTime(1_500);expect(f.actions).toHaveLength(1);expect(f.received.at(-1)).toMatchObject({ status: 'pending', value: null });
+    f.completeSources();vi.advanceTimersByTime(500);expect(f.actions).toHaveLength(1);expect(f.received.at(-1)).toMatchObject({ status: 'pending', value: null });
+    f.finishLoading();expect(f.received.at(-1)).toMatchObject({ status: 'ready', value: true });
+    f.stop();expect(f.actions).toEqual([true, undefined].map(value => ({ type: 'diffSettings/UPDATE_GLOBAL_SHOULD_IGNORE_WHITESPACE_SUCCESS', payload: { shouldIgnoreWhitespace: value } })));
+    expect(f.raw()).toMatchObject({ value: undefined });
+  });
+  it.each([false, true])('observes a fast async native loader mount before SUCCESS without waiting for the timer, transparent=%s', async transparent => {
+    vi.useFakeTimers();const f = nativeFixture({ raw: undefined });f.request();f.startFlags();
+    f.mountLoader();if (transparent) document.querySelector('[data-testid="diff-loading-spinner-wrapper"]')!.setAttribute('style', 'opacity:0');
+    await Promise.resolve();f.completeSources();expect(f.actions).toHaveLength(1);expect(f.received.at(-1)).toMatchObject({ status: 'pending', value: null });
+    f.mountRegion();await Promise.resolve();expect(f.received.at(-1)).toMatchObject({ status: 'ready', value: true });expect(f.actions).toHaveLength(1);
+  });
+  it.each(['disable', 'alert'])('restores exact undefined on %s during native region removal without reacquiring', async action => {
+    const f = nativeFixture({ raw: undefined, loaderRemovesRegion: true });f.request();
+    if (action === 'disable') f.request(false);
+    else { document.body.insertAdjacentHTML('beforeend', '<div role="alert">Try again</div>');await Promise.resolve(); }
+    expect(f.actions).toHaveLength(2);expect(f.raw()).toMatchObject({ value: undefined });
+    document.querySelector('[role="alert"]')?.remove();f.finishLoading();f.notify();
+    expect(f.actions).toHaveLength(2);expect(f.received.at(-1)).not.toMatchObject({ value: true });
+  });
+  it.each(['removed', 'replacement', 'duplicate', 'hidden', 'owned', 'wrong-shape'])('does not retain a settled empty region after the witnessed spinner is %s', change => {
+    const f = nativeFixture({ raw: undefined, loaderRemovesRegion: true });f.request();f.completeSources();
+    expect(f.actions).toHaveLength(1);expect(f.received.at(-1)).toMatchObject({ status: 'pending' });
+    const spinner = document.querySelector('[data-testid="diff-loading-spinner"]')!;
+    if (change === 'removed') spinner.remove();
+    else if (change === 'replacement') spinner.replaceWith(spinner.cloneNode(true));
+    else if (change === 'duplicate') spinner.after(spinner.cloneNode(true));
+    else if (change === 'hidden') spinner.parentElement!.setAttribute('hidden', '');
+    else if (change === 'owned') spinner.parentElement!.setAttribute('data-geld-ui', '');
+    else spinner.setAttribute('viewBox', '0 0 99 99');
+    f.notify();expect(f.actions).toHaveLength(2);expect(f.raw()?.value).toBeUndefined();
+  });
+  it('requires the qualified region to belong to the current diff panel', () => {
+    const f = nativeFixture();document.body.append(document.querySelector('[role="region"]')!);f.request();expect(f.actions).toEqual([]);
+  });
+  it('cannot acquire from a native loading spinner without a previously qualified region', () => {
+    const f = nativeFixture();f.beginLoading();f.request();expect(f.actions).toEqual([]);
+  });
+  it.each(['duplicate-region', 'changed-panel', 'changed-head', 'missing-control', 'settled-missing-region', 'native-error', 'native-alert', 'changed-header', 'changed-opener', 'changed-comparison'])('restores instead of retaining loading custody after %s', failure => {
+    const f = nativeFixture({ raw: undefined, loaderRemovesRegion: true });f.request();expect(f.actions).toHaveLength(1);
+    if (failure === 'duplicate-region') document.querySelector('[role="tabpanel"]')!.insertAdjacentHTML('beforeend', '<section role="region" aria-label="Diff"></section><section role="region" aria-label="Diff"></section>');
+    else if (failure === 'changed-panel') { const panel = document.querySelector('[role="tabpanel"]')!;panel.replaceWith(panel.cloneNode(true)); }
+    else if (failure === 'changed-head') f.refs('c'.repeat(40), 'b'.repeat(40));
+    else if (failure === 'missing-control') document.querySelector('[aria-haspopup]')!.remove();
+    else if (failure === 'settled-missing-region') { f.finishLoading();document.querySelector('[role="region"]')!.remove(); }
+    else if (failure === 'native-error') f.fail();
+    else if (failure === 'changed-header' || failure === 'changed-opener' || failure === 'changed-comparison') {
+      const node = document.querySelector(failure === 'changed-header' ? '[data-testid="pr-header"]' : failure === 'changed-opener' ? 'button[aria-live]' : 'button[aria-haspopup]')!;node.replaceWith(node.cloneNode(true));
+    }
+    else document.body.insertAdjacentHTML('beforeend', '<div role="alert">Try again</div>');
+    f.notify();expect(f.actions).toHaveLength(2);expect(f.raw()).toMatchObject({ value: undefined });expect(f.received.at(-1)).not.toMatchObject({ status: 'ready' });
+  });
+
   it('admits the hydrated own-undefined Off shape and restores that exact raw field on stop', () => {
     // Native initial global JSON has locale but omits the preference; the audited LoadGlobal reducer creates this own undefined field.
     const f = nativeFixture({ raw: undefined });expect(f.raw()).toMatchObject({ value: undefined });
