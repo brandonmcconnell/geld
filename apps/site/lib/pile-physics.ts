@@ -36,6 +36,8 @@ export interface Body {
   /** Tilt in radians, and how fast it is turning; a box that lands stops turning. */
   angle?: number;
   spin?: number;
+  /** Seconds it still passes through other bodies: a burst of cards from one spot flies apart instead of being shoved upward. */
+  ghost?: number;
 }
 
 export interface World {
@@ -51,6 +53,8 @@ const GRAVITY = 2400;
 const FRICTION = 0.8;
 const ITERATIONS = 6;
 const MAX_SPEED = 3200;
+/** The most speed a body takes from being pushed out of an overlap, so untangling a heap never launches it. */
+const CORRECTION_SPEED = 900;
 const SLEEP_SPEED = 12;
 const SLEEP_AFTER = 24;
 /** How far per substep a body overhanging the edge of what it rests on slides off it. */
@@ -85,6 +89,7 @@ export function step(bodies: readonly Body[], world: World, dt: number): void {
 function substep(bodies: readonly Body[], world: World, dt: number): void {
   const free: Body[] = [];
   const before = new Map<Body, { readonly x: number; readonly y: number }>();
+  const moved = new Map<Body, { readonly x: number; readonly y: number }>();
   const grounded = new Set<Body>();
   for (const body of bodies) {
     if (body.mode === 'hidden') continue;
@@ -104,6 +109,7 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
     }
     free.push(body);
     before.set(body, { x: body.x, y: body.y });
+    if (body.ghost !== undefined && body.ghost > 0) body.ghost = Math.max(0, body.ghost - dt);
     body.scale += (1 - body.scale) * Math.min(1, 10 * dt);
     if (body.held || body.still >= SLEEP_AFTER) continue;
     body.vy += GRAVITY * dt;
@@ -114,6 +120,7 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
     }
     body.x += body.vx * dt;
     body.y += body.vy * dt;
+    moved.set(body, { x: body.x, y: body.y });
     if (body.spin !== undefined && body.spin !== 0) {
       body.angle = Math.max(-MAX_TILT, Math.min(MAX_TILT, (body.angle ?? 0) + body.spin * dt));
       if (Math.abs(body.angle) >= MAX_TILT) body.spin *= -0.4;
@@ -140,8 +147,17 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
     if (body.held) continue;
     const start = before.get(body);
     if (start === undefined) continue;
-    body.vx = (body.x - start.x) / dt;
-    body.vy = (body.y - start.y) / dt;
+    // Its own motion, plus what pushing it out of overlaps added, the push capped: a deep overlap resolved in one substep would otherwise launch it off the page.
+    const own = moved.get(body) ?? start;
+    let cx = (body.x - own.x) / dt;
+    let cy = (body.y - own.y) / dt;
+    const correction = Math.hypot(cx, cy);
+    if (correction > CORRECTION_SPEED) {
+      cx *= CORRECTION_SPEED / correction;
+      cy *= CORRECTION_SPEED / correction;
+    }
+    body.vx = (own.x - start.x) / dt + cx;
+    body.vy = (own.y - start.y) / dt + cy;
     if (grounded.has(body)) {
       body.vx *= FRICTION;
       if (body.spin !== undefined) body.spin *= 0.5;
@@ -197,6 +213,7 @@ function separate(a: Body, b: Body, grounded: Set<Body>): void {
   const oy = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
   if (ox <= 0 || oy <= 0) return;
   if (a.held && b.held) return;
+  if ((a.ghost ?? 0) > 0 || (b.ghost ?? 0) > 0) return;
   // A resting body pushed by a moving one takes the whole push, so a pile stays put under a single landing.
   const aRests = a.held || a.still >= SLEEP_AFTER;
   const bRests = b.held || b.still >= SLEEP_AFTER;

@@ -62,6 +62,8 @@ export function HeroPile() {
   const base = useRef<World | null>(null);
   const world = useRef<World | null>(null);
   const cupRef = useRef<Rect | null>(null);
+  /** Exploded once Geld is first turned off: from then on the mess lands anywhere. */
+  const broken = useRef(false);
   const frame = useRef<number | null>(null);
   const last = useRef(0);
   const interacted = useRef(false);
@@ -72,6 +74,7 @@ export function HeroPile() {
   const [used, setUsed] = useState(false);
   const [layout, setLayout] = useState<Layout | null>(null);
   const [cup, setCup] = useState<Rect | null>(null);
+  const [cupGone, setCupGone] = useState(false);
   const [inPlay, setInPlay] = useState<readonly number[]>([]);
   const [gathered, setGathered] = useState('');
 
@@ -200,7 +203,7 @@ export function HeroPile() {
     cupRef.current = next;
     setCup(next);
     const current = base.current;
-    if (current === null) return;
+    if (current === null || broken.current) return;
     const walls: Rect[] = [
       { left: next.left - WALL, top: next.top, right: next.left + 1, bottom: next.bottom + WALL },
       { left: next.right - 1, top: next.top, right: next.right + WALL, bottom: next.bottom + WALL },
@@ -224,7 +227,7 @@ export function HeroPile() {
       const next = measure();
       if (next === null) return;
       base.current = next.world;
-      if (world.current === null) world.current = next.world;
+      if (world.current === null || broken.current) world.current = next.world;
       setLayout(next);
     };
 
@@ -259,7 +262,8 @@ export function HeroPile() {
         const x = random();
         const tilt = (random() - 0.5) * 0.5;
         const spin = (random() - 0.5) * 9;
-        const drift = (random() - 0.5) * 520;
+        // Toward the cup's far side, so paths cross and the heap jumbles without flying over the rim.
+        const drift = (0.5 - x) * 520 + (random() - 0.5) * 160;
         const speed = 250 + random() * 350;
         pours.current.push(
           window.setTimeout(() => {
@@ -348,6 +352,12 @@ export function HeroPile() {
     }
     const origin = root.getBoundingClientRect();
     const head = card.current?.getBoundingClientRect();
+    const exploding = !geld && bodies.current.some((body) => body.mode !== 'free' && kept.current.has(bodies.current.indexOf(body)));
+    if (exploding && !broken.current && base.current !== null) {
+      broken.current = true;
+      world.current = base.current;
+      setCupGone(true);
+    }
     let delay = geld ? 220 : 0;
     bodies.current.forEach((body, index) => {
       const item = PILE_ITEMS[index];
@@ -366,25 +376,27 @@ export function HeroPile() {
         );
         delay += 70;
       } else if (!geld && body.mode !== 'free') {
+        // Off: the card explodes. Every item flies out of its line at once, away from the card's middle and mostly sideways, so the mess lands all over rather than back in a column.
+        const into = cupRef.current;
+        const centre = into ? { x: (into.left + into.right) / 2, y: (into.top + into.bottom) / 2 } : current.sink;
+        const from = body.target ?? centre;
+        const away = Math.atan2(from.y - centre.y, from.x - centre.x) + (random() - 0.5) * 1.6;
+        const speed = 800 + random() * 1000;
         timers.push(
           window.setTimeout(() => {
-            const into = cupRef.current;
-            const from = body.target ?? (into ? { x: (into.left + into.right) / 2, y: into.bottom - 40 } : current.sink);
-            // From anywhere across the cup at its line's height, so they fall back in as a heap, not a column.
-            const span = into ? into.right - into.left - body.w : 0;
             body.mode = 'free';
             body.scale = 1;
-            body.x = into && span > 0 ? into.left + body.w / 2 + random() * span : from.x;
-            body.y = from.y;
-            body.vx = (random() - 0.5) * 700;
-            body.vy = -500 - random() * 600;
-            body.angle = (random() - 0.5) * 0.4;
-            body.spin = (random() - 0.5) * 10;
+            body.x = from.x + (random() - 0.5) * 80;
+            body.y = from.y + (random() - 0.5) * 20;
+            body.ghost = 0.45;
+            body.vx = Math.cos(away) * speed;
+            body.vy = Math.min(-120, Math.sin(away) * speed * 0.35 - 250);
+            body.angle = (random() - 0.5) * 0.5;
+            body.spin = (random() - 0.5) * 16;
             body.still = 0;
             run();
-          }, delay),
+          }, random() * 50),
         );
-        delay += 45;
       }
     });
     wake(bodies.current);
@@ -449,7 +461,7 @@ export function HeroPile() {
       {cup !== null && (
         <div
           aria-hidden="true"
-          className={cn('absolute rounded-b-xl border-2 border-t-0 border-foreground/20 transition-opacity duration-300', geld && 'opacity-0')}
+          className={cn('absolute rounded-b-xl border-2 border-t-0 border-foreground/35 transition-opacity duration-300', (geld || cupGone) && 'opacity-0')}
           style={{ left: cup.left, top: cup.top, width: cup.right - cup.left, height: cup.bottom - cup.top }}
         />
       )}
