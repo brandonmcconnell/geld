@@ -11,7 +11,7 @@ export function SiteHeader() {
   const links = NAV_LINKS.filter((link) => link.inHeader);
   return (
     // Fixed rather than sticky so that a secondary bar joining the header (below) never changes the page's layout; the body pads for the base height.
-    <header className="group/header fixed inset-x-0 top-0 z-40 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70 [view-transition-name:site-header]">
+    <header className="group/header fixed inset-x-0 top-0 z-40 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-transparent supports-[backdrop-filter]:bg-linear-to-t supports-[backdrop-filter]:from-background/90 supports-[backdrop-filter]:to-background/75 [view-transition-name:site-header]">
       <div className="container-site flex h-14 items-center justify-between gap-6">
         <div className="flex items-center">
           <NavMenu links={links} className="sm:hidden" />
