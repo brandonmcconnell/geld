@@ -2199,3 +2199,9 @@ The retained298 native GitLab header places the literal English label `2 files` 
 Its line-count parser accepts complete unsigned, ASCII-signed and Unicode-minus magnitudes, including the synthetic `-0` counterexample, while malformed or unrelated text remains unrecognized and is never retained.
 Actual299 failed before a checkbox input after qualifying its baseline and acquisition but without retaining a totals substage, so neither the precise failed totals check nor a wrong-count conclusion follows from that report.
 The session harness records bounded numeric and known-slot projections at explicit baseline, tab-total, test-category and native-presentation phases using the same existing reads, without adding source requests or changing expected counts.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
