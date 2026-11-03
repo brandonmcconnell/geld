@@ -13,16 +13,17 @@ export function NavMenu({ links, className }: { readonly links: readonly NavLink
   const pathname = usePathname();
   return (
     <DropdownMenu>
+      {/* A bare glyph in a 44px hit area: the icon sits on the column's edge and the area reaches 12px past it, ending where the wordmark begins. */}
       <DropdownMenuTrigger
         aria-label="Menu"
         className={cn(
-          'geld-corners geld-cut-[7px] inline-grid size-8 place-items-center border border-input text-foreground outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40 aria-expanded:bg-muted',
+          '-ml-3 inline-grid size-11 shrink-0 place-items-center text-foreground/75 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset aria-expanded:text-foreground',
           className,
         )}
       >
-        <TextAlignStartIcon aria-hidden="true" className="size-4" />
+        <TextAlignStartIcon aria-hidden="true" className="size-5" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="min-w-48">
+      <DropdownMenuContent alignOffset={12} className="min-w-48">
         {links.map((link) => (
           <DropdownMenuItem key={link.href} render={<Link href={link.href} aria-current={pathname === link.href ? 'page' : undefined} />} className="aria-[current=page]:font-medium">
             {link.label}
