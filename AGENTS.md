@@ -2430,3 +2430,8 @@ panel replacement or an inner duplicate still does.
 Bitbucket's visible Lines updated totals place the signed counts inside aria-hidden presentation spans because the native accessible summary describes them separately.
 The full-context acceptance reads only that original heading's signed numeric span pair while retaining real hidden, owned and interactive-node exclusions.
 Source-row and action qualification must not inherit this visual-counter exception.
+
+Chromium can re-encode charset-less text resource bodies when DevTools returns them as text, so the Bitbucket whole-source acceptance streams original response bytes from request-time Network events instead.
+That observer initializes before source intent, bounds every stream and never changes responses or fetches another copy.
+Native source-menu closure follows its original opener and captured popup, including closed popovers that remain connected during exit animation.
+Unrelated later popups are reported separately rather than counted as a leaked source menu.
