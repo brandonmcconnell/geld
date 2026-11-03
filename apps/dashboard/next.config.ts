@@ -1,4 +1,6 @@
 import type { NextConfig } from 'next';
+// Standalone is the self-hosted image's output (deploy/Dockerfile). Vercel's own build step fails on it.
+const output: Pick<NextConfig, 'output'> = process.env.VERCEL === '1' ? {} : { output: 'standalone' };
 const config: NextConfig = {
   cacheComponents: true,
   reactStrictMode: true,
@@ -13,7 +15,7 @@ const config: NextConfig = {
     '@geld/ui',
     '@geld/relay',
   ],
-  output: 'standalone',
+  ...output,
   serverExternalPackages: ['posthog-js'],
   outputFileTracingExcludes: {
     '*': ['../../.private/**', '../../.git/**', './.env*'],

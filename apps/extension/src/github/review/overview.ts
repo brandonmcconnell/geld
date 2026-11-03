@@ -12,7 +12,7 @@ import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, 
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage, pullRequestStateWords } from '../page';
-import { phase, phaseSince } from '../../lib/perf';
+import { count, phase, phaseSince } from '../../lib/perf';
 import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
@@ -37,7 +37,7 @@ import { shortenDescription } from './description';
 import { applyFolds, closureKindOf, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
+import { ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -3139,11 +3139,21 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       });
     },
     onToggleGroup: (group) => {
+      const start = performance.now();
       if (visit.collapsedGroups.has(group)) visit.collapsedGroups.delete(group);
       else visit.collapsedGroups.add(group);
+      let closed = false;
       if (visit.openKey !== null && ((group === 'hidden' && visit.openKey.startsWith('fold:')) || (group !== 'hidden' && visit.openKey.startsWith('item:')))) {
         visit.openKey = null;
+        closed = true;
       }
+      // Folding a group changes no reading: the rows are already built, so this is an attribute flip, not a pass. Only
+      // a group holding the open row renders, for that row's slot (and a row closed above it).
+      if (!closed && syncPanelGroups(visit.collapsedGroups, group)) {
+        phaseSince('group-toggle', start);
+        return;
+      }
+      count('group-toggle-render');
       reapply();
     },
     onCopyLink: (anchor) => {

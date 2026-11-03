@@ -3988,6 +3988,11 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   list-style: none;
 }
 
+/* A folded group's rows stay built and are hidden: rows set their own display, which would outrank `hidden`. */
+.geld-review__rows > [data-geld-in-group][hidden] {
+  display: none !important;
+}
+
 .geld-review__group + .geld-review__group,
 .geld-review__row,
 .geld-review__slot,
