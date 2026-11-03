@@ -2085,11 +2085,12 @@ function subtractTotals(a, b) {
 function formatDiffstat(totals) {
   return `+${formatCount(totals.additions)} \u2212${formatCount(totals.deletions)}`;
 }
-var numberFormatter, EMPTY_TOTALS;
+var numberFormatter, COUNT_SOURCE, EMPTY_TOTALS;
 var init_format = __esm({
   "../../packages/core/src/format.ts"() {
     "use strict";
     numberFormatter = new Intl.NumberFormat("en-US");
+    COUNT_SOURCE = String.raw`\d(?:[\d,.\u00a0\u202f'\u2019]*\d)?`;
     EMPTY_TOTALS = { files: 0, additions: 0, deletions: 0 };
   }
 });
@@ -11376,6 +11377,7 @@ __export(src_exports, {
   CHIP_PLACEMENTS: () => CHIP_PLACEMENTS,
   COMPACT_TIMELINE_MODES: () => COMPACT_TIMELINE_MODES,
   CORRUPTED_SETTINGS_COPY: () => CORRUPTED_SETTINGS_COPY,
+  COUNT_SOURCE: () => COUNT_SOURCE,
   CUSTOM_GROUP_ID: () => CUSTOM_GROUP_ID,
   DEFAULT_SETTINGS: () => DEFAULT_SETTINGS,
   EMPTY_REPO_CONFIG: () => EMPTY_REPO_CONFIG,

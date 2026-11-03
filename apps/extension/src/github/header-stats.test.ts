@@ -8,6 +8,13 @@ describe('replaceCount', () => {
     expect(replaceCount('\u00a0(18)', 1234)).toBe('\u00a0(1,234)');
   });
 
+  it('replaces the whole count whatever separator the reader\'s locale groups digits with', () => {
+    expect(replaceCount('+1.660', 1405)).toBe('+1,405');
+    expect(replaceCount('1.660 files changed', 1405)).toBe('1,405 files changed');
+    expect(replaceCount('1\u00a0660 additions', 2)).toBe('2 additions');
+    expect(replaceCount("1'660 additions.", 1)).toBe('1 addition.');
+  });
+
   it('keeps sentences and fixes plurals', () => {
     expect(replaceCount('18 files changed', 12)).toBe('12 files changed');
     expect(replaceCount('18 files changed', 1)).toBe('1 file changed');
@@ -26,6 +33,7 @@ describe('parseLineStats', () => {
       additions: 1093,
       deletions: 53,
     });
+    expect(parseLineStats('Lines changed: 1.660 additions & 567 deletions')).toEqual({ additions: 1660, deletions: 567 });
     expect(parseLineStats('BIN +1.2 KB')).toBeNull();
     expect(parseLineStats(null)).toBeNull();
   });

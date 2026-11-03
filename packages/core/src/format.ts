@@ -5,6 +5,9 @@ export function formatCount(value: number): string {
   return numberFormatter.format(Math.max(0, value));
 }
 
+/** A count in any locale's grouping (`1,660`, `1.660`, `1 660`, `1'660`): GitHub prints header counts in the reader's. */
+export const COUNT_SOURCE = String.raw`\d(?:[\d,.\u00a0\u202f'\u2019]*\d)?`;
+
 /** Parse a GitHub-formatted count such as `+1,234`, `−53` or `18`. */
 export function parseCount(text: string | null | undefined): number | null {
   if (text === null || text === undefined) return null;
