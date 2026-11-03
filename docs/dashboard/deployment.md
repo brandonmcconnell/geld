@@ -11,6 +11,8 @@ The dashboard has its own Vercel project, `geld-dashboard`, in the `dreamthinkbu
 - Install command: `cd ../.. && corepack pnpm install --frozen-lockfile`
 - Build command: `corepack pnpm verify:icons && corepack pnpm build`
 
+Vercel builds use the platform adapter without standalone output. Local and Docker builds retain standalone output for the self-hosted server.
+
 `verify:icons` imports Sharp Regular, Sharp Solid, Utility and Utility Fill directly from the installed Kit and checks required SVG definitions. Utility Duo is not used. Git workflow icons are checked in Sharp because the Utility catalog does not include them all.
 
 ## Private package access
