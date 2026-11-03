@@ -10,6 +10,10 @@ function safeUrl(value: string | null, base: string): string | null {
   try { const url = new URL(value, base); return ['https:', 'http:'].includes(url.protocol) && url.username === '' && url.password === '' ? url.href : null; } catch { return null; }
 }
 
+export function bitbucketCommentSignature(comment: ProviderReviewComment, doc: Document): string | null {
+  return nativeBitbucketComment(comment, doc)?.querySelector<HTMLElement>('[data-testid="comment-content"] .ak-renderer-document')?.innerHTML ?? null;
+}
+
 export function renderBitbucketComment(comment: ProviderReviewComment, host: HTMLElement, doc: Document): boolean {
   const source = nativeBitbucketComment(comment, doc)?.querySelector<HTMLElement>('[data-testid="comment-content"] .ak-renderer-document');
   if (source === null || source === undefined) { bindBitbucketCommentTypography(null, host); return false; }

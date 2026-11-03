@@ -174,6 +174,7 @@ export interface ProviderReviewSnapshot {
   readonly sourceCoverage?: ProviderSourceCoverage;
   readonly sourceActions?: (comment: ProviderReviewComment) => readonly ProviderReviewSourceAction[];
   readonly renderComment?: (comment: ProviderReviewComment, host: HTMLElement, context?: ProviderCommentRenderContext) => boolean;
+  readonly commentSignature?: (comment: ProviderReviewComment) => string | null;
   readonly authorPresentation?: (comment: ProviderReviewComment) => ProviderReviewAuthorPresentation | null;
   readonly input: ProviderReviewInput;
   readonly comments: readonly ProviderReviewComment[];

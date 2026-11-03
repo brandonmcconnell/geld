@@ -66,6 +66,7 @@ export interface ProviderReviewPanelOptions {
   readonly version?: number;
   readonly actionsForSource?: (comment: ProviderReviewComment) => readonly ProviderReviewSourceAction[];
   readonly renderComment?: (comment: ProviderReviewComment, host: HTMLElement, context?: ProviderCommentRenderContext) => boolean;
+  readonly commentSignature?: (comment: ProviderReviewComment) => string | null;
   readonly authorPresentation?: (comment: ProviderReviewComment) => ProviderReviewAuthorPresentation | null;
   readonly onActionComplete?: () => void;
   readonly comments?: readonly ProviderReviewComment[];
@@ -1137,7 +1138,11 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const publicationSignature = publication === undefined ? null : [publication.status, publication.candidate?.comment, publication.candidate?.generatedAt, publication.issues, [...publication.matchedItemIds], options.publication?.save !== undefined];
     for (const request of options.botRequests ?? []) botRequests.get(request.key)?.update(request);
     const requestSignature = options.botRequests?.map((request) => [request.key, request.current(), request.comment.available, request.comment.reason]);
-    const signature = JSON.stringify([input, options.reviewerControls?.available, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature]);
+    const commentSignatures = options.commentSignature === undefined ? null : [...input.threads.flatMap((thread) => thread.comments), ...(options.comments ?? [])].map((comment) => {
+      if (sourceLink({ anchor: comment.anchor, kind: 'comment', author: comment.author.login, url: comment.url }, input.subject) === null) return null;
+      try { return [comment.anchor, options.commentSignature?.(comment)]; } catch { return [comment.anchor, null]; }
+    });
+    const signature = JSON.stringify([input, options.reviewerControls?.available, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature, commentSignatures]);
     if (signature === lastSignature) {
       for (const time of panel.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
         const native = nativeTimes.get(Date.parse(time.dateTime));
