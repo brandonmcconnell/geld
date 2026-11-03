@@ -2087,3 +2087,9 @@ Provider context source verification must agree with actual extraction: accept o
 A PAX size override previously let the verifier hash34523 LICENSE bytes while GNU tar extracted34522, and a V7 prefix previously let the verifier retain a Git path while tar listed a root basename.
 Explicit repository reads use `--no-lazy-fetch`, `GIT_NO_LAZY_FETCH=1`, disabled remote protocols, fixed `tar.umask=0022` and no host `core.attributesFile`, so missing promised objects fail locally and host umasks do not vary accepted context bytes.
 The preparer does not copy host credential/config files or serialize environment values, rather than claiming that Git never reads host configuration.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
