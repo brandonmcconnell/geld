@@ -7270,32 +7270,96 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   text-decoration: underline;
 }
 
-/* ---- description collapse (minimal mode) ---------------------------------- */
+/* ---- description outline and cap (description.ts) ------------------------- */
 
-[data-geld-desc='collapsed'] > :not(:first-child) {
-  display: none;
+[data-geld-desc-fold] {
+  display: none !important;
 }
 
-.geld-review-desc {
-  display: inline-block;
-  margin: 4px 0 12px;
+[data-geld-desc-heading] {
+  cursor: pointer;
+}
+
+[data-geld-desc-heading] > :is(h1, h2, h3, h4, h5, h6),
+:is(h1, h2, h3, h4, h5, h6)[data-geld-desc-heading] {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.geld-desc-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: calc((1lh - 20px) / 2);
+  margin-left: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  cursor: pointer;
+}
+
+.geld-desc-toggle:hover {
+  background: var(--bgColor-neutral-muted, rgba(175, 184, 193, 0.2));
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-desc-toggle .octicon {
+  transition: transform 120ms ease;
+}
+
+[data-geld-desc-heading='closed'] .geld-desc-toggle .octicon {
+  transform: rotate(-90deg);
+}
+
+[data-geld-desc-cap][data-geld-desc-long] {
+  max-height: 500px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 96px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 96px), transparent);
+}
+
+.geld-desc-more {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  margin: 0 16px 12px;
   padding: 0;
   border: 0;
   background: none;
   color: var(--fgColor-accent, var(--color-accent-fg));
   font: inherit;
   font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
 }
 
-.geld-review-desc:hover {
+[data-geld-desc-long] + .geld-desc-more {
+  display: inline-flex;
+}
+
+.geld-desc-more:hover span {
   text-decoration: underline;
+}
+
+[data-geld-desc-cap] + .geld-desc-more .octicon {
+  transform: none;
+}
+
+:not([data-geld-desc-cap]) + .geld-desc-more .octicon {
+  transform: rotate(180deg);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .geld-review__meter > i,
   .geld-review__group-btn .octicon,
-  .geld-review__chevron .octicon {
+  .geld-review__chevron .octicon,
+  .geld-desc-toggle .octicon {
     transition: none;
   }
 

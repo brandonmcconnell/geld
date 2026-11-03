@@ -116,8 +116,7 @@ export interface GeldSettings {
   /**
    * How far to fold the PR timeline. `off` only shows the panel. `compact`
    * (default) folds bot review comments and low-signal events. `minimal` also
-   * folds human comments that belong to done items, and may collapse the
-   * description when {@link collapseDescription} is on.
+   * folds human comments that belong to done items.
    */
   readonly compactTimeline: CompactTimelineMode;
   /**
@@ -126,7 +125,11 @@ export interface GeldSettings {
    * holding what landed since the previous one).
    */
   readonly reviewGrouping: ReviewGrouping;
-  /** In `minimal` mode, collapse the PR description to its first paragraph. */
+  /**
+   * Shorten the PR description above the digest: fold each section under its
+   * heading (innermost sections closed) and cut a still-tall description to
+   * 500px behind a "Show full description" control.
+   */
   readonly collapseDescription: boolean;
   /**
    * Put a "Submit review" button in the pull request's tab bar, beside the
@@ -218,7 +221,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   prOverview: true,
   compactTimeline: 'compact',
   reviewGrouping: 'type',
-  collapseDescription: false,
+  collapseDescription: true,
   quickReview: true,
   reviewBots: [],
   aiEnabled: false,

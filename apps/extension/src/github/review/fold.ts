@@ -8,7 +8,6 @@ import type { LeftoverKind } from './crawler';
  */
 
 import { botTitle, resolveBotId } from '@geld/review';
-import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
 import { loginOfLink } from './login';
 import { isTeleported } from './teleport';
 
@@ -293,26 +292,4 @@ export function groupDoneHumans(
   const nodes = [...new Set(comments.filter((comment) => doneAnchors.has(comment.anchor) && !comment.author.endsWith('[bot]')).map((comment) => comment.root))];
   if (nodes.length === 0) return null;
   return { key: 'done-human', label: `${nodes.length} comment${nodes.length === 1 ? '' : 's'} on done items`, author: null, nodes };
-}
-
-export function collapseDescription(on: boolean): void {
-  const body =
-    document.querySelector('.js-comment-container .js-comment-body') ??
-    document.querySelector('[data-testid="issue-body"] .markdown-body') ??
-    document.querySelector('.timeline-comment .comment-body');
-  if (!(body instanceof HTMLElement)) return;
-  if (!on) {
-    body.removeAttribute('data-geld-desc');
-    body.parentElement?.querySelector('.geld-review-desc')?.remove();
-    return;
-  }
-  if (body.hasAttribute('data-geld-desc')) return;
-  body.setAttribute('data-geld-desc', 'collapsed');
-  const toggle = createElement('button', { type: 'button', class: 'geld-review-desc', [OWN_UI_ATTRIBUTE]: '' }, ['Show full description']);
-  toggle.addEventListener('click', () => {
-    const collapsed = body.getAttribute('data-geld-desc') === 'collapsed';
-    body.setAttribute('data-geld-desc', collapsed ? 'open' : 'collapsed');
-    toggle.textContent = collapsed ? 'Show less' : 'Show full description';
-  });
-  body.insertAdjacentElement('afterend', toggle);
 }

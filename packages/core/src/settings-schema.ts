@@ -490,8 +490,8 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       {
         kind: 'toggle',
         key: 'collapseDescription',
-        label: 'Collapse the description',
-        description: 'In Minimal mode, show the first paragraph of the pull request body and a control to expand the rest.',
+        label: 'Shorten the description',
+        description: 'Fold each section of the pull request description under its heading, and cut a description taller than 500px to a preview with a control to show the rest.',
         popup: false,
       },
       {
