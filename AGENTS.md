@@ -2271,3 +2271,9 @@ Native GitLab target-version metadata may omit `base_sha` while retaining exact 
 source-version and file diff refs still provide the required full base.
 The shell acceptance permits that missing target field but rejects any contradictory present target base.
 Its single initial native URL includes the known unchanged `file_path`, matching retained native file links, so an unmounted virtual tree entry is not a prerequisite for loading that file.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
