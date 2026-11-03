@@ -2421,3 +2421,9 @@ Bitbucket's native DiffLoader removes the Diff region while either its diff or d
 An already-owned whitespace transition preserves its lease through that exact loading state only with the same store, comparison, original panel and visible native spinner plus the usual route, header, settings and All changes guards.
 When Redux settles before React remounts the Diff region, only the same previously witnessed spinner can retain that pending lease, and no ready receipt is published until the original-panel region returns.
 The missing region cannot authorize initial acquisition or a ready receipt, and errors, duplicate regions, changed custody or a settled missing region still release the exact raw preference.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
