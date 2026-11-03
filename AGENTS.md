@@ -2203,3 +2203,9 @@ The installed300 session case preserved corrected counts and the known test cate
 That report did not retain layout ownership or positioning, so visible-root observations alone do not identify an adapter or controller cause.
 Native-presentation diagnostics retain only bounded known layout enums, Geld grouping and hiding markers, mount state and at most four ancestors per known file within the existing read.
 The independent observer reports its bounded count when its existing history limit rejects a session, without relaxing the limit or granting source authority.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
