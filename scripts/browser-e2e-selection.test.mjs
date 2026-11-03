@@ -189,6 +189,19 @@ test('native GitLab file search selects one explicit immutable MR case without b
   assert.deepEqual(select({ body: marker('gitlab-file-search'), from: marker('github') }), { focus: 'gitlab-file-search', run: 'true', failures: [] });
 });
 
+test('standalone GitLab whole-file acceptance is a two-case literal-only slice, observed before navigation and excluded from all/default', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
+  const names = ['gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'];assert.deepEqual(Array.from(cases['gitlab-standalone-whole']), names);
+  for (const [focus, selected] of Object.entries(cases)) if (focus !== 'gitlab-standalone-whole') for (const name of names) assert.equal(selected.includes(name), false);
+  assert.deepEqual(select({ body: marker('gitlab-standalone-whole'), from: marker('github') }), { focus: 'gitlab-standalone-whole', run: 'true', failures: [] });
+  assert.equal(select({ body: `${marker('gitlab-standalone-whole')}\nNew evidence`, from: marker('gitlab-standalone-whole') }).run, 'false');
+  assert.equal(select({ body: marker('gitlab-standalone-whole'), fork: true, from: marker('github') }).run, 'false');
+  const runner = harness.slice(harness.indexOf('async function runCase('), harness.indexOf('async function crossSettingsDom('));
+  assert.match(runner, /\['gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'\]\.includes\(name\) && focus !== 'gitlab-standalone-whole'/);
+  assert.ok(runner.indexOf('standaloneObserver = observeStandaloneWhole(') < runner.indexOf('await page.goto(url'));
+  assert.match(runner, /await standaloneObserver\.dispose\(\)/);assert.match(harness, /verifyStandaloneWhole\(page, item\.standaloneWhole/);
+});
+
 test('pipeline focus selects only its explicit case and never broadens regression', () => {
   const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);
   const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
