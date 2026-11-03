@@ -89,6 +89,17 @@ test('Bitbucket UI summaries retain fixed status and custody fields without raw 
   assert.doesNotMatch(JSON.stringify(result), /PRIVATE_CANARY|https:/);
 });
 
+test('continuity export preserves fixed checkpoint evidence without native paths or arbitrary values', () => {
+  const value = report();value.cases = [{ name: 'bitbucket-ui-continuity', status: 'failed', uiContinuity: {
+    digest: { status: 'passed' }, diff: { status: 'incomplete' },
+    inventoryRestoration: { sameNative: true, files: [{ path: 'PRIVATE_CANARY' }], mismatches: { anchor: 0, root: 0, link: 0, checkbox: 0 } },
+    cacheStorageTimes: { initial: 1, afterTransition: 2, afterFiltering: 3, private: 'PRIVATE_CANARY' },
+  } }];
+  const result = summarizeProviderEvidence(value, Buffer.from('{}')).cases[0].continuity;
+  assert.equal(result.digestPassed, true);assert.equal(result.diffPassed, false);assert.equal(result.nativePreserved, true);assert.equal(result.nativeFiles, 1);
+  assert.deepEqual(result.cacheStorageTimes, { initial: 1, afterTransition: 2, afterFiltering: 3 });assert.doesNotMatch(JSON.stringify(result), /PRIVATE_CANARY/);
+});
+
 test('paths and symlinks cannot read outside the fixed artifact directory', async () => withDirectory(async directory => {
   await assert.rejects(readEvidenceFile(directory, '../report.json', 10), { code: 'EVIDENCE_PATH' });
   await assert.rejects(readEvidenceFile(directory, '/etc/passwd', 10), { code: 'EVIDENCE_PATH' });

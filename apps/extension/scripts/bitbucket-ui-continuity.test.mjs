@@ -33,7 +33,7 @@ function protocol(options = {}) {
   const context = {
     verifyDigest: async (actual) => { assert.equal(actual, page);calls.push('digest'); },
     readState: async actual => { assert.equal(actual, page);return state(); },
-    readSource: async () => { const value = source();if (options.cacheCanary) value.privateCanary = 'CACHE_CANARY_NOT_FOR_DIAGNOSTICS';if (clicked && options.changed) value.storedAt++;return [value]; },
+    readSource: async () => { const value = source();if (options.cacheCanary) value.privateCanary = 'CACHE_CANARY_NOT_FOR_DIAGNOSTICS';if (clicked && options.changed) value.files[0].status = 'modified';if (options.timestampRefreshed) value.storedAt = clicked ? calls.includes('filter') ? 3 : 2 : 1;return [value]; },
     verifyFiltering: async (actual, record, fixture) => { assert.equal(actual, page);assert.equal(record, item);assert.deepEqual(fixture.source.files, source().files);calls.push('filter');if (options.filterError) throw Error('filter failed'); },
     poll: async (read, accepts) => { const value = await read();assert.ok(accepts(value));return value; },
     quota: () => ({ limit: 40, activeWithinHour: options.budget ? 40 : 26 }),
@@ -48,6 +48,11 @@ test('one-page protocol checkpoints digest before one native click and verifies 
   assert.deepEqual(f.calls, ['digest', 'lease', 'click', 'dispose', 'filter', 'cleanup']);
   assert.equal(f.checkpoints[0].digest.status, 'passed');assert.equal(f.checkpoints[0].navigationAttempts, 0);
   assert.equal(f.item.uiContinuity.diff.status, 'passed');assert.equal(f.item.uiContinuity.navigationAttempts, 1);
+});
+test('cache refresh timestamps may advance while every semantic source field stays identical', async () => {
+  const f = protocol({ timestampRefreshed: true });
+  assert.equal((await f.run()).status, 'passed');
+  assert.deepEqual(f.item.uiContinuity.cacheStorageTimes, { initial: 1, afterTransition: 2, afterFiltering: 3 });
 });
 for (const [name, options] of [['budget before navigation', { budget: true }], ['budget during navigation', { budgetAtClick: true }], ['full reload', { reload: true }], ['untrusted activation', { untrusted: true }], ['changed cache', { changed: true }], ['different digest head', { wrongHead: true }], ['failed filtering', { filterError: true }], ['native node replaced', { nativeChanged: true }]]) test(`keeps digest checkpoint but never claims continuity after ${name}`, async () => {
   const f = protocol(options);await assert.rejects(f.run());assert.equal(f.item.uiContinuity.status, 'incomplete');assert.equal(f.item.uiContinuity.digest.status, 'passed');assert.equal(f.item.uiContinuity.diff.status, 'incomplete');assert.ok(f.item.uiContinuity.navigationAttempts <= 1);
