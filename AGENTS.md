@@ -1376,6 +1376,7 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
 - **Pages:** `/` (hero with the two lines of `HEADLINE`, sized in container units so each fills the column at most and never wraps;
   install buttons;
   the customer logo reel;
+  the feature tour;
   live "try a path" demo in `components/path-tester.tsx`), `/how-it-works`, `/patterns` (rendered from `CATEGORIES` — the same source `catalog/patterns.json` is generated from — never hand-written;
   no runtime fetch, so a catalog change reaches the site with the next deploy), `/faq`, `/privacy` (doubles as the store privacy policy).
   Favicons are drawn from the brand SVGs at build time (`lib/brand.ts`);
@@ -1386,6 +1387,11 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
   with reduced motion it is one still, wrapping row.
   Each logo is a single-colour SVG in `public/logos/` drawn as a CSS mask in the text colour, so it follows both schemes;
   a company whose logo is a mark alone gets its name set beside it, as its own site does.
+  The feature tour (`components/tour/`) walks eight features in three chapters, each a live scene in a trimmed GitHub window (`PrWindow`): categories, counts, test titles, the description outline, the digest, Request a review, the review group and the status pill.
+  On wide screens the steps scroll past one sticky stage that crossfades to the step crossing the middle of the viewport (an `IntersectionObserver` with a zero-height band there);
+  on narrow ones each step carries its own scene, so every scene is rendered twice and the copy that is not displayed is `display: none`.
+  The categories and counts scenes classify their files with the real matcher (`createMatcher`), so the picture follows the catalog;
+  everything else in a scene is sample data, and a scene that copies an extension behaviour (what the pill offers from each state, what the request menu pre-ticks) follows the extension's rules as AGENTS.md states them.
 - **Data that must stay in sync with the extension:** the version comes from `apps/extension/package.json` (`lib/version.ts`);
   patterns and categories from `@geld/core`;
   install links from the latest GitHub Release until store listings exist — set a URL in `STORE_URLS` (`lib/downloads.ts`) to switch a browser over.

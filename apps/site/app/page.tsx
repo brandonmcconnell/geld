@@ -1,4 +1,3 @@
-import { REVIEW_BOTS } from '@geld/review/bots';
 import { ArrowRightIcon } from 'lucide-react';
 import Link from 'next/link';
 
@@ -9,10 +8,9 @@ import { LogoReel } from '@/components/logo-reel';
 import { Wordmark } from '@/components/logo';
 import { PathTester } from '@/components/path-tester';
 import { Section } from '@/components/section';
+import { Tour } from '@/components/tour/tour';
 import { buttonVariants } from '@/components/ui/button';
 import { HEADLINE, REPO_URL } from '@/lib/site';
-
-const NAMED_BOTS = ['Bugbot', 'CodeRabbit', 'Greptile', 'Copilot'];
 
 export default function HomePage() {
   const [firstLine, secondLine] = HEADLINE;
@@ -38,44 +36,30 @@ export default function HomePage() {
 
       <LogoReel className="pb-16 sm:pb-24" />
 
-      <Section
-        id="why"
-        eyebrow="What changes"
-        title="Less to scroll, nothing lost."
-        description="Geld works inside GitHub's own pages. Replies, resolves, reactions and merges still go through GitHub, and anything Geld folds away is one click from coming back."
-        className="border-t"
-      >
-        <ul className="grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
-          <Feature title="A digest, not a timeline">
-            Under the description, one panel lays the pull request out by round: what each push brought in, with its threads, reviews and bot comments,
-            open threads first. A thread opens as a chat right where you are.
-          </Feature>
-          <Feature title="Every review bot in one row">
-            {NAMED_BOTS.join(', ')} and {REVIEW_BOTS.length - NAMED_BOTS.length} more each get a verdict: clean, findings, running or skipped. Ask one or
-            all of them for another review from the same row.
-          </Feature>
-          <Feature title="Checks, previews and reports">
-            CI, preview deployments, coverage and security reports each get a row, red only when something failed. Who approved, and who is still
-            awaited, sits right beside them.
-          </Feature>
-          <Feature title="A diff that starts with the code">
-            Tests move behind one row at the bottom, and generated files, lockfiles and docs can join them. The header counts leave them out:{' '}
-            <code className="code-chip">+93 −53</code> becomes <code className="code-chip">6 tests +42 −26</code>.
-          </Feature>
-          <Feature title="Tests read as titles">
-            Open a test file and every test is one line with its name and its own <code className="code-chip">+N −M</code>. Expand only the ones you
-            care about.
-          </Feature>
-          <Feature title="Review from any tab">
-            Approve, request changes or comment from any tab, pending comments included. The status pill beside the title merges, queues, drafts or
-            closes the pull request.
-          </Feature>
-        </ul>
-        <Link href="/how-it-works" className={buttonVariants({ variant: 'outline', className: 'mt-10' })}>
-          How it works
-          <ArrowRightIcon aria-hidden="true" />
-        </Link>
-      </Section>
+      <section id="tour" aria-labelledby="tour-heading" className="pb-16 sm:pb-20">
+        <div className="container-site border-t pt-16 sm:pt-20">
+          <div className="max-w-2xl">
+            <p className="mb-4 font-mono text-[0.9375rem] font-medium tracking-[0.12em] text-muted-foreground uppercase">What it does</p>
+            <h2 id="tour-heading" className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
+              Everything a review needs, on the page you already have open.
+            </h2>
+            <p className="mt-3 text-base text-muted-foreground text-pretty">
+              Geld works inside GitHub&apos;s own pages, so replies, resolves, reactions and merges still go through GitHub. Every window below is live,
+              so try them as you scroll.
+            </p>
+          </div>
+        </div>
+        {/* Wider than the page's column: the scenes need a GitHub-sized window beside their words. */}
+        <div className="mx-auto mt-12 w-full max-w-7xl px-5 sm:px-8 lg:mt-0">
+          <Tour />
+        </div>
+        <div className="container-site">
+          <Link href="/how-it-works" className={buttonVariants({ variant: 'outline', className: 'mt-16 lg:mt-4' })}>
+            Everything Geld changes
+            <ArrowRightIcon aria-hidden="true" />
+          </Link>
+        </div>
+      </section>
 
       <Section
         id="try"
@@ -106,14 +90,5 @@ export default function HomePage() {
         </p>
       </Section>
     </>
-  );
-}
-
-function Feature({ title, children }: { readonly title: string; readonly children: React.ReactNode }) {
-  return (
-    <li className="flex flex-col gap-2">
-      <h3 className="text-base font-semibold">{title}</h3>
-      <p className="text-sm leading-6 text-muted-foreground">{children}</p>
-    </li>
   );
 }
