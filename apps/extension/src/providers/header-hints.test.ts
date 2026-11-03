@@ -109,7 +109,7 @@ it.each(['display: none', 'visibility: hidden', 'opacity: 0'])('supplements nati
   hints.update([current], '1 test', totals);
   const anchor = hints.forTarget(current);
   node('#native').setAttribute('style', style);
-  expect(hints.needsRepair()).toBe(true);
+  expect(hints.needsRepair()).toBe(false);
   window.dispatchEvent(new Event('resize'));
   expect(node('.geld-provider-header-line-counts__add').textContent).toBe('+7');
   expect(node('.geld-provider-header-line-counts__del').textContent).toBe('−3');
@@ -162,4 +162,37 @@ it('does not count a clipped screen-reader-only number as a visible native total
   hints.update([current], '1 test', totals);
   expect(node('.geld-provider-header-line-counts__add').textContent).toBe('+7');
   expect(node('.geld-provider-header-line-counts__del').textContent).toBe('−3');
+});
+
+it('keeps mutation repair checks layout-free and refreshes visibility from resize observations', () => {
+  let resized: () => void = () => undefined;
+  const observe = vi.fn(), unobserve = vi.fn(), disconnect = vi.fn();
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: () => void) { resized = callback; }
+    observe = observe;
+    unobserve = unobserve;
+    disconnect = disconnect;
+  });
+  try {
+    const current = lineFixture();
+    hints.update([current], '1 test', totals);
+    expect(observe).toHaveBeenCalledWith(node('#add'));
+    vi.mocked(node('#add').getBoundingClientRect).mockClear();
+    vi.mocked(node('#del').getBoundingClientRect).mockClear();
+    const style = vi.spyOn(window, 'getComputedStyle');
+    for (let index = 0; index < 30; index += 1) expect(hints.needsRepair()).toBe(false);
+    expect(style).not.toHaveBeenCalled();
+    expect(node('#add').getBoundingClientRect).not.toHaveBeenCalled();
+    expect(node('#del').getBoundingClientRect).not.toHaveBeenCalled();
+    node('#native').hidden = true;
+    resized();
+    expect(node('.geld-provider-header-line-counts__add').textContent).toBe('+7');
+    node('#native').hidden = false;
+    resized();
+    expect(document.querySelector('.geld-provider-header-line-counts')).toBeNull();
+    hints.clear();
+    expect(disconnect).toHaveBeenCalledOnce();
+    resized();
+    expect(document.querySelector('.geld-provider-header-stats')).toBeNull();
+  } finally { vi.unstubAllGlobals(); }
 });
