@@ -2465,10 +2465,16 @@ html[data-geld-timeline='full'] [data-geld-folded] {
  * stamps `data-geld-seen` on everything present when a pass ends), so the
  * time between arrival and fold never paints it. Only once the panel is up,
  * so the first paint of the page is GitHub's own; items on loan to the
- * panel are exempt.
+ * panel are exempt. Never `display: none`: a Mermaid diagram GitHub renders in
+ * that window has no layout in its iframe, fails with "svg element not in
+ * render tree" and stays failed when the item shows.
  */
 html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-timeline-item, .TimelineItem, [data-testid='timeline-row']):not([data-geld-seen]):not(.geld-review *) {
-  display: none !important;
+  content-visibility: hidden !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
 }
 
 /* The description card the panel grows out of: one box, shared border. */
