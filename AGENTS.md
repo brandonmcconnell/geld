@@ -2424,4 +2424,5 @@ The missing region cannot authorize initial acquisition or a ready receipt, and 
 
 Bitbucket's native static PR header keeps its original branch metadata inside ActionsWrapper, which switches to visibility:hidden while CompactHeader is shown after scrolling.
 Source-reference custody may read that original closed branch pair while CSS-hidden, but retains exact nodes, parents, text, route and source identities and never clicks those metadata controls.
-The actionable All changes control is scoped to the original unique native diff panel, so a compact-header copy outside that panel does not invalidate source preparation; panel replacement or an inner duplicate still does.
+The actionable All changes control is scoped to the original unique native diff panel, so a compact-header copy outside that panel does not invalidate source preparation;
+panel replacement or an inner duplicate still does.
