@@ -2235,3 +2235,9 @@ The layout adapter recognizes both native structures, validates the same childre
 Treating the direct native stream as an unknown wrapper forced inline fallback: counts stayed correct while category-hidden file roots became visible.
 The independent two-cycle whitespace test gives each validated trusted input a separate mutation budget rather than accumulating unrelated earlier-cycle records.
 The two-input maximum, current-frame and actor checks, and the per-phase 4,096-record refusal remain in force, with the rejected phase recorded on overflow.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
