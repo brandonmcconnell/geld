@@ -10,12 +10,12 @@ const script = selectorJob.split('          script: |\n')[1].replace(/^ {12}/gm,
 const repository = 'brandonmcconnell/geld';
 const marker = (focus) => `<!-- geld-browser-focus: ${focus} -->`;
 
-function select({ event = 'pull_request', action = 'edited', body = '', from, changes, fork = false, input } = {}) {
+function select({ event = 'pull_request', action = 'edited', body = '', from, changes, fork = false, input, labels = [] } = {}) {
   const outputs = {};
   const logs = [];
   const failures = [];
-  const payload = event === 'workflow_dispatch' ? { inputs: input === undefined ? {} : { focus: input } } : {
-    action, pull_request: { head: { repo: { full_name: fork ? 'someone/fork' : repository } }, body },
+  const payload = event === 'workflow_dispatch' ? { inputs: input === undefined ? {} : { focus: input }, pull_request: { labels: labels.map(name => ({ name })) } } : {
+    action, pull_request: { head: { repo: { full_name: fork ? 'someone/fork' : repository } }, body, labels: labels.map(name => ({ name })) },
     changes: changes ?? (from === undefined ? {} : { body: { from } }),
   };
   // Execute the repository's static selector; event metadata remains data in context.payload.
@@ -23,7 +23,7 @@ function select({ event = 'pull_request', action = 'edited', body = '', from, ch
     context: { eventName: event, payload, repo: { owner: 'brandonmcconnell', repo: 'geld' } },
     core: { setOutput: (key, value) => { outputs[key] = value; }, info: (message) => logs.push(message), setFailed: (message) => failures.push(message) },
   }, { timeout: 1000 });
-  if (outputs.run === 'false') assert.ok(logs.some((message) => message.includes('No feature verification ran or passed.')));
+  if (outputs.run === 'false') assert.ok(logs.some((message) => /No (?:public )?feature verification ran or passed\./.test(message)));
   return { ...outputs, failures };
 }
 
@@ -355,5 +355,34 @@ test('whitespace wall deadline checkpoints and closes without provider cooldown 
     assert.equal(report.cases[0].status, 'failed');assert.equal(report.cases[0].timeout.code, 'WHITESPACE_CASE_TIMEOUT');assert.equal(report.cases[0].timeout.observedRequests, 3);
     assert.equal(saves.some(value => value.lastCheckpoint.stage === 'case_timeout'), true);assert.equal(closed, true);assert.equal(restored, true);
     assert.equal(cooldowns.size, 0);assert.equal(report.cases[0].rateLimitedUntil, undefined);assert.equal(report.cases[0].budgetHold, undefined);
+  }
+});
+
+for (const action of ['opened', 'synchronize', 'reopened', 'edited']) test(`labelled restack ${action} defers public verification without changing the selected focus`, () => {
+  assert.deepEqual(select({ action, body: marker('bitbucket-pr-whole-context'), from: marker('github'), labels: ['geld:restack'] }),
+    { focus: 'bitbucket-pr-whole-context', run: 'false', failures: [] });
+});
+
+test('other labels leave code-event and focus-change verification enabled', () => {
+  assert.equal(select({ action: 'synchronize', body: marker('github'), labels: ['geld:restack-other'] }).run, 'true');
+  assert.equal(select({ body: marker('gitlab-diff'), from: marker('github'), labels: ['review'] }).run, 'true');
+});
+
+test('an explicit dispatch remains available during a labelled restack', () => {
+  assert.deepEqual(select({ event: 'workflow_dispatch', input: 'bitbucket-pr-whole-context', labels: ['geld:restack'] }),
+    { focus: 'bitbucket-pr-whole-context', run: 'true', failures: [] });
+});
+
+test('the restack label guards both public jobs while preserving their original focus conditions', () => {
+  const condition = name => {
+    const section = workflow.slice(workflow.indexOf(`  ${name}:`));
+    const expression = /^    if: (.+)$/m.exec(section)?.[1];assert.ok(expression);
+    return expression.replace(/\$\{\{\s*|\s*\}\}/g, '').replace('github.event.pull_request.labels.*.name', 'labels').replaceAll('needs.select-public-verification', "needs['select-public-verification']");
+  };
+  for (const event_name of ['pull_request', 'workflow_dispatch']) for (const label of [false, true]) for (const run of ['false', 'true']) for (const focus of ['github', 'bitbucket-whitespace-source']) {
+    const globals = { github: { event_name }, labels: label ? ['geld:restack'] : [], contains: (values, value) => values.includes(value), needs: { 'select-public-verification': { outputs: { run, focus } } } };
+    const deferred = event_name === 'pull_request' && label;
+    assert.equal(new vm.Script(condition('installed-extension')).runInNewContext(globals), !deferred && run === 'true' && focus !== 'bitbucket-whitespace-source');
+    assert.equal(new vm.Script(condition('bitbucket-static-source')).runInNewContext(globals), !deferred && run === 'true' && focus === 'bitbucket-whitespace-source');
   }
 });
