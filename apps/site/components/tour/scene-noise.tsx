@@ -148,7 +148,7 @@ function FileLine({ file, dim = false }: { readonly file: Classified; readonly d
   const directory = index === -1 ? '' : file.path.slice(0, index + 1);
   const name = file.path.slice(index + 1);
   return (
-    <div className={cn('flex items-center gap-2 border-b px-4 py-1.5 font-mono text-xs', dim && 'text-muted-foreground')}>
+    <div className={cn('flex items-center gap-2 border-b px-4 py-1 font-mono text-xs', dim && 'text-muted-foreground')}>
       <FileCodeIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate">
         <span className="text-muted-foreground">{directory}</span>

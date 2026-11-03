@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from 'cn';
-import { CheckIcon, CircleCheckIcon, FileCodeIcon, GitCommitHorizontalIcon, MessageSquareIcon, XIcon } from 'lucide-react';
+import { CheckIcon, CircleCheckIcon, FileCodeIcon, FileDiffIcon, GitCommitHorizontalIcon, MessageSquareIcon, XIcon } from 'lucide-react';
 import { useState } from 'react';
 
 import { Avatar } from '@/components/tour/bits';
@@ -11,10 +11,11 @@ import { useInstantKey } from '@/components/tour/use-instant-key';
 
 type Verdict = 'approve' | 'changes' | 'comment';
 
-const VERDICT: Record<Verdict, { readonly label: string; readonly done: string; readonly submit: string }> = {
-  approve: { label: 'Approve', done: 'Approved', submit: 'bg-[#1f883d] text-white' },
-  changes: { label: 'Request changes', done: 'Changes requested', submit: 'bg-[#cf222e] text-white' },
-  comment: { label: 'Comment', done: 'Review submitted', submit: 'border bg-muted text-foreground' },
+/** `icon` is the glyph GitHub's reviewers list gives the verdict: a check, the file-diff of a change request, a comment bubble. */
+const VERDICT: Record<Verdict, { readonly label: string; readonly done: string; readonly submit: string; readonly icon: React.ReactNode }> = {
+  approve: { label: 'Approve', done: 'Approved', submit: 'bg-[#1f883d] text-white', icon: <CheckIcon aria-hidden="true" className="size-3 text-addition" strokeWidth={3} /> },
+  changes: { label: 'Request changes', done: 'Changes requested', submit: 'bg-[#cf222e] text-white', icon: <FileDiffIcon aria-hidden="true" className="size-3 text-deletion" strokeWidth={2.5} /> },
+  comment: { label: 'Comment', done: 'Review submitted', submit: 'border bg-muted text-foreground', icon: <MessageSquareIcon aria-hidden="true" className="size-3 text-muted-foreground" strokeWidth={2.5} /> },
 };
 
 const TAB_BODY: Record<PrTab, readonly { readonly icon: React.ReactNode; readonly text: string }[]> = {
@@ -51,12 +52,12 @@ export function QuickReviewScene() {
   const [box, setBox] = useState<Verdict | null>(null);
   const [words, setWords] = useState('');
   const [mine, setMine] = useState<Verdict | null>(null);
-  const [said, setSaid] = useState<string | null>(null);
+  const [said, setSaid] = useState<Verdict | null>(null);
   const instant = useInstantKey();
 
   const send = (verdict: Verdict): void => {
     setMine(verdict === 'comment' ? mine : verdict);
-    setSaid(VERDICT[verdict].done);
+    setSaid(verdict);
     setBox(null);
     setWords('');
   };
@@ -68,6 +69,7 @@ export function QuickReviewScene() {
 
   const approvals = 1 + (mine === 'approve' ? 1 : 0);
   const requests = mine === 'changes' ? 1 : 0;
+  const commenters = 1 + (said === 'comment' && mine === null ? 1 : 0);
 
   return (
     <PrWindow
@@ -75,7 +77,7 @@ export function QuickReviewScene() {
       onTab={setTab}
       tabsEnd={
         <>
-          <span className="hidden items-center gap-1.5 text-xs text-muted-foreground tabular-nums sm:inline-flex" aria-label={`${approvals} approvals, ${requests} requests for changes`}>
+          <span className="hidden items-center gap-1.5 text-xs text-muted-foreground tabular-nums sm:inline-flex" aria-label={`${approvals} approvals, ${requests} requests for changes, ${commenters} commented`}>
             {approvals}
             <CheckIcon aria-hidden="true" className="size-3.5 text-addition" strokeWidth={2.5} />
             {requests > 0 ? (
@@ -84,7 +86,7 @@ export function QuickReviewScene() {
                 <XIcon aria-hidden="true" className="size-3.5 text-deletion" strokeWidth={2.5} />
               </>
             ) : null}
-            1
+            {commenters}
             <MessageSquareIcon aria-hidden="true" className="size-3.5" />
           </span>
           <span className="inline-flex overflow-hidden rounded-md border shadow-xs" role="group" aria-label="Review">
@@ -113,8 +115,8 @@ export function QuickReviewScene() {
       <p className="px-4 text-xs text-muted-foreground" aria-live="polite">
         {said ? (
           <span className="inline-flex items-center gap-1.5 rounded-full border bg-muted/60 px-2 py-0.5 font-medium text-foreground">
-            <CheckIcon aria-hidden="true" className="size-3 text-addition" strokeWidth={3} />
-            {said}
+            {VERDICT[said].icon}
+            {VERDICT[said].done}
           </span>
         ) : (
           'Switch tabs: the review group stays put.'

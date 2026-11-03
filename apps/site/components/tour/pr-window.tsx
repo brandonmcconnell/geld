@@ -17,13 +17,13 @@ const STATE_WORD: Record<PrState, string> = { open: 'Open', draft: 'Draft', merg
 
 export function StateIcon({ state, className }: { readonly state: PrState; readonly className?: string }) {
   const Icon = state === 'merged' ? GitMergeIcon : state === 'closed' ? GitPullRequestClosedIcon : state === 'draft' ? GitPullRequestDraftIcon : GitPullRequestIcon;
-  return <Icon aria-hidden="true" className={cn('size-3.5', className)} />;
+  return <Icon aria-hidden="true" className={cn('size-3.5', className)} strokeWidth={2.5} />;
 }
 
 /** GitHub's state label, as a plain label. */
 export function StatePill({ state }: { readonly state: PrState }) {
   return (
-    <span className={cn('inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-xs font-medium', STATE_COLOR[state])}>
+    <span className={cn('inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-xs font-semibold', STATE_COLOR[state])}>
       <StateIcon state={state} />
       {STATE_WORD[state]}
     </span>
@@ -121,7 +121,8 @@ export function PrWindow({
         </ul>
         {tabsEnd ? <div className="flex shrink-0 items-center gap-2 pb-1.5">{tabsEnd}</div> : null}
       </div>
-      <div className={cn('min-h-0 flex-1 overflow-y-auto overscroll-contain', bodyClassName)}>{children}</div>
+      {/* Never a scroll container: a wheel over the window must scroll the page, so every scene is laid out to fit. */}
+      <div className={cn('min-h-0 flex-1 overflow-hidden', bodyClassName)}>{children}</div>
     </div>
   );
 }

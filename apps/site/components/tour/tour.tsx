@@ -12,6 +12,7 @@ import { QuickReviewScene } from '@/components/tour/scene-quick-review';
 import { RequestScene } from '@/components/tour/scene-request';
 import { StatusScene } from '@/components/tour/scene-status';
 import { TestsScene } from '@/components/tour/scene-tests';
+import { WorkflowScene } from '@/components/tour/scene-workflow';
 
 interface Step {
   readonly id: string;
@@ -46,6 +47,14 @@ const STEPS: readonly Step[] = [
     body: 'When you do open a test file, each test is one line: where it starts, its name and its own count. Expand the ones worth reading.',
     hint: 'Open a test',
     Scene: TestsScene,
+  },
+  {
+    id: 'workflow',
+    chapter: 'Read less',
+    title: 'Shell that reads like shell',
+    body: "To GitHub, a workflow's multiline run block is one long string. Geld colours the script inside as the shell that runs it, on both sides of the diff.",
+    hint: 'Flip the switch to see it as GitHub does',
+    Scene: WorkflowScene,
   },
   {
     id: 'outline',
@@ -153,19 +162,20 @@ export function Tour() {
       </ol>
 
       <div className="hidden lg:block">
-        <div className="sticky top-[max(4.5rem,calc(50vh-17.25rem))]">
-          <Plate className="h-[38rem]">
+        <div className="sticky top-[max(4.5rem,calc(50vh-18.25rem))]">
+          <Plate className="h-[40rem]">
             <div className="grid h-full grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]">
               {STEPS.map((step, index) => {
                 const isActive = index === active;
                 return (
                   <div
                     key={step.id}
+                    data-scene={step.id}
                     inert={!isActive}
                     aria-hidden={!isActive}
                     className={cn(
-                      'col-start-1 row-start-1 min-h-0 min-w-0 transition-[opacity,transform,filter] duration-500 ease-out [&>*]:h-full',
-                      isActive ? 'translate-y-0 opacity-100 blur-none' : cn('pointer-events-none opacity-0 blur-[3px]', index < active ? '-translate-y-4' : 'translate-y-4'),
+                      'col-start-1 row-start-1 min-h-0 min-w-0 transition-opacity duration-500 ease-in-out [&>*]:h-full',
+                      isActive ? 'opacity-100' : 'pointer-events-none opacity-0',
                     )}
                   >
                     <step.Scene />

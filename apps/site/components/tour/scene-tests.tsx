@@ -67,13 +67,8 @@ function countsOf(lines: readonly Line[]): { readonly additions: number; readonl
 
 export function TestsScene() {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set(['calls onChange when controlled']));
-  const toggle = (title: string): void =>
-    setOpen((previous) => {
-      const next = new Set(previous);
-      if (next.has(title)) next.delete(title);
-      else next.add(title);
-      return next;
-    });
+  // One test open at a time keeps the file inside the window.
+  const toggle = (title: string): void => setOpen((previous) => (previous.has(title) ? new Set() : new Set([title])));
   const total = countsOf(TESTS.flatMap((test) => test.lines));
 
   return (
@@ -130,7 +125,7 @@ function CodeRow({ line }: { readonly line: Line }) {
     <div className={cn('flex whitespace-pre', line.kind === 'add' && 'bg-addition-muted/70', line.kind === 'del' && 'bg-deletion-muted/70')}>
       <span className="w-10 shrink-0 pr-2 text-right text-[0.6875rem] leading-5 text-muted-foreground tabular-nums select-none">{line.n}</span>
       <span className="w-4 shrink-0 text-center leading-5 text-muted-foreground select-none">{line.kind === 'add' ? '+' : line.kind === 'del' ? '−' : ''}</span>
-      <span className="min-w-0 truncate leading-5">{line.text}</span>
+      <span className="min-w-0 overflow-hidden leading-5 text-ellipsis whitespace-pre">{line.text}</span>
     </div>
   );
 }

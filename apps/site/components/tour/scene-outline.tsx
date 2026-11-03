@@ -56,7 +56,7 @@ const DESCRIPTION: readonly Outline[] = [
       </ul>
     ),
   },
-  { title: 'Screenshots', level: 2, body: <div className="grid h-20 place-items-center rounded-md border border-dashed text-muted-foreground">button-states.png</div> },
+  { title: 'Screenshots', level: 2, body: <p className="text-muted-foreground">button-states.png · button-disabled.png</p> },
 ];
 
 export function OutlineScene() {
@@ -78,7 +78,7 @@ export function OutlineScene() {
             <span className="font-semibold text-foreground">octocat</span> commented 2 days ago
           </span>
         </div>
-        <div className="px-3 py-3 text-[0.8125rem] leading-6 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:font-mono [&_code]:text-[0.75rem] [&_li]:ml-4 [&_li]:list-disc [&_p]:my-1 [&_ul]:my-1">
+        <div className="px-3 py-2 text-[0.8125rem] leading-5 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:font-mono [&_code]:text-[0.75rem] [&_li]:ml-4 [&_li]:list-disc [&_p]:my-0.5 [&_ul]:my-0.5">
           {DESCRIPTION.map((section) => (
             <Section key={section.title} section={section} closed={closed} onToggle={toggle} />
           ))}

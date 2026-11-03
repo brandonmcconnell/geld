@@ -10,7 +10,6 @@ export interface TourFile {
 /** The tour's pull request, in GitHub's file order. Which file lands in which category is the real matcher's call. */
 export const TOUR_FILES: readonly TourFile[] = [
   { path: '.github/workflows/ci.yml', additions: 3, deletions: 1 },
-  { path: 'CHANGELOG.md', additions: 4, deletions: 0 },
   { path: 'README.md', additions: 3, deletions: 2 },
   { path: 'docs/button.mdx', additions: 22, deletions: 4 },
   { path: 'e2e/button.cy.ts', additions: 7, deletions: 3 },
@@ -22,7 +21,6 @@ export const TOUR_FILES: readonly TourFile[] = [
   { path: 'src/hooks/useToggle.test.ts', additions: 11, deletions: 5 },
   { path: 'src/hooks/useToggle.ts', additions: 8, deletions: 7 },
   { path: 'src/index.ts', additions: 2, deletions: 1 },
-  { path: 'src/types.ts', additions: 5, deletions: 3 },
 ];
 
 export function totalsOf(files: readonly TourFile[]): ChangeTotals {

@@ -1387,10 +1387,12 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
   with reduced motion it is one still, wrapping row.
   Each logo is a single-colour SVG in `public/logos/` drawn as a CSS mask in the text colour, so it follows both schemes;
   a company whose logo is a mark alone gets its name set beside it, as its own site does.
-  The feature tour (`components/tour/`) walks eight features in three chapters, each a live scene in a trimmed GitHub window (`PrWindow`): categories, counts, test titles, the description outline, the digest, Request a review, the review group and the status pill.
-  On wide screens the steps scroll past one sticky stage that crossfades to the step crossing the middle of the viewport (an `IntersectionObserver` with a zero-height band there);
+  The feature tour (`components/tour/`) walks nine features in three chapters, each a live scene in a trimmed GitHub window (`PrWindow`): categories, counts, test titles, workflow shell highlighting, the description outline, the digest, Request a review, the review group and the status pill.
+  On wide screens the steps scroll past one sticky stage that crossfades in place, opacity only, to the step crossing the middle of the viewport (an `IntersectionObserver` with a zero-height band there);
+  a scene's body is never a scroll container, since a wheel over the stage must scroll the page, so every scene is laid out to fit its window with anything a reader can open opened (one test, one group, one thread at a time where needed).
   on narrow ones each step carries its own scene, so every scene is rendered twice and the copy that is not displayed is `display: none`.
   The categories and counts scenes classify their files with the real matcher (`createMatcher`), so the picture follows the catalog;
+  the counts scene's breakdown mirrors the extension's tooltip (`.geld-breakdown`, from `.geld-tooltip`, hung flush from the tab bar), and the workflow scene's tokens use the extension's Bash scope colours, tagged by hand so the site takes no highlight.js (a lockfile change on `main` releases the extension);
   everything else in a scene is sample data, and a scene that copies an extension behaviour (what the pill offers from each state, what the request menu pre-ticks) follows the extension's rules as AGENTS.md states them.
 - **Data that must stay in sync with the extension:** the version comes from `apps/extension/package.json` (`lib/version.ts`);
   patterns and categories from `@geld/core`;

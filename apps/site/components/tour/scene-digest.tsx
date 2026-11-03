@@ -23,15 +23,15 @@ const THREADS: readonly Thread[] = [
     title: 'Controlled value ignores defaultPressed',
     path: 'src/Button.tsx',
     by: { bot: 'bugbot' },
-    said: 'When `pressed` is set, `defaultPressed` is silently dropped. Warn in development so the mix is caught early.',
-    reply: 'Good catch, added a dev warning in 3f2a91c.',
+    said: '`defaultPressed` is dropped once `pressed` is set. Warn in development.',
+    reply: 'Added a dev warning in 3f2a91c.',
   },
   {
     id: 'aria',
     title: 'aria-pressed is missing when uncontrolled',
     path: 'src/Button.tsx',
     by: { person: 'hubot' },
-    said: 'Screen readers only hear the state in controlled mode. The uncontrolled branch needs it too.',
+    said: 'Screen readers only hear the state in controlled mode.',
     reply: 'Fixed, both branches set it now.',
   },
   {
@@ -39,7 +39,7 @@ const THREADS: readonly Thread[] = [
     title: 'Docs example still uses onClick',
     path: 'docs/button.mdx',
     by: { bot: 'coderabbit' },
-    said: 'The controlled example passes `onClick`, which no longer toggles. Use `onChange`.',
+    said: 'The example passes `onClick`, which no longer toggles. Use `onChange`.',
     reply: 'Updated the example.',
   },
 ];
@@ -58,13 +58,7 @@ export function DigestScene() {
   return (
     <PrWindow tab="conversation">
       <div className="m-3">
-        <div className="flex items-center gap-2 rounded-t-lg border bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
-          <Avatar who="octocat" size={18} />
-          <span className="min-w-0 truncate">
-            <span className="font-semibold text-foreground">octocat</span> commented · Button can now be controlled…
-          </span>
-        </div>
-        <div className="-mt-px rounded-b-lg border text-xs">
+        <div className="rounded-lg border text-xs">
           <div className="flex items-center gap-2 border-b px-3 py-2">
             <span className="font-semibold">Geld</span>
             <Meter done={done} total={total} />
@@ -111,20 +105,22 @@ export function DigestScene() {
           <StatusRow label="CI checks">
             <span aria-hidden="true" className="size-3.5 rounded-full border-[3px] border-addition" />
             <span>18 successful checks</span>
-          </StatusRow>
-          <StatusRow label="Previews">
-            <Chip>
-              <RocketIcon aria-hidden="true" className="ml-0.5 size-3 text-muted-foreground" />
-              widgets-docs
-              <Light tone="good" />
-            </Chip>
+            <span className="text-muted-foreground">·</span>
+            <RocketIcon aria-hidden="true" className="size-3 text-muted-foreground" />
+            <span>1 preview ready</span>
           </StatusRow>
 
-          <GroupBand open={roundOpen} onToggle={() => setRoundOpen((value) => !value)}>
+          <GroupBand
+            open={roundOpen}
+            onToggle={() => {
+              setRoundOpen((value) => !value);
+              setSettledOpen(false);
+            }}
+          >
             {open.length > 0 ? '1 round to review' : 'Current round'}
           </GroupBand>
           <Collapsible open={roundOpen}>
-            <div className="flex items-center gap-2 border-b px-3 py-2 text-[0.8125rem]">
+            <div className="flex items-center gap-2 border-b px-3 py-1.5 text-[0.8125rem]">
               {open.length === 0 ? <CircleCheckIcon aria-hidden="true" className="size-4 text-addition" /> : <CircleIcon aria-hidden="true" className="size-4 text-muted-foreground" />}
               <span className="flex -space-x-1">
                 <BotMark bot="bugbot" size={18} />
@@ -158,7 +154,14 @@ export function DigestScene() {
               ))}
             </ul>
           </Collapsible>
-          <GroupBand open={settledOpen} onToggle={() => setSettledOpen((value) => !value)} last>
+          <GroupBand
+            open={settledOpen}
+            onToggle={() => {
+              setSettledOpen((value) => !value);
+              setRoundOpen(false);
+            }}
+            last
+          >
             2 settled rounds
           </GroupBand>
           <Collapsible open={settledOpen}>
@@ -179,7 +182,7 @@ export function DigestScene() {
 
 function StatusRow({ label, children }: { readonly label: string; readonly children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3 border-b px-3 py-1.5">
+    <div className="flex items-center gap-3 border-b px-3 py-1">
       <span className="w-20 shrink-0 text-muted-foreground">{label}</span>
       <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">{children}</div>
     </div>
@@ -198,7 +201,7 @@ function GroupBand({ open, onToggle, children, last = false }: { readonly open: 
       type="button"
       aria-expanded={open}
       onClick={onToggle}
-      className={cn('flex w-full items-center gap-1.5 bg-muted/70 px-3 py-1.5 text-left text-[0.75rem] font-semibold outline-none hover:bg-muted focus-visible:bg-muted', !last && 'border-b', last && 'rounded-b-lg')}
+      className={cn('flex w-full items-center gap-1.5 bg-muted/70 px-3 py-1 text-left text-[0.75rem] font-semibold outline-none hover:bg-muted focus-visible:bg-muted', !last && 'border-b', last && 'rounded-b-lg')}
     >
       <ChevronDownIcon aria-hidden="true" className={cn('size-3.5 text-muted-foreground transition-transform', !open && '-rotate-90')} />
       {children}
@@ -240,21 +243,21 @@ function ThreadRow({
         <ChevronRightIcon aria-hidden="true" className={cn('ml-auto size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')} />
       </button>
       <Collapsible open={open}>
-        <div className="flex flex-col gap-2 py-2 pr-3 pl-6">
+        <div className="flex flex-col gap-1.5 py-1.5 pr-3 pl-6">
           <div className="flex items-start gap-2">
             {author}
-            <p className="max-w-[85%] rounded-xl rounded-tl-sm border bg-card px-2.5 py-1.5 leading-5">{formatInline(thread.said)}</p>
+            <p className="max-w-[85%] rounded-xl rounded-tl-sm border bg-card px-2.5 py-1 leading-5">{formatInline(thread.said)}</p>
           </div>
           <div className="flex items-start justify-end gap-2">
-            <p className="max-w-[85%] rounded-xl rounded-tr-sm bg-[oklch(0.62_0.15_255/0.14)] px-2.5 py-1.5 leading-5">{thread.reply}</p>
+            <p className="max-w-[85%] rounded-xl rounded-tr-sm bg-[oklch(0.62_0.15_255/0.14)] px-2.5 py-1 leading-5">{thread.reply}</p>
             <Avatar who="octocat" size={16} className="ring-0" />
           </div>
-          <div className="flex items-center gap-2">
-            <span className="flex-1 rounded-md border bg-card px-2 py-1 text-muted-foreground">Reply…</span>
+          <div className="flex items-center justify-end gap-2">
+            <span className="flex-1 rounded-md border bg-card px-2 py-0.5 text-muted-foreground">Reply…</span>
             <button
               type="button"
               onClick={onResolve}
-              className="rounded-md border bg-card px-2 py-1 font-medium outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40"
+              className="rounded-md border bg-card px-2 py-0.5 font-medium outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40"
             >
               {resolved ? 'Unresolve' : 'Resolve conversation'}
             </button>

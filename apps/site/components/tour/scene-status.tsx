@@ -71,7 +71,7 @@ export function StatusScene() {
 
   const pill =
     options.length === 0 ? (
-      <span className={cn('inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors duration-300', STATE_COLOR[state])}>
+      <span className={cn('inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition-colors duration-300', STATE_COLOR[state])}>
         <StateIcon state={state} />
         {stateWord(state)}
       </span>
@@ -85,13 +85,13 @@ export function StatusScene() {
           aria-label={oneClick ? 'Merge now: Squash and merge' : `${stateWord(state)}. Change the status`}
           onClick={(event) => (event.metaKey || event.ctrlKey) && state === 'open' ? change('merged') : setMenuOpen((value) => !value)}
           className={cn(
-            'group/pill inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-xs font-medium outline-none transition-[background-color,box-shadow,filter] duration-300 hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+            'group/pill inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-xs font-semibold outline-none transition-[background-color,box-shadow,filter] duration-300 hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
             oneClick ? 'bg-transparent text-[#8250df] ring-[1.5px] ring-[#8250df]' : STATE_COLOR[state],
           )}
         >
           {oneClick ? <StateIcon state="merged" /> : <StateIcon state={state} />}
           {oneClick ? 'Merge' : stateWord(state)}
-          <ChevronDownIcon aria-hidden="true" className={cn('-mr-1 size-3 opacity-80 transition-transform', menuOpen && 'rotate-180')} />
+          <ChevronDownIcon aria-hidden="true" strokeWidth={2.5} className={cn('-mr-1 size-3 opacity-80 transition-transform', menuOpen && 'rotate-180')} />
         </button>
         <span
           role="menu"
