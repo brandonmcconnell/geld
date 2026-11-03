@@ -35,7 +35,7 @@ env:
   GELD_GREPTILE_KEY_SECRET: '' # e.g. GREPTILE_API_KEY, from Greptile > Settings > Organization > API Keys
   GELD_BUGBOT_KEY_SECRET: '' # e.g. CURSOR_API_KEY, from Cursor Dashboard > API Keys (admin scope, Cursor Enterprise)
   GELD_DEVIN_KEY_SECRET: '' # e.g. DEVIN_API_KEY, a Devin service user with the UseReviewManual permission
-  GELD_DEVIN_ORG_ID: '' # your Devin organization id (org-…); not a secret
+  GELD_DEVIN_ORG_ID: '' # optional: found from the key, needed only for an enterprise-wide Devin key; not a secret
 
 jobs:
   summary:
@@ -142,7 +142,14 @@ jobs:
                     method: 'tools/call',
                     params: {
                       name: 'trigger_code_review',
-                      arguments: { name: `${owner}/${repo}`, remote: 'github', defaultBranch: context.payload.repository.default_branch, prNumber: pr.number },
+                      arguments: {
+                        name: `${owner}/${repo}`,
+                        remote: 'github',
+                        defaultBranch: context.payload.repository.default_branch,
+                        prNumber: pr.number,
+                        // Greptile tells a self-hosted GitHub Enterprise Server apart by its address; github.com sends none.
+                        ...(context.serverUrl === 'https://github.com' ? {} : { remoteUrl: context.serverUrl }),
+                      },
                     },
                   }),
                 });
@@ -162,9 +169,15 @@ jobs:
               },
               devin: async () => {
                 const key = process.env.DEVIN_KEY;
-                const org = process.env.GELD_DEVIN_ORG_ID;
                 if (!key) throw new Error(missing('DEVIN'));
-                if (!org) throw new Error('set GELD_DEVIN_ORG_ID in the workflow to your Devin organization id');
+                // A key made in one organization's settings knows its organization; an enterprise-wide key does not.
+                let org = process.env.GELD_DEVIN_ORG_ID;
+                if (!org) {
+                  const self = await fetch('https://api.devin.ai/v3/self', { headers: { Authorization: `Bearer ${key}` } });
+                  if (!self.ok) throw new Error(`Devin answered ${self.status} when asked which organization the key belongs to`);
+                  org = (await self.json().catch(() => ({}))).org_id;
+                  if (!org) throw new Error('this Devin key spans several organizations: set GELD_DEVIN_ORG_ID in the workflow');
+                }
                 const response = await fetch(`https://api.devin.ai/v3/organizations/${encodeURIComponent(org)}/pr-reviews`, {
                   method: 'POST',
                   headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
@@ -176,6 +189,7 @@ jobs:
 
             const results = await Promise.allSettled(bots.map((bot) => start[bot]()));
             const failed = results.flatMap((result, index) => (result.status === 'rejected' ? [`${bots[index]}: ${result.reason.message}`] : []));
-            for (const [index, result] of results.entries()) if (result.status === 'fulfilled') core.info(`${bots[index]}: review queued`);
+            // The bots' APIs act for the organization the key belongs to, so who asked is recorded here, with the run.
+            for (const [index, result] of results.entries()) if (result.status === 'fulfilled') core.info(`${bots[index]}: review queued for ${comment.user.login}`);
             await react(failed.length === 0 ? 'rocket' : 'confused');
             if (failed.length > 0) core.setFailed(failed.join('\n'));

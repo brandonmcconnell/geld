@@ -378,8 +378,8 @@ reviewBots:                     # offered in Request a review on every PR
                 The same workflow can start review bots through their own APIs, for when a bot is not answering its tag comment. Comment{' '}
                 <code>/geld run greptile</code> on a pull request (or <code>bugbot</code>, <code>devin</code>, several at once) and the workflow asks
                 each bot to review it, in parallel. Each bot is off until you store its key as a repository secret and put that secret&apos;s name in
-                the workflow: <code>GELD_GREPTILE_KEY_SECRET</code>, <code>GELD_BUGBOT_KEY_SECRET</code>, or <code>GELD_DEVIN_KEY_SECRET</code> with{' '}
-                <code>GELD_DEVIN_ORG_ID</code>. Only people with write access to the repository can start a bot this way. The workflow reacts to the
+                the workflow: <code>GELD_GREPTILE_KEY_SECRET</code>, <code>GELD_BUGBOT_KEY_SECRET</code> or <code>GELD_DEVIN_KEY_SECRET</code>. Only people with
+                write access to the repository can start a bot this way, and the run&apos;s log names who asked, since the bots see only the key. The workflow reacts to the
                 comment with 🚀 when every bot was queued and 😕 when one was not, and the run&apos;s log says why. Tick a bot under{' '}
                 <em>Start review bots by API</em> in Geld&apos;s settings and Rerun posts the command for you wherever the workflow has that bot&apos;s
                 key. Geld reads only the secret&apos;s name from the workflow, never the key.

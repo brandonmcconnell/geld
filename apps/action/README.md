@@ -41,7 +41,7 @@ Every bot is off until you turn it on. Store the bot's key as a repository secre
 |---|---|---|
 | `greptile` | `GELD_GREPTILE_KEY_SECRET` | Greptile, Settings > Organization > API Keys. Calls `trigger_code_review` on `api.greptile.com/mcp`. |
 | `bugbot` | `GELD_BUGBOT_KEY_SECRET` | Cursor Dashboard > API Keys, admin scope (Cursor Enterprise). Calls `POST api.cursor.com/bugbot/review`. |
-| `devin` | `GELD_DEVIN_KEY_SECRET` and `GELD_DEVIN_ORG_ID` | A Devin service user with `UseReviewManual`, and your organization id (not a secret). Calls `POST api.devin.ai/v3/organizations/{org}/pr-reviews`. |
+| `devin` | `GELD_DEVIN_KEY_SECRET` (and `GELD_DEVIN_ORG_ID` for an enterprise-wide key) | A Devin service user with `UseReviewManual`. Its organization is read from the key (`GET /v3/self`); an enterprise-wide key spans several, so name the organization id (not a secret). Calls `POST api.devin.ai/v3/organizations/{org}/pr-reviews`. |
 
 ```yaml
 env:
@@ -49,6 +49,8 @@ env:
 ```
 
 - **Who can trigger:** secrets are available to every comment's run, so the job checks the commenter's permission first and refuses anyone without write access, and comments from bot accounts.
+- **Whose key it is:** every bot acts for the organization or team the key belongs to, not for the person who commented: none of the three APIs takes a requester. Who asked is on GitHub, in the comment and in the run's log (`review queued for <login>`). Use an organization's key, not a personal one: a Devin personal access token acts as the person who made it, and a Cursor API key belongs to the team.
+- **GitHub Enterprise Server:** Greptile is sent the server's address (`remoteUrl`) so it finds the repository there. Bugbot and Devin take the pull request's own link.
 - **Parallel:** the `trigger` job has no concurrency group, so every command runs, alongside the others and the summary. The `summary` job keeps its own group, which cancels older summary runs so only the newest rewrites the comment.
 - **Result:** a 🚀 reaction on the comment when every bot was queued, 😕 otherwise, with the reason in the run's log. A queued review still runs on the bot's side and posts as usual.
 - **From the extension:** with a bot ticked under "Start review bots by API" in Geld's settings, Rerun and Request a review post `/geld run <bot>` on repositories whose Geld workflow names a secret for that bot (the extension reads the workflow file for the names, never the keys) and the bot's own tag comment everywhere else. The digest reads the workflow's 🚀 as the bot taking the run and its 😕 as no run.
