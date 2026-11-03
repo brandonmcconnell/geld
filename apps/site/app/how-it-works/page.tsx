@@ -2,7 +2,7 @@ import { CATEGORIES, TESTS_CATEGORY } from '@geld/core';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { Frame } from '@/components/demo/before-after';
+import { Frame } from '@/components/demo/frame';
 import { FileRow } from '@/components/demo/file-row';
 import { HiddenRow } from '@/components/demo/hidden-row';
 import { PrHeader } from '@/components/demo/pr-header';

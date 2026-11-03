@@ -1373,14 +1373,19 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
 - **Feedback goes through the site.**
   The extension's Feedback links (popup footer, options footer, `src/ui/feedback-link.ts`) point at `https://www.geld.sh/feedback?version=…&browser=…&page=…` (never a URL or a login), and `app/feedback/route.ts` forwards to a new issue on the repository with the issue form `.github/ISSUE_TEMPLATE/feedback.yml` pre-filled.
   The hop exists so the destination can change (a form on the site opening issues through the Geld App on a private tracker, once the source is closed) without a store release.
-- **Pages:** `/` (hero, before/after PR header + hidden row built from `components/demo/sample-pr.ts`, which classifies its sample files with `createMatcher(DEFAULT_SETTINGS)` so the picture cannot lie;
+- **Pages:** `/` (hero with the two lines of `HEADLINE`, sized in container units so each fills the column at most and never wraps;
   install buttons;
+  the customer logo reel;
   live "try a path" demo in `components/path-tester.tsx`), `/how-it-works`, `/patterns` (rendered from `CATEGORIES` — the same source `catalog/patterns.json` is generated from — never hand-written;
   no runtime fetch, so a catalog change reaches the site with the next deploy), `/faq`, `/privacy` (doubles as the store privacy policy).
   Favicons are drawn from the brand SVGs at build time (`lib/brand.ts`);
   the OG image (`app/opengraph-image.tsx`) combines the wordmark with a real 2× screenshot from `assets/screenshots/` (embedded as a data URL, `loadScreenshot`).
   Re-capture that screenshot with the extension on a public PR when the header UI changes;
   the Vercel ignore script watches the folder.
+  The logo reel (`components/logo-reel.tsx`) lists `lib/customers.ts` twice on one track that slides by half, so the loop has no seam, and never pauses;
+  with reduced motion it is one still, wrapping row.
+  Each logo is a single-colour SVG in `public/logos/` drawn as a CSS mask in the text colour, so it follows both schemes;
+  a company whose logo is a mark alone gets its name set beside it, as its own site does.
 - **Data that must stay in sync with the extension:** the version comes from `apps/extension/package.json` (`lib/version.ts`);
   patterns and categories from `@geld/core`;
   install links from the latest GitHub Release until store listings exist — set a URL in `STORE_URLS` (`lib/downloads.ts`) to switch a browser over.

@@ -1,9 +1,9 @@
 import { ImageResponse } from 'next/og';
 
 import { loadGeistFont, loadScreenshot, loadWordmark } from '@/lib/brand';
-import { SITE_NAME, TAGLINE } from '@/lib/site';
+import { HEADLINE, TAGLINE } from '@/lib/site';
 
-export const alt = `${SITE_NAME} — ${TAGLINE}`;
+export const alt = TAGLINE;
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -55,9 +55,13 @@ export default async function OpenGraphImage() {
           </svg>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-            <div style={{ fontSize: 60, fontWeight: 600, letterSpacing: -2.2, lineHeight: 1.05 }}>{`${TAGLINE}.`}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', fontSize: 48, fontWeight: 600, letterSpacing: -1.6, lineHeight: 1.08 }}>
+              {HEADLINE.map((line) => (
+                <span key={line}>{line}</span>
+              ))}
+            </div>
             <div style={{ fontSize: 26, lineHeight: 1.35, color: '#59636e' }}>
-              A browser extension that hides test files and other review noise from GitHub diffs.
+              One digest of every thread, bot verdict and review, and a diff that starts with the code.
             </div>
           </div>
 
