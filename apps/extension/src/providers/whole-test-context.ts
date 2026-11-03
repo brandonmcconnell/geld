@@ -5,7 +5,13 @@ import type { ProviderAdapter, ProviderDiffEntry, ProviderDiffLine, ProviderDiff
 import { ProviderWholeSourceCache } from './whole-source';
 import type { ProviderWholeSourceLease, ProviderWholeSourceReader, ProviderWholeSourceValue } from './whole-source';
 
-export interface ProviderNativeContextStep { current(): boolean; activate(): void }
+export interface ProviderNativeContextStep {
+  current(): boolean;
+  activate(): void;
+  /** Recognize only a newly inserted physical row from this activated native gap; this supplies no source authority. */
+  insertedFocus?(target: Element): { readonly row: HTMLElement; readonly newLine: number; readonly newText: string } | null;
+}
+export interface ProviderWholeFocusOwner { current(): HTMLButtonElement | null }
 export interface ProviderWholeTestAdapter {
   readonly readSource: ProviderWholeSourceReader;
   createIntent(doc: Document): { readonly button: HTMLButtonElement; readonly text: HTMLElement };
@@ -17,7 +23,7 @@ export interface ProviderWholeTestAdapter {
 export interface ProviderWholeTestSession {
   mount(entry: ProviderDiffEntry): void;
   source(entry: ProviderDiffEntry): ProviderWholeSourceValue | null;
-  reveal(entry: ProviderDiffEntry, fold: TestFold, open: () => boolean): void;
+  reveal(entry: ProviderDiffEntry, fold: TestFold, open: () => boolean, focus?: ProviderWholeFocusOwner): void;
   cancelReveal(entry: ProviderDiffEntry): void;
   retain(roots: ReadonlySet<HTMLElement>): void;
 }
@@ -82,13 +88,13 @@ export class ProviderWholeTestContext implements ProviderWholeTestSession {
 
   cancelReveal(entry: ProviderDiffEntry): void { this.files.get(entry.root)?.reveal?.abort(); }
 
-  reveal(entry: ProviderDiffEntry, fold: TestFold, open: () => boolean): void {
+  reveal(entry: ProviderDiffEntry, fold: TestFold, open: () => boolean, focus?: ProviderWholeFocusOwner): void {
     const intent = this.files.get(entry.root);if (intent === undefined || this.source(entry) === null) return;
     for (const other of this.files.values()) other.reveal?.abort();
     const abort = new AbortController();intent.reveal = abort;
     const cancel = (event: Event): void => { if (event.isTrusted) abort.abort(); };
     this.doc.addEventListener('pointerdown', cancel, true);this.doc.addEventListener('keydown', cancel, true);
-    void this.revealLoop(intent, fold, open, abort.signal).finally(() => {
+    void this.revealLoop(intent, fold, open, abort, focus).finally(() => {
       this.doc.removeEventListener('pointerdown', cancel, true);this.doc.removeEventListener('keydown', cancel, true);
       if (intent.reveal === abort) intent.reveal = null;
     });
@@ -139,8 +145,8 @@ export class ProviderWholeTestContext implements ProviderWholeTestSession {
     finally { if (intent.abort === abort) intent.abort = null;if (this.files.get(intent.root) === intent) { this.label(intent);this.refresh(); } }
   }
 
-  private async revealLoop(intent: FileIntent, fold: TestFold, open: () => boolean, signal: AbortSignal): Promise<void> {
-    const deadline = Date.now() + 30_000;
+  private async revealLoop(intent: FileIntent, fold: TestFold, open: () => boolean, abort: AbortController, focus?: ProviderWholeFocusOwner): Promise<void> {
+    const signal = abort.signal, deadline = Date.now() + 30_000;let handedOff = false;
     try {
       for (let attempt = 0; attempt < 4 && Date.now() < deadline; attempt++) {
         if (signal.aborted || !open()) return;
@@ -149,8 +155,27 @@ export class ProviderWholeTestContext implements ProviderWholeTestSession {
         const missing = providerMissingNewLines(fold, bound.entry.readLines?.() ?? []);if (missing.length === 0) return;
         const step = this.feature.nextContext(bound.entry, missing);
         if (step === null || !step.current() || !bound.lease.current() || signal.aborted || !open()) return;
-        step.activate();
-        const progressed = await this.waitForProgress(intent, fold, missing.length, open, signal, Math.min(deadline, Date.now() + 8000));
+        const stepDeadline = Math.min(deadline, Date.now() + 8000), control = focus?.current(), url = this.doc.URL;
+        const canHandOff = !handedOff && step.insertedFocus !== undefined && control !== undefined && control !== null && this.doc.activeElement === control && control.isConnected && intent.root.contains(control);
+        const dispose = (): void => { this.doc.removeEventListener('focusin', focused, true);signal.removeEventListener('abort', dispose); };
+        const focused = (event: FocusEvent): void => {
+          if (event.target === control) return;
+          try {
+            const target = event.target;
+            const fresh = this.lease(intent), value = fresh === null ? null : this.source(fresh.entry);
+            const candidate = target instanceof Element ? step.insertedFocus?.(target) : null;
+            const shown = candidate === null || candidate === undefined || fresh === null ? undefined : fresh.entry.readLines?.().find((line) => line.root === candidate.row && line.newLine === candidate.newLine && line.newText === candidate.newText);
+            if (!canHandOff || handedOff || signal.aborted || Date.now() >= stepDeadline || !open() || this.doc.URL !== url || focus?.current() !== control || this.doc.activeElement !== target
+              || fresh === null || !fresh.lease.current() || value === null || value.token !== body.token || candidate === null || candidate === undefined || shown === undefined
+              || !missing.includes(candidate.newLine) || value.lines[candidate.newLine - 1] !== candidate.newText || !control?.isConnected || !intent.root.contains(control)) { dispose();abort.abort();return; }
+            // Focus event trust is not user intent. Only this live operation plus immutable NEW-side agreement permits one return.
+            handedOff = true;dispose();control.focus({ preventScroll: true });
+          } catch { dispose();abort.abort(); }
+        };
+        if (canHandOff) { this.doc.addEventListener('focusin', focused, true);signal.addEventListener('abort', dispose, { once: true }); }
+        let progressed: boolean;
+        try { step.activate();progressed = await this.waitForProgress(intent, fold, missing.length, open, signal, stepDeadline); }
+        finally { dispose(); }
         if (!progressed) return;this.refresh();
       }
     } catch { /* A retired or unavailable native source leaves its displayed-only outline. */ }

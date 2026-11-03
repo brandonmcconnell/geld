@@ -16,7 +16,7 @@ const managers: ProviderWholeTestContext[] = [];
 function deferred<T>() { let resolve!: (value:T)=>void;const promise = new Promise<T>((done) => { resolve = done; });return { promise, resolve }; }
 function fixture() {
   window.location.href = 'https://gitlab.com/group/repo/-/merge_requests/1/diffs?diff_id=101';
-  const row = (n:number, text = source[n - 1]!) => `<tr class="rd-hunk-lines-inline"><td class="rd-line-number" data-position="old"><a data-line-number="${n}"></a></td><td class="rd-line-number" data-position="new"><a data-line-number="${n}"></a></td><td class="rd-line-content"><pre class="rd-line-text">${text}\n</pre></td></tr>`;
+  const row = (n:number, text = source[n - 1]!) => `<tr class="rd-hunk-lines-inline"><td class="rd-line-number" data-position="old"><a class="rd-line-link" href="#line" data-line-number="${n}"></a></td><td class="rd-line-number" data-position="new"><a class="rd-line-link" href="#line" data-line-number="${n}"></a></td><td class="rd-line-content"><pre class="rd-line-text">${text}\n</pre></td></tr>`;
   const appData = { project_path: 'group/repo', mr_path: '/group/repo/-/merge_requests/1', is_fork: 'false', versions: { source_versions: [{ id:101, selected:true, head_sha:H, base_sha:B, start_sha:S }], target_versions: [{ id:101, selected:true, head_sha:H, start_sha:S, is_merge_head:false }] } };
   const fileData = { new_path:PATH, old_path:PATH, diff_refs:{ base_sha:B, head_sha:H, start_sha:S }, blob_raw_path:`/group/repo/-/raw/${H}/${PATH}`, diff_lines_path:`/group/repo/-/blob/${H}/${PATH}/diff_lines` };
   document.body.innerHTML = `<article data-rapid-diffs><div data-diffs-list><diff-file><header data-testid="rd-diff-file-header" aria-label="Diff file controls"><div class="rd-diff-file-info"><input type="checkbox" data-viewed-checkbox></div></header><details data-file-body open><table class="rd-text-view-root"><tbody class="rd-text-view-content"><tr class="rd-hunk-header" data-hunk-header><td><button data-click="expandLines" data-expand-direction="up">Show lines</button></td></tr>${row(4)}${row(5)}</tbody></table></details></diff-file></div></article>`;
@@ -98,4 +98,50 @@ it('checks duplicate/invalid new coordinates and never mistakes old-only rows fo
   expect(providerWholeSourceAgrees(source,[...shown,{...shown[1]!,newLine:4,newText:'wrong'}])).toBe(false);
   expect(providerWholeSourceAgrees(source,shown.map((line)=>({...line,newLine:null})))).toBe(false);
   expect(providerMissingNewLines(f.fold,shown)).toEqual([1,2,3]);
+});
+
+async function focusOperation() {
+  const f = fixture();await f.request();const control = document.createElement('button');control.dataset.geldUi = '';f.root.append(control);control.focus();let ownerCurrent = true;
+  const native = f.root.querySelector<HTMLButtonElement>('[data-expand-direction="up"]')!;native.addEventListener('click', (event) => event.preventDefault());
+  const insert = (number = 3): HTMLAnchorElement => { const holder = document.createElement('tbody');holder.className = 'rd-text-view-content';holder.innerHTML = [1, 2, number].map((n) => f.row(n)).join('');native.closest('tbody')!.before(holder);return holder.querySelector<HTMLAnchorElement>(`.rd-line-number[data-position="old"] a[data-line-number="${number}"]`)!; };
+  return { ...f, control, native, insert, owner: { current: () => ownerCurrent ? control : null }, revoke: () => { ownerCurrent = false; } };
+}
+function unitReaderInput(type: 'keydown' | 'pointerdown'): void { const event = type === 'keydown' ? new KeyboardEvent(type, { key: 'Tab', bubbles: true }) : new MouseEvent(type, { bubbles: true });Object.defineProperty(event, 'isTrusted', { value: true });document.dispatchEvent(event); }
+it('hands newly inserted native OLD3 focus back only through the same row immutable NEW3 and current focused owner', async () => {
+  const f = await focusOperation();let target: HTMLAnchorElement | null = null;const focus = vi.spyOn(f.control, 'focus');f.native.addEventListener('click', () => { target = f.insert();target.focus(); });
+  f.manager.reveal(f.entry, f.fold, () => true, f.owner);expect(target).not.toBeNull();expect(document.activeElement).toBe(f.control);expect(focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });await vi.waitFor(() => expect(f.refresh).toHaveBeenCalledTimes(2));expect(f.manager.source(f.entry)).not.toBeNull();
+});
+it('keeps the bounded listener through asynchronous native insertion/focus and removes it when that step completes', async () => {
+  vi.useFakeTimers();const f = await focusOperation(), focus = vi.spyOn(f.control, 'focus');let later: HTMLAnchorElement | null = null;
+  f.native.addEventListener('click', () => { setTimeout(() => { later = f.insert();later.focus(); }, 30); });f.manager.reveal(f.entry, f.fold, () => true, f.owner);await vi.advanceTimersByTimeAsync(80);expect(document.activeElement).toBe(f.control);expect(focus).toHaveBeenCalledOnce();later!.focus();expect(document.activeElement).toBe(later);expect(focus).toHaveBeenCalledOnce();
+});
+for (const mode of ['existing link', 'wrong body', 'wrong line', 'old-only row', 'stale head', 'stale route', 'stale control', 'closed fold', 'unrelated focus', 'reader key', 'reader pointer', 'BODY only'] as const) it(`never hands context focus back after ${mode}`, async () => {
+  const f = await focusOperation(), focus = vi.spyOn(f.control, 'focus');let open = true;
+  f.native.addEventListener('click', () => {
+    if (mode === 'reader key') unitReaderInput('keydown');if (mode === 'reader pointer') unitReaderInput('pointerdown');
+    if (mode === 'unrelated focus') { const other = document.createElement('button');document.body.append(other);other.focus(); }
+    if (mode === 'stale head') f.root.dataset.fileData = JSON.stringify({ ...f.fileData, diff_refs: { ...f.fileData.diff_refs, head_sha: 'd'.repeat(40) } });
+    if (mode === 'stale route') window.history.replaceState({}, '', '/group/repo/-/merge_requests/2/diffs');
+    if (mode === 'stale control') f.revoke();if (mode === 'closed fold') open = false;
+    const target = mode === 'existing link' ? f.root.querySelector<HTMLAnchorElement>('.rd-line-number[data-position="old"] a')! : f.insert(mode === 'wrong line' ? 5 : 3);
+    if (mode === 'wrong body') target.closest('tr')!.querySelector('.rd-line-text')!.textContent = 'different source\n';
+    if (mode === 'old-only row') target.closest('tr')!.querySelector('[data-position="new"]')!.remove();
+    if (mode === 'BODY only') f.control.blur();else target.focus();
+  });
+  f.manager.reveal(f.entry, f.fold, () => open, f.owner);await Promise.resolve();expect(document.activeElement).not.toBe(f.control);expect(focus).not.toHaveBeenCalled();
+});
+it('does not arm custody for a control that was not focused before the native activation', async () => { const f = await focusOperation(), focus = vi.spyOn(f.control, 'focus');f.control.blur();f.native.addEventListener('click', () => f.insert().focus());f.manager.reveal(f.entry, f.fold, () => true, f.owner);await Promise.resolve();expect(focus).not.toHaveBeenCalled(); });
+it('uses one handoff at most for the entire trusted Show even across multiple progressing context activations', async () => {
+  vi.useFakeTimers();const f = await focusOperation(), focus = vi.spyOn(f.control, 'focus');const insertions: HTMLAnchorElement[] = [];
+  let steps = 0;
+  f.step.mockImplementation(() => { steps++;return { current: () => true, activate: () => { const n = steps;const held = document.createElement('tbody');held.className = 'rd-text-view-content';held.innerHTML = f.row(n);f.native.closest('tbody')!.before(held);const target = held.querySelector<HTMLAnchorElement>('a')!;insertions.push(target);target.focus(); }, insertedFocus: (target) => { const row = target.closest('tr')!;return { row, newLine: steps, newText: source[steps - 1]! }; } }; });
+  f.manager.reveal(f.entry, f.fold, () => true, f.owner);await vi.advanceTimersByTimeAsync(400);expect(focus).toHaveBeenCalledOnce();expect(insertions.length).toBeGreaterThan(1);expect(document.activeElement).toBe(insertions.at(-1));
+});
+it('removes operation listeners immediately on retirement or expiry before a later matching row focuses', async () => {
+  vi.useFakeTimers();const f = await focusOperation(), focus = vi.spyOn(f.control, 'focus');f.manager.reveal(f.entry, f.fold, () => true, f.owner);await vi.advanceTimersByTimeAsync(8100);f.insert().focus();expect(focus).not.toHaveBeenCalled();
+  const second = await focusOperation(), other = vi.spyOn(second.control, 'focus');second.manager.reveal(second.entry, second.fold, () => true, second.owner);second.manager.destroy();second.insert().focus();expect(other).not.toHaveBeenCalled();
+});
+it('releases the exact operation focus listener after success and immediately after unrelated focus cancellation', async () => {
+  const first = await focusOperation(), add = vi.spyOn(document, 'addEventListener'), remove = vi.spyOn(document, 'removeEventListener');first.native.addEventListener('click', () => first.insert().focus());first.manager.reveal(first.entry, first.fold, () => true, first.owner);await vi.waitFor(() => expect(first.refresh).toHaveBeenCalledTimes(2));const installed = add.mock.calls.find(([name]) => name === 'focusin');expect(installed).toBeDefined();expect(remove.mock.calls.some(([name, listener]) => name === 'focusin' && listener === installed![1])).toBe(true);
+  const second = await focusOperation(), outside = document.createElement('button');document.body.append(outside);add.mockClear();remove.mockClear();second.manager.reveal(second.entry, second.fold, () => true, second.owner);const next = add.mock.calls.find(([name]) => name === 'focusin');outside.focus();expect(remove.mock.calls.some(([name, listener]) => name === 'focusin' && listener === next![1])).toBe(true);second.insert().focus();expect(document.activeElement).not.toBe(second.control);
 });
