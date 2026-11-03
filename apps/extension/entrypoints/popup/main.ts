@@ -178,14 +178,34 @@ async function main(): Promise<void> {
     info.className = 'popup__info';
     info.setAttribute('aria-label', `About ${field.label}`);
     info.append(svgFromString(ICON_INFO));
-    info.addEventListener('pointerenter', () => showTip(info, description));
-    info.addEventListener('focus', () => showTip(info, description));
-    info.addEventListener('pointerleave', hideTip);
-    info.addEventListener('blur', hideTip);
+    // Shown while the icon is hovered or focused, hidden once it is neither.
+    let hovered = false;
+    let focused = false;
+    const sync = (): void => {
+      if (hovered || focused) showTip(info, description);
+      else hideTip();
+    };
+    info.addEventListener('pointerenter', () => {
+      hovered = true;
+      sync();
+    });
+    info.addEventListener('pointerleave', () => {
+      hovered = false;
+      sync();
+    });
+    info.addEventListener('focus', () => {
+      focused = true;
+      sync();
+    });
+    info.addEventListener('blur', () => {
+      focused = false;
+      sync();
+    });
     const help = document.createElement('span');
     help.className = 'popup__sr-only';
     help.id = `${field.key}-help`;
     help.textContent = description;
+    info.setAttribute('aria-describedby', help.id);
     const button = document.createElement('button');
     button.id = field.key;
     button.className = 'geld-switch geld-switch--small';
