@@ -24,6 +24,7 @@ import { BITBUCKET_COMMIT_LIST, commitLinkSettingsScope, verifyBitbucketCommitLi
 import { GITLAB_FILE_SEARCH, verifyGitLabFileSearch } from './gitlab-file-search.mjs';
 import { verifyGitLabDisplayedOutline } from './gitlab-displayed-outline.mjs';
 import { verifyGitLabWholeTestContext } from './gitlab-whole-test-context.mjs';
+import { observeGitLabComparisons } from './gitlab-comparison-observer.mjs';
 import { CODERABBIT_FIXTURE, observeCodeRabbitFixture, verifyCodeRabbitCommands } from './gitlab-coderabbit-acceptance.mjs';
 import { verifyGitLabTableHeights } from './gitlab-table-height-acceptance.mjs';
 import { verifyGitLabRoundAttention } from './round-attention-acceptance.mjs';
@@ -64,6 +65,7 @@ const coldBitbucketList = ['bitbucket-list', 'bitbucket-list-commit'].includes(f
 const commitSources = new WeakMap();
 const codeRabbitSources = new WeakMap();
 const nativeBashSources = new WeakMap();
+const gitLabComparisonSources = new WeakMap();
 const GL_MIXED = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs?diff_id=2158520123';
 const GL_OVERVIEW = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334';
 const GL_BOT = 'https://gitlab.com/whitebox-aero/whitebox/-/merge_requests/272';
@@ -331,6 +333,7 @@ async function runCase(name, url, body, discovery = false) {
   let commitLinkSettings;
   let pipelineSettings;
   let pipelineMainAsset;
+  let gitLabComparisonObserver;
   const abort = new AbortController();
   try {
     if (name === 'bitbucket-pipeline-shell' && focus !== 'bitbucket-pipeline-shell') {
@@ -437,6 +440,7 @@ async function runCase(name, url, body, discovery = false) {
       }
     });
     if (name === 'gitlab-bot-digest') observeGitLabBotFixture(page, item);
+    if (name === 'gitlab-mixed') { gitLabComparisonObserver=observeGitLabComparisons(page,item,{extensionId});gitLabComparisonSources.set(page,gitLabComparisonObserver); }
     if (name === 'gitlab-coderabbit-digest') codeRabbitSources.set(page, observeCodeRabbitFixture(page, item, extensionId));
     if (name === 'bitbucket-pipeline-shell') {
       item.nativeMainAsset = {};pipelineMainAsset = observeBitbucketPipelineMainAsset(page, item.nativeMainAsset, { writeArtifact: (file, bytes, signal) => writeFile(resolve(artifacts, file), bytes, { signal }) });
@@ -470,6 +474,11 @@ async function runCase(name, url, body, discovery = false) {
     if (pipelineMainAsset !== undefined) {
       try { await pipelineMainAsset.dispose(); }
       catch (error) { item.nativeMainAsset.status = 'unavailable';item.nativeMainAsset.cleanup = { ...item.nativeMainAsset.cleanup, status: 'failed', error: errorText(error) }; }
+    }
+    if (gitLabComparisonObserver !== undefined) {
+      try { await gitLabComparisonObserver.dispose(); }
+      catch { item.gitLabComparisonObservations.status='unavailable';item.gitLabComparisonObservations.cleanup={status:'failed',code:'OBSERVER_CLEANUP_UNAVAILABLE'}; }
+      if (page !== undefined) gitLabComparisonSources.delete(page);
     }
     if (page !== undefined && !page.isClosed()) {
       try { await page.close(); }
@@ -2697,7 +2706,7 @@ try {
     }
     await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }]);
     item.wholeTestContext = {};
-    await verifyGitLabWholeTestContext(page, { progress: item.wholeTestContext, poll, capture, safeUrl, extensionId,
+    await verifyGitLabWholeTestContext(page, { progress: item.wholeTestContext, poll, capture, safeUrl, extensionId, comparisonObserver:gitLabComparisonSources.get(page),
       readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY),
       writeSettings: (value) => options.evaluate(async (key, saved) => { await chrome.storage.sync.set({ [key]: saved }); }, SETTINGS_KEY, value),
       readState: async () => ({ runtime: await tabState(page), native: await gitLabDom(page) }),

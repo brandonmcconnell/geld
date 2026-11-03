@@ -45,6 +45,16 @@ export function gitLabWholeTestProbe(action='read', argument=null) {
     store.cleanup=()=>{for(const type of ['click','input','change'])document.removeEventListener(type,store.listener,true);};globalThis[KEY]=store;
   }
   if(!store)return null;
+  if(action==='native-eligibility'){
+    const allowed=(node)=>node.closest('[data-geld-ui],[hidden],[inert],[aria-hidden="true"],form,textarea,button,[role="button"],[contenteditable],dialog,[role="dialog"],[role="tooltip"],[popover],[data-testid="noteable-note-container"],li.js-timeline-entry.system-note,.note,.note-text,[data-testid="description-content"],.md,[data-testid="comment"],[data-qa="pull-request-description"],[data-qa="pull-request-overview-activity-content"],.ak-renderer-document')===null;
+    const apps=[...document.querySelectorAll('[data-rapid-diffs][data-app-data]')].filter(allowed),app=root.closest('[data-rapid-diffs][data-app-data]');let details;
+    try{details=JSON.parse(app?.getAttribute('data-app-data')??'null');}catch{return{state:'invalid_native_app'};}
+    const versions=(key)=>Array.isArray(details?.versions?.[key])?details.versions[key].filter((value)=>value?.selected===true).slice(0,9).map((value)=>({selected:true,id:value.id,head_sha:value.head_sha,base_sha:value.base_sha,start_sha:value.start_sha,is_merge_head:value.is_merge_head})):null;
+    const hosts=[...root.querySelectorAll('header[data-testid="rd-diff-file-header"][aria-label="Diff file controls"] > .rd-diff-file-info')].filter((host)=>allowed(host)&&host.closest('diff-file')===root);
+    const search=document.querySelector('section[data-testid="file-tree-container"] input[type="search"],section[data-testid="file-tree-container"] input[placeholder*="Search"]');
+    const nativeDetails=root.querySelector('details[data-file-body]');
+    return{projectPath:details?.project_path,mrPath:details?.mr_path,isFork:details?.is_fork,sourceVersions:versions('source_versions'),targetVersions:versions('target_versions'),nativeApps:apps.length,originalFileInApp:apps.length===1&&apps[0]===app&&allowed(root),headerHosts:hosts.length,contextControls:controls().length,expanded:nativeDetails?nativeDetails.open:[...root.querySelectorAll('button[aria-label="Hide file contents"]')].some((button)=>button.closest('[data-geld-ui]')===null&&button.closest('diff-file')===root&&allowed(button.parentElement??root)),visible:getComputedStyle(root).display!=='none'&&root.getBoundingClientRect().height>0,nativeSearchNonempty:search?search.value!=='' :null,file:{new_path:data.new_path,head_sha:data.diff_refs?.head_sha,base_sha:data.diff_refs?.base_sha,start_sha:data.diff_refs?.start_sha,blob_raw_path:data.blob_raw_path,diff_lines_path:data.diff_lines_path}};
+  }
   const currentRows=rows();const sameOriginal=store.root===root&&root.parentElement===store.parent&&store.url===location.href&&store.data===root.getAttribute('data-file-data')&&(store.firstOpenedRows??store.rows).every((old)=>{
     const current=currentRows.find((line)=>line.node===old.node);return current&&current.number===old.number&&current.text===old.text&&current.html===old.html&&JSON.stringify(current.attributes)===JSON.stringify(old.attributes)&&current.texts.length===old.texts.length&&current.texts.every(([node,text],i)=>node===old.texts[i][0]&&text===old.texts[i][1])&&current.ids.length===old.ids.length&&current.ids.every(([node,id],i)=>node===old.ids[i][0]&&id===old.ids[i][1])&&current.links.length===old.links.length&&current.links.every(([node,href],i)=>node===old.links[i][0]&&href===old.links[i][1]);
   });
@@ -104,7 +114,7 @@ export async function scrollGitLabWholeTestControl(page,target) {
   try{const button=handle.asElement();assert.ok(button,'Second qualified test control unavailable');await button.scrollIntoView();}finally{await handle.dispose();}
 }
 
-export async function verifyGitLabWholeTestContext(page,{progress,poll,capture,readSettings,writeSettings,readState,safeUrl,extensionId}) {
+export async function verifyGitLabWholeTestContext(page,{progress,poll,capture,readSettings,writeSettings,readState,safeUrl,extensionId,comparisonObserver}) {
   progress.status='running';progress.scope='Explicit file intent, exact immutable rendered new source, then explicit original native context expansion; no default-on raw acquisition.';
   const original=structuredClone(await readSettings());assert.equal(original.testOutline,false);const enabled={...original,testOutline:true};let setup=false,prepared=false,failure;const requests=[],responses=[];const pending=new Set();
   const request=(value)=>{let url;try{url=new URL(value.url());}catch{return;}if(url.origin!=='https://gitlab.com')return;const frames=[];let stack=value.initiator?.()?.stack;for(let i=0;stack&&i<8;i++){frames.push(...(stack.callFrames??[]).map((f)=>f.url));stack=stack.parent;}requests.push({url:safeUrl(value.url()),method:value.method(),extensionInitiator:frames.some((frame)=>frame.startsWith(`chrome-extension://${extensionId}/`))});};
@@ -120,6 +130,7 @@ export async function verifyGitLabWholeTestContext(page,{progress,poll,capture,r
     page.on('request',request);page.on('response',response);progress.openCategoryInput=await click('Tests');await poll(read,(s)=>intact(s)&&s.visible,'Native original test file visible for whole-context intent',8000);
     prepared=true;await writeSettings(structuredClone(enabled));assert.ok(isDeepStrictEqual(await readSettings(),enabled));
     progress.beforeIntent=await poll(read,(s)=>intact(s)&&s.folds.length===3,'Shown-source outline baseline before explicit whole-context intent',8000);
+    if(comparisonObserver){try{progress.comparisonCheckpoint=await comparisonObserver.checkpoint('beforeIntent',await page.evaluate(gitLabWholeTestProbe,'native-eligibility'));}catch{progress.comparisonCheckpoint={status:'unavailable',code:'NATIVE_CHECKPOINT_UNAVAILABLE'};}}
     assert.equal(requests.filter((r)=>r.extensionInitiator&&/\/-\/raw\//.test(r.url)).length,0,'No raw acquisition before real file intent');
     if(progress.beforeIntent.intent===null){progress.status='unavailable';progress.reason='Fresh acquired/native new-source authority or eligible original file-header/context control was unavailable. No raw source request was made.';}
     else {
