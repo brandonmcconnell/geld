@@ -244,7 +244,7 @@ export function assertProviderDashboard(snapshot, originalsVisible = false) {
   assert.deepEqual(snapshot.appearance, snapshot.nativeAppearance, 'Dashboard typography and colors must match native body text and card surface');
 }
 
-export async function verifyProviderDashboardUi(page, progress, { poll, capture }) {
+export async function verifyProviderDashboardUi(page, progress, { poll, capture, onOriginalsShown }) {
   const read = (mode = 'read') => page.evaluate(providerDashboardProbe, mode);
   const click = async (selector, index = null) => {
     const handles = await page.$$(selector);
@@ -278,9 +278,12 @@ export async function verifyProviderDashboardUi(page, progress, { poll, capture 
     await click('button[data-geld-original-conversation]');
     progress.originalsShown = await poll(read, (value) => value.originalVisible === value.originalCount && value.sameOriginals, 'Real Show original conversation restores retained native entries');
     assertProviderDashboard(progress.originalsShown, true);
-    await click('button[data-geld-original-conversation]');
-    progress.originalsHidden = await poll(read, (value) => value.originalVisible === 0 && value.sameOriginals, 'Real Hide original conversation suppresses the same retained entries');
-    assertProviderDashboard(progress.originalsHidden);
+    try { await onOriginalsShown?.(progress.originalsShown); }
+    finally {
+      await click('button[data-geld-original-conversation]');
+      progress.originalsHidden = await poll(read, (value) => value.originalVisible === 0 && value.sameOriginals, 'Real Hide original conversation suppresses the same retained entries');
+      assertProviderDashboard(progress.originalsHidden);
+    }
     await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
     await new Promise((resolve) => setTimeout(resolve, 350));
     progress.dark = await poll(read, (value) => value.sameOriginals, 'Dashboard remains current under native dark preference');

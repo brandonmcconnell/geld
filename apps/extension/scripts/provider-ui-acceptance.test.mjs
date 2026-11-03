@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
 import { Window } from 'happy-dom';
-import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertProviderDashboard, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, providerHeaderHintTarget, openProviderReviewAncestors, providerDashboardProbe, providerUiProbe, verifyGitLabCategoryFallback } from './provider-ui-acceptance.mjs';
+import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertProviderDashboard, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, providerHeaderHintTarget, openProviderReviewAncestors, providerDashboardProbe, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
 
 let window;
 let saved;
@@ -205,4 +205,40 @@ for (const failure of [false, true]) test(`native sidebar fallback ${failure ? '
   const promise = verifyGitLabCategoryFallback(page, {}, { poll, interact: async () => { if (failure) throw Error('Interaction failed');return { tested: true }; }, capture: async () => 'fixture.png' });
   if (failure) await assert.rejects(promise, /Interaction failed/);else await promise;
   assert.equal(clicks, 2);assert.equal(button.getAttribute('aria-label'), 'Hide file browser');assert.equal(sidebar.hidden, false);assert.equal(fallback.hidden, true);
+});
+
+
+for (const failure of [false, true]) test(`visible-original callback ${failure ? 'restores originals and propagates failure' : 'runs between the existing show and hide clicks'}`, async () => {
+  dashboard();
+  const original = document.querySelector('#note_1');
+  const order = [];
+  let target;
+  document.elementFromPoint = () => target;
+  for (const toggle of document.querySelectorAll('[data-geld-review-toggle]')) toggle.addEventListener('click', () => {
+    const open = toggle.getAttribute('aria-expanded') !== 'true';
+    toggle.setAttribute('aria-expanded', String(open));
+    document.getElementById(toggle.getAttribute('aria-controls')).hidden = !open;
+  });
+  document.querySelector('[data-geld-original-conversation]').addEventListener('click', () => {
+    const shown = original.hasAttribute('hidden');order.push(shown ? 'show' : 'hide');
+    if (shown) original.removeAttribute('hidden');else original.setAttribute('hidden', 'until-found');
+  });
+  const page = {
+    evaluate: async (fn, value) => fn(value), isClosed: () => false,
+    $$: async selector => [...document.querySelectorAll(selector)].map(node => ({
+      evaluate: async fn => { target = node;node.scrollIntoView = () => {};return fn(node); }, dispose: async () => {},
+    })),
+    mouse: { click: async () => target.click() }, emulateMediaFeatures: async () => {},
+  };
+  const progress = {};
+  const promise = verifyProviderDashboardUi(page, progress, {
+    poll: async (read, accepts) => { const value = await read();assert.ok(accepts(value));return value; }, capture: async () => 'fixture.png',
+    onOriginalsShown: async snapshot => {
+      order.push('callback');assert.equal(snapshot.originalVisible, 1);assert.equal(original.hasAttribute('hidden'), false);
+      if (failure) throw Error('Author comparison failed');
+    },
+  });
+  if (failure) await assert.rejects(promise, /Author comparison failed/);else await promise;
+  assert.deepEqual(order, ['show', 'callback', 'hide']);
+  assert.equal(original.getAttribute('hidden'), 'until-found');assert.equal(progress.originalsHidden.originalVisible, 0);
 });

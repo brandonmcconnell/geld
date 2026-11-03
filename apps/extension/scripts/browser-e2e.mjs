@@ -3366,9 +3366,10 @@ try {
   const verifyDigestUi = async (page, item) => {
     item.commentDigest = await bitbucketCommentDigest(page);
     item.dashboardUi = {};
-    await verifyProviderDashboardUi(page, item.dashboardUi, { poll, capture: (name) => capture(page, `bitbucket-${name}`) });
-    item.authorPresentation = await authorThemeEvidence(page, 'bitbucket', 'comment-471253038');
-    assertAuthorThemeEvidence(item.authorPresentation);
+    await verifyProviderDashboardUi(page, item.dashboardUi, { poll, capture: (name) => capture(page, `bitbucket-${name}`), onOriginalsShown: async () => {
+      item.authorPresentation = await authorThemeEvidence(page, 'bitbucket', 'comment-471253038');
+      assertAuthorThemeEvidence(item.authorPresentation);
+    } });
     item.state = await poll(() => tabState(page), (value) => value.repository?.provider === 'bitbucket' && value.visible !== null, 'Bitbucket overview has computed visible totals');
     item.headerUi = await poll(() => page.evaluate(providerUiProbe, 'bitbucket'), (value) => value.counts.additions.length > 0 && value.counts.deletions.length > 0, 'Visible Bitbucket overview additions and deletions');
     assertVisibleProviderCounts(item.headerUi, item.state.visible);
