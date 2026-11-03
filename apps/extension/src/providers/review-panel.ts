@@ -197,6 +197,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   let destroyed = false;
   let items: readonly ReviewItem[] = [];
   let nativeItems: ReadonlyMap<string, ReviewItem> = new Map();
+  const copyFocusTargets = new WeakMap<HTMLElement, { readonly subject: string; readonly route: string; readonly item: string; readonly kind: 'markdown' | 'fix'; readonly source: string }>();
   const authorPresentations = new Map<string, ProviderReviewAuthorPresentation>();
   let bots: readonly BotVerdictRecord[] = [];
   let identities: ReviewerIdentityControl[] = [];
@@ -335,6 +336,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     message.setAttribute('role', 'status');message.setAttribute('aria-live', 'polite');
     const subject = JSON.stringify(input.subject);
     const route = new URL(doc.URL);route.hash = '';
+    const nativeItem = nativeItems.get(itemId);
+    if (nativeItem !== undefined) copyFocusTargets.set(button, { subject, route: route.href, item: itemId, kind, source: JSON.stringify(nativeItem) });
     const current = (): boolean => {
       const active = new URL(doc.URL);active.hash = '';
       return !destroyed && button.isConnected && subject === JSON.stringify(input.subject) && route.href === active.href;
@@ -1125,6 +1128,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function render(): void {
     if (destroyed) return;
     const focused = doc.activeElement;
+    const copyFocus = focused instanceof HTMLElement && panel.contains(focused) && !focused.matches(':disabled') ? copyFocusTargets.get(focused) : undefined;
     const commentControlId = focused instanceof HTMLElement && panel.contains(focused) && focused.hasAttribute('data-geld-comment-control') ? focused.id : null;
     const requestFocus = focused instanceof HTMLElement && panel.contains(focused) && focused.closest('[data-geld-bot-request]') !== null ? focused : null;
     const dashboardFocus = focused instanceof HTMLElement && panel.contains(focused)
@@ -1331,6 +1335,16 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       }
     }
     panel.replaceChildren(...children);
+    if (copyFocus !== undefined && copyFocus.subject === nextRenderScope && (doc.activeElement === doc.body || doc.activeElement === focused)) {
+      const route = new URL(doc.URL);route.hash = '';
+      const candidates = [...panel.querySelectorAll<HTMLButtonElement>('[data-geld-item-copy]')].filter((button) => {
+        const target = copyFocusTargets.get(button);
+        return target !== undefined && target.subject === copyFocus.subject && target.route === copyFocus.route && target.route === route.href
+          && target.item === copyFocus.item && target.kind === copyFocus.kind && target.source === copyFocus.source;
+      });
+      const target = candidates.length === 1 ? candidates[0] : undefined;
+      if (target !== undefined && !target.disabled && target.closest('[hidden], [inert], [aria-hidden="true"], details:not([open]), [data-geld-review-open="false"]') === null) target.focus({ preventScroll: true });
+    }
     for (const request of options.botRequests ?? []) botRequests.get(request.key)?.update(request);
     for (const [key, control] of botRequests) {
       if (!panel.contains(control.element)) { control.destroy();botRequests.delete(key); }
