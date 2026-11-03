@@ -276,6 +276,26 @@ async function pause(ms, signal = currentCaseAbort?.signal) {
   try { await caseOperation(new Promise((done) => { timer = setTimeout(done, ms); }), signal); }
   finally { clearTimeout(timer); }
 }
+async function captureBitbucketPrControl(page, target, geometry) {
+  if (!['intent', 45, 83].includes(target)) return { unavailable: 'unknown_control' };
+  const actual = new URL(page.url()), expected = new URL(bitbucketPrWholeURL);
+  if (actual.origin !== expected.origin || actual.pathname !== expected.pathname || actual.search || actual.username || actual.password) return { unavailable: 'scope_changed' };
+  const { rect, viewport } = geometry;
+  if (![rect?.left, rect?.top, rect?.width, rect?.height, viewport?.width, viewport?.height].every(Number.isFinite) || rect.width <= 0 || rect.height <= 0 || rect.height > 160) return { unavailable: 'invalid_geometry' };
+  const x = Math.max(0, Math.floor(rect.left - 40)), y = Math.max(0, Math.floor(rect.top - 40));
+  const right = Math.min(viewport.width, Math.ceil(rect.left + rect.width + 40)), bottom = Math.min(viewport.height, Math.ceil(rect.top + rect.height + 40));
+  const clip = { x, y, width: right - x, height: bottom - y };
+  if (clip.width <= 0 || clip.height <= 0 || clip.width > viewport.width || clip.height > 240) return { unavailable: 'invalid_geometry' };
+  const fields = await page.evaluate(box => [...document.querySelectorAll('form,input,textarea,select,[contenteditable],iframe')].some(node => {
+    const rect = node.getBoundingClientRect(), style = getComputedStyle(node);
+    return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0 && rect.left < box.x + box.width && rect.right > box.x && rect.top < box.y + box.height && rect.bottom > box.y;
+  }), clip);
+  if (fields) return { unavailable: 'interactive_fields' };
+  const file = `bitbucket-pr-control-${target}.png`;
+  await page.screenshot({ path: resolve(artifacts, file), clip, captureBeyondViewport: false });
+  return { file, clip, scope: 'Known public PR control intersection only' };
+}
+
 async function poll(read, accepts, label, ms = WAIT_MS) {
   const expires = Date.now() + ms;
   let last;
@@ -3064,7 +3084,7 @@ try {
 
   await runCase('bitbucket-pr-whole-context', bitbucketPrWholeURL, async (page,item) => {
     const context=bitbucketWholeCases.get(page);assert.ok(context,'Dedicated PR whole-context scope unavailable');
-    return verifyBitbucketPrWhole(page,{...context,poll,progress:item.bitbucketWhole,guardBudget:guardBitbucketPrContextBudget,readCounters:async()=>({state:await tabState(page),native:await bitbucketDom(page)}),captureDiagnostic:async html=>{const file='bitbucket-pr-target-diagnostic.html';await writeFile(resolve(artifacts,file),html);return{file,scope:'Sanitized known public target only; no scripts, forms, source URLs or token-like attributes.'};}});
+    return verifyBitbucketPrWhole(page,{...context,poll,progress:item.bitbucketWhole,guardBudget:guardBitbucketPrContextBudget,captureControl:(target,geometry)=>captureBitbucketPrControl(page,target,geometry),readCounters:async()=>({state:await tabState(page),native:await bitbucketDom(page)}),captureDiagnostic:async html=>{const file='bitbucket-pr-target-diagnostic.html';await writeFile(resolve(artifacts,file),html);return{file,scope:'Sanitized known public target only; no scripts, forms, source URLs or token-like attributes.'};}});
   }, true);
 
   await runCase('bitbucket-whole-context', bitbucketWholeURL, async (page,item) => {
