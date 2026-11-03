@@ -3,13 +3,17 @@ import type { RepositoryIdentity } from '@geld/core';
 import { parseProviderDiffSourceFacts, providerBitbucketComparisonKey, providerBitbucketReferenceResolution, providerSourceSubject, providerSourceSubjectKey } from '../providers/source-facts';
 import type { ProviderDiffSourceFacts, ProviderNativeSourceFrame, ProviderNativeSourceReference } from '../providers/source-facts';
 import type { ProviderDiffEntry, ProviderDiffResult, ProviderNativeView, ProviderPage } from '../providers/types';
-import type { ProviderWholeSourcePreparation } from '../providers/whole-test-context';
+import type { ProviderNativeContextSource, ProviderWholeSourcePreparation } from '../providers/whole-test-context';
 
 const excluded = '[data-geld-ui],.ak-renderer-document,[data-testid="comment"],[data-testid="comment-content"],[data-qa="pr-activity"],[data-qa="pull-request-description"],form,input,textarea,[contenteditable]';
 const popupSelector = '[role="menu"],[role="listbox"],[role="dialog"],[popover]';
 const readers = new WeakMap<Document, BitbucketSourceReferences>();
 interface GlobalFrame { readonly key: string; readonly region: HTMLElement; readonly watched: readonly HTMLElement[]; current(): boolean }
-interface FileFrame { readonly root: HTMLElement; readonly opener: HTMLButtonElement; current(): boolean }
+interface FileFrame {
+  readonly root: HTMLElement; readonly opener: HTMLButtonElement; current(): boolean;
+  armContext(button: HTMLButtonElement, before: number | null, after: number | null, oldBefore: number | null, oldAfter: number | null, source: readonly string[]): boolean;
+  cancelContext(): void;
+}
 interface Active { readonly key: string; readonly page: ProviderPage; readonly facts: ProviderDiffSourceFacts; frame: GlobalFrame | null }
 interface Captured { readonly reference: ProviderNativeSourceReference; readonly popup: HTMLElement; readonly link: HTMLAnchorElement; readonly parent: Element | null; readonly popupParent: Element | null }
 interface Seal { readonly file: FileFrame; readonly captured: Captured }
@@ -89,6 +93,11 @@ function sourceRow(row: HTMLElement): SourceRow | null {
   }
   return { row, parent: row.parentElement, code, numbers, old, next, text, kind };
 }
+function sameRow(before: SourceRow, after: SourceRow): boolean {
+  return after.row === before.row && after.parent === before.parent && after.code === before.code && after.numbers === before.numbers
+    && after.old === before.old && after.next === before.next && after.text === before.text && after.kind === before.kind;
+}
+function rowKey(row: SourceRow): string { return JSON.stringify([row.old, row.next, row.kind, row.text]); }
 function fileFrame(entry: Pick<ProviderDiffEntry, 'root' | 'path'>, region: HTMLElement): FileFrame | null {
   const root = entry.root;
   if (!native(root) || root.parentElement !== region) return null;
@@ -103,19 +112,63 @@ function fileFrame(entry: Pick<ProviderDiffEntry, 'root' | 'path'>, region: HTML
     || buttons?.length !== 1 || !(opener instanceof HTMLButtonElement) || opener.parentElement !== menu || opener.type !== 'button'
     || opener.getAttribute('aria-haspopup') !== 'true' || opener.querySelectorAll('span[role="img"][aria-label="Diff actions"]').length !== 1) return null;
   const nodes = [root, anchor, article, header, title, menu, opener], parents = nodes.map((node) => node.parentElement);
-  const shownRows = [...article.querySelectorAll<HTMLElement>('[data-qa="code-line"]')].filter(native).map(sourceRow);
-  if (shownRows.length === 0 || shownRows.some((row) => row === null)) return null;
-  return { root, opener, current: () => nodes.every((node, index) => native(node) && node.parentElement === parents[index]) && root.parentElement === region
+  const readRows = (): SourceRow[] | null => {
+    const elements = [...article.querySelectorAll<HTMLElement>('[data-qa="code-line"]')].filter(native);
+    if (elements.length === 0 || elements.length > 20_000) return null;
+    const rows: SourceRow[] = [];
+    for (const element of elements) { const row = sourceRow(element);if (row === null) return null;rows.push(row); }
+    return rows;
+  };
+  const initialRows = readRows();if (initialRows === null) return null;
+  let shownRows = initialRows;
+  let transition: { readonly before: number | null; readonly after: number | null; readonly oldBefore: number | null; readonly oldAfter: number | null; readonly source: readonly string[]; readonly deadline: number } | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const cancelContext = (): void => { transition = null;if (timer !== null) clearTimeout(timer);timer = null; };
+  const structure = (): boolean => nodes.every((node, index) => native(node) && node.parentElement === parents[index]) && root.parentElement === region
     && root.querySelectorAll(':scope > div[id^="chg-"]').length === 1 && root.querySelectorAll('article[data-qa="branch-diff-file"]').length === 1
     && article.querySelectorAll('[data-qa="bk-file__header"][data-testid="file-header"]').length === 1 && header.querySelectorAll('h2[data-qa="bk-filepath"]').length === 1
     && header.querySelectorAll('[data-qa="bk-file__menu"]').length === 1 && menu.querySelectorAll('button').length === 1
     && anchor.id === `chg-${entry.path}` && title.textContent?.trim() === entry.path && !opener.disabled && opener.getAttribute('aria-disabled') !== 'true'
-    && opener.getAttribute('aria-haspopup') === 'true' && ['false', 'true'].includes(opener.getAttribute('aria-expanded') ?? '') && shown(opener)
-    && shownRows.every((before) => {
-      if (before === null || !native(before.row) || !article.contains(before.row)) return false;
-      const after = sourceRow(before.row);return after !== null && after.parent === before.parent && after.code === before.code && after.numbers === before.numbers
-        && after.old === before.old && after.next === before.next && after.text === before.text && after.kind === before.kind;
-    }) };
+    && opener.getAttribute('aria-haspopup') === 'true' && ['false', 'true'].includes(opener.getAttribute('aria-expanded') ?? '') && shown(opener);
+  const current = (): boolean => {
+    if (!structure()) return false;
+    const rows = readRows();if (rows === null) return false;
+    if (transition !== null && Date.now() >= transition.deadline) cancelContext();
+    if (transition === null) {
+      const byNode = new Map(rows.map(row => [row.row, row]));
+      return shownRows.every(before => { const after = byNode.get(before.row);return after !== undefined && sameRow(before, after); });
+    }
+    if (rows.length === shownRows.length && rows.every((row, index) => sameRow(shownRows[index]!, row))) return true;
+    // Native context prepends/merges index-keyed chunks: accept that one remount only with
+    // unchanged prior semantics and additional NEW-side context proven by the full source.
+    const previous = new Set(shownRows.map(rowKey)), keys = rows.map(rowKey), next = new Set(keys);
+    if (previous.size !== shownRows.length || next.size !== rows.length) return false;
+    let priorIndex = 0, lastNew = 0, additions = 0;
+    for (const row of rows) {
+      if (row.next !== null) {
+        const line = Number(row.next);
+        if (line <= lastNew || transition.source[line - 1] !== row.text) return false;
+        lastNew = line;
+      }
+      const key = rowKey(row);
+      if (previous.has(key)) { if (key !== rowKey(shownRows[priorIndex++]!)) return false; }
+      else {
+        if (row.kind !== ' ' || row.next === null || row.old === null || Number(row.next) <= (transition.before ?? 0) || Number(row.next) >= (transition.after ?? Infinity)
+          || Number(row.old) <= (transition.oldBefore ?? 0) || Number(row.old) >= (transition.oldAfter ?? Infinity)) return false;
+        additions++;
+      }
+    }
+    if (priorIndex !== shownRows.length || additions === 0) return false;
+    shownRows = rows;cancelContext();return true;
+  };
+  return { root, opener, current, cancelContext, armContext: (button, before, after, oldBefore, oldAfter, source) => {
+    if (transition !== null || !current() || !native(button) || !article.contains(button) || button.disabled || !button.matches('button[data-qa="pr-diff-show-more-lines-above"],button[data-qa="pr-diff-show-more-lines-below"]')
+      || ![before, after, oldBefore, oldAfter].every(value => value === null || Number.isSafeInteger(value) && value > 0) || (before ?? 0) >= (after ?? Infinity) || (oldBefore ?? 0) >= (oldAfter ?? Infinity)
+      || source.length === 0 || source.length > 10_000 || source.some(line => /[\r\n\0]/.test(line))) return false;
+    const rows = readRows();if (rows === null || rows.some(row => row.next !== null && source[Number(row.next) - 1] !== row.text)) return false;
+    shownRows = rows;transition = { before, after, oldBefore, oldAfter, source: [...source], deadline: Date.now() + 8000 };
+    timer = setTimeout(cancelContext, 8000);return true;
+  } };
 }
 
 function sealCurrent(seal: Seal): boolean {
@@ -206,8 +259,8 @@ export class BitbucketSourceReferences implements ProviderNativeView {
   }
   suspended(): boolean { return false; }
   sourceUnavailable(): boolean { return false; }
-  stop(): void { this.observer.disconnect();this.observation?.abort();this.operation?.abort();this.observation = null;this.operation = null;this.doc.removeEventListener('click', this.nativeOpened, true);this.doc.defaultView?.removeEventListener('popstate', this.navigated);this.doc.defaultView?.removeEventListener('pagehide', this.navigated);this.active = null;this.seals.clear();if (readers.get(this.doc) === this) readers.delete(this.doc); }
-  private retireFrame(): void { this.observation?.abort();this.operation?.abort();this.observation = null;this.operation = null;this.epoch++;this.seals.clear();if (this.active !== null) this.active.frame = null;this.changed(); }
+  stop(): void { this.observer.disconnect();this.observation?.abort();this.operation?.abort();this.observation = null;this.operation = null;this.doc.removeEventListener('click', this.nativeOpened, true);this.doc.defaultView?.removeEventListener('popstate', this.navigated);this.doc.defaultView?.removeEventListener('pagehide', this.navigated);this.active = null;for (const seal of this.seals.values()) seal.file.cancelContext();this.seals.clear();if (readers.get(this.doc) === this) readers.delete(this.doc); }
+  private retireFrame(): void { this.observation?.abort();this.operation?.abort();this.observation = null;this.operation = null;this.epoch++;for (const seal of this.seals.values()) seal.file.cancelContext();this.seals.clear();if (this.active !== null) this.active.frame = null;this.changed(); }
   private frame(): GlobalFrame | null {
     const active = this.active;if (active === null) return null;
     if (active.frame !== null && !active.frame.current()) this.retireFrame();
@@ -223,6 +276,21 @@ export class BitbucketSourceReferences implements ProviderNativeView {
   prepare(entry: ProviderDiffEntry): ProviderWholeSourcePreparation | null {
     const selected = this.selection(entry);if (selected === null) return null;
     return { key: selected.key, origin: selected.repository.origin, current: selected.current, run: (signal, focus) => this.openSource(selected, signal, focus) };
+  }
+  prepareContext(entry: ProviderDiffEntry, button: HTMLButtonElement, before: number | null, after: number | null, source: ProviderNativeContextSource): boolean {
+    const active = this.active, frame = this.frame(), seal = this.seals.get(entry.root), comparison = active?.facts.comparison;
+    if (active === null || frame === null || comparison?.kind !== 'bitbucket-review' || seal === undefined || !frame.current() || !sealCurrent(seal)) return false;
+    const reference = seal.captured.reference, revision = source.revision;
+    if (revision.key !== JSON.stringify([repositoryKey(reference.repository), comparison.headSha, entry.path]) || revision.provenance !== 'provider-resolved-native-reference' || revision.headSha !== comparison.headSha || revision.path !== entry.path
+      || reference.path !== entry.path || repositoryKey(revision.repository) !== repositoryKey(reference.repository)
+      || reference.acquiredComparisonKey !== providerBitbucketComparisonKey(comparison)) return false;
+    const heading = button.closest('.diff-chunk > .diff-chunk-inner > .chunk-heading-wrapper'), lines = entry.readLines?.() ?? [];
+    const at = lines.findIndex(line => line.kind === 'hunk' && line.root === heading);
+    if (at < 0 || (lines.slice(0, at).findLast(line => line.newLine !== null)?.newLine ?? null) !== before
+      || (lines.slice(at + 1).find(line => line.newLine !== null)?.newLine ?? null) !== after) return false;
+    const oldBefore = lines.slice(0, at).findLast(line => line.oldLine !== null)?.oldLine ?? null;
+    const oldAfter = lines.slice(at + 1).find(line => line.oldLine !== null)?.oldLine ?? null;
+    return seal.file.armContext(button, before, after, oldBefore, oldAfter, source.source.lines);
   }
   private selection(entry: Pick<ProviderDiffEntry, 'root' | 'path'>): Selection | null {
     const active = this.active, frame = this.frame(), comparison = active?.facts.comparison;
@@ -271,3 +339,6 @@ export class BitbucketSourceReferences implements ProviderNativeView {
 
 export function bitbucketReferenceFrame(doc: Document, region: HTMLElement): ProviderNativeSourceFrame | null { return readers.get(doc)?.readFrame(region) ?? null; }
 export function bitbucketPrepareSource(entry: ProviderDiffEntry): ProviderWholeSourcePreparation | null { return readers.get(entry.root.ownerDocument)?.prepare(entry) ?? null; }
+export function bitbucketPrepareContext(entry: ProviderDiffEntry, button: HTMLButtonElement, before: number | null, after: number | null, source: ProviderNativeContextSource): boolean {
+  return readers.get(entry.root.ownerDocument)?.prepareContext(entry, button, before, after, source) ?? false;
+}

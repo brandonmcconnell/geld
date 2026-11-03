@@ -32,7 +32,7 @@ export class BitbucketWhitespaceLease {
   private waiting: Waiting | null = null;
   private editing: Editing | null = null;
   private dispatching = false;
-  private stable: { readonly subject: string; readonly value: boolean; readonly unset: boolean; readonly diff: object; readonly stats: object; readonly at: number } | null = null;
+  private stable: { readonly owner: object; readonly panel: object | null; readonly subject: string; readonly value: boolean; readonly unset: boolean; readonly diff: object; readonly stats: object; readonly at: number } | null = null;
   private epoch = 0;
   private subject: string | null = null;
   private receipt: WhitespaceReceipt = { status: 'legacy', value: null, epoch: 0 };
@@ -98,7 +98,12 @@ export class BitbucketWhitespaceLease {
     const desired = !this.force || this.blocked === snapshot.subject ? snapshot.value : this.choice?.subject === snapshot.subject ? this.choice.value : true;
     if (snapshot.value === desired) {
       const stable = this.stable;
-      if (stable === null || stable.subject !== snapshot.subject || stable.value !== snapshot.value || stable.unset !== snapshot.unset || stable.diff !== snapshot.diff || stable.stats !== snapshot.stats) { this.stable = { subject: snapshot.subject, value: snapshot.value, unset: snapshot.unset, diff: snapshot.diff, stats: snapshot.stats, at: this.now() };this.publish('pending', null);return; }
+      // Native EXPAND_CONTEXT.SUCCESS replaces diff arrays without changing the comparison mode.
+      // Keep an already acknowledged idle mode so its source leases survive that row refresh.
+      if (this.receipt.status === 'ready' && stable !== null && stable.owner === snapshot.owner && stable.panel === snapshot.panel && stable.subject === snapshot.subject && stable.value === snapshot.value && stable.unset === snapshot.unset) {
+        this.stable = { ...stable, diff: snapshot.diff, stats: snapshot.stats };return;
+      }
+      if (stable === null || stable.owner !== snapshot.owner || stable.panel !== snapshot.panel || stable.subject !== snapshot.subject || stable.value !== snapshot.value || stable.unset !== snapshot.unset || stable.diff !== snapshot.diff || stable.stats !== snapshot.stats) { this.stable = { owner: snapshot.owner, panel: snapshot.panel, subject: snapshot.subject, value: snapshot.value, unset: snapshot.unset, diff: snapshot.diff, stats: snapshot.stats, at: this.now() };this.publish('pending', null);return; }
       if (this.now() - stable.at >= 150) this.publish('ready', snapshot.value);return;
     }
     this.stable = null;
@@ -116,7 +121,7 @@ export class BitbucketWhitespaceLease {
     this.observeLoading(snapshot);
     const waiting = this.waiting;if (waiting === null) return true;
     if (snapshot.value !== waiting.value || snapshot.unset !== waiting.unset || !waiting.diffStarted || !waiting.statsStarted || snapshot.busy || snapshot.diff === waiting.diff || snapshot.stats === waiting.stats) { this.publish('pending', null);return false; }
-    this.waiting = null;this.stable = { subject: snapshot.subject, value: snapshot.value, unset: snapshot.unset, diff: snapshot.diff, stats: snapshot.stats, at: this.now() - 150 };this.publish(waiting.after, waiting.after === 'ready' ? snapshot.value : null);return true;
+    this.waiting = null;this.stable = { owner: snapshot.owner, panel: snapshot.panel, subject: snapshot.subject, value: snapshot.value, unset: snapshot.unset, diff: snapshot.diff, stats: snapshot.stats, at: this.now() - 150 };this.publish(waiting.after, waiting.after === 'ready' ? snapshot.value : null);return true;
   }
   suspend(): void {
     const snapshot = this.read();if (snapshot === null) return;

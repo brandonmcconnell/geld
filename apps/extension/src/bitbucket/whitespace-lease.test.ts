@@ -10,6 +10,22 @@ function fixture(raw: boolean | 'unset' = false) {
   return { lease, values, raw: () => Reflect.get(state.settings, 'globalShouldIgnoreWhitespace'), patch: (patch: Partial<NativeWhitespaceSnapshot>) => { now += 250;state = { ...state, ...patch };lease.tick(); }, settle: () => { now += 250;state = { ...state, diffLoading: true, statsLoading: true, busy: true };lease.tick();state = { ...state, diffLoading: false, statsLoading: false, diff: [], stats: [], busy: false };lease.tick(); } };
 }
 describe('Bitbucket native in-memory whitespace lease', () => {
+  it.each([false, true, 'unset'] as const)('retains an acknowledged idle mode across native context array replacements: %s', raw => {
+    const f = fixture(raw);f.lease.update(true, false);f.patch({});const receipt = f.lease.state();
+    expect(receipt.status).toBe('ready');
+    f.patch({ diff: [] });f.patch({ diff: [], stats: [] });
+    expect(f.lease.state()).toBe(receipt);expect(f.values).toEqual([]);expect(f.raw()).toBe(raw === 'unset' ? undefined : raw);
+  });
+  it('retains the owned ready mode through context refresh and still restores the exact unset baseline', () => {
+    const f = fixture('unset');f.lease.update(true);f.settle();const receipt = f.lease.state();
+    f.patch({ diff: [] });expect(f.lease.state()).toBe(receipt);expect(f.values).toEqual([true]);
+    f.lease.stop();expect(f.values).toEqual([true, undefined]);
+  });
+  it.each(['owner', 'panel', 'subject', 'busy', 'open', 'failed', 'unset', 'value'] as const)('does not preserve ready after %s changes during an array refresh', change => {
+    const f = fixture();f.lease.update(true, false);f.patch({});const receipt = f.lease.state();
+    const patch: Partial<NativeWhitespaceSnapshot> = { diff: [], stats: [], [change]: change === 'owner' || change === 'panel' ? {} : change === 'subject' ? 'other' : true };
+    f.patch(patch);expect(f.lease.state()).not.toBe(receipt);expect(f.lease.state().status).not.toBe('ready');
+  });
   it('holds only its existing acquisition through source-qualified missing-region loading', () => {
     const f = fixture('unset');f.lease.update(true);f.patch({ current: false, loadingCurrent: true, diffLoading: true, statsLoading: true, busy: true });
     expect(f.values).toEqual([true]);expect(f.lease.state()).toMatchObject({ status: 'pending', value: null });
