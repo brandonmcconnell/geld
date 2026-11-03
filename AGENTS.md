@@ -2567,3 +2567,7 @@ Table content, native source identity and unrelated controls remain strictly com
 
 Installed dashboard theme checks wait for the owned surface to match the native surface after a real OS color-scheme change.
 They still require exact typography and color equality, and failures include the two bounded computed-style records.
+
+Bitbucket lazy file placeholders have no Viewed checkbox until the native diff is hydrated.
+The UI continuity lease retains original anchors, wrapper roots, tree links and existing Viewed controls, while permitting a newly hydrated native Viewed control only in its unchecked state.
+Its final comparison records field-specific identity mismatches and still rejects replaced existing controls, changed links or newly checked files.
