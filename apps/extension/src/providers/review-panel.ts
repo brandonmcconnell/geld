@@ -473,6 +473,11 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const reviewers = input.reviewers;
     const summary = reviewStandingSummary();
     const section = disclosure('reviewers', summary.label, false);
+    const summaryElement = section.querySelector('summary');
+    if (summaryElement !== null) {
+      summaryElement.textContent = '';
+      summaryElement.append(node('span', summary.label, 'geld-provider-review__reviewer-summary'));
+    }
     if (options.reviewerControls?.available === true) {
       const controls = node('div', '', 'geld-provider-review__source-actions');
       const button = node('button', 'Reviewer controls');
@@ -500,20 +505,56 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       if (summary.coverage === 'complete') section.append(node('p', 'No reviewer standings.'));
       return section;
     }
-    const list = node('ul');
+    const list = node('span', '', 'geld-provider-review__reviewers');
+    list.setAttribute('role', 'list');
     for (const reviewer of reviewers) {
-      const row = node('li', '', 'geld-provider-review__standing');
+      const row = node('span', '', 'geld-provider-review__standing');
+      row.setAttribute('role', 'listitem');row.dataset.geldReviewer = reviewer.author.id;
       row.dataset.state = reviewer.state;
       if (reviewer.reviewRequest !== undefined) row.dataset.reviewRequest = reviewer.reviewRequest;
-      const url = reviewer.url === undefined ? null : safeUrl(reviewer.url, input.subject.origin);
-      row.append(url === null ? node('span', reviewer.author.login) : link(reviewer.author.login, url, reviewer.anchor ?? ''));
-      if (reviewer.author.automated === true) row.append(node('span', 'Automated account', 'geld-provider-review__muted'));
-      if (reviewer.state !== 'pending' && reviewer.reviewRequest !== undefined && reviewer.reviewRequest !== 'not-pending') {
-        row.append(node('span', STANDING[reviewer.state]), node('span', ` · ${reviewer.reviewRequest === 'pending' ? 'Review requested' : 'Request state unavailable'}`, 'geld-provider-review__muted'));
-      } else row.append(node('span', reviewerLabel(reviewer)));
-      list.append(row);
+      const source = reviewer.state !== 'pending' && reviewer.url !== undefined && reviewer.anchor !== undefined
+        ? sourceLink({ anchor: reviewer.anchor, kind: 'comment', author: reviewer.author.login, url: reviewer.url }, input.subject) : null;
+      const chip = source === null ? node('span') : link('', source, reviewer.anchor);
+      chip.classList.add('geld-provider-review__reviewer');
+      chip.setAttribute('aria-label', `${reviewer.author.login}: ${reviewerLabel(reviewer)}`);
+      if (source !== null) {
+        chip.title = 'Open the latest review update';
+        const subject = providerReviewKey(input.subject), head = input.subject.headSha;
+        chip.addEventListener('click', event => {
+          if (destroyed || !chip.isConnected || !panel.contains(chip) || subject !== providerReviewKey(input.subject) || head !== input.subject.headSha) { event.preventDefault();event.stopImmediatePropagation(); }
+        }, { capture: true });
+        chip.addEventListener('click', event => event.stopPropagation());
+      }
+      const presentation = [...authorPresentations.values()].find(value => value.authorId === reviewer.author.id && value.avatar !== undefined);
+      const avatar = presentation?.avatar;
+      const avatarUrl = avatar === undefined ? null : safeUrl(avatar.src);
+      const mark = node('span', '', 'geld-provider-review__reviewer-avatar');mark.setAttribute('aria-hidden', 'true');
+      if (avatarUrl !== null && new URL(avatarUrl).protocol === 'https:') {
+        const image = node('img');image.src = avatarUrl;image.alt = '';image.referrerPolicy = 'no-referrer';image.decoding = 'async';mark.append(image);
+      } else mark.textContent = reviewer.author.login.charAt(0).toUpperCase() || '?';
+      chip.append(mark, node('span', reviewer.author.login, 'geld-provider-review__reviewer-name'));
+      if (reviewer.state !== 'pending' || !reviewerRequested(reviewer)) chip.append(node('span', reviewer.state === 'pending' ? 'Reviewer' : STANDING[reviewer.state], 'geld-provider-review__reviewer-verdict'));
+      if (reviewerRequested(reviewer)) {
+        const request = node('span', 'Review requested', 'geld-provider-review__reviewer-request');
+        request.title = reviewer.state === 'pending' ? 'Review requested' : 'Review requested again. The current verdict still stands.';
+        chip.append(request);
+      } else if (reviewer.reviewRequest === 'unknown') chip.append(node('span', 'Request state unavailable', 'geld-provider-review__muted'));
+      if (reviewer.author.automated === true) chip.append(node('span', 'Automated account', 'geld-provider-review__muted'));
+      const comments = new Map<string, ProviderReviewComment>();
+      for (const comment of [...input.threads.flatMap(thread => thread.comments), ...(options.comments ?? [])]) {
+        if (comment.author.id === reviewer.author.id && comment.body.trim() !== '' && sourceLink({ anchor: comment.anchor, kind: 'comment', author: comment.author.login, url: comment.url }, input.subject) !== null) comments.set(comment.id, comment);
+      }
+      const threads = input.threads.filter(thread => thread.comments[0]?.author.id === reviewer.author.id && comments.has(thread.comments[0].id)).length;
+      if (comments.size > 0) {
+        const observed = input.complete !== true || options.complete === false ? 'observed ' : '';
+        const counts = [threads > 0 ? `${threads} ${observed}thread${threads === 1 ? '' : 's'} started` : null, countLabel(comments.size, `${observed}comment`)].filter(value => value !== null);
+        const activity = node('span', `In this conversation: ${counts.join(' · ')}`, 'geld-provider-review__reviewer-activity');
+        activity.title = 'Conversation activity by this account. These counts are not grouped into a review.';
+        row.append(activity);
+      }
+      row.prepend(chip);list.append(row);
     }
-    section.append(list);
+    summaryElement?.append(list);
     return section;
   }
 

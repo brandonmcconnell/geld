@@ -41,6 +41,18 @@ html[data-geld-provider] [data-geld-provider-author-hidden] { display: none !imp
 .geld-provider-review__avatar-slot { display: inline-flex; position: relative; flex: 0 0 auto; align-self: center; }
 .geld-provider-review__body { padding: var(--geld-provider-space-3); border-inline-start: var(--geld-provider-border-width) solid var(--geld-provider-border); }
 .geld-provider-review__standing, .geld-provider-review__check, .geld-provider-review__event { padding-block: var(--geld-provider-space-2); }
+.geld-provider-review__reviewer-summary { margin-inline-end: var(--geld-provider-space-3); }
+.geld-provider-review__reviewers { display: inline-flex; flex-wrap: wrap; align-items: flex-start; gap: var(--geld-provider-space-3); min-inline-size: 0; }
+.geld-provider-review__reviewers > .geld-provider-review__standing { display: inline-flex; flex-direction: column; gap: var(--geld-provider-space-2); padding: 0; min-inline-size: 0; color: var(--geld-provider-text); }
+.geld-provider-review__reviewer { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--geld-provider-space-2); max-inline-size: 100%; padding: var(--geld-provider-space-2) var(--geld-provider-space-3); border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: var(--geld-provider-button-radius); background: var(--geld-provider-bg-subtle); font: var(--geld-provider-byline-font); color: var(--geld-provider-text); }
+.geld-provider-review__reviewer-avatar { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; inline-size: 1.5em; block-size: 1.5em; overflow: hidden; border-radius: 50%; background: var(--geld-provider-bg); color: var(--geld-provider-text-subtle); }
+.geld-provider-review__reviewer-avatar img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+.geld-provider-review__reviewer-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-inline-size: 16ch; }
+.geld-provider-review__standing[data-state="approved"] .geld-provider-review__reviewer-verdict { color: var(--geld-provider-success); }
+.geld-provider-review__standing[data-state="changes_requested"] .geld-provider-review__reviewer-verdict { color: var(--geld-provider-warning); }
+.geld-provider-review__reviewer-request { display: inline-flex; align-items: center; gap: var(--geld-provider-space-2); color: var(--geld-provider-warning); }
+.geld-provider-review__reviewer-request::before { content: ''; inline-size: .4em; block-size: .4em; border-radius: 50%; background: currentColor; }
+.geld-provider-review__reviewer-activity { font: var(--geld-provider-byline-font); color: var(--geld-provider-text-subtle); }
 .geld-provider-review__check-part { display: inline-flex; align-items: center; gap: var(--geld-provider-space-2); }
 .geld-provider-check-icon { display: inline-flex; flex: 0 0 auto; vertical-align: text-bottom; }
 .geld-provider-check-icon[data-provider="bitbucket"] { color: var(--geld-provider-ci-success); }

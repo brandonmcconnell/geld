@@ -464,6 +464,18 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
       }
     }
   } else if (reviewerResult?.status === 'rejected') areaError('reviews', reviewerResult.reason);
+  for (const [id, reviewer] of reviewerMap) {
+    const wording = reviewer.state === 'approved' ? 'approved this merge request' : reviewer.state === 'changes_requested' ? 'requested changes' : null;
+    if (wording === null) continue;
+    const matching = parsed.events.filter(event => event.author.id === id && event.body.trim() === wording);
+    const newest = matching.reduce((latest, event) => Math.max(latest, Date.parse(event.createdAt)), -Infinity);
+    const latest = matching.filter(event => Date.parse(event.createdAt) === newest);
+    const event = latest.length === 1 ? latest[0] : undefined;
+    if (event === undefined) continue;
+    const url = new URL(event.url);
+    if (url.origin !== origin || url.pathname !== new URL(base).pathname || url.search !== '' || url.username || url.password || url.hash !== `#note_${event.id}`) continue;
+    reviewerMap.set(id, { ...reviewer, url: url.href, anchor: url.hash.slice(1) });
+  }
   const pipelineResult = results[2];
   const pipelines = pipelineResult?.status === 'fulfilled' ? pipelineResult.value : [];
   if (pipelineResult?.status === 'rejected') areaError('checks', pipelineResult.reason);
