@@ -24,7 +24,7 @@ function checksText(metaChecks: readonly { readonly name: string; readonly statu
   if (metaChecks.length === 0) return [];
   const counts = { passed: 0, failed: 0, running: 0, waiting: 0, other: 0 };
   for (const check of metaChecks) {
-    if (check.status === 'waiting') counts.waiting += 1;
+    if (check.status === 'waiting' || check.status === 'queued') counts.waiting += 1;
     else if (check.status !== 'completed') counts.running += 1;
     else if (check.conclusion === 'success') counts.passed += 1;
     else if (check.conclusion === 'failure') counts.failed += 1;

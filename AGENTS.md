@@ -2575,3 +2575,18 @@ Its final comparison records field-specific identity mismatches and still reject
 GitLab conversation cards use gl-background-color-section and gl-border-color-section, rather than the page-default surface tokens.
 They coincide in light mode but diverge in dark mode, so the provider digest overrides only its own card surface and border with those native section tokens.
 An offline replay of retained GitLab application and notes CSS reproduces the prior dark mismatch and verifies light, dark and restored-light equality.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
+
+Provider header ownership checks run in document mutation callbacks and must not read computed styles or layout.
+Native count visibility is refreshed during rendering and resize observation, while needsRepair checks only the owned hint attachment.
+
+A retired or unrelated content client must return no response for an unknown local review validation token.
+Replying false wins the extension message race against the owning client and rejects otherwise valid saves after reinjection.
+
+GitLab created, pending, preparing, scheduled and waiting_for_resource jobs remain queued in trusted CI input.
+Published CI totals count both queued and manual jobs as waiting, and only native running jobs as in progress.

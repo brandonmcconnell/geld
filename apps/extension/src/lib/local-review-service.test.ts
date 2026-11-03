@@ -131,10 +131,10 @@ describe('one background owner for local review writes', () => {
     await vi.waitFor(() => expect(requests).toHaveLength(2));
     const [one, two] = requests;
     if (!one || !two) throw new Error('Missing requests');
-    expect(await a.validate(two.token)).toEqual({ ok: false });
-    expect(await b.validate(one.token)).toEqual({ ok: false });
+    expect(a.validate(two.token)).toBeUndefined();
+    expect(b.validate(one.token)).toBeUndefined();
     release.resolve(); await Promise.all([first, second]);
-    expect(await a.validate(one.token)).toEqual({ ok: false });
+    expect(a.validate(one.token)).toBeUndefined();
   });
 
   it('rejects a stale source before sending any write request', async () => {
@@ -143,4 +143,25 @@ describe('one background owner for local review writes', () => {
     await expect(write(item(), async () => { throw new Error('Already stale'); })).rejects.toThrow('Already stale');
     expect(send).not.toHaveBeenCalled();
   });
+});
+
+it('lets a reinjected client validate its save without a retired listener winning the response race', async () => {
+  const listeners: ((message: unknown) => Promise<unknown> | undefined)[] = [];
+  const checks = deferred();
+  const send = async (message: LocalReviewWrite): Promise<unknown> => {
+    const responses = listeners.flatMap((listener) => {
+      const response = listener({ type: 'geld:local-review-validate', token: message.token });
+      return response === undefined ? [] : [response];
+    });
+    return Promise.race(responses);
+  };
+  const transport = { send, subscribe: (listener: (message: unknown) => Promise<unknown> | undefined) => { listeners.push(listener); } };
+  const retired = createLocalReviewClient(transport);
+  await retired(item(), valid);
+  const current = createLocalReviewClient(transport);
+  let validations = 0;
+  const saved = current(item('ri_current'), async () => { if (++validations > 1) await checks.promise; });
+  await vi.waitFor(() => expect(validations).toBe(2));
+  checks.resolve();
+  await expect(saved).resolves.toBeUndefined();
 });
