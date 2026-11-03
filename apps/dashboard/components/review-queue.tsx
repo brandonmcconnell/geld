@@ -282,7 +282,7 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
                     ? GitPullRequestDraft
                     : GitPullRequest;
             return (
-              <article className="pull-row" key={path}>
+              <article className="pull-row" data-selected={selection.includes(path)} key={path}>
                 <input
                   name={`select-${pull.id}`}
                   type="checkbox"

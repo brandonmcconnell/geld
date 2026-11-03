@@ -23,7 +23,13 @@ try {
     if (await decline.count()) await decline.first().click();
     await weight(page.getByRole('link', { name: 'Review queue', exact: true }).locator('.app-icon'), 'solid');
     await weight(page.getByRole('link', { name: 'Repositories', exact: true }).locator('.app-icon'), 'regular');
-    const star = page.locator('.star-button').first();
+    const row = page.locator('.pull-row').first();
+    const star = row.locator('.star-button');
+    await row.locator('input[type=checkbox]').check();
+    await weight(row.locator(':scope > .app-icon'), 'solid');
+    await weight(star.locator('.app-icon'), 'regular');
+    await row.locator('input[type=checkbox]').uncheck();
+    await weight(row.locator(':scope > .app-icon'), 'regular');
     await weight(star.locator('.app-icon'), 'regular');
     await star.hover();
     await star.focus();

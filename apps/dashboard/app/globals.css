@@ -757,6 +757,9 @@ kbd {
 .pull-row:hover {
   background: light-dark(#fafbfc, #ffffff02);
 }
+.pull-row[data-selected='true'] {
+  background: var(--muted);
+}
 .pull-row > input,
 .pull-row > svg {
   align-self: start;
