@@ -6,10 +6,10 @@ import { promisify } from 'node:util';
 import { gzip } from 'node:zlib';
 import { BITBUCKET_MODULE_FILES, BITBUCKET_MAX_SOURCE_LIMIT, extractBitbucketModule } from './bitbucket-main-asset-module-worker.mjs';
 
-export const BITBUCKET_WHITESPACE_ASSET = 'https://bbc-frontbucket-static.prod-east.frontend.public.atl-paas.net/assets/app.6ea3303b1b2659fcb5ca5dc82e17933a815f4108.js';
+export const BITBUCKET_WHITESPACE_ASSET = 'https://bbc-frontbucket-static.prod-east.frontend.public.atl-paas.net/assets/app.5ff3a9b1c1755f86e976fb46708c460744f6ad56.js';
 export const BITBUCKET_WHITESPACE_BODY_LIMIT = BITBUCKET_MAX_SOURCE_LIMIT;
 export const BITBUCKET_WHITESPACE_WORKER_DEADLINE = 10_000;
-export const BITBUCKET_WHITESPACE_SOURCE_ARCHIVE = 'bitbucket-public-app-6ea3303b1b2659fcb5ca5dc82e17933a815f4108.js.gz';
+export const BITBUCKET_WHITESPACE_SOURCE_ARCHIVE = 'bitbucket-public-app-5ff3a9b1c1755f86e976fb46708c460744f6ad56.js.gz';
 const compress = promisify(gzip);
 const reasons = new Set(['aborted', 'body_size', 'worker_deadline', 'worker_failed', 'worker_memory', 'parser_depth', 'worker_exit', 'worker_result', 'syntax', 'registration', 'snippet_size', 'utf8', 'module_id', 'source_limit']);
 
