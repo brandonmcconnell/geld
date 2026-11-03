@@ -1357,6 +1357,11 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
 `pnpm --filter @geld/site check` runs typecheck, lint, unit tests and a production build, and is part of root `pnpm check`.
 
 - **Stack:** Next.js 16 App Router with `cacheComponents: true`, Tailwind CSS 4, shadcn components generated on **Base UI** (`components/ui/`), the `cn` package for class merging, Geist via the `geist` package, `lucide-react` icons.
+  **Font Awesome Sharp is replacing Lucide**, one icon at a time, from the Geld kit (`@awesome.me/kit-2e791c163e`, shared with the dashboard, imported by style: `icons/sharp/solid`, `icons/sharp/regular`) and drawn by `components/fa-icon.tsx` from the icon's path data, with no Font Awesome runtime.
+  The kit is a private package on Font Awesome's registry: the root `.npmrc` reads its token from `FONTAWESOME_PACKAGE_TOKEN`, set as a GitHub Actions secret (every `pnpm install` step passes it), on the `geld-site` and `geld-dashboard` Vercel projects, and as a Cursor secret for agents.
+  An install without the token fetches every public package and then stops at the kit, so a fork's pull request, which gets no secrets, cannot install.
+  The kit's icons and styles are chosen on fontawesome.com, and each change there publishes a new version;
+  both apps pin it exactly, so `pnpm --filter @geld/site --filter @geld/dashboard update @awesome.me/kit-2e791c163e --latest` takes it (a plain `update` stays on the pinned version).
   Everything is prerendered;
   the only cached-async piece is the latest-release lookup (`lib/release.ts`, `use cache`, revalidated hourly, falls back to the Releases page when there is no release yet).
   Light/dark follows `prefers-color-scheme` by default;
