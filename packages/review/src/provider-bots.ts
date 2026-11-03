@@ -1,5 +1,5 @@
 import type { BotComment, RawCheckRun } from './bots';
-import { botById, commandReply, isReviewShaped, isStatusLineComment, parseBotBody, refusalReason, STATUS_LINE_STALE_MS, verdictsFrom } from './bots';
+import { botById, checkRefusalReason, commandReply, isReviewShaped, isStatusLineComment, parseBotBody, refusalReason, STATUS_LINE_STALE_MS, verdictsFrom } from './bots';
 import type { BotVerdictRecord, ReviewProvider } from './model';
 import type { ProviderReviewBot, ProviderReviewCheck, ProviderReviewComment, ProviderReviewInput, ProviderReviewSubject } from './provider-review';
 import { providerReviewKey, providerReviewUrl, sourceLink } from './provider-review';
@@ -204,7 +204,9 @@ export function buildProviderBotVerdicts(input: ProviderReviewInput, ordinaryCom
     }
     comments.sort((a, b) => Date.parse(a.createdAt ?? '') - Date.parse(b.createdAt ?? ''));
     const check = confirmedChecks(input, registered, support).at(-1);
-    const decisive = check !== undefined && (check.status !== 'completed' || ['success', 'failure', 'timed_out', 'cancelled', 'action_required', 'stale', 'skipped'].includes(check.conclusion ?? ''));
+    const decisive = check !== undefined && (check.status !== 'completed'
+      || ['success', 'failure', 'timed_out', 'cancelled', 'action_required', 'stale', 'skipped'].includes(check.conclusion ?? '')
+      || checkRefusalReason(check, refusalOptions) !== null);
     const checks: RawCheckRun[] = check === undefined || !decisive ? [] : [{ ...check, name: parser.checkNames[0] ?? parser.title, sha: check.reviewHeadSha ?? check.sha }];
     const found = verdictsFrom(checks, comments, input.subject.headSha, [], Date.now(), { ...refusalOptions, complete: input.complete === true, partial: input.complete !== true, closed: input.closed === true }).find((verdict) => verdict.id === id);
     const source = found?.sourceId === undefined ? undefined : native.get(found.sourceId);

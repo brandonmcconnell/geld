@@ -139,6 +139,7 @@ function normalizeChecks(source: readonly BitbucketStatus[], headSha: string, un
     if (status.sha !== headSha) continue;
     checks.push({
       key: status.key, nativeStatus: status.state,
+      ...(status.description === undefined ? {} : { description: status.description }),
       name: status.name, sha: status.sha, status: status.state === 'INPROGRESS' ? 'in_progress' : 'completed',
       conclusion: status.state === 'INPROGRESS' ? null : status.state === 'SUCCESSFUL' ? 'success' : status.state === 'FAILED' ? 'failure' : 'cancelled',
       startedAt: status.createdAt,

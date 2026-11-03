@@ -254,6 +254,7 @@ export class BitbucketCiAdapter implements ProviderCiAdapter {
       const updatedAt = time(status.updated_on);
       const check: RawCheckRun = {
         name: text(status.name), sha: commit.hash, status: state === 'INPROGRESS' ? 'in_progress' : 'completed',
+        ...(typeof status.description === 'string' && status.description !== '' ? { description: status.description } : {}),
         conclusion: state === 'INPROGRESS' ? null : state === 'SUCCESSFUL' ? 'success' : state === 'FAILED' ? 'failure' : 'cancelled',
         startedAt: time(status.created_on), ...(state === 'INPROGRESS' ? {} : { completedAt: updatedAt }),
       };
