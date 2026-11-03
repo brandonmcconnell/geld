@@ -2426,3 +2426,7 @@ Bitbucket's native static PR header keeps its original branch metadata inside Ac
 Source-reference custody may read that original closed branch pair while CSS-hidden, but retains exact nodes, parents, text, route and source identities and never clicks those metadata controls.
 The actionable All changes control is scoped to the original unique native diff panel, so a compact-header copy outside that panel does not invalidate source preparation;
 panel replacement or an inner duplicate still does.
+
+Bitbucket's visible Lines updated totals place the signed counts inside aria-hidden presentation spans because the native accessible summary describes them separately.
+The full-context acceptance reads only that original heading's signed numeric span pair while retaining real hidden, owned and interactive-node exclusions.
+Source-row and action qualification must not inherit this visual-counter exception.
