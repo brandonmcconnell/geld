@@ -33,7 +33,8 @@ import type { ReviewerCandidate } from './reviewers';
 import { nextRunGraceEnd, withRunTimes } from './run-starts';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
-import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
+import { shortenDescription } from './description';
+import { applyFolds, closureKindOf, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
 import { ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
@@ -3552,7 +3553,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     }
   }
   const tailStart = performance.now();
-  collapseDescription(settings.compactTimeline === 'minimal' && settings.collapseDescription && !visit.fullTimeline);
+  shortenDescription(settings.collapseDescription && !visit.fullTimeline);
   setFullTimeline(visit.fullTimeline);
   if (hidingTimeline) document.documentElement.setAttribute('data-geld-timeline', 'compact');
   // Everything on the page has been read: what GitHub inserts from here on waits for the next pass.
@@ -3627,7 +3628,7 @@ export function teardownReviewOverview(): void {
   unmountPanel();
   hideSummary(null);
   applyFolds([], new Set());
-  collapseDescription(false);
+  shortenDescription(false);
   setFullTimeline(false);
   visit.openKey = null;
   visit.pageKey = '';
