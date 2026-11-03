@@ -165,7 +165,8 @@ jobs:
                 if (created > Date.now() - 60 * 60 * 1000) throw Error('Recent cooldown evidence is unavailable; no provider navigation allowed');
                 continue;
               }
-              if (artifact.workflow_run.id !== context.runId) candidates.push({ artifact, created });
+              if (artifact.workflow_run.id === context.runId) throw Error('Current run has prior-attempt evidence; resolve its cooldown before retrying');
+              candidates.push({ artifact, created });
             }
             candidates.sort((left, right) => right.created - left.created || right.artifact.id - left.artifact.id);
             let selected = null;

@@ -456,3 +456,8 @@ test('cooldown discovery orders by artifact time and refuses unavailable recent 
   const expired = { ...cooldownArtifact(), expired: true, created_at: new Date().toISOString() };
   await assert.rejects(discoverCooldown({ pages: [{ artifacts: [expired], total_count: 1 }] }), /Recent cooldown evidence is unavailable/);
 });
+
+
+test('a rerun cannot discard the same run ID prior-attempt provider evidence', async () => {
+  await assert.rejects(discoverCooldown({ pages: [{ artifacts: [cooldownArtifact(1, 99999)], total_count: 1 }] }), /Current run has prior-attempt evidence/);
+});
