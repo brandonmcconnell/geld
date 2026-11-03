@@ -8,6 +8,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
+import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, providerHeaderHintTarget, openProviderReviewAncestors, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
 import { commentBodyPresentationProbe, compareCommentBodyPresentation } from './comment-body-branding.mjs';
 import { BITBUCKET_LOCAL_REVIEW, localReviewStorageScope, observeLocalReview, verifyBitbucketLocalReview } from './bitbucket-local-reviewed.mjs';
 import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-list-row.mjs';
@@ -56,6 +57,8 @@ const BITBUCKET_ANONYMOUS_COOLDOWN_MS = 62 * 60 * 1000; // Documented rolling-ho
 const FOCUSED_CASES = {
   regression: ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'github-regression', 'bitbucket-diff'],
   'bitbucket-diff': ['bitbucket-diff'],
+  'bitbucket-ui': ['bitbucket-diff', 'bitbucket-comment-digest'],
+  'gitlab-ui': ['gitlab-mixed', 'gitlab-overview-digest'],
   'bitbucket-whitespace-session': ['bitbucket-whitespace-session'],
   'bitbucket-pipeline-shell': ['bitbucket-pipeline-shell'],
   'bitbucket-pipeline-syntax-on': ['bitbucket-pipeline-syntax-on'],
@@ -193,6 +196,24 @@ async function saveReport() {
     report.coverage = { focus, completeParity: false, passed: report.cases.filter((item) => item.status === 'passed').map((item) => item.name), notSelected: report.cases.filter((item) => item.status === 'not_selected').map((item) => item.name), failed: report.cases.filter((item) => item.status === 'failed').map((item) => item.name) };
     const failed = report.infrastructureErrors.length > 0 || report.cases.some((item) => item.status === 'failed');
     report.status = running ? 'running' : failed ? 'failed' : 'completed_with_unsupported_features';
+    const active = bitbucketRequestTimes.filter(at => at > Date.now() - 60 * 60 * 1000).sort((left, right) => left - right);
+    const limit = report.quotaPolicy?.conservativeObservedRequestBudget ?? null;
+    const stamp = value => Number.isFinite(value) ? new Date(value).toISOString() : null;
+    const summary = {
+      limit, externalReserve: report.quotaPolicy?.externalRequestReserve ?? 0,
+      inheritedAtStart: report.previousEvidence?.inheritedAnonymousRequestsWithinRollingHour ?? 0,
+      observedThisRun: report.observedBitbucketApiRequests ?? 0, activeWithinHour: active.length,
+      oldestActiveAt: stamp(active[0]), latestActiveAt: stamp(active.at(-1)),
+      availableBelowLimitAt: limit !== null && active.length >= limit ? stamp(active[active.length - limit] + 60 * 60 * 1000 + 1) : null,
+      inheritedCooldowns: Object.fromEntries(['github', 'gitlab', 'bitbucket'].map(provider => [provider, stamp(Date.parse(report.previousEvidence?.inheritedCooldowns?.[provider] ?? ''))])),
+      currentCooldowns: Object.fromEntries(['github', 'gitlab', 'bitbucket'].map(provider => [provider, stamp(cooldowns.get(provider))])),
+      cases: report.cases.slice(0, 100).map((item, index) => ({ index, observed: item.observedBitbucketApiRequests ?? 0, budgetHeld: item.budgetHold != null, serverRateLimited: item.holdReason === 'provider_http429', navigationSuppressed: item.navigationSuppressedByBudget === true || item.navigationSuppressedByCooldown === true })),
+    };
+    const signature = JSON.stringify(summary);
+    if (signature !== saveReport.lastQuotaSignature) {
+      console.log(`QUOTA_SUMMARY: ${JSON.stringify({ observedAt: new Date().toISOString(), ...summary })}`);
+      saveReport.lastQuotaSignature = signature;
+    }
     await writeFile(resolve(artifacts, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
   });
   return reportWrite;
@@ -1187,7 +1208,7 @@ async function installedHover(page, selector, interaction, artifactName, anchorS
   let keyboardNavigation;
   if (interaction === 'keyboard') {
     const previous = await page.evaluate((target) => {
-      const anchor = [...document.querySelectorAll(target)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
+      const anchor = [...(typeof target === 'string' ? document.querySelectorAll(target) : [target])].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
       const order = [...document.querySelectorAll('a[href], button, input, select, textarea, [tabindex]')].filter((node) => node.tabIndex >= 0 && !node.disabled && node.closest('[inert]') === null && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
       const at = order.indexOf(anchor);
       const describe = (node) => node == null ? null : { tag: node.tagName, id: node.id, testid: node.getAttribute('data-testid'), href: node.getAttribute('href'), tabindex: node.getAttribute('tabindex'), label: node.getAttribute('aria-label'), text: node.textContent.trim().slice(0, 120) };
@@ -1214,26 +1235,26 @@ async function installedHover(page, selector, interaction, artifactName, anchorS
       } else await page.keyboard.press('Tab');
       const stop = await page.evaluate((target) => {
         const node = document.activeElement;
-        return { target: [...document.querySelectorAll(target)].some((value) => value === node), tag: node?.tagName, id: node?.id, href: node?.getAttribute('href'), testid: node?.getAttribute('data-testid'), label: node?.getAttribute('aria-label'), text: node?.textContent.trim().slice(0, 120) };
+        return { target: [...(typeof target === 'string' ? document.querySelectorAll(target) : [target])].some((value) => value === node), tag: node?.tagName, id: node?.id, href: node?.getAttribute('href'), testid: node?.getAttribute('data-testid'), label: node?.getAttribute('aria-label'), text: node?.textContent.trim().slice(0, 120) };
       }, selector);
       keyboardNavigation.stops.push(stop);
       if (stop.target) break;
     }
     assert.equal(keyboardNavigation.stops.at(-1)?.target, true, `Real Tab traversal did not reach the count owner: ${JSON.stringify(keyboardNavigation)}`);
   } else {
-    const handle = await page.evaluateHandle((target) => [...document.querySelectorAll(target)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden') ?? null, selector);
+    const handle = await page.evaluateHandle((target) => [...(typeof target === 'string' ? document.querySelectorAll(target) : [target])].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden') ?? null, selector);
     const control = handle.asElement();
     assert.ok(control !== null, 'Visible count hover host is missing');
     await control.hover();
     await discardHandle(handle);
   }
   const snapshot = await poll(() => page.evaluate((target, anchorSelector) => {
-    const host = [...document.querySelectorAll(target)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
+    const host = [...(typeof target === 'string' ? document.querySelectorAll(target) : [target])].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
     const tip = document.querySelector('#geld-provider-count-tooltip[role="tooltip"]');
     if (tip === null || tip.hidden || getComputedStyle(tip).display === 'none') return null;
     const style = getComputedStyle(tip);
     const bounds = tip.getBoundingClientRect();
-    const anchor = anchorSelector === undefined ? null : [...document.querySelectorAll(anchorSelector)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0);
+    const anchor = anchorSelector === undefined ? null : [...(typeof anchorSelector === 'string' ? document.querySelectorAll(anchorSelector) : [anchorSelector])].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0);
     const anchorRect = anchor?.getBoundingClientRect();
     return { text: tip.textContent.replace(/\s+/g, ' ').trim(), fontFamily: style.fontFamily, fontSize: style.fontSize, lineHeight: style.lineHeight, color: style.color, background: style.backgroundColor, filter: style.filter,
       anchor: anchorRect === undefined ? null : { left: anchorRect.left, right: anchorRect.right, top: anchorRect.top, bottom: anchorRect.bottom }, caret: Number.parseFloat(style.getPropertyValue('--geld-provider-hover-caret')), placement: tip.getAttribute('data-placement'),
@@ -1242,6 +1263,8 @@ async function installedHover(page, selector, interaction, artifactName, anchorS
       bounds: { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom }, viewport: { width: innerWidth, height: innerHeight } };
   }, selector, anchorSelector), (value) => value !== null && value.described && /Essential/.test(value.text) && /Tests/.test(value.text) && /Total/.test(value.text) && (expectedRows === undefined || isDeepStrictEqual(value.rows, expectedRows)), 'Installed native count hover breakdown and accessible owner', 12_000);
   assert.ok(snapshot.bounds.left >= 0 && snapshot.bounds.right <= snapshot.viewport.width + 1 && snapshot.bounds.top >= 0 && snapshot.bounds.bottom <= snapshot.viewport.height + 1, 'Count tooltip escapes the tested viewport');
+  snapshot.compactUi = await page.evaluate(providerUiProbe, providerOf(page.url()));
+  assertCompactProviderPopover(snapshot.compactUi);
   if (anchorSelector !== undefined) {
     assert.ok(snapshot.anchor !== null && Number.isFinite(snapshot.caret), 'Header group hover must expose its real owned hint anchor and caret');
     const center = (snapshot.anchor.left + snapshot.anchor.right) / 2;
@@ -1272,7 +1295,9 @@ async function headerHintsEvidence(page, expectedLabel, groupSelector, name, int
       let nativeKeyboard = null;
       for (let parent = node.parentElement; parent !== null; parent = parent.parentElement) if (parent.hasAttribute('data-geld-hover-bound') && parent.tabIndex >= 0 && parent.closest('[data-geld-ui]') === null) { nativeKeyboard = parent;break; }
       const style = getComputedStyle(node);const parent = getComputedStyle(node.parentElement);
-      return { text: node.textContent.trim(), role: node.getAttribute('role'), aria: node.getAttribute('aria-label'), tabIndex: node.tabIndex, nativeKeyboardAncestor: nativeKeyboard !== null,
+      const wrapper = node.closest('.geld-provider-header-stats');
+      const wrapperKeyboard = wrapper?.tabIndex >= 0 && wrapper.hasAttribute('data-geld-hover-bound');
+      return { text: node.textContent.trim(), role: node.getAttribute('role'), aria: node.getAttribute('aria-label'), tabIndex: node.tabIndex, nativeKeyboardAncestor: nativeKeyboard !== null, wrapper: wrapper !== null, wrapperKeyboard, wrapperTabIndex: wrapper?.tabIndex ?? null,
         forbiddenAncestor: node.closest('[aria-hidden="true"],[hidden],[inert],.badge,.gl-badge,[data-component="Label"],[role="tab"],[role="tablist"]') !== null,
         font: { family: style.fontFamily, size: style.fontSize, lineHeight: style.lineHeight }, nativeParentFont: { family: parent.fontFamily, size: parent.fontSize, lineHeight: parent.lineHeight } };
     }), nativeIds: [...document.querySelectorAll('[data-testid="diffs-tab"],#file-tree,#pull-request-tabs-1,[role="region"][aria-label="Diff"] > div > div[id^="chg-"]')].filter((node) => node.closest('[data-geld-ui]') === null).map((node) => ({ id: node.id, testid: node.getAttribute('data-testid'), href: node.getAttribute('href') })) };
@@ -1281,15 +1306,20 @@ async function headerHintsEvidence(page, expectedLabel, groupSelector, name, int
   for (const hint of measurement.hints) {
     assert.equal(hint.forbiddenAncestor, false, 'Category hint is hidden from accessibility or nested inside native badge/tab content');
     assert.equal(hint.role, 'note');assert.equal(hint.aria, `${expectedLabel} hidden`);
-    assert.equal(hint.tabIndex, hint.nativeKeyboardAncestor ? -1 : 0, 'Hint must add a keyboard stop only when its native group has none');
+    assert.equal(hint.tabIndex, hint.wrapper || hint.nativeKeyboardAncestor ? -1 : 0, 'The count label must not duplicate its wrapper or native keyboard stop');
+    if (hint.wrapper) assert.equal(hint.wrapperTabIndex, hint.nativeKeyboardAncestor ? -1 : 0, 'The stable statistics wrapper owns the fallback keyboard stop');
     assert.deepEqual(hint.font, hint.nativeParentFont, 'Header hint does not inherit the native header typography');
   }
   if (!interactions) return measurement;
-  const pointer = await installedHover(page, groupSelector, 'pointer', `${name}-group-pointer`, hintSelector);
-  const keyboardSelector = measurement.hints[0].nativeKeyboardAncestor ? groupSelector : hintSelector;
-  const keyboard = await installedHover(page, keyboardSelector, 'keyboard', `${name}-hint-keyboard`, hintSelector);
-  assert.equal(pointer.text, keyboard.text, 'Native group and correctly selected keyboard hint/group totals disagree');
-  return { ...measurement, pointer, keyboard, keyboardSelector };
+  const anchor = await page.evaluateHandle(providerHeaderHintTarget, groupSelector, 'anchor');
+  const keyboardTarget = await page.evaluateHandle(providerHeaderHintTarget, groupSelector, 'keyboard');
+  try {
+    assert.ok(anchor.asElement() !== null && keyboardTarget.asElement() !== null, 'The actual native count group needs one associated visible hint and keyboard owner');
+    const pointer = await installedHover(page, groupSelector, 'pointer', `${name}-group-pointer`, anchor);
+    const keyboard = await installedHover(page, keyboardTarget, 'keyboard', `${name}-hint-keyboard`, anchor);
+    assert.equal(pointer.text, keyboard.text, 'Native group and correctly selected keyboard hint/group totals disagree');
+    return { ...measurement, pointer, keyboard, keyboardSelector: 'associated_native_group_hint_owner' };
+  } finally { await discardHandle(keyboardTarget);await discardHandle(anchor); }
 }
 
 async function browserZoom(page, factor) {
@@ -1473,6 +1503,8 @@ async function bitbucketFiltering(page, item) {
     assert.ok(item.derivedHidden.additions + item.derivedHidden.deletions > 0, 'The selected file did not remove any changed lines');
     item.filteredDom = await poll(() => bitbucketDom(page), (value) => value.files === visible.files && value.additions === visible.additions && value.deletions === visible.deletions && value.hidden.some((file) => file.path === 'pipe/pipe.py' && file.mode === 'closed' && file.display === 'none'), 'Native Bitbucket file count/line totals and actual hidden file wrapper');
     item.filteredHeaderHints = await headerHintsEvidence(page, '1 test', summarySelector, 'bitbucket-filtered');
+    item.visibleCountUi = await page.evaluate(providerUiProbe, 'bitbucket');
+    assertVisibleProviderCounts(item.visibleCountUi, visible);
     assert.deepEqual(item.filteredHeaderHints.nativeIds, item.baselineHeaderHints.nativeIds, 'Category hint update changed native header/file anchor IDs');
     item.filteredArtifacts = await capture(page, 'bitbucket-pattern-filtered');
     item.categoryInteraction = await categoryInteraction(page, 'pipe/pipe.py', 'bitbucket', 'bitbucket-category', true);
@@ -1499,7 +1531,7 @@ async function bitbucketFiltering(page, item) {
   assert.deepEqual(item.restoredHeaderHints.nativeIds, item.baselineHeaderHints.nativeIds);
 }
 
-async function categoryInteraction(page, path, provider, name, reveal) {
+async function categoryInteraction(page, path, provider, name, reveal, retainedNativePresentation = null) {
   const read = () => page.evaluate((path, provider) => {
     const headers = [...document.querySelectorAll('.geld-provider-category-header')];
     const active = document.querySelector('.geld-provider-category[data-active="true"]');
@@ -1537,6 +1569,8 @@ async function categoryInteraction(page, path, provider, name, reveal) {
       root: root == null ? null : { id: root.id, data: root.getAttribute('data-file-data'), display: getComputedStyle(root).display, hiddenMode: root.getAttribute('data-geld-provider-hidden'), rendered: root.querySelector('article[data-qa="branch-diff-file"]') !== null,
         expanded: content != null && content.closest('[aria-hidden="true"]') === null && getComputedStyle(content).display !== 'none', codeLines: root.querySelectorAll('[data-qa="code-line"]').length } };
   }, path, provider);
+  const discoverable = await page.evaluate(providerUiProbe, provider);
+  assertDiscoverableProviderCategories(discoverable);
   const initial = await poll(read, (value) => value.headers.length >= 2 && /^Essential/.test(value.headers[0].text) && value.headers[0].expanded === 'true' && value.headers.at(-1).expanded === 'false' && value.root?.display === 'none', 'Essential starts expanded and Tests starts collapsed');
   await page.focus('.geld-provider-category-header');
   await page.keyboard.press('End');
@@ -1554,12 +1588,13 @@ async function categoryInteraction(page, path, provider, name, reveal) {
   for (const [label, container] of [['owned panel', panel], ['active content', content]]) {
     assert.ok(firstFile.left >= container.left - 1 && firstFile.right <= container.right + 1 && firstFile.top >= container.top - 1 && firstFile.bottom <= container.bottom + 1, `Opened ${provider} first file is outside its ${label}: ${JSON.stringify(opened.layout)}`);
   }
-  assert.ok(opened.source !== null && opened.clone.style !== null, 'Native source and cloned control samples are required');
-  if (opened.source.style.tag === opened.clone.style.tag) {
-    for (const key of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color']) assert.equal(opened.clone.style[key], opened.source.style[key], `Cloned ${provider} native file ${key} diverges`);
+  const nativePresentation = opened.source ?? retainedNativePresentation;
+  assert.ok(nativePresentation !== null && opened.clone.style !== null, 'Current or earlier same-path native presentation is required');
+  if (nativePresentation.style.tag === opened.clone.style.tag) {
+    for (const key of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color']) assert.equal(opened.clone.style[key], nativePresentation.style[key], `Cloned ${provider} native file ${key} diverges`);
   }
-  assert.ok(opened.clone.marks.length >= opened.source.marks.length, 'Cloned native row lost status or annotation visuals');
-  const result = { path, interaction: 'Real Puppeteer End then Enter keyboard events', initial, endFocused, opened, openedArtifacts: await capture(page, `${name}-open`) };
+  assert.ok(opened.clone.marks.length >= nativePresentation.marks.length, 'Cloned native row lost status or annotation visuals');
+  const result = { path, discoverable, nativePresentationSource: opened.source === null ? 'earlier_same_path_native_tree' : 'current_native_tree', interaction: 'Real Puppeteer End then Enter keyboard events', initial, endFocused, opened, openedArtifacts: await capture(page, `${name}-open`) };
   result.openedAfterCapture = await read();
   assert.ok(testsOpen(result.openedAfterCapture), 'Tests category/body choice changed during actual screenshot/DOM capture');
   assert.equal(result.openedAfterCapture.root.id, opened.root.id, 'Category capture replaced the native file identity');
@@ -2332,21 +2367,7 @@ async function gitLabReferencesEvidence(page, item) {
 }
 
 async function openReviewAncestors(page, selector) {
-  let clicks = 0;
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    const handle = await page.evaluateHandle((selector) => {
-      const target = document.querySelector(selector);
-      const closed = [];
-      for (let node = target?.parentElement; node != null; node = node.parentElement) if (node instanceof HTMLDetailsElement && !node.open) closed.push(node);
-      return closed.at(-1)?.querySelector(':scope > summary') ?? null;
-    }, selector);
-    const summary = handle.asElement();
-    if (summary === null) { await discardHandle(handle); return clicks; }
-    await summary.click();
-    await discardHandle(handle);
-    clicks += 1;
-  }
-  throw new Error('Review disclosure nesting did not settle after real summary clicks');
+  return openProviderReviewAncestors(page, selector);
 }
 
 async function localReviewedStorage() {
@@ -2371,17 +2392,15 @@ function assertReviewedStorage(value, itemId, reviewKey, headSha) {
 }
 
 async function localReviewedFlag(page, recordFragment) {
-  const initial = await poll(() => page.evaluate(() => {
-    for (const button of document.querySelectorAll('.geld-provider-review [data-geld-local-reviewed]')) {
-      const source = [...button.closest('[data-geld-item]')?.querySelectorAll('[data-geld-source]') ?? []].find((source) => {
-        const byline = source.querySelector(':scope > .geld-provider-review__byline');
-        const native = document.getElementById(source.getAttribute('data-geld-source'));
-        return byline !== null && ![...byline.children].some((node) => node.textContent.trim() === 'Automated account') && native?.querySelector('.note-header a.author-name-link[data-user-id]') !== null && native != null;
-      });
-      if (source !== undefined) return { id: button.getAttribute('data-geld-local-reviewed'), humanAnchor: source.getAttribute('data-geld-source'), pressed: button.getAttribute('aria-pressed'), disabled: button.disabled };
-    }
-    return null;
-  }), (value) => value !== null && value.id !== '' && value.pressed === 'false' && !value.disabled, 'First installed local-review control becomes available');
+  let lastSelection;
+  let selected;
+  try {
+    selected = await poll(async () => { lastSelection = await page.evaluate(gitLabLocalReviewedCandidate);return lastSelection; }, (value) => value.candidate !== null, 'An enabled, unpressed actionable human local-review item must become available');
+  } catch (error) {
+    if (lastSelection === undefined) throw error;
+    throw new Error(`No enabled, unpressed actionable human local-review item: ${JSON.stringify(lastSelection.counts)}`);
+  }
+  const initial = selected.candidate;
   const itemId = initial.id;
   const selector = `.geld-provider-review [data-geld-local-reviewed=${JSON.stringify(itemId)}]`;
   const observe = () => page.evaluate((itemId) => {
@@ -3117,10 +3136,14 @@ try {
     item.enabledState = await waitTotals(page, { files: 3, additions: 36, deletions: 0 }, { files: 2, additions: 4, deletions: 0 }, 1);
     const enabled = await poll(() => gitLabDom(page), (value) => value.headers.some((row) => row.files === 2 && row.additions === 4 && row.deletions === 0) && value.hidden.some((row) => row.value === 'closed' && row.display === 'none'), 'Actual native header rewrite and hidden file DOM');
     item.enabledDom = enabled;
+    item.visibleCountUi = await page.evaluate(providerUiProbe, 'gitlab');
+    assertVisibleProviderCounts(item.visibleCountUi, item.enabledState.visible);
     item.headerHints = await headerHintsEvidence(page, '1 test', '[data-testid="js-file-addition-line"]', 'gitlab-mixed-header');
     const categorizedPath = item.enabledState.categories.find((category) => category.id === 'tests')?.paths[0];
     assert.ok(typeof categorizedPath === 'string', 'Mixed GitLab fixture needs a real categorized path');
     item.categoryInteraction = await categoryInteraction(page, categorizedPath, 'gitlab', 'gitlab-category', false);
+    item.closedTreeUi = {};
+    await verifyGitLabCategoryFallback(page, item.closedTreeUi, { poll, interact: () => categoryInteraction(page, categorizedPath, 'gitlab', 'gitlab-fallback-category', false, item.categoryInteraction.opened.source), capture: (name) => capture(page, `gitlab-${name}`) });
     item.displayedOutline = {};
     await verifyGitLabDisplayedOutline(page, { progress: item.displayedOutline, poll, pollStable, capture, safeUrl, extensionId,
       readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY),
@@ -3191,8 +3214,8 @@ try {
     item.digest = await poll(() => page.evaluate(() => {
       const panel = document.querySelector('.geld-provider-review');
       if (panel === null) return null;
-      return { state: panel.getAttribute('data-state'), title: panel.querySelector('h2')?.textContent, reviews: panel.querySelector('[data-geld-review-key="reviewers"] summary')?.textContent,
-        checks: panel.querySelector('[data-geld-review-key="checks"] summary')?.textContent, items: panel.querySelectorAll('[data-geld-item]').length,
+      return { state: panel.getAttribute('data-state'), title: panel.querySelector('h2')?.textContent, reviews: panel.querySelector('[data-geld-review-key="reviewers"] > [data-geld-review-toggle]')?.textContent,
+        checks: panel.querySelector('[data-geld-review-key="checks"] > [data-geld-review-toggle]')?.textContent, items: panel.querySelectorAll('[data-geld-item]').length,
         sources: panel.querySelectorAll('[data-geld-source]').length, reviewerRows: panel.querySelectorAll('.geld-provider-review__standing').length, checkRows: panel.querySelectorAll('.geld-provider-review__check').length, activity: panel.querySelectorAll('.geld-provider-review__event').length,
         unavailable: [...panel.querySelectorAll('.geld-provider-review__unavailable')].map((node) => node.textContent),
         sourceLinks: [...panel.querySelectorAll('[data-geld-source] a[href]')].slice(0, 8).map((link) => link.href),
@@ -3202,6 +3225,11 @@ try {
     item.state = await tabState(page);
     assert.equal(item.state.repository?.provider, 'gitlab');
     assert.equal(item.state.onDiffPage, false);
+    assert.ok(item.state.visible, 'Overview must have computed visible line totals');
+    item.headerUi = await poll(() => page.evaluate(providerUiProbe, 'gitlab'), (value) => value.counts.additions.length > 0 && value.counts.deletions.length > 0, 'Visible overview additions and deletions');
+    assertVisibleProviderCounts(item.headerUi, item.state.visible);
+    item.dashboardUi = {};
+    await verifyProviderDashboardUi(page, item.dashboardUi, { poll, capture: (name) => capture(page, `gitlab-${name}`) });
     item.authorPresentation = await authorThemeEvidence(page, 'gitlab', 'note_4118584957');
     assertAuthorThemeEvidence(item.authorPresentation);
     item.localReviewed = await localReviewedFlag(page, (evidence) => { item.nativeFragment = evidence; });
@@ -3327,11 +3355,15 @@ try {
   });
   await runCase('bitbucket-comment-digest', BB_COMMENT_PR, async (page, item) => {
     item.commentDigest = await bitbucketCommentDigest(page);
+    item.dashboardUi = {};
+    await verifyProviderDashboardUi(page, item.dashboardUi, { poll, capture: (name) => capture(page, `bitbucket-${name}`) });
     item.authorPresentation = await authorThemeEvidence(page, 'bitbucket', 'comment-471253038');
     assertAuthorThemeEvidence(item.authorPresentation);
-    item.state = await tabState(page);
+    item.state = await poll(() => tabState(page), (value) => value.repository?.provider === 'bitbucket' && value.visible !== null, 'Bitbucket overview has computed visible totals');
+    item.headerUi = await poll(() => page.evaluate(providerUiProbe, 'bitbucket'), (value) => value.counts.additions.length > 0 && value.counts.deletions.length > 0, 'Visible Bitbucket overview additions and deletions');
+    assertVisibleProviderCounts(item.headerUi, item.state.visible);
     item.featureParity = 'partial';
-    return { status: 'passed', verified: 'Actual public native comment471253038 is safely rendered with its original source permalink and native outdated state. Anonymous write controls remain unavailable; no provider write is attempted.' };
+    return { status: 'passed', verified: 'Actual public native comment471253038 is safely rendered with its original source permalink and native outdated state. The overview visibly renders its adjusted additions and deletions. Anonymous write controls remain unavailable; no provider write is attempted.' };
   });
   await runCase('bitbucket-commit-counts', BB_COMMIT, async (page, item) => {
     item.commitCounts = await bitbucketCommitCounts(page, item);

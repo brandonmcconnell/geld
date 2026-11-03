@@ -43,6 +43,16 @@ test('a valid literal focus change selects that slice', () => {
   assert.deepEqual(select({ body: marker('bitbucket-list'), from: marker('gitlab-review') }), { focus: 'bitbucket-list', run: 'true', failures: [] });
 });
 
+test('UI acceptance aliases reuse two existing cases each without broadening defaults or budgets', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);
+  const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
+  assert.deepEqual(Array.from(cases['gitlab-ui']), ['gitlab-mixed', 'gitlab-overview-digest']);
+  assert.deepEqual(Array.from(cases['bitbucket-ui']), ['bitbucket-diff', 'bitbucket-comment-digest']);
+  for (const focus of ['gitlab-ui', 'bitbucket-ui']) assert.deepEqual(select({ body: marker(focus), from: marker('github') }), { focus, run: 'true', failures: [] });
+  assert.deepEqual(Array.from(cases.regression), ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'github-regression', 'bitbucket-diff']);
+  assert.match(harness, /conservativeObservedRequestBudget: 40/);
+});
+
 test('the literal Bitbucket list+commit slice selects exactly two cases and preserves cold-list demand', () => {
   const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];
   assert.ok(literal);
