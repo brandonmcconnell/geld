@@ -1379,7 +1379,7 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
   The hop exists so the destination can change (a form on the site opening issues through the Geld App on a private tracker, once the source is closed) without a store release.
 - **Pages:** `/` (hero with the two lines of `HEADLINE`, sized in container units so each fills the column at most and never wraps;
   install buttons;
-  the customer logo reel;
+  the customer logo reel, which with the hero fills the first screen below the header (capped at 60rem), so the border under it lands just past the fold, the space above the wordmark shrinking to 1px on a short screen;
   the feature tour;
   live "try a path" demo in `components/path-tester.tsx`), `/how-it-works`, `/patterns` (rendered from `CATEGORIES` — the same source `catalog/patterns.json` is generated from — never hand-written;
   no runtime fetch, so a catalog change reaches the site with the next deploy), `/faq`, `/privacy` (doubles as the store privacy policy).
