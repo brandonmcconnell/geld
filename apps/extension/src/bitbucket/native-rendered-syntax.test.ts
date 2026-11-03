@@ -6,6 +6,7 @@ import { readBitbucketDiff } from './diff';
 import type { ProviderDiffSyntax, ProviderDiffView } from '../providers/types';
 
 const projection = (mode: 'on' | 'off'): string => readFileSync(new NodeURL(`./fixtures/native-syntax-${mode}.html`, import.meta.url), 'utf8');
+const cookieProjection = readFileSync(new NodeURL('./fixtures/passive-cookie-notice.html', import.meta.url), 'utf8');
 const registry = new Map<string, Set<AbstractRange>>();
 const trusted = new WeakSet<Event>();
 let create: typeof import('./diff-syntax').createBitbucketDiffSyntax;
@@ -117,6 +118,30 @@ describe('initial file-local native rendered Syntax On', () => {
   it('direct initial eligibility reads drain detached Settings history before any bridge reapply', () => {
     fixture();preference = new Preference(document, vi.fn());expect(preference.read()).toBe('unknown');expect(preference.allowsInitialRenderedOn()).toBe(true);
     const field = document.createElement('input');field.id = 'diff-settings-syntax-highlighting-toggle';document.body.append(field);field.remove();expect(preference.allowsInitialRenderedOn()).toBe(false);expect(preference.read()).toBe('unknown');
+  });
+
+  it('the original passive cookie notice is neutral only to initial local rendering while global preference stays unknown', () => {
+    fixture();document.body.insertAdjacentHTML('beforeend', cookieProjection);preference = new Preference(document, vi.fn());expect(preference.read()).toBe('unknown');expect(preference.allowsInitialRenderedOn()).toBe(true);expect(preference.read()).toBe('unknown');
+  });
+
+  it('ordinary cookie presence/removal preserves current original source and local On eligibility', () => {
+    fixture();document.body.insertAdjacentHTML('beforeend', cookieProjection);const before = document.body.innerHTML;apply();expect(count()).toBe(47);expect(document.body.innerHTML).toBe(before);document.querySelector('[aria-labelledby="cookiesTrackingNoticeLink"]')?.remove();apply();expect(count()).toBe(47);
+  });
+  it('incomplete initial cookie rendering has no grace or later automatic local qualification', () => {
+    fixture();document.body.insertAdjacentHTML('beforeend', cookieProjection);const cookie = document.querySelector('[aria-labelledby="cookiesTrackingNoticeLink"]');if (cookie === null) throw new Error('Missing cookie');cookie.removeAttribute('role');apply();expect(count()).toBe(0);cookie.setAttribute('role', 'dialog');apply();expect(count()).toBe(0);cookie.remove();apply();expect(count()).toBe(0);
+  });
+
+  it.each(['unknown-field', 'settings-field', 'unknown-dialog', 'label', 'role', 'unknown-form'] as const)('a cookie cannot hide transient unsafe native history from production: %s', (fault) => {
+    fixture();document.body.insertAdjacentHTML('beforeend', cookieProjection);apply();expect(count()).toBe(47);const cookie = document.querySelector('[aria-labelledby="cookiesTrackingNoticeLink"]');if (cookie === null) throw new Error('Missing cookie projection');
+    if (fault === 'label') { cookie.setAttribute('aria-labelledby', 'unknown');cookie.setAttribute('aria-labelledby', 'cookiesTrackingNoticeLink'); }
+    else if (fault === 'role') { cookie.setAttribute('role', 'alertdialog');cookie.setAttribute('role', 'dialog'); }
+    else { const n = document.createElement(fault === 'unknown-dialog' ? 'div' : fault === 'unknown-form' ? 'form' : 'input');if (fault === 'unknown-dialog') n.setAttribute('role', 'dialog');if (fault === 'settings-field') n.id = 'diff-settings-syntax-highlighting-toggle';cookie.append(n);n.remove(); }
+    apply();expect(count()).toBe(0);cookie.remove();apply();expect(count()).toBe(0);syntax?.clear();syntax = create();apply();expect(count()).toBe(0);
+  });
+
+  it('known cookie presence does not weaken global pristine Settings qualification or reopen explicit Off', () => {
+    fixture();apply();open(false).close();expect(count()).toBe(0);document.body.insertAdjacentHTML('beforeend', cookieProjection);apply();expect(count()).toBe(0);document.querySelector('[aria-labelledby="cookiesTrackingNoticeLink"]')?.remove();apply();expect(count()).toBe(0);
+    const active = open(true);document.body.insertAdjacentHTML('beforeend', cookieProjection);active.close();expect(count()).toBe(0);document.querySelector('[aria-labelledby="cookiesTrackingNoticeLink"]')?.remove();apply();expect(count()).toBe(0);
   });
 
   it('clears cached ranges when rendering becomes unknown and re-reads fresh same-route context', () => {
