@@ -2024,3 +2024,9 @@ Bash rowgroup delimiters are observed on that exact file and never inherit the P
 Native source-fragment span/highlight colors and installed owned pseudo rules are compared separately from design-system variables, with plain, ambiguous, inaccessible, occluded and unselected-theme coverage explicitly limited.
 Before selecting standalone native-On, root must independently verify and cite the actual prior PR NativeOn run, artifact and report hashes, successful restoration and observed costs in its admission note.
 The harness labels this prior-success requirement ROOT-MANUAL and unverified by the case, while machine-enforcing a fully free forty-request window, eight free before native Save and the existing global quota/cleanup guards.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
