@@ -8,6 +8,7 @@ import { accountItem, authFlowItem, EMPTY_SYNC_STATE, syncStateItem } from '../l
 import type { AccountActionMessage } from '../lib/messages';
 import { isAccountActionResponse } from '../lib/messages';
 import { formatSyncAge } from './sync-age';
+import { ICON_LINK_EXTERNAL, ICON_SIGN_OUT, ICON_SYNC } from '../github/ui/icons';
 
 /**
  * The account control shown top-right in the popup and options page:
@@ -56,6 +57,11 @@ function svg(markup: string): Element {
   return template.content.firstElementChild ?? document.createElement('span');
 }
 
+/** An account menu row: the action's words, its glyph at the far right. */
+function menuItem(label: string, icon: string, onClick: () => void): HTMLButtonElement {
+  return button([el('span', 'geld-account__menu-label', [label]), svg(icon)], 'geld-account__menu-item', onClick);
+}
+
 export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOptions): () => void {
   const promptHost = options.promptHost ?? host;
   let dashboard:DashboardSession={user:null,teams:[]};
@@ -76,7 +82,7 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
   const startSyncClock = (status: HTMLTimeElement, summary: HTMLElement, timestamp: number): void => {
     const update = (): void => {
       const age = formatSyncAge(timestamp);
-      status.textContent = age.compact;
+      status.textContent = age.accessible;
       status.title = age.accessible;
       status.setAttribute('aria-label', age.accessible);
       summary.title = age.accessible;
@@ -112,7 +118,7 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     if (!compact || (account === null && flow.status !== 'pending')) {
       const shared=el('div','geld-account__shared');
       if(dashboard.user){shared.append(button([dashboard.user.name],'geld-button--small',openGeldAccount));if(!compact){const select=el('select','geld-input');select.setAttribute('aria-label','Geld team');const personal=el('option','',['Personal view']);personal.value='';select.append(personal);for(const team of dashboard.teams){const option=el('option','',[team.name]);option.value=team.id;select.append(option);}select.value=teamId;select.addEventListener('change',()=>{teamId=select.value;void selectDashboardTeam(teamId).then(()=>refreshDashboardSession());});shared.append(select);}}
-      else shared.append(button(['Sign in to Geld'],'geld-button--small geld-button--primary',connectGeld));
+      else shared.append(button(['Sign in to Geld', svg(ICON_LINK_EXTERNAL)],'geld-button--small geld-button--primary',connectGeld));
       host.append(shared);
     }
 
@@ -167,16 +173,12 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     } else {
       summary.title = statusText;
     }
-    const geldItem = !compact
-      ? null
-      : dashboard.user === null
-        ? button(['Sign in to Geld'], 'geld-account__menu-item', connectGeld)
-        : button([`Geld account: ${dashboard.user.name}`], 'geld-account__menu-item', openGeldAccount);
+    const geldItem = compact && dashboard.user !== null ? menuItem(`Geld account: ${dashboard.user.name}`, ICON_LINK_EXTERNAL, openGeldAccount) : null;
     const menu = el('div', 'geld-account__menu-body', [
       status,
-      button(['Sync now'], 'geld-account__menu-item', () => void act('sync-now')),
+      menuItem('Sync now', ICON_SYNC, () => void act('sync-now')),
       ...(geldItem === null ? [] : [geldItem]),
-      button(['Sign out'], 'geld-account__menu-item', () => void act('sign-out')),
+      menuItem('Sign out', ICON_SIGN_OUT, () => void act('sign-out')),
     ]);
     details.append(summary, menu);
     host.append(details);
