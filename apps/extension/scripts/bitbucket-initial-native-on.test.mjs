@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { nativeSettingsReadinessProbe } from './native-settings-readiness.mjs';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
@@ -44,7 +45,7 @@ test('unknown-form diagnostics retain only bounded names/types, never values, la
 function boundary(fault = {}) {
   const order = [];const item = { shellNativeSources: evidence(), syntaxOnTraffic: { records: [], windows: [], truncated: false } };let active = false;let on = false;let dialogs = 0;let events = [];let last = null;let selected = false;let enableAttempted = false;let closed = false;let baseline = false;let budgetCalls = 0;let saveClicks = 0;let nativeActions = 0;
   const vector = () => Array.from({ length: 13 }, (_, i) => ({ id: i === 2 ? SYNTAX : `field${i}`, type: i === 2 ? 'checkbox' : 'unit', checked: i === 2 ? on : false, value: 'unit' }));
-  const native = () => ({ same: !fault.nativeDrift || !active, offPreserved: !on, onBaseline: baseline, onPreserved: !fault.remount || !active, foreignPreserved: !fault.foreign || !active, dialogs, formAvailable: dialogs === 1 && !fault.unknown, ready: dialogs === 1, vector: dialogs ? vector() : null, sourceRows: 55, events: clone(events), baselineEvidence: { origin: 'fresh-native-on-form-open', originalLines: retained.original, renderedLines: retained.on, lineModel: classifySyntaxOnLines(retained.original, retained.on, 'on') } });
+  const native = () => ({ same: !fault.nativeDrift || !active, offPreserved: !on, onBaseline: baseline, onPreserved: !fault.remount || !active, foreignPreserved: !fault.foreign || !active, dialogs, formAvailable: dialogs === 1 && !fault.unknown, ready: dialogs === 1, vector: dialogs ? vector() : null, sourceRows: 55, events: clone(events), earlyEvents: [], baselineEvidence: { origin: 'fresh-native-on-form-open', originalLines: retained.original, renderedLines: retained.on, lineModel: classifySyntaxOnLines(retained.original, retained.on, 'on') } });
   const source = () => ({ ownedCount: active ? fault.rangeCount ?? 47 : 0, invalidRanges: [], selection: selected ? { text: 'if [', anchor: 1, focus: 2 } : null });
   const click = async (kind) => {
     assert.equal(active, false, 'Native control while active');nativeActions++;order.push(kind + (kind === 'save' ? ':' + on : ''));
@@ -57,6 +58,7 @@ function boundary(fault = {}) {
   const page = { url: () => URL, isClosed: () => closed,
     evaluate: async (fn, action) => {
       if (action === 'cleanup') { order.push('cleanup');return null; }
+      if (fn === nativeSettingsReadinessProbe) { if (action === 'begin') return { started: true };return { same: true, clicked: true, dialogs, formPinned: true, presentation: { eligible: true }, diagnostics: { fields: [] } }; }
       if (fn === initialNativeOnFormShape) return { dialogs, fields: [{ name: 'csrf', type: 'hidden' }] };
       if (fn === syntaxOnProbe) {
         if (action === 'event') return last;if (action === 'events') return clone(events);if (action === 'bind') return vector();if (action === 'ready-frames') return { frames: 2 };if (action === 'begin-native-save') return true;
