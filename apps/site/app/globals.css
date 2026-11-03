@@ -60,6 +60,14 @@
   }
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  /* The track holds the logos twice, so sliding it by half lands on an identical frame. */
+  @keyframes logo-reel {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+  --animate-logo-reel: logo-reel 50s linear infinite;
 }
 
 /* Base UI exposes open/closed state as bare data attributes. */
@@ -160,6 +168,25 @@
 
 @utility container-site {
   @apply mx-auto w-full max-w-5xl px-5 sm:px-8;
+}
+
+/* The logo reel's window: logos fade in and out at both edges while they move. */
+@utility logo-reel {
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent, #000 4rem, #000 calc(100% - 4rem), transparent);
+  @media (prefers-reduced-motion: reduce) {
+    mask-image: none;
+  }
+}
+
+/* A customer logo: a single-colour SVG mask filled with the text colour. */
+@utility logo-mask {
+  display: block;
+  flex-shrink: 0;
+  background-color: currentColor;
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  mask-position: center;
 }
 
 /*
