@@ -2631,3 +2631,5 @@ Published CI totals count both queued and manual jobs as waiting, and only nativ
 Native author style acceptance shows the retained original conversation through its actual control before comparing theme-dependent rendered colors.
 A hidden-until-found subtree can retain rendering from an earlier theme, so its folded computed styles are not a visible native color oracle.
 The Bitbucket regression checks category navigation first, then temporarily disables grouping through the shared setting to exercise the original native context tree, restoring the exact setting presence afterward.
+
+Provider configuration caching is best-effort when local storage fails, but aborted or cleared generations still reject before applying fetched rules.
