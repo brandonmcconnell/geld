@@ -175,7 +175,7 @@ function ensureFoldRow(state: Painted, key: string, before: HTMLElement, action:
     button.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (state.root.isConnected) created.action();
+      if (painted.get(state.root) === state && state.notes.get(key) === created && button.isConnected && root.contains(button) && state.root.contains(root)) created.action();
     });
     note = created;
     state.notes.set(key, note);
@@ -354,7 +354,7 @@ export function applyProviderLineFolds(view: ProviderDiffView, files: readonly F
       state.signature = signature;
       state.folds = outline ? outlineTestFolds(reading, syntaxes) : [];
     }
-    const runs = commentRuns(reading, file, settings.hideCommentLines);
+    const runs = commentRuns(reading, file, settings.hideCommentLines && context?.commentCoordinateMismatches?.has(entry.root) !== true);
     followHash(state, reading, runs);
     const counts = paint(state, reading, runs);
     hiddenAdditions += counts.hiddenAdditions;
