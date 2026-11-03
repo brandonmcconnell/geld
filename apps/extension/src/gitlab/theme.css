@@ -63,6 +63,11 @@ html[data-geld-provider="gitlab"] {
   --geld-provider-space-6: var(--gl-spacing-scale-6);
 }
 
+html[data-geld-provider="gitlab"] .geld-provider-review {
+  --geld-provider-bg: var(--gl-background-color-section);
+  --geld-provider-border: var(--gl-border-color-section);
+}
+
 html[data-geld-provider="gitlab"] .geld-provider-review [data-geld-author-profile] { color: var(--gl-text-color-default); }
 
 html[data-geld-provider="gitlab"] .geld-provider-review [data-geld-bot-command] { font-family: var(--font-family-monospace); }
