@@ -50,8 +50,11 @@ describe('database lookup admission before channel authentication', () => {
       expect((await fetch(url+'/v1/channels/missing/request',{method:'POST',body:'{}'})).status).toBe(401);
       expect(resolver).not.toHaveBeenCalled();
       const send = (id:string) => {const path=`/v1/channels/${id}/request`;return fetch(url+path,{method:'POST',body:'{}',headers:signRelay(secret,'POST',path,'{}')});};
-      const requests = Array.from({length:6},(_,i)=>send(`missing-${i}`));
+      const answered: Response[] = [];
+      const requests = Array.from({length:6},(_,i)=>send(`missing-${i}`).then(response=>{answered.push(response);return response;}));
       await vi.waitFor(()=>expect(resolver).toHaveBeenCalledTimes(2));
+      // A request still on its way when the hold is released finds a free slot, so wait for the four the limit turns away.
+      await vi.waitFor(()=>expect(answered).toHaveLength(4));
       expect((await send('static')).status).toBe(400);
       blocked=false;release();
       const responses = await Promise.all(requests);

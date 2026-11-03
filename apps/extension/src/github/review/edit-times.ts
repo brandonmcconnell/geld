@@ -212,6 +212,19 @@ export function editTimesOf(anchor: string, onChange: () => void): { readonly ed
 }
 
 /**
+ * Every time the comment `anchor` was written (ISO, oldest first: the post, then each rewrite): empty when the page
+ * shows no edit (its creation is then the only time, which the caller knows), null while its log is on its way
+ * (`onChange` then runs once it has landed).
+ */
+export function revisionTimesOf(anchor: string, onChange: () => void): readonly string[] | null {
+  const url = editLogUrlOf(anchor);
+  if (url === null) return [];
+  const log = logFor(url, onChange, DISPLAY_REFRESH_MS);
+  if (log.fetchedAt === 0) return null;
+  return log.revisions.map((revision) => revision.at);
+}
+
+/**
  * Read again, once stale, the logs of the comments whose times are on screen (`anchors`). A row is built once and
  * kept while the panel's signature holds, so the refresh `editTimesOf` starts while building it never came for a
  * later edit, or a first one. `onChange` runs only when a log says something new.
