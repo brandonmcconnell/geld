@@ -2459,3 +2459,9 @@ The Bitbucket-scoped Geld fold is relatively positioned so normal DOM paint orde
 
 A maintainer-applied `geld:restack` label defers only public browser and static-provider verification while each PR still runs normal CI and packaging.
 Deferred jobs do not claim a public feature pass, and final-tip public verification runs explicitly after removing the label within the carried provider budget.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
