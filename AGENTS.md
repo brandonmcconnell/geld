@@ -2365,3 +2365,9 @@ The existing API independently resolves full refs and verifies both native prefi
 This native lease is limited to cloud PR diff pages with the observed All changes and original Settings controls.
 Lists, standalone commits, other tabs, and unsupported browsers keep their existing policy.
 The whole-context acceptance harness explicitly sets `hideWhitespace:false` to preserve its raw source fixture.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
