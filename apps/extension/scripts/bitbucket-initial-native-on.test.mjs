@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { observeInitialOnSource } from './bitbucket-initial-on-source.mjs';
 import { nativeSettingsReadinessProbe } from './native-settings-readiness.mjs';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
@@ -91,12 +92,12 @@ test('late traffic after checkbox work drops below8 and blocks actual Save with 
 
 for (const failDisable of [false, true]) for (const assetCleanupFailure of [false,true]) test(`actual outer runner suppresses unknown-form auth/DOM/AX and preserves cleanup failure:${failDisable}, optional asset cleanup:${assetCleanupFailure}`, async () => {
   const b = boundary({ unknown: true, disable: failDisable });let stored = { enabled: true, quickReview: true, retained: 'preserve' };const original = clone(stored);let captures = 0;let auth = 0;let saves = 0;
-  Object.assign(b.page, { setViewport: async () => {}, bringToFront: async () => {}, on: () => {}, once: () => {}, off: () => {}, goto: async () => { assert.equal(stored.enabled, false);b.order.push('navigate-disabled');return { status: () => 200 }; } });
+  Object.assign(b.page, { mainFrame: () => null, setViewport: async () => {}, bringToFront: async () => {}, on: () => {}, once: () => {}, off: () => {}, goto: async () => { assert.equal(stored.enabled, false);b.order.push('navigate-disabled');return { status: () => 200 }; } });
   const report = { cases: [], infrastructureErrors: [], quotaPolicy: { conservativeObservedRequestBudget: 40 } };
   const body = harness.slice(harness.indexOf('async function runCase('), harness.indexOf('\nasync function crossSettingsDom('));
   const context = { assert, report, focus: 'bitbucket-pipeline-initial-on', FOCUSED_CASES: { 'bitbucket-pipeline-initial-on': ['bitbucket-pipeline-initial-on'] }, AbortController, structuredClone, providerOf: () => 'bitbucket', cooldowns: new Map(), SETTINGS_KEY: 'settings', currentCaseAbort: undefined, extensionId: 'unit', bitbucketRequestTimes: [], initialNativeOnPreflight, initialNativeOnSettings, initialOnSettingsScopes: new WeakMap(), syntaxOnObservers: new WeakMap(),
     options: { evaluate: async (...args) => { if (args.length === 3) { if (args[2]?.enabled === true) { assert.equal(b.page.isClosed(), true);b.order.push('restore-master'); }stored = clone(args[2]); }return clone(stored); } },
-    browser: { newPage: async () => { assert.equal(stored.enabled, false);b.order.push('create-disabled');return b.page; } }, observeBitbucketBudget: () => {}, observeBitbucketPipelineMainAsset:(_page,p,opts)=>{assert.equal(opts.moduleOnly,true);assert.equal(b.order.includes('navigate-disabled'),false);b.order.push('module-observe');return{dispose:async()=>{b.order.push('module-dispose');if(assetCleanupFailure)throw Error('DO_NOT_RETAIN_AUTH');p.status='unavailable';}};}, createSyntaxOnRequestIdentity: () => () => 1,
+    browser: { newPage: async () => { assert.equal(stored.enabled, false);b.order.push('create-disabled');return b.page; } }, observeBitbucketBudget: () => {}, observeBitbucketPipelineMainAsset:(_page,p,opts)=>{assert.equal(opts.moduleOnly,true);assert.equal(b.order.includes('navigate-disabled'),false);b.order.push('module-observe');return{dispose:async()=>{b.order.push('module-dispose');if(assetCleanupFailure)throw Error('DO_NOT_RETAIN_AUTH');p.status='unavailable';}};}, createSyntaxOnRequestIdentity: () => () => 1, observeInitialOnSource,
     observeSyntaxOnTraffic: (_page, progress) => { Object.assign(progress, b.item.syntaxOnTraffic);return { ...b.deps.traffic, dispose: () => {} }; },
     observeBitbucketShellFixture: (_page, item) => { item.shellNativeSources = b.item.shellNativeSources; },
     assertInitialNativeOnTraffic, assertSyntaxOnTraffic: (traffic) => { assert.equal(traffic.truncated, false); }, authObservation: async () => { auth++;throw Error('Unexpected outer authentication serialization'); }, capture: async () => { captures++;throw Error('DO_NOT_RETAIN_AUTH'); }, safeUrl: (v) => v, errorText: String, closedTarget: () => false, console: { log: () => {} }, saveReport: async () => { saves++;assert.doesNotMatch(JSON.stringify(report), /DO_NOT_RETAIN_AUTH/); },
@@ -158,4 +159,11 @@ test('unknown native field names cannot carry arbitrary text into the report', (
   const window = new Window();const original = globalThis.document;
   try { globalThis.document = window.document;const dialog = document.createElement('section');dialog.setAttribute('role', 'dialog');const input = document.createElement('input');input.name = 'DO NOT RETAIN arbitrary secret text';input.type = 'hidden';input.value = 'secretValue';dialog.append(input);document.body.append(dialog);const result = initialNativeOnFormShape();assert.deepEqual(result.fields, [{ name: '[omitted]', type: 'hidden' }]);assert.doesNotMatch(JSON.stringify(result), /DO NOT RETAIN|secretValue/); }
   finally { if (original === undefined) delete globalThis.document;else globalThis.document = original;window.happyDOM.abort(); }
+});
+
+for (const fail of [false, true]) test(`actual first-use orchestrator requires the explicit closed-form tuple recheck/reserve before its sole enable:${fail}`, async () => {
+  const b = boundary();let rechecked = false;
+  b.deps.unitOnly.sourceQualifier = { current: () => ({ sourceRepo: REPO, head: HEAD, base: BASE }), beforeEnable: async () => { assert.equal(b.active(), false);assert.equal(b.on(), true);assert.equal(b.order.at(-1), 'cancel');b.order.push('explicit-current-tuple-recheck');if (fail) throw Error('API comparison changed before enable');rechecked = true; }, assertEnableReserve: () => { assert.equal(rechecked, true);assert.equal(b.active(), false);b.order.push('explicit-enable-reserve'); } };
+  if (fail) { await assert.rejects(verifyInitialNativeOn(b.page, b.item, b.deps), /API comparison changed/);assert.equal(b.order.includes('enable'), false);assert.equal(b.item.initialNativeOn.restoration.status, 'restored');assert.equal(b.on(), false); }
+  else { await verifyInitialNativeOn(b.page, b.item, b.deps);assert.deepEqual(b.order.slice(b.order.indexOf('explicit-enable-reserve'), b.order.indexOf('enable') + 1), ['explicit-enable-reserve', 'firstuse_enable_master', 'enable']);assert.equal(b.item.initialNativeOn.status, 'passed'); }
 });
