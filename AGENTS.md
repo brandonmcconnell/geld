@@ -2477,3 +2477,5 @@ The trusted summary runner keeps this endpoint-specific limit through pagination
 
 Provider header ownership checks run in document mutation callbacks and must not read computed styles or layout.
 Native count visibility is refreshed during rendering and resize observation, while needsRepair checks only the owned hint attachment.
+
+Provider configuration caching is best-effort when local storage fails, but aborted or cleared generations still reject before applying fetched rules.
