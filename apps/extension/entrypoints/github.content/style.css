@@ -6234,6 +6234,11 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   margin-left: -5px;
 }
 
+/* The history menu and its tooltip, side by side: no box of its own, so the menu stands in the byline as before. */
+.geld-review__edited-pair {
+  display: contents;
+}
+
 .geld-review__edited {
   display: inline-flex;
   align-items: center;
@@ -6250,17 +6255,6 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 .geld-review__edited svg {
   width: 12px;
   height: 12px;
-}
-
-/* An edited comment's time in a row: the edit's, then the clock, on the time's own line. */
-.geld-review__time--edited {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.geld-review__time--edited > .geld-review__edited-wrap {
-  margin-left: 0;
 }
 
 /* The clock that opens GitHub's edit history is GitHub's dropdown: a summary, so no marker and the pointer. */
@@ -6281,7 +6275,10 @@ summary.geld-review__edited--menu:hover,
   color: var(--fgColor-accent, var(--color-accent-fg));
 }
 
+/* GitHub's `dropdown-menu-sw` caret sits about 15px in from the menu's right edge, centred on its own wider "edited ▾"
+ * control. Ours is a 12px clock whose centre is 6px in, so the menu moves 9px right to put the caret's tip on it. */
 .geld-review__edited-wrap > details-menu {
+  right: -9px;
   font-size: 12px;
   font-weight: 400;
   text-align: left;
