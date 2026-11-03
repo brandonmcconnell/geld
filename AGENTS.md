@@ -2209,3 +2209,9 @@ Witness-mutation failures retain only a fixed attribute and target kind, current
 After a Rapid whitespace reload, GitLab can place `streaming-element` directly under `data-diffs-list`, while the initial page nests it inside `data-stream-remaining-diffs`.
 The layout adapter recognizes both native structures, validates the same children and normal-flow constraints, and applies grouping through CSS without moving native files or controls.
 Treating the direct native stream as an unknown wrapper forced inline fallback: counts stayed correct while category-hidden file roots became visible.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
