@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { BITBUCKET_UI_PR, BITBUCKET_UI_PATH, bitbucketUiSourceCache, verifyBitbucketUiContinuity } from './bitbucket-ui-continuity.mjs';
 /** Live installed-extension smoke. Run only where unpacked extensions are permitted by policy. */
 import assert from 'node:assert/strict';
 import { isDeepStrictEqual } from 'node:util';
@@ -57,7 +58,7 @@ const BITBUCKET_ANONYMOUS_COOLDOWN_MS = 62 * 60 * 1000; // Documented rolling-ho
 const FOCUSED_CASES = {
   regression: ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'github-regression', 'bitbucket-diff'],
   'bitbucket-diff': ['bitbucket-diff'],
-  'bitbucket-ui': ['bitbucket-diff', 'bitbucket-comment-digest'],
+  'bitbucket-ui': ['bitbucket-ui-continuity'],
   'gitlab-ui': ['gitlab-mixed', 'gitlab-overview-digest'],
   'bitbucket-whitespace-session': ['bitbucket-whitespace-session'],
   'bitbucket-pipeline-shell': ['bitbucket-pipeline-shell'],
@@ -1488,26 +1489,28 @@ function guardBitbucketPrContextBudget(options) {
   return { observedWithinRollingHour: active, observedLimit: 47, externalReserve: 3, ...decision };
 }
 
-async function bitbucketFiltering(page, item) {
-  const all = { files: 5, additions: 46, deletions: 29 };
-  item.baseline = await waitTotals(page, all, all, 0);
-  item.baselineDom = await poll(() => bitbucketDom(page), (value) => value.files === all.files && value.additions === all.additions && value.deletions === all.deletions && value.hidden.length === 0, 'Actual native Bitbucket baseline counts');
+async function bitbucketFiltering(page, item, continuity = null) {
+  const all = continuity?.originalState.all ?? { files: 5, additions: 46, deletions: 29 };
+  const path = continuity === null ? 'pipe/pipe.py' : BITBUCKET_UI_PATH;
   const summarySelector = '#file-tree :has(> .geld-provider-accessible-counts)';
-  item.baselineHeaderHints = await headerHintsEvidence(page, '0 tests', summarySelector, 'bitbucket-baseline', false);
   const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
   try {
-    await patchSettings({ categoryPatterns: { ...original.categoryPatterns, tests: ['pipe/pipe.py'] } });
-    item.filtered = await poll(() => tabState(page), (state) => state.hasDiff === true && state.all?.files === 5 && state.all.additions === 46 && state.all.deletions === 29 && state.visible?.files === 4 && state.hiddenCount === 1 && state.categories.some((category) => category.id === 'tests' && category.paths.includes('pipe/pipe.py')), 'Actual shared pattern setting hides one complete Bitbucket file');
+    if (continuity !== null) await patchSettings({ categoryPatterns: { ...original.categoryPatterns, tests: ['!**/*'] } });
+    item.baseline = await waitTotals(page, all, all, 0);
+    item.baselineDom = await poll(() => bitbucketDom(page), (value) => value.files === all.files && value.additions === all.additions && value.deletions === all.deletions && value.hidden.length === 0, 'Actual native Bitbucket baseline counts');
+    item.baselineHeaderHints = await headerHintsEvidence(page, '0 tests', summarySelector, 'bitbucket-baseline', false);
+    await patchSettings({ categoryPatterns: { ...original.categoryPatterns, tests: continuity === null ? [path] : [...continuity.source.files.filter(file => file.path !== path).map(file => `!${file.path}`), path] } });
+    item.filtered = await poll(() => tabState(page), (state) => state.hasDiff === true && state.all?.files === all.files && state.all.additions === all.additions && state.all.deletions === all.deletions && state.visible?.files === all.files - 1 && state.hiddenCount === 1 && state.categories.some((category) => category.id === 'tests' && category.paths.includes(path)), 'Actual shared pattern setting hides one complete Bitbucket file');
     const visible = item.filtered.visible;
-    item.derivedHidden = { path: 'pipe/pipe.py', files: all.files - visible.files, additions: all.additions - visible.additions, deletions: all.deletions - visible.deletions, basis: 'Actual complete adapter result minus actual visible totals, not a guessed fixture count' };
+    item.derivedHidden = { path, files: all.files - visible.files, additions: all.additions - visible.additions, deletions: all.deletions - visible.deletions, basis: 'Actual complete adapter result minus actual visible totals, not a guessed fixture count' };
     assert.ok(item.derivedHidden.additions + item.derivedHidden.deletions > 0, 'The selected file did not remove any changed lines');
-    item.filteredDom = await poll(() => bitbucketDom(page), (value) => value.files === visible.files && value.additions === visible.additions && value.deletions === visible.deletions && value.hidden.some((file) => file.path === 'pipe/pipe.py' && file.mode === 'closed' && file.display === 'none'), 'Native Bitbucket file count/line totals and actual hidden file wrapper');
+    item.filteredDom = await poll(() => bitbucketDom(page), (value) => value.files === visible.files && value.additions === visible.additions && value.deletions === visible.deletions && value.hidden.some((file) => file.path === path && file.mode === 'closed' && file.display === 'none'), 'Native Bitbucket file count/line totals and actual hidden file wrapper');
     item.filteredHeaderHints = await headerHintsEvidence(page, '1 test', summarySelector, 'bitbucket-filtered');
     item.visibleCountUi = await page.evaluate(providerUiProbe, 'bitbucket');
     assertVisibleProviderCounts(item.visibleCountUi, visible);
     assert.deepEqual(item.filteredHeaderHints.nativeIds, item.baselineHeaderHints.nativeIds, 'Category hint update changed native header/file anchor IDs');
     item.filteredArtifacts = await capture(page, 'bitbucket-pattern-filtered');
-    item.categoryInteraction = await categoryInteraction(page, 'pipe/pipe.py', 'bitbucket', 'bitbucket-category', true);
+    item.categoryInteraction = await categoryInteraction(page, path, 'bitbucket', 'bitbucket-category', true);
     item.spokenFiltered = await poll(() => page.$eval(`${summarySelector} > .geld-provider-accessible-counts`, (node) => node.textContent), (text) => text.includes(`${visible.files} files changed`) && text.includes(`Added ${visible.additions} lines`) && text.includes(`Removed ${visible.deletions} lines`), 'Native Bitbucket screen reader totals follow actual filtering');
     item.keyboardStatsHover = await installedHover(page, summarySelector, 'keyboard', 'bitbucket-stats-keyboard-hover');
     item.zoom200 = await responsiveHover(page, summarySelector, 'bitbucket-zoom200', item.keyboardStatsHover.text);
@@ -1523,11 +1526,18 @@ async function bitbucketFiltering(page, item) {
       if (changed) item.osDarkPreference.artifacts = await capture(page, 'bitbucket-os-dark');
     } finally { await page.emulateMediaFeatures([]); }
   } finally {
-    await patchSettings({ categoryPatterns: original.categoryPatterns ?? {} });
+    await options.evaluate(async (key, saved) => {
+      const current = (await chrome.storage.sync.get(key))[key] ?? {};
+      if (Object.hasOwn(saved, 'categoryPatterns')) current.categoryPatterns = saved.categoryPatterns;
+      else delete current.categoryPatterns;
+      await chrome.storage.sync.set({ [key]: current });
+    }, SETTINGS_KEY, original);
   }
-  item.restored = await waitTotals(page, all, all, 0);
-  item.restoredDom = await poll(() => bitbucketDom(page), (value) => value.files === all.files && value.additions === all.additions && value.deletions === all.deletions && value.hidden.length === 0, 'Native Bitbucket counts and hiding attributes restored after pattern removal');
-  item.restoredHeaderHints = await headerHintsEvidence(page, '0 tests', summarySelector, 'bitbucket-restored', false);
+  const restoredVisible = continuity?.originalState.visible ?? all;
+  const restoredHidden = continuity?.originalState.hiddenCount ?? 0;
+  item.restored = await waitTotals(page, all, restoredVisible, restoredHidden);
+  item.restoredDom = await poll(() => bitbucketDom(page), (value) => value.files === restoredVisible.files && value.additions === restoredVisible.additions && value.deletions === restoredVisible.deletions && value.hidden.length === restoredHidden, 'Native Bitbucket counts and hiding attributes restored after pattern removal');
+  item.restoredHeaderHints = await headerHintsEvidence(page, `${restoredHidden} ${restoredHidden === 1 ? 'test' : 'tests'}`, summarySelector, 'bitbucket-restored', false);
   assert.deepEqual(item.restoredHeaderHints.nativeIds, item.baselineHeaderHints.nativeIds);
 }
 
@@ -3353,18 +3363,30 @@ try {
       return { available: remaining >= 16, remaining };
     } });
   });
-  await runCase('bitbucket-comment-digest', BB_COMMENT_PR, async (page, item) => {
+  const verifyDigestUi = async (page, item) => {
     item.commentDigest = await bitbucketCommentDigest(page);
     item.dashboardUi = {};
-    await verifyProviderDashboardUi(page, item.dashboardUi, { poll, capture: (name) => capture(page, `bitbucket-${name}`) });
-    item.authorPresentation = await authorThemeEvidence(page, 'bitbucket', 'comment-471253038');
-    assertAuthorThemeEvidence(item.authorPresentation);
+    await verifyProviderDashboardUi(page, item.dashboardUi, { poll, capture: (name) => capture(page, `bitbucket-${name}`), onOriginalsShown: async () => {
+      item.authorPresentation = await authorThemeEvidence(page, 'bitbucket', 'comment-471253038');
+      assertAuthorThemeEvidence(item.authorPresentation);
+    } });
     item.state = await poll(() => tabState(page), (value) => value.repository?.provider === 'bitbucket' && value.visible !== null, 'Bitbucket overview has computed visible totals');
     item.headerUi = await poll(() => page.evaluate(providerUiProbe, 'bitbucket'), (value) => value.counts.additions.length > 0 && value.counts.deletions.length > 0, 'Visible Bitbucket overview additions and deletions');
     assertVisibleProviderCounts(item.headerUi, item.state.visible);
     item.featureParity = 'partial';
     return { status: 'passed', verified: 'Actual public native comment471253038 is safely rendered with its original source permalink and native outdated state. The overview visibly renders its adjusted additions and deletions. Anonymous write controls remain unavailable; no provider write is attempted.' };
-  });
+  };
+  if (focus === 'bitbucket-ui') await runCase('bitbucket-ui-continuity', BITBUCKET_UI_PR, async (page, item) => verifyBitbucketUiContinuity(page, item, {
+    verifyDigest: verifyDigestUi,
+    readState: tabState,
+    readSource: () => options.evaluate(bitbucketUiSourceCache),
+    verifyFiltering: bitbucketFiltering,
+    poll,
+    quota: () => ({ observedThisCase: item.observedBitbucketApiRequests ?? 0, activeWithinHour: bitbucketRequestTimes.filter(at => at > Date.now() - 60 * 60 * 1000).length, limit: report.quotaPolicy.conservativeObservedRequestBudget }),
+    guard: () => { currentCaseAbort?.signal.throwIfAborted();assert.equal(bitbucketBudgetHold(bitbucketRequestTimes, report.quotaPolicy.conservativeObservedRequestBudget), null, 'No remaining observed request budget for the native Files transition'); },
+    checkpoint: saveReport,
+  }));
+  await runCase('bitbucket-comment-digest', BB_COMMENT_PR, verifyDigestUi);
   await runCase('bitbucket-commit-counts', BB_COMMIT, async (page, item) => {
     item.commitCounts = await bitbucketCommitCounts(page, item);
     item.state = await tabState(page);

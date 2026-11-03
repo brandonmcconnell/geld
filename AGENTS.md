@@ -2490,6 +2490,20 @@ Keep that limit and its carried history intact when arranging focused UI checks,
 GNU tar can finish extracting a requested member before Node has written a full repository archive into its stdin.
 The malicious PAX license fixture uses a temporary archive file to avoid an EPIPE race while preserving its exact extracted-size, hash and verifier-rejection assertions.
 
+Restack and description-only workflow runs can bury the last actual browser result beyond a fixed page of completed runs.
+Cooldown restoration discovers named browser artifacts with bounded pagination and verifies their workflow and repository before selecting the latest retained result.
+Incomplete or ambiguous history must stop provider navigation instead of silently resetting the request budget.
+
+GitLab can render a diff-stat sign separately from its numeric leaf, so visible-count acceptance requires both parts in the same native group.
+Conversation preservation checks retain exact native roots, parents, IDs and semantic body nodes while allowing unrelated live timestamp labels to update.
+Unknown native shapes retain strict whole-root comparison, and changed bodies or replaced source nodes still fail the check.
+
+The bounded Bitbucket UI continuity case starts on public PR22, checkpoints its real comment digest, then clicks the original native Files tab once on the same document.
+Earlier independent PR27 diff and PR22 overview runs each observed 26 standard API requests, so combining two fresh page bootstraps does not fit the unchanged 40-request budget.
+The continuity case corroborates public tab-state totals with the read-only complete-result cache and actual native file inventory, without writing cache entries or issuing an oracle request.
+A changed cache identity, untrusted input, full document navigation, missing native file or exhausted budget leaves the combined case incomplete while preserving its earlier digest checkpoint.
+The independent `bitbucket-diff` and `bitbucket-comment` focuses remain available to verify the unfinished half in a later eligible window.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
