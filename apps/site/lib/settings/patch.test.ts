@@ -75,6 +75,18 @@ describe('applyPatch', () => {
     expect(list.ok && list.settings.repoRules).toEqual(['acme', '!acme/widgets']);
   });
 
+  it('ticks one checklist box at a time, on the saved set', () => {
+    expect(isSettingsPatch({ kind: 'checklist', key: 'apiTriggerBots', value: 'greptile', checked: true })).toBe(true);
+    expect(isSettingsPatch({ kind: 'checklist', key: 'apiTriggerBots', value: 'coderabbit', checked: true })).toBe(false);
+    expect(isSettingsPatch({ kind: 'checklist', key: 'apiTriggerBots', value: 'greptile' })).toBe(false);
+    // Bugbot was turned on elsewhere after this page loaded: ticking Greptile here keeps it.
+    const saved = { ...DEFAULT_SETTINGS, apiTriggerBots: ['bugbot'] };
+    const ticked = applyPatch(saved, { kind: 'checklist', key: 'apiTriggerBots', value: 'greptile', checked: true });
+    expect(ticked.ok && ticked.settings.apiTriggerBots).toEqual(['bugbot', 'greptile']);
+    const unticked = applyPatch(saved, { kind: 'checklist', key: 'apiTriggerBots', value: 'bugbot', checked: false });
+    expect(unticked.ok && unticked.settings.apiTriggerBots).toEqual([]);
+  });
+
   it('adds, replaces and removes extra patterns per category', () => {
     const added = applyPatch(DEFAULT_SETTINGS, { kind: 'category-patterns', categoryId: 'docs', lines: ['*.golden', ''] });
     expect(added.ok && added.settings.categoryPatterns).toEqual({ docs: ['*.golden'] });

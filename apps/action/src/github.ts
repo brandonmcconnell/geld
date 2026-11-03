@@ -7,7 +7,7 @@ import { createApiTransport } from '@geld/github';
 import { isAllowedSummaryAuthor, looksLikeSummaryBody, parseSummaryBody } from '@geld/review';
 import type { GeldPrMeta } from '@geld/review';
 import type { RawCheckRun } from '@geld/review';
-import type { RawIssueComment, RawPullRequest, RawReview, RawThread } from '@geld/review';
+import type { CommentReaction, RawIssueComment, RawPullRequest, RawReview, RawThread } from '@geld/review';
 
 const API = 'https://api.github.com';
 const GRAPHQL = `${API}/graphql`;
@@ -74,7 +74,10 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
       }
       comments(first: 50, after: $commentCursor) {
         pageInfo { hasNextPage endCursor }
-        nodes { databaseId author { login __typename } body createdAt lastEditedAt }
+        nodes {
+          databaseId author { login __typename } body createdAt lastEditedAt
+          reactionGroups { content reactors(first: 10) { nodes { __typename ... on Bot { login } ... on User { login } } } }
+        }
       }
       reviews(first: 50, after: $reviewCursor) {
         pageInfo { hasNextPage endCursor }
@@ -177,6 +180,22 @@ interface GqlComment {
   readonly createdAt: string;
   /** Issue comments only (the query asks for it there); null when never edited. */
   readonly lastEditedAt?: string | null;
+  /** Issue comments only: the Geld workflow answers a `/geld run` command with a 🚀 or a 😕 reaction. */
+  readonly reactionGroups?: readonly GqlReactionGroup[] | null;
+}
+
+interface GqlReactionGroup {
+  /** `ROCKET`, `CONFUSED`, `THUMBS_UP`, … */
+  readonly content: string;
+  readonly reactors: { readonly nodes: readonly { readonly __typename?: string; readonly login?: string | null }[] };
+}
+
+/** The reactions as the page's tooltips name them ("rocket", "thumbs up"), by the login GitHub shows. */
+function reactionsOf(groups: readonly GqlReactionGroup[] | null | undefined): readonly CommentReaction[] {
+  return (groups ?? []).flatMap((group) => {
+    const emoji = group.content.toLowerCase().replace(/_/g, ' ');
+    return group.reactors.nodes.flatMap((reactor) => (typeof reactor.login === 'string' ? [{ login: loginOf({ login: reactor.login, ...(reactor.__typename === undefined ? {} : { __typename: reactor.__typename }) }), emoji }] : []));
+  });
 }
 
 interface GqlReview {
@@ -347,12 +366,14 @@ export async function loadPullRequest(client: GithubClient, owner: string, repo:
       });
     }
     for (const node of pr.comments.nodes) {
+      const reactions = reactionsOf(node.reactionGroups);
       comments.push({
         databaseId: node.databaseId,
         author: loginOf(node.author),
         body: node.body,
         createdAt: node.createdAt,
         ...(typeof node.lastEditedAt === 'string' ? { editedAt: node.lastEditedAt } : {}),
+        ...(reactions.length === 0 ? {} : { reactions }),
       });
     }
     for (const node of pr.reviews.nodes) {

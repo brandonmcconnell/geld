@@ -208,7 +208,7 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
                         field={field}
                         values={settings[field.key]}
                         disabled={signedOut || remoteInvalid}
-                        onChange={(values) => void submit({ kind: 'checklist', key: field.key, values })}
+                        onChange={(value, checked) => void submit({ kind: 'checklist', key: field.key, value, checked })}
                       />
                     );
                   case 'list':

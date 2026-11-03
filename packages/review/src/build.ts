@@ -8,7 +8,7 @@ import { parsePreviews, previewDocFromMarkdown } from './previews';
 import { META_VERSION, PAYLOAD_BUDGET, STATUS_RANK, truncateMeta } from './model';
 import { isTriggerComment, looksLikeBotLogin, resolveBotId, verdictsFrom } from './bots';
 import type { BotComment, RawCheckRun } from './bots';
-import type { RawComment } from './cluster';
+import type { CommentReaction, RawComment } from './cluster';
 import { clusterComments, isBotOnly } from './cluster';
 import { applyAddressedAll } from './addressed';
 import type { Carried } from './consolidate';
@@ -38,6 +38,8 @@ export interface RawIssueComment {
   readonly createdAt: string;
   /** When it was last rewritten, ISO (the API's `lastEditedAt`): a bot that re-reviews into the same comment reports by editing it. */
   readonly editedAt?: string;
+  /** Its reactions: the Geld workflow's 🚀 or 😕 is its answer to a `/geld run` command (see `geldRunAnswer`). */
+  readonly reactions?: readonly CommentReaction[];
 }
 
 export interface RawReview {
@@ -258,7 +260,7 @@ export function buildMeta(pr: RawPullRequest, options: BuildOptions): GeldPrMeta
     return review === undefined ? created : review.at;
   };
   const ordered: { readonly comment: BotComment; readonly at: number; readonly rank: number }[] = [
-    ...pr.comments.map((comment) => ({ comment: { author: comment.author, body: comment.body, anchor: `issuecomment-${comment.databaseId}`, createdAt: comment.createdAt, ...(comment.editedAt === undefined ? {} : { editedAt: comment.editedAt }) }, at: Date.parse(comment.createdAt), rank: 0 })),
+    ...pr.comments.map((comment) => ({ comment: { author: comment.author, body: comment.body, anchor: `issuecomment-${comment.databaseId}`, createdAt: comment.createdAt, ...(comment.editedAt === undefined ? {} : { editedAt: comment.editedAt }), ...(comment.reactions === undefined ? {} : { reactions: comment.reactions }) }, at: Date.parse(comment.createdAt), rank: 0 })),
     ...pr.reviews.map((review) => ({ comment: { author: review.author, body: review.body, anchor: `pullrequestreview-${review.databaseId}`, ...(review.submittedAt === null ? {} : { createdAt: review.submittedAt }) }, at: Date.parse(review.submittedAt ?? ''), rank: 0 })),
     ...pr.threads.flatMap((thread) => {
       const first = thread.comments[0];

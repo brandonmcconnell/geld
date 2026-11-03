@@ -32223,11 +32223,11 @@ function botsTriggeredBy(body, extraLogins = []) {
   return out;
 }
 var API_TRIGGER_BOT_IDS = ["greptile", "bugbot", "devin"];
-var GELD_RUN = /^\/geld\s+run\s+([a-z][a-z0-9-]*(?:[\s,]+[a-z][a-z0-9-]*)*)\s*$/i;
+var GELD_RUN = /^\/geld[ \t]+run[ \t]+([a-z][a-z0-9-]*(?:[ \t,]+[a-z][a-z0-9-]*)*)[ \t]*$/i;
 function geldRunBots(body) {
   const match = GELD_RUN.exec(body.trim());
   if (match?.[1] === void 0) return [];
-  const ids = [...new Set(match[1].toLowerCase().split(/[\s,]+/).filter((id) => id !== ""))];
+  const ids = [...new Set(match[1].toLowerCase().split(/[ \t,]+/).filter((id) => id !== ""))];
   return ids.every((id) => API_TRIGGER_BOT_IDS.includes(id)) ? ids : [];
 }
 function geldRunAnswer(comment) {
@@ -33497,7 +33497,7 @@ function buildMeta(pr, options) {
     return review === void 0 ? created : review.at;
   };
   const ordered = [
-    ...pr.comments.map((comment) => ({ comment: { author: comment.author, body: comment.body, anchor: `issuecomment-${comment.databaseId}`, createdAt: comment.createdAt, ...comment.editedAt === void 0 ? {} : { editedAt: comment.editedAt } }, at: Date.parse(comment.createdAt), rank: 0 })),
+    ...pr.comments.map((comment) => ({ comment: { author: comment.author, body: comment.body, anchor: `issuecomment-${comment.databaseId}`, createdAt: comment.createdAt, ...comment.editedAt === void 0 ? {} : { editedAt: comment.editedAt }, ...comment.reactions === void 0 ? {} : { reactions: comment.reactions } }, at: Date.parse(comment.createdAt), rank: 0 })),
     ...pr.reviews.map((review) => ({ comment: { author: review.author, body: review.body, anchor: `pullrequestreview-${review.databaseId}`, ...review.submittedAt === null ? {} : { createdAt: review.submittedAt } }, at: Date.parse(review.submittedAt ?? ""), rank: 0 })),
     ...pr.threads.flatMap((thread) => {
       const first = thread.comments[0];
@@ -33927,7 +33927,10 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
       }
       comments(first: 50, after: $commentCursor) {
         pageInfo { hasNextPage endCursor }
-        nodes { databaseId author { login __typename } body createdAt lastEditedAt }
+        nodes {
+          databaseId author { login __typename } body createdAt lastEditedAt
+          reactionGroups { content reactors(first: 10) { nodes { __typename ... on Bot { login } ... on User { login } } } }
+        }
       }
       reviews(first: 50, after: $reviewCursor) {
         pageInfo { hasNextPage endCursor }
@@ -33982,6 +33985,12 @@ async function remainingThreadComments(client, threadId, first) {
     cursor = data.node.comments.pageInfo.endCursor;
   }
   return nodes;
+}
+function reactionsOf(groups) {
+  return (groups ?? []).flatMap((group) => {
+    const emoji3 = group.content.toLowerCase().replace(/_/g, " ");
+    return group.reactors.nodes.flatMap((reactor) => typeof reactor.login === "string" ? [{ login: loginOf({ login: reactor.login, ...reactor.__typename === void 0 ? {} : { __typename: reactor.__typename } }), emoji: emoji3 }] : []);
+  });
 }
 var CHECK_CONTEXTS_QUERY = `
 query GeldCheckContexts($owner: String!, $name: String!, $oid: GitObjectID!, $cursor: String) {
@@ -34091,12 +34100,14 @@ async function loadPullRequest(client, owner, repo, number4) {
       });
     }
     for (const node2 of pr.comments.nodes) {
+      const reactions = reactionsOf(node2.reactionGroups);
       comments.push({
         databaseId: node2.databaseId,
         author: loginOf(node2.author),
         body: node2.body,
         createdAt: node2.createdAt,
-        ...typeof node2.lastEditedAt === "string" ? { editedAt: node2.lastEditedAt } : {}
+        ...typeof node2.lastEditedAt === "string" ? { editedAt: node2.lastEditedAt } : {},
+        ...reactions.length === 0 ? {} : { reactions }
       });
     }
     for (const node2 of pr.reviews.nodes) {

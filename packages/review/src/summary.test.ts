@@ -809,6 +809,8 @@ describe('bots + prompts', () => {
     expect(geldRunBots('/geld run coderabbit')).toEqual([]);
     expect(geldRunBots('/geld run greptile please')).toEqual([]);
     expect(geldRunBots('Use /geld run greptile next time')).toEqual([]);
+    // One line: the workflow refuses a command split over lines, so it starts no run here either.
+    expect(geldRunBots('/geld run greptile\nbugbot')).toEqual([]);
     expect(isTriggerComment('/geld run greptile bugbot')).toBe(true);
     expect(botByTrigger('/geld run devin')?.id).toBe('devin');
     expect(botsTriggeredBy('/geld run greptile bugbot').map((bot) => `${bot.id}:${bot.login}`)).toEqual(['greptile:greptile-apps[bot]', 'bugbot:cursor[bot]']);

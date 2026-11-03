@@ -100,14 +100,18 @@ jobs:
               return core.setFailed(`${comment.user.login} needs write access to start review bots.`);
             }
 
-            const firstLine = comment.body.trim().split(/\r?\n/)[0];
-            const match = /^\/geld\s+run\s+(.+)$/i.exec(firstLine);
-            const bots = [...new Set((match?.[1] ?? '').toLowerCase().split(/[\s,]+/).filter(Boolean))];
+            // The whole comment, on one line: the Geld extension reads the command the same way (`geldRunBots`).
             const known = ['greptile', 'bugbot', 'devin'];
-            const unknown = bots.filter((bot) => !known.includes(bot));
-            if (bots.length === 0 || unknown.length > 0) {
+            const match = /^\/geld[ \t]+run[ \t]+([a-z][a-z0-9-]*(?:[ \t,]+[a-z][a-z0-9-]*)*)[ \t]*$/i.exec(comment.body.trim());
+            if (match === null) {
               await react('confused');
-              return core.setFailed(`Unknown or missing bot (${unknown.join(', ') || 'none'}). Use: /geld run ${known.join(' | ')}`);
+              return core.setFailed(`The command must be the whole comment, on one line: /geld run ${known.join(' | ')}`);
+            }
+            const bots = [...new Set(match[1].toLowerCase().split(/[ \t,]+/).filter(Boolean))];
+            const unknown = bots.filter((bot) => !known.includes(bot));
+            if (unknown.length > 0) {
+              await react('confused');
+              return core.setFailed(`Unknown bot (${unknown.join(', ')}). Use: /geld run ${known.join(' | ')}`);
             }
 
             const missing = (bot) => {

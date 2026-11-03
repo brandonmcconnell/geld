@@ -34,7 +34,8 @@ export type SettingsPatch =
   | { readonly kind: 'custom-category'; readonly category: CustomCategory }
   | { readonly kind: 'remove-custom-category'; readonly id: AnyCategoryId }
   | { readonly kind: 'list'; readonly key: ListSettingKey; readonly lines: readonly string[] }
-  | { readonly kind: 'checklist'; readonly key: ChecklistSettingKey; readonly values: readonly string[] }
+  /** One box of a checklist, applied to the freshly read set so a choice made elsewhere meanwhile stays. */
+  | { readonly kind: 'checklist'; readonly key: ChecklistSettingKey; readonly value: string; readonly checked: boolean }
   /** Whole-document replacement: an imported file or the defaults. Validated strictly, never merged. */
   | { readonly kind: 'replace'; readonly settings: unknown };
 
@@ -62,10 +63,10 @@ function isSiteChoice(key: unknown, value: unknown): key is ChoiceSettingKey {
   return field !== undefined && field.options.some((option) => option.value === value);
 }
 
-/** A checklist key the site may edit, with every value among the field's options. */
-function isSiteChecklist(key: unknown, values: unknown): key is ChecklistSettingKey {
+/** A checklist key the site may edit, with a value among the field's options. */
+function isSiteChecklist(key: unknown, value: unknown): key is ChecklistSettingKey {
   const field = SITE_CHECKLIST_FIELDS.find((candidate) => candidate.key === key);
-  return field !== undefined && isStringArray(values) && values.every((value) => field.options.some((option) => option.value === value));
+  return field !== undefined && field.options.some((option) => option.value === value);
 }
 
 function isSiteListKey(value: unknown): value is ListSettingKey {
@@ -115,7 +116,7 @@ export function isSettingsPatch(value: unknown): value is SettingsPatch {
     case 'list':
       return isSiteListKey(value.key) && isStringArray(value.lines);
     case 'checklist':
-      return isSiteChecklist(value.key, value.values);
+      return isSiteChecklist(value.key, value.value) && typeof value.checked === 'boolean';
     case 'replace':
       return isRecord(value.settings);
     default:
@@ -241,8 +242,10 @@ export function applyPatch(base: GeldSettings, patch: SettingsPatch): PatchResul
       if (!validated.ok) return { ok: false, message: validated.message };
       return { ok: true, settings: { ...base, [patch.key]: validated.lines } };
     }
-    case 'checklist':
-      return { ok: true, settings: { ...base, [patch.key]: [...new Set(patch.values)] } };
+    case 'checklist': {
+      const others = base[patch.key].filter((entry) => entry !== patch.value);
+      return { ok: true, settings: { ...base, [patch.key]: patch.checked ? [...others, patch.value] : others } };
+    }
     case 'replace': {
       const validated = validateSettingsValue(patch.settings);
       if (validated.ok) return { ok: true, settings: validated.settings };

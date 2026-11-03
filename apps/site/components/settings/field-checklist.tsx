@@ -17,14 +17,11 @@ export function ChecklistRow({
   readonly field: ChecklistField;
   readonly values: readonly string[];
   readonly disabled: boolean;
-  readonly onChange: (values: readonly string[]) => void;
+  /** One box at a time: the change is applied to the saved set, not to this page's copy of it. */
+  readonly onChange: (value: string, checked: boolean) => void;
 }) {
   const helpId = useId();
   const on = field.options.filter((option) => values.includes(option.value)).map((option) => option.label);
-  const set = (value: string, checked: boolean): void => {
-    const others = values.filter((entry) => entry !== value);
-    onChange(checked ? [...others, value] : others);
-  };
   return (
     <div className="py-4 not-last:border-b">
       <details className="group/checklist border">
@@ -40,7 +37,7 @@ export function ChecklistRow({
         </summary>
         <ul className="flex flex-col gap-2 border-t bg-muted/30 px-4 py-4" aria-describedby={helpId}>
           {field.options.map((option) => (
-            <ChecklistOption key={option.value} label={option.label} description={option.description} checked={values.includes(option.value)} disabled={disabled} onChange={(checked) => set(option.value, checked)} />
+            <ChecklistOption key={option.value} label={option.label} description={option.description} checked={values.includes(option.value)} disabled={disabled} onChange={(checked) => onChange(option.value, checked)} />
           ))}
         </ul>
       </details>

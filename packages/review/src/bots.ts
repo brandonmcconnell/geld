@@ -1685,13 +1685,14 @@ export function geldRunCommand(ids: readonly string[]): string {
   return `/geld run ${ids.join(' ')}`;
 }
 
-const GELD_RUN = /^\/geld\s+run\s+([a-z][a-z0-9-]*(?:[\s,]+[a-z][a-z0-9-]*)*)\s*$/i;
+// Mirrored by the `trigger` job's script in `apps/action/examples/geld.yml`: one line, the whole comment.
+const GELD_RUN = /^\/geld[ \t]+run[ \t]+([a-z][a-z0-9-]*(?:[ \t,]+[a-z][a-z0-9-]*)*)[ \t]*$/i;
 
-/** The bots a `/geld run` comment asks for (the whole comment is the command, as the workflow reads it), else none. */
+/** The bots a `/geld run` comment asks for (the whole comment, on one line, as the workflow reads it), else none. */
 export function geldRunBots(body: string): readonly string[] {
   const match = GELD_RUN.exec(body.trim());
   if (match?.[1] === undefined) return [];
-  const ids = [...new Set(match[1].toLowerCase().split(/[\s,]+/).filter((id) => id !== ''))];
+  const ids = [...new Set(match[1].toLowerCase().split(/[ \t,]+/).filter((id) => id !== ''))];
   return ids.every((id) => API_TRIGGER_BOT_IDS.includes(id)) ? ids : [];
 }
 

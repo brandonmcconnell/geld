@@ -2094,7 +2094,8 @@ function rerunFor(id: string, author: string, meta: GeldPrMeta, reapply: () => v
     running,
     onRerun: () => {
       visit.rerunPending.set(id, Date.now());
-      void postTopLevelComments([trigger]).then(() => reapplySoon());
+      // Read at the click: the repository's workflow may have been found since this control was drawn.
+      void postTopLevelComments([triggerFor(id, repoBots) ?? trigger]).then(() => reapplySoon());
       reapply();
     },
   };
