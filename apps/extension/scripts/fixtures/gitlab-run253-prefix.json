@@ -1,0 +1,17 @@
+[
+  "",
+  "script step/bash:",
+  "  extends: .e2e:use-pipeline-runner",
+  "  image: alpine:${ALPINE_VERSION}",
+  "  run:",
+  "    - name: install_bash",
+  "      script: apk add bash && which bash",
+  "    - name: verify_bash_installed",
+  "      script: if ! command -v bash 2>&1 >/dev/null; then echo \"bash not found, aborting test\" && exit 1; fi",
+  "    - name: echo_shell",
+  "      script: echo \"Using shell $0\" && echo \"{\\\"name\\\":\\\"USED_SHELL\\\",\\\"value\\\":\\\"Using shell $0\\\"}\" >${{ export_file }}",
+  "    - name: verify_shell_used",
+  "      script: '[[ \"$USED_SHELL\" =~ ^Using\\ shell\\ .*/bash$ ]] || (printf \"Expected: Using shell (.*)bash\\n  Actual: $USED_SHELL\\n\" && exit 1)'",
+  "",
+  "script step/sh:"
+]
