@@ -1,0 +1,8 @@
+ARG NODE_IMAGE
+FROM ${NODE_IMAGE}
+WORKDIR /geld
+COPY provider.cjs LICENSE provenance.json /geld/
+COPY notices/ /geld/notices/
+COPY source/ /geld/source/
+USER node
+CMD ["node", "/geld/provider.cjs"]

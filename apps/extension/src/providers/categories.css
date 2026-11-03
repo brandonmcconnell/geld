@@ -1,0 +1,31 @@
+section.geld-provider-category-fallback[data-geld-provider-category-host] {
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-block-size: min(24rem, var(--geld-provider-tree-max-height, 24rem));
+  margin-block-end: var(--geld-provider-space-4);
+  border: var(--geld-provider-border-width) solid var(--geld-provider-border);
+  border-radius: var(--geld-provider-radius);
+  background: var(--geld-provider-bg);
+  color: var(--geld-provider-text);
+  font: var(--geld-provider-font);
+  overflow: hidden;
+}
+
+.geld-provider-category-fallback > .geld-provider-category-header {
+  border-block-start: 0;
+}
+
+.geld-provider-category-fallback .geld-provider-category-native-row {
+  box-sizing: border-box;
+  max-inline-size: 100%;
+}
+
+.geld-provider-category-fallback .geld-provider-category-label,
+.geld-provider-category-fallback .geld-provider-category-folder-label {
+  overflow-wrap: anywhere;
+}
+
+html[data-geld-provider="gitlab"] :is(.geld-provider-essential-content, .geld-provider-category-content) > .geld-provider-category-list {
+  padding-left: var(--gl-spacing-scale-3, 8px);
+}

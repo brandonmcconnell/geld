@@ -1,0 +1,11 @@
+/* Keep compacted native originals discoverable through browser fragment and beforematch navigation. */
+html[data-geld-provider] [data-geld-provider-native-find='folded'][hidden='until-found'] {
+  display: var(--geld-provider-native-find-display) !important;
+  min-height: 0 !important;
+  height: 0 !important;
+  min-block-size: 0 !important;
+  block-size: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}

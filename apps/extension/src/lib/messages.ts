@@ -1,4 +1,4 @@
-import type { AnyCategoryId, ChangeTotals, FileStats, RepoConfigMode, SettingsIssue } from '@geld/core';
+import type { AnyCategoryId, ChangeTotals, FileStats, RepoConfigMode, RepositoryIdentity, SettingsIssue } from '@geld/core';
 import type { JevRequest, JevResult, ModelInfo } from '@geld/review';
 
 /** Messages exchanged between the content script, popup and background. */
@@ -118,9 +118,13 @@ export interface TabRepoConfig {
   readonly decision: RepoConfigDecision;
   readonly loading: boolean;
   readonly files: readonly TabRepoConfigFile[];
+  readonly status?: 'loading' | 'ready' | 'failed';
+  readonly error?: string;
+  readonly ref?: string;
 }
 
 export interface TabState {
+  readonly repository?: RepositoryIdentity;
   readonly repo: string | null;
   /** `null` when repository configs are off, or the page is not in a repository. */
   readonly repoConfig: TabRepoConfig | null;

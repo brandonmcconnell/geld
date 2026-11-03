@@ -1,0 +1,22 @@
+{
+  "scope": "Inert reduced native CodeGrid projection from actual installed run210. Owner wrapper/layout/trust are explicit unit protocol, not fresh initial-On live acceptance. No resource fetches or scripts.",
+  "run": 41399198096,
+  "reportSHA256": "d2081d864ce9ff0a5b5e88b3800229d8c1b8aa3d2835c4ed62ff23c115c28462",
+  "sourceHead": "9777bca47119a91758bde1209ac14e6076ffbf23",
+  "sources": {
+    "on": {
+      "artifactFile": "bitbucket-native-syntax-on.html",
+      "sourceBytes": 343164,
+      "sourceSHA256": "633b8e90c5fd53f1294762c9e293f82f83a754e3fe440c232915058bf7621989",
+      "projectedBytes": 60430,
+      "projectionSHA256": "702f3e85c69fa98ac332b693f03acaaf6af6f0244585380a23ce618621928b11"
+    },
+    "off": {
+      "artifactFile": "bitbucket-pipeline-syntax-on.html",
+      "sourceBytes": 306500,
+      "sourceSHA256": "c979bdd1989c48cb1cea6280971f8481e30ec9550a6810815130c08aadaaeee7",
+      "projectedBytes": 51951,
+      "projectionSHA256": "540445b4a837ce07e27a16a722f6aa5272747b0da2f0015724847ba5e4581a46"
+    }
+  }
+}

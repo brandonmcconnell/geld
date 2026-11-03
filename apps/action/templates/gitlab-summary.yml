@@ -1,0 +1,27 @@
+# Inert source template: no image is supplied and the first rule disables the job.
+# Copy this file from a reviewed full commit into your trusted default branch.
+# Add a reviewed literal image.name ending in @sha256:<64 hex characters>, with
+# image.entrypoint: [""], BEFORE removing the first unconditional never rule.
+# See PROVIDERS.md for the protected credentials and trusted-invoker contract.
+geld-summary:
+  stage: test
+  inherit:
+    default: false
+    variables: false
+  variables:
+    GIT_STRATEGY: none
+    GELD_PROVIDER: gitlab
+  before_script: []
+  after_script: []
+  hooks:
+    pre_get_sources_script: []
+  cache: []
+  dependencies: []
+  resource_group: "geld-summary-$GELD_REPOSITORY-$GELD_REVIEW_NUMBER"
+  rules:
+    - when: never
+    - if: '$CI_DEFAULT_BRANCH && $CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true" && ($CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "api" || $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "pipeline") && $GELD_REPOSITORY =~ /^[A-Za-z0-9_][A-Za-z0-9_.-]*(\/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$/ && $GELD_REVIEW_NUMBER =~ /^[1-9][0-9]*$/'
+      when: on_success
+    - when: never
+  script:
+    - node /geld/provider.cjs

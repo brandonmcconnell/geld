@@ -1,4 +1,6 @@
+import { mountProviderAccess } from '../../src/ui/provider-access';
 import { browser } from 'wxt/browser';
+import { PROVIDER_CACHE_SLOTS } from '../../src/providers/diff-cache';
 import type { AnyCategoryId, BuiltInCategory, Catalog, CategoriesField, CategoryIconName, CustomCategoriesField, CustomCategory, GeldSettings, HiddenCategory, PatternGroup } from '@geld/core';
 import {
   CATEGORY_ICON_NAMES,
@@ -27,6 +29,10 @@ import {
   actionsFor,
   allHosts,
   authorRuleProblem,
+  mergeTrustedReviewAccounts,
+  mergeTrustedSummaryPublishers,
+  trustedSummaryPublishersProblem,
+  trustedReviewAccountsProblem,
   pluralize,
   sectionsFor,
   serializeSettingsPayload,
@@ -176,6 +182,7 @@ function requireCategoryFields(): { readonly categoriesField: CategoriesField; r
 /* ------------------------------------------------------------------- main */
 
 async function main(): Promise<void> {
+  mountProviderAccess(requireElement('provider-access', HTMLElement));
   let settings = await settingsItem.getValue();
   // The active pattern catalog: bundled, or the newer signed copy the background fetched.
   let cachedCatalog = await catalogItem.getValue();
@@ -784,7 +791,7 @@ async function main(): Promise<void> {
     reviewSwitches.push({ field, set: bound.set });
     return block([el('div', 'geld-row options__field-row', [head, button]), ...extra]);
   };
-  let reviewBotsArea: HTMLTextAreaElement | null = null;
+  const reviewListEditors = new Map<'reviewBots' | 'trustedReviewAccounts' | 'trustedSummaryPublishers', { readonly area: HTMLTextAreaElement; base: readonly string[] }>();
   const aiFieldKeys = new Set<string>(['aiEnabled', 'aiBaseUrl', 'aiModel', 'aiJev']);
   let aiRendered = false;
   for (const field of reviewSection?.fields ?? []) {
@@ -829,36 +836,43 @@ async function main(): Promise<void> {
       show(settings);
       choiceSetters.push(show);
       block([el('div', 'geld-row options__field-row', [head, group]), note]);
-    } else if (field.kind === 'list' && field.key === 'reviewBots') {
+    } else if (field.kind === 'list' && (field.key === 'reviewBots' || field.key === 'trustedReviewAccounts' || field.key === 'trustedSummaryPublishers')) {
+      const key = field.key;
       const { head } = fieldHead(field);
       const area = el('textarea', 'geld-textarea geld-code options__textarea');
-      area.id = 'review-bots';
+      area.id = key === 'reviewBots' ? 'review-bots' : key === 'trustedReviewAccounts' ? 'trusted-review-accounts' : 'trusted-summary-publishers';
       area.rows = field.rows;
       area.spellcheck = false;
       area.placeholder = field.placeholder;
       area.setAttribute('aria-label', field.label);
-      area.value = settings.reviewBots.join('\n');
+      area.value = settings[key].join('\n');
+      const editor = { area, base: settings[key] };
+      reviewListEditors.set(key, editor);
       const statusEl = el('span', 'geld-status');
       statusEl.setAttribute('aria-live', 'polite');
       const status = statusReporter(statusEl);
       const save = el('button', 'geld-button geld-button--primary', [field.saveLabel]);
       save.type = 'button';
       area.addEventListener('input', () => {
-        status(area.value.trim() !== settings.reviewBots.join('\n') ? 'Unsaved changes' : '', 'neutral');
+        status(parsePatternList(area.value).join('\n') !== parsePatternList(editor.base.join('\n')).join('\n') ? 'Unsaved changes' : '', 'neutral');
       });
       save.addEventListener('click', async () => {
-        const reviewBots = parsePatternList(area.value);
-        const problem = reviewBots.map(authorRuleProblem).find((entry): entry is string => entry !== null) ?? null;
+        const lines = parsePatternList(area.value);
+        const problem = key === 'trustedReviewAccounts' ? trustedReviewAccountsProblem(lines) : key === 'trustedSummaryPublishers' ? trustedSummaryPublishersProblem(lines) : lines.map(authorRuleProblem).find((entry): entry is string => entry !== null) ?? null;
         if (problem !== null) {
           status(problem, 'error');
           return;
         }
-        settings = await settingsItem.patch({ reviewBots });
-        area.value = reviewBots.join('\n');
-        status(`Saved ${pluralize(reviewBots.length, 'bot', 'bots')}`, 'success');
+        settings = key === 'trustedReviewAccounts'
+          ? await settingsItem.update((current) => ({ trustedReviewAccounts: mergeTrustedReviewAccounts(editor.base, lines, current.trustedReviewAccounts) }))
+          : key === 'trustedSummaryPublishers'
+            ? await settingsItem.update((current) => ({ trustedSummaryPublishers: mergeTrustedSummaryPublishers(editor.base, lines, current.trustedSummaryPublishers) }))
+            : await settingsItem.patch({ reviewBots: lines });
+        editor.base = settings[key];
+        area.value = editor.base.join('\n');
+        status(`Saved ${key === 'reviewBots' ? pluralize(editor.base.length, 'bot', 'bots') : key === 'trustedSummaryPublishers' ? pluralize(editor.base.length, 'publisher', 'publishers') : pluralize(editor.base.length, 'account', 'accounts')}`, 'success');
       });
-      reviewBotsArea = area;
-      block([head, area, el('div', 'geld-row options__actions', [statusEl, save])]);
+      block([head, area, el('p', 'geld-help', richText(field.syntax.join(' '))), el('div', 'geld-row options__actions', [statusEl, save])]);
     }
   }
 
@@ -1184,7 +1198,7 @@ async function main(): Promise<void> {
 
     settings = await settingsItem.patch({ enterpriseHosts: hosts });
     hostsArea.value = hosts.join('\n');
-    hostsStatus(hosts.length === 0 ? 'Saved; only github.com is used.' : `Saved ${hosts.length} host${hosts.length === 1 ? '' : 's'}. Reload open tabs on those hosts.`, 'success');
+    hostsStatus(hosts.length === 0 ? 'Saved. No additional GitHub Enterprise hosts.' : `Saved ${hosts.length} host${hosts.length === 1 ? '' : 's'}. Reload open tabs on those hosts.`, 'success');
   });
 
   /* Tester */
@@ -1295,11 +1309,13 @@ async function main(): Promise<void> {
     },
     import: () => importInput.click(),
     'clear-cache': async () => {
-      await browser.storage.local.remove(['diffCache', 'repoConfigCache']);
+      await browser.storage.local.remove(['diffCache', 'repoConfigCache', 'providerRepoConfigCache', ...Array.from({ length: PROVIDER_CACHE_SLOTS }, (_, index) => `providerDiffCache:${index}`)]);
       // The worker keeps recent responses in memory for ten minutes too.
       const clear: ClearDiffCacheMessage = { type: 'geld:clear-diff-cache' };
       await browser.runtime.sendMessage(clear).catch(() => undefined);
-      maintenanceStatus('Cached diffs and repository configs cleared; open pages recount on reload', 'success');
+      const providerTabs = await browser.tabs.query({ url: ['https://gitlab.com/*', 'https://bitbucket.org/*'] });
+      await Promise.allSettled(providerTabs.map((tab) => tab.id === undefined ? Promise.resolve() : browser.tabs.sendMessage(tab.id, clear)));
+      maintenanceStatus('Cached diffs and repository configs cleared. Open pages recount on reload', 'success');
     },
     'copy-diagnostics': async () => {
       const text = await diagnosticsReport();
@@ -1422,7 +1438,12 @@ async function main(): Promise<void> {
     const nextSyntaxes = next.testSyntaxes.join('\n');
     if (syntaxArea !== null && nextSyntaxes !== syntaxSaved && parsePatternList(syntaxArea.value).join('\n') === syntaxSaved) syntaxArea.value = nextSyntaxes;
     syntaxSaved = nextSyntaxes;
-    if (reviewBotsArea !== null && document.activeElement !== reviewBotsArea) reviewBotsArea.value = next.reviewBots.join('\n');
+    for (const [key, editor] of reviewListEditors) {
+      if (document.activeElement !== editor.area && parsePatternList(editor.area.value).join('\n') === parsePatternList(editor.base.join('\n')).join('\n')) {
+        editor.area.value = next[key].join('\n');
+        editor.base = next[key];
+      }
+    }
     if (document.activeElement !== hostsArea) hostsArea.value = next.enterpriseHosts.join('\n');
     runTester();
   });

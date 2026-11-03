@@ -59,6 +59,8 @@ const PERSONAL_KEYS = [
   'enabled',
   'repoRules',
   'hiddenAuthors',
+  'trustedReviewAccounts',
+  'trustedSummaryPublishers',
   'groupHidden',
   'expandedByDefault',
   'hideCommentLines',

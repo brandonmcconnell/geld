@@ -1,5 +1,5 @@
-import type { TrackerReference } from '@geld/core';
-import { TRACKER_LABELS } from '@geld/core';
+import type { TrackerReference } from '@geld/core/trackers';
+import { TRACKER_LABELS } from '@geld/core/trackers';
 /**
  * GeldPrMeta → the one PR comment body. Deterministic; snapshot-tested.
  * The JSON rides in the footer as an empty `<span title="geld:…">`
@@ -10,7 +10,9 @@ import { TRACKER_LABELS } from '@geld/core';
  * `<details>` with a `geld` fence; the parser still reads those.
  */
 
-import type { BotVerdictRecord, GeldPrMeta, ReviewItem, ReviewerRecord } from './model';
+import type { BotVerdictRecord, GeldPrMeta, ReviewItem, ReviewerRecord, ReviewSource } from './model';
+import type { ProviderReviewSubject } from './provider-review';
+import { providerReviewUrl, sourceLink } from './provider-review';
 import {
   SUMMARY_HEADING,
   SUMMARY_MARKER,
@@ -22,7 +24,7 @@ import {
 } from './model';
 import { botTitle } from './bots';
 import { parseInlineMarkdown } from './inline-markdown';
-import { encodePayloadAttribute } from './summary-parse';
+import { publishedSummaryFooter } from './summary-parse';
 
 const STATUS_LABEL: Readonly<Record<ReviewItem['status'], string>> = {
   open: 'Open',
@@ -46,7 +48,7 @@ function inlineMd(text: string, inBold = false): string {
   return parseInlineMarkdown(text)
     .map((run) => {
       if (run.marks.includes('code')) {
-        const fence = run.text.includes('`') ? '``' : '`';
+        const fence = fenceFor(run.text, 1);
         return run.text.includes('`') ? `${fence} ${run.text} ${fence}` : `${fence}${run.text}${fence}`;
       }
       let out = escapeMd(run.text);
@@ -77,17 +79,65 @@ function authorsOf(item: ReviewItem): string {
   return names.join(', ');
 }
 
-function sourcesOf(item: ReviewItem): string {
-  return item.sources.map((source) => `[source](#${source.anchor})`).join(' · ');
+interface SummaryLinks {
+  readonly sourceHref: (source: ReviewSource) => string | null;
+  readonly openHref: string;
+  readonly openLabel: string;
+  readonly reviewNoun: 'pull request' | 'merge request';
+  readonly trackers?: readonly TrackerReference[];
 }
 
-function itemLine(item: ReviewItem, checked: boolean): string {
+function fenceFor(text: string, minimum: number): string {
+  const longest = (text.match(/`+/g) ?? []).reduce((length, run) => Math.max(length, run.length), 0);
+  return '`'.repeat(Math.max(minimum, longest + 1));
+}
+
+function sourcesOf(item: ReviewItem, links: SummaryLinks): string {
+  return item.sources.map((source) => {
+    const href = links.sourceHref(source);
+    return href === null ? 'source unavailable' : `[source](${href.replace(/\(/g, '%28').replace(/\)/g, '%29')})`;
+  }).join(' · ');
+}
+
+function itemLine(item: ReviewItem, checked: boolean, links: SummaryLinks): string {
   const box = checked ? '- [x]' : '- [ ]';
-  const head = `${box} **${inlineMd(item.title, true)}** —${locationOf(item)} · ${authorsOf(item)} — ${sourcesOf(item)}`;
+  const head = `${box} **${inlineMd(item.title, true)}** —${locationOf(item)} · ${authorsOf(item)} — ${sourcesOf(item, links)}`;
   const extra: string[] = [];
   if (item.context !== undefined) extra.push(`  ${inlineMd(item.context)}`);
-  if (item.fix !== undefined) extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, '', '  ```suggestion', ...item.fix.text.split('\n').map((line) => `  ${line}`), '  ```', '', '  </details>');
+  if (item.fix !== undefined) {
+    const fence = fenceFor(item.fix.text, 3);
+    extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, '', `  ${fence}suggestion`, ...item.fix.text.split('\n').map((line) => `  ${line}`), `  ${fence}`, '', '  </details>');
+  }
   return [head, ...extra].join('\n');
+}
+
+/** One native concern for a clipboard handoff, without a published-summary frame or payload. */
+export function renderProviderItemMarkdown(item: ReviewItem, subject: ProviderReviewSubject, options: {
+  readonly showFix: boolean;
+  readonly sourceStatus?: ReviewItem['status'];
+  readonly reviewedOnDevice?: boolean;
+}): string {
+  providerReviewUrl(subject);
+  const status = options.sourceStatus ?? item.status;
+  const location = item.path === undefined ? '' : `${item.path}${item.line === undefined ? '' : `:${item.line}`}`;
+  const displayedLocation = /[\r\n]|^\s|\s$/.test(location) ? JSON.stringify(location) : location;
+  const ticks = fenceFor(displayedLocation, 1);
+  const padding = displayedLocation.includes('`') ? ' ' : '';
+  const path = location === '' ? '' : ` ${ticks}${padding}${displayedLocation}${padding}${ticks}`;
+  const sources = sourcesOf(item, { sourceHref: (source) => sourceLink(source, subject), openHref: providerReviewUrl(subject), openLabel: '', reviewNoun: subject.provider === 'gitlab' ? 'merge request' : 'pull request' });
+  const authors = [...new Set(item.sources.map((source) => source.author))].map((author) => `@${author}`).join(', ');
+  const lines = [`- [${isOpenStatus(status) ? ' ' : 'x'}] **${inlineMd(item.title, true)}**${path} · ${escapeMd(authors)}`, `  Source status: ${status}.`];
+  if (item.rewritten) lines.push('  AI triage wording. Original sources linked below.');
+  if (item.status !== status) lines.push(`  Geld triage status: ${item.status}.`);
+  if (options.reviewedOnDevice) lines.push('  Reviewed on this device.');
+  if (item.context !== undefined) lines.push(`  ${inlineMd(item.context)}`);
+  if (item.addressed !== undefined) lines.push(`  AI assessment: ${item.addressed.verdict}. ${item.addressed.evidence.map((evidence) => inlineMd(evidence)).join(' ')}`);
+  if (options.showFix && item.fix !== undefined) {
+    const fence = fenceFor(item.fix.text, 3);
+    lines.push(`  Suggested fix (${item.fix.source}):`, `  ${fence}suggestion`, ...item.fix.text.split('\n').map((line) => `  ${line}`), `  ${fence}`);
+  }
+  lines.push(`  Sources: ${sources}`);
+  return lines.join('\n');
 }
 
 function groupItems(items: readonly ReviewItem[]): { open: ReviewItem[]; done: ReviewItem[] } {
@@ -154,6 +204,26 @@ export function renderSummary(
   meta: GeldPrMeta,
   subject?: { readonly owner: string; readonly repo: string; readonly number: number;readonly links?:readonly TrackerReference[] },
 ): string {
+  return renderSummaryBody(meta, {
+    sourceHref: (source) => `#${source.anchor}`,
+    openHref: subject === undefined ? howItWorksUrl() : geldPrUrl(subject.owner, subject.repo, subject.number, meta),
+    openLabel: 'Open in Geld',
+    reviewNoun: 'pull request',
+    ...(subject?.links === undefined ? {} : { trackers: subject.links }),
+  });
+}
+
+export function renderProviderSummary(meta: GeldPrMeta, subject: ProviderReviewSubject, options: { readonly notes?: readonly string[] } = {}): string {
+  const noun = subject.provider === 'gitlab' ? 'merge request' : 'pull request';
+  return renderSummaryBody(meta, {
+    sourceHref: (source) => sourceLink(source, subject),
+    openHref: providerReviewUrl(subject),
+    openLabel: `Open ${noun}`,
+    reviewNoun: noun,
+  }, options.notes);
+}
+
+function renderSummaryBody(meta: GeldPrMeta, links: SummaryLinks, notes: readonly string[] = []): string {
   const { open, done } = groupItems(meta.items);
   const lines: string[] = [
     SUMMARY_MARKER,
@@ -161,19 +231,19 @@ export function renderSummary(
     headerLine(meta),
     '',
   ];
-  if(subject?.links?.length){lines.push('**Links** '+subject.links.map(link=>`<img src="https://www.geld.sh/tracker-icons/${link.provider}.svg" width="16" height="16" alt=""/> [${TRACKER_LABELS[link.provider]} ${escapeMd(link.id)}${link.status?` · ${escapeMd(link.status)}`:''}](${link.url.replace(/[()]/g,encodeURIComponent)})`).join(' · '),'');}
+  if(links.trackers?.length){lines.push('**Links** '+links.trackers.map(link=>`<img src="https://www.geld.sh/tracker-icons/${link.provider}.svg" width="16" height="16" alt=""/> [${TRACKER_LABELS[link.provider]} ${escapeMd(link.id)}${link.status?` · ${escapeMd(link.status)}`:''}](${link.url.replace(/[()]/g,encodeURIComponent)})`).join(' · '),'');}
   if (meta.summary !== undefined) {
     lines.push(meta.summary.tldr, '');
   }
   if (open.length > 0) {
     lines.push(`**Open (${open.length})**`);
-    for (const item of open) lines.push(itemLine(item, false));
+    for (const item of open) lines.push(itemLine(item, false, links));
     lines.push('');
   }
   if (done.length > 0) {
     lines.push(`<details><summary>Done (${done.length})</summary>`);
     lines.push('');
-    for (const item of done) lines.push(itemLine(item, true));
+    for (const item of done) lines.push(itemLine(item, true, links));
     lines.push('');
     lines.push('</details>');
     lines.push('');
@@ -183,12 +253,12 @@ export function renderSummary(
     lines.push('');
   }
   if (meta.truncated === true) {
-    lines.push('_List truncated; open the pull request with Geld to see the rest._');
+    lines.push(`_List truncated; open the ${links.reviewNoun} with Geld to see the rest._`);
     lines.push('');
   }
-  const openHref = subject === undefined ? howItWorksUrl() : geldPrUrl(subject.owner, subject.repo, subject.number, meta);
+  if (notes.length > 0) lines.push(...notes, '');
   // The payload's carrier sits inside the footer's own line, so it adds no paragraph (an empty inline is sizeless).
-  lines.push(`<sub>Maintained by Geld · <a href="${openHref}">Open in Geld</a> · <a href="${howItWorksUrl()}">what is this?</a><span title='${encodePayloadAttribute(JSON.stringify(meta))}'></span></sub>`);
+  lines.push(publishedSummaryFooter(JSON.stringify(meta), links.openHref, links.openLabel));
   lines.push('');
   return lines.join('\n');
 }

@@ -1,0 +1,18 @@
+.geld-provider-header-stats,
+.geld-provider-header-line-counts {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--geld-provider-space-2);
+  font: inherit;
+  white-space: nowrap;
+}
+.geld-provider-header-stats { cursor: help; }
+.geld-provider-header-stats[hidden] { display: none; }
+.geld-provider-header-line-counts { font-variant-numeric: tabular-nums; }
+.geld-provider-header-line-counts__add { color: var(--geld-provider-success); }
+.geld-provider-header-line-counts__del { color: var(--geld-provider-danger); }
+.geld-provider-header-stats:focus-visible {
+  outline: var(--geld-provider-focus-outline);
+  outline-offset: var(--geld-provider-focus-offset);
+  box-shadow: var(--geld-provider-focus-ring);
+}

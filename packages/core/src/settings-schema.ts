@@ -430,7 +430,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
     id: 'lists',
     title: 'Pull request lists',
     intro:
-      'Pull requests opened by these authors are hidden in PR lists and stacks, behind a row that says how many and shows them on click. One login per line; `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).',
+      'Pull requests opened by these authors are hidden in PR lists and stacks, behind a row that says how many and shows them on click. One login or provider-qualified identity per line; `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).',
     fields: [
       {
         kind: 'list',
@@ -442,6 +442,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         placeholder: '*[bot]\nrenovate*',
         syntax: [
           'A login as GitHub shows it: `dependabot[bot]`, `octocat`; a leading `@` is fine.',
+          'GitLab uses its native username. Bitbucket Cloud uses `bitbucket.org/uuid/<UUID>` with the canonical account UUID without braces. Names and nicknames are not logins. Authors that cannot be resolved remain visible.',
           '`*` matches any run of characters: `*[bot]` is every GitHub App, `renovate*` every Renovate account.',
           'Matching ignores case. Lines starting with `#` are comments.',
         ],
@@ -514,6 +515,36 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
           '`*` is allowed the same way as hidden authors. Lines starting with `#` are comments.',
         ],
         saveLabel: 'Save bots',
+      },
+      {
+        kind: 'list',
+        key: 'trustedReviewAccounts',
+        label: 'Trusted review accounts',
+        description: 'GitLab and Bitbucket review services use different accounts in each installation. Trust a native account id as a service only in the repository you name. Names and comment markers never establish this trust.',
+        popup: false,
+        rows: 4,
+        placeholder: 'gitlab.com/group/project coderabbit 12345\nbitbucket.org/workspace/repo coderabbit {12345678-1234-1234-1234-123456789abc}',
+        syntax: [
+          'One exact repository, bot id and native account id per line, separated by spaces. No wildcards or credentials.',
+          'GitLab uses a numeric user id. Bitbucket uses an account UUID. Lines starting with `#` are comments.',
+          'A trust action on a review records this binding for you. Remove its line to withdraw trust.',
+        ],
+        saveLabel: 'Save trusted accounts',
+      },
+      {
+        kind: 'list',
+        key: 'trustedSummaryPublishers',
+        label: 'Trusted summary publishers',
+        description: 'Trust an actual GitLab or Bitbucket account to publish Geld summaries in one exact repository. This is separate from review bot identity and does not attest that a CI job ran.',
+        popup: false,
+        rows: 4,
+        placeholder: 'gitlab.com/group/project 12345\nbitbucket.org/workspace/repo {12345678-1234-1234-1234-123456789abc}',
+        syntax: [
+          'One exact repository and native account id per line, separated by a space. No wildcards or credentials.',
+          'GitLab uses a numeric user id. Bitbucket uses an account UUID. A personal token account can publish summaries too.',
+          'Only your explicit choice grants trust. Remove a line to withdraw it. Repository configuration cannot grant trust.',
+        ],
+        saveLabel: 'Save trusted publishers',
       },
       {
         kind: 'choice',

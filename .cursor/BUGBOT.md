@@ -8,6 +8,9 @@ this file lists what a reviewer must check.
 
 ## Blocking issues
 
+- Installed GitLab web discussion observers must normalize canonical positive string or numeric note IDs and require complete observed pagination before claiming a native bot corpus;
+  copying a prepared command never posts it or grants trust from its body marker.
+
 - Any `any` (explicit or implicit), `ZodTypeAny`, or an `as X` cast outside the few commented interop
   shims.
   Prefer type guards and `unknown`.
@@ -32,6 +35,11 @@ this file lists what a reviewer must check.
   purpose, once per page or head, as the page itself does on navigation: the files-tab summaries
   (`/pull/N/changes?_json=1`), the Commits tab (`/pull/N/commits` with `Accept: application/json`),
   directory listings and raw files for `.github/geld.yml`.
+- A failed or malformed GitLab review source must not become a zero-approval claim.
+  Preserve known standings from successful approval/reviewer sources, label partial coverage and keep guarded native required/remaining approval facts independent.
+- Mutable GitLab MR and Bitbucket PR identity snapshots, and symbolic or abbreviated commit resolution, explicitly revalidate with `cache: 'no-cache'`.
+  Keep conditional validator/body handling, immutable payload caches, request scheduling and quota cooldowns intact;
+  do not require two wire-level HTTP 200 responses or add guard reads.
 - Workflow syntax highlighting must leave diff nodes intact, tokenize old and new sides separately and clear its own CSS highlights on teardown.
   Use fixed `StaticRange` endpoints so a temporary DOM detach cannot collapse the colors.
 - New or widened manifest permissions / host permissions.

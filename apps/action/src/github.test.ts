@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { buildMeta, encodePayloadAttribute, renderSummary } from '@geld/review';
 import { filesChangedBetween, findSummaryComment, loadPullRequest, parseActionEvent, shouldSkipSelfEdit } from './github';
 
 const BASE = {
@@ -58,7 +59,19 @@ describe('findSummaryComment', () => {
       },
     ]);
     expect(found?.commentId).toBe(2);
-    expect(found?.meta?.v).toBe(1);
+    // Keep ownership/update target selection, but legacy fences are not cache data.
+    expect(found?.meta).toBeNull();
+  });
+
+  it('caches only a canonical published footer and ignores quoted payload-shaped code', () => {
+    const meta = buildMeta({ owner: 'acme', repo: 'widgets', number: 123, headSha: 'a'.repeat(40), threads: [], comments: [], reviews: [], checks: [] }, { producer: { kind: 'action', version: 'real', ai: false }, generatedAt: '2026-09-18T12:00:00.000Z' });
+    const quoted = `title='${encodePayloadAttribute(JSON.stringify({ ...meta, producer: { ...meta.producer, version: 'quoted' } }))}'`;
+    const body = renderSummary(meta).replace('\n\n<sub>', `\n\n\`\`\`suggestion\n${quoted}\n\`\`\`\n\n<sub>`);
+    const comment = { databaseId: 2, author: 'github-actions[bot]', body, createdAt: meta.generatedAt };
+    expect(findSummaryComment([comment])?.meta).toEqual(meta);
+    expect(findSummaryComment([{ ...comment, body: `${body}trailing content` }])?.meta).toBeNull();
+    expect(findSummaryComment([{ ...comment, body: `<!-- geld:summary:v1 -->\n### Geld review summary\n${quoted}` }])?.meta).toBeNull();
+    expect(findSummaryComment([{ ...comment, author: 'mallory' }])).toBeNull();
   });
 
   it('passes over a participant\u2019s comment that carries the marker, and takes the token\u2019s own login', () => {

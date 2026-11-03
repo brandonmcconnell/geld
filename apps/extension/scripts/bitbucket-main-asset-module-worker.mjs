@@ -1,0 +1,82 @@
+import { createHash } from 'node:crypto';
+import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
+
+export const BITBUCKET_MODULE_FILES = Object.freeze({ fozrM: 'bitbucket-native-fozrM.js', h43l2: 'bitbucket-native-h43l2.js' });
+export const BITBUCKET_MODULE_FILE = BITBUCKET_MODULE_FILES.fozrM;
+export const BITBUCKET_MODULE_LIMIT = 256 * 1024;
+export const BITBUCKET_SOURCE_LIMIT = 6 * 1024 * 1024;
+export const BITBUCKET_MAX_SOURCE_LIMIT = 16 * 1024 * 1024;
+export const BITBUCKET_WORKER_LIMITS = Object.freeze({ maxOldGenerationSizeMb: 256, maxYoungGenerationSizeMb: 16, stackSizeMb: 4 });
+export const BITBUCKET_LARGE_SOURCE_WORKER_LIMITS = Object.freeze({ maxOldGenerationSizeMb: 1024, maxYoungGenerationSizeMb: 16, stackSizeMb: 4 });
+const unavailable = (reason) => ({ status: 'unavailable', reason });
+const validSourceLimit = (value) => Number.isSafeInteger(value) && value > 0 && value <= BITBUCKET_MAX_SOURCE_LIMIT;
+const workerFailure = (error) => unavailable(error?.code === 'ERR_WORKER_OUT_OF_MEMORY' ? 'worker_memory' : error instanceof RangeError ? 'parser_depth' : 'worker_failed');
+
+export function extractBitbucketModule(bytes, { signal, deadlineMs = 2000, moduleId = 'fozrM', sourceLimitBytes = BITBUCKET_SOURCE_LIMIT, workerFactory = (options) => new Worker(new URL(import.meta.url), options) } = {}) {
+  if (typeof moduleId !== 'string' || !Object.hasOwn(BITBUCKET_MODULE_FILES, moduleId)) return Promise.resolve(unavailable('module_id'));
+  if (signal?.aborted) return Promise.resolve(unavailable('aborted'));
+  if (!validSourceLimit(sourceLimitBytes)) return Promise.resolve(unavailable('source_limit'));
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0 || bytes.byteLength > sourceLimitBytes) return Promise.resolve(unavailable('body_size'));
+  return new Promise((resolve) => {
+    let worker;let timer;let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;clearTimeout(timer);signal?.removeEventListener('abort', abort);
+      worker?.removeAllListeners();void worker?.terminate().catch(() => undefined);resolve(result);
+    };
+    const abort = () => finish(unavailable('aborted'));
+    try {
+      worker = workerFactory({ workerData: { bytes, moduleId, sourceLimitBytes }, resourceLimits: sourceLimitBytes > BITBUCKET_SOURCE_LIMIT ? BITBUCKET_LARGE_SOURCE_WORKER_LIMITS : BITBUCKET_WORKER_LIMITS });
+      signal?.addEventListener('abort', abort, { once: true });
+      timer = setTimeout(() => finish(unavailable('worker_deadline')), deadlineMs);
+      worker.once('error', (error) => finish(workerFailure(error)));
+      worker.once('exit', () => finish(unavailable('worker_exit')));
+      worker.once('message', (result) => {
+        if (result?.status === 'extracted' && result.moduleId === moduleId && result.bytes instanceof Uint8Array && result.bytes.byteLength > 0 && result.bytes.byteLength <= BITBUCKET_MODULE_LIMIT
+          && Number.isSafeInteger(result.start) && result.start >= 0 && Number.isSafeInteger(result.end) && result.end > result.start
+          && Number.isSafeInteger(result.byteStart) && result.byteStart >= 0 && Number.isSafeInteger(result.byteEnd) && result.byteEnd > result.byteStart && result.byteEnd <= bytes.byteLength
+          && result.byteEnd - result.byteStart === result.bytes.byteLength && Buffer.from(bytes).subarray(result.byteStart, result.byteEnd).equals(Buffer.from(result.bytes))) finish(result);
+        else finish(unavailable(['syntax', 'registration', 'snippet_size', 'utf8', 'parser_depth', 'worker_memory'].includes(result?.reason) ? result.reason : 'worker_result'));
+      });
+      if (signal?.aborted) abort();
+    } catch (error) { finish(workerFailure(error)); }
+  });
+}
+
+async function parseModule(bytes, moduleId) {
+  let text;
+  try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);if (!Buffer.from(text).equals(Buffer.from(bytes))) return unavailable('utf8'); }
+  catch { return unavailable('utf8'); }
+  const ts = await import('typescript');
+  const source = ts.createSourceFile('native.js', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  if (source.parseDiagnostics.length !== 0) return unavailable('syntax');
+  const registrations = [];
+  const nodes = [source];
+  while (nodes.length > 0) {
+    const node = nodes.pop();
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.arguments.length === 2
+      && ts.isStringLiteral(node.arguments[0]) && node.arguments[0].text === moduleId) {
+      let factory = node.arguments[1];
+      while (ts.isParenthesizedExpression(factory)) factory = factory.expression;
+      if (ts.isFunctionExpression(factory) && factory.asteriskToken === undefined && !factory.modifiers?.length
+        && [2, 3].includes(factory.parameters.length) && factory.parameters.every((parameter) => ts.isIdentifier(parameter.name) && parameter.initializer === undefined && parameter.dotDotDotToken === undefined)) registrations.push(node);
+    }
+    ts.forEachChild(node, (child) => { nodes.push(child); });
+  }
+  if (registrations.length !== 1) return unavailable('registration');
+  const call = registrations[0];
+  const start = call.getStart(source);const end = call.end;const snippet = Buffer.from(text.slice(start, end));
+  if (snippet.byteLength === 0 || snippet.byteLength > BITBUCKET_MODULE_LIMIT) return unavailable('snippet_size');
+  const byteStart = Buffer.byteLength(text.slice(0, start));
+  return { status: 'extracted', moduleId, start, end, byteStart, byteEnd: byteStart + snippet.byteLength, sha256: createHash('sha256').update(snippet).digest('hex'), bytes: snippet };
+}
+
+if (!isMainThread) {
+  try {
+    if (typeof workerData?.moduleId !== 'string' || !Object.hasOwn(BITBUCKET_MODULE_FILES, workerData.moduleId)) parentPort?.postMessage(unavailable('module_id'));
+    else if (!validSourceLimit(workerData.sourceLimitBytes)) parentPort?.postMessage(unavailable('source_limit'));
+    else if (!(workerData.bytes instanceof Uint8Array) || workerData.bytes.byteLength === 0 || workerData.bytes.byteLength > workerData.sourceLimitBytes) parentPort?.postMessage(unavailable('body_size'));
+    else parentPort?.postMessage(await parseModule(workerData.bytes, workerData.moduleId));
+  }
+  catch (error) { parentPort?.postMessage(workerFailure(error)); }
+}
