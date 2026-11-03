@@ -64,7 +64,20 @@ test('presentation bounds ancestor/layout observations and excludes unknown clas
 }));
 test('history-limit rejection retains a bounded count without accepting the exhausted session', async () => dom(async ({ install }) => {
   await install();globalThis.__geldNativeWhitespaceSessionProof.records = 4096;document.body.append(document.createElement('div'));
-  const result = await probe('read', F);assert.equal(result.qualified, false);assert.equal(result.code, 'SESSION_HISTORY_BOUND');assert.deepEqual(result.history, { observed: 4097, limit: 4096 });
+  const result = await probe('read', F);assert.equal(result.qualified, false);assert.equal(result.code, 'SESSION_HISTORY_BOUND');assert.deepEqual(result.history, { observed: 4097, limit: 4096, phase: 'baseline' });
+}));
+test('two qualified native cycles each receive their own bounded mutation budget', async () => dom(async ({ install, input, cycle }) => {
+  await install();
+  for (const [phase, desired, count] of [['toggle', true, 1], ['restore', false, 2]]) {
+    assert.equal((await probe(`mark-${phase}`, F)).qualified, true);input(desired);cycle();
+    for (let i = 0; i < 2200; i++) document.body.setAttribute('data-native-render-tick', String(i));
+    const result = await probe('read', F);assert.equal(result.qualified, true);assert.equal(result.completed, count);
+  }
+}));
+test('a single native cycle still refuses more than its mutation budget', async () => dom(async ({ install, input, cycle }) => {
+  await install();await probe('mark-toggle', F);input(true);cycle();
+  for (let i = 0; i < 4097; i++) document.body.setAttribute('data-native-render-tick', String(i));
+  const result = await probe('read', F);assert.equal(result.qualified, false);assert.equal(result.code, 'SESSION_HISTORY_BOUND');assert.equal(result.history.phase, 'toggle');assert.equal(result.history.limit, 4096);
 }));
 for (const [label, value] of [['2 files', 2], ['1 file', 1], ['0 files', 0], ['2', 2], ['1,234 files', 1234]]) test(`native count context accepts supported file label ${label}`, async () => dom(async () => {
   nativeHeader(label);const header = gitLabWhitespaceSessionPresentation(F.paths).headers[0];assert.equal(header.files, value);assert.equal(header.parsed.files.recognized, true);
