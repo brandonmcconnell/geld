@@ -2,7 +2,7 @@ import test from 'node:test';
 import { EventEmitter } from 'node:events';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { actualTableOverflow, tableHeightAuthority, assertTableHeightAction, assertTableHeightSource, assertTableHeightInput, assertTableHeightLastRow, tableHeightPointerInput, tableHeightKeyboardInput, tableHeightRequestObservation, tableHeightProbe, verifyGitLabTableHeights } from './gitlab-table-height-acceptance.mjs';
+import { actualTableOverflow, tableHeightAuthority, assertTableHeightAction, assertTableHeightSource, assertTableHeightInput, assertTableHeightLastRow, tableHeightPointerInput, tableHeightKeyboardInput, tableHeightRequestObservation, tableHeightProbe, tableFocusTrace, verifyGitLabTableHeights } from './gitlab-table-height-acceptance.mjs';
 
 function geometry(change = {}) { return { presented: true, maxHeight: '490px', overflowY: 'auto', clientHeight: 490, scrollHeight: 800, tableHeight: 800, className: 'gl-max-h-[70vh]', ...change }; }
 function snapshot(expanded = false) { return { head: 'a'.repeat(40), height: 700, width: 1200, summaries: [], sameSource: true, sameOwned: true, nativeBody: '<table>Original cells</table>', preference: null, nativeEvents: [], mappingErrors: [], candidates: [{ nativeId: 'markdown-table-176-scroll', sameTarget: true, sameNativeControl: true, ownedAuthority: 'actual-native-geometry', nativeHiddenReasons: [], nativeIntentQualified: false, cells: [['Original cells']], native: geometry(), owned: geometry(expanded ? { className: 'other-native-classes', maxHeight: 'none', clientHeight: 800 } : {}), nativeControls: [{ expanded: 'false', label: 'Show full table' }], button: { label: expanded ? 'Collapse table' : 'Show full table', expanded: String(expanded), targetCount: 1, controlCount: 1, focused: true, enabled: true, same: true, presented: true, hit: { x: 200, y: 350, clipped: false, unobscured: true, chain: [{ tag: 'BUTTON', id: 'owned-table-toggle' }] } } }] }; }
@@ -135,7 +135,8 @@ test('post-capture focus failure retains the exact failed sample and still resto
   const value=snapshot(expanded);value.ownedBody='<div>unchanged owned body</div>';value.events=structuredClone(events);value.activeElement={tag:'BODY',id:'',classes:[],isConnected:true,insideCurrentButton:false,insideOwnedSource:false};
   const row=value.candidates[0];row.button.id='owned-toggle';row.button.focused=!captured;Object.assign(row,{lastRowPresented:true,lastCellPresented:true,lastRow:{top:200,bottom:240},scrollClip:{top:100,bottom:650},lastCellHit:{clipped:false,unobscured:true,clips:[]}});return value;
  };
- page.evaluate=async(fn)=>{
+ page.evaluate=async(fn,action,phase)=>{
+  if(fn===tableFocusTrace)return {records:[{kind:'state',phase}],stopped:action==='cleanup',framePending:false};
   if(fn===tableHeightProbe)return read();const source=String(fn);
   if(source.includes("getAttribute('aria-expanded')"))return expanded;
   if(source.includes('details.length'))return 0;
@@ -144,8 +145,27 @@ test('post-capture focus failure retains the exact failed sample and still resto
  page.mouse={click:async()=>{expanded=!expanded;events.push({type:'click',trusted:true});}};
  page.keyboard={press:async()=>{expanded=!expanded;events.push({type:'click',trusted:true});}};
  page.$=async()=>({evaluate:async()=>{},dispose:async()=>{}});
- await assert.rejects(verifyGitLabTableHeights(page,proof,{anchor:'note_11',head:'a'.repeat(40),poll:async(fn,accepts)=>{const value=await fn();assert.ok(accepts(value));return value;},capture:async()=>{captured=true;return{png:'synthetic-only'};}}),/Actual owned table control lost focus/);
- const result=proof.tableHeight;assert.equal(result.status,'failed');assert.equal(result.actions.length,4);assert.equal(result.afterCapture.candidates[0].button.focused,false);assert.equal(result.afterCapture.activeElement.tag,'BODY');assert.equal(result.restored,true);assert.equal(result.listenerDisposed,true);assert.equal(page.listenerCount('request'),0);
+ await assert.rejects(verifyGitLabTableHeights(page,proof,{anchor:'note_11',head:'a'.repeat(40),poll:async(fn,accepts)=>{const value=await fn();assert.ok(accepts(value));return value;},capture:async(_page,_name,{onStage})=>{captured=true;await onStage('after_screenshot');await onStage('after_dom_read');await onStage('after_accessibility_read');return{png:'synthetic-only'};}}),/Actual owned table control lost focus/);
+ const result=proof.tableHeight;assert.equal(result.status,'failed');assert.equal(result.actions.length,4);assert.equal(result.afterCapture.candidates[0].button.focused,false);assert.equal(result.afterCapture.activeElement.tag,'BODY');assert.deepEqual(result.captureStages.map(stage=>stage.stage),['after_screenshot','after_dom_read','after_accessibility_read']);assert.equal(result.captureStages[0].snapshot.candidates[0].button.focused,false);assert.equal(result.traceDisposed,true);assert.equal(result.restored,true);assert.equal(result.listenerDisposed,true);assert.equal(page.listenerCount('request'),0);
+});
+test('capture-stage read failure retains partial phase evidence and still stops tracing/restores ownership',async()=>{
+ const page=new EventEmitter();let expanded=false,captured=false;const events=[];const proof={};
+ const read=()=>{
+  const value=snapshot(expanded);value.ownedBody='<div>unchanged owned body</div>';value.events=structuredClone(events);value.activeElement={tag:'BODY',id:'',classes:[],isConnected:true,insideCurrentButton:false,insideOwnedSource:false};
+  const row=value.candidates[0];row.button.id='owned-toggle';row.button.focused=!captured;Object.assign(row,{lastRowPresented:true,lastCellPresented:true,lastRow:{top:200,bottom:240},scrollClip:{top:100,bottom:650},lastCellHit:{clipped:false,unobscured:true,clips:[]}});return value;
+ };
+ page.evaluate=async(fn,action,phase)=>{
+  if(fn===tableFocusTrace)return {records:[{kind:'state',phase}],stopped:action==='cleanup',framePending:false};
+  if(fn===tableHeightProbe){if(captured){captured=false;throw Error('Synthetic capture-stage read failed');}return read();}const source=String(fn);
+  if(source.includes("getAttribute('aria-expanded')"))return expanded;
+  if(source.includes('details.length'))return 0;
+  if(source.includes('delete globalThis.__geldTableHeightProof'))return true;
+ };
+ page.mouse={click:async()=>{expanded=!expanded;events.push({type:'click',trusted:true});}};
+ page.keyboard={press:async()=>{expanded=!expanded;events.push({type:'click',trusted:true});}};
+ page.$=async()=>({evaluate:async()=>{},dispose:async()=>{}});
+ await assert.rejects(verifyGitLabTableHeights(page,proof,{anchor:'note_11',head:'a'.repeat(40),poll:async(fn,accepts)=>{const value=await fn();assert.ok(accepts(value));return value;},capture:async(_page,_name,{onStage})=>{captured=true;await onStage('after_screenshot');await onStage('after_dom_read');await onStage('after_accessibility_read');return{png:'synthetic-only'};}}),/Synthetic capture-stage read failed|Owned table height cleanup failed/);
+ const result=proof.tableHeight;assert.equal(result.status,'failed');assert.equal(result.actions.length,4);assert.equal(result.captureStages.length,1);assert.equal(result.captureStages[0].stage,'after_screenshot');assert.ok(result.captureStages[0].trace);assert.equal(result.captureStages[0].snapshot,undefined);assert.equal(result.restored,true);assert.equal(result.traceDisposed,true);assert.equal(result.listenerDisposed,true);assert.equal(page.listenerCount('request'),0);
 });
 test('post-capture boolean failures identify the exact ownership/focus/cap requirement',()=>{
  for(const [change,message]of [
@@ -154,4 +174,60 @@ test('post-capture boolean failures identify the exact ownership/focus/cap requi
   [value=>{value.candidates[0].button.focused=false;},/control lost focus/],
   [value=>{value.candidates[0].owned.className='';},/height-cap class/],
  ]){const value=snapshot();change(value);assert.throws(()=>assertTableHeightAction(value,snapshot(),'markdown-table-176-scroll',false),message);}
+});
+
+async function traceFixture(run) {
+ const {Window}=await import('happy-dom');const win=new Window({url:'https://gitlab.com/ark-bitcoin/bark/-/merge_requests/2117',settings:{enableCSSFileLoading:false,enableJavaScriptEvaluation:false,enableImageFileLoading:false}});
+ const frames=new Map();const observerInstances=new Set();const listeners=new Set();let next=0;const keys=['document','window','Element','HTMLDetailsElement','MutationObserver','getComputedStyle','innerWidth','innerHeight','requestAnimationFrame','cancelAnimationFrame','__geldTableHeightProof'];const old=new Map(keys.map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
+ try {
+  class ObservedMutationObserver extends win.MutationObserver {constructor(callback){super(callback);observerInstances.add(this);}disconnect(){observerInstances.delete(this);super.disconnect();}}
+  for(const target of [win.document,win]){const add=target.addEventListener.bind(target),remove=target.removeEventListener.bind(target);target.addEventListener=(type,listener,...args)=>{if(['focusin','focusout','blur','resize'].includes(type))listeners.add(listener);return add(type,listener,...args);};target.removeEventListener=(type,listener,...args)=>{listeners.delete(listener);return remove(type,listener,...args);};}
+  const values={window:win,document:win.document,Element:win.Element,HTMLDetailsElement:win.HTMLDetailsElement,MutationObserver:ObservedMutationObserver,getComputedStyle:win.getComputedStyle.bind(win),innerWidth:1200,innerHeight:1000,requestAnimationFrame:fn=>{const id=++next;frames.set(id,fn);return id;},cancelAnimationFrame:id=>frames.delete(id)};
+  for(const[key,value]of Object.entries(values))Object.defineProperty(globalThis,key,{configurable:true,writable:true,value});
+  document.body.innerHTML='<main><section class="geld-provider-review"><article><div class="note-text"><div id="target" style="max-height:700px;overflow-y:auto"><table><tbody><tr><td>PRIVATE-CELL-NOT-FOR-TRACE</td></tr></tbody></table></div><div data-geld-table-height-authority="hidden-native-generated-control"><button id="exact-control">PRIVATE-BUTTON-TEXT</button></div></div></article></section></main><aside id="unrelated">PRIVATE-OTHER-TEXT</aside>';
+  const owned=document.querySelector('.note-text'),button=document.querySelector('button'),controls=button.parentElement,target=document.getElementById('target');
+  globalThis.__geldTableHeightProof={button,target,table:target.querySelector('table'),owned,nativeControl:null,nativeId:'markdown-table-176-scroll'};
+  const read=()=>tableFocusTrace();const flush=()=>{for(const[id,fn]of [...frames]){frames.delete(id);fn();}};
+  await run({win,button,owned,controls,target,read,flush,frames,observerInstances,listeners});
+ }finally{tableFocusTrace('cleanup');for(const[key,value]of old)if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key];win.happyDOM.abort();}
+}
+test('trace detects same-node control removal/reinsertion independently of final ownership and cancels its pending frame',async()=>{
+ await traceFixture(async({win,button,controls,owned,read,frames,observerInstances,listeners})=>{
+  tableFocusTrace('setup');button.focus();controls.remove();owned.append(controls);const result=tableFocusTrace('stage','after_screenshot');
+  const removal=result.records.find(row=>row.kind==='childList'&&row.removed.some(node=>node.sameControls));const addition=result.records.find(row=>row.kind==='childList'&&row.added.some(node=>node.sameControls));
+  assert.ok(removal);assert.ok(addition);assert.equal(button.isConnected,true);assert.equal(controls.contains(button),true);assert.ok(result.records.some(row=>row.kind==='focusin'&&row.target.sameButton));assert.equal(frames.size,1);
+  const stopped=tableFocusTrace('cleanup');assert.equal(stopped.stopped,true);assert.equal(stopped.framePending,false);assert.equal(frames.size,0);assert.equal(observerInstances.size,0);assert.equal(listeners.size,0);const length=stopped.records.length;button.dispatchEvent(new win.FocusEvent('focusout',{bubbles:true}));assert.equal(read().records.length,length);
+ });
+});
+test('trace coalesces event-driven layout reads, records viewport/style state changes and stays idle without events',async()=>{
+ await traceFixture(async({win,button,owned,read,flush,frames})=>{
+  tableFocusTrace('setup');const initial=read().records.length;assert.equal(frames.size,0);button.focus();win.dispatchEvent(new win.Event('resize'));win.dispatchEvent(new win.Event('resize'));assert.equal(frames.size,1);flush();assert.equal(frames.size,0);
+  const after=read().records.length;flush();assert.equal(read().records.length,after);assert.ok(after>initial);
+  delete button.parentElement.dataset.geldTableHeightAuthority;owned.hidden=true;owned.style.fontSize='17px';owned.style.lineHeight='25px';globalThis.innerHeight=1500;const value=tableFocusTrace('stage','after_dom_read');const state=value.records.filter(row=>row.kind==='state').at(-1).state;
+  assert.equal(state.viewport.height,1500);assert.ok(state.ancestors.some(row=>row.node.sameOwned&&row.hidden&&row.metrics.fontSize==='17px'&&row.metrics.lineHeight==='25px'));assert.ok(value.records.some(row=>row.kind==='attribute'&&row.name==='hidden'));assert.ok(value.records.some(row=>row.kind==='attribute'&&row.name==='data-geld-table-height-authority'&&row.old.token==='hidden-native-generated-control'));
+ });
+});
+test('trace metadata is bounded and never retains DOM text, raw styles, secret URLs or unrelated subtree mutations',async()=>{
+ await traceFixture(async({win,button,owned,read})=>{
+  tableFocusTrace('setup');document.getElementById('unrelated').append(document.createElement('div'));let value=tableFocusTrace('stage','before_capture');assert.equal(value.records.some(row=>row.kind==='childList'),false);
+  owned.style.backgroundImage='url("https://example.test/avatar?secret=PRIVATE-QUERY")';owned.dataset.secret='PRIVATE-DATA';button.className='safe-class '+('x'.repeat(300));
+  for(let index=0;index<160;index++)button.dispatchEvent(new win.FocusEvent('focusout',{bubbles:true,relatedTarget:document.body}));
+  value=tableFocusTrace('stage','after_accessibility_read');assert.equal(value.records.length,128);assert.ok(value.dropped>0);assert.doesNotMatch(JSON.stringify(value),/PRIVATE-|backgroundImage|cssText|outerHTML|innerHTML|secret=/);assert.ok(value.records.every(row=>row.target?.classes.length===undefined||row.target.classes.length<=16));
+ });
+});
+test('trace snapshots retain each capture-stage focus state without moving focus',async()=>{
+ await traceFixture(async({button})=>{
+  tableFocusTrace('setup');button.focus();const before=tableFocusTrace('stage','before_capture');assert.equal(before.records.filter(row=>row.kind==='state').at(-1).state.focused,true);
+  // Explicit synthetic user/browser focus loss: the observer itself never blurs or restores focus.
+  button.blur();const after=tableFocusTrace('stage','after_screenshot');const state=after.records.filter(row=>row.kind==='state').at(-1);assert.equal(state.phase,'after_screenshot');assert.equal(state.state.focused,false);assert.equal(state.state.active.tag,'BODY');assert.equal(document.activeElement,document.body);
+ });
+});
+test('event-time viewport and focus measurements preserve a transient 1px viewport even when the frame sees restoration',async()=>{
+ await traceFixture(async({win,button,read,frames,flush})=>{
+  const visual=new win.EventTarget();Object.assign(visual,{width:1440,height:1000,scale:1});Object.defineProperty(win,'visualViewport',{configurable:true,value:visual});
+  tableFocusTrace('setup');button.focus();globalThis.innerWidth=1;globalThis.innerHeight=1;Object.assign(visual,{width:1,height:1});win.dispatchEvent(new win.Event('resize'));button.blur();globalThis.innerWidth=1440;globalThis.innerHeight=1000;Object.assign(visual,{width:1440,height:1000});visual.dispatchEvent(new win.Event('resize'));
+  assert.equal(frames.size,1);flush();const result=read();const events=result.records.filter(row=>row.kind==='viewport-event');assert.deepEqual(events.map(row=>[row.instant.viewport.width,row.instant.viewport.height]),[[1,1],[1440,1000]]);
+  const loss=result.records.find(row=>row.kind==='focusout');assert.equal(loss.instant.viewport.width,1);assert.equal(loss.instant.viewport.height,1);assert.equal(loss.instant.viewport.visualHeight,1);assert.equal(loss.instant.viewport.visualWidth,1);assert.equal(loss.instant.controls.isConnected,true);assert.ok(Object.hasOwn(loss.instant.buttonMetrics,'visibility'));assert.ok(Object.hasOwn(loss.instant.ownedMetrics,'overflowY'));
+  assert.deepEqual(result.records.filter(row=>row.kind==='state').at(-1).state.viewport,{width:1440,height:1000,visualHeight:1000,visualWidth:1440,visualScale:1});
+ });
 });

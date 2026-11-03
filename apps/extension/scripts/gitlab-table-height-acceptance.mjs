@@ -158,12 +158,77 @@ export function tableHeightRequestObservation(request, extensionId) {
     attribution: extension ? 'extension_frame_observed' : classified?.attribution ?? 'native_or_unattributed', recognizedCodeRabbitRequest: classified !== null, nativeSource };
 }
 
+/** Observation only: no focus, DOM mutation, continuous polling or mutator interception. */
+export function tableFocusTrace(action = 'read', phase = null) {
+  const held = globalThis.__geldTableHeightProof;
+  if (!held) return null;
+  if (action === 'setup') {
+    if (held.trace) throw Error('Table focus trace already installed.');
+    if (!held.button?.isConnected || !held.owned?.contains(held.button)) throw Error('Current owned table button unavailable for tracing.');
+    const button = held.button, controls = button.parentElement, owned = held.owned;
+    const ancestors = [];for (let node = button.parentElement; node && ancestors.length < 24; node = node.parentElement) ancestors.push(node);
+    const watched = new Set([button, controls, owned, held.target, held.table, ...ancestors]);
+    const safe = (value, limit = 128) => typeof value === 'string' && value.length <= limit && /^[a-zA-Z0-9_!@:/ .-]*$/.test(value) ? value : null;
+    const number = (value) => Number.isFinite(value) ? value : null;
+    const classes = (value) => typeof value === 'string' ? value.split(/\s+/).filter(Boolean).slice(0, 16).map((name) => safe(name, 96)).filter((name) => name !== null) : [];
+    const describe = (node) => node instanceof Element ? { tag: node.tagName, id: safe(node.id), classes: classes(node.getAttribute('class')), isConnected: node.isConnected,
+      sameButton: node === button, sameControls: node === controls, sameOwned: node === owned, retainedAncestor: ancestors.includes(node), containsButtonNow: node.contains(button), insideOwnedNow: owned.contains(node) } : null;
+    const trace = { records: [], dropped: 0, phase: 'mounted', frame: null, stopped: false, previous: null };
+    const push = (kind, data = {}) => { if (trace.stopped) return;const row = { at: number(performance.now()), phase: trace.phase, kind, ...data };if (trace.records.length < 128) trace.records.push(row);else trace.dropped++; };
+    const metric = (node) => { if (!node) return null;const style = getComputedStyle(node);return { isConnected: node.isConnected, clientHeight: number(node.clientHeight), scrollHeight: number(node.scrollHeight), offsetHeight: number(node.offsetHeight),
+        maxHeight: safe(style.maxHeight), overflowY: safe(style.overflowY), display: safe(style.display), visibility: safe(style.visibility), opacity: safe(style.opacity), contentVisibility: safe(style.contentVisibility), fontSize: safe(style.fontSize), lineHeight: safe(style.lineHeight), fontWeight: safe(style.fontWeight) }; };
+    const viewport = () => ({ width: number(innerWidth), height: number(innerHeight), visualHeight: number(window.visualViewport?.height), visualWidth: number(window.visualViewport?.width), visualScale: number(window.visualViewport?.scale) });
+    const instant = () => ({ viewport: viewport(), button: describe(button), controls: describe(controls), buttonMetrics: metric(button), ownedMetrics: metric(held.target), authority: safe(controls?.dataset.geldTableHeightAuthority) });
+    const snapshot = (reason) => {
+      const state = { active: describe(document.activeElement), button: describe(button), focused: document.activeElement === button, authority: safe(controls?.dataset.geldTableHeightAuthority),
+        viewport: viewport(),
+        owned: metric(held.target), table: metric(held.table), nativeScroll: metric(held.nativeBody?.querySelector(`[id="${held.nativeId}"]`)), nativeTable: metric(held.nativeBody?.querySelector(`[id="${held.nativeId}"] > table`)),
+        ancestors: ancestors.slice(0, 8).map((node) => ({ node: describe(node), hidden: node.hasAttribute('hidden'), inert: node.hasAttribute('inert'), ariaHidden: node.getAttribute('aria-hidden') === 'true', open: node instanceof HTMLDetailsElement ? node.open : null, metrics: metric(node) })) };
+      const signature = JSON.stringify(state);if (signature !== trace.previous) { trace.previous = signature;push('state', { reason, state }); }
+    };
+    const schedule = (reason) => { if (!trace.stopped && trace.frame === null) trace.frame = requestAnimationFrame(() => { trace.frame = null;snapshot(reason); }); };
+    const relevant = (node) => node instanceof Element && (watched.has(node) || node.contains(button) || node.contains(owned));
+    const mutations = (records) => {
+      for (const record of records) {
+        if (record.type === 'childList') {
+          const removed = [...record.removedNodes].filter(relevant), added = [...record.addedNodes].filter(relevant);
+          if (!removed.length && !added.length) continue;
+          push('childList', { target: describe(record.target), removed: removed.slice(0, 8).map(describe), added: added.slice(0, 8).map(describe), removedCount: removed.length, addedCount: added.length });schedule('owned-childList');
+        } else if (watched.has(record.target)) {
+          const name = record.attributeName;
+          const old = name === 'class' ? { classes: classes(record.oldValue) } : ['hidden', 'inert', 'open', 'aria-hidden', 'data-geld-table-height-authority'].includes(name) ? { present: record.oldValue !== null, token: safe(record.oldValue, 32) } : null;
+          push('attribute', { target: describe(record.target), name, old });schedule('owned-attribute');
+        }
+      }
+    };
+    const observer = new MutationObserver(mutations);
+    observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeOldValue: true, attributeFilter: ['class', 'style', 'hidden', 'inert', 'open', 'aria-hidden', 'data-geld-table-height-authority'] });
+    const focus = (event) => {
+      if (!(event.target instanceof Element) || !(event.target === button || button.contains(event.target) || event.relatedTarget === button || event.relatedTarget instanceof Element && button.contains(event.relatedTarget))) return;
+      const callbackFrames = [...(new Error().stack ?? '').matchAll(/(?:https?:\/\/|chrome-extension:\/\/)[^\s)]+/g)].slice(0, 4).flatMap(([href]) => { try { const url = new URL(href);return /\.(?:m?js|ts)(?::\d+){0,2}$/.test(url.pathname) ? [url.protocol + '//' + url.host + url.pathname.slice(0, 256)] : []; } catch { return []; } });
+      push(event.type, { target: describe(event.target), related: describe(event.relatedTarget), active: describe(document.activeElement), trusted: event.isTrusted === true, instant: instant(), callbackFrames });schedule('owned-focus');
+    };
+    const resize = () => { push('viewport-event', { active: describe(document.activeElement), instant: instant() });schedule('viewport-event'); };
+    for (const type of ['focusin', 'focusout', 'blur']) document.addEventListener(type, focus, true);
+    window.addEventListener('resize', resize);window.visualViewport?.addEventListener('resize', resize);window.visualViewport?.addEventListener('scroll', resize);
+    trace.snapshot = (reason) => { mutations(observer.takeRecords());snapshot(reason); };
+    trace.cleanup = () => { mutations(observer.takeRecords());snapshot('cleanup');observer.disconnect();for (const type of ['focusin', 'focusout', 'blur']) document.removeEventListener(type, focus, true);window.removeEventListener('resize', resize);window.visualViewport?.removeEventListener('resize', resize);window.visualViewport?.removeEventListener('scroll', resize);if (trace.frame !== null) cancelAnimationFrame(trace.frame);trace.frame = null;trace.stopped = true; };
+    held.trace = trace;snapshot('mounted');
+  }
+  const trace = held.trace;if (!trace) return null;
+  if (typeof phase === 'string' && /^[a-z_-]{1,64}$/.test(phase)) trace.phase = phase;
+  if (action === 'stage') trace.snapshot('capture-stage');
+  if (action === 'cleanup') trace.cleanup();
+  return { records: [...trace.records], dropped: trace.dropped, stopped: trace.stopped, framePending: trace.frame !== null, limit: 128,
+    scope: 'Event-driven focus, reference-identity mutations and measured states only; callback frames are not the DOM mutator stack. No cause is inferred from final state.' };
+}
+
 export async function verifyGitLabTableHeights(page, proof, { anchor, head, poll, capture, extensionId }) {
   const progress = { status: 'running', actions: [], inputs: [], requests: [], sourceGets: [], otherGets: [], scope: 'Genuine owned pointer/keyboard height interaction on measured owned overflow, with native authority mode recorded separately; recognized source/extension GETs must stay empty, all other HTTP GETs are retained separately. No native toggle or global preference write.' };proof.tableHeight = progress;
   const request = (value) => { const seen = tableHeightRequestObservation({ url: value.url(), method: value.method(), initiator: value.initiator?.() }, extensionId);if (seen) { progress.requests.push(seen);(seen.source ? progress.sourceGets : progress.otherGets).push(seen); } };
-  let held = false;let initial;let selected;let listener = false;let primary;let trustedPointer;
+  let held = false;let initial;let selected;let listener = false;let tracing = false;let primary;let trustedPointer;
   const read = () => page.evaluate(tableHeightProbe, anchor);
-  trustedPointer = (handle, label, summary) => tableHeightPointerInput(page, handle, { read, before: initial, nativeId: selected, summary, inputs: progress.inputs, label });
+  trustedPointer = async (handle, label, summary) => { if (tracing) await page.evaluate(tableFocusTrace, 'stage', `pointer_${label.replace(/[^a-z]+/g, '_')}`);return tableHeightPointerInput(page, handle, { read, before: initial, nativeId: selected, summary, inputs: progress.inputs, label }); };
   page.on('request', request);
   try {
     await page.evaluate((id) => {
@@ -192,8 +257,9 @@ export async function verifyGitLabTableHeights(page, proof, { anchor, head, poll
       held.listen = (event) => { if (event.target === button || button.contains(event.target)) held.events.push({ type: event.type, trusted: event.isTrusted, detail: event.detail ?? null, key: event.key ?? null }); };
       button.addEventListener('click', held.listen, true);button.addEventListener('keydown', held.listen, true);
     }, { buttonId: candidate.button.id, nativeId: selected });listener = true;
+    tracing = true;progress.focusTrace = await page.evaluate(tableFocusTrace, 'setup');assert.ok(progress.focusTrace?.records.length > 0, 'Bounded focus trace did not mount.');
     before = await read();progress.before = before;
-    const trustedKeyboard = (key) => tableHeightKeyboardInput(page, key, { read, before: initial, nativeId: selected, inputs: progress.inputs });
+    const trustedKeyboard = async (key) => { await page.evaluate(tableFocusTrace, 'stage', `keyboard_${key.toLowerCase()}`);return tableHeightKeyboardInput(page, key, { read, before: initial, nativeId: selected, inputs: progress.inputs }); };
     // Cleanup uses the same source/geometry/hit guards as the action phase.
     const buttonHandle = await page.$(`[id="${candidate.button.id}"]`);assert.ok(buttonHandle);
     try {
@@ -204,7 +270,10 @@ export async function verifyGitLabTableHeights(page, proof, { anchor, head, poll
       await trustedKeyboard('Space');value = await read();assertTableHeightAction(value, before, selected, true);progress.actions.push({ input: 'keyboard Space', expanded: true, snapshot: value });
       await trustedPointer(buttonHandle, 'collapse');value = await read();assertTableHeightAction(value, before, selected, false);assert.equal(value.ownedBody, before.ownedBody);progress.actions.push({ input: 'pointer', expanded: false, snapshot: value });
       assert.equal(value.events.filter((event) => event.type === 'click').length, 4);assert.ok(value.events.every((event) => event.trusted));
-      progress.artifacts = await capture(page, 'gitlab-coderabbit-table-height');progress.afterCapture = await read();assertTableHeightAction(progress.afterCapture, before, selected, false);assert.equal(progress.afterCapture.ownedBody, before.ownedBody, 'Owned table body changed after capture.');assert.deepEqual(progress.sourceGets, [], 'Table interaction issued a recognized source or extension-attributed GET; other GET traffic is recorded separately.');progress.status = 'passed';
+      progress.captureStages = [];
+      progress.focusTrace = await page.evaluate(tableFocusTrace, 'stage', 'before_capture');
+      progress.artifacts = await capture(page, 'gitlab-coderabbit-table-height', { onStage: async (stage) => { const sample = { stage };progress.captureStages.push(sample);sample.trace = await page.evaluate(tableFocusTrace, 'stage', stage);sample.snapshot = await read(); } });
+      progress.focusTrace = await page.evaluate(tableFocusTrace, 'stage', 'after_capture');progress.afterCapture = await read();assert.deepEqual(progress.captureStages.map((sample) => sample.stage), ['after_screenshot', 'after_dom_read', 'after_accessibility_read'], 'Table capture-stage observations are incomplete.');assertTableHeightAction(progress.afterCapture, before, selected, false);assert.equal(progress.afterCapture.ownedBody, before.ownedBody, 'Owned table body changed after capture.');assert.deepEqual(progress.sourceGets, [], 'Table interaction issued a recognized source or extension-attributed GET; other GET traffic is recorded separately.');progress.status = 'passed';
     } finally { await buttonHandle.dispose(); }
   } catch (error) { primary = error;progress.status = 'failed';progress.error = String(error);throw error; }
   finally {
@@ -221,6 +290,7 @@ export async function verifyGitLabTableHeights(page, proof, { anchor, head, poll
         await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         const restored = await read();assertTableHeightSource(restored, initial);assert.equal(restored.ownedBody, initial.ownedBody, 'Owned table body did not restore byte-exactly before command guards.');progress.restored = true;
       } catch (error) { errors.push(error); }
+      if (tracing) { try { progress.focusTrace = await page.evaluate(tableFocusTrace, 'cleanup', 'finally');progress.traceDisposed = progress.focusTrace?.stopped === true && progress.focusTrace?.framePending === false;assert.equal(progress.traceDisposed, true, 'Focus trace cleanup was not verified.'); } catch (error) { errors.push(error); } }
       try { progress.listenerDisposed = await page.evaluate(() => { const held = globalThis.__geldTableHeightProof;if (held?.listen && held.button) { held.button.removeEventListener('click', held.listen, true);held.button.removeEventListener('keydown', held.listen, true); }if (held?.nativeListen) window.removeEventListener('gl-markdown-table-expanded', held.nativeListen);delete globalThis.__geldTableHeightProof;return globalThis.__geldTableHeightProof === undefined; }); } catch (error) { errors.push(error); }
     }
     page.off('request', request);

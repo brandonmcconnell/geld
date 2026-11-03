@@ -1707,6 +1707,9 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Readiness never retries source, original-button identity, counts or settings drift;
   initial coverage is retained separately, and the earlier line-103 failure without a captured actor remains unattributed.
   Table-height acceptance saves its post-capture sample before named guards run, including bounded active-element ownership/focus diagnostics, without weakening any source, focus, height or four-input requirement.
+  Its diagnostic trace retains at most 128 safe records of exact-control focus, reference-identity removal/reinsertion, authority and ancestor visibility changes, with event-driven layout reads coalesced into one pending animation frame rather than continuous polling.
+  The same table phase samples screenshot, detached DOM-read and accessibility-read boundaries while preserving default full-page capture and strict post-capture focus, source and four-input assertions.
+  Observer/listener/frame cleanup is verified even on capture-stage failure, and callback script frames are observational rather than the asynchronous DOM mutator stack.
   Every other settings change keeps the existing expansion invalidation, including classification, layout, defaults and master toggles, so outline presentation cannot silently replace a selected Tests category with Essential.
   Automatic large-diff loading requires an adapter capability that verifies the current native size-only loader, and GitLab Rapid and Bitbucket do not advertise that capability until their native size-placeholder behavior is verified.
 - **CI presentation preserves provider source facts.**
