@@ -95,6 +95,21 @@ describe('the pile', () => {
     expect(settled(bodies)).toBe(true);
   });
 
+  it('ignores a step whose clock did not advance, rather than filling the world with NaN', () => {
+    const b = body(450, 100);
+    b.vx = 50;
+    step([b], world, 0);
+    step([b], world, -0.01);
+    expect(b.x).toBe(450);
+    expect(Number.isFinite(b.vx) && Number.isFinite(b.vy)).toBe(true);
+  });
+
+  it('keeps a fenced box inside the world when the world is narrower than its fence', () => {
+    const b = { ...body(880, 580), fence: { left: 600, right: 1200 } };
+    run([b], world, 1);
+    expect(rectOf(b).right).toBeLessThanOrEqual(world.width + 0.5);
+  });
+
   it('never moves a held box, and pushes the others out of its way', () => {
     const held = body(450, 580);
     held.held = true;

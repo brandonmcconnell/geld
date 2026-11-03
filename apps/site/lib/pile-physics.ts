@@ -90,6 +90,8 @@ export function rectOf(body: Body): Rect {
 
 /** Advance the world by `dt` seconds (split into steps of at most 1/120 s). */
 export function step(bodies: readonly Body[], world: World, dt: number): void {
+  // A frame whose clock did not advance would divide by zero and leave NaN in every body it touched.
+  if (!(dt > 0)) return;
   const steps = Math.max(1, Math.ceil(dt * 120));
   const h = dt / steps;
   for (let s = 0; s < steps; s++) substep(bodies, world, h);
@@ -214,7 +216,7 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
 function bound(body: Body, world: World, grounded: Set<Body>): void {
   const r = rectOf(body);
   const left = body.fence?.left ?? 0;
-  const right = body.fence?.right ?? world.width;
+  const right = Math.min(body.fence?.right ?? world.width, world.width);
   if (r.left < left) body.x += left - r.left;
   else if (r.right > right) body.x -= r.right - right;
   if (r.bottom > world.floor) {

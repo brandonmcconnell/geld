@@ -287,7 +287,9 @@ function ChipValue({ digest, row }: { readonly digest: Digest; readonly row: Dig
           {digest.checks.passed > 0 && digest.checks.passed}
           {digest.checks.failed > 0 && <CircleXIcon aria-hidden="true" className="size-3.5 text-deletion" />}
           {digest.checks.failed > 0 && digest.checks.failed}
-          {digest.checks.passed + digest.checks.failed === 0 && <LoaderCircleIcon aria-hidden="true" className="size-3.5" />}
+          {digest.checks.running > 0 && <LoaderCircleIcon aria-hidden="true" className="size-3.5 text-[oklch(0.7_0.14_75)]" />}
+          {digest.checks.running > 0 && digest.checks.running}
+          {digest.checks.passed + digest.checks.failed + digest.checks.running === 0 && <span className="text-muted-foreground">–</span>}
         </>
       );
     case 'preview':

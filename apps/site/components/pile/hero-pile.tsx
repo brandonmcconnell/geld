@@ -50,6 +50,14 @@ interface Region {
   readonly at?: number;
 }
 
+/** Only the column right of the words, so nothing falls on the heading or beside and under it; with no room there (a phone), the band under the words. */
+function regionsOf({ words, world }: Layout): Region[] {
+  const right: Region = { left: words.right + 8, right: world.width, depth: world.floor };
+  const band = world.floor - words.bottom;
+  if (right.right - right.left > 220) return [right];
+  return band >= 60 ? [{ left: 0, right: world.width, depth: band, at: words.bottom + 30 }] : [];
+}
+
 interface Shot {
   readonly vx: number;
   readonly vy: number;
@@ -224,7 +232,17 @@ export function HeroPile() {
     const root = layer.current;
     if (!root) return;
     let started = false;
+    let disposed = false;
     let at: Layout | null = null;
+
+    // Where cards land and the walls they keep to follow the page as it resizes; a card someone dragged keeps none.
+    const fenceIn = (next: Layout): Region[] => {
+      const regions = regionsOf(next);
+      landing.current = { regions };
+      fence.current = regions[0] ? { left: regions[0].left, right: regions[0].right } : undefined;
+      for (const body of bodies.current) if (body.fence !== undefined) body.fence = fence.current;
+      return regions;
+    };
 
     const relayout = (): void => {
       const next = measure();
@@ -232,6 +250,7 @@ export function HeroPile() {
       at = next;
       world.current = next.world;
       setLayout(next);
+      if (started) fenceIn(next);
       if (bodies.current.length > 0) {
         wake(bodies.current);
         run();
@@ -242,16 +261,10 @@ export function HeroPile() {
       const current = at;
       if (started || current === null) return;
       started = true;
-      const { words, world: w } = current;
       const sizes = els.current.map((el) => ({ w: el?.offsetWidth ?? 200, h: el?.offsetHeight ?? 44 }));
       const average = sizes.reduce((sum, size) => sum + size.w * size.h, 0) / Math.max(1, sizes.length);
-      // Only the column right of the words, so nothing falls on the heading or beside and under it; with no room there (a phone), the band under the words.
-      const right: Region = { left: words.right + 8, right: w.width, depth: w.floor };
-      const band = w.floor - words.bottom;
-      const regions: Region[] = right.right - right.left > 220 ? [right] : band >= 60 ? [{ left: 0, right: w.width, depth: band, at: words.bottom + 30 }] : [];
+      const regions = fenceIn(current);
       const area = regions.reduce((sum, region) => sum + (region.right - region.left) * region.depth, 0);
-      landing.current = { regions };
-      fence.current = regions[0] ? { left: regions[0].left, right: regions[0].right } : undefined;
       const room = Math.min(PILE_ITEMS.length, Math.max(8, Math.floor((area * FILL) / average)));
       const keep = new Set(PILE_ITEMS.slice(0, room).map((_, index) => index));
       const random = seeded(17);
@@ -314,12 +327,14 @@ export function HeroPile() {
     });
     const resize = new ResizeObserver(relayout);
     void document.fonts.ready.then(() => {
+      if (disposed) return;
       relayout();
       observer.observe(root);
       if (root.parentElement) resize.observe(root.parentElement);
     });
     const timers = pours.current;
     return () => {
+      disposed = true;
       observer.disconnect();
       resize.disconnect();
       timers.forEach((timer) => window.clearTimeout(timer));
