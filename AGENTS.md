@@ -2164,3 +2164,9 @@ The default raw collector remains pinned to its original exact URL, and no eligi
   The eight-request navigation forecast plus reserve is not a future cost bound, and the global40/429 guards and independent root admission remain authoritative.
   Reports contain only bounded relation/count primitives, fixed label enums and exact same-provider/repository known-file source candidates with explicit abbreviated or full hexadecimal precision, with no native full-head or whole-source authority, arbitrary text/URLs/queries, field values, HTML, AX or PNG.
   Unknown popups are closed only by page closure before exact raw extension settings restoration, while native prefs and product source bindings remain untouched.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
