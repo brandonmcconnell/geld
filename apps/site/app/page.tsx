@@ -16,21 +16,29 @@ export default function HomePage() {
   const [firstLine, secondLine] = HEADLINE;
   return (
     <>
-      <section aria-labelledby="hero-heading" className="container-site pt-20 pb-14 sm:pt-28 sm:pb-20">
-        <div className="max-w-3xl @container">
-          <div id={HERO_WORDMARK_ID} className="mb-8 w-fit sm:mb-10">
-            <Wordmark height={44} alt="Geld" priority />
+      {/*
+        The hero and the reel fill the first screen below the header, so the border under the reel lands just past the fold.
+        The two spacers share what is left: the top one from 1px to 10rem, the middle one from 3rem up. Capped at 60rem so a
+        tall monitor sees more of the page rather than a stretched hero; too short to fit, the block grows and the reel drops below.
+      */}
+      <div className="flex min-h-[min(calc(100svh-3.5rem-1px),60rem)] flex-col">
+        <div aria-hidden="true" className="max-h-40 min-h-px grow basis-0" />
+        <section aria-labelledby="hero-heading" className="container-site">
+          <div className="max-w-3xl @container">
+            <div id={HERO_WORDMARK_ID} className="mb-8 w-fit sm:mb-10">
+              <Wordmark height={44} alt="Geld" priority />
+            </div>
+            {/* Sized to the column, not the viewport, so each line fills it at most and never wraps. */}
+            <h1 id="hero-heading" className="text-[min(9.4cqi,3.5rem)] leading-[1.04] font-semibold tracking-tight whitespace-nowrap">
+              <span className="block">{firstLine}</span> <span className="block">{secondLine}</span>
+            </h1>
+            <p className="mt-6 text-xl tracking-tight text-muted-foreground text-balance sm:text-2xl">Less noise. More shipping.</p>
+            <InstallButtons className="mt-8" size="lg" />
           </div>
-          {/* Sized to the column, not the viewport, so each line fills it at most and never wraps. */}
-          <h1 id="hero-heading" className="text-[min(9.4cqi,3.5rem)] leading-[1.04] font-semibold tracking-tight whitespace-nowrap">
-            <span className="block">{firstLine}</span> <span className="block">{secondLine}</span>
-          </h1>
-          <p className="mt-6 text-xl tracking-tight text-muted-foreground text-balance sm:text-2xl">Less noise. More shipping.</p>
-          <InstallButtons className="mt-8" size="lg" />
-        </div>
-      </section>
-
-      <LogoReel className="pb-10 sm:pb-12" />
+        </section>
+        <div aria-hidden="true" className="min-h-12 grow basis-0" />
+        <LogoReel className="pb-10 sm:pb-12" />
+      </div>
 
       <section id="tour" aria-labelledby="tour-heading" className="pb-16 sm:pb-20">
         <div className="container-site border-t pt-16 sm:pt-20">
