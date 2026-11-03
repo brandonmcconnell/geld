@@ -461,3 +461,16 @@ test('cooldown discovery orders by artifact time and refuses unavailable recent 
 test('a rerun cannot discard the same run ID prior-attempt provider evidence', async () => {
   await assert.rejects(discoverCooldown({ pages: [{ artifacts: [cooldownArtifact(1, 99999)], total_count: 1 }] }), /Current run has prior-attempt evidence/);
 });
+
+test('provider-evidence is explicit and cannot enter install/build/Chrome/browser/upload steps', () => {
+  assert.deepEqual(select({ body: marker('provider-evidence'), from: marker('gitlab-ui') }), { focus: 'provider-evidence', run: 'true', failures: [] });
+  const job = workflow.slice(workflow.indexOf('  installed-extension:'), workflow.indexOf('  bitbucket-static-source:'));
+  assert.match(job, /name: Export retained provider evidence without browser navigation\n\s+if: needs\.select-public-verification\.outputs\.focus == 'provider-evidence'\n\s+run: node scripts\/provider-evidence\.mjs/);
+  for (const command of ['pnpm install --frozen-lockfile', 'pnpm --filter @geld/extension build:chrome']) {
+    const before = job.slice(0, job.indexOf('run: ' + command));assert.match(before.slice(before.lastIndexOf('      - ')), /focus != 'provider-evidence'/);
+  }
+  for (const step of ["Locate the runner's Chrome", 'Test the installed extension on public pages', 'Save browser evidence']) {
+    const block = job.slice(job.indexOf('      - name: ' + step)).split('\n      - ')[0];assert.match(block, /focus != 'provider-evidence'/);
+  }
+  assert.doesNotMatch(harness, /provider-evidence/);
+});
