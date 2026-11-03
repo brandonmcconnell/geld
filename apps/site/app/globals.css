@@ -255,22 +255,35 @@
  * the same function list in every state, so the browser interpolates each
  * number straight from one state to the next. The bends turn at their joints:
  * (6, 6) on the top bar, (18, 18) on the bottom, (5, 12) and (19, 12) on the
- * middle. Open, every line straightens: the top bar (1.757 to 21, pivot
- * 11.379, 6) and the bottom (3 to 22.243, pivot 12.621, 18) shrink to 0.51 of
- * their length and become the two halves of the stroke from (5, 5) to
- * (19, 19); the middle (2.172 to 21.828, pivot 12, 12) turns into the whole
- * stroke from bottom left to top right. Round caps keep the joints clean at
- * every angle.
+ * middle. Open, every line straightens: the top bar (0.757 to 22, pivot
+ * 11.379, 6) and the bottom (2 to 23.243, pivot 12.621, 18) shrink to 0.51 of
+ * their length and become the two halves of the stroke from (4.343, 4.343) to
+ * (19.657, 19.657); the middle (1.172 to 22.828, pivot 12, 12) turns into the
+ * whole stroke from bottom left to top right. Lengths include the half-stroke
+ * the open ends are drawn long by (nav-menu.tsx), and each joint's dot shares
+ * its bar's transform.
  */
+.menu-glyph {
+  opacity: 0.75;
+  transition: opacity 150ms ease-out;
+}
+.menu-trigger[aria-expanded='true'] .menu-glyph {
+  opacity: 1;
+}
+.menu-glyph path,
+.menu-glyph circle {
+  transform-box: view-box;
+  transform-origin: 0 0;
+  transition: transform 280ms cubic-bezier(0.3, 0.7, 0.2, 1);
+}
 .menu-glyph path {
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transform-box: view-box;
-  transform-origin: 0 0;
-  transition: transform 280ms cubic-bezier(0.3, 0.7, 0.2, 1);
+  stroke-linecap: butt;
+}
+.menu-glyph circle {
+  fill: currentColor;
 }
 .menu-glyph__top {
   transform: translate(11.379px, 6px) rotate(0deg) scale(1, 1) translate(-11.379px, -6px);
@@ -296,6 +309,9 @@
 
 /* Hover only where there is a pointer to hover with, so a tap goes straight from idle to open. */
 @media (hover: hover) {
+  .menu-trigger:hover .menu-glyph {
+    opacity: 1;
+  }
   .menu-trigger:hover .menu-glyph__top-bend {
     transform: translate(11.379px, 6px) rotate(0deg) scale(1, 1) translate(-11.379px, -6px) translate(6px, 6px) rotate(20deg) translate(-6px, -6px);
   }
@@ -312,10 +328,10 @@
 
 /* Open wins over hover: same specificity, later in the sheet. */
 .menu-trigger[aria-expanded='true'] .menu-glyph__top {
-  transform: translate(8.5px, 8.5px) rotate(45deg) scale(0.5145, 1) translate(-11.379px, -6px);
+  transform: translate(8.172px, 8.172px) rotate(45deg) scale(0.5098, 1) translate(-11.379px, -6px);
 }
 .menu-trigger[aria-expanded='true'] .menu-glyph__top-bend {
-  transform: translate(8.5px, 8.5px) rotate(45deg) scale(0.5145, 1) translate(-11.379px, -6px) translate(6px, 6px) rotate(45deg) translate(-6px, -6px);
+  transform: translate(8.172px, 8.172px) rotate(45deg) scale(0.5098, 1) translate(-11.379px, -6px) translate(6px, 6px) rotate(45deg) translate(-6px, -6px);
 }
 .menu-trigger[aria-expanded='true'] .menu-glyph__middle {
   transform: translate(12px, 12px) rotate(-45deg) translate(-12px, -12px);
@@ -327,10 +343,10 @@
   transform: translate(12px, 12px) rotate(-45deg) translate(-12px, -12px) translate(19px, 12px) rotate(45deg) translate(-19px, -12px);
 }
 .menu-trigger[aria-expanded='true'] .menu-glyph__bottom {
-  transform: translate(15.5px, 15.5px) rotate(45deg) scale(0.5145, 1) translate(-12.621px, -18px);
+  transform: translate(15.828px, 15.828px) rotate(45deg) scale(0.5098, 1) translate(-12.621px, -18px);
 }
 .menu-trigger[aria-expanded='true'] .menu-glyph__bottom-bend {
-  transform: translate(15.5px, 15.5px) rotate(45deg) scale(0.5145, 1) translate(-12.621px, -18px) translate(18px, 18px) rotate(45deg) translate(-18px, -18px);
+  transform: translate(15.828px, 15.828px) rotate(45deg) scale(0.5098, 1) translate(-12.621px, -18px) translate(18px, 18px) rotate(45deg) translate(-18px, -18px);
 }
 
 /* A customer logo: a single-colour SVG mask filled with the text colour. */
