@@ -10,7 +10,7 @@ export const GITLAB_FILE_SEARCH = Object.freeze({
   query: 'issue_move_list_spec.rb',
 });
 
-export function gitLabFileSearchSnapshot(fixture) {
+export function gitLabFileSearchSnapshot(fixture, mode = 'snapshot') {
   let app = null;
   try {
     const nodes = [...document.querySelectorAll('[data-rapid-diffs][data-app-data]')];
@@ -26,10 +26,6 @@ export function gitLabFileSearchSnapshot(fixture) {
   const control = own?.querySelector('a,button');
   const section = own?.closest('.geld-provider-category');
   const folder = [...section?.querySelectorAll('.geld-provider-category-folder') ?? []].find((node) => node.nextElementSibling?.contains(own));
-  const original = [...nav?.querySelectorAll('a[data-testid="file-row"][data-file-row]') ?? []].filter((link) => {
-    if (link.closest('[data-geld-ui]') !== null) return false;
-    try { const url = new URL(link.href);return url.origin === location.origin && url.pathname === location.pathname && url.searchParams.get('file_path') === fixture.path && url.searchParams.get('diff_id') === fixture.version && url.hash === `#${fixture.anchor}`; } catch { return false; }
-  });
   const roots = [...document.querySelectorAll('diff-file[data-file-data]')].filter((node) => {
     try { return JSON.parse(node.getAttribute('data-file-data')).new_path === fixture.path; } catch { return false; }
   });
@@ -44,6 +40,50 @@ export function gitLabFileSearchSnapshot(fixture) {
     }
     const rect = node.getBoundingClientRect();return rect.width > 0 && rect.height > 0;
   };
+  const bounds = (node) => {
+    if (node == null) return null;
+    const rect = node.getBoundingClientRect();
+    return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
+  };
+  const positive = (rect) => rect !== null && Object.values(rect).every(Number.isFinite) && rect.width > 0 && rect.height > 0;
+  const nativeRows = [...nav?.querySelectorAll('a[data-testid="file-row"][data-file-row]') ?? []].filter((link) => link.closest('[data-geld-ui]') === null).map((link) => {
+    let path = null;let scoped = false;
+    try {
+      const url = new URL(link.href);path = url.searchParams.get('file_path');
+      scoped = url.username === '' && url.password === '' && url.origin === location.origin && url.pathname === location.pathname && url.searchParams.get('diff_id') === fixture.version && path !== null && path !== '' && url.hash === `#${link.getAttribute('data-file-row')}`;
+    } catch { /* Unknown native links remain included and cannot satisfy exact source matching. */ }
+    const row = link.closest('[data-testid="file-row-container"]');
+    const view = row?.parentElement;
+    const wrapper = view?.parentElement;
+    const scroller = wrapper?.parentElement;
+    const chain = link.parentElement === row && view?.classList.contains('vue-recycle-scroller__item-view') === true && wrapper?.classList.contains('vue-recycle-scroller__item-wrapper') === true && scroller?.matches('.vue-recycle-scroller.ready.direction-vertical') === true && nav?.contains(scroller) === true;
+    const rect = bounds(link);const viewRect = bounds(view);
+    const inlineTransform = view?.style.transform ?? null;
+    const computedTransform = view == null ? null : getComputedStyle(view).transform;
+    let computedParked = false;
+    const matrix = /^matrix\(([^)]+)\)$/.exec(computedTransform ?? '');
+    const matrix3d = /^matrix3d\(([^)]+)\)$/.exec(computedTransform ?? '');
+    if (matrix !== null) computedParked = JSON.stringify(matrix[1].split(',').map(Number)) === '[1,0,0,1,0,-9999]';
+    if (matrix3d !== null) computedParked = JSON.stringify(matrix3d[1].split(',').map(Number)) === '[1,0,0,0,0,1,0,0,0,0,1,0,0,-9999,0,1]';
+    const clips = [];
+    for (let ancestor = link.parentElement; ancestor !== null && host?.contains(ancestor); ancestor = ancestor.parentElement) {
+      const style = getComputedStyle(ancestor);const x = /^(auto|scroll|hidden|clip)$/.test(style.overflowX);const y = /^(auto|scroll|hidden|clip)$/.test(style.overflowY);
+      if (!x && !y) continue;
+      const outer = bounds(ancestor);
+      const clip = positive(outer) && ancestor.clientWidth > 0 && ancestor.clientHeight > 0 ? { left: outer.left + ancestor.clientLeft, top: outer.top + ancestor.clientTop, right: outer.left + ancestor.clientLeft + ancestor.clientWidth, bottom: outer.top + ancestor.clientTop + ancestor.clientHeight } : null;
+      clips.push({ nativeWrapper: ancestor === wrapper, nativeScroller: ancestor === scroller, className: ancestor.className, overflowX: style.overflowX, overflowY: style.overflowY, rect: outer, clip, x, y });
+    }
+    const outside = (rect, clip) => positive(rect) && clip.clip !== null && (clip.x && (rect.right <= clip.clip.left || rect.left >= clip.clip.right) || clip.y && (rect.bottom <= clip.clip.top || rect.top >= clip.clip.bottom));
+    const parked = scoped && chain && inlineTransform === 'translateY(-9999px)' && computedParked && clips.some((clip) => (clip.nativeWrapper || clip.nativeScroller) && outside(rect, clip) && outside(viewRect, clip));
+    const painted = visible(link) && positive(rect) && rect.right > 0 && rect.left < innerWidth && rect.bottom > 0 && rect.top < innerHeight && !clips.some((clip) => outside(rect, clip));
+    const target = scoped && path === fixture.path && link.getAttribute('data-file-row') === fixture.anchor;
+    return { link, info: { path: scoped ? path : null, rawPath: path, href: link.href, anchor: link.getAttribute('data-file-row'), scoped, target, included: !parked, reason: parked ? 'verified_native_unused_pool' : !scoped ? 'included_unknown_source' : !chain ? 'included_unknown_pool_chain' : inlineTransform !== 'translateY(-9999px)' ? 'included_not_parked' : !computedParked ? 'included_computed_transform_mismatch' : 'included_unproven_native_clipping', rendered: visible(link), painted, rect, pool: { chain, viewClass: view?.className ?? null, wrapperClass: wrapper?.className ?? null, scrollerClass: scroller?.className ?? null, inlineTransform, inlineTop: view?.style.top ?? null, computedTransform, rect: viewRect, wrapperRect: bounds(wrapper), scrollerRect: bounds(scroller), scrollTop: scroller?.scrollTop ?? null }, clips } };
+  });
+  const included = nativeRows.filter((row) => row.info.included);
+  const targets = included.filter((row) => row.info.target);
+  if (mode === 'target') return included.length === 1 && targets.length === 1 ? targets[0].link : null;
+  const original = targets.map((row) => row.link);
+  const searchBox = input?.closest('.gl-search-box-by-type');
   const code = [...details?.querySelectorAll('.rd-line-text') ?? []].find((node) => node.textContent.trim() !== '' && visible(node));
   const proof = globalThis.__geldFileSearchProof;
   const boxes = [...root?.querySelectorAll('input[type="checkbox"]') ?? []];
@@ -52,12 +92,27 @@ export function gitLabFileSearchSnapshot(fixture) {
     url: location.href, app,
     unique: { host: document.querySelectorAll('[data-testid="file-tree-container"]').length, input: host?.querySelectorAll('input[type="search"][data-testid="diff-tree-search"]').length ?? 0, nav: host?.querySelectorAll('nav.mr-tree-list[aria-label="File tree"]').length ?? 0, roots: roots.length },
     search: input == null ? null : { attributes: ['type', 'id', 'data-testid', 'aria-label', 'placeholder'].map((name) => [name, input.getAttribute(name)]), value: input.value, label: input.getAttribute('aria-label'), visible: visible(input), focused: document.activeElement === input },
-    native: { paths: [...nav?.querySelectorAll('a[data-testid="file-row"][data-file-row]') ?? []].filter((link) => link.closest('[data-geld-ui]') === null && visible(link)).map((link) => { try { return new URL(link.href).searchParams.get('file_path'); } catch { return null; } }), resultCount: original.length, visible: visible(original[0]), href: original[0]?.href ?? null, anchor: original[0]?.getAttribute('data-file-row') ?? null, ariaCurrent: original[0]?.getAttribute('aria-current') ?? null, className: original[0]?.className ?? null, listMarker: nav?.getAttribute('data-geld-provider-category-body') ?? null },
+    native: { rows: nativeRows.map((row) => row.info), paths: included.map((row) => row.info.path), domCount: nativeRows.length, excludedCount: nativeRows.length - included.length, domTargetCount: nativeRows.filter((row) => row.info.target).length, resultCount: targets.length, visible: targets.length === 1 && targets[0].info.painted, href: original[0]?.href ?? null, anchor: original[0]?.getAttribute('data-file-row') ?? null, ariaCurrent: original[0]?.getAttribute('aria-current') ?? null, className: original[0]?.className ?? null, listMarker: nav?.getAttribute('data-geld-provider-category-body') ?? null, model: { navClass: nav?.className ?? null, treeViewSelected: host?.querySelector('[data-testid="tree-view-toggle"]')?.getAttribute('aria-current') ?? null, clearButtons: [...searchBox?.querySelectorAll('.gl-search-box-by-type-clear') ?? []].map((button) => ({ tag: button.tagName, title: button.getAttribute('title'), disabled: button.disabled, rendered: visible(button) })) } },
     owned: { count: host?.querySelectorAll('.geld-provider-categories').length ?? 0, active: section?.getAttribute('data-active') ?? null, current: control?.getAttribute('aria-current') ?? null, folder: folder == null ? null : { label: folder.querySelector('.geld-provider-category-folder-label')?.textContent ?? null, expanded: folder.getAttribute('aria-expanded') }, headers: [...host?.querySelectorAll('.geld-provider-category-header') ?? []].map((button) => ({ text: button.textContent, expanded: button.getAttribute('aria-expanded') })) },
     source: { id: root?.id ?? null, raw: root?.getAttribute('data-file-data') ?? null, path: data?.new_path ?? null, head: data?.diff_refs?.head_sha ?? null, review: data?.code_review_id ?? null, visible: visible(root), open: details?.open ?? false, codeLines: details?.querySelectorAll('.rd-line-text').length ?? 0, codeVisible: visible(code), codeInViewport: rect != null && rect.bottom > 0 && rect.top < innerHeight && rect.right > 0 && rect.left < innerWidth, boxes: boxes.map((box) => ({ id: box.id, checked: box.checked, disabled: box.disabled, attributes: [...box.attributes].map((attr) => [attr.name, attr.value]) })) },
     identity: proof == null ? null : { input: input === proof.input && input?.parentElement === proof.inputParent, host: host === proof.host && host?.parentElement === proof.hostParent, nav: nav === proof.nav && nav?.parentElement === proof.navParent, root: root === proof.root && root?.parentElement === proof.rootParent, boxes: boxes.length === proof.boxes.length && boxes.every((box, index) => box === proof.boxes[index]) },
     events: proof?.events ?? [],
   };
+}
+
+export function bindGitLabFileSearchProof(fixture) {
+  const host = document.querySelector('[data-testid="file-tree-container"]');const input = host.querySelector('input[type="search"][data-testid="diff-tree-search"]');const nav = host.querySelector('nav.mr-tree-list[aria-label="File tree"]');const root = document.getElementById(fixture.anchor);
+  const proof = { input, inputParent: input.parentElement, host, hostParent: host.parentElement, nav, navParent: nav.parentElement, root, rootParent: root.parentElement, boxes: [...root.querySelectorAll('input[type="checkbox"]')], events: [] };
+  proof.listen = (event) => {
+    const target = event.target instanceof Element ? event.target : null;const native = target?.closest('a[data-testid="file-row"][data-file-row]');
+    const owned = target?.closest('[data-geld-category-path]');
+    if (target === input || native !== null && native !== undefined && native.closest('[data-geld-ui]') === null || owned !== null && owned !== undefined) {
+      const observation = { type: event.type, trusted: event.isTrusted, input: target === input, native: native?.closest('[data-geld-ui]') === null ? native.getAttribute('data-file-row') : null, nativeHref: native?.closest('[data-geld-ui]') === null ? native.href : null, owned: owned?.getAttribute('data-geld-category-path') ?? null, key: event instanceof KeyboardEvent ? event.key : null, value: target === input ? input.value : null, cancelable: event.cancelable, defaultPrevented: event.defaultPrevented, defaultPreventedFinal: null };
+      proof.events.push(observation);queueMicrotask(() => { observation.defaultPreventedFinal = event.defaultPrevented; });
+    }
+  };
+  for (const type of ['click', 'focusin', 'focusout', 'input', 'keydown']) document.addEventListener(type, proof.listen, true);
+  globalThis.__geldFileSearchProof = proof;
 }
 
 export function gitLabFileSearchSelection(snapshot, fixture = GITLAB_FILE_SEARCH) {
@@ -125,13 +180,30 @@ export async function verifyGitLabFileSearch(page, { poll, capture, totals, prog
     header: '.geld-provider-category-header',
     file: `[data-geld-category-path="${fixture.path}"] .geld-provider-category-native-row`,
     input: 'input[type="search"][data-testid="diff-tree-search"]',
-    native: `a[data-testid="file-row"][data-file-row="${fixture.anchor}"]`,
   };
   const click = async (selector) => {
     await page.$eval(selector, (node) => node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }));
     const target = await page.$eval(selector, (node, selector) => { const rect = node.getBoundingClientRect();return { unique: document.querySelectorAll(selector).length, unobstructed: node.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)) }; }, selector);
     assert.equal(target.unique, 1, 'Native search action target is ambiguous');assert.equal(target.unobstructed, true, 'Native search action target is obstructed');
     await page.click(selector);
+  };
+  const clickNativeResult = async () => {
+    const handle = await page.evaluateHandle(gitLabFileSearchSnapshot, fixture, 'target');
+    try {
+      const target = handle.asElement();assert.ok(target !== null, 'Native search needs one included original target');
+      await target.evaluate((node) => node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }));
+      progress.nativeClick = { before: await read() };unchanged(progress.nativeClick.before, progress.before);
+      assert.deepEqual(progress.nativeClick.before.native.paths, [fixture.path]);assert.equal(progress.nativeClick.before.native.resultCount, 1);
+      progress.nativeClick.node = await target.evaluate((node) => {
+        const rect = node.getBoundingClientRect();const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return { connected: node.isConnected && node.ownerDocument === document, original: node.closest('[data-geld-ui]') === null, href: node.href, anchor: node.getAttribute('data-file-row'), rect: { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, width: rect.width, height: rect.height }, inViewport: rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.bottom <= innerHeight && rect.left >= 0 && rect.right <= innerWidth, unobstructed: hit !== null && node.contains(hit) };
+      });
+      const node = progress.nativeClick.node;
+      assert.equal(node.connected, true);assert.equal(node.original, true);assert.equal(node.inViewport, true);assert.equal(node.unobstructed, true);
+      assert.equal(node.anchor, fixture.anchor);assert.equal(node.href, progress.nativeClick.before.native.href);
+      assert.equal(progress.nativeClick.before.native.visible, true, 'Included native target is clipped or hidden');
+      await target.click();
+    } finally { await handle.dispose(); }
   };
   const unchanged = (value, baseline) => {
     assertGitLabFileSearchScope(value);
@@ -168,17 +240,7 @@ export async function verifyGitLabFileSearch(page, { poll, capture, totals, prog
     await page.click(selectors.header);
     await page.keyboard.press('End');await page.keyboard.press('Enter');
     progress.tests = await poll(read, (value) => value.owned.active === 'true' && value.source.visible && value.owned.headers.some((header) => /^Tests\s*\(1 test\)/.test(header.text) && header.expanded === 'true'), 'Native search begins with Tests selected');
-    await page.evaluate((fixture) => {
-      const host = document.querySelector('[data-testid="file-tree-container"]');const input = host.querySelector('input[type="search"][data-testid="diff-tree-search"]');const nav = host.querySelector('nav.mr-tree-list[aria-label="File tree"]');const root = document.getElementById(fixture.anchor);
-      const proof = { input, inputParent: input.parentElement, host, hostParent: host.parentElement, nav, navParent: nav.parentElement, root, rootParent: root.parentElement, boxes: [...root.querySelectorAll('input[type="checkbox"]')], events: [] };
-      proof.listen = (event) => {
-        const target = event.target instanceof Element ? event.target : null;const native = target?.closest('a[data-testid="file-row"][data-file-row]');
-        const owned = target?.closest('[data-geld-category-path]');
-        if (target === input || native !== null && native !== undefined && native.closest('[data-geld-ui]') === null || owned !== null && owned !== undefined) proof.events.push({ type: event.type, trusted: event.isTrusted, input: target === input, native: native?.closest('[data-geld-ui]') === null ? native.getAttribute('data-file-row') : null, owned: owned?.getAttribute('data-geld-category-path') ?? null, key: event instanceof KeyboardEvent ? event.key : null, value: target === input ? input.value : null });
-      };
-      for (const type of ['click', 'focusin', 'focusout', 'input', 'keydown']) document.addEventListener(type, proof.listen, true);
-      globalThis.__geldFileSearchProof = proof;
-    }, fixture);
+    await page.evaluate(bindGitLabFileSearchProof, fixture);
     bound = true;
     await click(selectors.file);
     progress.selected = await poll(read, (value) => value.owned.current === 'true' && new URL(value.url).hash === `#${fixture.anchor}` && value.source.open && value.source.codeVisible && value.source.codeInViewport, 'Owned test row reveals exact original native file');
@@ -203,10 +265,10 @@ export async function verifyGitLabFileSearch(page, { poll, capture, totals, prog
     assert.deepEqual(progress.search.native.paths, [fixture.path], 'Native filename search left unrelated original file results');
     assert.ok(progress.search.events.some((event) => event.type === 'input' && event.input && event.trusted), 'Typing must produce a trusted native input event');
     progress.searchArtifacts = await capture(page, 'gitlab-file-search-native-results');
-    await click(selectors.native);
+    await clickNativeResult();
     progress.activated = await poll(read, (value) => new URL(value.url).hash === `#${fixture.anchor}` && new URL(value.url).searchParams.get('file_path') === fixture.path && value.source.open && value.source.codeVisible && value.source.codeInViewport, 'Real native search result selects and reveals the exact immutable file');
     unchanged(progress.activated, progress.before);
-    assert.ok(progress.activated.events.some((event) => event.type === 'click' && event.native === fixture.anchor && event.trusted), 'Native result activation needs an original trusted click');
+    assert.ok(progress.activated.events.some((event) => event.type === 'click' && event.native === fixture.anchor && event.nativeHref === progress.nativeClick.node.href && event.trusted), 'Native result activation needs an original trusted click');
     await clear('clear');
     progress.restored = await poll(read, recovered, 'Clearing native search restores Tests, custom folder collapse and current file');
     unchanged(progress.restored, progress.before);
@@ -219,7 +281,16 @@ export async function verifyGitLabFileSearch(page, { poll, capture, totals, prog
     assert.equal(progress.afterCapture.source.visible, true);assert.equal(progress.afterCapture.source.open, true);assert.equal(progress.afterCapture.source.codeVisible, true);
     progress.proof = 'Original native file search with trusted pointer, Tab, typing and result selection. Not browser Ctrl+F. Native hydration demand is observed by the existing request guards without a zero-traffic claim.';
     return progress;
-  } catch (error) { failure = error;throw error; }
+  } catch (error) {
+    failure = error;
+    if (bound && !page.isClosed()) {
+      try {
+        progress.failureBeforeCleanup = await read();
+        if (sameScope(progress.failureBeforeCleanup)) progress.failureArtifacts = await capture(page, 'gitlab-file-search-before-cleanup');
+      } catch (diagnosticError) { progress.failureDiagnosticError = String(diagnosticError); }
+    }
+    throw error;
+  }
   finally {
     const errors = [];
     progress.cleanup = { status: 'pending' };
