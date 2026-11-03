@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { enableOptionalProviders, optionalProvidersForCases } from './provider-access-acceptance.mjs';
 import { BITBUCKET_UI_PR, BITBUCKET_UI_PATH, bitbucketUiSourceCache, verifyBitbucketUiContinuity } from './bitbucket-ui-continuity.mjs';
 /** Live installed-extension smoke. Run only where unpacked extensions are permitted by policy. */
 import assert from 'node:assert/strict';
@@ -3108,6 +3109,8 @@ try {
   assert.equal(installed.storageAvailable, true);
   console.log(`INSTALLED: ${extensionId}, ${report.browserVersion}, service worker ${worker.url()}`);
   report.installation = { extensionId, serviceWorker: worker.url(), optionsUrl: options.url(), verifiedActualChromeStorage: true, installedManifestVersion: installed.manifest.version };
+  const selected = focus === 'all' ? Object.values(FOCUSED_CASES).flat() : FOCUSED_CASES[focus] ?? [];
+  report.providerAccess = await enableOptionalProviders(options, optionalProvidersForCases(selected), { poll });
   await prepareInstalledBrowserSettings();
 
   await runBitbucketWhitespaceCase();
