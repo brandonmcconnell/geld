@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
-import { extractBitbucketModule as extract, BITBUCKET_MODULE_LIMIT, BITBUCKET_WORKER_LIMITS } from './bitbucket-main-asset-module-worker.mjs';
+import { extractBitbucketModule as extract, BITBUCKET_MODULE_LIMIT, BITBUCKET_WORKER_LIMITS, BITBUCKET_LARGE_SOURCE_WORKER_LIMITS, BITBUCKET_SOURCE_LIMIT, BITBUCKET_MAX_SOURCE_LIMIT } from './bitbucket-main-asset-module-worker.mjs';
 const registration = 'o("fozrM",(function(e,r){e.exports={getGlobalShouldIgnoreWhitespace:s=>s.settings.shouldIgnoreWhitespace};}))';
 const body = (text = registration) => Buffer.from(text);
 test('actual worker extracts exact static registration and UTF8/character offsets without executing it', async () => {
@@ -61,4 +61,26 @@ test('worker result for the other allowlisted module cannot qualify selected mod
 });
 test('duplicate DiffLoader factory remains ambiguous even beside one valid settings factory',async()=>{
   const loader='r("h43l2",function(e,r){})';assert.deepEqual(await extract(body(registration+';'+loader+';'+loader),{moduleId:'h43l2'}),{status:'unavailable',reason:'registration'});
+});
+
+test('explicit larger source allowance selects only the fixed 512MiB worker budget',async()=>{
+  const worker=pendingWorker();let config;
+  const result=extract(body(),{sourceLimitBytes:BITBUCKET_MAX_SOURCE_LIMIT,workerFactory:(options)=>{config=options;return worker;}});
+  assert.equal(config.workerData.sourceLimitBytes,16*1024*1024);assert.deepEqual(config.resourceLimits,BITBUCKET_LARGE_SOURCE_WORKER_LIMITS);
+  assert.equal(config.resourceLimits.maxOldGenerationSizeMb,512);assert.equal(config.resourceLimits.stackSizeMb,BITBUCKET_WORKER_LIMITS.stackSizeMb);
+  worker.emit('error',new Error('private'));assert.deepEqual(await result,{status:'unavailable',reason:'worker_failed'});
+});
+for(const sourceLimitBytes of [0,-1,1.5,NaN,Infinity,BITBUCKET_MAX_SOURCE_LIMIT+1,'16777216',null])test('invalid explicit source allowance cannot start a worker: '+String(sourceLimitBytes),async()=>{
+  assert.deepEqual(await extract(body(),{sourceLimitBytes,workerFactory:()=>{throw Error('must not create worker');}}),{status:'unavailable',reason:'source_limit'});
+});
+test('the explicit source allowance is a hard pre-worker cap and legacy limit stays6MiB',async()=>{
+  assert.equal(BITBUCKET_SOURCE_LIMIT,6*1024*1024);assert.equal(BITBUCKET_WORKER_LIMITS.maxOldGenerationSizeMb,256);
+  const bytes=Buffer.alloc(BITBUCKET_MAX_SOURCE_LIMIT+1);
+  assert.deepEqual(await extract(bytes,{sourceLimitBytes:BITBUCKET_MAX_SOURCE_LIMIT,workerFactory:()=>{throw Error('must not create worker');}}),{status:'unavailable',reason:'body_size'});
+  assert.deepEqual(await extract(bytes.subarray(0,BITBUCKET_SOURCE_LIMIT+1),{workerFactory:()=>{throw Error('must not create worker');}}),{status:'unavailable',reason:'body_size'});
+});
+test('actual larger worker parses over6MiB without executing the fetched registration or trailing code',async()=>{
+  const padding='/*'+' '.repeat(BITBUCKET_SOURCE_LIMIT)+'*/';const bytes=body(padding+registration+';throw Error("never execute large source");');
+  const result=await extract(bytes,{sourceLimitBytes:BITBUCKET_MAX_SOURCE_LIMIT,deadlineMs:10_000});
+  assert.equal(result.status,'extracted');assert.deepEqual(Buffer.from(result.bytes),body(registration));assert.equal(result.byteStart,Buffer.byteLength(padding));
 });

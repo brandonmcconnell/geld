@@ -1527,7 +1527,10 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   The separate `bitbucket-pr-whole-context` case observes current API refs and native All changes/menu provenance independently;
   native abbreviated source refs remain distinct from full API hashes.
   Its PR-only preparation disables unrelated overview/list/config/AI reads, preserves test-category counts, and restores the exact raw settings after the page closes.
-  PR whole-context acceptance opens Tests and hydrates the original target placeholder through its existing file control or anchor before binding native source rows.
+  PR whole-context acceptance opens Tests with actual End/Enter keyboard navigation and hydrates the original target placeholder through its existing file control or anchor before binding native source rows.
+  Fixed preparation phases, boolean file/header hit checks and independent cleanup codes remain in the private receipt even if the outer runner suppresses exception text.
+  Browser-decoded PR API304 responses count as revalidation only after an earlier successful200 for the same URL/query fingerprint and body hash in that visit;
+  response-event order is preserved before reading bodies.
 
 
 - **Selected GitLab diffs require immutable comparisons.**
@@ -2190,7 +2193,10 @@ Optional module-only research on the explicit native-Bash and initial-On visits 
 The default raw collector remains pinned to its original exact URL, and no eligible module response triggers a fetch, retry or change to native preference qualification.
 The separate literal `bitbucket-whitespace-source` workflow focus performs exactly one anonymous GET of the retained public app.6ea3303b1b2659fcb5ca5dc82e17933a815f4108.js CDN asset.
 It skips installed-browser execution entirely, has no provider API request or native preference action, and saves a separate source-research artifact that cannot replace browser cooldown evidence.
-Redirects, wrong MIME/final URL, empty/invalid bodies and declared or streamed bodies above6MiB are refused, with no retries or fallback endpoints.
+Redirects, wrong MIME/final URL, empty/invalid bodies and declared or streamed bodies above16MiB are refused, with no retries or fallback endpoints.
+Only this static collector opts into the larger worker source allowance and its512MiB old-generation and10s parser bounds, under the existing30s total wall deadline.
+The installed-browser worker keeps its6MiB source,256MiB old-generation and2s parser defaults.
+Reports retain the valid declared byte length and a streamed bytes-seen count capped at the body limit plus one, with a separate capped flag, without retaining an oversized body.
 The bounded worker extracts only `fozrM` and `h43l2` function registrations, independently recording absent or ambiguous modules, source offsets and SHA256 hashes without executing fetched code.
 Each selected factory is limited to256KiB and written under a fixed filename, while the full app body is not saved.
 Static source capture does not establish native source authority, live preference state or feature acceptance.
@@ -2285,6 +2291,19 @@ Its single initial native URL includes the known unchanged `file_path`, matching
 
 Puppeteer25 passes media-feature reset values to Chromium CDP, which requires an empty array rather than null.
 The shell acceptance uses `emulateMediaFeatures([])` on both normal and failure cleanup paths to restore the browser's baseline light or dark media.
+
+
+### Read-only Bitbucket PR context admission
+
+The literal `bitbucket-pr-whole-context` case disables both `prOverview` and `quickReview` before navigation so its source-only test does not start the unrelated conversation reader.
+Only that case reserves three external requests and stops at47 observed requests, for50 total planned requests below the documented60/hour ceiling.
+The external reservation is a policy margin for reads accounted outside the browser runner, not synthesized events in the observed browser timestamps.
+All other cases retain the existing40-request policy and native preference preflights.
+A read-only cap hit aborts and records a budget hold with the first actual expiry, without manufacturing a provider429 cooldown.
+Actual provider429 handling and inherited server cooldowns remain unchanged.
+Native context inputs require three remaining observed slots for at most two concurrent expansion requests.
+A cached owned fold may omit that request reserve only after a fresh qualified source snapshot proves every leaf line already mounted and source-equal, with the exact closed fold still present.
+The after-request hard stop remains active during cached toggles and every other phase.
 
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
