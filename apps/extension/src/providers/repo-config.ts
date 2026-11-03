@@ -107,15 +107,30 @@ export async function configJson(url: URL, signal: AbortSignal, fetcher: typeof 
 interface CachedFile { readonly text: string | null; readonly at: number; }
 const cacheItem = storage.defineItem<Readonly<Record<string, CachedFile>>>('local:providerRepoConfigCache', { fallback: {} });
 let writeQueue: Promise<unknown> = Promise.resolve();
+let cacheGeneration = 0;
+
+function assertCurrent(signal: AbortSignal, generation: number): void {
+  signal.throwIfAborted();
+  if (generation !== cacheGeneration) throw new DOMException('Repository configuration cache was cleared', 'AbortError');
+}
+
+export async function clearProviderConfigCache(): Promise<void> {
+  cacheGeneration += 1;
+  const run = writeQueue.then(() => cacheItem.removeValue());
+  writeQueue = run.catch(() => undefined);
+  await run;
+}
 
 function cachedFile(value: unknown): value is CachedFile {
   return configRecord(value) && (value.text === null || typeof value.text === 'string') && typeof value.at === 'number'
     && Number.isFinite(value.at) && (value.text === null || byteSize(value.text) <= MAX_CONFIG_BYTES);
 }
 
-async function cacheFile(key: string, text: string | null): Promise<void> {
+async function cacheFile(key: string, text: string | null, signal: AbortSignal, generation: number): Promise<void> {
   const run = writeQueue.then(async () => {
+    assertCurrent(signal, generation);
     const stored = await cacheItem.getValue();
+    assertCurrent(signal, generation);
     const now = Date.now();
     const entries = Object.entries(stored).filter(([storedKey, value]) => storedKey !== key && cachedFile(value) && now >= value.at && now - value.at < TTL_MS);
     entries.push([key, { text, at: now }]);
@@ -123,7 +138,7 @@ async function cacheFile(key: string, text: string | null): Promise<void> {
     await cacheItem.setValue(Object.fromEntries(entries.slice(0, CACHE_LIMIT)));
   });
   writeQueue = run.catch(() => undefined);
-  await writeQueue;
+  await run;
 }
 
 export async function loadProviderConfig(
@@ -134,19 +149,21 @@ export async function loadProviderConfig(
   fileUrl: (path: ProviderConfigPath) => string,
 ): Promise<ProviderRepositoryConfig> {
   if (!CONFIG_SHA.test(ref)) throw new ProviderConfigError('Repository configuration is not pinned to an immutable revision');
+  const generation = cacheGeneration;
   const stored = await cacheItem.getValue();
+  assertCurrent(signal, generation);
   const files: ProviderRepositoryConfigFile[] = [];
   for (const path of PROVIDER_CONFIG_PATHS) {
-    signal.throwIfAborted();
+    assertCurrent(signal, generation);
     const key = JSON.stringify([repositoryKey(repository), ref, path]);
     const cached = stored[key];
     const usable = cachedFile(cached) && Date.now() >= cached.at && Date.now() - cached.at < TTL_MS;
     const url = new URL(fileUrl(path));
     if (url.origin !== repository.origin || url.username !== '' || url.password !== '') throw new ProviderConfigError('Invalid repository configuration file link');
     const text = usable ? cached.text : await readFile(path);
-    signal.throwIfAborted();
+    assertCurrent(signal, generation);
     if (text !== null && (byteSize(text) > MAX_CONFIG_BYTES || looksLikeHtml(null, text))) throw new ProviderConfigError('Repository configuration is not a valid bounded text file');
-    if (!usable) await cacheFile(key, text);
+    if (!usable) await cacheFile(key, text, signal, generation);
     files.push({ kind: path === '.gitattributes' ? 'gitattributes' : 'repo', path, url: url.href, text });
   }
   return { repository, ref, files };
@@ -169,6 +186,7 @@ export class ProviderRepoConfigSource {
   private running = 0;
   private active = true;
   private stopped = false;
+  private clearing = false;
   private catalog: Catalog;
 
   constructor(private readonly fetchConfig: ProviderConfigFetcher, private readonly changed: () => void, catalog: Catalog = BUNDLED_CATALOG) { this.catalog = catalog; }
@@ -179,6 +197,18 @@ export class ProviderRepoConfigSource {
     this.stopped = true;
     for (const lookup of this.lookups.values()) lookup.abort?.abort();
     this.lookups.clear(); this.queue.length = 0;
+  }
+
+  async clearCache(): Promise<void> {
+    this.clearing = true;
+    for (const lookup of this.lookups.values()) lookup.abort?.abort();
+    this.lookups.clear();
+    this.queue.length = 0;
+    try { await clearProviderConfigCache(); }
+    finally {
+      this.clearing = false;
+      if (!this.stopped) { this.changed(); this.pump(); }
+    }
   }
 
   get(page: ProviderPage, settings: GeldSettings, choices: RepoConfigChoices = {}, allowFetch = true): ProviderConfigResolution {
@@ -193,7 +223,7 @@ export class ProviderRepoConfigSource {
         if (candidate !== key && entry.abort === null && !entry.queued) this.lookups.delete(candidate);
       }
     }
-    if (allowFetch && !this.stopped && !lookup.queued && lookup.abort === null && Date.now() >= lookup.retryAt && (lookup.status !== 'ready' || Date.now() - lookup.at >= TTL_MS)) {
+    if (allowFetch && !this.stopped && !this.clearing && !lookup.queued && lookup.abort === null && Date.now() >= lookup.retryAt && (lookup.status !== 'ready' || Date.now() - lookup.at >= TTL_MS)) {
       lookup.queued = true; this.queue.push(lookup); this.pump();
     }
     const choice = choices[repositoryConfigChoiceKey(page.repository)];
@@ -217,7 +247,7 @@ export class ProviderRepoConfigSource {
   }
 
   private pump(): void {
-    if (this.stopped || !this.active) return;
+    if (this.stopped || this.clearing || !this.active) return;
     while (this.running < 2) {
       const lookup = this.queue.shift();
       if (lookup === undefined) break;
@@ -226,18 +256,18 @@ export class ProviderRepoConfigSource {
       lookup.abort = abort;
       this.running += 1;
       void this.fetchConfig(lookup.page, abort.signal).then((snapshot) => {
-        if (this.stopped) return;
+        if (this.stopped || abort.signal.aborted) return;
         if (!CONFIG_SHA.test(snapshot.ref) || repositoryKey(snapshot.repository) !== repositoryKey(lookup.page.repository)
           || snapshot.files.length !== PROVIDER_CONFIG_PATHS.length || PROVIDER_CONFIG_PATHS.some((path) => snapshot.files.filter((file) => file.path === path).length !== 1)) throw new ProviderConfigError('Repository configuration source returned a different repository or incomplete files');
         lookup.snapshot = snapshot; lookup.status = 'ready'; lookup.error = null; lookup.at = Date.now(); lookup.retryAt = 0;
       }).catch((error: unknown) => {
-        if (this.stopped) return;
+        if (this.stopped || abort.signal.aborted) return;
         lookup.snapshot = null; lookup.status = 'failed'; lookup.error = error instanceof Error ? error.message : 'Repository configuration unavailable';
         const retry = configRecord(error) ? error.retryAfterMs : undefined;
         lookup.retryAt = Date.now() + (typeof retry === 'number' && Number.isFinite(retry) && retry > 0 ? retry : RETRY_MS);
       }).finally(() => {
         lookup.abort = null; this.running -= 1;
-        if (!this.stopped) { this.changed(); this.pump(); }
+        if (!this.stopped) { if (!abort.signal.aborted) this.changed(); this.pump(); }
       });
     }
   }
