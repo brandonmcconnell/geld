@@ -1791,7 +1791,7 @@ async function sendReview(state: Mounted, event: ReviewEvent, body: string): Pro
   window.clearTimeout(state.submittedTimer);
   state.status.textContent = 'Submitting…';
   try {
-    const response = await fetch(url, init);
+    const response = await fetch(new URL(url, location.href), init);
     if (!response.ok) {
       const payload: unknown = await response.json().catch(() => null);
       return reviewErrorText(response.status, payload);
@@ -1846,7 +1846,7 @@ async function sendComment(state: Mounted, text: string): Promise<string | null>
   window.clearTimeout(state.submittedTimer);
   state.status.textContent = 'Posting…';
   try {
-    const response = await fetch(url, init);
+    const response = await fetch(new URL(url, location.href), init);
     if (!response.ok) {
       const payload: unknown = await response.json().catch(() => null);
       const said = messageOf(payload);
@@ -2257,7 +2257,7 @@ async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Ste
       if (!here()) return null;
       const answer = (async (): Promise<string | null> => {
         try {
-          const response = await fetch(step.request.url, step.request.init);
+          const response = await fetch(new URL(step.request.url, location.href), step.request.init);
           const payload: unknown = await response.json().catch(() => null);
           const refused = typeof payload === 'object' && payload !== null && Reflect.get(payload, 'status') === 'failed';
           return !response.ok || refused ? actionErrorText(kind, response.status, payload) : null;

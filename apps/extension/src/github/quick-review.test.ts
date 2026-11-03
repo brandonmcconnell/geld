@@ -5,6 +5,12 @@ import { applyQuickReview, canSubmit, isInstantClick, pullPathOf, quickReviewSta
 
 const SHA = 'a'.repeat(40);
 
+// Requests go out absolute (Firefox resolves a content script's relative URL against the extension); the stubs match on the page path.
+function pathOf(input: RequestInfo | URL): string {
+  const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+  return url.origin === location.origin ? `${url.pathname}${url.search}` : url.href;
+}
+
 function groupAt(host: HTMLElement): HeaderStatGroup {
   return { host, additions: null, deletions: null, srOnly: null, fileCounts: [], original: null, sentence: false };
 }
@@ -333,7 +339,7 @@ describe('the tab bar button', () => {
   it('approves at once on the instant click, without the box', async () => {
     const sent: { url: string; body: string }[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
+      const url = pathOf(input);
       if (url.endsWith('/submit_review')) {
         sent.push({ url, body: String(init?.body) });
         return new Response('{}', { status: 200 });
@@ -356,9 +362,9 @@ describe('the tab bar button', () => {
     document.head.innerHTML = '<meta name="user-login" content="alice">';
     document.body.insertAdjacentHTML('beforeend', '<div id="partial-timeline" class="js-timeline-marker" data-url="/acme/widgets/pull/7/partials/unread_timeline?since=1"></div>');
     const reload = vi.fn();
-    vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '', href: window.location.href });
+    vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '', href: window.location.href, origin: window.location.origin });
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = pathOf(input);
       if (url.endsWith('/submit_review')) return new Response('{}', { status: 200 });
       // GitHub answers from before the review for a while: no verdict in the merge box, nobody in the Reviewers block.
       if (url.includes('/page_data/merge_box')) return new Response(mergeBox('MERGEABLE', true), { status: 200 });
@@ -379,7 +385,7 @@ describe('the tab bar button', () => {
 
   it('freezes the group while a review is on its way, the pressed segment’s glyph giving way to a spinner', async () => {
     let answer: ((response: Response) => void) | null = null;
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => (String(input).endsWith('/submit_review') ? new Promise<Response>((resolve) => { answer = resolve; }) : Promise.resolve(new Response('{}', { status: 404 })))));
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => (pathOf(input).endsWith('/submit_review') ? new Promise<Response>((resolve) => { answer = resolve; }) : Promise.resolve(new Response('{}', { status: 404 })))));
     mount();
     segment('approve').dispatchEvent(new MouseEvent('click', instant));
     await settle();
@@ -399,7 +405,7 @@ describe('the tab bar button', () => {
   it('opens the box with the verdict instead of sending when words wait in it', async () => {
     const sent: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      sent.push(String(input));
+      sent.push(pathOf(input));
       return new Response('{}', { status: 200 });
     }));
     mount();
@@ -423,7 +429,7 @@ describe('the tab bar button', () => {
 
   it('asks for words with GitHub’s reason when it refuses an instant verdict', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) =>
-      String(input).endsWith('/submit_review') ? new Response('{"error":"Review body is required"}', { status: 422 }) : new Response('{}', { status: 404 }),
+      pathOf(input).endsWith('/submit_review') ? new Response('{"error":"Review body is required"}', { status: 422 }) : new Response('{}', { status: 404 }),
     ));
     mount();
     segment('request changes').dispatchEvent(new MouseEvent('click', instant));
@@ -462,7 +468,7 @@ describe('the tab bar button', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
+        const url = pathOf(input);
         if (url.includes('/page_data/merge_box')) return new Response(box(), { status: 200 });
         if (init?.method === 'POST') {
           sent.push(url.replace(/^.*\/page_data\//, ''));
@@ -478,7 +484,7 @@ describe('the tab bar button', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
+        const url = pathOf(input);
         if (url.endsWith('/page_data/stacks')) return stack === null ? new Response('{}', { status: 500 }) : new Response(stack, { status: 200 });
         if (!url.includes('/page_data/merge_box')) return new Response('{}', { status: 404 });
         const payload: unknown = JSON.parse(mergeBox('MERGEABLE', true));
@@ -521,7 +527,7 @@ describe('the tab bar button', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
+        const url = pathOf(input);
         if (!url.includes('/page_data/merge_box')) return new Response('{}', { status: 404 });
         const past = url.includes('bypass_requirements=true');
         const payload = JSON.parse(mergeBox(past ? 'MERGEABLE' : 'BLOCKED', true));
@@ -554,7 +560,7 @@ describe('the tab bar button', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
+        const url = pathOf(input);
         if (init?.method === 'POST') {
           posts.push(url);
           if (refuse !== null && url.includes(refuse)) return new Response('{"error":"Not allowed"}', { status: 422 });
@@ -576,7 +582,7 @@ describe('the tab bar button', () => {
       }),
     );
     const reload = vi.fn();
-    vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '' });
+    vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '', href: window.location.href, origin: window.location.origin });
     withLabel('Open', 'pullOpened');
     mount();
     for (let i = 0; i < 6; i += 1) await settle();
@@ -639,12 +645,12 @@ describe('the tab bar button', () => {
   it('completes nothing and reloads nothing when a change comes back after the reader moved to another pull request', async () => {
     window.localStorage.clear();
     resetStatusHints();
-    const where = { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' };
+    const where = { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '', href: window.location.href, origin: window.location.origin };
     vi.stubGlobal('location', where);
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
+        const url = pathOf(input);
         if (init?.method === 'POST') {
           where.pathname = '/acme/widgets/pull/8';
           return new Response('{}', { status: 200 });
@@ -668,12 +674,12 @@ describe('the tab bar button', () => {
     window.localStorage.clear();
     resetStatusHints();
     const posts: string[] = [];
-    const where = { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' };
+    const where = { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '', href: window.location.href, origin: window.location.origin };
     vi.stubGlobal('location', where);
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
+        const url = pathOf(input);
         if (init?.method === 'POST') {
           posts.push(url);
           // The reader moves on to another pull request while the first change is out.
@@ -710,11 +716,11 @@ describe('the tab bar button', () => {
     window.localStorage.clear();
     resetStatusHints();
     const posts: string[] = [];
-    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' });
+    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '', href: window.location.href, origin: window.location.origin });
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
+        const url = pathOf(input);
         if (init?.method === 'POST') {
           posts.push(url);
           return new Response('{}', { status: 200 });
@@ -751,11 +757,11 @@ describe('the tab bar button', () => {
     window.localStorage.clear();
     resetStatusHints();
     const posts: { url: string; body: unknown }[] = [];
-    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' });
+    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '', href: window.location.href, origin: window.location.origin });
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
+        const url = pathOf(input);
         if (init?.method === 'POST') {
           posts.push({ url, body: JSON.parse(String(init.body)) });
           return new Response('{"status":"merged"}', { status: 200 });
@@ -792,7 +798,7 @@ describe('the tab bar button', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
+        const url = pathOf(input);
         if (!url.includes('/page_data/merge_box')) return new Response('{}', { status: 404 });
         const method = /merge_method=([A-Z]+)/.exec(url)?.[1] ?? 'SQUASH';
         const payload = JSON.parse(mergeBox('MERGEABLE', true));
@@ -845,7 +851,7 @@ describe('the tab bar button', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
+        const url = pathOf(input);
         if (!url.includes('/page_data/merge_box')) return new Response('{}', { status: 404 });
         const method = /merge_method=([A-Z]+)/.exec(url)?.[1] ?? 'SQUASH';
         if (method === 'MERGE' && failMerge) return new Response('{}', { status: 500 });
@@ -975,7 +981,7 @@ describe('the tab bar button', () => {
     resetStatusHints();
     rememberStatusHint('acme/widgets', true);
     const answers: Array<(response: Response) => void> = [];
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => (String(input).includes('/page_data/merge_box') && answers.length > 0 ? new Promise<Response>((resolve) => answers.push(resolve)) : new Response('busy', { status: 503 }))));
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => (pathOf(input).includes('/page_data/merge_box') && answers.length > 0 ? new Promise<Response>((resolve) => answers.push(resolve)) : new Response('busy', { status: 503 }))));
     withLabel('Open', 'pullOpened');
     mount();
     for (let i = 0; i < 4; i += 1) await settle();
@@ -1048,7 +1054,7 @@ describe('the tab bar button', () => {
     // Declined, the reader carries on from the pill: the menu item that had focus is gone.
     expect(document.activeElement).toBe(pill());
     confirm.mockReturnValue(true);
-    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' });
+    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '', href: window.location.href, origin: window.location.origin });
     pill()?.click();
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="closed"]')?.click();
     await settle();
@@ -1071,7 +1077,7 @@ describe('the tab bar button', () => {
       ['closed', 'Close pull request'],
     ]);
     const reload = vi.fn();
-    vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '' });
+    vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '', href: window.location.href, origin: window.location.origin });
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="open"]')?.click();
     await settle();
     expect(sent).toEqual(['mark_ready_for_review']);
@@ -1156,7 +1162,7 @@ describe('the tab bar button', () => {
     const confirm = vi.fn(() => true);
     vi.stubGlobal('confirm', confirm);
     const reload = vi.fn();
-    vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '' });
+    vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '', href: window.location.href, origin: window.location.origin });
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="queued"]')?.click();
     expect(confirm).toHaveBeenCalledWith('Add this pull request to the merge queue?');
     for (let i = 0; i < 3; i += 1) await settle();
@@ -1185,7 +1191,7 @@ describe('the tab bar button', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
+        const url = pathOf(input);
         if (url.includes('/page_data/merge_box')) return new Response(queueBox(), { status: 200 });
         if (init?.method === 'POST') {
           queued = true;
@@ -1198,7 +1204,7 @@ describe('the tab bar button', () => {
     mount();
     for (let i = 0; i < 4; i += 1) await settle();
     vi.stubGlobal('confirm', vi.fn(() => true));
-    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' });
+    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '', href: window.location.href, origin: window.location.origin });
     vi.useFakeTimers();
     pill()?.click();
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="queued"]')?.click();
@@ -1217,7 +1223,7 @@ describe('the tab bar button', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
+        const url = pathOf(input);
         if (url.includes('/page_data/merge_box')) {
           reads += 1;
           return new Response(
@@ -1236,7 +1242,7 @@ describe('the tab bar button', () => {
     mount();
     for (let i = 0; i < 4; i += 1) await settle();
     vi.stubGlobal('confirm', vi.fn(() => true));
-    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '' });
+    vi.stubGlobal('location', { ...window.location, reload: vi.fn(), pathname: window.location.pathname, hash: '', search: '', href: window.location.href, origin: window.location.origin });
     vi.useFakeTimers();
     pill()?.click();
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-status="queued"]')?.click();
@@ -1272,7 +1278,7 @@ describe('the tab bar button', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
+        const url = pathOf(input);
         if (url.includes('/page_data/merge_box')) return new Response(mergeBox('MERGEABLE', true, { reviews: [{ author: { login: 'ann' }, state: 'APPROVED' }] }), { status: 200 });
         if (init?.method === 'POST') {
           posts.push({ url: url.replace(/^.*\/page_data\//, ''), body: String(init.body) });
@@ -1282,7 +1288,7 @@ describe('the tab bar button', () => {
       }),
     );
     const reload = vi.fn();
-    vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '' });
+    vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '', href: window.location.href, origin: window.location.origin });
     withLabel('Open', 'pullOpened');
     mount();
     for (let i = 0; i < 4; i += 1) await settle();
@@ -1388,7 +1394,7 @@ describe('the tab bar button', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
+        const url = pathOf(input);
         if (init?.method === 'POST') sent.push(url);
         if (!url.includes('/page_data/merge_box')) return new Response('{}', { status: 404 });
         const payload = JSON.parse(mergeBox(url.includes('bypass_requirements=true') ? 'MERGEABLE' : 'BLOCKED', true));
@@ -1468,7 +1474,7 @@ describe('the tab bar button', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
-        if (!String(input).includes('/page_data/merge_box')) return new Response('{}', { status: 404 });
+        if (!pathOf(input).includes('/page_data/merge_box')) return new Response('{}', { status: 404 });
         reads += 1;
         return new Response(mergeBox(draft ? 'UNMERGEABLE' : 'MERGEABLE', true, { draft }), { status: 200 });
       }),
@@ -1501,7 +1507,7 @@ describe('the tab bar button', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
-        if (!String(input).includes('/page_data/merge_box')) return new Response('{}', { status: 404 });
+        if (!pathOf(input).includes('/page_data/merge_box')) return new Response('{}', { status: 404 });
         const answer = new Response(mergeBox(draft ? 'UNMERGEABLE' : 'MERGEABLE', true, { draft }), { status: 200 });
         // The first read (still a draft) is slow, and answers only after the second.
         if (gate.release === null && draft) {
@@ -1538,7 +1544,7 @@ describe('the tab bar button', () => {
   it('tallies the standing reviews from the Reviewers block, left of the group', async () => {
     const row = (login: string, words: string): string => `<p><span data-assignee-name="${login}"><img src="/a.png"></span><span class="reviewers-status-icon" aria-label="${words}"></span></p>`;
     const partial = `<form id="pull-request-reviewers-form-1">${row('ann', 'ann approved these changes')}${row('ben', 'ben approved these changes')}${row('cy', 'cy requested changes')}${row('dee', 'dee left review comments')}</form>`;
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => (String(input).includes('show_partial') ? new Response(partial, { status: 200 }) : new Response('{}', { status: 404 }))));
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => (pathOf(input).includes('show_partial') ? new Response(partial, { status: 200 }) : new Response('{}', { status: 404 }))));
     mount();
     for (let i = 0; i < 4; i += 1) await settle();
     const tally = document.querySelector<HTMLElement>('.geld-quick-review__tally');
@@ -1604,7 +1610,7 @@ describe('the tab bar button', () => {
 
   it('follows GitHub’s own count on Files changed, down to none once the pending review is discarded there', async () => {
     const pending = { id: '1', path: 'src/a.ts', line: 3, isOutdated: false, subject: { diffLines: [] }, commentsData: { comments: [{ id: 'c1', state: 'pending', viewerDidAuthor: true, body: 'Typo.', currentDiffResourcePath: '/acme/widgets/pull/13/files#r1' }] } };
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => (String(input).endsWith('/thread_previews') ? new Response(JSON.stringify([pending]), { status: 200 }) : new Response('{}', { status: 200 }))));
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => (pathOf(input).endsWith('/thread_previews') ? new Response(JSON.stringify([pending]), { status: 200 }) : new Response('{}', { status: 200 }))));
     window.history.replaceState(null, '', '/acme/widgets/pull/13/changes');
     const context = { page: { kind: 'pull-files' as const, diffUrl: null, stateKey: '/acme/widgets/pull/13' }, groups: [groupAt(counts())], headSha: () => SHA };
     const own = document.querySelector('.ReviewMenuButton__x');
@@ -1631,7 +1637,7 @@ describe('the tab bar button', () => {
     };
     const calls: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
+      const url = pathOf(input);
       calls.push(`${init?.method ?? 'GET'} ${url}`);
       if (url.endsWith('/thread_previews')) return new Response(JSON.stringify([pending]), { status: 200 });
       return new Response('{}', { status: 200 });
@@ -1693,7 +1699,7 @@ describe('the tab bar button', () => {
   it('posts a plain comment from 💬 by default, and a review once chosen', async () => {
     const sent: { url: string; body: string }[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
+      const url = pathOf(input);
       if (init?.method === 'POST' || init?.method === 'PUT') sent.push({ url, body: String(init.body) });
       return new Response('{}', { status: url.includes('create_timeline_comment') || url.includes('submit_review') ? 200 : 404 });
     }));
@@ -1755,7 +1761,7 @@ describe('the tab bar button', () => {
     };
     const sent: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
+      const url = pathOf(input);
       if (url.endsWith('/thread_previews')) return new Response(JSON.stringify([pending]), { status: 200 });
       if (init?.method === 'PUT' || init?.method === 'POST') {
         sent.push(url.replace(/^.*\/page_data\//, ''));
@@ -1802,7 +1808,7 @@ describe('the tab bar button', () => {
     const row = (login: string, words: string): string => `<p><span data-assignee-name="${login}"><img src="/${login}.png"></span><span class="reviewers-status-icon" aria-label="${words}"></span></p>`;
     const partial = `<form id="pull-request-reviewers-form-1">${row('ann', 'ann approved these changes')}${row('dee', 'dee left review comments')}</form>`;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = pathOf(input);
       if (url.includes('show_partial')) return new Response(partial, { status: 200 });
       if (url.includes('/page_data/merge_box')) return new Response(mergeBox('MERGEABLE', true, { reviews: [{ id: 42, author: { login: 'ann' }, state: 'APPROVED' }] }), { status: 200 });
       return new Response('{}', { status: 404 });
@@ -1891,7 +1897,7 @@ describe('the tab bar button', () => {
     const sent: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === 'POST') sent.push(String(init.body));
-      return new Response('{}', { status: String(input).includes('create_timeline_comment') ? 200 : 404 });
+      return new Response('{}', { status: pathOf(input).includes('create_timeline_comment') ? 200 : 404 });
     }));
     document.body.insertAdjacentHTML('beforeend', WRITER_HTML);
     const own = document.querySelector<HTMLTextAreaElement>('#new_comment_field');
@@ -1936,7 +1942,7 @@ describe('the tab bar button', () => {
   it('fetches the writer off the conversation, on intent, and shows it in place of a placeholder', async () => {
     const asked: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = pathOf(input);
       asked.push(url);
       return url === '/acme/widgets/pull/11' ? new Response(`<html><body>${WRITER_HTML}</body></html>`, { status: 200 }) : new Response('{}', { status: 404 });
     }));
