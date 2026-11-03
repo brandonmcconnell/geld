@@ -34,6 +34,26 @@ function required<T>(value: T | null | undefined): T {
   return value;
 }
 
+it('supplies the exact physical native row for presentation without changing source roots', () => {
+  const entry = required(readBitbucketDiff(document)?.entries[0]), lines = required(entry.readLines?.());
+  expect(lines).toHaveLength(3);
+  for (const line of lines) {
+    expect(line.root.matches('.line-wrapper[data-qa="code-line"]')).toBe(true);
+    expect(line.visualRoot).toBe(line.root.parentElement);
+    expect(line.visualRoot?.matches('.lines-wrapper[role="row"][data-key="code-line"]')).toBe(true);
+  }
+});
+
+it.each(['class', 'role', 'key', 'indirect'] as const)('does not promote an unqualified native row parent: %s', change => {
+  const line = required(readBitbucketDiff(document)?.entries[0]?.readLines?.()[0]), parent = required(line.root.parentElement);
+  if (change === 'class') parent.className = 'unrelated';
+  if (change === 'role') parent.setAttribute('role', 'presentation');
+  if (change === 'key') parent.setAttribute('data-key', 'unrelated');
+  if (change === 'indirect') { const wrapper = document.createElement('div');parent.append(wrapper);wrapper.append(line.root); }
+  const current = required(readBitbucketDiff(document)?.entries[0]?.readLines?.()[0]);
+  expect(current.root).toBe(line.root);expect(current.visualRoot).toBeUndefined();
+});
+
 it('reads all normal-flow native file wrappers, including lazy placeholders and nested tree paths', () => {
   const view = required(readBitbucketDiff(document));
   expect(view.virtualized).toBe(false);
