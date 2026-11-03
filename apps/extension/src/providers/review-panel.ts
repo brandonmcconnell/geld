@@ -853,7 +853,6 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       attention.dataset.geldReviewAttention = '';
       for (const item of openItems) {
         const home = itemSection(item, comments);
-        home.id = `${panelId}-item-${item.id}`;
         homes.set(item.id, home);attention.append(home);
       }
       sections.push(attention);
@@ -1105,6 +1104,13 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const focused = doc.activeElement;
     const commentControlId = focused instanceof HTMLElement && panel.contains(focused) && focused.hasAttribute('data-geld-comment-control') ? focused.id : null;
     const requestFocus = focused instanceof HTMLElement && panel.contains(focused) && focused.closest('[data-geld-bot-request]') !== null ? focused : null;
+    const dashboardFocus = focused instanceof HTMLElement && panel.contains(focused)
+      ? focused.hasAttribute('data-geld-original-conversation')
+        ? { scope: renderScope, section: null }
+        : focused.hasAttribute('data-geld-review-toggle')
+          ? { scope: renderScope, section: focused.parentElement?.dataset.geldReviewKey ?? null }
+          : null
+      : null;
     const focusedCheck = focused?.matches('a[href]') === true && panel.contains(focused) ? focused.closest<HTMLElement>('[data-geld-check-key]') : null;
     const checkFocus = focusedCheck === null ? null : { key: focusedCheck.dataset.geldCheckKey, href: focused?.getAttribute('href') };
     const nextChecksScope = JSON.stringify([input.subject.provider, input.subject.origin, input.subject.repository, input.subject.id, input.subject.headSha]);
@@ -1300,6 +1306,13 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     for (const request of options.botRequests ?? []) botRequests.get(request.key)?.update(request);
     for (const [key, control] of botRequests) {
       if (!panel.contains(control.element)) { control.destroy();botRequests.delete(key); }
+    }
+    if (dashboardFocus !== null && dashboardFocus.scope === nextRenderScope && (doc.activeElement === doc.body || doc.activeElement === focused)) {
+      const section = dashboardFocus.section === null ? null : [...panel.querySelectorAll<HTMLElement>('[data-geld-review-key]')].find((entry) => entry.dataset.geldReviewKey === dashboardFocus.section);
+      const control = dashboardFocus.section === null ? panel.querySelector<HTMLElement>('[data-geld-original-conversation]') : section?.querySelector<HTMLElement>(':scope > [data-geld-review-toggle]');
+      const hiddenParent = section?.parentElement?.closest('[data-geld-review-open="false"]');
+      if (control !== null && control !== undefined && !control.matches(':disabled') && !hiddenParent
+        && control.closest('[hidden], [inert], [aria-hidden="true"], details:not([open])') === null) control.focus({ preventScroll: true });
     }
     if (requestFocus !== null && panel.contains(requestFocus) && !requestFocus.matches(':disabled') && (doc.activeElement === doc.body || doc.activeElement === focused)) requestFocus.focus({ preventScroll: true });
     if (checkFocus !== null && checksScope === nextChecksScope && (doc.activeElement === doc.body || doc.activeElement === focused)) {

@@ -971,3 +971,49 @@ it('renders an owned dashboard with button-controlled sections and preserves dis
   expect(panel.element.querySelector('button a, button button')).toBeNull();
   panel.destroy();
 });
+
+it('retains focus on the original-conversation control after its keyboard activation rerenders the same review', () => {
+  const source = input([thread('a')]);
+  let shown = false;
+  const toggle = (): void => { shown = !shown;panel.update(source, { originalConversation: { shown, toggle } }); };
+  const panel = renderProviderReviewPanel(host(), source, { originalConversation: { shown, toggle } });
+  const before = panel.element.querySelector<HTMLButtonElement>('[data-geld-original-conversation]');
+  before?.focus();before?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+  const after = panel.element.querySelector<HTMLButtonElement>('[data-geld-original-conversation]');
+  expect(after).not.toBe(before);expect(after?.getAttribute('aria-pressed')).toBe('true');
+  expect(document.activeElement).toBe(after);
+  after?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+  expect(document.activeElement).toBe(panel.element.querySelector('[data-geld-original-conversation]'));
+  expect(panel.element.querySelector('[data-geld-original-conversation]')?.getAttribute('aria-pressed')).toBe('false');
+  panel.destroy();
+});
+
+it('retains a focused custom disclosure on same-review updates without transferring focus across reviews or from another control', () => {
+  const source = input([thread('a')]);
+  const panel = renderProviderReviewPanel(host(), source);
+  const before = panel.element.querySelector<HTMLButtonElement>('[data-geld-review-key="checks"] > button');
+  before?.focus();before?.click();
+  panel.update({ ...source, closed: true });
+  const after = panel.element.querySelector<HTMLButtonElement>('[data-geld-review-key="checks"] > button');
+  expect(after).not.toBe(before);expect(document.activeElement).toBe(after);
+  expect(after?.getAttribute('aria-expanded')).toBe('true');
+  panel.update({ ...source, subject: { ...source.subject, headSha: 'b'.repeat(40) } });
+  expect(document.activeElement).not.toBe(panel.element.querySelector('[data-geld-review-key="checks"] > button'));
+  const external = document.createElement('button');document.body.append(external);external.focus();
+  panel.update({ ...source, closed: false });expect(document.activeElement).toBe(external);
+  panel.destroy();
+});
+
+it('binds every batch-history disclosure to its current content and label after creating attention pointers', () => {
+  const source = input([thread('a')]);
+  const panel = renderProviderReviewPanel(host(), source, { reviewGrouping: 'batch', events: [{ id: 'push-1', url: reviewUrl, author: { id: 'author', login: 'author' }, body: 'Pushed changes', createdAt: '2026-11-01T11:00:00Z', kind: 'push' }] });
+  expect(panel.element.querySelector('[data-geld-review-attention] [data-geld-item]')).not.toBeNull();
+  for (const section of panel.element.querySelectorAll('[data-geld-review-key]')) {
+    const button = section.querySelector<HTMLButtonElement>(':scope > button[data-geld-review-toggle]');
+    const content = document.getElementById(button?.getAttribute('aria-controls') ?? '');
+    expect(content?.parentElement).toBe(section);
+    expect(content?.getAttribute('aria-labelledby')).toBe(button?.id);
+    expect(document.getElementById(content?.getAttribute('aria-labelledby') ?? '')).toBe(button);
+  }
+  panel.destroy();
+});

@@ -2476,3 +2476,5 @@ Unknown sources, active editors and unsupported native-find layouts remain nativ
 The dashboard's explicit original-conversation control and source links reveal retained native nodes without moving them, and disabling the overview restores their original presentation.
 Bitbucket activity cards without native anchors require one uniquely matching exact native timestamp and matching event wording or commit prefix before they can be folded.
 GitLab discussion wrappers are eligible only when every native note anchor is represented and no editor is inside them.
+A provider digest rerender restores focus to its original-conversation or section button only within the same review subject and when no other control has taken focus.
+Batch-history attention pointers retain each section's initial ID so its disclosure button and content region keep reciprocal accessible references.
