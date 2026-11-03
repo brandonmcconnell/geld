@@ -70,6 +70,9 @@ importers:
 
   apps/dashboard:
     dependencies:
+      '@awesome.me/kit-2e791c163e':
+        specifier: 1.0.4
+        version: 1.0.4
       '@base-ui/react':
         specifier: ^1.8.0
         version: 1.8.0(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -510,6 +513,10 @@ packages:
 
   '@authenio/xml-encryption@6.0.2':
     resolution: {integrity: sha512-/jv5qO935fH4Ma+fxh5rJLRYZvUM57fd/I74IiSoR8cFm+sgjszXFEEn1PkqZhhBD4MVkH2YT+/UDY+pnW0S0Q==}
+
+  '@awesome.me/kit-2e791c163e@1.0.4':
+    resolution: {integrity: sha512-ot10wXEvViUCA6G93qLbcyrFoVIKT5u+Agz9yqlArYLh9Eew+HCEO8yCTbmZiftespKYcE/EwAtk8YUVOCjFUw==}
+    engines: {node: '>=16'}
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -973,6 +980,10 @@ packages:
 
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
+
+  '@fortawesome/fontawesome-common-types@7.3.1':
+    resolution: {integrity: sha512-k0C0sdHmZtAo6dRDtd1Z/qcpyHbL0CKsjV8seMY/21xGhY5Wsv0XRmiI/xEEH4y2c9b1+jvgNs/3EqhV27yUEA==}
+    engines: {node: '>=6'}
 
   '@grpc/grpc-js@1.14.7':
     resolution: {integrity: sha512-W4W/fcBMGRVtG6dW2c7cw2mnpS3hvbBd+oQXjh2iYFTZDk1JJmcNqkM5KSaPubQpamlUUurrlb7G1s9NJeERmQ==}
@@ -5260,6 +5271,10 @@ snapshots:
       '@xmldom/xmldom': 0.8.15
       escape-html: 1.0.3
 
+  '@awesome.me/kit-2e791c163e@1.0.4':
+    dependencies:
+      '@fortawesome/fontawesome-common-types': 7.3.1
+
   '@babel/code-frame@7.29.7':
     dependencies:
       '@babel/helper-validator-identifier': 7.29.7
@@ -5800,6 +5815,8 @@ snapshots:
       react-dom: 19.2.8(react@19.2.8)
 
   '@floating-ui/utils@0.2.12': {}
+
+  '@fortawesome/fontawesome-common-types@7.3.1': {}
 
   '@grpc/grpc-js@1.14.7':
     dependencies:
