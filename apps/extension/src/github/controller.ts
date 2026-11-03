@@ -1655,7 +1655,8 @@ export class GeldController {
     let want: StandIn | null = null;
     const pullPath = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(url.pathname)?.[0] ?? null;
     if (page.kind.startsWith('pull') && page.diffUrl !== null && pullPath !== null && groups.every((group) => isCountsStandIn(group.host))) {
-      const github = headerDiffstat(pullPath, sha, () => this.onCountsStandInChanged());
+      // GitHub's totals are the whole pull request's, so a Files tab narrowed to a commit or range counts its own diff.
+      const github = page.commits === undefined ? headerDiffstat(pullPath, sha, () => this.onCountsStandInChanged()) : null;
       const state = this.diffSource.request(page.diffUrl, sha, 'page');
       if (state.status === 'failed') want = github ?? null;
       else if (state.status === 'ready' && github !== undefined && !this.configPending(repoFromPathname(url.pathname))) {

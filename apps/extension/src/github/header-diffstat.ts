@@ -13,6 +13,7 @@ interface Ask {
   sha: string | null;
   readonly at: number;
   totals: StandInTotals | null | undefined;
+  recheck: boolean;
 }
 const asks = new Map<string, Ask>();
 
@@ -32,11 +33,20 @@ export function parseDiffstat(payload: unknown): StandInTotals | null {
  */
 export function headerDiffstat(pullPath: string, sha: string | null, landed: () => void): StandInTotals | null | undefined {
   const known = asks.get(pullPath);
-  if (known !== undefined && (known.sha === sha || sha === null || known.sha === null || Date.now() - known.at < REASK_AFTER_MS)) {
-    if (sha !== null) known.sha = sha;
-    return known.totals;
+  if (known !== undefined) {
+    if (known.sha === null) known.sha = sha;
+    if (known.sha === sha || sha === null) return known.totals;
+    // Another head within the window keeps the answer asked for, and the pass after the window asks for this head.
+    const wait = known.at + REASK_AFTER_MS - Date.now();
+    if (wait > 0) {
+      if (!known.recheck) {
+        known.recheck = true;
+        setTimeout(landed, wait);
+      }
+      return known.totals;
+    }
   }
-  const ask: Ask = { sha, at: Date.now(), totals: undefined };
+  const ask: Ask = { sha, at: Date.now(), totals: undefined, recheck: false };
   asks.set(pullPath, ask);
   const nonce = document.querySelector<HTMLMetaElement>('meta[name="fetch-nonce"]')?.content ?? '';
   void fetch(`${pullPath}/page_data/diffstat`, {
