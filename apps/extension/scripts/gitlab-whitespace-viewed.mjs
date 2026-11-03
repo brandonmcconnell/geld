@@ -7,6 +7,18 @@ const error = (code) => Object.assign(new Error(`GitLab whitespace characterizat
 const check = (value, code) => { if (!value) throw error(code); };
 const code = (value) => typeof value?.code === 'string' && /^[A-Z_]{1,64}$/.test(value.code) ? value.code : 'OPERATION_FAILED';
 const cleanups = new WeakMap();
+const probeCodes = new Set(['ACTOR_UNQUALIFIED', 'ANCHOR_UNQUALIFIED', 'ANONYMOUS_WITNESS_MISSING', 'BIND_UNQUALIFIED', 'FILE_DATA_UNQUALIFIED', 'FILE_INVENTORY_UNQUALIFIED', 'MENU_FIELD_UNQUALIFIED', 'MENU_LABEL_UNQUALIFIED', 'MENU_OWNER_PENDING', 'MENU_OWNER_UNQUALIFIED', 'MENU_SCHEMA_UNQUALIFIED', 'MODE_UNQUALIFIED', 'NATIVE_ENDPOINT_UNQUALIFIED', 'OPENER_ARM_UNQUALIFIED', 'OPENER_UNQUALIFIED', 'ORIGINAL_OWNER_CHANGED', 'PINNED_SOURCE_CHANGED', 'PROJECT_SCOPE_UNQUALIFIED', 'ROUTE_UNQUALIFIED', 'SELECTION_UNQUALIFIED', 'SOURCE_BOUND', 'SOURCE_DATA_UNQUALIFIED', 'SOURCE_OWNER_PENDING', 'SOURCE_OWNER_UNQUALIFIED', 'UNKNOWN_PROBE_ACTION', 'UNRELATED_DIALOG_UNQUALIFIED', 'VERSIONS_CHANGED_DURING_READ', 'VERSIONS_UNQUALIFIED', 'VIEWED_UNQUALIFIED']);
+
+function retainedBaseline(value) {
+  const versions = (values) => values.map(({ id, selected, is_merge_head, head_sha, href }) => ({ id, selected, is_merge_head, ...(head_sha === undefined ? {} : { head_sha }), href }));
+  return { qualified: true, anonymous: true, url: value.url, app: { path: value.app.path, iid: value.app.iid, fileByFileMode: value.app.fileByFileMode,
+      sourceVersions: versions(value.app.sourceVersions), targetVersions: versions(value.app.targetVersions) },
+    initialShowWhitespace: value.initialShowWhitespace, checked: value.checked, other: { fileByFile: value.other.fileByFile }, open: value.open,
+    nativeStream: { resource: value.nativeStream.resource, diffId: value.nativeStream.diffId, view: value.nativeStream.view, requestSourceHead: value.nativeStream.requestSourceHead, requestTargetHead: value.nativeStream.requestTargetHead },
+    files: value.files.map(({ path, anchor, head, mounted, rows, sha256, viewed }) => ({ path, anchor, head, mounted, rows, sha256, viewed: { checked: viewed.checked, disabled: viewed.disabled } })),
+    displayedCounts: { additions: value.displayedCounts?.additions ?? null, deletions: value.displayedCounts?.deletions ?? null }, armed: value.armed === true, bound: value.bound === true,
+    events: value.events.map(({ kind, type, trusted, checked }) => ({ kind, type, trusted, ...(kind === 'whitespace' ? { checked } : {}) })), eventOverflow: value.eventOverflow };
+}
 
 export function whitespaceReceiptURL(value) {
   try { const url = new URL(value);return ['http:', 'https:'].includes(url.protocol) ? `${url.origin}${url.pathname.replace(/\/(?:token|secret|password|authorization|signature|nonce|key)\/[^/]+/gi, '/[redacted]')}` : 'NON_HTTP_RESOURCE'; }
@@ -114,26 +126,42 @@ function selection(snapshot) {
 
 function acquisitionMatches(snapshot, evidence) {
   const selected = selection(snapshot);const responses = evidence?.responses ?? [];
-  const versions = responses.some((entry) => entry.status === 'projected' && entry.kind === 'versions' && entry.projection?.source?.selectedCount === 1 && entry.projection.target?.selectedCount === 1
-    && entry.projection.source.values[0]?.id === selected.source.id && entry.projection.source.values[0]?.headSha === selected.source.head
-    && entry.projection.target.values[0]?.id === selected.target.id && entry.projection.target.values[0]?.headSha === selected.target.head);
+  const source = (entry) => entry.status === 'projected' && entry.kind === 'versions' && entry.projection?.source?.selectedCount === 1
+    && entry.projection.source.values[0]?.id === selected.source.id && entry.projection.source.values[0]?.headSha === selected.source.head;
+  const target = (entry) => entry.status === 'projected' && entry.kind === 'versions' && entry.projection?.target?.selectedCount === 1
+    && entry.projection.target.values[0]?.id === selected.target.id && entry.projection.target.values[0]?.headSha === selected.target.head;
+  const versions = responses.some((entry) => source(entry) && target(entry));
   const metadata = responses.some((entry) => entry.status === 'projected' && entry.kind === 'metadata' && entry.projection?.projectPath === 'gitlab-org/gitlab' && entry.projection.diffId === GITLAB_WHITESPACE.version
     && entry.projection.inventory?.state === 'observed' && entry.projection.inventory.scanComplete === true && entry.projection.inventory.total === GITLAB_WHITESPACE.paths.length
     && entry.projection.inventory.uniqueNewPaths === GITLAB_WHITESPACE.paths.length && entry.projection.inventory.paths?.length === GITLAB_WHITESPACE.paths.length
     && [3, '3'].includes(entry.projection.inventory.size) && [3, '3'].includes(entry.projection.inventory.realSize) && entry.projection.inventory.overflow === false
     && entry.projection.inventory.paths.every((file) => GITLAB_WHITESPACE.paths.includes(file.newPath) && !file.deleted && !file.submodule));
-  return versions && metadata;
+  return { source: responses.some(source), target: responses.some(target), pairedVersions: versions, metadata, matched: versions && metadata };
 }
 
 export async function verifyGitLabWhitespace(page, { settings, observer, comparisons, acquisition, poll, progress }) {
   const p = progress;Object.assign(p, { status: 'running', stages: [], propertyVectorRestored: false, effectiveModeRestored: 'unverified', nativeRestored: false,
     artifacts: { suppressed: 'Report only. No HTML, AX, PNG, arbitrary field values or raw bootstrap.' } });
   let baseline;let bound = false;let installed = false;let toggleAttempted = false;let primary;const cleanupErrors = [];
-  const read = () => page.evaluate(gitLabWhitespaceProbe, 'read', GITLAB_WHITESPACE);
+  p.setupPhase = 'BASELINE_READINESS';
+  const observed = async (action) => {
+    try {
+      const value = await page.evaluate(gitLabWhitespaceProbe, action, GITLAB_WHITESPACE);
+      p.lastProbe = value?.qualified === true ? { qualified: true, anonymous: value.anonymous === true, armed: value.armed === true, bound: value.bound === true, open: value.open === true,
+        mountedFiles: Array.isArray(value.files) ? Math.min(GITLAB_WHITESPACE.paths.length, value.files.filter((file) => file.mounted === true).length) : 0 }
+        : { qualified: false, code: probeCodes.has(value?.code) ? value.code : 'NATIVE_PROBE_UNQUALIFIED' };
+      return value;
+    } catch (failure) { p.lastProbe = { qualified: false, code: 'PROBE_OPERATION_FAILED' };throw failure; }
+  };
+  const read = () => observed('read');
   const current = async () => {
-    await settings.current();const value = await read();const chosen = selection(value);
-    if (baseline) { check(value.bound === true, 'ORIGINAL_OWNER_CHANGED');check(isDeepStrictEqual(chosen, selection(baseline)), 'SELECTED_TARGET_CHANGED');check(value.url === baseline.url && value.initialShowWhitespace === baseline.initialShowWhitespace, 'NATIVE_ROUTE_OR_BOOTSTRAP_CHANGED'); }
-    return value;
+    try {
+      await settings.current();const value = await read();const chosen = selection(value);
+      if (baseline) { check(value.bound === true, 'ORIGINAL_OWNER_CHANGED');check(isDeepStrictEqual(chosen, selection(baseline)), 'SELECTED_TARGET_CHANGED');check(value.url === baseline.url && value.initialShowWhitespace === baseline.initialShowWhitespace, 'NATIVE_ROUTE_OR_BOOTSTRAP_CHANGED'); }
+      p.lastCurrentCheck = 'QUALIFIED';return value;
+    } catch (failure) {
+      const fixed = code(failure);p.lastCurrentCheck = probeCodes.has(fixed) || ['NATIVE_SCOPE_UNQUALIFIED', 'NATIVE_VERSION_SCOPE_CHANGED', 'NATIVE_FILE_SCOPE_CHANGED', 'NATIVE_MENU_CHANGED', 'SELECTED_TARGET_CHANGED', 'NATIVE_ROUTE_OR_BOOTSTRAP_CHANGED', 'EXTENSION_SETTINGS_CHANGED'].includes(fixed) ? fixed : 'CURRENT_CHECK_FAILED';throw failure;
+    }
   };
   const click = async (action) => {
     await current();const handle = await page.evaluateHandle(gitLabWhitespaceProbe, action, GITLAB_WHITESPACE);
@@ -166,7 +194,7 @@ export async function verifyGitLabWhitespace(page, { settings, observer, compari
       } catch (failure) { reopen.status = 'failed';reopen.failure = code(failure);throw failure; }
     }
     const prior = before.events.length;
-    if (phase === 'toggle') toggleAttempted = true;
+    if (phase === 'toggle') { toggleAttempted = true;p.toggleAttempted = true; }
     await click('toggle-target');
     const value = await poll(current, (next) => next.events.slice(prior).some((event) => event.kind === 'whitespace' && event.type === 'change' && event.trusted === true && event.checked === desired), 'Original native whitespace property and trusted change');
     check(value.bound && value.open, 'NATIVE_MENU_OWNER_LOST');
@@ -191,28 +219,43 @@ export async function verifyGitLabWhitespace(page, { settings, observer, compari
     }, (value) => value.qualified === true ? value.files.length === GITLAB_WHITESPACE.paths.length && value.files.every((file) => file.mounted === true)
       : !['SOURCE_OWNER_PENDING', 'MENU_OWNER_PENDING'].includes(value.code), 'Original anonymous GitLab native preferences and mounted pinned source');
     selection(ready);
-    const armed = await page.evaluate(gitLabWhitespaceProbe, 'arm-opener', GITLAB_WHITESPACE);installed = armed?.armed === true;selection(armed);check(installed, 'OPENER_ARM_UNQUALIFIED');
+    p.setupPhase = 'ARM_ORIGINAL_OPENER';
+    const armed = await observed('arm-opener');installed = armed?.armed === true;selection(armed);check(installed, 'OPENER_ARM_UNQUALIFIED');
+    p.setupPhase = 'OPEN_ORIGINAL_MENU';
     await click('opener');await poll(read, (value) => value.qualified && value.open, 'Original native Preferences opens');
-    const value = await page.evaluate(gitLabWhitespaceProbe, 'bind', GITLAB_WHITESPACE);bound = value?.bound === true;selection(value);check(value.bound && value.open, 'NATIVE_BASELINE_UNQUALIFIED');
+    p.setupPhase = 'BIND_ORIGINAL_MENU';
+    const value = await observed('bind');bound = value?.bound === true;selection(value);check(value.bound && value.open, 'NATIVE_BASELINE_UNQUALIFIED');
     check(value.events.some((event) => event.kind === 'opener' && event.type === 'click' && event.trusted === true) && !value.events.some((event) => event.kind !== 'opener'), 'TRUSTED_OPENER_UNVERIFIED');baseline = value;
+    p.baseline = retainedBaseline(baseline);p.selection = selection(baseline);p.toggleAttempted = false;p.setupPhase = 'BEFORE_INTENT_CHECKPOINT';
     await comparisons.checkpoint('beforeIntent', {});
-    await poll(async () => { await current();return acquisitionMatches(baseline, acquisition()); }, (value) => value === true, 'Already-issued independent source and target version evidence');
-    observer.bind(baseline.nativeStream);
-    p.baseline = baseline;p.selection = selection(baseline);
+    p.setupPhase = 'INDEPENDENT_ACQUISITION';p.acquisitionMatch = { attempts: 0, source: false, target: false, pairedVersions: false, metadata: false, matched: false };
+    await poll(async () => {
+      await current();
+      try {
+        const match = acquisitionMatches(baseline, acquisition());
+        p.acquisitionMatch = { attempts: Math.min(p.acquisitionMatch.attempts + 1, 65535), ...match };p.lastAcquisitionCheck = match.matched ? 'MATCHED' : 'MISMATCH';return match.matched;
+      } catch (failure) { p.lastAcquisitionCheck = 'ACQUISITION_READ_FAILED';throw failure; }
+    }, (value) => value === true, 'Already-issued independent source and target version evidence');
+    p.setupPhase = 'BIND_NATIVE_ENDPOINT';observer.bind(baseline.nativeStream);
+    p.setupPhase = 'VIEWED_SANITY';
     check(baseline.files.every((file) => file.viewed.disabled === true), 'ANONYMOUS_VIEWED_UNEXPECTEDLY_ENABLED');
     p.viewed = { status: 'disabled_native_values_preserved', count: baseline.files.length, nodeIdentityAcrossReload: 'not_asserted', positiveWriteAcceptance: false };
+    p.setupPhase = 'NATIVE_TOGGLE';
     const toggled = await transition(!baseline.checked, 'toggle');p.stages.push({ phase: 'toggle', ...toggled });
     // Native preference rejection and native reload are recorded independently, never coerced into success.
     if (toggled.status === 'native_property_transition_observed') {
+      p.setupPhase = 'NATIVE_MODE_WAIT';
       try { await poll(async () => { await current();return modeWitnesses('toggle', !baseline.checked).length > 0; }, (ready) => ready === true, 'Already-issued native whitespace-mode response'); }
       catch { p.modeEvidence = 'no_complete_native_mode_witness';await current(); }
     }
+    p.setupPhase = 'AFTER_TOGGLE_STABILITY';
     p.afterToggle = (await settled()).snapshot;
     const modes = modeWitnesses('toggle', !baseline.checked);
     p.nativeMode = modes.length > 0 ? 'native_frame_mode_response_observed' : 'property_only_native_source_mode_unverified';
     p.status = modes.length > 0 ? 'bounded_anonymous_characterization' : 'partial';
+    p.setupPhase = 'COMPLETE';
     p.counts = 'No whitespace-only delta or wrong Geld counts inferred from this additive fixture.';
-  } catch (failure) { primary = error(code(failure));p.primaryFailure = code(failure);p.status = baseline ? 'failed' : 'unavailable'; }
+  } catch (failure) { primary = error(code(failure));p.primaryFailure = code(failure);p.failurePhase = p.setupPhase;p.failureProbe = p.lastProbe;p.failureCurrentCheck = p.lastCurrentCheck;p.status = baseline ? 'failed' : 'unavailable'; }
   finally {
     if (baseline && bound && toggleAttempted && !page.isClosed()) {
       try {
