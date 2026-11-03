@@ -758,7 +758,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   CI runs `pnpm catalog:check`, which fails when the JSON drifted from the TypeScript or the signature no longer matches.
   A pull request from this repository that changes patterns would always fail that check (its committed `.sig` is stale and only the push to `main` can commit a new one), so the PR run first regenerates and signs the catalog in the workspace with the same secret, committing nothing;
   a fork's PR gets no secrets and still shows the stale signature.
-  **The key never shares a runner with pull request code:** two jobs precede `check-and-pack` on a same-repo PR — `catalog-build` (the branch's checkout, no secret) runs `catalog:build --auto-version` and uploads `patterns.json`, the bumped `categories.ts` and `catalog-key.ts` as an artifact;
+  **The key never shares a runner with pull request code:** two jobs precede `check-and-pack` on a same-repo PR — `catalog-build` (the branch's checkout, no signing key) runs `catalog:build --auto-version` and uploads `patterns.json`, the bumped `categories.ts` and `catalog-key.ts` as an artifact;
   `catalog-sign` checks out the *default branch*, downloads that artifact and runs `node scripts/catalog-sign.mjs` with `GELD_CATALOG_PRIVATE_KEY` (nothing from the branch executes there: no install, no pnpm, the artifact is data the signer reads), uploading `patterns.sig`;
   `check-and-pack` downloads both over its tree before `pnpm check`.
   Splitting *steps* was not enough — anything a branch runs earlier in the same job (pnpm scripts, a `node` on `$GITHUB_PATH`, a process left behind) can reach a secret a later step holds.
