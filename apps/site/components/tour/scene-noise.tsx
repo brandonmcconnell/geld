@@ -73,7 +73,7 @@ export function NoiseScene() {
               aria-pressed={on}
               onClick={() => toggle(id)}
               className={cn(
-                'inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/40',
+                'inline-flex h-7 items-center gap-1.5 rounded-full border pr-2.5 pl-1.5 text-xs font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/40',
                 on ? 'border-foreground bg-foreground text-background' : 'bg-card text-muted-foreground hover:text-foreground',
               )}
             >

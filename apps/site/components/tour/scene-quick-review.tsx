@@ -36,8 +36,8 @@ const TAB_BODY: Record<PrTab, readonly { readonly icon: React.ReactNode; readonl
     { icon: <CircleCheckIcon aria-hidden="true" className="size-4 text-addition" />, text: 'CI / test (pull_request)' },
     { icon: <CircleCheckIcon aria-hidden="true" className="size-4 text-addition" />, text: 'CI / lint (pull_request)' },
     { icon: <CircleCheckIcon aria-hidden="true" className="size-4 text-addition" />, text: 'Vercel · widgets-docs' },
-    { icon: <CircleCheckIcon aria-hidden="true" className="size-4 text-addition" />, text: 'Cursor Bugbot' },
-    { icon: <CircleCheckIcon aria-hidden="true" className="size-4 text-addition" />, text: 'CodeRabbit' },
+    { icon: <CircleCheckIcon aria-hidden="true" className="size-4 text-addition" />, text: 'Buggy' },
+    { icon: <CircleCheckIcon aria-hidden="true" className="size-4 text-addition" />, text: 'CodeHopper' },
   ],
   files: [
     { icon: <FileCodeIcon aria-hidden="true" className="size-4 text-muted-foreground" />, text: 'src/Button.tsx' },

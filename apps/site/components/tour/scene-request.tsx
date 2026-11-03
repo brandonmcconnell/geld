@@ -18,10 +18,10 @@ interface BotLine {
 }
 
 const START: readonly BotLine[] = [
-  { bot: 'bugbot', trigger: 'bugbot run', state: 'findings' },
-  { bot: 'coderabbit', trigger: '@coderabbitai review', state: 'earlier' },
-  { bot: 'greptile', trigger: '@greptileai', state: 'passed' },
-  { bot: 'devin', trigger: '/devin review', state: 'not-run' },
+  { bot: 'buggy', trigger: 'buggy run', state: 'findings' },
+  { bot: 'codehopper', trigger: '@codehopper review', state: 'earlier' },
+  { bot: 'gecko', trigger: '@gecko', state: 'passed' },
+  { bot: 'devlin', trigger: '/devlin review', state: 'not-run' },
 ];
 
 const STATE_WORD: Record<RunState, string> = { findings: 'Findings', earlier: 'Earlier commit', passed: 'Passed', 'not-run': 'Not run', running: 'Running' };
@@ -33,11 +33,11 @@ const STATE_CLASS: Record<RunState, string> = {
   running: 'text-[#0969da] dark:text-[#4493f8]',
 };
 
-const OTHER_BOTS = ['Copilot', 'Claude Code Review', 'cubic', 'Qodo', 'Sourcery', 'Gemini Code Assist'];
+const OTHER_BOTS = ['Wingman', 'Clawed Review', 'cuboid', 'Kodo', 'Sorcery', 'Gemstone Code Assist'];
 
 export function RequestScene() {
   const [lines, setLines] = useState<readonly BotLine[]>(START);
-  const [ticked, setTicked] = useState<ReadonlySet<BotId>>(() => new Set<BotId>(['bugbot', 'coderabbit']));
+  const [ticked, setTicked] = useState<ReadonlySet<BotId>>(() => new Set<BotId>(['buggy', 'codehopper']));
   const [menuOpen, setMenuOpen] = useState(true);
   const [othersOpen, setOthersOpen] = useState(false);
   const [posted, setPosted] = useState<readonly string[]>([]);
@@ -71,7 +71,7 @@ export function RequestScene() {
               .filter((line) => line.state !== 'not-run')
               .map((line) => (
                 <Chip key={line.bot}>
-                  <BotMark bot={line.bot} size={16} />
+                  <BotMark bot={line.bot} size={16} pill />
                   {botName(line.bot)}
                   {line.state === 'running' ? (
                     <LoaderCircleIcon aria-hidden="true" className="size-3 animate-spin text-[#0969da] dark:text-[#4493f8]" />
@@ -150,15 +150,15 @@ export function RequestScene() {
       </div>
 
       <div className="mx-3 mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-        <BotMark bot="bugbot" size={18} />
+        <BotMark bot="buggy" size={18} />
         <span className="min-w-0 truncate">
-          <span className="font-medium text-foreground">Bugbot</span> reviewed · found 1 potential issue
+          <span className="font-medium text-foreground">Buggy</span> reviewed · found 1 potential issue
         </span>
       </div>
       <div className="mx-3 mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-        <BotMark bot="coderabbit" size={18} />
+        <BotMark bot="codehopper" size={18} />
         <span className="min-w-0 truncate">
-          <span className="font-medium text-foreground">CodeRabbit</span> reviewed · Actionable comments posted: 0
+          <span className="font-medium text-foreground">CodeHopper</span> reviewed · Actionable comments posted: 0
         </span>
       </div>
       <div className="mx-3 mt-2 flex items-center gap-2 text-xs text-muted-foreground">

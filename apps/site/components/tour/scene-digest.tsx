@@ -22,7 +22,7 @@ const THREADS: readonly Thread[] = [
     id: 'default',
     title: 'Controlled value ignores defaultPressed',
     path: 'src/Button.tsx',
-    by: { bot: 'bugbot' },
+    by: { bot: 'buggy' },
     said: '`defaultPressed` is dropped once `pressed` is set. Warn in development.',
     reply: 'Added a dev warning in 3f2a91c.',
   },
@@ -38,7 +38,7 @@ const THREADS: readonly Thread[] = [
     id: 'docs',
     title: 'Docs example still uses onClick',
     path: 'docs/button.mdx',
-    by: { bot: 'coderabbit' },
+    by: { bot: 'codehopper' },
     said: 'The example passes `onClick`, which no longer toggles. Use `onChange`.',
     reply: 'Updated the example.',
   },
@@ -87,18 +87,18 @@ export function DigestScene() {
           </StatusRow>
           <StatusRow label="Review bots">
             <Chip>
-              <BotMark bot="bugbot" size={16} />
-              Bugbot <span className="text-muted-foreground">{resolved.has('default') ? 'resolved' : '1 issue'}</span>
+              <BotMark bot="buggy" size={16} pill />
+              Buggy <span className="text-muted-foreground">{resolved.has('default') ? 'resolved' : '1 issue'}</span>
               <Light tone={resolved.has('default') ? 'good' : 'warn'} />
             </Chip>
             <Chip>
-              <BotMark bot="coderabbit" size={16} />
-              CodeRabbit <span className="text-muted-foreground">{resolved.has('docs') ? 'resolved' : '1 issue'}</span>
+              <BotMark bot="codehopper" size={16} pill />
+              CodeHopper <span className="text-muted-foreground">{resolved.has('docs') ? 'resolved' : '1 issue'}</span>
               <Light tone={resolved.has('docs') ? 'good' : 'warn'} />
             </Chip>
             <Chip>
-              <BotMark bot="greptile" size={16} />
-              Greptile <span className="text-muted-foreground">5/5</span>
+              <BotMark bot="gecko" size={16} pill />
+              Gecko <span className="text-muted-foreground">5/5</span>
               <Light tone="good" />
             </Chip>
           </StatusRow>
@@ -123,9 +123,9 @@ export function DigestScene() {
             <div className="flex items-center gap-2 border-b px-3 py-1.5 text-[0.8125rem]">
               {open.length === 0 ? <CircleCheckIcon aria-hidden="true" className="size-4 text-addition" /> : <CircleIcon aria-hidden="true" className="size-4 text-muted-foreground" />}
               <span className="flex -space-x-1">
-                <BotMark bot="bugbot" size={18} />
+                <BotMark bot="buggy" size={18} className="ring-2 ring-card" />
                 <Avatar who="hubot" size={18} />
-                <BotMark bot="coderabbit" size={18} />
+                <BotMark bot="codehopper" size={18} className="ring-2 ring-card" />
               </span>
               <span className="font-semibold">Round 3</span>
               <Meter done={resolved.size} total={THREADS.length} />

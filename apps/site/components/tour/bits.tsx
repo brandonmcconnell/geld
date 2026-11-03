@@ -19,13 +19,13 @@ const PEOPLE = {
 
 export type Person = keyof typeof PEOPLE;
 
-/** A person's round picture: a tinted disc with their initial, so no faces are borrowed. */
+/** A person's round picture: a tinted disc with their initial, so no faces are borrowed. The initial is set as a bot's mark sets its letter. */
 export function Avatar({ who, size = 20, className }: { readonly who: Person; readonly size?: number; readonly className?: string }) {
   return (
     <span
       aria-hidden="true"
-      className={cn('inline-grid shrink-0 place-items-center rounded-full font-semibold text-white uppercase ring-2 ring-card', PEOPLE[who], className)}
-      style={{ width: size, height: size, fontSize: size * 0.48 }}
+      className={cn('inline-grid shrink-0 place-items-center rounded-full font-bold text-white uppercase ring-2 ring-card', PEOPLE[who], className)}
+      style={{ width: size, height: size, fontSize: size * 0.55 }}
     >
       {who[0]}
     </span>
@@ -33,11 +33,10 @@ export function Avatar({ who, size = 20, className }: { readonly who: Person; re
 }
 
 const BOTS = {
-  bugbot: { name: 'Bugbot', className: 'bg-[#14120b] text-white dark:bg-white dark:text-[#14120b]', glyph: 'B' },
-  coderabbit: { name: 'CodeRabbit', className: 'bg-[#ff570a] text-white', glyph: 'C' },
-  greptile: { name: 'Greptile', className: 'bg-[#22c55e] text-white', glyph: 'G' },
-  devin: { name: 'Devin', className: 'bg-[#0294de] text-white', glyph: 'D' },
-  copilot: { name: 'Copilot', className: 'bg-[#8250df] text-white', glyph: 'C' },
+  buggy: { name: 'Buggy', className: 'bg-[#14120b] text-white dark:bg-white dark:text-[#14120b]', glyph: 'B' },
+  codehopper: { name: 'CodeHopper', className: 'bg-[#ff570a] text-white', glyph: 'C' },
+  gecko: { name: 'Gecko', className: 'bg-[#22c55e] text-white', glyph: 'G' },
+  devlin: { name: 'Devlin', className: 'bg-[#0294de] text-white', glyph: 'D' },
 } as const;
 
 export type BotId = keyof typeof BOTS;
@@ -46,13 +45,17 @@ export function botName(bot: BotId): string {
   return BOTS[bot].name;
 }
 
-/** A bot's square mark, the shape GitHub gives App avatars. */
-export function BotMark({ bot, size = 18, className }: { readonly bot: BotId; readonly size?: number; readonly className?: string }) {
+/**
+ * A bot's square mark, the shape GitHub gives App avatars. At the start of a
+ * `Chip` (`pill`) its left corners follow the chip's curve: inset as far from
+ * the chip's edge on the left as above and below, half its size is concentric.
+ */
+export function BotMark({ bot, size = 18, pill = false, className }: { readonly bot: BotId; readonly size?: number; readonly pill?: boolean; readonly className?: string }) {
   return (
     <span
       aria-hidden="true"
-      className={cn('inline-grid shrink-0 place-items-center rounded-[4px] font-bold', BOTS[bot].className, className)}
-      style={{ width: size, height: size, fontSize: size * 0.55 }}
+      className={cn('inline-grid shrink-0 place-items-center font-bold', BOTS[bot].className, className)}
+      style={{ width: size, height: size, fontSize: size * 0.55, borderRadius: pill ? `${size / 2}px 4px 4px ${size / 2}px` : 4 }}
     >
       {BOTS[bot].glyph}
     </span>
@@ -73,7 +76,7 @@ export function Chip({ children, className, dashed = false }: { readonly childre
   return (
     <span
       className={cn(
-        'inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border bg-card pr-2 pl-1 text-xs whitespace-nowrap',
+        'inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border bg-card pr-2 pl-[3px] text-xs whitespace-nowrap',
         dashed && 'border-dashed',
         className,
       )}
