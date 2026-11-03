@@ -1792,38 +1792,19 @@ async function sendReview(state: Mounted, event: ReviewEvent, body: string): Pro
   window.clearTimeout(state.submittedTimer);
   state.status.textContent = 'Submitting…';
   try {
-    const response = await pageFetch(url, init);
+    let response: Response;
+    try {
+      response = await pageFetch(url, init);
+    } catch {
+      return 'GitHub could not submit the review.';
+    }
     if (!response.ok) {
       const payload: unknown = await response.json().catch(() => null);
       return reviewErrorText(response.status, payload);
     }
-    // An instant send leaves words saved in the box out on purpose: they stay for the next box.
-    if (body !== '') clearDraft(pullPath, body);
-    // The reader went on to another pull request meanwhile: that page is neither reloaded nor told this one is done.
-    // The controls may still name it while the browser already shows the next one (the controller's route pass is debounced).
-    if (state.pullPath !== pullPath || pullPathOf(window.location.pathname) !== pullPath) return null;
-    showCommentKind(state);
-    // A new verdict replaces the reader's standing one, as GitHub counts reviews; a comment leaves it standing.
-    showOwnReview(state, event);
-    const published = pendingCount(state) > 0;
-    // Files changed still draws the comments just published as pending until it reloads; nothing else needs a reload.
-    if (published && state.context.page.kind === 'pull-files') {
-      window.location.reload();
-      return null;
-    }
-    showDone(state, EVENT_INFO[event].done);
-    if (published) {
-      // They went with the review: none are pending now, and a read already on its way must not bring them back.
-      pendingRead += 1;
-      state.pending = [];
-      showCount(state);
-    }
-    // The review in the conversation as GitHub's live update would put it there (a no-op off the classic conversation).
-    void catchUpAfterPost();
-    void loadMergeActions(state);
+    // The review is in: a failure from here on only leaves the controls behind, and must not be reported as a refusal.
+    afterSent('review', () => showSubmitted(state, pullPath, event, body));
     return null;
-  } catch {
-    return 'GitHub could not submit the review.';
   } finally {
     state.sending = false;
     state.panelRefresh?.();
@@ -1831,6 +1812,42 @@ async function sendReview(state: Mounted, event: ReviewEvent, body: string): Pro
     state.segments[event].removeAttribute(ATTR_SENDING);
     if (state.status.textContent === 'Submitting…') state.status.textContent = '';
   }
+}
+
+/** Run what follows an accepted write; its failure is logged, since GitHub already took the write. */
+function afterSent(what: string, update: () => void): void {
+  try {
+    update();
+  } catch (error) {
+    console.warn(`[geld] GitHub took the ${what}, but updating the page afterwards failed`, error);
+  }
+}
+
+function showSubmitted(state: Mounted, pullPath: string, event: ReviewEvent, body: string): void {
+  // An instant send leaves words saved in the box out on purpose: they stay for the next box.
+  if (body !== '') clearDraft(pullPath, body);
+  // The reader went on to another pull request meanwhile: that page is neither reloaded nor told this one is done.
+  // The controls may still name it while the browser already shows the next one (the controller's route pass is debounced).
+  if (state.pullPath !== pullPath || pullPathOf(window.location.pathname) !== pullPath) return;
+  showCommentKind(state);
+  // A new verdict replaces the reader's standing one, as GitHub counts reviews; a comment leaves it standing.
+  showOwnReview(state, event);
+  const published = pendingCount(state) > 0;
+  // Files changed still draws the comments just published as pending until it reloads; nothing else needs a reload.
+  if (published && state.context.page.kind === 'pull-files') {
+    window.location.reload();
+    return;
+  }
+  showDone(state, EVENT_INFO[event].done);
+  if (published) {
+    // They went with the review: none are pending now, and a read already on its way must not bring them back.
+    pendingRead += 1;
+    state.pending = [];
+    showCount(state);
+  }
+  // The review in the conversation as GitHub's live update would put it there (a no-op off the classic conversation).
+  void catchUpAfterPost();
+  void loadMergeActions(state);
 }
 
 /**
@@ -1847,32 +1864,39 @@ async function sendComment(state: Mounted, text: string): Promise<string | null>
   window.clearTimeout(state.submittedTimer);
   state.status.textContent = 'Posting…';
   try {
-    const response = await pageFetch(url, init);
+    let response: Response;
+    try {
+      response = await pageFetch(url, init);
+    } catch {
+      return 'GitHub could not post the comment.';
+    }
     if (!response.ok) {
       const payload: unknown = await response.json().catch(() => null);
       const said = messageOf(payload);
       return said === null ? `GitHub could not post the comment (HTTP ${response.status}).` : `GitHub could not post the comment: ${said}`;
     }
-    clearDraft(pullPath, text);
-    if (state.pullPath !== pullPath || pullPathOf(window.location.pathname) !== pullPath) return null;
-    showCommentKind(state);
-    showDone(state, 'Commented');
-    // The comment in the conversation as GitHub's live update would put it there; a reload only where there is no marker
-    // to read (a read that keeps missing is left to GitHub's own live update: reloading a long conversation took seconds).
-    if (state.context.page.kind === 'pull-conversation') {
-      void catchUpAfterPost().then((caught) => {
-        if (caught === null && pullPathOf(window.location.pathname) === pullPath) window.location.reload();
-      });
-    }
+    afterSent('comment', () => showCommented(state, pullPath, text));
     return null;
-  } catch {
-    return 'GitHub could not post the comment.';
   } finally {
     state.sending = false;
     state.panelRefresh?.();
     state.root.removeAttribute('aria-busy');
     state.segments.comment.removeAttribute(ATTR_SENDING);
     if (state.status.textContent === 'Posting…') state.status.textContent = '';
+  }
+}
+
+function showCommented(state: Mounted, pullPath: string, text: string): void {
+  clearDraft(pullPath, text);
+  if (state.pullPath !== pullPath || pullPathOf(window.location.pathname) !== pullPath) return;
+  showCommentKind(state);
+  showDone(state, 'Commented');
+  // The comment in the conversation as GitHub's live update would put it there; a reload only where there is no marker
+  // to read (a read that keeps missing is left to GitHub's own live update: reloading a long conversation took seconds).
+  if (state.context.page.kind === 'pull-conversation') {
+    void catchUpAfterPost().then((caught) => {
+      if (caught === null && pullPathOf(window.location.pathname) === pullPath) window.location.reload();
+    });
   }
 }
 

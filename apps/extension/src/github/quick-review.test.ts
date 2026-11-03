@@ -440,6 +440,49 @@ describe('the tab bar button', () => {
     expect(document.querySelector('.geld-quick-review__status')?.textContent).toBe('');
   });
 
+  it('says the review did not go when the request itself fails, as it did in Firefox before requests went out as the page', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (pathOf(input).endsWith('/submit_review')) throw new TypeError('NetworkError when attempting to fetch resource.');
+      return new Response('{}', { status: 404 });
+    }));
+    mount();
+    segment('approve').dispatchEvent(new MouseEvent('click', instant));
+    await settle();
+    await settle();
+    expect(document.querySelector('.geld-quick-review__error')?.textContent).toBe('GitHub could not submit the review.');
+  });
+
+  it('does not report a review GitHub took as failed when updating the page afterwards throws', async () => {
+    const pending = { id: '1', path: 'src/a.ts', line: 3, isOutdated: false, subject: { diffLines: [] }, commentsData: { comments: [{ id: 'c1', state: 'pending', viewerDidAuthor: true, body: 'Typo.', currentDiffResourcePath: '/acme/widgets/pull/13/files#r1' }] } };
+    const submitted: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = pathOf(input);
+      if (url.endsWith('/thread_previews')) return new Response(JSON.stringify([pending]), { status: 200 });
+      if (url.endsWith('/submit_review')) submitted.push(url);
+      return new Response('{}', { status: 200 });
+    }));
+    window.history.replaceState(null, '', '/acme/widgets/pull/13/changes');
+    // Files changed reloads after publishing pending comments: a reload that throws stands for any failure after the send.
+    const reload = vi.fn(() => {
+      throw new Error('reload blocked');
+    });
+    vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '', href: window.location.href, origin: window.location.origin });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const context = { page: { kind: 'pull-files' as const, diffUrl: null, stateKey: '/acme/widgets/pull/13' }, groups: [groupAt(counts())], headSha: () => SHA };
+    document.querySelector('.ReviewMenuButton__x')?.insertAdjacentHTML('beforeend', '<span data-component="ButtonCounter">1</span>');
+    applyQuickReview(true, context);
+    await settle();
+    applyQuickReview(true, context);
+    segment('approve').dispatchEvent(new MouseEvent('click', instant));
+    await settle();
+    await settle();
+    expect(submitted).toEqual(['/acme/widgets/pull/13/page_data/submit_review']);
+    expect(reload).toHaveBeenCalled();
+    expect(document.querySelector('.geld-quick-review__error')).toBeNull();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('leaves the author 💬 alone, since GitHub refuses their own approval and change request', () => {
     document.head.innerHTML = '<meta name="user-login" content="bob">';
     mount();
