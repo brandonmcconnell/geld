@@ -133,6 +133,8 @@ function describePage(url: URL, doc: Document, knownVersion?: Record<string, unk
   const candidate = params.get('commit_id') ?? (typeof version?.head_sha === 'string' ? version.head_sha : note?.diff_head_sha);
   const headSha = typeof candidate === 'string' && SHA.test(candidate) ? candidate.toLowerCase() : null;
   const query = params.size > 0 ? `?${params}` : '';
+  const identityParams = new URLSearchParams(params);
+  identityParams.sort();
   return {
     provider: 'gitlab',
     repository: { provider: 'gitlab', origin: url.origin, path: repository },
@@ -142,7 +144,7 @@ function describePage(url: URL, doc: Document, knownVersion?: Record<string, unk
     diffUrl: `${base}.diff${query}`,
     kind: match[3] === 'diffs' ? 'diff' : match[3] === undefined ? 'overview' : 'other',
     headSha,
-    version: [params.toString(), headSha ?? 'latest'].join('|'),
+    version: [identityParams.toString(), headSha ?? 'latest'].join('|'),
   };
 }
 

@@ -2510,3 +2510,6 @@ The independent `bitbucket-diff` and `bitbucket-comment` focuses remain availabl
 
 GitLab CI summary jobs may run on a temporary merged-results commit, so the MR's exact `head_pipeline.id` associates those checks with the source head while `sha` retains the actual pipeline commit and `reviewHeadSha` records the association.
 Provider CI summaries count waiting manual jobs separately from running jobs so an idle deployment does not make completed CI look active.
+
+GitLab may add the already displayed `diff_id` while opening an unmounted file from an unversioned MR URL, so a reveal retains the exact navigator-verified destination before the native click and canonicalises effective selection order for its review identity.
+A pending reveal still rejects other query, file, hash or review changes and checks the same verified destination again before alignment.

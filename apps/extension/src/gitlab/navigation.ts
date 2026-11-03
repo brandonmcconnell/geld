@@ -22,7 +22,7 @@ function filePath(path: string): boolean {
     && path.split('/').every((part) => part !== '' && part !== '.' && part !== '..');
 }
 
-export function gitLabPathNavigator(doc: Document, tree: HTMLElement | null): ((path: string) => boolean) | null {
+export function gitLabPathNavigator(doc: Document, tree: HTMLElement | null): ((path: string, beforeNavigate?: (url: URL) => void) => boolean) | null {
   const current = new URL(doc.location.href);
   const page = describeGitLabPage(current, doc);
   if (current.protocol !== 'https:' || current.username !== '' || current.password !== '' || page?.kind !== 'diff') { routes.delete(doc); return null; }
@@ -52,7 +52,7 @@ export function gitLabPathNavigator(doc: Document, tree: HTMLElement | null): ((
   }
   if (route === undefined) return null;
   const snapshot = route;
-  return (path) => {
+  return (path, beforeNavigate) => {
     if (doc.location.href !== snapshot.url || describeGitLabPage(new URL(doc.location.href), doc)?.version !== snapshot.version || displayedVersion(doc) !== snapshot.displayed
       || (snapshot.template.isConnected && (!tree.contains(snapshot.template) || snapshot.template.closest('[data-geld-ui]') !== null || snapshot.template.href !== snapshot.href))) {
       if (routes.get(doc) === snapshot) routes.delete(doc);
@@ -68,7 +68,7 @@ export function gitLabPathNavigator(doc: Document, tree: HTMLElement | null): ((
     link.tabIndex = -1;
     link.setAttribute('data-geld-ui', '');
     doc.body.append(link);
-    try { link.click(); } finally { link.remove(); }
+    try { beforeNavigate?.(target); link.click(); } finally { link.remove(); }
     return true;
   };
 }

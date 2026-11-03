@@ -119,7 +119,8 @@ export interface ProviderDiffView {
   readonly treeHost: HTMLElement | null;
   /** Verified native file-list root only; excludes provider search/header controls. */
   readonly treeContainer?: HTMLElement | null;
-  navigateToPath?(path: string): boolean;
+  /** Reports the verified destination before a native click can synchronously change the URL. */
+  navigateToPath?(path: string, beforeNavigate?: (url: URL) => void): boolean;
   readonly filteredPaths: ReadonlySet<string>;
   readonly virtualized: boolean;
 }
