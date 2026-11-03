@@ -204,6 +204,11 @@ jobs:
         run: pnpm install --frozen-lockfile
       - if: needs.select-public-verification.outputs.focus != 'provider-evidence'
         run: pnpm --filter @geld/extension build:chrome
+      - name: Install native browser dialog accessibility
+        if: needs.select-public-verification.outputs.focus != 'provider-evidence'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y xvfb xauth dbus-x11 at-spi2-core python3-pyatspi
       - name: Locate the runner's Chrome
         if: needs.select-public-verification.outputs.focus != 'provider-evidence'
         shell: bash
@@ -214,7 +219,9 @@ jobs:
       - name: Test the installed extension on public pages
         if: needs.select-public-verification.outputs.focus != 'provider-evidence'
         timeout-minutes: ${{ needs.select-public-verification.outputs.focus == 'provider-access' && 3 || needs.select-public-verification.outputs.focus == 'bitbucket-whitespace-session' && 5 || 15 }}
-        run: pnpm --filter @geld/extension test:browser
+        env:
+          GELD_BROWSER_NATIVE_DIALOGS: '1'
+        run: env -u NO_AT_BRIDGE dbus-run-session -- xvfb-run -a --server-args='-screen 0 2000x1400x24' pnpm --filter @geld/extension test:browser
       - name: Save browser evidence
         if: always() && needs.select-public-verification.outputs.focus != 'provider-evidence'
         uses: actions/upload-artifact@v7

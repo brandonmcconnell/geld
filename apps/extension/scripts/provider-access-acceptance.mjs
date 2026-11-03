@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
 
 export function optionalProvidersForCases(cases) {
   const providers = new Set();
@@ -10,13 +11,20 @@ export function optionalProvidersForCases(cases) {
 }
 
 /** Exercise the same user-gesture opt-in as a new install, without granting permissions through automation APIs. */
-export async function enableOptionalProviders(page, providers, { poll }) {
+export async function enableOptionalProviders(page, providers, { poll, readState, confirmPermission, progress = [] }) {
   const originalUrl = page.url();
   assert.equal(new URL(originalUrl).protocol, 'chrome-extension:');
-  const result = [];
+  const result = progress;
   for (const provider of providers) {
     assert.ok(provider === 'gitlab' || provider === 'bitbucket');
     const label = provider === 'gitlab' ? 'GitLab' : 'Bitbucket';
+    const record = { provider };
+    result.push(record);
+    let beforeOrigins;
+    if (readState) {
+      try { const before = await readState();beforeOrigins = [...before.permissions.origins];record.before = accessState(before, provider); }
+      catch (error) { record.pendingPhase = 'state_unavailable';throw error; }
+    }
     const selector = `#provider-access button[data-provider-enable="${provider}"]`;
     const read = () => {
       assert.equal(page.url(), originalUrl, 'Provider opt-in must stay on the installed options page');
@@ -46,8 +54,23 @@ export async function enableOptionalProviders(page, providers, { poll }) {
       await page.mouse.click(point.x, point.y);
       const click = await handle.evaluate(node => node.__geldAccessReceipt?.receipt);
       assert.deepEqual(click, { clicks: 1, trusted: true }, 'Optional permissions require one genuine pointer click');
+      record.pointerClick = true;record.trusted = true;
+      if (confirmPermission) record.confirmation = await confirmPermission(provider);
       const enabled = await poll(read, value => value.disabled && value.text === `${label} enabled` && value.busy !== 'true', `Installed ${label} grant and worker registration acknowledgement`, 20_000);
-      result.push({ provider, pointerClick: true, trusted: true, acknowledged: enabled.disabled && enabled.text === `${label} enabled` });
+      record.acknowledged = enabled.disabled && enabled.text === `${label} enabled`;
+      if (readState) {
+        const after = await readState();
+        record.after = accessState(after, provider);
+        const wanted = provider === 'gitlab' ? ['https://gitlab.com/*'] : ['https://bitbucket.org/*', 'https://api.bitbucket.org/*'];
+        record.grantScopeValid = isDeepStrictEqual([...new Set(after.permissions.origins)].sort(), [...new Set([...beforeOrigins, ...wanted])].sort());
+        assert.ok(record.grantScopeValid, 'Provider permission grant changed unexpected origin scope');
+      }
+    } catch (error) {
+      if (readState) {
+        try { record.after = accessState(await readState(), provider);record.pendingPhase = record.grantScopeValid === false ? 'unexpected_permission_scope' : record.after.granted ? 'worker_registration' : 'permission_request'; }
+        catch { record.pendingPhase = 'state_unavailable'; }
+      }
+      throw error;
     } finally {
       await handle.evaluate(node => {
         const observation = node.__geldAccessReceipt;
@@ -58,6 +81,34 @@ export async function enableOptionalProviders(page, providers, { poll }) {
     }
   }
   return result;
+}
+
+
+function accessState(snapshot, provider) {
+  const origins = provider === 'gitlab' ? ['https://gitlab.com/*'] : ['https://bitbucket.org/*', 'https://api.bitbucket.org/*'];
+  const ids = provider === 'gitlab' ? ['geld-gitlab'] : ['geld-bitbucket', 'geld-bitbucket-main'];
+  return { granted: origins.every(origin => snapshot.permissions.origins.includes(origin)),
+    origins: origins.filter(origin => snapshot.permissions.origins.includes(origin)),
+    scripts: ids.map(id => {
+      const matches = snapshot.scripts.filter(script => script.id === id);
+      const script = matches[0];
+      const main = id === 'geld-bitbucket-main';
+      const file = main ? 'bitbucket-whitespace' : provider;
+      return { id, count: Math.min(matches.length, 100), documentStart: script?.runAt === 'document_start',
+        expectedWorld: (script?.world ?? 'ISOLATED') === (main ? 'MAIN' : 'ISOLATED'),
+        expectedFile: isDeepStrictEqual(script?.js, [`content-scripts/${file}.js`]),
+        expectedHosts: isDeepStrictEqual(script?.matches, [origins[0]]) };
+    }) };
+}
+
+export async function readWorkerProviderAccess(worker) {
+  let timer;
+  try {
+    return await Promise.race([
+      worker.evaluate(async () => ({ permissions: await chrome.permissions.getAll(), scripts: await chrome.scripting.getRegisteredContentScripts() })),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('PROVIDER_ACCESS_WORKER_STATE_TIMEOUT')), 3000); }),
+    ]);
+  } finally { clearTimeout(timer); }
 }
 
 export function assertOptionalProviderRegistrations(snapshot) {
@@ -72,20 +123,21 @@ export function assertOptionalProviderRegistrations(snapshot) {
     const matches = snapshot.scripts.filter(script => script.id === entry.id);
     assert.equal(matches.length, 1, 'Each provider needs exactly one worker-registered script');
     const script = matches[0];
-    assert.deepEqual(script.matches, [entry.host]);
-    assert.deepEqual(script.js, [`content-scripts/${entry.file}.js`]);
+    assert.ok(isDeepStrictEqual(script.matches, [entry.host]), 'Registered script must match only its provider');
+    assert.ok(isDeepStrictEqual(script.js, [`content-scripts/${entry.file}.js`]), 'Registered script must use its bundled entrypoint');
     assert.equal(script.runAt, 'document_start');
     assert.equal(script.persistAcrossSessions, true);
     assert.equal(script.world ?? 'ISOLATED', entry.main ? 'MAIN' : 'ISOLATED');
-    if (!entry.main) assert.deepEqual(script.css, [`content-scripts/${entry.file}.css`]);
+    if (!entry.main) assert.ok(isDeepStrictEqual(script.css, [`content-scripts/${entry.file}.css`]), 'Registered script must use its provider styles');
   }
   return { origins, scripts: expected.map(entry => ({ id: entry.id, world: entry.main ? 'MAIN' : 'ISOLATED', runAt: 'document_start' })) };
 }
 
 /** Only the original installed options controls can grant; the worker is observed read-only afterward. */
-export async function verifyOptionalProviderRegistration(page, worker, { poll }) {
-  const clicks = await enableOptionalProviders(page, ['gitlab', 'bitbucket'], { poll });
-  const snapshot = await worker.evaluate(async () => ({ permissions: await chrome.permissions.getAll(), scripts: await chrome.scripting.getRegisteredContentScripts() }));
+export async function verifyOptionalProviderRegistration(page, worker, { poll, confirmPermission, progress = {} }) {
+  progress.clicks = [];
+  const clicks = await enableOptionalProviders(page, ['gitlab', 'bitbucket'], { poll, confirmPermission, readState: () => readWorkerProviderAccess(worker), progress: progress.clicks });
+  const snapshot = await readWorkerProviderAccess(worker);
   const registration = assertOptionalProviderRegistrations(snapshot);
   return { status: 'passed', clicks, ...registration, scope: 'Installed options and worker only. No public provider page is opened. External DNS is blocked for this focus.' };
 }

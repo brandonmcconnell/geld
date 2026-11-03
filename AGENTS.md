@@ -2533,3 +2533,8 @@ The ancillary native-fragment check remains with MR266334 legacy round history r
 
 The `provider-access` installed-browser focus grants optional sites through genuine options-page pointer clicks and verifies worker-registered GitLab, Bitbucket and Bitbucket MAIN scripts before opening any public provider page.
 This focus blocks external DNS, skips all public cases and uploads only `geld-provider-access`, so its options-only receipt cannot replace the canonical provider cooldown artifact.
+
+Installed provider opt-in verification reads worker permissions before and after each options click, so a pending permission request is distinct from pending script registration.
+The CI browser runs headed under Xvfb for the native permission prompt, while the existing page viewport sizes remain unchanged inside a larger desktop window.
+Native confirmation is limited to an active dialog owned by the launched Chrome process tree, outside web documents, naming Geld and the exact requested provider hosts with one enabled Allow action.
+Unknown, ambiguous or inaccessible dialogs remain unconfirmed, and no direct permission grant API or blind keyboard input substitutes for that native confirmation.

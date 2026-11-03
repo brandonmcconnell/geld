@@ -505,7 +505,7 @@ test('provider-access builds and loads the extension but selects no public cases
   const cases = new vm.Script(`(${literal})`).runInNewContext();assert.deepEqual(Array.from(cases['provider-access']), []);
   const start = harness.indexOf("  if (focus === 'provider-access') {");
   const access = harness.slice(start, harness.indexOf('  const selected =', start));
-  assert.match(access, /verifyOptionalProviderRegistration\(options, runtime, \{ poll \}\)/);
+  assert.match(access, /verifyOptionalProviderRegistration\(options, runtime, \{ poll, confirmPermission, progress: report\.providerAccessVerification \}\)/);
   assert.doesNotMatch(access, /runCase|fetch\(|\.goto\(/);
   assert.match(harness, /focus === 'provider-access' \? \['--host-resolver-rules=MAP \* ~NOTFOUND'\] : \[\]/);
   assert.match(workflow, /name: \$\{\{ needs\.select-public-verification\.outputs\.focus == 'provider-access' && 'geld-provider-access' \|\| 'geld-installed-browser-e2e' \}\}/);
@@ -515,4 +515,14 @@ test('provider-access builds and loads the extension but selects no public cases
     assert.match(step, /focus != 'provider-evidence'/);assert.doesNotMatch(step, /focus != 'provider-access'/);
   }
   assert.match(job, /const artifactName = 'geld-installed-browser-e2e'/);
+});
+
+
+test('installed permission verification uses a headed accessibility session without automatic grants', () => {
+  assert.match(workflow, /sudo apt-get install --no-install-recommends -y xvfb xauth dbus-x11 at-spi2-core python3-pyatspi/);
+  assert.match(workflow, /GELD_BROWSER_NATIVE_DIALOGS: '1'/);
+  assert.match(workflow, /env -u NO_AT_BRIDGE dbus-run-session/);
+  assert.match(workflow, /dbus-run-session -- xvfb-run -a --server-args='-screen 0 2000x1400x24' pnpm --filter @geld\/extension test:browser/);
+  assert.match(harness, /headless: process\.env\.GELD_BROWSER_NATIVE_DIALOGS !== '1'/);
+  assert.doesNotMatch(harness, /auto-accept|autoaccept|Browser\.grantPermissions|Browser\.setPermission/);
 });
