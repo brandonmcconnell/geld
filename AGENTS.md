@@ -2621,3 +2621,6 @@ The trusted summary runner keeps this endpoint-specific limit through pagination
 
 Provider header ownership checks run in document mutation callbacks and must not read computed styles or layout.
 Native count visibility is refreshed during rendering and resize observation, while needsRepair checks only the owned hint attachment.
+
+A retired or unrelated content client must return no response for an unknown local review validation token.
+Replying false wins the extension message race against the owning client and rejects otherwise valid saves after reinjection.
