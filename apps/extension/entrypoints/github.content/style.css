@@ -6230,6 +6230,48 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   height: 12px;
 }
 
+/* An edited comment's time in a row: the edit's, then the clock, on the time's own line. */
+.geld-review__time--edited {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.geld-review__time--edited > .geld-review__edited-wrap {
+  margin-left: 0;
+}
+
+/* The clock that opens GitHub's edit history is GitHub's dropdown: a summary, so no marker and the pointer. */
+summary.geld-review__edited--menu {
+  padding: 2px;
+  margin: -2px;
+  border-radius: 4px;
+  list-style: none;
+  cursor: pointer;
+}
+
+summary.geld-review__edited--menu::-webkit-details-marker {
+  display: none;
+}
+
+summary.geld-review__edited--menu:hover,
+.geld-review__edited-wrap[open] > summary.geld-review__edited--menu {
+  color: var(--fgColor-accent, var(--color-accent-fg));
+}
+
+.geld-review__edited-wrap > details-menu {
+  font-size: 12px;
+  font-weight: 400;
+  text-align: left;
+  white-space: normal;
+}
+
+.geld-review__edited-loading {
+  display: block;
+  padding: 8px 12px;
+  color: var(--geld-review-muted);
+}
+
 /*
  * Rerun, on the byline's right. The byline's words stand 8px under the slot's top edge; the chat column is inset
  * 16px from the slot's right edge, so the control reaches 8px past the column to stand 8px from that edge too —

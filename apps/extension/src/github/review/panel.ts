@@ -27,6 +27,8 @@ import { ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import type { ReviewerCandidate } from './reviewers';
 import { shapeMark } from './mark-shape';
 import { inlineText } from './inline-text';
+import { editedMark } from './edited-mark';
+import { relativeTimeElement } from './time';
 
 export const PANEL_CLASS = 'geld-review';
 export const ATTR_PANEL = 'data-geld-review-panel';
@@ -40,6 +42,8 @@ const ATTR_SLOT = 'data-geld-slot';
  * without a crawl or a render.
  */
 export const ATTR_TIME_FOR = 'data-geld-time-for';
+/** On an edited comment's time: the anchor whose edit log the clock refresh reads again (`refreshEditTimes`). */
+export const ATTR_EDITED_FOR = 'data-geld-edited-for';
 
 /**
  * A row of pills that gives way in two steps when the row is short of room
@@ -57,8 +61,17 @@ export function panelSignature(): string {
 
 /** A row's time cell for `anchor`, or null when the page shows no time for it. */
 function timeCell(model: PanelModel, anchor: string): HTMLElement | null {
-  const time = model.timeFor(anchor);
-  return time === '' ? null : createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: anchor }, [time]);
+  return commentTime(model, anchor, model.timeFor(anchor));
+}
+
+/**
+ * A comment's time in a row: for an edited one the edit's, live, with the clock that says when it was first posted
+ * and opens GitHub's edit history (`editedMark`); else the page's words, which the time refresh keeps current.
+ */
+function commentTime(model: PanelModel, anchor: string, text: string): HTMLElement | null {
+  const edited = model.editedFor(anchor);
+  if (edited !== null) return createElement('span', { class: `${PANEL_CLASS}__time ${PANEL_CLASS}__time--edited`, [ATTR_EDITED_FOR]: anchor }, [relativeTimeElement(edited.editedAt, `${PANEL_CLASS}__time-text`), editedMark(edited.editedAt, edited.postedAt, edited.log)]);
+  return text === '' ? null : createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: anchor }, [text]);
 }
 
 export type GroupId = 'open' | 'done' | 'hidden' | 'activity' | 'pushes';
@@ -407,6 +420,8 @@ export interface PanelModel {
   readonly myReactionFor: (anchor: string) => string | null;
   /** The comment's time as the page shows it ("yesterday"). */
   readonly timeFor: (anchor: string) => string;
+  /** When the comment was last edited and first posted, and its edit-history log; null when it was never edited. */
+  readonly editedFor: (anchor: string) => { readonly editedAt: string; readonly postedAt: string | null; readonly log: string } | null;
   /** Whether GitHub offers Resolve for this item's thread (else the ⋯ menu says "Mark done"). */
   readonly resolvable: (item: ReviewItem) => boolean;
 }
@@ -425,7 +440,7 @@ export interface PanelHandlers {
   readonly onFullTimeline: () => void;
   /** Post the trigger comment of each bot, in order. */
   readonly onRequest: (botIds: readonly string[]) => void;
-  /** The Request a review menu closed: the panel may have held back a rebuild while it was open. */
+  /** A menu the panel holds rebuilds for (Request a review, an edit history) closed: a rebuild may be waiting. */
   readonly onRequestMenuClosed: () => void;
   /** Everyone who can be asked to review, as GitHub's own menu lists them (fetched when the people menu first needs it). */
   readonly loadReviewerCandidates: () => Promise<readonly ReviewerCandidate[] | null>;
@@ -2153,7 +2168,8 @@ function botLine(line: BotLine, model: PanelModel, handlers: PanelHandlers, rese
       : createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static`, [ATTR_FOCUS]: focusKey }, mainChildren);
   if (opens || goes) mainClickToggles(main, act);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
-  if (line.time !== '' && line.anchor !== null) right.append(createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: line.anchor }, [line.time]));
+  const lineTime = line.anchor === null ? null : commentTime(model, line.anchor, line.time);
+  if (lineTime !== null) right.append(lineTime);
   const spacer = (): HTMLElement => createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' });
   if (opens && line.anchor !== null) right.append(controlSlot(line.anchor, true), chevron(open, act));
   else if (goes) {
@@ -2340,7 +2356,8 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
       : createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static`, [ATTR_FOCUS]: focusKey }, mainChildren);
   if (opens || goes) mainClickToggles(main, act);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
-  if (entry.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: entry.anchor }, [entry.time]));
+  const entryTime = commentTime(model, entry.anchor, entry.time);
+  if (entryTime !== null) right.append(entryTime);
   // The times read as one column: a line with fewer squares after its time than a sibling leaves the missing
   // ones blank. In a round an opening line has a ⋯ and a chevron (two squares); in the Reviews index every line
   // that goes somewhere has one chevron and nothing else.
@@ -2562,6 +2579,8 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     if (slot !== null && active instanceof Element && slot.contains(active) && active.matches('textarea, input, [contenteditable]')) return { root: existing, slot };
     // The Request a review menu is open with boxes ticked: a rebuild would close it and lose the picks. Wait.
     if (existing.querySelector(`.${PANEL_CLASS}__request[open]`) !== null) return { root: existing, slot };
+    // An edit history is open from a clock: a rebuild would close it and take the reader's focus. Wait.
+    if (existing.querySelector(`.${PANEL_CLASS}__edited-wrap[open]`) !== null) return { root: existing, slot };
   }
   const card = descriptionCard();
   if (card === null) return null;
@@ -2708,6 +2727,14 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     panel.append(createElement('div', { class: `${PANEL_CLASS}__timeline` }, [toggle]));
   }
 
+  // `toggle` does not bubble, so one capturing listener hears every edit history in the rows and the slot close.
+  panel.addEventListener(
+    'toggle',
+    (event) => {
+      if (event.target instanceof HTMLDetailsElement && !event.target.open && event.target.matches(`.${PANEL_CLASS}__edited-wrap`)) handlers.onRequestMenuClosed();
+    },
+    true,
+  );
   panel.style.marginLeft = cardMargins.left;
   panel.style.marginRight = cardMargins.right;
   const freshBody = carried === null ? null : panel.querySelector<HTMLElement>(`[${ATTR_SLOT}="${CHECKS_KEY}"] > .${PANEL_CLASS}__slot-body`);

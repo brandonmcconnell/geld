@@ -19,13 +19,15 @@ import { authorOf, avatarSrcForLogin } from './crawler';
 import { fitPathInto } from './path-fit';
 import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
-import { ATTR_TIME_FOR } from './panel';
+import { ATTR_EDITED_FOR, ATTR_TIME_FOR } from './panel';
 import { isTeleported, onRestore, teleportInto } from './teleport';
 import { inlineText } from './inline-text';
 import { armViaHovercard } from './via';
 import type { ViaBot } from './via';
+import { isMinimizedWrapper } from './edit-times';
 import type { RevisionView } from './edit-times';
-import { absoluteTimeText, relativeTimeElement } from './time';
+import { editedMark } from './edited-mark';
+import { relativeTimeElement } from './time';
 import { stickyHeaderBottomAt } from './sticky';
 
 /** On a message: `meta` (author line), `bubble` (the body), `edit` (GitHub's edit form), `reactions`. */
@@ -41,8 +43,6 @@ const BODY_SELECTOR = '.comment-body, .js-comment-body, [data-testid="comment-bo
 const MESSAGE_SELECTOR = '.timeline-comment, .js-comment, .review-comment, .react-issue-comment, [data-testid="comment-container"], [data-testid="review-thread-comment"], [id^="discussion_r"]';
 const META_SELECTOR = '.timeline-comment-header, .timeline-comment-actions, [data-testid="comment-header"], h3, a.author, a[data-testid="author-link"]';
 const REACTIONS_SELECTOR = '.comment-reactions, .js-reactions-container, [data-testid="reactions"], [data-testid="comment-reactions"]';
-/** GitHub's wrapper round a minimized comment (its <details> holds the notice and the comment). */
-const MINIMIZED_WRAPPER = '.minimized-comment, .js-minimized-comment';
 /** The compact comment card GitHub renders inside a minimized comment: header (h4) and body as siblings in here. */
 const COMPACT_CARD = '.review-comment-contents';
 /** The signed-in login, from GitHub's own meta tag (empty when signed out: then nothing is "mine"). */
@@ -239,6 +239,8 @@ export interface ChatByline {
   readonly edited?: string;
   /** When the comment was first posted (ISO), for that clock; `time` is its relative wording as the page says it. */
   readonly postedAt?: string;
+  /** The comment's edit-history log: the clock then opens GitHub's edit history (`editedMark`). */
+  readonly editLog?: string;
 }
 
 /** An older word of a review bot's: the control that leads to its current one. */
@@ -382,42 +384,6 @@ function latestControl(latest: ChatLatest): HTMLElement {
   return createElement('span', { class: 'geld-review__rerun-wrap' }, [button]);
 }
 
-let editedIds = 0;
-
-/**
- * A comment edited after it was posted: a clock beside the byline's time.
- * The byline says the edit's time, since the bubble is the comment as it
- * reads now; the clock's words say when it was first posted ("Originally
- * posted Oct 8, 2026, 5:08 PM"), or, when the page has not said that, when
- * it was edited. The moment is absolute only: a relative age would need
- * re-wording while the chat stays open, and with the date beside it the
- * tooltip ran to two lines. The words come up in GitHub's own tooltip
- * (`tool-tip`, instant and styled like the page's; where the page does not
- * define it they are the title) and are read aloud as the mark's label.
- */
-function editedMark(editedAt: string, postedAt: string | null): HTMLElement {
-  editedIds += 1;
-  const id = `geld-edited-${editedIds}`;
-  const words = editedWords(editedAt, postedAt);
-  const mark = createElement('span', { id, class: 'geld-review__edited', role: 'img', 'aria-label': words }, [icon(ICON_HISTORY)]);
-  // The content script's world has no `customElements` to ask (Chrome leaves it null there); a page that defines
-  // `tool-tip` has rendered some of its own by now (the header's), so their presence stands for the definition.
-  if (document.querySelector('tool-tip') === null) {
-    mark.setAttribute('title', words);
-    return mark;
-  }
-  const tip = document.createElement('tool-tip');
-  for (const [name, value] of Object.entries({ for: id, popover: 'manual', 'data-direction': 'n', 'data-type': 'description', class: 'sr-only position-absolute', role: 'tooltip' })) tip.setAttribute(name, value);
-  tip.textContent = words;
-  return createElement('span', { class: 'geld-review__edited-wrap' }, [mark, tip]);
-}
-
-/** "Originally posted Oct 8, 2026, 5:08 PM"; "Edited Oct 8, 2026, 5:08 PM" when the posting time is not known. */
-function editedWords(editedAt: string, postedAt: string | null): string {
-  const absolute = absoluteTimeText(postedAt ?? editedAt);
-  return `${postedAt === null ? 'Edited' : 'Originally posted'}${absolute === '' ? '' : ` ${absolute}`}`;
-}
-
 /**
  * GitHub's own small dialog (Primer's `Overlay`, as the page's "Verified"
  * and saved-replies dialogs are built), asking whether to trigger a bot that
@@ -505,7 +471,9 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
       // The bubble is the comment as it reads now, so the time beside the name is the edit's (GitHub's own live
       // element, which keeps it current); the clock says when the comment was first posted. The created time is
       // not refreshed into this cell (no `ATTR_TIME_FOR`).
-      line.append(relativeTimeElement(byline.edited, 'geld-review__time'), editedMark(byline.edited, byline.postedAt ?? null));
+      const time = relativeTimeElement(byline.edited, 'geld-review__time');
+      if (byline.timeAnchor !== undefined) time.setAttribute(ATTR_EDITED_FOR, byline.timeAnchor);
+      line.append(time, editedMark(byline.edited, byline.postedAt ?? null, byline.editLog ?? null));
     } else if (byline.time !== '') {
       line.append(createElement('span', { class: 'geld-review__time', ...(byline.timeAnchor === undefined ? {} : { [ATTR_TIME_FOR]: byline.timeAnchor }) }, [byline.time]));
     }
@@ -972,8 +940,7 @@ export function messagesIn(root: HTMLElement, thread: boolean): readonly HTMLEle
   // The wrapper of a minimized comment is told by the <details> it holds: a review's own card carries the
   // `minimized-comment` class too (with `timeline-comment` and `js-comment`, the header a direct child), and read
   // as a wrapper it had no message at all — the card showed raw in its chat, header and all (server#7851).
-  const minimizedWrapper = (node: HTMLElement): boolean => node.matches(MINIMIZED_WRAPPER) && (node instanceof HTMLDetailsElement || node.querySelector(':scope > details') !== null);
-  const all = [...candidates, ...compact].filter((node) => node.closest('form') === null && node.querySelector(BODY_SELECTOR) !== null && !minimizedWrapper(node) && (node.matches(COMPACT_CARD) || node.querySelector(COMPACT_CARD) === null));
+  const all = [...candidates, ...compact].filter((node) => node.closest('form') === null && node.querySelector(BODY_SELECTOR) !== null && !isMinimizedWrapper(node) && (node.matches(COMPACT_CARD) || node.querySelector(COMPACT_CARD) === null));
   return all.filter((node) => !all.some((other) => other !== node && other.contains(node)));
 }
 
