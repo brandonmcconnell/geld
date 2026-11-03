@@ -12,6 +12,7 @@ import { ProviderReveal } from './reveal';
 import { ProviderCategoryTree } from './tree';
 import { ProviderInlineTree } from './inline-tree';
 import { ProviderHiddenAuthors } from './hidden-authors';
+import { ProviderListAuthors } from './list-authors';
 import { ProviderHeaderHints } from './header-hints';
 import { applyProviderLineFolds, clearProviderLineFolds, PROVIDER_LINE_FOLDS_CHANGED } from './line-folds';
 import { immutableProviderPage, isProviderReviewPage } from './types';
@@ -64,6 +65,7 @@ export class ProviderController {
   private readonly categoryTree = new ProviderCategoryTree();
   private readonly inlineTree = new ProviderInlineTree();
   private readonly hiddenAuthors: ProviderHiddenAuthors;
+  private readonly listAuthors: ProviderListAuthors;
   private readonly headerHints = new ProviderHeaderHints();
   private readonly conversation: ProviderConversation;
   private readonly hover: ProviderHover;
@@ -112,6 +114,7 @@ export class ProviderController {
     this.catalog = catalog;
     this.expanded = settings.expandedByDefault;
     this.hiddenAuthors = new ProviderHiddenAuthors(adapter.id, () => this.requestRefresh());
+    this.listAuthors = new ProviderListAuthors(adapter.fetchListAuthors, () => this.requestRefresh());
     this.source = new ProviderDiffSource(adapter, () => this.requestRefresh(), undefined, {
       anonymous: () => adapter.id === 'bitbucket' && adapter.eagerListDiffs?.(document) !== true,
     });
@@ -198,6 +201,7 @@ export class ProviderController {
     this.source.setActive(!document.hidden);
     this.configs?.setActive(!document.hidden);
     if (document.hidden) {
+      this.listAuthors.pause();
       this.reveal.clear();
       if (this.timer !== null) clearTimeout(this.timer);
       this.timer = null;
@@ -211,6 +215,7 @@ export class ProviderController {
   }
 
   updateSettings(settings: GeldSettings): void {
+    if (settings.enabled !== this.settings.enabled || JSON.stringify([settings.hiddenAuthors, settings.repoRules]) !== JSON.stringify([this.settings.hiddenAuthors, this.settings.repoRules])) this.listAuthors.clear();
     const layoutChanged = settings.groupHidden !== this.settings.groupHidden;
     const defaultChanged = settings.expandedByDefault !== this.settings.expandedByDefault;
     if (settings !== this.settings) { this.expansionChoices.clear(); this.inlineTouched.clear(); }
@@ -275,6 +280,7 @@ export class ProviderController {
     this.configs?.stop();
     this.conversation.clear();
     this.hiddenAuthors.clear();
+    this.listAuthors.clear();
     this.restorePage();
     if (document.documentElement.getAttribute('data-geld-provider') === this.adapter.id) document.documentElement.removeAttribute('data-geld-provider');
     this.state = PROVIDER_IDLE_STATE;
@@ -321,6 +327,7 @@ export class ProviderController {
     const page = this.adapter.describe(new URL(window.location.href), document);
     const key = page === null ? window.location.href : providerDiffKey(page);
     if (key !== this.pageKey) {
+      this.listAuthors.clear();
       this.listDemand = new WeakMap();
       this.hiddenAuthors.clear();
       this.reveal.clear();
@@ -333,6 +340,7 @@ export class ProviderController {
     }
     const decision = page === null ? { allowed: true, rule: null } : decideRepo(compileRepoRules(this.settings.repoRules), providerRepositoryScope(page.repository));
     if (!this.settings.enabled || !decision.allowed) {
+      this.listAuthors.clear();
       this.reveal.clear();
       this.source.setActive(false);
       this.configs?.setActive(false);
@@ -619,7 +627,8 @@ export class ProviderController {
         return page === null ? [] : [{ row, page, allowed: decideRepo(repoRules, providerRepositoryScope(page.repository)).allowed }];
       } catch { return []; }
     });
-    const authorHidden = this.hiddenAuthors.update(rows.filter((entry) => entry.allowed).map((entry) => entry.row), this.settings, this.pageKey);
+    const authorRows = this.listAuthors.update(rows.filter((entry) => entry.allowed).map((entry) => entry.row), this.settings, window.location.href);
+    const authorHidden = this.hiddenAuthors.update(authorRows, this.settings, this.pageKey);
     for (const { row, page, allowed } of rows) {
       const scope = providerRepositoryScope(page.repository);
       if (!allowed) {

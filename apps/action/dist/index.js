@@ -11407,7 +11407,7 @@ var init_settings_schema = __esm({
       {
         id: "lists",
         title: "Pull request lists",
-        intro: "Pull requests opened by these authors are hidden in PR lists and stacks, behind a row that says how many and shows them on click. One login per line; `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).",
+        intro: "Pull requests opened by these authors are hidden in PR lists and stacks, behind a row that says how many and shows them on click. One login or provider-qualified identity per line; `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).",
         fields: [
           {
             kind: "list",
@@ -11419,6 +11419,7 @@ var init_settings_schema = __esm({
             placeholder: "*[bot]\nrenovate*",
             syntax: [
               "A login as GitHub shows it: `dependabot[bot]`, `octocat`; a leading `@` is fine.",
+              "GitLab uses its native username. Bitbucket Cloud uses `bitbucket.org/uuid/<UUID>` with the canonical account UUID without braces. Names and nicknames are not logins. Authors that cannot be resolved remain visible.",
               "`*` matches any run of characters: `*[bot]` is every GitHub App, `renovate*` every Renovate account.",
               "Matching ignores case. Lines starting with `#` are comments."
             ],
