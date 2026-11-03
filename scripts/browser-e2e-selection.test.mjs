@@ -197,3 +197,13 @@ test('pipeline focus selects only its explicit case and never broadens regressio
   assert.equal(select({ body: `${marker('bitbucket-pipeline-shell')}\nNew prose`, from: `${marker('bitbucket-pipeline-shell')}\nOld prose` }).run, 'false');
   assert.equal(select({ body: marker('bitbucket-pipeline-shell'), fork: true, action: 'edited', from: marker('github') }).run, 'false');
 });
+
+test('native Syntax-on characterization is literal-only, fresh-window admitted and separate from Off/default/all', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
+  assert.deepEqual(Array.from(cases['bitbucket-pipeline-syntax-on']), ['bitbucket-pipeline-syntax-on']);assert.equal(cases.regression.includes('bitbucket-pipeline-syntax-on'), false);assert.deepEqual(Array.from(cases['bitbucket-pipeline-shell']), ['bitbucket-pipeline-shell']);
+  assert.match(harness, /name === 'bitbucket-pipeline-syntax-on' && focus !== 'bitbucket-pipeline-syntax-on'/);assert.match(harness, /syntaxOnBudgetPreflight\(active, report\.quotaPolicy\.conservativeObservedRequestBudget\)/);
+  assert.ok(harness.indexOf('syntaxOnTraffic = observeSyntaxOnTraffic(page') < harness.indexOf('const response = await page.goto(url'));
+  assert.match(harness, /characterizeBitbucketSyntaxOn\(page, item,/);assert.match(harness, /freshAnonymousProfile: report\.auth\.freshTemporaryBrowserProfile/);
+  assert.deepEqual(select({ body: marker('bitbucket-pipeline-syntax-on'), from: marker('github') }), { focus: 'bitbucket-pipeline-syntax-on', run: 'true', failures: [] });
+  assert.equal(select({ body: `${marker('bitbucket-pipeline-syntax-on')}\nNew prose`, from: `${marker('bitbucket-pipeline-syntax-on')}\nOld prose` }).run, 'false');
+});

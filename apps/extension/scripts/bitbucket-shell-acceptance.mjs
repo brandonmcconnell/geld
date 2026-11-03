@@ -57,7 +57,7 @@ export function parseObservedBitbucketShellMetadata(body) {
 }
 
 /** Observe existing browser demand only. No page/API/raw/source fetch is issued by this helper. */
-export function observeBitbucketShellFixture(page, item, { safeUrl, extensionId }) {
+export function observeBitbucketShellFixture(page, item, { safeUrl, extensionId, identifyRequest }) {
   const evidence = { metadata: [], partialMetadata: [], commits: [], pins: [], requests: [], mutations: [], errors: [], phase: 'native_navigation' };
   const pending = new Set();
   const request = (value) => {
@@ -65,7 +65,7 @@ export function observeBitbucketShellFixture(page, item, { safeUrl, extensionId 
     if (url === null) return;
     const frames = [];let stack = value.initiator?.()?.stack;
     for (let depth = 0; stack != null && depth < 8; depth += 1) { frames.push(...(stack.callFrames ?? []).map((frame) => frame.url));stack = stack.parent; }
-    const observed = { url: safeUrl(value.url()), method: value.method(), at: new Date().toISOString(), phase: evidence.phase,
+    const observed = { url: safeUrl(value.url()), method: value.method(), at: new Date().toISOString(), phase: evidence.phase, ...(identifyRequest === undefined ? {} : { requestId: identifyRequest(value) }),
       extensionInitiator: frames.some((frame) => frame.startsWith(`chrome-extension://${extensionId}/`)) };
     evidence.requests.push(observed);
     if (!['GET', 'HEAD', 'OPTIONS'].includes(value.method())) evidence.mutations.push(observed);
@@ -104,9 +104,18 @@ export function observeBitbucketShellFixture(page, item, { safeUrl, extensionId 
   item.shellNativeSources = evidence;
 }
 
+export async function flushObservedBitbucketShell(page) {
+  const session = sessions.get(page);assert.ok(session, 'Shell native observer must start before actual navigation');await session.flush();
+}
+
 export function currentBitbucketShellHead(evidence) {
   assert.deepEqual(evidence.errors, [], 'Existing native source evidence could not be read');
   assert.deepEqual(evidence.mutations, [], 'Shell verification observed a provider mutation');
+  return observedBitbucketShellIdentity(evidence);
+}
+
+export function observedBitbucketShellIdentity(evidence) {
+  assert.deepEqual(evidence.errors, [], 'Existing native source evidence could not be read');
   assert.ok(evidence.metadata.length > 0 && evidence.pins.length > 0, 'Need actual current PR metadata and already-issued immutable diff comparison');
   const selected = evidence.pins.at(-1);
   assert.ok(HEAD.test(selected.head) && HEAD.test(selected.base));
@@ -256,9 +265,23 @@ export function verifyBitbucketShellUnpainted(preference, probe, baseline, expec
   assert.deepEqual(probe.viewed, baseline.viewed, 'Native Viewed state changed while syntax painting was withheld');
 }
 
-export function verifyBitbucketShellSource(probe, expectedURL = REVIEW) {
+export function verifyBitbucketShellSource(probe, expectedURL = REVIEW, baseline = probe) {
   const source = verifyBitbucketShellContext(probe, expectedURL);
-  assert.deepEqual(probe.invalidRanges, []);assert.equal(probe.prePaintSeen, true);assert.equal(probe.preserved, true, 'Syntax painting changed actual native source references/text/IDs/links/fonts');
+  assert.deepEqual(probe.invalidRanges, []);
+  let baselineEvidence;
+  if (baseline === probe) {
+    assert.equal(probe.prePaintSeen, true);assert.equal(probe.preserved, true, 'Syntax painting changed actual native source references/text/IDs/links/fonts');
+  } else {
+    assert.equal(baseline.origin, 'fresh-native-on-form-open');const record = baseline.record;const current = baseline.currentNative;
+    assert.equal(record?.origin, baseline.origin);assert.match(record?.id ?? '', /^native-on-[1-9]\d*$/);assert.match(record.formId ?? '', /^native-form-[1-9]\d*$/);assert.equal(record.formControls, 13);assert.equal(record.dialogs, 1);assert.equal(record.checked, true);assert.equal(record.ownedCount, 0);assert.deepEqual(record.events, []);
+    assertBitbucketPipelineURL(record.url, expectedURL);assert.ok(current?.same && current.sameScope && current.sameSemantic && current.sameContainer && current.onBaseline && current.onPreserved && current.foreignPreserved, 'Current native-On nodes/source/foreign highlights no longer match their own pristine baseline');
+    assert.equal(current.baselineEvidence?.id, record.id);assert.equal(current.baselineEvidence.formId, record.formId);assert.deepEqual(current.semanticRows, record.semanticRows);
+    const rows = probe.rows.map((r) => ({ text: r.text, kind: r.kind, numbers: [[r.old === null ? null : String(r.old), r.next === null ? null : String(r.next)]], ids: r.ids, links: r.links }));
+    assert.deepEqual(rows, record.semanticRows, 'Raw range source differs from the native-On baseline');
+    for (const subject of [baseline.subject, baseline.currentSubject]) { assert.ok(subject && HEAD.test(subject.head) && HEAD.test(subject.base));assert.equal(typeof subject.sourceRepo, 'string'); }
+    assert.deepEqual([baseline.subject.sourceRepo, baseline.subject.head, baseline.subject.base], [baseline.currentSubject.sourceRepo, baseline.currentSubject.head, baseline.currentSubject.base], 'Native-On baseline full comparison changed');
+    baselineEvidence = { origin: baseline.origin, id: record.id, formId: record.formId, source: 'Raw bitbucketShellProbe rows/ranges', preservation: 'Separate syntaxOnProbe original native-On node baseline', comparison: { sourceRepo: baseline.subject.sourceRepo, head: baseline.subject.head, base: baseline.subject.base } };
+  }
   assert.ok(probe.nativeIds.includes('Lbitbucket-pipelines.ymlT34'));
   const row = probe.rows.find((value) => value.next === 34);assert.ok(row.links.some((link) => link[0] === '#Lbitbucket-pipelines.ymlT34' && link[1] === 'To line 34'));const ranges = probe.ranges.filter((range) => range.rowId === row.rowId);
   const covered = (scope, start, end) => { for (let offset = start; offset < end; offset += 1) if (!ranges.some((range) => range.scope === scope && range.start <= offset && range.end > offset)) return false;return true; };
@@ -304,7 +327,7 @@ export function verifyBitbucketShellSource(probe, expectedURL = REVIEW) {
     assert.equal(value.pseudoNormalized, value.nativeNormalized, `Actual ${scope} pseudo-highlight differs from native ADS code token`);
   }
   return { prefixOld: probe.prefixOld, prefixNext: probe.prefixNext, declaredAnchor: 'check-next-release', command: COMMAND, sourceFingerprint: createHash('sha256').update(source).digest('hex'), rangeCount: ranges.length,
-    colors: probe.colors, theme: probe.theme, shell: 'Actual declared hosted /bin/sh context only; later anchor callsite overrides and a native Bash-renderer palette comparison are not inferred.' };
+    colors: probe.colors, theme: probe.theme, ...(baselineEvidence === undefined ? {} : { baselineEvidence }), shell: 'Actual declared hosted /bin/sh context only; later anchor callsite overrides and a native Bash-renderer palette comparison are not inferred.' };
 }
 
 export function assertBitbucketShellCounts(beforeCounts, beforeState, afterCounts, afterState) {

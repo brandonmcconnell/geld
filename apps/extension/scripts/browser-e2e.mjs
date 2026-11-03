@@ -13,6 +13,7 @@ import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-li
 import { bitbucketColdChipVisibilityProbe, bitbucketCountIntentRequests } from './bitbucket-cold-chip.mjs';
 import { verifyBitbucketHiddenAuthors } from './bitbucket-hidden-authors.mjs';
 import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-shell-acceptance.mjs';
+import { assertSyntaxOnTraffic, characterizeBitbucketSyntaxOn, createSyntaxOnRequestIdentity, observeSyntaxOnTraffic, syntaxOnBudgetPreflight } from './bitbucket-syntax-on.mjs';
 import { observeBitbucketPipelineMainAsset } from './bitbucket-pipeline-main-asset.mjs';
 import { bitbucketPipelineAssetMetadata, pipelineBudgetPreflight, pipelineSettingsScope } from './bitbucket-pipeline-visit.mjs';
 import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommitFixture, prepareBitbucketParentCommit } from './bitbucket-commit-oracle.mjs';
@@ -42,6 +43,7 @@ const FOCUSED_CASES = {
   regression: ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'github-regression', 'bitbucket-diff'],
   'bitbucket-diff': ['bitbucket-diff'],
   'bitbucket-pipeline-shell': ['bitbucket-pipeline-shell'],
+  'bitbucket-pipeline-syntax-on': ['bitbucket-pipeline-syntax-on'],
   'bitbucket-list': ['bitbucket-list-counts'],
   'bitbucket-authors': ['bitbucket-list-authors'],
   'bitbucket-native-bash': ['bitbucket-native-bash-style'],
@@ -64,6 +66,7 @@ const focus = process.env.GELD_BROWSER_FOCUS ?? 'regression';
 const coldBitbucketList = ['bitbucket-list', 'bitbucket-list-commit'].includes(focus);
 const commitSources = new WeakMap();
 const codeRabbitSources = new WeakMap();
+const syntaxOnObservers = new WeakMap();
 const nativeBashSources = new WeakMap();
 const gitLabComparisonSources = new WeakMap();
 const GL_MIXED = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs?diff_id=2158520123';
@@ -334,8 +337,12 @@ async function runCase(name, url, body, discovery = false) {
   let pipelineSettings;
   let pipelineMainAsset;
   let gitLabComparisonObserver;
+  let syntaxOnTraffic;
   const abort = new AbortController();
   try {
+    if (name === 'bitbucket-pipeline-syntax-on' && focus !== 'bitbucket-pipeline-syntax-on') {
+      item.status = 'not_selected';item.reason = 'Reversible native Syntax-on characterization requires its explicit literal focus, excluding all/default/regression. No navigation or native preference action.';return;
+    }
     if (name === 'bitbucket-pipeline-shell' && focus !== 'bitbucket-pipeline-shell') {
       item.status = 'not_selected';item.reason = 'Pipeline-only acceptance requires its explicit literal focus, excluding all/default. No navigation or feature pass.';return;
     }
@@ -375,9 +382,10 @@ async function runCase(name, url, body, discovery = false) {
       throw new Error(`Provider rate limited until ${item.rateLimitedUntil}; no navigation attempted`);
     }
     currentCaseAbort = abort;
-    if (name === 'bitbucket-pipeline-shell') {
+    if (['bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on'].includes(name)) {
       const active = bitbucketRequestTimes.filter((at) => at > Date.now() - 60 * 60 * 1000).length;
-      item.pipelinePreflight = pipelineBudgetPreflight(active, report.quotaPolicy.conservativeObservedRequestBudget);
+      item.pipelinePreflight = name === 'bitbucket-pipeline-syntax-on' ? syntaxOnBudgetPreflight(active, report.quotaPolicy.conservativeObservedRequestBudget) : pipelineBudgetPreflight(active, report.quotaPolicy.conservativeObservedRequestBudget);
+      if (name === 'bitbucket-pipeline-syntax-on' && !item.pipelinePreflight.available) { item.navigationSuppressedByBudget = true;throw new Error('Native Syntax-on characterization requires a fully free40-request rolling window. Save and restoration costs remain unmeasured.'); }
       if (!item.pipelinePreflight.available) { item.navigationSuppressedByBudget = true;throw new Error('Pipeline budget hold:16 measured focused navigation requests plus five free are required before any navigation. Later consent, Settings and selection costs remain unmeasured.'); }
       item.pipelineSettings = {};
       pipelineSettings = pipelineSettingsScope({
@@ -446,6 +454,11 @@ async function runCase(name, url, body, discovery = false) {
       item.nativeMainAsset = {};pipelineMainAsset = observeBitbucketPipelineMainAsset(page, item.nativeMainAsset, { writeArtifact: (file, bytes, signal) => writeFile(resolve(artifacts, file), bytes, { signal }) });
     }
     if (['bitbucket-diff', 'bitbucket-pipeline-shell'].includes(name)) observeBitbucketShellFixture(page, item, { safeUrl, extensionId });
+    if (name === 'bitbucket-pipeline-syntax-on') {
+      item.purpose = 'Dedicated reversible anonymous native Syntax preference characterization. Original checkbox/Save/Cancel only, no authenticated or server-persistence claim.';
+      const identifyRequest = createSyntaxOnRequestIdentity();item.syntaxOnTraffic = {};syntaxOnTraffic = observeSyntaxOnTraffic(page, item.syntaxOnTraffic, extensionId, identifyRequest);syntaxOnObservers.set(page, syntaxOnTraffic);
+      observeBitbucketShellFixture(page, item, { safeUrl, extensionId, identifyRequest });
+    }
     if (name === 'bitbucket-commit-counts') commitSources.set(page, observeBitbucketCommitFixture(page, item));
     if (name === 'bitbucket-commit-links') commitSources.set(page, observeBitbucketCommitFixture(page, item));
     if (name === 'bitbucket-native-bash-style') nativeBashSources.set(page, observeNativeBashSources(page, item, { safeUrl, extensionId }));
@@ -456,7 +469,7 @@ async function runCase(name, url, body, discovery = false) {
     const result = await body(page, item);
     Object.assign(item, result);
     item.auth = await authObservation(page, provider);
-    item.artifacts = name === 'bitbucket-native-bash-style' ? item.nativeBashStyle.artifacts : await capture(page, name, { fullPage: name !== 'bitbucket-pipeline-shell' });
+    item.artifacts = name === 'bitbucket-native-bash-style' ? item.nativeBashStyle.artifacts : await capture(page, name, { fullPage: !['bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on'].includes(name) });
     item.status = result?.status ?? (discovery ? 'discovery' : 'passed');
   } catch (error) {
     item.status = discovery ? item.rateLimitedUntil === undefined ? 'unavailable' : 'rate_limited' : 'failed';
@@ -466,7 +479,7 @@ async function runCase(name, url, body, discovery = false) {
       item.error = `${item.holdReason === 'conservative_anonymous_api_budget' ? 'Conservative anonymous API budget hold' : item.navigationSuppressedByCooldown ? 'Inherited provider cooldown' : 'Provider HTTP429 cooldown'} until ${item.rateLimitedUntil}. Native demand stopped and no retry was attempted.`;
     }
     if (page !== undefined && !page.isClosed()) {
-      try { item.artifacts = await capture(page, `${name}-failed`, { fullPage: !['bitbucket-native-bash-style', 'bitbucket-pipeline-shell'].includes(name) }); } catch (captureError) { item.captureError = errorText(captureError); }
+      try { item.artifacts = await capture(page, `${name}-failed`, { fullPage: !['bitbucket-native-bash-style', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on'].includes(name) }); } catch (captureError) { item.captureError = errorText(captureError); }
     }
   } finally {
     currentCaseAbort = undefined;
@@ -486,6 +499,11 @@ async function runCase(name, url, body, discovery = false) {
         item.cleanupObservation = errorText(error);
         if (!closedTarget(error)) { item.status = 'failed';item.cleanupError = errorText(error); }
       }
+    }
+    if (syntaxOnTraffic !== undefined) {
+      try { assert.ok(item.shellNativeSources && Array.isArray(item.shellNativeSources.mutations), 'Native source observer evidence unavailable');assertSyntaxOnTraffic(item.syntaxOnTraffic, item.shellNativeSources.mutations);item.syntaxOnTraffic.finalCheckedAfterPageClose = page.isClosed(); }
+      catch (error) { item.status = 'failed';item.cleanupError = errorText(error); }
+      finally { syntaxOnTraffic.dispose(); }
     }
     if (pipelineSettings !== undefined) {
       try { await pipelineSettings.restore(page === undefined || page.isClosed()); }
@@ -2832,6 +2850,14 @@ try {
       ? 'Focused native Settings observation and genuine context mechanics with no owned colors while native syntax is disabled. No positive syntax or palette acceptance.'
       : item.shellSyntax?.status === 'unavailable' ? 'Focused native context/count/source preservation is verified with colors withheld, but native syntax preference remains unavailable. This is not native-off or positive syntax/palette acceptance.'
       : `Focused native Pipeline selection, context, original-source ranges/selection and complete counts. Native preference: ${item.shellSyntax?.nativeSettings?.status ?? 'unavailable'}. Native Bash palette equivalence and unselected themes remain unverified.` };
+  });
+
+  await runCase('bitbucket-pipeline-syntax-on', `${BB_PR}/diff`, async (page, item) => {
+    item.state = await waitTotals(page, { files: 5, additions: 46, deletions: 29 }, { files: 5, additions: 46, deletions: 29 }, 0);
+    const proof = await characterizeBitbucketSyntaxOn(page, item, { poll, pause, tabState, bitbucketDom, capture: (target, name) => capture(target, name, { fullPage: false }), guardBudget: guardBitbucketShellBudget, prepareConsent: true, freshAnonymousProfile: report.auth.freshTemporaryBrowserProfile, traffic: syntaxOnObservers.get(page) });
+    item.featureParity = 'partial';return { status: proof.status === 'characterized' ? 'passed' : 'unsupported', verified: proof.status === 'characterized'
+      ? 'Dedicated anonymous native Syntax toggle/Save, fresh pristine On read/Cancel, owned source/range/color preservation and real text selection, then native Off restoration. No authenticated persistence or native Bash palette claim.'
+      : proof.reason };
   });
 
   await runCase('bitbucket-list-counts', BB_PR_LIST, async (page, item) => {
