@@ -42,6 +42,33 @@ function retainedLifecycle(value) {
   return { status: value.status, code: value.code, stateTiming: 'observation_drain', fileReferenceBasis: 'phase_native_files', limit: 128, overflow: value.overflow, stopped: value.stopped, history };
 }
 
+function retainedNativeFiles(value, boundHead, endpointHead) {
+  if (value === undefined) return undefined;
+  const invalid = { state: 'schema_unqualified', bootstrapAttributeEqualToBinding: null, slots: [] };
+  const full = (head) => typeof head === 'string' && /^[a-f0-9]{40}$/.test(head);
+  const version = (entry) => typeof entry?.id === 'string' && /^[1-9]\d{0,15}$/.test(entry.id) && Number.isSafeInteger(Number(entry.id)) && full(entry.head);
+  if (!['observed', 'not_bound', 'owner_changed', 'snapshot_changed'].includes(value?.state) || !Array.isArray(value.slots) || value.slots.length > 3) return invalid;
+  if (['not_bound', 'owner_changed'].includes(value.state)) return { state: value.state, bootstrapAttributeEqualToBinding: null, slots: [] };
+  if (typeof value.bootstrapAttributeEqualToBinding !== 'boolean' || !version(value.currentSelection?.source) || !version(value.currentSelection?.target) || typeof value.currentSelection.target.mergeHead !== 'boolean' || value.currentSelection.source.id !== GITLAB_WHITESPACE.version || value.currentSelection.source.head !== GITLAB_WHITESPACE.head || value.slots.length !== 3) return invalid;
+  const currentSelection = { source: { id: value.currentSelection.source.id, head: value.currentSelection.source.head }, target: { id: value.currentSelection.target.id, head: value.currentSelection.target.head, mergeHead: value.currentSelection.target.mergeHead } };
+  const slots = [];
+  for (const entry of value.slots) {
+    if (!['valid_candidate', 'unknown_path', 'oversize_attr', 'json_unreadable', 'missing_refs', 'malformed_refs'].includes(entry?.state) || typeof entry.anchorValid !== 'boolean' || typeof entry.mounted !== 'boolean') return invalid;
+    if (entry.slot === null) { if (!['unknown_path', 'oversize_attr', 'json_unreadable'].includes(entry.state)) return invalid;slots.push({ slot: null, state: entry.state, anchorValid: entry.anchorValid, mounted: entry.mounted });continue; }
+    if (!Number.isInteger(entry.slot) || entry.slot < 0 || entry.slot >= 3 || !['valid_candidate', 'missing_refs', 'malformed_refs'].includes(entry.state) || entry.refs === null || typeof entry.refs !== 'object' || Array.isArray(entry.refs)
+      || !['rawPathPresent', 'rawAtOwnHead', 'contextPathPresent', 'contextAtOwnHead'].every((field) => typeof entry[field] === 'boolean')) return invalid;
+    const refs = {};
+    for (const name of ['base', 'start', 'head']) if (entry.refs[name] !== undefined) { if (!full(entry.refs[name])) return invalid;refs[name] = entry.refs[name]; }
+    if ((Object.keys(refs).length === 3) !== (entry.state === 'valid_candidate')) return invalid;
+    const knownBound = full(boundHead) ? boundHead : value.bootstrapAttributeEqualToBinding ? currentSelection.target.head : null;
+    slots.push({ slot: entry.slot, state: entry.state, anchorValid: entry.anchorValid, mounted: entry.mounted, refs,
+      rawPathPresent: entry.rawPathPresent, rawAtOwnHead: refs.head !== undefined && entry.rawPathPresent && entry.rawAtOwnHead, contextPathPresent: entry.contextPathPresent, contextAtOwnHead: refs.head !== undefined && entry.contextPathPresent && entry.contextAtOwnHead,
+      headMatchesCurrentTarget: refs.head === undefined ? null : refs.head === currentSelection.target.head, headMatchesBoundTarget: refs.head === undefined || knownBound === null ? null : refs.head === knownBound,
+      headMatchesEndpointDefault: refs.head === undefined || !full(endpointHead) ? null : refs.head === endpointHead });
+  }
+  return { state: value.state, bootstrapAttributeEqualToBinding: value.bootstrapAttributeEqualToBinding, currentSelection, slots };
+}
+
 export function whitespaceReceiptURL(value) {
   try { const url = new URL(value);return ['http:', 'https:'].includes(url.protocol) ? `${url.origin}${url.pathname.replace(/\/(?:token|secret|password|authorization|signature|nonce|key)\/[^/]+/gi, '/[redacted]')}` : 'NON_HTTP_RESOURCE'; }
   catch { return 'UNAVAILABLE_RESOURCE'; }
@@ -189,10 +216,12 @@ export async function verifyGitLabWhitespace(page, { settings, observer, compari
   const observed = async (action) => {
     try {
       const value = await page.evaluate(gitLabWhitespaceProbe, action, GITLAB_WHITESPACE);
+      const nativeFilesDiagnostic = retainedNativeFiles(value?.nativeFilesDiagnostic, p.selection?.target.head, p.acquisitionMatch?.endpointTarget?.head);
       const lifecycle = retainedLifecycle(value?.lifecycle);if (lifecycle !== undefined) p.lifecycle = lifecycle;
       p.lastProbe = value?.qualified === true ? { qualified: true, anonymous: value.anonymous === true, armed: value.armed === true, bound: value.bound === true, open: value.open === true,
         mountedFiles: Array.isArray(value.files) ? Math.min(GITLAB_WHITESPACE.paths.length, value.files.filter((file) => file.mounted === true).length) : 0 }
         : { qualified: false, code: probeCodes.has(value?.code) ? value.code : 'NATIVE_PROBE_UNQUALIFIED' };
+      if (nativeFilesDiagnostic !== undefined) p.lastProbe.nativeFilesDiagnostic = nativeFilesDiagnostic;
       const detail = value?.fileData;
       if (value?.code === 'FILE_DATA_UNQUALIFIED' && ['FILE_JSON_UNREADABLE', 'FILE_PATH_UNEXPECTED', 'FILE_REF_MISSING', 'FILE_HEAD_INVALID', 'FILE_HEAD_MISMATCH', 'FILE_ANCHOR_INVALID'].includes(detail?.reason)
         && ['knownPath', 'refPresent', 'headValid', 'headMatchesTarget', 'anchorValid'].every((field) => typeof detail[field] === 'boolean')
@@ -201,7 +230,7 @@ export async function verifyGitLabWhitespace(page, { settings, observer, compari
         p.lastProbe.fileData = { reason: detail.reason, pathSlot: detail.pathSlot, knownPath: detail.knownPath, refPresent: detail.refPresent, headValid: detail.headValid, headMatchesTarget: detail.headMatchesTarget, anchorValid: detail.anchorValid,
           ...(candidate === null ? {} : { candidateHead: candidate }), candidateMatchesEndpointTarget: candidate !== null && typeof p.acquisitionMatch?.endpointTarget?.head === 'string' ? candidate === p.acquisitionMatch.endpointTarget.head : null };
       }
-      return lifecycle === undefined ? value : { ...value, lifecycle };
+      return { ...value, ...(lifecycle === undefined ? {} : { lifecycle }), ...(nativeFilesDiagnostic === undefined ? {} : { nativeFilesDiagnostic }) };
     } catch (failure) { p.lastProbe = { qualified: false, code: 'PROBE_OPERATION_FAILED' };throw failure; }
   };
   const read = () => observed('read');
@@ -277,7 +306,7 @@ export async function verifyGitLabWhitespace(page, { settings, observer, compari
     p.setupPhase = 'BIND_ORIGINAL_MENU';
     const value = await observed('bind');bound = value?.bound === true;selection(value);check(value.bound && value.open, 'NATIVE_BASELINE_UNQUALIFIED');
     check(value.events.some((event) => event.kind === 'opener' && event.type === 'click' && event.trusted === true) && !value.events.some((event) => event.kind !== 'opener'), 'TRUSTED_OPENER_UNVERIFIED');baseline = value;
-    p.baseline = retainedBaseline(baseline);p.selection = selection(baseline);p.toggleAttempted = false;p.setupPhase = 'BEFORE_INTENT_CHECKPOINT';
+    p.baseline = retainedBaseline(baseline);if (value.nativeFilesDiagnostic !== undefined) p.nativeFilesBaseline = value.nativeFilesDiagnostic;p.selection = selection(baseline);p.toggleAttempted = false;p.setupPhase = 'BEFORE_INTENT_CHECKPOINT';
     await comparisons.checkpoint('beforeIntent', {});
     p.setupPhase = 'INDEPENDENT_ACQUISITION';p.acquisitionMatch = { attempts: 0, source: false, target: false, pairedVersions: false, immutableSourceTarget: false, metadata: false, matched: false, proofMode: 'unverified', proofResponseId: null, endpointTarget: null };
     await poll(async () => {

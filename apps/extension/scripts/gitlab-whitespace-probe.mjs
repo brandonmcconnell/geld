@@ -41,8 +41,8 @@ export async function gitLabWhitespaceProbe(action = 'read', fixture) {
   if (signIn.length < 1) return fail('ANONYMOUS_WITNESS_MISSING');
   const roots = [...document.querySelectorAll('[data-rapid-diffs][data-app-data]')].filter(native);
   if (roots.length !== 1) return fail(roots.length === 0 ? 'SOURCE_OWNER_PENDING' : 'SOURCE_OWNER_UNQUALIFIED');
-  const root = roots[0];let app;
-  try { app = JSON.parse(root.getAttribute('data-app-data')); } catch { return fail('SOURCE_DATA_UNQUALIFIED'); }
+  const root = roots[0];const serializedApp = root.getAttribute('data-app-data');let app;
+  try { app = JSON.parse(serializedApp); } catch { return fail('SOURCE_DATA_UNQUALIFIED'); }
   if (!record(app) || app.mr_path !== '/gitlab-org/gitlab/-/merge_requests/266334' || id(app.iid) !== '266334' || app.file_by_file_mode !== false || typeof app.show_whitespace !== 'boolean'
     || app.update_user_endpoint !== '/api/v4/user/preferences') return fail('SOURCE_DATA_UNQUALIFIED');
   let nativeStream;
@@ -95,12 +95,55 @@ export async function gitLabWhitespaceProbe(action = 'read', fixture) {
     known[testid] = { field, label: labels[0] };
   }
   if (known['file-by-file'].field.checked !== false) return fail('MODE_UNQUALIFIED');
+  const diagnosticReferences = { root, rootParent: root.parentElement, owner, ownerParent: owner.parentElement, opener, openerParent: opener.parentElement, menu, menuParent: menu.parentElement,
+    field: known['show-whitespace'].field, fieldParent: known['show-whitespace'].field.parentElement, label: known['show-whitespace'].label, other: known['file-by-file'].field, otherParent: known['file-by-file'].field.parentElement };
   const fileRoots = [...root.querySelectorAll('diff-file[data-file-data]')].filter(native);
   if (fileRoots.length !== fixture.paths.length) return fail('FILE_INVENTORY_UNQUALIFIED');
+  const nativeFilesDiagnostic = () => {
+    const lease = globalThis[key];
+    if (!lease?.bound) return { state: 'not_bound', bootstrapAttributeEqualToBinding: null, slots: [] };
+    const owns = () => Object.keys(diagnosticReferences).every((name) => diagnosticReferences[name] === lease.references[name]) && root.isConnected && root.parentNode === diagnosticReferences.rootParent
+      && lease.diagnosticParents?.every(({ node, parent }) => native(node) && node.parentNode === parent) === true;
+    if (!owns()) return { state: 'owner_changed', bootstrapAttributeEqualToBinding: null, slots: [] };
+    const startSerialized = root.getAttribute('data-app-data');const rawSnapshots = [];
+    const currentSelection = { source: { id: id(source.id), head: source.head_sha }, target: { id: id(target.id), head: target.head_sha, mergeHead: target.is_merge_head } };
+    const slots = [];
+    for (const file of fileRoots.slice(0, 3)) {
+      const raw = file.getAttribute('data-file-data');rawSnapshots.push(raw);const base = { slot: null, anchorValid: sha(file.id), mounted: file.lastElementChild?.tagName === 'DIFF-FILE-MOUNTED' };
+      if (typeof raw !== 'string') { slots.push({ ...base, state: 'json_unreadable' });continue; }
+      if (raw.length > 16384 || new TextEncoder().encode(raw).byteLength > 16384) { slots.push({ ...base, state: 'oversize_attr' });continue; }
+      let data;try { data = JSON.parse(raw); } catch { slots.push({ ...base, state: 'json_unreadable' });continue; }
+      const slot = fixture.paths.indexOf(data?.new_path);
+      if (slot < 0) { slots.push({ ...base, state: 'unknown_path' });continue; }
+      const refs = record(data.diff_refs) ? data.diff_refs : {};
+      const safeRefs = Object.fromEntries([['base', refs.base_sha], ['start', refs.start_sha], ['head', refs.head_sha]].filter(([, value]) => sha(value)));
+      const complete = ['base', 'start', 'head'].every((name) => Object.hasOwn(safeRefs, name));
+      const missing = ['base_sha', 'start_sha', 'head_sha'].some((name) => !Object.hasOwn(refs, name));
+      const resource = (name, rawFile) => {
+        if (typeof data[name] !== 'string' || data[name].length > 4096 || safeRefs.head === undefined) return false;
+        try {
+          const link = new URL(data[name], url.origin);const encoded = fixture.paths[slot].split('/').map(encodeURIComponent).join('/');
+          return link.origin === url.origin && !link.username && !link.password && !link.search && !link.hash
+            && link.pathname === `/gitlab-org/gitlab/-/${rawFile ? 'raw' : 'blob'}/${safeRefs.head}/${encoded}${rawFile ? '' : '/diff_lines'}`;
+        } catch { return false; }
+      };
+      slots.push({ ...base, slot, state: complete ? 'valid_candidate' : missing ? 'missing_refs' : 'malformed_refs', refs: safeRefs,
+        rawPathPresent: typeof data.blob_raw_path === 'string', rawAtOwnHead: resource('blob_raw_path', true), contextPathPresent: typeof data.diff_lines_path === 'string', contextAtOwnHead: resource('diff_lines_path', false),
+        headMatchesCurrentTarget: safeRefs.head === undefined ? null : safeRefs.head === target.head_sha, headMatchesBoundTarget: safeRefs.head === undefined ? null : safeRefs.head === lease.nativeTargetHead });
+    }
+    const currentFiles = [...root.querySelectorAll('diff-file[data-file-data]')].filter(native);
+    let actorStable = false;
+    try { const currentActors = [...document.querySelectorAll('#js-vue-mr-discussions[data-current-user-data]')].filter(native);actorStable = currentActors.length === actors.length && currentActors.every((node, index) => node === actors[index] && JSON.parse(node.getAttribute('data-current-user-data') ?? 'null')?.id == null) && ![...document.querySelectorAll('.js-mr-title-actions[data-is-signed-in="true"]')].some(native) && signIn.some(shown); } catch { /* Diagnostic remains inconsistent without retaining actor data. */ }
+    const endSerialized = root.getAttribute('data-app-data');
+    const stable = owns() && actorStable && location.href === url.href && document.body.dataset.projectId === '278964' && document.body.dataset.projectFullPath === 'gitlab-org/gitlab'
+      && startSerialized === serializedApp && endSerialized === startSerialized && currentFiles.length === fileRoots.length
+      && fileRoots.every((file, index) => currentFiles[index] === file && native(file) && file.closest('[data-rapid-diffs]') === root && file.getAttribute('data-file-data') === rawSnapshots[index]);
+    return { state: stable ? 'observed' : 'snapshot_changed', bootstrapAttributeEqualToBinding: endSerialized === lease.bootstrapAttribute, currentSelection, slots };
+  };
   const files = [];const boxes = [];let bytes = 0;
   const fileFailure = (reason, data, file) => {
     const slot = fixture.paths.indexOf(data?.new_path);const head = data?.diff_refs?.head_sha;const validHead = sha(head);
-    return { ...fail('FILE_DATA_UNQUALIFIED'), fileData: { reason, pathSlot: slot < 0 ? null : slot, knownPath: slot >= 0,
+    return { ...fail('FILE_DATA_UNQUALIFIED'), nativeFilesDiagnostic: nativeFilesDiagnostic(), fileData: { reason, pathSlot: slot < 0 ? null : slot, knownPath: slot >= 0,
       refPresent: record(data?.diff_refs) && Object.hasOwn(data.diff_refs, 'head_sha'), headValid: validHead, headMatchesTarget: validHead && head === target.head_sha, anchorValid: sha(file.id),
       ...(slot >= 0 && validHead ? { candidateHead: head } : {}) } };
   };
@@ -132,11 +175,12 @@ export async function gitLabWhitespaceProbe(action = 'read', fixture) {
     if (JSON.stringify(versions(latest.versions?.source_versions, false)) !== JSON.stringify(sourceVersions) || JSON.stringify(versions(latest.versions?.target_versions, true)) !== JSON.stringify(targetVersions)
       || latest.reload_stream_url !== app.reload_stream_url || latest.diff_view_type !== app.diff_view_type) return fail('VERSIONS_CHANGED_DURING_READ');
   } catch { return fail('SOURCE_DATA_UNQUALIFIED'); }
+
   const references = { root, rootParent: root.parentElement, owner, ownerParent: owner.parentElement, opener, openerParent: opener.parentElement, menu, menuParent: menu.parentElement,
     field: known['show-whitespace'].field, fieldParent: known['show-whitespace'].field.parentElement, label: known['show-whitespace'].label, other: known['file-by-file'].field, otherParent: known['file-by-file'].field.parentElement };
   const scope = JSON.stringify([url.origin, url.pathname, url.search, source, target, nativeStream, files.map(({ path, anchor, head }) => [path, anchor, head])]);
   let proof = globalThis[key];
-  if (proof && (proof.scope !== scope || Object.keys(references).some((name) => references[name] !== proof.references[name]))) return fail('ORIGINAL_OWNER_CHANGED');
+  if (proof && (proof.scope !== scope || Object.keys(references).some((name) => references[name] !== proof.references[name]))) return { ...fail('ORIGINAL_OWNER_CHANGED'), nativeFilesDiagnostic: nativeFilesDiagnostic() };
   if (action === 'bind' || action === 'arm-opener') {
     if (action === 'arm-opener' && (proof || opener.getAttribute('aria-expanded') !== 'false')) return fail('OPENER_ARM_UNQUALIFIED');
     if (action === 'bind' && (proof?.bound || opener.getAttribute('aria-expanded') !== 'true' || !shown(menu) || !shown(references.label))) return fail('BIND_UNQUALIFIED');
@@ -154,7 +198,7 @@ export async function gitLabWhitespaceProbe(action = 'read', fixture) {
       globalThis[key] = proof;
     }
     if (action === 'bind') {
-      proof.bound = true;
+      proof.bound = true;proof.bootstrapAttribute = root.getAttribute('data-app-data');proof.nativeTargetHead = target.head_sha;proof.diagnosticParents = [root, owner, opener, menu, references.field, references.label, references.other].map((node) => ({ node, parent: node.parentNode }));
       const history = [];const limit = 128;let phase = 'baseline';let status = 'observing';let diagnosticCode = 'OBSERVING';let overflow = false;let closed = false;let observer;
       const one = (selector) => { const nodes = [...root.querySelectorAll(selector)].filter(native);return nodes.length === 1 ? nodes[0] : null; };
       const list = one('[data-diffs-list]');const overlay = one('[data-diffs-overlay]');const loading = one('[data-list-loading]');const alert = one('[data-diffs-list-alert]');
@@ -222,6 +266,6 @@ export async function gitLabWhitespaceProbe(action = 'read', fixture) {
   if (action === 'toggle-target') return proof && opener.getAttribute('aria-expanded') === 'true' && shown(menu) && shown(references.label) ? references.label : null;
   const number = (selector) => { const text = root.querySelector(selector)?.textContent?.trim() ?? '';return /^[+−\-]?[\d,]+$/.test(text) ? Number(text.replace(/[+,−\-]/g, '')) : null; };
   return { qualified: true, anonymous: true, url: url.href, app: { path: app.mr_path, iid: app.iid, fileByFileMode: false, sourceVersions, targetVersions },
-    initialShowWhitespace: app.show_whitespace, nativeStream, checked: references.field.checked, other: { fileByFile: references.other.checked }, open: opener.getAttribute('aria-expanded') === 'true' && shown(menu),
+    initialShowWhitespace: app.show_whitespace, nativeStream, ...(proof?.bound ? { nativeFilesDiagnostic: nativeFilesDiagnostic() } : {}), checked: references.field.checked, other: { fileByFile: references.other.checked }, open: opener.getAttribute('aria-expanded') === 'true' && shown(menu),
     ...(proof?.readLifecycle === undefined ? {} : { lifecycle: proof.readLifecycle() }), files, displayedCounts: { additions: number('[data-testid="js-file-addition-line"]'), deletions: number('[data-testid="js-file-deletion-line"]') }, armed: proof !== undefined, bound: proof?.bound === true, events: proof?.events ?? [], eventOverflow: proof?.overflow ?? false };
 }
