@@ -2854,7 +2854,7 @@ async function bitbucketParentCommitHover(page, oracle) {
     observed = await poll(() => oracle.snapshot(native.links[0].sha), (value) => value.status === 'ready', 'Already-issued metadata and complete diffstat for the hovered native parent', 3000);
     keyboard = await installedHover(page, selector, 'keyboard', 'bitbucket-parent-commit-keyboard', undefined, { verifyUnobscured: true });
   } catch (error) {
-    if (page.isClosed() || currentCaseAbort?.signal.aborted || (cooldowns.get('bitbucket') ?? 0) > Date.now()) throw error;
+    if (observed?.status === 'ready' || page.isClosed() || currentCaseAbort?.signal.aborted || (cooldowns.get('bitbucket') ?? 0) > Date.now()) throw error;
     return { status: 'unverified', reason: errorText(error), native: native ?? initial, preparation, pointer, oracle: oracle.snapshot(initial.links[0].sha), remaining };
   }
   assert.deepEqual(commitHoverTotal(pointer.rows), observed.totals, 'Parent hover does not describe its own observed immutable diffstat');
