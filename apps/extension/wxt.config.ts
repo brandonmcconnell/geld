@@ -1,3 +1,4 @@
+import { withoutRequiredProviderOrigins } from './src/lib/provider-access-spec';
 import { defineConfig } from 'wxt';
 import type { ThemeIcon } from 'wxt';
 import { ACTION_ICON_SIZES, actionIconPath } from './src/lib/action-icon';
@@ -56,11 +57,11 @@ export default defineConfig({
     // api.github.com serves the optional GitHub sign-in (gist sync) and the
     // signed pattern catalog (catalog/patterns.json via the contents API).
     web_accessible_resources:[{resources:['tracker-icons/*.svg'],matches:['https://*/*']}],
-    host_permissions: ['https://github.com/*', 'https://patch-diff.githubusercontent.com/*', 'https://api.github.com/*', 'https://gitlab.com/*', 'https://bitbucket.org/*', 'https://api.bitbucket.org/*'],
+    host_permissions: ['https://github.com/*', 'https://patch-diff.githubusercontent.com/*', 'https://api.github.com/*'],
     // GitHub Enterprise Server: the user grants specific hosts from the options page.
     ...(mv === 3
       ? { optional_host_permissions: ['https://*/*'] }
-      : { optional_permissions: ['https://*/*'] }),
+      : { optional_permissions: ['https://*/*', 'scripting'] }),
     commands: {
       'toggle-hidden': {
         suggested_key: { default: 'Alt+Shift+T' },
@@ -82,6 +83,8 @@ export default defineConfig({
   }),
   hooks: {
     'build:manifestGenerated': (wxt, manifest) => {
+      if (manifest.host_permissions) manifest.host_permissions = withoutRequiredProviderOrigins(manifest.host_permissions);
+      if (manifest.permissions) manifest.permissions = withoutRequiredProviderOrigins(manifest.permissions);
       if (wxt.config.browser !== 'firefox') return;
       // Firefox picks the icon by theme text colour: `dark` is the dark icon
       // (light themes), `light` is the light icon (dark themes).

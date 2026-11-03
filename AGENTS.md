@@ -1502,6 +1502,12 @@ Retained public MR253 source supplies the positive lexical fixture, but offline 
 
 The cloud content scripts live in `entrypoints/gitlab.content/` and `entrypoints/bitbucket.content/`, with provider adapters in `src/gitlab/` and `src/bitbucket/` behind `src/providers/` interfaces.
 The first pass targets gitlab.com and Bitbucket Cloud, with self-hosted variants requiring separate adapter verification and host permissions.
+GitLab and Bitbucket cloud access is optional, including their content-script registration, so upgrading a GitHub-only installation does not introduce required site access.
+The popup and options expose explicit Enable GitLab and Enable Bitbucket controls;
+a granted origin registers only that provider's isolated script and the supported Bitbucket MAIN helper through the background.
+Firefox MV2 requests the optional scripting capability with that enable action and uses its supported Firefox 128 MAIN registration, without adding a required update permission.
+A failed MAIN registration rolls back the provider registration and cannot produce an enabled acknowledgement.
+Revoking either required Bitbucket origin removes its registration, and initial installed-browser acceptance must use the real extension enable control before visiting the provider.
 Repository identity includes the provider, origin and full repository path, so nested GitLab groups and equally named repositories on different hosts remain separate.
 One synchronized Geld settings object follows the user across providers, with the same core matcher and category definitions.
 Provider-specific surfaces translate settings and sources into shared review and diff models rather than importing GitHub's DOM adapters or Primer styles.

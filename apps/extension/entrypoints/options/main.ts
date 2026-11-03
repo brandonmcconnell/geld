@@ -1,3 +1,4 @@
+import { mountProviderAccess } from '../../src/ui/provider-access';
 import { browser } from 'wxt/browser';
 import { PROVIDER_CACHE_SLOTS } from '../../src/providers/diff-cache';
 import type { AnyCategoryId, BuiltInCategory, Catalog, CategoriesField, CategoryIconName, CustomCategoriesField, CustomCategory, GeldSettings, HiddenCategory, PatternGroup } from '@geld/core';
@@ -181,6 +182,7 @@ function requireCategoryFields(): { readonly categoriesField: CategoriesField; r
 /* ------------------------------------------------------------------- main */
 
 async function main(): Promise<void> {
+  mountProviderAccess(requireElement('provider-access', HTMLElement));
   let settings = await settingsItem.getValue();
   // The active pattern catalog: bundled, or the newer signed copy the background fetched.
   let cachedCatalog = await catalogItem.getValue();

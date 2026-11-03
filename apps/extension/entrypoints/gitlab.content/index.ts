@@ -5,7 +5,7 @@ import '../../src/providers/style.css';
 import '../../src/gitlab/theme.css';
 import '../../src/gitlab/comment-render.css';
 
-export default defineContentScript({
+export default defineContentScript({ registration: 'runtime',
   matches: ['https://gitlab.com/*'],
   runAt: 'document_start',
   main: (ctx) => startProvider(ctx, createGitLabAdapter()),
