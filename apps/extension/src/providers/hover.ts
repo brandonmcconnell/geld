@@ -52,7 +52,7 @@ const ADDED_TABINDEX = 'data-geld-hover-tabindex';
 const INTENT_MS = 150;
 const MARGIN = 8;
 const GAP = 8;
-const MAX_WIDTH = 420;
+const MAX_WIDTH = 360;
 const owners = new WeakMap<Document, ProviderHover>();
 
 export function providerHoverPlacement(anchor: Rect, size: { readonly width: number; readonly height: number }, viewport: { readonly width: number; readonly height: number }, column: { readonly left: number; readonly right: number }): ProviderHoverPlacement {
@@ -463,7 +463,9 @@ export class ProviderHover {
     const available = Math.max(0, Math.min(width - MARGIN, column.right - MARGIN) - Math.max(MARGIN, column.left + MARGIN));
     if (available < 48 || rect.bottom < 0 || rect.top > height) { this.close(); return; }
     const measuredWidth = Math.min(MAX_WIDTH, available);
-    box.style.width = `${measuredWidth}px`;
+    box.style.width = 'max-content';
+    box.style.maxWidth = `${measuredWidth}px`;
+    box.toggleAttribute('data-compact', measuredWidth < 280);
     box.style.maxHeight = `${Math.max(0, height - MARGIN * 2)}px`;
     const size = box.getBoundingClientRect();
     const placement = providerHoverPlacement(rect, { width: size.width || measuredWidth, height: size.height }, { width, height }, column);

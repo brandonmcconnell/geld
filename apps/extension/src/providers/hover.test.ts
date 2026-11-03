@@ -581,6 +581,27 @@ describe('count tooltip ownership and lifecycle', () => {
 });
 
 describe('provider count popup placement', () => {
+  it.each([420, 260])('fits intrinsic content within a %s px native column and responds to resizing', async (columnWidth) => {
+    const host = link();
+    const column = document.createElement('section');
+    document.body.append(column); column.append(host);
+    const rect = vi.spyOn(column, 'getBoundingClientRect').mockReturnValue(new DOMRect(40, 0, columnWidth, 400));
+    create(() => ready());
+    hover(host); await vi.advanceTimersByTimeAsync(150);
+    const box = tooltip();
+    expect(box?.style.width).toBe('max-content');
+    expect(box?.style.maxWidth).toBe(`${Math.min(360, columnWidth - 16)}px`);
+    expect(box?.hasAttribute('data-compact')).toBe(columnWidth - 16 < 280);
+    rect.mockReturnValue(new DOMRect(40, 0, 200, 400));
+    window.dispatchEvent(new Event('resize'));
+    expect(box?.style.maxWidth).toBe('184px');
+    expect(box?.hasAttribute('data-compact')).toBe(true);
+    expect(box?.hidden).toBe(false);
+    host.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(box?.hidden).toBe(true);
+    expect(host.title).toBe('Native commit title');
+  });
+
   it('clamps a popup to the host content column and flips above when the space below is smaller', () => {
     const value = providerHoverPlacement({ left: 700, right: 800, top: 530, bottom: 550 }, { width: 300, height: 160 }, { width: 1000, height: 600 }, { left: 400, right: 820 });
     expect(value.placement).toBe('above');

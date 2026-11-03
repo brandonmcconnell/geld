@@ -2459,3 +2459,7 @@ The Bitbucket-scoped Geld fold is relatively positioned so normal DOM paint orde
 
 A maintainer-applied `geld:restack` label defers only public browser and static-provider verification while each PR still runs normal CI and packaging.
 Deferred jobs do not claim a public feature pass, and final-tip public verification runs explicitly after removing the label within the carried provider budget.
+
+Provider overview headers can expose a file count without visible signed line totals, and responsive layouts can hide an otherwise valid native counter.
+The owned header hint supplies filtered additions and deletions only where the native sign is not visibly rendered, keeps one keyboard and hover anchor, and restores without changing native visibility.
+Count popovers use intrinsic width bounded by their native column and the viewport, without inline-size containment that would discard their content width.
