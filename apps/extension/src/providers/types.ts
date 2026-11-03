@@ -58,6 +58,7 @@ export interface ProviderDiffEntry {
   readonly anchor: string | null;
   readonly additions: number | null;
   readonly deletions: number | null;
+  prepareReveal?(): void;
   isExpanded?(): boolean;
   isViewed?(): boolean | null;
   readLines?(): readonly ProviderDiffLine[];
@@ -78,6 +79,8 @@ export interface ProviderDiffLine {
 export interface ProviderTreeEntry {
   readonly path: string;
   readonly root: HTMLElement;
+  /** Observed per-file visual wrapper, including native status/comment marks; never moved. */
+  readonly presentationRoot?: HTMLElement;
   readonly link: HTMLAnchorElement | null;
 }
 
@@ -87,6 +90,9 @@ export interface ProviderDiffView {
   readonly entries: readonly ProviderDiffEntry[];
   readonly tree: readonly ProviderTreeEntry[];
   readonly treeHost: HTMLElement | null;
+  /** Verified native file-list root only; excludes provider search/header controls. */
+  readonly treeContainer?: HTMLElement | null;
+  navigateToPath?(path: string): boolean;
   readonly filteredPaths: ReadonlySet<string>;
   readonly virtualized: boolean;
 }
@@ -96,10 +102,12 @@ export interface ProviderHeaderTarget {
   readonly deletions: HTMLElement | null;
   readonly files: HTMLElement | null;
   readonly hoverHosts?: readonly HTMLElement[];
+  readonly keyboardHoverHosts?: readonly HTMLElement[];
+  readonly accessibleSummaryHost?: HTMLElement;
   readonly labels?: readonly {
     readonly host: HTMLElement;
     readonly attribute: 'aria-label' | 'title';
-    readonly count: 'files' | 'additions' | 'deletions';
+    readonly count: 'files' | 'additions' | 'deletions' | 'lines';
   }[];
 }
 
@@ -130,6 +138,12 @@ export interface ProviderReviewSnapshot {
   readonly actions: readonly ProviderReviewAction[];
 }
 
+export interface ProviderConversationRoot {
+  readonly root: HTMLElement;
+  readonly anchors: readonly string[];
+  readonly kind: 'comment' | 'activity';
+}
+
 export interface ProviderAdapter {
   readonly id: ReviewProvider;
   describe(url: URL, doc: Document): ProviderPage | null;
@@ -139,6 +153,8 @@ export interface ProviderAdapter {
   fetchDiff(page: ProviderPage, signal: AbortSignal): Promise<ProviderDiffResult>;
   readonly fetchConfig?: ProviderConfigFetcher;
   reviewHost?(doc: Document): HTMLElement | null;
+  conversationRoots?(doc: Document): readonly ProviderConversationRoot[];
+  descriptionHost?(doc: Document): HTMLElement | null;
   actionHost?(doc: Document): HTMLElement | null;
   fetchReview?(page: ProviderReviewPage, signal: AbortSignal, doc: Document): Promise<ProviderReviewSnapshot>;
 }

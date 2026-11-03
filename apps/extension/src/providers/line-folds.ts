@@ -1,5 +1,5 @@
 import type { FileStats, GeldSettings, OutlineLine, TestFold } from '@geld/core';
-import { CATEGORY_IDS, createMatcher, describeRepository, formatCount, outlineTestFolds, testSyntaxesFrom } from '@geld/core';
+import { CATEGORY_IDS, createMatcher, describeRepository, formatCount, outlineTestFolds, providerRepositoryScope, testSyntaxesFrom } from '@geld/core';
 import type { ProviderDiffEntry, ProviderDiffLine, ProviderDiffView } from './types';
 import './line-folds.css';
 
@@ -298,7 +298,9 @@ export function applyProviderLineFolds(view: ProviderDiffView, files: readonly F
   if (!settings.enabled || (!settings.hideCommentLines && !settings.testOutline)) { clearProviderLineFolds(); return { hiddenAdditions: 0, hiddenDeletions: 0 }; }
   const facts = new Map(files.map((file) => [file.path, file]));
   const categories = Object.fromEntries(CATEGORY_IDS.map((id) => [id, id === 'tests']));
-  const matcher = settings.testOutline ? createMatcher({ ...settings, categories, customCategories: [], hideLargeDiffs: false }, describeRepository(window.location.href)?.path ?? null) : null;
+  const repository = describeRepository(window.location.href);
+  const scope = repository === null ? null : providerRepositoryScope(repository);
+  const matcher = settings.testOutline ? createMatcher({ ...settings, categories, customCategories: [], hideLargeDiffs: false }, scope) : null;
   const syntaxes = testSyntaxesFrom(settings.testSyntaxes);
   const active = new Set<HTMLElement>();
   let hiddenAdditions = 0;
