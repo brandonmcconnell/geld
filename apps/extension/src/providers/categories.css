@@ -25,3 +25,7 @@ section.geld-provider-category-fallback[data-geld-provider-category-host] {
 .geld-provider-category-fallback .geld-provider-category-folder-label {
   overflow-wrap: anywhere;
 }
+
+html[data-geld-provider="gitlab"] :is(.geld-provider-essential-content, .geld-provider-category-content) > .geld-provider-category-list {
+  padding-left: var(--gl-spacing-scale-3, 8px);
+}
