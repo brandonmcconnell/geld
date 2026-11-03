@@ -378,14 +378,29 @@ test('OS dark evidence changes only for comparable native colors and never claim
   const body = f.read();
   const author = { name: { native: { style: { color: 'black' } } }, aliasPair: { native: null }, avatar: { native: null }, badges: [] };
   const baseline = { ...author, body };
-  for (const nativeChanges of [false, true]) {
+  for (const nativeChanges of [false, true]) for (const originallyShown of [false, true]) {
     const darkBody = structuredClone(body);
     if (nativeChanges) darkBody.samples[0].native.style.color = 'white';
     else darkBody.samples = darkBody.samples.slice(0, 1);
     const measurements = [baseline, { ...author, body: darkBody }];
     const media = [];
-    const theme = harnessFunction('authorThemeEvidence', 'function assertAuthorThemeEvidence', { authorPresentationProbe: async () => measurements.shift(), pause: async () => {}, capture: async () => ({ kind: 'offline test only' }) });
-    const result = await theme({ emulateMediaFeatures: async (value) => media.push(value) }, 'bitbucket', f.anchor);
+    let shown = originallyShown;
+    const clicks = [];
+    f.native.hidden = !shown;
+    const theme = harnessFunction('authorThemeEvidence', 'function assertAuthorThemeEvidence', {
+      authorPresentationProbe: async () => { assert.equal(f.native.hidden, false);return measurements.shift(); },
+      pause: async () => {}, capture: async () => ({ kind: 'offline test only' }),
+      poll: async (read, accepts) => { const value = await read();assert.equal(accepts(value), true);return value; },
+      clickReviewButton: async (_page, _selector, label) => { clicks.push(label);shown = label === 'Show original conversation';f.native.hidden = !shown; },
+    });
+    const result = await theme({
+      $eval: async (_selector, read) => read({ getAttribute: () => String(shown) }),
+      evaluate: async (read, ...args) => read(...args),
+      isClosed: () => false,
+      emulateMediaFeatures: async (value) => media.push(value),
+    }, 'bitbucket', f.anchor);
+    assert.equal(shown, originallyShown);
+    assert.deepEqual(clicks, originallyShown ? [] : ['Show original conversation', 'Hide original conversation']);
     assert.equal(result.darkPreferenceProbe.nativeThemeChanged, nativeChanges);
     assert.equal(result.darkPreferenceProbe.bodyNativeThemeChanged, nativeChanges);
     assert.equal(result.darkPreferenceProbe.status, nativeChanges ? 'native_scheme_observed' : 'site_did_not_select_dark_theme');
