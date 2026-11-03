@@ -2409,3 +2409,9 @@ That mode has four concurrent reads, an eight MiB per-file cap, a sixty-four MiB
 The PR full-context acceptance also scopes All changes to the active native diff panel and keeps the original control identity through scrolling.
 A hidden sticky copy must not discard its file lease or erase the failure diagnostic.
 Its source-menu probe recognizes the same untouched passive cookie notice while rejecting any unknown dialog, and a placeholder text hint is not evidence of a native error.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
