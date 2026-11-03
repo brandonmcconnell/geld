@@ -135,7 +135,7 @@ export class GitLabCiAdapter implements ProviderCiAdapter {
         const name = text(job.name);
         const jobId = BigInt(id(job.id));
         const check: RawCheckRun = {
-          name, sha: pipelineSha, ...(pipelineSha === headSha ? {} : { reviewHeadSha: headSha }), status: completed ? 'completed' : state === 'manual' ? 'waiting' : 'in_progress',
+          name, sha: pipelineSha, ...(pipelineSha === headSha ? {} : { reviewHeadSha: headSha }), status: completed ? 'completed' : state === 'running' ? 'in_progress' : state === 'manual' ? 'waiting' : 'queued',
           conclusion: !completed ? null : state === 'success' ? 'success' : state === 'failed' ? 'failure' : state === 'canceled' ? 'cancelled' : 'skipped',
           ...(job.started_at === null || job.started_at === undefined ? {} : { startedAt: time(job.started_at) }),
           ...(job.finished_at === null || job.finished_at === undefined ? {} : { completedAt: time(job.finished_at) }),

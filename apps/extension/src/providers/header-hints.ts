@@ -32,6 +32,8 @@ export class ProviderHeaderHints {
   private readonly hints = new Map<HTMLElement, HeaderHint>();
   private latest: { targets: readonly ProviderHeaderTarget[]; label: string | null; totals: ChangeTotals | undefined } | null = null;
   private view: Window | null = null;
+  private sizeObserver: ResizeObserver | null = null;
+  private readonly observed = new Set<Element>();
   private readonly resize = (): void => {
     const latest = this.latest;
     if (latest !== null) this.update(latest.targets, latest.label, latest.totals);
@@ -112,6 +114,13 @@ export class ProviderHeaderHints {
       this.view = view;
       this.view?.addEventListener('resize', this.resize, { passive: true });
     }
+    if (this.sizeObserver === null && typeof ResizeObserver !== 'undefined') this.sizeObserver = new ResizeObserver(this.resize);
+    const observed = new Set<Element>();
+    for (const target of targets) for (const node of [target.hintHost, target.additions, target.deletions]) {
+      if (node?.isConnected) observed.add(node);
+    }
+    for (const node of this.observed) if (!observed.has(node)) { this.sizeObserver?.unobserve(node); this.observed.delete(node); }
+    for (const node of observed) if (!this.observed.has(node)) { this.sizeObserver?.observe(node); this.observed.add(node); }
   }
 
   forTarget(target: ProviderHeaderTarget): HTMLElement | null {
@@ -120,14 +129,16 @@ export class ProviderHeaderHints {
   }
 
   needsRepair(): boolean {
-    return [...this.hints].some(([host, hint]) => host.isConnected && (hint.root.parentElement !== host
-      || this.latest?.totals !== undefined && (hint.showAdditions !== !visible(hint.additions) || hint.showDeletions !== !visible(hint.deletions))));
+    return [...this.hints].some(([host, hint]) => host.isConnected && hint.root.parentElement !== host);
   }
 
   clear(): void {
     for (const hint of this.hints.values()) hint.root.remove();
     this.hints.clear();
     this.latest = null;
+    this.sizeObserver?.disconnect();
+    this.sizeObserver = null;
+    this.observed.clear();
     this.view?.removeEventListener('resize', this.resize);
     this.view = null;
   }
