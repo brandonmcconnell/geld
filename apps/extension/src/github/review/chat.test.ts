@@ -95,6 +95,16 @@ describe('takeAgentViewLink', () => {
     expect(takeAgentViewLink(body)?.label).toBe('View in Greptile');
   });
 
+  it("takes Greptile's badge when it links through the tenant switch", () => {
+    const href = 'https://app.greptile.com/-/switch-tenant?tenant=geld&next=%2Fbrandonmcconnell%2Fgeld%2Fpull%2F367&utm_source=greptile_review&utm_medium=github&utm_campaign=view_in_greptile';
+    const body = parse(`<div><h2><a href="https://app.greptile.com/api/retrigger?id=1"><picture><img alt="Retrigger" src="r.svg"></picture></a><a href="${href.replace(/&/g, '&amp;')}"><picture><img alt="View in Greptile" src="v.svg" align="right"></picture></a>Confidence Score: 5/5</h2><p>Safe.</p></div>`);
+    expect(takeAgentViewLink(body)).toEqual({ href, label: 'View in Greptile' });
+    expect(body.querySelector('a[href*="switch-tenant"]')?.hasAttribute('data-geld-agent-view')).toBe(true);
+    expect(body.querySelector('h2')?.hasAttribute('data-geld-agent-rerun')).toBe(false);
+    // The switch with no run behind it (a tenant's home) is not the badge.
+    expect(takeAgentViewLink(parse('<div><p><a href="https://app.greptile.com/-/switch-tenant?tenant=geld&amp;next=%2F"><img alt="Greptile" src="g.svg"></a></p></div>'))).toBeNull();
+  });
+
   it('hides the paragraph both Greptile badges share once both are taken', () => {
     const body = parse(GREPTILE_PARAGRAPH);
     hideAgentRerunControls(body);
