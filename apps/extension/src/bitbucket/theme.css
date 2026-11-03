@@ -7,6 +7,9 @@ html[data-geld-provider="bitbucket"] {
   --geld-provider-font: var(--ds-font-body);
   --geld-provider-font-small: var(--ds-font-body-small);
   --geld-provider-byline-font: var(--ds-font-body-small);
+  --geld-provider-author-font: var(--ds-font-body);
+  --geld-provider-author-weight: var(--ds-font-weight-medium);
+  --geld-provider-author-text: var(--ds-text);
   --geld-provider-text: var(--ds-text);
   --geld-provider-text-subtle: var(--ds-text-subtle);
   --geld-provider-link: var(--ds-link);
