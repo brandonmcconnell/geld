@@ -93,14 +93,22 @@ export function bitbucketUiNativeInventory(remember = false) {
     });
     const link = links.length === 1 ? links[0] : null;
     const root = anchor.parentElement;
-    const checkbox = root?.querySelector('input[type="checkbox"]');
+    const checkbox = [...root?.querySelectorAll('article[data-qa="branch-diff-file"] label') ?? []].find(label => label.textContent.trim() === 'Viewed')?.querySelector('input[type="checkbox"]') ?? null;
     return { path, anchor, root, link, checkbox };
   });
   if (remember) lease.rows = nodes;
+  const mismatches = { anchor: 0, root: 0, link: 0, checkbox: 0 };
+  const hydratedControls = [];
+  for (const [index, entry] of nodes.entries()) {
+    const saved = lease.rows?.[index];
+    for (const key of ['anchor', 'root', 'link']) if (saved?.[key] !== entry[key]) mismatches[key]++;
+    if (saved?.checkbox === entry.checkbox) continue;
+    if (saved?.checkbox === null && entry.checkbox !== null && !entry.checkbox.checked) hydratedControls.push(entry.path);
+    else mismatches.checkbox++;
+  }
   return {
-    sameNative: lease.rows?.length === nodes.length && nodes.every((entry, index) => {
-      const saved = lease.rows[index];return saved.anchor === entry.anchor && saved.root === entry.root && saved.link === entry.link && saved.checkbox === entry.checkbox;
-    }),
+    sameNative: lease.rows?.length === nodes.length && Object.values(mismatches).every(count => count === 0),
+    mismatches, hydratedControls,
     files: nodes.map(entry => ({ path: entry.path, anchor: entry.anchor.id, href: entry.link?.getAttribute('href') ?? null, viewed: entry.checkbox?.checked ?? null })),
   };
 }
@@ -138,8 +146,10 @@ export async function verifyBitbucketUiContinuity(page, item, context) {
     assert.deepEqual(inventory.files.map(file => file.path).sort(), source.files.map(file => file.path).sort());
     await context.verifyFiltering(page, item, { source, originalState: diffState });
     const restoredInventory = await page.evaluate(bitbucketUiNativeInventory);
-    assert.equal(restoredInventory?.sameNative, true, 'Native source nodes changed during category filtering');
-    assert.deepEqual(restoredInventory.files, inventory.files, 'Native paths, links or Viewed flags changed during filtering');
+    result.inventoryRestoration = restoredInventory;
+    assert.equal(restoredInventory?.sameNative, true, `Native source nodes changed during category filtering: ${JSON.stringify(restoredInventory?.mismatches)}`);
+    const expectedFiles = inventory.files.map(file => file.viewed === null && restoredInventory.hydratedControls?.includes(file.path) ? { ...file, viewed: false } : file);
+    assert.deepEqual(restoredInventory.files, expectedFiles, 'Native paths, links or Viewed flags changed during filtering');
     result.nativeInventory = { files: inventory.files.length, preserved: true, fingerprint: createHash('sha256').update(JSON.stringify(inventory.files)).digest('hex') };
     const finalSource = assertBitbucketUiSource(await context.readSource(), await context.readState(page));
     assert.ok(isDeepStrictEqual(finalSource, source), 'Filtering must retain the same complete source');

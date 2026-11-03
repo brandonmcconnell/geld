@@ -2534,10 +2534,16 @@ The ancillary native-fragment check remains with MR266334 legacy round history r
 The `provider-access` installed-browser focus grants optional sites through genuine options-page pointer clicks and verifies worker-registered GitLab, Bitbucket and Bitbucket MAIN scripts before opening any public provider page.
 This focus blocks external DNS, skips all public cases and uploads only `geld-provider-access`, so its options-only receipt cannot replace the canonical provider cooldown artifact.
 
-Installed provider opt-in verification reads worker permissions before and after each options click, so a pending permission request is distinct from pending script registration.
+Installed provider opt-in verification reads browser-owned permissions before and after each options click, so a pending permission request is distinct from pending script registration.
 The CI browser runs headed under Xvfb for the native permission prompt, while the existing page viewport sizes remain unchanged inside a larger desktop window.
 Native confirmation is limited to an active dialog owned by the launched Chrome process tree, outside web documents, naming Geld and the exact requested provider hosts with one enabled Allow action.
 Unknown, ambiguous or inaccessible dialogs remain unconfirmed, and no direct permission grant API or blind keyboard input substitutes for that native confirmation.
+
+Installed opt-in verification reads Chrome's permissions and registered content scripts through the verified options page, without attaching a DevTools evaluation context to the transient MV3 service worker.
+Each bounded read checks the exact extension ID and page URL before and after both read-only browser API calls, while the genuine options acknowledgement still proves the worker completed registration.
+
+Provider dashboards show incomplete source coverage as one muted partial-review status rather than repeating API diagnostics in the conversation.
+The copied digest retains every unavailable source reason, including separate missing thread states, while the panel remains explicitly partial.
 
 The read-only provider-evidence exporter accepts only the fixed GitLab captures and Bitbucket dashboard hidden/dark or named UI-failure captures emitted by the installed runner.
 It preserves the existing per-file, compressed-total and chunk limits and reports fixed Bitbucket UI status/custody fields without opening a browser or requesting provider data.
@@ -2545,6 +2551,26 @@ Chrome's native ATK bridge is separate from renderer accessibility: the owned CI
 The accessibility preflight verifies that the real registry exposes an owned, showing, active native Chrome window with a showing native control outside web-document subtrees before requesting optional provider access.
 Missing native accessibility stops before the options click and records only bounded ownership, role and window-state counters;
 an empty dialog scan cannot prove a product permission failure.
+
+Dashboard pointer acceptance completes source-custody reads before stabilizing the original control's hit box across animation frames.
+It follows the same section key and ID rather than its array position, and records the trusted target plus immediate and microtask expansion state so a missed click is distinct from a later state reset.
+A missed, replaced or persistently moving target fails before result polling without retrying pointer input.
+
+Installed dashboard custody failures include bounded structural diagnostics for the first mismatched native payloads.
+The record names only a validated public note ID, child-node path, change kind, attribute name, and text or HTML lengths and fingerprints.
+Original comment text and attribute values remain in the page, and exact preservation assertions are unchanged.
+
+GitLab lazily adds its native Show full table control after a digest custody baseline, including when a dashboard scroll changes table measurements.
+Installed run41614670790 identified this exact comment-placeholder to height-control transition inside note4118703980, while retained captures preserved the table data.
+The acceptance snapshot normalizes only a height-toggle wrapper bound to its immediately preceding native table-shadow overlay, sticky scroll ID and marked table.
+Table content, native source identity and unrelated controls remain strictly compared.
+
+Installed dashboard theme checks wait for the owned surface to match the native surface after a real OS color-scheme change.
+They still require exact typography and color equality, and failures include the two bounded computed-style records.
+
+Bitbucket lazy file placeholders have no Viewed checkbox until the native diff is hydrated.
+The UI continuity lease retains original anchors, wrapper roots, tree links and existing Viewed controls, while permitting a newly hydrated native Viewed control only in its unchecked state.
+Its final comparison records field-specific identity mismatches and still rejects replaced existing controls, changed links or newly checked files.
 
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.

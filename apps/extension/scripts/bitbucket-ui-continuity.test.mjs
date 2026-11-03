@@ -115,7 +115,7 @@ test('native inventory requires actual anchors and tree links and detects replac
   const previous = globalThis.document;
   try {
     globalThis.document = window.document;
-    document.body.innerHTML = '<div id="file-tree"><ul role="list"><li><a href="#chg-test%2Ftest.py">test.py</a></li></ul></div><section role="region" aria-label="Diff"><div><div id="chg-test/test.py"></div><article><input type="checkbox"></article></div></section>';
+    document.body.innerHTML = '<div id="file-tree"><ul role="list"><li><a href="#chg-test%2Ftest.py">test.py</a></li></ul></div><section role="region" aria-label="Diff"><div><div id="chg-test/test.py"></div><article data-qa="branch-diff-file"><label>Viewed<input type="checkbox"></label></article></div></section>';
     globalThis.__geldBitbucketUiContinuity = { document };
     const initial = bitbucketUiNativeInventory(true);
     assert.deepEqual(initial.files, [{ path: 'test/test.py', anchor: 'chg-test/test.py', href: '#chg-test%2Ftest.py', viewed: false }]);
@@ -125,6 +125,20 @@ test('native inventory requires actual anchors and tree links and detects replac
   } finally { delete globalThis.__geldBitbucketUiContinuity;if (previous === undefined) delete globalThis.document;else globalThis.document = previous;window.close(); }
 });
 
+test('native file hydration may add an unchecked Viewed control while preserving existing source nodes', () => {
+  const window = new Window({ url: `${URL}/diff` });const previous = globalThis.document;
+  try {
+    globalThis.document = window.document;
+    document.body.innerHTML = '<div id="file-tree"><ul role="list"><li><a href="#chg-test%2Ftest.py">test.py</a></li></ul></div><section role="region" aria-label="Diff"><div><div id="chg-test/test.py"></div></div></section>';
+    globalThis.__geldBitbucketUiContinuity = { document };
+    assert.equal(bitbucketUiNativeInventory(true).files[0].viewed, null);
+    document.querySelector('[role="region"] > div').insertAdjacentHTML('beforeend', '<article data-qa="branch-diff-file"><label>Viewed<input type="checkbox"></label></article>');
+    const hydrated = bitbucketUiNativeInventory();assert.equal(hydrated.sameNative, true);assert.deepEqual(hydrated.hydratedControls, ['test/test.py']);assert.equal(hydrated.files[0].viewed, false);
+    document.querySelector('input').checked = true;assert.equal(bitbucketUiNativeInventory().sameNative, false);
+    document.querySelector('input').checked = false;bitbucketUiNativeInventory(true);
+    document.querySelector('input').replaceWith(document.querySelector('input').cloneNode(true));assert.equal(bitbucketUiNativeInventory().sameNative, false);
+  } finally { delete globalThis.__geldBitbucketUiContinuity;if (previous === undefined) delete globalThis.document;else globalThis.document = previous;window.close(); }
+});
 test('changed-cache errors never serialize cache contents into diagnostics', async () => {
   const f = protocol({ changed: true, cacheCanary: true });
   await assert.rejects(f.run(), error => { assert.match(error.message, /same complete cached source/);assert.doesNotMatch(String(error.stack), /CACHE_CANARY_NOT_FOR_DIAGNOSTICS/);return true; });

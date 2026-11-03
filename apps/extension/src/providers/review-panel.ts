@@ -1048,7 +1048,11 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
 
   function digestText(): string {
     const lines = ['# Geld review digest', providerReviewUrl(input.subject), ''];
-    if ((options.complete ?? input.complete) === false || (options.unavailable?.length ?? 0) > 0) lines.push('Some review data is unavailable.', '');
+    if ((options.complete ?? input.complete) === false || (options.unavailable?.length ?? 0) > 0) {
+      lines.push('Some review data is unavailable.');
+      for (const source of options.unavailable ?? []) lines.push(source.area === 'reviews' ? `Reviews source unavailable: ${source.reason}` : `${source.area}: ${source.reason}`);
+      lines.push('');
+    }
     const publication = options.publication?.result;
     if (publication !== undefined && publication.status !== 'none') {
       lines.push(`Published summary: ${publication.status}.`);
@@ -1061,7 +1065,6 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const reviews = reviewStandingSummary();
     if (reviews.coverage !== 'complete') {
       lines.push(reviews.label);
-      for (const source of options.unavailable ?? []) if (source.area === 'reviews') lines.push(`Reviews source unavailable: ${source.reason}`);
     }
     for (const reviewer of input.reviewers ?? []) lines.push(`- ${reviewer.author.login}: ${reviewerLabel(reviewer)}`);
     const summary = options.ai?.enabled === true && options.ai.state.key === identity ? options.ai.state.summary : undefined;
@@ -1273,10 +1276,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       children.push(summary);
     }
     if (panel.dataset.state === 'partial') {
-      const unavailable = node('div', '', 'geld-provider-review__unavailable');
+      const unavailable = node('p', 'Partial review · Some review data is unavailable.', 'geld-provider-review__muted');
       unavailable.setAttribute('role', 'status');
-      unavailable.append(node('p', 'Some review data is unavailable.'));
-      for (const source of options.unavailable ?? []) unavailable.append(node('p', `${source.area}: ${source.reason}`));
+      unavailable.dataset.geldReviewCoverage = 'partial';
       children.push(unavailable);
     }
     children.push(reviewStandings(), checksSection());

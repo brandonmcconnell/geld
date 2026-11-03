@@ -220,7 +220,20 @@ export function providerDashboardProbe(mode = 'read') {
       const bodySelector = provider === 'gitlab' ? entry.matches('li.js-timeline-entry.system-note') ? '[data-testid="system-note-content"]' : '.note-body .note-text' : '[data-testid="comment-content"] .ak-renderer-document';
       const bodies = [...entry.querySelectorAll(bodySelector)].filter(node => node.closest(selector) === entry && node.closest('[data-geld-ui]') === null);
       if (bodies.length !== 1) return null;
-      result.push({ owner: entry, body: bodies[0] });
+      const body = bodies[0];
+      const copy = body.cloneNode(true);
+      if (provider === 'gitlab') for (const button of copy.querySelectorAll('button[data-testid="markdown-table-height-toggle"][aria-controls]')) {
+        const wrapper = button.parentElement;
+        const overlay = wrapper?.previousElementSibling;
+        const target = overlay?.firstElementChild;
+        const table = target?.firstElementChild;
+        if (wrapper?.tagName !== 'DIV' || !wrapper.classList.contains('gl-order-1') || wrapper.children.length !== 1
+          || overlay?.getAttribute('data-testid') !== 'table-shadow-overlay' || target?.id !== button.getAttribute('aria-controls')
+          || !target.hasAttribute('data-sticky-header') || table?.tagName !== 'TABLE' || table.getAttribute('data-markdown-table-applied') !== 'true'
+          || !['true', 'false'].includes(button.getAttribute('aria-expanded'))) continue;
+        wrapper.replaceWith(document.createComment(''));
+      }
+      result.push({ owner: entry, body, text: copy.textContent, html: copy.innerHTML });
     }
     return result;
   };
@@ -228,7 +241,7 @@ export function providerDashboardProbe(mode = 'read') {
     const roots = [...document.querySelectorAll('[data-geld-provider-native-find="folded"]')].filter((node) => !panel.contains(node));
     if (roots.length > 0) globalThis[key] = { panel, url: location.href, roots: roots.map((node) => {
       const known = payloads(node);
-      return { node, parent: node.parentElement, id: node.id, qualified: known !== null, payloads: (known ?? [{ owner: node, body: node }]).map(({ owner, body }) => ({ owner, parent: owner.parentElement, id: owner.id, text: body.textContent, html: known === null ? null : body.innerHTML })) };
+      return { node, parent: node.parentElement, id: node.id, qualified: known !== null, payloads: (known ?? [{ owner: node, body: node, text: node.textContent, html: null }]).map(({ owner, text, html }) => ({ owner, parent: owner.parentElement, id: owner.id, text, html })) };
     }) };
   }
   const state = globalThis[key];
@@ -236,12 +249,33 @@ export function providerDashboardProbe(mode = 'read') {
   const sections = [...panel?.querySelectorAll('[data-geld-review-key]') ?? []];
   const bound = state?.panel === panel && state?.url === location.href;
   const custody = { identityMismatches: 0, parentMismatches: 0, idMismatches: 0, bodyMismatches: 0, payloadOrderMismatches: 0, unqualifiedPayloads: 0 };
+  const bodyChanges = [];
+  const fingerprint = value => {
+    let hash = 2166136261;
+    for (let index = 0; index < value.length; index++) hash = Math.imul(hash ^ value.charCodeAt(index), 16777619);
+    return { length: value.length, hash: (hash >>> 0).toString(16) };
+  };
+  const difference = (before, after, path = [], budget = { remaining: 20000 }) => {
+    if (--budget.remaining < 0) return { kind: 'scan-limit', path };
+    if (!before || !after || before.nodeType !== after.nodeType || before.nodeName !== after.nodeName) return { kind: 'node-shape', path, beforeType: before?.nodeType ?? null, afterType: after?.nodeType ?? null };
+    if (before.nodeType === 3 && before.textContent !== after.textContent) return { kind: 'text', path, before: fingerprint(before.textContent), after: fingerprint(after.textContent) };
+    if (before.nodeType === 1) {
+      const names = new Set([...before.attributes, ...after.attributes].map(attribute => attribute.name));
+      for (const name of names) if (before.getAttribute(name) !== after.getAttribute(name)) return { kind: 'attribute', path, name: /^[a-z][a-z0-9:_-]{0,79}$/.test(name) ? name : 'other', before: fingerprint(before.getAttribute(name) ?? ''), after: fingerprint(after.getAttribute(name) ?? '') };
+    }
+    if (path.length >= 40) return { kind: 'depth-limit', path };
+    for (let index = 0; index < Math.max(before.childNodes.length, after.childNodes.length); index++) {
+      const result = difference(before.childNodes[index], after.childNodes[index], [...path, index], budget);
+      if (result !== null) return result;
+    }
+    return null;
+  };
   for (const entry of native) {
     if (!entry.node.isConnected || entry.node.ownerDocument !== document || entry.id !== '' && document.getElementById(entry.id) !== entry.node) custody.identityMismatches++;
     if (entry.node.parentElement !== entry.parent) custody.parentMismatches++;
     if (entry.node.id !== entry.id) custody.idMismatches++;
     if (!entry.qualified) custody.unqualifiedPayloads++;
-    const current = entry.qualified ? payloads(entry.node) : [{ owner: entry.node, body: entry.node }];
+    const current = entry.qualified ? payloads(entry.node) : [{ owner: entry.node, body: entry.node, text: entry.node.textContent, html: null }];
     if (current === null || current.length !== entry.payloads.length) custody.bodyMismatches++;
     for (const [index, saved] of entry.payloads.entries()) {
       const found = current?.[index];
@@ -253,14 +287,26 @@ export function providerDashboardProbe(mode = 'read') {
       if (found?.owner !== saved.owner) custody.payloadOrderMismatches++;
       // Native hydration can replace equivalent inner wrappers. The original note/event
       // identity and its exact semantic content remain the authority, not that wrapper.
-      if (found === undefined || found.body.textContent !== saved.text || saved.html !== null && found.body.innerHTML !== saved.html) custody.bodyMismatches++;
+      if (found === undefined || found.text !== saved.text || saved.html !== null && found.html !== saved.html) {
+        custody.bodyMismatches++;
+        if (bodyChanges.length < 8) {
+          const before = document.createElement('template');
+          const after = document.createElement('template');
+          if (saved.html !== null) before.innerHTML = saved.html;
+          if (found !== undefined) after.innerHTML = found.html ?? found.body.innerHTML;
+          bodyChanges.push({ source: /^(?:note_[1-9]\d*|comment-[1-9]\d*)$/.test(saved.id) ? saved.id : null, index,
+            beforeText: fingerprint(saved.text ?? ''), afterText: fingerprint(found?.text ?? ''),
+            beforeHtml: saved.html === null ? null : fingerprint(saved.html), afterHtml: found === undefined ? null : fingerprint(found.html ?? found.body.innerHTML),
+            difference: saved.html === null || found === undefined ? { kind: 'unavailable' } : difference(before.content, after.content) });
+        }
+      }
     }
   }
   const sameOriginals = bound && custody.identityMismatches === 0 && custody.parentMismatches === 0 && custody.idMismatches === 0 && custody.bodyMismatches === 0 && custody.payloadOrderMismatches === 0;
   const sectionBindings = sections.map((section) => {
     const control = section.querySelector(':scope > button[data-geld-review-toggle]');
     const target = document.getElementById(control?.getAttribute('aria-controls') ?? '');
-    return { primary: section.parentElement === panel, nativeDetails: section.tagName === 'DETAILS', toggle: visible(control), expanded: control?.getAttribute('aria-expanded') ?? null, ownsContent: target !== null && section.contains(target) && target.classList.contains('geld-provider-review__section-content') && control.id !== '' && target.getAttribute('aria-labelledby') === control.id, contentVisible: visible(target) };
+    return { key: section.dataset.geldReviewKey ?? null, id: section.id, primary: section.parentElement === panel, nativeDetails: section.tagName === 'DETAILS', toggle: visible(control), expanded: control?.getAttribute('aria-expanded') ?? null, ownsContent: target !== null && section.contains(target) && target.classList.contains('geld-provider-review__section-content') && control.id !== '' && target.getAttribute('aria-labelledby') === control.id, contentVisible: visible(target) };
   });
   const provider = panel?.getAttribute('data-provider');
   const nativeSelector = provider === 'gitlab' ? '.issuable-discussion [data-testid="noteable-note-container"] .timeline-content' : provider === 'bitbucket' ? '[data-qa="pull-request-description"]' : null;
@@ -268,7 +314,7 @@ export function providerDashboardProbe(mode = 'read') {
   const nativeBodyAppearance = appearance(document.body);
   const nativeSurfaceAppearance = appearance(nativeSurface);
   return {
-    panelCount: panels.length, panelVisible: visible(panel), bound, sameOriginals, custody,
+    panelCount: panels.length, panelVisible: visible(panel), bound, sameOriginals, custody, bodyChanges,
     overviewVisible: visible(panel?.querySelector('[data-geld-review-overview]')),
     metrics: ['open', 'comments', 'activity'].map((name) => ({ name, visible: visible(panel?.querySelector(`[data-geld-review-metric="${name}"]`)) })),
     sectionBindings: sectionBindings.slice(0, 40), truncated: sectionBindings.length > 40 || native.length > 1000,
@@ -298,7 +344,7 @@ export function assertProviderDashboard(snapshot, originalsVisible = false) {
   assert.ok(snapshot.representedMounted > 0, 'Mounted digest sources must have real native counterparts');
   assert.equal(snapshot.representedVisible, originalsVisible ? snapshot.representedMounted : 0, 'Every represented native source must follow original-conversation visibility');
   assert.equal(snapshot.nativeSurfaceAvailable, true, 'A genuine non-owned native card surface is required');
-  assert.deepEqual(snapshot.appearance, snapshot.nativeAppearance, 'Dashboard typography and colors must match native body text and card surface');
+  assert.deepEqual(snapshot.appearance, snapshot.nativeAppearance, `Dashboard typography and colors must match native body text and card surface: ${JSON.stringify({ actual: snapshot.appearance, native: snapshot.nativeAppearance })}`);
 }
 
 export async function verifyProviderDashboardUi(page, progress, { poll, capture, onOriginalsShown }) {
@@ -309,30 +355,76 @@ export async function verifyProviderDashboardUi(page, progress, { poll, capture,
     const handle = handles[index ?? 0];
     try {
       await handle.evaluate((node) => node.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'nearest' }));
-      const point = await handle.evaluate((node) => {
-        if (!node.isConnected || node.disabled) return null;
-        const box = node.getBoundingClientRect();const x = box.left + box.width / 2;const y = box.top + box.height / 2;
-        const hit = document.elementFromPoint(x, y);
-        return box.width > 0 && box.height > 0 && x > 0 && y > 0 && x < innerWidth && y < innerHeight && hit !== null && node.contains(hit) ? { x, y } : null;
-      });
-      assert.ok(point, 'The original dashboard control must have an unobscured visible click point');
       const custody = await read();
-      assert.equal(custody.sameOriginals, true, `Original conversation changed before the real pointer input: ${JSON.stringify(custody.custody)}`);
+      assert.equal(custody.sameOriginals, true, `Original conversation changed before the real pointer input: ${JSON.stringify({ custody: custody.custody, bodyChanges: custody.bodyChanges })}`);
+      const point = await handle.evaluate(async (node) => {
+        let previous = null;
+        let stable = 0;
+        for (let frame = 0; frame < 24; frame++) {
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          if (!node.isConnected || node.disabled) return { ready: false, reason: 'detached-or-disabled', sample: previous };
+          const box = node.getBoundingClientRect();const x = box.left + box.width / 2;const y = box.top + box.height / 2;
+          const hit = document.elementFromPoint(x, y);
+          const next = { x, y, width: box.width, height: box.height };
+          const visible = box.width > 0 && box.height > 0 && x > 0 && y > 0 && x < innerWidth && y < innerHeight && hit !== null && node.contains(hit);
+          stable = visible && previous !== null && Object.keys(next).every((key) => Math.abs(next[key] - previous[key]) < 0.25) ? stable + 1 : 0;
+          previous = next;
+          if (stable < 2) continue;
+          const state = { node, receipt: null, listener: null, afterListener: null };
+          const expansion = () => ({ target: node.getAttribute('aria-expanded'), current: node.id ? document.getElementById(node.id)?.getAttribute('aria-expanded') ?? null : null, connected: node.isConnected });
+          state.listener = (event) => {
+            const sameControl = event.currentTarget === node && node.contains(event.target);
+            state.receipt = { trusted: event.isTrusted, trustedTargetCount: event.isTrusted && sameControl ? 1 : 0, connected: node.isConnected, sameControl, controlId: node.id, sectionKey: node.parentElement?.dataset.geldReviewKey ?? null, x: event.clientX, y: event.clientY, before: expansion(), immediate: null, microtask: null };
+          };
+          state.afterListener = () => {
+            if (state.receipt === null) return;
+            state.receipt.immediate = expansion();
+            queueMicrotask(() => { if (state.receipt !== null) state.receipt.microtask = expansion(); });
+          };
+          node.addEventListener('click', state.listener, { capture: true, once: true });
+          node.addEventListener('click', state.afterListener, { once: true });
+          globalThis.__geldDashboardPointerReceipt = state;
+          return { ready: true, ...next, controlId: node.id, sectionKey: node.parentElement?.dataset.geldReviewKey ?? null, sectionId: node.parentElement?.id ?? null, expandedBefore: node.getAttribute('aria-expanded') };
+        }
+        return { ready: false, reason: 'unstable-or-obscured', sample: previous };
+      });
+      progress.clicks ??= [];
+      const attempt = { point, receipt: null };
+      progress.clicks.push(attempt);
+      assert.equal(point.ready, true, 'The original dashboard control must have a stable unobscured visible click point');
       await page.mouse.click(point.x, point.y);
-    } finally { await Promise.all(handles.map((entry) => entry.dispose())); }
+      const receipt = await handle.evaluate((node) => {
+        const state = globalThis.__geldDashboardPointerReceipt;
+        return state?.node === node ? state.receipt : null;
+      });
+      attempt.receipt = receipt;
+      assert.ok(receipt?.trusted && receipt.trustedTargetCount === 1 && receipt.connected && receipt.sameControl, 'The original dashboard control must receive the trusted click before waiting for its result');
+    } finally {
+      if (!page.isClosed()) await handle.evaluate(() => {
+        const state = globalThis.__geldDashboardPointerReceipt;
+        state?.node.removeEventListener('click', state.listener, true);
+        state?.node.removeEventListener('click', state.afterListener);
+        delete globalThis.__geldDashboardPointerReceipt;
+      });
+      await Promise.all(handles.map((entry) => entry.dispose()));
+    }
   };
   try {
     progress.baseline = await poll(() => read('bind'), (value) => value.bound && value.originalCount > 0 && value.overviewVisible, 'Visible dashboard and retained original conversation');
     assertProviderDashboard(progress.baseline);
     progress.initialScreenshot = await capture('dashboard-native-hidden');
-    const sectionSelector = '.geld-provider-review > [data-geld-review-key] > button[data-geld-review-toggle]';
-    const beforeExpanded = progress.baseline.sectionBindings.find((section) => section.primary)?.expanded;
-    await click(sectionSelector, 0);
-    progress.sectionToggled = await poll(read, (value) => value.sectionBindings.find((section) => section.primary)?.expanded !== beforeExpanded && value.sameOriginals, 'Real custom dashboard disclosure changes its body');
-    const toggled = progress.sectionToggled.sectionBindings.find((section) => section.primary);
+    const section = progress.baseline.sectionBindings.find((section) => section.primary);
+    assert.ok(section?.key && section.id, 'The first primary dashboard section must have a stable identity');
+    const selected = (value) => value.sectionBindings.find((candidate) => candidate.primary && candidate.key === section.key && candidate.id === section.id);
+    const sectionSelector = `.geld-provider-review > [data-geld-review-key=${JSON.stringify(section.key)}] > button[data-geld-review-toggle]`;
+    const beforeExpanded = section.expanded;
+    const expectedExpanded = beforeExpanded === 'true' ? 'false' : 'true';
+    await click(sectionSelector);
+    progress.sectionToggled = await poll(read, (value) => selected(value)?.expanded === expectedExpanded && value.sameOriginals, 'Real custom dashboard disclosure changes its body');
+    const toggled = selected(progress.sectionToggled);
     assert.equal(toggled.contentVisible, toggled.expanded === 'true', 'Dashboard disclosure controls actual content visibility');
-    await click(sectionSelector, 0);
-    await poll(read, (value) => value.sectionBindings.find((section) => section.primary)?.expanded === beforeExpanded && value.sameOriginals, 'Custom dashboard disclosure restores its original state');
+    await click(sectionSelector);
+    await poll(read, (value) => selected(value)?.expanded === beforeExpanded && value.sameOriginals, 'Custom dashboard disclosure restores its original state');
     await click('button[data-geld-original-conversation]');
     progress.originalsShown = await poll(read, (value) => value.originalVisible === value.originalCount && value.sameOriginals, 'Real Show original conversation restores retained native entries');
     assertProviderDashboard(progress.originalsShown, true);
@@ -344,7 +436,7 @@ export async function verifyProviderDashboardUi(page, progress, { poll, capture,
     }
     await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
     await new Promise((resolve) => setTimeout(resolve, 350));
-    progress.dark = await poll(read, (value) => value.sameOriginals, 'Dashboard remains current under native dark preference');
+    progress.dark = await poll(read, (value) => value.sameOriginals && JSON.stringify(value.appearance) === JSON.stringify(value.nativeAppearance), 'Dashboard matches the settled native dark preference');
     assertProviderDashboard(progress.dark);
     progress.darkMode = progress.dark.nativeAppearance.color !== progress.baseline.nativeAppearance.color || progress.dark.nativeAppearance.background !== progress.baseline.nativeAppearance.background ? 'native_dark_observed' : 'native_did_not_switch';
     if (progress.darkMode === 'native_dark_observed') progress.darkScreenshot = await capture('dashboard-native-dark');
