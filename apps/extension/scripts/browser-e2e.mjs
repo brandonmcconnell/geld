@@ -11,6 +11,7 @@ import { commentBodyPresentationProbe, compareCommentBodyPresentation } from './
 import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-list-row.mjs';
 import { bitbucketColdChipVisibilityProbe, bitbucketCountIntentRequests } from './bitbucket-cold-chip.mjs';
 import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-shell-acceptance.mjs';
+import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommitFixture } from './bitbucket-commit-oracle.mjs';
 
 const extensionRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const extensionPath = resolve(extensionRoot, '.output/chrome-mv3');
@@ -25,6 +26,7 @@ const FOCUSED_CASES = {
   'bitbucket-list': ['bitbucket-list-counts'],
   'bitbucket-comment': ['bitbucket-comment-digest'],
   'bitbucket-commit': ['bitbucket-commit-counts'],
+  'bitbucket-list-commit': ['bitbucket-list-counts', 'bitbucket-commit-counts'],
   'gitlab-lists': ['gitlab-project-mr-list', 'gitlab-group-mr-list'],
   'gitlab-diff': ['gitlab-mixed', 'gitlab-all-tests'],
   'gitlab-review': ['gitlab-overview-digest'],
@@ -35,6 +37,8 @@ const FOCUSED_CASES = {
   'cross-provider-settings': ['cross-provider-settings'],
 };
 const focus = process.env.GELD_BROWSER_FOCUS ?? 'regression';
+const coldBitbucketList = ['bitbucket-list', 'bitbucket-list-commit'].includes(focus);
+const commitSources = new WeakMap();
 const GL_MIXED = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs?diff_id=2158520123';
 const GL_OVERVIEW = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334';
 const GL_BOT = 'https://gitlab.com/whitebox-aero/whitebox/-/merge_requests/272';
@@ -343,6 +347,7 @@ async function runCase(name, url, body, discovery = false) {
     });
     if (name === 'gitlab-bot-digest') observeGitLabBotFixture(page, item);
     if (name === 'bitbucket-diff') observeBitbucketShellFixture(page, item, { safeUrl, extensionId });
+    if (name === 'bitbucket-commit-counts') commitSources.set(page, observeBitbucketCommitFixture(page, item));
     const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     abort.signal.throwIfAborted();
     item.navigation = { status: response?.status() ?? null, finalUrl: safeUrl(page.url()) };
@@ -1993,11 +1998,11 @@ async function bitbucketListCounts(page, item) {
     assert.ok(coldChipVisibility.rows.some((row) => row.href === '/atlassian/bitbucket-upload-file/pull-requests/25'), 'The actual long-title PR25 cold chip must be covered before any count intent');
     assert.equal(coldChipVisibility.allVisible, true, `Every fully on-screen cold instruction must fit and remain unobscured: ${JSON.stringify(coldChipVisibility)}`);
     const beforeIntentLabel = await targetLabel();
-    if (focus === 'bitbucket-list') {
+    if (coldBitbucketList) {
       assert.equal(coldLabel, 'Hover to count changes', 'Isolated list verification must start with a cold source');
       assert.equal(beforeIntentLabel, 'Hover to count changes', 'The isolated target must stay cold until real pointer intent');
     }
-    const sourceDemand = { mode: beforeIntentLabel === 'Hover to count changes' ? 'cold_before_intent' : /\b0 tests?\b/.test(beforeIntentLabel ?? '') && beforeIntentLabel.includes('+46') && beforeIntentLabel.includes('−29') ? 'warm_cache_before_intent' : 'noncold_all_before_intent', initialLabel: coldLabel, beforeIntentLabel, coldRequired: focus === 'bitbucket-list' };
+    const sourceDemand = { mode: beforeIntentLabel === 'Hover to count changes' ? 'cold_before_intent' : /\b0 tests?\b/.test(beforeIntentLabel ?? '') && beforeIntentLabel.includes('+46') && beforeIntentLabel.includes('−29') ? 'warm_cache_before_intent' : 'noncold_all_before_intent', initialLabel: coldLabel, beforeIntentLabel, coldRequired: coldBitbucketList };
     if (sourceDemand.mode !== 'cold_before_intent') assert.equal(focus, 'all', 'Only the all slice may observe a prewarmed or pending target source');
     const intent = await page.evaluateHandle((selector) => [...document.querySelectorAll(selector)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0), selector);
     assert.ok(intent.asElement() !== null);
@@ -2206,13 +2211,48 @@ async function bitbucketCommentDigest(page) {
     writeVerification: 'Native bootstrap explicitly anonymous. Owned Reply/Resolve/Reopen and global quick actions are absent; no provider write controls are activated.' };
 }
 
+async function bitbucketParentCommitHover(page, oracle) {
+  const remaining = report.quotaPolicy.conservativeObservedRequestBudget - bitbucketRequestTimes.filter((time) => time > Date.now() - 60 * 60 * 1000).length;
+  if (remaining < 8) return { status: 'unverified', reason: 'Optional native parent hover lacks an eight-request budget reserve.', remaining };
+  const initial = await page.evaluate(bitbucketParentCommitSnapshot);
+  if (initial === null || initial.links.length !== 1) return { status: 'unverified', reason: 'The observed native Details/Parent commits structure did not supply one actual immutable parent link.', native: initial };
+  let pointer;
+  let keyboard;
+  let observed;
+  let native;
+  try {
+    if (!initial.links[0].visible) await page.click('[data-testid="sidebar-tab-details"][role="tab"]');
+    native = await poll(() => page.evaluate(bitbucketParentCommitSnapshot), (value) => value?.links.length === 1 && value.links[0].visible, 'Actual visible native parent link after its existing Details tab opens', 5000);
+    assert.equal(native.links[0].href, initial.links[0].href, 'Native parent identity changed during discovery');
+    const selector = `[data-testid="expanded-CommitCard"] a[href="${native.links[0].raw}"]`;
+    pointer = await installedHover(page, selector, 'pointer', 'bitbucket-parent-commit-pointer', undefined, true);
+    observed = await poll(() => oracle.snapshot(native.links[0].sha), (value) => value.status === 'ready', 'Already-issued metadata and complete diffstat for the hovered native parent', 3000);
+    keyboard = await installedHover(page, selector, 'keyboard', 'bitbucket-parent-commit-keyboard', undefined, true);
+  } catch (error) {
+    if (page.isClosed() || currentCaseAbort?.signal.aborted || (cooldowns.get('bitbucket') ?? 0) > Date.now()) throw error;
+    return { status: 'unverified', reason: errorText(error), native: native ?? initial, pointer, oracle: oracle.snapshot(initial.links[0].sha), remaining };
+  }
+  assert.deepEqual(commitHoverTotal(pointer.rows), observed.totals, 'Parent hover does not describe its own observed immutable diffstat');
+  assert.deepEqual(commitHoverTotal(keyboard.rows), observed.totals);
+  assert.equal(pointer.text, keyboard.text);
+  const after = await page.evaluate(bitbucketParentCommitSnapshot);
+  assert.equal(after?.links[0]?.href, native.links[0].href);
+  assert.equal(after?.links[0]?.text, native.links[0].text);
+  return { status: 'passed', native, pointer, keyboard, oracle: observed, remainingBeforeDiscovery: remaining, basis: 'A genuine native parent link, real pointer and Tab input, and its own already-issued full metadata/diffstat responses. No parent count is assumed.' };
+}
+
 async function bitbucketCommitCounts(page) {
+  const oracle = commitSources.get(page);
+  assert.ok(oracle !== undefined, 'Commit response observer must attach before navigation');
+  const ref = new URL(page.url()).pathname.split('/').at(-1);
+  const source = await poll(() => oracle.snapshot(ref), (value) => value.status === 'ready', 'Complete already-issued standalone commit metadata and diffstat oracle', 15_000);
+  assert.deepEqual(source.files.map((file) => file.path), ['pipe/pipe.py'], 'The immutable standalone fixture no longer has its observed sole file');
   const read = () => page.evaluate(() => ({
     heading: [...document.querySelectorAll('[role="region"][aria-label="Diff"] > div > div > h2')].find((node) => /^[\d,]+ files?$/.test(node.textContent.trim()))?.textContent.trim() ?? null,
     badge: document.querySelector('[data-testid="sidebar-tab-files"][role="tab"] > span > div > span > span')?.textContent.trim() ?? null,
     file: document.getElementById('chg-pipe/pipe.py')?.parentElement == null ? null : { id: document.getElementById('chg-pipe/pipe.py').id, display: getComputedStyle(document.getElementById('chg-pipe/pipe.py').parentElement).display, hidden: document.getElementById('chg-pipe/pipe.py').parentElement.getAttribute('data-geld-provider-hidden'), path: document.getElementById('chg-pipe/pipe.py').parentElement.querySelector('[data-qa="bk-filepath"]')?.textContent ?? null },
     nativeLinks: [...document.querySelectorAll('[role="region"][aria-label="Diff"] a[href]')].filter((node) => node.closest('[data-geld-ui]') === null).map((node) => node.getAttribute('href')) }));
-  const all = { files: 1, additions: 2, deletions: 0 };
+  const all = source.totals;
   const baseline = await waitTotals(page, all, all, 0);
   const native = await poll(read, (value) => value.heading === '1 file' && value.badge === '1' && value.file?.path === 'pipe/pipe.py', 'Actual standalone commit heading and sidebar Files badge');
   const headerGroup = '[role="region"][aria-label="Diff"] > div > div > h2';
@@ -2246,7 +2286,8 @@ async function bitbucketCommitCounts(page) {
   assert.equal(restored.file.id, native.file.id);assert.deepEqual(restored.nativeLinks, native.nativeLinks);
   const restoredHeaderHints = await headerHintsEvidence(page, '0 tests', headerGroup, 'bitbucket-commit-restored', false);
   assert.deepEqual(restoredHeaderHints.nativeIds, baselineHeaderHints.nativeIds);
-  return { baseline, native, baselineHeaderHints, filtered, filteredHeaderHints, autoOpened, hideClick, hidden, hiddenArtifacts, showClick, restoredState, restored, restoredHeaderHints, nativeFingerprint: createHash('sha256').update(JSON.stringify({ id: native.file.id, path: native.file.path, links: native.nativeLinks })).digest('hex'), nativeLineTotals: 'No native added/deleted header summary is present. Only actual runtime totals and native file-count surfaces are asserted.' };
+  const parentHover = await bitbucketParentCommitHover(page, oracle);
+  return { source, baseline, native, baselineHeaderHints, filtered, filteredHeaderHints, autoOpened, hideClick, hidden, hiddenArtifacts, showClick, restoredState, restored, restoredHeaderHints, parentHover, nativeFingerprint: createHash('sha256').update(JSON.stringify({ id: native.file.id, path: native.file.path, links: native.nativeLinks })).digest('hex'), nativeLineTotals: 'No native added/deleted header summary is present. Already-issued metadata/diffstat is the independent count oracle; actual native file-count surfaces are asserted.' };
 }
 
 await mkdir(artifacts, { recursive: true });
@@ -2426,7 +2467,7 @@ try {
     item.commitCounts = await bitbucketCommitCounts(page);
     item.state = await tabState(page);
     item.featureParity = 'partial';
-    return { status: 'passed', verified: 'The actual standalone commit has one file and two added lines in runtime state. Its native file heading and badge reach zero under a real synchronized custom rule, hide the actual file, and restore with native IDs/links preserved.' };
+    return { status: 'passed', verified: `Standalone totals match complete already-issued immutable metadata/diffstat responses. The native heading and badge reach zero under a real synchronized custom rule, hide the actual file, and restore with native IDs/links preserved. ${item.commitCounts.parentHover.status === 'passed' ? 'The genuine native parent link also shows its own observed immutable count breakdown by pointer and real Tab input.' : `Parent hover remains unverified: ${item.commitCounts.parentHover.reason}`}` };
   });
 
   await runCase('gitlab-binary-counts', GL_BINARY, async (page, item) => gitLabBinaryCounts(page, item));
