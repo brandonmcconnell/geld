@@ -58,6 +58,7 @@ import { quietClick } from './quiet-click';
 import { fitChips, stopFittingChips } from './fit-chips';
 import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrphanedLoans, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
+import { pageFetch } from '../page-fetch';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
@@ -1135,7 +1136,7 @@ function fragmentLanded(): void {
 async function fetchFragment(fragment: Element, src: string): Promise<void> {
   const { signal } = fragmentAbort;
   try {
-    const response = await fetch(new URL(src, location.href), { headers: fragmentHeaders(), credentials: 'same-origin', signal });
+    const response = await pageFetch(src, { headers: fragmentHeaders(), credentials: 'same-origin', signal });
     if (!response.ok) {
       failedFragments.set(src, Date.now());
       return;

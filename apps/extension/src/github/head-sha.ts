@@ -1,4 +1,5 @@
 import { compareHome } from './review/teleport';
+import { pageFetch } from './page-fetch';
 
 const SHA = /^[0-9a-f]{40}$/i;
 
@@ -148,7 +149,7 @@ function newestCommit(value: unknown, best: { oid: string; at: number } | null, 
  */
 export async function fetchHeadSha(pullPath: string): Promise<string | null> {
   try {
-    const response = await fetch(new URL(`${pullPath}/commits`, location.href), {
+    const response = await pageFetch(`${pullPath}/commits`, {
       credentials: 'same-origin',
       headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     });

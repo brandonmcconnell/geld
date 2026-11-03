@@ -1,3 +1,5 @@
+import { pageFetch } from './page-fetch';
+
 /**
  * What the reader may do to the pull request beyond reviewing it, and the
  * requests that do it, as GitHub's React merge box reads and sends them
@@ -282,7 +284,7 @@ function fetchNonce(): string {
 /** The merge box for a method, or null when GitHub could not say. */
 export async function fetchMergeBox(pullPath: string, method: MergeMethod, bypass: boolean): Promise<MergeBox | null> {
   try {
-    const response = await fetch(new URL(mergeBoxUrl(pullPath, method, bypass), location.href), { credentials: 'same-origin', headers: headers(fetchNonce(), false) });
+    const response = await pageFetch(mergeBoxUrl(pullPath, method, bypass), { credentials: 'same-origin', headers: headers(fetchNonce(), false) });
     if (!response.ok) return null;
     return parseMergeBox(await response.json());
   } catch {
@@ -324,7 +326,7 @@ export function parseStack(payload: unknown, pullPath: string): readonly StackMe
 
 async function readStack(pullPath: string, box: MergeBox): Promise<Stack | null> {
   try {
-    const response = await fetch(new URL(`${pullPath}/page_data/stacks`, location.href), { credentials: 'same-origin', headers: headers(fetchNonce(), false) });
+    const response = await pageFetch(`${pullPath}/page_data/stacks`, { credentials: 'same-origin', headers: headers(fetchNonce(), false) });
     if (!response.ok) return null;
     const members = parseStack(await response.json(), pullPath);
     if (members === null) return null;

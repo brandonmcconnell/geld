@@ -21,6 +21,7 @@ import type { PullStatus, StackAction, StackChoice, StackGroup, StatusOption } f
 import { ATTR_INSTANT_MERGE, rememberStatusHint, removeStatusPills, showMergedPills, STATUS_INFO, stackConfirmWords, stackGroups, statusHint, statusOf, statusOptions, syncStatusPills } from './status-pill';
 import { fetchReviewers, REVIEW_BY_HASH, REVIEWS_HASH, reviewLink, standingReviewers, tallyOf, tallyWords } from './review-tally';
 import { ICON_ALERT_FILL_12, ICON_CHECK, ICON_CHECK_SEND, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CODE_REVIEW, ICON_CODE_REVIEW_SEND, ICON_COMMENT, ICON_COMMENT_SEND, ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_SPINNER, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_X, ICON_X_SEND } from './ui/icons';
+import { pageFetch } from './page-fetch';
 
 /**
  * The review controls in the pull request's tab bar, left of the line
@@ -1791,7 +1792,7 @@ async function sendReview(state: Mounted, event: ReviewEvent, body: string): Pro
   window.clearTimeout(state.submittedTimer);
   state.status.textContent = 'Submitting…';
   try {
-    const response = await fetch(new URL(url, location.href), init);
+    const response = await pageFetch(url, init);
     if (!response.ok) {
       const payload: unknown = await response.json().catch(() => null);
       return reviewErrorText(response.status, payload);
@@ -1846,7 +1847,7 @@ async function sendComment(state: Mounted, text: string): Promise<string | null>
   window.clearTimeout(state.submittedTimer);
   state.status.textContent = 'Posting…';
   try {
-    const response = await fetch(new URL(url, location.href), init);
+    const response = await pageFetch(url, init);
     if (!response.ok) {
       const payload: unknown = await response.json().catch(() => null);
       const said = messageOf(payload);
@@ -2257,7 +2258,7 @@ async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Ste
       if (!here()) return null;
       const answer = (async (): Promise<string | null> => {
         try {
-          const response = await fetch(new URL(step.request.url, location.href), step.request.init);
+          const response = await pageFetch(step.request.url, step.request.init);
           const payload: unknown = await response.json().catch(() => null);
           const refused = typeof payload === 'object' && payload !== null && Reflect.get(payload, 'status') === 'failed';
           return !response.ok || refused ? actionErrorText(kind, response.status, payload) : null;
