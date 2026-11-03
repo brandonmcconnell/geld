@@ -48,7 +48,7 @@ export function DigestCard({
       ref={cardRef}
       style={{ width, maxHeight }}
       className={cn(
-        '@container pointer-events-auto flex origin-bottom-right flex-col overflow-hidden rounded-xl border bg-card text-[0.8125rem] shadow-xl transition-[opacity,scale] duration-300',
+        '@container pointer-events-auto flex origin-bottom flex-col overflow-hidden rounded-xl border bg-card text-[0.8125rem] shadow-xl transition-[opacity,scale] duration-300',
         open ? 'scale-100 opacity-100' : 'pointer-events-none scale-95 opacity-0',
       )}
     >
@@ -60,7 +60,7 @@ export function DigestCard({
         </div>
       )}
       {compact ? (
-        <div className="flex flex-1 flex-wrap content-start gap-1.5 p-2">
+        <div className="flex flex-wrap gap-1.5 p-2">
           {rows.map((row) => (
             <span
               key={row}
@@ -74,8 +74,8 @@ export function DigestCard({
         </div>
       ) : (
         rows.map((row) => (
-          <div key={row} ref={rowRef(row)} className={cn('flex min-h-11 flex-1 items-center gap-3 border-t px-4 py-2 transition-opacity duration-300', !filled(digest, row) && 'opacity-30')}>
-            <span className="w-[5.5rem] shrink-0 text-[0.75rem] text-muted-foreground">{LABEL[row]}</span>
+          <div key={row} ref={rowRef(row)} className={cn('flex min-h-11 shrink-0 items-center gap-3 border-t px-4 py-2 @max-[23rem]:gap-2 @max-[23rem]:px-3 transition-opacity duration-300', !filled(digest, row) && 'opacity-30')}>
+            <span className="w-[5.5rem] shrink-0 text-[0.75rem] text-muted-foreground @max-[23rem]:w-[4.75rem]">{LABEL[row]}</span>
             <span className="flex min-w-0 flex-1 items-center gap-2">
               <RowValue digest={digest} row={row} />
             </span>
@@ -140,14 +140,15 @@ function RowValue({ digest, row }: { readonly digest: Digest; readonly row: Dige
             {digest.reviews.approved.length > 0 && (
               <span className="inline-flex items-center gap-1">
                 <CircleCheckIcon aria-hidden="true" className="size-3.5 text-addition" />
-                {digest.reviews.approved.length} approved
+                {digest.reviews.approved.length}
+                <Wide> approved</Wide>
               </span>
             )}
             {digest.reviews.changes.length > 0 && (
               <span className="inline-flex items-center gap-1">
                 <CircleXIcon aria-hidden="true" className="size-3.5 text-deletion" />
-                {digest.reviews.changes.length} <Wide>{digest.reviews.changes.length === 1 ? 'change ' : 'changes '}</Wide>
-                requested
+                {digest.reviews.changes.length}
+                <Wide>{digest.reviews.changes.length === 1 ? ' change requested' : ' changes requested'}</Wide>
               </span>
             )}
           </span>
@@ -161,7 +162,7 @@ function RowValue({ digest, row }: { readonly digest: Digest; readonly row: Dige
             <span>
               <span className="font-semibold">{digest.comments}</span> {digest.comments === 1 ? 'comment' : 'comments'}
               {digest.needsYou > 0 && (
-                <span className="ml-1.5 rounded-full bg-foreground px-1.5 py-px text-[0.6875rem] font-semibold text-background @max-[25.5rem]:hidden">{digest.needsYou} for you</span>
+                <span className="ml-1.5 rounded-full bg-foreground px-1.5 py-px text-[0.6875rem] font-semibold text-background @max-[23rem]:hidden">{digest.needsYou} for you</span>
               )}
             </span>
             {digest.botComments > 0 && (
@@ -308,11 +309,11 @@ function ChipValue({ digest, row }: { readonly digest: Digest; readonly row: Dig
 
 /** Words only a wide card has room for; a narrow card says the same without them. */
 function Wide({ children }: { readonly children: React.ReactNode }) {
-  return <span className="@max-[25.5rem]:hidden">{children}</span>;
+  return <span className="@max-[23rem]:hidden">{children}</span>;
 }
 
 function Narrow({ children }: { readonly children: React.ReactNode }) {
-  return <span className="hidden @max-[25.5rem]:inline">{children}</span>;
+  return <span className="hidden @max-[23rem]:inline">{children}</span>;
 }
 
 function Stack({ people, fallback, size = 20 }: { readonly people: readonly Person[]; readonly fallback: React.ReactNode; readonly size?: number }) {

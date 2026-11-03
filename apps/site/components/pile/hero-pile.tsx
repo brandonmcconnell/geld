@@ -16,7 +16,12 @@ import { PileCard } from './pile-card';
 const AUTO_GELD_AFTER = 2.4;
 /** Gaps between lines of the hero's words narrower than this are filled, so no card wedges into one. */
 const LINE_GAP = 44;
-const CARD_WIDTH = 440;
+/** The card's natural width; narrower than this it says less (digest-card's `@max-[23rem]`). */
+const CARD_WIDTH = 380;
+/** Narrower than this beside the words, the card goes under them as chips instead. */
+const CARD_MIN = 240;
+/** The least room kept between the heading and the card. */
+const CARD_GAP = 40;
 const ROW_HEIGHT = 50;
 const CARD_CHROME = 48;
 const CHIP_LINE = 34;
@@ -31,7 +36,7 @@ interface Layout {
   readonly height: number;
   /** Anchored by its right edge, so the label changing never moves it. */
   readonly toggle: { readonly right: number; readonly top: number };
-  readonly card: { readonly width: number; readonly maxHeight: number };
+  readonly card: { readonly left: number; readonly width: number; readonly maxHeight: number };
   readonly words: Rect;
 }
 
@@ -101,6 +106,8 @@ export function HeroPile() {
   const last = useRef(0);
   const interacted = useRef(false);
   const landedAt = useRef<number | null>(null);
+  /** When the last card was poured; a pile still jostling this long after counts as landed. */
+  const pouredAt = useRef<number | null>(null);
   const drag = useRef<{ index: number; dx: number; dy: number; x: number; y: number; t: number; vx: number; vy: number } | null>(null);
 
   const [geld, setGeld] = useState(false);
@@ -146,7 +153,8 @@ export function HeroPile() {
       last.current = now;
       step(bodies.current, current, dt);
       paint();
-      if (landedAt.current === null && pending.current.size === 0 && bodies.current.length > 0 && settled(bodies.current)) landedAt.current = now;
+      const lastPour = pouredAt.current;
+      if (landedAt.current === null && pending.current.size === 0 && bodies.current.length > 0 && (settled(bodies.current) || (lastPour !== null && now - lastPour > 3000))) landedAt.current = now;
       if (!settled(bodies.current) || drag.current !== null) frame.current = requestAnimationFrame(loop);
     };
     frame.current = requestAnimationFrame(loop);
@@ -193,15 +201,19 @@ export function HeroPile() {
     const right = heroBox.right - origin.left - padRight;
     const top = floor - th;
     obstacles.push({ left: right - tw - 4, top: top - 4, right: right + 4, bottom: floor + 8 });
-    // Beside the words when there is room for the card there, else in the band under them.
-    const beside = right - words.right - 12;
-    const width = Math.min(CARD_WIDTH, beside >= 300 ? beside : right - 8);
-    const ceiling = beside >= 300 ? 8 : words.bottom + 8;
+    // Beside the words where there is room: centred over the switch, pushed right as the heading comes near until it is flush with the switch, then narrower. Else under the words.
+    const toggleRight = origin.width - right;
+    const reach = right + Math.max(0, Math.min(120, toggleRight - 24));
+    const nearest = words.right + CARD_GAP;
+    const fitsBeside = reach - nearest >= CARD_MIN;
+    const width = fitsBeside ? Math.min(CARD_WIDTH, reach - nearest) : Math.min(CARD_WIDTH, right - 8);
+    const left = fitsBeside ? Math.max(nearest, Math.min(reach - width, right - tw / 2 - width / 2)) : right - width;
+    const ceiling = fitsBeside ? 8 : words.bottom + 8;
     return {
       world: { width: origin.width, floor, obstacles, sink: { x: right - tw / 2, y: top + th / 2 } },
       height: origin.height,
-      toggle: { right: origin.width - right, top },
-      card: { width, maxHeight: Math.max(0, top - GAP_ABOVE_SWITCH - ceiling) },
+      toggle: { right: toggleRight, top },
+      card: { left, width, maxHeight: Math.max(0, top - GAP_ABOVE_SWITCH - ceiling) },
       words,
     };
   }, []);
@@ -272,6 +284,7 @@ export function HeroPile() {
             const body = bodies.current[index];
             if (!body || !pending.current.has(index) || region === undefined) return;
             pending.current.delete(index);
+            pouredAt.current = performance.now();
             const span = region.right - region.left - body.w;
             body.x = region.left + body.w / 2 + (span > 0 ? across * span : span / 2);
             body.y = region.at ?? -body.h;
@@ -506,7 +519,7 @@ export function HeroPile() {
         ))}
       </div>
       {layout !== null && (
-        <div aria-hidden="true" className="absolute z-40" style={{ right: layout.toggle.right, bottom: layout.height - layout.toggle.top + GAP_ABOVE_SWITCH }}>
+        <div aria-hidden="true" className="absolute z-40" style={{ left: layout.card.left, bottom: layout.height - layout.toggle.top + GAP_ABOVE_SWITCH }}>
           <DigestCard
             digest={digest}
             rows={rows.rows}
