@@ -2175,3 +2175,9 @@ The default raw collector remains pinned to its original exact URL, and no eligi
   File-menu arming keeps mandatory original center ownership and bounded cardinal inset hits, with center and edge overlays still rejected, while legacy corner flags and normalized radius numbers are diagnostic only.
   Fixed operation phases, handle/asElement and actual arm/hit results are retained before assertions, and handle/listener cleanup cannot replace the primary rejected stage.
   URL-omitted response failures report only safe known-provider and standard-Bitbucket-API enums, without retroactively identifying295's unclassified429 or claiming all HTTP mutations are observed.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
