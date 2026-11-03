@@ -19,11 +19,12 @@ import { authorOf, avatarSrcForLogin } from './crawler';
 import { fitPathInto } from './path-fit';
 import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
-import { ATTR_TIME_FOR } from './panel';
+import { ATTR_EDITED_FOR, ATTR_TIME_FOR } from './panel';
 import { isTeleported, onRestore, teleportInto } from './teleport';
 import { inlineText } from './inline-text';
 import { armViaHovercard } from './via';
 import type { ViaBot } from './via';
+import { isMinimizedWrapper } from './edit-times';
 import type { RevisionView } from './edit-times';
 import { editedMark } from './edited-mark';
 import { relativeTimeElement } from './time';
@@ -42,8 +43,6 @@ const BODY_SELECTOR = '.comment-body, .js-comment-body, [data-testid="comment-bo
 const MESSAGE_SELECTOR = '.timeline-comment, .js-comment, .review-comment, .react-issue-comment, [data-testid="comment-container"], [data-testid="review-thread-comment"], [id^="discussion_r"]';
 const META_SELECTOR = '.timeline-comment-header, .timeline-comment-actions, [data-testid="comment-header"], h3, a.author, a[data-testid="author-link"]';
 const REACTIONS_SELECTOR = '.comment-reactions, .js-reactions-container, [data-testid="reactions"], [data-testid="comment-reactions"]';
-/** GitHub's wrapper round a minimized comment (its <details> holds the notice and the comment). */
-const MINIMIZED_WRAPPER = '.minimized-comment, .js-minimized-comment';
 /** The compact comment card GitHub renders inside a minimized comment: header (h4) and body as siblings in here. */
 const COMPACT_CARD = '.review-comment-contents';
 /** The signed-in login, from GitHub's own meta tag (empty when signed out: then nothing is "mine"). */
@@ -472,7 +471,9 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
       // The bubble is the comment as it reads now, so the time beside the name is the edit's (GitHub's own live
       // element, which keeps it current); the clock says when the comment was first posted. The created time is
       // not refreshed into this cell (no `ATTR_TIME_FOR`).
-      line.append(relativeTimeElement(byline.edited, 'geld-review__time'), editedMark(byline.edited, byline.postedAt ?? null, byline.editLog ?? null));
+      const time = relativeTimeElement(byline.edited, 'geld-review__time');
+      if (byline.timeAnchor !== undefined) time.setAttribute(ATTR_EDITED_FOR, byline.timeAnchor);
+      line.append(time, editedMark(byline.edited, byline.postedAt ?? null, byline.editLog ?? null));
     } else if (byline.time !== '') {
       line.append(createElement('span', { class: 'geld-review__time', ...(byline.timeAnchor === undefined ? {} : { [ATTR_TIME_FOR]: byline.timeAnchor }) }, [byline.time]));
     }
@@ -939,8 +940,7 @@ export function messagesIn(root: HTMLElement, thread: boolean): readonly HTMLEle
   // The wrapper of a minimized comment is told by the <details> it holds: a review's own card carries the
   // `minimized-comment` class too (with `timeline-comment` and `js-comment`, the header a direct child), and read
   // as a wrapper it had no message at all — the card showed raw in its chat, header and all (server#7851).
-  const minimizedWrapper = (node: HTMLElement): boolean => node.matches(MINIMIZED_WRAPPER) && (node instanceof HTMLDetailsElement || node.querySelector(':scope > details') !== null);
-  const all = [...candidates, ...compact].filter((node) => node.closest('form') === null && node.querySelector(BODY_SELECTOR) !== null && !minimizedWrapper(node) && (node.matches(COMPACT_CARD) || node.querySelector(COMPACT_CARD) === null));
+  const all = [...candidates, ...compact].filter((node) => node.closest('form') === null && node.querySelector(BODY_SELECTOR) !== null && !isMinimizedWrapper(node) && (node.matches(COMPACT_CARD) || node.querySelector(COMPACT_CARD) === null));
   return all.filter((node) => !all.some((other) => other !== node && other.contains(node)));
 }
 

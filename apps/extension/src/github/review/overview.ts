@@ -24,7 +24,7 @@ import { crawlConversation } from './crawler';
 import { threadFragmentOf } from './thread-fragment';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
-import { editedAt, editsVersion, editTimesOf, resetEditTimes, revisionAsOf } from './edit-times';
+import { editedAt, editsVersion, editTimesOf, refreshEditTimes, resetEditTimes, revisionAsOf } from './edit-times';
 import { headChecks, nextCheckRefresh, resetHeadChecks } from './check-source';
 import { absoluteTimeText, relativeTimeText } from './time';
 import { stickyHeaderBottomAt } from './sticky';
@@ -36,7 +36,7 @@ import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-p
 import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
+import { ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -2250,8 +2250,20 @@ let timeRefreshTimer: number | null = null;
 /** Keep the cells current while the panel is up; a hidden tab skips the pass (its return re-renders anyway). */
 function scheduleTimeRefresh(): void {
   timeRefreshTimer ??= window.setInterval(() => {
-    if (!document.hidden) refreshReviewTimes();
+    if (document.hidden) return;
+    refreshReviewTimes();
+    refreshEditTimes(shownTimeAnchors(), reapplySoon);
   }, TIME_REFRESH_MS);
+}
+
+/** The comments whose times the panel shows, edited or not. */
+function shownTimeAnchors(): Set<string> {
+  const anchors = new Set<string>();
+  for (const cell of document.querySelectorAll(`.${PANEL_CLASS} [${ATTR_TIME_FOR}], .${PANEL_CLASS} [${ATTR_EDITED_FOR}]`)) {
+    const anchor = cell.getAttribute(ATTR_EDITED_FOR) ?? cell.getAttribute(ATTR_TIME_FOR);
+    if (anchor !== null && anchor !== '') anchors.add(anchor);
+  }
+  return anchors;
 }
 
 function stopTimeRefresh(): void {
@@ -2740,10 +2752,13 @@ function slotNeedsRender(slot: HTMLElement): boolean {
  * dress phase of this same pass, as after a panel rebuild. Not while the
  * reader types in a reply box inside the slot (a reaction from someone else
  * can refresh a message in the thread they are answering): the render waits
- * for the field to blur, as a panel rebuild does.
+ * for the field to blur, as a panel rebuild does. Nor while an edit history
+ * is open from a byline's clock.
  */
 function readySlotForRender(slot: HTMLElement): boolean {
   if (slot.querySelector(`[${ATTR_TELEPORTED}]`) === null) return true;
+  // An edit history open from a byline's clock: the panel asks for a pass when it closes.
+  if (slot.querySelector('.geld-review__edited-wrap[open]') !== null) return false;
   const active = document.activeElement;
   if (active instanceof Element && slot.contains(active) && active.matches('textarea, input, [contenteditable]')) {
     active.addEventListener('focusout', () => reapplySoon(), { once: true });

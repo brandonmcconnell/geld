@@ -42,6 +42,8 @@ const ATTR_SLOT = 'data-geld-slot';
  * without a crawl or a render.
  */
 export const ATTR_TIME_FOR = 'data-geld-time-for';
+/** On an edited comment's time: the anchor whose edit log the clock refresh reads again (`refreshEditTimes`). */
+export const ATTR_EDITED_FOR = 'data-geld-edited-for';
 
 /**
  * A row of pills that gives way in two steps when the row is short of room
@@ -68,7 +70,7 @@ function timeCell(model: PanelModel, anchor: string): HTMLElement | null {
  */
 function commentTime(model: PanelModel, anchor: string, text: string): HTMLElement | null {
   const edited = model.editedFor(anchor);
-  if (edited !== null) return createElement('span', { class: `${PANEL_CLASS}__time ${PANEL_CLASS}__time--edited` }, [relativeTimeElement(edited.editedAt, `${PANEL_CLASS}__time-text`), editedMark(edited.editedAt, edited.postedAt, edited.log)]);
+  if (edited !== null) return createElement('span', { class: `${PANEL_CLASS}__time ${PANEL_CLASS}__time--edited`, [ATTR_EDITED_FOR]: anchor }, [relativeTimeElement(edited.editedAt, `${PANEL_CLASS}__time-text`), editedMark(edited.editedAt, edited.postedAt, edited.log)]);
   return text === '' ? null : createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: anchor }, [text]);
 }
 
@@ -438,7 +440,7 @@ export interface PanelHandlers {
   readonly onFullTimeline: () => void;
   /** Post the trigger comment of each bot, in order. */
   readonly onRequest: (botIds: readonly string[]) => void;
-  /** The Request a review menu closed: the panel may have held back a rebuild while it was open. */
+  /** A menu the panel holds rebuilds for (Request a review, an edit history) closed: a rebuild may be waiting. */
   readonly onRequestMenuClosed: () => void;
   /** Everyone who can be asked to review, as GitHub's own menu lists them (fetched when the people menu first needs it). */
   readonly loadReviewerCandidates: () => Promise<readonly ReviewerCandidate[] | null>;
@@ -2579,6 +2581,8 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     if (slot !== null && active instanceof Element && slot.contains(active) && active.matches('textarea, input, [contenteditable]')) return { root: existing, slot };
     // The Request a review menu is open with boxes ticked: a rebuild would close it and lose the picks. Wait.
     if (existing.querySelector(`.${PANEL_CLASS}__request[open]`) !== null) return { root: existing, slot };
+    // An edit history is open from a clock: a rebuild would close it and take the reader's focus. Wait.
+    if (existing.querySelector(`.${PANEL_CLASS}__edited-wrap[open]`) !== null) return { root: existing, slot };
   }
   const card = descriptionCard();
   if (card === null) return null;
@@ -2725,6 +2729,14 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     panel.append(createElement('div', { class: `${PANEL_CLASS}__timeline` }, [toggle]));
   }
 
+  // `toggle` does not bubble, so one capturing listener hears every edit history in the rows and the slot close.
+  panel.addEventListener(
+    'toggle',
+    (event) => {
+      if (event.target instanceof HTMLDetailsElement && !event.target.open && event.target.matches(`.${PANEL_CLASS}__edited-wrap`)) handlers.onRequestMenuClosed();
+    },
+    true,
+  );
   panel.style.marginLeft = cardMargins.left;
   panel.style.marginRight = cardMargins.right;
   const freshBody = carried === null ? null : panel.querySelector<HTMLElement>(`[${ATTR_SLOT}="${CHECKS_KEY}"] > .${PANEL_CLASS}__slot-body`);

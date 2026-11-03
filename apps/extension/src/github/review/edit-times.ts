@@ -56,6 +56,8 @@ export function editsVersion(): number {
   return version;
 }
 
+const COMMENT_ANCHOR = '[id^="issuecomment-"], [id^="discussion_r"], [id^="pullrequestreview-"]';
+
 /**
  * The edit-history log URL of the comment `node` (its own header, not a
  * nested comment's), or null when it was never edited. `anchor` is the
@@ -66,7 +68,7 @@ function logUrlOf(node: Element, anchor = node.id): string | null {
   for (const menu of node.querySelectorAll('details-menu[src*="show_edit_history_log"]')) {
     // A review's node holds its threads' comments too, each with a header of its own: only the log whose nearest
     // comment is this one counts (GitHub repeats a comment's id on its wrapper, so ids are compared, not nodes).
-    const owner = menu.closest('[id^="issuecomment-"], [id^="discussion_r"], [id^="pullrequestreview-"]');
+    const owner = menu.closest(COMMENT_ANCHOR);
     if (owner === null || owner.id === anchor) return menu.getAttribute('src');
   }
   return null;
@@ -108,9 +110,19 @@ function repositoryId(): number {
   return Number(document.querySelector<HTMLMetaElement>('meta[name="octolytics-dimension-repository_id"]')?.content ?? Number.NaN);
 }
 
-/** A minimized comment: GitHub's header says only "This comment has been minimized", with no "edited" menu to read. */
-function minimized(node: Element): boolean {
-  return node.querySelector('.minimized-comment > details, .minimized-comment details') !== null;
+/**
+ * The wrapper of a minimized comment: a `.minimized-comment` that is the `<details>` ("This comment has been
+ * minimized", then the comment proper) or holds one as a direct child. A review's own body card carries the class
+ * too, minimized or not, and its menus are deeper inside, so the class alone says nothing.
+ */
+export function isMinimizedWrapper(node: Element): boolean {
+  return node.matches('.minimized-comment, .js-minimized-comment') && (node instanceof HTMLDetailsElement || node.querySelector(':scope > details') !== null);
+}
+
+/** Whether the comment `anchor` (whose outermost carrier is `node`) is minimized. A nested comment's wrapper does not count. */
+function minimized(node: Element, anchor: string): boolean {
+  const wrappers = [...(node.matches('.minimized-comment, .js-minimized-comment') ? [node] : []), ...node.querySelectorAll('.minimized-comment, .js-minimized-comment')];
+  return wrappers.some((wrapper) => isMinimizedWrapper(wrapper) && wrapper.closest(COMMENT_ANCHOR)?.id === anchor);
 }
 
 /**
@@ -121,7 +133,7 @@ export function editLogUrlOf(anchor: string): string | null {
   const node = document.getElementById(anchor);
   if (node === null) return null;
   const listed = logUrlOf(node, anchor);
-  if (listed !== null || !minimized(node)) return listed;
+  if (listed !== null || !minimized(node, anchor)) return listed;
   const nodeId = nodeIdOf(anchor, repositoryId());
   return nodeId === null ? null : `/user_content_edits/show_edit_history_log/${nodeId}`;
 }
@@ -196,6 +208,22 @@ export function editTimesOf(anchor: string, onChange: () => void): { readonly ed
   const created = log.revisions[0]?.at ?? null;
   if (log.editedAt === null || log.editedAt === created) return null;
   return { editedAt: log.editedAt, postedAt: created, log: url };
+}
+
+/**
+ * Read again, once stale, the logs of the comments whose times are on screen (`anchors`). A row is built once and
+ * kept while the panel's signature holds, so the refresh `editTimesOf` starts while building it never came for a
+ * later edit, or a first one. `onChange` runs only when a log says something new.
+ */
+export function refreshEditTimes(anchors: Iterable<string>, onChange: () => void): void {
+  for (const anchor of anchors) {
+    const url = editLogUrlOf(anchor);
+    if (url === null) continue;
+    const seen = version;
+    logFor(url, () => {
+      if (version !== seen) onChange();
+    }, DISPLAY_REFRESH_MS);
+  }
 }
 
 /**
