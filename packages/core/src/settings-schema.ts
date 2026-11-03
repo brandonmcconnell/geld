@@ -491,7 +491,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         kind: 'toggle',
         key: 'collapseDescription',
         label: 'Shorten the description',
-        description: 'Fold each section of the pull request description under its heading, and cut a description taller than 500px to a preview with a control to show the rest.',
+        description: 'Fold each section of the pull request description under its heading. A long description with no headings is cut to 500px with a control to show the rest.',
         popup: false,
       },
       {

@@ -127,8 +127,8 @@ export interface GeldSettings {
   readonly reviewGrouping: ReviewGrouping;
   /**
    * Shorten the PR description above the digest: fold each section under its
-   * heading (innermost sections closed) and cut a still-tall description to
-   * 500px behind a "Show full description" control.
+   * heading (innermost sections closed), and cut a long description with no
+   * headings to 500px behind a "Show full description" control.
    */
   readonly collapseDescription: boolean;
   /**

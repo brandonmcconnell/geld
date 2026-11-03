@@ -81,10 +81,11 @@ describe('shortenDescription', () => {
     expect(body.querySelectorAll('.geld-desc-toggle')).toHaveLength(3);
   });
 
-  it('opens a section on a click on its heading, independently of the others, and lifts the cut', () => {
+  it('opens a section on a click on its heading, independently of the others, and never cuts a description with headings', () => {
     const body = mountDescription(`${h(2, 'One')}<p>a</p>${h(2, 'Two')}<p>b</p>`);
     shortenDescription(true);
-    expect(body.hasAttribute('data-geld-desc-cap')).toBe(true);
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
+    expect(document.querySelector('.geld-desc-more')).toBeNull();
     body.querySelector<HTMLElement>('.markdown-heading h2')?.click();
     expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(false);
     expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(true);
@@ -99,6 +100,40 @@ describe('shortenDescription', () => {
     shortenDescription(true);
     body.querySelector<HTMLElement>('a.anchor')?.click();
     expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+  });
+
+  it('lifts the cut for good on Show full description', () => {
+    const body = mountDescription('<p>a long wall of text</p>');
+    shortenDescription(true);
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(true);
+    document.querySelector<HTMLButtonElement>('.geld-desc-more')?.click();
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
+    expect(document.querySelector('.geld-desc-more')).toBeNull();
+    shortenDescription(true);
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
+  });
+
+  it('replaces a Show full description button GitHub re-rendered from a copy, which lost its listener', () => {
+    const body = mountDescription('<p>a long wall of text</p>');
+    shortenDescription(true);
+    const original = document.querySelector('.geld-desc-more');
+    if (original === null) throw new Error('no button');
+    original.replaceWith(original.cloneNode(true));
+    shortenDescription(true);
+    document.querySelector<HTMLButtonElement>('.geld-desc-more')?.click();
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
+  });
+
+  it('lifts the cut when a collapsible part of the description is opened, not on a link', () => {
+    const body = mountDescription('<p><a href="#x">a link</a></p><details><summary>More</summary><p>b</p></details>');
+    shortenDescription(true);
+    body.querySelector('a')?.click();
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(true);
+    const details = body.querySelector('details');
+    if (details === null) throw new Error('no details');
+    details.open = true;
+    details.dispatchEvent(new Event('toggle'));
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
   });
 
   it('puts one control after the body and removes everything when turned off', () => {

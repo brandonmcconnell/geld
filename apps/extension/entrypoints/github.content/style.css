@@ -7407,13 +7407,6 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   text-decoration: underline;
 }
 
-[data-geld-desc-cap] + .geld-desc-more .octicon {
-  transform: none;
-}
-
-:not([data-geld-desc-cap]) + .geld-desc-more .octicon {
-  transform: rotate(180deg);
-}
 
 @media (prefers-reduced-motion: reduce) {
   .geld-review__meter > i,

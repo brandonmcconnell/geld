@@ -1,7 +1,7 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { ICON_CHEVRON_DOWN } from '../ui/icons';
 
-/** A description taller than this is cut to it, behind a fade and "Show full description". */
+/** A long description with no headings to fold is cut to this height, behind a fade and "Show full description". */
 export const DESCRIPTION_CAP_PX = 500;
 /** How far past the cap the description must run before it is cut, so a cut never hides only a line or two. */
 const CAP_SLACK_PX = 80;
@@ -182,22 +182,41 @@ function wire(block: HTMLElement, body: HTMLElement): void {
     const key = block.getAttribute(ATTR_KEY);
     if (key === null) return;
     state.open.set(key, block.getAttribute(ATTR_HEADING) !== 'open');
-    // Opening or closing a section is reading the description: the cut would hide what was just opened.
-    state.capped = false;
     applyTo(body);
   });
 }
 
-function moreButton(body: HTMLElement): HTMLButtonElement {
+/** Lift the cut for good: the reader is reading the description. */
+function uncap(body: HTMLElement): void {
+  if (!state.capped) return;
+  state.capped = false;
+  applyTo(body);
+}
+
+/** The buttons this copy made: a button GitHub re-rendered from a copy of its markup keeps nothing of its listener. */
+const moreButtons = new WeakSet<HTMLButtonElement>();
+
+function syncMoreButton(body: HTMLElement, show: boolean): void {
   const next = body.nextElementSibling;
-  if (next instanceof HTMLButtonElement && next.classList.contains(MORE_CLASS)) return next;
-  const more = createElement('button', { type: 'button', class: MORE_CLASS, [OWN_UI_ATTRIBUTE]: '' }, [svgFromString(ICON_CHEVRON_DOWN), createElement('span', {})]);
-  more.addEventListener('click', () => {
-    state.capped = !state.capped;
-    applyTo(body);
-  });
+  const existing = next instanceof HTMLButtonElement && next.classList.contains(MORE_CLASS) ? next : null;
+  if (!show || (existing !== null && !moreButtons.has(existing))) existing?.remove();
+  if (!show || (existing !== null && moreButtons.has(existing))) return;
+  const more = createElement('button', { type: 'button', class: MORE_CLASS, [OWN_UI_ATTRIBUTE]: '' }, [svgFromString(ICON_CHEVRON_DOWN), createElement('span', {}, ['Show full description'])]);
+  more.addEventListener('click', () => uncap(body));
+  moreButtons.add(more);
   body.insertAdjacentElement('afterend', more);
-  return more;
+}
+
+const watchedBodies = new WeakSet<HTMLElement>();
+
+/** Opening any collapsible part of a cut description (a `<details>`) is reading it: the cut goes. */
+function watchDisclosures(body: HTMLElement): void {
+  if (watchedBodies.has(body)) return;
+  watchedBodies.add(body);
+  // `toggle` does not bubble, so it is caught on the way down.
+  body.addEventListener('toggle', (event) => {
+    if (event.target instanceof HTMLDetailsElement && event.target.open) uncap(body);
+  }, true);
 }
 
 function measure(body: HTMLElement): void {
@@ -282,12 +301,11 @@ function applyTo(body: HTMLElement): void {
     if (block instanceof HTMLElement) dressRails(block, rails.get(index) ?? null);
   });
   setFlag(body, ATTR_ON, '');
-  setFlag(body, ATTR_CAP, state.capped ? '' : null);
-  const more = moreButton(body);
-  const label = state.capped ? 'Show full description' : 'Show less';
-  const text = more.querySelector('span');
-  if (text !== null && text.textContent !== label) text.textContent = label;
-  setFlag(more, 'aria-expanded', String(!state.capped));
+  // Only a description with no headings to fold is cut: one with headings is already short once folded.
+  const cut = state.capped && outline.length === 0;
+  setFlag(body, ATTR_CAP, cut ? '' : null);
+  syncMoreButton(body, cut);
+  if (cut) watchDisclosures(body);
   observe(body);
 }
 
@@ -306,9 +324,10 @@ function clear(): void {
 
 /**
  * Shorten the pull request's description so the digest under it is in reach: every section folds under its
- * heading (sections with headings of their own start open, the innermost start closed, so the outline shows),
- * and a description still taller than {@link DESCRIPTION_CAP_PX} is cut there behind a fade and "Show full
- * description". Only attributes and Geld's own controls are added; GitHub's nodes stay where they are.
+ * heading (sections with headings of their own start open, the innermost start closed, so the outline shows).
+ * A description with no headings to fold that is taller than {@link DESCRIPTION_CAP_PX} is cut there behind a
+ * fade and "Show full description", until the reader clicks that or opens anything collapsible in it.
+ * Only attributes and Geld's own controls are added, GitHub's nodes stay where they are.
  */
 export function shortenDescription(on: boolean): void {
   if (!on) {
