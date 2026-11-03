@@ -2245,3 +2245,9 @@ Qualify both native link media and effective stylesheet media through loaded rea
 Only a real mouse drag supplies selection evidence, and unsupported copy remains explicitly unverified.
 Keep the complete original raw settings vector, change only the master flag, remove owned highlighting and test selection, close the native page, then restore exact original storage presence and value.
 Missing native source, original controls or usable native palettes is unavailable rather than a substitute source pass, and failure reporting omits unknown fields, raw bootstrap, console, exception and URL details.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
