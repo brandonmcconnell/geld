@@ -13,7 +13,7 @@ import { readGitLabThreadActions, syncGitLabNativeReviewState } from './thread-a
 import { fetchGitLabConfig } from './config';
 import { renderGitLabComment } from './comment-render';
 import { gitLabConversationRoots, gitLabDescriptionHost } from './conversation';
-import { gitLabAuthorPresentation } from './author-presentation';
+import { createGitLabAuthorPresentationReader } from './author-presentation';
 import { gitLabReferenceAnchor, readGitLabReferences } from './references';
 import { readGitLabBotRequests } from './bot-request';
 
@@ -34,6 +34,7 @@ export const gitlabAdapter: ProviderAdapter = {
   fetchReview: async (page, signal, doc) => {
     const actionVisit = gitLabActionVisit(doc);
     const snapshot = await fetchGitLabReview(page, signal, doc);
+    const authorPresentation = createGitLabAuthorPresentationReader(snapshot.input, snapshot.comments, doc);
     const permissionsForNote = new Map<string, GitLabNativeThreadCapabilities>();
     for (const thread of snapshot.threadCapabilities.values()) {
       for (const note of thread.notes) permissionsForNote.set(note.noteId, thread);
@@ -44,7 +45,7 @@ export const gitlabAdapter: ProviderAdapter = {
       get input() { return syncGitLabNativeReviewState(snapshot.input, doc); },
       get actions() { return readGitLabActions(doc, snapshot.capabilities, { ...actionVisit, url: doc.URL.split('#')[0] ?? doc.URL, headSha: snapshot.input.subject.headSha, reviewUrl: page.url }); },
       renderComment: (comment: ProviderReviewComment, host: HTMLElement) => renderGitLabComment(comment, host, doc, snapshot.renderedNotes.get(comment.id)),
-      authorPresentation: (comment: ProviderReviewComment) => gitLabAuthorPresentation(comment, doc),
+      authorPresentation,
       sourceActions: (comment: ProviderReviewComment) => {
         const permissions = permissionsForNote.get(comment.id);
         if (permissions === undefined) return [];

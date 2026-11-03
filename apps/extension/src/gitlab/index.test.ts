@@ -128,3 +128,21 @@ it('offers fresh native actions on another tab of the same review while retainin
   expect(document.querySelector('textarea')?.value).toBe('Existing native draft');
   expect(fetchGitLabReview).toHaveBeenCalledOnce();expect(fetch).not.toHaveBeenCalled();
 });
+
+it('binds the presentation reader to the complete fetched thread and ordinary source set', async () => {
+  // Synthetic protocol fixture shaped like retained native note headers, not a live author test.
+  const author = { id: '20', login: 'reviewer' };
+  const donor = { id: '100', anchor: 'note_100', url: `${REVIEW}#note_100`, author, body: 'Summary fixture', createdAt: '2026-11-01T00:00:00Z' };
+  const target = { ...donor, id: '101', anchor: 'note_101', url: `${REVIEW}#note_101`, body: 'Finding fixture' };
+  const value = snapshot();
+  vi.mocked(fetchGitLabReview).mockResolvedValue({ ...value, comments: [donor], input: { ...value.input, threads: [{ id: 'thread', anchor: target.anchor, url: target.url, resolved: false, outdated: false, comments: [target] }] } });
+  const native = document.createElement('article');
+  native.setAttribute('data-rapid-diffs', '');
+  native.setAttribute('data-app-data', JSON.stringify({ mr_path: '/group/repo/-/merge_requests/7', project_path: 'group/repo', iid: 7, versions: { source_versions: [{ id: 1, selected: true, latest: true, is_merge_head: false, head_sha: HEAD }] } }));
+  document.body.append(native);
+  document.body.insertAdjacentHTML('beforeend', '<li id="note_100" data-note-id="100" data-testid="noteable-note-container"><div class="timeline-entry-inner"><div class="timeline-content"><div class="note-header"><div class="note-header-info"><a class="author-name-link" data-user-id="20" data-username="reviewer" href="/reviewer"><span data-testid="author-name">Native account</span></a></div></div></div></div></li>');
+  const result = await acquire();
+  expect(result.authorPresentation?.(target)).toEqual({ authorId: '20', displayName: 'Native account', profileUrl: 'https://gitlab.com/reviewer' });
+  expect(result.authorPresentation?.({ ...target, body: 'Changed caller body' })).toBeNull();
+  expect(fetchGitLabReview).toHaveBeenCalledOnce(); expect(fetch).not.toHaveBeenCalled();
+});
