@@ -1439,7 +1439,12 @@ the installed unknown branch reports unavailability and the known-off branch req
 The separate bitbucket-pipeline-syntax-on focus is an explicit-only anonymous characterization, excluded from default, regression and all, and requires an entirely free 40-request rolling window because the first native Save/restore cost is unmeasured.
 It reuses the existing Off acceptance before any preference change, then operates only the original native Syntax checkbox and unique same-form submit Save, preserving the other 12 controls including hidden tabSize.
 The current form has 13 controls rather than the 12 visible fields alone, and its original modal heading is Global diff view settings.
-After native Save, source row/code/Text replacement is permitted only while the exact semantic source vector, original file root/anchor/Viewed, raw anonymous bootstrap actor/workspace, selected URL and already-observed full comparison identity remain unchanged.
+After native Save, source row/code/Text replacement is permitted only while the original code characters, ordered native rowgroups, line numbers/kinds/IDs/links, original file root/anchor/Viewed, raw anonymous bootstrap actor/workspace, selected URL and already-observed full comparison identity remain unchanged.
+The retained native renderer adds exactly one terminal LF to each non-final row of its unchanged rowgroup while preserving its final row, gridcell aria-label and span-only token structure;
+the harness records every raw before/after string and this separate presentation classification, rejecting extra LF, interior changes, unknown markup or changed group boundaries.
+Only the explicit On oracle uses the original code-character projection, excludes that proven LF from every owned range and re-locks fresh native On span/Text identity before painting;
+the existing Off verifier remains exact and unchanged, and physical native Text fragmentation does not imply a fixed range count.
+The first installed characterization failed before fresh On qualification and Off restoration, so retained renderer evidence and offline painter compatibility do not establish a public On, palette or restoration pass.
 Fresh pristine On-form initial state, zero owned colors and native-On Text-node references are captured before trusted Cancel qualifies production's passive observer;
 later owned ranges must preserve that new baseline, native links/IDs/fonts and foreign highlights through real text selection and viewport capture.
 All native HTTP traffic remains separately recorded with query values redacted and bounded allowlisted preference primitives, without inferring a settings endpoint, authenticated success or server persistence.
