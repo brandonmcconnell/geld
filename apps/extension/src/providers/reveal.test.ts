@@ -2,6 +2,9 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ProviderDiffEntry, ProviderDiffView } from './types';
 import { ProviderReveal } from './reveal';
+import { gitLabPathNavigator } from '../gitlab/navigation';
+import { describeGitLabPage } from '../gitlab/page';
+import { providerDiffKey } from './diff-cache';
 
 let reveal: ProviderReveal | null = null;
 
@@ -71,7 +74,7 @@ it('uses a verified provider navigation fallback once when the native tree row i
   reveal = new ProviderReveal(() => ({ ...view, tree: [], navigateToPath }), () => 'same-visit');
   reveal.request('src/lazy.ts');
   await vi.advanceTimersByTimeAsync(1000);
-  expect(navigateToPath).toHaveBeenCalledExactlyOnceWith('src/lazy.ts');
+  expect(navigateToPath).toHaveBeenCalledExactlyOnceWith('src/lazy.ts', expect.any(Function));
   const root = document.createElement('article');
   view.container.append(root);
   const scroll = vi.spyOn(root, 'scrollIntoView').mockImplementation(() => undefined);
@@ -79,6 +82,69 @@ it('uses a verified provider navigation fallback once when the native tree row i
   reveal.refresh();
   expect(scroll).toHaveBeenCalledTimes(1);
   expect(navigateToPath).toHaveBeenCalledTimes(1);
+});
+
+function pinnedNavigation(synchronous: boolean) {
+  const base = 'https://gitlab.com/group/sub/project/-/merge_requests/42/diffs';
+  window.location.href = `${base}?w=1`;
+  document.body.innerHTML = `<section data-testid="file-tree-container"><a data-testid="file-row" data-file-row="native-file-hash" href="${base}?diff_id=123&w=1&file_path=src%2Fmounted.ts">mounted.ts</a></section><article data-rapid-diffs data-app-data='{"versions":{"source_versions":[{"id":123,"selected":true}]}}'></article>`;
+  const tree = document.querySelector<HTMLElement>('section');
+  const navigateToPath = gitLabPathNavigator(document, tree);
+  if (tree === null || navigateToPath === null) throw new Error('Expected verified GitLab route');
+  const entries: ProviderDiffEntry[] = [];
+  const view: ProviderDiffView = { kind: 'gitlab', container: tree, entries, tree: [], treeHost: tree, filteredPaths: new Set(), virtualized: true, navigateToPath };
+  let destination = '';
+  const follow = () => {
+    window.history.replaceState(null, '', destination);
+    window.dispatchEvent(new Event('wxt:locationchange'));
+  };
+  document.addEventListener('click', (event) => {
+    if (!(event.target instanceof HTMLAnchorElement) || !event.target.hasAttribute('data-geld-ui')) return;
+    event.preventDefault();
+    destination = event.target.href;
+    if (synchronous) follow();
+  }, { once: true });
+  reveal = new ProviderReveal(() => view, () => {
+    const page = describeGitLabPage(new URL(window.location.href), document);
+    return page === null ? 'missing' : providerDiffKey(page);
+  });
+  reveal.request('src/lazy.ts');
+  return {
+    follow,
+    mount: () => {
+      const root = document.createElement('article');
+      tree.append(root);
+      const scroll = vi.spyOn(root, 'scrollIntoView').mockImplementation(() => undefined);
+      const expand = vi.fn(() => true);
+      entries.push({ path: 'src/lazy.ts', root, anchor: 'native-file-hash', additions: null, deletions: null, expand, collapse: () => false });
+      reveal?.refresh();
+      return { scroll, expand };
+    },
+  };
+}
+
+it.each([true, false])('finishes a native GitLab reveal that pins the displayed version (synchronous=%s)', (synchronous) => {
+  const fixture = pinnedNavigation(synchronous);
+  if (!synchronous) fixture.follow();
+  expect(new URL(window.location.href).searchParams.get('diff_id')).toBe('123');
+  const { scroll, expand } = fixture.mount();
+  expect(expand).toHaveBeenCalledTimes(1);
+  expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: 'start', behavior: 'smooth' });
+  expect(window.location.hash).toBe('#native-file-hash');
+});
+
+it.each(['diff_id=124', 'w=0', 'start_sha=other', 'context=20', 'file_path=src%2Fother.ts', 'file_path=src%2Flazy.ts&file_path=src%2Flazy.ts'])('rejects comparison or file drift after verified native version pin (%s)', (change) => {
+  const fixture = pinnedNavigation(false);
+  fixture.follow();
+  const url = new URL(window.location.href);
+  const [key] = change.split('=');
+  if (key === undefined) throw new Error('Missing query key');
+  url.searchParams.delete(key);
+  for (const [name, value] of new URLSearchParams(change)) url.searchParams.append(name, value);
+  window.history.replaceState(null, '', url.href);
+  const { scroll, expand } = fixture.mount();
+  expect(expand).not.toHaveBeenCalled();
+  expect(scroll).not.toHaveBeenCalled();
 });
 
 it.each(['https://foreign.example/review', '/group/sub/project/-/merge_requests/42/diffs?file_path=src%2Flazy.ts', '/group/sub/project/-/merge_requests/42/diffs?diff_id=123&view=parallel&w=1&file_path=src%2Fother.ts'])('does not follow a stale or foreign tree link (%s)', async (href) => {

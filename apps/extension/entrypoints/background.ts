@@ -1,8 +1,10 @@
+import { grantedProviderHosts, isProviderAccessSync, syncOptionalProviders } from '../src/lib/provider-access';
+import { createLocalReviewAuthority, isLocalReviewWrite, validateLocalReviewOrigin } from '../src/lib/local-review-service';
 import { isTrackerStatusRequest,readTrackerStatuses } from '../src/lib/tracker-service';
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
-import { CLOUD_PROVIDER_HOSTS, parseUnifiedDiff, providerForHost } from '@geld/core';
+import { parseUnifiedDiff, providerForHost } from '@geld/core';
 import { completeChat, evaluateJev, listModels, TYPESAFE_API } from '@geld/review';
 import { handleAccountMessage, startAccountSync } from '../src/lib/account-service';
 import { actionIconPaths } from '../src/lib/action-icon';
@@ -492,7 +494,7 @@ function updateBadge(tabId: number, state: TabState): void {
 async function contentHosts(): Promise<Set<string>> {
   const settings = await settingsItem.getValue();
   const enterpriseHosts = settings.enterpriseHosts.filter((host) => providerForHost(host) === null);
-  return new Set([...CLOUD_PROVIDER_HOSTS, ...(await grantedHosts(enterpriseHosts))]);
+  return new Set(['github.com', ...(await grantedProviderHosts()), ...(await grantedHosts(enterpriseHosts))]);
 }
 
 /**
@@ -519,7 +521,20 @@ async function toggleHiddenInActiveTab(): Promise<void> {
 export default defineBackground(() => {
   // Each start is a previous stop: a run of these around failing fetches says the worker is being killed mid-request.
   recordDiagnostic({ kind: 'worker-start' });
+  const writeLocalReview = createLocalReviewAuthority();
   browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+    if (isProviderAccessSync(message)) {
+      if (sender.id !== browser.runtime.id) return undefined;
+      void syncOptionalProviders().then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
+      return true;
+    }
+    if (isLocalReviewWrite(message)) {
+      const tabId = sender.tab?.id;
+      if (sender.id !== browser.runtime.id || tabId === undefined) { sendResponse({ ok: false }); return undefined; }
+      const validate = () => validateLocalReviewOrigin(() => browser.tabs.sendMessage(tabId, { type: 'geld:local-review-validate', token: message.token }, { frameId: sender.frameId ?? 0 }));
+      void writeLocalReview(message.mutation, validate).then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
+      return true;
+    }
     if(isTrackerStatusRequest(message)){void readTrackerStatuses(message,sender.url??sender.tab?.url).then(sendResponse);return true;}
     if (isColorSchemeMessage(message)) {
       applyToolbarIcon(message.dark);
@@ -612,6 +627,12 @@ export default defineBackground(() => {
   browser.runtime.onStartup.addListener(syncHosts);
   settingsItem.watch((settings) => void syncEnterpriseHosts(settings.enterpriseHosts.filter((host) => providerForHost(host) === null)).catch(() => undefined));
   syncHosts();
+  const syncProviders = (): void => { void syncOptionalProviders().catch(() => undefined); };
+  browser.runtime.onInstalled.addListener(syncProviders);
+  browser.runtime.onStartup.addListener(syncProviders);
+  browser.permissions.onAdded.addListener(syncProviders);
+  browser.permissions.onRemoved.addListener(syncProviders);
+  syncProviders();
 
   // Tabs that were open before an install/update have no content script yet.
   browser.runtime.onInstalled.addListener(() => {

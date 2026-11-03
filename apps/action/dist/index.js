@@ -1978,7 +1978,10 @@ function parseUnifiedDiff(diffText) {
     }
     if (!inHunk) {
       if (line.startsWith("rename to ")) {
-        current.path = line.slice("rename to ".length);
+        const path = line.slice("rename to ".length);
+        const quoted = /^"((?:\\.|[^"\\])*)"$/.exec(path);
+        if (!path.startsWith('"')) current.path = path;
+        else if (quoted?.[1] !== void 0) current.path = unescapeGitPath(quoted[1]);
         current.renamed = true;
         current.syntax = commentSyntaxFor(current.path);
       } else if (line.startsWith("rename from ")) current.renamed = true;

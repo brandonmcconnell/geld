@@ -49,7 +49,7 @@ test('UI acceptance selects one Bitbucket continuity case without broadening def
   assert.deepEqual(Array.from(cases['gitlab-ui']), ['gitlab-mixed', 'gitlab-overview-digest']);
   assert.deepEqual(Array.from(cases['bitbucket-ui']), ['bitbucket-ui-continuity']);
   for (const focus of ['gitlab-ui', 'bitbucket-ui']) assert.deepEqual(select({ body: marker(focus), from: marker('github') }), { focus, run: 'true', failures: [] });
-  assert.deepEqual(Array.from(cases.regression), ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'github-regression', 'bitbucket-diff']);
+  assert.deepEqual(Array.from(cases.regression), ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'gitlab-local-reviewed', 'github-regression', 'bitbucket-diff']);
   assert.match(harness, /conservativeObservedRequestBudget: 40/);
 });
 
@@ -473,4 +473,46 @@ test('provider-evidence is explicit and cannot enter install/build/Chrome/browse
     const block = job.slice(job.indexOf('      - name: ' + step)).split('\n      - ')[0];assert.match(block, /focus != 'provider-evidence'/);
   }
   assert.doesNotMatch(harness, /provider-evidence/);
+});
+
+
+test('GitLab UI and local review are distinct live receipts while legacy suites retain both', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);
+  const cases = new vm.Script(`(${literal})`).runInNewContext();
+  assert.deepEqual(Array.from(cases['gitlab-ui']), ['gitlab-mixed', 'gitlab-overview-digest']);
+  assert.deepEqual(Array.from(cases['gitlab-local-reviewed']), ['gitlab-local-reviewed']);
+  assert.deepEqual(Array.from(cases['gitlab-review']), ['gitlab-overview-digest', 'gitlab-local-reviewed']);
+  assert.equal(cases.regression.includes('gitlab-local-reviewed'), true);
+  assert.deepEqual(select({ body: marker('gitlab-local-reviewed'), from: marker('gitlab-ui') }), { focus: 'gitlab-local-reviewed', run: 'true', failures: [] });
+  assert.match(harness, /if \(focus === 'gitlab-ui'\) return/);
+  assert.match(harness, /await runCase\('gitlab-local-reviewed', GITLAB_LOCAL_REVIEW.url/);
+  assert.match(harness, /headSha: native.selected.headSha/);
+  assert.match(harness, /assert.ok\(\['open', 'needs-reply', 'addressed'\]\.includes\(original.localStatus\)/);
+});
+
+
+test('dedicated local-review receipt retains mark reload Undo while legacy fragment stays on MR266334', () => {
+  const local = harness.slice(harness.indexOf('async function localReviewedFlag('), harness.indexOf('async function nativeFragmentEvidence('));
+  assert.match(local, /await page\.reload/);assert.match(local, /Real Undo removes only the local review mark/);assert.match(local, /Local reviewed flag attempted a native provider mutation/);
+  assert.doesNotMatch(local, /nativeFragmentEvidence/);
+  assert.match(harness, /item.nativeFragment = await nativeFragmentEvidence\(page, 'note_4118584957'/);
+  assert.match(harness, /localReviewedFlag\(page, GITLAB_LOCAL_REVIEW\)/);
+});
+
+test('provider-access builds and loads the extension but selects no public cases and preserves the canonical ledger artifact', () => {
+  assert.deepEqual(select({ event: 'workflow_dispatch', input: 'provider-access' }), { focus: 'provider-access', run: 'true', failures: [] });
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];
+  const cases = new vm.Script(`(${literal})`).runInNewContext();assert.deepEqual(Array.from(cases['provider-access']), []);
+  const start = harness.indexOf("  if (focus === 'provider-access') {");
+  const access = harness.slice(start, harness.indexOf('  const selected =', start));
+  assert.match(access, /verifyOptionalProviderRegistration\(options, runtime, \{ poll \}\)/);
+  assert.doesNotMatch(access, /runCase|fetch\(|\.goto\(/);
+  assert.match(harness, /focus === 'provider-access' \? \['--host-resolver-rules=MAP \* ~NOTFOUND'\] : \[\]/);
+  assert.match(workflow, /name: \$\{\{ needs\.select-public-verification\.outputs\.focus == 'provider-access' && 'geld-provider-access' \|\| 'geld-installed-browser-e2e' \}\}/);
+  const job = workflow.slice(workflow.indexOf('  installed-extension:'), workflow.indexOf('  bitbucket-static-source:'));
+  for (const command of ['pnpm install --frozen-lockfile', 'pnpm --filter @geld/extension build:chrome']) {
+    const step = job.slice(0, job.indexOf('run: ' + command)).split('      - ').at(-1);
+    assert.match(step, /focus != 'provider-evidence'/);assert.doesNotMatch(step, /focus != 'provider-access'/);
+  }
+  assert.match(job, /const artifactName = 'geld-installed-browser-e2e'/);
 });

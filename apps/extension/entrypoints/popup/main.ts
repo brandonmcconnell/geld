@@ -1,3 +1,4 @@
+import { mountProviderAccess } from '../../src/ui/provider-access';
 import { browser } from 'wxt/browser';
 import { allCategories } from '@geld/core';
 import { formatCount, pluralize } from '@geld/core';
@@ -72,6 +73,7 @@ function orgOf(repo: string): string {
 }
 
 async function main(): Promise<void> {
+  mountProviderAccess(requireElement('provider-access', HTMLElement), () => location.reload());
   let settings = await settingsItem.getValue();
   // Titles and descriptions come from the active catalog; the popup is short-lived, so one read is enough.
   const catalog = await loadCatalog();

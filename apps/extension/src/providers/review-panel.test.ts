@@ -220,6 +220,45 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector('[data-geld-item]')?.getAttribute('data-state')).toBe('open');
   });
 
+  it.each(['markdown', 'fix'])('preserves %s copy focus across unchanged review refreshes without stealing external focus', (kind) => {
+    const source = input([thread('a')]);
+    const options = { suggestedFixes: 'all' as const, transformItems: (items: readonly import('@geld/review').ReviewItem[]) => items.map((item) => ({ ...item, fix: { source: 'human' as const, text: 'fixed();' } })) };
+    const panel = renderProviderReviewPanel(host(), source, options);
+    const item = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-item]');
+    if (item === null) throw new Error('Missing review item');
+    item.open = true;
+    const before = panel.element.querySelector<HTMLButtonElement>(`[data-geld-copy-kind="${kind}"]`);
+    if (before === null) throw new Error('Missing copy control');
+    before.focus();
+    panel.update(source, { ...options, version: 2, updating: true });
+    const after = panel.element.querySelector(`[data-geld-copy-kind="${kind}"]`);
+    expect(after).not.toBe(before);
+    expect(document.activeElement).toBe(after);
+    const outside = document.createElement('button');document.body.append(outside);outside.focus();
+    panel.update(source, { ...options, version: 3, updating: false });
+    expect(document.activeElement).toBe(outside);
+    panel.destroy();
+  });
+
+  it.each(['head', 'body', 'ineligible', 'hidden', 'route'] as const)('does not restore copy focus after the %s changes', (change) => {
+    const source = input([thread('a')]);
+    const options = { suggestedFixes: 'all' as const, transformItems: (items: readonly import('@geld/review').ReviewItem[]) => items.map((item) => ({ ...item, fix: { source: 'human' as const, text: 'fixed();' } })) };
+    const panel = renderProviderReviewPanel(host(), source, options);
+    const item = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-item]');
+    if (item === null) throw new Error('Missing review item');
+    item.open = true;
+    const button = panel.element.querySelector<HTMLButtonElement>('[data-geld-copy-kind="fix"]');
+    if (button === null) throw new Error('Missing copy control');
+    button.focus();
+    if (change === 'hidden') item.open = false;
+    if (change === 'route') window.history.replaceState(null, '', `${reviewUrl}?changed=1`);
+    const next = change === 'head' ? { ...source, subject: { ...subject, headSha: 'b'.repeat(40) } }
+      : change === 'body' ? input([thread('a', { comments: [comment('1', 'A different source concern.')] })]) : source;
+    panel.update(next, { ...options, version: 2, ...(change === 'ineligible' ? { suggestedFixes: 'off' as const } : {}) });
+    expect(document.activeElement?.hasAttribute('data-geld-item-copy')).toBe(false);
+    panel.destroy();
+  });
+
   const copyFixModes: readonly { mode: 'all' | 'bots' | 'ai' | 'off'; source: 'human' | 'bot' | 'ai'; visible: boolean }[] = [
     { mode: 'all', source: 'human', visible: true }, { mode: 'all', source: 'bot', visible: true }, { mode: 'all', source: 'ai', visible: true },
     { mode: 'bots', source: 'human', visible: true }, { mode: 'bots', source: 'bot', visible: true }, { mode: 'bots', source: 'ai', visible: false },

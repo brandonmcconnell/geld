@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
 import { Window } from 'happy-dom';
-import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertProviderDashboard, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, providerHeaderHintTarget, openProviderReviewAncestors, providerDashboardProbe, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
+import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertProviderDashboard, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, GITLAB_LOCAL_REVIEW, providerHeaderHintTarget, openProviderReviewAncestors, providerDashboardProbe, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
 
 let window;
 let saved;
@@ -62,6 +62,15 @@ test('local-review selection skips disabled, already reviewed and automated cand
   assert.equal(gitLabLocalReviewedCandidate().candidate?.id, 'item-3');
   buttons[3].setAttribute('aria-disabled', 'true');assert.equal(gitLabLocalReviewedCandidate().candidate, null);
   assert.deepEqual(gitLabLocalReviewedCandidate().counts, { total: 4, truncated: false, human: 3, disabled: 2, pressed: 1, states: { open: 3, 'needs-reply': 0, addressed: 1, resolved: 0, outdated: 0, 'done-manual': 0, other: 0 } });
+});
+test('dedicated local-review fixture renews both the known source identity and actionable state live', () => {
+  reviewCandidates(['open', 'open']);
+  const required = { anchor: 'note_2', authorId: '2' };
+  assert.equal(gitLabLocalReviewedCandidate(required).candidate?.id, 'item-1');
+  assert.equal(gitLabLocalReviewedCandidate({ ...required, authorId: 'foreign' }).candidate, null);
+  document.querySelector('[data-geld-item="item-1"]').setAttribute('data-state', 'resolved');
+  assert.equal(gitLabLocalReviewedCandidate(required).candidate, null, 'a now-resolved retained source does not become a pass');
+  assert.equal(GITLAB_LOCAL_REVIEW.url, 'https://gitlab.com/ark-bitcoin/bark/-/merge_requests/2117');
 });
 test('local-review failure diagnostics use only fixed state counters without source text', () => {
   reviewCandidates(['PRIVATE_CANARY']);
@@ -164,15 +173,40 @@ test('native timestamps and status/control labels may update while the original 
   const changed = providerDashboardProbe();assert.equal(changed.custody.bodyMismatches, 1);assert.equal(changed.sameOriginals, false);
   assert.throws(() => assertProviderDashboard(changed), /bodyMismatches/);assert.doesNotMatch(JSON.stringify(changed), /PRIVATE_CHANGED_BODY/);
 });
-test('native root replacement, reparenting, id changes and semantic body replacement still fail custody', () => {
+test('native root replacement, reparenting, id changes and semantic body changes still fail custody', () => {
   for (const [kind, mutate] of [
     ['identityMismatches', node => node.replaceWith(node.cloneNode(true))],
     ['parentMismatches', node => { const parent = document.createElement('div');node.parentElement.append(parent);parent.append(node); }],
     ['idMismatches', node => { node.id = 'note_2'; }],
-    ['bodyMismatches', node => { const body = node.querySelector('.note-text');body.replaceWith(body.cloneNode(true)); }],
+    ['bodyMismatches', node => { node.querySelector('.note-text').innerHTML = '<span>Native stable comment body</span>'; }],
   ]) {
     providerDashboardProbe('cleanup');semanticDashboard();providerDashboardProbe('bind');mutate(document.querySelector('#note_1'));
     const value = providerDashboardProbe();assert.equal(value.sameOriginals, false, kind);assert.equal(value.custody[kind], 1, kind);
+  }
+});
+test('equivalent inner body or parent wrapper hydration preserves the exact original native source', () => {
+  semanticDashboard();providerDashboardProbe('bind');
+  const source = document.querySelector('#note_1');
+  const body = source.querySelector('.note-text');body.replaceWith(body.cloneNode(true));
+  assertProviderDashboard(providerDashboardProbe());
+  const wrapper = source.querySelector('.note-body');wrapper.replaceWith(wrapper.cloneNode(true));
+  assertProviderDashboard(providerDashboardProbe());
+  assert.equal(document.querySelector('#note_1'), source);
+});
+test('grouped native notes retain their original identities, parents, payload count and ordering', () => {
+  for (const [field, change] of [
+    ['idMismatches', (root, note) => { note.id = 'note_3'; }],
+    ['identityMismatches', (root, note) => { note.replaceWith(note.cloneNode(true)); }],
+    ['parentMismatches', (root, note) => { const wrapper = document.createElement('div');root.append(wrapper);wrapper.append(note); }],
+    ['payloadOrderMismatches', (root, note) => { root.append(note); }],
+    ['bodyMismatches', (root, note) => { note.querySelector('.note-body').append(note.querySelector('.note-text').cloneNode(true)); }],
+  ]) {
+    providerDashboardProbe('cleanup');semanticDashboard();
+    const note = document.querySelector('#note_1'), root = document.createElement('li');root.className = 'note-discussion';root.id = 'discussion';
+    note.before(root);root.append(note);root.setAttribute('data-geld-provider-native-find', 'folded');root.setAttribute('hidden', 'until-found');note.removeAttribute('data-geld-provider-native-find');note.removeAttribute('hidden');
+    const second = note.cloneNode(true);second.id = 'note_2';root.append(second);
+    providerDashboardProbe('bind');change(root, note);
+    const value = providerDashboardProbe();assert.equal(value.sameOriginals, false, field);assert.ok(value.custody[field] > 0, field);
   }
 });
 test('native system-event payload is pinned independently from its separate timestamp', () => {

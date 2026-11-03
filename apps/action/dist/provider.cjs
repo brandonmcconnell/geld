@@ -21325,10 +21325,12 @@ var GitLabCiAdapter = class {
     }
     const latestChecks = /* @__PURE__ */ new Map();
     const pipelineIds = /* @__PURE__ */ new Set();
+    const headPipelineId = isRecord(mr.head_pipeline) ? id(mr.head_pipeline.id) : null;
     for (const value of pipelines) {
       const pipeline = object2(value);
-      if (sha2(pipeline.sha) !== headSha) continue;
+      const pipelineSha = sha2(pipeline.sha);
       const pipelineId = id(pipeline.id);
+      if (pipelineSha !== headSha && pipelineId !== headPipelineId) continue;
       if (pipelineIds.has(pipelineId)) throw new ProviderCiError("GitLab repeated a pipeline.");
       pipelineIds.add(pipelineId);
       const projectId = id(pipeline.project_id ?? mr.project_id);
@@ -21342,8 +21344,9 @@ var GitLabCiAdapter = class {
         const jobId = BigInt(id(job.id));
         const check2 = {
           name,
-          sha: headSha,
-          status: completed ? "completed" : state === "manual" ? "waiting" : "in_progress",
+          sha: pipelineSha,
+          ...pipelineSha === headSha ? {} : { reviewHeadSha: headSha },
+          status: completed ? "completed" : state === "running" ? "in_progress" : state === "manual" ? "waiting" : "queued",
           conclusion: !completed ? null : state === "success" ? "success" : state === "failed" ? "failure" : state === "canceled" ? "cancelled" : "skipped",
           ...job.started_at === null || job.started_at === void 0 ? {} : { startedAt: time3(job.started_at) },
           ...job.finished_at === null || job.finished_at === void 0 ? {} : { completedAt: time3(job.finished_at) },
@@ -21390,14 +21393,15 @@ function validatedMeta(value) {
 }
 function checksText(metaChecks) {
   if (metaChecks.length === 0) return [];
-  const counts = { passed: 0, failed: 0, running: 0, other: 0 };
+  const counts = { passed: 0, failed: 0, running: 0, waiting: 0, other: 0 };
   for (const check2 of metaChecks) {
-    if (check2.status !== "completed") counts.running += 1;
+    if (check2.status === "waiting" || check2.status === "queued") counts.waiting += 1;
+    else if (check2.status !== "completed") counts.running += 1;
     else if (check2.conclusion === "success") counts.passed += 1;
     else if (check2.conclusion === "failure") counts.failed += 1;
     else counts.other += 1;
   }
-  return [`CI checks: ${counts.passed} passed, ${counts.failed} failed, ${counts.running} running, ${counts.other} other`];
+  return [`CI checks: ${counts.passed} passed, ${counts.failed} failed, ${counts.running} running, ${counts.waiting} waiting, ${counts.other} other`];
 }
 async function produceProviderSummary(adapter, now = (/* @__PURE__ */ new Date()).toISOString()) {
   const owner = await adapter.identity();

@@ -245,6 +245,7 @@ export class ProviderConversation {
           return action.activate({ ...context, current });
         } })) ?? [] }),
         ...(snapshot.renderComment === undefined ? {} : { renderComment: snapshot.renderComment }),
+        ...(snapshot.commentSignature === undefined ? {} : { commentSignature: snapshot.commentSignature }),
         ...(snapshot.authorPresentation === undefined ? {} : { authorPresentation: snapshot.authorPresentation }),
         onActionComplete: (): void => {
           this.nextRefresh = Date.now() + 700;
