@@ -2478,3 +2478,12 @@ Bitbucket activity cards without native anchors require one uniquely matching ex
 GitLab discussion wrappers are eligible only when every native note anchor is represented and no editor is inside them.
 A provider digest rerender restores focus to its original-conversation or section button only within the same review subject and when no other control has taken focus.
 Batch-history attention pointers retain each section's initial ID so its disclosure button and content region keep reciprocal accessible references.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
+
+Provider header ownership checks run in document mutation callbacks and must not read computed styles or layout.
+Native count visibility is refreshed during rendering and resize observation, while needsRepair checks only the owned hint attachment.
