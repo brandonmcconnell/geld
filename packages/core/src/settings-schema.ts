@@ -14,10 +14,16 @@ export type BooleanSettingKey = {
   [K in keyof GeldSettings]: GeldSettings[K] extends boolean ? K : never;
 }[keyof GeldSettings];
 
+/** Settings that hold a set of ids picked with checkboxes (see {@link ChecklistField}). */
+export type ChecklistSettingKey = 'apiTriggerBots';
+
 /** Line-list settings (one entry per line in the UI). */
-export type ListSettingKey = {
-  [K in keyof GeldSettings]: GeldSettings[K] extends readonly string[] ? K : never;
-}[keyof GeldSettings];
+export type ListSettingKey = Exclude<
+  {
+    [K in keyof GeldSettings]: GeldSettings[K] extends readonly string[] ? K : never;
+  }[keyof GeldSettings],
+  ChecklistSettingKey
+>;
 
 /** Settings that pick one of a fixed set of string values. */
 export type ChoiceSettingKey = 'repoConfigs' | 'compactTimeline' | 'reviewGrouping' | 'suggestedFixes';
@@ -112,6 +118,19 @@ export interface ListField extends FieldBase {
   readonly saveLabel: string;
 }
 
+export interface ChecklistOption {
+  readonly value: string;
+  readonly label: string;
+  readonly description: string;
+}
+
+/** A set of ids, one unchecked checkbox per option by default, inside a disclosure that starts closed. */
+export interface ChecklistField extends FieldBase {
+  readonly kind: 'checklist';
+  readonly key: ChecklistSettingKey;
+  readonly options: readonly ChecklistOption[];
+}
+
 export interface TextField extends FieldBase {
   readonly kind: 'text';
   readonly key: TextSettingKey;
@@ -160,7 +179,7 @@ export interface IssueTrackerField extends FieldBase {
   readonly saveLabel: string;
 }
 
-export type SettingsField = IssueTrackerField | ToggleField | ChoiceField | CategoriesField | CustomCategoriesField | ListField | TextField | ActionsField;
+export type SettingsField = IssueTrackerField | ToggleField | ChoiceField | CategoriesField | CustomCategoriesField | ListField | ChecklistField | TextField | ActionsField;
 
 export type SettingsSectionId = 'general' | 'hide' | 'tests' | 'large-diffs' | 'custom-categories' | 'repositories' | 'lists' | 'experiments' | 'enterprise' | 'maintenance';
 
@@ -516,6 +535,19 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         saveLabel: 'Save bots',
       },
       {
+        kind: 'checklist',
+        key: 'apiTriggerBots',
+        label: 'Start review bots by API',
+        description:
+          'For a bot that is not answering its tag comment. On a repository whose Geld workflow names a key for the bot, Rerun and Request a review post `/geld run <bot>` and the workflow starts the bot through its own API. Elsewhere they post the bot’s usual comment.',
+        popup: false,
+        options: [
+          { value: 'greptile', label: 'Greptile', description: 'Through Greptile’s `trigger_code_review` API.' },
+          { value: 'bugbot', label: 'Bugbot', description: 'Through Cursor’s Bugbot review API (Cursor Enterprise).' },
+          { value: 'devin', label: 'Devin', description: 'Through Devin’s PR review API.' },
+        ],
+      },
+      {
         kind: 'choice',
         key: 'suggestedFixes',
         label: 'Suggested fixes',
@@ -684,6 +716,10 @@ export function toggleFields(fields: readonly SettingsField[]): readonly ToggleF
 
 export function choiceFields(fields: readonly SettingsField[]): readonly ChoiceField[] {
   return fields.filter((field): field is ChoiceField => field.kind === 'choice');
+}
+
+export function checklistFields(fields: readonly SettingsField[]): readonly ChecklistField[] {
+  return fields.filter((field): field is ChecklistField => field.kind === 'checklist');
 }
 
 export function listFields(fields: readonly SettingsField[]): readonly ListField[] {

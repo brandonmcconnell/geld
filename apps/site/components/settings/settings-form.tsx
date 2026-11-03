@@ -14,6 +14,7 @@ import { CategoriesRows } from '@/components/settings/field-categories';
 import { CustomCategoriesRows } from '@/components/settings/field-custom-categories';
 import type { LinesSaveResult } from '@/components/settings/field-list';
 import { ListEditor } from '@/components/settings/field-list';
+import { ChecklistRow } from '@/components/settings/field-checklist';
 import { ChoiceRow } from '@/components/settings/field-choice';
 import { ToggleRow } from '@/components/settings/field-toggle';
 import { RichText } from '@/components/settings/rich-text';
@@ -198,6 +199,16 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
                         onCategory={onCategory}
                         onSave={onCustomSave}
                         onRemove={onCustomRemove}
+                      />
+                    );
+                  case 'checklist':
+                    return (
+                      <ChecklistRow
+                        key={field.key}
+                        field={field}
+                        values={settings[field.key]}
+                        disabled={signedOut || remoteInvalid}
+                        onChange={(values) => void submit({ kind: 'checklist', key: field.key, values })}
                       />
                     );
                   case 'list':

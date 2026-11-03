@@ -2373,6 +2373,8 @@ function normalizeSettings(value) {
     collapseDescription: bool(record4, "collapseDescription", DEFAULT_SETTINGS.collapseDescription),
     quickReview: bool(record4, "quickReview", DEFAULT_SETTINGS.quickReview),
     reviewBots: isStringArray(record4.reviewBots) ? record4.reviewBots : DEFAULT_SETTINGS.reviewBots,
+    // Well-formed ids this build does not know are kept: a newer Geld may have written them.
+    apiTriggerBots: isStringArray(record4.apiTriggerBots) ? [...new Set(record4.apiTriggerBots.filter((id) => API_TRIGGER_BOT_ID.test(id)))] : DEFAULT_SETTINGS.apiTriggerBots,
     aiEnabled: bool(record4, "aiEnabled", DEFAULT_SETTINGS.aiEnabled),
     aiBaseUrl: typeof record4.aiBaseUrl === "string" ? normalizeAiBaseUrl(record4.aiBaseUrl) : DEFAULT_SETTINGS.aiBaseUrl,
     issueTracker: parseIssueTracker(record4.issueTracker),
@@ -2435,7 +2437,7 @@ function withCustomCategory(settings, custom2) {
 function withCategoryEnabled(settings, id, enabled) {
   return id === "large" ? { ...settings, hideLargeDiffs: enabled } : { ...settings, categories: { ...settings.categories, [id]: enabled } };
 }
-var SUGGESTED_FIX_MODES, REPO_CONFIG_MODES, REVIEW_GROUPINGS, COMPACT_TIMELINE_MODES, DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY, CATEGORY_ORDER;
+var SUGGESTED_FIX_MODES, REPO_CONFIG_MODES, REVIEW_GROUPINGS, COMPACT_TIMELINE_MODES, API_TRIGGER_BOT_ID, DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY, CATEGORY_ORDER;
 var init_settings = __esm({
   "../../packages/core/src/settings.ts"() {
     "use strict";
@@ -2447,6 +2449,7 @@ var init_settings = __esm({
     REPO_CONFIG_MODES = ["always", "ask", "never"];
     REVIEW_GROUPINGS = ["type", "batch"];
     COMPACT_TIMELINE_MODES = ["off", "compact", "minimal"];
+    API_TRIGGER_BOT_ID = /^[a-z][a-z0-9-]*$/;
     DEFAULT_SETTINGS = {
       enabled: true,
       categories: {},
@@ -2476,6 +2479,7 @@ var init_settings = __esm({
       collapseDescription: false,
       quickReview: true,
       reviewBots: [],
+      apiTriggerBots: [],
       aiEnabled: false,
       aiBaseUrl: "",
       aiModel: "",
@@ -2696,6 +2700,7 @@ function collectSettingsIssues(value, path = "settings", catalog = BUNDLED_CATAL
   checkStringList(issues, `${path}.hiddenAuthors`, value.hiddenAuthors, authorRuleProblem);
   checkStringList(issues, `${path}.testSyntaxes`, value.testSyntaxes, testSyntaxProblem);
   checkStringList(issues, `${path}.reviewBots`, value.reviewBots, authorRuleProblem);
+  checkStringList(issues, `${path}.apiTriggerBots`, value.apiTriggerBots, (id) => API_TRIGGER_BOT_ID.test(id) ? null : `"${id}" is not a review bot id (lowercase letters, digits and dashes).`);
   checkStringList(issues, `${path}.enterpriseHosts`, value.enterpriseHosts, hostProblem);
   return issues;
 }
@@ -10813,6 +10818,9 @@ function toggleFields(fields) {
 function choiceFields(fields) {
   return fields.filter((field) => field.kind === "choice");
 }
+function checklistFields(fields) {
+  return fields.filter((field) => field.kind === "checklist");
+}
 function listFields(fields) {
   return fields.filter((field) => field.kind === "list");
 }
@@ -11173,6 +11181,18 @@ var init_settings_schema = __esm({
             saveLabel: "Save bots"
           },
           {
+            kind: "checklist",
+            key: "apiTriggerBots",
+            label: "Start review bots by API",
+            description: "For a bot that is not answering its tag comment. On a repository whose Geld workflow names a key for the bot, Rerun and Request a review post `/geld run <bot>` and the workflow starts the bot through its own API. Elsewhere they post the bot\u2019s usual comment.",
+            popup: false,
+            options: [
+              { value: "greptile", label: "Greptile", description: "Through Greptile\u2019s `trigger_code_review` API." },
+              { value: "bugbot", label: "Bugbot", description: "Through Cursor\u2019s Bugbot review API (Cursor Enterprise)." },
+              { value: "devin", label: "Devin", description: "Through Devin\u2019s PR review API." }
+            ]
+          },
+          {
             kind: "choice",
             key: "suggestedFixes",
             label: "Suggested fixes",
@@ -11357,6 +11377,7 @@ var init_diff_hunks = __esm({
 // ../../packages/core/src/index.ts
 var src_exports = {};
 __export(src_exports, {
+  API_TRIGGER_BOT_ID: () => API_TRIGGER_BOT_ID,
   AUTHOR_SOURCE_KINDS: () => AUTHOR_SOURCE_KINDS,
   BUILT_IN_TEST_SYNTAXES: () => BUILT_IN_TEST_SYNTAXES,
   BUNDLED_CATALOG: () => BUNDLED_CATALOG,
@@ -11418,6 +11439,7 @@ __export(src_exports, {
   checkCategoryPatterns: () => checkCategoryPatterns,
   checkCustomCategories: () => checkCustomCategories,
   checkStringList: () => checkStringList,
+  checklistFields: () => checklistFields,
   choiceFields: () => choiceFields,
   collectRepoConfigIssues: () => collectRepoConfigIssues,
   collectSettingsIssues: () => collectSettingsIssues,
@@ -31931,14 +31953,18 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     }
     if (comment.resolved === void 0 && isTriggerComment(comment.body, extraLogins)) {
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
+      const viaWorkflow = geldRunBots(comment.body).length > 0;
+      const workflow = viaWorkflow ? geldRunAnswer(comment) : null;
       for (const asked of botsTriggeredBy(comment.body, extraLogins)) {
         if (asked.id === id) continue;
-        if (!Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === "reaction" && !reactedBy(comment, asked.id)) continue;
+        if (viaWorkflow && (workflow === "failed" || workflow === null && !Number.isNaN(at) && now - at > ACK_GRACE_MS)) continue;
+        if (!viaWorkflow && !Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === "reaction" && !reactedBy(comment, asked.id)) continue;
         const prior = threadRuns.get(asked.id);
         if (prior !== void 0) runsBeforeAsk.set(asked.id, prior);
         threadRuns.delete(asked.id);
         unthreadedBy.delete(asked.id);
-        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged: botById(asked.id)?.acknowledges === "reaction" && reactedBy(comment, asked.id), askedAt: Number.isNaN(at) ? null : at });
+        const acknowledged = viaWorkflow ? workflow === "queued" : botById(asked.id)?.acknowledges === "reaction" && reactedBy(comment, asked.id);
+        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged, askedAt: Number.isNaN(at) ? null : at });
       }
       continue;
     }
@@ -32176,6 +32202,13 @@ function plainTrigger(text) {
   return text.replace(/[`*>~]/g, "").replace(/(^|\s)_+(?=\S)/g, "$1").replace(/(?<=\S)_+(?=\s|$)/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 function botsTriggeredBy(body, extraLogins = []) {
+  const viaWorkflow = geldRunBots(body);
+  if (viaWorkflow.length > 0) {
+    return viaWorkflow.flatMap((id) => {
+      const bot = botById(id);
+      return bot === null ? [] : [{ id: bot.id, login: bot.logins[0] ?? bot.id }];
+    });
+  }
   const text = ` ${plainTrigger(body)} `;
   const out = [];
   for (const bot of REVIEW_BOTS) {
@@ -32189,8 +32222,23 @@ function botsTriggeredBy(body, extraLogins = []) {
   }
   return out;
 }
+var API_TRIGGER_BOT_IDS = ["greptile", "bugbot", "devin"];
+var GELD_RUN = /^\/geld\s+run\s+([a-z][a-z0-9-]*(?:[\s,]+[a-z][a-z0-9-]*)*)\s*$/i;
+function geldRunBots(body) {
+  const match = GELD_RUN.exec(body.trim());
+  if (match?.[1] === void 0) return [];
+  const ids = [...new Set(match[1].toLowerCase().split(/[\s,]+/).filter((id) => id !== ""))];
+  return ids.every((id) => API_TRIGGER_BOT_IDS.includes(id)) ? ids : [];
+}
+function geldRunAnswer(comment) {
+  const fromApps = (comment.reactions ?? []).filter((reaction) => /\[bot\]$/i.test(reaction.login) || reaction.login.toLowerCase() === "github-actions");
+  if (fromApps.some((reaction) => reaction.emoji.toLowerCase() === "confused")) return "failed";
+  if (fromApps.some((reaction) => reaction.emoji.toLowerCase() === "rocket")) return "queued";
+  return null;
+}
 var GENERIC_TRIGGER = /^(?:@[\w-]+(?:\[bot\])?|\/[\w-]+)(?:\s+(?:review|run|rerun|re-run|retrigger|full review|summary))?$/i;
 function isTriggerComment(body, extraLogins = []) {
+  if (geldRunBots(body).length > 0) return true;
   const lines2 = body.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "");
   if (lines2.length > 1) return lines2.length <= 6 && lines2.every((line) => isTriggerComment(line, extraLogins));
   if (isSingleTrigger(body, extraLogins)) return true;

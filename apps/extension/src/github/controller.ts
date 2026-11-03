@@ -10,6 +10,7 @@ import type { RepoConfigDecision, TabRepoConfig, TabState } from '../lib/message
 import { REVEAL_HASH_PREFIX } from '../lib/messages';
 import type { RepoRule } from '@geld/core';
 import { applyRepoConfigs, compileAuthorRules, compileRepoRules, decideRepo, declaredReviewBots, describeRepoConfig, repoFromPathname } from '@geld/core';
+import { geldRunCommand } from '@geld/review';
 import type { AuthorRules } from '@geld/core';
 import { extensionAlive, persist } from '../lib/context';
 import { cancelIdle, whenIdle } from '../lib/idle';
@@ -893,7 +894,18 @@ export class GeldController {
     if (page.kind !== 'pull-conversation' || repo === null || !this.settings.prOverview) return undefined;
     const resolved = this.resolvedConfig(repo);
     const declared = resolved !== null && !resolved.loading && this.repoDecision(repo) === 'use' ? declaredReviewBots(validConfigs(resolved)) : null;
-    return { declared, configured: this.repoConfigs.botConfigs(window.location.origin, repo).found };
+    return { declared, configured: this.repoConfigs.botConfigs(window.location.origin, repo).found, apiTriggers: this.apiTriggers(repo) };
+  }
+
+  /**
+   * The bots the reader asked to start by API (`apiTriggerBots`) that this
+   * repository's Geld workflow has a key for, each with its `/geld run`
+   * command. The workflow is only read once a bot is turned on.
+   */
+  private apiTriggers(repo: string): ReadonlyMap<string, string> {
+    if (this.settings.apiTriggerBots.length === 0) return new Map();
+    const workflow = this.repoConfigs.workflowTriggers(window.location.origin, repo);
+    return new Map(this.settings.apiTriggerBots.filter((id) => workflow.bots.has(id)).map((id) => [id, geldRunCommand([id])]));
   }
 
   /** Refresh {@link diffFacts} for this page (requesting the diff if it is not here yet; the source re-runs apply when it lands). */

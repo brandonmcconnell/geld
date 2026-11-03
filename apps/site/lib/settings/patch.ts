@@ -1,4 +1,4 @@
-import type { IssueTrackerConfig, AnyCategoryId, BooleanSettingKey, CategoryId, ChoiceSettingKey, CustomCategory, GeldSettings, ListSettingKey } from '@geld/core';
+import type { IssueTrackerConfig, AnyCategoryId, BooleanSettingKey, CategoryId, ChecklistSettingKey, ChoiceSettingKey, CustomCategory, GeldSettings, ListSettingKey } from '@geld/core';
 import {
   authorRuleProblem,
   parseIssueTracker,
@@ -34,6 +34,7 @@ export type SettingsPatch =
   | { readonly kind: 'custom-category'; readonly category: CustomCategory }
   | { readonly kind: 'remove-custom-category'; readonly id: AnyCategoryId }
   | { readonly kind: 'list'; readonly key: ListSettingKey; readonly lines: readonly string[] }
+  | { readonly kind: 'checklist'; readonly key: ChecklistSettingKey; readonly values: readonly string[] }
   /** Whole-document replacement: an imported file or the defaults. Validated strictly, never merged. */
   | { readonly kind: 'replace'; readonly settings: unknown };
 
@@ -43,6 +44,7 @@ const SITE_FIELDS = fieldsFor('site');
 export const SITE_TOGGLE_KEYS: readonly BooleanSettingKey[] = SITE_FIELDS.flatMap((field) => (field.kind === 'toggle' ? [field.key] : []));
 export const SITE_LIST_KEYS: readonly ListSettingKey[] = SITE_FIELDS.flatMap((field) => (field.kind === 'list' ? [field.key] : []));
 const SITE_CHOICE_FIELDS = SITE_FIELDS.flatMap((field) => (field.kind === 'choice' ? [field] : []));
+const SITE_CHECKLIST_FIELDS = SITE_FIELDS.flatMap((field) => (field.kind === 'checklist' ? [field] : []));
 
 export const MAX_CATEGORY_TITLE = 40;
 
@@ -58,6 +60,12 @@ function isSiteToggleKey(value: unknown): value is BooleanSettingKey {
 function isSiteChoice(key: unknown, value: unknown): key is ChoiceSettingKey {
   const field = SITE_CHOICE_FIELDS.find((candidate) => candidate.key === key);
   return field !== undefined && field.options.some((option) => option.value === value);
+}
+
+/** A checklist key the site may edit, with every value among the field's options. */
+function isSiteChecklist(key: unknown, values: unknown): key is ChecklistSettingKey {
+  const field = SITE_CHECKLIST_FIELDS.find((candidate) => candidate.key === key);
+  return field !== undefined && isStringArray(values) && values.every((value) => field.options.some((option) => option.value === value));
 }
 
 function isSiteListKey(value: unknown): value is ListSettingKey {
@@ -106,6 +114,8 @@ export function isSettingsPatch(value: unknown): value is SettingsPatch {
       return isCustomCategoryId(value.id);
     case 'list':
       return isSiteListKey(value.key) && isStringArray(value.lines);
+    case 'checklist':
+      return isSiteChecklist(value.key, value.values);
     case 'replace':
       return isRecord(value.settings);
     default:
@@ -231,6 +241,8 @@ export function applyPatch(base: GeldSettings, patch: SettingsPatch): PatchResul
       if (!validated.ok) return { ok: false, message: validated.message };
       return { ok: true, settings: { ...base, [patch.key]: validated.lines } };
     }
+    case 'checklist':
+      return { ok: true, settings: { ...base, [patch.key]: [...new Set(patch.values)] } };
     case 'replace': {
       const validated = validateSettingsValue(patch.settings);
       if (validated.ok) return { ok: true, settings: validated.settings };

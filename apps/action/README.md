@@ -33,17 +33,25 @@ With AI on, the Action consolidates **bot-only** findings (people's comments kee
 
 ## Start review bots by API
 
-The example workflow has a second job, `trigger`, that starts review bots through their own APIs when someone with write access comments `/geld run greptile` (or `bugbot`, `devin`, several separated by spaces). It helps when a bot is not picking up its own tag comment, since the bot never has to read the comment. Add a repository secret for each bot you use:
+The example workflow has a second job, `trigger`, that starts review bots through their own APIs when someone with write access comments `/geld run greptile` (or `bugbot`, `devin`, several separated by spaces). It helps when a bot is not picking up its own tag comment, since the bot never has to read the comment.
 
-| Bot | Secrets | Where the key comes from |
+Every bot is off until you turn it on. Store the bot's key as a repository secret (Settings > Secrets and variables > Actions), then put that secret's **name** in the workflow's `env` block:
+
+| Bot | Workflow setting | Where the key comes from |
 |---|---|---|
-| `greptile` | `GREPTILE_API_KEY` | Greptile, Settings > Organization > API Keys. Calls `trigger_code_review` on `api.greptile.com/mcp`. |
-| `bugbot` | `CURSOR_API_KEY` | Cursor Dashboard > API Keys, admin scope (Enterprise). Calls `POST api.cursor.com/bugbot/review`. |
-| `devin` | `DEVIN_API_KEY`, `DEVIN_ORG_ID` | A Devin service user with `UseReviewManual`. Calls `POST api.devin.ai/v3/organizations/{org}/pr-reviews`. |
+| `greptile` | `GELD_GREPTILE_KEY_SECRET` | Greptile, Settings > Organization > API Keys. Calls `trigger_code_review` on `api.greptile.com/mcp`. |
+| `bugbot` | `GELD_BUGBOT_KEY_SECRET` | Cursor Dashboard > API Keys, admin scope (Cursor Enterprise). Calls `POST api.cursor.com/bugbot/review`. |
+| `devin` | `GELD_DEVIN_KEY_SECRET` and `GELD_DEVIN_ORG_ID` | A Devin service user with `UseReviewManual`, and your organization id (not a secret). Calls `POST api.devin.ai/v3/organizations/{org}/pr-reviews`. |
+
+```yaml
+env:
+  GELD_GREPTILE_KEY_SECRET: GREPTILE_API_KEY # the name of your secret, not the key
+```
 
 - **Who can trigger:** secrets are available to every comment's run, so the job checks the commenter's permission first and refuses anyone without write access, and comments from bot accounts.
 - **Parallel:** the `trigger` job has no concurrency group, so every command runs, alongside the others and the summary. The `summary` job keeps its own group, which cancels older summary runs so only the newest rewrites the comment.
 - **Result:** a 🚀 reaction on the comment when every bot was queued, 😕 otherwise, with the reason in the run's log. A queued review still runs on the bot's side and posts as usual.
+- **From the extension:** with a bot ticked under "Start review bots by API" in Geld's settings, Rerun and Request a review post `/geld run <bot>` on repositories whose Geld workflow names a secret for that bot (the extension reads the workflow file for the names, never the keys) and the bot's own tag comment everywhere else. The digest reads the workflow's 🚀 as the bot taking the run and its 😕 as no run.
 
 Repositories that copied an earlier version of `examples/geld.yml` need to copy it again to get this job: `uses: …@main` updates the Action's code, not the workflow file.
 
