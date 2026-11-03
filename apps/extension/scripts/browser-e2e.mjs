@@ -533,8 +533,8 @@ async function runCase(name, url, body, discovery = false) {
     }
     if (['gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'].includes(name)) { item.standaloneTraffic = {};standaloneObserver = observeStandaloneWhole(page, item.standaloneTraffic, { kind: name.endsWith('-commit') ? 'commit' : 'compare', extensionId, safeUrl });gitLabStandaloneSources.set(page, standaloneObserver); }
     if (name === 'gitlab-coderabbit-digest') codeRabbitSources.set(page, observeCodeRabbitFixture(page, item, extensionId));
-    if (['bitbucket-pipeline-shell', 'bitbucket-native-bash-on'].includes(name)) {
-      item.nativeMainAsset = {};pipelineMainAsset = observeBitbucketPipelineMainAsset(page, item.nativeMainAsset, { moduleOnly: name === 'bitbucket-native-bash-on', writeArtifact: (file, bytes, signal) => writeFile(resolve(artifacts, file), bytes, { signal }) });
+    if (['bitbucket-pipeline-shell', 'bitbucket-native-bash-on', 'bitbucket-pipeline-initial-on'].includes(name)) {
+      item.nativeMainAsset = {};pipelineMainAsset = observeBitbucketPipelineMainAsset(page, item.nativeMainAsset, { moduleOnly: name !== 'bitbucket-pipeline-shell', writeArtifact: (file, bytes, signal) => writeFile(resolve(artifacts, file), bytes, { signal }) });
     }
     if (['bitbucket-diff', 'bitbucket-pipeline-shell'].includes(name)) observeBitbucketShellFixture(page, item, { safeUrl, extensionId });
     if (['bitbucket-pipeline-syntax-on', 'bitbucket-pipeline-initial-on'].includes(name)) {
@@ -585,7 +585,7 @@ async function runCase(name, url, body, discovery = false) {
     if (listSettings !== undefined) await patchSettings({ showListStats: listSettings.showListStats ?? true });
     if (pipelineMainAsset !== undefined) {
       try { await pipelineMainAsset.dispose(); }
-      catch (error) { item.nativeMainAsset.status = 'unavailable';item.nativeMainAsset.cleanup = { ...item.nativeMainAsset.cleanup, status: 'failed', error: name === 'bitbucket-native-bash-on' ? 'Optional native module observer cleanup unavailable' : errorText(error) }; }
+      catch (error) { item.nativeMainAsset.status = 'unavailable';item.nativeMainAsset.cleanup = { ...item.nativeMainAsset.cleanup, status: 'failed', error: ['bitbucket-native-bash-on', 'bitbucket-pipeline-initial-on'].includes(name) ? 'Optional native module observer cleanup unavailable' : errorText(error) }; }
     }
     if (gitLabComparisonObserver !== undefined) {
       try { await gitLabComparisonObserver.dispose(); }
