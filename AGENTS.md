@@ -2140,3 +2140,9 @@ The default raw collector remains pinned to its original exact URL, and no eligi
 - **Owned shell comments conditionally use the native comment variable**: retained first-party token.comment CSS and historical native root measurements support --ds-comment-refreshed, with the existing native code-comments token as the exact fallback when that property is absent.
   Only the owned comment highlight and its declared-model oracle prefer this variable, while meta, native YAML styles, grammar, plain ranges and eligibility retain their prior behavior.
   Current embedded-element availability and enabled comment equality remain unverified, and master-off native Bash evidence does not establish live YAML, dark or complete palette equivalence.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
