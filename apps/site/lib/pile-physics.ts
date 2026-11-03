@@ -46,6 +46,8 @@ const ITERATIONS = 6;
 const MAX_SPEED = 3200;
 const SLEEP_SPEED = 12;
 const SLEEP_AFTER = 24;
+/** How far per substep a body overhanging the edge of what it rests on slides off it. */
+const SPILL = 0.7;
 const ABSORBED_SCALE = 0.25;
 const SWALLOW_DISTANCE = 10;
 
@@ -157,6 +159,9 @@ function pushOut(body: Body, obstacle: Rect, grounded: Set<Body>): void {
   } else if (body.y < (obstacle.top + obstacle.bottom) / 2) {
     body.y -= oy;
     grounded.add(body);
+    // Resting with its middle past the edge: it slides off, since a box that cannot tip would balance there forever.
+    if (body.x < obstacle.left) body.x -= SPILL;
+    else if (body.x > obstacle.right) body.x += SPILL;
   } else {
     body.y += oy;
   }
@@ -182,7 +187,14 @@ function separate(a: Body, b: Body, grounded: Set<Body>): void {
     const sign = a.y < b.y ? -1 : 1;
     a.y += sign * oy * share;
     b.y -= sign * oy * (1 - share);
-    grounded.add(sign < 0 ? a : b);
+    const upper = sign < 0 ? a : b;
+    const lower = sign < 0 ? b : a;
+    grounded.add(upper);
+    if (!upper.held) {
+      const support = rectOf(lower);
+      if (upper.x < support.left) upper.x -= SPILL;
+      else if (upper.x > support.right) upper.x += SPILL;
+    }
   }
   // A resting body that actually got moved (by the pointer, or by another resting body) wakes.
   const push = Math.min(ox, oy);

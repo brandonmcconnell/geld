@@ -65,6 +65,13 @@ describe('the pile', () => {
     expect(overlaps(rectOf(held), rectOf(other))).toBe(false);
   });
 
+  it('slides a box off a ledge it overhangs, rather than balancing it there', () => {
+    const ledge: Rect = { left: 300, top: 400, right: 500, bottom: 460 };
+    const overhanging = body(520, 380);
+    run([overhanging], { ...world, obstacles: [ledge] }, 4);
+    expect(rectOf(overhanging).bottom).toBeCloseTo(world.floor, 0);
+  });
+
   it('carries a thrown box sideways until friction stops it', () => {
     const thrown = body(100, 580);
     thrown.vx = 900;
