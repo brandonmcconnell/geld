@@ -2195,3 +2195,9 @@ Full conversation digest acceptance remains the separate Overview regression bec
 The actual298 Bitbucket file-menu observation measured the original32px button with6px radius, owned center and cardinal hits, and an old bottom-right corner outside the native hit target.
 Its one trusted original opener click succeeded, but the observed popup satisfied none of the four checked associations and exposed only the safe12-character source reference9777bca47119, granting no native full-head authority.
 Those recorded geometry facts do not explain295's unrecorded rejection stage, and the298 URL-omitted429 remains provider-unclassified with the `not_bitbucket_standard` API classification and unknown emitter while any subsequently carried cooldown remains authoritative.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
