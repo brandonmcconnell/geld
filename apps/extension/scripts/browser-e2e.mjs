@@ -3340,9 +3340,11 @@ try {
     await verifyProviderDashboardUi(page, item.dashboardUi, { poll, capture: (name) => capture(page, `bitbucket-${name}`) });
     item.authorPresentation = await authorThemeEvidence(page, 'bitbucket', 'comment-471253038');
     assertAuthorThemeEvidence(item.authorPresentation);
-    item.state = await tabState(page);
+    item.state = await poll(() => tabState(page), (value) => value.repository?.provider === 'bitbucket' && value.visible !== null, 'Bitbucket overview has computed visible totals');
+    item.headerUi = await poll(() => page.evaluate(providerUiProbe, 'bitbucket'), (value) => value.counts.additions.length > 0 && value.counts.deletions.length > 0, 'Visible Bitbucket overview additions and deletions');
+    assertVisibleProviderCounts(item.headerUi, item.state.visible);
     item.featureParity = 'partial';
-    return { status: 'passed', verified: 'Actual public native comment471253038 is safely rendered with its original source permalink and native outdated state. Anonymous write controls remain unavailable; no provider write is attempted.' };
+    return { status: 'passed', verified: 'Actual public native comment471253038 is safely rendered with its original source permalink and native outdated state. The overview visibly renders its adjusted additions and deletions. Anonymous write controls remain unavailable; no provider write is attempted.' };
   });
   await runCase('bitbucket-commit-counts', BB_COMMIT, async (page, item) => {
     item.commitCounts = await bitbucketCommitCounts(page, item);
