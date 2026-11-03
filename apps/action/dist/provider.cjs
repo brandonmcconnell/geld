@@ -28664,7 +28664,7 @@ var ProviderHttp = class {
   }
   async bitbucketValues(path) {
     const initial = this.url(path);
-    initial.searchParams.set("pagelen", "100");
+    initial.searchParams.set("pagelen", initial.pathname.endsWith("/activity") ? "50" : "100");
     const values = [];
     let next = initial;
     const visited = /* @__PURE__ */ new Set();
