@@ -2539,9 +2539,16 @@ The CI browser runs headed under Xvfb for the native permission prompt, while th
 Native confirmation is limited to an active dialog owned by the launched Chrome process tree, outside web documents, naming Geld and the exact requested provider hosts with one enabled Allow action.
 Unknown, ambiguous or inaccessible dialogs remain unconfirmed, and no direct permission grant API or blind keyboard input substitutes for that native confirmation.
 
+Provider dashboards show incomplete source coverage as one muted partial-review status rather than repeating API diagnostics in the conversation.
+The copied digest retains every unavailable source reason, including separate missing thread states, while the panel remains explicitly partial.
+
 The read-only provider-evidence exporter accepts only the fixed GitLab captures and Bitbucket dashboard hidden/dark or named UI-failure captures emitted by the installed runner.
 It preserves the existing per-file, compressed-total and chunk limits and reports fixed Bitbucket UI status/custody fields without opening a browser or requesting provider data.
 Chrome's native ATK bridge is separate from renderer accessibility: the owned CI process sets `ACCESSIBILITY_ENABLED=1` and removes `CHROME_HEADLESS`, then uses the same isolated D-Bus session whose `org.a11y.Status.IsEnabled` is explicitly set and read back before Chrome starts.
 The accessibility preflight verifies that the real registry exposes an owned, showing, active native Chrome window with a showing native control outside web-document subtrees before requesting optional provider access.
 Missing native accessibility stops before the options click and records only bounded ownership, role and window-state counters;
 an empty dialog scan cannot prove a product permission failure.
+
+Dashboard pointer acceptance completes source-custody reads before stabilizing the original control's hit box across animation frames.
+It follows the same section key and ID rather than its array position, and records the trusted target plus immediate and microtask expansion state so a missed click is distinct from a later state reset.
+A missed, replaced or persistently moving target fails before result polling without retrying pointer input.

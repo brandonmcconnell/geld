@@ -260,7 +260,7 @@ export function providerDashboardProbe(mode = 'read') {
   const sectionBindings = sections.map((section) => {
     const control = section.querySelector(':scope > button[data-geld-review-toggle]');
     const target = document.getElementById(control?.getAttribute('aria-controls') ?? '');
-    return { primary: section.parentElement === panel, nativeDetails: section.tagName === 'DETAILS', toggle: visible(control), expanded: control?.getAttribute('aria-expanded') ?? null, ownsContent: target !== null && section.contains(target) && target.classList.contains('geld-provider-review__section-content') && control.id !== '' && target.getAttribute('aria-labelledby') === control.id, contentVisible: visible(target) };
+    return { key: section.dataset.geldReviewKey ?? null, id: section.id, primary: section.parentElement === panel, nativeDetails: section.tagName === 'DETAILS', toggle: visible(control), expanded: control?.getAttribute('aria-expanded') ?? null, ownsContent: target !== null && section.contains(target) && target.classList.contains('geld-provider-review__section-content') && control.id !== '' && target.getAttribute('aria-labelledby') === control.id, contentVisible: visible(target) };
   });
   const provider = panel?.getAttribute('data-provider');
   const nativeSelector = provider === 'gitlab' ? '.issuable-discussion [data-testid="noteable-note-container"] .timeline-content' : provider === 'bitbucket' ? '[data-qa="pull-request-description"]' : null;
@@ -309,30 +309,76 @@ export async function verifyProviderDashboardUi(page, progress, { poll, capture,
     const handle = handles[index ?? 0];
     try {
       await handle.evaluate((node) => node.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'nearest' }));
-      const point = await handle.evaluate((node) => {
-        if (!node.isConnected || node.disabled) return null;
-        const box = node.getBoundingClientRect();const x = box.left + box.width / 2;const y = box.top + box.height / 2;
-        const hit = document.elementFromPoint(x, y);
-        return box.width > 0 && box.height > 0 && x > 0 && y > 0 && x < innerWidth && y < innerHeight && hit !== null && node.contains(hit) ? { x, y } : null;
-      });
-      assert.ok(point, 'The original dashboard control must have an unobscured visible click point');
       const custody = await read();
       assert.equal(custody.sameOriginals, true, `Original conversation changed before the real pointer input: ${JSON.stringify(custody.custody)}`);
+      const point = await handle.evaluate(async (node) => {
+        let previous = null;
+        let stable = 0;
+        for (let frame = 0; frame < 24; frame++) {
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          if (!node.isConnected || node.disabled) return { ready: false, reason: 'detached-or-disabled', sample: previous };
+          const box = node.getBoundingClientRect();const x = box.left + box.width / 2;const y = box.top + box.height / 2;
+          const hit = document.elementFromPoint(x, y);
+          const next = { x, y, width: box.width, height: box.height };
+          const visible = box.width > 0 && box.height > 0 && x > 0 && y > 0 && x < innerWidth && y < innerHeight && hit !== null && node.contains(hit);
+          stable = visible && previous !== null && Object.keys(next).every((key) => Math.abs(next[key] - previous[key]) < 0.25) ? stable + 1 : 0;
+          previous = next;
+          if (stable < 2) continue;
+          const state = { node, receipt: null, listener: null, afterListener: null };
+          const expansion = () => ({ target: node.getAttribute('aria-expanded'), current: node.id ? document.getElementById(node.id)?.getAttribute('aria-expanded') ?? null : null, connected: node.isConnected });
+          state.listener = (event) => {
+            const sameControl = event.currentTarget === node && node.contains(event.target);
+            state.receipt = { trusted: event.isTrusted, trustedTargetCount: event.isTrusted && sameControl ? 1 : 0, connected: node.isConnected, sameControl, controlId: node.id, sectionKey: node.parentElement?.dataset.geldReviewKey ?? null, x: event.clientX, y: event.clientY, before: expansion(), immediate: null, microtask: null };
+          };
+          state.afterListener = () => {
+            if (state.receipt === null) return;
+            state.receipt.immediate = expansion();
+            queueMicrotask(() => { if (state.receipt !== null) state.receipt.microtask = expansion(); });
+          };
+          node.addEventListener('click', state.listener, { capture: true, once: true });
+          node.addEventListener('click', state.afterListener, { once: true });
+          globalThis.__geldDashboardPointerReceipt = state;
+          return { ready: true, ...next, controlId: node.id, sectionKey: node.parentElement?.dataset.geldReviewKey ?? null, sectionId: node.parentElement?.id ?? null, expandedBefore: node.getAttribute('aria-expanded') };
+        }
+        return { ready: false, reason: 'unstable-or-obscured', sample: previous };
+      });
+      progress.clicks ??= [];
+      const attempt = { point, receipt: null };
+      progress.clicks.push(attempt);
+      assert.equal(point.ready, true, 'The original dashboard control must have a stable unobscured visible click point');
       await page.mouse.click(point.x, point.y);
-    } finally { await Promise.all(handles.map((entry) => entry.dispose())); }
+      const receipt = await handle.evaluate((node) => {
+        const state = globalThis.__geldDashboardPointerReceipt;
+        return state?.node === node ? state.receipt : null;
+      });
+      attempt.receipt = receipt;
+      assert.ok(receipt?.trusted && receipt.trustedTargetCount === 1 && receipt.connected && receipt.sameControl, 'The original dashboard control must receive the trusted click before waiting for its result');
+    } finally {
+      if (!page.isClosed()) await handle.evaluate(() => {
+        const state = globalThis.__geldDashboardPointerReceipt;
+        state?.node.removeEventListener('click', state.listener, true);
+        state?.node.removeEventListener('click', state.afterListener);
+        delete globalThis.__geldDashboardPointerReceipt;
+      });
+      await Promise.all(handles.map((entry) => entry.dispose()));
+    }
   };
   try {
     progress.baseline = await poll(() => read('bind'), (value) => value.bound && value.originalCount > 0 && value.overviewVisible, 'Visible dashboard and retained original conversation');
     assertProviderDashboard(progress.baseline);
     progress.initialScreenshot = await capture('dashboard-native-hidden');
-    const sectionSelector = '.geld-provider-review > [data-geld-review-key] > button[data-geld-review-toggle]';
-    const beforeExpanded = progress.baseline.sectionBindings.find((section) => section.primary)?.expanded;
-    await click(sectionSelector, 0);
-    progress.sectionToggled = await poll(read, (value) => value.sectionBindings.find((section) => section.primary)?.expanded !== beforeExpanded && value.sameOriginals, 'Real custom dashboard disclosure changes its body');
-    const toggled = progress.sectionToggled.sectionBindings.find((section) => section.primary);
+    const section = progress.baseline.sectionBindings.find((section) => section.primary);
+    assert.ok(section?.key && section.id, 'The first primary dashboard section must have a stable identity');
+    const selected = (value) => value.sectionBindings.find((candidate) => candidate.primary && candidate.key === section.key && candidate.id === section.id);
+    const sectionSelector = `.geld-provider-review > [data-geld-review-key=${JSON.stringify(section.key)}] > button[data-geld-review-toggle]`;
+    const beforeExpanded = section.expanded;
+    const expectedExpanded = beforeExpanded === 'true' ? 'false' : 'true';
+    await click(sectionSelector);
+    progress.sectionToggled = await poll(read, (value) => selected(value)?.expanded === expectedExpanded && value.sameOriginals, 'Real custom dashboard disclosure changes its body');
+    const toggled = selected(progress.sectionToggled);
     assert.equal(toggled.contentVisible, toggled.expanded === 'true', 'Dashboard disclosure controls actual content visibility');
-    await click(sectionSelector, 0);
-    await poll(read, (value) => value.sectionBindings.find((section) => section.primary)?.expanded === beforeExpanded && value.sameOriginals, 'Custom dashboard disclosure restores its original state');
+    await click(sectionSelector);
+    await poll(read, (value) => selected(value)?.expanded === beforeExpanded && value.sameOriginals, 'Custom dashboard disclosure restores its original state');
     await click('button[data-geld-original-conversation]');
     progress.originalsShown = await poll(read, (value) => value.originalVisible === value.originalCount && value.sameOriginals, 'Real Show original conversation restores retained native entries');
     assertProviderDashboard(progress.originalsShown, true);

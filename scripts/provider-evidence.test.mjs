@@ -8,7 +8,7 @@ import { gunzipSync } from 'node:zlib';
 import { randomBytes, createHash } from 'node:crypto';
 import { EVIDENCE_FILES, EVIDENCE_LIMITS, emitProviderEvidence, readEvidenceFile, summarizeProviderEvidence } from './provider-evidence.mjs';
 const sha = value => createHash('sha256').update(value).digest('hex');
-const report = () => ({ schema: 1, startedAt: '2026-11-03T07:00:00.000Z', cases: [{ name: 'gitlab-overview-digest', status: 'failed', error: 'Original conversation PRIVATE_CANARY', url: 'https://PRIVATE_CANARY/' }], private: 'PRIVATE_CANARY' });
+const report = () => ({ schema: 1, startedAt: '2026-11-03T07:00:00.000Z', cases: [{ name: 'gitlab-overview-digest', status: 'failed', error: 'Original conversation nodes and content must be retained: PRIVATE_CANARY', url: 'https://PRIVATE_CANARY/' }], private: 'PRIVATE_CANARY' });
 async function withDirectory(fn) { const directory = await mkdtemp(join(tmpdir(), 'geld-evidence-'));try { await fn(directory); } finally { await rm(directory, { recursive: true, force: true }); } }
 
 test('fixed artifact bytes round trip through bounded gzip/base64 log chunks with exact hashes', async () => withDirectory(async directory => {
@@ -31,6 +31,21 @@ test('summary only exports known case/status/count/time fields, never raw errors
   const result = summarizeProviderEvidence(value, Buffer.from('{}'));
   assert.equal(result.cases.length, 1);assert.equal(result.cases[0].errorKind, 'conversation_custody');
   assert.doesNotMatch(JSON.stringify(result), /PRIVATE_CANARY|https:/);
+});
+
+test('actual disclosure timeout with zero custody mismatches remains a failed disclosure rather than a custody failure', () => {
+  const value = report();
+  value.cases = [{ name: 'bitbucket-ui-continuity', status: 'failed',
+    error: 'Error: Real custom dashboard disclosure changes its body timed out. Last value: {"sameOriginals":true,"custody":{"bodyMismatches":0}}',
+    dashboardUi: { baseline: { custody: { identityMismatches: 0, parentMismatches: 0, idMismatches: 0, bodyMismatches: 0, payloadOrderMismatches: 0, unqualifiedPayloads: 0 } } } }];
+  const result = summarizeProviderEvidence(value, Buffer.from('{}')).cases[0];
+  assert.equal(result.errorKind, 'dashboard_disclosure');assert.equal(result.status, 'failed');
+  value.cases[0].error = 'An unrelated request body failed';
+  assert.equal(summarizeProviderEvidence(value, Buffer.from('{}')).cases[0].errorKind, 'other');
+  value.cases[0].dashboardUi.baseline.custody.bodyMismatches = 1;
+  assert.equal(summarizeProviderEvidence(value, Buffer.from('{}')).cases[0].errorKind, 'conversation_custody');
+  value.cases[0].holdReason = 'provider_http429';
+  assert.equal(summarizeProviderEvidence(value, Buffer.from('{}')).cases[0].errorKind, 'http429');
 });
 
 test('Bitbucket dashboard captures use exact runner filenames and retain hashes without broadening the path allowlist', async () => withDirectory(async directory => {
