@@ -2390,6 +2390,10 @@ The November 2 native app refresh from `6ea3303` to `5ff3a9b` changed the bundle
 The acceptance guard allows both exact audited URLs and records at most four validated native app paths with match, extension-frame and truncation flags when rejecting an initiator.
 It never records arbitrary stack URLs, function names or request bodies.
 
+The native Atlassian cookie notice uses `role="dialog"` while remaining a passive layout banner.
+Whitespace acceptance excludes only the retained native cookie shape and ownership from its active-dialog guard, preserving every notice node and never choosing consent.
+Unknown dialogs, changed notices and dialogs containing fields remain blockers, and the report separates passive notice counts from actionable Settings matches.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 

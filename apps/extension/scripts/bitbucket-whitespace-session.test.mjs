@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
 import { Window } from 'happy-dom';
 import { BITBUCKET_WHITESPACE_URL as URL, bitbucketWhitespaceBudget as budget, bitbucketWhitespaceAwait, bitbucketConnectRead, bitbucketNativeReadPost, bitbucketWhitespaceSettings as settingsScope, bitbucketWhitespaceResource as resource, observeBitbucketWhitespace, qualifyBitbucketWhitespace as qualify, bitbucketWhitespaceProbe as probe, verifyBitbucketWhitespace as verify } from './bitbucket-whitespace-session.mjs';
 const API = 'https://bitbucket.org/!api/2.0/repositories/atlassian/bitbucket-upload-file/';
@@ -70,6 +71,68 @@ function dom() {
   const addDialog = checked => { const d = w.document.createElement('div');d.setAttribute('role', 'dialog');d.innerHTML = '<form><label id="diff-settings-ignore-whitespace-toggle-label" for="diff-settings-ignore-whitespace-toggle">Whitespace changes<input id="diff-settings-ignore-whitespace-toggle" type="checkbox" name="shouldIgnoreWhitespace" value="shouldIgnoreWhitespace"></label><button type="button">Cancel</button><button type="submit">Save</button></form>';w.document.body.append(d);d.querySelector('input').checked = checked;for (const n of [d, ...d.querySelectorAll('*')]) n.getBoundingClientRect = () => ({ width: 20, height: 20 });return d; };
   return { w, addDialog, close() { probe('dispose');for (const [k, value] of old) if (value) Object.defineProperty(globalThis, k, value);else delete globalThis[k];w.happyDOM.abort(); } };
 }
+const retainedCookieNotice = readFileSync(new globalThis.URL('../src/bitbucket/fixtures/passive-cookie-notice.html', import.meta.url), 'utf8');
+function installRetainedCookie(d) {
+  d.w.document.body.insertAdjacentHTML('beforeend', retainedCookieNotice);
+  const root = d.w.document.getElementById('unsafe-design-system-page-layout-root');
+  for (const node of [root, ...root.querySelectorAll('*'), d.w.document.querySelector('button[aria-live="polite"]')]) node.getBoundingClientRect = () => ({ width: 20, height: 20 });
+  return { root, dialog: root.querySelector('[role="dialog"]'), slot: root.firstElementChild };
+}
+test('retained native passive cookie notice stays byte-identical and untouched beside the actual Settings dialog', () => {
+  const d = dom();try {
+    const { root, dialog } = installRetainedCookie(d), before = root.outerHTML, nodes = [...root.querySelectorAll('*')];let consentInputs = 0;
+    for (const type of ['click', 'input', 'change', 'submit']) root.addEventListener(type, () => { consentInputs++; });
+    const baseline = probe('bind');assert.equal(baseline.dialogCount, 0);assert.deepEqual(baseline.dialogCounts, { total: 1, passiveCookie: 1, actionable: 0, settingsMatches: 0 });
+    assert.equal(probe('target', 'opener'), d.w.document.querySelector('#pull-request-tabs-1-tab > button'));
+    const settings = d.addDialog(true);const opened = probe();assert.equal(opened.checkbox.checked, true);
+    assert.deepEqual(opened.dialogCounts, { total: 2, passiveCookie: 1, actionable: 1, settingsMatches: 1 });
+    assert.equal(probe('target', 'cancel'), settings.querySelector('button[type="button"]'));
+    settings.remove();assert.equal(probe().dialogCount, 0);assert.equal(probe('diagnostic').dialogCounts.passiveCookie, 1);
+    assert.equal(root.outerHTML, before);assert.deepEqual([...root.querySelectorAll('*')], nodes);assert.equal(consentInputs, 0);assert.equal(dialog.isConnected, true);assert.deepEqual(probe().events, []);
+  } finally { d.close(); }
+});
+for (const change of ['changed-narrative', 'extra-text', 'extra-span-text', 'changed-hidden-narrative']) test('unknown cookie narrative before initial binding remains an actionable dialog: ' + change, () => {
+  const d = dom();try {
+    const { root, dialog } = installRetainedCookie(d);
+    const narratives = [...dialog.querySelectorAll('span')].filter(node => node.textContent.startsWith('Atlassian uses cookies'));
+    if (change === 'changed-narrative') narratives[0].textContent = 'UNKNOWN MODAL CONTENT BEFORE BASELINE';
+    if (change === 'changed-hidden-narrative') narratives.at(-1).textContent = 'UNKNOWN HIDDEN NARRATIVE BEFORE BASELINE';
+    if (change === 'extra-text') dialog.append(d.w.document.createTextNode('UNEXPECTED TEXT BEFORE BASELINE'));
+    if (change === 'extra-span-text') dialog.insertAdjacentHTML('beforeend', '<span>UNEXPECTED SPAN BEFORE BASELINE</span>');
+    const before = root.outerHTML;const value = probe('bind');
+    assert.deepEqual(value.dialogCounts, { total: 1, passiveCookie: 0, actionable: 1, settingsMatches: 0 });
+    assert.equal(probe('target', 'opener'), null);assert.equal(root.outerHTML, before);assert.deepEqual(probe().events, []);
+    assert.equal(JSON.stringify(probe('diagnostic')).includes('BEFORE BASELINE'), false);
+  } finally { d.close(); }
+});
+test('known initial cookie narrative permits whitespace normalization without changing the DOM', () => {
+  const d = dom();try {
+    const { root, dialog } = installRetainedCookie(d);const narrative = [...dialog.querySelectorAll('span')].find(node => node.textContent.startsWith('Atlassian uses cookies'));
+    narrative.textContent = narrative.textContent.replace(/\s+/g, ' \n\t ');const before = root.outerHTML;
+    assert.equal(probe('bind').dialogCounts.passiveCookie, 1);assert.equal(root.outerHTML, before);
+  } finally { d.close(); }
+});
+for (const mutation of ['unknown-label', 'wrong-owner', 'slot-nesting', 'extra-parent-attribute', 'extra-slot-sibling', 'field', 'form', 'button', 'link', 'unknown-element', 'text-change', 'replacement', 'duplicate']) test('changed cookie notice remains an actionable veto: ' + mutation, () => {
+  const d = dom();try {
+    const { root, dialog, slot } = installRetainedCookie(d);assert.equal(probe('bind').dialogCounts.passiveCookie, 1);
+    if (mutation === 'unknown-label') dialog.setAttribute('aria-labelledby', 'PRIVATE_UNKNOWN');
+    if (mutation === 'wrong-owner') root.id = 'PRIVATE_OWNER';
+    if (mutation === 'slot-nesting') { const wrap = d.w.document.createElement('div');root.append(wrap);wrap.append(slot); }
+    if (mutation === 'extra-parent-attribute') dialog.parentElement.dataset.private = 'PRIVATE_ATTRIBUTE';
+    if (mutation === 'extra-slot-sibling') slot.append(d.w.document.createElement('div'));
+    if (mutation === 'field') dialog.insertAdjacentHTML('beforeend', '<input value="PRIVATE_FIELD">');
+    if (mutation === 'form') dialog.insertAdjacentHTML('beforeend', '<form></form>');
+    if (mutation === 'button') dialog.querySelector('button').textContent = 'PRIVATE_BUTTON';
+    if (mutation === 'link') dialog.querySelector('a').href = 'https://example.test/PRIVATE_LINK';
+    if (mutation === 'unknown-element') dialog.insertAdjacentHTML('beforeend', '<section>PRIVATE_ELEMENT</section>');
+    if (mutation === 'text-change') dialog.querySelector('span').textContent = 'PRIVATE_TEXT';
+    if (mutation === 'replacement') { const clone = dialog.cloneNode(true);clone.getBoundingClientRect = () => ({ width: 20, height: 20 });dialog.replaceWith(clone); }
+    if (mutation === 'duplicate') { const clone = dialog.cloneNode(true);clone.getBoundingClientRect = () => ({ width: 20, height: 20 });dialog.after(clone); }
+    const result = probe();assert.equal(result.dialogCounts.passiveCookie, 0);assert.ok(result.dialogCount >= 1);assert.equal(probe('target', 'opener'), null);
+    assert.equal(JSON.stringify(probe('diagnostic')).includes('PRIVATE_'), false);
+    const settings = d.addDialog(true);assert.equal(probe().checkbox, null);assert.equal(probe('target', 'cancel'), null);assert.equal(settings.isConnected, true);
+  } finally { d.close(); }
+});
 test('native probe reads only original known checkbox, retaining Viewed identity and rejecting duplicate fields', () => {
   const d = dom();try { assert.equal(probe('bind').originalsPreserved, true);const dialog = d.addDialog(true);const before = d.w.document.body.innerHTML;assert.equal(probe().checkbox.checked, true);assert.equal(d.w.document.body.innerHTML, before);dialog.querySelector('input').after(dialog.querySelector('input').cloneNode());assert.equal(probe().checkbox, null);assert.equal(probe('target', 'cancel').textContent, 'Cancel'); } finally { d.close(); }
 });
