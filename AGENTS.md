@@ -2049,3 +2049,9 @@ The harness labels this prior-success requirement ROOT-MANUAL and unverified by 
   Progress retains only bounded safe names/types and fixed boolean/numeric presentation diagnostics, with no unknown form values, DOM, AX, screenshots or generic Cancel.
   A never-ready initial form remains unavailable and untouched, while an unknown fresh form after a prior Save remains failed native restoration.
   The actual first standalone attempt stopped at one dialog sample that failed its visibility predicate before schema inspection, which establishes no specific visibility cause, empty form, animation or successful native Bash palette reference.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
