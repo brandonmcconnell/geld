@@ -36,10 +36,10 @@ export default function HomePage() {
         <div className="container-site border-t pt-16 sm:pt-20">
           <div className="max-w-2xl">
             <p className="mb-4 font-mono text-[0.9375rem] font-medium tracking-[0.12em] text-muted-foreground uppercase">What it does</p>
-            <h2 id="tour-heading" className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
+            <h2 id="tour-heading" className="text-2xl font-semibold tracking-tight sm:text-3xl">
               Everything a review needs, on the page you already have open.
             </h2>
-            <p className="mt-3 text-base text-muted-foreground text-pretty">
+            <p className="mt-3 text-base text-muted-foreground text-balance">
               Geld works inside GitHub&apos;s own pages, so replies, resolves, reactions and merges still go through GitHub. Every window below is live,
               so try them as you scroll.
             </p>
@@ -50,8 +50,8 @@ export default function HomePage() {
           <Tour />
         </div>
         <div className="container-site mt-20 flex flex-col items-center text-center stage:mt-12">
-          <h3 className="text-xl font-semibold tracking-tight text-balance sm:text-2xl">Plus the parts you set once</h3>
-          <p className="mt-3 max-w-xl text-base text-muted-foreground text-pretty">
+          <h3 className="text-xl font-semibold tracking-tight sm:text-2xl">Plus the parts you set once</h3>
+          <p className="mt-3 max-w-xl text-base text-muted-foreground text-balance">
             Categories of your own, rules per repository or organisation, a <code className="code-chip">.github/geld.yml</code> everyone who reviews
             shares, and GitHub Enterprise Server. How it works covers every change Geld makes, and what it leaves alone.
           </p>

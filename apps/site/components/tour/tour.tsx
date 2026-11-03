@@ -156,8 +156,8 @@ export function Tour() {
                     <span className={cn('absolute inset-0 origin-left bg-foreground transition-transform duration-700 ease-out', isActive ? 'scale-x-100' : 'scale-x-0')} />
                   </span>
                 </p>
-                <h3 className="mt-3 text-2xl font-semibold tracking-tight text-balance sm:text-[1.75rem]">{step.title}</h3>
-                <p className="mt-3 text-base leading-7 text-muted-foreground text-pretty">{step.body}</p>
+                <h3 className="mt-3 text-2xl font-semibold tracking-tight sm:text-[1.75rem]">{step.title}</h3>
+                <p className="mt-3 text-base leading-7 text-muted-foreground">{step.body}</p>
                 <p className="mt-4 inline-flex items-center gap-2 text-sm font-medium">
                   <MousePointerClickIcon aria-hidden="true" className="size-4 text-muted-foreground" />
                   {step.hint}

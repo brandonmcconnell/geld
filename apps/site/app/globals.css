@@ -153,6 +153,18 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Headings balance their lines; paragraphs avoid a lone last word. A subtitle opts into balance with `text-balance`. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply text-balance;
+  }
+  p {
+    @apply text-pretty;
+  }
   ::selection {
     @apply bg-foreground/90 text-background;
   }
