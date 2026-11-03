@@ -570,9 +570,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The timeline's folds had the same problem and the same fix.
   Every listener is registered with one `AbortController` signal that cleanup aborts, so a retired content-script copy leaves none behind (two copies each handling a click undid each other's toggle), and choices survive shortening being turned off and on (the full timeline and back).
   A section holding headings of its own starts open and the innermost ones start closed, so the outline shows whole on arrival.
-  The first section also starts open, whatever its title: it is nearly always the description proper ("Summary", "What", "Overview", a ticket title), and matching titles would mean telling authors what to call it.
+  When the description opens on a heading, the first section also starts open, whatever its title: it is then nearly always the description proper ("Summary", "What", "Overview", a ticket title), and matching titles would mean telling authors what to call it.
   Only that section's own default changes;
   its subsections follow the rule above, and what the reader opens or closes still wins.
+  When text comes before the first heading, that text is the description, so every section starts by the outline rule alone.
   Sections open and close independently (not the digest's one-open accordion), clicking anywhere on the heading but a link toggles it, and choices are remembered per page by the heading's position and text.
   Headings are slimmed as the chat view slims them (h1 and h2 16px, the rest 14px, no bottom border, a fixed 24px line), every block sits one level in (24px) per open section around it, and each open heading draws a rail from its chevron down to the end of its last visible block (`railsOf`, tested): the rails are custom properties on the block (`--geld-desc-rails`, `-rail-pos`, `-rail-size`, `-depth`) painted by its `::before`, which runs on through the block's bottom margin (`--geld-desc-after`) and 1px past it, since blocks start on fractional pixels and two rail pieces meeting edge to edge left a light seam, and stops at the content on a section's last block.
   Each 1px line starts half a pixel before the chevron's centre so its own centre is under it.

@@ -108,6 +108,21 @@ describe('shortenDescription', () => {
     expect(body.children[0]?.getAttribute('data-geld-desc-heading')).toBe('closed');
   });
 
+  it('keeps the first section closed when text comes before it, since that text is the description', () => {
+    const body = mountDescription(`<p>intro</p>${h(2, 'Changes')}<p>a</p>${h(2, 'Testing')}<p>b</p>`);
+    shortenDescription(true);
+    expect(body.children[1]?.getAttribute('data-geld-desc-heading')).toBe('closed');
+    expect(body.children[2]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+  });
+
+  it('still opens the first section when only an empty heading comes before it', () => {
+    const body = mountDescription(`${h(2, 'Title')}${h(2, 'Changes')}<p>a</p>${h(2, 'Testing')}<p>b</p>`);
+    shortenDescription(true);
+    expect(body.children[1]?.getAttribute('data-geld-desc-heading')).toBe('open');
+    expect(body.children[2]?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(body.children[4]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+  });
+
   it('opens a section on a click on its heading, independently of the others, and never cuts a description with headings', async () => {
     const body = mountDescription(`${h(2, 'One')}<p>a</p>${h(2, 'Two')}<p>b</p>`);
     shortenDescription(true);

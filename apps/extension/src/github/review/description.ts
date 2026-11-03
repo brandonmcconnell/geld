@@ -297,13 +297,16 @@ function applyTo(body: HTMLElement): void {
   const outline = outlineOf(blocks);
   const folding = new Set(outline.map((heading) => heading.index));
   const openNow = new Map<number, boolean>();
+  // A description that opens on a heading keeps its substance in that first section, whatever its title says.
+  // One that opens with text has it above the headings, so there every section starts by the outline rule alone.
+  const first = outline[0];
+  const leading = first !== undefined && blocks.slice(0, first.index).every((block) => headingLevelOf(block) !== null) ? first : null;
   for (const heading of outline) {
     const block = blocks[heading.index];
     const element = block === undefined ? null : headingElementOf(block);
     if (!(block instanceof HTMLElement) || element === null) continue;
     const key = keyOf(heading, element);
-    // The first section is nearly always the description proper, whatever its title says.
-    const open = state.open.get(key) ?? (heading === outline[0] || heading.hasSubheadings);
+    const open = state.open.get(key) ?? (heading === leading || heading.hasSubheadings);
     openNow.set(heading.index, open);
     setFlag(block, ATTR_KEY, key);
     setFlag(block, ATTR_HEADING, open ? 'open' : 'closed');
@@ -366,8 +369,8 @@ function clear(): void {
 
 /**
  * Shorten the pull request's description so the digest under it is in reach: every section folds under its
- * heading (the first section and sections with headings of their own start open, the innermost start closed, so
- * the outline shows).
+ * heading (sections with headings of their own start open, the innermost start closed, so the outline shows, and
+ * the first section starts open too when the description opens on a heading).
  * A description with no headings to fold that is taller than {@link DESCRIPTION_CAP_PX} is cut there behind a
  * fade and "Show full description", until the reader clicks that or opens anything collapsible in it.
  * Only attributes and Geld's own controls are added, GitHub's nodes stay where they are.
