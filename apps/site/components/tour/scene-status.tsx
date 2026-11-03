@@ -84,13 +84,22 @@ export function StatusScene() {
           aria-label={oneClick ? 'Merge now: Squash and merge' : `${stateWord(state)}. Change the status`}
           onClick={(event) => (event.metaKey || event.ctrlKey) && state === 'open' ? change('merged') : setMenuOpen((value) => !value)}
           className={cn(
-            'group/pill inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-xs font-semibold outline-none transition-[background-color,box-shadow,filter] duration-300 hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-            oneClick ? 'bg-transparent text-[#8250df] ring-[1.5px] ring-[#8250df]' : STATE_COLOR[state],
+            'group/pill inline-grid h-7 place-items-center rounded-full px-3 text-xs font-semibold outline-none inset-ring-[1.5px] transition-[background-color,box-shadow,filter] duration-300 hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+            oneClick ? 'bg-transparent text-[#8250df] inset-ring-[#8250df]' : cn('inset-ring-transparent', STATE_COLOR[state]),
           )}
         >
-          {oneClick ? <StateIcon state="merged" /> : <StateIcon state={state} />}
-          {oneClick ? 'Merge' : stateWord(state)}
-          <ChevronDownIcon aria-hidden="true" strokeWidth={2.5} className={cn('-mr-1 size-3 opacity-80 transition-transform', menuOpen && 'rotate-180')} />
+          {/* Both faces always take their room, so the 1-click face never changes the pill's size. */}
+          <span className={cn('col-start-1 row-start-1 inline-flex items-center gap-1.5', oneClick && 'invisible')}>
+            <StateIcon state={state} />
+            {stateWord(state)}
+            <ChevronDownIcon aria-hidden="true" strokeWidth={2.5} className={cn('-mr-1 size-3 opacity-80 transition-transform', menuOpen && 'rotate-180')} />
+          </span>
+          {state === 'open' ? (
+            <span aria-hidden="true" className={cn('col-start-1 row-start-1 inline-flex items-center gap-1.5', !oneClick && 'invisible')}>
+              <StateIcon state="merged" />
+              Merge
+            </span>
+          ) : null}
         </button>
         <span
           className={cn(
