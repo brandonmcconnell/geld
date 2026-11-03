@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { beforeEach, afterEach } from 'node:test';
 import { Window } from 'happy-dom';
-import { BITBUCKET_COMMIT_LIST, BITBUCKET_COMMIT_LINK_SETTINGS, bitbucketCommitLinksSnapshot, bitbucketCommitLinkState, commitLinkSettingsScope, verifyBitbucketCommitLinks } from './bitbucket-commit-links.mjs';
+import { BITBUCKET_COMMIT_LIST, BITBUCKET_COMMIT_LINK_SETTINGS, commitLinkFilteredRows, bitbucketCommitLinksSnapshot, bitbucketCommitLinkState, commitLinkSettingsScope, verifyBitbucketCommitLinks } from './bitbucket-commit-links.mjs';
 import { createBitbucketCommitOracle } from './bitbucket-commit-oracle.mjs';
 
 const KNOWN = '9777bca47119a91758bde1209ac14e6076ffbf23';
@@ -76,40 +76,58 @@ function protocol(options = {}) {
   const selected = { selector: 'main > table > tbody > tr > td > a', href: `${BITBUCKET_COMMIT_LIST}${OTHER}`, raw: `${BITBUCKET_COMMIT_LIST}${OTHER}`, ref: OTHER, text: 'Actual native commit' };
   const oracle = createBitbucketCommitOracle();
   oracle.observe(`https://api.bitbucket.org/2.0/repositories/atlassian/bitbucket-upload-file/commit/${OTHER}`, { hash: OTHER });
-  if (!options.incomplete) oracle.observe(`https://api.bitbucket.org/2.0/repositories/atlassian/bitbucket-upload-file/diffstat/${OTHER}?pagelen=100`, { size: 1, values: [{ new: { path: 'pipe/pipe.py' }, lines_added: 2, lines_removed: 0 }] });
-  const events = [];const calls = [];let cleanups = 0;
+  if (!options.incomplete) oracle.observe(`https://api.bitbucket.org/2.0/repositories/atlassian/bitbucket-upload-file/diffstat/${OTHER}?pagelen=100`, { size: 2, values: [{ new: { path: options.noReadme ? 'other.md' : 'README.md' }, lines_added: 2, lines_removed: 1 }, { new: { path: 'pipe/pipe.py' }, lines_added: 3, lines_removed: 0 }] });
+  const events = [];const calls = [];let cleanups = 0;let listener = null;let writes = 0;
+  const original = { enabled: true, aiEnabled: false, categories: {}, autoViewed: {}, ...(options.patternsAbsent ? {} : { categoryPatterns: { generated: ['preserved/**'] } }) };
+  let saved = structuredClone(original);
   const actualURL = options.canonical ? `${BITBUCKET_COMMIT_LIST}branch/master` : BITBUCKET_COMMIT_LIST;
   const branch = options.canonical ? { selector: '[data-testid="ref-selector-trigger"]', label: 'Filter by ref: master', text: 'master' } : null;
   const state = () => ({ url: calls.length > 0 && options.navigation ? options.navigation : actualURL, branch: branch === null ? null : { ...branch, unique: true, sameNode: !options.branchReplaced || calls.length === 0, sameParent: true, label: calls.length > 0 && options.branchChanged ? 'Filter by ref: another' : branch.label }, sameNode: !options.replaced || calls.length === 0, sameParent: true, sameText: !options.changedText || calls.length === 0, href: selected.href, raw: selected.raw, text: selected.text, events, nativeCards: [] });
   const page = {
     isClosed: () => false,
+    on: (_type, fn) => { listener = fn; }, off: (_type, fn) => { assert.equal(listener, fn);listener = null; },
     evaluate: async (fn) => {
       if (fn === bitbucketCommitLinksSnapshot) return { actualURL, branch, selected: options.noFixture ? null : selected, links: [] };
       if (fn === bitbucketCommitLinkState) return state();
       if (fn.toString().includes('delete globalThis')) cleanups += 1;
+      if (fn.toString().includes('events.length = 0')) events.length = 0;
     },
   };
   const item = {};
-  const run = () => verifyBitbucketCommitLinks(page, item, { oracle,
-    guardBudget: () => ({ available: !options.budget, remaining: options.budget ? 7 : 12, minimumReserve: 8 }),
+  const run = () => verifyBitbucketCommitLinks(page, item, { oracle, extensionId: 'installed',
+    readSettings: async () => structuredClone(saved),
+    writeSettings: async (value) => { writes += 1;saved = structuredClone(value);if (writes === 1 && options.writeFailure) throw new Error('Pattern write failed');if (writes === 2 && options.restoreFailure) throw new Error('Pattern restore failed');if (writes === 2 && options.restoreMismatch) saved.categoryPatterns = { tests: ['wrong/**'] }; },
+    guardBudget: () => ({ available: !options.budget && !(options.filteredBudget && writes > 0), remaining: options.budget || options.filteredBudget && writes > 0 ? 7 : 12, minimumReserve: 8 }),
     poll: async (read, accept, label) => { const value = await read();assert.ok(accept(value), label);return value; },
     installedHover: async (_page, selector, input, _name, _anchor, config) => {
       assert.equal(selector, selected.selector);assert.equal(config.verifyUnobscured, true);calls.push(input);
       if (options.nativeCard) throw new Error('Native card retained ownership. Count popup not observed.');
-      events.push({ type: input === 'pointer' ? 'mouseover' : 'focusin', trusted: !options.untrusted });
-      const additions = input === 'pointer' && options.wrongPointer || input === 'keyboard' && options.wrongKeyboard ? '+99' : '+2';
-      return { rows: [{ label: 'Total', files: '1 file', additions, deletions: '−0' }], described: true, escapeDismissed: true,
+      events.push({ type: input === 'pointer' ? 'mouseover' : 'focusin', trusted: !options.untrusted && !(options.filteredUntrusted && writes > 0) });
+      const filtered = saved.categoryPatterns?.tests?.[0] === 'README.md';
+      const phase = writes === 0 ? 'baseline' : filtered ? 'filtered' : 'restored';
+      const rows = [
+        { label: 'Essential', files: filtered ? '1 file' : '2 files', additions: filtered ? '+3' : '+5', deletions: filtered ? '−0' : '−1' },
+        { label: 'Tests', files: filtered ? '1 file' : '0 files', additions: filtered ? '+2' : '+0', deletions: filtered ? '−1' : '−0' },
+        { label: 'Total', files: '2 files', additions: '+5', deletions: '−1' },
+      ];
+      if (input === 'pointer' && options.wrongPointer || input === 'keyboard' && options.wrongKeyboard || options.wrongPhase === phase) rows[0].additions = '+99';
+      if (options.wrongTests && filtered) rows[1].deletions = '−0';
+      if (options.filteredNavigation && filtered) options.navigation = `${actualURL}?changed=1`;
+      if (options.sourceDrift && filtered) oracle.observe(`https://api.bitbucket.org/2.0/repositories/atlassian/bitbucket-upload-file/commit/${OTHER}`, { hash: 'b'.repeat(40) });
+      if (listener && options.sourceRequest) listener({ url: () => `https://api.bitbucket.org/2.0/repositories/atlassian/bitbucket-upload-file/diffstat/${OTHER}`, method: () => 'GET', initiator: () => options.sourceRequest === 'extension' ? { stack: { callFrames: [{ url: 'chrome-extension://installed/content-scripts/bitbucket.js' }] } } : undefined });
+      if (phase !== 'baseline') assert.ok(config.expectedRows, 'Filtered/restored waits must bind actual row expectations');
+      return { rows, described: true, escapeDismissed: true,
         visibility: { beforeScreenshot: { unobscured: !options.occluded }, afterScreenshot: { unobscured: true } },
         ...(input === 'keyboard' ? { keyboardNavigation: { started: true, stops: [{ target: !options.missedTab }] } } : {}),
       };
     },
   });
-  return { run, item, calls, cleanups: () => cleanups };
+  return { run, item, calls, original, saved: () => saved, listener: () => listener, writes: () => writes, cleanups: () => cleanups };
 }
 
 test('protocol requires the original trusted pointer and real Tab path against its independent complete response oracle', async () => {
   const f = protocol();assert.equal((await f.run()).status, 'passed');
-  assert.deepEqual(f.calls, ['pointer', 'keyboard']);assert.equal(f.item.commitLinks.oracle.sha, OTHER);assert.equal(f.cleanups(), 1);
+  assert.deepEqual(f.calls, ['pointer', 'keyboard', 'pointer', 'keyboard', 'pointer', 'keyboard']);assert.equal(f.item.commitLinks.oracle.sha, OTHER);assert.equal(f.cleanups(), 1);
 });
 
 for (const [name, options] of [['unknown layout', { noFixture: true }], ['source reserve', { budget: true }], ['incomplete source', { incomplete: true }], ['native card ownership', { nativeCard: true }]]) test(`${name} remains unavailable without an oracle GET or second candidate`, async () => {
@@ -185,7 +203,7 @@ test('tracks the actual original native branch-control identity and selected tex
 
 test('canonical-route pointer and real-Tab protocol stays bound to discovery.actualURL rather than requested URL', async () => {
   const fixture = protocol({ canonical: true });assert.equal((await fixture.run()).status, 'passed');
-  assert.equal(fixture.item.commitLinks.discovery.actualURL, MASTER_LIST);assert.deepEqual(fixture.calls, ['pointer', 'keyboard']);assert.equal(fixture.cleanups(), 1);
+  assert.equal(fixture.item.commitLinks.discovery.actualURL, MASTER_LIST);assert.deepEqual(fixture.calls, ['pointer', 'keyboard', 'pointer', 'keyboard', 'pointer', 'keyboard']);assert.equal(fixture.cleanups(), 1);
 });
 for (const navigation of [BITBUCKET_COMMIT_LIST, `${MASTER_LIST}?changed=1`, `${MASTER_LIST}#note`, `${BITBUCKET_COMMIT_LIST}branch/other`, `${BITBUCKET_COMMIT_LIST}${OTHER}`, MASTER_LIST.replace('bitbucket.org', 'foreign.example')]) test(`after-discovery navigation to ${navigation} fails with listener cleanup`, async () => {
   const fixture = protocol({ canonical: true, navigation });await assert.rejects(fixture.run());assert.equal(fixture.item.commitLinks.status, 'failed');assert.equal(fixture.cleanups(), 1);
@@ -200,4 +218,70 @@ test('does not ignore a present nonmaster or ambiguous native selected ref on th
   assert.equal(bitbucketCommitLinksSnapshot().selected, null);
   document.body.innerHTML = `<main>${masterRef()}${masterRef().replace('Filter by ref: master', 'Filter by ref: development')}${link()}</main>`;geometry();
   assert.equal(bitbucketCommitLinksSnapshot().selected, null);
+});
+
+const actualOracle = () => ({ status: 'ready', totals: { files: 5, additions: 21, deletions: 11 }, files: [
+  { path: '.changes/0.7.5.json', additions: 10, deletions: 0 },
+  { path: '.changes/next-release/patch-20250701070558543229.json', additions: 0, deletions: 4 },
+  { path: 'CHANGELOG.md', additions: 4, deletions: 0 },
+  { path: 'README.md', additions: 6, deletions: 6 },
+  { path: 'pipe.yml', additions: 1, deletions: 1 },
+] });
+
+test('derives nonzero category subtraction from retained actual 212 per-file oracle, with conserved totals', () => {
+  assert.deepEqual(commitLinkFilteredRows(actualOracle()), [
+    { label: 'Essential', files: '4 files', additions: '+15', deletions: '−5' },
+    { label: 'Tests', files: '1 file', additions: '+6', deletions: '−6' },
+    { label: 'Total', files: '5 files', additions: '+21', deletions: '−11' },
+  ]);
+  const changed = actualOracle();changed.files[3].additions = 9;changed.totals.additions = 24;
+  assert.equal(commitLinkFilteredRows(changed)[1].additions, '+9');assert.equal(commitLinkFilteredRows(changed)[0].additions, '+15');
+});
+
+for (const invalid of ['missing README', 'duplicate README', 'zero additions', 'zero deletions', 'mismatched total', 'negative lines', 'not ready']) test(`positive category proof rejects ${invalid} source rather than guessing totals`, () => {
+  const source = actualOracle();
+  if (invalid === 'missing README') source.files[3].path = 'elsewhere/README.md';
+  if (invalid === 'duplicate README') source.files[2].path = 'README.md';
+  if (invalid === 'zero additions') { source.totals.additions -= source.files[3].additions;source.files[3].additions = 0; }
+  if (invalid === 'zero deletions') { source.totals.deletions -= source.files[3].deletions;source.files[3].deletions = 0; }
+  if (invalid === 'mismatched total') source.totals.deletions += 1;
+  if (invalid === 'negative lines') source.files[0].additions = -1;
+  if (invalid === 'not ready') source.status = 'unavailable';
+  assert.throws(() => commitLinkFilteredRows(source));
+});
+
+test('pattern-only protocol preserves other settings and original categoryPatterns absence, rehovers pointer and Tab after restoration', async () => {
+  const fixture = protocol({ canonical: true, patternsAbsent: true });assert.equal((await fixture.run()).status, 'passed');
+  const evidence = fixture.item.commitLinks.categorySubtraction;
+  assert.equal(evidence.status, 'passed');assert.equal(evidence.restoration, 'restored');assert.equal(evidence.sourceGetCount, 0);
+  assert.deepEqual(evidence.filteredSettings, { ...fixture.original, categoryPatterns: { tests: ['README.md'] } });
+  assert.deepEqual(evidence.filtered.pointer.rows, evidence.expectedRows);assert.deepEqual(evidence.filtered.keyboard.rows, evidence.expectedRows);
+  assert.deepEqual(evidence.restored.pointer.rows, fixture.item.commitLinks.pointer.rows);assert.deepEqual(evidence.restored.keyboard.rows, fixture.item.commitLinks.pointer.rows);
+  assert.deepEqual(fixture.saved(), fixture.original);assert.equal(Object.hasOwn(fixture.saved(), 'categoryPatterns'), false);assert.equal(fixture.listener(), null);assert.equal(fixture.writes(), 2);
+});
+
+for (const [name, options] of [
+  ['wrong filtered Essential count', { wrongPhase: 'filtered' }], ['wrong filtered Tests count', { wrongTests: true }],
+  ['wrong restored rows', { wrongPhase: 'restored' }], ['filtered route drift', { filteredNavigation: true }],
+  ['changed immutable source', { sourceDrift: true }], ['failed partial pattern write', { writeFailure: true }],
+  ['restore write failure', { restoreFailure: true }], ['restore readback mismatch', { restoreMismatch: true }],
+  ['positively extension-attributed source GET', { sourceRequest: 'extension' }],
+  ['lost eight-request reserve before filtered intent', { filteredBudget: true }], ['new untrusted filtered input', { filteredUntrusted: true }],
+]) test(`${name} fails the whole case, preserves evidence and releases listeners`, async () => {
+  const fixture = protocol(options);await assert.rejects(fixture.run());
+  assert.equal(fixture.item.commitLinks.status, 'failed');assert.equal(fixture.item.commitLinks.categorySubtraction.status, 'failed');assert.equal(fixture.listener(), null);assert.equal(fixture.cleanups(), 1);
+  if (options.restoreFailure || options.restoreMismatch) assert.equal(fixture.item.commitLinks.categorySubtraction.restoration, 'failed');
+  else { assert.equal(fixture.item.commitLinks.categorySubtraction.restoration, 'restored');assert.deepEqual(fixture.saved(), fixture.original); }
+});
+
+test('missing positively observed README fails before changing settings', async () => {
+  const fixture = protocol({ noReadme: true });await assert.rejects(fixture.run(), /exactly observed README/);
+  assert.equal(fixture.item.commitLinks.status, 'failed');assert.equal(fixture.writes(), 0);assert.equal(fixture.listener(), null);
+});
+
+test('missing source initiator stays native-or-unattributed evidence and does not become a zero-GET claim', async () => {
+  const fixture = protocol({ sourceRequest: 'unknown' });assert.equal((await fixture.run()).status, 'passed');
+  const evidence = fixture.item.commitLinks.categorySubtraction;
+  assert.equal(evidence.sourceGetCount, 4);assert.deepEqual(evidence.extensionRequests, []);assert.equal(evidence.nativeOrUnattributedRequests.length, 4);
+  assert.ok(evidence.nativeOrUnattributedRequests.every((request) => request.attribution === 'native-or-unattributed'));
 });
