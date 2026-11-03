@@ -146,3 +146,15 @@ test('literal Bitbucket author-only focus selects one stats-off case without rep
   assert.match(harness, /name === 'bitbucket-list-authors' && focus === 'all'/);
   assert.match(harness, /conservativeObservedRequestBudget: 40/);
 });
+
+
+test('native Bash discovery requires its explicit literal focus and does not broaden regression or all', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);
+  const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
+  assert.deepEqual(Array.from(cases['bitbucket-native-bash']), ['bitbucket-native-bash-style']);
+  for (const [focus, selected] of Object.entries(cases)) if (focus !== 'bitbucket-native-bash') assert.equal(selected.includes('bitbucket-native-bash-style'), false);
+  assert.deepEqual(select({ body: marker('bitbucket-native-bash'), from: marker('github') }), { focus: 'bitbucket-native-bash', run: 'true', failures: [] });
+  assert.equal(select({ body: marker('bitbucket-native-bash') + '\nUpdated prose', from: marker('bitbucket-native-bash') }).run, 'false');
+  assert.deepEqual(select({ fork: true, body: marker('bitbucket-native-bash'), from: marker('github') }), { focus: 'regression', run: 'false', failures: [] });
+  assert.match(harness, /name === 'bitbucket-native-bash-style' && focus !== 'bitbucket-native-bash'/);
+});

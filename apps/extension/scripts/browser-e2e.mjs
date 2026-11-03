@@ -16,6 +16,7 @@ import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommit
 import { gitLabCopyFixOf, verifyGitLabItemCopies } from './item-copy-acceptance.mjs';
 import { verifyGitLabRoundAttention } from './round-attention-acceptance.mjs';
 import { SHARED_SETTINGS_NATIVE_ORACLES, assertPatternOnlySettings, restoreCategoryPatterns, settingsRequestEvidence, sharedSettingsSourceIdentity, sharedSettingsSampleValid } from './three-provider-settings.mjs';
+import { BITBUCKET_NATIVE_BASH, discoverNativeBash, observeNativeBashSources } from './bitbucket-native-bash.mjs';
 
 const extensionRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const extensionPath = resolve(extensionRoot, '.output/chrome-mv3');
@@ -29,6 +30,7 @@ const FOCUSED_CASES = {
   'bitbucket-diff': ['bitbucket-diff'],
   'bitbucket-list': ['bitbucket-list-counts'],
   'bitbucket-authors': ['bitbucket-list-authors'],
+  'bitbucket-native-bash': ['bitbucket-native-bash-style'],
   'bitbucket-comment': ['bitbucket-comment-digest'],
   'bitbucket-commit': ['bitbucket-commit-counts'],
   'bitbucket-list-commit': ['bitbucket-list-counts', 'bitbucket-commit-counts'],
@@ -44,6 +46,7 @@ const FOCUSED_CASES = {
 const focus = process.env.GELD_BROWSER_FOCUS ?? 'regression';
 const coldBitbucketList = ['bitbucket-list', 'bitbucket-list-commit'].includes(focus);
 const commitSources = new WeakMap();
+const nativeBashSources = new WeakMap();
 const GL_MIXED = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs?diff_id=2158520123';
 const GL_OVERVIEW = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334';
 const GL_BOT = 'https://gitlab.com/whitebox-aero/whitebox/-/merge_requests/272';
@@ -259,10 +262,10 @@ async function authObservation(page, provider) {
   assert.equal(observed.signedIn, false, 'Smoke browser unexpectedly has an authenticated native identity');
   return observed;
 }
-async function capture(page, name) {
+async function capture(page, name, { fullPage = true } = {}) {
   if (page.isClosed()) return { unavailable: 'Page closed after rate limit or navigation failure' };
   const files = { screenshot: `${name}.png`, dom: `${name}.html`, accessibility: `${name}.accessibility.json` };
-  await page.screenshot({ path: resolve(artifacts, files.screenshot), fullPage: true });
+  await page.screenshot({ path: resolve(artifacts, files.screenshot), fullPage });
   const html = await page.evaluate(() => {
     const copy = document.documentElement.cloneNode(true);
     for (const script of copy.querySelectorAll('script')) script.remove();
@@ -303,8 +306,14 @@ async function runCase(name, url, body, discovery = false) {
   report.cases.push(item);
   let page;
   let listSettings;
+  let nativeSettings;
   const abort = new AbortController();
   try {
+    if (name === 'bitbucket-native-bash-style' && focus !== 'bitbucket-native-bash') {
+      item.status = 'not_selected';
+      item.reason = 'Native Bash discovery requires its explicit literal focus, including exclusion from all. No navigation or feature pass.';
+      return;
+    }
     if (name === 'bitbucket-list-authors' && focus === 'all') {
       item.status = 'not_selected';
       item.reason = 'Dedicated author-only slice avoids repeating the author acquisition already covered by the full list case. No navigation or feature pass.';
@@ -331,6 +340,11 @@ async function runCase(name, url, body, discovery = false) {
       item.listSourcePreparation = name === 'bitbucket-list-authors'
         ? 'List stats remain disabled before and during native author-only verification. One UUID/name projection, no count intent or oracle GET.'
         : 'List stats disabled through real shared settings before native navigation; enable on the actual multi-row list and demand only PR27 through explicit intent.';
+    }
+    if (name === 'bitbucket-native-bash-style') {
+      nativeSettings = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+      item.nativePreparation = await patchSettings({ enabled: false });
+      assert.equal(item.nativePreparation.enabled, false, 'Master must be saved disabled before native page creation/navigation');
     }
     page = await browser.newPage();
     await page.setViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
@@ -366,6 +380,7 @@ async function runCase(name, url, body, discovery = false) {
     if (name === 'gitlab-bot-digest') observeGitLabBotFixture(page, item);
     if (name === 'bitbucket-diff') observeBitbucketShellFixture(page, item, { safeUrl, extensionId });
     if (name === 'bitbucket-commit-counts') commitSources.set(page, observeBitbucketCommitFixture(page, item));
+    if (name === 'bitbucket-native-bash-style') nativeBashSources.set(page, observeNativeBashSources(page, item, { safeUrl, extensionId }));
     const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     abort.signal.throwIfAborted();
     item.navigation = { status: response?.status() ?? null, finalUrl: safeUrl(page.url()) };
@@ -373,7 +388,7 @@ async function runCase(name, url, body, discovery = false) {
     const result = await body(page, item);
     Object.assign(item, result);
     item.auth = await authObservation(page, provider);
-    item.artifacts = await capture(page, name);
+    item.artifacts = name === 'bitbucket-native-bash-style' ? item.nativeBashStyle.artifacts : await capture(page, name);
     item.status = result?.status ?? (discovery ? 'discovery' : 'passed');
   } catch (error) {
     item.status = discovery ? item.rateLimitedUntil === undefined ? 'unavailable' : 'rate_limited' : 'failed';
@@ -383,12 +398,11 @@ async function runCase(name, url, body, discovery = false) {
       item.error = `${item.holdReason === 'conservative_anonymous_api_budget' ? 'Conservative anonymous API budget hold' : item.navigationSuppressedByCooldown ? 'Inherited provider cooldown' : 'Provider HTTP429 cooldown'} until ${item.rateLimitedUntil}. Native demand stopped and no retry was attempted.`;
     }
     if (page !== undefined && !page.isClosed()) {
-      try { item.artifacts = await capture(page, `${name}-failed`); } catch (captureError) { item.captureError = errorText(captureError); }
+      try { item.artifacts = await capture(page, `${name}-failed`, { fullPage: name !== 'bitbucket-native-bash-style' }); } catch (captureError) { item.captureError = errorText(captureError); }
     }
   } finally {
     currentCaseAbort = undefined;
     if (listSettings !== undefined) await patchSettings({ showListStats: listSettings.showListStats ?? true });
-    item.finishedAt = new Date().toISOString();
     if (page !== undefined && !page.isClosed()) {
       try { await page.close(); }
       catch (error) {
@@ -396,6 +410,25 @@ async function runCase(name, url, body, discovery = false) {
         if (!closedTarget(error)) { item.status = 'failed';item.cleanupError = errorText(error); }
       }
     }
+    if (nativeSettings !== undefined) {
+      if (page === undefined || page.isClosed()) {
+        item.masterRestoration = { pageClosedBeforeRestore: true, restored: false, status: 'pending' };
+        try {
+          const saved = await patchSettings({ enabled: nativeSettings.enabled ?? true });
+          item.masterRestoration.saved = saved;
+          assert.equal(saved.enabled, nativeSettings.enabled ?? true, 'Master restoration readback differs from the saved original setting');
+          item.masterRestoration.restored = true;item.masterRestoration.status = 'restored';
+        } catch (error) {
+          item.status = 'unavailable';item.cleanupError = errorText(error);item.masterRestoration.status = 'failed';item.masterRestoration.error = item.cleanupError;
+          report.infrastructureErrors.push(`Native master restoration failed: ${item.cleanupError}`);
+        }
+      } else {
+        item.status = 'unavailable';item.cleanupError ??= item.cleanupObservation ?? 'Native page remains open';
+        item.masterRestoration = { pageClosedBeforeRestore: false, restored: false, status: 'failed', error: item.cleanupError, reason: 'Native page remains open, so master stays disabled to avoid extra source demand' };
+        report.infrastructureErrors.push(`Native page cleanup failed: ${item.cleanupError}`);
+      }
+    }
+    item.finishedAt = new Date().toISOString();
     await saveReport();
     console.log(`${item.status.toUpperCase()}: ${name}${item.error === undefined ? '' : ` — ${item.error}`}`);
   }
@@ -2664,6 +2697,10 @@ try {
     item.featureParity = 'partial';
     return { status: 'passed', verified: `Standalone totals match complete already-issued immutable metadata/diffstat responses. The native heading and badge reach zero under a real synchronized custom rule, hide the actual file, and restore with native IDs/links preserved. The pattern-only shared setting also reaches zero and restores all three public sites without another extension-attributed Bitbucket source request. ${item.commitCounts.parentHover.status === 'passed' ? 'The genuine native parent link also shows its own observed immutable count breakdown by pointer and real Tab input.' : `Parent hover remains unverified: ${item.commitCounts.parentHover.reason}`}` };
   });
+
+  await runCase('bitbucket-native-bash-style', BITBUCKET_NATIVE_BASH.url, async (page, item) => discoverNativeBash(page, item, {
+    poll, tabState, source: nativeBashSources.get(page), capture: (target, name) => capture(target, name, { fullPage: false }),
+  }), true);
 
   await runCase('gitlab-binary-counts', GL_BINARY, async (page, item) => gitLabBinaryCounts(page, item));
 
