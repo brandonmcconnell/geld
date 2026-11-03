@@ -223,7 +223,8 @@ it('keeps a reader-revealed identity visible when its native DOM root is replace
 
 it.each(['editing', 'table', 'native-hidden'] as const)('rechecks a revealed identity remounted as %s before offering a hideable shown state', (state) => {
   const find = owner();find.sync([entry()]);expect(find.reveal('note_10')).toBe(true);
-  const replacement = root().cloneNode(true) as HTMLElement;
+  const replacement = root().cloneNode(true);
+  if (!(replacement instanceof HTMLElement)) throw new Error('Expected an HTML element clone.');
   if (state === 'editing') replacement.append(document.createElement('textarea'));
   else if (state === 'table') replacement.style.display = 'table';
   else replacement.setAttribute('hidden', '');
