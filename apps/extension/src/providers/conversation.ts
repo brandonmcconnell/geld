@@ -15,7 +15,8 @@ import { ProviderNativeFind } from './native-find';
 import type { ProviderNativeFindEntry, ProviderNativeFindEnvironment } from './native-find';
 import './conversation-compact.css';
 
-const ACTION_NAMES = { approve: 'Approve', 'request-changes': 'Request changes', comment: 'Comment' };
+const ACTION_NAMES = { approve: 'Approve', 'request-changes': 'Request changes', comment: 'Comment', 'open-pending-review': 'Open pending review' };
+const actionSubject = (input: ProviderReviewInput): string => JSON.stringify([input.subject.provider, input.subject.origin, input.subject.repository, input.subject.id, input.subject.headSha]);
 
 function hiddenFlag(node: Element, name: string, hidden: boolean): void {
   if (hidden && !node.hasAttribute(name)) node.setAttribute(name, '');
@@ -309,7 +310,8 @@ export class ProviderConversation {
     }
     if (actionHost !== null && snapshot !== null) {
       const available = snapshot.actions.filter((action) => action.available);
-      const signature = JSON.stringify([this.key, available.map((action) => action.kind)]);
+      const sourceSubject = actionSubject(snapshot.input);
+      const signature = JSON.stringify([this.key, available.some((action) => action.scopeKey !== undefined) ? sourceSubject : null, available.map((action) => [action.kind, action.scopeKey ?? null])]);
       if (signature !== this.signature || this.actions?.isConnected !== true || this.actions.parentElement !== actionHost) {
         this.actions?.remove();
         this.signature = signature;
@@ -317,16 +319,27 @@ export class ProviderConversation {
         this.actions = element('div', '', 'geld-provider-actions');
         this.actions.setAttribute('role', 'group');
         this.actions.setAttribute('aria-label', 'Review actions');
+        const group = this.actions;
         const key = this.key;
         for (const action of available) {
           const button = element('button', ACTION_NAMES[action.kind]);
           button.type = 'button';
           button.addEventListener('click', () => {
             if (this.key !== key || !button.isConnected) return;
+            const scopedCurrent = (): boolean => {
+              if (this.key !== key || this.actions !== group || !button.isConnected || button.parentElement !== group || group.parentElement !== actionHost || this.snapshot === null || actionSubject(this.snapshot.input) !== sourceSubject) return false;
+              const currentPage = this.adapter.describe(new URL(document.URL), document);
+              if (currentPage === null || !isProviderReviewPage(currentPage) || currentPage.url !== page.url || currentPage.version !== page.version || repositoryKey(currentPage.repository) !== repositoryKey(page.repository)
+                || currentPage.headSha !== null && currentPage.headSha !== this.snapshot.input.subject.headSha) return false;
+              const matches = this.snapshot.actions.filter((candidate) => candidate.kind === action.kind && candidate.available);
+              return matches.length === 1 && matches[0]?.scopeKey === action.scopeKey;
+            };
             const current = this.snapshot?.actions.find((candidate) => candidate.kind === action.kind && candidate.available);
-            if (current === undefined) { button.title = 'The review controls are unavailable'; return; }
+            if (current === undefined || action.scopeKey !== undefined && !scopedCurrent()) { button.title = 'The review controls are unavailable'; return; }
             button.disabled = true;
-            void current.activate().then((triggered) => { if (!triggered) button.title = 'Open the provider review controls to continue'; })
+            // A scoped rendered action keeps its original native owner; it cannot adopt a new descriptor at click time.
+            const activated = action.scopeKey === undefined ? current.activate() : action.activate({ current: scopedCurrent });
+            void activated.then((triggered) => { if (!triggered) button.title = 'Open the provider review controls to continue'; })
               .catch(() => { button.title = 'The review controls are unavailable'; })
               .finally(() => { button.disabled = false; });
           });
