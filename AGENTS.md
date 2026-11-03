@@ -2076,6 +2076,8 @@ The harness labels this prior-success requirement ROOT-MANUAL and unverified by 
 Provider runner image contexts are generated offline from one full reviewed commit, with an independently verified Git commit object/tree, byte-identical esbuild output and an explicit reviewed official Node base digest.
 Never send a full working tree to Docker: only the allowlisted bundle, unchanged license/notice bytes, corresponding-source archives, commit object and provenance are copied under `/geld`.
 The retained Zod4.5.4 source tar is bound to the frozen-lock SHA512 and original MIT notice, and unknown bundled dependencies or versions fail until reviewed.
+The frozen rebuild links the reviewed review package to the reviewed core package, and summary rendering imports only the tracker-label module rather than the core barrel.
+The core barrel pulls YAML initialization into a provider bundle even when only tracker labels are used, so retain the Zod-only bundled-dependency guard and verify the narrowed bundle against tracked source before packaging.
 Offline rebuilding still requires the declared frozen build dependencies installed or cached, rather than a claim that all build tools are shipped.
 The sole reviewed tracked alias `.cursor/skills/github-surface` has Git120000 blob `7bdab2e33869af42ef1a4d5c1a0664a37523a4bc` and target `../../.claude/skills/github-surface`: preserve it inertly in source/tree verification but never materialize or follow it, and reject other archive or selected-input/output links.
 Source-only rebuilding checks the supplied raw commit hash and reconstructed tree before using delivered source, so missing `.git` metadata cannot turn a supplied source label into authority.
