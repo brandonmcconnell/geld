@@ -2513,3 +2513,7 @@ Provider CI summaries count waiting manual jobs separately from running jobs so 
 
 GitLab may add the already displayed `diff_id` while opening an unmounted file from an unversioned MR URL, so a reveal retains the exact navigator-verified destination before the native click and canonicalises effective selection order for its review identity.
 A pending reveal still rejects other query, file, hash or review changes and checks the same verified destination again before alignment.
+Installed GitLab capture can replace an equivalent inner comment/system-note wrapper while retaining the original source note and exact payload.
+The UI custody probe pins the native source roots, note/event nodes, their parents and IDs, payload count/order, and exact semantic text plus HTML;
+it permits equivalent inner wrapper hydration only.
+Actual body changes, source replacement, source reparenting, changed identity or reordered payloads still fail with fixed mismatch counters.

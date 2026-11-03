@@ -164,15 +164,40 @@ test('native timestamps and status/control labels may update while the original 
   const changed = providerDashboardProbe();assert.equal(changed.custody.bodyMismatches, 1);assert.equal(changed.sameOriginals, false);
   assert.throws(() => assertProviderDashboard(changed), /bodyMismatches/);assert.doesNotMatch(JSON.stringify(changed), /PRIVATE_CHANGED_BODY/);
 });
-test('native root replacement, reparenting, id changes and semantic body replacement still fail custody', () => {
+test('native root replacement, reparenting, id changes and semantic body changes still fail custody', () => {
   for (const [kind, mutate] of [
     ['identityMismatches', node => node.replaceWith(node.cloneNode(true))],
     ['parentMismatches', node => { const parent = document.createElement('div');node.parentElement.append(parent);parent.append(node); }],
     ['idMismatches', node => { node.id = 'note_2'; }],
-    ['bodyMismatches', node => { const body = node.querySelector('.note-text');body.replaceWith(body.cloneNode(true)); }],
+    ['bodyMismatches', node => { node.querySelector('.note-text').innerHTML = '<span>Native stable comment body</span>'; }],
   ]) {
     providerDashboardProbe('cleanup');semanticDashboard();providerDashboardProbe('bind');mutate(document.querySelector('#note_1'));
     const value = providerDashboardProbe();assert.equal(value.sameOriginals, false, kind);assert.equal(value.custody[kind], 1, kind);
+  }
+});
+test('equivalent inner body or parent wrapper hydration preserves the exact original native source', () => {
+  semanticDashboard();providerDashboardProbe('bind');
+  const source = document.querySelector('#note_1');
+  const body = source.querySelector('.note-text');body.replaceWith(body.cloneNode(true));
+  assertProviderDashboard(providerDashboardProbe());
+  const wrapper = source.querySelector('.note-body');wrapper.replaceWith(wrapper.cloneNode(true));
+  assertProviderDashboard(providerDashboardProbe());
+  assert.equal(document.querySelector('#note_1'), source);
+});
+test('grouped native notes retain their original identities, parents, payload count and ordering', () => {
+  for (const [field, change] of [
+    ['idMismatches', (root, note) => { note.id = 'note_3'; }],
+    ['identityMismatches', (root, note) => { note.replaceWith(note.cloneNode(true)); }],
+    ['parentMismatches', (root, note) => { const wrapper = document.createElement('div');root.append(wrapper);wrapper.append(note); }],
+    ['payloadOrderMismatches', (root, note) => { root.append(note); }],
+    ['bodyMismatches', (root, note) => { note.querySelector('.note-body').append(note.querySelector('.note-text').cloneNode(true)); }],
+  ]) {
+    providerDashboardProbe('cleanup');semanticDashboard();
+    const note = document.querySelector('#note_1'), root = document.createElement('li');root.className = 'note-discussion';root.id = 'discussion';
+    note.before(root);root.append(note);root.setAttribute('data-geld-provider-native-find', 'folded');root.setAttribute('hidden', 'until-found');note.removeAttribute('data-geld-provider-native-find');note.removeAttribute('hidden');
+    const second = note.cloneNode(true);second.id = 'note_2';root.append(second);
+    providerDashboardProbe('bind');change(root, note);
+    const value = providerDashboardProbe();assert.equal(value.sameOriginals, false, field);assert.ok(value.custody[field] > 0, field);
   }
 });
 test('native system-event payload is pinned independently from its separate timestamp', () => {
