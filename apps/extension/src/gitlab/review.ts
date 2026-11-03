@@ -387,7 +387,7 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
     for (const item of approvals.approved_by) {
       if (!record(item)) throw new GitLabReviewError('GitLab returned invalid approver data.');
       const author = authorOf(item.user);
-      reviewerMap.set(author.id, { author, state: 'approved' });
+      reviewerMap.set(author.id, { author, state: 'approved', reviewRequest: 'unknown' });
     }
   }
   const reviewerResult = results[3];
@@ -397,10 +397,13 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
       const author = authorOf(item.user);
       const standing = reviewerMap.get(author.id);
       if (item.state === 'approved' || item.state === 'requested_changes') {
-        reviewerMap.set(author.id, { author, state: item.state === 'approved' ? 'approved' : 'changes_requested' });
+        reviewerMap.set(author.id, { author, state: item.state === 'approved' ? 'approved' : 'changes_requested', reviewRequest: 'not-pending' });
       } else if (item.state === 'reviewed' || item.state === 'unreviewed') {
-        if (standing === undefined) reviewerMap.set(author.id, { author, state: item.state === 'reviewed' ? 'commented' : 'pending' });
-      } else areaError('reviews', 'GitLab returned an unknown reviewer state.');
+        reviewerMap.set(author.id, { author, state: standing?.state ?? (item.state === 'reviewed' ? 'commented' : 'pending'), reviewRequest: item.state === 'unreviewed' ? 'pending' : 'not-pending' });
+      } else {
+        reviewerMap.set(author.id, { author, state: standing?.state ?? 'pending', reviewRequest: 'unknown' });
+        areaError('reviews', 'GitLab returned an unknown reviewer state.');
+      }
     }
   } else if (reviewerResult?.status === 'rejected') areaError('reviews', reviewerResult.reason);
   const pipelineResult = results[2];
