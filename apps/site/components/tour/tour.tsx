@@ -104,7 +104,9 @@ const STEPS: readonly Step[] = [
  * narrow ones each step carries its own window. Every scene is live.
  */
 export function Tour() {
-  const [active, setActive] = useState(0);
+  // The scene leaving stays on top and fades out over the one arriving, which is opaque from the start: the windows share their chrome, and fading both made it blink.
+  const [stage, setStage] = useState<{ readonly active: number; readonly leaving: number | null }>({ active: 0, leaving: null });
+  const active = stage.active;
   const steps = useRef<(HTMLLIElement | null)[]>([]);
 
   // Read from where the page is, not from a step crossing the middle: a jump (End, a restored scroll) crosses nothing.
@@ -117,7 +119,7 @@ export function Tour() {
       steps.current.forEach((step, index) => {
         if (step && step.getBoundingClientRect().top <= middle) current = index;
       });
-      setActive(current);
+      setStage((previous) => (previous.active === current ? previous : { active: current, leaving: previous.active }));
     };
     const schedule = (): void => {
       if (frame === null) frame = requestAnimationFrame(update);
@@ -174,9 +176,11 @@ export function Tour() {
       <div className="hidden stage:block" data-tour-stage>
         <div className="sticky top-[max(4.5rem,calc(50vh-18.25rem))]">
           <Plate className="h-[40rem]">
-            <div className="grid h-full grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]">
+            {/* One shadow for the stage, not one per window: two half-faded shadows over each other would darken mid-fade. */}
+            <div className="grid h-full grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] rounded-xl shadow-[0_24px_60px_-28px_rgb(0_0_0/0.35)]">
               {STEPS.map((step, index) => {
                 const isActive = index === active;
+                const isLeaving = index === stage.leaving;
                 return (
                   <div
                     key={step.id}
@@ -184,8 +188,10 @@ export function Tour() {
                     inert={!isActive}
                     aria-hidden={!isActive}
                     className={cn(
-                      'col-start-1 row-start-1 min-h-0 min-w-0 transition-opacity duration-500 ease-in-out [&>*]:h-full',
-                      isActive ? 'opacity-100' : 'pointer-events-none opacity-0',
+                      'col-start-1 row-start-1 min-h-0 min-w-0 [&>*]:h-full [&>*]:shadow-none',
+                      isActive && 'z-0 opacity-100',
+                      isLeaving && 'pointer-events-none z-10 opacity-0 transition-opacity duration-500 ease-in-out',
+                      !isActive && !isLeaving && 'pointer-events-none opacity-0',
                     )}
                   >
                     <step.Scene />
