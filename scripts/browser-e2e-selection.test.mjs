@@ -302,7 +302,7 @@ test('static whitespace-source focus selects no browser job and retains its own 
   const browser=workflow.slice(workflow.indexOf('  installed-extension:'),workflow.indexOf('  bitbucket-static-source:'));
   const source=workflow.slice(workflow.indexOf('  bitbucket-static-source:'));
   assert.match(browser,/focus != 'bitbucket-whitespace-source'/);assert.match(source,/focus == 'bitbucket-whitespace-source'/);
-  assert.match(source,/node apps\/extension\/scripts\/bitbucket-whitespace-source-research\.mjs --retain-asset/);assert.match(source,/name: geld-bitbucket-source-research/);
+  assert.match(source,/node apps\/extension\/scripts\/bitbucket-whitespace-source-research\.mjs --pr-dependencies/);assert.match(source,/name: geld-bitbucket-source-research/);
   assert.doesNotMatch(browser,/--retain-asset/);
   assert.doesNotMatch(source,/test:browser|build:chrome|google-chrome|geld-installed-browser-e2e|GELD_BROWSER_PREVIOUS_REPORT/);
   assert.doesNotMatch(harness,/bitbucket-whitespace-source/);
