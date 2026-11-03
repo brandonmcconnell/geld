@@ -105,6 +105,20 @@ function input(): ProviderReviewInput {
 }
 
 describe('provider summary ownership and determinism', () => {
+  it('reports waiting manual jobs separately from running jobs', async () => {
+    let saved = '';
+    const adapter: ProviderCiAdapter = {
+      identity: async () => '7', head: async () => HEAD,
+      load: async () => ({ input: { ...input(), checks: [
+        { name: 'Unit tests', sha: HEAD, status: 'completed', conclusion: 'success' },
+        { name: 'Deploy', sha: HEAD, status: 'waiting', conclusion: null },
+        { name: 'Integration', sha: HEAD, status: 'in_progress', conclusion: null },
+      ] }, comments: [], notes: [] }),
+      upsert: async (_id, body) => { saved = body; },
+    };
+    await produceProviderSummary(adapter, DATE);
+    expect(saved).toContain('CI checks: 1 passed, 0 failed, 1 running, 1 waiting, 0 other');
+  });
   it('omits explicitly unknown pending requests from the legacy login-only payload without changing its schema', async () => {
     let body = '';
     const source: ProviderReviewInput = { ...input(), reviewers: [
@@ -227,7 +241,7 @@ describe('provider summary ownership and determinism', () => {
     };
     expect(await produceProviderSummary(adapter, DATE)).toBe('created');
     expect(parsePublishedSummaryBody(saved).ok).toBe(true);
-    expect(saved).toContain('Required approvals: 1\n**Tasks**\n- [ ] Task: inspect output\nCI checks: 1 passed, 0 failed, 0 running, 0 other\n\n<sub>');
+    expect(saved).toContain('Required approvals: 1\n**Tasks**\n- [ ] Task: inspect output\nCI checks: 1 passed, 0 failed, 0 running, 0 waiting, 0 other\n\n<sub>');
     expect(saved.trimEnd()).toMatch(/<\/span><\/sub>$/);
     expect(await produceProviderSummary(adapter, '2026-11-02T10:00:00Z')).toBe('unchanged');
     expect(writes).toBe(1);
@@ -317,6 +331,25 @@ describe('provider summary ownership and determinism', () => {
 });
 
 describe('GitLab authenticated protocol fixture', () => {
+  it('keeps merged-results checks associated with the MR head and preserves their actual commit', async () => {
+    const root = '/api/v4/projects/group%2Fsubgroup%2Fproject/merge_requests/42';
+    const mergeSha = 'c'.repeat(40);
+    const t = transport((url) => {
+      if (url.pathname === root) return json({ iid: 42, project_id: 1, sha: HEAD, head_pipeline: { id: 9, sha: mergeSha } });
+      if (url.pathname === `${root}/approvals`) return json({ approved_by: [] });
+      if (url.pathname === `${root}/pipelines`) return json([
+        { id: 7, sha: NEXT }, { id: 8, sha: HEAD }, { id: 9, sha: mergeSha },
+      ]);
+      if (url.pathname.endsWith('/pipelines/8/jobs')) return json([{ id: 80, name: 'Unit tests', status: 'failed' }]);
+      if (url.pathname.endsWith('/pipelines/9/jobs')) return json([{ id: 90, name: 'Unit tests', status: 'success' }]);
+      if (url.pathname.endsWith('/pipelines/7/jobs')) throw new Error('Unrelated pipeline must not be read');
+      return json([]);
+    });
+    const review = await new GitLabCiAdapter(new ProviderHttp(config('gitlab'), t.fetcher)).load();
+    expect(review.input.subject.headSha).toBe(HEAD);
+    expect(review.input.checks).toEqual([{ name: 'Unit tests', sha: mergeSha, reviewHeadSha: HEAD, status: 'completed', conclusion: 'success' }]);
+    expect(t.requests.filter((request) => request.url.includes('/jobs?'))).toHaveLength(2);
+  });
   it.each(['unreviewed', 'reviewed'] as const)('keeps a native approval beside its independent %s reviewer state in the typed producer input', async (state) => {
     const mr = '/api/v4/projects/group%2Fsubgroup%2Fproject/merge_requests/42';
     const user = { id: 8, username: 'reviewer' };

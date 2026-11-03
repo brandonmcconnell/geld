@@ -2507,3 +2507,6 @@ Earlier independent PR27 diff and PR22 overview runs each observed 26 standard A
 The continuity case corroborates public tab-state totals with the read-only complete-result cache and actual native file inventory, without writing cache entries or issuing an oracle request.
 A changed cache identity, untrusted input, full document navigation, missing native file or exhausted budget leaves the combined case incomplete while preserving its earlier digest checkpoint.
 The independent `bitbucket-diff` and `bitbucket-comment` focuses remain available to verify the unfinished half in a later eligible window.
+
+GitLab CI summary jobs may run on a temporary merged-results commit, so the MR's exact `head_pipeline.id` associates those checks with the source head while `sha` retains the actual pipeline commit and `reviewHeadSha` records the association.
+Provider CI summaries count waiting manual jobs separately from running jobs so an idle deployment does not make completed CI look active.
