@@ -170,6 +170,14 @@ export async function verifyGitLabWhitespace(page, { settings, observer, compari
       p.lastProbe = value?.qualified === true ? { qualified: true, anonymous: value.anonymous === true, armed: value.armed === true, bound: value.bound === true, open: value.open === true,
         mountedFiles: Array.isArray(value.files) ? Math.min(GITLAB_WHITESPACE.paths.length, value.files.filter((file) => file.mounted === true).length) : 0 }
         : { qualified: false, code: probeCodes.has(value?.code) ? value.code : 'NATIVE_PROBE_UNQUALIFIED' };
+      const detail = value?.fileData;
+      if (value?.code === 'FILE_DATA_UNQUALIFIED' && ['FILE_JSON_UNREADABLE', 'FILE_PATH_UNEXPECTED', 'FILE_REF_MISSING', 'FILE_HEAD_INVALID', 'FILE_HEAD_MISMATCH', 'FILE_ANCHOR_INVALID'].includes(detail?.reason)
+        && ['knownPath', 'refPresent', 'headValid', 'headMatchesTarget', 'anchorValid'].every((field) => typeof detail[field] === 'boolean')
+        && (detail.knownPath ? Number.isInteger(detail.pathSlot) && detail.pathSlot >= 0 && detail.pathSlot < GITLAB_WHITESPACE.paths.length : detail.pathSlot === null)) {
+        const candidate = detail.knownPath && detail.headValid && typeof detail.candidateHead === 'string' && /^[a-f0-9]{40}$/.test(detail.candidateHead) ? detail.candidateHead : null;
+        p.lastProbe.fileData = { reason: detail.reason, pathSlot: detail.pathSlot, knownPath: detail.knownPath, refPresent: detail.refPresent, headValid: detail.headValid, headMatchesTarget: detail.headMatchesTarget, anchorValid: detail.anchorValid,
+          ...(candidate === null ? {} : { candidateHead: candidate }), candidateMatchesEndpointTarget: candidate !== null && typeof p.acquisitionMatch?.endpointTarget?.head === 'string' ? candidate === p.acquisitionMatch.endpointTarget.head : null };
+      }
       return value;
     } catch (failure) { p.lastProbe = { qualified: false, code: 'PROBE_OPERATION_FAILED' };throw failure; }
   };

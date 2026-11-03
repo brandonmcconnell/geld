@@ -19,7 +19,7 @@ function evidence() {
     { id: 'r2', kind: 'metadata', status: 'projected', httpStatus: 200, selectionRedacted: false, selection: { diff_id: F.version }, url: `https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs_metadata.json?diff_id=${F.version}`, projection: { projectPath: 'gitlab-org/gitlab', diffId: F.version, inventory: { state: 'observed', scanComplete: true, total: 3, uniqueNewPaths: 3, size: 3, realSize: 3, overflow: false, paths: F.paths.map((newPath) => ({ newPath, deleted: false, submodule: false })) } } }] };
 }
 async function protocol(options = {}) {
-  let live = state();let closed = false;let phase = 'baseline';let clicks = 0;let writes = 0;let readinessReads = 0;let binds = 0;let acquisitionReads = 0;const order = [];const progress = {};const settingsProgress = {};
+  let live = state();let closed = false;let phase = 'baseline';let clicks = 0;let writes = 0;let readinessReads = 0;let binds = 0;let acquisitionReads = 0;let afterChangeReads = 0;let fileFailureActive = false;const order = [];const progress = {};const settingsProgress = {};
   if (options.nativeSelection) { live.app = structuredClone(options.nativeSelection);live.files.forEach((file) => { file.head = live.app.targetVersions.find((version) => version.selected).head_sha; }); }
   if (options.nativeMutation) options.nativeMutation(live);
   if (options.mountPending) live.files.forEach((file) => { file.mounted = false; });
@@ -55,6 +55,10 @@ async function protocol(options = {}) {
         else { live.qualified = false;live.code = options.scopeAfterMatch === 'actor' ? 'ACTOR_UNQUALIFIED' : 'ORIGINAL_OWNER_CHANGED'; }
       }
       if (options.pairingTargetDrift && acquisitionReads) { live.app.targetVersions[0].head_sha = 'b'.repeat(40);live.files.forEach((file) => { file.head = 'b'.repeat(40); }); }
+      if (options.fileDataAfterToggle && action === 'read') {
+        if (phase === 'toggle' && live.events.some((event) => event.kind === 'whitespace') && ++afterChangeReads >= 2) fileFailureActive = true;
+        if (fileFailureActive) return { qualified: false, code: 'FILE_DATA_UNQUALIFIED', fileData: options.fileDataAfterToggle, secret: 'DO_NOT_RETAIN_FILE_FAILURE' };
+      }
       if (options.unknown) return { qualified: false, code: 'MENU_SCHEMA_UNQUALIFIED' };
       return structuredClone(live);
     },
@@ -167,6 +171,24 @@ for (const field of ['id', 'mergeHead']) test(`a distinct native merge target re
 for (const scope of ['target', 'owner', 'actor']) test(`native ${scope} changes after immutable matching cannot be adopted before the first toggle`, async () => {
   const f = await protocol({ nativeSelection: immutableNative(), acquisitionEvidence: observed285(), scopeAfterMatch: scope });await assert.rejects(f.run(), AggregateError);
   assert.equal(f.progress.acquisitionMatch.immutableSourceTarget, true);assert.equal(f.progress.failurePhase, 'NATIVE_TOGGLE');assert.equal(f.progress.toggleAttempted, false);assert.equal(f.clicks(), 1);assert.equal(f.progress.selection.target.head, F.head);assert.deepEqual(f.storage(), f.original);
+});
+
+
+for (const matches of [true, false]) test(`actual mode-wait file failure retains only whitelisted diagnostic and endpoint-head equality=${matches} without adopting it`, async () => {
+  const endpoint = observed285().responses[0].projection.target.values[0].headSha;
+  const detail = { reason: 'FILE_HEAD_MISMATCH', pathSlot: 0, knownPath: true, refPresent: true, headValid: true, headMatchesTarget: false, anchorValid: true, candidateHead: matches ? endpoint : 'a'.repeat(40), secret: 'DO_NOT_RETAIN' };
+  const f = await protocol({ nativeSelection: immutableNative(), acquisitionEvidence: observed285(), fileDataAfterToggle: detail });await assert.rejects(f.run(), AggregateError);
+  assert.equal(f.progress.failurePhase, 'NATIVE_MODE_WAIT');assert.equal(f.progress.primaryFailure, 'FILE_DATA_UNQUALIFIED');
+  assert.equal(f.progress.failureProbe.fileData.candidateMatchesEndpointTarget, matches);assert.equal(f.progress.failureProbe.fileData.candidateHead, detail.candidateHead);
+  assert.equal(f.progress.lastProbe.fileData.reason, 'FILE_HEAD_MISMATCH');assert.equal(f.progress.selection.target.head, F.head);assert.equal(f.progress.nativeRestored, false);assert.equal(f.clicks(), 2);assert.equal(f.binds(), 1);assert.deepEqual(f.storage(), f.original);assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
+});
+test('unknown-path candidate and extra diagnostic fields are not retained by the actual orchestrator', async () => {
+  const detail = { reason: 'FILE_PATH_UNEXPECTED', pathSlot: null, knownPath: false, refPresent: true, headValid: true, headMatchesTarget: false, anchorValid: true, candidateHead: T, unknownPath: 'DO_NOT_RETAIN_PATH' };
+  const f = await protocol({ fileDataAfterToggle: detail });await assert.rejects(f.run(), AggregateError);
+  assert.equal(f.progress.failureProbe.fileData.candidateHead, undefined);assert.equal(f.progress.failureProbe.fileData.candidateMatchesEndpointTarget, null);assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
+});
+for (const detail of [{ reason: 'DO_NOT_RETAIN_REASON' }, { reason: 'FILE_HEAD_MISMATCH', pathSlot: 99, knownPath: true, refPresent: true, headValid: true, headMatchesTarget: false, anchorValid: true, candidateHead: T }]) test('unknown or malformed file diagnostic cannot expand the fixed-code report', async () => {
+  const f = await protocol({ fileDataAfterToggle: detail });await assert.rejects(f.run(), AggregateError);assert.deepEqual(f.progress.failureProbe, { qualified: false, code: 'FILE_DATA_UNQUALIFIED' });assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
 });
 
 test('pairing timeout retains the qualified original baseline and finite setup diagnostics before any toggle', async () => {
@@ -313,6 +335,27 @@ async function withDOM(run) {
     await run({ w, app, menu: document.querySelector('[data-testid="base-dropdown-menu"]'), checkbox: document.querySelector('#ws') });
   } finally { await probe('cleanup');for (const [name, value] of before) { if (value) Object.defineProperty(globalThis, name, value);else delete globalThis[name]; }await w.happyDOM.abort(); }
 }
+
+for (const [name, mutate, reason, candidate] of [
+  ['missing ref', (file, data) => { delete data.diff_refs; }, 'FILE_REF_MISSING', undefined],
+  ['invalid head', (file, data) => { data.diff_refs.head_sha = 'DO_NOT_RETAIN_HEAD'; }, 'FILE_HEAD_INVALID', undefined],
+  ['wrong valid head', (file, data) => { data.diff_refs.head_sha = 'a'.repeat(40); }, 'FILE_HEAD_MISMATCH', 'a'.repeat(40)],
+  ['unknown path', (file, data) => { data.new_path = 'DO_NOT_RETAIN_PATH';data.diff_refs.head_sha = 'a'.repeat(40); }, 'FILE_PATH_UNEXPECTED', undefined],
+  ['invalid anchor', (file) => { file.id = 'DO_NOT_RETAIN_ANCHOR'; }, 'FILE_ANCHOR_INVALID', T],
+]) test(`native file diagnostic distinguishes ${name} without code, unknown path or raw data`, async () => withDOM(async () => {
+  const file = document.querySelector('diff-file');const data = JSON.parse(file.getAttribute('data-file-data'));data.secret = 'DO_NOT_RETAIN_JSON';mutate(file, data);file.setAttribute('data-file-data', JSON.stringify(data));
+  const before = document.body.innerHTML;const value = await probe('read', F);assert.equal(value.qualified, false);assert.equal(value.code, 'FILE_DATA_UNQUALIFIED');assert.equal(value.fileData.reason, reason);assert.equal(value.fileData.candidateHead, candidate);
+  assert.equal(value.fileData.pathSlot, name === 'unknown path' ? null : 0);assert.equal(value.fileData.knownPath, name !== 'unknown path');assert.equal(value.fileData.refPresent, name !== 'missing ref');assert.equal(value.fileData.headValid, !['missing ref', 'invalid head'].includes(name));assert.equal(value.fileData.headMatchesTarget, name === 'invalid anchor');assert.equal(value.fileData.anchorValid, name !== 'invalid anchor');
+  assert.doesNotMatch(JSON.stringify(value), /DO_NOT_RETAIN|Source canary/);assert.equal(document.body.innerHTML, before);
+}));
+test('unreadable file JSON is diagnosed without returning the raw attribute', async () => withDOM(async () => {
+  document.querySelector('diff-file').setAttribute('data-file-data', '{DO_NOT_RETAIN_JSON');const value = await probe('read', F);assert.equal(value.fileData.reason, 'FILE_JSON_UNREADABLE');assert.equal(value.fileData.pathSlot, null);assert.equal(value.fileData.candidateHead, undefined);assert.doesNotMatch(JSON.stringify(value), /DO_NOT_RETAIN/);
+}));
+test('actor and project guards refuse before reading or retaining malformed file evidence', async () => withDOM(async () => {
+  document.querySelector('diff-file').setAttribute('data-file-data', '{DO_NOT_RETAIN_JSON');document.body.dataset.projectId = 'other';assert.deepEqual(await probe('read', F), { qualified: false, code: 'PROJECT_SCOPE_UNQUALIFIED' });document.body.dataset.projectId = '278964';
+  document.body.insertAdjacentHTML('afterbegin', `<div id="js-vue-mr-discussions" data-current-user-data='{"id":7}'></div>`);assert.deepEqual(await probe('read', F), { qualified: false, code: 'ACTOR_UNQUALIFIED' });
+}));
+
 test('actual DOM probe reads current checked property rather than absent HTML attribute and never exposes code text', async () => withDOM(async ({ checkbox }) => {
   checkbox.checked = true;assert.equal(checkbox.hasAttribute('checked'), false);const value = await probe('read', F);assert.equal(value.qualified, true);assert.equal(value.checked, true);assert.equal(value.initialShowWhitespace, false);assert.doesNotMatch(JSON.stringify(value), /Source canary/);
 }));
