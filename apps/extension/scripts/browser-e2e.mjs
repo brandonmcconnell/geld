@@ -1149,7 +1149,7 @@ async function gitLabBinaryCounts(page, item) {
       && value.badge === '10' && value.file?.hidden === 'open' && value.file.display !== 'none' && value.file.bodyOpen === true
       && value.file.header.painted && value.file.images.some((image) => image.src !== null && image.complete && image.naturalWidth > 0 && image.painted)
       && value.sidebar?.headers.length === 2 && value.sidebar.headers.every((header) => header.painted)
-      && value.sidebar.headers[0].expanded === 'false' && value.sidebar.headers[1].expanded === 'true' && value.sidebar.selectedFile?.painted === true
+      && value.sidebar.headers[0].expanded === 'false' && value.sidebar.headers[1].expanded === 'true' && value.sidebar.selectedFile?.painted === true && value.sidebar.selectedFile.current === 'true'
       && value.sidebar.nativeBodies.length > 0 && value.sidebar.nativeBodies.every((body) => body.marker === 'native' && body.style.display === 'none');
     const revealPosition = (value) => JSON.stringify([value.categories, value.file?.id, value.file?.header.bounds, value.file?.images.map((image) => image.visibleBounds),
       value.sidebar?.headers.map((header) => header.bounds), value.sidebar?.selectedFile?.bounds, value.sidebar?.nativeBodies.map((body) => [body.marker, body.style.display])]);
