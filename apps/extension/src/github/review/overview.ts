@@ -816,7 +816,7 @@ function checksSection(): HTMLElement | null {
 }
 
 const APPROVE_WORKFLOWS = /^approve (?:workflows to run|and run)$/i;
-const AWAITING_APPROVAL = /\b(\d+) workflows? awaiting approval\b/i;
+const AWAITING_APPROVAL = /\b(\d+) workflows? awaiting approval/i;
 
 /**
  * GitHub's own "Approve workflows to run": a first-time contributor's
