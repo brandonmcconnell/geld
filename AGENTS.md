@@ -2453,3 +2453,9 @@ A ready, still-source-agreeing whole-file intent survives removal of the final n
 Bitbucket code cells live inside a separate physical `.lines-wrapper` row that also owns the permalink, so fold presentation uses an adapter-supplied visual root while source custody retains the original inner code cell.
 The shared fold renderer accepts that visual root only as the connected direct parent in the same file and document, places its control before the physical row, and hides or restores the whole row without moving native children.
 This prevents an inner native PRE from intercepting the empty part of a full-width fold button, as observed during the public whole-context acceptance.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
