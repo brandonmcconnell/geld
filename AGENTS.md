@@ -2305,3 +2305,9 @@ Actual provider429 handling and inherited server cooldowns remain unchanged.
 Native context inputs require three remaining observed slots for at most two concurrent expansion requests.
 A cached owned fold may omit that request reserve only after a fresh qualified source snapshot proves every leaf line already mounted and source-equal, with the exact closed fold still present.
 The after-request hard stop remains active during cached toggles and every other phase.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
