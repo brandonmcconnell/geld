@@ -6,6 +6,64 @@ export const GITLAB_WHITESPACE_SESSION = Object.freeze({ ...GITLAB_WHITESPACE, u
 const check = (value, code) => { if (!value) throw Object.assign(new Error(`GitLab whitespace session: ${code}`), { code }); };
 const fixed = (failure) => typeof failure?.code === 'string' && /^[A-Z_]{1,64}$/.test(failure.code) ? failure.code : 'OPERATION_FAILED';
 
+export function gitLabWhitespaceSessionPresentation(paths) {
+  const count = (node, files = false) => {
+    if (node === null) return { present: false, recognized: !files, format: files ? 'absent' : 'absent_zero', value: files ? null : 0 };
+    const text = (node.textContent ?? '').trim().replace(/\s+/g, ' ');
+    const invalid = { present: true, recognized: false, format: 'unrecognized', value: null };
+    if (text.length > 64) return invalid;
+    const digits = '(0|[1-9]\\d*|[1-9]\\d{0,2}(?:,\\d{3})+)';
+    const match = new RegExp(files ? `^${digits}(?: (file|files))?$` : `^([+−-])? ?${digits}$`).exec(text);
+    if (match === null) return invalid;
+    const value = Number(match[files ? 1 : 2].replaceAll(',', ''));
+    if (!Number.isSafeInteger(value) || value > 1_000_000_000 || files && (match[2] === 'file' && value !== 1 || match[2] === 'files' && value === 1)) return invalid;
+    return { present: true, recognized: true, format: files ? match[2] ? 'file_label' : 'bare' : match[1] === '−' ? 'signed_unicode' : match[1] ? 'signed_ascii' : 'unsigned', value };
+  };
+  const roots = [...document.querySelectorAll('.diff-stats.inline-parallel-buttons .diff-stats-contents')];
+  const headers = roots.slice(0, 4).map((root) => {
+    const parsed = { files: count(root.querySelector(':scope > .diff-stats-group > span'), true), additions: count(root.querySelector('[data-testid="js-file-addition-line"]')), deletions: count(root.querySelector('[data-testid="js-file-deletion-line"]')) };
+    return { files: parsed.files.value, additions: parsed.additions.value, deletions: parsed.deletions.value, parsed };
+  });
+  const nativeFiles = [...document.querySelectorAll('diff-file[data-file-data]')];
+  const files = nativeFiles.slice(0, paths.length + 1).map((root) => {
+    let data;try { const raw = root.getAttribute('data-file-data');if (raw !== null && raw.length <= 16384) data = JSON.parse(raw); } catch { /* Only a known slot is returned. */ }
+    const slot = paths.indexOf(data?.new_path);return { slot: slot < 0 ? null : slot, hidden: getComputedStyle(root).display === 'none' };
+  });
+  return { headers, headerOverflow: roots.length > 4, files, fileCount: Math.min(nativeFiles.length, paths.length + 1), fileOverflow: nativeFiles.length > paths.length,
+    exactKnownPaths: files.length === paths.length && files.every(({ slot }) => slot !== null) && new Set(files.map(({ slot }) => slot)).size === paths.length };
+}
+
+export async function verifyGitLabWhitespaceSessionProduct(page, { phase, progress, readState, poll }) {
+  const observations = progress.productObservations ??= [];
+  check(['baseline', 'toggle', 'restore'].includes(phase) && observations.length < 3, 'PRODUCT_OBSERVATION_SCOPE_UNQUALIFIED');
+  const observation = { phase, entryPhase: { baseline: 'BASELINE_PRODUCT_TOTALS', toggle: 'TOGGLE_PRODUCT_TOTALS', restore: 'RESTORE_PRODUCT_TOTALS' }[phase], stage: 'TAB_TOTALS', tabReads: 0, nativeReads: 0 };observations.push(observation);
+  const stage = (name) => { observation.stage = name;progress.phase = name; };
+  const number = (value) => Number.isSafeInteger(value) && value >= 0 && value <= 1_000_000_000 ? value : null;
+  const totals = (value) => ({ files: number(value?.files), additions: number(value?.additions), deletions: number(value?.deletions) });
+  const equal = (value, expected) => ['files', 'additions', 'deletions'].every((name) => value[name] === expected[name]);
+  const projected = (value) => {
+    const category = Array.isArray(value?.categories) ? value.categories.find((entry) => entry?.id === 'tests') : undefined;
+    const paths = Array.isArray(category?.paths) ? category.paths : [];
+    return { hasDiff: typeof value?.hasDiff === 'boolean' ? value.hasDiff : null, all: totals(value?.all), visible: totals(value?.visible), hiddenCount: number(value?.hiddenCount),
+      tests: { present: category !== undefined, count: number(category?.count), pathCount: Math.min(paths.length, 4), knownSlots: paths.slice(0, 4).map((path) => { const slot = GITLAB_WHITESPACE.paths.indexOf(path);return slot < 0 ? null : slot; }), exactKnownPath: paths.length === 1 && paths[0] === GITLAB_WHITESPACE.paths[2] } };
+  };
+  stage('TAB_TOTALS');
+  const state = await poll(async () => {
+    observation.tabReads = Math.min(observation.tabReads + 1, 65535);let value;
+    try { value = await readState();observation.tabReadError = null; } catch { observation.tabReadError = 'TAB_STATE_READ_UNAVAILABLE';check(false, 'TAB_STATE_READ_UNAVAILABLE'); }
+    observation.lastTab = projected(value);return observation.lastTab;
+  }, (value) => value.hasDiff === true && equal(value.all, { files: 3, additions: 36, deletions: 0 }) && equal(value.visible, { files: 2, additions: 4, deletions: 0 }) && value.hiddenCount === 1, 'Installed whitespace session exact complete totals');
+  stage('TEST_CATEGORY');check(state.tests.present && state.tests.count === 1 && state.tests.exactKnownPath, 'PRODUCT_TEST_CATEGORY_MISMATCH');
+  stage('NATIVE_PRESENTATION');
+  const native = await poll(async () => {
+    observation.nativeReads = Math.min(observation.nativeReads + 1, 65535);
+    try { observation.lastNative = await page.evaluate(gitLabWhitespaceSessionPresentation, GITLAB_WHITESPACE.paths);observation.nativeReadError = null; } catch { observation.nativeReadError = 'NATIVE_PRESENTATION_READ_UNAVAILABLE';check(false, 'NATIVE_PRESENTATION_READ_UNAVAILABLE'); }
+    return observation.lastNative;
+  }, (value) => !value.headerOverflow && value.headers.some((header) => header.files === 2 && header.additions === 4 && header.deletions === 0)
+    && !value.fileOverflow && value.fileCount === 3 && value.exactKnownPaths && value.files.every((file) => file.hidden === (file.slot === 2)), 'Native whitespace session corrected counts and exact hidden file');
+  observation.stage = 'VERIFIED';return { all: state.all, visible: state.visible, hiddenCount: state.hiddenCount, tests: state.tests, native };
+}
+
 export function gitLabWhitespaceSessionSettings({ read, write, progress }) {
   const key = JSON.stringify(['gitlab', 'https://gitlab.com', '/gitlab-org/gitlab/-/merge_requests/266334/diffs']);
   let original;let prepared;let baseline;let expected;let pending;let cleanup;
@@ -223,7 +281,7 @@ export async function verifyGitLabWhitespaceSession(page, { settings, observer, 
     const value = await poll(() => read(), (value) => value.events.length === count && value.events[count - 1].trusted === true && value.events[count - 1].checked === desired, 'Trusted original native whitespace choice');
     p[phase] = { input: value };await poll(() => read(), (value) => mode(phase, desired) && value.completed === count, 'Independent native mode response and completed reload');
     const settled = (await stable(count)).after;check(settled.checked === desired, 'NATIVE_MODE_REVERTED');await poll(async () => { try { await settings.choiceComplete();return true; } catch (failure) { if (fixed(failure) === 'NATIVE_INTENT_NOT_PERSISTED') return false;throw failure; } }, (ready) => ready, 'Product-generated current-review opt-out choice');
-    p[phase].settled = settled;p[phase].state = await totals();const after = await read('frame');check(after.preservedNativeNodes && after.completed === count && !after.pending && after.checked === desired && isDeepStrictEqual(after.files, settled.files), 'POST_PRODUCT_NATIVE_FRAME_CHANGED');p[phase].afterProduct = after;return after;
+    p[phase].settled = settled;p.phase = phase === 'toggle' ? 'TOGGLE_PRODUCT_TOTALS' : 'RESTORE_PRODUCT_TOTALS';p[phase].state = await totals(phase);p.phase = 'POST_PRODUCT_NATIVE_FRAME';const after = await read('frame');check(after.preservedNativeNodes && after.completed === count && !after.pending && after.checked === desired && isDeepStrictEqual(after.files, settled.files), 'POST_PRODUCT_NATIVE_FRAME_CHANGED');p[phase].afterProduct = after;return after;
   };
   try {
     const ready = await poll(() => old('read'), (value) => value.qualified ? value.files.every((file) => file.mounted) : !['SOURCE_OWNER_PENDING', 'MENU_OWNER_PENDING'].includes(value.code), 'Strict original anonymous whitespace baseline');
@@ -237,7 +295,7 @@ export async function verifyGitLabWhitespaceSession(page, { settings, observer, 
     await comparisons.checkpoint('beforeIntent', {});
     p.phase = 'INDEPENDENT_ACQUISITION';p.acquisition = await poll(async () => acquisitionMatches(baseline, acquisition(), '1'), (value) => value.matched, 'Existing complete pinned independent acquisition for explicit w1');
     await strictCurrent();observer.bind(baseline.nativeStream);observer.phase('baseline');p.phase = 'INSTALL_INDEPENDENT_SESSION';const setup = await page.evaluate(gitLabWhitespaceSessionProbe, 'install', GITLAB_WHITESPACE_SESSION);p.setup = setup;check(setup.qualified, setup.code ?? 'SESSION_INSTALL_FAILED');installed = true;
-    p.baselineState = await totals();p.baselineSelection = { source: { id: GITLAB_WHITESPACE.version, head: GITLAB_WHITESPACE.head }, target: baseline.app.targetVersions.filter((entry) => entry.selected).map(({ id, head_sha, is_merge_head }) => ({ id: String(id), head: head_sha, mergeHead: is_merge_head })) };
+    p.phase = 'BASELINE_PRODUCT_TOTALS';p.baselineState = await totals('baseline');p.baselineSelection = { source: { id: GITLAB_WHITESPACE.version, head: GITLAB_WHITESPACE.head }, target: baseline.app.targetVersions.filter((entry) => entry.selected).map(({ id, head_sha, is_merge_head }) => ({ id: String(id), head: head_sha, mergeHead: is_merge_head })) };
     await transition(true, 'toggle', 1);p.status = 'bounded_session_verified';
   } catch (failure) { primary = fixed(failure);p.primaryFailure = primary;p.failurePhase = p.phase;p.status = baseline ? 'failed' : 'unavailable'; }
   finally {
