@@ -21,5 +21,5 @@ Each slice must pass its package checks, and the complete stack must pass `pnpm 
 Dashboard CI is temporarily advisory during rollout.
 Once the dashboard is fully rolled out, restore its checks as required CI and remove the temporary success-or-skipped handling in `.github/workflows/ci.yml`, so dashboard failures block CI again.
 Until the dashboard launches, the extension's account control offers only GitHub sync, as geld.sh does since #337: the "Sign in to Geld" control #151 added was taken out of `apps/extension/src/ui/account-widget.ts` in #352.
-At launch, bring it back as the extension's one sign-in, replacing GitHub sync, since settings sync then lives in the Geld account. Restore `account-widget-session.test.ts` from #151 with it. `dashboard-session.ts` and the tracker links stay in place meanwhile, idle without a session.
+At launch, bring it back as the extension's one sign-in, replacing GitHub sync, since settings sync then lives in the Geld account. Restore `account-widget-session.test.ts` from #151 with it. `dashboard-session.ts` and the tracker links stay in place meanwhile, idle without a session. The background drops any Geld session an earlier build saved (`retireDashboardSession`, on install and update), so remove that call at launch too.
 Publishing, merging, paid plans, live billing and real-data migrations remain owner actions.
