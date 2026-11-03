@@ -178,15 +178,29 @@ it('provides a hint host in the native Lines updated count group, outside its hi
   expect(bitbucketHeaderTargets(document)[1]?.hintBefore).toBe(visual);
 });
 
-it('defers an overview hint rather than inserting into the native tablist or aria-hidden sticky header', () => {
+it('places overview counts beside the verified native tablist without changing tab semantics or the hidden sticky header', () => {
   window.location.href = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27/overview';
   document.body.innerHTML = '<div id="sticky-header-content" aria-hidden="true"></div><nav aria-label="Pull request"><div role="tablist"><a id="pull-request-tabs-1" role="tab" aria-selected="false" href="/atlassian/bitbucket-upload-file/pull-requests/27/diff"><div>Files changed<span><span>5</span></span></div></a></div></nav>';
   const markup = document.body.innerHTML;
   const targets = bitbucketHeaderTargets(document);
   expect(targets).toHaveLength(1);
   expect(targets[0]?.files?.textContent).toBe('5');
-  expect(targets[0]?.hintHost).toBeUndefined();
+  expect(targets[0]?.hintHost).toBe(document.querySelector('nav[aria-label="Pull request"]'));
   expect(document.body.innerHTML).toBe(markup);
+  const tablist = required(document.querySelector('[role="tablist"]'));
+  const tabs = tablist.outerHTML;
+  const hint = document.createElement('span'); hint.dataset.geldUi = ''; hint.textContent = '+20 −10';
+  targets[0]?.hintHost?.append(hint);
+  expect(tablist.outerHTML).toBe(tabs);
+  expect(hint.previousElementSibling).toBe(tablist);
+  expect(hint.closest('[role="tablist"], [role="tab"], [aria-hidden="true"]')).toBeNull();
+  const authored = document.createElement('section'); authored.dataset.qa = 'pull-request-description';
+  const nav = required(document.querySelector('nav'));
+  nav.before(authored); authored.append(nav);
+  expect(bitbucketHeaderTargets(document)[0]?.hintHost).toBeUndefined();
+  authored.before(nav); authored.remove();
+  required(document.querySelector('nav')).setAttribute('aria-hidden', 'true');
+  expect(bitbucketHeaderTargets(document)[0]?.hintHost).toBeUndefined();
   document.querySelector('a')?.setAttribute('href', '/atlassian/bitbucket-upload-file/pull-requests/22/diff');
   expect(bitbucketHeaderTargets(document)).toEqual([]);
 });

@@ -115,7 +115,15 @@ it('keeps a still-loading stream box intact, then groups when all eleven unique 
   expect(node('[data-diffs-list]').classList.contains('geld-provider-diffs')).toBe(false);
   expect(node('#native-image-0').hasAttribute('data-geld-provider-inline')).toBe(true);
   expect(document.querySelector('.geld-provider-hidden')).toBeNull();
-  expect(document.querySelector('.geld-provider-categories')).toBeNull();
+  expect(document.querySelector('.geld-provider-categories')).not.toBeNull();
+  expect([...document.querySelectorAll('.geld-provider-category-header')].map((header) => header.textContent)).toEqual(['Essential (9 files)', 'Tests (2 tests)']);
+  const headers = [...document.querySelectorAll<HTMLButtonElement>('.geld-provider-category-header')];
+  headers[1]?.click();
+  expect(controller.getTabState().expanded).toBe(true);
+  expect(node('#native-image-0').querySelector<HTMLDetailsElement>('details')?.open).toBe(true);
+  expect(outer.hasAttribute('data-geld-provider-flow-wrapper')).toBe(false);
+  headers[0]?.click();
+  expect(controller.getTabState().expanded).toBe(false);
   stream.insertAdjacentHTML('afterbegin', PATHS.slice(5).map((path, index) => image(path, index + 5)).join(''));
   nativeControls(stream);
   controller.requestRefresh(); await settle();
@@ -194,7 +202,7 @@ it.each(['position', 'transform', 'hidden style', 'hidden attribute', 'file by f
   expect(stream.hasAttribute('data-geld-provider-flow-wrapper')).toBe(false);
   expect(outer.getAttribute('style')).toBe(originalOuter); expect(stream.getAttribute('style')).toBe(originalStream);
   expect(document.querySelector('.geld-provider-hidden')).toBeNull();
-  expect(document.querySelector('.geld-provider-categories') !== null).toBe(readGitLabDiff(document)?.virtualized === true);
+  expect(document.querySelector('.geld-provider-categories')).not.toBeNull();
   controller.requestRefresh(); await settle();
   expect(stream.hasAttribute('data-geld-provider-flow-wrapper')).toBe(false);
 });

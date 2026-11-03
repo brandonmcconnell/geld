@@ -540,6 +540,7 @@ export class ProviderController {
       if (hiddenFile && !ownedInline && shown && this.shownInline.get(entry.root) !== entry.path) {
         if (entry.expand()) { this.shownInline.set(entry.root, entry.path); this.collapsed.delete(entry.path); }
       } else if (hiddenFile && !ownedInline && !grouped) {
+        if (!shown) this.shownInline.delete(entry.root);
         if (!shown && this.collapsed.get(entry.path)?.root !== entry.root && entry.isExpanded?.() === true) {
           if (entry.collapse()) this.collapsed.set(entry.path, entry);
         }
@@ -571,7 +572,7 @@ export class ProviderController {
       this.touched.add(row.root);
       attribute(row.root, INLINE, !grouped && hiddenPaths.has(row.path) ? '' : null);
     }
-    if (effective.groupHidden && (grouped || view.virtualized)) {
+    if (effective.groupHidden) {
       this.inlineTree.clear();
       this.categoryTree.update(view, hidden, all, files, {
       subjectKey: JSON.stringify([this.pageKey, revision]),

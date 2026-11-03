@@ -106,6 +106,37 @@ afterEach(() => {
 
 async function settle(): Promise<void> { await vi.advanceTimersByTimeAsync(120); }
 
+it('reopens a category selected again during partial-stream layout while preserving a native collapse within the selected category', async () => {
+  const files: readonly FileStats[] = [...FILES, { path: 'README.md', additions: 1, deletions: 0 }];
+  const { adapter, view } = fixture('gitlab', files);
+  const root = document.createElement('article'); root.id = 'docs'; view.container.append(root);
+  let testsOpen = true; let docsOpen = true;
+  const testEntry = view.entries[1];
+  if (testEntry === undefined) throw new Error('Missing native test file');
+  const entries: readonly ProviderDiffEntry[] = [view.entries[0] ?? testEntry,
+    { ...testEntry, isExpanded: () => testsOpen, expand: () => { testsOpen = true; return true; }, collapse: () => { testsOpen = false; return true; } },
+    { path: 'README.md', root, anchor: 'docs', additions: 1, deletions: 0, isExpanded: () => docsOpen,
+      expand: () => { docsOpen = true; return true; }, collapse: () => { docsOpen = false; return true; } }];
+  const { controller } = start({ ...adapter, readDiff: () => ({ ...view, entries, groupingWrappers: [view.container], groupingReady: false }) },
+    { ...DEFAULT_SETTINGS, testOutline: false, categories: { docs: true }, categoryPatterns: { docs: ['README.md'] } });
+  await settle();
+  const select = (title: string): void => {
+    const header = [...document.querySelectorAll<HTMLButtonElement>('.geld-provider-category-header')].find((button) => button.textContent?.startsWith(title));
+    if (header === undefined) throw new Error(`Missing ${title} category`);
+    header.click();
+  };
+  expect(testsOpen).toBe(false); expect(docsOpen).toBe(false);
+  select('Tests'); expect(testsOpen).toBe(true); expect(docsOpen).toBe(false);
+  select('Docs'); expect(testsOpen).toBe(false); expect(docsOpen).toBe(true);
+  select('Tests'); expect(testsOpen).toBe(true); expect(docsOpen).toBe(false);
+  testsOpen = false;
+  controller.requestRefresh(); await settle();
+  expect(testsOpen).toBe(false);
+  select('Docs'); select('Tests');
+  expect(testsOpen).toBe(true);
+  expect(view.container.classList.contains('geld-provider-diffs')).toBe(false);
+});
+
 describe('provider controller behavior', () => {
   it('withdraws native projections during a reload, preserves category/folder choices and retires only source-dependent work', async () => {
     const { adapter, view, fetchDiff } = fixture('gitlab', FILES);
