@@ -4,6 +4,8 @@ import { DEFAULT_SETTINGS } from '@geld/core';
 import type { FileStats, GeldSettings } from '@geld/core';
 import type { TabState } from '../lib/messages';
 import { ProviderController } from './controller';
+import { readBitbucketDiff } from '../bitbucket/diff';
+import { bitbucketAdapter } from '../bitbucket';
 import type { ProviderAdapter, ProviderDiffEntry, ProviderDiffResult, ProviderDiffView, ProviderReviewPage, ProviderCommitPage, ReviewProvider } from './types';
 
 vi.mock('wxt/utils/storage', () => ({ storage: {
@@ -620,4 +622,86 @@ it('retries unconfirmed Viewed clicks but preserves manual unview after confirma
   controller.requestRefresh();
   await settle();
   expect(markViewed).toHaveBeenCalledTimes(3);
+});
+
+
+it('keeps native Bitbucket shell coloring independent of source-count loading and folding, restoring on disable/no view/stop', async () => {
+  const registry = new Map<string, Set<AbstractRange>>();
+  vi.stubGlobal('CSS', { highlights: registry });
+  vi.stubGlobal('Highlight', class extends Set<AbstractRange> {});
+  vi.stubGlobal('StaticRange', class { constructor(init: StaticRangeInit) { Object.assign(this, init); } });
+  const request = deferred<ProviderDiffResult>();
+  const { adapter, fetchDiff } = fixture('bitbucket', [], () => request.promise);
+  const region = document.createElement('div');
+  region.setAttribute('role', 'region');
+  region.setAttribute('aria-label', 'Diff');
+  const root = document.createElement('div');
+  root.innerHTML = '<div id="chg-bitbucket-pipelines.yml"></div><article data-qa="branch-diff-file"></article>';
+  const article = root.querySelector('article');
+  if (article === null) throw new Error('Missing native article');
+  const lines = ['demo: &demo', '  step:', '    script:', '      - if true; then echo "$V"; fi', 'next: true'];
+  for (const [index, text] of lines.entries()) {
+    const row = document.createElement('div');
+    row.setAttribute('data-qa', 'code-line');
+    row.innerHTML = `<span data-key="code-line-number" data-old-line-number="${index + 1}" data-new-line-number="${index + 1}"></span><span data-line-type=" "></span>`;
+    const code = row.querySelector('[data-line-type]');
+    if (code === null) throw new Error('Missing native code');
+    code.textContent = text;
+    article.append(row);
+  }
+  region.append(root);
+  document.body.append(region);
+  let available = true;
+  const diffSyntax = bitbucketAdapter.diffSyntax;
+  if (diffSyntax === undefined) throw new Error('Missing native adapter syntax hook');
+  const { controller } = start({ ...adapter, diffSyntax, readDiff: () => available ? readBitbucketDiff(document) : null }, { ...DEFAULT_SETTINGS, hideCommentLines: false, testOutline: false });
+  await settle();
+  expect(fetchDiff).toHaveBeenCalledOnce(); // Full counts remain pending throughout this test.
+  expect(controller.getTabState().visible).toBeNull();
+  expect(registry.get('geld-bitbucket-shell-keyword')?.size).toBeGreaterThan(0);
+  controller.updateSettings({ ...DEFAULT_SETTINGS, enabled: false });
+  await settle();
+  expect(registry.has('geld-bitbucket-shell-keyword')).toBe(false);
+  controller.updateSettings(DEFAULT_SETTINGS);
+  await settle();
+  expect(registry.get('geld-bitbucket-shell-keyword')?.size).toBeGreaterThan(0);
+  available = false;
+  controller.requestRefresh();
+  await settle();
+  expect(registry.has('geld-bitbucket-shell-keyword')).toBe(false);
+  available = true;
+  controller.requestRefresh();
+  await settle();
+  expect(registry.get('geld-bitbucket-shell-keyword')?.size).toBeGreaterThan(0);
+  controller.stop();
+  expect([...registry.keys()].filter((key) => key.startsWith('geld-bitbucket-shell-'))).toEqual([]);
+});
+
+
+it('calls the optional provider syntax lifecycle through its adapter across views and navigation', async () => {
+  const { adapter, view } = fixture('gitlab', FILES);
+  const apply = vi.fn();
+  const clear = vi.fn();
+  let available = true;
+  const { controller } = start({ ...adapter, readDiff: () => available ? view : null, diffSyntax: { apply, clear } });
+  await settle();
+  expect(apply).toHaveBeenCalledWith(view);
+  const previousClears = clear.mock.calls.length;
+  window.history.replaceState(null, '', '/reviews/2');
+  controller.requestRefresh();
+  await settle();
+  expect(clear.mock.calls.length).toBeGreaterThan(previousClears);
+  expect(apply).toHaveBeenLastCalledWith(view);
+  available = false;
+  apply.mockClear();
+  controller.requestRefresh();
+  await settle();
+  expect(apply).not.toHaveBeenCalled();
+  const beforeDisable = clear.mock.calls.length;
+  controller.updateSettings({ ...DEFAULT_SETTINGS, enabled: false });
+  await settle();
+  expect(clear.mock.calls.length).toBeGreaterThan(beforeDisable);
+  const beforeStop = clear.mock.calls.length;
+  controller.stop();
+  expect(clear.mock.calls.length).toBeGreaterThan(beforeStop);
 });

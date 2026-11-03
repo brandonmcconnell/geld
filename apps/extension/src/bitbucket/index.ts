@@ -11,6 +11,7 @@ import { renderBitbucketComment } from './comment-render';
 import { bitbucketThreadActions } from './thread-actions';
 import { bitbucketAuthorPresentation } from './author-presentation';
 import { readBitbucketRequirements } from './requirements';
+import { applyBitbucketWorkflowSyntax, removeBitbucketWorkflowSyntax } from './workflow-syntax';
 
 export { BitbucketClient, BitbucketApiError, bitbucketCapabilities } from './api';
 export type { BitbucketPullRequest, BitbucketAuthor, BitbucketParticipant, BitbucketComment, BitbucketTask, BitbucketStatus, BitbucketActivity, BitbucketCapabilities } from './api';
@@ -21,6 +22,7 @@ export const bitbucketAdapter: ProviderAdapter = {
   id: 'bitbucket',
   describe: describeBitbucketProviderPage,
   readDiff: readBitbucketDiff,
+  diffSyntax: { apply: (view) => applyBitbucketWorkflowSyntax(view.entries), clear: removeBitbucketWorkflowSyntax },
   headerTargets: bitbucketHeaderTargets,
   listRows: bitbucketListRows,
   eagerListDiffs: bitbucketAuthenticated,
