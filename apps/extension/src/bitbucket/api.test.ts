@@ -80,6 +80,28 @@ describe('Bitbucket Cloud page identity', () => {
 });
 
 describe('Bitbucket diff acquisition from documented API shapes', () => {
+  it('pins both native whitespace resources to the acknowledged mode and rejects a transition during metadata', async () => {
+    for (const ignoreWhitespace of [true, false]) {
+      const fixture = setup(url => url.pathname === ROOT ? json(PR) : url.pathname.includes('/diffstat/') ? json({ size: 2, values: [TEST, SOURCE] }) : new Response(PATCH));
+      let current = true;
+      const page = { ...fixture.client.page, headSha: HEAD, version: `native-whitespace:${ignoreWhitespace}`, diffMode: { ignoreWhitespace, current: () => current } };
+      const fetcher: typeof fetch = async input => {
+        const url = new URL(String(input));fixture.requests.push(url.href);
+        return url.pathname === ROOT ? json(PR) : url.pathname.includes('/diffstat/') ? json({ size: 2, values: [TEST, SOURCE] }) : new Response(PATCH);
+      };
+      const transport = createBitbucketTransport({ origin: () => null, now: () => 0, store: { read: async () => 0, write: async () => undefined } });
+      const client = new BitbucketClient(page, fetcher, transport);
+      expect((await client.diff(signal())).complete).toBe(true);
+      const resources = fixture.requests.map(url => new URL(url)).filter(url => url.pathname.includes('/diff/') || url.pathname.includes('/diffstat/'));
+      expect(resources).toHaveLength(2);expect(resources.map(url => url.searchParams.get('ignore_whitespace'))).toEqual([ignoreWhitespace ? 'true' : null, ignoreWhitespace ? 'true' : null]);
+      current = false;const count = fixture.requests.length;
+      await expect(client.diff(signal())).rejects.toMatchObject({ reason: 'changed' });expect(fixture.requests).toHaveLength(count);
+      current = true;
+      const transition = new BitbucketClient(page, async () => { current = false;return json(PR); }, transport);
+      await expect(transition.diff(signal())).rejects.toMatchObject({ reason: 'changed' });
+    }
+  });
+
   it('resolves native abbreviated refs to full immutable commits before publishing review data', async () => {
     const head = '9777bca47119a91758bde1209ac14e6076ffbf23';
     const base = 'c522201d16c0142bd10bf7e606e72851d9669eb0';

@@ -195,3 +195,15 @@ it('keeps a native abbreviated URL distinct when both API snapshots directly sup
   expect(frame.readReference?.(f.entry)).toMatchObject({ literalRef: REF, resolution: 'full-api-head-prefix', url: `https://bitbucket.org/team/repo/src/${REF}/${PATH}` });
   expect(frame.read(f.entry)).toBeNull();expect(f.manager.source(f.entry)?.lines).toEqual(source);expect(f.fetcher).toHaveBeenCalledTimes(1);
 });
+
+
+it('binds native PR source references to the acknowledged whitespace comparison and revokes stale mode authority', async () => {
+  const f = fixture();let current = true;
+  const page = { ...f.page, version: `${f.page.version}|native-whitespace:source-head-base:true`, diffMode: { ignoreWhitespace: true, current: () => current } };
+  const facts = providerDiffSourceFacts(page, { kind: 'bitbucket-review', headSha: H, baseSha: B, sourceRepository: 'team/repo', sourceRef: REF, topic: true }, [{ path: PATH, newPath: PATH }])!;
+  const result = { ...f.result, sourceFacts: facts };f.native.update(page, result);trustedClick(f.opener);
+  await vi.waitFor(() => expect(providerOutlineContext(page, result, readBitbucketDiff(document)!).newSources.size).toBe(1));
+  const frame = readBitbucketDiff(document)!.readNewSourceFrame!()!;
+  expect(frame.current()).toBe(true);expect(providerOutlineContext(page, result, readBitbucketDiff(document)!).newSources.get(f.entry.root)).toMatchObject({ headSha: H });
+  current = false;expect(frame.current()).toBe(false);expect(providerOutlineContext(page, result, readBitbucketDiff(document)!).newSources.size).toBe(0);
+});

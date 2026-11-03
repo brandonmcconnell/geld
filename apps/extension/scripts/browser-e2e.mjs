@@ -15,6 +15,7 @@ import { bitbucketColdChipVisibilityProbe, bitbucketCountIntentRequests } from '
 import { verifyBitbucketHiddenAuthors } from './bitbucket-hidden-authors.mjs';
 import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-shell-acceptance.mjs';
 import { assertSyntaxOnTraffic, characterizeBitbucketSyntaxOn, createSyntaxOnRequestIdentity, observeSyntaxOnTraffic, syntaxOnBudgetPreflight } from './bitbucket-syntax-on.mjs';
+import { BITBUCKET_WHITESPACE_URL, bitbucketWhitespaceBudget, bitbucketWhitespaceSettings, observeBitbucketWhitespace, verifyBitbucketWhitespace } from './bitbucket-whitespace-session.mjs';
 import { bitbucketPrContextPolicy, bitbucketPrContextInputBudget } from './bitbucket-pr-context-budget.mjs';
 import { observeBitbucketPipelineMainAsset } from './bitbucket-pipeline-main-asset.mjs';
 import { bitbucketPipelineAssetMetadata, pipelineBudgetPreflight, pipelineSettingsScope } from './bitbucket-pipeline-visit.mjs';
@@ -55,6 +56,7 @@ const BITBUCKET_ANONYMOUS_COOLDOWN_MS = 62 * 60 * 1000; // Documented rolling-ho
 const FOCUSED_CASES = {
   regression: ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'github-regression', 'bitbucket-diff'],
   'bitbucket-diff': ['bitbucket-diff'],
+  'bitbucket-whitespace-session': ['bitbucket-whitespace-session'],
   'bitbucket-pipeline-shell': ['bitbucket-pipeline-shell'],
   'bitbucket-pipeline-syntax-on': ['bitbucket-pipeline-syntax-on'],
   'bitbucket-pipeline-initial-on': ['bitbucket-pipeline-initial-on'],
@@ -135,7 +137,7 @@ const report = {
   auth: { freshTemporaryBrowserProfile: true, credentialsProvided: false, authenticatedProviderWrites: false },
   limitations: ['Bitbucket routing and native surface discovery do not establish feature parity.', 'No authenticated review, Viewed, merge or AI-gateway operation is exercised.', 'Computed style probes describe the tested viewport/theme only. Discovery cases report observations or explicit unavailability, never a feature pass.'],
   installation: null, cases: [], infrastructureErrors: [],
-  focus, quotaPolicy: { source: 'https://support.atlassian.com/bitbucket-cloud/docs/api-request-limits/', anonymousRequestsPerRollingHour: 60, conservativeObservedRequestBudget: 40, broadDiscoveryDefault: false, ...bitbucketPrContextPolicy(focus) },
+  focus, quotaPolicy: { source: 'https://support.atlassian.com/bitbucket-cloud/docs/api-request-limits/', anonymousRequestsPerRollingHour: 60, conservativeObservedRequestBudget: 40, broadDiscoveryDefault: false, ...bitbucketPrContextPolicy(focus === 'bitbucket-whitespace-session' ? 'bitbucket-pr-whole-context' : focus) },
 };
 const cooldowns = new Map();
 const capturedNativeResources = new Set();
@@ -189,6 +191,17 @@ async function saveReport() {
   report.status = failed ? 'failed' : 'completed_with_unsupported_features';
   await writeFile(resolve(artifacts, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
 }
+function sourceFailureProvider(failure) {
+  return ['github', 'gitlab', 'bitbucket'].includes(failure.provider) ? failure.provider : providerOf(failure.url);
+}
+function bitbucketBudgetHold(times, limit, now = Date.now(), externalReserve = 0) {
+  const active = times.filter((at) => at > now - 60 * 60 * 1000).sort((left, right) => left - right);
+  if (active.length < limit) return null;
+  return { reason: 'read_only_observed_limit', observedLimit: limit, observedRequests: active.length,
+    ...(externalReserve > 0 ? { externalReserve } : {}),
+    firstExpiry: new Date(active[0] + 60 * 60 * 1000 + 1).toISOString(),
+    availableAt: new Date(active[active.length - limit] + 60 * 60 * 1000 + 1).toISOString() };
+}
 async function inheritCooldowns() {
   const path = process.env.GELD_BROWSER_PREVIOUS_REPORT;
   if (path === undefined || path === '') return;
@@ -218,21 +231,25 @@ async function inheritCooldowns() {
     assert.ok(until <= Date.now() + 366 * 24 * 60 * 60 * 1000, 'Previous cooldown exceeds one year; verification must stop for investigation');
     if (until > Date.now()) cooldowns.set(provider, Math.max(cooldowns.get(provider) ?? 0, until));
   };
+  const recordedDeadlineProviders = new Set();
   if (previous.cooldowns !== undefined) {
     assert.ok(previous.cooldowns !== null && typeof previous.cooldowns === 'object' && !Array.isArray(previous.cooldowns), 'Previous cooldown map is malformed');
-    for (const [provider, until] of Object.entries(previous.cooldowns)) inherit(provider, until);
+    for (const [provider, until] of Object.entries(previous.cooldowns)) { inherit(provider, until);recordedDeadlineProviders.add(provider); }
   }
   for (const item of previous.cases) {
-    if (item.rateLimitedUntil !== undefined) inherit(providerOf(item.url), item.rateLimitedUntil);
+    if (item.rateLimitedUntil !== undefined) { const provider = item.cooldownProvider ?? providerOf(item.url);inherit(provider, item.rateLimitedUntil);recordedDeadlineProviders.add(provider); }
+  }
+  for (const item of previous.cases) {
     // Earlier harness versions used a one-minute fallback. Carry the real anonymous quota window forward instead.
-    if (providerOf(item.url) === 'bitbucket' && item.sourceFailures?.some((failure) => failure.status === 429 && (failure.retryAfter === null || failure.retryAfter === undefined))) {
-      const at = Date.parse(item.finishedAt ?? item.startedAt);
+    for (const failure of item.sourceFailures ?? []) {
+      if (failure.status !== 429 || sourceFailureProvider(failure) !== 'bitbucket' || recordedDeadlineProviders.has('bitbucket') || (failure.retryAfter !== null && failure.retryAfter !== undefined)) continue;
+      const at = Date.parse(failure.observedAt ?? item.finishedAt ?? item.startedAt);
       assert.ok(Number.isFinite(at), 'Previous anonymous Bitbucket429 has no valid observation time');
       inherit('bitbucket', new Date(at + BITBUCKET_ANONYMOUS_COOLDOWN_MS).toISOString());
     }
   }
-  if (focus !== 'bitbucket-pr-whole-context' && bitbucketRequestTimes.length >= report.quotaPolicy.conservativeObservedRequestBudget) inherit('bitbucket', new Date(bitbucketRequestTimes.at(-1) + BITBUCKET_ANONYMOUS_COOLDOWN_MS).toISOString());
-  report.previousEvidence = { path, status: 'parsed_json_only', startedAt: previous.startedAt ?? null, inheritedAnonymousRequestsWithinRollingHour: bitbucketRequestTimes.length, inheritedCooldowns: Object.fromEntries([...cooldowns].map(([provider, until]) => [provider, new Date(until).toISOString()])) };
+  const inheritedBudgetHold = bitbucketBudgetHold(bitbucketRequestTimes, report.quotaPolicy.conservativeObservedRequestBudget, Date.now(), report.quotaPolicy.externalRequestReserve);
+  report.previousEvidence = { path, status: 'parsed_json_only', startedAt: previous.startedAt ?? null, inheritedAnonymousRequestsWithinRollingHour: bitbucketRequestTimes.length, ...(inheritedBudgetHold === null ? {} : { inheritedBudgetHold }), inheritedCooldowns: Object.fromEntries([...cooldowns].map(([provider, until]) => [provider, new Date(until).toISOString()])) };
 }
 function closedTarget(error) { return /Target closed|Target\.closeTarget|Session closed|Connection closed|targetgone|No target with given id/i.test(errorText(error)); }
 async function discardHandle(handle) {
@@ -349,13 +366,7 @@ function observeBitbucketBudget(page, item, abort) {
     report.observedBitbucketApiRequests = bitbucketApiRequests;
     report.observedAnonymousRequestsWithinRollingHour = bitbucketRequestTimes.length;
     if (bitbucketRequestTimes.length >= report.quotaPolicy.conservativeObservedRequestBudget && !abort.signal.aborted) {
-      if (item.name === 'bitbucket-pr-whole-context') item.budgetHold = { reason: 'read_only_observed_limit', observedLimit: 47, externalReserve: 3,
-        firstExpiry: new Date(bitbucketRequestTimes[0] + 60 * 60 * 1000 + 1).toISOString() };
-      else {
-        const until = Date.now() + BITBUCKET_ANONYMOUS_COOLDOWN_MS;
-        cooldowns.set('bitbucket', Math.max(cooldowns.get('bitbucket') ?? 0, until));
-        item.rateLimitedUntil = new Date(cooldowns.get('bitbucket')).toISOString();
-      }
+      item.budgetHold = bitbucketBudgetHold(bitbucketRequestTimes, report.quotaPolicy.conservativeObservedRequestBudget, now, report.quotaPolicy.externalRequestReserve);
       item.holdReason = 'conservative_anonymous_api_budget';
       abort.abort(new Error('Conservative anonymous Bitbucket API request budget reached; demand stopped before continuing the verification slice'));
       void page.close().catch(() => undefined);
@@ -444,7 +455,8 @@ async function runCase(name, url, body, discovery = false) {
       return;
     }
     const provider = providerOf(url);
-    const held = (name === 'cross-provider-settings' ? ['gitlab', 'github'] : name === 'bitbucket-commit-counts' ? ['bitbucket', 'gitlab', 'github'] : [provider]).find((site) => (cooldowns.get(site) ?? 0) > Date.now());
+    const requiredProviders = name === 'cross-provider-settings' ? ['gitlab', 'github'] : name === 'bitbucket-commit-counts' ? ['bitbucket', 'gitlab', 'github'] : [provider];
+    const held = requiredProviders.find((site) => (cooldowns.get(site) ?? 0) > Date.now());
     const cooldown = cooldowns.get(held);
     if (held !== undefined && cooldown !== undefined) {
       item.cooldownProvider = held;
@@ -452,8 +464,9 @@ async function runCase(name, url, body, discovery = false) {
       item.navigationSuppressedByCooldown = true;
       throw new Error(`Provider rate limited until ${item.rateLimitedUntil}; no navigation attempted`);
     }
-    if (prWhole && bitbucketRequestTimes.filter(at => at > Date.now() - 60 * 60 * 1000).length >= 47) {
-      item.navigationSuppressedByBudget = true;throw new Error('Read-only PR context observed request budget is full; no navigation attempted');
+    const budgetHold = requiredProviders.includes('bitbucket') ? bitbucketBudgetHold(bitbucketRequestTimes, report.quotaPolicy.conservativeObservedRequestBudget, Date.now(), report.quotaPolicy.externalRequestReserve) : null;
+    if (budgetHold !== null) {
+      item.budgetHold = budgetHold;item.navigationSuppressedByBudget = true;throw new Error('Read-only observed request budget is full; no navigation attempted');
     }
     currentCaseAbort = abort;
     if (localReviewOnly) {
@@ -474,7 +487,7 @@ async function runCase(name, url, body, discovery = false) {
     if (wholePrivacy) {
       item.bitbucketWholeSettings = {};
       wholeSettings = bitbucketWholeSettings({ progress:item.bitbucketWholeSettings,
-        preparePatch:prWhole?{prOverview:false,quickReview:false,showListStats:false,repoConfigs:'never',aiEnabled:false}:undefined,
+        preparePatch:prWhole?{hideWhitespace:false,prOverview:false,quickReview:false,showListStats:false,repoConfigs:'never',aiEnabled:false}:undefined,
         read:() => options.evaluate(async key => { const v=await chrome.storage.sync.get(key);return Object.hasOwn(v,key)?{present:true,value:v[key]}:{present:false}; }, SETTINGS_KEY),
         write:v => options.evaluate(async (key,saved) => { if(saved.present)await chrome.storage.sync.set({[key]:saved.value});else await chrome.storage.sync.remove(key); }, SETTINGS_KEY,v),
       });await wholeSettings.prepare();
@@ -599,7 +612,7 @@ async function runCase(name, url, body, discovery = false) {
         const until = Date.now() + retryAfter(headers['retry-after'], resourceProvider);
         cooldowns.set(resourceProvider, Math.max(cooldowns.get(resourceProvider) ?? 0, until));
         item.rateLimitedUntil = new Date(cooldowns.get(resourceProvider)).toISOString();
-        item.holdReason = 'provider_http429';
+        item.holdReason = 'provider_http429';item.cooldownProvider = resourceProvider;
         if (!abort.signal.aborted) abort.abort(new Error(`Provider HTTP429 cooldown until ${item.rateLimitedUntil}; polling stopped immediately`));
         // Stop this tab's demand immediately; later scenarios honor the provider cooldown.
         void page.close().catch(() => undefined);
@@ -672,8 +685,9 @@ async function runCase(name, url, body, discovery = false) {
     item.artifacts = wholePrivacy ? { suppressed:'Source and ownership receipt only. No screenshot, HTML, AX or unknown form capture.' } : localReviewOnly ? { suppressed: 'Report only for local review persistence. No generic DOM, AX or image capture.' } : shellPrivacy ? item.gitLabShell?.artifacts ?? { suppressed: 'No unqualified source capture. Report only unless the exact original code row qualifies.' } : fileMenuPrivacy ? { suppressed: 'Always report only. No HTML, AX, PNG, arbitrary labels/URLs or native field values.' } : whitespacePrivacy ? { suppressed: 'Always report only. No HTML, AX, PNG, raw bootstrap or arbitrary native field values.' } : name === 'bitbucket-native-settings-diagnostic' ? { suppressed: 'Always report only. No HTML, AX, PNG or form serialization.' } : name === 'bitbucket-pipeline-initial-on' ? item.initialNativeOn?.artifacts ?? { suppressed: 'No safe first-use stage artifact. Unknown form DOM/AX must never be captured.' } : name === 'bitbucket-native-bash-on' ? item.nativeBashOn?.artifacts ?? { suppressed: 'No safe native Bash stage artifact. Generic DOM/AX capture is prohibited for an unknown form.' } : name === 'bitbucket-native-bash-style' ? item.nativeBashStyle.artifacts : await capture(page, name, { fullPage: !['bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'].includes(name) });
     item.status = result?.status ?? (discovery ? 'discovery' : 'passed');
   } catch (error) {
-    item.status = wholePrivacy ? (item.bitbucketWhole?.status==='failed'?'failed':item.rateLimitedUntil!==undefined?'rate_limited':'unavailable') : shellPrivacy ? (item.gitLabShell?.status === 'failed' ? 'failed' : item.rateLimitedUntil !== undefined ? 'rate_limited' : 'unavailable') : fileMenuPrivacy && item.rateLimitedUntil !== undefined ? 'rate_limited' : fileMenuPrivacy && (item.nativeFileMenu?.status === 'failed' || item.nativeFileMenuContract === 'invalid_result' || item.nativeFileMenuTraffic?.forbiddenWrites > 0 || item.nativeFileMenuTraffic?.positiveExtensionRequests > 0) ? 'failed' : whitespacePrivacy && item.nativeWhitespace?.status === 'failed' ? 'failed' : name === 'bitbucket-native-settings-diagnostic' && item.nativeSettingsDiagnostic?.status === 'failed' ? 'failed' : name === 'bitbucket-native-bash-on' && item.nativeBashOn?.status === 'failed' ? 'failed' : discovery ? item.rateLimitedUntil === undefined ? 'unavailable' : 'rate_limited' : 'failed';
+    item.status = item.rateLimitedUntil !== undefined && item.holdReason === 'provider_http429' ? 'rate_limited' : item.budgetHold !== undefined ? 'unavailable' : wholePrivacy ? (item.bitbucketWhole?.status==='failed'?'failed':item.rateLimitedUntil!==undefined?'rate_limited':'unavailable') : shellPrivacy ? (item.gitLabShell?.status === 'failed' ? 'failed' : item.rateLimitedUntil !== undefined ? 'rate_limited' : 'unavailable') : fileMenuPrivacy && item.rateLimitedUntil !== undefined ? 'rate_limited' : fileMenuPrivacy && (item.nativeFileMenu?.status === 'failed' || item.nativeFileMenuContract === 'invalid_result' || item.nativeFileMenuTraffic?.forbiddenWrites > 0 || item.nativeFileMenuTraffic?.positiveExtensionRequests > 0) ? 'failed' : whitespacePrivacy && item.nativeWhitespace?.status === 'failed' ? 'failed' : name === 'bitbucket-native-settings-diagnostic' && item.nativeSettingsDiagnostic?.status === 'failed' ? 'failed' : name === 'bitbucket-native-bash-on' && item.nativeBashOn?.status === 'failed' ? 'failed' : discovery ? item.rateLimitedUntil === undefined ? 'unavailable' : 'rate_limited' : 'failed';
     item.error = wholePrivacy ? 'Bitbucket whole-context acceptance unavailable or failed. See fixed stage diagnostics.' : localReviewOnly ? 'Bitbucket local review acceptance failed. See bounded stage evidence.' : shellPrivacy ? 'GitLab shell acceptance unavailable or failed. See fixed phase and cleanup diagnostics.' : fileMenuPrivacy ? 'Native file-menu diagnostic unavailable or guard failed. See fixed progress and cleanup codes.' : whitespacePrivacy ? 'Native whitespace characterization unavailable or failed. See fixed stage and cleanup codes.' : errorText(error);
+    if (item.budgetHold !== undefined && item.rateLimitedUntil === undefined) item.error = `Conservative anonymous API budget hold until ${item.budgetHold.availableAt}. No provider HTTP429 is implied; native demand stopped and no retry was attempted.`;
     if (item.rateLimitedUntil !== undefined) {
       item.interruptedError = item.error;
       item.error = `${item.holdReason === 'conservative_anonymous_api_budget' ? 'Conservative anonymous API budget hold' : item.navigationSuppressedByCooldown ? 'Inherited provider cooldown' : 'Provider HTTP429 cooldown'} until ${item.rateLimitedUntil}. Native demand stopped and no retry was attempted.`;
@@ -794,6 +808,40 @@ async function runCase(name, url, body, discovery = false) {
     console.log(`${item.status.toUpperCase()}: ${name}${item.error === undefined ? '' : ` — ${item.error}`}`);
   }
 }
+async function runBitbucketWhitespaceCase() {
+  const item = { name: 'bitbucket-whitespace-session', url: BITBUCKET_WHITESPACE_URL, startedAt: new Date().toISOString(), status: 'not_selected' };report.cases.push(item);
+  if (focus !== item.name) { item.reason = 'Literal-only native whitespace acceptance; no navigation or settings change.';return; }
+  const abort = new AbortController();let page, scope, observer;
+  const active = () => bitbucketRequestTimes.filter(at => at > Date.now() - 60 * 60 * 1000).length;
+  try {
+    assert.ok((cooldowns.get('bitbucket') ?? 0) <= Date.now(), 'Carried Bitbucket cooldown');
+    item.preflight = bitbucketWhitespaceBudget(active());
+    if (!item.preflight.available) { item.navigationSuppressedByBudget = true;throw new Error('Whitespace forecast does not fit carried47 cap; schedule after sufficient expiry.'); }
+    currentCaseAbort = abort;item.settings = {};item.whitespace = {};item.traffic = {};
+    scope = bitbucketWhitespaceSettings({ progress: item.settings,
+      read: () => options.evaluate(async () => { const v = await chrome.storage.sync.get('settings');return Object.hasOwn(v, 'settings') ? { present: true, value: v.settings } : { present: false }; }),
+      write: saved => options.evaluate(async v => { if (v.present) await chrome.storage.sync.set({ settings: v.value });else await chrome.storage.sync.remove('settings'); }, saved),
+    });await scope.prepare();
+    page = await browser.newPage();
+    await page.setViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
+    await page.bringToFront();
+    observeBitbucketBudget(page, item, abort);
+    page.on('response', response => { if (providerOf(response.url()) !== 'bitbucket' || response.status() !== 429) return;const until = Date.now() + retryAfter(response.headers()['retry-after'], 'bitbucket');cooldowns.set('bitbucket', Math.max(cooldowns.get('bitbucket') ?? 0, until));item.rateLimitedUntil = new Date(until).toISOString();item.holdReason = 'provider_http429';item.cooldownProvider = 'bitbucket';abort.abort(new Error('RATE_LIMIT'));void page.close().catch(() => {}); });
+    observer = observeBitbucketWhitespace(page, item.traffic, extensionId, abort);
+    const response = await page.goto(BITBUCKET_WHITESPACE_URL, { waitUntil: 'domcontentloaded', timeout: WAIT_MS });
+    assert.equal(response?.status(), 200);assert.equal(page.url(), BITBUCKET_WHITESPACE_URL);
+    const guardBudget = action => { abort.signal.throwIfAborted();assert.ok((cooldowns.get('bitbucket') ?? 0) <= Date.now());const remaining = 47 - active();const required = action === 'hide' ? 27 : action === 'opener' && item.traffic.requests.some(r => r.phase === 'hide') ? 12 : 5;assert.ok(remaining >= required, 'Native whitespace input exceeds remaining phase forecast');return { remaining, required, observedAtCheckpoint: active(), actualCaseRequests: item.observedBitbucketApiRequests ?? 0 }; };
+    const result = await verifyBitbucketWhitespace(page, { settings: scope, observer, progress: item.whitespace, poll, readState: () => tabState(page), guardBudget });Object.assign(item, result);
+  } catch { item.status = item.rateLimitedUntil ? 'rate_limited' : item.whitespace?.status === 'failed' ? 'failed' : 'unavailable';item.error = 'Bounded native whitespace acceptance unavailable; see fixed phase/budget evidence.'; }
+  finally {
+    if (page && !page.isClosed()) await page.close().catch(() => {});
+    if (observer && !observer.evidence.released) await observer.dispose().catch(() => {});
+    if (scope && !item.settings.restored) try { await scope.restore(page === undefined || page.isClosed()); } catch { item.status = 'failed';item.cleanupError = 'RAW_SETTINGS_RESTORE_FAILED'; }
+    item.artifacts = { suppressed: 'Report-only native source, known checkbox and bounded request receipts; no HTML, AX, screenshots or arbitrary form values.' };
+    item.finishedAt = new Date().toISOString();currentCaseAbort = undefined;await saveReport();
+  }
+}
+
 async function crossSettingsDom(page, provider) {
   return page.evaluate((site) => {
     const numeric = (node, absentIsZero = false) => { if (node === null) return absentIsZero ? 0 : null; const value = node.textContent?.replace(/[,\s]/g, '').match(/\d+/)?.[0]; return value === undefined ? null : Number(value); };
@@ -2930,6 +2978,8 @@ try {
   console.log(`INSTALLED: ${extensionId}, ${report.browserVersion}, service worker ${worker.url()}`);
   report.installation = { extensionId, serviceWorker: worker.url(), optionsUrl: options.url(), verifiedActualChromeStorage: true, installedManifestVersion: installed.manifest.version };
   report.settings = await patchSettings({ enabled: true, categories: { tests: true }, groupHidden: true, expandedByDefault: false, hideCommentLines: false, testOutline: false, hideLargeDiffs: false, hideWhitespace: false, repoRules: [], hiddenAuthors: [], repoConfigs: 'never', aiEnabled: false, autoViewed: {}, autoUpdatePatterns: false });
+
+  await runBitbucketWhitespaceCase();
 
   await runCase('gitlab-whitespace-viewed', GL_MIXED, async (page, item) => {
     const context = gitLabWhitespaceCases.get(page);

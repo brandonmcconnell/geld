@@ -96,14 +96,14 @@ test('retains contradictory or malformed existing metadata as errors instead of 
 });
 
 const harness = readFileSync(new URL('./browser-e2e.mjs', import.meta.url), 'utf8');
-const runCaseBody = harness.slice(harness.indexOf('async function runCase('), harness.indexOf('\nasync function crossSettingsDom('));
+const runCaseBody = harness.slice(harness.indexOf('async function runCase('), harness.indexOf('\nasync function runBitbucketWhitespaceCase('));
 const budgetObserverBody = harness.slice(harness.indexOf('function observeBitbucketBudget('), harness.indexOf('async function runCase('));
 function runner({ focus = 'bitbucket-native-bash', closeFailure = false, navigationFailure = false, held = false, restoreFailure = false, restoreMismatch = false } = {}) {
   const order = [];let enabled = true;let closed = false;let reportSaves = 0;const savedReports = [];const itemReport = { cases: [], infrastructureErrors: [], quotaPolicy: { conservativeObservedRequestBudget: 40 } };
   const page = { setViewport: async () => {}, bringToFront: async () => {}, on: () => {}, once: () => {}, url: () => fixture.url, isClosed: () => closed,
     goto: async () => { assert.equal(enabled, false);order.push('navigate-disabled');return { status: () => navigationFailure ? 503 : 200 }; },
     close: async () => { order.push('close');if (closeFailure) throw Error('Synthetic close failure');closed = true; } };
-  const context = { assert, report: itemReport, focus, FOCUSED_CASES: { 'bitbucket-native-bash': ['bitbucket-native-bash-style'] }, AbortController, structuredClone,
+  const context = { bitbucketRequestTimes: [], bitbucketBudgetHold: vm.runInNewContext('(' + harness.slice(harness.indexOf('function bitbucketBudgetHold('), harness.indexOf('async function inheritCooldowns(')) + ')'), assert, report: itemReport, focus, FOCUSED_CASES: { 'bitbucket-native-bash': ['bitbucket-native-bash-style'] }, AbortController, structuredClone,
     providerOf: () => 'bitbucket', cooldowns: new Map(held ? [['bitbucket', Date.now() + 60_000]] : []), SETTINGS_KEY: 'settings', currentCaseAbort: undefined, extensionId: 'fixture', nativeBashSources: new WeakMap(),
     options: { evaluate: async () => ({ enabled: true }) }, patchSettings: async (patch) => { if (patch.enabled) { assert.equal(closed, true, 'Master restore must follow actual page close');if (restoreFailure) { order.push('restore-rejected');throw Error('Synthetic master restoration rejected'); }if (restoreMismatch) { order.push('restore-mismatched');return { enabled: false }; } }enabled = patch.enabled;order.push(`enabled:${enabled}`);return { enabled }; },
     browser: { newPage: async () => { assert.equal(enabled, false);order.push('create-disabled');return page; } },

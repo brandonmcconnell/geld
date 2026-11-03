@@ -1,5 +1,5 @@
 import type { ProviderCommentRenderContext } from './comment-render';
-import type { FileStats, RepositoryIdentity } from '@geld/core';
+import type { GeldSettings, FileStats, RepositoryIdentity } from '@geld/core';
 import type { ProviderReviewComment, ProviderReviewInput, ProviderSourceCoverage } from '@geld/review';
 import type { ProviderReviewAuthorPresentation, ProviderReviewPanelEvent, ProviderReviewRequirement, ProviderReviewSourceAction } from './review-panel';
 import type { ProviderConfigFetcher } from './repo-config';
@@ -10,7 +10,20 @@ import type { ProviderWholeTestAdapter } from './whole-test-context';
 
 export type ReviewProvider = 'gitlab' | 'bitbucket';
 
+export interface ProviderDiffMode {
+  readonly comparison?: { readonly head: string; readonly base: string; readonly sourceRepository: string };
+  readonly ignoreWhitespace: boolean | null;
+  current(): boolean;
+}
+
+export interface ProviderPageMode {
+  update(settings: GeldSettings): void;
+  decorate(page: ProviderPage | null): ProviderPage | null;
+  stop(): void;
+}
+
 interface ProviderPageIdentity {
+  readonly diffMode?: ProviderDiffMode;
   readonly provider: ReviewProvider;
   readonly repository: RepositoryIdentity;
   readonly url: string;
@@ -191,6 +204,7 @@ export interface ProviderNativeView {
 }
 
 export interface ProviderAdapter {
+  createPageMode?(doc: Document, changed: () => void): ProviderPageMode;
   createNativeView?(doc: Document, changed: () => void, choice: (url: URL, showWhitespace: boolean) => void): ProviderNativeView;
   readonly wholeTests?: ProviderWholeTestAdapter;
   readonly id: ReviewProvider;

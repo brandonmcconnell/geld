@@ -1,0 +1,58 @@
+import { describe, expect, it } from 'vitest';
+import { BitbucketWhitespaceLease } from './whitespace-lease';
+import type { NativeWhitespaceSnapshot } from './whitespace-lease';
+function fixture(value = false) {
+  let now = 0;
+  let state: NativeWhitespaceSnapshot = { owner: {}, settings: { globalShouldIgnoreWhitespace: value }, subject: 'acme/repo!1:a', current: true, detached: false, value, open: false, loading: false, busy: false, failed: false, diffLoading: false, statsLoading: false, diff: [], stats: [] };
+  const values: boolean[] = [];
+  const lease = new BitbucketWhitespaceLease(() => state, value => { values.push(value);state = { ...state, settings: { ...state.settings, globalShouldIgnoreWhitespace: value }, value }; }, () => undefined, () => now);
+  return { lease, values, patch: (patch: Partial<NativeWhitespaceSnapshot>) => { now += 250;state = { ...state, ...patch };lease.tick(); }, settle: () => { now += 250;state = { ...state, diffLoading: true, statsLoading: true, busy: true };lease.tick();state = { ...state, diffLoading: false, statsLoading: false, diff: [], stats: [], busy: false };lease.tick(); } };
+}
+describe('Bitbucket native in-memory whitespace lease', () => {
+  it('waits for both replacement native sources, then restores only its field after unrelated settings changed', () => {
+    const f = fixture();f.lease.update(true);expect(f.values).toEqual([true]);expect(f.lease.state().status).toBe('pending');
+    f.patch({ diff: [] });expect(f.lease.state().status).toBe('pending');f.patch({ stats: [] });expect(f.lease.state().status).toBe('pending');f.settle();expect(f.lease.state()).toMatchObject({ status: 'ready', value: true });
+    f.patch({ settings: { tabSize: 4 } });f.lease.update(false);expect(f.values).toEqual([true, false]);f.settle();expect(f.lease.state().status).toBe('legacy');
+  });
+  it('respects an already enabled native preference and observes its mode when Geld hide whitespace is off', () => {
+    const f = fixture(true);f.lease.update(true, false);f.settle();f.patch({});expect(f.values).toEqual([]);expect(f.lease.state()).toMatchObject({ status: 'ready', value: true });
+    f.patch({ value: false });f.patch({});expect(f.lease.state()).toMatchObject({ status: 'ready', value: false });
+  });
+  it('restores before the original settings handler, reapplies on Cancel, and respects a successful Save', () => {
+    const f = fixture();f.lease.update(true);f.settle();expect(f.lease.beforePreferences()).toBe(true);expect(f.values).toEqual([true, false]);
+    f.patch({ open: true });f.patch({ open: false });expect(f.values).toEqual([true, false, true]);f.settle();
+    f.lease.beforePreferences();f.patch({ open: true });f.lease.preferenceIntent(false);f.lease.preferenceSubmit();f.patch({ loading: true });f.patch({ loading: false, open: false, value: false });
+    f.patch({});expect(f.lease.state()).toMatchObject({ status: 'ready', value: false });expect(f.values).toEqual([true, false, true, false]);
+    f.lease.update(false);expect(f.values).toEqual([true, false, true, false]);
+  });
+  it('does not treat a failed or cancelled Save as a native opt-out', () => {
+    const f = fixture();f.lease.update(true);f.settle();f.lease.beforePreferences();f.patch({ open: true });f.lease.preferenceIntent(false);f.lease.preferenceSubmit();f.patch({ open: false });
+    expect(f.values.at(-1)).toBe(true);f.settle();expect(f.lease.state().value).toBe(true);
+  });
+  it('invalidates the receipt on a same-mode head change and restores before acquiring the next subject', () => {
+    const f = fixture();f.lease.update(true);f.settle();const epoch = f.lease.state().epoch;
+    f.patch({ subject: 'acme/repo!1:b' });expect(f.values).toEqual([true, false]);expect(f.lease.state()).toMatchObject({ status: 'pending' });expect(f.lease.state().epoch).toBeGreaterThan(epoch);
+    f.settle();expect(f.values).toEqual([true, false, true]);f.settle();expect(f.lease.state().status).toBe('ready');
+  });
+  it('restores on native source failure before error preference controls can open', () => {
+    const f = fixture();f.lease.update(true);f.settle();f.patch({ failed: true, busy: true });expect(f.values).toEqual([true, false]);expect(f.lease.state().status).toBe('pending');
+  });
+  it('relinquishes an independent same-value native action without undoing it on disable', () => {
+    const f = fixture();f.lease.update(true);f.settle();f.patch({ settings: { globalShouldIgnoreWhitespace: true } });f.lease.update(false);expect(f.values).toEqual([true]);
+  });
+  it('does not wait for nonexistent off-page restoration requests on returning to a new review', () => {
+    const f = fixture();f.lease.update(true);f.settle();f.patch({ current: false, detached: true });f.patch({});f.patch({ current: true, detached: false, subject: 'acme/repo!2:b' });
+    expect(f.values).toEqual([true, false, true]);f.settle();expect(f.lease.state().status).toBe('ready');
+  });
+  it('keeps repeated visible-alert mutations stable after native restoration settles', () => {
+    const f = fixture();f.lease.update(true);f.settle();f.lease.suspend();f.patch({ current: false });f.settle();const epoch = f.lease.state().epoch;
+    for (let i = 0; i < 3; i++) { f.lease.suspend();f.patch({}); }
+    expect(f.lease.state()).toMatchObject({ status: 'legacy', epoch });expect(f.values).toEqual([true, false]);
+  });
+  it('never overwrites a native value change and does not reacquire that visit', () => {
+    const f = fixture();f.lease.update(true);f.settle();f.patch({ value: false });f.settle();f.lease.update(false);expect(f.values).toEqual([true]);
+  });
+  it('restores on losing the current All changes context and remains pending until both native sources settle', () => {
+    const f = fixture();f.lease.update(true);f.settle();f.patch({ current: false });expect(f.values).toEqual([true, false]);expect(f.lease.state().status).toBe('pending');f.settle();expect(f.lease.state().status).toBe('legacy');
+  });
+});
