@@ -34,18 +34,22 @@ export function NavMenu({ links, className }: { readonly links: readonly NavLink
 }
 
 /**
- * Three bars whose outer ends are bent like the site's cut corners (top left,
- * bottom right). Hover flattens the bends part-way and stretches the middle
- * bar, and open unbends them into a cross (`menu-glyph` in globals.css). Every
- * state moves the same five segments by transforms only, so any state turns
- * into any other, even mid-way.
+ * Three bars bent like the site's cut corners: the top bar at its left end,
+ * the bottom bar at its right, and the middle bar at both, all three the same
+ * width. Hover flattens the bends part-way. Open straightens every bend: the
+ * top and bottom bars become the two halves of the stroke from top left to
+ * bottom right, and the middle bar the whole stroke from bottom left to top
+ * right (`menu-glyph` in globals.css). Every state moves the same seven
+ * segments by transforms only, so any state turns into any other, even mid-way.
  */
 function MenuGlyph() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="menu-glyph size-5">
       <path className="menu-glyph__top" d="M6 6H21" />
       <path className="menu-glyph__top-bend" d="M6 6L3 9" />
-      <path className="menu-glyph__middle" d="M3 12H15" />
+      <path className="menu-glyph__middle-bend-start" d="M5 12L3 14" />
+      <path className="menu-glyph__middle" d="M5 12H19" />
+      <path className="menu-glyph__middle-bend-end" d="M19 12L21 10" />
       <path className="menu-glyph__bottom" d="M3 18H18" />
       <path className="menu-glyph__bottom-bend" d="M18 18L21 15" />
     </svg>
