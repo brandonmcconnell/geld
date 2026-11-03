@@ -120,6 +120,34 @@ for (const [name, change] of [
 ]) test(`acquisition refuses ${name}`, async () => { const f = await observerFixture();change(f.proof);assert.throws(() => assertStandaloneAcquisition(f.proof));await f.observer.dispose(); });
 test('native or unattributed POST is recorded separately without being called an extension mutation', async () => { const f = await observerFixture();f.page.emit('request', request('https://gitlab.com/api/graphql', { method: 'POST' }));assert.equal(f.proof.nonReadRequests.length, 1);assert.equal(f.proof.nonReadRequests[0].extensionFrameObserved, false);assertStandaloneAcquisition(f.proof);await f.observer.dispose(); });
 
+function withDecoded304(proof, kind) { const observed = proof.responses.find((item) => item.kind === kind && item.status === 200);assert.ok(observed);const item = { ...structuredClone(observed), status: 304, fromCache: false, contentType: null };proof.responses.push(item);return item; }
+for (const kind of ['commit', 'compare']) test(`actual-shaped ${kind} decoded304 metadata/stats coexist with an independent complete200 triplet without rewriting observations`, async () => {
+  const f = await observerFixture(kind);
+  for (const [type, body] of [['metadata', metadata()], ['stats', { diffs_stats: { added_lines: 36, removed_lines: 0, diffs_count: 3, real_size: '3' } }]]) {
+    const url = f.proof.responses.find((item) => item.kind === type).url, observed = response(url, body, { status: 304 });observed.headers = () => ({});f.page.emit('response', observed);
+  }
+  await f.observer.checkpoint();const before = structuredClone(f.proof.responses), result = await f.observer.acquisition();assert.deepEqual(f.proof.responses, before);assert.equal(f.proof.responses.length, 5);assert.deepEqual(f.proof.responses.map((item) => item.status), [200, 200, 200, 304, 304]);assert.equal(result.responses.qualified200.length, 3);assert.equal(result.responses.compatible304.length, 2);assert.ok(result.responses.compatible304.every((item) => item.status === 304 && item.browserDecodedBodyEqual));assert.match(result.responses.scope, /does not identify a product-consumed result or prove an origin round trip/);await f.observer.dispose();
+});
+test('decoded304 evidence may complete before its compatible200 buffer without claiming cache causality or product consumption', async () => { const f = await observerFixture();const item = withDecoded304(f.proof, 'metadata');f.proof.responses.splice(f.proof.responses.indexOf(item), 1);f.proof.responses.unshift(item);const result = assertStandaloneAcquisition(f.proof);assert.equal(result.compatible304[0].observation, 0);assert.ok(result.compatible304[0].matchesObserved200 > 0);assert.equal(item.status, 304);await f.observer.dispose(); });
+for (const [name, change] of [
+  ['missing complete200 metadata', (proof, item) => { proof.responses = proof.responses.filter((value) => value.kind !== 'metadata' || value.status !== 200); }],
+  ['same counts but different exact endpoint', (proof, item) => { item.url += '?w=0'; }],
+  ['cross-kind endpoint', (proof, item) => { item.url = proof.responses.find((value) => value.kind === 'stats').url; }],
+  ['missing decoded bytes', (proof, item) => { delete item.bytes; }],
+  ['empty literal304 body', (proof, item) => { item.bytes = 0; }],
+  ['missing decoded digest', (proof, item) => { delete item.sha256; }],
+  ['different body hash with identical projection', (proof, item) => { item.sha256 = 'f'.repeat(64); }],
+  ['different byte length', (proof, item) => { item.bytes++; }],
+  ['different complete projection with the same count vector', (proof, item) => { item.projection[0].unrecognized = 'changed'; }],
+  ['failed decoded body read', (proof, item) => { item.error = 'Could not load revalidated body'; }],
+  ['redirected304', (proof, item) => { item.redirected = true; }],
+  ['other wire status', (proof, item) => { item.status = 206; }],
+  ['conflicting successful200 body', (proof) => { const item = structuredClone(proof.responses.find((value) => value.kind === 'metadata' && value.status === 200));item.sha256 = 'e'.repeat(64);proof.responses.push(item); }],
+]) test(`revalidation refuses ${name}`, async () => { const f = await observerFixture();const item = withDecoded304(f.proof, 'metadata');change(f.proof, item);assert.throws(() => assertStandaloneAcquisition(f.proof));await f.observer.dispose(); });
+test('decoded stats304 cannot replace its own complete200 even when metadata and patch200 are complete', async () => { const f = await observerFixture();withDecoded304(f.proof, 'stats');f.proof.responses = f.proof.responses.filter((value) => value.kind !== 'stats' || value.status !== 200);assert.throws(() => assertStandaloneAcquisition(f.proof), /independent complete200 standalone stats/);await f.observer.dispose(); });
+test('patch304 is refused even if its decoded body matches a separate complete200 patch', async () => { const f = await observerFixture();withDecoded304(f.proof, 'patch');assert.throws(() => assertStandaloneAcquisition(f.proof), /Unexpected standalone patch status/);await f.observer.dispose(); });
+test('a full200 triplet never masks a second failed metadata observation', async () => { const f = await observerFixture();const item = withDecoded304(f.proof, 'metadata');item.status = 500;assert.throws(() => assertStandaloneAcquisition(f.proof));await f.observer.dispose(); });
+
 function counts() { return { runtime: { hasDiff: true, onDiffPage: true, repository: { provider: 'gitlab', origin: 'https://gitlab.com', path: 'gitlab-org/gitlab' }, all: { files: 3, additions: 36, deletions: 0 }, visible: { files: 2, additions: 4, deletions: 0 }, hiddenCount: 1, categories: [{ id: 'tests', paths: [F.path] }] }, native: { headers: [{ files: 2, additions: 4, deletions: 0 }] } }; }
 function unavailableRunner({ missingAcquisition = false, cleanupFailure = false, sourceChanged = false } = {}) {
   const original = { enabled: true, aiEnabled: false, testOutline: false }, progress = {};let settings = structuredClone(original), cleanup = false, setup = false;

@@ -66,21 +66,30 @@ export function observeStandaloneWhole(page, proof, { kind, extensionId, safeUrl
   };
   page.on('request', request);page.on('response', response);
   const checkpoint = async () => { await Promise.all([...pending]);return proof; };
-  const acquisition = async () => { await checkpoint();assertStandaloneAcquisition(proof);return { all: { files: 3, additions: 36, deletions: 0 }, visible: { files: 2, additions: 4, deletions: 0 }, basis: 'Observed complete immutable standalone metadata, stats and unified patch agree with the retained original fixture.' }; };
+  const acquisition = async () => { await checkpoint();const responses = assertStandaloneAcquisition(proof);return { all: { files: 3, additions: 36, deletions: 0 }, visible: { files: 2, additions: 4, deletions: 0 }, responses, basis: 'Independent complete200 metadata, stats and unified patch agree with the retained fixture. Any accepted304 retains that wire status and only proves browser-decoded compatibility with an observed200 at the exact same endpoint, not server-body, origin-round-trip or product-consumption identity.' }; };
   return { checkpoint, acquisition, raw: async () => { await checkpoint();return proof.responses.filter((item) => item.kind === 'raw'); }, dispose: async () => { if (disposed) return;disposed = true;page.off('request', request);page.off('response', response);await checkpoint();proof.disposed = true; } };
 }
 
 export function assertStandaloneAcquisition(proof) {
   assert.equal(proof.truncated, false);assert.equal(proof.nonReadRequests.some((request) => request.extensionFrameObserved), false, 'Extension initiated an unexpected provider write/other non-read request');
+  const qualified200 = [], compatible304 = [];
   for (const kind of ['metadata', 'stats', 'patch']) {
     const found = proof.responses.filter((item) => item.kind === kind);assert.ok(found.length > 0, `Missing observed standalone ${kind}`);
+    const successful = found.filter((item) => item.status === 200);assert.ok(successful.length > 0, `Missing independent complete200 standalone ${kind}`);
     for (const item of found) {
-      assert.equal(item.status, 200);assert.equal(item.redirected, false);assert.equal(item.error, undefined);assert.notEqual(item.overflow, true);
+      assert.ok(item.status === 200 || kind !== 'patch' && item.status === 304, `Unexpected standalone ${kind} status`);assert.equal(item.redirected, false);assert.equal(item.error, undefined);assert.notEqual(item.overflow, true);
+      assert.ok(Number.isSafeInteger(item.bytes) && item.bytes > 0 && item.bytes <= 512 * 1024, 'Missing bounded decoded response bytes');assert.match(item.sha256 ?? '', /^[a-f0-9]{64}$/, 'Missing decoded response digest');
       if (kind === 'metadata') { assert.ok(Array.isArray(item.projection));assert.deepEqual(item.projection.map(({ path, additions, deletions }) => ({ path, additions, deletions })), expectedFiles);assert.ok(item.projection.every((file) => file.deleted === false && file.submodule === false && file.oldPath === file.path)); }
       if (kind === 'patch') assert.deepEqual(item.files, expectedFiles);
       if (kind === 'stats') for (const [key, expected] of Object.entries({ added_lines: 36, removed_lines: 0, diffs_count: 3, real_size: 3 })) assert.equal(Number(item.projection?.[key]), expected);
+      const match = item.status === 304 ? successful.find((candidate) => candidate.url === item.url) : successful[0];
+      assert.ok(match, 'A decoded304 needs an independent qualifying200 at the exact same endpoint');
+      assert.equal(item.bytes, match.bytes);assert.equal(item.sha256, match.sha256);assert.deepEqual(item.projection, match.projection);assert.deepEqual(item.files, match.files);assert.equal(item.overflow, match.overflow);
+      const retained = { observation: proof.responses.indexOf(item), kind, url: item.url, status: item.status, bytes: item.bytes, sha256: item.sha256 };
+      if (item.status === 304) compatible304.push({ ...retained, matchesObserved200: proof.responses.indexOf(match), browserDecodedBodyEqual: true });else qualified200.push(retained);
     }
   }
+  return { qualified200, compatible304, scope: 'Wire statuses remain separate. Matching decoded304 data does not identify a product-consumed result or prove an origin round trip.' };
 }
 
 /** Independent original native standalone projection. No provider/controller calls or source writes. */
