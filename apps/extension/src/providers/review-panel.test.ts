@@ -189,19 +189,23 @@ describe('provider conversation digest', () => {
     expect(run).toHaveBeenCalledTimes(1);
   });
 
-  it('groups by recorded native pushes, moves edited comments by their actual edit time, and keeps an empty latest push', () => {
+  it('keeps edited human comments in their creation round and seats new comments after the next native push', () => {
     const original = input([thread('a')]);
     const edited = { ...comment('2', 'Current edited review text.'), updatedAt: '2026-11-01T14:00:00Z' };
+    const latest = { ...comment('3', 'New human comment after the second push.'), createdAt: '2026-11-01T13:30:00Z' };
     const events: readonly ProviderReviewPanelEvent[] = [{ id: 'push-1', url: reviewUrl, author: comment('1').author, body: 'Native push event one', createdAt: '2026-11-01T11:00:00Z', kind: 'push' }, { id: 'push-2', url: reviewUrl, author: comment('1').author, body: 'Native push event two', createdAt: '2026-11-01T13:00:00Z', kind: 'push' }];
-    const options = { reviewGrouping: 'batch', comments: [edited], events } satisfies Parameters<typeof renderProviderReviewPanel>[2];
+    const options = { reviewGrouping: 'batch', comments: [edited, latest], events } satisfies Parameters<typeof renderProviderReviewPanel>[2];
     const panel = renderProviderReviewPanel(host(), original, options);
     const rounds = panel.element.querySelectorAll<HTMLDetailsElement>('[data-geld-review-round]');
     expect(rounds).toHaveLength(2);
     expect(rounds[0]?.textContent).toContain(comment('1').body);
-    expect(rounds[0]?.textContent).not.toContain(edited.body);
+    expect(rounds[0]?.querySelector('[data-geld-source="note_2"]')?.textContent).toContain(edited.body);
+    expect(rounds[0]?.textContent).toContain('Edited');
+    expect(rounds[0]?.querySelector<HTMLTimeElement>('[data-geld-source="note_2"] time:last-of-type')?.dateTime).toBe('2026-11-01T14:00:00.000Z');
     expect(rounds[1]?.textContent).toContain('Latest recorded push');
-    expect(rounds[1]?.textContent).toContain(edited.body);
-    expect(rounds[1]?.textContent).toContain('Edited');
+    expect(rounds[1]?.textContent).toContain(latest.body);
+    expect(rounds[1]?.querySelector('[data-geld-source="note_2"]')).toBeNull();
+    expect(rounds[0]?.querySelector<HTMLAnchorElement>('[data-geld-source="note_2"] a')?.href).toBe(edited.url);
     const item = rounds[0]?.querySelector<HTMLDetailsElement>('[data-geld-item]');
     if (item !== null && item !== undefined) item.open = true;
     panel.update(original, { ...options, reviewGrouping: 'type' });
@@ -209,6 +213,53 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-item]')?.open).toBe(true);
     panel.update(original, { ...options, comments: [] });
     expect(panel.element.querySelector('[data-geld-review-round="push-2"]')?.textContent).toContain('No conversation recorded after this push.');
+  });
+
+  it('keeps an edited human thread and later replies with its original push while a new thread joins the later push', () => {
+    const first = comment('1', 'Original human thread before the next push.');
+    const later = { ...comment('2', 'New thread after the next push.'), createdAt: '2026-11-01T13:30:00Z' };
+    const original = input([thread('a', { comments: [first] }), thread('b', { comments: [later] })]);
+    const events: readonly ProviderReviewPanelEvent[] = [
+      { id: 'push-a', url: reviewUrl, author: first.author, body: 'Native first push', createdAt: '2026-11-01T11:00:00Z', kind: 'push', headSha: 'b'.repeat(40) },
+      { id: 'push-b', url: reviewUrl, author: first.author, body: 'Native latest push', createdAt: '2026-11-01T13:00:00Z', kind: 'push', headSha: subject.headSha },
+    ];
+    const panel = renderProviderReviewPanel(host(), original, { reviewGrouping: 'batch', events });
+    const originalLaterId = panel.element.querySelector<HTMLElement>('[data-geld-review-round="push-b"] [data-geld-item]')?.dataset.geldItem;
+    const edited = { ...first, body: 'Current edited human thread text.', updatedAt: '2026-11-01T14:00:00Z' };
+    const reply = { ...comment('3', 'Actual reply after the later push.'), createdAt: '2026-11-01T14:30:00Z' };
+    const refreshed = input([thread('a', { comments: [edited, reply] }), thread('b', { comments: [later] })]);
+    panel.update(refreshed, { reviewGrouping: 'batch', events });
+    const earlierRound = panel.element.querySelector('[data-geld-review-round="push-a"]');
+    const laterRound = panel.element.querySelector('[data-geld-review-round="push-b"]');
+    expect(earlierRound?.querySelector('[data-geld-source="note_1"]')?.textContent).toContain(edited.body);
+    expect(earlierRound?.querySelector('[data-geld-source="note_3"]')?.textContent).toContain(reply.body);
+    expect(earlierRound?.textContent).toContain('Edited');
+    expect(laterRound?.querySelector('[data-geld-source="note_2"]')?.textContent).toContain(later.body);
+    expect(laterRound?.querySelector('[data-geld-source="note_1"], [data-geld-source="note_3"]')).toBeNull();
+    expect(laterRound?.textContent).toContain('Latest recorded push');
+    expect(laterRound?.querySelector<HTMLElement>('[data-geld-item]')?.dataset.geldItem).toBe(originalLaterId);
+    expect([...panel.element.querySelectorAll<HTMLElement>('[data-geld-source]')].map((source) => source.dataset.geldSource)).toEqual(['note_1', 'note_3', 'note_2']);
+    expect(refreshed.subject.headSha).toBe(subject.headSha);
+    expect(earlierRound?.textContent).not.toContain(first.body);
+  });
+
+  it('keeps an automated edited report on its latest edit clock without moving its original finding thread', () => {
+    const author = { id: '38968537', login: 'native-review-service', automated: true };
+    const finding = { ...comment('1', 'Original native automated finding.'), author, updatedAt: '2026-11-01T14:00:00Z' };
+    const report = { ...comment('2', 'Current edited review report.'), author, updatedAt: '2026-11-01T14:00:00Z' };
+    const panel = renderProviderReviewPanel(host(), input([thread('a', { comments: [finding] })]), { reviewGrouping: 'batch', comments: [report], events: [
+      { id: 'push-a', url: reviewUrl, author, body: 'Native first push', createdAt: '2026-11-01T11:00:00Z', kind: 'push' },
+      { id: 'push-b', url: reviewUrl, author, body: 'Native latest push', createdAt: '2026-11-01T13:00:00Z', kind: 'push' },
+    ] });
+    const earlierRound = panel.element.querySelector('[data-geld-review-round="push-a"]');
+    const laterRound = panel.element.querySelector('[data-geld-review-round="push-b"]');
+    expect(earlierRound?.querySelector('[data-geld-source="note_1"]')?.textContent).toContain(finding.body);
+    expect(earlierRound?.querySelector('[data-geld-source="note_2"]')).toBeNull();
+    expect(laterRound?.querySelector('[data-geld-source="note_2"]')?.textContent).toContain(report.body);
+    expect(laterRound?.querySelector<HTMLTimeElement>('[data-geld-source="note_2"] time:last-of-type')?.dateTime).toBe('2026-11-01T14:00:00.000Z');
+    expect(laterRound?.textContent).toContain('Automated account');
+    expect(laterRound?.textContent).toContain('Edited');
+    expect(panel.element.querySelectorAll('[data-geld-source="note_2"]')).toHaveLength(1);
   });
 
   it('does not invent push rounds from comment prose or events with unknown kinds', () => {

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS } from '@geld/core';
 import type { FileStats, GeldSettings } from '@geld/core';
 import type { ProviderDiffEntry, ProviderDiffLine, ProviderDiffView } from './types';
@@ -52,7 +52,148 @@ function hidden(root: HTMLElement): boolean { return root.hasAttribute(ATTR_PROV
 function testButtons(root: HTMLElement): HTMLButtonElement[] { return [...root.querySelectorAll<HTMLButtonElement>(`[${ATTR_PROVIDER_FOLD_ROW}^="test:"] button`)]; }
 function commentButton(root: HTMLElement): HTMLButtonElement | null { return root.querySelector<HTMLButtonElement>(`[${ATTR_PROVIDER_FOLD_ROW}^="comments:"] button`); }
 
-afterEach(() => { clearProviderLineFolds(); document.body.replaceChildren(); window.location.hash = ''; });
+afterEach(() => { clearProviderLineFolds(); document.body.replaceChildren(); window.location.hash = ''; vi.restoreAllMocks(); });
+
+function frames() {
+  const callbacks = new Map<number, FrameRequestCallback>();
+  let sequence = 0;
+  const request = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+    const id = ++sequence;
+    callbacks.set(id, callback);
+    return id;
+  });
+  const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => { callbacks.delete(id); });
+  const flush = (): void => {
+    const pending = [...callbacks.values()];
+    callbacks.clear();
+    for (const callback of pending) callback(0);
+  };
+  return { request, cancel, flush };
+}
+
+function linkedFixture() {
+  const file = fixture(["it('linked source', () => {", '  expect(value).toBe(1);', '});'].map((text, index) => added(index + 1, text)));
+  const row = file.lines[1]?.root;
+  if (row === undefined) throw new Error('Expected linked native row.');
+  applyProviderLineFolds(file.view, [file.stats], settings());
+  return { ...file, row };
+}
+
+describe('linked fold landing', () => {
+  it('centers the original hidden row once on the next frame after opening its fold', () => {
+    const { request, flush } = frames();
+    const file = linkedFixture();
+    const scroll = vi.spyOn(file.row, 'scrollIntoView');
+    expect(hidden(file.row)).toBe(true);
+    window.location.hash = '#native-line-1';
+    applyProviderLineFolds(file.view, [file.stats], settings());
+    expect(hidden(file.row)).toBe(false);
+    expect(scroll).not.toHaveBeenCalled();
+    applyProviderLineFolds(file.view, [file.stats], settings());
+    expect(request).toHaveBeenCalledOnce();
+    flush();
+    expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: 'center', behavior: 'auto' });
+    applyProviderLineFolds(file.view, [file.stats], settings());
+    flush();
+    expect(scroll).toHaveBeenCalledOnce();
+  });
+
+  it.each(['hash', 'comparison'] as const)('does not move the reader after the requested %s changed before the frame', (change) => {
+    const previous = window.location.href;
+    try {
+      const { flush } = frames();
+      const file = linkedFixture();
+      const scroll = vi.spyOn(file.row, 'scrollIntoView');
+      window.location.hash = '#native-line-1';
+      applyProviderLineFolds(file.view, [file.stats], settings());
+      if (change === 'hash') window.location.hash = '#another-line';
+      else window.location.search = '?diff_id=another-version';
+      flush();
+      expect(scroll).not.toHaveBeenCalled();
+    } finally { window.location.href = previous; }
+  });
+
+  it('cancels its pending frame when the hash was removed and a new pass runs', () => {
+    const { cancel, flush } = frames();
+    const file = linkedFixture();
+    const scroll = vi.spyOn(file.row, 'scrollIntoView');
+    window.location.hash = '#native-line-1';
+    applyProviderLineFolds(file.view, [file.stats], settings());
+    window.location.hash = '';
+    applyProviderLineFolds(file.view, [file.stats], settings());
+    expect(cancel).toHaveBeenCalledOnce();
+    flush();
+    expect(scroll).not.toHaveBeenCalled();
+  });
+
+  it('does not act on a detached row or its replacement with the same native id', () => {
+    const { flush } = frames();
+    const file = linkedFixture();
+    const scroll = vi.spyOn(file.row, 'scrollIntoView');
+    window.location.hash = '#native-line-1';
+    applyProviderLineFolds(file.view, [file.stats], settings());
+    const replacement = document.createElement('tr');
+    replacement.id = file.row.id;
+    const nextScroll = vi.spyOn(replacement, 'scrollIntoView');
+    file.row.replaceWith(replacement);
+    flush();
+    expect(scroll).not.toHaveBeenCalled();
+    expect(nextScroll).not.toHaveBeenCalled();
+  });
+
+  it('cancels an old file landing when the native file remounts without closing its opened fold', () => {
+    const { cancel, flush } = frames();
+    const file = linkedFixture();
+    const scroll = vi.spyOn(file.row, 'scrollIntoView');
+    window.location.hash = '#native-line-1';
+    applyProviderLineFolds(file.view, [file.stats], settings());
+    file.root.remove();
+    const next = fixture(["it('linked source', () => {", '  expect(value).toBe(1);', '});'].map((text, index) => added(index + 1, text)));
+    applyProviderLineFolds(next.view, [next.stats], settings());
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(next.lines.every((line) => !hidden(line.root))).toBe(true);
+    flush();
+    expect(scroll).not.toHaveBeenCalled();
+  });
+
+  it('cancels its frame when folding is cleared', () => {
+    const { cancel, flush } = frames();
+    const file = linkedFixture();
+    const scroll = vi.spyOn(file.row, 'scrollIntoView');
+    window.location.hash = '#native-line-1';
+    applyProviderLineFolds(file.view, [file.stats], settings());
+    clearProviderLineFolds();
+    expect(cancel).toHaveBeenCalledOnce();
+    flush();
+    expect(scroll).not.toHaveBeenCalled();
+    expect(hidden(file.row)).toBe(false);
+  });
+
+  it('respects a reader closing the linked fold before its landing frame', () => {
+    const { flush } = frames();
+    const file = linkedFixture();
+    const scroll = vi.spyOn(file.row, 'scrollIntoView');
+    window.location.hash = '#native-line-1';
+    applyProviderLineFolds(file.view, [file.stats], settings());
+    testButtons(file.root)[0]?.click();
+    expect(hidden(file.row)).toBe(true);
+    flush();
+    expect(scroll).not.toHaveBeenCalled();
+  });
+
+  it('leaves an already visible unrelated native target to the browser', () => {
+    const { request, flush } = frames();
+    const file = fixture([added(1, 'export const value = 1;')], 'src/cache.ts');
+    const row = file.lines[0]?.root;
+    if (row === undefined) throw new Error('Expected visible native row.');
+    const scroll = vi.spyOn(row, 'scrollIntoView');
+    window.location.hash = '#native-line-0';
+    applyProviderLineFolds(file.view, [file.stats], settings());
+    flush();
+    expect(request).not.toHaveBeenCalled();
+    expect(scroll).not.toHaveBeenCalled();
+  });
+});
 
 describe('provider test outlines', () => {
   it.each([

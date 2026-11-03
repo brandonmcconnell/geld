@@ -94,6 +94,84 @@ it('declares the observed paired native line-count label once and rejects unrela
   expect(gitLabHeaderTargets(document)[0]?.labels).toEqual([]);
 });
 
+it('places a diff-header hint beside native count groups while preserving their spoken labels and nodes', () => {
+  rapid();
+  const root = document.querySelector<HTMLElement>('.diff-stats-contents');
+  const nativeCount = document.querySelector<HTMLElement>('[aria-label="Added 4 lines."]');
+  if (root === null || nativeCount === null) throw new Error('Missing native stats');
+  const before = nativeCount.outerHTML;
+  const target = gitLabHeaderTargets(document)[0];
+  expect(target?.hintHost).toBe(root);
+  expect(target?.hintBefore).toBe(nativeCount);
+  const hint = document.createElement('span'); hint.dataset.geldUi = ''; hint.textContent = '1 test'; hint.tabIndex = 0;
+  target?.hintHost?.insertBefore(hint, target.hintBefore ?? null);
+  hint.focus();
+  expect(document.activeElement).toBe(hint);
+  expect(nativeCount.outerHTML).toBe(before);
+  expect(hint.closest('[aria-label], a, button')).toBeNull();
+  expect(nativeCount.parentElement).toBe(root);
+});
+
+function overviewHeader(): void {
+  window.location.href = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334';
+  // Projected from the actual anonymous MR266334 tab/actions header.
+  document.body.innerHTML = '<div class="merge-request-tabs-container"><ul class="merge-request-tabs"><li data-testid="diffs-tab"><a data-action="diffs" data-toggle="tabvue" href="/gitlab-org/gitlab/-/merge_requests/266334/diffs"><span>Changes</span><span class="gl-badge badge badge-pill badge-neutral"><span class="gl-badge-content"><span class="js-changes-tab-count">2</span></span></span></a></li></ul><div class="merge-request-tabs-actions"><div id="discussionCounter"><div data-testid="discussions-counter-text"><span aria-hidden="true">4</span><span class="gl-sr-only">4 open threads</span><div role="group"><button aria-label="Previous open thread">Previous</button><button aria-label="Next open thread">Next</button></div></div></div></div></div>';
+}
+
+it('uses the neutral overview action slot outside the Changes anchor, badge, and thread counter', () => {
+  overviewHeader();
+  const tab = document.querySelector('a[data-action="diffs"]');
+  const counter = document.getElementById('discussionCounter');
+  const actions = document.querySelector<HTMLElement>('.merge-request-tabs-actions');
+  const previous = counter?.querySelector('button');
+  if (tab === null || counter === null || actions === null || previous === null || previous === undefined) throw new Error('Missing overview header');
+  const tabMarkup = tab.outerHTML;
+  const counterMarkup = counter.outerHTML;
+  const target = gitLabHeaderTargets(document)[0];
+  expect(target?.hintHost).toBe(actions);
+  expect(target?.hintBefore).toBe(counter);
+  const hint = document.createElement('span'); hint.dataset.geldUi = ''; hint.textContent = '0 tests'; hint.tabIndex = 0;
+  target?.hintHost?.insertBefore(hint, target.hintBefore ?? null);
+  hint.focus();
+  expect(hint.closest('a, button, [role="group"], [aria-hidden="true"]')).toBeNull();
+  expect(tab.outerHTML).toBe(tabMarkup);
+  expect(counter.outerHTML).toBe(counterMarkup);
+  expect(document.activeElement).toBe(hint);
+  previous.focus();
+  expect(document.activeElement).toBe(previous);
+});
+
+it('deduplicates the overview fallback when a native stats hint exists and rejects foreign Changes identity', () => {
+  overviewHeader();
+  document.body.insertAdjacentHTML('beforeend', '<div class="diff-stats inline-parallel-buttons"><div class="diff-stats-contents"><div class="diff-stats-group"><span>2 files</span></div><div aria-label="Added 4 lines."><span data-testid="js-file-addition-line">4</span></div></div></div>');
+  expect(gitLabHeaderTargets(document).filter((target) => target.hintHost !== undefined)).toHaveLength(1);
+  expect(gitLabHeaderTargets(document)[0]?.hintHost).toBe(document.querySelector('.diff-stats-contents'));
+  document.querySelector('a[data-action="diffs"]')?.setAttribute('href', 'https://example.com/gitlab-org/gitlab/-/merge_requests/266334/diffs');
+  expect(gitLabHeaderTargets(document)).toHaveLength(1);
+});
+
+it('uses the same neutral stats host on an immutable native commit and ignores hidden or cloned insertion hosts', () => {
+  rapid();
+  window.location.href = `https://gitlab.com/gitlab-org/gitlab/-/commit/${HEAD}`;
+  expect(gitLabHeaderTargets(document)[0]?.hintHost).toBe(document.querySelector('.diff-stats-contents'));
+  document.querySelector('.diff-stats')?.setAttribute('aria-hidden', 'true');
+  expect(gitLabHeaderTargets(document)[0]?.hintHost).toBeUndefined();
+  document.querySelector('.diff-stats')?.setAttribute('data-geld-ui', '');
+  expect(gitLabHeaderTargets(document)).toEqual([]);
+  window.location.href = 'https://gitlab.com/users/sign_in';
+  expect(gitLabHeaderTargets(document)).toEqual([]);
+});
+
+it('places a checked-category hint before the native file group when a binary-only header has no line counts', () => {
+  window.location.href = `https://gitlab.com/gitlab-org/gitlab/-/commit/${HEAD}`;
+  document.body.innerHTML = '<div class="diff-stats inline-parallel-buttons"><div class="diff-stats-contents"><div class="diff-stats-group"><span>1 file</span></div></div></div>';
+  const target = gitLabHeaderTargets(document)[0];
+  expect(target?.additions).toBeNull();
+  expect(target?.deletions).toBeNull();
+  expect(target?.hintHost).toBe(document.querySelector('.diff-stats-contents'));
+  expect(target?.hintBefore).toBe(document.querySelector('.diff-stats-group'));
+});
+
 it('collapses with native controls, keeps nodes in place and respects disabled Viewed', () => {
   rapid();
   const view = readGitLabDiff(document);

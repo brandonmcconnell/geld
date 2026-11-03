@@ -9,6 +9,8 @@ import { renderProviderReviewPanel } from './review-panel';
 import type { ProviderReviewPanel } from './review-panel';
 import type { ProviderAdapter, ProviderReviewPage, ProviderReviewSnapshot } from './types';
 import { isProviderReviewPage } from './types';
+import { ProviderNativeFind } from './native-find';
+import type { ProviderNativeFindEntry, ProviderNativeFindEnvironment } from './native-find';
 import './conversation-compact.css';
 
 const ACTION_NAMES = { approve: 'Approve', 'request-changes': 'Request changes', comment: 'Comment' };
@@ -23,6 +25,8 @@ export interface ProviderConversationServices {
   readonly aiDependencies?: Partial<ProviderAiDependencies>;
   readonly readReviewed?: (input: ProviderReviewInput) => Promise<Readonly<Record<string, string>>>;
   readonly saveReviewed?: (input: ProviderReviewInput, item: ReviewItem, fingerprint: string, reviewed: boolean) => Promise<void>;
+  /** Unit protocol only; runtime uses the browser's real native-find capability and display. */
+  readonly nativeFindEnvironment?: ProviderNativeFindEnvironment;
 }
 
 const reviewedNativeItems = new WeakMap<ProviderReviewInput, readonly ReviewItem[]>();
@@ -75,7 +79,9 @@ export class ProviderConversation {
   private observedHead: string | null = null;
   private snapshotVersion = 0;
   private readonly ai: ProviderAiTriage;
-  private readonly compacted = new Map<HTMLElement, { readonly key: string; readonly control: HTMLElement; readonly button: HTMLButtonElement }>();
+  private readonly compacted = new Map<HTMLElement, { readonly key: string; readonly anchors: readonly string[]; readonly control: HTMLElement; readonly button: HTMLButtonElement }>();
+  private nativeFind: ProviderNativeFind | null = null;
+  private nativeEntries: readonly ProviderNativeFindEntry[] = [];
   private readonly originalsShown = new Set<string>();
   private description: { readonly host: HTMLElement; readonly control: HTMLButtonElement; readonly hidden: Set<Element> } | null = null;
   private descriptionShown = false;
@@ -228,12 +234,16 @@ export class ProviderConversation {
         this.actions = element('div', '', 'geld-provider-actions');
         this.actions.setAttribute('role', 'group');
         this.actions.setAttribute('aria-label', 'Review actions');
+        const key = this.key;
         for (const action of available) {
           const button = element('button', ACTION_NAMES[action.kind]);
           button.type = 'button';
           button.addEventListener('click', () => {
+            if (this.key !== key || !button.isConnected) return;
+            const current = this.snapshot?.actions.find((candidate) => candidate.kind === action.kind && candidate.available);
+            if (current === undefined) { button.title = 'The review controls are unavailable'; return; }
             button.disabled = true;
-            void action.activate().then((opened) => { if (!opened) button.title = 'Open the provider review controls to continue'; })
+            void current.activate().then((triggered) => { if (!triggered) button.title = 'Open the provider review controls to continue'; })
               .catch(() => { button.title = 'The review controls are unavailable'; })
               .finally(() => { button.disabled = false; });
           });
@@ -258,39 +268,11 @@ export class ProviderConversation {
         try { const anchor = new URL(event.url).hash.slice(1); if (anchor !== '') eligible.add(anchor); } catch { /* An invalid source cannot hide native activity. */ }
       }
     }
-    const roots = (this.adapter.conversationRoots?.(document) ?? []).filter((entry) => entry.anchors.length > 0 && entry.anchors.every((anchor) => eligible.has(anchor)) && !entry.root.contains(this.panel?.element ?? null) && entry.root.querySelector('textarea,[contenteditable="true"],[role="textbox"]') === null);
-    const active = new Set(roots.map((entry) => entry.root));
-    for (const [root, record] of this.compacted) {
-      if (active.has(root) && record.control.isConnected) continue;
-      root.removeAttribute('data-geld-provider-compact-hidden');
-      record.control.remove();
-      this.compacted.delete(root);
-    }
-    for (const entry of roots) {
-      const key = [...entry.anchors].sort().join('|');
-      const previous = this.compacted.get(entry.root);
-      if (previous?.key === key) continue;
-      if (previous !== undefined) { previous.control.remove(); this.compacted.delete(entry.root); }
-      const button = element('button', '', 'geld-provider-toggle');
-      button.type = 'button';
-      const control = entry.root.tagName === 'LI' ? element('li') : entry.root.tagName === 'TR' ? element('tr') : element('div');
-      control.className = 'geld-provider-original';
-      if (control instanceof HTMLTableRowElement) {
-        const cell = element('td');
-        cell.colSpan = Math.max(1, [...entry.root.children].reduce((count, child) => count + (child instanceof HTMLTableCellElement ? child.colSpan : 1), 0));
-        cell.append(button); control.append(cell);
-      } else control.append(button);
-      const update = (): void => {
-        const shown = this.originalsShown.has(key);
-        button.textContent = shown ? 'Hide original conversation entry' : 'Show original conversation entry';
-        button.setAttribute('aria-expanded', String(shown));
-        hiddenFlag(entry.root, 'data-geld-provider-compact-hidden', !shown);
-      };
-      button.addEventListener('click', () => { if (this.originalsShown.has(key)) this.originalsShown.delete(key); else this.originalsShown.add(key); update(); });
-      entry.root.before(control);
-      this.compacted.set(entry.root, { key, control, button });
-      update();
-    }
+    const roots = (this.adapter.conversationRoots?.(document) ?? []).filter((entry) => entry.anchors.length > 0 && entry.anchors.every((anchor) => eligible.has(anchor)) && !entry.root.contains(this.panel?.element ?? null)
+      && !entry.root.matches('textarea,[contenteditable="true"],[role="textbox"]') && entry.root.querySelector('textarea,[contenteditable="true"],[role="textbox"]') === null);
+    this.nativeEntries = roots.map((entry) => ({ root: entry.root, key: [...entry.anchors].sort().join('|'), anchors: entry.anchors, compact: true, shown: false }));
+    if (this.nativeEntries.length === 0) this.restoreCompact();
+    else this.syncCompact();
     const description = settings.compactTimeline === 'minimal' && settings.collapseDescription ? this.adapter.descriptionHost?.(document) ?? null : null;
     if (this.description?.host !== description) this.restoreDescription();
     if (description === null || description.contains(this.panel?.element ?? null)) return;
@@ -320,6 +302,63 @@ export class ProviderConversation {
     this.updateDescription();
   }
 
+  private syncCompact(): void {
+    if (this.nativeFind === null) {
+      this.nativeFind = new ProviderNativeFind(document, { onReveal: (entry) => {
+        this.originalsShown.add(entry.key);
+        const record = this.compacted.get(entry.root);
+        if (record?.key === entry.key) this.updateOriginal(record.button, true);
+        this.changed();
+      } }, this.services.nativeFindEnvironment);
+    }
+    const entries = this.nativeEntries.map((entry) => ({ ...entry, shown: this.originalsShown.has(entry.key) }));
+    const outcomes = this.nativeFind.sync(entries);
+    const supported = new Set(outcomes.filter((outcome) => outcome.status === 'folded' || outcome.status === 'shown').map((outcome) => outcome.key));
+    const active = new Set(entries.filter((entry) => supported.has(entry.key)).map((entry) => entry.root));
+    for (const [root, record] of this.compacted) {
+      if (active.has(root) && record.control.isConnected) continue;
+      root.removeAttribute('data-geld-provider-compact-hidden');
+      record.control.remove();
+      this.compacted.delete(root);
+    }
+    for (const entry of entries) {
+      if (!active.has(entry.root)) continue;
+      const key = entry.key;
+      entry.root.removeAttribute('data-geld-provider-compact-hidden');
+      const previous = this.compacted.get(entry.root);
+      if (previous?.key === key) {
+        if (previous.control.parentElement !== entry.root.parentElement || previous.control.nextElementSibling !== entry.root) entry.root.before(previous.control);
+        this.updateOriginal(previous.button, this.originalsShown.has(key));
+        continue;
+      }
+      if (previous !== undefined) { previous.control.remove(); this.compacted.delete(entry.root); }
+      const button = element('button', '', 'geld-provider-toggle');
+      button.type = 'button';
+      const control = entry.root.tagName === 'LI' ? element('li') : entry.root.tagName === 'TR' ? element('tr') : element('div');
+      control.className = 'geld-provider-original';
+      if (control instanceof HTMLTableRowElement) {
+        const cell = element('td');
+        cell.colSpan = Math.max(1, [...entry.root.children].reduce((count, child) => count + (child instanceof HTMLTableCellElement ? child.colSpan : 1), 0));
+        cell.append(button); control.append(cell);
+      } else control.append(button);
+      button.addEventListener('click', () => {
+        if (this.compacted.get(entry.root)?.button !== button || !entry.root.isConnected) return;
+        if (this.originalsShown.has(key)) { this.originalsShown.delete(key); this.nativeFind?.allowCompact(key); }
+        else this.originalsShown.add(key);
+        this.syncCompact();
+      });
+      entry.root.before(control);
+      this.compacted.set(entry.root, { key, anchors: entry.anchors, control, button });
+      this.updateOriginal(button, this.originalsShown.has(key));
+    }
+  }
+
+  private updateOriginal(button: HTMLButtonElement, shown: boolean): void {
+    const text = shown ? 'Hide original conversation entry' : 'Show original conversation entry';
+    if (button.textContent !== text) button.textContent = text;
+    if (button.getAttribute('aria-expanded') !== String(shown)) button.setAttribute('aria-expanded', String(shown));
+  }
+
   private updateDescription(): void {
     if (this.description === null) return;
     for (const node of this.description.hidden) {
@@ -330,17 +369,19 @@ export class ProviderConversation {
   }
 
   private revealOriginal(anchor: string): void {
+    this.nativeFind?.reveal(anchor);
     const target = document.getElementById(anchor);
     for (const [root, record] of this.compacted) {
-      if (target === null || !(root === target || root.contains(target))) continue;
+      if (!record.anchors.includes(anchor) || target === null || !(root === target || root.contains(target))) continue;
       this.originalsShown.add(record.key);
-      root.removeAttribute('data-geld-provider-compact-hidden');
-      record.button.textContent = 'Hide original conversation entry';
-      record.button.setAttribute('aria-expanded', 'true');
+      this.updateOriginal(record.button, true);
     }
   }
 
   private restoreCompact(): void {
+    this.nativeFind?.destroy();
+    this.nativeFind = null;
+    this.nativeEntries = [];
     for (const [root, record] of this.compacted) { root.removeAttribute('data-geld-provider-compact-hidden'); record.control.remove(); }
     this.compacted.clear();
   }
