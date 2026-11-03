@@ -246,3 +246,8 @@ test('first-use native On has one literal focus, no default/all/regression navig
   assert.ok(harness.indexOf('await firstUseSettings.prepare()') < harness.indexOf('page = await browser.newPage()'));
   assert.match(harness, /await firstUseSettings.restore\(page === undefined \|\| page.isClosed\(\)\)/);
 });
+
+test('report-only native Settings diagnosis is one explicit literal with unchanged NativeOn selection',()=>{
+ const literal=/const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];const cases=new vm.Script(`(${literal})`).runInNewContext();assert.deepEqual(Array.from(cases['bitbucket-native-settings-diagnostic']),['bitbucket-native-settings-diagnostic']);for(const[k,v]of Object.entries(cases))if(k!=='bitbucket-native-settings-diagnostic')assert.equal(v.includes('bitbucket-native-settings-diagnostic'),false);
+ assert.deepEqual(select({body:marker('bitbucket-native-settings-diagnostic'),from:marker('github')}),{focus:'bitbucket-native-settings-diagnostic',run:'true',failures:[]});assert.equal(select({body:marker('bitbucket-native-settings-diagnostic')+'\nNew prose',from:marker('bitbucket-native-settings-diagnostic')}).run,'false');assert.equal(select({fork:true,body:marker('bitbucket-native-settings-diagnostic'),from:marker('github')}).run,'false');assert.match(harness,/name === 'bitbucket-native-settings-diagnostic' && focus !== 'bitbucket-native-settings-diagnostic'/);assert.match(harness,/nativeSettingsDiagnosticPreflight\(active, report.quotaPolicy.conservativeObservedRequestBudget\)/);
+});
