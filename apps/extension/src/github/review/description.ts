@@ -254,7 +254,8 @@ function dressRails(block: HTMLElement, rails: BlockRails | null): void {
   setFlag(block, ATTR_DEPTH, String(rails.depth));
   setProperty(block, '--geld-desc-depth', String(rails.depth));
   const lines = rails.rails;
-  const x = (rail: Rail): string => `${rail.level * INDENT_PX + CHEVRON_CENTER_PX}px`;
+  // A 1px line starts half a pixel early so its centre, not its left edge, is under the chevron's centre.
+  const x = (rail: Rail): string => `${rail.level * INDENT_PX + CHEVRON_CENTER_PX - 0.5}px`;
   setProperty(block, '--geld-desc-rails', lines.length === 0 ? null : lines.map(() => RAIL_LINE).join(', '));
   setProperty(block, '--geld-desc-rail-pos', lines.length === 0 ? null : lines.map((rail) => `${x(rail)} ${rail.kind === 'own' ? 'var(--geld-desc-chevron-y)' : '0'}`).join(', '));
   setProperty(
@@ -262,7 +263,7 @@ function dressRails(block: HTMLElement, rails: BlockRails | null): void {
     '--geld-desc-rail-size',
     lines.length === 0
       ? null
-      : lines.map((rail) => (rail.kind === 'through' ? '1px 100%' : rail.kind === 'end' ? '1px calc(100% - var(--geld-desc-after))' : '1px calc(100% - var(--geld-desc-chevron-y))')).join(', '),
+      : lines.map((rail) => (rail.kind === 'through' ? '1px 100%' : rail.kind === 'end' ? '1px calc(100% - var(--geld-desc-after) - 1px)' : '1px calc(100% - var(--geld-desc-chevron-y))')).join(', '),
   );
 }
 

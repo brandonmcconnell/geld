@@ -7327,7 +7327,8 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   content: '';
   position: absolute;
   top: 0;
-  bottom: calc(-1 * var(--geld-desc-after));
+  /* 1px past the gap: blocks start on fractional pixels, and two rail pieces meeting edge to edge leave a light seam. */
+  bottom: calc(-1 * var(--geld-desc-after) - 1px);
   left: calc(var(--geld-desc-depth, 0) * -24px);
   width: calc((var(--geld-desc-depth, 0) + 1) * 24px);
   background-image: var(--geld-desc-rails, none);
