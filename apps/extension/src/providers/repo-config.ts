@@ -138,7 +138,8 @@ async function cacheFile(key: string, text: string | null, signal: AbortSignal, 
     await cacheItem.setValue(Object.fromEntries(entries.slice(0, CACHE_LIMIT)));
   });
   writeQueue = run.catch(() => undefined);
-  await run;
+  await writeQueue;
+  assertCurrent(signal, generation);
 }
 
 export async function loadProviderConfig(
