@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
-import { enableOptionalProviders, optionalProvidersForCases, assertOptionalProviderRegistrations, verifyOptionalProviderRegistration } from './provider-access-acceptance.mjs';
+import { enableOptionalProviders, optionalProvidersForCases, assertOptionalProviderRegistrations, verifyOptionalProviderRegistration, readWorkerProviderAccess } from './provider-access-acceptance.mjs';
 
 const OPTIONS = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/options.html';
 function protocol({ trusted = true, acknowledge = true, obstructed = false, navigate = false } = {}) {
@@ -81,5 +81,38 @@ test('options-only verification observes the actual worker with read-only APIs a
     scripting: { getRegisteredContentScripts: async () => { calls.push('scripts');return registered().scripts; } },
   } }) };
   const value = await verifyOptionalProviderRegistration(f.page, worker, { poll: async (read, accepts) => { const result = await read();assert.ok(accepts(result));return result; } });
-  assert.equal(value.status, 'passed');assert.deepEqual(f.clicks, ['gitlab', 'bitbucket']);assert.deepEqual(calls, ['permissions', 'scripts']);
+  assert.equal(value.status, 'passed');assert.deepEqual(f.clicks, ['gitlab', 'bitbucket']);assert.deepEqual(calls, Array.from({ length: 5 }, () => ['permissions', 'scripts']).flat());
+});
+
+
+for (const granted of [false, true]) test(`pending opt-in records ${granted ? 'worker registration' : 'permission request'} diagnostics`, async () => {
+  const f = protocol({ acknowledge: false });const progress = [];
+  await assert.rejects(enableOptionalProviders(f.page, ['gitlab'], {
+    progress,
+    poll: async (read, accepts) => { const result = await read();assert.ok(accepts(result));return result; },
+    readState: async () => ({ permissions: { origins: granted ? ['https://gitlab.com/*'] : [] }, scripts: [] }),
+    confirmPermission: async () => { assert.deepEqual(f.clicks, ['gitlab']);return { status: 'confirmed' }; },
+  }));
+  assert.equal(progress[0].pendingPhase, granted ? 'worker_registration' : 'permission_request');
+  assert.equal(progress[0].after.granted, granted);assert.ok(progress[0].after.scripts.every(script => script.count === 0));
+});
+
+
+test('worker state diagnostics fail with a fixed timeout rather than hanging setup', async context => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  const rejected = assert.rejects(readWorkerProviderAccess({ evaluate: () => new Promise(() => {}) }), /PROVIDER_ACCESS_WORKER_STATE_TIMEOUT/);
+  context.mock.timers.tick(3000);
+  await rejected;
+});
+
+
+test('permission acknowledgement cannot conceal an extra origin grant and diagnostics omit that origin', async () => {
+  const f = protocol();const progress = [];
+  const pending = enableOptionalProviders(f.page, ['gitlab'], {
+    progress, poll: async (read, accepts) => { const value = await read();assert.ok(accepts(value));return value; },
+    readState: async () => ({ permissions: { origins: f.clicks.length === 0 ? [] : ['https://gitlab.com/*', 'https://private-canary.invalid/*'] }, scripts: [] }),
+  });
+  await assert.rejects(pending, /unexpected origin scope/);
+  assert.equal(progress[0].grantScopeValid, false);assert.equal(progress[0].pendingPhase, 'unexpected_permission_scope');
+  assert.doesNotMatch(JSON.stringify(progress), /private-canary/);
 });
