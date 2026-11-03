@@ -256,10 +256,10 @@
  * number straight from one state to the next. The bends turn at their joints:
  * (6, 6) on the top bar, (18, 18) on the bottom, (5, 12) and (19, 12) on the
  * middle. Open, every line straightens: the top bar (0.757 to 19, pivot
- * 9.879, 6) and the bottom (5 to 23.243, pivot 14.121, 18) shrink to 0.594 of
- * their length and become the two halves of the stroke from (4.343, 4.343) to
- * (19.657, 19.657); the middle (1.172 to 22.828, pivot 12, 12) turns into the
- * whole stroke from bottom left to top right. Lengths include the half-stroke
+ * 9.879, 6) and the bottom (5 to 23.243, pivot 14.121, 18) shrink to 0.465 of
+ * their length and become the two halves of the stroke from (6, 6) to
+ * (18, 18); the middle (1.172 to 22.828, pivot 12, 12) shrinks to 0.784 and
+ * turns into the whole stroke from (6, 18) to (18, 6). Lengths include the half-stroke
  * the open ends are drawn long by (nav-menu.tsx), and each joint's dot shares
  * its bar's transform.
  */
@@ -292,13 +292,13 @@
   transform: translate(9.879px, 6px) rotate(0deg) scale(1, 1) translate(-9.879px, -6px) translate(6px, 6px) rotate(0deg) translate(-6px, -6px);
 }
 .menu-glyph__middle {
-  transform: translate(12px, 12px) rotate(0deg) translate(-12px, -12px);
+  transform: translate(12px, 12px) rotate(0deg) scale(1, 1) translate(-12px, -12px);
 }
 .menu-glyph__middle-bend-start {
-  transform: translate(12px, 12px) rotate(0deg) translate(-12px, -12px) translate(5px, 12px) rotate(0deg) translate(-5px, -12px);
+  transform: translate(12px, 12px) rotate(0deg) scale(1, 1) translate(-12px, -12px) translate(5px, 12px) rotate(0deg) translate(-5px, -12px);
 }
 .menu-glyph__middle-bend-end {
-  transform: translate(12px, 12px) rotate(0deg) translate(-12px, -12px) translate(19px, 12px) rotate(0deg) translate(-19px, -12px);
+  transform: translate(12px, 12px) rotate(0deg) scale(1, 1) translate(-12px, -12px) translate(19px, 12px) rotate(0deg) translate(-19px, -12px);
 }
 .menu-glyph__bottom {
   transform: translate(14.121px, 18px) rotate(0deg) scale(1, 1) translate(-14.121px, -18px);
@@ -316,10 +316,10 @@
     transform: translate(9.879px, 6px) rotate(0deg) scale(1, 1) translate(-9.879px, -6px) translate(6px, 6px) rotate(20deg) translate(-6px, -6px);
   }
   .menu-trigger:hover .menu-glyph__middle-bend-start {
-    transform: translate(12px, 12px) rotate(0deg) translate(-12px, -12px) translate(5px, 12px) rotate(20deg) translate(-5px, -12px);
+    transform: translate(12px, 12px) rotate(0deg) scale(1, 1) translate(-12px, -12px) translate(5px, 12px) rotate(20deg) translate(-5px, -12px);
   }
   .menu-trigger:hover .menu-glyph__middle-bend-end {
-    transform: translate(12px, 12px) rotate(0deg) translate(-12px, -12px) translate(19px, 12px) rotate(20deg) translate(-19px, -12px);
+    transform: translate(12px, 12px) rotate(0deg) scale(1, 1) translate(-12px, -12px) translate(19px, 12px) rotate(20deg) translate(-19px, -12px);
   }
   .menu-trigger:hover .menu-glyph__bottom-bend {
     transform: translate(14.121px, 18px) rotate(0deg) scale(1, 1) translate(-14.121px, -18px) translate(18px, 18px) rotate(20deg) translate(-18px, -18px);
@@ -328,25 +328,25 @@
 
 /* Open wins over hover: same specificity, later in the sheet. */
 .menu-trigger[aria-expanded='true'] .menu-glyph__top {
-  transform: translate(8.172px, 8.172px) rotate(45deg) scale(0.5936, 1) translate(-9.879px, -6px);
+  transform: translate(9px, 9px) rotate(45deg) scale(0.4651, 1) translate(-9.879px, -6px);
 }
 .menu-trigger[aria-expanded='true'] .menu-glyph__top-bend {
-  transform: translate(8.172px, 8.172px) rotate(45deg) scale(0.5936, 1) translate(-9.879px, -6px) translate(6px, 6px) rotate(45deg) translate(-6px, -6px);
+  transform: translate(9px, 9px) rotate(45deg) scale(0.4651, 1) translate(-9.879px, -6px) translate(6px, 6px) rotate(45deg) translate(-6px, -6px);
 }
 .menu-trigger[aria-expanded='true'] .menu-glyph__middle {
-  transform: translate(12px, 12px) rotate(-45deg) translate(-12px, -12px);
+  transform: translate(12px, 12px) rotate(-45deg) scale(0.7836, 1) translate(-12px, -12px);
 }
 .menu-trigger[aria-expanded='true'] .menu-glyph__middle-bend-start {
-  transform: translate(12px, 12px) rotate(-45deg) translate(-12px, -12px) translate(5px, 12px) rotate(45deg) translate(-5px, -12px);
+  transform: translate(12px, 12px) rotate(-45deg) scale(0.7836, 1) translate(-12px, -12px) translate(5px, 12px) rotate(45deg) translate(-5px, -12px);
 }
 .menu-trigger[aria-expanded='true'] .menu-glyph__middle-bend-end {
-  transform: translate(12px, 12px) rotate(-45deg) translate(-12px, -12px) translate(19px, 12px) rotate(45deg) translate(-19px, -12px);
+  transform: translate(12px, 12px) rotate(-45deg) scale(0.7836, 1) translate(-12px, -12px) translate(19px, 12px) rotate(45deg) translate(-19px, -12px);
 }
 .menu-trigger[aria-expanded='true'] .menu-glyph__bottom {
-  transform: translate(15.828px, 15.828px) rotate(45deg) scale(0.5936, 1) translate(-14.121px, -18px);
+  transform: translate(15px, 15px) rotate(45deg) scale(0.4651, 1) translate(-14.121px, -18px);
 }
 .menu-trigger[aria-expanded='true'] .menu-glyph__bottom-bend {
-  transform: translate(15.828px, 15.828px) rotate(45deg) scale(0.5936, 1) translate(-14.121px, -18px) translate(18px, 18px) rotate(45deg) translate(-18px, -18px);
+  transform: translate(15px, 15px) rotate(45deg) scale(0.4651, 1) translate(-14.121px, -18px) translate(18px, 18px) rotate(45deg) translate(-18px, -18px);
 }
 
 /* A customer logo: a single-colour SVG mask filled with the text colour. */
