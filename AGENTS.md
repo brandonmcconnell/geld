@@ -2381,3 +2381,9 @@ The whitespace-only run skips the redundant global settings write because its ca
 It saves a report before browser shutdown and bounds that shutdown, terminating only its own launched browser process if the protocol close stalls.
 Cleanup remains bounded and restores raw settings only after confirmed page closure and completion of any earlier settings write;
 an unconfirmed write or restoration is reported as failure.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
