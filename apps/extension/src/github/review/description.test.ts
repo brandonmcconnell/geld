@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest';
-import { hiddenBlocks, outlineOf, shortenDescription } from './description';
+import { hiddenBlocks, outlineOf, railsOf, shortenDescription } from './description';
 
 function blocksOf(html: string): Element[] {
   const holder = document.createElement('div');
@@ -37,6 +37,24 @@ describe('hiddenBlocks', () => {
     const outline = outlineOf(blocksOf(`${h(2, 'A')}<p>a</p>${h(3, 'B')}<p>b</p>${h(2, 'C')}<p>c</p>`));
     expect([...hiddenBlocks(outline, (heading) => heading.hasSubheadings)]).toEqual([3, 5]);
     expect([...hiddenBlocks(outline, (heading) => heading.index !== 0)].sort()).toEqual([1, 2, 3]);
+  });
+});
+
+describe('railsOf', () => {
+  it('indents each block under its open sections and ends each rail at the section’s last visible block', () => {
+    // 0 h2 A, 1 p, 2 h3 B, 3 p, 4 h3 C, 5 p, 6 h2 D, 7 p
+    const outline = outlineOf(blocksOf(`${h(2, 'A')}<p>a</p>${h(3, 'B')}<p>b</p>${h(3, 'C')}<p>c</p>${h(2, 'D')}<p>d</p>`));
+    const isOpen = (heading: { readonly index: number }): boolean => heading.index !== 4 && heading.index !== 6;
+    const hidden = hiddenBlocks(outline, isOpen);
+    const rails = railsOf(8, outline, hidden, isOpen);
+    expect(rails.get(0)).toEqual({ depth: 0, rails: [{ level: 0, kind: 'own' }] });
+    expect(rails.get(2)).toEqual({ depth: 1, rails: [{ level: 0, kind: 'through' }, { level: 1, kind: 'own' }] });
+    expect(rails.get(3)).toEqual({ depth: 2, rails: [{ level: 0, kind: 'through' }, { level: 1, kind: 'end' }] });
+    // C is closed, so its heading is the last thing A shows.
+    expect(rails.get(4)).toEqual({ depth: 1, rails: [{ level: 0, kind: 'end' }] });
+    expect(rails.has(5)).toBe(false);
+    // A closed heading at the top level has nothing to draw.
+    expect(rails.has(6)).toBe(false);
   });
 });
 

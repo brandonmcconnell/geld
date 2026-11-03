@@ -16,6 +16,15 @@ const ATTR_KEY = 'data-geld-desc-key';
 const ATTR_CAP = 'data-geld-desc-cap';
 /** On the description body while its whole height passes the cap. */
 const ATTR_LONG = 'data-geld-desc-long';
+/** On the description body while it is shortened: scopes the slimmer headings. */
+const ATTR_ON = 'data-geld-desc';
+/** On a block indented under an open heading, or drawing a rail: its rails are in its inline custom properties. */
+const ATTR_DEPTH = 'data-geld-desc-depth';
+const RAIL_PROPERTIES = ['--geld-desc-depth', '--geld-desc-rails', '--geld-desc-rail-pos', '--geld-desc-rail-size'] as const;
+
+/** One level of indentation, and the chevron's centre within it. Mirrored in style.css (description outline). */
+const INDENT_PX = 24;
+const CHEVRON_CENTER_PX = 10;
 
 const TOGGLE_CLASS = 'geld-desc-toggle';
 const MORE_CLASS = 'geld-desc-more';
@@ -76,6 +85,48 @@ export function hiddenBlocks(outline: readonly OutlineHeading[], isOpen: (headin
     for (let index = heading.index + 1; index < heading.end; index++) hidden.add(index);
   }
   return hidden;
+}
+
+/**
+ * One vertical rail beside a block: for the open section at nesting `level`, passing on to the next block
+ * (`through`), stopping at this block's last line (`end`), or, on an open heading itself, starting at its
+ * chevron (`own`).
+ */
+export interface Rail {
+  readonly level: number;
+  readonly kind: 'through' | 'end' | 'own';
+}
+
+export interface BlockRails {
+  /** Open sections the block sits in, which is how far it is indented. */
+  readonly depth: number;
+  readonly rails: readonly Rail[];
+}
+
+/**
+ * The indentation and rails of every visible block: each open section draws a line from its heading's chevron
+ * down to the end of its last visible block, so nested sections read as a tree.
+ */
+export function railsOf(blockCount: number, outline: readonly OutlineHeading[], hidden: ReadonlySet<number>, isOpen: (heading: OutlineHeading) => boolean): Map<number, BlockRails> {
+  const lastVisible = new Map<number, number>();
+  for (const heading of outline) {
+    for (let index = heading.end - 1; index > heading.index; index--) {
+      if (!hidden.has(index)) {
+        lastVisible.set(heading.index, index);
+        break;
+      }
+    }
+  }
+  const result = new Map<number, BlockRails>();
+  for (let index = 0; index < blockCount; index++) {
+    if (hidden.has(index)) continue;
+    const enclosing = outline.filter((heading) => heading.index < index && index < heading.end);
+    const rails: Rail[] = enclosing.map((heading, level) => ({ level, kind: lastVisible.get(heading.index) === index ? 'end' : 'through' }));
+    const own = outline.find((heading) => heading.index === index);
+    if (own !== undefined && isOpen(own) && lastVisible.has(own.index)) rails.push({ level: enclosing.length, kind: 'own' });
+    if (enclosing.length > 0 || rails.length > 0) result.set(index, { depth: enclosing.length, rails });
+  }
+  return result;
 }
 
 /** What the reader changed on this page: headings opened or closed by hand, and whether the cut was lifted. */
@@ -164,6 +215,38 @@ function observe(body: HTMLElement): void {
   resizeObserver.observe(body);
 }
 
+function setProperty(element: HTMLElement, name: string, value: string | null): void {
+  if (value === null) {
+    if (element.style.getPropertyValue(name) !== '') element.style.removeProperty(name);
+  } else if (element.style.getPropertyValue(name) !== value) {
+    element.style.setProperty(name, value);
+  }
+}
+
+const RAIL_LINE = 'linear-gradient(var(--geld-desc-rail), var(--geld-desc-rail))';
+
+/** Indent a block under its open headings and draw its rails, as custom properties its `::before` paints. */
+function dressRails(block: HTMLElement, rails: BlockRails | null): void {
+  if (rails === null) {
+    setFlag(block, ATTR_DEPTH, null);
+    for (const name of RAIL_PROPERTIES) setProperty(block, name, null);
+    return;
+  }
+  setFlag(block, ATTR_DEPTH, String(rails.depth));
+  setProperty(block, '--geld-desc-depth', String(rails.depth));
+  const lines = rails.rails;
+  const x = (rail: Rail): string => `${rail.level * INDENT_PX + CHEVRON_CENTER_PX}px`;
+  setProperty(block, '--geld-desc-rails', lines.length === 0 ? null : lines.map(() => RAIL_LINE).join(', '));
+  setProperty(block, '--geld-desc-rail-pos', lines.length === 0 ? null : lines.map((rail) => `${x(rail)} ${rail.kind === 'own' ? 'var(--geld-desc-chevron-y)' : '0'}`).join(', '));
+  setProperty(
+    block,
+    '--geld-desc-rail-size',
+    lines.length === 0
+      ? null
+      : lines.map((rail) => (rail.kind === 'through' ? '1px 100%' : rail.kind === 'end' ? '1px calc(100% - var(--geld-desc-after))' : '1px calc(100% - var(--geld-desc-chevron-y))')).join(', '),
+  );
+}
+
 function applyTo(body: HTMLElement): void {
   const blocks = [...body.children].filter((block) => !block.hasAttribute(OWN_UI_ATTRIBUTE));
   const outline = outlineOf(blocks);
@@ -194,6 +277,11 @@ function applyTo(body: HTMLElement): void {
     const element = headingElementOf(block);
     element?.querySelector(`:scope > .${TOGGLE_CLASS}`)?.remove();
   });
+  const rails = railsOf(blocks.length, outline, hidden, (heading) => openNow.get(heading.index) ?? true);
+  blocks.forEach((block, index) => {
+    if (block instanceof HTMLElement) dressRails(block, rails.get(index) ?? null);
+  });
+  setFlag(body, ATTR_ON, '');
   setFlag(body, ATTR_CAP, state.capped ? '' : null);
   const more = moreButton(body);
   const label = state.capped ? 'Show full description' : 'Show less';
@@ -208,7 +296,10 @@ function clear(): void {
   if (observed !== null) resizeObserver?.unobserve(observed);
   observed = null;
   for (const element of document.querySelectorAll(`.${TOGGLE_CLASS}, .${MORE_CLASS}`)) element.remove();
-  for (const name of [ATTR_FOLD, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG]) {
+  for (const element of document.querySelectorAll(`[${ATTR_DEPTH}]`)) {
+    if (element instanceof HTMLElement) for (const name of RAIL_PROPERTIES) element.style.removeProperty(name);
+  }
+  for (const name of [ATTR_FOLD, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH]) {
     for (const element of document.querySelectorAll(`[${name}]`)) element.removeAttribute(name);
   }
 }
