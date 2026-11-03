@@ -399,15 +399,15 @@ test('the restack label guards both public jobs while preserving their original 
 
 const cooldownJob = workflow.slice(workflow.indexOf('      - name: Find prior provider cooldown evidence'), workflow.indexOf('      - name: Restore prior provider cooldown evidence'));
 const cooldownScript = cooldownJob.split('          script: |\n')[1].replace(/^ {12}/gm, '');
-async function discoverCooldown({ pages = [{ artifacts: [], total_count: 0 }], runs = {}, error } = {}) {
+async function discoverCooldown({ pages = [{ artifacts: [], total_count: 0 }], runs = {}, error, focus = 'gitlab-ui' } = {}) {
   const calls = [], outputs = {}, logs = [];
   const current = { id: 99999, workflow_id: 42, head_repository: { full_name: repository } };
   const github = { rest: { actions: {
     getWorkflowRun: async ({ run_id }) => { calls.push(['run', run_id]);return { data: run_id === current.id ? current : runs[run_id] }; },
-    listArtifactsForRepo: async args => { calls.push(['artifacts', args.page]);assert.equal(args.name, 'geld-installed-browser-e2e');assert.equal(args.per_page, 100);if (error) throw error;return { data: pages[args.page - 1] ?? pages.at(-1) }; },
+    listArtifactsForRepo: async args => { calls.push(['artifacts', args.page]);assert.equal(args.name, focus === 'provider-access-evidence' ? 'geld-provider-access' : 'geld-installed-browser-e2e');assert.equal(args.per_page, 100);if (error) throw error;return { data: pages[args.page - 1] ?? pages.at(-1) }; },
     listWorkflowRuns: () => assert.fail('Skipped workflow runs must not hide artifacts'),
   } } };
-  await new vm.Script(`(async () => {${cooldownScript}})()`).runInNewContext({ github, context: { repo: { owner: 'brandonmcconnell', repo: 'geld' }, runId: current.id }, core: { setOutput: (key, value) => { outputs[key] = value; }, info: message => logs.push(message) } });
+  await new vm.Script(`(async () => {${cooldownScript}})()`).runInNewContext({ github, process: { env: { GELD_BROWSER_FOCUS: focus } }, context: { repo: { owner: 'brandonmcconnell', repo: 'geld' }, runId: current.id }, core: { setOutput: (key, value) => { outputs[key] = value; }, info: message => logs.push(message) } });
   return { outputs, calls, logs };
 }
 const cooldownArtifact = (id = 123, runId = 5, created = '2026-11-01T10:00:00Z') => ({ id, name: 'geld-installed-browser-e2e', expired: false, created_at: created, workflow_run: { id: runId } });
@@ -514,7 +514,7 @@ test('provider-access builds and loads the extension but selects no public cases
     const step = job.slice(0, job.indexOf('run: ' + command)).split('      - ').at(-1);
     assert.match(step, /focus != 'provider-evidence'/);assert.doesNotMatch(step, /focus != 'provider-access'/);
   }
-  assert.match(job, /const artifactName = 'geld-installed-browser-e2e'/);
+  assert.match(job, /const artifactName = process.env.GELD_BROWSER_FOCUS === 'provider-access-evidence' \? 'geld-provider-access' : 'geld-installed-browser-e2e'/);
 });
 
 
@@ -525,4 +525,20 @@ test('installed permission verification uses a headed accessibility session with
   assert.match(workflow, /dbus-run-session -- xvfb-run -a --server-args='-screen 0 2000x1400x24' pnpm --filter @geld\/extension test:browser/);
   assert.match(harness, /headless: process\.env\.GELD_BROWSER_NATIVE_DIALOGS !== '1'/);
   assert.doesNotMatch(harness, /auto-accept|autoaccept|Browser\.grantPermissions|Browser\.setPermission/);
+});
+
+
+test('optional-provider evidence selects only its distinct artifact and cannot start a browser', async () => {
+  assert.deepEqual(select({ body: marker('provider-access-evidence'), from: marker('provider-access') }), { focus: 'provider-access-evidence', run: 'true', failures: [] });
+  const artifact = { ...cooldownArtifact(), name: 'geld-provider-access' };
+  const found = await discoverCooldown({ focus: 'provider-access-evidence', pages: [{ artifacts: [artifact], total_count: 1 }], runs: { 5: cooldownRun() } });
+  assert.equal(found.outputs['run-id'], '5');
+  const job = workflow.slice(workflow.indexOf('  installed-extension:'), workflow.indexOf('  bitbucket-static-source:'));
+  assert.match(job, /name: Export retained optional-provider access state\n\s+if: needs\.select-public-verification\.outputs\.focus == 'provider-access-evidence'\n\s+run: node scripts\/provider-access-evidence\.mjs/);
+  for (const title of ["Locate the runner's Chrome", 'Test the installed extension on public pages', 'Save browser evidence', 'Install native browser dialog accessibility']) {
+    const block = job.slice(job.indexOf('      - name: ' + title)).split('\n      - ')[0];assert.match(block, /focus != 'provider-access-evidence'/);
+  }
+  for (const command of ['pnpm install --frozen-lockfile', 'pnpm --filter @geld/extension build:chrome']) {
+    const before = job.slice(0, job.indexOf('run: ' + command));assert.match(before.slice(before.lastIndexOf('      - ')), /focus != 'provider-access-evidence'/);
+  }
 });
