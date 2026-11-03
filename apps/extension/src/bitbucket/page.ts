@@ -4,10 +4,10 @@ import type { ProviderCommitPage, ProviderPage, ProviderReviewPage } from '../pr
 export function describeBitbucketPage(url: URL): ProviderReviewPage | null {
   const repository = describeRepository(url);
   if (repository?.provider !== 'bitbucket' || repository.origin !== 'https://bitbucket.org') return null;
-  const match = /^\/[^/]+\/[^/]+\/pull-requests\/([1-9]\d*)(?:\/(diff|commits|activity))?\/?$/.exec(url.pathname);
+  const match = /^\/[^/]+\/[^/]+\/pull-requests\/([1-9]\d*)(?:\/(diff|commits|activity)|\/_\/(diff|overview))?\/?$/.exec(url.pathname);
   const number = match?.[1];
   if (number === undefined) return null;
-  const tab = match?.[2];
+  const tab = match?.[2] ?? match?.[3];
   const pageUrl = `${repository.origin}/${repository.path}/pull-requests/${number}`;
   const apiPath = repository.path.split('/').map(encodeURIComponent).join('/');
   return {
@@ -17,7 +17,7 @@ export function describeBitbucketPage(url: URL): ProviderReviewPage | null {
     url: pageUrl,
     diffPageUrl: `${pageUrl}/diff`,
     diffUrl: `https://api.bitbucket.org/2.0/repositories/${apiPath}/pullrequests/${number}/diff`,
-    kind: tab === 'diff' ? 'diff' : tab === undefined ? 'overview' : 'other',
+    kind: tab === 'diff' ? 'diff' : tab === undefined || tab === 'overview' ? 'overview' : 'other',
     headSha: null,
     version: 'current',
   };
