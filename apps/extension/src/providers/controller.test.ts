@@ -107,6 +107,31 @@ afterEach(() => {
 async function settle(): Promise<void> { await vi.advanceTimersByTimeAsync(120); }
 
 describe('provider controller behavior', () => {
+  it('withdraws native projections during a reload, preserves category/folder choices and retires only source-dependent work', async () => {
+    const { adapter, view, fetchDiff } = fixture('gitlab', FILES);
+    let pending = false;let unavailable = false;
+    const stopped = vi.fn();const update = vi.fn();const source = vi.fn(() => null);
+    const { controller } = start({ ...adapter, createNativeView: () => ({ update, suspended: () => pending, sourceUnavailable: () => unavailable, stop: stopped }),
+      readDiff: () => ({ ...view, readNewSourceFrame: source }) }, { ...DEFAULT_SETTINGS, testOutline: true });
+    await settle();controller.revealPath('src/first.test.ts');
+    const header = () => [...document.querySelectorAll<HTMLButtonElement>('.geld-provider-category-header')].find((button) => button.textContent?.startsWith('Tests'));
+    const folder = () => [...document.querySelectorAll<HTMLButtonElement>('.geld-provider-category-folder')].find((button) => button.querySelector('.geld-provider-category-folder-label')?.textContent === 'test');
+    folder()?.click();expect(folder()?.getAttribute('aria-expanded')).toBe('false');
+    const raw = controller.getTabState().all;const readCount = source.mock.calls.length;
+    pending = true;unavailable = true;controller.requestRefresh();await settle();
+    expect(document.querySelector('.geld-provider-categories')).toBeNull();expect(node('#hidden').hasAttribute('data-geld-provider-hidden')).toBe(false);
+    expect(controller.getTabState().all).toEqual(raw);expect(source).toHaveBeenCalledTimes(readCount);expect(fetchDiff).toHaveBeenCalledOnce();
+    pending = false;unavailable = false;controller.requestRefresh();await settle();
+    expect(header()?.getAttribute('aria-expanded')).toBe('true');expect(folder()?.getAttribute('aria-expanded')).toBe('false');
+    expect(document.querySelector('[data-geld-category-path="src/first.test.ts"] [aria-current="true"]')).not.toBeNull();
+    expect(node('#hidden').getAttribute('data-geld-provider-hidden')).toBe('open');expect(fetchDiff).toHaveBeenCalledOnce();
+    unavailable = true;controller.requestRefresh();await settle();
+    expect(header()?.getAttribute('aria-expanded')).toBe('true');expect(node('#hidden').getAttribute('data-geld-provider-hidden')).toBe('open');
+    const blockedReads = source.mock.calls.length;controller.clearDiffCache();await settle();expect(source).toHaveBeenCalledTimes(blockedReads);
+    controller.updateSettings({ ...DEFAULT_SETTINGS, enabled: false });await settle();expect(stopped).not.toHaveBeenCalled();
+    controller.stop();expect(stopped).toHaveBeenCalledOnce();
+  });
+
   it('does not read native source frames when both fold features are disabled', async () => {
     const { adapter, view, fetchDiff } = fixture('gitlab', FILES);
     const readNewSourceFrame = vi.fn(() => null);
