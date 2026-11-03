@@ -2188,6 +2188,13 @@ A captured registration-shaped source slice does not establish loader binding, r
 
 Optional module-only research on the explicit native-Bash and initial-On visits selects one already-issued script at the exact public CDN origin and app.<40lowerhex>.js path, retaining its actual URL and body SHA without relaxing frame, redirect, response, size, worker or cleanup guards.
 The default raw collector remains pinned to its original exact URL, and no eligible module response triggers a fetch, retry or change to native preference qualification.
+The separate literal `bitbucket-whitespace-source` workflow focus performs exactly one anonymous GET of the retained public app.6ea3303b1b2659fcb5ca5dc82e17933a815f4108.js CDN asset.
+It skips installed-browser execution entirely, has no provider API request or native preference action, and saves a separate source-research artifact that cannot replace browser cooldown evidence.
+Redirects, wrong MIME/final URL, empty/invalid bodies and declared or streamed bodies above6MiB are refused, with no retries or fallback endpoints.
+The bounded worker extracts only `fozrM` and `h43l2` function registrations, independently recording absent or ambiguous modules, source offsets and SHA256 hashes without executing fetched code.
+Each selected factory is limited to256KiB and written under a fixed filename, while the full app body is not saved.
+Static source capture does not establish native source authority, live preference state or feature acceptance.
+
 
 
 - **Owned shell comments conditionally use the native comment variable**: retained first-party token.comment CSS and historical native root measurements support --ds-comment-refreshed, with the existing native code-comments token as the exact fallback when that property is absent.
