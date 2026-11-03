@@ -35,8 +35,9 @@ export function NavMenu({ links, className }: { readonly links: readonly NavLink
 
 /**
  * Three bars bent like the site's cut corners: the top bar at its left end,
- * the bottom bar at its right, and the middle bar at both, all three the same
- * width. Hover flattens the bends part-way. Open straightens every bend: the
+ * the bottom bar at its right, and the middle bar at both. The top bar's flat
+ * ends, and the bottom bar's starts, right over the middle bar's bends. Hover
+ * flattens the bends part-way. Open straightens every bend: the
  * top and bottom bars become the two halves of the stroke from top left to
  * bottom right, and the middle bar the whole stroke from bottom left to top
  * right (`menu-glyph` in globals.css). Every state moves the same segments by
@@ -49,7 +50,7 @@ export function NavMenu({ links, className }: { readonly links: readonly NavLink
 function MenuGlyph() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="menu-glyph size-5">
-      <path className="menu-glyph__top" d="M6 6H22" />
+      <path className="menu-glyph__top" d="M6 6H19" />
       <path className="menu-glyph__top-bend" d="M6 6L2.293 9.707" />
       <circle className="menu-glyph__top" cx="6" cy="6" r="1" />
       <path className="menu-glyph__middle-bend-start" d="M5 12L2.293 14.707" />
@@ -57,7 +58,7 @@ function MenuGlyph() {
       <path className="menu-glyph__middle-bend-end" d="M19 12L21.707 9.293" />
       <circle className="menu-glyph__middle" cx="5" cy="12" r="1" />
       <circle className="menu-glyph__middle" cx="19" cy="12" r="1" />
-      <path className="menu-glyph__bottom" d="M2 18H18" />
+      <path className="menu-glyph__bottom" d="M5 18H18" />
       <path className="menu-glyph__bottom-bend" d="M18 18L21.707 14.293" />
       <circle className="menu-glyph__bottom" cx="18" cy="18" r="1" />
     </svg>
