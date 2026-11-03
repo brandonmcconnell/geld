@@ -1521,6 +1521,7 @@ async function gitLabBotBodyEvidence(page, item) {
       const body = await page.evaluate(commentBodyPresentationProbe, 'gitlab', anchor);
       const value = { ...body, ...compareCommentBodyPresentation(body) };
       progress[stage] = value;
+      if (stage === 'darkPreferenceMeasurement') progress.darkPreferenceProbe.measurement = value;
       if (stage === 'beforeCapture') {
         progress.beforeCaptureSamples.push(value);
         if (progress.beforeCaptureSamples.length > 4) progress.beforeCaptureSamples.shift();
@@ -1541,6 +1542,24 @@ async function gitLabBotBodyEvidence(page, item) {
     assertRich(progress.beforeCapture);
     progress.artifacts = await capture(page, 'gitlab-bot-trusted');
     assertRich(await read('afterCapture'));
+    const nativeColors = (body) => body.samples.map((pair) => [pair.category, pair.sourceOrder, pair.native.tag, pair.native.text, pair.native.textLength,
+      ...['color', 'backgroundColor', 'boxShadow', 'borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor'].map((key) => pair.native.style[key])]);
+    progress.darkPreferenceProbe = { mechanism: 'Body-only OS prefers-color-scheme emulation on the same mounted note. No theme-class override or additional source GET.', status: 'running', nativeThemeChanged: null, measurement: null };
+    try {
+      await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);await pause(300);
+      const dark = await pollStable(() => read('darkPreferenceMeasurement'), aligned, 'Required rich body formats settle after OS dark preference', 8000, (body) => JSON.stringify(body));
+      progress.darkPreferenceProbe.measurement = dark;assertRich(dark);
+      const changed = JSON.stringify(nativeColors(dark)) !== JSON.stringify(nativeColors(progress.beforeCapture));
+      progress.darkPreferenceProbe.nativeThemeChanged = changed;
+      progress.darkPreferenceProbe.status = changed ? 'native_scheme_observed' : 'native_scheme_unchanged';
+      if (changed) {
+        progress.darkPreferenceProbe.artifacts = await capture(page, 'gitlab-bot-body-os-dark');
+        progress.darkPreferenceProbe.afterCapture = await read('darkAfterCapture');assertRich(progress.darkPreferenceProbe.afterCapture);
+      }
+    } finally { await page.emulateMediaFeatures([]);await pause(300); }
+    progress.restoredAfterTheme = await pollStable(() => read('restoredAfterTheme'), aligned, 'Rich body samples settle after restoring OS preference', 8000, (body) => JSON.stringify(body));
+    assertRich(progress.restoredAfterTheme);
+    assert.deepEqual(nativeColors(progress.restoredAfterTheme), nativeColors(progress.beforeCapture), 'Restoring OS preference changed the original selected native body scheme');
     assert.deepEqual(sourceGets, [], 'Rich body comparison must reuse mounted notes without another API or review JSON GET');
     progress.status = 'passed';
     return progress;

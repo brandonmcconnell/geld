@@ -162,6 +162,28 @@ test('compares visible code/pre/list/table samples and catches their own inner b
   assert.ok(mismatch.some((item) => item.label.endsWith('.borderTopColor')));
 });
 
+test('compares actual inner table shadows instead of accepting matching text and background alone', () => {
+  const f = fixture('<table><thead><tr><th>Filename</th></tr></thead></table>');
+  f.native.querySelector('th').style.boxShadow = 'inset 0 -1px 0 rgb(91,92,93)';
+  const mismatch = compareCommentBodyPresentation(f.read()).mismatches;
+  assert.ok(mismatch.some((pair) => pair.label.includes('table cell') && pair.label.endsWith('.boxShadow')));
+  f.owned.querySelector('th').style.boxShadow = 'inset 0 -1px 0 rgb(91,92,93)';
+  assert.deepEqual(compareCommentBodyPresentation(f.read()).mismatches, []);
+});
+
+test('keeps closed native details content uncovered despite positive descendant rectangles', () => {
+  const f = fixture('<details><summary><h3>Sequence Diagram</h3></summary><pre><code>Native Mermaid source</code></pre></details>');
+  const closed = f.read();
+  assert.ok(closed.samples.some((pair) => pair.category === 'heading'));
+  assert.ok(!closed.samples.some((pair) => ['preformatted', 'block code'].includes(pair.category)));
+  assert.ok(closed.uncovered.some((label) => label.includes('block code') && label.includes('not presented')));
+  f.native.querySelector('details').open = true;f.owned.querySelector('details').open = true;
+  const open = f.read();
+  assert.ok(open.samples.some((pair) => pair.category === 'preformatted'));
+  assert.ok(open.samples.some((pair) => pair.category === 'block code'));
+  assert.deepEqual(compareCommentBodyPresentation(open).mismatches, []);
+});
+
 test('bounds scan count, per-kind sampling and report text without claiming absent tags beyond the scan', () => {
   const f = fixture(Array.from({ length: 130 }, (_, index) => `<p>Paragraph ${index}</p>`).join(''));
   const evidence = f.read();
@@ -201,7 +223,7 @@ test('compares the actual button label weight instead of accepting equal normal-
   assert.ok(compareCommentBodyPresentation(f.read()).mismatches.some((pair) => pair.label.includes('table header label') && pair.label.endsWith('.fontWeight') && pair.native === '700' && pair.owned === '400'));
 });
 
-function richBotFixture({ reveal = true, captureEffect = () => {}, beforeProbe = () => {} } = {}) {
+function richBotFixture({ reveal = true, captureEffect = () => {}, beforeProbe = () => {}, nativeDark = false, ownedDarkDrift = false } = {}) {
   const f = fixture(`<h3>Important Files Changed</h3><p>Update <code>insta360</code></p><ul><li>Published packages</li></ul><table><thead><tr>${sortableHeaders()}</tr></thead><tbody><tr><td>backend/pyproject.toml</td><td>Dependencies</td></tr></tbody></table><pre hidden><code>Closed Mermaid source</code></pre>`);
   inertHeaderLabels(f.owned);
   const review = 'https://gitlab.com/whitebox-aero/whitebox/-/merge_requests/272';
@@ -210,10 +232,16 @@ function richBotFixture({ reveal = true, captureEffect = () => {}, beforeProbe =
   f.native.id = anchor;f.native.hidden = true;
   document.querySelector('article').setAttribute('data-geld-source', anchor);
   document.querySelector('.geld-provider-review__byline a').href = `${review}#${anchor}`;
-  const listeners = new Map();const events = [];const item = {};let reads = 0;
+  const listeners = new Map();const events = [];const item = {};const media = [];let reads = 0;
   const page = {
     on: (event, fn) => listeners.set(event, fn), off: (event) => listeners.delete(event), url: () => review,
     evaluate: async (fn, ...args) => { if (fn === commentBodyPresentationProbe) beforeProbe({ fixture: f, read: ++reads });return fn(...args); },
+    emulateMediaFeatures: async (features) => {
+      media.push(features);
+      const dark = features[0]?.value === 'dark';
+      f.native.querySelector('.body-copy').style.color = dark && nativeDark ? 'rgb(240,241,242)' : '';
+      f.owned.style.color = dark && (nativeDark || ownedDarkDrift) ? 'rgb(240,241,242)' : '';
+    },
     evaluateHandle: async (fn, ...args) => {
       const link = fn(...args);
       return { asElement: () => link === null ? null : { evaluate: async (read) => { if (read.toString().includes('scrollIntoView')) return;return read(link); }, click: async () => { events.push('real-control-protocol');if (reveal) f.native.hidden = false; } }, dispose: async () => {} };
@@ -222,6 +250,7 @@ function richBotFixture({ reveal = true, captureEffect = () => {}, beforeProbe =
   const read = harnessFunction('gitLabBotBodyEvidence', 'async function verifyGitLabBot', {
     assert, GL_BOT: review, safeUrl: (value) => value, openReviewAncestors: async () => 0,
     errorText: (error) => error.message,
+    pause: async () => {},
     discardHandle: async (handle) => handle.dispose(), commentBodyPresentationProbe, compareCommentBodyPresentation,
     pollStable: async (read, accepts, label, ms, signature) => {
       assert.equal(ms, 8000);let previous;
@@ -234,7 +263,7 @@ function richBotFixture({ reveal = true, captureEffect = () => {}, beforeProbe =
     },
     capture: async () => { captureEffect({ fixture: f, listeners });return { screenshot: 'offline-layout-protocol-only.png' }; },
   });
-  return { fixture: f, listeners, events, item, run: () => read(page, item) };
+  return { fixture: f, listeners, events, item, media, run: () => read(page, item) };
 }
 
 test('rich bot case reveals the mounted original and positively requires actual format samples without source reads', async () => {
@@ -250,6 +279,30 @@ test('rich bot case reveals the mounted original and positively requires actual 
   assert.ok(result.beforeCapture.samples.some((pair) => pair.category === 'heading'));
   assert.ok(result.beforeCapture.samples.some((pair) => pair.native.tag === 'TH' && pair.owned.text === 'Filename'));
   assert.ok(result.beforeCapture.uncovered.some((label) => label.includes('preformatted') && label.includes('not presented')));
+  assert.equal(f.listeners.size, 0);
+  assert.equal(result.darkPreferenceProbe.nativeThemeChanged, false);
+  assert.equal(result.darkPreferenceProbe.status, 'native_scheme_unchanged');
+  assert.equal(f.media.length, 2);
+  assert.deepEqual(f.media[1], []);
+});
+
+test('rich body dark-preference evidence records only an actual native color change and restores it', async () => {
+  const f = richBotFixture({ nativeDark: true });
+  const result = await f.run();
+  assert.equal(result.darkPreferenceProbe.nativeThemeChanged, true);
+  assert.equal(result.darkPreferenceProbe.status, 'native_scheme_observed');
+  assert.deepEqual(result.darkPreferenceProbe.measurement.mismatches, []);
+  assert.equal(result.restoredAfterTheme.samples[0].native.style.color, result.beforeCapture.samples[0].native.style.color);
+  assert.deepEqual(f.media[1], []);
+  assert.deepEqual(result.sourceGets, []);
+});
+
+test('rich body dark-preference failure retains mismatched samples and still restores preference', async () => {
+  const f = richBotFixture({ ownedDarkDrift: true });
+  await assert.rejects(f.run(), /all required rich formats/);
+  assert.equal(f.item.richBody.status, 'failed');
+  assert.ok(f.item.richBody.darkPreferenceProbe.measurement.mismatches.some((pair) => pair.label.endsWith('.color')));
+  assert.deepEqual(f.media[1], []);
   assert.equal(f.listeners.size, 0);
 });
 
