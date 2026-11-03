@@ -2422,6 +2422,11 @@ An already-owned whitespace transition preserves its lease through that exact lo
 When Redux settles before React remounts the Diff region, only the same previously witnessed spinner can retain that pending lease, and no ready receipt is published until the original-panel region returns.
 The missing region cannot authorize initial acquisition or a ready receipt, and errors, duplicate regions, changed custody or a settled missing region still release the exact raw preference.
 
+Bitbucket's native static PR header keeps its original branch metadata inside ActionsWrapper, which switches to visibility:hidden while CompactHeader is shown after scrolling.
+Source-reference custody may read that original closed branch pair while CSS-hidden, but retains exact nodes, parents, text, route and source identities and never clicks those metadata controls.
+The actionable All changes control is scoped to the original unique native diff panel, so a compact-header copy outside that panel does not invalidate source preparation;
+panel replacement or an inner duplicate still does.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
