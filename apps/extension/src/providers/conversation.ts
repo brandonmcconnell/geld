@@ -3,6 +3,7 @@ import { repositoryKey, trustedReviewAccountFor } from '@geld/core';
 import { botById, buildProviderReviewItems, isOpenStatus, PROVIDER_BOT_CAPABILITIES, providerBotSupport } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput, ReviewItem } from '@geld/review';
 import { ProviderAiTriage } from './ai';
+import { ProviderPublishedReview } from './publication';
 import type { ProviderAiDependencies } from './ai';
 import { element } from './dom';
 import { renderProviderReviewPanel } from './review-panel';
@@ -22,6 +23,7 @@ function hiddenFlag(node: Element, name: string, hidden: boolean): void {
 
 export interface ProviderConversationServices {
   readonly saveTrustedBot?: (input: ProviderReviewInput, comment: ProviderReviewComment, botId: string) => Promise<void>;
+  readonly saveTrustedPublisher?: (input: ProviderReviewInput, comment: ProviderReviewComment) => Promise<void>;
   readonly aiDependencies?: Partial<ProviderAiDependencies>;
   readonly readReviewed?: (input: ProviderReviewInput) => Promise<Readonly<Record<string, string>>>;
   readonly saveReviewed?: (input: ProviderReviewInput, item: ReviewItem, fingerprint: string, reviewed: boolean) => Promise<void>;
@@ -79,6 +81,7 @@ export class ProviderConversation {
   private observedHead: string | null = null;
   private snapshotVersion = 0;
   private readonly ai: ProviderAiTriage;
+  private readonly publication: ProviderPublishedReview;
   private readonly compacted = new Map<HTMLElement, { readonly key: string; readonly anchors: readonly string[]; readonly control: HTMLElement; readonly button: HTMLButtonElement }>();
   private nativeFind: ProviderNativeFind | null = null;
   private nativeEntries: readonly ProviderNativeFindEntry[] = [];
@@ -94,6 +97,7 @@ export class ProviderConversation {
 
   constructor(private readonly adapter: ProviderAdapter, private readonly changed: () => void, private readonly services: ProviderConversationServices = {}) {
     this.ai = new ProviderAiTriage(() => this.changed(), services.aiDependencies);
+    this.publication = new ProviderPublishedReview(() => this.changed());
   }
 
   apply(page: ProviderReviewPage | null, settings: GeldSettings): void {
@@ -108,6 +112,7 @@ export class ProviderConversation {
       this.nextRefresh = 0;
       if (this.ai.state.key !== null) this.ai.reset();
       this.snapshot = null;
+      this.publication.reset();
       this.panel?.destroy(); this.panel = null;
       this.restoreCompact(); this.restoreDescription();
       this.resetReviewed();
@@ -141,12 +146,17 @@ export class ProviderConversation {
     }
     const snapshot = this.snapshot;
     if (host !== null && snapshot !== null) {
-      const input = providerReviewWithTrustedAccounts(snapshot.input, snapshot.comments, settings, snapshot.complete);
-      this.loadReviewed(input, snapshot.comments);
-      if (settings.aiEnabled) void this.ai.load(input, snapshot.comments, settings);
+      const native = providerReviewWithTrustedAccounts(snapshot.input, snapshot.comments, settings, snapshot.complete);
+      this.publication.load(native, snapshot.comments, snapshot.sourceCoverage, settings);
+      const publication = this.publication.result;
+      const input = publication?.input ?? native;
+      const comments = publication?.comments ?? snapshot.comments;
+      this.loadReviewed(input, comments);
+      if (settings.aiEnabled) void this.ai.load(input, comments, settings);
       else if (this.ai.state.key !== null) this.ai.reset();
       const repository = { provider: input.subject.provider, origin: input.subject.origin, path: input.subject.repository };
       const saveTrustedBot = this.services.saveTrustedBot;
+      const saveTrustedPublisher = this.services.saveTrustedPublisher;
       this.status?.remove(); this.status = null;
       const options = {
         updating: this.abort !== null,
@@ -163,15 +173,20 @@ export class ProviderConversation {
           }, 700);
           this.changed();
         },
-        comments: snapshot.comments, events: snapshot.events, complete: snapshot.complete,
-        unavailable: this.error === '' ? snapshot.unavailable : [...snapshot.unavailable, { area: 'Refresh', reason: this.error }],
+        comments, events: snapshot.events, complete: snapshot.complete,
+        ...(publication === null ? {} : { publication: {
+          result: publication,
+          repository,
+          ...(saveTrustedPublisher === undefined ? {} : { save: (comment: ProviderReviewComment): Promise<void> => saveTrustedPublisher(input, comment) }),
+        } }),
+        unavailable: [...snapshot.unavailable, ...(this.error === '' ? [] : [{ area: 'Refresh', reason: this.error }]), ...(this.publication.error === '' ? [] : [{ area: 'Published summary', reason: this.publication.error }])],
         approvalsRequired: snapshot.approvalsRequired, approvalsLeft: snapshot.approvalsLeft,
         ...(snapshot.requirements === undefined ? {} : { requirements: snapshot.requirements }),
-        transformItems: (items: Parameters<ProviderAiTriage['apply']>[0]) => this.ai.apply(items),
+        transformItems: (items: Parameters<ProviderAiTriage['apply']>[0]) => this.ai.apply(publication?.items ?? items),
         ai: {
           enabled: settings.aiEnabled,
           state: this.ai.state,
-          run: (): void => { void this.ai.run(input, snapshot.comments, settings); },
+          run: (): void => { void this.ai.run(input, comments, settings); },
           cancel: (): void => this.ai.cancel(),
         },
         suggestedFixes: settings.suggestedFixes,
@@ -180,7 +195,7 @@ export class ProviderConversation {
           ids: this.reviewed,
           pending: this.reviewedPending,
           ...(this.reviewedError === '' ? {} : { error: this.reviewedError }),
-          set: (item: ReviewItem, reviewed: boolean): void => { void this.setReviewed(input, snapshot.comments, item, reviewed); },
+          set: (item: ReviewItem, reviewed: boolean): void => { void this.setReviewed(input, comments, item, reviewed); },
         } }),
         ...(saveTrustedBot === undefined ? {} : { identifyReviewer: {
           repository,
@@ -472,6 +487,7 @@ export class ProviderConversation {
     this.actions?.remove(); this.actions = null;
     this.status?.remove(); this.status = null;
     this.snapshot = null;
+    this.publication.reset();
     this.key = '';
     this.nextRefresh = 0;
     this.error = '';

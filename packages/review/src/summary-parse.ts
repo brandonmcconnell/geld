@@ -47,14 +47,20 @@ export function hasPublishedSummaryPrefix(body: string): boolean {
   return marker === SUMMARY_MARKER && heading === `### ${SUMMARY_HEADING}`;
 }
 
-function publishedPayloadText(body: string): string | null {
+interface RawPublishedFrame {
+  readonly json: string;
+  readonly href: string;
+  readonly label: string;
+}
+
+function publishedFrame(body: string): RawPublishedFrame | null {
   const lines = body.split(/\r?\n/);
   if (!hasPublishedSummaryPrefix(body)) return null;
   // The renderer emits one final newline. An EOF without it is equivalent;
   // additional trailing content (including blank lines) is not its frame.
   if (lines.at(-1) === '') lines.pop();
   let fence: { readonly character: string; readonly length: number } | null = null;
-  let payload: string | null = null;
+  let payload: RawPublishedFrame | null = null;
   for (let index = 2; index < lines.length; index += 1) {
     const line = lines[index];
     if (line === undefined) continue;
@@ -79,10 +85,12 @@ function publishedPayloadText(body: string): string | null {
     if (href === undefined || label === undefined || carried === undefined || footer[3] !== howItWorksUrl() || !publishedLink(href, label)) return null;
     const json = payloadFromAttribute(decodeEntities(carried));
     if (json === null || line !== publishedSummaryFooter(json, href, label)) return null;
-    payload = json;
+    payload = { json, href, label };
   }
   return fence === null ? payload : null;
 }
+
+function publishedPayloadText(body: string): string | null { return publishedFrame(body)?.json ?? null; }
 
 function parsePayload(text: string): ParseResult<GeldPrMeta> {
   let parsed: unknown;
@@ -102,6 +110,14 @@ function parsePayload(text: string): ParseResult<GeldPrMeta> {
 export function parsePublishedSummaryBody(body: string): ParseResult<GeldPrMeta> {
   const text = publishedPayloadText(body);
   return text === null ? { ok: false, issues: ['$: No unambiguous published Geld footer.'] } : parsePayload(text);
+}
+
+/** The strict frame's validated link remains available for provider scope checks. */
+export function parsePublishedSummaryFrame(body: string): ParseResult<{ readonly meta: GeldPrMeta; readonly href: string; readonly label: string }> {
+  const frame = publishedFrame(body);
+  if (frame === null) return { ok: false, issues: ['$: No unambiguous published Geld footer.'] };
+  const meta = parsePayload(frame.json);
+  return meta.ok ? { ok: true, value: { meta: meta.value, href: frame.href, label: frame.label } } : meta;
 }
 
 /** The payload JSON from an attribute value read from the DOM (already decoded) or null when it is not a carrier. */

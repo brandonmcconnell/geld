@@ -65,6 +65,8 @@ describe('Bitbucket review normalization from documented API fixtures', () => {
     expect(snapshot.input.bots).toEqual([]);
     expect(buildProviderReviewItems(snapshot.input)[0]?.sources[0]?.bot).toBeUndefined();
     expect(snapshot.actions).toEqual([]);
+    expect(snapshot.sourceCoverage).toEqual({ comments: 'complete', threads: 'complete' });
+    expect(snapshot.input.threads[0]?.stateKnown).toBe(true);
     expect(snapshot.approvalsRequired).toBeNull();
     expect(snapshot.complete).toBe(false);
     expect(snapshot.input.complete).toBe(false);
@@ -150,6 +152,7 @@ describe('Bitbucket review normalization from documented API fixtures', () => {
     const snapshot = await fetchBitbucketReview(page, new AbortController().signal, client);
     expect(snapshot.input.threads).toEqual([]);
     expect(snapshot.unavailable.filter((item) => item.area === 'comments')).toHaveLength(2);
+    expect(snapshot.sourceCoverage).toEqual({ comments: 'partial', threads: 'partial' });
   });
 });
 
@@ -175,4 +178,86 @@ describe('Bitbucket source state and completeness', () => {
     expect(snapshot.input.closed).toBe(true);
     expect(snapshot.input.complete).toBe(false);
   });
+});
+
+
+describe('Bitbucket narrow source coverage', () => {
+  it('distinguishes unavailable comments from an authoritative empty collection', async () => {
+    const failed = setup({}, 'comments');
+    expect((await fetchBitbucketReview(failed.page, new AbortController().signal, failed.client)).sourceCoverage).toEqual({ comments: 'unavailable', threads: 'unavailable' });
+    const empty = setup({ comments: [] }, 'statuses');
+    const snapshot = await fetchBitbucketReview(empty.page, new AbortController().signal, empty.client);
+    expect(snapshot.sourceCoverage).toEqual({ comments: 'complete', threads: 'complete' });
+    expect(snapshot.complete).toBe(false);
+  });
+
+  it.each(['resolution', 'outdated'])('marks missing %s as unknown thread state while preserving comment coverage', async (missing) => {
+    const root = comment(10);
+    if (missing === 'resolution') delete root.resolution;
+    else root.inline = { path: 'src/a.ts', to: 5 };
+    const fixture = setup({ comments: [root] });
+    const snapshot = await fetchBitbucketReview(fixture.page, new AbortController().signal, fixture.client);
+    expect(snapshot.sourceCoverage).toEqual({ comments: 'complete', threads: 'partial' });
+    expect(snapshot.input.threads[0]?.stateKnown).toBe(false);
+    expect(snapshot.unavailable).toContainEqual(expect.objectContaining({ area: 'thread state' }));
+  });
+
+  it('does not mark malformed source links or missing parent pages complete', async () => {
+    for (const comments of [[{ ...comment(10), links: {} }], [comment(11, 999)]]) {
+      const fixture = setup({ comments });
+      const snapshot = await fetchBitbucketReview(fixture.page, new AbortController().signal, fixture.client);
+      expect(snapshot.sourceCoverage).toEqual({ comments: 'partial', threads: 'partial' });
+    }
+  });
+});
+
+it('matches a real CI adapter publication against API-normalized Bitbucket thread facts', async () => {
+  // Documented-shape protocol fixtures only; fake fetch records local requests.
+  // Explicit inline.outdated and resolution facts are required for publication.
+  const { readProviderCiConfig } = await import('../../../action/src/providers/config');
+  const { ProviderHttp } = await import('../../../action/src/providers/http');
+  const { BitbucketCiAdapter } = await import('../../../action/src/providers/bitbucket');
+  const { produceProviderSummary } = await import('../../../action/src/providers/summary');
+  const { buildProviderReviewItems, createNativePublication, parsePublishedSummaryBody, readProviderPublication } = await import('@geld/review');
+  const owner = '{70000000-0000-4000-8000-000000000007}';
+  const reviewer = { uuid: '{80000000-0000-4000-8000-000000000008}', nickname: 'reviewer', display_name: 'Reviewer' };
+  const sources = [{ ...comment(10), user: reviewer, inline: { path: 'src/a.ts', to: 5, from: null, outdated: false } }, { ...comment(11, 10), user: reviewer }];
+  let saved = '';
+  let commentReads = 0;
+  const config = readProviderCiConfig({ GELD_PROVIDER: 'bitbucket', GELD_REPOSITORY: 'acme/widgets', GELD_REVIEW_NUMBER: '42', GELD_TOKEN: 'local-protocol-fixture' });
+  const ciFetch: typeof fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname === '/2.0/user') return json({ uuid: owner });
+    if (url.pathname === ROOT) return json({ ...PR, participants: [] });
+    if (url.pathname === `${ROOT}/comments`) {
+      if (init?.method === 'POST' && typeof init.body === 'string') {
+        const body: unknown = JSON.parse(init.body);
+        if (typeof body !== 'object' || body === null || !('content' in body) || typeof body.content !== 'object' || body.content === null || !('raw' in body.content) || typeof body.content.raw !== 'string') throw new Error('Missing generated summary');
+        saved = body.content.raw;
+        return json({ id: 901 });
+      }
+      commentReads += 1;
+      return json({ values: sources });
+    }
+    return json({ values: [] });
+  };
+  expect(await produceProviderSummary(new BitbucketCiAdapter(new ProviderHttp(config, ciFetch)), DATE)).toBe('created');
+  expect(commentReads).toBe(1);
+  const publication = parsePublishedSummaryBody(saved);
+  if (!publication.ok) throw new Error('Invalid CI publication');
+  expect(publication.value.nativePublication?.items).toHaveLength(1);
+  const published = { ...comment(901), user: { uuid: owner, nickname: 'geld-ci', display_name: 'Geld CI' }, content: { raw: saved }, inline: null, resolution: undefined };
+  const fixture = setup({ comments: [...sources, published] }, 'statuses');
+  const snapshot = await fetchBitbucketReview(fixture.page, new AbortController().signal, fixture.client);
+  expect(snapshot.complete).toBe(false);
+  expect(snapshot.unavailable.filter((entry) => entry.area === 'comments')).toEqual([]);
+  expect(snapshot.sourceCoverage).toEqual({ comments: 'complete', threads: 'complete' });
+  expect(snapshot.input.threads[0]).toMatchObject({ id: '10', resolved: false, outdated: false, stateKnown: true });
+  expect(await createNativePublication(snapshot.input, buildProviderReviewItems(snapshot.input))).toEqual(publication.value.nativePublication);
+  const read = await readProviderPublication({ input: snapshot.input, comments: snapshot.comments, sourceCoverage: snapshot.sourceCoverage, trustedPublisherIds: [owner] });
+  expect(read.issues).toEqual([]);
+  expect(read.status).toBe('current');
+  expect(read.matchedItemIds.size).toBe(1);
+  expect(read.comments).toEqual([]);
+  expect(read.input.threads[0]?.comments).toHaveLength(2);
 });
