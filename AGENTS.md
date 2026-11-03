@@ -2131,3 +2131,9 @@ A captured registration-shaped source slice does not establish loader binding, r
 
 Optional module-only research on the explicit native-Bash and initial-On visits selects one already-issued script at the exact public CDN origin and app.<40lowerhex>.js path, retaining its actual URL and body SHA without relaxing frame, redirect, response, size, worker or cleanup guards.
 The default raw collector remains pinned to its original exact URL, and no eligible module response triggers a fetch, retry or change to native preference qualification.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
