@@ -247,7 +247,7 @@ export class ProviderController {
     this.restorePage();
     this.state = PROVIDER_IDLE_STATE;
     this.publish(this.state);
-    await this.source.clearCache();
+    await Promise.all([this.source.clearCache(), this.configs?.clearCache()]);
     this.requestRefresh();
   }
 
