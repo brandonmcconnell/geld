@@ -2430,3 +2430,9 @@ panel replacement or an inner duplicate still does.
 Bitbucket's visible Lines updated totals place the signed counts inside aria-hidden presentation spans because the native accessible summary describes them separately.
 The full-context acceptance reads only that original heading's signed numeric span pair while retaining real hidden, owned and interactive-node exclusions.
 Source-row and action qualification must not inherit this visual-counter exception.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
