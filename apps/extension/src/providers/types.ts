@@ -4,6 +4,7 @@ import type { ProviderReviewAuthorPresentation, ProviderReviewPanelEvent, Provid
 import type { ProviderConfigFetcher } from './repo-config';
 import type { ProviderReviewReference } from './references';
 import type { ProviderBotRequest } from './bot-request';
+import type { ProviderDiffSourceFacts, ProviderNativeSourceFrame } from './source-facts';
 
 export type ReviewProvider = 'gitlab' | 'bitbucket';
 
@@ -52,6 +53,7 @@ export interface ProviderDiffResult {
   readonly revision: string;
   readonly complete: boolean;
   readonly patches?: ReadonlyMap<string, string>;
+  readonly sourceFacts?: ProviderDiffSourceFacts;
 }
 
 export interface ProviderDiffEntry {
@@ -90,6 +92,7 @@ export interface ProviderTreeEntry {
 
 export interface ProviderDiffView {
   readonly kind: string;
+  readNewSourceFrame?(): ProviderNativeSourceFrame | null;
   readonly container: HTMLElement;
   /** Known normal-flow stream wrappers, flattened only after the complete source inventory is mounted. */
   readonly groupingWrappers?: readonly HTMLElement[];

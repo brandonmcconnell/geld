@@ -106,6 +106,19 @@ afterEach(() => {
 async function settle(): Promise<void> { await vi.advanceTimersByTimeAsync(120); }
 
 describe('provider controller behavior', () => {
+  it('does not read native source frames when both fold features are disabled', async () => {
+    const { adapter, view, fetchDiff } = fixture('gitlab', FILES);
+    const readNewSourceFrame = vi.fn(() => null);
+    const settings = { ...DEFAULT_SETTINGS, testOutline: false, hideCommentLines: false };
+    const { controller } = start({ ...adapter, readDiff: () => ({ ...view, readNewSourceFrame }) }, settings);
+    await settle();
+    expect(controller.getTabState().hasDiff).toBe(true);
+    expect(readNewSourceFrame).not.toHaveBeenCalled();
+    controller.updateSettings({ ...settings, testOutline: true });await settle();
+    expect(readNewSourceFrame).toHaveBeenCalled();
+    expect(fetchDiff).toHaveBeenCalledOnce();
+  });
+
   it.each(PROVIDERS)('opens an all-hidden %s subject by default while preserving zero essential counts and a manual collapse', async (provider) => {
     const files: readonly FileStats[] = [{ path: 'src/first.test.ts', additions: 30, deletions: 10 }];
     const { adapter, view } = fixture(provider, files);

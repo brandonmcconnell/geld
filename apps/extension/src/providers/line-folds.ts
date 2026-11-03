@@ -1,6 +1,7 @@
 import type { FileStats, GeldSettings, OutlineLine, TestFold } from '@geld/core';
 import { CATEGORY_IDS, createMatcher, describeRepository, formatCount, outlineTestFolds, providerRepositoryScope, testSyntaxesFrom } from '@geld/core';
 import type { ProviderDiffEntry, ProviderDiffLine, ProviderDiffView } from './types';
+import type { ProviderOutlineContext } from './source-facts';
 import './line-folds.css';
 
 export const PROVIDER_LINE_FOLDS_CHANGED = 'geld:provider-line-folds-changed';
@@ -322,7 +323,7 @@ function clearPainted(state: Painted): void {
   state.managed.clear();
 }
 
-export function applyProviderLineFolds(view: ProviderDiffView, files: readonly FileStats[], settings: GeldSettings): { hiddenAdditions: number; hiddenDeletions: number } {
+export function applyProviderLineFolds(view: ProviderDiffView, files: readonly FileStats[], settings: GeldSettings, context?: ProviderOutlineContext): { hiddenAdditions: number; hiddenDeletions: number } {
   if (!settings.enabled || (!settings.hideCommentLines && !settings.testOutline)) { clearProviderLineFolds(); return { hiddenAdditions: 0, hiddenDeletions: 0 }; }
   const facts = new Map(files.map((file) => [file.path, file]));
   const categories = Object.fromEntries(CATEGORY_IDS.map((id) => [id, id === 'tests']));
@@ -337,7 +338,7 @@ export function applyProviderLineFolds(view: ProviderDiffView, files: readonly F
     const file = facts.get(entry.path);
     if (file === undefined || entry.readLines === undefined || view.filteredPaths.has(entry.path)) continue;
     active.add(entry.root);
-    const visitKey = `${window.location.origin}${window.location.pathname}:${entry.path}`;
+    const visitKey = JSON.stringify([context?.subjectKey ?? `${window.location.origin}${window.location.pathname}`, entry.path]);
     let visit = visits.get(visitKey);
     if (visit === undefined) { visit = { opened: new Set(), shown: new Set(), linkedHash: '' }; visits.set(visitKey, visit); }
     let state = painted.get(entry.root);
@@ -348,7 +349,7 @@ export function applyProviderLineFolds(view: ProviderDiffView, files: readonly F
     }
     const reading = readLines(entry);
     const outline = matcher?.categorize(entry.path)?.id === 'tests';
-    const signature = JSON.stringify([reading.signature, outline, settings.testSyntaxes]);
+    const signature = JSON.stringify([reading.signature, outline, settings.testSyntaxes, context?.newSources.get(entry.root)?.key ?? null]);
     if (state.signature !== signature) {
       state.signature = signature;
       state.folds = outline ? outlineTestFolds(reading, syntaxes) : [];

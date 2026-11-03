@@ -2,6 +2,8 @@ import { parseUnifiedDiff } from '@geld/core';
 import type { FileStats } from '@geld/core';
 import type { ProviderDiffResult, ProviderReviewPage } from '../providers/types';
 import { record, selection, SHA } from './page';
+import { providerDiffSourceFacts, providerSourceId } from '../providers/source-facts';
+import type { ProviderGitLabTarget } from '../providers/source-facts';
 
 const MAX_BYTES = 20 * 1024 * 1024;
 
@@ -91,6 +93,7 @@ export async function fetchGitLabDiff(page: ProviderReviewPage, signal: AbortSig
   if (diffId !== null && diffId !== undefined) params.set('diff_id', diffId);
   let head: string;
   let base: string;
+  let targetFacts: ProviderGitLabTarget | null = null;
   if (commit !== null) {
     const selectedCommit = record(metadata.commit) ? metadata.commit : null;
     const parents = selectedCommit?.parent_ids;
@@ -108,6 +111,8 @@ export async function fetchGitLabDiff(page: ProviderReviewPage, signal: AbortSig
     if (typeof candidateHead !== 'string' || !SHA.test(candidateHead) || typeof candidateBase !== 'string' || !SHA.test(candidateBase) || (diffId !== undefined && diffId !== null && String(source?.id) !== diffId) || target === null) throw new Error('GitLab selected diff revisions are unavailable');
     head = candidateHead.toLowerCase();
     base = candidateBase.toLowerCase();
+    const targetId = providerSourceId(target.id);
+    if (targetId !== null && typeof target.head_sha === 'string' && SHA.test(target.head_sha) && typeof target.start_sha === 'string' && SHA.test(target.start_sha) && typeof target.is_merge_head === 'boolean') targetFacts = { id: targetId, headSha: target.head_sha.toLowerCase(), startSha: target.start_sha.toLowerCase(), mergeHead: target.is_merge_head };
   }
   if (page.headSha !== null && page.headSha !== head) throw new Error('GitLab changes advanced to another revision');
   // MR .diff ignores diff_id and start_sha, so compare the selected immutable refs instead.
@@ -133,5 +138,7 @@ export async function fetchGitLabDiff(page: ProviderReviewPage, signal: AbortSig
     const first = parseUnifiedDiff(patch)[0];
     if (first !== undefined) patches.set(first.path, patch);
   }
-  return { files, complete, revision: `${diffId ?? 'commit'}:${base}:${head}:${params.get('w') ?? '0'}`, patches };
+  const newPaths = Array.isArray(metadata.diff_files) ? metadata.diff_files.flatMap((file: unknown) => record(file) && typeof file.new_path === 'string' && file.deleted_file !== true && file.submodule !== true ? [{ path: file.new_path, newPath: file.new_path }] : []) : [];
+  const sourceFacts = providerDiffSourceFacts(page, { kind: 'gitlab-review', headSha: head.toLowerCase(), baseSha: base.toLowerCase(), diffId: diffId ?? null, commitId: commit?.toLowerCase() ?? null, projectPath: typeof metadata.project_path === 'string' ? metadata.project_path : null, target: targetFacts }, newPaths);
+  return { files, complete, revision: `${diffId ?? 'commit'}:${base}:${head}:${params.get('w') ?? '0'}`, patches, ...(sourceFacts === null ? {} : { sourceFacts }) };
 }

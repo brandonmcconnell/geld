@@ -1534,6 +1534,11 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Summary targets require the same unambiguous native account binding, verified provider format and canonical review source as verdict parsing, excluding threads, status notes, refusals, commands and acknowledgements.
   The presentation target never replaces a running verdict's request provenance or a settled finding or refusal's own source.
 - **Provider diff caching and throttling have their own boundaries.**
+  Whole-test source facts distinguish the selected acquisition head from the actual native rendered new-side tree, whose owner, full 40- or 64-character SHA and authoritative new path require a current original file witness.
+  GitLab selected source and selected merge heads can differ, and neither matching visible lines nor a complete source diff proves unseen merge-head extents.
+  Schema2 diff-cache records retain only validated acquisition metadata, while schema1 and oversized-provenance fallbacks remain counts-only without forcing new requests.
+  Unknown forks, missing Bitbucket source repositories and headless native PR comparisons supply no whole-file authority, and this metadata layer performs no raw-file loading or context expansion.
+  Matching data hooks inside authored notes, descriptions, forms or editable/inert scopes never establish native source ownership or a current comparison witness.
   Persistent diff cache storage uses 64 bounded slots of at most 64 KiB each and stores validated file statistics rather than raw source patches.
   Unknown-head cache entries are provisional until refreshed, and an exact revision's cached result must not leak into a different comparison or whitespace mode.
   Request priority schedules a real hover promptly but does not make a provisional cache exact, so strict header readers filter their own return value without deleting cached hover totals or refresh errors.

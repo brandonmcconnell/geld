@@ -1,3 +1,4 @@
+import { providerDiffSourceFacts } from './source-facts';
 import { ProviderDiffCache, PROVIDER_CACHE_EXACT_MS, PROVIDER_CACHE_FRESH_MS, PROVIDER_CACHE_LATEST_MS, PROVIDER_CACHE_MAX_BYTES, PROVIDER_CACHE_SLOTS, providerCacheSlot, providerDiffKey } from './diff-cache';
 import type { ProviderCacheStorage } from './diff-cache';
 import type { ProviderCommitPage, ProviderComparePage, ProviderDiffResult, ProviderReviewPage } from './types';
@@ -232,4 +233,66 @@ it('clears only the bounded provider slots and makes an exact cached result unav
   await cached.clear();
   expect(cached.get(page(), true)).toBeNull();
   expect(write.mock.calls.filter((call) => call[1] === null)).toHaveLength(PROVIDER_CACHE_SLOTS);
+});
+
+function withSourceFacts(): ProviderDiffResult {
+  const sourceFacts = providerDiffSourceFacts(page(), { kind: 'gitlab-review', headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40), diffId: '1', commitId: null, projectPath: page().repository.path, target: { id: '1', headSha: 'a'.repeat(40), startSha: 'b'.repeat(40), mergeHead: false } }, [{ path: 'src/a.ts', newPath: 'src/a.ts' }]);
+  if (sourceFacts === null) throw new Error('Expected source facts');
+  return { ...result(), sourceFacts };
+}
+
+it('round trips only same-snapshot schema2 facts and never persists source bodies', async () => {
+  const store = memory();const first = cache(store.backend);const acquired = withSourceFacts();
+  first.set(page(), acquired);await vi.advanceTimersByTimeAsync(0);
+  expect([...store.values.values()][0]).toMatchObject({ schema: 2, sourceFacts: acquired.sourceFacts });
+  expect(JSON.stringify([...store.values.values()])).not.toContain('private source');
+  const reloaded = cache(store.backend);await reloaded.load(page());
+  expect(reloaded.get(page())?.result.sourceFacts).toEqual(acquired.sourceFacts);
+  expect(reloaded.get(page())?.result.patches).toBeUndefined();
+});
+
+it('keeps legacy schema1 exact-head counts but ignores even an injected source proof', async () => {
+  const store = memory();const key = providerDiffKey(page());
+  store.values.set(providerCacheSlot(key), { schema: 1, key, storedAt: Date.now(), revision: result().revision, files: result().files, sourceFacts: withSourceFacts().sourceFacts });
+  const value = cache(store.backend);await value.load(page());
+  expect(value.get(page(), true)?.result.files).toEqual(result().files);
+  expect(value.get(page(), true)?.result.sourceFacts).toBeUndefined();
+});
+
+it('does not attach mismatched or malformed schema2 facts to otherwise valid counts', async () => {
+  const acquired = withSourceFacts();const facts = acquired.sourceFacts;
+  if (facts === undefined) throw new Error('Missing facts');
+  for (const sourceFacts of [
+    { ...facts, subject: { ...facts.subject, version: 'different comparison' } },
+    { ...facts, comparison: { ...facts.comparison, headSha: 'f'.repeat(41) } },
+    { ...facts, newPaths: [{ path: 'missing.test.ts', newPath: 'missing.test.ts' }] },
+  ]) {
+    const store = memory();const key = providerDiffKey(page());
+    store.values.set(providerCacheSlot(key), { schema: 2, key, storedAt: Date.now(), revision: acquired.revision, files: acquired.files, sourceFacts });
+    const value = cache(store.backend);await value.load(page());
+    expect(value.get(page(), true)?.result.files).toEqual(acquired.files);
+    expect(value.get(page(), true)?.result.sourceFacts).toBeUndefined();
+  }
+});
+
+it('drops old facts when a watched counts-only legacy snapshot replaces the record', async () => {
+  const store = memory();const value = cache(store.backend);value.set(page(), withSourceFacts());await vi.advanceTimersByTimeAsync(0);
+  expect(value.get(page())?.result.sourceFacts).toBeDefined();
+  const key = providerDiffKey(page());
+  await vi.advanceTimersByTimeAsync(1);
+  await store.backend.write(providerCacheSlot(key), { schema: 1, key, storedAt: Date.now(), revision: result().revision, files: result().files });
+  expect(value.get(page())?.result.sourceFacts).toBeUndefined();
+  expect(value.get(page())?.result.files).toEqual(result().files);
+});
+
+it('preserves count cache coverage when optional source facts exceed the existing slot budget', async () => {
+  const store = memory();const value = cache(store.backend);const original = withSourceFacts();
+  const facts = original.sourceFacts;if (facts === undefined) throw new Error('Missing facts');
+  const paths = Array.from({ length: 500 }, (_, index) => `spec/${'long'.repeat(8)}${index}.test.ts`);
+  const files = paths.map((path) => ({ path, additions: 0, deletions: 0 }));
+  value.set(page(), { ...original, files, sourceFacts: { ...facts, newPaths: paths.map((path) => ({ path, newPath: path })) } });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(value.get(page(), true)?.result.files).toHaveLength(500);
+  expect(value.get(page(), true)?.result.sourceFacts).toBeUndefined();
+  expect(JSON.stringify([...store.values.values()])).not.toContain('sourceFacts');
 });
