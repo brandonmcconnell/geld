@@ -2029,6 +2029,8 @@ The Finish Review component and localization evidence are source-only protocols 
 `pnpm --filter @geld/extension test:browser` runs the installed Chrome extension against public provider pages after `build:chrome`.
 Its literal gitlab-whitespace-viewed case is excluded from default, regression and all, observes only qualified original anonymous native preferences and keeps natural unauthenticated preference attempts distinct from server persistence or native Viewed writes.
 That case never captures HTML, AX, PNG, arbitrary field values or full bootstrap, and restores exact raw extension settings and local whitespace opt-out key presence after closing the provider page even when observation cleanup fails.
+Actual PR282 observed a qualified bound whitespace menu closed before restoration, so cleanup may reopen the same original native menu once through its trusted opener before restoring the checkbox, with no rebind or new baseline.
+The observed closed state does not identify its cause, and changed owners, actor, source or controls cancel restoration instead of retrying or adopting a replacement.
 The installed-browser workflow path filter excludes Action-only packaging, root package and scripts changes, so normal CI or local image validation may run without an installed artifact and imply neither browser failure nor browser acceptance.
 The `Installed browser tests` workflow uses a separate standard GitHub-hosted runner, read-only repository permissions and no provider credentials or publishing steps.
 Set `GELD_BROWSER_EXECUTABLE` to the Chrome executable and `GELD_BROWSER_ARTIFACTS` to the evidence directory when running it in an extension-enabled test environment.

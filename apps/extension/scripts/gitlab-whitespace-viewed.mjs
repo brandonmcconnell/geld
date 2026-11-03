@@ -132,7 +132,7 @@ export async function verifyGitLabWhitespace(page, { settings, observer, compari
   const read = () => page.evaluate(gitLabWhitespaceProbe, 'read', GITLAB_WHITESPACE);
   const current = async () => {
     await settings.current();const value = await read();const chosen = selection(value);
-    if (baseline) { check(isDeepStrictEqual(chosen, selection(baseline)), 'SELECTED_TARGET_CHANGED');check(value.url === baseline.url && value.initialShowWhitespace === baseline.initialShowWhitespace, 'NATIVE_ROUTE_OR_BOOTSTRAP_CHANGED'); }
+    if (baseline) { check(value.bound === true, 'ORIGINAL_OWNER_CHANGED');check(isDeepStrictEqual(chosen, selection(baseline)), 'SELECTED_TARGET_CHANGED');check(value.url === baseline.url && value.initialShowWhitespace === baseline.initialShowWhitespace, 'NATIVE_ROUTE_OR_BOOTSTRAP_CHANGED'); }
     return value;
   };
   const click = async (action) => {
@@ -146,9 +146,25 @@ export async function verifyGitLabWhitespace(page, { settings, observer, compari
     finally { await handle.dispose(); }
   };
   const transition = async (desired, phase) => {
-    observer.phase(phase);const before = await current();
+    observer.phase(phase);let before = await current();
     if (phase === 'toggle') check(before.checked === baseline.checked, 'NATIVE_PROPERTY_CHANGED_BEFORE_TOGGLE');
     if (before.checked === desired) return { status: 'property_already_matches', snapshot: before };
+    if (phase === 'restore' && before.open === false) {
+      check(p.restorationReopen === undefined, 'RESTORE_REOPEN_ALREADY_ATTEMPTED');
+      const previous = before;const start = before.events.length;
+      const reopen = { attempts: 1, action: 'original_native_opener', status: 'attempted', before: { qualified: before.qualified, bound: before.bound, open: before.open, checked: before.checked } };
+      p.restorationReopen = reopen;
+      try {
+        await click('opener');
+        const opened = await poll(async () => {
+          try { return { ok: true, value: await current() }; } catch (failure) { return { ok: false, code: code(failure) }; }
+        }, (result) => !result.ok || result.value.open && result.value.events.slice(start).some((event) => event.kind === 'opener' && event.type === 'click' && event.trusted === true), 'Same original Preferences menu reopens for restoration');
+        check(opened.ok, opened.code ?? 'RESTORE_REOPEN_UNQUALIFIED');
+        check(opened.value.checked === previous.checked && isDeepStrictEqual(opened.value.other, previous.other), 'RESTORE_REOPEN_CHANGED_PREFERENCES');
+        reopen.status = 'opened_original_menu';reopen.after = { qualified: opened.value.qualified, bound: opened.value.bound, open: opened.value.open, checked: opened.value.checked };
+        reopen.events = opened.value.events.slice(start).filter((event) => event.kind === 'opener');before = opened.value;
+      } catch (failure) { reopen.status = 'failed';reopen.failure = code(failure);throw failure; }
+    }
     const prior = before.events.length;
     if (phase === 'toggle') toggleAttempted = true;
     await click('toggle-target');

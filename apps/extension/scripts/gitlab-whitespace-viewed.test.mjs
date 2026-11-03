@@ -19,13 +19,16 @@ function evidence() {
     { kind: 'metadata', status: 'projected', projection: { projectPath: 'gitlab-org/gitlab', diffId: F.version, inventory: { state: 'observed', scanComplete: true, total: 3, uniqueNewPaths: 3, size: 3, realSize: 3, overflow: false, paths: F.paths.map((newPath) => ({ newPath, deleted: false, submodule: false })) } } }] };
 }
 async function protocol(options = {}) {
-  let live = state();let closed = false;let phase = 'baseline';let clicks = 0;let writes = 0;let readinessReads = 0;const order = [];const progress = {};const settingsProgress = {};
+  let live = state();let closed = false;let phase = 'baseline';let clicks = 0;let writes = 0;let readinessReads = 0;let binds = 0;const order = [];const progress = {};const settingsProgress = {};
   if (options.mountPending) live.files.forEach((file) => { file.mounted = false; });
   const original = { sync: { present: true, value: { enabled: false, keep: 'DO_NOT_RETAIN_SETTINGS_CANARY' } }, local: { present: false } };let storage = structuredClone(original);
   const settings = gitLabWhitespaceSettings({ progress: settingsProgress, read: async () => structuredClone(storage), write: async (value) => { writes++;storage = structuredClone(value);order.push(closed ? 'restore-after-close' : 'prepare'); } });
   await settings.prepare();
   const observer = { evidence: { modes: [], nonreads: [], overflow: false }, bind: (value) => assert.deepEqual(value, state().nativeStream),
-    phase: (value) => { phase = value;if (options.revertBeforeRestore && value === 'restore') live.checked = false; }, dispose: async () => { order.push('observer');if (options.observerFailure) throw Error('DO_NOT_RETAIN_OBSERVER_CANARY'); } };
+    phase: (value) => {
+      phase = value;if (options.revertBeforeRestore && value === 'restore') live.checked = false;
+      if (value === 'restore' && options.closedAfterToggle && options.driftBeforeReopen) { live.qualified = false;live.code = options.driftBeforeReopen === 'actor' ? 'ACTOR_UNQUALIFIED' : 'ORIGINAL_OWNER_CHANGED'; }
+    }, dispose: async () => { order.push('observer');if (options.observerFailure) throw Error('DO_NOT_RETAIN_OBSERVER_CANARY'); } };
   const comparisons = { checkpoint: async () => {}, dispose: async () => { order.push('comparisons');if (options.comparisonFailure) throw Error('DO_NOT_RETAIN_COMPARISON_CANARY'); } };
   const page = {
     isClosed: () => closed, close: async () => { order.push('close');if (options.closeFailure) throw Error('DO_NOT_RETAIN_CLOSE_CANARY');closed = true; },
@@ -41,15 +44,20 @@ async function protocol(options = {}) {
       }
       if (action === 'cleanup') { order.push('release');if (options.probeCleanupFailure) throw Error('DO_NOT_RETAIN_CLEANUP_CANARY');return { released: true }; }
       if (action === 'arm-opener') live.armed = true;
-      if (action === 'bind') live.bound = true;
+      if (action === 'bind') { live.bound = true;binds++; }
+      if (action === 'frame' && phase === 'toggle' && options.closedAfterToggle) live.open = false;
       if (options.unknown) return { qualified: false, code: 'MENU_SCHEMA_UNQUALIFIED' };
       return structuredClone(live);
     },
     evaluateHandle: async (fn, action) => {
       assert.equal(fn, probe);assert.ok(['opener', 'toggle-target'].includes(action));
-      return { asElement: () => ({ evaluate: async () => true, click: async () => {
+      return { asElement: () => action === 'toggle-target' && !live.open || action === 'opener' && live.open ? null : ({ evaluate: async () => true, click: async () => {
         assert.equal(live.files.every((file) => file.mounted), true, 'Native action preceded complete source mounting');
-        clicks++;if (action === 'opener') { live.open = true;live.events.push({ kind: 'opener', type: 'click', trusted: !options.untrustedOpener });return; }
+        clicks++;if (action === 'opener') {
+          live.open = !(phase === 'restore' && options.reopenStaysClosed);live.events.push({ kind: 'opener', type: 'click', trusted: !options.untrustedOpener });
+          if (phase === 'restore' && options.driftDuringReopen) { live.qualified = false;live.code = options.driftDuringReopen === 'actor' ? 'ACTOR_UNQUALIFIED' : 'ORIGINAL_OWNER_CHANGED'; }
+          return;
+        }
         const desired = !live.checked;live.checked = desired;
         live.events.push({ kind: 'whitespace', type: 'change', trusted: !options.untrusted, checked: desired });
         observer.evidence.nonreads.push({ method: 'PUT', resource: 'https://gitlab.com/api/v4/user/preferences', status: 401, phase, provenance: 'unattributed_browser_request' });
@@ -63,7 +71,7 @@ async function protocol(options = {}) {
     },
   };
   const poll = async (read, accepts) => { for (let i = 0; i < 4; i++) { const value = await read();if (accepts(value)) return value; }throw Object.assign(Error('Unit deadline'), { code: 'OBSERVATION_DEADLINE' }); };
-  return { page, progress, settingsProgress, observer, comparisons, order, original, storage: () => storage, clicks: () => clicks, writes: () => writes, readinessReads: () => readinessReads,
+  return { page, progress, settingsProgress, observer, comparisons, order, original, storage: () => storage, clicks: () => clicks, writes: () => writes, readinessReads: () => readinessReads, binds: () => binds,
     run: () => verifyGitLabWhitespace(page, { settings, observer, comparisons, acquisition: () => {
       if (options.noAcquisition) return {};
       const value = evidence();if (options.incompleteInventory) value.responses[1].projection.inventory.realSize = 4;return value;
@@ -75,6 +83,26 @@ test('actual orchestrator observes natural anonymous401 plus local transition, r
   assert.equal(f.clicks(), 3);assert.deepEqual(f.observer.evidence.nonreads.map((v) => v.status), [401, 401]);assert.equal(f.progress.nativeMode, 'native_frame_mode_response_observed');
   assert.deepEqual(f.storage(), f.original);assert.equal(f.settingsProgress.restoredAfterPageClose, true);assert.ok(f.order.indexOf('close') < f.order.indexOf('restore-after-close'));
   assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
+});
+test('same original closed menu is reopened once for restoration without rebinding or replacing the baseline', async () => {
+  const f = await protocol({ closedAfterToggle: true });assert.equal((await f.run()).status, 'discovery');
+  assert.equal(f.progress.afterToggle.open, false);assert.equal(f.progress.baseline.checked, false);assert.equal(f.progress.baseline.open, true);
+  assert.equal(f.progress.nativeRestored, true);assert.equal(f.progress.restoredStable.checked, false);assert.equal(f.clicks(), 4);assert.equal(f.binds(), 1);
+  assert.equal(f.progress.restorationReopen.attempts, 1);assert.equal(f.progress.restorationReopen.before.open, false);assert.equal(f.progress.restorationReopen.after.open, true);
+  assert.deepEqual(f.storage(), f.original);
+});
+for (const drift of ['owner', 'opener', 'actor']) test(`closed restoration refuses ${drift} drift before any reopening`, async () => {
+  const f = await protocol({ closedAfterToggle: true, driftBeforeReopen: drift });await assert.rejects(f.run(), AggregateError);
+  assert.equal(f.progress.afterToggle.open, false);assert.equal(f.clicks(), 2);assert.equal(f.binds(), 1);assert.equal(f.progress.restorationReopen, undefined);assert.equal(f.progress.nativeRestored, false);assert.deepEqual(f.storage(), f.original);
+});
+for (const drift of ['owner', 'opener', 'actor']) test(`one reopen attempt stops immediately on ${drift} drift without a checkbox action or retry`, async () => {
+  const f = await protocol({ closedAfterToggle: true, driftDuringReopen: drift });await assert.rejects(f.run(), AggregateError);
+  assert.equal(f.clicks(), 3);assert.equal(f.binds(), 1);assert.equal(f.progress.restorationReopen.attempts, 1);assert.equal(f.progress.restorationReopen.status, 'failed');assert.equal(f.progress.nativeRestored, false);assert.deepEqual(f.storage(), f.original);
+});
+test('a same-owner menu that does not reopen receives no second opener click and retains cleanup failure', async () => {
+  const f = await protocol({ closedAfterToggle: true, reopenStaysClosed: true, observerFailure: true });await assert.rejects(f.run(), AggregateError);
+  assert.equal(f.clicks(), 3);assert.equal(f.binds(), 1);assert.equal(f.progress.restorationReopen.status, 'failed');assert.equal(f.progress.restorationReopen.failure, 'OBSERVATION_DEADLINE');
+  assert.ok(f.progress.cleanup.codes.includes('OBSERVER_CLEANUP_FAILED'));assert.deepEqual(f.storage(), f.original);
 });
 test('qualified but still mounting source waits for the same pinned inventory before the first native action', async () => {
   const f = await protocol({ mountPending: true });assert.equal((await f.run()).status, 'discovery');assert.ok(f.readinessReads() >= 2);assert.equal(f.clicks(), 3);assert.equal(f.progress.nativeRestored, true);assert.deepEqual(f.storage(), f.original);
@@ -174,6 +202,19 @@ for (const shape of ['input', 'select', 'textarea', 'form', 'editable']) test(`u
 }));
 test('bound original native field replacement is rejected rather than adopted', async () => withDOM(async ({ checkbox }) => {
   assert.equal((await probe('bind', F)).bound, true);checkbox.replaceWith(checkbox.cloneNode(true));assert.deepEqual(await probe('read', F), { qualified: false, code: 'ORIGINAL_OWNER_CHANGED' });
+}));
+test('closed same-owner probe exposes only its original opener and retains the original binding', async () => withDOM(async ({ menu, checkbox }) => {
+  const opener = document.querySelector('button');assert.equal((await probe('bind', F)).bound, true);opener.setAttribute('aria-expanded', 'false');menu.hidden = true;
+  const closed = await probe('read', F);assert.equal(closed.qualified, true);assert.equal(closed.bound, true);assert.equal(closed.open, false);
+  assert.equal(await probe('opener', F), opener);assert.equal(await probe('toggle-target', F), null);assert.equal(checkbox.checked, false);
+  assert.deepEqual(await probe('bind', F), { qualified: false, code: 'BIND_UNQUALIFIED' });
+}));
+for (const drift of ['owner', 'opener', 'actor']) test(`actual closed-menu probe declines a changed ${drift} instead of exposing a replacement opener`, async () => withDOM(async ({ menu }) => {
+  assert.equal((await probe('bind', F)).bound, true);const opener = document.querySelector('button');opener.setAttribute('aria-expanded', 'false');menu.hidden = true;
+  if (drift === 'owner') { const owner = document.querySelector('.gl-new-dropdown');owner.replaceWith(owner.cloneNode(true)); }
+  if (drift === 'opener') opener.replaceWith(opener.cloneNode(true));
+  if (drift === 'actor') document.body.insertAdjacentHTML('afterbegin', '<div id="js-vue-mr-discussions" data-current-user-data=\'{"id":7}\'></div>');
+  const value = await probe('opener', F);assert.deepEqual(value, { qualified: false, code: drift === 'actor' ? 'ACTOR_UNQUALIFIED' : 'ORIGINAL_OWNER_CHANGED' });
 }));
 test('numeric native actor refuses before menu values or arbitrary authored content is returned', async () => withDOM(async () => {
   document.body.insertAdjacentHTML('afterbegin', '<div id="js-vue-mr-discussions" data-current-user-data=\'{"id":7,"secret":"DO_NOT_RETAIN"}\'></div>');
