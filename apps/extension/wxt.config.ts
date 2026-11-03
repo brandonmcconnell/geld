@@ -34,7 +34,7 @@ export default defineConfig({
     // Chrome shows this instead of the raw number; other browsers ignore it.
     ...(browser === 'chrome' || browser === 'edge' ? { version_name: buildNumber === '' ? baseVersion : `${baseVersion} (build ${buildNumber})` } : {}),
     description:
-      'Hide test files from GitHub diffs. Review what matters; the tests wait in a tidy section at the bottom.',
+      'Hide review noise on GitHub, GitLab and Bitbucket. Review what matters with shared categories and settings.',
     homepage_url: 'https://github.com/brandonmcconnell/geld',
     // Black mark on a white tile. Deliberately no 48/96: chrome://extensions
     // requests the smallest icon >= 48 and shows it in a 48 CSS px box, so an
@@ -56,7 +56,7 @@ export default defineConfig({
     // api.github.com serves the optional GitHub sign-in (gist sync) and the
     // signed pattern catalog (catalog/patterns.json via the contents API).
     web_accessible_resources:[{resources:['tracker-icons/*.svg'],matches:['https://*/*']}],
-    host_permissions: ['https://github.com/*', 'https://patch-diff.githubusercontent.com/*', 'https://api.github.com/*'],
+    host_permissions: ['https://github.com/*', 'https://patch-diff.githubusercontent.com/*', 'https://api.github.com/*', 'https://gitlab.com/*', 'https://bitbucket.org/*', 'https://api.bitbucket.org/*'],
     // GitHub Enterprise Server: the user grants specific hosts from the options page.
     ...(mv === 3
       ? { optional_host_permissions: ['https://*/*'] }
