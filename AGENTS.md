@@ -2031,6 +2031,14 @@ Native source-fragment span/highlight colors and installed owned pseudo rules ar
 Before selecting standalone native-On, root must independently verify and cite the actual prior PR NativeOn run, artifact and report hashes, successful restoration and observed costs in its admission note.
 The harness labels this prior-success requirement ROOT-MANUAL and unverified by the case, while machine-enforcing a fully free forty-request window, eight free before native Save and the existing global quota/cleanup guards.
 
+- **Initial native On acceptance must avoid learning global Settings first**: the literal `bitbucket-pipeline-initial-on` case disables master before creating its fresh anonymous page and performs native Pipeline selection, bounded context expansion and exact Off→SaveOn→fresh-On-read/Cancel while Geld is inactive.
+  Only after the original On form closes does it enable master once and check the same original native source, physical Text ranges, renderer-LF exclusion, selected-theme ADS tokens, real selection and unchanged counts.
+  The distinction from the legacy NativeOn case comes from audited controller/bridge initialization order and first-use progression, never a private preference getter or injected capability.
+  It disables master before restoring the exact native Off field vector, closes the page before restoring raw extension settings and does not claim new Off-observer or native Bash palette acceptance.
+  Unknown forms receive only bounded field-name/type diagnostics and no input, Save, unknown Cancel or generic outer DOM/AX capture.
+  This separate case requires a fully free40-request window and at least eight free immediately before each native Save, with no forecast for first-enable or restoration costs and no navigation from default, all or regression focus.
+  Prior successful NativeOn210 cost and exact restoration review is an external ROOT-MANUAL admission requirement, explicitly not verified by the first-use harness or by literal focus selection.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
