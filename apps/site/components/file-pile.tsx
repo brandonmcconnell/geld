@@ -207,6 +207,7 @@ export function FilePile() {
       const words = current.obstacles.slice(0, -1);
       const textLeft = Math.min(...words.map((r) => r.left));
       const textRight = Math.max(...words.map((r) => r.right));
+      const textTop = Math.max(0, Math.min(...words.map((r) => r.top)));
       const textBottom = Math.max(...words.map((r) => r.bottom));
       const columns = [
         { left: 0, right: textLeft - 8 },
@@ -214,16 +215,17 @@ export function FilePile() {
       ].filter((column) => column.right - column.left > 140);
       const columnWidth = columns.reduce((sum, column) => sum + column.right - column.left, 0);
       const useColumns = columnWidth > current.width * 0.25;
-      const freeArea = useColumns ? columnWidth * current.floor : current.width * Math.max(0, current.floor - textBottom);
+      // Without columns: the band above the words (files fall onto them) and the band below them, never inside.
+      const topBand = textTop;
+      const bottomBand = Math.max(0, current.floor - textBottom);
+      const freeArea = useColumns ? columnWidth * current.floor : current.width * (topBand + bottomBand);
       const average = sizes.reduce((sum, size) => sum + size.w * size.h, 0) / Math.max(1, sizes.length);
       const room = Math.max(8, Math.floor((freeArea * 0.34) / average));
-      const keep = new Set<number>();
-      files.forEach((file, index) => {
-        if (file.category === null) keep.add(index);
-      });
-      files.forEach((file, index) => {
-        if (file.category !== null && keep.size < room) keep.add(index);
-      });
+      // A real pull request's proportions: about a quarter of what lands is worth reviewing, the rest is noise.
+      const essentials = files.flatMap((file, index) => (file.category === null ? [index] : []));
+      const noise = files.flatMap((file, index) => (file.category === null ? [] : [index]));
+      const essentialCount = Math.min(essentials.length, Math.max(2, Math.round(room * 0.25)));
+      const keep = new Set<number>([...essentials.slice(0, essentialCount), ...noise.slice(0, Math.max(0, room - essentialCount))]);
       const order = [...keep];
       const random = seeded(17);
       bodies.current = files.map((_, index) => {
@@ -244,7 +246,8 @@ export function FilePile() {
             pick -= span;
           }
         } else if (!useColumns) {
-          y = textBottom - size.h - place * 6 - random() * 20;
+          const below = random() * (topBand + bottomBand) < bottomBand;
+          if (below) y = textBottom + size.h / 2 + 2 + random() * Math.max(0, bottomBand - size.h - 4) - place * 4;
         }
         return {
           x,
