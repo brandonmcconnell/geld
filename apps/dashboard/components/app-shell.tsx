@@ -16,6 +16,7 @@ import {
   Settings,
   Users,
   FolderGit2,
+  Lock,
   MoreHorizontal,
 } from './icons';
 import type { AppIcon } from './icons';
@@ -365,7 +366,7 @@ function AppSidebar() {
                                   isActive={pathname === repositoryPath(repo.ref)}
                                   aria-current={pathname === repositoryPath(repo.ref) ? 'page' : undefined}
                                 >
-                                  <FolderGit2 size={16} />
+                                  {repo.private ? <Lock size={16} /> : <FolderGit2 size={16} />}
                                   <span>{repo.ref.repo}</span>
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>

@@ -7,7 +7,7 @@ import { Popover } from '@base-ui/react/popover';
 import { parseDashboardPathname, repositoryPath } from '@geld/domain';
 import { useDashboard } from '@/lib/dashboard-context';
 import { useRepositoryOptions } from '@/lib/use-repository-options';
-import { Check, ChevronsUpDown, FolderGit2, Layers, Search, Settings, Sparkles } from './icons';
+import { Check, ChevronsUpDown, FolderGit2, Lock, Layers, Search, Settings, Sparkles } from './icons';
 import { settingsLinks } from './settings-navigation';
 import { OpenReview } from './open-review';
 import { SidebarTrigger, useSidebar } from './ui/sidebar';
@@ -130,7 +130,7 @@ function RepositoryPicker() {
                 <span>All repositories</span>
                 {!selected && <Check size={15} />}
               </button>
-              {repositories.map(({ ref }) => {
+              {repositories.map(({ ref, private: isPrivate }) => {
                 const active = !!selected && repositoryPath(selected) === repositoryPath(ref);
                 return (
                   <button
@@ -144,7 +144,7 @@ function RepositoryPicker() {
                       router.push(repositoryPath(ref));
                     }}
                   >
-                    <FolderGit2 size={16} />
+                    {isPrivate ? <Lock size={16} /> : <FolderGit2 size={16} />}
                     <span>
                       {ref.owner}/<strong>{ref.repo}</strong>
                       <small>{ref.host}</small>

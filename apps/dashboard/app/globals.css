@@ -2,6 +2,43 @@
 @import '../components/ui/sidebar.css';
 @source "../../../packages/ui/src";
 
+.app-icon {
+  display: inline-block;
+  flex-shrink: 0;
+  fill: currentColor;
+  vertical-align: -0.125em;
+  --icon-regular-display: block;
+  --icon-solid-display: none;
+}
+.app-icon > [data-icon-weight='regular'] {
+  display: var(--icon-regular-display);
+}
+.app-icon > [data-icon-weight='solid'] {
+  display: var(--icon-solid-display);
+}
+:where(
+  [aria-current]:not([aria-current='false']),
+  [aria-selected='true'],
+  [aria-pressed='true'],
+  button[aria-expanded='true'],
+  [role='button'][aria-expanded='true'],
+  [data-active='true'],
+  [data-active=''],
+  [data-selected='true'],
+  [data-selected=''],
+  [data-state='active'],
+  [data-state='checked'],
+  [data-checked]:not([data-checked='false'])
+) .app-icon,
+.app-icon[data-icon-active='true'] {
+  --icon-regular-display: none;
+  --icon-solid-display: block;
+}
+.app-icon[data-icon-active='false'] {
+  --icon-regular-display: block;
+  --icon-solid-display: none;
+}
+
 @theme inline {
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
@@ -720,6 +757,9 @@ kbd {
 .pull-row:hover {
   background: light-dark(#fafbfc, #ffffff02);
 }
+.pull-row[data-selected='true'] {
+  background: var(--muted);
+}
 .pull-row > input,
 .pull-row > svg {
   align-self: start;
@@ -871,7 +911,7 @@ input[type='radio'] {
   @apply rounded-none;
   color: var(--muted-foreground);
 }
-.empty-icon svg {
+.empty-icon > svg {
   width: 21px;
   height: 21px;
 }
@@ -2226,7 +2266,7 @@ textarea.field {
   font-size: 0.75rem;
   margin-bottom: 18px;
 }
-.guide-intro-icon svg {
+.guide-intro-icon > svg {
   width: 20px;
   height: 20px;
 }
