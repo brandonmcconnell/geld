@@ -6,7 +6,7 @@ import type { TabState } from '../lib/messages';
 import { ProviderController } from './controller';
 import { readBitbucketDiff } from '../bitbucket/diff';
 import { bitbucketAdapter } from '../bitbucket';
-import type { ProviderAdapter, ProviderDiffEntry, ProviderDiffResult, ProviderDiffView, ProviderReviewPage, ProviderCommitPage, ReviewProvider } from './types';
+import type { ProviderAdapter, ProviderDiffEntry, ProviderDiffResult, ProviderDiffView, ProviderDiffLine, ProviderReviewPage, ProviderCommitPage, ReviewProvider } from './types';
 
 vi.mock('wxt/utils/storage', () => ({ storage: {
   defineItem: () => ({ getValue: async () => ({}), setValue: async () => undefined, watch: () => () => undefined }),
@@ -736,4 +736,101 @@ it('resolves optional list-author identities with stats off while suppressing di
   expect(read).toHaveBeenCalledTimes(1);expect(root.hasAttribute('data-geld-provider-author-hidden')).toBe(true);expect(fetchDiff).not.toHaveBeenCalled();
   expect(document.querySelector('[data-geld-provider-author-note]')?.textContent).toContain('Albert Sundjaja');
   controller.updateSettings({ ...DEFAULT_SETTINGS, showListStats: false, hiddenAuthors: [] });await settle();expect(root.hasAttribute('data-geld-provider-author-hidden')).toBe(false);expect(read.mock.calls[0]?.[2].aborted).toBe(true);
+});
+
+describe('presentation-only settings preserve provider expansion choices', () => {
+  function category(title: string): HTMLButtonElement {
+    const button = [...document.querySelectorAll<HTMLButtonElement>('.geld-provider-category-header')].find((node) => node.textContent?.startsWith(title));
+    if (button === undefined) throw new Error(`Missing ${title} category`);
+    return button;
+  }
+  function folder(name: string): HTMLButtonElement {
+    const region = document.getElementById(category('Tests').getAttribute('aria-controls') ?? '');
+    const button = [...region?.querySelectorAll<HTMLButtonElement>('.geld-provider-category-folder') ?? []].find((node) => node.querySelector('.geld-provider-category-folder-label')?.textContent === name);
+    if (button === undefined) throw new Error(`Missing ${name} folder`);
+    return button;
+  }
+  function current(): string | null {
+    return document.querySelector('[data-geld-category-path] [aria-current="true"]')?.closest('[data-geld-category-path]')?.getAttribute('data-geld-category-path') ?? null;
+  }
+  function settings(outline: boolean): GeldSettings {
+    return { ...DEFAULT_SETTINGS, hideCommentLines: false, testOutline: outline, categories: { tests: true, generated: false }, categoryPatterns: { tests: [], generated: [] } };
+  }
+  function next(previous: GeldSettings, change: string): GeldSettings {
+    if (change === 'outline') return { ...previous, testOutline: !previous.testOutline };
+    if (change === 'clone') return structuredClone(previous);
+    return { ...previous, categories: { generated: false, tests: true }, categoryPatterns: { generated: [], tests: [] } };
+  }
+  function mountedSuites(root: HTMLElement): readonly ProviderDiffLine[] {
+    // Adapter-contract protocol rows. Real category tree/controller/fold implementations run below.
+    const body = document.createElement('tbody');const table = document.createElement('table');table.append(body);root.replaceChildren(table);
+    return ['first', 'second', 'third'].flatMap((title, suite) => [`it('${title}', () => {`, '  expect(value).toBe(true);', '});'].map((text, index) => {
+      const row = document.createElement('tr');const cell = document.createElement('td');cell.textContent = text;row.append(cell);body.append(row);
+      return { root: row, kind: 'added', oldLine: null, oldText: null, newLine: suite * 3 + index + 1, newText: text };
+    }));
+  }
+
+  for (const provider of PROVIDERS) for (const change of ['outline', 'clone', 'key order']) {
+    it(`keeps the real ${provider} category, current file, folders and source presented after ${change} writes`, async () => {
+      const { adapter, view, fetchDiff } = fixture(provider, FILES);
+      const original = node('#hidden');const parent = original.parentElement;const lines = mountedSuites(original);
+      const entries = view.entries.map((entry) => entry.root === original ? { ...entry, readLines: () => lines } : entry);
+      const initial = settings(change !== 'outline');
+      const { controller } = start({ ...adapter, readDiff: () => ({ ...view, entries }) }, initial);
+      await settle();controller.revealPath('src/first.test.ts');folder('test').click();
+      const header = category('Tests');const closedFolder = folder('test');const selectedFolder = folder('src');
+      expect(header.getAttribute('aria-expanded')).toBe('true');expect(closedFolder.getAttribute('aria-expanded')).toBe('false');expect(selectedFolder.getAttribute('aria-expanded')).toBe('true');
+      expect(current()).toBe('src/first.test.ts');expect(original.getAttribute('data-geld-provider-hidden')).toBe('open');
+      controller.updateSettings(next(initial, change));await settle();
+      expect(controller.getTabState().expanded).toBe(true);expect(category('Tests')).toBe(header);expect(header.getAttribute('aria-expanded')).toBe('true');expect(category('Essential').getAttribute('aria-expanded')).toBe('false');
+      expect(folder('test')).toBe(closedFolder);expect(closedFolder.getAttribute('aria-expanded')).toBe('false');expect(folder('src')).toBe(selectedFolder);expect(selectedFolder.getAttribute('aria-expanded')).toBe('true');expect(current()).toBe('src/first.test.ts');
+      expect(original.parentElement).toBe(parent);expect(original.id).toBe('hidden');expect(original.getAttribute('data-geld-provider-hidden')).toBe('open');expect(original.hidden).toBe(false);
+      expect(original.querySelectorAll('[data-geld-provider-fold-row^="test:"]')).toHaveLength(3);expect(fetchDiff).toHaveBeenCalledOnce();
+      if (change === 'outline') { controller.updateSettings(initial);await settle();expect(original.querySelectorAll('[data-geld-provider-fold-row^="test:"]')).toHaveLength(0);expect(controller.getTabState().expanded).toBe(true);expect(original.getAttribute('data-geld-provider-hidden')).toBe('open');expect(current()).toBe('src/first.test.ts');expect(folder('test').getAttribute('aria-expanded')).toBe('false'); }
+    });
+
+    it(`keeps explicit ${provider} inline ownership after ${change} writes`, async () => {
+      const { adapter, view, fetchDiff } = fixture(provider, FILES);const original = node('#hidden');let expanded = true;
+      const collapse = vi.fn(() => { expanded = false;return true; });
+      const entries = view.entries.map((entry) => entry.root === original ? { ...entry, isExpanded: () => expanded, expand: () => { expanded = true;return true; }, collapse } : entry);
+      const initial = { ...settings(change !== 'outline'), groupHidden: false };
+      const { controller } = start({ ...adapter, readDiff: () => ({ ...view, entries }) }, initial);
+      await settle();expect(expanded).toBe(false);controller.revealPath('src/first.test.ts');expect(expanded).toBe(true);expect(collapse).toHaveBeenCalledOnce();
+      controller.updateSettings(next(initial, change));await settle();
+      expect(expanded).toBe(true);expect(collapse).toHaveBeenCalledOnce();expect(original.getAttribute('data-geld-provider-inline')).toBe('');expect(controller.getTabState().expanded).toBe(false);expect(fetchDiff).toHaveBeenCalledOnce();
+    });
+  }
+
+  for (const provider of PROVIDERS) {
+    it(`still resets ${provider} explicit expansion for classification, layout, defaults and master changes`, async () => {
+      const { adapter, fetchDiff } = fixture(provider, FILES);const initial = settings(false);const { controller } = start(adapter, initial);
+      await settle();controller.revealPath('src/first.test.ts');expect(controller.getTabState().expanded).toBe(true);
+      const classified = { ...initial, categoryPatterns: { ...initial.categoryPatterns, tests: ['new-classification-pattern/**'] } };
+      controller.updateSettings(classified);await settle();expect(controller.getTabState().expanded).toBe(false);expect(node('#hidden').getAttribute('data-geld-provider-hidden')).toBe('closed');
+      controller.revealPath('src/first.test.ts');controller.updateSettings({ ...classified, groupHidden: false });await settle();expect(controller.getTabState().expanded).toBe(false);expect(node('#hidden').hasAttribute('data-geld-provider-inline')).toBe(true);
+      controller.updateSettings(classified);await settle();controller.toggleHidden();controller.toggleHidden();expect(controller.getTabState().expanded).toBe(false);
+      controller.updateSettings({ ...classified, expandedByDefault: true });await settle();expect(controller.getTabState().expanded).toBe(true);
+      controller.updateSettings(classified);await settle();expect(controller.getTabState().expanded).toBe(false);
+      controller.revealPath('src/first.test.ts');controller.updateSettings({ ...classified, enabled: false });await settle();expect(node('#hidden').hasAttribute('data-geld-provider-hidden')).toBe(false);
+      controller.updateSettings(classified);await settle();expect(controller.getTabState().expanded).toBe(false);expect(node('#hidden').getAttribute('data-geld-provider-hidden')).toBe('closed');expect(fetchDiff).toHaveBeenCalledOnce();
+    });
+  }
+
+  it.each(PROVIDERS)('still releases %s inline ownership on classification, defaults, layout and master changes', async (provider) => {
+    const { adapter, view, fetchDiff } = fixture(provider, FILES);const original = node('#hidden');let expanded = true;
+    const collapse = vi.fn(() => { expanded = false;return true; });
+    const entries = view.entries.map((entry) => entry.root === original ? { ...entry, isExpanded: () => expanded, expand: () => { expanded = true;return true; }, collapse } : entry);
+    const initial = { ...settings(false), groupHidden: false };
+    const { controller } = start({ ...adapter, readDiff: () => ({ ...view, entries }) }, initial);
+    await settle();controller.revealPath('src/first.test.ts');expect(expanded).toBe(true);
+    const classified = { ...initial, categoryPatterns: { ...initial.categoryPatterns, tests: ['another-pattern/**'] } };
+    controller.updateSettings(classified);await settle();expect(expanded).toBe(false);expect(collapse).toHaveBeenCalledTimes(2);
+    controller.revealPath('src/first.test.ts');controller.updateSettings({ ...classified, expandedByDefault: true });await settle();expect(expanded).toBe(true);
+    controller.updateSettings(classified);await settle();expect(expanded).toBe(false);
+    controller.revealPath('src/first.test.ts');controller.updateSettings({ ...classified, groupHidden: true });await settle();expect(original.getAttribute('data-geld-provider-hidden')).toBe('closed');
+    controller.updateSettings(classified);await settle();expect(expanded).toBe(false);
+    controller.revealPath('src/first.test.ts');controller.updateSettings({ ...classified, enabled: false });await settle();
+    controller.updateSettings(classified);await settle();expect(expanded).toBe(false);expect(fetchDiff).toHaveBeenCalledOnce();
+  });
+
 });
