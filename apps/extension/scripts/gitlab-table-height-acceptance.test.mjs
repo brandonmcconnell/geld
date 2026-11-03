@@ -99,7 +99,7 @@ test('readonly DOM projection detects a real ancestor clip and an elementFromPoi
     const native = document.getElementById('markdown-table-176-scroll');dimensions(native, { clientHeight: 490, scrollHeight: 800 });dimensions(native.querySelector('table'), { offsetHeight: 800 });
     let covered = false;document.elementFromPoint = (_x, y) => covered ? document.getElementById('overlay') : y < 400 ? button : lastCell;
     globalThis.__geldTableHeightProof = { note, noteParent: note.parentElement, nativeBody: note.querySelector('.note-body .note-text'), owned, ownedParent: owned.parentElement, target, table: ownTable, button, nativeControl: null, details: [], events: [], nativeEvents: [] };button.focus();
-    const before = tableHeightProbe('note_11');assert.doesNotThrow(() => assertTableHeightLastRow(before, before, 'markdown-table-176-scroll'));assert.doesNotThrow(() => assertTableHeightInput(before, before, 'markdown-table-176-scroll'));
+    const before = tableHeightProbe('note_11');assert.deepEqual(before.activeElement,{tag:'BUTTON',id:'owned-control',classes:[],classesTruncated:false,isConnected:true,insideCurrentButton:true,insideOwnedSource:true});assert.doesNotThrow(() => assertTableHeightLastRow(before, before, 'markdown-table-176-scroll'));assert.doesNotThrow(() => assertTableHeightInput(before, before, 'markdown-table-176-scroll'));
     clipper.style.overflowY = 'hidden';const clipped = tableHeightProbe('note_11');assert.equal(clipped.candidates[0].lastRow.bottom, 680);assert.equal(clipped.candidates[0].lastCellHit.clipped, true);assert.throws(() => assertTableHeightLastRow(clipped, before, 'markdown-table-176-scroll'));
     clipper.style.overflowY = 'visible';covered = true;const blocked = tableHeightProbe('note_11');assert.equal(blocked.candidates[0].button.hit.chain[0].id, 'overlay');assert.throws(() => assertTableHeightInput(blocked, before, 'markdown-table-176-scroll'));assert.throws(() => assertTableHeightLastRow(blocked, before, 'markdown-table-176-scroll'));
     covered = false;native.removeAttribute('style');native.className = 'gl-max-h-[70vh] gl-w-fit gl-max-w-full gl-overflow-x-auto gl-overflow-y-auto print:gl-max-h-none';native.setAttribute('data-print-scale-container', '');
@@ -127,4 +127,31 @@ test('hidden generated intent authorizes measured owned expansion without preten
 });
 test('native control replacement and an invented authority label fail before a trusted height input', () => {
   for (const change of [(row) => { row.sameNativeControl = false; }, (row) => { row.ownedAuthority = 'hidden-native-generated-control'; }, (row) => { row.ownedAuthority = null; }]) { const value = snapshot();change(value.candidates[0]);assert.throws(() => assertTableHeightInput(value, snapshot(), 'markdown-table-176-scroll')); }
+});
+
+test('post-capture focus failure retains the exact failed sample and still restores/disposes diagnostics',async()=>{
+ const page=new EventEmitter();let expanded=false,captured=false;const events=[];const proof={};
+ const read=()=>{
+  const value=snapshot(expanded);value.ownedBody='<div>unchanged owned body</div>';value.events=structuredClone(events);value.activeElement={tag:'BODY',id:'',classes:[],isConnected:true,insideCurrentButton:false,insideOwnedSource:false};
+  const row=value.candidates[0];row.button.id='owned-toggle';row.button.focused=!captured;Object.assign(row,{lastRowPresented:true,lastCellPresented:true,lastRow:{top:200,bottom:240},scrollClip:{top:100,bottom:650},lastCellHit:{clipped:false,unobscured:true,clips:[]}});return value;
+ };
+ page.evaluate=async(fn)=>{
+  if(fn===tableHeightProbe)return read();const source=String(fn);
+  if(source.includes("getAttribute('aria-expanded')"))return expanded;
+  if(source.includes('details.length'))return 0;
+  if(source.includes('delete globalThis.__geldTableHeightProof'))return true;
+ };
+ page.mouse={click:async()=>{expanded=!expanded;events.push({type:'click',trusted:true});}};
+ page.keyboard={press:async()=>{expanded=!expanded;events.push({type:'click',trusted:true});}};
+ page.$=async()=>({evaluate:async()=>{},dispose:async()=>{}});
+ await assert.rejects(verifyGitLabTableHeights(page,proof,{anchor:'note_11',head:'a'.repeat(40),poll:async(fn,accepts)=>{const value=await fn();assert.ok(accepts(value));return value;},capture:async()=>{captured=true;return{png:'synthetic-only'};}}),/Actual owned table control lost focus/);
+ const result=proof.tableHeight;assert.equal(result.status,'failed');assert.equal(result.actions.length,4);assert.equal(result.afterCapture.candidates[0].button.focused,false);assert.equal(result.afterCapture.activeElement.tag,'BODY');assert.equal(result.restored,true);assert.equal(result.listenerDisposed,true);assert.equal(page.listenerCount('request'),0);
+});
+test('post-capture boolean failures identify the exact ownership/focus/cap requirement',()=>{
+ for(const [change,message]of [
+  [value=>{value.sameSource=false;},/native table note\/body ownership/],
+  [value=>{value.sameOwned=false;},/owned table note\/body ownership/],
+  [value=>{value.candidates[0].button.focused=false;},/control lost focus/],
+  [value=>{value.candidates[0].owned.className='';},/height-cap class/],
+ ]){const value=snapshot();change(value);assert.throws(()=>assertTableHeightAction(value,snapshot(),'markdown-table-176-scroll',false),message);}
 });

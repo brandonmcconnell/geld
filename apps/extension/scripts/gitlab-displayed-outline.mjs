@@ -26,7 +26,7 @@ export function gitLabDisplayedOutlineProbe(action = 'read', target = null) {
       nodes.push({ tag: node.tagName.toLowerCase(), id: safeAttribute(node, 'id'), classes: classes.filter((name) => /^[a-zA-Z0-9_!@:/.-]{1,96}$/.test(name)).slice(0, 16), classesTruncated: classes.length > 16,
         testid: safeAttribute(node, 'data-testid'), qa: safeAttribute(node, 'data-qa'), role: safeAttribute(node, 'role'),
         owned: node.hasAttribute('data-geld-ui'), ownedAncestor: node.closest('[data-geld-ui]') !== null, isButton: node === button, containsButton: node.contains(button),
-        style: Object.fromEntries(['position', 'zIndex', 'pointerEvents', 'display', 'visibility', 'overflowX', 'overflowY', 'clipPath', 'contain', 'transform', 'scrollMarginTop', 'scrollPaddingTop'].map((key) => [key, typeof style[key] === 'string' ? style[key].slice(0, 256) : null])),
+        style: Object.fromEntries(['position', 'zIndex', 'pointerEvents', 'display', 'visibility', 'overflowX', 'overflowY', 'clipPath', 'contain', 'contentVisibility', 'containIntrinsicSize', 'transform', 'scrollMarginTop', 'scrollPaddingTop'].map((key) => [key, typeof style[key] === 'string' ? style[key].slice(0, 256) : null])),
         bounds: bounds(node.getBoundingClientRect()), scroll: Object.fromEntries(['scrollTop', 'scrollLeft', 'scrollHeight', 'scrollWidth', 'clientHeight', 'clientWidth'].map((key) => [key, metric(node[key])])) });
       node = node.parentElement;
     }
@@ -90,13 +90,17 @@ export function gitLabDisplayedOutlineProbe(action = 'read', target = null) {
     const nativeSpan = body?.matches('tbody.rd-text-view-content') && table?.matches('table.rd-text-view-root') && cell?.matches('td.geld-provider-line-fold__cell[data-geld-ui]')
       ? { sourceBound: source !== undefined && source.parent === body && root.contains(table) && native(body) && native(table) && hunks.length === 1,
         table: { bounds: bounds(table.getBoundingClientRect()), display: getComputedStyle(table).display }, body: { bounds: bounds(body.getBoundingClientRect()), display: getComputedStyle(body).display },
-        row: { bounds: bounds(row.getBoundingClientRect()), display: getComputedStyle(row).display }, cell: { bounds: bounds(cell.getBoundingClientRect()), display: getComputedStyle(cell).display },
+        row: { bounds: bounds(row.getBoundingClientRect()), display: getComputedStyle(row).display },
+        cell: { bounds: bounds(cell.getBoundingClientRect()), display: getComputedStyle(cell).display,
+          clientLeft: metric(cell.clientLeft), clientWidth: metric(cell.clientWidth),
+          style: Object.fromEntries(['borderLeftWidth', 'borderRightWidth', 'paddingLeft', 'paddingRight', 'boxSizing'].map((key) => [key, getComputedStyle(cell)[key]])) },
         hunk: hunks.length === 1 ? { bounds: bounds(hunks[0].getBoundingClientRect()), display: getComputedStyle(hunks[0]).display } : null } : null;
     const rect = button?.getBoundingClientRect();const hit = rect ? document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) : null;
     const control = rect ? { bounds: bounds(rect), nativeSpan, point: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }, inViewport: rect.width > 0 && rect.height > 0 && rect.left >= 0 && rect.top >= 0 && rect.right <= (view?.innerWidth ?? 0) && rect.bottom <= (view?.innerHeight ?? 0), unobscured: hit !== null && button.contains(hit), hitChain: inspectChain(hit, button), buttonChain: inspectChain(button, button) } : null;
     return { row, button, source, control, text: row.textContent, kind: row.dataset.kind, status: row.dataset.status, label: button?.getAttribute('aria-label') ?? '', title: row.querySelector('.geld-provider-line-fold__title')?.textContent ?? '', expanded: button?.getAttribute('aria-expanded') ?? null };
   });
   if (action === 'fold-button') return same ? folds.find((fold) => Number(fold.source?.next) === target)?.button ?? null : null;
+  if (action === 'fold-button-current') return same && folds.some((fold) => fold.button === target && fold.source?.next === '103' && fold.row.parentElement === fold.source.parent);
   if (action === 'arm') { if (!same || !(target instanceof HTMLButtonElement) || !headers.includes(target) && !folds.some((fold) => fold.button === target)) return false;store.expected = target;store.lastClick = null;return true; }
   if (action === 'click-result') return store.lastClick ?? null;
   const rectangle = root.getBoundingClientRect();
@@ -138,13 +142,46 @@ export function assertDisplayedOutlineControl(sample) {
     const span = fold.control?.nativeSpan;
     assert.equal(span?.sourceBound, true, 'Outline width must bind to the original native Rapid body and hunk.');
     assert.equal(span.table.display, 'block');assert.equal(span.body.display, 'block');assert.equal(span.row.display, 'block');assert.equal(span.cell.display, 'block');
-    for (const rect of [span.body.bounds, span.row.bounds, span.cell.bounds, span.hunk?.bounds, fold.control?.bounds]) {
+    for (const rect of [span.body.bounds, span.row.bounds, span.cell.bounds, span.hunk?.bounds]) {
       for (const key of ['left', 'right', 'width']) assert.ok(Number.isFinite(rect?.[key]), 'Outline width geometry must be finite.');
       assert.ok(rect.width > 0, 'Outline width must be positive.');
       assert.ok(Math.abs(rect.right - rect.left - rect.width) <= 1, 'Outline width geometry must be internally consistent.');
-      for (const key of ['left', 'right', 'width']) assert.ok(Math.abs(rect[key] - span.body.bounds[key]) <= 1, 'Outline row and button must fill the actual native Rapid hunk/body span.');
+      for (const key of ['left', 'right', 'width']) assert.ok(Math.abs(rect[key] - span.body.bounds[key]) <= 1, 'Outline row and cell border boxes must fill the actual native Rapid hunk/body span.');
     }
+    const px = (value) => typeof value === 'string' && /^\d+(?:\.\d+)?px$/.test(value) ? Number.parseFloat(value) : NaN;
+    const leftBorder = px(span.cell.style?.borderLeftWidth), rightBorder = px(span.cell.style?.borderRightWidth);
+    const leftPadding = px(span.cell.style?.paddingLeft), rightPadding = px(span.cell.style?.paddingRight);
+    for (const value of [span.cell.clientLeft, span.cell.clientWidth, leftBorder, rightBorder, leftPadding, rightPadding]) assert.ok(Number.isFinite(value) && value >= 0, 'Actual cell client/border/padding metrics must be finite and nonnegative.');
+    assert.ok(Math.abs(span.cell.clientLeft - leftBorder) <= 1, 'Cell client edge must agree with its actual border.');
+    assert.ok(Math.abs(span.cell.bounds.width - span.cell.clientWidth - leftBorder - rightBorder) <= 1, 'Cell border box must agree with its measured client width and borders.');
+    const content = { left: span.cell.bounds.left + span.cell.clientLeft + leftPadding, width: span.cell.clientWidth - leftPadding - rightPadding };
+    content.right = content.left + content.width;assert.ok(content.width > 0);
+    const button = fold.control.bounds;
+    for (const key of ['left', 'right', 'width']) assert.ok(Number.isFinite(button?.[key]) && Math.abs(button[key] - content[key]) <= 1, 'Outline button must fill the actual cell content box within one CSS pixel.');
+    assert.ok(Math.abs(button.right - button.left - button.width) <= 1, 'Button geometry must be internally consistent.');
   }
+}
+
+/** Require consecutive real-frame measurements; identity/count/settings guards never retry. */
+export async function waitDisplayedOutlineControl(page, { read, validate, progress }) {
+  progress.samples = [];let previous;let stable = 0;
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    await page.evaluate(() => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(Error('Actual animation frames did not arrive for outline readiness.')), 1000);
+      requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(timer);resolve(); }));
+    }));
+    const sample = await read();progress.latest = sample;
+    // These checks fail immediately, even if a later sample would recover.
+    await validate(sample);
+    let ready = true;let reason = null;
+    try { assertDisplayedOutlineControl(sample); } catch (error) { ready = false;reason = error.message; }
+    const signature = JSON.stringify(sample.folds.map((fold) => ({ sourceLine: fold.sourceLine, expanded: fold.expanded, control: { bounds: fold.control?.bounds, nativeSpan: fold.control?.nativeSpan, inViewport: fold.control?.inViewport, unobscured: fold.control?.unobscured } })));
+    stable = ready ? signature === previous ? stable + 1 : 1 : 0;previous = signature;
+    progress.samples.push({ attempt, ready, reason, stable, sample });if (progress.samples.length > 8) progress.samples.shift();
+    if (stable >= 2) { progress.attempts = attempt + 1;return sample; }
+  }
+  assertDisplayedOutlineControl(progress.latest);
+  throw Error('Actual first outline native geometry did not settle across consecutive frame measurements.');
 }
 
 export async function verifyGitLabDisplayedOutline(page, { progress, poll, pollStable, capture, readSettings, writeSettings, readState, safeUrl, extensionId }) {
@@ -178,11 +215,25 @@ export async function verifyGitLabDisplayedOutline(page, { progress, poll, pollS
     progress.outlined = await pollStable(read, (sample) => { try { assertDisplayedOutlineRows(sample);return true; } catch { return false; } }, 'Actual displayed native outlines remain stable', 8000, (sample) => JSON.stringify(sample.folds));
     assertDisplayedOutlineRows(progress.outlined);progress.outlinedCounts = await readState();assertDisplayedOutlineCounts(progress.beforeCounts, progress.outlinedCounts);
     const visibleHandle = await page.evaluateHandle(gitLabDisplayedOutlineProbe, 'fold-button', 103);
-    try { const button = visibleHandle.asElement();assert.ok(button !== null);await button.scrollIntoView(); } finally { await visibleHandle.dispose(); }
-    progress.beforeCapture = await read();assertDisplayedOutlineRows(progress.beforeCapture);
-    progress.outlinedArtifacts = await capture(page, 'gitlab-displayed-outline', { fullPage: false });progress.afterCapture = await read();assertDisplayedOutlineRows(progress.afterCapture);
-    assertDisplayedOutlineControl(progress.beforeCapture);assertDisplayedOutlineControl(progress.afterCapture);
-    progress.openFoldInput = await click('fold-button', 103);
+    try {
+      const button = visibleHandle.asElement();assert.ok(button !== null);await button.scrollIntoView();
+      const validate = async (sample) => {
+        assertDisplayedOutlineRows(sample);
+        assert.equal(await page.evaluate(gitLabDisplayedOutlineProbe, 'fold-button-current', button), true, 'Original actual line 103 control was replaced.');
+        assert.ok(isDeepStrictEqual(await readSettings(), enabled), 'Settings changed while awaiting actual outline readiness.');
+        const state = await readState();assertDisplayedOutlineCounts(progress.beforeCounts, state);progress.readinessCounts = state;
+      };
+      progress.initialScrolled = await read();await validate(progress.initialScrolled);
+      progress.initialArtifacts = await capture(page, 'gitlab-displayed-outline-initial', { fullPage: false });
+      progress.initialAfterCapture = await read();await validate(progress.initialAfterCapture);
+      progress.readiness = {};
+      progress.beforeCapture = await waitDisplayedOutlineControl(page, { read, validate, progress: progress.readiness });
+      progress.outlinedArtifacts = await capture(page, 'gitlab-displayed-outline', { fullPage: false });progress.afterCapture = await read();await validate(progress.afterCapture);
+      assertDisplayedOutlineControl(progress.beforeCapture);assertDisplayedOutlineControl(progress.afterCapture);
+      progress.beforeInput = await read();await validate(progress.beforeInput);assertDisplayedOutlineControl(progress.beforeInput);
+      assert.equal(await page.evaluate(gitLabDisplayedOutlineProbe, 'arm', button), true);await button.click();
+      progress.openFoldInput = await page.evaluate(gitLabDisplayedOutlineProbe, 'click-result');assert.equal(progress.openFoldInput?.trusted, true);
+    } finally { await visibleHandle.dispose(); }
     progress.opened = await poll(read, (sample) => sample?.sameSource && sample.folds.find((fold) => fold.sourceLine === '103')?.expanded === 'true', 'Trusted Show opens currently mounted original suite rows', 8000);
     assertDisplayedOutlineRows(progress.opened);assert.equal(progress.opened.sourceRows.find((row) => row.next === '104')?.hidden, false);
     progress.openedArtifacts = await capture(page, 'gitlab-displayed-outline-open', { fullPage: false });progress.openedAfterCapture = await read();assertDisplayedOutlineRows(progress.openedAfterCapture);assertDisplayedOutlineControl(progress.openedAfterCapture);assert.equal(progress.openedAfterCapture.folds.find((fold) => fold.sourceLine === '103')?.expanded, 'true');

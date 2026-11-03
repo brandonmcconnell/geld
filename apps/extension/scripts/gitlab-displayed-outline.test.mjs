@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test, beforeEach, afterEach } from 'node:test';
 import { Window } from 'happy-dom';
-import { gitLabDisplayedOutlineProbe as probe, assertDisplayedOutlineCounts, assertDisplayedOutlineRows, assertDisplayedOutlineControl, GITLAB_DISPLAYED_OUTLINE, verifyGitLabDisplayedOutline } from './gitlab-displayed-outline.mjs';
+import { gitLabDisplayedOutlineProbe as probe, assertDisplayedOutlineCounts, assertDisplayedOutlineRows, assertDisplayedOutlineControl, waitDisplayedOutlineControl, GITLAB_DISPLAYED_OUTLINE, verifyGitLabDisplayedOutline } from './gitlab-displayed-outline.mjs';
 const URL = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs?diff_id=2158520123';
 let window;const originals = new Map();
 beforeEach(() => {
@@ -32,8 +32,8 @@ test('no source, duplicate native source, changed selected version and changed U
 test('test declaration inspection uses actual new-side text in split rows', () => { fixture();const row = document.querySelector('tr');row.className = 'rd-hunk-lines-parallel';const old = row.querySelector('.rd-line-content');old.dataset.position = 'old';const next = old.cloneNode(true);next.dataset.position = 'new';next.textContent = 'different new-side source';row.append(next);const initial = probe('setup');assert.equal(initial.sourceRows[0].newText, 'different new-side source'); });
 
 function fullSpan() {
- const rect = { left: 598, right: 1403, width: 805 };
- return { sourceBound: true, table: { bounds: { ...rect }, display: 'block' }, body: { bounds: { ...rect }, display: 'block' }, row: { bounds: { ...rect }, display: 'block' }, cell: { bounds: { ...rect }, display: 'block' }, hunk: { bounds: { ...rect }, display: 'grid' } };
+ const rect = { left: 597, right: 1404, width: 807 };
+ return { sourceBound: true, table: { bounds: { ...rect }, display: 'block' }, body: { bounds: { ...rect }, display: 'block' }, row: { bounds: { ...rect }, display: 'block' }, cell: { bounds: { ...rect }, display: 'block', clientLeft: 1, clientWidth: 805, style: { borderLeftWidth: '1px', borderRightWidth: '1px', paddingLeft: '0px', paddingRight: '0px', boxSizing: 'border-box' } }, hunk: { bounds: { ...rect }, display: 'grid' } };
 }
 function sample() { return { sameSource: true, visible: true, events: [], controls: [{}, {}, {}], folds: GITLAB_DISPLAYED_OUTLINE.declarations.map((d) => ({ title: d.title, sourceLine: String(d.line), kind: 'suite', status: 'added', label: `Show ${d.title}, from line ${d.line}, added, +${d.additions}`, expanded: 'false', control: { inViewport: true, unobscured: true, bounds: { left: 598, right: 1403, width: 805 }, nativeSpan: fullSpan() } })) }; }
 test('known displayed outlines require all three source-bound suite labels and counts', () => { assert.doesNotThrow(() => assertDisplayedOutlineRows(sample())); });
@@ -44,12 +44,12 @@ function counts() { return { runtime: { hasDiff: true, onDiffPage: true, reposit
 test('independent native/runtime count guards reject adjusted or missing totals', () => { const before = counts();assertDisplayedOutlineCounts(before, counts());const after = counts();after.native.headers[0].additions = 36;assert.throws(() => assertDisplayedOutlineCounts(before, after));after.native = before.native;after.runtime.visible.files = 3;assert.throws(() => assertDisplayedOutlineCounts(before, after)); });
 
 // Protocol-only state transitions exercise cleanup and trust refusal, never browser acceptance.
-function runner({ failClick = false, restoreFailure = false, countsFailure = false, coveredControl = false, captureFailure = false } = {}) {
- const progress = {};const original = { testOutline: false, enabled: true, future: { retained: true } };let settings = structuredClone(original);let tests = false;let opened = false;let expected;const order = [];const listeners = new Map();
+function runner({ failClick = false, restoreFailure = false, countsFailure = false, coveredControl = false, captureFailure = false, transientCovered = false, targetChanged = false } = {}) {
+ const progress = {};const original = { testOutline: false, enabled: true, future: { retained: true } };let settings = structuredClone(original);let tests = false;let opened = false;let expected;const order = [];const listeners = new Map();let frames=0;
  const rows = Array.from({ length: 44 }, (_, index) => ({ next: String(index + 1), hidden: false, newText: 'other' }));for (const d of GITLAB_DISPLAYED_OUTLINE.declarations) rows[rows.length - GITLAB_DISPLAYED_OUTLINE.declarations.indexOf(d) - 1] = { next: String(d.line), hidden: false, newText: `context '${d.title}' do\n` };rows[0] = { next: '104', hidden: false, newText: 'body' };
- const read = () => ({ ...sample(), sourceRows: rows, controls: [{}, {}, {}], visible: tests, headers: [{ text: 'Essential 2', expanded: String(!tests) }, { text: 'Tests 1', expanded: String(tests) }], folds: settings.testOutline ? sample().folds.map((fold) => ({ ...fold, expanded: fold.sourceLine === '103' ? String(opened) : 'false', control: { ...fold.control, unobscured: fold.sourceLine === '103' ? !coveredControl : fold.control.unobscured } })) : [] });
+ const read = () => ({ ...sample(), sourceRows: rows, controls: [{}, {}, {}], visible: tests, headers: [{ text: 'Essential 2', expanded: String(!tests) }, { text: 'Tests 1', expanded: String(tests) }], folds: settings.testOutline ? sample().folds.map((fold) => ({ ...fold, expanded: fold.sourceLine === '103' ? String(opened) : 'false', control: { ...fold.control, unobscured: fold.sourceLine === '103' ? !(coveredControl || transientCovered && frames === 0) : fold.control.unobscured } })) : [] });
  const page = { isClosed: () => false, on: (name, fn) => listeners.set(name, fn), off: (name) => listeners.delete(name), evaluate: async (fn, action, target) => {
-   if (action === 'cleanup') return null;if (action === 'arm') { expected = target;return true; }if (action === 'click-result') return { trusted: !failClick };return read();
+   if (action === 'fold-button-current') return !targetChanged;if (String(fn).includes('requestAnimationFrame')) {frames++;return;}if (action === 'cleanup') return null;if (action === 'arm') { expected = target;return true; }if (action === 'click-result') return { trusted: !failClick };return read();
   }, evaluateHandle: async (fn, action, target) => ({ asElement: () => ({ scrollIntoView: async () => {}, click: async () => { order.push(['input', action, target]);if (!failClick) { if (action === 'category-button') tests = target === 'Tests';else opened = true; } } }), dispose: async () => {} }) };
  const dependencies = { progress, poll: async (fn, accepts) => { const value = await fn();assert.ok(accepts(value), 'Synthetic protocol refused current phase');return value; }, pollStable: async (fn, accepts) => { const value = await fn();assert.ok(accepts(value));return value; }, capture: async (p, name, config) => { assert.equal(config.fullPage, false);order.push(['capture', name]);if (captureFailure) throw Error('Synthetic outlined capture failed');return {}; }, readSettings: async () => structuredClone(settings), writeSettings: async (value) => { if (value.testOutline === false && restoreFailure) throw Error('Synthetic settings restore failed');settings = structuredClone(value);order.push(['settings', value.testOutline]); }, readState: async () => { const value = counts();if (countsFailure && settings.testOutline) value.native.headers[0].additions = 36;return value; }, safeUrl: (value) => value, extensionId: 'synthetic' };
  return { progress, original, current: () => settings, order, listeners, run: () => verifyGitLabDisplayedOutline(page, dependencies) };
@@ -77,7 +77,7 @@ for (const [name, mutate] of [
 test('full-span comparison allows one CSS pixel rounding but preserves native table/body border geometry',()=>{
  const v=sample();v.folds[0].control.nativeSpan.table.bounds={left:599,right:1402,width:803};
  v.folds[0].control.bounds={left:598.5,right:1402.5,width:804};assert.doesNotThrow(()=>assertDisplayedOutlineControl(v));
- v.folds[0].control.bounds.width=803.9;assert.throws(()=>assertDisplayedOutlineControl(v));
+ v.folds[0].control.bounds.width=802.9;assert.throws(()=>assertDisplayedOutlineControl(v));
 });
 test('a replaced native hunk cannot establish preserved source-bound full-span geometry',()=>{
  fixture();document.querySelector('tr.rd-hunk-header').setAttribute('data-hunk-header','');probe('setup');
@@ -135,15 +135,53 @@ test('span diagnostics bind the actual source-adjacent owned row to its native R
  const button=document.createElement('button');button.type='button';cell.append(button);row.append(cell);body.prepend(row);
  // Explicit measured protocol, not actual served-CSS or provider layout evidence.
  for(const node of [table,body,hunk,row,cell,button])node.getBoundingClientRect=()=>new window.DOMRect(10,20,805,28);
+ cell.style.borderLeftWidth='0px';cell.style.borderRightWidth='0px';cell.style.paddingLeft='0px';cell.style.paddingRight='0px';Object.defineProperty(cell,'clientLeft',{value:0});Object.defineProperty(cell,'clientWidth',{value:805});
  document.elementFromPoint=()=>button;const html=root.innerHTML;let value=probe();assert.equal(value.sameSource,true);assert.equal(value.folds[0].control.nativeSpan.sourceBound,true);
  assert.deepEqual(value.folds[0].control.nativeSpan.body.bounds,{left:10,right:815,top:20,bottom:48,width:805,height:28});assert.doesNotThrow(()=>assertDisplayedOutlineControl(value));assert.equal(root.innerHTML,html);
  const duplicate=hunk.cloneNode(true);body.append(duplicate);value=probe();assert.equal(value.sameSource,false);assert.equal(value.folds[0].control.nativeSpan.sourceBound,false);assert.equal(value.folds[0].control.nativeSpan.hunk,null);
 });
 test('covered line103 is captured before the unchanged strict assertion fails, with no substitute click and complete cleanup', async () => {
- const r=runner({coveredControl:true});await assert.rejects(r.run(),/covered at its click point/);assert.equal(r.progress.status,'failed');assert.equal(r.progress.beforeCapture.folds[0].control.unobscured,false);assert.equal(r.progress.afterCapture.folds[0].control.unobscured,false);
- const capture=r.order.findIndex(([kind,name])=>kind==='capture'&&name==='gitlab-displayed-outline');const restore=r.order.findIndex(([kind,value])=>kind==='settings'&&value===false);assert.ok(capture>=0&&capture<restore);assert.equal(r.order.some(([kind,action])=>kind==='input'&&action==='fold-button'),false);
+ const r=runner({coveredControl:true});await assert.rejects(r.run(),/covered at its click point/);assert.equal(r.progress.status,'failed');assert.equal(r.progress.initialScrolled.folds[0].control.unobscured,false);assert.equal(r.progress.initialAfterCapture.folds[0].control.unobscured,false);
+ const capture=r.order.findIndex(([kind,name])=>kind==='capture'&&name==='gitlab-displayed-outline-initial');const restore=r.order.findIndex(([kind,value])=>kind==='settings'&&value===false);assert.ok(capture>=0&&capture<restore);assert.equal(r.order.some(([kind,action])=>kind==='input'&&action==='fold-button'),false);
  assert.deepEqual(r.current(),r.original);assert.equal(r.progress.settings.restoration,'restored');assert.equal(r.progress.closed.visible,false);assert.equal(r.listeners.size,0);
 });
 test('a diagnostic capture failure restores settings, category and listeners without a feature pass', async () => {
  const r=runner({captureFailure:true});await assert.rejects(r.run(),/capture failed/);assert.equal(r.progress.status,'failed');assert.deepEqual(r.current(),r.original);assert.equal(r.progress.closed.visible,false);assert.equal(r.listeners.size,0);
+});
+
+
+test('actual 807px cell border box and 805px content-filling button pass without widening tolerance',()=>{
+ const value=sample();assertDisplayedOutlineControl(value);
+ const cell=value.folds[0].control.nativeSpan.cell;
+ assert.equal(cell.bounds.width,807);assert.equal(cell.clientWidth,805);assert.equal(value.folds[0].control.bounds.width,805);
+ cell.style.paddingLeft='3px';cell.style.paddingRight='5px';value.folds[0].control.bounds={left:601,right:1398,width:797};assertDisplayedOutlineControl(value);
+ value.folds[0].control.bounds={left:598,right:1403,width:805};assert.throws(()=>assertDisplayedOutlineControl(value),/content box/);
+});
+for(const [name,change] of [
+ ['missing client width',c=>{delete c.clientWidth;}],['unknown padding',c=>{c.style.paddingLeft='normal';}],['inconsistent border',c=>{c.style.borderRightWidth='4px';}],['negative client',c=>{c.clientLeft=-1;}],['zero content',c=>{c.style.paddingLeft='805px';}],
+])test(`content-box proof rejects ${name}`,()=>{const value=sample();change(value.folds[0].control.nativeSpan.cell);assert.throws(()=>assertDisplayedOutlineControl(value));});
+
+test('frame readiness retains actual covered actor and requires consecutive settled native geometry',async()=>{
+ let frames=0,at=0;const progress={};const states=[sample(),sample(),sample(),sample()];states[0].folds[0].control.unobscured=false;states[0].folds[0].control.hitChain={nodes:[{tag:'tbody',classes:['rd-text-view-content']}]};
+ states[1].folds[0].control.nativeSpan.body.bounds.height=400;states[2].folds[0].control.nativeSpan.body.bounds.height=188;states[3].folds[0].control.nativeSpan.body.bounds.height=188;
+ const result=await waitDisplayedOutlineControl({evaluate:async()=>{frames++;}},{read:async()=>states[at++],validate:async value=>assertDisplayedOutlineRows(value),progress});
+ assert.equal(frames,4);assert.equal(result,states[3]);assert.equal(progress.samples[0].sample.folds[0].control.hitChain.nodes[0].tag,'tbody');assert.deepEqual(progress.samples.map(v=>v.stable),[0,1,1,2]);
+});
+for(const name of ['source','original control','counts','settings'])test(`readiness never retries recovered ${name} drift`,async()=>{
+ let reads=0,validations=0;const progress={};await assert.rejects(waitDisplayedOutlineControl({evaluate:async()=>{}},{read:async()=>{reads++;return sample();},validate:async()=>{validations++;if(validations===1)throw Error(name+' drift');},progress}),new RegExp(name+' drift'));assert.equal(reads,1);assert.equal(validations,1);
+});
+test('persistent actual coverage remains failed with a bounded final actor sample and no ready substitution',async()=>{
+ const value=sample();value.folds[0].control.unobscured=false;value.folds[0].control.hitChain={nodes:[{tag:'tbody',id:'actual-hit'}]};const progress={};let reads=0;
+ await assert.rejects(waitDisplayedOutlineControl({evaluate:async()=>{}},{read:async()=>{reads++;return value;},validate:async()=>{},progress}),/covered at its click point/);assert.equal(reads,60);assert.equal(progress.samples.length,8);assert.equal(progress.latest.folds[0].control.hitChain.nodes[0].id,'actual-hit');
+});
+test('missing real animation frames fails before readiness can be asserted',async()=>{
+ let reads=0;await assert.rejects(waitDisplayedOutlineControl({evaluate:async()=>{throw Error('Actual animation frames did not arrive');}},{read:async()=>{reads++;return sample();},validate:async()=>{},progress:{}}),/frames did not arrive/);assert.equal(reads,0);
+});
+
+test('full protocol captures initial covered 103 then clicks that same held control only after stable frame proof',async()=>{
+ const r=runner({transientCovered:true});await r.run();assert.equal(r.progress.initialScrolled.folds[0].control.unobscured,false);assert.equal(r.progress.initialAfterCapture.folds[0].control.unobscured,false);assert.equal(r.progress.beforeInput.folds[0].control.unobscured,true);assert.equal(r.progress.readiness.attempts,2);assert.equal(r.progress.status,'passed');
+ const names=r.order.filter(v=>v[0]==='capture').map(v=>v[1]);assert.deepEqual(names,['gitlab-displayed-outline-initial','gitlab-displayed-outline','gitlab-displayed-outline-open']);assert.equal(r.order.filter(v=>v[0]==='input'&&v[1]==='fold-button').length,1);
+});
+test('an original actual 103 handle replacement fails before any readiness input and restores settings',async()=>{
+ const r=runner({targetChanged:true});await assert.rejects(r.run(),/103 control was replaced/);assert.equal(r.order.some(v=>v[0]==='input'&&v[1]==='fold-button'),false);assert.deepEqual(r.current(),r.original);assert.equal(r.listeners.size,0);
 });
