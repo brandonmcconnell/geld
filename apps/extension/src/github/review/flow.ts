@@ -3,7 +3,7 @@ import type { FlowComponent, FlowEdge, FlowRoute } from '@geld/core/file-flow';
 import { formatCount } from '@geld/core/format';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { looksLikeHtml } from '../../lib/http';
-import { ICON_WORKFLOW, ICON_X } from '../ui/icons';
+import { ICON_FILE_ADDED, ICON_FILE_MODIFIED, ICON_FILE_MOVED, ICON_FILE_REMOVED, ICON_WORKFLOW, ICON_X } from '../ui/icons';
 
 /**
  * The Flow dialog: the pull request's changed files as a diagram of which
@@ -50,6 +50,7 @@ const ZOOM_MAX = 1.5;
 const ZOOM_STEP = 0.1;
 
 const STATUS_WORD: Readonly<Record<FlowFileStatus, string>> = { added: 'New', deleted: 'Removed', renamed: 'Renamed', modified: 'Changed' };
+const STATUS_ICON: Readonly<Record<FlowFileStatus, string>> = { added: ICON_FILE_ADDED, deleted: ICON_FILE_REMOVED, renamed: ICON_FILE_MOVED, modified: ICON_FILE_MODIFIED };
 
 let source: FlowSource | null = null;
 
@@ -181,6 +182,13 @@ function icon(markup: string): SVGElement {
   return svgFromString(markup);
 }
 
+/** The icon GitHub's file tree gives the change: file-added, file-diff, file-moved, file-removed, in its colours. */
+function statusIcon(status: FlowFileStatus): SVGElement {
+  const glyph = icon(STATUS_ICON[status]);
+  glyph.classList.add('geld-flow__status-icon');
+  return glyph;
+}
+
 function nameOf(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1);
 }
@@ -194,7 +202,7 @@ function directoryOf(path: string): string {
 
 function card(file: FlowFile, filesHref: string, onOpen: () => void): HTMLAnchorElement {
   const directory = directoryOf(file.path);
-  const meta = createElement('span', { class: 'geld-flow__meta' }, [createElement('span', { class: 'geld-flow__dot', 'aria-hidden': 'true' }), createElement('span', { class: 'geld-flow__status' }, [STATUS_WORD[file.status]])]);
+  const meta = createElement('span', { class: 'geld-flow__meta' }, [statusIcon(file.status), createElement('span', { class: 'geld-flow__status' }, [STATUS_WORD[file.status]])]);
   if (directory !== '') meta.append(createElement('span', { class: 'geld-flow__dir' }, [directory]));
   const counts = createElement('span', { class: 'geld-flow__counts' });
   if (file.additions > 0) counts.append(createElement('span', { class: 'geld-flow__add' }, [`+${formatCount(file.additions)}`]));
@@ -364,20 +372,32 @@ export function openFlowDialog(): void {
   const titleId = `geld-flow-${dialogIds}-title`;
   const dialog = createElement('dialog', { class: 'Overlay Overlay--motion-scaleFade geld-flow', [OWN_UI_ATTRIBUTE]: '', 'aria-labelledby': titleId });
   const close = createElement('button', { type: 'button', class: 'close-button Overlay-closeButton', 'aria-label': 'Close' }, [icon(ICON_X)]);
-  const subtitle = createElement('p', { class: 'geld-flow__subtitle', 'aria-live': 'polite' });
   const hiddenCount = current.files.filter((file) => file.hiddenAs !== null).length;
   const essentialCount = current.files.length - hiddenCount;
   let showHidden = essentialCount === 0;
   const toggle = createElement('button', { type: 'button', class: 'btn btn-sm geld-flow__toggle', 'aria-pressed': String(showHidden) });
-  const legend = createElement('div', { class: 'geld-flow__legend', 'aria-hidden': 'true' }, (['added', 'modified', 'renamed', 'deleted'] as const).map((status) => createElement('span', { class: 'geld-flow__legend-item', 'data-status': status }, [createElement('span', { class: 'geld-flow__dot' }), STATUS_WORD[status]])));
-  const zoomOut = createElement('button', { type: 'button', class: 'btn btn-sm geld-flow__zoom-btn', 'aria-label': 'Zoom out' }, ['\u2212']);
-  const zoomLevel = createElement('button', { type: 'button', class: 'btn btn-sm geld-flow__zoom-level', title: 'Fit the diagram to the window' });
-  const zoomIn = createElement('button', { type: 'button', class: 'btn btn-sm geld-flow__zoom-btn', 'aria-label': 'Zoom in' }, ['+']);
-  const zoom = createElement('div', { class: 'BtnGroup geld-flow__zoom' }, [zoomOut, zoomLevel, zoomIn]);
-  const actions = createElement('div', { class: 'Overlay-actionWrap geld-flow__actions' }, [legend, zoom, ...(hiddenCount > 0 && essentialCount > 0 ? [toggle] : []), close]);
-  const body = createElement('div', { class: 'Overlay-body geld-flow__body' });
+  const actions = createElement('div', { class: 'Overlay-actionWrap geld-flow__actions' }, [...(hiddenCount > 0 && essentialCount > 0 ? [toggle] : []), close]);
+
+  // The diagram scrolls inside the stage; the controls float over its lower right corner and stay put.
+  const scroller = createElement('div', { class: 'geld-flow__scroll' });
   const canvas = createElement('div', { class: 'geld-flow__canvas' });
-  body.append(canvas);
+  scroller.append(canvas);
+  const status = createElement('p', { class: 'geld-flow__reading', role: 'status', hidden: '' });
+  const legendList = createElement('div', { class: 'geld-flow__legend', id: `geld-flow-${dialogIds}-legend`, hidden: '' }, (['added', 'modified', 'renamed', 'deleted'] as const).map((key) => createElement('span', { class: 'geld-flow__legend-item' }, [statusIcon(key), STATUS_WORD[key]])));
+  const legendButton = createElement('button', { type: 'button', class: 'geld-flow__ctl geld-flow__legend-btn', 'aria-expanded': 'false', 'aria-controls': legendList.id }, ['Legend']);
+  legendButton.addEventListener('click', () => {
+    const open = legendList.hidden;
+    legendList.hidden = !open;
+    legendButton.setAttribute('aria-expanded', String(open));
+  });
+  const zoomOut = createElement('button', { type: 'button', class: 'geld-flow__ctl geld-flow__ctl--square', 'aria-label': 'Zoom out' }, ['\u2212']);
+  const zoomLevel = createElement('button', { type: 'button', class: 'geld-flow__ctl geld-flow__zoom-level', title: 'Fit to the window' });
+  const zoomIn = createElement('button', { type: 'button', class: 'geld-flow__ctl geld-flow__ctl--square', 'aria-label': 'Zoom in' }, ['+']);
+  const controls = createElement('div', { class: 'geld-flow__controls' }, [
+    createElement('div', { class: 'geld-flow__legend-wrap' }, [legendList, legendButton]),
+    createElement('div', { class: 'geld-flow__zoom', role: 'group', 'aria-label': 'Zoom' }, [zoomOut, zoomLevel, zoomIn]),
+  ]);
+  const body = createElement('div', { class: 'Overlay-body geld-flow__stage' }, [scroller, status, controls]);
   let scale: number | null = null;
   const applyScale = (next: number): void => {
     scale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(next * 100) / 100));
@@ -386,10 +406,10 @@ export function openFlowDialog(): void {
     zoomOut.disabled = scale <= ZOOM_MIN;
     zoomIn.disabled = scale >= ZOOM_MAX;
   };
-  /** The widest graph, scaled to the room the body has (never above 100%). */
+  /** The widest graph, scaled to the room the stage has (never above 100%). */
   const fitScale = (): number => {
     const widest = Math.max(0, ...[...canvas.querySelectorAll<HTMLElement>('.geld-flow__graph')].map((graph) => graph.offsetWidth));
-    return widest === 0 ? 1 : Math.min(1, (body.clientWidth - 16) / widest);
+    return widest === 0 ? 1 : Math.min(1, (scroller.clientWidth - 16) / widest);
   };
   zoomOut.addEventListener('click', () => applyScale((scale ?? 1) - ZOOM_STEP));
   zoomIn.addEventListener('click', () => applyScale((scale ?? 1) + ZOOM_STEP));
@@ -397,7 +417,7 @@ export function openFlowDialog(): void {
   dialog.append(
     createElement('div', { class: 'Overlay-header geld-flow__header' }, [
       createElement('div', { class: 'Overlay-headerContentWrap' }, [
-        createElement('div', { class: 'Overlay-titleWrap' }, [createElement('h1', { class: 'Overlay-title geld-flow__title', id: titleId }, [icon(ICON_WORKFLOW), 'Flow']), subtitle]),
+        createElement('div', { class: 'Overlay-titleWrap' }, [createElement('h1', { class: 'Overlay-title geld-flow__title', id: titleId }, [icon(ICON_WORKFLOW), 'Flow'])]),
         actions,
       ]),
     ]),
@@ -428,17 +448,10 @@ export function openFlowDialog(): void {
     );
     const byPath = new Map(files.map((file) => [file.path, file]));
     const stillReading = reading.landed < reading.wanted;
-    const linked = files.length - layout.loose.length;
-    const implied = layout.components.reduce((sum, component) => sum + component.implied, 0);
-    subtitle.textContent = stillReading
-      ? `Reading ${formatCount(reading.landed)} of ${plural(reading.wanted, 'file')}…`
-      : linked === 0
-        ? `${plural(files.length, 'changed file')}. None of them import another.`
-        : `${plural(linked, 'linked file')} · ${implied > 0 ? `${formatCount(edges.length - implied)} of ${plural(edges.length, 'link')} drawn` : plural(edges.length, 'link')}${layout.loose.length > 0 ? ` · ${formatCount(layout.loose.length)} on their own` : ''}`;
-    if (implied > 0) subtitle.title = 'A link is left out when a path through other changed files already connects the two.';
-    else subtitle.removeAttribute('title');
-    const scrollTop = body.scrollTop;
-    const scrollLeft = body.scrollLeft;
+    status.hidden = !stillReading;
+    status.textContent = stillReading ? `Reading ${formatCount(reading.landed)} of ${plural(reading.wanted, 'file')}…` : '';
+    const scrollTop = scroller.scrollTop;
+    const scrollLeft = scroller.scrollLeft;
     canvas.replaceChildren();
     for (const component of layout.components) canvas.append(drawComponent(component, byPath, filesHref, dismiss));
     if (layout.loose.length > 0) {
@@ -452,9 +465,8 @@ export function openFlowDialog(): void {
       canvas.append(section);
     }
     if (reading.unreadable) canvas.prepend(createElement('p', { class: 'geld-flow__note' }, ['Geld could not tell which commit this page shows, so it drew the files without their links.']));
-    body.scrollTop = scrollTop;
-    body.scrollLeft = scrollLeft;
-    body.toggleAttribute('data-reading', stillReading);
+    scroller.scrollTop = scrollTop;
+    scroller.scrollLeft = scrollLeft;
     // Fitted once the links are in (a diagram drawn while files are still being read is narrower); the reader's own zoom stays.
     if (!stillReading && !fitted) {
       fitted = true;

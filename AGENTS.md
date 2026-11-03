@@ -559,12 +559,14 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   styles: `@import`/`@use`/`@forward` with Sass partials;
   Python `from`/`import`;
   Rust `mod`), resolved by `resolveImport` against the changed files only (relative paths with extension, `index` and compiled-extension fallbacks, `@/`-style aliases by a unique tail), and a link found only at the base is `removed` (dashed, danger).
-  `layoutFlow` draws each connected group on its own, importers above imports: longest-path rows with every file then pulled down beside the nearest file it imports, links another path already implies left undrawn (`implied`, said in the subtitle as "N of M links drawn";
+  `layoutFlow` draws each connected group on its own, importers above imports: longest-path rows with every file then pulled down beside the nearest file it imports, links another path already implies left undrawn (`implied`;
   a removed link is always drawn), bend points for links that skip rows so they pass between cards, barycentre ordering sweeps, and rows placed by pool-adjacent-violators (`closestSpaced`) so a crowded row spreads around where it wants to be instead of drifting right.
   Files no link touches sit below under "Not linked to other changes".
-  The dialog is a `<dialog>` with Primer's `Overlay` frame: cards (status dot and word, the nearest two folders, file name, +/−;
-  a hidden file dashed with its category's tag), an SVG layer of rounded orthogonal links whose ends are spread per side, hover lighting a card's links, a legend, zoom (−, the level, which fits, +;
-  CSS `zoom` on the canvas, fitted to the width once the reading ends and again when hidden files are toggled), and a toggle for hidden files (essential files only by default).
+  The dialog is a `<dialog>` with Primer's `Overlay` frame whose header holds only the title, the hidden-files toggle (essential files only by default) and close: cards lead with the icon GitHub's file tree gives the change (`ICON_FILE_ADDED`, `ICON_FILE_MODIFIED`, `ICON_FILE_MOVED`, `ICON_FILE_REMOVED`, in its colours) and its word, then the nearest two folders, the file name and +/−, a hidden file dashed with its category's tag.
+  Links are an SVG layer of rounded orthogonal paths whose ends are spread per side, and resting on a card lights its links.
+  The diagram scrolls inside a stage whose lower right corner holds the controls, floating: "Legend", which opens upward to the four icons in two columns, and zoom (−, the level, which fits, + at one 24px height;
+  CSS `zoom` on the canvas, fitted to the width once the reading ends and again when hidden files are toggled);
+  while files are still being read, the lower left says how many.
   A card is a link to its file in Files changed (`#diff-<sha256 of the path>` on the page's own Files tab URL, so `?w=1` stays): the click closes the dialog and GitHub's own navigation goes there.
   The diagram is drawn by hand on purpose, with no graph library.
 - **Comment text keeps its inline formatting, everywhere it is shortened to a line.**

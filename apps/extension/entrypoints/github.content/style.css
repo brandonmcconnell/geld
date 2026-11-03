@@ -7752,39 +7752,42 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   color: var(--fgColor-muted, var(--color-fg-muted));
 }
 
-.geld-flow__subtitle {
-  margin: 2px 0 0;
-  color: var(--fgColor-muted, var(--color-fg-muted));
-  font-size: 12px;
-  line-height: 18px;
-}
-
 .geld-flow__actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
-.geld-flow__legend {
-  display: flex;
-  gap: 12px;
-  color: var(--fgColor-muted, var(--color-fg-muted));
-  font-size: 12px;
-}
-
-.geld-flow__legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.geld-flow__body {
+/* The stage holds the scrolling diagram and the controls that float over its corner. */
+.geld-flow__stage {
+  position: relative;
   flex: 1 1 auto;
-  overflow: auto;
-  padding: 8px 0 32px;
+  min-height: 0;
+  padding: 0 !important;
+  overflow: hidden;
   background-color: var(--bgColor-muted, var(--color-canvas-subtle));
   background-image: radial-gradient(var(--borderColor-default, var(--color-border-default)) 1px, transparent 1px);
   background-size: 18px 18px;
+}
+
+.geld-flow__scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  padding: 8px 0 72px;
+}
+
+.geld-flow__canvas {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: max-content;
+  min-width: 100%;
+}
+
+.geld-flow__canvas > .geld-flow__loose,
+.geld-flow__canvas > .geld-flow__note {
+  align-self: stretch;
 }
 
 .geld-flow__graph {
@@ -7873,13 +7876,21 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 .geld-flow__meta {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
   overflow: hidden;
   color: var(--fgColor-muted, var(--color-fg-muted));
   font-size: 11px;
   line-height: 14px;
   white-space: nowrap;
+}
+
+/* GitHub's file-tree icons, at the size of the line they lead (the svg's own box, so it centres on the text). */
+.geld-flow__status-icon {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  vertical-align: middle !important;
 }
 
 .geld-flow__status {
@@ -7943,29 +7954,6 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   color: var(--fgColor-danger, var(--color-danger-fg));
 }
 
-.geld-flow__dot {
-  flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--fgColor-muted, var(--color-fg-muted));
-}
-
-[data-status='added'] > .geld-flow__dot,
-[data-status='added'] .geld-flow__meta > .geld-flow__dot {
-  background: var(--fgColor-success, var(--color-success-fg));
-}
-
-[data-status='deleted'] > .geld-flow__dot,
-[data-status='deleted'] .geld-flow__meta > .geld-flow__dot {
-  background: var(--fgColor-danger, var(--color-danger-fg));
-}
-
-[data-status='renamed'] > .geld-flow__dot,
-[data-status='renamed'] .geld-flow__meta > .geld-flow__dot {
-  background: var(--fgColor-attention, var(--color-attention-fg));
-}
-
 .geld-flow__loose {
   padding: 8px 28px 0;
 }
@@ -7993,37 +7981,143 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   font-size: 12px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .geld-flow__link,
-  .geld-flow__node {
-    transition: none;
-  }
+/* Floating over the diagram's lower corners: what is still being read on the left, the legend and zoom on the right. */
+.geld-flow__reading {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--borderColor-default, var(--color-border-default));
+  border-radius: 6px;
+  background: var(--bgColor-default, var(--color-canvas-default));
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font-size: 12px;
+  line-height: 22px;
 }
 
-.geld-flow__canvas {
+.geld-flow__reading[hidden] {
+  display: none;
+}
+
+.geld-flow__controls {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  width: max-content;
-  min-width: 100%;
+  align-items: flex-end;
+  gap: 6px;
 }
 
-.geld-flow__canvas > .geld-flow__loose,
-.geld-flow__canvas > .geld-flow__note {
-  align-self: stretch;
+.geld-flow__ctl {
+  box-sizing: border-box;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--borderColor-default, var(--color-border-default));
+  border-radius: 6px;
+  background: var(--bgColor-default, var(--color-canvas-default));
+  box-shadow: var(--shadow-resting-small, 0 1px 1px rgba(31, 35, 40, 0.04));
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 22px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.geld-flow__ctl:hover:not(:disabled) {
+  background: var(--bgColor-neutral-muted, var(--color-neutral-subtle));
+}
+
+.geld-flow__ctl:disabled {
+  color: var(--fgColor-disabled, var(--color-primer-fg-disabled));
+  cursor: default;
+}
+
+.geld-flow__ctl:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, var(--color-accent-fg));
+  outline-offset: 1px;
+  position: relative;
+  z-index: 1;
+}
+
+.geld-flow__ctl--square {
+  width: 24px;
+  padding: 0;
 }
 
 .geld-flow__zoom {
   display: inline-flex;
 }
 
-.geld-flow__zoom-btn {
-  width: 28px;
-  padding: 0 !important;
-  font-variant-numeric: tabular-nums;
+.geld-flow__zoom > .geld-flow__ctl {
+  box-shadow: none;
+}
+
+.geld-flow__zoom > .geld-flow__ctl:not(:first-child) {
+  margin-left: -1px;
+}
+
+.geld-flow__zoom > .geld-flow__ctl:not(:first-child, :last-child) {
+  border-radius: 0;
+}
+
+.geld-flow__zoom > .geld-flow__ctl:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.geld-flow__zoom > .geld-flow__ctl:last-child {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
 }
 
 .geld-flow__zoom-level {
-  min-width: 52px;
-  font-variant-numeric: tabular-nums;
+  min-width: 48px;
+}
+
+.geld-flow__legend-wrap {
+  position: relative;
+}
+
+/* The legend opens upward from its button, in two columns. */
+.geld-flow__legend {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: 6px 16px;
+  padding: 8px 10px;
+  border: 1px solid var(--borderColor-default, var(--color-border-default));
+  border-radius: 6px;
+  background: var(--bgColor-default, var(--color-canvas-default));
+  box-shadow: var(--shadow-floating-small, 0 3px 6px rgba(140, 149, 159, 0.15));
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.geld-flow__legend[hidden] {
+  display: none;
+}
+
+.geld-flow__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.geld-flow__legend-btn[aria-expanded='true'] {
+  background: var(--bgColor-neutral-muted, var(--color-neutral-subtle));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .geld-flow__link,
+  .geld-flow__node {
+    transition: none;
+  }
 }
