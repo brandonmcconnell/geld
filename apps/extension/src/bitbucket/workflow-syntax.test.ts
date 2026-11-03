@@ -2,11 +2,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseDocument } from 'yaml';
 import { readBitbucketDiff } from './diff';
-import { applyBitbucketWorkflowSyntax, removeBitbucketWorkflowSyntax } from './workflow-syntax';
+import { applyBitbucketWorkflowSyntax as applyWithCapability, removeBitbucketWorkflowSyntax } from './workflow-syntax';
 import type { ProviderDiffEntry } from '../providers/types';
 
 type Row = readonly [number | null, number | null, string, string];
 const registry = new Map<string, Set<AbstractRange>>();
+
+// Parser/range protocols explicitly supply enabled evidence, never a native public preference claim.
+function applyBitbucketWorkflowSyntax(entries: readonly ProviderDiffEntry[]): void { applyWithCapability(entries, 'enabled'); }
 
 // Actual native installed public PR27 projection, run41337759558. These are source rows,
 // not a claim that that historical browser run exercised shell highlighting.
@@ -59,7 +62,66 @@ const publicRows: readonly Row[] = [
   [76, 82, "    - <<: *push", " "],
 ];
 
-function fixture(rows: readonly Row[], path = 'bitbucket-pipelines.yml'): ProviderDiffEntry {
+// Exact observed expanded public projection from run41383777805, not native Syntax-on acceptance.
+const expandedPublicRows: readonly Row[] = [
+  [1, 1, "image:", " "],
+  [2, 2, "  name: python:3.10", " "],
+  [3, 3, "", " "],
+  [4, null, "test: &test", "-"],
+  [null, 4, "lint: &lint", "+"],
+  [5, 5, "  parallel:", " "],
+  [6, 6, "    - step:", " "],
+  [7, null, "        name: Test", "-"],
+  [null, 7, "        name: Lint", "+"],
+  [8, 8, "        size: 4x", " "],
+  [9, 9, "        runtime:", " "],
+  [10, 10, "          cloud:", " "],
+  [11, 11, "            atlassian-ip-ranges: true", " "],
+  [12, 12, "        script:", " "],
+  [13, null, "          - pip install -r requirements.txt", "-"],
+  [14, 13, "          - pip install -r test/requirements.txt", " "],
+  [15, null, "          - pytest -v test/test.py", "-"],
+  [16, 14, "          - flake8 --ignore E501,E125", " "],
+  [17, 15, "        services:", " "],
+  [18, 16, "          - docker", " "],
+  [19, 17, "    - step:", " "],
+  [20, 18, "        name: Lint the Dockerfile", " "],
+  [21, 19, "        image: hadolint/hadolint:latest-debian", " "],
+  [22, 20, "        script:", " "],
+  [23, 21, "          - hadolint Dockerfile", " "],
+  [24, 22, "    - step:", " "],
+  [25, 23, "        name: Security Scan", " "],
+  [26, 24, "        script:", " "],
+  [27, 25, "          # Run a security scan for sensitive data.", " "],
+  [28, 26, "          # See more security tools at https://bitbucket.org/product/features/pipelines/integrations?&category=security", " "],
+  [29, 27, "          - pipe: atlassian/git-secrets-scan:3.0.0", " "],
+  [30, 28, "", " "],
+  [31, 29, "", " "],
+  [null, 30, "check-next-release: &check-next-release", "+"],
+  [null, 31, "  step:", "+"],
+  [null, 32, "    name: Check next release", "+"],
+  [null, 33, "    script:", "+"],
+  [null, 34, "    - if [ ! -d \".changes/next-release\" ]; then echo \"Next release file missing, make sure to run 'semversioner add-change'\"; exit 1; fi", "+"],
+  [null, 35, "", "+"],
+  [null, 36, "", "+"],
+  [32, 37, "release-dev: &release-dev", " "],
+  [33, 38, "  step:", " "],
+  [34, 39, "    name: Release development version", " "],
+  [68, 73, "", " "],
+  [69, 74, "pipelines:", " "],
+  [70, 75, "  default:", " "],
+  [71, null, "  - <<: *test", "-"],
+  [null, 76, "  - <<: *lint", "+"],
+  [null, 77, "  - <<: *check-next-release", "+"],
+  [72, 78, "  - <<: *release-dev", " "],
+  [73, 79, "  branches:", " "],
+  [74, 80, "    master:", " "],
+  [75, null, "    - <<: *test", "-"],
+  [null, 81, "    - <<: *lint", "+"],
+  [76, 82, "    - <<: *push", " "],
+];
+
+function fixture(rows: readonly Row[], path = 'bitbucket-pipelines.yml', split = true): ProviderDiffEntry {
   let region = document.querySelector('[role="region"][aria-label="Diff"]');
   if (region === null) {
     region = document.createElement('div');
@@ -89,7 +151,7 @@ function fixture(rows: readonly Row[], path = 'bitbucket-pipelines.yml'): Provid
     code.setAttribute('data-line-type', kind);
     code.className = 'code-diff';
     // Native renderers may tokenize one source line into several immutable spans.
-    for (const part of [text.slice(0, 7), text.slice(7)]) {
+    for (const part of split ? [text.slice(0, 7), text.slice(7)] : [text]) {
       const token = document.createElement('span');
       token.textContent = part;
       code.append(token);
@@ -136,6 +198,28 @@ afterEach(() => {
 });
 
 describe('Bitbucket native Pipelines shell', () => {
+  it.each(['disabled', 'unknown'] as const)('clears all22 observed ranges and their unchanged-node cache when native syntax becomes %s', (capability) => {
+    const entry = fixture(expandedPublicRows, undefined, false);
+    const html = entry.root.innerHTML;const nodes = [...entry.root.querySelectorAll('*')];const texts = [...entry.root.querySelectorAll('[data-line-type]')].flatMap((node) => [...node.childNodes]);
+    const foreign = new Set<AbstractRange>();registry.set('native-find', foreign);registry.set('geld-shell-string', foreign);
+    applyWithCapability([entry], 'enabled');
+    expect([...registry.entries()].filter(([key]) => key.startsWith('geld-bitbucket-shell-')).reduce((sum, [, value]) => sum + value.size, 0)).toBe(22);
+    const initial = ranges('keyword')[0];expect(initial).toBeDefined();expect(ranges('plain')).toHaveLength(13);
+    applyWithCapability([entry], 'enabled');expect(ranges('keyword')[0]).toBe(initial);
+    applyWithCapability([entry], capability);expect([...registry.keys()]).toEqual(['native-find', 'geld-shell-string']);
+    expect(registry.get('native-find')).toBe(foreign);expect(entry.root.innerHTML).toBe(html);expect([...entry.root.querySelectorAll('*')]).toEqual(nodes);
+    expect([...entry.root.querySelectorAll('[data-line-type]')].flatMap((node) => [...node.childNodes])).toEqual(texts);
+    applyWithCapability([entry], 'enabled');expect(ranges('keyword')[0]).toBeDefined();expect(ranges('keyword')[0]).not.toBe(initial);
+    expect([...registry.entries()].filter(([key]) => key.startsWith('geld-bitbucket-shell-')).reduce((sum, [, value]) => sum + value.size, 0)).toBe(22);
+    expect(entry.root.innerHTML).toBe(html);expect(registry.get('native-find')).toBe(foreign);
+  });
+
+  it('declines coloring unknown native state by default, including plain ranges', () => {
+    const entry = fixture(expandedPublicRows, undefined, false);applyWithCapability([entry]);expect(allWords()).toBe('');expect(registry.size).toBe(0);
+    applyWithCapability([entry], 'enabled');expect(ranges('plain').length).toBeGreaterThan(0);
+    applyWithCapability([entry]);expect(registry.size).toBe(0);
+  });
+
   it('keeps the actual default public projection native after its unknown gap, preserving all nodes', () => {
     const entry = fixture(publicRows);
     const html = entry.root.innerHTML;

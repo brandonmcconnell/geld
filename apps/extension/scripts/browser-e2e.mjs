@@ -2803,6 +2803,7 @@ try {
       item.featureParity = 'partial';
       return { status: 'passed', verified: name === 'bitbucket-diff' ? item.shellSyntax?.status === 'native_disabled'
         ? 'Installed diff counts/filtering and trusted native context expansion; observed native syntax disabled with no owned coloring. No positive shell color or palette pass.'
+        : item.shellSyntax?.status === 'unavailable' ? 'Installed diff counts/filtering and trusted native context expansion with owned colors withheld. Native syntax preference is unavailable, so no native-off, positive syntax or palette acceptance is claimed.'
         : `Installed complete diff counts, real synchronized filtering/restoration, trusted native context expansion, exact original-source shell ranges and native ADS pseudo-highlight colors on the selected theme. Native preference: ${item.shellSyntax?.nativeSettings?.status ?? 'unavailable'}; native Bash palette equivalence is unverified.`
         : 'Installed digest exposes real public activity in ready/partial state. This fixture does not verify comment threads or authenticated actions.' };
     });
@@ -2814,8 +2815,9 @@ try {
     item.nativeStaticAssetMetadata = await page.evaluate(bitbucketPipelineAssetMetadata);
     await verifyBitbucketShell(page, item, { poll, pause, tabState, bitbucketDom, capture: (target, name) => capture(target, name, { fullPage: false }), guardBudget: guardBitbucketShellBudget, prepareConsent: true, freshAnonymousProfile: true });
     item.featureParity = 'partial';
-    return { status: 'passed', verified: item.shellSyntax?.status === 'native_disabled'
+    return { status: item.shellSyntax?.status === 'unavailable' ? 'unsupported' : 'passed', verified: item.shellSyntax?.status === 'native_disabled'
       ? 'Focused native Settings observation and genuine context mechanics with no owned colors while native syntax is disabled. No positive syntax or palette acceptance.'
+      : item.shellSyntax?.status === 'unavailable' ? 'Focused native context/count/source preservation is verified with colors withheld, but native syntax preference remains unavailable. This is not native-off or positive syntax/palette acceptance.'
       : `Focused native Pipeline selection, context, original-source ranges/selection and complete counts. Native preference: ${item.shellSyntax?.nativeSettings?.status ?? 'unavailable'}. Native Bash palette equivalence and unselected themes remain unverified.` };
   });
 

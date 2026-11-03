@@ -5,7 +5,7 @@ import type { FileStats, GeldSettings } from '@geld/core';
 import type { TabState } from '../lib/messages';
 import { ProviderController } from './controller';
 import { readBitbucketDiff } from '../bitbucket/diff';
-import { bitbucketAdapter } from '../bitbucket';
+import { createBitbucketDiffSyntax } from '../bitbucket';
 import type { ProviderAdapter, ProviderDiffEntry, ProviderDiffResult, ProviderDiffView, ProviderDiffLine, ProviderReviewPage, ProviderCommitPage, ReviewProvider } from './types';
 
 vi.mock('wxt/utils/storage', () => ({ storage: {
@@ -101,6 +101,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
   document.body.innerHTML = '';
+  document.head.querySelector('[data-geld-unit-native-syntax]')?.remove();
 });
 
 async function settle(): Promise<void> { await vi.advanceTimersByTimeAsync(120); }
@@ -656,7 +657,7 @@ it('retries unconfirmed Viewed clicks but preserves manual unview after confirma
 });
 
 
-it('keeps native Bitbucket shell coloring independent of source-count loading and folding, restoring on disable/no view/stop', async () => {
+it('keeps positively observed native syntax independent of source-count loading and requires fresh evidence after disable/no view/stop', async ({ onTestFinished }) => {
   const registry = new Map<string, Set<AbstractRange>>();
   vi.stubGlobal('CSS', { highlights: registry });
   vi.stubGlobal('Highlight', class extends Set<AbstractRange> {});
@@ -681,20 +682,37 @@ it('keeps native Bitbucket shell coloring independent of source-count loading an
     article.append(row);
   }
   region.append(root);
-  document.body.append(region);
+  const originalUrl = window.location.href;onTestFinished(() => { window.location.href = originalUrl; });
+  window.location.href = 'https://bitbucket.org/acme/widgets/pull-requests/1/diff';
+  const bootstrap = document.createElement('meta');bootstrap.id = 'bb-bootstrap';bootstrap.dataset.geldUnitNativeSyntax = '';
+  bootstrap.setAttribute('data-current-user', '{"isAuthenticated":false}');bootstrap.setAttribute('data-target-workspace-uuid', '02b941e3-cfaa-40f9-9a58-cec53e20bdc3');document.head.append(bootstrap);
+  const tab = document.createElement('section');tab.setAttribute('role', 'tabpanel');tab.id = 'pull-request-tabs-1-tab';
+  tab.innerHTML = '<button type="button" data-testid="settingsButton" aria-label="Open modal window: diff display settings">Settings</button>';tab.append(region);document.body.append(tab);
+  // Explicit trusted-input/layout protocol, not public native Syntax-on evidence.
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(10, 10, 80, 30));
+  const qualify = async (): Promise<void> => {
+    tab.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const dialog = document.createElement('section');dialog.setAttribute('role', 'dialog');
+    dialog.innerHTML = '<form><label for="diff-settings-syntax-highlighting-toggle">Syntax highlighting</label><input id="diff-settings-syntax-highlighting-toggle" name="enableSyntaxHighlighting" value="enableSyntaxHighlighting" type="checkbox" checked><button type="button">Cancel</button></form>';document.body.append(dialog);
+    await settle();dialog.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));dialog.remove();await settle();
+  };
   let available = true;
-  const diffSyntax = bitbucketAdapter.diffSyntax;
-  if (diffSyntax === undefined) throw new Error('Missing native adapter syntax hook');
-  const { controller } = start({ ...adapter, diffSyntax, readDiff: () => available ? readBitbucketDiff(document) : null }, { ...DEFAULT_SETTINGS, hideCommentLines: false, testOutline: false });
+  const diffSyntax = createBitbucketDiffSyntax({ unitOnly: { trusted: () => true } });
+  const currentPage = { ...page('bitbucket', '1'), diffPageUrl: window.location.href };
+  const { controller } = start({ ...adapter, describe: () => currentPage, diffSyntax, readDiff: () => available ? readBitbucketDiff(document) : null }, { ...DEFAULT_SETTINGS, hideCommentLines: false, testOutline: false });
   await settle();
   expect(fetchDiff).toHaveBeenCalledOnce(); // Full counts remain pending throughout this test.
   expect(controller.getTabState().visible).toBeNull();
-  expect(registry.get('geld-bitbucket-shell-keyword')?.size).toBeGreaterThan(0);
+  expect(registry.has('geld-bitbucket-shell-keyword')).toBe(false);
+  await qualify();expect(registry.get('geld-bitbucket-shell-keyword')?.size).toBeGreaterThan(0);expect(controller.getTabState().visible).toBeNull();expect(fetchDiff).toHaveBeenCalledOnce();
+  const code = article.querySelector('[data-line-type]');if (code === null) throw new Error('Missing original native code');code.replaceWith(code.cloneNode(true));
+  controller.requestRefresh();await settle();expect(registry.get('geld-bitbucket-shell-keyword')?.size).toBeGreaterThan(0);expect(fetchDiff).toHaveBeenCalledOnce();
   controller.updateSettings({ ...DEFAULT_SETTINGS, enabled: false });
   await settle();
   expect(registry.has('geld-bitbucket-shell-keyword')).toBe(false);
   controller.updateSettings(DEFAULT_SETTINGS);
   await settle();
+  expect(registry.has('geld-bitbucket-shell-keyword')).toBe(false);await qualify();
   expect(registry.get('geld-bitbucket-shell-keyword')?.size).toBeGreaterThan(0);
   available = false;
   controller.requestRefresh();
@@ -703,6 +721,7 @@ it('keeps native Bitbucket shell coloring independent of source-count loading an
   available = true;
   controller.requestRefresh();
   await settle();
+  expect(registry.has('geld-bitbucket-shell-keyword')).toBe(false);await qualify();
   expect(registry.get('geld-bitbucket-shell-keyword')?.size).toBeGreaterThan(0);
   controller.stop();
   expect([...registry.keys()].filter((key) => key.startsWith('geld-bitbucket-shell-'))).toEqual([]);

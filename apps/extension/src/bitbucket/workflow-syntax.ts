@@ -9,6 +9,7 @@ interface Source { readonly text: string; readonly lines: readonly LocatedLine[]
 interface PaintedFile { readonly lines: readonly ShellLine[]; readonly beforeCount: number; readonly ranges: ShellRanges }
 const painted = new Map<HTMLElement, PaintedFile>();
 const PREFIX = 'geld-bitbucket-shell-';
+export type BitbucketSyntaxCapability = 'enabled' | 'disabled' | 'unknown';
 
 function linesOf(entry: ProviderDiffEntry, side: 'old' | 'new'): ShellLine[] {
   const result: ShellLine[] = [];
@@ -197,8 +198,8 @@ function setHighlights(): void {
   }
 }
 
-export function applyBitbucketWorkflowSyntax(entries: readonly ProviderDiffEntry[]): void {
-  if (typeof CSS === 'undefined' || CSS.highlights === undefined || typeof Highlight === 'undefined' || typeof StaticRange === 'undefined') {
+export function applyBitbucketWorkflowSyntax(entries: readonly ProviderDiffEntry[], capability: BitbucketSyntaxCapability = 'unknown'): void {
+  if (capability !== 'enabled' || typeof CSS === 'undefined' || CSS.highlights === undefined || typeof Highlight === 'undefined' || typeof StaticRange === 'undefined') {
     removeBitbucketWorkflowSyntax();
     return;
   }
