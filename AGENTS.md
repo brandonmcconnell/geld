@@ -553,12 +553,13 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
 - **Flow: the changed files as a diagram of what imports what** (`review/flow.ts`, `@geld/core/file-flow.ts`).
   A "Flow" button (Lucide's `workflow` mark, `ICON_WORKFLOW`) stands in the Geld row just left of the grouping control whenever the pull request's diff is in with more than one file (`PanelModel.flow` from `flowAvailable()`).
   The controller hands the digest its source each conversation pass (`setFlowSource`, `pageFlowSource`: the diff's `FileStats` with each file's hidden category from the reader's matcher).
-  Opening it reads every changed file whole at the head from the page's own `raw` route (same origin, so private repositories work;
-  six at a time, at most 160, 400 KB each), and for a pull request that removes files also the base (`baseRefOid` / `baseRefName` from the embedded payload, else `.base-ref`) for the removed files and the files that may have imported them.
+  Opening it reads every changed file whole at the head from the page's own `raw` route through `pageFetch` (same origin, so private repositories work;
+  six at a time, at most 160, 400 KB each, kept per pull request head and dropped when the head or the pull request changes, at most 12 million characters, oldest first), and for a pull request that removes files also the base (`baseRefOid` / `baseRefName` from the embedded payload, else `.base-ref`) for the removed files and the files that may have imported them.
   Imports are read by `importSpecifiers` (scripts: `import`, `export … from`, `import()`, `require`;
   styles: `@import`/`@use`/`@forward` with Sass partials;
-  Python `from`/`import`;
-  Rust `mod`), resolved by `resolveImport` against the changed files only (relative paths with extension, `index` and compiled-extension fallbacks, `@/`-style aliases by a unique tail), and a link found only at the base is `removed` (dashed, danger).
+  Python `from`/`import`, the names a `from . import a, b` lists tried as modules too;
+  Rust `mod`;
+  comments, and strings that are not what an import names, blanked first by `scrub`, so `// import './b'` links nothing), resolved by `resolveImport` against the changed files only (relative paths with extension, `index` and compiled-extension fallbacks, `@/`-style aliases by a unique tail), and a link found only at the base is `removed` (dashed, danger), but only from a deleted file or one whose head text was read: a surviving file that could not be read has not dropped its imports.
   `layoutFlow` draws each connected group on its own, importers above imports: longest-path rows with every file then pulled down beside the nearest file it imports, links another path already implies left undrawn (`implied`;
   a removed link is always drawn), bend points for links that skip rows so they pass between cards, barycentre ordering sweeps, and rows placed by pool-adjacent-violators (`closestSpaced`) so a crowded row spreads around where it wants to be instead of drifting right.
   Files no link touches sit below under "Not linked to other changes".
@@ -569,6 +570,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   CSS `zoom` on the canvas, fitted to the width once the reading ends and again when hidden files are toggled);
   while files are still being read, the lower left says how many.
   A card is a link to its file in Files changed (`#diff-<sha256 of the path>` on the page's own Files tab URL, so `?w=1` stays): the click closes the dialog and GitHub's own navigation goes there.
+  The legend button carries a chevron pointing up, the way the legend opens, turned over while it is open.
+  `teardownReviewOverview` calls `closeFlow`, which closes the dialog and drops the reads still queued, so Geld turned off leaves nothing over the page.
   The diagram is drawn by hand on purpose, with no graph library.
 - **Comment text keeps its inline formatting, everywhere it is shortened to a line.**
   The crawler's `blockText` writes GitHub's rendered `<code>`, `<strong>`/`<b>`, `<em>`/`<i>` and `<del>` back as Markdown marks (never inside `<pre>`), `firstSentence` (`@geld/review/cluster.ts`) keeps them and ends a sentence only outside a code span, and `@geld/review/inline-markdown.ts` (`parseInlineMarkdown`, `stripInlineMarkdown`) is the one reader of that inline subset — code, bold, italic, strikethrough;

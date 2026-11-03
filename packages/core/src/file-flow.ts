@@ -42,7 +42,8 @@ const SCRIPT_PATTERNS: readonly RegExp[] = [
   /\brequire\(\s*['"]([^'"\n]+)['"]\s*\)/g,
 ];
 const STYLE_PATTERNS: readonly RegExp[] = [/@(?:import|use|forward)\s+(?:url\()?\s*['"]?([^'")\s;]+)['"]?\s*\)?/g];
-const PYTHON_PATTERNS: readonly RegExp[] = [/^\s*from\s+(\.*[\w.]*)\s+import\b/gm, /^\s*import\s+([\w.]+(?:\s*,\s*[\w.]+)*)/gm];
+const PYTHON_FROM = /^[ \t]*from[ \t]+(\.+[\w.]*|[\w.]+)[ \t]+import[ \t]+(\([^)]*\)|[^\n#;]+)/gm;
+const PYTHON_IMPORT = /^[ \t]*import[ \t]+([^\n#;]+)/gm;
 const RUST_PATTERNS: readonly RegExp[] = [/^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*;/gm];
 
 function collect(text: string, patterns: readonly RegExp[]): string[] {
@@ -57,25 +58,106 @@ function collect(text: string, patterns: readonly RegExp[]): string[] {
   return found;
 }
 
+/** Names in a Python import list (`a, b as c`, or the same in parentheses over several lines), without aliases or `*`. */
+function pythonNames(list: string): string[] {
+  return list
+    .replace(/[()]/g, ' ')
+    .split(',')
+    .map((part) => part.trim().split(/\s+as\s+/)[0]?.trim() ?? '')
+    .filter((name) => name !== '' && name !== '*' && /^[\w.]+$/.test(name));
+}
+
 /**
  * The module specifiers a file names, as written (`./step`, `../lib/x.js`,
- * `@/components/card`, `.models` for Python's `from .models import`,
- * `mod:name` for a Rust `mod name;`). Unknown languages give none.
+ * `@/components/card`, `.models` for Python's `from .models import`, and
+ * `.helper` for `from . import helper`, `mod:name` for a Rust `mod name;`).
+ * Comments, and strings that are not what an import names, are read past:
+ * `// import './b'` names nothing. Unknown languages give none.
  */
 export function importSpecifiers(path: string, text: string): string[] {
   const language = languageOf(path);
   if (language === null) return [];
-  if (language === 'script') return unique(collect(text, SCRIPT_PATTERNS));
-  if (language === 'style') return unique(collect(text, STYLE_PATTERNS));
-  if (language === 'rust') return unique(collect(text, RUST_PATTERNS).map((name) => `mod:${name}`));
+  const code = scrub(language, text);
+  if (language === 'script') return unique(collect(code, SCRIPT_PATTERNS));
+  if (language === 'style') return unique(collect(code, STYLE_PATTERNS));
+  if (language === 'rust') return unique(collect(code, RUST_PATTERNS).map((name) => `mod:${name}`));
   const modules: string[] = [];
-  for (const entry of collect(text, PYTHON_PATTERNS)) {
-    for (const part of entry.split(',')) {
-      const name = part.trim();
-      if (name !== '') modules.push(name);
-    }
+  PYTHON_FROM.lastIndex = 0;
+  for (const match of code.matchAll(PYTHON_FROM)) {
+    const module = match[1] ?? '';
+    if (module === '') continue;
+    modules.push(module);
+    // `from . import helper` and `from .pkg import mod` may name modules as well as attributes: both are tried.
+    for (const name of pythonNames(match[2] ?? '')) modules.push(/^\.+$/.test(module) ? module + name : `${module}.${name}`);
   }
+  PYTHON_IMPORT.lastIndex = 0;
+  for (const match of code.matchAll(PYTHON_IMPORT)) modules.push(...pythonNames(match[1] ?? ''));
   return unique(modules);
+}
+
+/** Every character but line breaks as a space, so offsets and line starts survive. */
+function blank(text: string): string {
+  return text.replace(/[^\n]/g, ' ');
+}
+
+/** What an import's own string follows: the string after these is kept, any other is blanked. */
+const SCRIPT_IMPORT_LEAD = /(?:\bfrom|\bimport|\brequire\s*\(|\bimport\s*\()\s*$/;
+
+/**
+ * The text with comments blanked, and string contents blanked unless the
+ * string is what an import names (scripts), so an import written in a comment
+ * or as an example in a string is not read as one.
+ */
+function scrub(language: Language, text: string): string {
+  const out: string[] = [];
+  let tail = '';
+  const push = (chunk: string): void => {
+    out.push(chunk);
+    tail = (tail + chunk).slice(-48);
+  };
+  const lineComment = language === 'python' ? '#' : '//';
+  const blocks = language !== 'python';
+  const strings = language === 'script' || language === 'python';
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index] ?? '';
+    // Sass line comments only where a line or a word break starts one: `url(https://…)` is not a comment.
+    const lineStart = language !== 'style' || index === 0 || /\s/.test(text[index - 1] ?? '');
+    if (text.startsWith(lineComment, index) && lineStart) {
+      const end = text.indexOf('\n', index);
+      const stop = end < 0 ? text.length : end;
+      push(blank(text.slice(index, stop)));
+      index = stop;
+      continue;
+    }
+    if (blocks && text.startsWith('/*', index)) {
+      const end = text.indexOf('*/', index + 2);
+      const stop = end < 0 ? text.length : end + 2;
+      push(blank(text.slice(index, stop)));
+      index = stop;
+      continue;
+    }
+    if (strings && (char === '"' || char === "'" || char === '`')) {
+      const triple = language === 'python' && text.startsWith(char.repeat(3), index) ? char.repeat(3) : null;
+      const open = triple ?? char;
+      let cursor = index + open.length;
+      while (cursor < text.length && !text.startsWith(open, cursor)) {
+        if (text[cursor] === '\\') cursor += 1;
+        else if (triple === null && char !== '`' && text[cursor] === '\n') break;
+        cursor += 1;
+      }
+      const closed = text.startsWith(open, cursor);
+      const stop = Math.min(text.length, closed ? cursor + open.length : cursor);
+      const literal = text.slice(index, stop);
+      const keep = language === 'script' && char !== '`' && SCRIPT_IMPORT_LEAD.test(tail);
+      push(keep ? literal : open + blank(literal.slice(open.length, closed ? literal.length - open.length : literal.length)) + (closed ? open : ''));
+      index = stop;
+      continue;
+    }
+    push(char);
+    index += 1;
+  }
+  return out.join('');
 }
 
 function unique(values: readonly string[]): string[] {
@@ -209,9 +291,12 @@ export interface FlowEdge {
 /**
  * Every link between changed files: `after` holds each file's text as the
  * change leaves it, `before` the text it replaced (deleted files, and the
- * files that may have imported them). A link found only before is `removed`.
+ * files that may have imported them). A link found only before is `removed`,
+ * but only from a file the change `deleted` or one whose text after is known:
+ * a surviving file that could not be read is not taken to have dropped its
+ * imports.
  */
-export function flowEdges(paths: readonly string[], after: ReadonlyMap<string, string>, before: ReadonlyMap<string, string> = new Map()): FlowEdge[] {
+export function flowEdges(paths: readonly string[], after: ReadonlyMap<string, string>, before: ReadonlyMap<string, string> = new Map(), deleted: ReadonlySet<string> = new Set()): FlowEdge[] {
   const known = new Set(paths);
   const links = (texts: ReadonlyMap<string, string>): Set<string> => {
     const found = new Set<string>();
@@ -228,7 +313,11 @@ export function flowEdges(paths: readonly string[], after: ReadonlyMap<string, s
   const then = links(before);
   const edges: FlowEdge[] = [];
   for (const key of now) edges.push(edgeOf(key));
-  for (const key of then) if (!now.has(key)) edges.push({ ...edgeOf(key), removed: true });
+  for (const key of then) {
+    if (now.has(key)) continue;
+    const edge = edgeOf(key);
+    if (deleted.has(edge.from) || after.has(edge.from)) edges.push({ ...edge, removed: true });
+  }
   return edges.sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
 }
 

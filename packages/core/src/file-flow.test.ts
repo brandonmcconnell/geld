@@ -22,8 +22,29 @@ describe('importSpecifiers', () => {
 
   it('reads styles, Python and Rust', () => {
     expect(importSpecifiers('a.scss', "@use 'sass:math';\n@import 'tokens';\n@forward \"./mixins\";\n@import url(base.css);")).toEqual(['sass:math', 'tokens', './mixins', 'base.css']);
-    expect(importSpecifiers('pkg/views.py', 'from .models import User\nfrom ..core.db import session\nimport os, pkg.util as util\n')).toEqual(['.models', '..core.db', 'os', 'pkg.util']);
+    expect(importSpecifiers('pkg/views.py', 'from .models import User\nfrom ..core.db import session\nimport os, pkg.util as util\n')).toEqual(['.models', '.models.User', '..core.db', '..core.db.session', 'os', 'pkg.util']);
     expect(importSpecifiers('src/lib.rs', 'pub mod flow;\nmod parse;\nuse std::io;')).toEqual(['mod:flow', 'mod:parse']);
+  });
+
+  it('reads past comments and strings that only mention an import', () => {
+    const text = [
+      "// import './commented'",
+      "/* import './blocked' */",
+      "const example = \"import x from './in-a-string'\";",
+      'const template = `require("./in-a-template")`;',
+      "import { real } from './real'; // trailing comment",
+      "const url = 'https://example.com/import'; import('./lazy')",
+    ].join('\n');
+    expect(importSpecifiers('src/x.ts', text)).toEqual(['./real', './lazy']);
+    expect(importSpecifiers('a.scss', "// @import 'old';\n/* @use 'gone'; */\n@import url(https://fonts.example/x.css);\n@use 'kept';")).toEqual(['https://fonts.example/x.css', 'kept']);
+    expect(importSpecifiers('pkg/x.py', '# from .old import a\n"""\nfrom .doc import b\n"""\nfrom .real import c\n')).toEqual(['.real', '.real.c']);
+  });
+
+  it('reads the modules a Python relative import lists', () => {
+    expect(importSpecifiers('pkg/view.py', 'from . import helper, models as m\nfrom .api import (\n  client,\n  types,\n)\nfrom x import *\n')).toEqual(['.', '.helper', '.models', '.api', '.api.client', '.api.types', 'x']);
+    const known = new Set(['pkg/helper.py', 'pkg/api/client.py']);
+    expect(resolveImport('pkg/view.py', '.helper', known)).toBe('pkg/helper.py');
+    expect(resolveImport('pkg/view.py', '.api.client', known)).toBe('pkg/api/client.py');
   });
 
   it('knows which files it can read', () => {
@@ -71,7 +92,7 @@ describe('flowEdges', () => {
       ['src/a.ts', "import { b } from './b';\nimport { g } from './gone';"],
       ['src/gone.ts', "import { b } from './b';"],
     ]);
-    expect(flowEdges(paths, after, before)).toEqual([
+    expect(flowEdges(paths, after, before, new Set(['src/gone.ts']))).toEqual([
       { from: 'src/a.ts', to: 'src/b.ts' },
       { from: 'src/a.ts', to: 'src/gone.ts', removed: true },
       { from: 'src/gone.ts', to: 'src/b.ts', removed: true },
@@ -86,6 +107,14 @@ describe('closestSpaced', () => {
 
   it('spreads a crowd around where it wanted to be, not to one side', () => {
     expect(closestSpaced([3, 3, 3], [1, 1])).toEqual([2, 3, 4]);
+  });
+});
+
+describe('flowEdges with unread files', () => {
+  it('does not call the imports of a file it could not read removed', () => {
+    const paths = ['src/a.ts', 'src/b.ts', 'src/gone.ts'];
+    const before = new Map([['src/a.ts', "import { b } from './b';"]]);
+    expect(flowEdges(paths, new Map(), before, new Set(['src/gone.ts']))).toEqual([]);
   });
 });
 

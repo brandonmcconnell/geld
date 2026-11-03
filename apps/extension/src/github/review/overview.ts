@@ -59,7 +59,7 @@ import { fitChips, stopFittingChips } from './fit-chips';
 import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrphanedLoans, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 import { pageFetch } from '../page-fetch';
-import { flowAvailable, openFlowDialog } from './flow';
+import { closeFlow, flowAvailable, openFlowDialog } from './flow';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
@@ -3599,6 +3599,7 @@ export function teardownReviewOverview(): void {
   // First: nothing asked for earlier may run after this. Pending passes are dropped, fetches in flight cancelled,
   // and every later callback finds the overview unmounted (`lastSettings`).
   lastSettings = null;
+  closeFlow();
   setAutoLoading(false);
   deferredWhileHidden = false;
   window.removeEventListener('load', onDocumentLoaded);

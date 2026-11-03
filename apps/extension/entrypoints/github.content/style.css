@@ -8145,3 +8145,22 @@ dialog.geld-flow .geld-flow__title {
     transition: none;
   }
 }
+
+/* The legend button's chevron points the way the legend opens (up), and turns over once it is open. */
+.geld-flow__legend-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 6px;
+}
+
+.geld-flow__chevron {
+  width: 12px;
+  height: 12px;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  transform: rotate(180deg);
+}
+
+.geld-flow__legend-btn[aria-expanded='true'] .geld-flow__chevron {
+  transform: none;
+}

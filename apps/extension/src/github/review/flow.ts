@@ -3,7 +3,8 @@ import type { FlowComponent, FlowEdge, FlowRoute } from '@geld/core/file-flow';
 import { formatCount } from '@geld/core/format';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { looksLikeHtml } from '../../lib/http';
-import { ICON_FILE_ADDED, ICON_FILE_MODIFIED, ICON_FILE_MOVED, ICON_FILE_REMOVED, ICON_WORKFLOW, ICON_X } from '../ui/icons';
+import { pageFetch } from '../page-fetch';
+import { ICON_CHEVRON_DOWN, ICON_FILE_ADDED, ICON_FILE_MODIFIED, ICON_FILE_MOVED, ICON_FILE_REMOVED, ICON_WORKFLOW, ICON_X } from '../ui/icons';
 
 /**
  * The Flow dialog: the pull request's changed files as a diagram of which
@@ -45,6 +46,8 @@ const MAX_READS = 160;
 const MAX_BYTES = 400_000;
 const CONCURRENT_READS = 6;
 const RENDER_DEBOUNCE_MS = 120;
+/** Source text kept across dialogs on one pull request head, in characters; the oldest reads go first past it. */
+const MAX_CACHED_CHARS = 12_000_000;
 const ZOOM_MIN = 0.3;
 const ZOOM_MAX = 1.5;
 const ZOOM_STEP = 0.1;
@@ -53,10 +56,26 @@ const STATUS_WORD: Readonly<Record<FlowFileStatus, string>> = { added: 'New', de
 const STATUS_ICON: Readonly<Record<FlowFileStatus, string>> = { added: ICON_FILE_ADDED, deleted: ICON_FILE_REMOVED, renamed: ICON_FILE_MOVED, modified: ICON_FILE_MODIFIED };
 
 let source: FlowSource | null = null;
+/** The pull request and head the cached reads belong to. */
+let sourceKey = '';
 
 /** What the diagram is drawn from, set by the controller on every conversation pass (null elsewhere). */
 export function setFlowSource(next: FlowSource | null): void {
   source = next;
+  const key = next === null ? '' : `${next.origin}/${next.repo}${next.pullPath}@${next.headSha ?? ''}`;
+  // Another pull request or a new head: what was read for the last one is never asked for again.
+  if (key !== '' && key !== sourceKey) {
+    sourceKey = key;
+    forgetReads();
+  }
+}
+
+/** Close an open Flow dialog and drop every read still waiting (Geld turned off, or the digest torn down). */
+export function closeFlow(): void {
+  openDialog?.close();
+  openDialog = null;
+  onReadLanded = null;
+  forgetReads();
 }
 
 /** Whether the Geld row offers Flow: the diff is in and holds more than one file. */
@@ -69,7 +88,32 @@ type Read = { readonly state: 'pending' } | { readonly state: 'ready'; readonly 
 const reads = new Map<string, Read>();
 const queue: Array<{ readonly key: string; readonly url: string }> = [];
 let active = 0;
+let cachedChars = 0;
+/** Bumped whenever the cache is dropped, so an answer to a read from before is thrown away. */
+let readGeneration = 0;
 let onReadLanded: (() => void) | null = null;
+let openDialog: HTMLDialogElement | null = null;
+
+function forgetReads(): void {
+  reads.clear();
+  queue.length = 0;
+  cachedChars = 0;
+  readGeneration += 1;
+}
+
+function remember(key: string, read: Read): void {
+  const previous = reads.get(key);
+  if (previous?.state === 'ready') cachedChars -= previous.text.length;
+  reads.set(key, read);
+  if (read.state !== 'ready') return;
+  cachedChars += read.text.length;
+  for (const [oldKey, old] of reads) {
+    if (cachedChars <= MAX_CACHED_CHARS) break;
+    if (oldKey === key || old.state !== 'ready') continue;
+    cachedChars -= old.text.length;
+    reads.delete(oldKey);
+  }
+}
 
 function rawUrl(origin: string, repo: string, revision: string, path: string): string {
   return `${origin}/${repo}/raw/${encodeURIComponent(revision)}/${path.split('/').map(encodeURIComponent).join('/')}`;
@@ -80,7 +124,7 @@ function request(origin: string, repo: string, revision: string, path: string): 
   const known = reads.get(key);
   if (known !== undefined) return known;
   const pending: Read = { state: 'pending' };
-  reads.set(key, pending);
+  remember(key, pending);
   queue.push({ key, url: rawUrl(origin, repo, revision, path) });
   pump();
   return pending;
@@ -91,19 +135,23 @@ function pump(): void {
     const job = queue.shift();
     if (job === undefined) return;
     active += 1;
+    const generation = readGeneration;
+    const land = (read: Read): void => {
+      if (generation === readGeneration) remember(job.key, read);
+    };
     void fetchText(job.url)
-      .then((text) => reads.set(job.key, text === null ? { state: 'failed' } : { state: 'ready', text }))
-      .catch(() => reads.set(job.key, { state: 'failed' }))
+      .then((text) => land(text === null ? { state: 'failed' } : { state: 'ready', text }))
+      .catch(() => land({ state: 'failed' }))
       .finally(() => {
         active -= 1;
-        onReadLanded?.();
+        if (generation === readGeneration) onReadLanded?.();
         pump();
       });
   }
 }
 
 async function fetchText(url: string): Promise<string | null> {
-  const response = await fetch(url, { credentials: 'same-origin', redirect: 'follow' });
+  const response = await pageFetch(url, { credentials: 'same-origin', redirect: 'follow' });
   if (!response.ok) return null;
   const text = await response.text();
   if (text.length > MAX_BYTES || looksLikeHtml(response.headers.get('content-type'), text)) return null;
@@ -128,6 +176,7 @@ function baseRevision(): string | null {
 interface Reading {
   readonly after: ReadonlyMap<string, string>;
   readonly before: ReadonlyMap<string, string>;
+  readonly deleted: ReadonlySet<string>;
   readonly wanted: number;
   readonly landed: number;
   readonly unreadable: boolean;
@@ -137,7 +186,8 @@ function readFiles(current: FlowSource, files: readonly FlowFile[]): Reading {
   const after = new Map<string, string>();
   const before = new Map<string, string>();
   const readable = files.filter((file) => canReadImports(file.path));
-  if (current.headSha === null) return { after, before, wanted: 0, landed: 0, unreadable: readable.length > 0 };
+  const deleted = new Set(files.filter((file) => file.status === 'deleted').map((file) => file.path));
+  if (current.headSha === null) return { after, before, deleted, wanted: 0, landed: 0, unreadable: readable.length > 0 };
   const removed = readable.filter((file) => file.status === 'deleted');
   const base = removed.length > 0 ? baseRevision() : null;
   let wanted = 0;
@@ -158,7 +208,7 @@ function readFiles(current: FlowSource, files: readonly FlowFile[]): Reading {
       if (file.status === 'deleted' || file.status === 'modified') take(base, file.path, before);
     }
   }
-  return { after, before, wanted, landed, unreadable: false };
+  return { after, before, deleted, wanted, landed, unreadable: false };
 }
 
 async function sha256Hex(text: string): Promise<string> {
@@ -384,7 +434,9 @@ export function openFlowDialog(): void {
   scroller.append(canvas);
   const status = createElement('p', { class: 'geld-flow__reading', role: 'status', hidden: '' });
   const legendList = createElement('div', { class: 'geld-flow__legend', id: `geld-flow-${dialogIds}-legend`, hidden: '' }, (['added', 'modified', 'renamed', 'deleted'] as const).map((key) => createElement('span', { class: 'geld-flow__legend-item' }, [statusIcon(key), STATUS_WORD[key]])));
-  const legendButton = createElement('button', { type: 'button', class: 'geld-flow__ctl geld-flow__legend-btn', 'aria-expanded': 'false', 'aria-controls': legendList.id }, ['Legend']);
+  const chevron = icon(ICON_CHEVRON_DOWN);
+  chevron.classList.add('geld-flow__chevron');
+  const legendButton = createElement('button', { type: 'button', class: 'geld-flow__ctl geld-flow__legend-btn', 'aria-expanded': 'false', 'aria-controls': legendList.id }, ['Legend', chevron]);
   legendButton.addEventListener('click', () => {
     const open = legendList.hidden;
     legendList.hidden = !open;
@@ -442,6 +494,7 @@ export function openFlowDialog(): void {
       files.map((file) => file.path),
       reading.after,
       reading.before,
+      reading.deleted,
     );
     const layout = layoutFlow(
       files.map((file) => file.path),
@@ -491,10 +544,15 @@ export function openFlowDialog(): void {
     if (event.target === dialog) dismiss();
   });
   dialog.addEventListener('close', () => {
-    onReadLanded = null;
+    if (openDialog === dialog) {
+      openDialog = null;
+      onReadLanded = null;
+    }
     window.clearTimeout(timer);
     dialog.remove();
   });
+  openDialog?.close();
+  openDialog = dialog;
   document.body.append(dialog);
   dialog.showModal();
   applyScale(1);
