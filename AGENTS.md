@@ -1705,6 +1705,7 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Rapid diff fold rows inherit the selected code theme's `--code-*` colors and `--rd-body-font-size`/line-height with the native monospace font, rather than the surrounding UI's Sans font or surface palette.
   Define code-theme overrides at the fold row, since variables scoped below the document root cannot resolve in a bridge computed on `html`.
   GitLab's Changes badge can be pointer-transparent, so bind its surrounding native tab link as the hover and keyboard target while retaining the count span for text updates.
+  Bitbucket's verified pull-request navigation provides a neutral count slot after its direct native tablist, keeping owned overview line counts outside tab badges and hidden sticky headers.
   The native line-count `aria-label` lives on a wrapper outside the numeric span, so update its count alongside the visible text and restore the latest native wording during teardown.
   Atlassian typography tokens are complete font shorthands, with semantic font weights, shape, spacing, surface and focus tokens supplied by the host.
   Current Atlaskit default buttons draw the border on `::after` so it does not add to the button's layout height.
@@ -1749,7 +1750,11 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Native status or comment-mark updates can rebuild owned accordion rows, so retain focus only for the same subject, provider, active category and exact file, folder or original enabled native-action identity.
   A trailing comment action never falls back to the file link, and changed subjects, categories, unrelated focus or missing, replaced or disabled actions cancel focus restoration.
   A nonempty native tree search temporarily restores the native list rather than guessing its wildcard or filter syntax.
-  Temporary search or an absent native tree host releases owned DOM, layout markers and native action bindings while preserving collapsed folders, category and current file only for the exact provider, review and selected revision.
+  Temporary search releases owned DOM, layout markers and native action bindings while preserving collapsed folders, category and current file only for the exact provider, review and selected revision.
+  A closed, absent or unverifiable native tree uses an owned category accordion immediately before the verified diff container, restoring the native tree's markers and retaining the same subject's category, folder and current-file choices when the sidebar returns.
+  Window and native-tree resize observations request one debounced projection refresh only when sidebar visibility disagrees with the current placement, so responsive CSS changes do not wait for the periodic refresh or cause sizing loops.
+  Same-subject fallback rows may retain inert native presentation, but unavailable original comment controls are disabled and never fall back to a file-navigation action.
+  Category navigation remains available while a native diff stream is incomplete or cannot safely be grouped, without granting permission to flatten, reorder or hide unsupported source wrappers.
   The explicit `gitlab-file-search` installed slice uses GitLab's original file-tree search, trusted typing and native result activation on the immutable mixed MR, requiring custom collapsed-folder and current-file recovery after clearing the query.
   Its pinned source version and rendered native target are independent GitLab facts: a selected merge-result target can have a different head from `source_versions`, so bind both full native selections separately and reject any change during the interaction.
   PR 220's first installed search attempt failed on the obsolete rendered-head fixture gate before any search action, establishing neither a search pass nor a product defect.

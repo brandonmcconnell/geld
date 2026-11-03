@@ -4,6 +4,7 @@ import type { HiddenBreakdown } from '../github/breakdown';
 import { element } from './dom';
 import { nativeTreeIcon } from './tree-icons';
 import type { ProviderDiffView, ProviderTreeEntry, ReviewProvider } from './types';
+import './categories.css';
 
 export const PROVIDER_CATEGORY_ROW = 'data-geld-provider-category-row';
 const HOST = 'data-geld-provider-category-host';
@@ -14,6 +15,7 @@ export interface ProviderCategoryActions {
   readonly revealPath: (path: string) => void;
   readonly setExpanded: (expanded: boolean) => void;
   readonly selectCategory?: (id: string) => void;
+  readonly refresh?: () => void;
   /** Current controller choice; native framework remounts must not reset it independently. */
   readonly selectedCategoryId?: string;
   /** Exact provider subject/version/head key; prevents presentation reuse across selected revisions. */
@@ -49,6 +51,11 @@ function directory(paths: readonly string[]): Directory {
 export class ProviderCategoryTree {
   private readonly id = `geld-provider-tree-${++sequence}`;
   private host: HTMLElement | null = null;
+  private sourceHost: HTMLElement | null = null;
+  private nativeProjectionAllowed = false;
+  private refreshQueued = false;
+  private fallbackHost: HTMLElement | null = null;
+  private fallbackContainer: HTMLElement | null = null;
   private provider: ReviewProvider | null = null;
   private folderClass: string | null = null;
   private essential: HTMLButtonElement | null = null;
@@ -74,27 +81,41 @@ export class ProviderCategoryTree {
   private readonly paths = new Set<string>();
   private readonly managed = new Map<HTMLElement, Map<string, Managed>>();
   private readonly focusTargets = new WeakMap<HTMLElement, FocusTarget>();
+  private readonly nativeActions = new WeakMap<HTMLButtonElement, { readonly path: string; readonly index: number }>();
   private readonly bodies = new Set<HTMLElement>();
   private actions: ProviderCategoryActions = { revealPath: () => undefined, setExpanded: () => undefined };
 
   update(view: ProviderDiffView, hidden: HiddenBreakdown, all: ChangeTotals, files: readonly FileStats[], actions: ProviderCategoryActions): void {
     const focus = this.captureFocus();
-    const host = view.treeHost;
     const subjectKey = actions.subjectKey ?? null;
-    const provider = (host?.ownerDocument ?? view.container.ownerDocument).documentElement.getAttribute('data-geld-provider');
+    const provider = view.container.ownerDocument.documentElement.getAttribute('data-geld-provider');
     const nativeProvider = provider === 'gitlab' || provider === 'bitbucket' ? provider : null;
     const sameSubject = subjectKey !== null && this.subjectKey === subjectKey && this.provider === nativeProvider;
     if (this.provider !== nativeProvider || this.subjectKey !== subjectKey) this.clear();
     this.reconcile(files, hidden);
-    if (hidden.categories.length === 0 || (host !== null && view.virtualized && view.treeContainer == null)) { this.clear(); return; }
-    if (host === null || host.querySelector<HTMLInputElement>('input[type="search"]')?.value.trim()) {
+    if ((files.length === 0 && hidden.categories.length === 0) || !view.container.isConnected) { this.clear(); return; }
+    if (view.treeHost?.querySelector<HTMLInputElement>('input[type="search"]')?.value.trim()) {
       if (sameSubject && nativeProvider !== null) this.releaseProjection();
       else this.clear();
+      this.removeFallback();
       return;
     }
+    const nativeHost = view.treeHost !== null && this.presented(view.treeHost)
+      && (!view.virtualized || view.treeContainer != null) ? view.treeHost : null;
+    if (nativeHost !== null && this.fallbackHost !== null) { this.releaseProjection(sameSubject); this.removeFallback(); }
+    if (nativeHost === null && (this.fallbackHost?.isConnected !== true || this.fallbackContainer !== view.container)) {
+      this.releaseProjection(sameSubject); this.removeFallback();
+      this.fallbackHost = element('section', '', 'geld-provider-category-fallback');
+      this.fallbackHost.setAttribute('aria-label', 'Files by category');
+      this.fallbackHost.dataset.geldProviderCategoryPlacement = 'fallback';
+      this.fallbackContainer = view.container;
+      if (view.container === view.container.ownerDocument.body) view.container.prepend(this.fallbackHost);
+      else view.container.before(this.fallbackHost);
+    }
+    const host = nativeHost ?? this.fallbackHost;
+    if (host === null) return;
     if (this.host !== host || this.essential?.isConnected !== true || this.essentialContent?.isConnected !== true || this.nav?.isConnected !== true) {
-      if (!sameSubject) { this.clear(); this.reconcile(files, hidden); }
-      else this.releaseProjection();
+      this.releaseProjection(sameSubject);
       this.host = host;
       this.essential = element('button', '', 'geld-provider-category-header');
       this.essential.type = 'button';
@@ -114,6 +135,11 @@ export class ProviderCategoryTree {
       this.mark(host, HOST, '');
     }
     this.actions = actions;
+    this.refreshQueued = false;
+    this.nativeProjectionAllowed = !view.virtualized || view.treeContainer != null;
+    if (this.sourceHost !== view.treeHost && this.sourceHost !== null && this.sourceHost !== host) this.geometryObserver?.unobserve(this.sourceHost);
+    this.sourceHost = view.treeHost;
+    if (this.sourceHost !== null && this.sourceHost !== host) this.geometryObserver?.observe(this.sourceHost);
     this.subjectKey = subjectKey;
     this.provider = nativeProvider;
     const folderSelector = nativeProvider === 'gitlab' ? 'button[data-testid="file-row"][aria-expanded]' : nativeProvider === 'bitbucket' ? 'button[aria-expanded]:has([aria-label="Directory"])' : null;
@@ -181,6 +207,7 @@ export class ProviderCategoryTree {
       }
     }
     this.applyActive();
+    this.syncActionAvailability();
     this.restoreFocus(focus);
     this.essential?.addEventListener('keydown', this.keys);
     this.nav?.addEventListener('keydown', this.keys);
@@ -234,6 +261,7 @@ export class ProviderCategoryTree {
 
   clear(): void {
     this.releaseProjection();
+    this.removeFallback();
     this.collapsed.clear(); this.paths.clear();
     this.active = 'essential'; this.selected = null; this.subjectKey = null; this.provider = null;
     this.actions = { revealPath: () => undefined, setExpanded: () => undefined };
@@ -252,7 +280,7 @@ export class ProviderCategoryTree {
     for (const key of this.collapsed) if (!folders.has(key)) this.collapsed.delete(key);
   }
 
-  private releaseProjection(): void {
+  private releaseProjection(preservePresentation = false): void {
     this.geometryObserver?.disconnect(); this.geometryObserver = null;
     window.removeEventListener('resize', this.resize);
     if (this.geometryFrame !== null) cancelAnimationFrame(this.geometryFrame);
@@ -264,8 +292,23 @@ export class ProviderCategoryTree {
     }
     this.essential = null; this.essentialContent = null; this.essentialSignature = ''; this.heightLast = ''; this.heightOriginal = ''; this.heightOriginalPriority = ''; this.nav = null;
     for (const node of [...this.managed.keys()]) this.restoreNode(node);
-    this.host = null; this.bodies.clear(); this.panels.clear(); this.folderClass = null;
-    this.presentations.clear(); this.liveRows.clear();
+    this.host = null; this.sourceHost = null; this.nativeProjectionAllowed = false; this.refreshQueued = false; this.bodies.clear(); this.panels.clear();
+    if (!preservePresentation) { this.folderClass = null; this.presentations.clear(); }
+    this.liveRows.clear();
+  }
+
+  private removeFallback(): void {
+    this.fallbackHost?.remove(); this.fallbackHost = null; this.fallbackContainer = null;
+  }
+
+  private presented(host: HTMLElement): boolean {
+    if (!host.isConnected || host.closest('[hidden], [inert], [aria-hidden="true"]') !== null) return false;
+    for (let node: HTMLElement | null = host; node !== null; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || style.contentVisibility === 'hidden') return false;
+      if ((style.width === '0px' || style.inlineSize === '0px') && (style.overflow === 'hidden' || style.overflowX === 'hidden')) return false;
+    }
+    return true;
   }
 
   private startGeometry(): void {
@@ -273,6 +316,7 @@ export class ProviderCategoryTree {
     window.addEventListener('resize', this.resize);
     if (typeof ResizeObserver !== 'undefined') {
       this.geometryObserver = new ResizeObserver((entries) => {
+        if (entries.some((entry) => entry.target === this.host || entry.target === this.sourceHost)) this.refreshPresentation();
         const entry = entries.find((item) => item.target === this.host);
         if (entry === undefined) return;
         const changed = this.geometryWidth !== null && this.geometryWidth !== entry.contentRect.width;
@@ -285,10 +329,18 @@ export class ProviderCategoryTree {
     this.measureSoon();
   }
   private readonly resize = (): void => {
+    this.refreshPresentation();
     if (this.viewportWidth === window.innerWidth && this.viewportHeight === window.innerHeight) return;
     this.viewportWidth = window.innerWidth; this.viewportHeight = window.innerHeight;
     this.measureSoon();
   };
+  private refreshPresentation(): void {
+    if (this.refreshQueued || this.actions.refresh === undefined) return;
+    const native = this.nativeProjectionAllowed && this.sourceHost !== null && this.presented(this.sourceHost);
+    if (native === (this.fallbackHost === null)) return;
+    this.refreshQueued = true;
+    this.actions.refresh();
+  }
   private measureSoon(): void {
     if (this.host === null || this.geometryFrame !== null) return;
     const host = this.host;
@@ -322,6 +374,14 @@ export class ProviderCategoryTree {
       panel.button.setAttribute('aria-expanded', String(active));
       panel.content.hidden = !active;
       panel.section.dataset.active = String(active);
+    }
+  }
+  private syncActionAvailability(): void {
+    for (const root of [this.essentialContent, this.nav]) for (const button of root?.querySelectorAll<HTMLButtonElement>('button') ?? []) {
+      const action = this.nativeActions.get(button);
+      if (action === undefined) continue;
+      const source = this.liveControl(action.path, action.index);
+      button.disabled = source === undefined || source.disabled;
     }
   }
   private readonly keys = (event: KeyboardEvent): void => {
@@ -403,15 +463,19 @@ export class ProviderCategoryTree {
       for (const [index, button] of [...row.querySelectorAll<HTMLButtonElement>('button')].entries()) {
         if (button === control) continue;
         const source = this.liveControl(path, index);
+        this.nativeActions.set(button, { path, index });
+        button.disabled = source === undefined || source.disabled;
         if (source !== undefined) this.focusTargets.set(button, { kind: 'action', category, path, role: button.getAttribute('role'), index, source });
       }
       row.addEventListener('click', (event) => {
         if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
         const target = event.target instanceof Element ? event.target.closest('button') : null;
-        if (target !== null) {
+        if (target !== null && target !== control) {
           const index = [...row.querySelectorAll('button')].indexOf(target);
           const original = this.liveControl(path, index);
-          if (original !== undefined && original.isConnected && !original.disabled) { event.preventDefault(); original.click(); return; }
+          event.preventDefault();
+          if (original !== undefined && original.isConnected && !original.disabled) original.click();
+          return;
         }
         event.preventDefault(); this.selectPath(path);
         this.actions.setExpanded(category !== 'essential'); this.actions.revealPath(path);
@@ -432,7 +496,7 @@ export class ProviderCategoryTree {
     for (const path of this.presentations.keys()) if (!paths.has(path)) this.presentations.delete(path);
     for (const row of rows) {
       const root = row.presentationRoot ?? row.root;
-      if (!paths.has(row.path) || !root.isConnected || !row.root.isConnected || this.host?.contains(root) !== true) continue;
+      if (!paths.has(row.path) || !root.isConnected || !row.root.isConnected || this.sourceHost?.contains(root) !== true) continue;
       const presentation = this.presentation(root);
       if (presentation === null) continue;
       if (this.presentations.get(row.path)?.markup !== presentation.markup) this.presentations.set(row.path, presentation);
@@ -447,7 +511,7 @@ export class ProviderCategoryTree {
   }
   private liveControl(path: string, index: number): HTMLButtonElement | undefined {
     const live = this.liveRows.get(path);
-    if (index < 0 || live === undefined || !live.root.isConnected || this.host?.contains(live.root) !== true
+    if (index < 0 || live === undefined || !live.root.isConnected || this.sourceHost?.contains(live.root) !== true
       || (live.link !== null && (!live.link.isConnected || live.link.href !== live.href))
       // A recycler may retarget the same physical node before the controller's next pass.
       || this.presentation(live.root)?.markup !== live.markup) return undefined;
