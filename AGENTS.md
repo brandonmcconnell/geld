@@ -2452,4 +2452,7 @@ A ready, still-source-agreeing whole-file intent survives removal of the final n
 
 Bitbucket code cells live inside a separate physical `.lines-wrapper` row that also owns the permalink, so fold presentation uses an adapter-supplied visual root while source custody retains the original inner code cell.
 The shared fold renderer accepts that visual root only as the connected direct parent in the same file and document, places its control before the physical row, and hides or restores the whole row without moving native children.
-This prevents an inner native PRE from intercepting the empty part of a full-width fold button, as observed during the public whole-context acceptance.
+This keeps fold controls outside the native code-row layout and includes each row's permalink when hiding or restoring its presentation.
+
+Bitbucket's relatively positioned native code row contains a fixed-height PRE with an inline-block after pseudo-element whose overflow can paint and hit-test over the following fold, even without a trailing line feed.
+The Bitbucket-scoped Geld fold is relatively positioned so normal DOM paint order keeps its full visible button clickable without changing native styles, source text or z-index.
