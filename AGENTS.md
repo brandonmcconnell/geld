@@ -2170,3 +2170,9 @@ The default raw collector remains pinned to its original exact URL, and no eligi
   The immutable original-Off code model, actor, source container, Viewed state, links, same form and three trusted checkbox events remain required, and this snapshot grants no pristine-On or product capability.
   First-use current checks retain only bounded phase, last and first-failure projections of their existing guard read before asserting, without extra DOM/API reads or raw code, bootstrap or field values.
   Actual293 remains failed with native Off restoration unverified, and this arming correction adds no post-Save wait or mixed-renderer permission.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
