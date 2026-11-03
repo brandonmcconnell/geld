@@ -2624,3 +2624,6 @@ Native count visibility is refreshed during rendering and resize observation, wh
 
 A retired or unrelated content client must return no response for an unknown local review validation token.
 Replying false wins the extension message race against the owning client and rejects otherwise valid saves after reinjection.
+
+GitLab created, pending, preparing, scheduled and waiting_for_resource jobs remain queued in trusted CI input.
+Published CI totals count both queued and manual jobs as waiting, and only native running jobs as in progress.
