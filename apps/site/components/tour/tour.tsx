@@ -100,26 +100,36 @@ const STEPS: readonly Step[] = [
 
 /**
  * The home page's feature tour. On wide screens the steps scroll past a
- * sticky window that shows the step crossing the middle of the viewport; on
+ * sticky window that shows the last step whose top has passed the middle of the viewport; on
  * narrow ones each step carries its own window. Every scene is live.
  */
 export function Tour() {
   const [active, setActive] = useState(0);
   const steps = useRef<(HTMLLIElement | null)[]>([]);
 
+  // Read from where the page is, not from a step crossing the middle: a jump (End, a restored scroll) crosses nothing.
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          const index = steps.current.indexOf(entry.target instanceof HTMLLIElement ? entry.target : null);
-          if (index !== -1) setActive(index);
-        }
-      },
-      { rootMargin: '-50% 0px -50% 0px' },
-    );
-    for (const step of steps.current) if (step) observer.observe(step);
-    return () => observer.disconnect();
+    let frame: number | null = null;
+    const update = (): void => {
+      frame = null;
+      const middle = window.innerHeight / 2;
+      let current = 0;
+      steps.current.forEach((step, index) => {
+        if (step && step.getBoundingClientRect().top <= middle) current = index;
+      });
+      setActive(current);
+    };
+    const schedule = (): void => {
+      if (frame === null) frame = requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    return () => {
+      window.removeEventListener('scroll', schedule);
+      window.removeEventListener('resize', schedule);
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
   }, []);
 
   return (
