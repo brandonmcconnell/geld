@@ -8,7 +8,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
-import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertVisibleProviderCounts, openProviderReviewAncestors, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
+import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, openProviderReviewAncestors, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
 import { commentBodyPresentationProbe, compareCommentBodyPresentation } from './comment-body-branding.mjs';
 import { BITBUCKET_LOCAL_REVIEW, localReviewStorageScope, observeLocalReview, verifyBitbucketLocalReview } from './bitbucket-local-reviewed.mjs';
 import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-list-row.mjs';
@@ -2371,17 +2371,7 @@ function assertReviewedStorage(value, itemId, reviewKey, headSha) {
 }
 
 async function localReviewedFlag(page, recordFragment) {
-  const initial = await poll(() => page.evaluate(() => {
-    for (const button of document.querySelectorAll('.geld-provider-review [data-geld-local-reviewed]')) {
-      const source = [...button.closest('[data-geld-item]')?.querySelectorAll('[data-geld-source]') ?? []].find((source) => {
-        const byline = source.querySelector(':scope > .geld-provider-review__byline');
-        const native = document.getElementById(source.getAttribute('data-geld-source'));
-        return byline !== null && ![...byline.children].some((node) => node.textContent.trim() === 'Automated account') && native?.querySelector('.note-header a.author-name-link[data-user-id]') !== null && native != null;
-      });
-      if (source !== undefined) return { id: button.getAttribute('data-geld-local-reviewed'), humanAnchor: source.getAttribute('data-geld-source'), pressed: button.getAttribute('aria-pressed'), disabled: button.disabled };
-    }
-    return null;
-  }), (value) => value !== null && value.id !== '' && value.pressed === 'false' && !value.disabled, 'First installed local-review control becomes available');
+  const initial = await poll(() => page.evaluate(gitLabLocalReviewedCandidate), (value) => value !== null, 'An enabled, unpressed actionable human local-review item must become available');
   const itemId = initial.id;
   const selector = `.geld-provider-review [data-geld-local-reviewed=${JSON.stringify(itemId)}]`;
   const observe = () => page.evaluate((itemId) => {

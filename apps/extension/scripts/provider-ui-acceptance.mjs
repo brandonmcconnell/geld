@@ -1,5 +1,23 @@
 import assert from 'node:assert/strict';
 
+/** Select a real actionable human item before any local-review interaction. */
+export function gitLabLocalReviewedCandidate() {
+  for (const button of document.querySelectorAll('.geld-provider-review [data-geld-local-reviewed]')) {
+    const item = button.closest('[data-geld-item]');
+    const id = button.getAttribute('data-geld-local-reviewed');
+    if (!id || button.disabled || button.getAttribute('aria-disabled') === 'true' || button.getAttribute('aria-pressed') !== 'false'
+      || !['open', 'needs-reply', 'addressed'].includes(item?.getAttribute('data-state'))) continue;
+    const source = [...item.querySelectorAll('[data-geld-source]')].find((entry) => {
+      const byline = entry.querySelector(':scope > .geld-provider-review__byline');
+      const native = document.getElementById(entry.getAttribute('data-geld-source'));
+      return byline !== null && ![...byline.children].some((node) => node.textContent.trim() === 'Automated account')
+        && native !== null && native.querySelector('.note-header a.author-name-link[data-user-id]') !== null;
+    });
+    if (source !== undefined) return { id, humanAnchor: source.getAttribute('data-geld-source'), pressed: button.getAttribute('aria-pressed'), disabled: button.disabled };
+  }
+  return null;
+}
+
 /** Browser-side rendered evidence only: no API, source injection or product getters. */
 export function providerUiProbe(provider) {
   const rect = (node) => {

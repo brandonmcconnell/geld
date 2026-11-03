@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
 import { Window } from 'happy-dom';
-import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertProviderDashboard, assertVisibleProviderCounts, openProviderReviewAncestors, providerDashboardProbe, providerUiProbe, verifyGitLabCategoryFallback } from './provider-ui-acceptance.mjs';
+import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertProviderDashboard, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, openProviderReviewAncestors, providerDashboardProbe, providerUiProbe, verifyGitLabCategoryFallback } from './provider-ui-acceptance.mjs';
 
 let window;
 let saved;
@@ -25,6 +25,24 @@ afterEach(() => {
 function counts() {
   document.body.innerHTML = '<div class="geld-provider-header-line-counts"><span class="geld-provider-header-line-counts__add">+4</span><span class="geld-provider-header-line-counts__del">−0</span></div>';
 }
+function reviewCandidates(states) {
+  document.body.innerHTML = '<section class="geld-provider-review"></section>';
+  for (const [index, state] of states.entries()) {
+    document.querySelector('section').insertAdjacentHTML('beforeend', `<article data-geld-item="item-${index}" data-state="${state}"><button data-geld-local-reviewed="item-${index}" aria-pressed="false">Mark reviewed</button><article data-geld-source="note_${index + 1}"><div class="geld-provider-review__byline"><a>Human</a></div></article></article>`);
+    document.body.insertAdjacentHTML('beforeend', `<article id="note_${index + 1}"><div class="note-header"><a class="author-name-link" data-user-id="${index + 1}">Human</a></div></article>`);
+  }
+}
+test('local-review selection skips earlier resolved and outdated humans before choosing actual actionable work', () => {
+  reviewCandidates(['resolved', 'outdated', 'needs-reply']);
+  assert.deepEqual(gitLabLocalReviewedCandidate(), { id: 'item-2', humanAnchor: 'note_3', pressed: 'false', disabled: false });
+});
+test('local-review selection skips disabled, already reviewed and automated candidates and returns null without suitable work', () => {
+  reviewCandidates(['open', 'open', 'open', 'addressed']);
+  const buttons = document.querySelectorAll('[data-geld-local-reviewed]');buttons[0].disabled = true;buttons[1].setAttribute('aria-pressed', 'true');
+  document.querySelectorAll('.geld-provider-review__byline')[2].insertAdjacentHTML('beforeend', '<span>Automated account</span>');
+  assert.equal(gitLabLocalReviewedCandidate()?.id, 'item-3');
+  buttons[3].setAttribute('aria-disabled', 'true');assert.equal(gitLabLocalReviewedCandidate(), null);
+});
 test('visible additions and deletions must both agree, rather than only a files badge', () => {
   counts();assertVisibleProviderCounts(providerUiProbe('gitlab'), { additions: 4, deletions: 0 });
   document.querySelector('.geld-provider-header-line-counts__add').textContent = '+36';
