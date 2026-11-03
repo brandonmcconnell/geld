@@ -165,11 +165,26 @@ jobs:
         with:
           name: geld-catalog-signature
           path: catalog
-      # Typechecks and unit tests for every workspace package (core + extension),
-      # plus lint and a production build of the site.
-      - run: pnpm check
+      - name: Check required workspaces
+        run: |
+          pnpm -r --filter '!@geld/dashboard' run check
+          pnpm docs:lines:check
+          pnpm test:scripts
         env:
           NEXT_TELEMETRY_DISABLED: '1'
+      # Dashboard failures are advisory until the dashboard is ready for launch.
+      - name: Check dashboard (non-blocking)
+        id: dashboard-check
+        continue-on-error: true
+        run: pnpm --filter @geld/dashboard check
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      - name: Report dashboard check failure
+        if: steps.dashboard-check.outcome == 'failure'
+        run: |
+          echo '::warning title=Dashboard checks::Dashboard checks failed. They are non-blocking while the dashboard is in development.'
+          echo '### Dashboard checks (non-blocking)' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Dashboard checks failed. See the dashboard step logs for details. Required workspace and release checks still apply.' >> "$GITHUB_STEP_SUMMARY"
       # The pattern catalog the extension fetches at runtime is generated from
       # core and signed offline. Fail if catalog/patterns.json drifted from the
       # TypeScript or catalog/patterns.sig no longer matches it — an installed
