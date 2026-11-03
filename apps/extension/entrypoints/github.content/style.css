@@ -7742,18 +7742,26 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));
 }
 
-/* Primer's header leaves its bottom padding to the body below, which here is the diagram: even it out so the title and the buttons share one centre line. */
-.geld-flow__header > .Overlay-headerContentWrap {
+/*
+ * Primer's header leaves its bottom padding to the body below, which here is the diagram: even it out so the title
+ * and the buttons sit centred in the bar. Prefixed with the dialog: GitHub's `.Overlay-header .Overlay-headerContentWrap`
+ * has the same weight and loads after the extension's sheet, so an equal selector loses.
+ */
+dialog.geld-flow .geld-flow__header > .Overlay-headerContentWrap {
   align-items: center;
   padding: 8px;
 }
 
-.geld-flow__header .Overlay-titleWrap {
+dialog.geld-flow .geld-flow__actions {
+  align-self: center;
+}
+
+dialog.geld-flow .geld-flow__header .Overlay-titleWrap {
   align-self: center;
   padding: 0 0 0 8px;
 }
 
-.geld-flow__title {
+dialog.geld-flow .geld-flow__title {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -8092,22 +8100,19 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 }
 
 .geld-flow__zoom-level {
-  min-width: 48px;
+  min-width: 56px;
 }
 
-.geld-flow__legend-wrap {
-  position: relative;
-}
-
-/* The legend opens upward from its button, in two columns, as one of GitHub's small overlays. */
+/* The legend opens upward, as wide as the whole control row (the legend button's left to zoom's right), in two columns, as one of GitHub's small overlays. */
 .geld-flow__legend {
   position: absolute;
+  left: 0;
   right: 0;
   bottom: calc(100% + 8px);
   display: grid;
-  grid-template-columns: repeat(2, max-content);
-  gap: 8px 16px;
-  padding: 8px 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
   border-radius: var(--borderRadius-large, 12px);
   background: var(--overlay-bgColor, var(--color-canvas-overlay));
   box-shadow: var(--shadow-floating-small, 0 0 0 1px rgba(209, 217, 224, 0.5), 0 6px 12px -3px rgba(37, 41, 46, 0.04), 0 6px 18px 0 rgba(37, 41, 46, 0.12));
@@ -8125,6 +8130,7 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 
 /* Open, only the border says so: the button keeps GitHub's own face. */

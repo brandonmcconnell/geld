@@ -394,7 +394,8 @@ export function openFlowDialog(): void {
   const zoomLevel = createElement('button', { type: 'button', class: 'geld-flow__ctl geld-flow__zoom-level', title: 'Fit to the window' });
   const zoomIn = createElement('button', { type: 'button', class: 'geld-flow__ctl geld-flow__ctl--square', 'aria-label': 'Zoom in' }, ['+']);
   const controls = createElement('div', { class: 'geld-flow__controls' }, [
-    createElement('div', { class: 'geld-flow__legend-wrap' }, [legendList, legendButton]),
+    legendList,
+    legendButton,
     createElement('div', { class: 'geld-flow__zoom', role: 'group', 'aria-label': 'Zoom' }, [zoomOut, zoomLevel, zoomIn]),
   ]);
   const body = createElement('div', { class: 'Overlay-body geld-flow__stage' }, [scroller, status, controls]);
