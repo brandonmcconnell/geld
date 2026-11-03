@@ -49,4 +49,28 @@ describe('headerDiffstat', () => {
     expect(headerDiffstat(pull, 'bbb', landed)).toEqual({ additions: 14, deletions: 3 });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it('never takes a request made before the head was read as that head', async () => {
+    vi.useFakeTimers();
+    const answers = [
+      { diffstat: { linesAdded: 5, linesDeleted: 1 } },
+      { diffstat: { linesAdded: 8, linesDeleted: 2 } },
+    ];
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(answers.shift())));
+    vi.stubGlobal('fetch', fetchMock);
+    const landed = vi.fn();
+    const pull = '/o/r/pull/2';
+
+    expect(headerDiffstat(pull, null, landed)).toBeUndefined();
+    await vi.waitFor(() => expect(landed).toHaveBeenCalledTimes(1));
+    expect(headerDiffstat(pull, 'ccc', landed)).toEqual({ additions: 5, deletions: 1 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(10_000);
+    expect(landed).toHaveBeenCalledTimes(2);
+    expect(headerDiffstat(pull, 'ccc', landed)).toBeUndefined();
+    await vi.waitFor(() => expect(landed).toHaveBeenCalledTimes(3));
+    expect(headerDiffstat(pull, 'ccc', landed)).toEqual({ additions: 8, deletions: 2 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

@@ -10,7 +10,7 @@ import type { StandInTotals } from './header-stats';
  */
 const REASK_AFTER_MS = 10_000;
 interface Ask {
-  sha: string | null;
+  readonly sha: string | null;
   readonly at: number;
   totals: StandInTotals | null | undefined;
   recheck: boolean;
@@ -34,9 +34,9 @@ export function parseDiffstat(payload: unknown): StandInTotals | null {
 export function headerDiffstat(pullPath: string, sha: string | null, landed: () => void): StandInTotals | null | undefined {
   const known = asks.get(pullPath);
   if (known !== undefined) {
-    if (known.sha === null) known.sha = sha;
     if (known.sha === sha || sha === null) return known.totals;
-    // Another head within the window keeps the answer asked for, and the pass after the window asks for this head.
+    // Another head within the window (or the first known one, for a request made before it was read) keeps the answer
+    // asked for, and the pass after the window asks for this head.
     const wait = known.at + REASK_AFTER_MS - Date.now();
     if (wait > 0) {
       if (!known.recheck) {
