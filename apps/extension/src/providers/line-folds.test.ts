@@ -49,6 +49,37 @@ function fixture(source: readonly Line[], path = 'src/cache.test.ts', commentLin
 
 function settings(overrides: Partial<GeldSettings> = {}): GeldSettings { return { ...DEFAULT_SETTINGS, ...overrides }; }
 function hidden(root: HTMLElement): boolean { return root.hasAttribute(ATTR_PROVIDER_LINE_HIDDEN); }
+
+it('places fold controls beside physical rows and hides/restores the whole row without touching source nodes', () => {
+  const file = fixture(["it('physical row', () => {", '  expect(value).toBe(1);', '});'].map((text, index) => added(index + 1, text)));
+  const container = document.createElement('div'), physical = file.lines.map(line => {
+    const visualRoot = document.createElement('div'), root = document.createElement('div');root.textContent = line.newText;
+    const permalink = document.createElement('div');permalink.id = `native-${line.newLine}`;visualRoot.dataset.native = 'preserved';
+    visualRoot.append(permalink, root);container.append(visualRoot);return { ...line, root, visualRoot };
+  });
+  const original = physical.map(line => line.visualRoot.outerHTML);
+  file.root.replaceChildren(container);const entry = { ...file.entry, readLines: () => physical }, view = { ...file.view, entries: [entry] };
+  applyProviderLineFolds(view, [file.stats], settings());const button = testButtons(file.root)[0]!;
+  expect(button.parentElement?.parentElement).toBe(container);expect(physical.every(line => hidden(line.visualRoot))).toBe(true);
+  expect(physical.every(line => !hidden(line.root))).toBe(true);expect(physical[0]?.root.parentElement).toBe(physical[0]?.visualRoot);
+  expect(document.getElementById('native-1')?.closest(`[${ATTR_PROVIDER_LINE_HIDDEN}]`)).toBe(physical[0]?.visualRoot);
+  button.click();expect(physical.every(line => !hidden(line.visualRoot))).toBe(true);
+  clearProviderLineFolds();expect(file.root.querySelector(`[${ATTR_PROVIDER_FOLD_ROW}]`)).toBeNull();
+  expect(physical.every(line => line.root.parentElement === line.visualRoot && !hidden(line.visualRoot))).toBe(true);
+  expect(physical.map(line => line.visualRoot.outerHTML)).toEqual(original);
+});
+
+it.each(['foreign', 'indirect', 'detached', 'file'] as const)('rejects a supplied %s presentation root instead of altering an unrelated node', change => {
+  const file = fixture([added(1, '// comment')], 'src/cache.ts', { added: [1], removed: [] }), root = document.createElement('div'), parent = document.createElement('div'), unrelated = document.createElement('div');
+  root.textContent = '// comment';parent.append(root);file.root.replaceChildren(parent);document.body.append(unrelated);
+  const visualRoot = change === 'indirect' || change === 'file' ? file.root : unrelated;
+  if (change === 'file') file.root.append(root);
+  if (change === 'detached') unrelated.remove();
+  const entry = { ...file.entry, readLines: () => [{ ...file.lines[0]!, root, visualRoot }] };
+  applyProviderLineFolds({ ...file.view, entries: [entry] }, [file.stats], settings({ hideCommentLines: true }));
+  expect(hidden(visualRoot)).toBe(false);expect(hidden(root)).toBe(true);expect(commentButton(file.root)?.parentElement?.parentElement).toBe(root.parentElement);
+  clearProviderLineFolds();expect(hidden(root)).toBe(false);
+});
 function testButtons(root: HTMLElement): HTMLButtonElement[] { return [...root.querySelectorAll<HTMLButtonElement>(`[${ATTR_PROVIDER_FOLD_ROW}^="test:"] button`)]; }
 function commentButton(root: HTMLElement): HTMLButtonElement | null { return root.querySelector<HTMLButtonElement>(`[${ATTR_PROVIDER_FOLD_ROW}^="comments:"] button`); }
 

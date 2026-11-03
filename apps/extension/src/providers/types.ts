@@ -90,6 +90,8 @@ export interface ProviderDiffEntry {
 
 export interface ProviderDiffLine {
   readonly root: HTMLElement;
+  /** Original physical row used for presentation; source identity remains rooted at root. */
+  readonly visualRoot?: HTMLElement;
   readonly oldLine: number | null;
   readonly newLine: number | null;
   readonly oldText: string | null;

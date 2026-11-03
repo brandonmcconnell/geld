@@ -73,7 +73,10 @@ function lines(root: HTMLElement): readonly ProviderDiffLine[] {
     const newLine = count(numbers.getAttribute('data-new-line-number'));
     if (oldLine === null && newLine === null) continue;
     const text = lineText(row, code, type ?? '', groupEnds);
-    result.push({ root: row, oldLine, newLine, oldText: oldLine === null ? null : text, newText: newLine === null ? null : text, kind: type === '+' ? 'added' : type === '-' ? 'removed' : 'context' });
+    const parent = row.parentElement;
+    const visualRoot = row.matches('.line-wrapper[data-qa="code-line"]') && parent?.matches('.lines-wrapper[role="row"][data-key="code-line"]')
+      && parent.closest('article[data-qa="branch-diff-file"]') !== null && parent.closest('[data-geld-ui]') === null ? parent : undefined;
+    result.push({ root: row, ...(visualRoot === undefined ? {} : { visualRoot }), oldLine, newLine, oldText: oldLine === null ? null : text, newText: newLine === null ? null : text, kind: type === '+' ? 'added' : type === '-' ? 'removed' : 'context' });
   }
   return result;
 }
