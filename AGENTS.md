@@ -2446,3 +2446,9 @@ A sealed PR source permits one eight-second continuation only when Geld activate
 Every prior semantic row must remain uniquely ordered, added rows must be unchanged context inside both captured old and new gaps, and every new-side row must agree with the immutable full source before the replacement nodes become the strict retained frame.
 Unarmed remounts, changed source identity, duplicate or edited rows, out-of-gap additions and expired transitions still withdraw source authority.
 A ready, still-source-agreeing whole-file intent survives removal of the final native gap so a completed expansion keeps its fold and keyboard focus, but disabled settings, changed revision or mismatched source still remove it.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
