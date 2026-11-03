@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 import type { ProviderReviewComment, ProviderReviewInput } from '@geld/review';
+import type { ProviderReviewSnapshot } from '../providers/types';
+import { ProviderNativeFind } from '../providers/native-find';
 import { nativeBitbucketComment, bitbucketConversationRoots, syncBitbucketNativeReviewState } from './conversation';
 import { renderBitbucketComment } from './comment-render';
 import { bitbucketThreadActions } from './thread-actions';
@@ -27,7 +29,7 @@ function input(): ProviderReviewInput {
 it('finds the actual inline comment through its canonical native alias without confusing rendered clones', () => {
   const root = nativeBitbucketComment(comment, document);
   expect(root?.id).toBe(comment.anchor);
-  expect(bitbucketConversationRoots(document)).toEqual([{ root, anchors: [comment.anchor], kind: 'comment' }]);
+  expect(bitbucketConversationRoots(document)).toEqual([{ root: root?.closest('[data-qa="pull-request-activity"]'), anchors: [comment.anchor], kind: 'comment' }]);
   const clone = root?.cloneNode(true);
   const ui = document.createElement('div');
   ui.setAttribute('data-geld-ui', '');
@@ -124,4 +126,34 @@ it('relays only enabled same-comment native controls and rechecks authentication
   expect(await actions[1]?.activate()).toBe(false);
   window.location.href = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27';
   expect(await actions[0]?.activate()).toBe(false);
+});
+
+
+it('binds native activity without anchors to a unique represented timestamp and preserves unknown activity', () => {
+  document.body.innerHTML = '<div data-qa="pr-activity"><div data-qa="pull-request-activity"><span>Merged the pull request</span><time datetime="2024-02-13" title="February 13, 2024 at 3:46:48 PM UTC"></time></div><div data-qa="pull-request-activity"><span>New native activity</span><time datetime="2024-02-14T15:46:48Z"></time></div></div>';
+  const event = { id: 'activity:merge', url: 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22', author: comment.author, body: 'Merged the pull request', createdAt: '2024-02-13T15:46:48Z', kind: 'state' as const };
+  const source: ProviderReviewSnapshot = { input: input(), comments: [], events: [event], complete: false, unavailable: [], approvalsRequired: null, approvalsLeft: null, actions: [] };
+  const roots = bitbucketConversationRoots(document, source);
+  expect(roots).toHaveLength(1);
+  expect(roots[0]?.root).toBe(document.querySelector('[data-qa="pull-request-activity"]'));
+  expect(roots[0]).toMatchObject({ anchors: [], eventIds: [event.id], kind: 'activity' });
+  expect(bitbucketConversationRoots(document, { ...source, events: [event, { ...event, id: 'ambiguous' }] })).toHaveLength(0);
+  roots[0]?.root.append(document.createElement('textarea'));
+  expect(bitbucketConversationRoots(document, source)).toHaveLength(0);
+});
+
+
+it('keeps actions discoverable for a managed folded original but requires it to be revealed before activation', async () => {
+  document.head.querySelector('meta')?.setAttribute('data-current-user', '{"isAuthenticated":true}');
+  const root = nativeBitbucketComment(comment, document);
+  if (root === null) throw new Error('Missing comment');
+  const find = new ProviderNativeFind(document, { onReveal: () => undefined }, { supported: true, display: () => 'block' });
+  try {
+    find.sync([{ root, key: comment.anchor, anchors: [comment.anchor], compact: true, shown: false }]);
+    const reply = bitbucketThreadActions(comment, document).find((action) => action.kind === 'reply');
+    expect(reply?.available).toBe(true);
+    expect(await reply?.activate()).toBe(false);
+    find.reveal(comment.anchor);
+    expect(await reply?.activate()).toBe(true);
+  } finally { find.destroy(); }
 });

@@ -5,6 +5,7 @@ export interface ProviderNativeFindEntry {
   /** Stable source-root identity, retained when the provider replaces its DOM node. */
   readonly key: string;
   readonly anchors: readonly string[];
+  readonly eventIds?: readonly string[];
   readonly compact: boolean;
   readonly shown: boolean;
 }
@@ -20,6 +21,16 @@ export interface ProviderNativeFindOptions {
 export interface ProviderNativeFindEnvironment {
   readonly supported?: boolean;
   readonly display?: (root: HTMLElement) => string;
+}
+
+const managedFolds = new WeakMap<HTMLElement, () => boolean>();
+
+export function providerNativeHidden(element: HTMLElement, allowManagedFold = false): boolean {
+  for (let node: HTMLElement | null = element; node !== null; node = node.parentElement) {
+    if (node.hasAttribute('inert') || node.getAttribute('aria-hidden') === 'true') return true;
+    if (node.hasAttribute('hidden') && !(allowManagedFold && managedFolds.get(node)?.() === true)) return true;
+  }
+  return false;
 }
 
 const OWNED = 'data-geld-provider-native-find';
@@ -86,7 +97,8 @@ export class ProviderNativeFind {
       const { root } = entry;
       const fold = this.folded.get(root);
       const valid = entry.key.trim() !== '' && root.ownerDocument === this.doc && root.isConnected
-        && root.closest('[data-geld-ui]') === null && entry.anchors.length > 0
+        && root.closest('[data-geld-ui]') === null
+        && (entry.anchors.length > 0 || entry.eventIds !== undefined && entry.eventIds.length > 0 && entry.eventIds.every((id) => id.trim() !== ''))
         && entry.anchors.every((anchor) => {
           const target = this.doc.getElementById(anchor);
           return !conflicts.has(anchor) && anchor !== '' && !/[\s\u0000]/.test(anchor) && target !== null && (target === root || root.contains(target));
@@ -173,10 +185,12 @@ export class ProviderNativeFind {
     root.setAttribute(OWNED, 'folded');
     root.setAttribute('hidden', 'until-found');
     root.addEventListener('beforematch', fold.beforeMatch);
+    managedFolds.set(root, () => this.owns(root, fold));
   }
 
   private restore(root: HTMLElement, fold: Fold): void {
     this.folded.delete(root);
+    managedFolds.delete(root);
     this.displays.delete(root);
     root.removeEventListener('beforematch', fold.beforeMatch);
     if (root.getAttribute('hidden') === 'until-found') root.removeAttribute('hidden');

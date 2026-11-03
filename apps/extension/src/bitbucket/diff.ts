@@ -184,6 +184,19 @@ export function bitbucketHeaderTargets(doc: Document): readonly ProviderHeaderTa
 }
 
 export function bitbucketReviewHost(doc: Document): HTMLElement | null {
+  const descriptions = native(doc.querySelectorAll<HTMLElement>('section[data-qa="pull-request-description"]'));
+  if (descriptions.length === 1) {
+    const description = descriptions[0];
+    const content = description?.parentElement;
+    const panel = content?.parentElement;
+    const card = panel?.parentElement;
+    const host = card?.parentElement;
+    if (description !== undefined && content !== null && content !== undefined && panel?.classList.contains('panel-content') === true
+      && card !== null && card !== undefined && host !== null && host !== undefined && native(content.children).length === 1
+      && native(panel.children).length === 1 && native(card.children).length === 2 && native(card.children)[1] === panel
+      && native(card.children)[0]?.querySelector('h2')?.textContent?.trim() === 'Description'
+      && native(host.children).length === 1 && native(host.children)[0] === card) return host;
+  }
   return native(doc.querySelectorAll<HTMLElement>('[data-qa="pr-activity"]'))[0]?.parentElement ?? null;
 }
 

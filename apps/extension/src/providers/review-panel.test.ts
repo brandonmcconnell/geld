@@ -40,10 +40,10 @@ describe('provider conversation digest', () => {
       onOpenSource: opened,
       authorPresentation: source => ({ authorId: source.author.id, displayName: 'Alice', avatar: { src: 'https://gitlab.com/avatar.png', width: 24, height: 24 } }),
     });
-    const section = panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-key="reviewers"]');
+    const section = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="reviewers"]');
     expect(section?.open).toBe(false);
     const chips = section?.querySelectorAll('.geld-provider-review__reviewer');expect(chips).toHaveLength(2);
-    expect(chips?.[0]?.closest('summary')).not.toBeNull();
+    expect(chips?.[0]?.closest('[data-geld-review-preview]')).not.toBeNull();
     expect(chips?.[0]?.querySelector('img')?.getAttribute('alt')).toBe('');
     expect(chips?.[0]?.getAttribute('aria-label')).toBe('alice: Approved · Review requested');
     expect(chips?.[1]?.querySelector('.geld-provider-review__reviewer-avatar')?.textContent).toBe('B');
@@ -184,20 +184,20 @@ describe('provider conversation digest', () => {
   it('preserves expanded conversations and closed groups across replies and state updates', () => {
     const original = thread('a');
     const panel = renderProviderReviewPanel(host(), input([original]));
-    const item = panel.element.querySelector<HTMLDetailsElement>('details[data-geld-item]');
-    const group = panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-group="open"]');
+    const item = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-item]');
+    const group = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-group="open"]');
     expect(item).not.toBeNull();
     if (item !== null) item.open = true;
     if (group !== null) group.open = false;
     panel.update(input([{ ...original, comments: [...original.comments, comment('3', 'The missing response still needs a guard.')] }]));
-    expect(panel.element.querySelector<HTMLDetailsElement>('details[data-geld-item]')?.open).toBe(true);
-    expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-group="open"]')?.open).toBe(false);
+    expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-item]')?.open).toBe(true);
+    expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-group="open"]')?.open).toBe(false);
     expect(panel.element.querySelectorAll('[data-geld-source]')).toHaveLength(2);
     panel.update(input([{ ...original, resolved: true }]));
-    expect(panel.element.querySelector<HTMLDetailsElement>('details[data-geld-item]')?.open).toBe(true);
+    expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-item]')?.open).toBe(true);
     expect(panel.element.querySelector('[data-geld-review-group="resolved"]')).not.toBeNull();
     panel.update({ ...input([{ ...original, url: original.url.replace('/42#', '/43#'), comments: original.comments.map((entry) => ({ ...entry, url: entry.url.replace('/42#', '/43#') })) }]), subject: { ...subject, id: '43' } });
-    expect(panel.element.querySelector<HTMLDetailsElement>('details[data-geld-item]')?.open).toBe(false);
+    expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-item]')?.open).toBe(false);
   });
 
   it('copies one clustered concern with every actual native source rather than the whole digest', async () => {
@@ -353,7 +353,7 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector('[data-geld-review-group="open"]')).toBeNull();
     expect(panel.element.textContent).toContain('Automated account');
     expect(panel.element.textContent).not.toMatch(/Bugbot|Clean|Findings|running review/i);
-    expect([...panel.element.querySelectorAll('button')].filter((button) => !button.hasAttribute('data-geld-item-copy')).map((button) => button.textContent)).toEqual(['Copy digest']);
+    expect([...panel.element.querySelectorAll('button')].filter((button) => !button.hasAttribute('data-geld-item-copy') && !button.hasAttribute('data-geld-review-toggle')).map((button) => button.textContent)).toEqual(['Copy digest']);
   });
 
   it('distinguishes a known empty review, an unavailable source and malformed data', () => {
@@ -387,8 +387,8 @@ describe('provider conversation digest', () => {
     }, { approvalsRequired: 2, approvalsLeft: 1 });
     expect(panel.element.textContent).toContain('1/2 required approvals · 1 change request');
     expect(panel.element.textContent).toContain('Review requested');
-    const checks = panel.element.querySelector('details[data-geld-review-key="checks"]');
-    expect(checks?.querySelector('summary')?.textContent).toBe('CI checks · 1 passed · 1 running · 1 unknown');
+    const checks = panel.element.querySelector('[data-geld-review-key="checks"]');
+    expect(checks?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('CI checks · 1 passed · 1 running · 1 unknown');
     expect(checks?.textContent).toContain('Earlier commit · Failed');
     expect(checks?.querySelector('a')?.rel).toBe('noopener noreferrer');
   });
@@ -402,7 +402,7 @@ describe('provider conversation digest', () => {
       { key: 'job:4', name: 'All checks passed', sha: subject.headSha, status: 'completed', conclusion: 'success', nativeStatus: 'unsupported' },
     ] }, { copyText: (text) => { copied = text; } });
     const checks = panel.element.querySelector('[data-geld-review-key="checks"]');
-    expect(checks?.querySelector('summary')?.textContent).toBe('CI checks · Partial · 1 pending · 1 running · 1 manual · 1 unknown');
+    expect(checks?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('CI checks · Partial · 1 pending · 1 running · 1 manual · 1 unknown');
     expect(checks?.querySelector('[data-state="manual"]')?.textContent).toContain('ManualAllowed to fail');
     expect(checks?.querySelector('[data-state="manual"] svg')).toBeNull();
     expect(checks?.querySelector('[data-state="passed"]')).toBeNull();
@@ -429,7 +429,7 @@ describe('provider conversation digest', () => {
       { key: 'job:1', name: 'Tests', sha: subject.headSha, status: 'completed', conclusion: 'success' },
     ] });
     const checks = panel.element.querySelector('[data-geld-review-key="checks"]');
-    expect(checks?.querySelector('summary')?.textContent).toBe('CI checks · Partial · 1 passed');
+    expect(checks?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('CI checks · Partial · 1 passed');
     expect(checks?.textContent).toContain('Some CI checks could not be read.');
     expect(checks?.getAttribute('data-state')).toBeNull();
   });
@@ -437,7 +437,7 @@ describe('provider conversation digest', () => {
   it('restores only an unchanged current-source CI Details focus without stealing focus from outside the digest', () => {
     const check = { key: 'job:1', name: 'Tests', sha: subject.headSha, status: 'queued', conclusion: null, detailsUrl: 'https://gitlab.com/group/subgroup/project/-/jobs/1' };
     const panel = renderProviderReviewPanel(host(), { ...input(), checks: [check] });
-    const section = panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-key="checks"]');
+    const section = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="checks"]');
     if (section === null) throw new Error('Missing CI section');
     section.open = true;
     section.querySelector<HTMLAnchorElement>('a')?.focus();
@@ -454,7 +454,7 @@ describe('provider conversation digest', () => {
   it.each(['head', 'review', 'url', 'key', 'duplicate'])('does not transfer check focus across a changed %s', (change) => {
     const check = { key: 'job:1', name: 'Tests', sha: subject.headSha, status: 'queued', conclusion: null, detailsUrl: 'https://gitlab.com/group/subgroup/project/-/jobs/1' };
     const panel = renderProviderReviewPanel(host(), { ...input(), checks: [check] });
-    const section = panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-key="checks"]');
+    const section = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="checks"]');
     if (section === null) throw new Error('Missing CI section');
     section.open = true;
     section.querySelector<HTMLAnchorElement>('a')?.focus();
@@ -569,7 +569,7 @@ describe('provider conversation digest', () => {
     const panel = renderProviderReviewPanel(host(), original, options);
     expect(run).not.toHaveBeenCalled();
     expect(cancel).not.toHaveBeenCalled();
-    expect(panel.element.querySelector('[data-geld-item] > summary')?.textContent).toContain('AI consolidated title');
+    expect(panel.element.querySelector('[data-geld-item] > [data-geld-review-toggle]')?.textContent).toContain('AI consolidated title');
     expect(panel.element.querySelector('.geld-provider-review__body')?.textContent).toBe(comment('1').body);
     expect(panel.element.querySelector('[data-geld-ai-summary]')?.textContent).toContain('<script>plain text</script>');
     expect(panel.element.querySelector('script')).toBeNull();
@@ -589,7 +589,7 @@ describe('provider conversation digest', () => {
     const events: readonly ProviderReviewPanelEvent[] = [{ id: 'push-1', url: reviewUrl, author: comment('1').author, body: 'Native push event one', createdAt: '2026-11-01T11:00:00Z', kind: 'push' }, { id: 'push-2', url: reviewUrl, author: comment('1').author, body: 'Native push event two', createdAt: '2026-11-01T13:00:00Z', kind: 'push' }];
     const options = { reviewGrouping: 'batch', comments: [edited, latest], events } satisfies Parameters<typeof renderProviderReviewPanel>[2];
     const panel = renderProviderReviewPanel(host(), original, options);
-    const rounds = panel.element.querySelectorAll<HTMLDetailsElement>('[data-geld-review-round]');
+    const rounds = panel.element.querySelectorAll<HTMLElement & { open: boolean }>('[data-geld-review-round]');
     expect(rounds).toHaveLength(2);
     expect([...rounds].map((round) => round.dataset.geldReviewRound)).toEqual(['push-2', 'push-1']);
     expect(rounds[1]?.querySelector('[data-geld-review-pointer]')?.textContent).toContain(comment('1').body);
@@ -600,11 +600,11 @@ describe('provider conversation digest', () => {
     expect(rounds[0]?.textContent).toContain(latest.body);
     expect(rounds[0]?.querySelector('[data-geld-source="note_2"]')).toBeNull();
     expect(rounds[1]?.querySelector<HTMLAnchorElement>('[data-geld-source="note_2"] a')?.href).toBe(edited.url);
-    const item = panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-attention] [data-geld-item]');
+    const item = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-attention] [data-geld-item]');
     if (item !== null && item !== undefined) item.open = true;
     panel.update(original, { ...options, reviewGrouping: 'type' });
     expect(panel.element.querySelector('[data-geld-review-round]')).toBeNull();
-    expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-item]')?.open).toBe(true);
+    expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-item]')?.open).toBe(true);
     panel.update(original, { ...options, comments: [] });
     expect(panel.element.querySelector('[data-geld-review-round="push-2"]')?.textContent).toContain('No conversation recorded after this push.');
   });
@@ -686,7 +686,7 @@ describe('provider conversation digest', () => {
     const unsafe = { ...comment('5', 'Preview ready: [Preview](javascript:alert(1))'), author };
     const panel = renderProviderReviewPanel(host(), input(), { comments: [latest, earlier, human, unsafe] });
     const section = panel.element.querySelector('[data-geld-review-key="previews"]');
-    expect(section?.querySelector('summary')?.textContent).toBe('Preview links · 1');
+    expect(section?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Preview links · 1');
     expect(section?.querySelector('[data-geld-preview="note_3"]')?.textContent).toContain('native-deploy-account · Reported status: failed');
     expect(section?.querySelector('[data-geld-preview="note_3"] > a')?.getAttribute('href')).toBe('https://deploy.example/second');
     expect(section?.querySelector('[data-geld-review-key="previews:earlier"] [data-geld-preview]')?.getAttribute('data-geld-preview')).toBe('note_2');
@@ -705,7 +705,7 @@ describe('provider conversation digest', () => {
     const transformItems = (items: readonly typeof native[]) => items.map((item) => ({ ...item, title: 'AI consolidated cache title', context: 'The native words remain below.', rewritten: true }));
     const panel = renderProviderReviewPanel(host(), source, { localReviewed, transformItems });
     expect(set).not.toHaveBeenCalled();
-    expect(panel.element.querySelector('[data-geld-review-group="done"] [data-geld-item] > summary')?.textContent).toContain('AI consolidated cache title');
+    expect(panel.element.querySelector('[data-geld-review-group="done"] [data-geld-item] > [data-geld-review-toggle]')?.textContent).toContain('AI consolidated cache title');
     expect(panel.element.querySelector('[data-geld-local-review-notice]')?.textContent).toBe('Reviewed on this device. Native status: Open.');
     expect(panel.element.querySelector('[data-geld-review-bot="coderabbit"]')?.textContent).toContain('1 open finding');
     expect(panel.element.querySelector('.geld-provider-review__body')?.textContent).toBe('**Fix the credentials cache.**');
@@ -738,15 +738,15 @@ describe('provider conversation digest', () => {
     const set = vi.fn();
     const panel = renderProviderReviewPanel(host(), source, { localReviewed: { ids: new Set(), pending: new Set(), set } });
     const button = panel.element.querySelector<HTMLButtonElement>('[data-geld-local-reviewed]');
-    const details = panel.element.querySelector<HTMLDetailsElement>('[data-geld-item]');
+    const details = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-item]');
     if (details !== null) details.open = true;
     button?.focus();
     panel.update(source, { localReviewed: { ids: new Set(), pending: new Set([item.id]), set } });
     expect(document.activeElement?.getAttribute('data-geld-local-review-focus')).toBe(item.id);
     panel.update(source, { localReviewed: { ids: new Set([item.id]), pending: new Set(), set } });
     expect(document.activeElement?.getAttribute('data-geld-local-reviewed')).toBe(item.id);
-    expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-group="done"]')?.open).toBe(true);
-    expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-item]')?.open).toBe(true);
+    expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-group="done"]')?.open).toBe(true);
+    expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-item]')?.open).toBe(true);
   });
 
   it('retains a verified native avatar, name, profile and role classes without changing source navigation or controls', async () => {
@@ -828,14 +828,14 @@ describe('provider conversation digest', () => {
     const source = input([thread('a')]);
     const options = { authorPresentation: () => presentation };
     const panel = renderProviderReviewPanel(host(), source, options);
-    const details = panel.element.querySelector<HTMLDetailsElement>('[data-geld-item]');
+    const details = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-item]');
     if (details !== null) details.open = true;
     presentation = { ...presentation, displayName: 'Updated native name', badges: [{ label: 'Maintainer', title: 'Verified native header changed.', className: 'gl-badge badge badge-neutral' }] };
     panel.update(source, options);
     expect(panel.element.querySelector('.geld-provider-review__byline strong')?.textContent).toBe('Updated native name');
     expect(panel.element.querySelector('[data-geld-author-badge]')?.textContent).toBe('Maintainer');
     expect(panel.element.querySelector<HTMLElement>('[data-geld-author-badge]')?.style.cssText).toBe('');
-    expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-item]')?.open).toBe(true);
+    expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-item]')?.open).toBe(true);
     expect(panel.element.querySelector('.geld-provider-review__body')?.textContent).toBe(comment('1').body);
   });
 
@@ -865,7 +865,7 @@ describe('provider conversation digest', () => {
       ],
     });
     const section = panel.element.querySelector('[data-geld-review-key="requirements"]');
-    expect(section?.querySelector('summary')?.textContent).toBe('Merge requirements · 2 shown');
+    expect(section?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Merge requirements · 2 shown');
     expect(section?.querySelectorAll('[data-geld-native-requirement]')).toHaveLength(2);
     expect(section?.textContent).toContain('1+ approval from default reviewers');
     expect(panel.element.querySelector('[data-geld-review-key="reviewers"] .geld-provider-review__reviewer-summary')?.textContent).toBe('Reviews · 1 approval');
@@ -882,10 +882,10 @@ describe('provider conversation digest', () => {
     const label = '<img src=x onerror=alert(1)> Native rule';
     const options = { requirements: [{ id: 'native-rule', label, state: 'passed' }], copyText: (text: string) => { copied = text; } } satisfies Parameters<typeof renderProviderReviewPanel>[2];
     const panel = renderProviderReviewPanel(host(), input(), options);
-    const section = panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-key="requirements"]');
+    const section = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="requirements"]');
     if (section !== null) section.open = true;
     panel.update(input(), { ...options, requirements: [{ id: 'native-rule', label, state: 'unknown' }] });
-    expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-key="requirements"]')?.open).toBe(true);
+    expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="requirements"]')?.open).toBe(true);
     expect(panel.element.querySelector('[data-geld-native-requirement="native-rule"]')?.textContent).toContain(`${label}Unknown`);
     expect(panel.element.querySelector('img,[onerror]')).toBeNull();
     panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
@@ -933,7 +933,7 @@ describe('review standing availability', () => {
   ])('retains guarded required/left facts in partial sources: $required/$left', ({ required, left, tally }) => {
     const panel = renderProviderReviewPanel(host(), input(), { unavailable: [{ area: 'reviews', reason: 'Reviewers unread' }], approvalsRequired: required, approvalsLeft: left });
     const section = panel.element.querySelector('[data-geld-review-key="reviewers"]');
-    expect(section?.querySelector('summary')?.textContent).toBe(`Reviews · Partial${tally === null ? '' : ` · ${tally}`}`);
+    expect(section?.querySelector('[data-geld-review-toggle]')?.textContent).toBe(`Reviews · Partial${tally === null ? '' : ` · ${tally}`}`);
     expect(section?.textContent).not.toContain('0 approvals'); expect(section?.textContent).not.toContain('No reviewer standings.');
     panel.destroy();
   });
@@ -943,4 +943,77 @@ describe('review standing availability', () => {
     expect(panel.element.querySelector('[data-geld-review-key="reviewers"] .geld-provider-review__reviewer-summary')?.textContent).toBe('Reviews · Partial · 1/2 required approvals');
     panel.destroy();
   });
+});
+
+
+it('renders an owned dashboard with button-controlled sections and preserves disclosure choices', () => {
+  const source = input([thread('a')]);
+  const mount = host();
+  const description = document.createElement('p');description.textContent = 'A long native description';mount.append(description);
+  const panel = renderProviderReviewPanel(mount, source, { comments: [comment('2', 'Human context')] });
+  expect(mount.firstElementChild).toBe(panel.element);
+  expect(description.parentElement).toBe(mount);
+  expect(panel.element.nextElementSibling).toBe(description);
+  expect(panel.element.querySelector('details[data-geld-review-key]')).toBeNull();
+  expect(panel.element.querySelector('[data-geld-review-metric="open"]')?.textContent).toBe('1Open items');
+  expect(panel.element.querySelector('[data-geld-review-metric="comments"]')?.textContent).toBe('2Comments');
+  const section = panel.element.querySelector<HTMLElement>('[data-geld-review-group="open"]');
+  const toggle = section?.querySelector<HTMLButtonElement>(':scope > [data-geld-review-toggle]');
+  if (section === null || section === undefined || toggle === null || toggle === undefined) throw new Error('Missing dashboard section');
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  const controlled = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+  expect(controlled?.parentElement).toBe(section);
+  expect(controlled?.getAttribute('aria-labelledby')).toBe(toggle.id);
+  toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  panel.update({ ...source, closed: true });
+  expect(panel.element.querySelector('[data-geld-review-group="open"] > button')?.getAttribute('aria-expanded')).toBe('false');
+  expect(panel.element.querySelector('button a, button button')).toBeNull();
+  panel.destroy();
+});
+
+it('retains focus on the original-conversation control after its keyboard activation rerenders the same review', () => {
+  const source = input([thread('a')]);
+  let shown = false;
+  const toggle = (): void => { shown = !shown;panel.update(source, { originalConversation: { shown, toggle } }); };
+  const panel = renderProviderReviewPanel(host(), source, { originalConversation: { shown, toggle } });
+  const before = panel.element.querySelector<HTMLButtonElement>('[data-geld-original-conversation]');
+  before?.focus();before?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+  const after = panel.element.querySelector<HTMLButtonElement>('[data-geld-original-conversation]');
+  expect(after).not.toBe(before);expect(after?.getAttribute('aria-pressed')).toBe('true');
+  expect(document.activeElement).toBe(after);
+  after?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+  expect(document.activeElement).toBe(panel.element.querySelector('[data-geld-original-conversation]'));
+  expect(panel.element.querySelector('[data-geld-original-conversation]')?.getAttribute('aria-pressed')).toBe('false');
+  panel.destroy();
+});
+
+it('retains a focused custom disclosure on same-review updates without transferring focus across reviews or from another control', () => {
+  const source = input([thread('a')]);
+  const panel = renderProviderReviewPanel(host(), source);
+  const before = panel.element.querySelector<HTMLButtonElement>('[data-geld-review-key="checks"] > button');
+  before?.focus();before?.click();
+  panel.update({ ...source, closed: true });
+  const after = panel.element.querySelector<HTMLButtonElement>('[data-geld-review-key="checks"] > button');
+  expect(after).not.toBe(before);expect(document.activeElement).toBe(after);
+  expect(after?.getAttribute('aria-expanded')).toBe('true');
+  panel.update({ ...source, subject: { ...source.subject, headSha: 'b'.repeat(40) } });
+  expect(document.activeElement).not.toBe(panel.element.querySelector('[data-geld-review-key="checks"] > button'));
+  const external = document.createElement('button');document.body.append(external);external.focus();
+  panel.update({ ...source, closed: false });expect(document.activeElement).toBe(external);
+  panel.destroy();
+});
+
+it('binds every batch-history disclosure to its current content and label after creating attention pointers', () => {
+  const source = input([thread('a')]);
+  const panel = renderProviderReviewPanel(host(), source, { reviewGrouping: 'batch', events: [{ id: 'push-1', url: reviewUrl, author: { id: 'author', login: 'author' }, body: 'Pushed changes', createdAt: '2026-11-01T11:00:00Z', kind: 'push' }] });
+  expect(panel.element.querySelector('[data-geld-review-attention] [data-geld-item]')).not.toBeNull();
+  for (const section of panel.element.querySelectorAll('[data-geld-review-key]')) {
+    const button = section.querySelector<HTMLButtonElement>(':scope > button[data-geld-review-toggle]');
+    const content = document.getElementById(button?.getAttribute('aria-controls') ?? '');
+    expect(content?.parentElement).toBe(section);
+    expect(content?.getAttribute('aria-labelledby')).toBe(button?.id);
+    expect(document.getElementById(content?.getAttribute('aria-labelledby') ?? '')).toBe(button);
+  }
+  panel.destroy();
 });
