@@ -2,20 +2,31 @@ import assert from 'node:assert/strict';
 
 /** Select a real actionable human item before any local-review interaction. */
 export function gitLabLocalReviewedCandidate() {
-  for (const button of document.querySelectorAll('.geld-provider-review [data-geld-local-reviewed]')) {
+  const buttons = [...document.querySelectorAll('.geld-provider-review [data-geld-local-reviewed]')];
+  const counts = { total: Math.min(buttons.length, 1000), truncated: buttons.length > 1000, human: 0, disabled: 0, pressed: 0,
+    states: { open: 0, 'needs-reply': 0, addressed: 0, resolved: 0, outdated: 0, 'done-manual': 0, other: 0 } };
+  let candidate = null;
+  for (const button of buttons.slice(0, 1000)) {
     const item = button.closest('[data-geld-item]');
-    const id = button.getAttribute('data-geld-local-reviewed');
-    if (!id || button.disabled || button.getAttribute('aria-disabled') === 'true' || button.getAttribute('aria-pressed') !== 'false'
-      || !['open', 'needs-reply', 'addressed'].includes(item?.getAttribute('data-state'))) continue;
-    const source = [...item.querySelectorAll('[data-geld-source]')].find((entry) => {
+    const state = item?.getAttribute('data-state');
+    counts.states[Object.hasOwn(counts.states, state) ? state : 'other']++;
+    const disabled = button.disabled || button.getAttribute('aria-disabled') === 'true';
+    const pressed = button.getAttribute('aria-pressed') !== 'false';
+    if (disabled) counts.disabled++;
+    if (pressed) counts.pressed++;
+    const source = [...item?.querySelectorAll('[data-geld-source]') ?? []].find((entry) => {
       const byline = entry.querySelector(':scope > .geld-provider-review__byline');
       const native = document.getElementById(entry.getAttribute('data-geld-source'));
       return byline !== null && ![...byline.children].some((node) => node.textContent.trim() === 'Automated account')
         && native !== null && native.querySelector('.note-header a.author-name-link[data-user-id]') !== null;
     });
-    if (source !== undefined) return { id, humanAnchor: source.getAttribute('data-geld-source'), pressed: button.getAttribute('aria-pressed'), disabled: button.disabled };
+    if (source !== undefined) counts.human++;
+    const id = button.getAttribute('data-geld-local-reviewed');
+    if (candidate === null && id && !disabled && !pressed && ['open', 'needs-reply', 'addressed'].includes(state) && source !== undefined) {
+      candidate = { id, humanAnchor: source.getAttribute('data-geld-source'), pressed: button.getAttribute('aria-pressed'), disabled: button.disabled };
+    }
   }
-  return null;
+  return { candidate, counts };
 }
 
 /** Browser-side rendered evidence only: no API, source injection or product getters. */

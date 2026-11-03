@@ -2371,7 +2371,15 @@ function assertReviewedStorage(value, itemId, reviewKey, headSha) {
 }
 
 async function localReviewedFlag(page, recordFragment) {
-  const initial = await poll(() => page.evaluate(gitLabLocalReviewedCandidate), (value) => value !== null, 'An enabled, unpressed actionable human local-review item must become available');
+  let lastSelection;
+  let selected;
+  try {
+    selected = await poll(async () => { lastSelection = await page.evaluate(gitLabLocalReviewedCandidate);return lastSelection; }, (value) => value.candidate !== null, 'An enabled, unpressed actionable human local-review item must become available');
+  } catch (error) {
+    if (lastSelection === undefined) throw error;
+    throw new Error(`No enabled, unpressed actionable human local-review item: ${JSON.stringify(lastSelection.counts)}`);
+  }
+  const initial = selected.candidate;
   const itemId = initial.id;
   const selector = `.geld-provider-review [data-geld-local-reviewed=${JSON.stringify(itemId)}]`;
   const observe = () => page.evaluate((itemId) => {

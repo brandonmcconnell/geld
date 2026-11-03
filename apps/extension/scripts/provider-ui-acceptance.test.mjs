@@ -34,14 +34,21 @@ function reviewCandidates(states) {
 }
 test('local-review selection skips earlier resolved and outdated humans before choosing actual actionable work', () => {
   reviewCandidates(['resolved', 'outdated', 'needs-reply']);
-  assert.deepEqual(gitLabLocalReviewedCandidate(), { id: 'item-2', humanAnchor: 'note_3', pressed: 'false', disabled: false });
+  assert.deepEqual(gitLabLocalReviewedCandidate().candidate, { id: 'item-2', humanAnchor: 'note_3', pressed: 'false', disabled: false });
 });
 test('local-review selection skips disabled, already reviewed and automated candidates and returns null without suitable work', () => {
   reviewCandidates(['open', 'open', 'open', 'addressed']);
   const buttons = document.querySelectorAll('[data-geld-local-reviewed]');buttons[0].disabled = true;buttons[1].setAttribute('aria-pressed', 'true');
   document.querySelectorAll('.geld-provider-review__byline')[2].insertAdjacentHTML('beforeend', '<span>Automated account</span>');
-  assert.equal(gitLabLocalReviewedCandidate()?.id, 'item-3');
-  buttons[3].setAttribute('aria-disabled', 'true');assert.equal(gitLabLocalReviewedCandidate(), null);
+  assert.equal(gitLabLocalReviewedCandidate().candidate?.id, 'item-3');
+  buttons[3].setAttribute('aria-disabled', 'true');assert.equal(gitLabLocalReviewedCandidate().candidate, null);
+  assert.deepEqual(gitLabLocalReviewedCandidate().counts, { total: 4, truncated: false, human: 3, disabled: 2, pressed: 1, states: { open: 3, 'needs-reply': 0, addressed: 1, resolved: 0, outdated: 0, 'done-manual': 0, other: 0 } });
+});
+test('local-review failure diagnostics use only fixed state counters without source text', () => {
+  reviewCandidates(['PRIVATE_CANARY']);
+  const result = gitLabLocalReviewedCandidate();
+  assert.equal(result.candidate, null);assert.equal(result.counts.states.other, 1);
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE_CANARY|Human|note_1/);
 });
 test('visible additions and deletions must both agree, rather than only a files badge', () => {
   counts();assertVisibleProviderCounts(providerUiProbe('gitlab'), { additions: 4, deletions: 0 });
