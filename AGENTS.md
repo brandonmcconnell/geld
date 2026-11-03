@@ -2376,3 +2376,5 @@ Late responses and writes from a retired generation cannot restore cleared setti
 
 Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
 The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
+
+Provider configuration caching is best-effort when local storage fails, but aborted or cleared generations still reject before applying fetched rules.
