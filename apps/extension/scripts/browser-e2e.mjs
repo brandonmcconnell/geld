@@ -334,11 +334,16 @@ async function poll(read, accepts, label, ms = WAIT_MS) {
 async function pollStable(read, accepts, label, ms = WAIT_MS, signature = () => null) {
   let since = null; let previous; let samples = 0;
   const result = await poll(async () => {
-    const value = await read(); const key = signature(value); const valid = accepts(value);
-    if (!valid || key !== previous) { since = null; samples = 0; }
-    previous = key;
-    if (valid) { since ??= Date.now(); samples += 1; }
-    return { value, valid, samples, stableMs: since === null ? 0 : Date.now() - since };
+    try {
+      const value = await read(); const key = signature(value); const valid = accepts(value);
+      if (!valid || key !== previous) { since = null; samples = 0; }
+      previous = key;
+      if (valid) { since ??= Date.now(); samples += 1; }
+      return { value, valid, samples, stableMs: since === null ? 0 : Date.now() - since };
+    } catch (error) {
+      since = null;previous = undefined;samples = 0;
+      throw error;
+    }
   }, (sample) => sample.valid && sample.samples >= 2 && sample.stableMs >= 200, label, ms);
   return { ...result.value, stability: { samples: result.samples, stableMs: result.stableMs, minimumMs: 200 } };
 }
