@@ -2504,3 +2504,12 @@ Earlier independent PR27 diff and PR22 overview runs each observed 26 standard A
 The continuity case corroborates public tab-state totals with the read-only complete-result cache and actual native file inventory, without writing cache entries or issuing an oracle request.
 A changed cache identity, untrusted input, full document navigation, missing native file or exhausted budget leaves the combined case incomplete while preserving its earlier digest checkpoint.
 The independent `bitbucket-diff` and `bitbucket-comment` focuses remain available to verify the unfinished half in a later eligible window.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
+
+Provider header ownership checks run in document mutation callbacks and must not read computed styles or layout.
+Native count visibility is refreshed during rendering and resize observation, while needsRepair checks only the owned hint attachment.
