@@ -2038,3 +2038,9 @@ The harness labels this prior-success requirement ROOT-MANUAL and unverified by 
   Unknown forms receive only bounded field-name/type diagnostics and no input, Save, unknown Cancel or generic outer DOM/AX capture.
   This separate case requires a fully free40-request window and at least eight free immediately before each native Save, with no forecast for first-enable or restoration costs and no navigation from default, all or regression focus.
   Prior successful NativeOn210 cost and exact restoration review is an external ROOT-MANUAL admission requirement, explicitly not verified by the first-use harness or by literal focus selection.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
