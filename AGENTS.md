@@ -2117,3 +2117,9 @@ The explicit Bitbucket native-Bash visit may passively inspect one already-issue
 Module-only capture retains the asset SHA and one bounded parser-verified registration-shaped source slice, never the full app or runtime/session state, and reports timeout or unsupported syntax as unavailable.
 The six-MiB response check is applied after Puppeteer buffers decoded bytes and is not a streaming allocation limit.
 A captured registration-shaped source slice does not establish loader binding, runtime getter authority or native preference state.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
