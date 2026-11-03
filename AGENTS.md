@@ -2571,3 +2571,18 @@ They still require exact typography and color equality, and failures include the
 Bitbucket lazy file placeholders have no Viewed checkbox until the native diff is hydrated.
 The UI continuity lease retains original anchors, wrapper roots, tree links and existing Viewed controls, while permitting a newly hydrated native Viewed control only in its unchecked state.
 Its final comparison records field-specific identity mismatches and still rejects replaced existing controls, changed links or newly checked files.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
+
+Provider header ownership checks run in document mutation callbacks and must not read computed styles or layout.
+Native count visibility is refreshed during rendering and resize observation, while needsRepair checks only the owned hint attachment.
+
+A retired or unrelated content client must return no response for an unknown local review validation token.
+Replying false wins the extension message race against the owning client and rejects otherwise valid saves after reinjection.
+
+GitLab created, pending, preparing, scheduled and waiting_for_resource jobs remain queued in trusted CI input.
+Published CI totals count both queued and manual jobs as waiting, and only native running jobs as in progress.
