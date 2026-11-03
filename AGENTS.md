@@ -1966,3 +1966,9 @@ install the built folder with Puppeteer's `browser.installExtension()` after lau
 the flag is what makes `Extensions.loadUnpacked` available;
 the pipe is required for it), and bring a tab to the front before interacting with it (background tabs stall element handles).
 The full launch recipe, with a service-worker sanity check, is in `.claude/skills/github-surface/SKILL.md` §4.
+
+Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
+Late responses and writes from a retired generation cannot restore cleared settings.
+
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
