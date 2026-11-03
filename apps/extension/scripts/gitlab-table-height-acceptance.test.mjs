@@ -145,8 +145,27 @@ test('post-capture focus failure retains the exact failed sample and still resto
  page.mouse={click:async()=>{expanded=!expanded;events.push({type:'click',trusted:true});}};
  page.keyboard={press:async()=>{expanded=!expanded;events.push({type:'click',trusted:true});}};
  page.$=async()=>({evaluate:async()=>{},dispose:async()=>{}});
- await assert.rejects(verifyGitLabTableHeights(page,proof,{anchor:'note_11',head:'a'.repeat(40),poll:async(fn,accepts)=>{const value=await fn();assert.ok(accepts(value));return value;},capture:async(_page,_name,{onStage})=>{captured=true;await onStage('after_screenshot');await onStage('after_dom_read');await onStage('after_accessibility_read');return{png:'synthetic-only'};}}),/Actual owned table control lost focus/);
+ await assert.rejects(verifyGitLabTableHeights(page,proof,{anchor:'note_11',head:'a'.repeat(40),poll:async(fn,accepts)=>{const value=await fn();assert.ok(accepts(value));return value;},capture:async(_page,_name,{fullPage,onStage})=>{assert.equal(fullPage,false);captured=true;await onStage('after_screenshot');await onStage('after_dom_read');await onStage('after_accessibility_read');return{png:'synthetic-only'};}}),/Actual owned table control lost focus/);
  const result=proof.tableHeight;assert.equal(result.status,'failed');assert.equal(result.actions.length,4);assert.equal(result.afterCapture.candidates[0].button.focused,false);assert.equal(result.afterCapture.activeElement.tag,'BODY');assert.deepEqual(result.captureStages.map(stage=>stage.stage),['after_screenshot','after_dom_read','after_accessibility_read']);assert.equal(result.captureStages[0].snapshot.candidates[0].button.focused,false);assert.equal(result.traceDisposed,true);assert.equal(result.restored,true);assert.equal(result.listenerDisposed,true);assert.equal(page.listenerCount('request'),0);
+});
+test('viewport-only table capture preserves all four input and post-capture source/focus guards',async()=>{
+ const page=new EventEmitter();let expanded=false,captured=false;const events=[];const proof={};
+ const read=()=>{
+  const value=snapshot(expanded);value.ownedBody='<div>unchanged owned body</div>';value.events=structuredClone(events);value.activeElement={tag:captured?'BODY':'BUTTON',id:captured?'':'owned-toggle',classes:[],isConnected:true,insideCurrentButton:!captured,insideOwnedSource:!captured};
+  const row=value.candidates[0];row.button.id='owned-toggle';row.button.focused=!captured;Object.assign(row,{lastRowPresented:true,lastCellPresented:true,lastRow:{top:200,bottom:240},scrollClip:{top:100,bottom:650},lastCellHit:{clipped:false,unobscured:true,clips:[]}});return value;
+ };
+ page.evaluate=async(fn,action,phase)=>{
+  if(fn===tableFocusTrace)return {records:[{kind:'state',phase}],stopped:action==='cleanup',framePending:false};
+  if(fn===tableHeightProbe)return read();const source=String(fn);
+  if(source.includes("getAttribute('aria-expanded')"))return expanded;
+  if(source.includes('details.length'))return 0;
+  if(source.includes('delete globalThis.__geldTableHeightProof'))return true;
+ };
+ page.mouse={click:async()=>{expanded=!expanded;events.push({type:'click',trusted:true});}};
+ page.keyboard={press:async()=>{expanded=!expanded;events.push({type:'click',trusted:true});}};
+ page.$=async()=>({evaluate:async()=>{},dispose:async()=>{}});
+ await verifyGitLabTableHeights(page,proof,{anchor:'note_11',head:'a'.repeat(40),poll:async(fn,accepts)=>{const value=await fn();assert.ok(accepts(value));return value;},capture:async(_page,_name,{fullPage,onStage})=>{assert.equal(fullPage,false);captured=fullPage;await onStage('after_screenshot');await onStage('after_dom_read');await onStage('after_accessibility_read');return{png:'synthetic-only'};}});
+ const result=proof.tableHeight;assert.equal(result.status,'passed');assert.equal(result.actions.length,4);assert.equal(result.afterCapture.candidates[0].button.focused,true);assert.equal(result.afterCapture.activeElement.tag,'BUTTON');assert.deepEqual(result.captureStages.map(stage=>stage.stage),['after_screenshot','after_dom_read','after_accessibility_read']);assert.equal(result.captureStages[0].snapshot.candidates[0].button.focused,true);assert.equal(result.traceDisposed,true);assert.equal(result.restored,true);assert.equal(result.listenerDisposed,true);assert.equal(page.listenerCount('request'),0);
 });
 test('capture-stage read failure retains partial phase evidence and still stops tracing/restores ownership',async()=>{
  const page=new EventEmitter();let expanded=false,captured=false;const events=[];const proof={};
@@ -164,7 +183,7 @@ test('capture-stage read failure retains partial phase evidence and still stops 
  page.mouse={click:async()=>{expanded=!expanded;events.push({type:'click',trusted:true});}};
  page.keyboard={press:async()=>{expanded=!expanded;events.push({type:'click',trusted:true});}};
  page.$=async()=>({evaluate:async()=>{},dispose:async()=>{}});
- await assert.rejects(verifyGitLabTableHeights(page,proof,{anchor:'note_11',head:'a'.repeat(40),poll:async(fn,accepts)=>{const value=await fn();assert.ok(accepts(value));return value;},capture:async(_page,_name,{onStage})=>{captured=true;await onStage('after_screenshot');await onStage('after_dom_read');await onStage('after_accessibility_read');return{png:'synthetic-only'};}}),/Synthetic capture-stage read failed|Owned table height cleanup failed/);
+ await assert.rejects(verifyGitLabTableHeights(page,proof,{anchor:'note_11',head:'a'.repeat(40),poll:async(fn,accepts)=>{const value=await fn();assert.ok(accepts(value));return value;},capture:async(_page,_name,{fullPage,onStage})=>{assert.equal(fullPage,false);captured=true;await onStage('after_screenshot');await onStage('after_dom_read');await onStage('after_accessibility_read');return{png:'synthetic-only'};}}),/Synthetic capture-stage read failed|Owned table height cleanup failed/);
  const result=proof.tableHeight;assert.equal(result.status,'failed');assert.equal(result.actions.length,4);assert.equal(result.captureStages.length,1);assert.equal(result.captureStages[0].stage,'after_screenshot');assert.ok(result.captureStages[0].trace);assert.equal(result.captureStages[0].snapshot,undefined);assert.equal(result.restored,true);assert.equal(result.traceDisposed,true);assert.equal(result.listenerDisposed,true);assert.equal(page.listenerCount('request'),0);
 });
 test('post-capture boolean failures identify the exact ownership/focus/cap requirement',()=>{
