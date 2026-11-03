@@ -4,6 +4,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 const workflow = readFileSync(new URL('../.github/workflows/browser-e2e.yml', import.meta.url), 'utf8');
+const harness = readFileSync(new URL('../apps/extension/scripts/browser-e2e.mjs', import.meta.url), 'utf8');
 const selectorJob = workflow.slice(workflow.indexOf('  select-public-verification:'), workflow.indexOf('  installed-extension:'));
 const script = selectorJob.split('          script: |\n')[1].replace(/^ {12}/gm, '');
 const repository = 'brandonmcconnell/geld';
@@ -40,6 +41,21 @@ for (const [name, event] of [
 
 test('a valid literal focus change selects that slice', () => {
   assert.deepEqual(select({ body: marker('bitbucket-list'), from: marker('gitlab-review') }), { focus: 'bitbucket-list', run: 'true', failures: [] });
+});
+
+test('cross-provider settings selects one bounded case and does not broaden the default or Bitbucket slices', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];
+  assert.ok(literal, 'Missing static harness focus map');
+  const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
+  assert.deepEqual(Array.from(cases['cross-provider-settings']), ['cross-provider-settings']);
+  assert.equal(cases.regression.includes('cross-provider-settings'), false);
+  for (const [focus, selected] of Object.entries(cases)) if (focus.startsWith('bitbucket-')) assert.equal(selected.includes('cross-provider-settings'), false);
+  assert.match(harness, /await runCase\('cross-provider-settings', GL_MIXED, verifyCrossProviderSettings\)/);
+  assert.deepEqual(select({ body: marker('cross-provider-settings'), from: marker('gitlab-review') }), { focus: 'cross-provider-settings', run: 'true', failures: [] });
+});
+
+test('unchanged cross-provider settings prose edits do not enqueue another two-provider visit', () => {
+  assert.deepEqual(select({ body: `${marker('cross-provider-settings')}\nNew evidence`, from: `${marker('cross-provider-settings')}\nEarlier evidence` }), { focus: 'cross-provider-settings', run: 'false', failures: [] });
 });
 
 test('removing a nondefault marker explicitly returns to regression', () => {
