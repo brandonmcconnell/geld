@@ -8,6 +8,8 @@ import type { ProviderSourceActionContext, ProviderSourceSelection } from './sou
 export type { ProviderSourceActionContext } from './source-selection';
 import { renderReviewerIdentity } from './reviewer-identity';
 import { renderPublisherIdentity } from './publisher-identity';
+import { providerCheckKey, providerCheckPresentation, providerChecksCoverage } from './ci-checks';
+import { providerCheckIcon } from './ci-icons';
 import type { ReviewerIdentityChoice, ReviewerIdentityControl } from './reviewer-identity';
 
 export interface ProviderReviewPanelEvent {
@@ -152,17 +154,6 @@ function safeUrl(value: string, origin?: string): string | null {
   }
 }
 
-function checkState(check: RawCheckRun): string {
-  if (['queued', 'pending', 'in_progress', 'running', 'waiting', 'requested'].includes(check.status)) return 'Running';
-  if (check.status !== 'completed') return 'Unknown';
-  if (check.conclusion === 'success') return 'Passed';
-  if (['failure', 'timed_out', 'action_required', 'startup_failure'].includes(check.conclusion ?? '')) return 'Failed';
-  if (check.conclusion === 'skipped') return 'Skipped';
-  if (check.conclusion === 'cancelled' || check.conclusion === 'canceled') return 'Cancelled';
-  if (check.conclusion === 'neutral') return 'Neutral';
-  return 'Unknown';
-}
-
 function countLabel(count: number, singular: string): string {
   return `${count} ${singular}${count === 1 ? '' : 's'}`;
 }
@@ -182,6 +173,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   let input = initialInput;
   let options = initialOptions;
   let identity = '';
+  let checksScope: string | null = null;
   let destroyed = false;
   let items: readonly ReviewItem[] = [];
   let nativeItems: ReadonlyMap<string, ReviewItem> = new Map();
@@ -401,20 +393,49 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
 
   function checksSection(): HTMLElement {
     const checks = input.checks;
+    const coverage = providerChecksCoverage(input);
     const current = checks?.filter((check) => currentCheck(check, input.subject.headSha)) ?? [];
     const counts = new Map<string, number>();
-    for (const check of current) counts.set(checkState(check), (counts.get(checkState(check)) ?? 0) + 1);
+    for (const check of current) {
+      const label = providerCheckPresentation(check, input.subject.provider).label;
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
     const tally = [...counts].map(([state, count]) => `${count} ${state.toLowerCase()}`).join(' · ');
-    const section = disclosure('checks', `CI checks · ${checks === undefined ? 'Unavailable' : current.length === 0 ? 'None on this commit' : tally}`, false);
-    if (checks === undefined || checks.length === 0) section.append(node('p', checks === undefined ? 'CI checks could not be read.' : 'No CI checks reported.'));
+    const summaryText = coverage === 'unavailable' ? 'Unavailable' : coverage === 'partial' ? `Partial${tally === '' ? '' : ` · ${tally}`}` : current.length === 0 ? 'None on this commit' : tally;
+    const section = disclosure('checks', `CI checks · ${summaryText}`, false);
+    section.dataset.geldChecksCoverage = coverage;
+    const summary = section.querySelector('summary');
+    if (summary !== null && coverage !== 'unavailable' && current.length > 0) {
+      summary.replaceChildren(doc.createTextNode(`CI checks · ${coverage === 'partial' ? 'Partial · ' : ''}`));
+      let first = true;
+      for (const [label, count] of counts) {
+        if (!first) summary.append(doc.createTextNode(' · '));
+        first = false;
+        const part = node('span', '', 'geld-provider-review__check-part');
+        const source = current.find((check) => providerCheckPresentation(check, input.subject.provider).label === label);
+        const glyph = source === undefined ? null : providerCheckIcon(input.subject.provider, source, doc);
+        if (glyph !== null) part.append(glyph);
+        part.append(doc.createTextNode(`${count} ${label.toLowerCase()}`));
+        summary.append(part);
+      }
+    }
+    if (coverage !== 'complete') section.append(node('p', coverage === 'unavailable' ? 'CI checks could not be read.' : 'Some CI checks could not be read.'));
+    else if (checks?.length === 0) section.append(node('p', 'No CI checks reported.'));
     const list = node('ul');
     for (const check of checks ?? []) {
-      const state = checkState(check);
+      const presentation = providerCheckPresentation(check, input.subject.provider);
       const row = node('li', '', 'geld-provider-review__check');
-      row.dataset.state = currentCheck(check, input.subject.headSha) ? state.toLowerCase() : 'previous';
+      row.dataset.state = currentCheck(check, input.subject.headSha) ? presentation.state : 'previous';
+      const key = providerCheckKey(check);
+      if (key !== null) row.dataset.geldCheckKey = key;
       const url = check.detailsUrl === undefined ? null : safeUrl(check.detailsUrl);
       row.append(url === null ? node('span', check.name) : link(check.name, url, '', true));
-      row.append(node('span', currentCheck(check, input.subject.headSha) ? state : `Earlier commit · ${state}`));
+      const status = node('span', '', 'geld-provider-review__check-part');
+      const glyph = providerCheckIcon(input.subject.provider, check, doc);
+      if (glyph !== null) status.append(glyph);
+      status.append(doc.createTextNode(currentCheck(check, input.subject.headSha) ? presentation.label : `Earlier commit · ${presentation.label}`));
+      row.append(status);
+      if (check.allowFailure === true) row.append(node('span', 'Allowed to fail', 'geld-provider-review__muted'));
       if (check.description !== undefined && check.description !== '') row.append(node('span', check.description, 'geld-provider-review__muted'));
       list.append(row);
     }
@@ -708,9 +729,12 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     if (summary !== undefined) lines.push('', `AI summary: ${summary.tldr}`, '');
     for (const bot of bots) lines.push(`- ${botById(bot.id)?.title ?? bot.id}: ${verdictLabel(bot)}`);
     for (const requirement of options.requirements ?? []) lines.push(`- Merge requirement: ${requirement.label}: ${REQUIREMENT_STATE[requirement.state]}`);
+    const coverage = providerChecksCoverage(input);
+    if (coverage !== 'complete') lines.push(`CI checks: ${coverage === 'unavailable' ? 'Unavailable' : 'Partial'}`);
+    else if (input.checks?.length === 0) lines.push('CI checks: No CI checks reported.');
     for (const check of input.checks ?? []) {
       const url = check.detailsUrl === undefined ? null : safeUrl(check.detailsUrl);
-      lines.push(`- CI: ${check.name}: ${checkState(check)}${currentCheck(check, input.subject.headSha) ? '' : ' (earlier commit)'}${url === null ? '' : ` ${url}`}`);
+      lines.push(`- CI: ${check.name}: ${providerCheckPresentation(check, input.subject.provider).label}${check.allowFailure === true ? ' (allowed to fail)' : ''}${currentCheck(check, input.subject.headSha) ? '' : ' (earlier commit)'}${url === null ? '' : ` ${url}`}`);
     }
     for (const item of items) {
       lines.push('', `## ${STATUS[item.status]}: ${item.title}`);
@@ -736,6 +760,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function render(): void {
     if (destroyed) return;
     const focused = doc.activeElement;
+    const focusedCheck = focused?.matches('a[href]') === true && panel.contains(focused) ? focused.closest<HTMLElement>('[data-geld-check-key]') : null;
+    const checkFocus = focusedCheck === null ? null : { key: focusedCheck.dataset.geldCheckKey, href: focused?.getAttribute('href') };
+    const nextChecksScope = JSON.stringify([input.subject.provider, input.subject.origin, input.subject.repository, input.subject.id, input.subject.headSha]);
     const reviewedFocus = focused !== null && panel.contains(focused) ? focused.getAttribute('data-geld-local-reviewed') ?? focused.getAttribute('data-geld-local-review-focus') : null;
     nativeTimes.clear();
     for (const time of doc.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
@@ -886,6 +913,12 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       children.push(section);
     }
     panel.replaceChildren(...children);
+    if (checkFocus !== null && checksScope === nextChecksScope && (doc.activeElement === doc.body || doc.activeElement === focused)) {
+      const targets = [...panel.querySelectorAll<HTMLAnchorElement>('[data-geld-check-key] a[href]')].filter((target) => target.closest<HTMLElement>('[data-geld-check-key]')?.dataset.geldCheckKey === checkFocus.key && target.getAttribute('href') === checkFocus.href);
+      const target = targets.length === 1 ? targets[0] : undefined;
+      if (target !== undefined && target.closest('[hidden], [inert], [aria-hidden="true"], details:not([open])') === null) target.focus({ preventScroll: true });
+    }
+    checksScope = nextChecksScope;
     if (reviewedFocus !== null) {
       const button = [...panel.querySelectorAll<HTMLButtonElement>('[data-geld-local-reviewed]')].find((candidate) => candidate.dataset.geldLocalReviewed === reviewedFocus);
       if (button !== undefined) {
