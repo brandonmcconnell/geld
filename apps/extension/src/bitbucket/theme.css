@@ -1,0 +1,124 @@
+/* Atlassian Design System semantic tokens. Bitbucket's hydrated public UI must
+ * still be compared before claiming exact native visual parity. */
+html[data-geld-provider="bitbucket"] {
+  --geld-provider-font-family: var(--ds-font-family-body);
+  --geld-provider-font-weight: var(--ds-font-weight-regular);
+  --geld-provider-heading-weight: var(--ds-font-weight-bold);
+  --geld-provider-font: var(--ds-font-body);
+  --geld-provider-font-small: var(--ds-font-body-small);
+  --geld-provider-byline-font: var(--ds-font-body-small);
+  --geld-provider-author-font: var(--ds-font-body);
+  --geld-provider-author-weight: var(--ds-font-weight-medium);
+  --geld-provider-author-text: var(--ds-text);
+  --geld-provider-text: var(--ds-text);
+  --geld-provider-text-subtle: var(--ds-text-subtle);
+  --geld-provider-link: var(--ds-link);
+  --geld-provider-success: var(--ds-text-success);
+  --geld-provider-danger: var(--ds-text-danger);
+  --geld-provider-warning: var(--ds-text-warning);
+  --geld-provider-ci-success: var(--ds-icon-success);
+  --geld-provider-bg: var(--ds-surface);
+  --geld-provider-bg-subtle: var(--ds-surface-sunken);
+  --geld-provider-border: var(--ds-border);
+  --geld-provider-border-width: var(--ds-border-width);
+  --geld-provider-radius: var(--ds-radius-large);
+  --geld-provider-shadow: none;
+  --geld-provider-focus-ring: none;
+  --geld-provider-focus-outline: var(--ds-border-width-focused) solid var(--ds-border-focused);
+  --geld-provider-focus-offset: var(--ds-space-025);
+  --geld-provider-button-font: var(--ds-font-body);
+  --geld-provider-button-weight: var(--ds-font-weight-medium);
+  --geld-provider-button-transition: var(--ds-button-hovered);
+  --geld-provider-button-bg: var(--ds-background-neutral-subtle);
+  --geld-provider-button-text: var(--ds-text-subtle);
+  --geld-provider-button-border: var(--ds-border);
+  --geld-provider-button-hover-bg: var(--ds-background-neutral-subtle-hovered);
+  --geld-provider-button-hover-text: var(--ds-text-subtle);
+  --geld-provider-button-hover-border: var(--ds-border);
+  --geld-provider-button-active-bg: var(--ds-background-neutral-subtle-pressed);
+  --geld-provider-button-active-text: var(--ds-text-subtle);
+  --geld-provider-button-active-border: var(--ds-border);
+  --geld-provider-button-focus-bg: var(--ds-background-neutral-subtle);
+  --geld-provider-button-focus-text: var(--ds-text-subtle);
+  --geld-provider-button-focus-border: var(--ds-border);
+  --geld-provider-button-border-width: 0;
+  --geld-provider-button-disabled-bg: var(--ds-background-disabled);
+  --geld-provider-button-disabled-text: var(--ds-text-disabled);
+  --geld-provider-button-disabled-border: var(--ds-border-disabled);
+  --geld-provider-button-radius: var(--ds-radius-medium);
+  --geld-provider-button-min-height: calc(var(--ds-space-200) * 2);
+  --geld-provider-button-padding: var(--ds-space-075) var(--ds-space-150);
+  --geld-provider-overlay-bg: var(--ds-surface-overlay);
+  --geld-provider-overlay-font: var(--ds-font-body-small);
+  --geld-provider-overlay-radius: var(--ds-radius-large);
+  --geld-provider-overlay-padding: var(--ds-space-150);
+  --geld-provider-overlay-border-width: 0;
+  --geld-provider-overlay-filter: none;
+  --geld-provider-overlay-z-index: 400;
+  --geld-provider-overlay-shadow: var(--ds-shadow-overlay);
+  --geld-provider-space-1: var(--ds-space-025);
+  --geld-provider-space-2: var(--ds-space-050);
+  --geld-provider-space-3: var(--ds-space-100);
+  --geld-provider-space-4: var(--ds-space-150);
+  --geld-provider-space-5: var(--ds-space-200);
+  --geld-provider-space-6: var(--ds-space-300);
+}
+
+/* Atlaskit draws the default button border without adding to its box size. */
+html[data-geld-provider="bitbucket"] :is(.geld-provider-toggle, .geld-provider-review__copy, .geld-provider-actions button, .geld-provider-review__source-actions button) {
+  position: relative;
+}
+html[data-geld-provider="bitbucket"] :is(.geld-provider-toggle, .geld-provider-review__copy, .geld-provider-actions button, .geld-provider-review__source-actions button)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: var(--ds-border-width) solid var(--geld-provider-button-border);
+  border-radius: inherit;
+  pointer-events: none;
+}
+html[data-geld-provider="bitbucket"] :is(.geld-provider-toggle, .geld-provider-review__copy, .geld-provider-actions button, .geld-provider-review__source-actions button):disabled::after,
+html[data-geld-provider="bitbucket"] .geld-provider-test-boundaries[aria-disabled="true"]::after {
+  border-color: var(--geld-provider-button-disabled-border);
+}
+html[data-geld-provider="bitbucket"] .geld-provider-test-boundaries[aria-disabled="true"] {
+  background: var(--geld-provider-button-disabled-bg);
+  color: var(--geld-provider-button-disabled-text);
+  cursor: default;
+}
+
+/* The native renderer's typography carrier sits outside its sanitized document. */
+html[data-geld-provider="bitbucket"] .geld-provider-review__body[data-geld-bitbucket-typography] > .ak-renderer-document {
+  font-size: var(--ak-renderer-base-font-size, inherit);
+  line-height: var(--geld-bitbucket-body-line-height, inherit);
+}
+html[data-geld-provider="bitbucket"] .geld-provider-review__body[data-geld-bitbucket-typography] > .ak-renderer-document > p {
+  font: var(--ak-renderer-editor-font-normal-text, inherit);
+}
+
+/* Only the verified title line with an owned sibling chip reserves count width. */
+html[data-geld-provider="bitbucket"] tr[data-qa="pull-request-row"] div:has(> .geld-provider-list-counts[data-geld-ui]) > div[role="presentation"]:has(> span > a[data-qa="pull-request-row-link"]) {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html[data-geld-provider="bitbucket"] tr[data-qa="pull-request-row"] div:has(> div[role="presentation"] > span > a[data-qa="pull-request-row-link"]) > .geld-provider-list-counts[data-geld-ui] {
+  flex: 0 0 auto;
+}
+
+/* Owned Pipelines shell uses provider Bash role colors with native ADS fallbacks. */
+::highlight(geld-bitbucket-shell-plain), ::highlight(geld-bitbucket-shell-subst) { color: var(--ds-text-code-default); }
+::highlight(geld-bitbucket-shell-keyword) { color: var(--ds-text-code-keywords); }
+::highlight(geld-bitbucket-shell-built_in) { color: var(--ds-text-accent-blue-bolder, var(--ds-text-code-functions)); }
+::highlight(geld-bitbucket-shell-title) { color: var(--ds-text-code-functions); }
+::highlight(geld-bitbucket-shell-number), ::highlight(geld-bitbucket-shell-literal) { color: var(--ds-text-code-numbers); }
+::highlight(geld-bitbucket-shell-string) { color: var(--ds-text-accent-orange, var(--ds-text-code-strings)); }
+::highlight(geld-bitbucket-shell-comment) { color: var(--ds-comment-refreshed, var(--ds-text-code-comments)); }
+::highlight(geld-bitbucket-shell-meta) { color: var(--ds-text-code-comments); }
+::highlight(geld-bitbucket-shell-variable) { color: var(--ds-text-accent-blue-bolder, var(--ds-text-code-accent-1)); }
+::highlight(geld-bitbucket-shell-attr) { color: var(--ds-text-code-tags); }
+
+html[data-geld-provider="bitbucket"] .geld-provider-line-fold {
+  position: relative;
+}

@@ -1,0 +1,326 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+import { Window } from 'happy-dom';
+import { tsImport } from 'tsx/esm/api';
+const { normalizeSettings } = await tsImport('@geld/core', import.meta.url);
+import { CODERABBIT_FIXTURE as F, createCodeRabbitFixtureOracle, codeRabbitDomProbe, codeRabbitRequestObservation, observeCodeRabbitFixture, assertCodeRabbitSource, assertCodeRabbitRequestSource, assertCodeRabbitSettings, verifyCodeRabbitCommands } from './gitlab-coderabbit-acceptance.mjs';
+
+const SHA = 'a'.repeat(40);
+const API = 'https://gitlab.com/api/v4/projects/ark-bitcoin%2Fbark/merge_requests/2117';
+const DISCUSSIONS = F.url + '/discussions.json?per_page=100&notes_filter=0&persist_filter=false';
+const EXTENSION = 'abcdefghijklmnopabcdefghijklmnop';
+const metadata = () => ({ iid: 2117, web_url: F.url, sha: SHA, diff_refs: { head_sha: SHA }, state: 'merged' });
+// Compact protocol fixtures, not a substitute for a live CodeRabbit comment/account corpus.
+const note = (id = Number(F.note)) => ({ id, note: 'Walkthrough and original source words', system: false, noteable_note_url: `${F.url}#note_${id}`, author: { id: Number(F.author), username: F.login, bot: true, user_type: 'project_bot' }, created_at: '2026-10-28T10:00:00Z', updated_at: '2026-10-28T10:00:00Z' });
+const discussion = (id = 'one', notes = [note()]) => ({ id, notes, resolved: false, active: true });
+function ready() { const oracle = createCodeRabbitFixtureOracle();oracle.observe(API, 200, metadata());oracle.observe(DISCUSSIONS, 200, [discussion()]);return oracle; }
+
+test('requires one actual200 metadata body and a complete cursor chain;304 alone is not a fabricated body', () => {
+  const oracle = createCodeRabbitFixtureOracle();oracle.observe(API, 304, null);oracle.observe(DISCUSSIONS, 200, [discussion()], { 'x-next-page-cursor': 'next' });
+  assert.equal(oracle.snapshot().status, 'unavailable');oracle.observe(API, 200, metadata());assert.equal(oracle.snapshot().status, 'unavailable');
+  oracle.observe(DISCUSSIONS + '&cursor=next', 200, [discussion('two', [note(3436707544)])]);
+  const result = oracle.snapshot();assert.equal(result.status, 'ready');assert.equal(result.discussions, 2);assert.equal(result.notes, 2);assert.deepEqual(result.pages, ['page:1', 'cursor:next']);
+  assert.equal(oracle.evidence.metadataResponses[0].status, 304);assert.equal(oracle.evidence.metadata.length, 1);
+});
+test('also validates ordered numeric page continuation without inventing a complete first page', () => {
+  const oracle = createCodeRabbitFixtureOracle();oracle.observe(API, 200, metadata());oracle.observe(DISCUSSIONS, 200, [discussion()], { 'x-next-page': '2' });assert.equal(oracle.snapshot().status, 'unavailable');
+  oracle.observe(DISCUSSIONS + '&page=2', 200, [discussion('two', [note(3436707544)])]);assert.equal(oracle.snapshot().status, 'ready');
+});
+for (const [name, change] of [
+  ['vendor alias instead of native account', (value) => { value.author.username = 'coderabbitai'; }],
+  ['different durable author', (value) => { value.author.id = 99; }],
+  ['human/nonautomated account', (value) => { value.author.bot = false;value.author.user_type = 'human'; }],
+  ['system activity', (value) => { value.system = true; }],
+  ['foreign permalink', (value) => { value.noteable_note_url = F.url.replace('/2117', '/2118') + '#note_' + F.note; }],
+]) test(`${name} cannot establish the actual fixture even with a vendor-shaped body`, () => {
+  const oracle = createCodeRabbitFixtureOracle();const source = note();change(source);source.note = '<!-- CodeRabbit --> @coderabbitai review';oracle.observe(API, 200, metadata());oracle.observe(DISCUSSIONS, 200, [discussion('one', [source])]);assert.equal(oracle.snapshot().status, 'unavailable');
+});
+test('rejects conflicting metadata, duplicate/cyclic sources and changed already-observed pages', () => {
+  const moved = ready();moved.observe(API, 200, { ...metadata(), sha: 'b'.repeat(40), diff_refs: { head_sha: 'b'.repeat(40) } });assert.equal(moved.snapshot().status, 'unavailable');
+  const repeated = ready();repeated.observe(DISCUSSIONS + '&cursor=two', 200, [discussion('one')], { 'x-next-page-cursor': 'two' });assert.equal(repeated.snapshot().status, 'unavailable');
+  const changed = ready();changed.observe(DISCUSSIONS, 200, [discussion('one', [{ ...note(), note: 'Edited source' }])]);assert.equal(changed.snapshot().status, 'unavailable');
+  const duplicate = createCodeRabbitFixtureOracle();duplicate.observe(API, 200, metadata());duplicate.observe(DISCUSSIONS, 200, [discussion('one'), discussion('two')]);assert.equal(duplicate.snapshot().status, 'unavailable');
+});
+test('foreign routes, native20 previews, malformed source bodies and oversized pages never establish completion', () => {
+  for (const url of [API.replace('ark-bitcoin', 'foreign'), DISCUSSIONS.replace('per_page=100', 'per_page=20'), DISCUSSIONS + '&unknown=1']) {
+    const oracle = createCodeRabbitFixtureOracle();oracle.observe(API, 200, metadata());oracle.observe(url, 200, [discussion()]);assert.equal(oracle.snapshot().status, 'unavailable');
+  }
+  for (const value of [{ values: [] }, Array.from({ length: 101 }, () => discussion()), [{ id: 'one' }], [discussion('one', [{ ...note(), note: 'x'.repeat(1_000_001) }])]]) {
+    const oracle = createCodeRabbitFixtureOracle();oracle.observe(API, 200, metadata());oracle.observe(DISCUSSIONS, 200, value);assert.equal(oracle.snapshot().status, 'unavailable');
+  }
+});
+test('copy acquisition classification separates actual extension/owned source reads from incidental first-party reports', () => {
+  assert.equal(codeRabbitRequestObservation({ url: API, method: 'GET' }, EXTENSION).source, true);
+  const extension = codeRabbitRequestObservation({ url: 'https://gitlab.com/api/v4/users/123', method: 'GET', initiator: { stack: { callFrames: [], parent: { callFrames: [{ url: `chrome-extension://${EXTENSION}/content-scripts/gitlab.js` }] } } } }, EXTENSION);
+  assert.equal(extension.attribution, 'extension_frame_observed');assert.equal(extension.source, true);
+  assert.equal(codeRabbitRequestObservation({ url: F.url + '/test_reports.json', method: 'GET' }, EXTENSION).source, false);
+  assert.equal(codeRabbitRequestObservation({ url: 'https://other.example/api/v4/users', method: 'GET' }, EXTENSION), null);
+});
+test('observer reads already-issued response bodies without fetching and disposes its listeners', async () => {
+  const page = new EventEmitter();const item = {};const fixture = observeCodeRabbitFixture(page, item, EXTENSION);
+  for (const [url, value] of [[API, metadata()], [DISCUSSIONS, [discussion()]]]) page.emit('response', { url: () => url, status: () => 200, headers: () => ({}), json: async () => value });
+  await Promise.resolve();await Promise.resolve();assert.equal(fixture.snapshot().status, 'ready');fixture.copyPhase(true);
+  page.emit('request', { url: () => F.url + '/test_reports.json', method: () => 'GET', initiator: () => null });assert.equal(fixture.evidence.copyOtherGets.length, 1);assert.deepEqual(fixture.evidence.copySourceGets, []);
+  fixture.dispose();assert.equal(page.listenerCount('request'), 0);assert.equal(page.listenerCount('response'), 0);
+});
+
+function nativeVersion() { const selected = { id: 1850365024, head: SHA, selected: true, latest: true, href: '/ark-bitcoin/bark/-/merge_requests/2117/diffs?diff_id=1850365024' };return { status: 'observed', count: 1, project: F.project, path: new URL(F.url).pathname, iid: F.id, type: 'MergeRequest', selected: [selected], latest: [selected] }; }
+function dom() {
+  return { items: [{ id: 'ri_source', state: 'resolved', sources: [`note_${F.note}`] }], url: F.url, state: 'partial', head: SHA, nativeHead: SHA, nativeScope: { count: 1, project: F.project, path: new URL(F.url).pathname + '.json', action: 'show' }, nativeVersion: nativeVersion(), aiRunControls: 0, source: { anchor: `note_${F.note}`, body: '<p>Original words</p>', links: [`${F.url}#note_${F.note}`] },
+    native: { exists: true, body: '<p>Native words</p>', sourceContent: [{ tag: 'P', position: '1:1-1:12', text: 'Native words', href: null, src: null }], authorId: F.author, login: F.login, href: '/' + F.login, sameNode: true },
+    requests: [{ source: `${F.url}#note_${F.note}` }], requestNative: { anchor: `note_${F.note}`, exists: true, body: '<p>Native words</p>', authorId: F.author, login: F.login, sameNode: true } };
+}
+test('the command source needs actual same-account native author/body/root and a known canonical note link', () => {
+  const snapshot = ready().snapshot();const before = dom();assertCodeRabbitSource(before, snapshot);assertCodeRabbitRequestSource(before, snapshot);
+  for (const mutate of [(value) => { value.native.sameNode = false; }, (value) => { value.native.body = 'Replaced words'; }, (value) => { value.head = 'b'.repeat(40); }]) { const after = dom();mutate(after);assert.throws(() => assertCodeRabbitSource(after, snapshot, before)); }
+  for (const mutate of [(value) => { value.requestNative.sameNode = false; }, (value) => { value.requestNative.authorId = '99'; }, (value) => { value.requests[0].source = F.url + '#note_99'; }]) { const after = dom();mutate(after);assert.throws(() => assertCodeRabbitRequestSource(after, snapshot, before)); }
+});
+for (const sourceState of ['missing metadata', 'incomplete cursor chain', 'invalid metadata']) test(`${sourceState} returns case unavailable only after settings/listener cleanup, without clipboard access`, async () => {
+  const original = { aiEnabled: false, trustedReviewAccounts: [], trustedSummaryPublishers: [] };const events = [];let permission = false;
+  const oracle = createCodeRabbitFixtureOracle();
+  if (sourceState !== 'missing metadata') oracle.observe(API, 200, sourceState === 'invalid metadata' ? { ...metadata(), web_url: F.url.replace('/2117', '/2118') } : metadata());
+  oracle.observe(DISCUSSIONS, 200, [discussion()], sourceState === 'incomplete cursor chain' ? { 'x-next-page-cursor': 'unobserved-page' } : {});
+  assert.equal(oracle.snapshot().status, 'unavailable');
+  const fixture = { ...oracle, copyPhase() {}, dispose() { events.push('disposed'); } };const item = {};
+  const result = await verifyCodeRabbitCommands({ isClosed: () => true }, item, { fixture, context: { overridePermissions: async () => { permission = true; } }, readSettings: async () => original,
+    poll: async (read, valid) => { assert.equal(valid(await read()), false);throw new Error(`Actual fixture unavailable: ${sourceState}`); }, restoreTrust: async (value) => { assert.deepEqual(value, original);events.push('settings restored'); } });
+  assert.equal(result.status, 'unavailable');assert.match(result.reason, /Actual fixture unavailable/);assert.equal(item.codeRabbitCommands.status, 'unavailable');assert.equal(item.codeRabbitCommands.settingsRestored, true);
+  assert.deepEqual(events, ['settings restored', 'disposed']);assert.equal(permission, false);assert.equal(item.codeRabbitCommands.fixture, undefined);assert.deepEqual(item.codeRabbitCommands.actions, []);
+});
+for (const failure of ['settings', 'listener']) test(`unavailable fixture plus ${failure} cleanup failure throws and marks failed rather than unavailable/passed`, async () => {
+  const original = { aiEnabled: false, trustedReviewAccounts: [] };const item = {};const events = [];
+  const fixture = { snapshot: () => ({ status: 'unavailable' }), copyPhase() {}, dispose() { events.push('disposed');if (failure === 'listener') throw new Error('Listener cleanup failed'); } };
+  await assert.rejects(verifyCodeRabbitCommands({ isClosed: () => true }, item, { fixture, readSettings: async () => original,
+    poll: async (read, valid) => { assert.equal(valid(await read()), false);throw new Error('Missing native metadata'); },
+    restoreTrust: async () => { events.push('settings cleanup');if (failure === 'settings') throw new Error('Settings cleanup failed'); } }), /CodeRabbit clipboard\/trust cleanup failed/);
+  assert.deepEqual(events, ['settings cleanup', 'disposed']);assert.equal(item.codeRabbitCommands.status, 'failed');assert.equal(item.codeRabbitCommands.cleanupErrors.length, 1);assert.equal(item.codeRabbitCommands.fixture, undefined);
+});
+test('CodeRabbit focus is literal, selectable alone and excluded from default/all extra acquisition', () => {
+  const harness = readFileSync(new URL('./browser-e2e.mjs', import.meta.url), 'utf8');const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];const map = new vm.Script(`(${literal})`).runInNewContext();
+  assert.deepEqual(Array.from(map['gitlab-coderabbit']), ['gitlab-coderabbit-digest']);assert.equal(map.regression.includes('gitlab-coderabbit-digest'), false);
+  assert.match(harness, /name === 'gitlab-coderabbit-digest' && focus === 'all'/);
+  const workflow = readFileSync(new URL('../../../.github/workflows/browser-e2e.yml', import.meta.url), 'utf8');assert.match(workflow, /- gitlab-coderabbit\n/);assert.match(workflow, /'gitlab-coderabbit'/);
+});
+
+test('retained web discussions string-ID shape and actual100+12 cursor pagination are accepted', () => {
+  // Native note3436654383 fields retained November1; body deliberately omitted, padding is protocol-only.
+  const native = { id: '3436654383', system: false, noteable_note_url: 'https://gitlab.com/ark-bitcoin/bark/-/merge_requests/2117#note_3436654383',
+    author: { id: 38968537, username: 'group_117740890_bot_4b22dd1a4e94814ac4828214cbd93cfe', bot: true, user_type: 'project_bot' },
+    created_at: '2026-06-09T10:02:51.459Z', updated_at: '2026-06-13T15:20:20.557Z', note: 'Protocol fixture; original public bot body is not copied here.' };
+  const cursor = "eyJjcmVhdGVkX2F0IjoiMjAyNi0wNi0xNSAxMzozMzo0OS4xNTU1NTIwMDAgKzAwMDAiLCJpZCI6IjM0NTYzNjg2MTUiLCJfa2QiOiJuIn0=";
+  const oracle = createCodeRabbitFixtureOracle();oracle.observe(API, 200, metadata());
+  oracle.observe(DISCUSSIONS, 200, Array.from({ length: 100 }, (_, index) => discussion(`first-${index}`, index === 0 ? [native] : [])), { 'x-next-page-cursor': cursor });
+  assert.equal(oracle.snapshot().status, 'unavailable');
+  oracle.observe(DISCUSSIONS + '&cursor=' + encodeURIComponent(cursor), 200, Array.from({ length: 12 }, (_, index) => discussion(`second-${index}`, [])));
+  assert.equal(oracle.snapshot().status, 'ready');assert.equal(oracle.snapshot().discussions, 112);assert.equal(oracle.snapshot().source.id, '3436654383');
+});
+for (const id of ['', 0, '0', '03436654383', '3.436654383e9', '3436654383 ', Number.MAX_SAFE_INTEGER + 1, String(Number.MAX_SAFE_INTEGER + 1)]) test(`rejects ambiguous/noncanonical native note identity ${JSON.stringify(id)}`, () => {
+  const oracle = createCodeRabbitFixtureOracle();oracle.observe(API, 200, metadata());oracle.observe(DISCUSSIONS, 200, [discussion('one', [{ ...note(), id }])]);assert.equal(oracle.snapshot().status, 'unavailable');
+});
+
+// Offline browser/storage protocol doubles exercise failure cleanup and call ordering only.
+// These are not an installed CodeRabbit result and do not replace the real UI/clipboard assertions.
+function commandFlow({ permissionFailure = false, captureFailure = false, sourceFailure = false, materializeSettings = false, originalTrustAbsent = false, corruptCleanupPresence = false, verdictFailureAfterCopy = false, sourceFailureAfterCopy = false, readinessBodies, unstableReadiness = false, readinessCaptureFailure = false, readinessApiChange = false, readinessContentChange = false, readinessNodeChange = false, readinessOwnedChange = false, readinessHeadChange = false, finalCaptureBodyChange = false } = {}) {
+  const initial = { aiEnabled: false, trustedReviewAccounts: [], trustedSummaryPublishers: [], categoryPatterns: { tests: ['**/*.spec.ts'] }, aiModel: 'original-model' };if (originalTrustAbsent) delete initial.trustedReviewAccounts;let settings = structuredClone(initial);
+  let trusted = false;let held = false;let commandHeld = false;let mode = 'Incremental review';let clipboard = 'Original clipboard';let status = '';let input = null;let granted = false;let cleared = false;let disposed = false;let withdrew = false;let readinessCaptured = false;let frames = 0;let finalCaptured = false;const captures = [];
+  const oracle = ready();const snapshot = oracle.snapshot();const fixture = { ...oracle, snapshot() { const value = oracle.snapshot();return readinessApiChange && readinessCaptured ? { ...value, sourceSignature: 'changed-observed-source' } : value; }, copyPhase() {}, dispose() { disposed = true; } };
+  const nativeBody = () => finalCaptureBodyChange && finalCaptured ? 'Changed after final capture' : sourceFailureAfterCopy && status !== '' ? 'Changed native source' : readinessCaptured && unstableReadiness ? `Unstable native presentation ${frames}` : readinessCaptured && readinessBodies !== undefined ? readinessBodies[Math.min(Math.max(0, frames - 1), readinessBodies.length - 1)] : dom().native.body;
+  const snapshotDom = () => ({ ...dom(), source: readinessCaptured && readinessOwnedChange ? { ...dom().source, body: 'Changed owned source' } : dom().source, nativeHead: sourceFailure || readinessCaptured && readinessHeadChange ? 'b'.repeat(40) : SHA, native: { ...dom().native, body: nativeBody(), sourceContent: readinessCaptured && readinessContentChange ? [{ ...dom().native.sourceContent[0], text: 'Edited native source words' }] : dom().native.sourceContent, sameNode: held ? !(readinessCaptured && readinessNodeChange) : null },
+    requestNative: { ...dom().requestNative, body: nativeBody(), sameNode: commandHeld ? true : null }, bots: trusted ? [{ id: 'coderabbit', state: verdictFailureAfterCopy && status !== '' ? 'running' : 'unknown', text: 'Observed bound account' }] : [],
+    requests: trusted ? [{ source: `${F.url}#note_${F.note}`, summary: 'Prepare CodeRabbit request', preview: mode === 'Full review' ? '@coderabbitai full review' : '@coderabbitai review', copyDisabled: false, commentDisabled: true, commentTitle: 'Sign in to GitLab to open the native comment writer.', status,
+      modes: ['Incremental review', 'Full review'].map((text) => ({ text, pressed: String(text === mode) })) }] : [] });
+  const copy = (detail) => { clipboard = mode === 'Full review' ? '@coderabbitai full review' : '@coderabbitai review';status = 'Command copied. Paste it into the native comment writer and post when ready.';input = { trusted: true, detail }; };
+  const page = { isClosed: () => false,
+    evaluate: async (callback, arg) => {
+      if (callback.name === 'codeRabbitDomProbe') return snapshotDom();
+      const source = String(callback);
+      if (source.includes('requestAnimationFrame')) { frames += 1;return; }
+      if (/=>\s*globalThis\.__geldCodeRabbitInput/.test(source)) return input;
+      if (source.includes('navigator.clipboard.readText')) return clipboard;
+      if (source.includes('navigator.clipboard.writeText')) { clipboard = arg;return; }
+      if (source.includes('document.getElementById')) { if (source.includes('__geldCodeRabbitCommandNative')) commandHeld = true;else held = true; }
+    },
+    $eval: async (selector) => selector.includes('__never__') ? null : selector.includes('confirmation') ? { visible: true, text: `${F.login} CodeRabbit` } : { summary: 'Identify reviewer', metadata: `${F.author} ${F.login} gitlab.com/ark-bitcoin/bark` },
+    $: async () => ({ evaluate: async () => { input = null; }, click: async () => copy(1), focus: async () => {}, dispose: async () => {} }),
+    keyboard: { press: async (key) => { assert.equal(key, 'Enter');copy(0); } }, bringToFront: async () => {},
+  };
+  const poll = async (read, valid, label) => { for (let attempt = 0; attempt < 6; attempt += 1) { const value = await read();if (valid(value)) return value; }throw new Error(label); };
+  const item = {};
+  const run = () => verifyCodeRabbitCommands(page, item, { fixture,
+    context: { overridePermissions: async (origin, permissions) => { assert.equal(origin, 'https://gitlab.com');assert.ok(permissions.includes('clipboard-write'));granted = true;if (permissionFailure) throw new Error('Clipboard permission denied'); }, clearPermissionOverrides: async () => { cleared = true; } },
+    poll, openReviewAncestors: async () => [],
+    clickReviewButton: async (_page, _selector, label) => { if (label === 'Trust') { trusted = true;settings.trustedReviewAccounts = [`gitlab.com/ark-bitcoin/bark coderabbit ${F.author}`];if (materializeSettings) settings = normalizeSettings(settings); } else if (label.endsWith('review')) { mode = label;status = ''; }return { label }; },
+    readSettings: async () => structuredClone(settings), withdrawTrust: async () => { withdrew = true;trusted = false;settings.trustedReviewAccounts = [];return { bindingRemoved: true }; },
+    restoreTrust: async (original) => { if (Object.hasOwn(original, 'trustedReviewAccounts')) settings.trustedReviewAccounts = original.trustedReviewAccounts;else if (corruptCleanupPresence) settings.trustedReviewAccounts = [];else delete settings.trustedReviewAccounts;trusted = false; },
+    capture: async (_page, name) => { captures.push(name);if (name === 'gitlab-coderabbit-readiness') { readinessCaptured = true;if (readinessCaptureFailure) throw new Error('Readiness screenshot failed'); }else { finalCaptured = true;if (captureFailure) throw new Error('Screenshot failed'); }return { screenshot: 'offline-protocol-only.png' }; },
+  });
+  return { run, item, initial, settings: () => settings, clipboard: () => clipboard, cleanup: () => ({ granted, cleared, disposed, withdrew }), frames: () => frames, captures: () => captures };
+}
+test('offline orchestration preserves both exact previews/trusted input modes and clears clipboard permissions/settings', async () => {
+  const flow = commandFlow();await flow.run();assert.equal(flow.item.codeRabbitCommands.status, 'passed');
+  assert.deepEqual(flow.item.codeRabbitCommands.actions.map(({ expected, input, event }) => ({ expected, input, detail: event.detail })), [{ expected: '@coderabbitai review', input: 'pointer', detail: 1 }, { expected: '@coderabbitai full review', input: 'keyboard', detail: 0 }]);
+  assert.deepEqual(flow.settings(), flow.initial);assert.equal(flow.clipboard(), 'Original clipboard');assert.deepEqual(flow.cleanup(), { granted: true, cleared: true, disposed: true, withdrew: true });
+});
+test('a product/native-head mismatch after confirmed fixture still throws and marks failed', async () => {
+  const flow = commandFlow({ sourceFailure: true });await assert.rejects(flow.run());
+  assert.equal(flow.item.codeRabbitCommands.fixture.status, 'ready');assert.equal(flow.item.codeRabbitCommands.status, 'failed');assert.deepEqual(flow.settings(), flow.initial);assert.equal(flow.cleanup().disposed, true);assert.equal(flow.cleanup().granted, false);
+});
+for (const failure of ['permissionFailure', 'captureFailure']) test(`${failure} cannot leave a trusted binding or granted clipboard permission behind`, async () => {
+  const flow = commandFlow({ [failure]: true });await assert.rejects(flow.run(), failure === 'permissionFailure' ? /Clipboard permission denied/ : /Screenshot failed/);
+  assert.equal(flow.item.codeRabbitCommands.status, 'failed');assert.deepEqual(flow.settings(), flow.initial);assert.equal(flow.cleanup().cleared, true);assert.equal(flow.cleanup().disposed, true);
+});
+
+for (const [type, id] of [['LabelNote', '13a1d4815cdbb1b78d5fdb1eeec7e8f7ebf7c03d'], ['StateNote', '5b15017103440af5f7324d5d12831a0feb02edcf']]) test(`actual typed system ${type} SHA identity is pagination data, never a reviewer/comment candidate`, () => {
+  const oracle = createCodeRabbitFixtureOracle();oracle.observe(API, 200, metadata());oracle.observe(DISCUSSIONS, 200, [discussion()], { 'x-next-page-cursor': 'events' });
+  // Retained event type/id/system shape; body/other account fields are synthetic and not corpus claims.
+  const event = { ...note(), id, type, system: true, noteable_note_url: F.url + '#note_' + id };
+  oracle.observe(DISCUSSIONS + '&cursor=events', 200, [discussion(id, [event])]);
+  assert.deepEqual(oracle.evidence.errors, []);assert.equal(oracle.snapshot().status, 'ready');assert.equal(oracle.snapshot().notes, 2);assert.equal(oracle.snapshot().accountNotes.length, 1);
+  const invalid = createCodeRabbitFixtureOracle();invalid.observe(API, 200, metadata());invalid.observe(DISCUSSIONS, 200, [discussion(id, [{ ...event, system: false }])]);assert.equal(invalid.snapshot().status, 'unavailable');
+});
+
+// Minimal native attribute projection from run41367559862; bodies are not public-corpus fixtures.
+function nativeProjection() {
+  const window = new Window({ url: F.url, settings: { disableJavaScriptEvaluation: true, disableJavaScriptFileLoading: true, disableCSSFileLoading: true, disableIframePageLoading: true } });
+  const doc = window.document;const path = new URL(F.url).pathname;
+  doc.body.innerHTML = `<div class="merge-request" data-mr-action="show" data-project-path="ark-bitcoin/bark" data-url="${path}.json"></div><section class="geld-provider-review" data-state="ready" data-geld-review-head="${SHA}"></section>`;
+  const rapid = doc.createElement('article');rapid.className = 'rd-app';rapid.setAttribute('data-rapid-diffs', '');doc.body.append(rapid);
+  const app = { project_path: F.project, mr_path: path, iid: 2117, noteable_type: 'MergeRequest', versions: { source_versions: [{ id: 1850365024, head_sha: SHA, selected: true, latest: true, href: path + '/diffs?diff_id=1850365024' }] } };
+  rapid.setAttribute('data-app-data', JSON.stringify(app));
+  const probe = () => JSON.parse(JSON.stringify(new vm.Script(`(${codeRabbitDomProbe.toString()})(fixture)`).runInNewContext({ document: doc, location: window.location, URL, fixture: F })));
+  const assertSource = () => { const value = probe();assertCodeRabbitSource({ ...dom(), nativeScope: value.nativeScope, nativeHead: value.nativeHead, nativeVersion: value.nativeVersion }, ready().snapshot());return value; };
+  const noteable = (data) => { const node = doc.createElement('div');node.setAttribute('data-noteable-type', 'MergeRequest');node.setAttribute('data-noteable-data', typeof data === 'string' ? data : JSON.stringify(data));doc.body.append(node);return node; };
+  return { doc, rapid, app, probe, assertSource, noteable };
+}
+test('native Rapid selected/latest head and exact MR wrapper replace an absent/unknown noteable head', () => {
+  const native = nativeProjection();const value = native.assertSource();assert.equal(value.nativeHead, null);assert.deepEqual(value.nativeScope, dom().nativeScope);assert.deepEqual(value.nativeVersion, nativeVersion());
+  native.noteable({ diff_head_sha: SHA });assert.equal(native.assertSource().nativeHead, SHA);
+});
+for (const bad of ['malformed JSON', 'malformed selected head', 'stale selected version', 'conflicting current head', 'duplicate selection', 'foreign MR', 'ambiguous native app']) test(`present Rapid ${bad} cannot be waived because noteable head is absent`, () => {
+  const native = nativeProjection();const selected = native.app.versions.source_versions[0];
+  if (bad === 'malformed JSON') native.rapid.setAttribute('data-app-data', '{');
+  else {
+    if (bad === 'malformed selected head') selected.head_sha = null;
+    if (bad === 'stale selected version') { selected.latest = false;native.app.versions.source_versions.push({ ...selected, id: 1850365025, head_sha: 'b'.repeat(40), selected: false, latest: true }); }
+    if (bad === 'conflicting current head') selected.head_sha = 'b'.repeat(40);
+    if (bad === 'duplicate selection') native.app.versions.source_versions.push({ ...selected });
+    if (bad === 'foreign MR') native.app.mr_path = native.app.mr_path.replace('/2117', '/2118');
+    native.rapid.setAttribute('data-app-data', JSON.stringify(native.app));
+    if (bad === 'ambiguous native app') native.doc.body.append(native.rapid.cloneNode(true));
+  }
+  assert.throws(native.assertSource);
+});
+for (const data of ['{', 'null', { diff_head_sha: null }, { diff_head_sha: 'short' }, { diff_head_sha: 'b'.repeat(40) }]) test(`present noteable data ${JSON.stringify(data)} remains a conflicting/malformed head guard`, () => {
+  const native = nativeProjection();native.noteable(data);assert.throws(native.assertSource);
+});
+test('conflicting native head records and unknown Rapid selection fail closed', () => {
+  const native = nativeProjection();native.noteable({ diff_head_sha: SHA });native.noteable({ diff_head_sha: 'b'.repeat(40) });assert.throws(native.assertSource);
+  const unknown = nativeProjection();unknown.rapid.remove();assert.equal(unknown.probe().nativeVersion.status, 'absent');assert.throws(unknown.assertSource);
+});
+test('native scope is mandatory and note-body/owned copies do not become head evidence', () => {
+  const native = nativeProjection();const body = native.doc.createElement('div');body.className = 'note-body';body.append(native.rapid.cloneNode(true));native.doc.body.append(body);
+  const injected = native.noteable({ diff_head_sha: 'b'.repeat(40) });body.append(injected);
+  assert.equal(native.assertSource().nativeVersion.count, 1);assert.equal(native.probe().nativeHead, null);
+  native.doc.querySelector('.merge-request').setAttribute('data-project-path', 'foreign/project');assert.throws(native.assertSource);
+  native.doc.querySelector('.merge-request').remove();assert.throws(native.assertSource);
+});
+
+test('production normalization permits sparse-to-materialized defaults without claiming raw settings equality', () => {
+  const original = { aiEnabled: false, enabled: true, categories: { tests: true }, repoConfigs: 'never' };
+  const binding = `gitlab.com/ark-bitcoin/bark coderabbit ${F.author}`;
+  const current = normalizeSettings({ ...original, trustedReviewAccounts: [binding] });
+  const observed = assertCodeRabbitSettings(current, original, [binding]);assert.equal(observed.effectiveSettingsEqual, true);assert.equal(observed.rawOtherSettingsEqual, false);
+  assert.ok(observed.materializedKnownFields.includes('prOverview'));assert.ok(observed.materializedKnownFields.includes('aiModel'));assert.deepEqual(observed.unknownRawKeys, []);
+});
+for (const [name, change] of [
+  ['category setting', (value) => { value.categories.tests = false; }],
+  ['AI enablement', (value) => { value.aiEnabled = true; }],
+  ['existing known preference', (value) => { value.enabled = false; }],
+  ['newly materialized nondefault value', (value) => { value.prOverview = false; }],
+  ['exact raw account binding', (value) => { value.trustedReviewAccounts = [`gitlab.com/ark-bitcoin/bark coderabbit 999`]; }],
+  ['unknown raw-key addition', (value) => { value.futurePreference = { unexpected: true }; }],
+]) test(`normalization cannot hide a changed ${name}`, () => {
+  const original = { aiEnabled: false, enabled: true, categories: { tests: true } };const binding = `gitlab.com/ark-bitcoin/bark coderabbit ${F.author}`;
+  const current = structuredClone(normalizeSettings({ ...original, trustedReviewAccounts: [binding] }));change(current);assert.throws(() => assertCodeRabbitSettings(current, original, [binding]));
+});
+test('existing unknown raw settings must remain present and unchanged independently of effective normalization', () => {
+  const original = { aiEnabled: false, futurePreference: { original: true } };const current = { ...normalizeSettings(original), futurePreference: { original: true } };
+  assert.deepEqual(assertCodeRabbitSettings(current, original, []).unknownRawKeys, ['futurePreference']);
+  delete current.futurePreference;assert.throws(() => assertCodeRabbitSettings(current, original, []), /Unknown raw settings fields changed/);
+  current.futurePreference = { original: false };assert.throws(() => assertCodeRabbitSettings(current, original, []), /Unknown raw settings fields changed/);
+});
+for (const originalTrustAbsent of [false, true]) test(`materialized trust flow restores original raw trust ${originalTrustAbsent ? 'absence' : 'value/presence'} and all effective preferences`, async () => {
+  const flow = commandFlow({ materializeSettings: true, originalTrustAbsent });await flow.run();const proof = flow.item.codeRabbitCommands;
+  assert.equal(proof.status, 'passed');assert.equal(proof.settingsRestored, true);assert.equal(proof.rawTrustRestored, true);
+  assert.equal(Object.hasOwn(flow.settings(), 'trustedReviewAccounts'), Object.hasOwn(flow.initial, 'trustedReviewAccounts'));
+  assert.deepEqual(flow.settings().trustedReviewAccounts, flow.initial.trustedReviewAccounts);assertCodeRabbitSettings(flow.settings(), flow.initial, []);
+  assert.ok(proof.settingsComparisons.some((value) => value.stage === 'trusted' && value.materializedKnownFields.length > 0 && value.rawOtherSettingsEqual === false));
+  assert.equal(proof.settingsComparisons.at(-1).stage, 'cleanup');assert.equal(flow.clipboard(), 'Original clipboard');assert.equal(flow.cleanup().cleared, true);
+});
+test('effective equality cannot turn a wrong raw trust cleanup shape into a cleanup pass', async () => {
+  const flow = commandFlow({ materializeSettings: true, originalTrustAbsent: true, corruptCleanupPresence: true });await assert.rejects(flow.run(), /CodeRabbit clipboard\/trust cleanup failed/);
+  assert.equal(flow.item.codeRabbitCommands.status, 'failed');assert.equal(flow.item.codeRabbitCommands.settingsRestored, undefined);assert.equal(flow.item.codeRabbitCommands.rawTrustRestored, undefined);
+  assert.equal(Object.hasOwn(flow.settings(), 'trustedReviewAccounts'), true);assert.equal(flow.cleanup().cleared, true);assert.equal(flow.cleanup().disposed, true);
+});
+test('post-trust failure still restores the exact raw absent trust field after defaults materialize', async () => {
+  const flow = commandFlow({ materializeSettings: true, originalTrustAbsent: true, captureFailure: true });await assert.rejects(flow.run(), /Screenshot failed/);
+  assert.equal(flow.item.codeRabbitCommands.status, 'failed');assert.equal(flow.item.codeRabbitCommands.settingsRestored, true);assert.equal(Object.hasOwn(flow.settings(), 'trustedReviewAccounts'), false);
+  assertCodeRabbitSettings(flow.settings(), flow.initial, []);assert.equal(flow.clipboard(), 'Original clipboard');assert.equal(flow.cleanup().cleared, true);assert.equal(flow.cleanup().disposed, true);
+});
+
+function nestedBotProjection() {
+  const native = nativeProjection();const row = native.doc.createElement('div');row.dataset.geldReviewBot = 'coderabbit';row.dataset.state = 'findings';
+  row.innerHTML = `<strong>CodeRabbit</strong> · Findings resolved<p>${F.login}</p><a href="${F.url}#note_${F.note}">View review</a><details data-geld-bot-request="observed"><summary>Prepare CodeRabbit request</summary><a href="${F.url}#note_${F.note}">View original review</a><code data-geld-bot-command>@coderabbitai review</code><p role="status"></p></details>`;
+  native.doc.querySelector('.geld-provider-review').append(row);
+  return { ...native, row, verdict: () => native.probe().bots };
+}
+test('off-DOM bot verdict projection ignores nested command mode/ack text while keeping account/verdict/source and original nodes intact', () => {
+  const native = nestedBotProjection();const row = native.row;const source = row.querySelector(':scope > a');const control = row.querySelector('details');const baseline = native.verdict();
+  assert.equal(baseline[0].text, 'CodeRabbit · Findings resolved' + F.login + 'View review');assert.deepEqual(baseline[0].links, [{ text: 'View review', href: `${F.url}#note_${F.note}` }]);
+  const initial = row.outerHTML;assert.deepEqual(native.verdict(), baseline);assert.equal(row.outerHTML, initial);
+  control.querySelector('code').textContent = '@coderabbitai full review';control.querySelector('[role="status"]').textContent = 'Command copied. Paste it into the native comment writer and post when ready.';
+  const afterModeAndAck = row.outerHTML;assert.deepEqual(native.verdict(), baseline);assert.equal(row.outerHTML, afterModeAndAck);assert.equal(row.querySelector(':scope > a'), source);assert.equal(row.querySelector('details'), control);assert.equal(row.isConnected, true);
+});
+for (const [name, change] of [
+  ['verdict label', (row) => { row.childNodes[1].textContent = ' · Review running'; }],
+  ['verdict state', (row) => { row.dataset.state = 'running'; }],
+  ['account label', (row) => { row.querySelector(':scope > p').textContent = 'another-account'; }],
+  ['original verdict source', (row) => { row.querySelector(':scope > a').href = F.url + '#note_999'; }],
+]) test(`bot projection still rejects a changed actual ${name}`, () => {
+  const native = nestedBotProjection();const before = native.verdict();change(native.row);assert.throws(() => assert.deepEqual(native.verdict(), before));
+});
+for (const failure of ['verdictFailureAfterCopy', 'sourceFailureAfterCopy']) test(`validated input/clipboard/ack evidence survives later ${failure} without a completed-action or feature pass`, async () => {
+  const flow = commandFlow({ [failure]: true, materializeSettings: true });await assert.rejects(flow.run());const proof = flow.item.codeRabbitCommands;
+  assert.equal(proof.status, 'failed');assert.equal(proof.actions.length, 1);const action = proof.actions[0];
+  assert.equal(action.mode, 'Incremental review');assert.equal(action.stage, 'acknowledged');assert.equal(action.previewValidated, true);assert.deepEqual(action.event, { trusted: true, detail: 1 });assert.equal(action.eventValidated, true);
+  assert.equal(action.clipboard, '@coderabbitai review');assert.equal(action.clipboardValidated, true);assert.equal(action.acknowledged, true);assert.equal(action.after.requests[0].status, 'Command copied. Paste it into the native comment writer and post when ready.');
+  assert.equal(action.sourceAndStatusPreserved, undefined);assert.equal(action.completed, undefined);assert.equal(proof.settingsRestored, true);assert.equal(proof.permissionsRestored, true);assert.equal(flow.clipboard(), 'Original clipboard');
+});
+
+test('readiness retains raw presentation transition/API fingerprint and freezes only two frame-separated stable samples', async () => {
+  const hydrated = dom().native.body + '<div><button data-testid="markdown-table-height-toggle">Show full table</button></div>';
+  const flow = commandFlow({ readinessBodies: [hydrated] });await flow.run();const proof = flow.item.codeRabbitCommands;const readiness = proof.readiness;
+  assert.equal(readiness.status, 'ready');assert.equal(readiness.before.native.body, dom().native.body);assert.equal(readiness.after.native.body, hydrated);assert.equal(readiness.nativeHtmlChanged, true);
+  assert.equal(readiness.before.native.sameNode, null);assert.equal(readiness.after.native.sameNode, true);assert.deepEqual(readiness.before.source, readiness.after.source);assert.deepEqual(readiness.before.native.sourceContent, readiness.after.native.sourceContent);
+  assert.equal(readiness.apiFingerprintBefore, ready().snapshot().sourceSignature);assert.equal(readiness.apiFingerprintAfter, readiness.apiFingerprintBefore);assert.equal(readiness.observations, 2);assert.equal(flow.frames(), 2);
+  assert.equal(readiness.samples.length, 2);assert.deepEqual(readiness.samples[0], readiness.samples[1]);assert.equal(proof.beforeTrust.native.body, hydrated);
+  assert.deepEqual(flow.captures(), ['gitlab-coderabbit-readiness', 'gitlab-coderabbit-command-prepared']);assert.equal(proof.actions.length, 2);assert.ok(proof.actions.every((value) => value.completed));assert.match(readiness.scope, /accessibility remains unverified/);
+});
+test('different first readiness samples are retained and do not freeze until a later consecutive stable pair', async () => {
+  const flow = commandFlow({ readinessBodies: ['warming presentation', 'settled presentation', 'settled presentation'] });await flow.run();const ready = flow.item.codeRabbitCommands.readiness;
+  assert.equal(ready.observations, 3);assert.equal(flow.frames(), 3);assert.equal(ready.samples[0].native.body, 'warming presentation');assert.equal(ready.samples[1].native.body, 'settled presentation');assert.equal(ready.samples[2].native.body, 'settled presentation');assert.equal(ready.after.native.body, 'settled presentation');
+});
+for (const failure of ['unstableReadiness', 'readinessApiChange', 'readinessContentChange', 'readinessNodeChange', 'readinessOwnedChange', 'readinessHeadChange', 'readinessCaptureFailure']) test(`${failure} cannot freeze an action baseline or reach trust/copy`, async () => {
+  const flow = commandFlow({ [failure]: true });await assert.rejects(flow.run());const proof = flow.item.codeRabbitCommands;
+  assert.equal(proof.status, 'failed');assert.equal(proof.readiness.status, 'failed');assert.equal(proof.beforeTrust, undefined);assert.equal(proof.trustClick, undefined);assert.deepEqual(proof.actions, []);
+  assert.equal(proof.settingsRestored, true);assert.equal(proof.rawTrustRestored, true);assert.deepEqual(flow.cleanup(), { granted: false, cleared: false, disposed: true, withdrew: false });
+  if (failure === 'unstableReadiness') { assert.equal(proof.readiness.observations, 6);assert.equal(proof.readiness.samples.length, 4); }
+});
+test('later post-capture body changes still fail byte-exact guards after both copied commands completed', async () => {
+  const flow = commandFlow({ readinessBodies: ['stable native presentation'], finalCaptureBodyChange: true });await assert.rejects(flow.run());const proof = flow.item.codeRabbitCommands;
+  assert.equal(proof.readiness.status, 'ready');assert.equal(proof.status, 'failed');assert.equal(proof.actions.length, 2);assert.ok(proof.actions.every((value) => value.completed));assert.equal(proof.withdrawal, undefined);
+  assert.equal(proof.settingsRestored, true);assert.equal(proof.rawTrustRestored, true);assert.equal(proof.permissionsRestored, true);assert.equal(flow.clipboard(), 'Original clipboard');
+});

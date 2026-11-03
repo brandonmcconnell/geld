@@ -1,3 +1,4 @@
+import { withoutRequiredProviderOrigins } from './src/lib/provider-access-spec';
 import { defineConfig } from 'wxt';
 import type { ThemeIcon } from 'wxt';
 import { ACTION_ICON_SIZES, actionIconPath } from './src/lib/action-icon';
@@ -34,7 +35,7 @@ export default defineConfig({
     // Chrome shows this instead of the raw number; other browsers ignore it.
     ...(browser === 'chrome' || browser === 'edge' ? { version_name: buildNumber === '' ? baseVersion : `${baseVersion} (build ${buildNumber})` } : {}),
     description:
-      'Hide test files from GitHub diffs. Review what matters; the tests wait in a tidy section at the bottom.',
+      'Hide review noise on GitHub, GitLab and Bitbucket. Review what matters with shared categories and settings.',
     homepage_url: 'https://github.com/brandonmcconnell/geld',
     // Black mark on a white tile. Deliberately no 48/96: chrome://extensions
     // requests the smallest icon >= 48 and shows it in a 48 CSS px box, so an
@@ -60,7 +61,7 @@ export default defineConfig({
     // GitHub Enterprise Server: the user grants specific hosts from the options page.
     ...(mv === 3
       ? { optional_host_permissions: ['https://*/*'] }
-      : { optional_permissions: ['https://*/*'] }),
+      : { optional_permissions: ['https://*/*', 'scripting'] }),
     commands: {
       'toggle-hidden': {
         suggested_key: { default: 'Alt+Shift+T' },
@@ -82,6 +83,8 @@ export default defineConfig({
   }),
   hooks: {
     'build:manifestGenerated': (wxt, manifest) => {
+      if (manifest.host_permissions) manifest.host_permissions = withoutRequiredProviderOrigins(manifest.host_permissions);
+      if (manifest.permissions) manifest.permissions = withoutRequiredProviderOrigins(manifest.permissions);
       if (wxt.config.browser !== 'firefox') return;
       // Firefox picks the icon by theme text colour: `dark` is the dark icon
       // (light themes), `light` is the light icon (dark themes).

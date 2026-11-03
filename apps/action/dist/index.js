@@ -1883,9 +1883,17 @@ var init_test_outline = __esm({
 function pathFromGitHeader(line, side = "new") {
   const rest = line.slice("diff --git ".length);
   if (rest.startsWith('"')) {
-    const quoted = rest.match(/^"a\/((?:\\.|[^"\\])*)" "b\/((?:\\.|[^"\\])*)"$/);
-    if (quoted) return unescapeGitPath((side === "old" ? quoted[1] : quoted[2]) ?? "");
-    return null;
+    const quoted = rest.match(/^"a\/((?:\\.|[^"\\])*)" (.*)$/);
+    if (quoted?.[1] === void 0 || quoted[2] === void 0) return null;
+    const destination = destinationPath(quoted[2]);
+    if (destination === null) return null;
+    return side === "old" ? unescapeGitPath(quoted[1]) : destination;
+  }
+  const quotedDestination = rest.indexOf(' "b/');
+  if (quotedDestination !== -1) {
+    const destination = destinationPath(rest.slice(quotedDestination + 1));
+    if (destination === null) return null;
+    return side === "old" ? rest.slice("a/".length, quotedDestination) : destination;
   }
   const halfway = rest.indexOf(" b/");
   if (halfway === -1) return null;
@@ -1893,11 +1901,19 @@ function pathFromGitHeader(line, side = "new") {
   const bPath = rest.slice(halfway + " b/".length);
   return side === "old" ? aPath : bPath || aPath;
 }
+function destinationPath(text) {
+  if (text.startsWith("b/")) return text.slice(2);
+  const quoted = /^"b\/((?:\\.|[^"\\])*)"$/.exec(text);
+  return quoted?.[1] === void 0 ? null : unescapeGitPath(quoted[1]);
+}
 function unescapeGitPath(text) {
-  return text.replace(/\\(.)/g, (_match, char) => {
-    if (char === "n") return "\n";
-    if (char === "t") return "	";
-    return char;
+  return text.replace(/(?:\\[0-7]{3})+|\\(.)/g, (match, char) => {
+    if (char !== void 0) {
+      const escapes = { a: "\x07", b: "\b", f: "\f", n: "\n", r: "\r", t: "	", v: "\v" };
+      return escapes[char] ?? char;
+    }
+    const bytes = match.split("\\").slice(1).map((octal) => Number.parseInt(octal, 8));
+    return new TextDecoder().decode(new Uint8Array(bytes));
   });
 }
 function parseUnifiedDiff(diffText) {
@@ -1962,7 +1978,10 @@ function parseUnifiedDiff(diffText) {
     }
     if (!inHunk) {
       if (line.startsWith("rename to ")) {
-        current.path = line.slice("rename to ".length);
+        const path = line.slice("rename to ".length);
+        const quoted = /^"((?:\\.|[^"\\])*)"$/.exec(path);
+        if (!path.startsWith('"')) current.path = path;
+        else if (quoted?.[1] !== void 0) current.path = unescapeGitPath(quoted[1]);
         current.renamed = true;
         current.syntax = commentSyntaxFor(current.path);
       } else if (line.startsWith("rename from ")) current.renamed = true;
@@ -2198,6 +2217,383 @@ var init_trackers = __esm({
   }
 });
 
+// ../../packages/core/src/repo-rules.ts
+function normalizeRulePattern(pattern) {
+  let cleaned = pattern.trim().replace(/^\/+|\/+$/g, "");
+  if (cleaned === "") return "";
+  if (cleaned === "*" || cleaned === "**") return "**";
+  if (!cleaned.includes("/")) cleaned = `${cleaned}/*`;
+  return cleaned;
+}
+function compileRepoRules(lines2) {
+  const rules = [];
+  for (const raw of lines2) {
+    const trimmed = raw.trim();
+    if (trimmed === "" || trimmed.startsWith("#")) continue;
+    const negated = trimmed.startsWith("!");
+    const pattern = normalizeRulePattern(negated ? trimmed.slice(1) : trimmed);
+    if (pattern === "") continue;
+    const source = pattern === "**" ? "^.*$" : globToRegExp(pattern, { caseSensitive: false }).source;
+    rules.push({ raw: trimmed, pattern, negated, regExp: new RegExp(source, "i") });
+  }
+  return rules;
+}
+function decideRepo(rules, repo) {
+  const normalized = repo.trim().replace(/^\/+|\/+$/g, "").toLowerCase();
+  let decision = { allowed: true, rule: null };
+  for (const rule of rules) {
+    if (rule.regExp.test(normalized)) decision = { allowed: rule.negated, rule };
+  }
+  return decision;
+}
+function ownerProbe(owner) {
+  return `${owner}/\0probe`;
+}
+function withRepoRule(lines2, target, allowed) {
+  const normalizedTarget = normalizeRulePattern(target).toLowerCase();
+  const kept = lines2.filter((line) => {
+    const trimmed = line.trim();
+    if (trimmed === "" || trimmed.startsWith("#")) return true;
+    const pattern = normalizeRulePattern(trimmed.startsWith("!") ? trimmed.slice(1) : trimmed).toLowerCase();
+    return pattern !== normalizedTarget;
+  });
+  const probe = target.includes("/") ? target : ownerProbe(target);
+  if (decideRepo(compileRepoRules(kept), probe).allowed === allowed) return kept;
+  return [...kept, allowed ? `!${target}` : target];
+}
+function repoFromPathname(pathname) {
+  const match = /^\/([^/]+)\/([^/]+)(?:\/|$)/.exec(pathname);
+  if (match === null) return null;
+  const [, owner, repo] = match;
+  if (owner === void 0 || repo === void 0) return null;
+  if (RESERVED_OWNERS.has(owner.toLowerCase())) return null;
+  return `${owner}/${repo}`;
+}
+var RESERVED_OWNERS;
+var init_repo_rules = __esm({
+  "../../packages/core/src/repo-rules.ts"() {
+    "use strict";
+    init_glob();
+    RESERVED_OWNERS = /* @__PURE__ */ new Set([
+      "settings",
+      "notifications",
+      "pulls",
+      "issues",
+      "marketplace",
+      "explore",
+      "topics",
+      "trending",
+      "search",
+      "orgs",
+      "organizations",
+      "users",
+      "login",
+      "logout",
+      "join",
+      "sponsors",
+      "codespaces",
+      "features",
+      "about",
+      "pricing",
+      "new",
+      "dashboard",
+      "apps",
+      "enterprise",
+      "security",
+      "site",
+      "sessions",
+      "account"
+    ]);
+  }
+});
+
+// ../../packages/core/src/providers.ts
+function providerForHost(host) {
+  switch (host.toLowerCase()) {
+    case "github.com":
+      return "github";
+    case "gitlab.com":
+      return "gitlab";
+    case "bitbucket.org":
+      return "bitbucket";
+    default:
+      return null;
+  }
+}
+function repositoryKey(identity) {
+  const origin = new URL(identity.origin).origin;
+  return JSON.stringify([identity.provider, origin, identity.path]);
+}
+function providerRepositoryScope(identity) {
+  return identity.provider === "github" ? identity.path : `${new URL(identity.origin).host}/${identity.path}`;
+}
+function projectPath(path) {
+  const segments = path.split("/");
+  if (segments.length < 2 || segments.some((segment) => segment === "" || segment === "." || segment === ".." || /[\\\s?#\u0000-\u001f]/.test(segment))) return null;
+  return path;
+}
+function describeRepository(input3, explicitProvider) {
+  let url2;
+  try {
+    url2 = typeof input3 === "string" ? new URL(input3) : input3;
+  } catch {
+    return null;
+  }
+  if (url2.protocol !== "https:" || url2.username !== "" || url2.password !== "") return null;
+  const knownProvider = providerForHost(url2.hostname);
+  if (explicitProvider !== void 0 && knownProvider !== null && explicitProvider !== knownProvider) return null;
+  const provider = knownProvider ?? explicitProvider;
+  if (provider === void 0) return null;
+  let path;
+  if (provider === "github") {
+    path = repoFromPathname(url2.pathname);
+  } else if (provider === "gitlab") {
+    const boundary = url2.pathname.indexOf("/-/");
+    path = boundary < 0 ? null : projectPath(url2.pathname.slice(1, boundary));
+  } else {
+    const segments = url2.pathname.split("/");
+    const workspace = segments[1];
+    const repo = segments[2];
+    path = workspace === void 0 || repo === void 0 || BITBUCKET_WORKSPACE_ROUTES.has(repo.toLowerCase()) || ["account", "dashboard", "repo", "product"].includes(workspace.toLowerCase()) ? null : projectPath(`${workspace}/${repo}`);
+  }
+  if (path === null) return null;
+  try {
+    const decoded = path.split("/").map((segment) => decodeURIComponent(segment));
+    if (decoded.some((segment) => segment.includes("/"))) return null;
+    const clean = projectPath(decoded.join("/"));
+    return clean === null ? null : { provider, origin: url2.origin, path: clean };
+  } catch {
+    return null;
+  }
+}
+var CLOUD_PROVIDER_HOSTS, BITBUCKET_WORKSPACE_ROUTES;
+var init_providers = __esm({
+  "../../packages/core/src/providers.ts"() {
+    "use strict";
+    init_repo_rules();
+    CLOUD_PROVIDER_HOSTS = ["github.com", "gitlab.com", "bitbucket.org"];
+    BITBUCKET_WORKSPACE_ROUTES = /* @__PURE__ */ new Set(["workspace", "projects", "repositories", "members", "settings", "snippets", "overview"]);
+  }
+});
+
+// ../../packages/core/src/review-accounts.ts
+function normalizeReviewAccountId(provider, authorId) {
+  if (provider === "gitlab") return /^[1-9]\d{0,19}$/.test(authorId) ? authorId : null;
+  if (provider !== "bitbucket") return null;
+  const uuid3 = authorId.startsWith("{") && authorId.endsWith("}") ? authorId.slice(1, -1) : authorId;
+  return UUID.test(uuid3) ? uuid3.toLowerCase() : null;
+}
+function read(line) {
+  if (/[\r\n\u0000-\u0008\u000b-\u001f\u007f]/.test(line)) return { binding: null, problem: "Keep each trusted account on one line without control characters." };
+  const text = line.trim();
+  if (text === "" || text.startsWith("#")) return { binding: null, problem: null };
+  const parts = text.split(/\s+/);
+  if (parts.length !== 3) return { binding: null, problem: "Use one repository path, bot id and native account id, separated by spaces." };
+  const [scope, botId, account] = parts;
+  if (scope === void 0 || botId === void 0 || account === void 0) return { binding: null, problem: "A trusted account needs a repository, bot id and native account id." };
+  const segments = scope.split("/");
+  const host = segments.shift()?.toLowerCase();
+  const provider = host === "gitlab.com" ? "gitlab" : host === "bitbucket.org" ? "bitbucket" : null;
+  if (provider === null || segments.length < 2 || provider === "bitbucket" && segments.length !== 2 || segments.some((segment) => segment === "." || segment === ".." || !/^[\p{L}\p{N}_.-]+$/u.test(segment))) {
+    return { binding: null, problem: "Use an exact gitlab.com/group/project or bitbucket.org/workspace/repo path. Wildcards are not trusted." };
+  }
+  if (!BOT_ID.test(botId)) return { binding: null, problem: "A bot id uses lowercase letters, digits and dashes, such as coderabbit." };
+  const authorId = normalizeReviewAccountId(provider, account);
+  if (authorId === null) return { binding: null, problem: provider === "gitlab" ? "Use the numeric GitLab account id, not its username." : "Use the Bitbucket account UUID, not its nickname or a token." };
+  return { binding: { repository: { provider, origin: `https://${host}`, path: segments.join("/") }, botId, authorId }, problem: null };
+}
+function parseTrustedReviewAccount(line) {
+  return read(line).binding;
+}
+function trustedReviewAccountProblem(line) {
+  return read(line).problem;
+}
+function bindingKey(binding) {
+  return JSON.stringify([repositoryKey(binding.repository), binding.authorId]);
+}
+function serialize(binding) {
+  return `${providerRepositoryScope(binding.repository)} ${binding.botId} ${binding.authorId}`;
+}
+function trustedReviewAccountConflicts(lines2) {
+  const seen = /* @__PURE__ */ new Map();
+  const issues = [];
+  lines2.forEach((line, index) => {
+    const binding = typeof line === "string" ? parseTrustedReviewAccount(line) : null;
+    if (binding === null) return;
+    const key = bindingKey(binding);
+    const previous = seen.get(key);
+    if (previous !== void 0 && previous !== binding.botId) issues.push({ index, message: "This native account is assigned to more than one bot in the same repository." });
+    seen.set(key, binding.botId);
+  });
+  return issues;
+}
+function trustedReviewAccountsProblem(lines2) {
+  for (let index = 0; index < lines2.length; index += 1) {
+    const problem = trustedReviewAccountProblem(lines2[index] ?? "");
+    if (problem !== null) return `Line ${index + 1}: ${problem}`;
+  }
+  const conflict = trustedReviewAccountConflicts(lines2)[0];
+  return conflict === void 0 ? null : `Line ${conflict.index + 1}: ${conflict.message}`;
+}
+function normalizeTrustedReviewAccounts(value) {
+  const isList = (candidate) => Array.isArray(candidate);
+  if (!isList(value)) return [];
+  const bindings = /* @__PURE__ */ new Map();
+  const conflicts = /* @__PURE__ */ new Set();
+  for (const line of value) {
+    const binding = typeof line === "string" ? parseTrustedReviewAccount(line) : null;
+    if (binding === null) continue;
+    const key = bindingKey(binding);
+    if (conflicts.has(key)) continue;
+    const previous = bindings.get(key);
+    if (previous !== void 0 && previous.botId !== binding.botId) {
+      bindings.delete(key);
+      conflicts.add(key);
+    } else bindings.set(key, binding);
+  }
+  return Array.from(bindings.values(), serialize);
+}
+function trustedReviewAccountsFor(lines2, repository) {
+  if (repository.provider === "github") return [];
+  const key = repositoryKey(repository);
+  return normalizeTrustedReviewAccounts(lines2).flatMap((line) => {
+    const binding = parseTrustedReviewAccount(line);
+    return binding !== null && repositoryKey(binding.repository) === key ? [binding] : [];
+  });
+}
+function trustedReviewAccountFor(lines2, repository, nativeAuthorId) {
+  const authorId = normalizeReviewAccountId(repository.provider, nativeAuthorId);
+  return authorId === null ? null : trustedReviewAccountsFor(lines2, repository).find((binding) => binding.authorId === authorId) ?? null;
+}
+function withTrustedReviewAccount(lines2, repository, botId, nativeAuthorId) {
+  const candidate = read(`${providerRepositoryScope(repository)} ${botId} ${nativeAuthorId}`);
+  if (candidate.binding === null || candidate.problem !== null || repositoryKey(candidate.binding.repository) !== repositoryKey(repository)) throw new TypeError(candidate.problem ?? "Unsupported trusted review repository.");
+  const key = bindingKey(candidate.binding);
+  const kept = normalizeTrustedReviewAccounts(lines2).filter((line) => {
+    const binding = parseTrustedReviewAccount(line);
+    return binding === null || bindingKey(binding) !== key;
+  });
+  return [...kept, serialize(candidate.binding)];
+}
+function mergeTrustedReviewAccounts(base, edited, latest) {
+  const bindings = (lines2) => {
+    const result = /* @__PURE__ */ new Map();
+    for (const line of normalizeTrustedReviewAccounts(lines2)) {
+      const binding = parseTrustedReviewAccount(line);
+      if (binding !== null) result.set(bindingKey(binding), binding);
+    }
+    return result;
+  };
+  const before = bindings(base);
+  const changes = bindings(edited);
+  const current = bindings(latest);
+  for (const key of before.keys()) if (!changes.has(key)) current.delete(key);
+  for (const [key, binding] of changes) if (before.get(key)?.botId !== binding.botId) current.set(key, binding);
+  return Array.from(current.values(), serialize);
+}
+var BOT_ID, UUID;
+var init_review_accounts = __esm({
+  "../../packages/core/src/review-accounts.ts"() {
+    "use strict";
+    init_providers();
+    BOT_ID = /^[a-z][a-z0-9-]*$/;
+    UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  }
+});
+
+// ../../packages/core/src/publisher-accounts.ts
+function read2(line) {
+  if (/[\r\n\u0000-\u0008\u000b-\u001f\u007f]/.test(line)) return { binding: null, problem: "Keep each summary publisher on one line without control characters." };
+  const text = line.trim();
+  if (text === "" || text.startsWith("#")) return { binding: null, problem: null };
+  const parts = text.split(/\s+/);
+  if (parts.length !== 2) return { binding: null, problem: "Use one exact repository path and native account id, separated by a space." };
+  const [scope, account] = parts;
+  if (scope === void 0 || account === void 0) return { binding: null, problem: "A summary publisher needs a repository and native account id." };
+  const segments = scope.split("/");
+  const host = segments.shift()?.toLowerCase();
+  const provider = host === "gitlab.com" ? "gitlab" : host === "bitbucket.org" ? "bitbucket" : null;
+  if (provider === null || segments.length < 2 || provider === "bitbucket" && segments.length !== 2 || segments.some((segment) => segment === "." || segment === ".." || !/^[\p{L}\p{N}_.-]+$/u.test(segment))) {
+    return { binding: null, problem: "Use an exact gitlab.com/group/project or bitbucket.org/workspace/repo path. Wildcards are not trusted." };
+  }
+  const authorId = normalizeReviewAccountId(provider, account);
+  if (authorId === null) return { binding: null, problem: provider === "gitlab" ? "Use the numeric GitLab account id, not its username." : "Use the Bitbucket account UUID, not its nickname or a token." };
+  return { binding: { repository: { provider, origin: `https://${host}`, path: segments.join("/") }, authorId }, problem: null };
+}
+function parseTrustedSummaryPublisher(line) {
+  return read2(line).binding;
+}
+function trustedSummaryPublisherProblem(line) {
+  return read2(line).problem;
+}
+function bindingKey2(binding) {
+  return JSON.stringify([repositoryKey(binding.repository), binding.authorId]);
+}
+function serialize2(binding) {
+  return `${providerRepositoryScope(binding.repository)} ${binding.authorId}`;
+}
+function trustedSummaryPublishersProblem(lines2) {
+  for (let index = 0; index < lines2.length; index += 1) {
+    const problem = trustedSummaryPublisherProblem(lines2[index] ?? "");
+    if (problem !== null) return `Line ${index + 1}: ${problem}`;
+  }
+  return null;
+}
+function normalizeTrustedSummaryPublishers(value) {
+  const isList = (candidate) => Array.isArray(candidate);
+  if (!isList(value)) return [];
+  const bindings = /* @__PURE__ */ new Map();
+  for (const line of value) {
+    const binding = typeof line === "string" ? parseTrustedSummaryPublisher(line) : null;
+    if (binding !== null) bindings.set(bindingKey2(binding), binding);
+  }
+  return Array.from(bindings.values(), serialize2);
+}
+function trustedSummaryPublishersFor(lines2, repository) {
+  if ((repository.provider !== "gitlab" || repository.origin !== "https://gitlab.com") && (repository.provider !== "bitbucket" || repository.origin !== "https://bitbucket.org")) return [];
+  const key = repositoryKey(repository);
+  return normalizeTrustedSummaryPublishers(lines2).flatMap((line) => {
+    const binding = parseTrustedSummaryPublisher(line);
+    return binding !== null && repositoryKey(binding.repository) === key ? [binding] : [];
+  });
+}
+function trustedSummaryPublisherIdsFor(lines2, repository) {
+  return trustedSummaryPublishersFor(lines2, repository).map((binding) => binding.authorId);
+}
+function withTrustedSummaryPublisher(lines2, repository, nativeAuthorId) {
+  const candidate = read2(`${providerRepositoryScope(repository)} ${nativeAuthorId}`);
+  if (candidate.binding === null || candidate.problem !== null || candidate.binding.repository.origin !== repository.origin || repositoryKey(candidate.binding.repository) !== repositoryKey(repository)) throw new TypeError(candidate.problem ?? "Unsupported trusted summary repository.");
+  const key = bindingKey2(candidate.binding);
+  const kept = normalizeTrustedSummaryPublishers(lines2).filter((line) => {
+    const binding = parseTrustedSummaryPublisher(line);
+    return binding === null || bindingKey2(binding) !== key;
+  });
+  return [...kept, serialize2(candidate.binding)];
+}
+function mergeTrustedSummaryPublishers(base, edited, latest) {
+  const bindings = (lines2) => {
+    const result = /* @__PURE__ */ new Map();
+    for (const line of normalizeTrustedSummaryPublishers(lines2)) {
+      const binding = parseTrustedSummaryPublisher(line);
+      if (binding !== null) result.set(bindingKey2(binding), binding);
+    }
+    return result;
+  };
+  const before = bindings(base);
+  const changes = bindings(edited);
+  const current = bindings(latest);
+  for (const key of before.keys()) if (!changes.has(key)) current.delete(key);
+  for (const [key, binding] of changes) if (!before.has(key)) current.set(key, binding);
+  return Array.from(current.values(), serialize2);
+}
+var init_publisher_accounts = __esm({
+  "../../packages/core/src/publisher-accounts.ts"() {
+    "use strict";
+    init_providers();
+    init_review_accounts();
+  }
+});
+
 // ../../packages/core/src/settings.ts
 function isSuggestedFixMode(value) {
   return typeof value === "string" && SUGGESTED_FIX_MODES.some((mode) => mode === value);
@@ -2373,6 +2769,8 @@ function normalizeSettings(value) {
     collapseDescription: bool(record4, "collapseDescription", DEFAULT_SETTINGS.collapseDescription),
     quickReview: bool(record4, "quickReview", DEFAULT_SETTINGS.quickReview),
     reviewBots: isStringArray(record4.reviewBots) ? record4.reviewBots : DEFAULT_SETTINGS.reviewBots,
+    trustedReviewAccounts: normalizeTrustedReviewAccounts(record4.trustedReviewAccounts),
+    trustedSummaryPublishers: normalizeTrustedSummaryPublishers(record4.trustedSummaryPublishers),
     aiEnabled: bool(record4, "aiEnabled", DEFAULT_SETTINGS.aiEnabled),
     aiBaseUrl: typeof record4.aiBaseUrl === "string" ? normalizeAiBaseUrl(record4.aiBaseUrl) : DEFAULT_SETTINGS.aiBaseUrl,
     issueTracker: parseIssueTracker(record4.issueTracker),
@@ -2443,6 +2841,8 @@ var init_settings = __esm({
     init_categories();
     init_category_icons();
     init_test_patterns();
+    init_review_accounts();
+    init_publisher_accounts();
     SUGGESTED_FIX_MODES = ["all", "bots", "ai", "off"];
     REPO_CONFIG_MODES = ["always", "ask", "never"];
     REVIEW_GROUPINGS = ["type", "batch"];
@@ -2476,6 +2876,8 @@ var init_settings = __esm({
       collapseDescription: true,
       quickReview: true,
       reviewBots: [],
+      trustedReviewAccounts: [],
+      trustedSummaryPublishers: [],
       aiEnabled: false,
       aiBaseUrl: "",
       aiModel: "",
@@ -2696,6 +3098,11 @@ function collectSettingsIssues(value, path = "settings", catalog = BUNDLED_CATAL
   checkStringList(issues, `${path}.hiddenAuthors`, value.hiddenAuthors, authorRuleProblem);
   checkStringList(issues, `${path}.testSyntaxes`, value.testSyntaxes, testSyntaxProblem);
   checkStringList(issues, `${path}.reviewBots`, value.reviewBots, authorRuleProblem);
+  checkStringList(issues, `${path}.trustedSummaryPublishers`, value.trustedSummaryPublishers, trustedSummaryPublisherProblem);
+  checkStringList(issues, `${path}.trustedReviewAccounts`, value.trustedReviewAccounts, trustedReviewAccountProblem);
+  if (Array.isArray(value.trustedReviewAccounts)) {
+    for (const conflict of trustedReviewAccountConflicts(value.trustedReviewAccounts)) issues.push({ path: `${path}.trustedReviewAccounts[${conflict.index}]`, message: conflict.message });
+  }
   checkStringList(issues, `${path}.enterpriseHosts`, value.enterpriseHosts, hostProblem);
   return issues;
 }
@@ -2872,6 +3279,8 @@ var init_settings_validate = __esm({
     init_pr_authors();
     init_test_patterns();
     init_test_outline();
+    init_review_accounts();
+    init_publisher_accounts();
     CORRUPTED_SETTINGS_COPY = {
       title: "Error",
       body: "Your settings appear to have been corrupted on GitHub Gist. Please correct these errors or reset to default settings to continue.",
@@ -2978,9 +3387,9 @@ async function readRemoteContent(token, gistId) {
   return content === null ? null : { summary, content };
 }
 async function readRemoteValidated(token, gistId, catalog = BUNDLED_CATALOG) {
-  const read = await readRemoteContent(token, gistId);
-  if (read === null) return { kind: "missing" };
-  const { summary, content } = read;
+  const read3 = await readRemoteContent(token, gistId);
+  if (read3 === null) return { kind: "missing" };
+  const { summary, content } = read3;
   const validation = validateSettingsDocument(content, catalog);
   if (!validation.ok) {
     return { kind: "invalid", gistId: summary.id, updatedAt: summary.updatedAt, htmlUrl: summary.htmlUrl, issues: validation.issues };
@@ -2988,11 +3397,11 @@ async function readRemoteValidated(token, gistId, catalog = BUNDLED_CATALOG) {
   return { kind: "valid", remote: { gistId: summary.id, settings: validation.settings, updatedAt: summary.updatedAt, htmlUrl: summary.htmlUrl } };
 }
 async function readRemote(token, gistId) {
-  const read = await readRemoteContent(token, gistId);
-  if (read === null) return null;
-  const settings = parseSettingsPayload(read.content);
+  const read3 = await readRemoteContent(token, gistId);
+  if (read3 === null) return null;
+  const settings = parseSettingsPayload(read3.content);
   if (settings === null) return null;
-  const { summary } = read;
+  const { summary } = read3;
   return { gistId: summary.id, settings, updatedAt: summary.updatedAt, htmlUrl: summary.htmlUrl };
 }
 async function writeRemote(token, gistId, settings) {
@@ -10501,7 +10910,7 @@ function checkReviewBots(issues, path, value, knownBots) {
       issues.push({ path: at, message: `Expected a review bot id, got ${describeValue(entry2)}.${allowed}` });
       return;
     }
-    if (!BOT_ID.test(entry2)) {
+    if (!BOT_ID2.test(entry2)) {
       issues.push({ path: at, message: `"${entry2}" is not a review bot id (lowercase letters, digits and dashes).${allowed}` });
       return;
     }
@@ -10645,7 +11054,7 @@ function describeRepoConfig(config2) {
   if (config2.reviewBots.length > 0) parts.push(`${config2.reviewBots.length} review ${config2.reviewBots.length === 1 ? "bot" : "bots"}`);
   return parts.length === 0 ? "no changes" : parts.join(", ");
 }
-var import_yaml, REPO_CONFIG_PATH, ORG_CONFIG_REPO, ORG_CONFIG_PATHS, EMPTY_REPO_CONFIG, ALLOWED_KEYS, BOT_ID, PERSONAL_KEYS, SCOPE_RESET;
+var import_yaml, REPO_CONFIG_PATH, ORG_CONFIG_REPO, ORG_CONFIG_PATHS, EMPTY_REPO_CONFIG, ALLOWED_KEYS, BOT_ID2, PERSONAL_KEYS, SCOPE_RESET;
 var init_repo_config = __esm({
   "../../packages/core/src/repo-config.ts"() {
     "use strict";
@@ -10659,11 +11068,13 @@ var init_repo_config = __esm({
     ORG_CONFIG_PATHS = ["geld.yml", ".github/geld.yml"];
     EMPTY_REPO_CONFIG = { categories: {}, groups: {}, categoryPatterns: {}, customCategories: [], reviewBots: [] };
     ALLOWED_KEYS = ["version", "categories", "groups", "categoryPatterns", "customCategories", "reviewBots", "review", "issueTracker"];
-    BOT_ID = /^[a-z][a-z0-9-]*$/;
+    BOT_ID2 = /^[a-z][a-z0-9-]*$/;
     PERSONAL_KEYS = [
       "enabled",
       "repoRules",
       "hiddenAuthors",
+      "trustedReviewAccounts",
+      "trustedSummaryPublishers",
       "groupHidden",
       "expandedByDefault",
       "hideCommentLines",
@@ -10690,96 +11101,6 @@ var init_repo_config = __esm({
       "testSyntaxes"
     ];
     SCOPE_RESET = "[*]";
-  }
-});
-
-// ../../packages/core/src/repo-rules.ts
-function normalizeRulePattern(pattern) {
-  let cleaned = pattern.trim().replace(/^\/+|\/+$/g, "");
-  if (cleaned === "") return "";
-  if (cleaned === "*" || cleaned === "**") return "**";
-  if (!cleaned.includes("/")) cleaned = `${cleaned}/*`;
-  return cleaned;
-}
-function compileRepoRules(lines2) {
-  const rules = [];
-  for (const raw of lines2) {
-    const trimmed = raw.trim();
-    if (trimmed === "" || trimmed.startsWith("#")) continue;
-    const negated = trimmed.startsWith("!");
-    const pattern = normalizeRulePattern(negated ? trimmed.slice(1) : trimmed);
-    if (pattern === "") continue;
-    const source = pattern === "**" ? "^.*$" : globToRegExp(pattern, { caseSensitive: false }).source;
-    rules.push({ raw: trimmed, pattern, negated, regExp: new RegExp(source, "i") });
-  }
-  return rules;
-}
-function decideRepo(rules, repo) {
-  const normalized = repo.trim().replace(/^\/+|\/+$/g, "").toLowerCase();
-  let decision = { allowed: true, rule: null };
-  for (const rule of rules) {
-    if (rule.regExp.test(normalized)) decision = { allowed: rule.negated, rule };
-  }
-  return decision;
-}
-function ownerProbe(owner) {
-  return `${owner}/\0probe`;
-}
-function withRepoRule(lines2, target, allowed) {
-  const normalizedTarget = normalizeRulePattern(target).toLowerCase();
-  const kept = lines2.filter((line) => {
-    const trimmed = line.trim();
-    if (trimmed === "" || trimmed.startsWith("#")) return true;
-    const pattern = normalizeRulePattern(trimmed.startsWith("!") ? trimmed.slice(1) : trimmed).toLowerCase();
-    return pattern !== normalizedTarget;
-  });
-  const probe = target.includes("/") ? target : ownerProbe(target);
-  if (decideRepo(compileRepoRules(kept), probe).allowed === allowed) return kept;
-  return [...kept, allowed ? `!${target}` : target];
-}
-function repoFromPathname(pathname) {
-  const match = /^\/([^/]+)\/([^/]+)(?:\/|$)/.exec(pathname);
-  if (match === null) return null;
-  const [, owner, repo] = match;
-  if (owner === void 0 || repo === void 0) return null;
-  if (RESERVED_OWNERS.has(owner.toLowerCase())) return null;
-  return `${owner}/${repo}`;
-}
-var RESERVED_OWNERS;
-var init_repo_rules = __esm({
-  "../../packages/core/src/repo-rules.ts"() {
-    "use strict";
-    init_glob();
-    RESERVED_OWNERS = /* @__PURE__ */ new Set([
-      "settings",
-      "notifications",
-      "pulls",
-      "issues",
-      "marketplace",
-      "explore",
-      "topics",
-      "trending",
-      "search",
-      "orgs",
-      "organizations",
-      "users",
-      "login",
-      "logout",
-      "join",
-      "sponsors",
-      "codespaces",
-      "features",
-      "about",
-      "pricing",
-      "new",
-      "dashboard",
-      "apps",
-      "enterprise",
-      "security",
-      "site",
-      "sessions",
-      "account"
-    ]);
   }
 });
 
@@ -11089,7 +11410,7 @@ var init_settings_schema = __esm({
       {
         id: "lists",
         title: "Pull request lists",
-        intro: "Pull requests opened by these authors are hidden in PR lists and stacks, behind a row that says how many and shows them on click. One login per line; `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).",
+        intro: "Pull requests opened by these authors are hidden in PR lists and stacks, behind a row that says how many and shows them on click. One login or provider-qualified identity per line; `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).",
         fields: [
           {
             kind: "list",
@@ -11101,6 +11422,7 @@ var init_settings_schema = __esm({
             placeholder: "*[bot]\nrenovate*",
             syntax: [
               "A login as GitHub shows it: `dependabot[bot]`, `octocat`; a leading `@` is fine.",
+              "GitLab uses its native username. Bitbucket Cloud uses `bitbucket.org/uuid/<UUID>` with the canonical account UUID without braces. Names and nicknames are not logins. Authors that cannot be resolved remain visible.",
               "`*` matches any run of characters: `*[bot]` is every GitHub App, `renovate*` every Renovate account.",
               "Matching ignores case. Lines starting with `#` are comments."
             ],
@@ -11171,6 +11493,36 @@ var init_settings_schema = __esm({
               "`*` is allowed the same way as hidden authors. Lines starting with `#` are comments."
             ],
             saveLabel: "Save bots"
+          },
+          {
+            kind: "list",
+            key: "trustedReviewAccounts",
+            label: "Trusted review accounts",
+            description: "GitLab and Bitbucket review services use different accounts in each installation. Trust a native account id as a service only in the repository you name. Names and comment markers never establish this trust.",
+            popup: false,
+            rows: 4,
+            placeholder: "gitlab.com/group/project coderabbit 12345\nbitbucket.org/workspace/repo coderabbit {12345678-1234-1234-1234-123456789abc}",
+            syntax: [
+              "One exact repository, bot id and native account id per line, separated by spaces. No wildcards or credentials.",
+              "GitLab uses a numeric user id. Bitbucket uses an account UUID. Lines starting with `#` are comments.",
+              "A trust action on a review records this binding for you. Remove its line to withdraw trust."
+            ],
+            saveLabel: "Save trusted accounts"
+          },
+          {
+            kind: "list",
+            key: "trustedSummaryPublishers",
+            label: "Trusted summary publishers",
+            description: "Trust an actual GitLab or Bitbucket account to publish Geld summaries in one exact repository. This is separate from review bot identity and does not attest that a CI job ran.",
+            popup: false,
+            rows: 4,
+            placeholder: "gitlab.com/group/project 12345\nbitbucket.org/workspace/repo {12345678-1234-1234-1234-123456789abc}",
+            syntax: [
+              "One exact repository and native account id per line, separated by a space. No wildcards or credentials.",
+              "GitLab uses a numeric user id. Bitbucket uses an account UUID. A personal token account can publish summaries too.",
+              "Only your explicit choice grants trust. Remove a line to withdraw it. Repository configuration cannot grant trust."
+            ],
+            saveLabel: "Save trusted publishers"
           },
           {
             kind: "choice",
@@ -11374,6 +11726,7 @@ __export(src_exports, {
   CHANGE_KINDS_CATEGORY_IDS: () => CHANGE_KINDS_CATEGORY_IDS,
   CHANGE_KIND_IDS: () => CHANGE_KIND_IDS,
   CHIP_PLACEMENTS: () => CHIP_PLACEMENTS,
+  CLOUD_PROVIDER_HOSTS: () => CLOUD_PROVIDER_HOSTS,
   COMPACT_TIMELINE_MODES: () => COMPACT_TIMELINE_MODES,
   CORRUPTED_SETTINGS_COPY: () => CORRUPTED_SETTINGS_COPY,
   CUSTOM_GROUP_ID: () => CUSTOM_GROUP_ID,
@@ -11433,6 +11786,7 @@ __export(src_exports, {
   declaredReviewBots: () => declaredReviewBots,
   describeAdvancedSettings: () => describeAdvancedSettings,
   describeRepoConfig: () => describeRepoConfig,
+  describeRepository: () => describeRepository,
   describeValue: () => describeValue,
   diffSummariesUrl: () => diffSummariesUrl,
   diffstatSurfaceJson: () => diffstatSurfaceJson,
@@ -11475,11 +11829,16 @@ __export(src_exports, {
   listFields: () => listFields,
   listSurfaceJson: () => listSurfaceJson,
   mergeCustomCategoryEdit: () => mergeCustomCategoryEdit,
+  mergeTrustedReviewAccounts: () => mergeTrustedReviewAccounts,
+  mergeTrustedSummaryPublishers: () => mergeTrustedSummaryPublishers,
   newCommentScanState: () => newCommentScanState,
   normalizeAiBaseUrl: () => normalizeAiBaseUrl,
   normalizeAuthorRule: () => normalizeAuthorRule,
   normalizeHost: () => normalizeHost,
+  normalizeReviewAccountId: () => normalizeReviewAccountId,
   normalizeSettings: () => normalizeSettings,
+  normalizeTrustedReviewAccounts: () => normalizeTrustedReviewAccounts,
+  normalizeTrustedSummaryPublishers: () => normalizeTrustedSummaryPublishers,
   outlineTestFolds: () => outlineTestFolds,
   ownerProbe: () => ownerProbe,
   parseCatalog: () => parseCatalog,
@@ -11494,15 +11853,20 @@ __export(src_exports, {
   parseRepoConfig: () => parseRepoConfig,
   parseSettingsPayload: () => parseSettingsPayload,
   parseTestSyntax: () => parseTestSyntax,
+  parseTrustedReviewAccount: () => parseTrustedReviewAccount,
+  parseTrustedSummaryPublisher: () => parseTrustedSummaryPublisher,
   parseUnifiedDiff: () => parseUnifiedDiff,
   parseUnifiedDiffHunks: () => parseUnifiedDiffHunks,
   pathFromGitHeader: () => pathFromGitHeader,
   plainText: () => plainText,
   pluralize: () => pluralize,
+  providerForHost: () => providerForHost,
+  providerRepositoryScope: () => providerRepositoryScope,
   readRemote: () => readRemote,
   readRemoteValidated: () => readRemoteValidated,
   recognizeTickets: () => recognizeTickets,
   repoFromPathname: () => repoFromPathname,
+  repositoryKey: () => repositoryKey,
   resolveCatalog: () => resolveCatalog,
   resolveCustomPatterns: () => resolveCustomPatterns,
   sectionsFor: () => sectionsFor,
@@ -11516,12 +11880,23 @@ __export(src_exports, {
   testSyntaxesFrom: () => testSyntaxesFrom,
   textFields: () => textFields,
   toggleFields: () => toggleFields,
+  trustedReviewAccountConflicts: () => trustedReviewAccountConflicts,
+  trustedReviewAccountFor: () => trustedReviewAccountFor,
+  trustedReviewAccountProblem: () => trustedReviewAccountProblem,
+  trustedReviewAccountsFor: () => trustedReviewAccountsFor,
+  trustedReviewAccountsProblem: () => trustedReviewAccountsProblem,
+  trustedSummaryPublisherIdsFor: () => trustedSummaryPublisherIdsFor,
+  trustedSummaryPublisherProblem: () => trustedSummaryPublisherProblem,
+  trustedSummaryPublishersFor: () => trustedSummaryPublishersFor,
+  trustedSummaryPublishersProblem: () => trustedSummaryPublishersProblem,
   validateSettingsDocument: () => validateSettingsDocument,
   validateSettingsValue: () => validateSettingsValue,
   verifyCatalogSignature: () => verifyCatalogSignature,
   withCategoryEnabled: () => withCategoryEnabled,
   withCustomCategory: () => withCustomCategory,
   withRepoRule: () => withRepoRule,
+  withTrustedReviewAccount: () => withTrustedReviewAccount,
+  withTrustedSummaryPublisher: () => withTrustedSummaryPublisher,
   withoutCode: () => withoutCode,
   withoutCustomCategory: () => withoutCustomCategory,
   writeRemote: () => writeRemote
@@ -11544,8 +11919,11 @@ var init_src = __esm({
     init_list_surfaces();
     init_matcher();
     init_pr_authors();
+    init_providers();
+    init_publisher_accounts();
     init_repo_config();
     init_repo_rules();
+    init_review_accounts();
     init_settings();
     init_settings_schema();
     init_settings_validate();
@@ -30920,17 +31298,56 @@ var SOURCE_KINDS = ["thread", "comment", "review"];
 var ADDRESSED_VERDICTS = ["yes", "partly", "no", "unclear"];
 var PRODUCER_KINDS = ["action", "app", "crawler"];
 var FIX_SOURCES = ["bot", "human", "ai"];
-var SOURCE_ANCHOR_PATTERN = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+|event-\d+)$/;
-var sourceAnchorSchema = external_exports.string().regex(SOURCE_ANCHOR_PATTERN);
+var REVIEW_PROVIDERS = ["github", "gitlab", "bitbucket"];
+var SOURCE_ANCHOR_PATTERN = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+|event-\d+|note_\d+|discussion_[a-f0-9]{8,64}|comment[-_]\d+|geld-(?:github|gitlab|bitbucket)-(?:note|discussion|comment|thread|event|review)-[A-Za-z0-9_-]{1,180})$/;
+var GITHUB_ANCHOR = /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+|event-\d+)$/;
+var GITLAB_ANCHOR = /^(note_\d+|discussion_[a-f0-9]{8,64})$/;
+var BITBUCKET_ANCHOR = /^comment[-_]\d+$/;
+var QUALIFIED_ANCHOR = /^geld-(github|gitlab|bitbucket)-(?:note|discussion|comment|thread|event|review)-[A-Za-z0-9_-]{1,180}$/;
+var sourceAnchorSchema = external_exports.string().regex(SOURCE_ANCHOR_PATTERN).refine((value) => value.trim() === value);
+function isProviderSourceAnchor(provider, anchor2) {
+  if (anchor2.trim() !== anchor2) return false;
+  const qualified = QUALIFIED_ANCHOR.exec(anchor2);
+  if (qualified !== null) return qualified[1] === provider;
+  if (provider === "github") return GITHUB_ANCHOR.test(anchor2);
+  return provider === "gitlab" ? GITLAB_ANCHOR.test(anchor2) : BITBUCKET_ANCHOR.test(anchor2);
+}
 var FINDING_SEVERITIES = ["low", "medium", "high"];
 var PREVIEW_STATUSES = ["ready", "building", "failed", "skipped", "unknown"];
 var isoDate = external_exports.string().refine((value) => !Number.isNaN(Date.parse(value)), { error: "Expected an ISO date string." });
 var sha = external_exports.string().regex(/^[0-9a-f]{7,40}$/i, { error: "Expected a git SHA." });
+function httpOrigin(value) {
+  try {
+    const url2 = new URL(value);
+    return (url2.protocol === "https:" || url2.protocol === "http:") && url2.username === "" && url2.password === "" ? url2.origin : null;
+  } catch {
+    return null;
+  }
+}
 var reviewSourceSchema = external_exports.object({
   anchor: sourceAnchorSchema,
   kind: external_exports.enum(SOURCE_KINDS),
   author: external_exports.string().min(1),
-  bot: external_exports.string().min(1).optional()
+  bot: external_exports.string().min(1).optional(),
+  sourceId: external_exports.string().min(1).optional(),
+  authorId: external_exports.string().min(1).optional(),
+  automated: external_exports.boolean().optional(),
+  provider: external_exports.enum(REVIEW_PROVIDERS).optional(),
+  origin: external_exports.string().optional(),
+  url: external_exports.string().optional()
+}).superRefine((source, context) => {
+  if (source.provider !== void 0 && (!isProviderSourceAnchor(source.provider, source.anchor) || source.origin === void 0)) {
+    context.addIssue({ code: "custom", path: ["anchor"], message: "Expected an anchor and origin for the declared provider." });
+  }
+  if (!GITHUB_ANCHOR.test(source.anchor) && source.provider === void 0) {
+    context.addIssue({ code: "custom", path: ["provider"], message: "Native provider anchors require explicit provenance." });
+  }
+  if (source.origin !== void 0 && httpOrigin(source.origin) !== source.origin) {
+    context.addIssue({ code: "custom", path: ["origin"], message: "Expected an HTTP(S) origin without credentials or a path." });
+  }
+  if (source.url !== void 0 && (source.origin === void 0 || httpOrigin(source.url) !== source.origin)) {
+    context.addIssue({ code: "custom", path: ["url"], message: "Expected an HTTP(S) URL on the source origin." });
+  }
 });
 var addressedSchema = external_exports.object({
   verdict: external_exports.enum(ADDRESSED_VERDICTS),
@@ -30967,6 +31384,7 @@ var botVerdictSchema = external_exports.object({
   severity: external_exports.enum(FINDING_SEVERITIES).optional(),
   reviewedSha: sha,
   checkName: external_exports.string().min(1).optional(),
+  checkSha: sha.optional(),
   sourceId: external_exports.string().min(1).optional(),
   reason: external_exports.string().min(1).optional(),
   runJudged: external_exports.literal(true).optional()
@@ -30994,6 +31412,45 @@ var previewRecordSchema = external_exports.object({
   updatedAt: isoDate.optional(),
   reason: external_exports.string().min(1).max(200).optional()
 });
+var nativePublicationSchema = external_exports.object({
+  v: external_exports.literal(1),
+  subject: external_exports.object({
+    provider: external_exports.enum(["gitlab", "bitbucket"]),
+    origin: external_exports.string().max(500).refine((value) => httpOrigin(value) === value),
+    repository: external_exports.string().min(3).max(500).refine((value) => {
+      const parts = value.split("/");
+      return parts.length >= 2 && parts.every((part) => /^[\p{L}\p{N}_.-]+$/u.test(part) && part !== "." && part !== "..");
+    }),
+    id: external_exports.string().regex(/^[1-9]\d{0,19}$/),
+    headSha: external_exports.string().regex(/^[0-9a-f]{40}$/)
+  }),
+  items: external_exports.array(external_exports.object({
+    itemId: external_exports.string().min(1).max(100),
+    fingerprint: external_exports.string().regex(/^[0-9a-f]{64}$/),
+    sources: external_exports.array(external_exports.object({
+      id: external_exports.string().regex(/^[1-9]\d{0,19}$/),
+      anchor: sourceAnchorSchema,
+      authorId: external_exports.string().min(1).max(100),
+      fingerprint: external_exports.string().regex(/^[0-9a-f]{64}$/)
+    })).min(1).max(2e4)
+  })).max(5e3)
+}).superRefine((publication, context) => {
+  const items = /* @__PURE__ */ new Set();
+  const anchors = /* @__PURE__ */ new Set();
+  const sourceIds = /* @__PURE__ */ new Set();
+  publication.items.forEach((item, index) => {
+    if (items.has(item.itemId)) context.addIssue({ code: "custom", path: ["items", index, "itemId"], message: "Duplicate publication item." });
+    items.add(item.itemId);
+    item.sources.forEach((source, position) => {
+      const native = publication.subject.provider === "gitlab" ? source.anchor === `note_${source.id}` : source.anchor === `comment-${source.id}` || source.anchor === `comment_${source.id}`;
+      const account = publication.subject.provider === "gitlab" ? /^[1-9]\d{0,19}$/.test(source.authorId) : /^\{?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}?$/i.test(source.authorId) && source.authorId.startsWith("{") === source.authorId.endsWith("}");
+      if (!native || anchors.has(source.anchor) || sourceIds.has(source.id)) context.addIssue({ code: "custom", path: ["items", index, "sources", position, "anchor"], message: "Expected a unique native comment anchor." });
+      if (!account) context.addIssue({ code: "custom", path: ["items", index, "sources", position, "authorId"], message: "Expected a durable native account id." });
+      anchors.add(source.anchor);
+      sourceIds.add(source.id);
+    });
+  });
+});
 var geldPrMetaSchema = external_exports.object({
   v: external_exports.literal(META_VERSION),
   generatedAt: isoDate,
@@ -31005,7 +31462,29 @@ var geldPrMetaSchema = external_exports.object({
   fold: foldSchema,
   truncated: external_exports.boolean().optional(),
   summary: reviewSummarySchema.optional(),
-  previews: external_exports.array(previewRecordSchema).optional()
+  previews: external_exports.array(previewRecordSchema).optional(),
+  nativePublication: nativePublicationSchema.optional()
+}).superRefine((meta3, context) => {
+  const publication = meta3.nativePublication;
+  if (publication === void 0) return;
+  if (publication.subject.headSha !== meta3.headSha) context.addIssue({ code: "custom", path: ["nativePublication", "subject", "headSha"], message: "Publication and summary heads differ." });
+  const itemIds = /* @__PURE__ */ new Set();
+  const anchors = /* @__PURE__ */ new Set();
+  for (const item of meta3.items) {
+    if (itemIds.has(item.id)) context.addIssue({ code: "custom", path: ["items"], message: "Native publication item ids must be unique." });
+    itemIds.add(item.id);
+    for (const source of item.sources) {
+      if (anchors.has(source.anchor) || source.provider !== publication.subject.provider || source.origin !== publication.subject.origin) context.addIssue({ code: "custom", path: ["items"], message: "Native publication sources must be unique and share its provider origin." });
+      anchors.add(source.anchor);
+    }
+  }
+  for (const entry2 of publication.items) {
+    const item = meta3.items.find((candidate) => candidate.id === entry2.itemId);
+    if (item === void 0 || item.sources.length !== entry2.sources.length || item.sources.some((source, index) => {
+      const published = entry2.sources[index];
+      return published === void 0 || published.id !== source.sourceId || published.anchor !== source.anchor || published.authorId !== source.authorId;
+    })) context.addIssue({ code: "custom", path: ["nativePublication", "items"], message: "Publication sources must match retained summary items." });
+  }
 });
 var deeplinkSchema = external_exports.object({
   v: external_exports.literal(META_VERSION),
@@ -31021,7 +31500,18 @@ function issuesOf(error61) {
   });
 }
 function reviewSourceFrom(value) {
-  return value.bot === void 0 ? { anchor: value.anchor, kind: value.kind, author: value.author } : { anchor: value.anchor, kind: value.kind, author: value.author, bot: value.bot };
+  return {
+    anchor: value.anchor,
+    kind: value.kind,
+    author: value.author,
+    ...value.bot === void 0 ? {} : { bot: value.bot },
+    ...value.sourceId === void 0 ? {} : { sourceId: value.sourceId },
+    ...value.authorId === void 0 ? {} : { authorId: value.authorId },
+    ...value.automated === void 0 ? {} : { automated: value.automated },
+    ...value.provider === void 0 ? {} : { provider: value.provider },
+    ...value.origin === void 0 ? {} : { origin: value.origin },
+    ...value.url === void 0 ? {} : { url: value.url }
+  };
 }
 function reviewItemFrom(value) {
   const item = {
@@ -31049,7 +31539,8 @@ function botVerdictFrom(value) {
   const scored = value.score === void 0 ? counted2 : { ...counted2, score: value.score };
   const graded = value.severity === void 0 ? scored : { ...scored, severity: value.severity };
   const named = value.checkName === void 0 ? graded : { ...graded, checkName: value.checkName };
-  const sourced = value.sourceId === void 0 ? named : { ...named, sourceId: value.sourceId };
+  const checked = value.checkSha === void 0 ? named : { ...named, checkSha: value.checkSha };
+  const sourced = value.sourceId === void 0 ? checked : { ...checked, sourceId: value.sourceId };
   const reasoned = value.reason === void 0 ? sourced : { ...sourced, reason: value.reason };
   return value.runJudged === void 0 ? reasoned : { ...reasoned, runJudged: true };
 }
@@ -31064,7 +31555,8 @@ function metaFrom(value) {
     reviewers: value.reviewers.map((reviewer) => ({ login: reviewer.login, state: reviewer.state })),
     fold: { comments: value.fold.comments, events: value.fold.events }
   };
-  const flagged = value.truncated === void 0 ? meta3 : { ...meta3, truncated: value.truncated };
+  const published = value.nativePublication === void 0 ? meta3 : { ...meta3, nativePublication: value.nativePublication };
+  const flagged = value.truncated === void 0 ? published : { ...published, truncated: value.truncated };
   const summarised = value.summary === void 0 ? flagged : { ...flagged, summary: { tldr: value.summary.tldr, updatedAt: value.summary.updatedAt, forItems: value.summary.forItems } };
   return value.previews === void 0 ? summarised : {
     ...summarised,
@@ -31114,15 +31606,20 @@ function encodedPayloadLength(meta3) {
   return json2.length + extra;
 }
 function truncateMeta(meta3, budget = PAYLOAD_BUDGET) {
-  if (encodedPayloadLength(meta3) <= budget) return meta3;
+  const retained = (items2, truncated) => {
+    const ids = new Set(items2.map((item) => item.id));
+    return { ...meta3, items: items2, ...truncated ? { truncated: true } : {}, ...meta3.nativePublication === void 0 ? {} : { nativePublication: { ...meta3.nativePublication, items: meta3.nativePublication.items.filter((item) => ids.has(item.itemId)) } } };
+  };
+  const initial = meta3.nativePublication === void 0 ? meta3 : retained(meta3.items, false);
+  if (encodedPayloadLength(initial) <= budget) return initial;
   const ranked = [...meta3.items].sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status]);
   let items = ranked;
   while (items.length > 0) {
-    const candidate = { ...meta3, items, truncated: true };
+    const candidate = retained(items, true);
     if (encodedPayloadLength(candidate) <= budget) return candidate;
     items = items.slice(0, -1);
   }
-  return { ...meta3, items: [], truncated: true };
+  return retained([], true);
 }
 function deeplinkFrom(meta3) {
   return {
@@ -31549,7 +32046,7 @@ function parseBotBody(body, botId) {
   const unthreaded = coderabbit ? outsideDiffCount(text) : 0;
   return { count: Number.isFinite(count) ? count : null, score: !coderabbit && Number.isFinite(score) ? score : null, clean, severity, ...verdict, ...unthreaded > 0 ? { unthreaded } : {} };
 }
-function refusalReason(body) {
+function refusalReason(body, options = {}) {
   const untagged = body.replace(/<!--[\s\S]*?-->/g, "").replace(/<\/?(?:h[1-6]|p|div|br|li|ul|ol|details|summary|blockquote)\b[^>]*>/gi, "\n").replace(/<[^>]+>/g, "");
   const blocks = [];
   for (const raw of untagged.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").split("\n")) {
@@ -31589,7 +32086,7 @@ function refusalReason(body) {
   if (text.length > 400) return null;
   const skipped = /^(?:[\w.-]+(?:\[bot\])?\s*[:,-]\s*)?skipp(?:ing|ed)\s+(?:[A-Z][\w.-]*(?:\[bot\])?\s*[:—–-]|(?:the\s+|this\s+)?(?:review|reviewing|pull request|pr|run|analysis|scan)\b)/i.test(text) || /^[A-Z][\w.-]*(?:\[bot\])?\s+skipped\s+reviewing\b/i.test(text) || /^[A-Z][\w.-]*(?:\[bot\])?\s+encountered an error\b/i.test(text);
   const sentences = text.split(/(?<=[.!?])\s+/);
-  const bare = sentences[0] !== void 0 && isBareRefusal(sentences[0]) && (sentences.length === 1 || isBareAdvice(body, text)) ? sentences[0] : void 0;
+  const bare = sentences[0] !== void 0 && isBareRefusal(sentences[0]) && (sentences.length === 1 || isBareAdvice(body, text, options)) ? sentences[0] : void 0;
   const first = skipped ? sentences[0] : bare ?? sentences.find(isRefusalSentence);
   if (first === void 0) return null;
   const stripped = first.replace(/^skipp(?:ing|ed)\s+[\w.-]+(?:\[bot\])?\s*[:,-]\s*/i, "");
@@ -31606,8 +32103,8 @@ function onlyRefusalWords(text) {
   const rest = text.replace(/[.!?,;:]+$/, "").trim();
   return rest === "" || rest.split(/\s+/).every((word) => BARE_REFUSAL_WORDS.has(word.toLowerCase().replace(/^[^a-z]+|[^a-z]+$/gi, "")));
 }
-function isBareAdvice(body, text) {
-  if (SOURCE_LINK.test(body)) return false;
+function isBareAdvice(body, text, options) {
+  if (hasSourceLink(body, options)) return false;
   const unlinked = text.replace(/https?:\/\/\S+/g, "");
   if (unlinked.length > 200 || /`/.test(body)) return false;
   const raw = body.replace(/<!--[\s\S]*?-->/g, "").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, "");
@@ -31634,6 +32131,15 @@ function isRefusalSentence(sentence) {
   return onlyRefusalWords(sentence.slice(match.index + match[0].length));
 }
 var SOURCE_LINK = /https?:\/\/\S*(?:\/(?:blob|tree)\/\S+|\/pull\/\d+\/(?:files|changes)(?:[/?#]|$)|#L\d+(?:[-C]L?\d+)*[.,;:)\]]*(?:\s|$))/;
+function hasSourceLink(body, options) {
+  if (options.isSourceLink === void 0) return SOURCE_LINK.test(body);
+  const links = [
+    ...[...body.matchAll(/https?:\/\/[^\s<>"']+/gi)].map((match) => match[0].replace(/[.,;:!?)\]}]+$/, "")),
+    ...[...body.matchAll(/\[[^\]]*\]\(\s*<?([^\s)>]+)>?(?:\s+["'][^"']*["'])?\s*\)/g)].map((match) => match[1] ?? ""),
+    ...[...body.matchAll(/\bhref\s*=\s*["']([^"']+)["']/gi)].map((match) => match[1] ?? "")
+  ];
+  return links.some(options.isSourceLink);
+}
 var BARE_REFUSAL_WORDS = /* @__PURE__ */ new Set([
   "the",
   "this",
@@ -31847,14 +32353,14 @@ function isStatusLineComment(body) {
 }
 var STATUS_LINE_STALE_MS = 45 * 60 * 1e3;
 var RERUN_EDIT_GAP_MS = 5 * 60 * 1e3;
-function checkRefusal(check2) {
+function checkRefusalReason(check2, options = {}) {
   if (check2.status !== "completed") return null;
   if (check2.conclusion === "skipped") return "Check skipped";
   if (check2.conclusion !== "neutral" && check2.conclusion !== "success") return null;
-  const words = (check2.description ?? "").replace(/^.*?\s[\u2014\u2013-]\s+/, "").trim();
+  const words = (check2.description ?? "").replace(/^(?:Completed|Successful) in \d+(?:\.\d+)?\s*(?:ms|s|m|h|d|milliseconds?|seconds?|minutes?|hours?|days?)(?:\s*\d+(?:\.\d+)?\s*(?:ms|s|m|h|d|milliseconds?|seconds?|minutes?|hours?|days?))*\s+[\u2014\u2013-]\s+/i, "").trim();
   if (words === "") return null;
   if (/^(?:reviews?\s+)?(?:(?:was|were|is|are)\s+)?(?:rate[- ]limited|skipped|paused)[.!]?$/i.test(words)) return words.replace(/[.!]$/, "");
-  return refusalReason(words);
+  return refusalReason(words, options);
 }
 function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.now(), options = {}) {
   const byId = /* @__PURE__ */ new Map();
@@ -31870,7 +32376,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const login = bot.logins[0] ?? bot.id;
     const running = check2.status !== "completed";
     const failed = check2.conclusion === "failure" || check2.conclusion === "timed_out" || check2.conclusion === "cancelled" || check2.conclusion === "action_required" || check2.conclusion === "stale";
-    const refused = running ? null : checkRefusal(check2);
+    const refused = running ? null : checkRefusalReason(check2, options);
     const skipped = refused !== null;
     const neutralFindings = check2.conclusion === "neutral" && bot.neutralConclusion === "findings";
     const verdict = running ? "running" : failed || skipped ? "failed" : neutralFindings ? "findings" : "clean";
@@ -31968,7 +32474,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       runsBeforeAsk.delete(id);
       continue;
     }
-    const refusal = refusalReason(comment.body);
+    const refusal = refusalReason(comment.body, options);
     if (refusal !== null) {
       reported(id, comment);
       for (const at of [comment.createdAt, comment.editedAt]) {
@@ -32136,7 +32642,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       byId.set(bot.id, { ...afterAnswer(existing), runJudged: true });
       continue;
     }
-    if (checkRefusal(check2) !== null) {
+    if (checkRefusalReason(check2, options) !== null) {
       const pending = statusOnly.get(bot.id);
       const askedAt = pending === void 0 ? void 0 : pending.askedAt ?? pending.at;
       const thisRun = askedAt === void 0 || askedAt === null || started >= askedAt;
@@ -32249,9 +32755,16 @@ function ruleIdOf(body) {
   const match = RULE_ID.exec(body);
   return match?.[1]?.toLowerCase() ?? null;
 }
+var LEADING_REVIEW_BADGE = /^<a href="#"><img alt="P([12])" src="https:\/\/greptile-static-assets\.s3\.amazonaws\.com\/badges\/p\1\.svg\?v=9" height="20" align="top"><\/a>[ \t]+/;
+function titleLine(line) {
+  const badge = LEADING_REVIEW_BADGE.exec(line);
+  if (badge === null) return line;
+  const text = line.slice(badge[0].length).trimStart();
+  return text !== "" && !text.startsWith("<") && /[\p{L}\p{N}]/u.test(text) ? text : line;
+}
 function firstSentence(body) {
   const withoutCode2 = body.replace(/```[\s\S]*?```/g, " ");
-  const line = withoutCode2.split("\n").map((entry2) => entry2.trim()).filter((entry2) => entry2 !== "" && !entry2.startsWith("<") && !/^#{1,6}\s/.test(entry2) && !/^[-*]\s*$/.test(entry2)).map((entry2) => entry2.replace(/^\s*[-*]\s+/, "")).find((entry2) => entry2 !== "") ?? "";
+  const line = withoutCode2.split("\n").map((entry2) => titleLine(entry2.trim())).filter((entry2) => entry2 !== "" && !entry2.startsWith("<") && !/^#{1,6}\s/.test(entry2) && !/^[-*]\s*$/.test(entry2)).map((entry2) => entry2.replace(/^\s*[-*]\s+/, "")).find((entry2) => entry2 !== "") ?? "";
   const cleaned = line.replace(/\s+/g, " ").trim();
   if (cleaned === "") return "Comment";
   const sentence = sentenceOf(cleaned, 160);
@@ -32275,35 +32788,49 @@ function guessSeverity(body, bot, humanQuestion) {
   if (/\b(bug|null|crash|incorrect|broken|error|exception)\b/.test(text)) return "bug";
   return bot ? "suggestion" : "suggestion";
 }
-function sourceOf(comment, extraLogins) {
-  const bot = resolveBotId(comment.author, extraLogins);
+function sourceOf(comment, extraLogins, options) {
+  const bot = options.resolveBot === void 0 ? resolveBotId(comment.author, extraLogins) : options.resolveBot(comment);
   const kind = "kind" in comment ? comment.kind : "comment";
-  return bot === null ? { anchor: comment.anchor, kind, author: comment.author } : { anchor: comment.anchor, kind, author: comment.author, bot };
+  return {
+    anchor: comment.anchor,
+    kind,
+    author: comment.author,
+    ...bot === null ? {} : { bot },
+    ...comment.sourceId === void 0 ? {} : { sourceId: comment.sourceId },
+    ...comment.authorId === void 0 ? {} : { authorId: comment.authorId },
+    ...comment.automated === void 0 ? {} : { automated: comment.automated },
+    ...comment.provider === void 0 ? {} : { provider: comment.provider },
+    ...comment.origin === void 0 ? {} : { origin: comment.origin },
+    ...comment.url === void 0 ? {} : { url: comment.url }
+  };
 }
-function atomFrom(comment, extraLogins) {
-  const sources = [sourceOf(comment, extraLogins)];
+function automated(source) {
+  return source.bot !== void 0 || (source.automated ?? looksLikeBotLogin(source.author));
+}
+function atomFrom(comment, extraLogins, options) {
+  const sources = [sourceOf(comment, extraLogins, options)];
   const bodies = [comment.body];
   for (const peer of comment.threadAnchors ?? []) {
     if (peer.anchor === comment.anchor) continue;
-    sources.push(sourceOf(peer, extraLogins));
+    sources.push(sourceOf(peer, extraLogins, options));
     bodies.push(peer.body);
   }
   const botIds = /* @__PURE__ */ new Set();
   const humanAuthors = [];
   for (const source of sources) {
     if (source.bot !== void 0) botIds.add(source.bot);
-    else if (!looksLikeBotLogin(source.author)) humanAuthors.push(source.author);
+    else if (!automated(source)) humanAuthors.push(source.author);
   }
   const lead = sources[0];
   return {
     sources,
     bodies,
     title: firstSentence(comment.body),
-    humanLead: lead !== void 0 && lead.bot === void 0 && !looksLikeBotLogin(lead.author),
+    humanLead: lead !== void 0 && !automated(lead),
     path: comment.path,
     line: comment.line,
     suggestion: suggestionOf(comment.body),
-    suggestionBy: suggestionOf(comment.body) === null ? null : lead !== void 0 && (lead.bot !== void 0 || looksLikeBotLogin(lead.author)) ? "bot" : "human",
+    suggestionBy: suggestionOf(comment.body) === null ? null : lead !== void 0 && automated(lead) ? "bot" : "human",
     ruleId: ruleIdOf(comment.body),
     botIds,
     humanAuthors,
@@ -32354,7 +32881,7 @@ function severityOf(atom) {
   for (let index = 0; index < atom.bodies.length; index += 1) {
     const body = atom.bodies[index] ?? "";
     const source = atom.sources[index];
-    const bot = source?.bot !== void 0;
+    const bot = source !== void 0 && automated(source);
     const next = guessSeverity(body, bot, human && body.includes("?"));
     if (rank[next] < rank[worst]) worst = next;
   }
@@ -32393,11 +32920,12 @@ function sourceExcerpts(comments, item) {
     return `${who}: ${body.length > EXCERPT_CHARS ? `${body.slice(0, EXCERPT_CHARS)}\u2026` : body}`;
   });
 }
-function isReviewItemComment(comment, extraLogins = []) {
-  return comment.kind === "thread" && comment.body.trim() !== "" && !isTriggerComment(comment.body, extraLogins);
+function isReviewItemComment(comment, extraLogins = [], options = {}) {
+  const trigger = options.isTrigger === void 0 ? isTriggerComment(comment.body, extraLogins) : options.isTrigger(comment);
+  return comment.kind === "thread" && comment.body.trim() !== "" && !trigger;
 }
-function clusterComments(comments, extraLogins = []) {
-  const atoms = comments.filter((comment) => isReviewItemComment(comment, extraLogins)).map((comment) => atomFrom(comment, extraLogins));
+function clusterComments(comments, extraLogins = [], options = {}) {
+  const atoms = comments.filter((comment) => isReviewItemComment(comment, extraLogins, options)).map((comment) => atomFrom(comment, extraLogins, options));
   const parent = atoms.map((_, index) => index);
   const find = (index) => {
     const current = parent[index] ?? index;
@@ -32425,7 +32953,7 @@ function clusterComments(comments, extraLogins = []) {
   return [...groups.values()].map(itemFromAtom);
 }
 function isBotOnly(item) {
-  return item.sources.length > 0 && item.sources.every((source) => source.bot !== void 0 || looksLikeBotLogin(source.author));
+  return item.sources.length > 0 && item.sources.every(automated);
 }
 
 // ../../packages/review/src/addressed.ts
@@ -32551,7 +33079,7 @@ function fixVisible(fix, mode) {
 }
 
 // ../../packages/review/src/summary-render.ts
-init_src();
+init_trackers();
 
 // ../../packages/review/src/inline-markdown.ts
 var DELIMITERS = [
@@ -32654,22 +33182,56 @@ function encodePayloadAttribute(json2) {
 function decodeEntities(text) {
   return text.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 }
-function normaliseRenderedJson(text) {
-  return text.replace(/\u00a0/g, " ").replace(/\u2018|\u2019/g, "'").replace(/\u201c|\u201d/g, '"').replace(/\u2013|\u2014/g, "-").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+function publishedSummaryFooter(json2, href, label) {
+  return `<sub>Maintained by Geld \xB7 <a href="${href}">${label}</a> \xB7 <a href="${howItWorksUrl()}">what is this?</a><span title='${encodePayloadAttribute(json2)}'></span></sub>`;
 }
-function extractPayloadText(body) {
-  const carried = CARRIER.exec(body);
-  if (carried?.[1] !== void 0) return decodeEntities(carried[1]);
-  const normalised = normaliseRenderedJson(body);
-  const fenced = FENCE.exec(normalised);
-  if (fenced?.[1] !== void 0) return fenced[1].trim();
-  const trimmed = normalised.trim();
-  if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
-  return null;
+function publishedLink(href, label) {
+  if (label === "Open in Geld") {
+    return href === howItWorksUrl() || href.startsWith(`${SITE_ORIGIN}/pr/`) && /^[^/?#]+\/[^/?#]+\/[1-9]\d*#[A-Za-z0-9_-]+$/.test(href.slice(`${SITE_ORIGIN}/pr/`.length));
+  }
+  const review = label === "Open merge request" ? "-/merge_requests" : "(?:pull-requests|pull)";
+  return new RegExp(`^https?://[^/?#@\\s]+/(?:[^/?#\\s]+/)+${review}/[1-9]\\d*$`).test(href);
 }
-function parseSummaryBody(body) {
-  const text = extractPayloadText(body);
-  if (text === null) return { ok: false, issues: ["$: No geld payload fence found."] };
+function hasPublishedSummaryPrefix(body) {
+  const [marker, heading] = body.split(/\r?\n/, 3);
+  return marker === SUMMARY_MARKER && heading === `### ${SUMMARY_HEADING}`;
+}
+function publishedFrame(body) {
+  const lines2 = body.split(/\r?\n/);
+  if (!hasPublishedSummaryPrefix(body)) return null;
+  if (lines2.at(-1) === "") lines2.pop();
+  let fence = null;
+  let payload = null;
+  for (let index = 2; index < lines2.length; index += 1) {
+    const line = lines2[index];
+    if (line === void 0) continue;
+    const delimiter = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    const run2 = delimiter?.[1];
+    if (fence !== null) {
+      if (run2 !== void 0 && run2[0] === fence.character && run2.length >= fence.length && delimiter?.[2]?.trim() === "") fence = null;
+      continue;
+    }
+    if (run2 !== void 0) {
+      if (run2[0] !== "`" || !delimiter?.[2]?.includes("`")) fence = { character: run2[0] ?? "", length: run2.length };
+      continue;
+    }
+    const footer = /^<sub>Maintained by Geld · <a href="([^"<>\r\n]+)">(Open in Geld|Open merge request|Open pull request)<\/a> · <a href="([^"<>\r\n]+)">what is this\?<\/a><span title='([^']*)'><\/span><\/sub>$/.exec(line);
+    if (footer === null) continue;
+    if (payload !== null || index !== lines2.length - 1) return null;
+    const href = footer[1];
+    const label = footer[2];
+    const carried = footer[4];
+    if (href === void 0 || label === void 0 || carried === void 0 || footer[3] !== howItWorksUrl() || !publishedLink(href, label)) return null;
+    const json2 = payloadFromAttribute(decodeEntities(carried));
+    if (json2 === null || line !== publishedSummaryFooter(json2, href, label)) return null;
+    payload = { json: json2, href, label };
+  }
+  return fence === null ? payload : null;
+}
+function publishedPayloadText(body) {
+  return publishedFrame(body)?.json ?? null;
+}
+function parsePayload(text) {
   let parsed;
   try {
     parsed = JSON.parse(text);
@@ -32677,6 +33239,14 @@ function parseSummaryBody(body) {
     return { ok: false, issues: ["$: Payload is not valid JSON."] };
   }
   return parseGeldPrMeta(parsed);
+}
+function parsePublishedSummaryBody(body) {
+  const text = publishedPayloadText(body);
+  return text === null ? { ok: false, issues: ["$: No unambiguous published Geld footer."] } : parsePayload(text);
+}
+function payloadFromAttribute(value) {
+  if (value === null || value === void 0 || !value.startsWith(PAYLOAD_ATTR_PREFIX)) return null;
+  return value.slice(PAYLOAD_ATTR_PREFIX.length);
 }
 function looksLikeSummaryBody(body) {
   return body.includes(SUMMARY_MARKER) || body.includes(`### ${SUMMARY_HEADING}`) || body.includes(`title='${PAYLOAD_ATTR_PREFIX}`) || body.includes(`<summary>${DATA_SUMMARY}</summary>`);
@@ -32703,7 +33273,7 @@ function escapeMd(text) {
 function inlineMd(text, inBold = false) {
   return parseInlineMarkdown(text).map((run2) => {
     if (run2.marks.includes("code")) {
-      const fence = run2.text.includes("`") ? "``" : "`";
+      const fence = fenceFor(run2.text, 1);
       return run2.text.includes("`") ? `${fence} ${run2.text} ${fence}` : `${fence}${run2.text}${fence}`;
     }
     let out = escapeMd(run2.text);
@@ -32730,15 +33300,25 @@ function authorsOf(item) {
   }
   return names.join(", ");
 }
-function sourcesOf(item) {
-  return item.sources.map((source) => `[source](#${source.anchor})`).join(" \xB7 ");
+function fenceFor(text, minimum) {
+  const longest = (text.match(/`+/g) ?? []).reduce((length, run2) => Math.max(length, run2.length), 0);
+  return "`".repeat(Math.max(minimum, longest + 1));
 }
-function itemLine(item, checked) {
+function sourcesOf(item, links) {
+  return item.sources.map((source) => {
+    const href = links.sourceHref(source);
+    return href === null ? "source unavailable" : `[source](${href.replace(/\(/g, "%28").replace(/\)/g, "%29")})`;
+  }).join(" \xB7 ");
+}
+function itemLine(item, checked, links) {
   const box = checked ? "- [x]" : "- [ ]";
-  const head = `${box} **${inlineMd(item.title, true)}** \u2014${locationOf(item)} \xB7 ${authorsOf(item)} \u2014 ${sourcesOf(item)}`;
+  const head = `${box} **${inlineMd(item.title, true)}** \u2014${locationOf(item)} \xB7 ${authorsOf(item)} \u2014 ${sourcesOf(item, links)}`;
   const extra = [];
   if (item.context !== void 0) extra.push(`  ${inlineMd(item.context)}`);
-  if (item.fix !== void 0) extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, "", "  ```suggestion", ...item.fix.text.split("\n").map((line) => `  ${line}`), "  ```", "", "  </details>");
+  if (item.fix !== void 0) {
+    const fence = fenceFor(item.fix.text, 3);
+    extra.push(`  <details><summary>Suggested fix (${item.fix.source})</summary>`, "", `  ${fence}suggestion`, ...item.fix.text.split("\n").map((line) => `  ${line}`), `  ${fence}`, "", "  </details>");
+  }
   return [head, ...extra].join("\n");
 }
 function groupItems(items) {
@@ -32791,6 +33371,15 @@ function headerLine(meta3) {
   return parts.join(" \xB7 ");
 }
 function renderSummary(meta3, subject) {
+  return renderSummaryBody(meta3, {
+    sourceHref: (source) => `#${source.anchor}`,
+    openHref: subject === void 0 ? howItWorksUrl() : geldPrUrl(subject.owner, subject.repo, subject.number, meta3),
+    openLabel: "Open in Geld",
+    reviewNoun: "pull request",
+    ...subject?.links === void 0 ? {} : { trackers: subject.links }
+  });
+}
+function renderSummaryBody(meta3, links, notes = []) {
   const { open: open2, done } = groupItems(meta3.items);
   const lines2 = [
     SUMMARY_MARKER,
@@ -32798,21 +33387,21 @@ function renderSummary(meta3, subject) {
     headerLine(meta3),
     ""
   ];
-  if (subject?.links?.length) {
-    lines2.push("**Links** " + subject.links.map((link) => `<img src="https://www.geld.sh/tracker-icons/${link.provider}.svg" width="16" height="16" alt=""/> [${TRACKER_LABELS[link.provider]} ${escapeMd(link.id)}${link.status ? ` \xB7 ${escapeMd(link.status)}` : ""}](${link.url.replace(/[()]/g, encodeURIComponent)})`).join(" \xB7 "), "");
+  if (links.trackers?.length) {
+    lines2.push("**Links** " + links.trackers.map((link) => `<img src="https://www.geld.sh/tracker-icons/${link.provider}.svg" width="16" height="16" alt=""/> [${TRACKER_LABELS[link.provider]} ${escapeMd(link.id)}${link.status ? ` \xB7 ${escapeMd(link.status)}` : ""}](${link.url.replace(/[()]/g, encodeURIComponent)})`).join(" \xB7 "), "");
   }
   if (meta3.summary !== void 0) {
     lines2.push(meta3.summary.tldr, "");
   }
   if (open2.length > 0) {
     lines2.push(`**Open (${open2.length})**`);
-    for (const item of open2) lines2.push(itemLine(item, false));
+    for (const item of open2) lines2.push(itemLine(item, false, links));
     lines2.push("");
   }
   if (done.length > 0) {
     lines2.push(`<details><summary>Done (${done.length})</summary>`);
     lines2.push("");
-    for (const item of done) lines2.push(itemLine(item, true));
+    for (const item of done) lines2.push(itemLine(item, true, links));
     lines2.push("");
     lines2.push("</details>");
     lines2.push("");
@@ -32822,11 +33411,11 @@ function renderSummary(meta3, subject) {
     lines2.push("");
   }
   if (meta3.truncated === true) {
-    lines2.push("_List truncated; open the pull request with Geld to see the rest._");
+    lines2.push(`_List truncated; open the ${links.reviewNoun} with Geld to see the rest._`);
     lines2.push("");
   }
-  const openHref = subject === void 0 ? howItWorksUrl() : geldPrUrl(subject.owner, subject.repo, subject.number, meta3);
-  lines2.push(`<sub>Maintained by Geld \xB7 <a href="${openHref}">Open in Geld</a> \xB7 <a href="${howItWorksUrl()}">what is this?</a><span title='${encodePayloadAttribute(JSON.stringify(meta3))}'></span></sub>`);
+  if (notes.length > 0) lines2.push(...notes, "");
+  lines2.push(publishedSummaryFooter(JSON.stringify(meta3), links.openHref, links.openLabel));
   lines2.push("");
   return lines2.join("\n");
 }
@@ -33652,14 +34241,14 @@ var CHECK_REPORTERS = [
     project: afterSlash(/^cypress(?: cloud)?\s*[/:-]\s*/i),
     // "Failed: 2 • Passed: 41 • Pending: 0 • Skipped: 1" → "✗ 2 ✓ 41" (a pending count with a dot; zeros and skips left out).
     short: (words) => {
-      const read = (key) => {
+      const read3 = (key) => {
         const match = new RegExp(`${key}:?\\s*(\\d+)`, "i").exec(words);
         return match === null ? null : Number(match[1]);
       };
       const parts = [];
-      const failed = read("failed");
-      const passed = read("passed");
-      const pending = read("pending");
+      const failed = read3("failed");
+      const passed = read3("passed");
+      const pending = read3("pending");
       if (failed !== null && failed > 0) parts.push({ text: String(failed), glyph: "x", tone: "bad" });
       if (passed !== null && passed > 0) parts.push({ text: String(passed), glyph: "check", tone: "good" });
       if (pending !== null && pending > 0) parts.push({ text: String(pending), glyph: "dot", tone: "warn" });
@@ -33829,6 +34418,42 @@ var plannerOutputSchema = external_exports.object({ steps: external_exports.arra
   dependsOn: external_exports.array(external_exports.number().int().nonnegative()),
   watch: external_exports.array(external_exports.string().max(500)).max(3)
 })).min(1).max(200) });
+
+// ../../packages/review/src/provider-bots.ts
+function capability(id, provider, support, evidence, triggers = [], formatVerified = false, checkKeys = [], checkMode = "explicit") {
+  return { id, provider, support, evidence, triggers, formatVerified, checkKeys, checkMode };
+}
+var NATIVE_PROVIDERS = ["gitlab", "bitbucket"];
+var PROVIDER_BOT_CAPABILITIES = [
+  capability("bugbot", "gitlab", "supported", ["https://cursor.com/docs/bugbot"], ["bugbot run", "cursor review"]),
+  capability("bugbot", "bitbucket", "supported", ["https://cursor.com/docs/bugbot"], ["bugbot run", "cursor review"], false, ["cursor-bugbot"]),
+  capability("greptile", "gitlab", "supported", ["https://www.greptile.com/docs/integrations/code-providers", "https://www.greptile.com/docs/code-review/developer-essentials", "https://gitlab.com/whitebox-aero/whitebox/-/merge_requests/272"], ["@greptileai", "@greptile"], true),
+  capability("greptile", "bitbucket", "supported", ["https://www.greptile.com/docs/integrations/code-providers"]),
+  capability("devin", "gitlab", "supported", ["https://docs.devin.ai/work-with-devin/devin-review#supported-git-providers"]),
+  capability("devin", "bitbucket", "supported", ["https://docs.devin.ai/work-with-devin/devin-review#supported-git-providers"]),
+  capability("coderabbit", "gitlab", "supported", ["https://docs.coderabbit.ai/platforms/gitlab-com", "https://gitlab.com/ark-bitcoin/bark/-/merge_requests/2117"], ["@coderabbitai review", "@coderabbitai full review"], true),
+  capability("coderabbit", "bitbucket", "supported", ["https://docs.coderabbit.ai/platforms/bitbucket-cloud/"]),
+  capability("replicas", "gitlab", "supported", ["https://docs.replicas.dev/features/gitlab", "https://docs.replicas.dev/features/review"]),
+  capability("replicas", "bitbucket", "unverified", ["https://docs.replicas.dev/features/review"]),
+  capability("sourcery", "gitlab", "supported", ["https://docs.sourcery.ai/reviews/commands/", "https://docs.sourcery.ai/reviews/anatomy-of-a-review/"], ["@sourcery-ai review"], false, [], "none"),
+  capability("sourcery", "bitbucket", "unverified", ["https://docs.sourcery.ai/reviews/commands/"]),
+  capability("qodo", "gitlab", "supported", ["https://docs.qodo.ai/qodo-documentation/code-review/get-started/configuration-overview/configuration-file"], ["/agentic_review"]),
+  capability("qodo", "bitbucket", "supported", ["https://docs.qodo.ai/qodo-documentation/code-review/get-started/configuration-overview/configuration-file"], ["/agentic_review"]),
+  capability("entelligence", "gitlab", "unverified", ["https://docs.entelligence.ai/integrations/git-providers"]),
+  capability("entelligence", "bitbucket", "supported", ["https://docs.entelligence.ai/bitbucket-cloud"]),
+  ...NATIVE_PROVIDERS.flatMap((provider) => [
+    capability("codex", provider, "unverified", ["https://developers.openai.com/codex/integrations/github"]),
+    capability("copilot", provider, "unsupported", ["https://docs.github.com/en/copilot/concepts/agent-capabilities/agent-powered-workflows-and-operations/code-review#availability"]),
+    capability("gemini", provider, "unverified", ["https://docs.cloud.google.com/gemini/docs/code-review/review-repo-code"]),
+    capability("capy", provider, "unverified", ["https://docs.capy.ai/review"]),
+    capability("claude", provider, "unsupported", ["https://code.claude.com/docs/en/code-review"]),
+    capability("cubic", provider, "unsupported", ["https://docs.cubic.dev/ai-review/introduction"]),
+    capability("amazon-q", provider, provider === "gitlab" ? "unsupported" : "unverified", ["https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/gitlab-with-amazon-q.html"]),
+    capability("ellipsis", provider, "unverified", ["https://www.ellipsis.dev/docs/agents"]),
+    capability("macroscope", provider, "unverified", ["https://docs.macroscope.com/welcome"]),
+    capability("korbit", provider, "unverified", ["https://www.korbit.ai/"])
+  ])
+];
 
 // src/github.ts
 init_src2();
@@ -34086,7 +34711,7 @@ function findSummaryComment(comments, ownLogins = []) {
   for (const comment of comments) {
     if (!isAllowedSummaryAuthor(comment.author, ownLogins)) continue;
     if (!looksLikeSummaryBody(comment.body)) continue;
-    const parsed = parseSummaryBody(comment.body);
+    const parsed = parsePublishedSummaryBody(comment.body);
     return { commentId: comment.databaseId, body: comment.body, meta: parsed.ok ? parsed.value : null };
   }
   return null;

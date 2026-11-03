@@ -1,0 +1,5 @@
+# Copy the reviewed template to this path in your trusted default-branch repository.
+# It stays disabled until its trusted copied YAML has a reviewed literal digest image
+# and its leading unconditional never rule is removed. See ../PROVIDERS.md.
+include:
+  - local: '/.gitlab/ci/geld-summary.yml'

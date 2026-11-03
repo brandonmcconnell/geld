@@ -1,0 +1,233 @@
+import type { ProviderCommentRenderContext } from './comment-render';
+import type { GeldSettings, FileStats, RepositoryIdentity } from '@geld/core';
+import type { ProviderReviewComment, ProviderReviewInput, ProviderSourceCoverage } from '@geld/review';
+import type { ProviderReviewAuthorPresentation, ProviderReviewPanelEvent, ProviderReviewRequirement, ProviderReviewSourceAction } from './review-panel';
+import type { ProviderConfigFetcher } from './repo-config';
+import type { ProviderReviewReference } from './references';
+import type { ProviderBotRequest } from './bot-request';
+import type { ProviderDiffSourceFacts, ProviderNativeSourceFrame } from './source-facts';
+import type { ProviderWholeTestAdapter } from './whole-test-context';
+
+export type ReviewProvider = 'gitlab' | 'bitbucket';
+
+export interface ProviderDiffMode {
+  readonly comparison?: { readonly head: string; readonly base: string; readonly sourceRepository: string };
+  readonly ignoreWhitespace: boolean | null;
+  current(): boolean;
+}
+
+export interface ProviderPageMode {
+  update(settings: GeldSettings): void;
+  decorate(page: ProviderPage | null): ProviderPage | null;
+  stop(): void;
+}
+
+interface ProviderPageIdentity {
+  readonly diffMode?: ProviderDiffMode;
+  readonly provider: ReviewProvider;
+  readonly repository: RepositoryIdentity;
+  readonly url: string;
+  readonly diffPageUrl: string;
+  readonly diffUrl: string;
+  readonly headSha: string | null;
+  readonly version: string;
+}
+
+export interface ProviderReviewPage extends ProviderPageIdentity {
+  readonly number: string;
+  readonly kind: 'overview' | 'diff' | 'other';
+}
+
+export interface ProviderCommitPage extends ProviderPageIdentity {
+  readonly kind: 'commit';
+  readonly ref: string;
+}
+
+export interface ProviderComparePage extends ProviderPageIdentity {
+  readonly kind: 'compare';
+  readonly from: string;
+  readonly to: string;
+  readonly straight: boolean;
+  readonly targetProjectId?: string;
+}
+
+export type ProviderStandalonePage = ProviderCommitPage | ProviderComparePage;
+export type ProviderPage = ProviderReviewPage | ProviderStandalonePage;
+
+export function isProviderReviewPage(page: ProviderPage): page is ProviderReviewPage {
+  return page.kind === 'overview' || page.kind === 'diff' || page.kind === 'other';
+}
+
+export function immutableProviderPage(page: ProviderPage): boolean {
+  const sha = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+  return page.headSha !== null && sha.test(page.headSha) && (page.kind !== 'compare' || (sha.test(page.from) && sha.test(page.to)));
+}
+
+export interface ProviderDiffResult {
+  readonly files: readonly FileStats[];
+  readonly revision: string;
+  readonly complete: boolean;
+  readonly patches?: ReadonlyMap<string, string>;
+  readonly sourceFacts?: ProviderDiffSourceFacts;
+}
+
+export interface ProviderDiffEntry {
+  readonly path: string;
+  readonly root: HTMLElement;
+  readonly anchor: string | null;
+  readonly additions: number | null;
+  readonly deletions: number | null;
+  prepareReveal?(): void;
+  isExpanded?(): boolean;
+  isViewed?(): boolean | null;
+  readLines?(): readonly ProviderDiffLine[];
+  /** Revalidate the native size-only reason and enabled loader before pressing, never the generic file toggle. */
+  expandLargeDiff?(): boolean;
+  expand(): boolean;
+  collapse(): boolean;
+  markViewed?(): boolean;
+}
+
+export interface ProviderDiffLine {
+  readonly root: HTMLElement;
+  /** Original physical row used for presentation; source identity remains rooted at root. */
+  readonly visualRoot?: HTMLElement;
+  readonly oldLine: number | null;
+  readonly newLine: number | null;
+  readonly oldText: string | null;
+  readonly newText: string | null;
+  readonly kind: 'context' | 'added' | 'removed' | 'hunk';
+}
+
+export interface ProviderTreeEntry {
+  readonly path: string;
+  readonly root: HTMLElement;
+  /** Observed per-file visual wrapper, including native status/comment marks; never moved. */
+  readonly presentationRoot?: HTMLElement;
+  readonly link: HTMLAnchorElement | null;
+}
+
+export interface ProviderDiffView {
+  readonly kind: string;
+  readNewSourceFrame?(): ProviderNativeSourceFrame | null;
+  readonly container: HTMLElement;
+  /** Known normal-flow stream wrappers, flattened only after the complete source inventory is mounted. */
+  readonly groupingWrappers?: readonly HTMLElement[];
+  readonly groupingReady?: boolean;
+  readonly entries: readonly ProviderDiffEntry[];
+  readonly tree: readonly ProviderTreeEntry[];
+  readonly treeHost: HTMLElement | null;
+  /** Verified native file-list root only; excludes provider search/header controls. */
+  readonly treeContainer?: HTMLElement | null;
+  /** Reports the verified destination before a native click can synchronously change the URL. */
+  navigateToPath?(path: string, beforeNavigate?: (url: URL) => void): boolean;
+  readonly filteredPaths: ReadonlySet<string>;
+  readonly virtualized: boolean;
+}
+
+export interface ProviderHeaderTarget {
+  readonly hintHost?: HTMLElement;
+  readonly hintBefore?: HTMLElement | null;
+  readonly additions: HTMLElement | null;
+  readonly deletions: HTMLElement | null;
+  readonly files: HTMLElement | null;
+  readonly hoverHosts?: readonly HTMLElement[];
+  readonly keyboardHoverHosts?: readonly HTMLElement[];
+  readonly accessibleSummaryHost?: HTMLElement;
+  readonly labels?: readonly {
+    readonly host: HTMLElement;
+    readonly attribute: 'aria-label' | 'title';
+    readonly count: 'files' | 'additions' | 'deletions' | 'lines';
+  }[];
+}
+
+export interface ProviderListRow {
+  readonly root: HTMLElement;
+  readonly host: HTMLElement;
+  readonly url: string;
+  readonly author: string | null;
+  /** Readable native name only; filtering always uses author. */
+  readonly authorName?: string | null;
+}
+
+export interface ProviderListAuthor {
+  readonly url: string;
+  readonly author: string;
+  readonly authorName: string | null;
+}
+
+export type ProviderListAuthorFetcher = (listUrl: URL, visibleReviewUrls: readonly string[], signal: AbortSignal) => Promise<readonly ProviderListAuthor[]>;
+
+export interface ProviderReviewActionContext { readonly current: () => boolean }
+
+export interface ProviderReviewAction {
+  readonly kind: 'approve' | 'request-changes' | 'comment' | 'open-pending-review' | 'open-review';
+  /** Adapter-owned identity of the rendered native action lifetime, without credential or draft data. */
+  readonly scopeKey?: string;
+  readonly available: boolean;
+  readonly reason?: string;
+  activate(context?: ProviderReviewActionContext): Promise<boolean>;
+}
+
+export interface ProviderReviewSnapshot {
+  readonly reviewerControls?: ProviderReviewSourceAction;
+  readonly botRequests?: (input: ProviderReviewInput, comments: readonly ProviderReviewComment[], current: () => boolean) => readonly ProviderBotRequest[];
+  readonly sourceCoverage?: ProviderSourceCoverage;
+  readonly sourceActions?: (comment: ProviderReviewComment) => readonly ProviderReviewSourceAction[];
+  readonly renderComment?: (comment: ProviderReviewComment, host: HTMLElement, context?: ProviderCommentRenderContext) => boolean;
+  readonly commentSignature?: (comment: ProviderReviewComment) => string | null;
+  readonly authorPresentation?: (comment: ProviderReviewComment) => ProviderReviewAuthorPresentation | null;
+  readonly input: ProviderReviewInput;
+  readonly comments: readonly ProviderReviewComment[];
+  readonly events: readonly ProviderReviewPanelEvent[];
+  readonly complete: boolean;
+  readonly unavailable: readonly { readonly area: string; readonly reason: string }[];
+  readonly approvalsRequired: number | null;
+  readonly approvalsLeft: number | null;
+  readonly requirements?: readonly ProviderReviewRequirement[] | null;
+  readonly actions: readonly ProviderReviewAction[];
+}
+
+export interface ProviderConversationRoot {
+  readonly root: HTMLElement;
+  readonly anchors: readonly string[];
+  readonly kind: 'comment' | 'activity';
+  readonly eventIds?: readonly string[];
+}
+
+/** Optional provider-native syntax overlay. Never replaces source nodes or requests data. */
+export interface ProviderDiffSyntax {
+  apply(view: ProviderDiffView): void;
+  clear(): void;
+}
+
+export interface ProviderNativeView {
+  update(page: ProviderPage | null, result: ProviderDiffResult | null): void;
+  suspended(): boolean;
+  sourceUnavailable(): boolean;
+  stop(): void;
+}
+
+export interface ProviderAdapter {
+  createPageMode?(doc: Document, changed: () => void): ProviderPageMode;
+  createNativeView?(doc: Document, changed: () => void, choice: (url: URL, showWhitespace: boolean) => void): ProviderNativeView;
+  readonly wholeTests?: ProviderWholeTestAdapter;
+  readonly id: ReviewProvider;
+  readonly diffSyntax?: ProviderDiffSyntax;
+  describe(url: URL, doc: Document): ProviderPage | null;
+  readDiff(doc: Document): ProviderDiffView | null;
+  headerTargets(doc: Document): readonly ProviderHeaderTarget[];
+  listRows(doc: Document): readonly ProviderListRow[];
+  readonly fetchListAuthors?: ProviderListAuthorFetcher;
+  eagerListDiffs?(doc: Document): boolean;
+  reviewRefreshMs?(doc: Document): number;
+  fetchDiff(page: ProviderPage, signal: AbortSignal): Promise<ProviderDiffResult>;
+  readonly fetchConfig?: ProviderConfigFetcher;
+  reviewHost?(doc: Document): HTMLElement | null;
+  readReferences?(page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[]): readonly ProviderReviewReference[];
+  referenceAnchor?(reference: ProviderReviewReference, page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[]): HTMLAnchorElement | null;
+  conversationRoots?(doc: Document, snapshot?: ProviderReviewSnapshot): readonly ProviderConversationRoot[];
+  descriptionHost?(doc: Document): HTMLElement | null;
+  actionHost?(doc: Document): HTMLElement | null;
+  fetchReview?(page: ProviderReviewPage, signal: AbortSignal, doc: Document): Promise<ProviderReviewSnapshot>;
+}

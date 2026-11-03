@@ -1,0 +1,503 @@
+import type { FileStats } from '@geld/core';
+import { parseUnifiedDiff } from '@geld/core';
+import { looksLikeHtml } from '../lib/http';
+import type { ProviderCommitPage, ProviderDiffResult, ProviderReviewPage } from '../providers/types';
+import { providerDiffSourceFacts } from '../providers/source-facts';
+import type { ProviderNewPathFact } from '../providers/source-facts';
+import { bitbucketTransport, BitbucketTransportError, canonicalBitbucketApiUrl } from './transport';
+import type { BitbucketTransport } from './transport';
+
+const API_ORIGIN = 'https://api.bitbucket.org';
+const MAX_JSON_BYTES = 5 * 1024 * 1024;
+const MAX_DIFF_BYTES = 20 * 1024 * 1024;
+const MAX_PAGES = 100;
+const FULL_COMMIT = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i;
+
+function apiRepositoryPath(path: string): string {
+  const parts = path.split('/');
+  if (parts.length !== 2 || parts.some((part) => part === '' || part === '.' || part === '..' || /[\s\\?#%\u0000-\u001f]/.test(part))) throw new BitbucketApiError('invalid-response', 'Invalid Bitbucket repository identity.');
+  return `/2.0/repositories/${parts.map(encodeURIComponent).join('/')}`;
+}
+
+export type BitbucketFailure = 'authentication' | 'forbidden' | 'rate-limited' | 'unavailable' | 'invalid-response' | 'incomplete' | 'changed';
+
+export class BitbucketApiError extends Error {
+  constructor(readonly reason: BitbucketFailure, message: string, readonly retryAfterMs?: number) {
+    super(message);
+    this.name = 'BitbucketApiError';
+  }
+}
+
+export interface BitbucketAuthor {
+  readonly id: string;
+  readonly login: string;
+  readonly name: string;
+}
+
+export interface BitbucketParticipant {
+  readonly author: BitbucketAuthor;
+  readonly role: string;
+  readonly approved: boolean;
+  readonly changesRequested: boolean;
+}
+
+export interface BitbucketPullRequest {
+  readonly id: number;
+  readonly title: string;
+  readonly state: 'OPEN' | 'MERGED' | 'DECLINED' | 'SUPERSEDED';
+  readonly headSha: string;
+  readonly baseSha: string;
+  readonly sourceRepository: string;
+  readonly sourceRepositoryExplicit?: boolean;
+  readonly sourceRef?: string;
+  readonly author: BitbucketAuthor | null;
+  readonly participants: readonly BitbucketParticipant[];
+}
+
+export interface BitbucketComment {
+  readonly id: number;
+  readonly parentId: number | null;
+  readonly author: BitbucketAuthor | null;
+  readonly body: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly deleted: boolean;
+  readonly path: string | null;
+  readonly line: number | null;
+  readonly resolved: boolean | null;
+  readonly outdated: boolean | null;
+  readonly url: string | null;
+}
+
+export interface BitbucketTask {
+  readonly id: number;
+  readonly body: string;
+  readonly state: 'OPEN' | 'RESOLVED';
+  readonly commentId: number | null;
+  readonly creator: BitbucketAuthor | null;
+  readonly createdAt: string | null;
+  readonly url: string | null;
+}
+
+export interface BitbucketStatus {
+  readonly description?: string;
+  readonly key: string;
+  readonly name: string;
+  readonly state: 'SUCCESSFUL' | 'FAILED' | 'INPROGRESS' | 'STOPPED';
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly url: string | null;
+  readonly sha: string | null;
+}
+
+export interface BitbucketActivity {
+  readonly kind: 'approval' | 'changes-requested' | 'comment' | 'update' | 'unknown';
+  readonly at: string | null;
+  readonly author: BitbucketAuthor | null;
+  readonly commentId: number | null;
+  readonly state: string | null;
+  readonly previousState: string | null;
+  readonly headSha: string | null;
+  readonly reason: string | null;
+}
+
+export interface BitbucketCapabilities {
+  readonly approve: 'unavailable' | 'unverified';
+  readonly requestChanges: 'unavailable' | 'unverified';
+  readonly comment: 'unavailable' | 'unverified';
+  readonly resolve: 'unavailable' | 'unverified';
+}
+
+export function bitbucketCapabilities(signedIn: boolean): BitbucketCapabilities {
+  const state = signedIn ? 'unverified' : 'unavailable';
+  return { approve: state, requestChanges: state, comment: state, resolve: state };
+}
+
+function invalid(message: string): never {
+  throw new BitbucketApiError('invalid-response', message);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : invalid('Bitbucket returned an invalid object.');
+}
+
+function string(value: unknown): string {
+  return typeof value === 'string' ? value : invalid('Bitbucket returned an invalid string.');
+}
+
+function integer(value: unknown): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : invalid('Bitbucket returned an invalid count.');
+}
+
+function nullableId(value: unknown): number | null {
+  return value === undefined || value === null ? null : integer(record(value).id);
+}
+
+function timestamp(value: unknown): string {
+  const text = string(value);
+  return Number.isFinite(Date.parse(text)) ? text : invalid('Bitbucket returned an invalid timestamp.');
+}
+
+function commit(value: unknown): string {
+  const sha = string(record(record(value).commit).hash);
+  return FULL_COMMIT.test(sha) ? sha : invalid('Bitbucket returned an invalid commit.');
+}
+
+function author(value: unknown): BitbucketAuthor | null {
+  if (value === undefined || value === null) return null;
+  const user = record(value);
+  const id = typeof user.uuid === 'string' && user.uuid !== '' ? user.uuid : typeof user.account_id === 'string' && user.account_id !== '' ? user.account_id : invalid('Bitbucket returned an author without an identity.');
+  const name = string(user.display_name);
+  return { id, login: typeof user.nickname === 'string' && user.nickname !== '' ? user.nickname : id, name };
+}
+
+function content(value: unknown, optional = false): string {
+  if (value === undefined || value === null) return optional ? '' : invalid('Bitbucket omitted comment content.');
+  const raw = record(value).raw;
+  return raw === undefined && optional ? '' : string(raw);
+}
+
+function webUrl(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  try {
+    const url = new URL(string(value));
+    return url.protocol === 'https:' && url.username === '' && url.password === '' ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function link(value: unknown, name: string): string | null {
+  if (!isRecord(value) || !isRecord(value[name])) return null;
+  return webUrl(value[name].href);
+}
+
+function optionalCommit(value: unknown): string | null {
+  if (!isRecord(value) || !isRecord(value.commit) || typeof value.commit.hash !== 'string') return null;
+  return FULL_COMMIT.test(value.commit.hash) ? value.commit.hash : null;
+}
+
+function parsePullRequest(value: unknown, targetRepository: string): BitbucketPullRequest {
+  const pr = record(value);
+  const state = pr.state;
+  if (state !== 'OPEN' && state !== 'MERGED' && state !== 'DECLINED' && state !== 'SUPERSEDED') return invalid('Bitbucket returned an invalid pull request state.');
+  if (!Array.isArray(pr.participants)) return invalid('Bitbucket omitted review participants.');
+  const participants = pr.participants.map((value: unknown): BitbucketParticipant => {
+    const entry = record(value);
+    const user = author(entry.user);
+    if (user === null || typeof entry.approved !== 'boolean') return invalid('Bitbucket returned an invalid participant.');
+    return { author: user, role: string(entry.role), approved: entry.approved, changesRequested: entry.state === 'changes_requested' };
+  });
+  const source = record(pr.source);
+  const sourceRepository = source.repository === undefined || source.repository === null ? targetRepository : string(record(source.repository).full_name);
+  apiRepositoryPath(sourceRepository);
+  return { id: integer(pr.id), title: string(pr.title), state, headSha: commit(pr.source), baseSha: commit(pr.destination), sourceRepository, sourceRepositoryExplicit: source.repository !== undefined && source.repository !== null, author: author(pr.author), participants };
+}
+
+function parseDiffstat(value: unknown): FileStats {
+  const file = record(value);
+  const status = file.status;
+  const oldFile = file.old === null || file.old === undefined ? null : record(file.old);
+  const newFile = file.new === null || file.new === undefined ? null : record(file.new);
+  const path = string(newFile?.path ?? oldFile?.path);
+  if (path === '' || path.includes('\0')) return invalid('Bitbucket returned an invalid file path.');
+  if (status !== 'added' && status !== 'removed' && status !== 'renamed' && status !== 'modified') return invalid('Bitbucket returned an unknown file status.');
+  return { path, additions: integer(file.lines_added), deletions: integer(file.lines_removed), status: status === 'removed' ? 'deleted' : status };
+}
+
+function parseComment(value: unknown): BitbucketComment {
+  const comment = record(value);
+  if (typeof comment.deleted !== 'boolean') return invalid('Bitbucket omitted comment visibility.');
+  const inline = comment.inline === null || comment.inline === undefined ? null : record(comment.inline);
+  const line = inline?.to ?? inline?.from;
+  const resolution = comment.resolution === null || comment.resolution === undefined ? null : record(comment.resolution);
+  const resolved = typeof comment.resolved === 'boolean' ? comment.resolved : resolution !== null ? true : comment.resolution === null ? false : null;
+  return {
+    id: integer(comment.id), parentId: nullableId(comment.parent), author: author(comment.user),
+    body: content(comment.content, comment.deleted), createdAt: timestamp(comment.created_on), updatedAt: timestamp(comment.updated_on),
+    deleted: comment.deleted, path: inline === null ? null : string(inline.path),
+    line: line === undefined || line === null ? null : integer(line), resolved,
+    outdated: typeof inline?.outdated === 'boolean' ? inline.outdated : typeof comment.outdated === 'boolean' ? comment.outdated : null,
+    url: link(comment.links, 'html'),
+  };
+}
+
+function parseTask(value: unknown): BitbucketTask {
+  const task = record(value);
+  const state = task.state;
+  if (state !== 'OPEN' && state !== 'RESOLVED') return invalid('Bitbucket returned an invalid task state.');
+  return { id: integer(task.id), body: content(task.content), state, commentId: nullableId(task.comment), creator: author(task.creator), createdAt: task.created_on === undefined ? null : timestamp(task.created_on), url: link(task.links, 'html') };
+}
+
+function parseStatus(value: unknown, repositoryPath: string): BitbucketStatus {
+  const status = record(value);
+  const state = status.state;
+  if (state !== 'SUCCESSFUL' && state !== 'FAILED' && state !== 'INPROGRESS' && state !== 'STOPPED') return invalid('Bitbucket returned an invalid build state.');
+  const self = link(status.links, 'self');
+  let selfUrl: URL | null = null;
+  if (self !== null) { try { selfUrl = canonicalBitbucketApiUrl(self); } catch { selfUrl = null; } }
+  const selfSha = selfUrl?.origin === API_ORIGIN && selfUrl.pathname.startsWith(`${repositoryPath}/commit/`) ? /\/commit\/((?:[a-f0-9]{40}|[a-f0-9]{64}))\/statuses(?:\/|$)/i.exec(selfUrl.pathname)?.[1] ?? null : null;
+  const sha = optionalCommit(status) ?? selfSha;
+  return { ...(typeof status.description === 'string' && status.description !== '' ? { description: status.description } : {}), key: string(status.key), name: string(status.name), state, createdAt: timestamp(status.created_on), updatedAt: timestamp(status.updated_on), url: webUrl(status.url), sha };
+}
+
+function parseActivity(value: unknown): BitbucketActivity {
+  const activity = record(value);
+  for (const [key, kind] of [['approval', 'approval'], ['changes_requested', 'changes-requested'], ['comment', 'comment'], ['update', 'update']] as const) {
+    if (activity[key] === undefined) continue;
+    const entry = record(activity[key]);
+    const date = entry.date ?? entry.created_on ?? entry.updated_on;
+    const changes = isRecord(entry.changes) && isRecord(entry.changes.state) ? entry.changes.state : null;
+    const sourceChange = isRecord(entry.changes) && isRecord(entry.changes.source) ? entry.changes.source : null;
+    const changedHead = sourceChange === null ? null : optionalCommit(sourceChange.new);
+    const previousHead = sourceChange === null ? null : optionalCommit(sourceChange.old);
+    return {
+      kind, at: date === undefined ? null : timestamp(date), author: author(entry.user ?? entry.author), commentId: kind === 'comment' ? integer(entry.id) : null,
+      state: typeof changes?.new === 'string' ? changes.new : typeof entry.state === 'string' ? entry.state : null,
+      previousState: typeof changes?.old === 'string' ? changes.old : null,
+      headSha: changedHead !== null && previousHead !== null && changedHead !== previousHead ? changedHead : null,
+      reason: typeof entry.reason === 'string' ? entry.reason : null,
+    };
+  }
+  return { kind: 'unknown', at: null, author: null, commentId: null, state: null, previousState: null, headSha: null, reason: null };
+}
+
+async function boundedText(response: Response, limit: number): Promise<string> {
+  const declared = response.headers.get('content-length');
+  if (declared !== null && Number(declared) > limit) throw new BitbucketApiError('incomplete', 'Bitbucket response exceeds the size limit.');
+  if (response.body === null) return '';
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = '';
+  try {
+    for (;;) {
+      const part = await reader.read();
+      if (part.done) break;
+      bytes += part.value.byteLength;
+      if (bytes > limit) {
+        await reader.cancel();
+        throw new BitbucketApiError('incomplete', 'Bitbucket response exceeds the size limit.');
+      }
+      text += decoder.decode(part.value, { stream: true });
+    }
+    return text + decoder.decode();
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+export class BitbucketClient {
+  private readonly repositoryPath: string;
+  private readonly pullPath: string;
+
+  constructor(readonly page: ProviderReviewPage | ProviderCommitPage, private readonly fetcher: typeof fetch = fetch, private readonly transport: BitbucketTransport = bitbucketTransport) {
+    if (page.provider !== 'bitbucket' || page.repository.provider !== 'bitbucket' || page.repository.origin !== 'https://bitbucket.org'
+      || (page.kind === 'commit' ? !/^[a-f0-9]{7,40}$|^[a-f0-9]{64}$/i.test(page.ref) : !/^[1-9]\d*$/.test(page.number))) throw new BitbucketApiError('invalid-response', 'Invalid Bitbucket review identity.');
+    this.repositoryPath = apiRepositoryPath(page.repository.path);
+    this.pullPath = page.kind === 'commit' ? '' : `${this.repositoryPath}/pullrequests/${page.number}`;
+  }
+
+  private modeCurrent(): void {
+    if (this.page.diffMode !== undefined && (this.page.diffMode.ignoreWhitespace === null || !this.page.diffMode.current())) throw new BitbucketApiError('changed', 'Bitbucket whitespace mode changed while its diff was loading.');
+  }
+
+  private reviewPage(): ProviderReviewPage {
+    return this.page.kind === 'commit' ? invalid('A Bitbucket commit has no pull request review source.') : this.page;
+  }
+
+  private trustedUrl(value: string, initial: URL): URL {
+    let url: URL;
+    try { url = canonicalBitbucketApiUrl(value, initial); } catch { return invalid('Bitbucket returned an untrusted resource URL.'); }
+    const selection = (resource: URL): string => {
+      const params = new URLSearchParams(resource.search);
+      for (const key of ['page', 'pagelen', 'cursor']) params.delete(key);
+      params.sort();
+      return params.toString();
+    };
+    if (url.origin !== API_ORIGIN || url.username !== '' || url.password !== '' || url.hash !== '' || url.pathname !== initial.pathname || selection(url) !== selection(initial)) throw new BitbucketApiError('invalid-response', 'Bitbucket returned an untrusted resource URL.');
+    return url;
+  }
+
+  private async response(url: URL, signal: AbortSignal, raw = false, cache?: RequestCache): Promise<Response> {
+    this.modeCurrent();
+    let response: Response;
+    try { response = await this.transport.fetch(url, { signal, headers: { Accept: raw ? 'text/plain' : 'application/json' }, ...(cache === undefined ? {} : { cache }) }, this.fetcher); }
+    catch (error) { if (error instanceof BitbucketTransportError) throw new BitbucketApiError(error.reason, error.message, error.retryAfterMs); throw error; }
+    this.modeCurrent();
+    if (response.type === 'opaqueredirect' || response.status >= 300 && response.status < 400) throw new BitbucketApiError('invalid-response', 'Bitbucket unexpectedly redirected a pinned review source.');
+    if (response.url !== '') this.trustedUrl(response.url, url);
+    if (response.status === 401) throw new BitbucketApiError('authentication', 'Sign in to Bitbucket to read this review.');
+    if (response.status === 403) throw new BitbucketApiError('forbidden', 'Bitbucket did not allow this review source.');
+    if (!response.ok) throw new BitbucketApiError('unavailable', `Bitbucket review source returned ${response.status}.`);
+    return response;
+  }
+
+  private async json(url: URL, signal: AbortSignal, cache?: RequestCache): Promise<unknown> {
+    const response = await this.response(url, signal, false, cache);
+    const type = response.headers.get('content-type');
+    const text = await boundedText(response, MAX_JSON_BYTES);
+    this.modeCurrent();
+    if (looksLikeHtml(type, text) || type === null || !/^application\/(?:[\w.+-]*\+)?json\b/i.test(type)) throw new BitbucketApiError('invalid-response', 'Bitbucket did not return review data.');
+    try {
+      const value: unknown = JSON.parse(text);
+      return value;
+    } catch {
+      return invalid('Bitbucket returned invalid JSON.');
+    }
+  }
+
+  private async collection<T>(resource: string, parse: (value: unknown) => T, signal: AbortSignal, pinned?: URL): Promise<readonly T[]> {
+    if (pinned === undefined) this.reviewPage();
+    const initial = pinned ?? new URL(`${API_ORIGIN}${this.pullPath}/${resource}?pagelen=${resource === 'activity' ? 50 : 100}`);
+    let current: URL | null = initial;
+    const visited = new Set<string>();
+    const items: T[] = [];
+    let expected: number | null = null;
+    while (current !== null) {
+      if (visited.has(current.href) || visited.size >= MAX_PAGES) throw new BitbucketApiError('incomplete', 'Bitbucket review pagination did not finish.');
+      visited.add(current.href);
+      const page = record(await this.json(current, signal));
+      if (!Array.isArray(page.values)) return invalid('Bitbucket omitted collection values.');
+      items.push(...page.values.map((value: unknown) => parse(value)));
+      if (page.size !== undefined) {
+        const size = integer(page.size);
+        if (expected !== null && expected !== size) throw new BitbucketApiError('incomplete', 'Bitbucket collection size changed during pagination.');
+        expected = size;
+      }
+      current = page.next === undefined || page.next === null ? null : this.trustedUrl(string(page.next), initial);
+    }
+    if (expected !== null && items.length !== expected) throw new BitbucketApiError('incomplete', 'Bitbucket returned an incomplete review collection.');
+    return items;
+  }
+
+  async pullRequest(signal: AbortSignal): Promise<BitbucketPullRequest> {
+    const page = this.reviewPage();
+    const value = record(await this.json(new URL(`${API_ORIGIN}${this.pullPath}`), signal, 'no-cache'));
+    if (String(integer(value.id)) !== page.number) return invalid('Bitbucket returned a different pull request.');
+    const destination = record(value.destination);
+    if (isRecord(destination.repository) && destination.repository.full_name !== this.page.repository.path) return invalid('Bitbucket returned a different destination repository.');
+    const [source, base] = await Promise.all([this.resolveCommit(value.source, signal), this.resolveCommit(destination, signal)]);
+    return { ...parsePullRequest({ ...value, source, destination: base }, this.page.repository.path), sourceRef: string(record(record(value.source).commit).hash).toLowerCase() };
+  }
+
+  private async resolveCommit(value: unknown, signal: AbortSignal): Promise<Record<string, unknown>> {
+    const side = record(value);
+    const native = record(side.commit);
+    const prefix = string(native.hash);
+    if (native.type !== undefined && native.type !== 'commit') return invalid('Bitbucket returned a non-commit reference.');
+    if (FULL_COMMIT.test(prefix)) return side;
+    if (!/^[a-f0-9]{7,39}$/i.test(prefix)) return invalid('Bitbucket returned an invalid abbreviated commit.');
+    const path = apiRepositoryPath(string(record(side.repository).full_name));
+    const url = new URL(`${API_ORIGIN}${path}/commit/${prefix}`);
+    const self = link(native.links, 'self');
+    if (isRecord(native.links) && native.links.self !== undefined) {
+      let canonical: URL | null = null;
+      if (self !== null) { try { canonical = canonicalBitbucketApiUrl(self); } catch { canonical = null; } }
+      if (canonical?.href !== url.href) return invalid('Bitbucket returned a mismatched commit resource.');
+    }
+    url.searchParams.set('fields', 'hash');
+    // Resolve every snapshot separately so an ambiguous or reused prefix never becomes an immutable revision.
+    const resolved = record(await this.json(url, signal, 'no-cache'));
+    const full = string(resolved.hash);
+    if (resolved.repository !== undefined && apiRepositoryPath(string(record(resolved.repository).full_name)) !== path) return invalid('Bitbucket resolved the commit in a different repository.');
+    if (!FULL_COMMIT.test(full) || !full.toLowerCase().startsWith(prefix.toLowerCase())) return invalid('Bitbucket returned a different commit for the abbreviated ref.');
+    return { ...side, commit: { ...native, hash: full } };
+  }
+
+  comments(signal: AbortSignal): Promise<readonly BitbucketComment[]> {
+    return this.collection('comments', parseComment, signal);
+  }
+
+  tasks(signal: AbortSignal): Promise<readonly BitbucketTask[]> {
+    return this.collection('tasks', parseTask, signal);
+  }
+
+  activity(signal: AbortSignal): Promise<readonly BitbucketActivity[]> {
+    return this.collection('activity', parseActivity, signal);
+  }
+
+  statuses(signal: AbortSignal): Promise<readonly BitbucketStatus[]> {
+    return this.collection('statuses', (value) => parseStatus(value, this.repositoryPath), signal);
+  }
+
+  async diff(signal: AbortSignal): Promise<ProviderDiffResult> {
+    if (this.page.kind === 'commit') return this.commitDiff(this.page, signal);
+    const page = this.page;
+    const before = await this.pullRequest(signal);
+    const native = page.diffMode?.comparison;
+    if (native !== undefined && (!before.headSha.toLowerCase().startsWith(native.head) || !before.baseSha.toLowerCase().startsWith(native.base) || before.sourceRepository !== native.sourceRepository)) throw new BitbucketApiError('changed', 'Bitbucket native comparison changed while its diff was loading.');
+    const comparison = (resource: 'diff' | 'diffstat'): URL => {
+      const source = before.sourceRepository.split('/').map(encodeURIComponent).join('/');
+      const url = new URL(`${API_ORIGIN}${this.repositoryPath}/${resource}/${source}:${before.headSha}%0D${before.baseSha}`);
+      url.searchParams.set('from_pullrequest_id', page.number);
+      url.searchParams.set('topic', 'true');
+      if (page.diffMode?.ignoreWhitespace === true) url.searchParams.set('ignore_whitespace', 'true');
+      if (resource === 'diffstat') url.searchParams.set('pagelen', '100');
+      return url;
+    };
+    const { newPaths, ...result } = await this.diffFiles(comparison('diff'), comparison('diffstat'), signal);
+    const after = await this.pullRequest(signal);
+    if (before.headSha !== after.headSha || before.baseSha !== after.baseSha || before.sourceRepository !== after.sourceRepository) throw new BitbucketApiError('changed', 'Bitbucket changed the review while its diff was loading.');
+    if (page.headSha !== null && page.headSha !== before.headSha) throw new BitbucketApiError('changed', 'Bitbucket review head changed.');
+    const sourceFacts = providerDiffSourceFacts(page, { kind: 'bitbucket-review', headSha: before.headSha.toLowerCase(), baseSha: before.baseSha.toLowerCase(), sourceRepository: before.sourceRepositoryExplicit === true && after.sourceRepositoryExplicit === true ? before.sourceRepository : null, ...(before.sourceRef === undefined || before.sourceRef !== after.sourceRef ? {} : { sourceRef: before.sourceRef }), topic: true }, newPaths);
+    return { ...result, revision: `${before.baseSha}..${before.headSha}`, ...(sourceFacts === null ? {} : { sourceFacts }) };
+  }
+
+  private async commitDiff(page: ProviderCommitPage, signal: AbortSignal): Promise<ProviderDiffResult> {
+    const resolve = async (): Promise<string> => {
+      const url = new URL(`${API_ORIGIN}${this.repositoryPath}/commit/${page.ref}`);
+      url.searchParams.set('fields', 'hash,repository.full_name');
+      const value = record(await this.json(url, signal, FULL_COMMIT.test(page.ref) ? undefined : 'no-cache'));
+      const hash = string(value.hash).toLowerCase();
+      if (!FULL_COMMIT.test(hash) || !hash.startsWith(page.ref.toLowerCase()) || (value.repository !== undefined && apiRepositoryPath(string(record(value.repository).full_name)) !== this.repositoryPath)) return invalid('Bitbucket returned a different standalone commit.');
+      return hash;
+    };
+    const head = await resolve();
+    if (page.headSha !== null && head !== page.headSha.toLowerCase()) throw new BitbucketApiError('changed', 'Bitbucket selected commit changed.');
+    const stats = new URL(`${API_ORIGIN}${this.repositoryPath}/diffstat/${head}`);
+    stats.searchParams.set('pagelen', '100');
+    const { newPaths, ...result } = await this.diffFiles(new URL(`${API_ORIGIN}${this.repositoryPath}/diff/${head}`), stats, signal);
+    if (!FULL_COMMIT.test(page.ref) && await resolve() !== head) throw new BitbucketApiError('changed', 'Bitbucket commit reference changed while its diff was loading.');
+    const sourceFacts = providerDiffSourceFacts(page, { kind: 'bitbucket-commit', headSha: head, baseSha: null }, newPaths);
+    return { ...result, revision: `commit:${head}`, ...(sourceFacts === null ? {} : { sourceFacts }) };
+  }
+
+  private async diffFiles(diff: URL, diffstat: URL, signal: AbortSignal): Promise<Omit<ProviderDiffResult, 'revision'> & { readonly newPaths: readonly ProviderNewPathFact[] }> {
+    const newPaths: ProviderNewPathFact[] = [];
+    const [stats, response] = await Promise.all([
+      this.collection('diffstat', (value) => {
+        const file = parseDiffstat(value);
+        if (isRecord(value) && isRecord(value.new) && typeof value.new.path === 'string' && file.status !== 'deleted') newPaths.push({ path: file.path, newPath: value.new.path });
+        return file;
+      }, signal, diffstat),
+      this.response(diff, signal, true),
+    ]);
+    const patch = await boundedText(response, MAX_DIFF_BYTES);
+    this.modeCurrent();
+    if (looksLikeHtml(response.headers.get('content-type'), patch)) throw new BitbucketApiError('invalid-response', 'Bitbucket did not return a unified diff.');
+    if (patch.trim() !== '' && !/^diff --git /m.test(patch)) throw new BitbucketApiError('invalid-response', 'Bitbucket returned an invalid unified diff.');
+    const parsed = parseUnifiedDiff(patch);
+    const facts = new Map(parsed.map((file) => [file.path, file]));
+    const paths = new Set(stats.map((file) => file.path));
+    if (paths.size !== stats.length) throw new BitbucketApiError('invalid-response', 'Bitbucket returned duplicate diff paths.');
+    const complete = parsed.length === stats.length && stats.every((file) => {
+      const fact = facts.get(file.path);
+      return fact !== undefined && fact.additions === file.additions && fact.deletions === file.deletions;
+    });
+    const files = stats.map((file): FileStats => {
+      const fact = facts.get(file.path);
+      return fact !== undefined && fact.additions === file.additions && fact.deletions === file.deletions ? { ...fact, status: file.status ?? 'modified' } : file;
+    });
+    const patches = new Map<string, string>();
+    for (const part of patch.split(/(?=^diff --git )/m)) {
+      const file = parseUnifiedDiff(part)[0];
+      if (file !== undefined && paths.has(file.path)) patches.set(file.path, part);
+    }
+    return { files, complete, patches, newPaths };
+  }
+}

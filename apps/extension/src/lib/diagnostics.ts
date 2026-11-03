@@ -1,4 +1,5 @@
 import { storage } from 'wxt/utils/storage';
+import { describeRepository, providerForHost } from '@geld/core';
 
 /**
  * A short log of what happened to diff fetches, for "Copy diagnostics" on the
@@ -61,10 +62,31 @@ export async function readDiagnostics(): Promise<readonly DiagnosticEvent[]> {
  * people, and the log may name repositories and nothing more.
  */
 export function tabSubject(url: string): string {
+  let parsed: URL;
   let pathname: string;
   try {
-    pathname = new URL(url).pathname;
+    parsed = new URL(url);
+    pathname = parsed.pathname;
   } catch {
+    return 'other page';
+  }
+  const provider = providerForHost(parsed.hostname);
+  if (provider === 'gitlab' || provider === 'bitbucket') {
+    const repository = describeRepository(parsed);
+    if (repository === null) return 'other page';
+    if (provider === 'gitlab') {
+      const review = /\/-\/merge_requests\/(\d+)(\/(?:diffs|commits|pipelines))?(?:\/|$)/.exec(pathname);
+      if (review !== null) return `gitlab:${repository.path}!${review[1]}${review[2] ?? ''}`;
+      const commit = /\/-\/commit\/([0-9a-f]+)(?:\/|$)/i.exec(pathname);
+      if (commit !== null) return `gitlab:${repository.path}@${(commit[1] ?? '').slice(0, 7)}`;
+      if (pathname.endsWith('/-/merge_requests')) return `gitlab:${repository.path} (merge requests)`;
+    } else {
+      const review = /^\/[^/]+\/[^/]+\/pull-requests\/(\d+)(\/(?:diff|commits|activity))?(?:\/|$)/.exec(pathname);
+      if (review !== null) return `bitbucket:${repository.path}#${review[1]}${review[2] ?? ''}`;
+      const commit = /^\/[^/]+\/[^/]+\/commits\/([0-9a-f]+)(?:\/|$)/i.exec(pathname);
+      if (commit !== null) return `bitbucket:${repository.path}@${(commit[1] ?? '').slice(0, 7)}`;
+      if (/^\/[^/]+\/[^/]+\/pull-requests\/?$/.test(pathname)) return `bitbucket:${repository.path} (pull requests)`;
+    }
     return 'other page';
   }
   const pull = /^\/([^/]+\/[^/]+)\/pull\/(\d+)(\/(?:files|changes|commits|checks))?/.exec(pathname);
@@ -83,6 +105,15 @@ export function diagnosticSubject(diffUrl: string): string | null {
     url = new URL(diffUrl);
   } catch {
     return null;
+  }
+  if (url.hostname === 'gitlab.com') {
+    const repository = describeRepository(url);
+    const review = /\/-\/merge_requests\/(\d+)\.diff$/.exec(url.pathname);
+    return repository === null || review === null ? null : `gitlab:${repository.path}!${review[1]}`;
+  }
+  if (url.hostname === 'api.bitbucket.org') {
+    const review = /^\/2\.0\/repositories\/([^/]+)\/([^/]+)\/pullrequests\/(\d+)\/diff$/.exec(url.pathname);
+    return review === null ? null : `bitbucket:${review[1]}/${review[2]}#${review[3]}`;
   }
   const pull = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\.diff$/.exec(url.pathname);
   if (pull !== null) return `${pull[1]}/${pull[2]}#${pull[3]}`;

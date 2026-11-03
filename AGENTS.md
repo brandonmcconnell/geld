@@ -1305,6 +1305,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
 - **Repositories can configure Geld for everyone reviewing them** (`@geld/core/repo-config.ts`, `src/github/repo-config-source.ts`).
   A committed `.github/geld.yml` (and an org's defaults in `owner/.github`, `geld.yml` at the root or under `.github/`) uses the settings vocabulary — `categories`, `groups`, `categoryPatterns`, `customCategories` — and is checked by the same strict validator plus `collectRepoConfigIssues` (personal keys such as `enabled`/`repoRules` are rejected, unknown keys ignored).
   `.gitattributes` `linguist-generated` lines feed the Generated category via `generatedConfigFrom`.
+  Unresolved YAML aliases return a validation issue instead of escaping the parser, including for provider repository configs.
   **A sign-in page at a repository URL gets nothing** (`isSignInInterstitial`, `page.ts`: GitHub marks its login, organisation SSO and 2FA pages with `session-authentication` on `<body>`;
   `runPass` and the pre-paint header path stand down there, since every request for the repository's data would answer 401 in the console).
   **No lookup may 404 in the page** — the browser prints every failed `fetch` as a red console error attributed to Geld, and most repositories have none of these files.
@@ -1429,6 +1430,577 @@ a default comes only from `defaults.run.shell` (a `shell` under `env` is a varia
 Unknown hunk context, visibly unsupported shells, scripts over 100 KB and browsers without the highlight API keep GitHub's native colors.
 Ranges are refreshed when source nodes change and cleared on teardown.
 
+### Bitbucket Pipelines shell coloring (bounded first slice)
+
+The unchanged GitHub workflow reader shares browser-only token/range mechanics through `src/lib/shell-highlight.ts`.
+Bitbucket `src/bitbucket/workflow-syntax.ts` colors only exact root `bitbucket-pipelines.yml`, over native code Text nodes and provider-owned `geld-bitbucket-shell-*` CSS highlights.
+Atlassian's native `--ds-text-code-*` variables supply colors;
+no fonts, line numbers, diff markers, source nodes, Viewed state or provider requests are changed.
+Each side has independent YAML/shell state, common context belongs to the new side, and replaced/unmounted source nodes invalidate ranges.
+Only the unbroken native file prefix beginning at line1 can supply context, and that entire prefix must parse as one YAML mapping;
+never regex-split root-looking declarations out of multiline scalar text.
+Any gap taints all later source until actual native context is expanded;
+a parseable assembled projection cannot prove that omitted text did not open a quoted scalar.
+A step must have contiguous visible schema ancestry from its root declaration **through a visible following boundary before any hunk gap**: an apparent end-of-hunk cannot prove absence of a later `runs-on` or inherited merge.
+Hosted steps use documented `/bin/sh`;
+explicit literal `self.hosted` + `linux.shell` labels (plain or quoted;
+aliases/tags/interpolation stay native) use documented Bash.
+Windows, unknown runners, aliases/merges and unresolved inherited execution context stay native.
+The bounded reader supports adjacent unquoted command strings and literal blocks, including indentationless script sequences and anchored step declarations.
+Declared anchor source is colored in its own declared/default context;
+later aliases or runner overrides at callsites are never resolved or claimed as execution proof.
+`after-script` is a separate program.
+Pipe/variables mappings, quoted/folded YAML, aliases, unrelated YAML/README files and missing context stay native;
+GitLab classic runner context remains unsupported by this Bitbucket slice.
+The retained default public PR27 projection has an incomplete first step and later gap-tainted declarations, so all of it deliberately stays native.
+Its new30–37 declaration source is reused only in a self-contained synthetic-context grammar test;
+actual eligibility requires genuine native context expansion, with no automatic fetch/reveal by this feature.
+The shared controller uses the optional adapter `diffSyntax.apply(view)`/`clear()` lifecycle;
+no provider syntax reader is imported by the shared controller.
+Coloring is independent of comment/test folding and pending count fetches;
+master disable, no diff view, navigation and controller stop clear only its owned ranges.
+Bitbucket shell painting uses a qualified native Syntax preference in the current document, route and raw bootstrap actor/workspace scope, or a separate file-local initial native-On rendering witness.
+Disabled, or unknown without that positive original-file witness, removes every owned range, including plain ranges, and the unchanged-Text-node cache before any cache reuse, preserving foreign highlights and original native nodes.
+The passive observer never opens Settings or writes preferences, and accepts only a trusted original unique Settings opener, a newly mounted unique original form and untouched initial checkbox, then trusted Cancel followed by actual dialog removal.
+The older source-backed settingsButton/aria-label hook and the current observed Global diff settings aria-live button are bounded to the original Files changed tabpanel, with responsive tabindex-minus-one copies excluded.
+Input, change, submit, unknown closure, form/control remount, ambiguity, actor changes and route changes discard that observation;
+native context expansion and source-node replacement within the same route/actor retain it because Syntax is a global preference rather than acquired count/head state.
+No getter, private store, token-shaped DOM, settings draft or saved result supplies a substitute global preference value, and explicit trust/layout seams exist only in unit protocols.
+The initial rendering fallback leaves that preference unknown and considers only the original visible bitbucket-pipelines.yml Diff region/file anchor/article/CodeGrid, numbered native rows, exact gridcell aria labels and span-only native On wrappers with meaningful original token evidence.
+Every considered row must have the verified code-diff, syntax-highlighted and __rbb_syntax_highlight classes and current native rowgroup terminal-LF structure;
+blank inline code may have zero width while its native row/file remains visible.
+Plain, mixed, malformed, authored, owned, hidden, editor/dialog or duplicate source never supplies the fallback, and a highlighted sibling file cannot enable a plain pipeline file.
+Initial empty/plain hydration leaves eligibility unknown without inventing disabled, while native Settings opening, dirty/submit/unknown closure, transient/remounted native forms, route/actor/bootstrap/workspace changes and clear latch local fallback closed for the document even across observer recreation or master toggling.
+Only the existing pristine read/Cancel path may then qualify an explicit native preference.
+The exact original passive Atlassian cookie notice is neutral only to still-initial local history/eligibility, with its original layout-slot owner, three known buttons, two legal links and zero form/field/editor/nested-dialog content.
+The two native legal notice IDs are duplicates, so they are not treated as a unique heading.
+Current full shape and original control identities, or exact pending original-owner removal records, are required even when the banner has already detached;
+transient controls/forms/Settings fields, unknown role/label oldValues and incomplete rendering close the latch without async grace, while unrelated source hydration remains neutral.
+This never reopens closed history or overrides Off, never operates consent, and leaves every native dialog counted by the global pristine Settings/read/Cancel qualification.
+Same-route context/source replacement rechecks current original rows and creates fresh ranges without waiting for count or head acquisition, never carrying disconnected Text evidence or inventing a PR full-head witness.
+The retained public PR242 native-off expansion produced 22 owned ranges, including 13 plain ranges, so both disabled and unknown regressions must clear that exact visible-source projection without recreating cached ranges until a new positive observation.
+The dedicated anonymous installed characterization verified native On, fresh pristine On read/Cancel, source-preserving owned painting and exact native Off restoration with the other 12 controls unchanged in the tested light theme.
+That explicit preference case does not establish fresh initial-document fallback acceptance, authenticated/server persistence, dark theme or an independent native Bash-renderer palette match.
+The installed unknown branch reports unavailability and the known-off branch requires zero owned ranges, a pre-paint witness, preserved source/Viewed state, empty invalid ranges and exact context/count/head checks before and after capture.
+The separate bitbucket-pipeline-syntax-on focus is an explicit-only anonymous characterization, excluded from default, regression and all, and requires an entirely free 40-request rolling window because the first native Save/restore cost is unmeasured.
+It reuses the existing Off acceptance before any preference change, then operates only the original native Syntax checkbox and unique same-form submit Save, preserving the other 12 controls including hidden tabSize.
+The current form has 13 controls rather than the 12 visible fields alone, and its original modal heading is Global diff view settings.
+After native Save, source row/code/Text replacement is permitted only while the original code characters, ordered native rowgroups, line numbers/kinds/IDs/links, original file root/anchor/Viewed, raw anonymous bootstrap actor/workspace, selected URL and already-observed full comparison identity remain unchanged.
+The retained native renderer adds exactly one terminal LF to each non-final row of its unchanged rowgroup while preserving its final row, gridcell aria-label and span-only token structure;
+the harness records every raw before/after string and this separate presentation classification, rejecting extra LF, interior changes, unknown markup or changed group boundaries.
+Only the explicit On oracle uses the original code-character projection, excludes that proven LF from every owned range and re-locks fresh native On span/Text identity before painting;
+the existing Off verifier remains exact and unchanged, and physical native Text fragmentation does not imply a fixed range count.
+The first installed characterization failed before fresh On qualification and Off restoration, so retained renderer evidence and offline painter compatibility do not establish a public On, palette or restoration pass.
+Fresh pristine On-form initial state, zero owned colors and native-On Text-node references are captured before trusted Cancel qualifies production's passive observer;
+later owned ranges must preserve that new baseline, native links/IDs/fonts and foreign highlights through real text selection and viewport capture.
+All native HTTP traffic remains separately recorded with query values redacted and bounded allowlisted preference primitives, without inferring a settings endpoint, authenticated success or server persistence.
+The original currentBitbucketShellHead still rejects errors and every mutation, while the characterization uses the same extracted immutable identity conditions plus its unfiltered traffic and exact native form-write windows, never a fabricated empty mutation array.
+Only that dedicated focus opts both observers into a shared WeakMap HTTPRequest identity, including response.request references, so standard API mutation association requires the exact request object, method, form window and source-backed setting body rather than URL/timing proximity or absence of an extension stack.
+Restoration always freshly reads the native field vector, uses original checkbox/Save only if On, then freshly reads Off and trusted-Cancels before profile closure, retaining original, traffic and restoration failures separately.
+Synthetic trust/layout/orchestration fixtures are unit-only and do not establish a public native-On, unselected-theme or native Bash-renderer palette pass.
+The existing GitHub18 regressions plus native-fixture unit checks do not prove installed Bitbucket highlighting, exact native Bash-scope palette mapping or actual Bitbucket dark-theme selection.
+Keep D25 partial until those are verified publicly.
+The dedicated bitbucket-native-bash browser focus is native discovery only and is excluded from regression and all.
+It saves the real shared master setting disabled before creating its guarded native page, uses only bounded original-file reveal, and closes that page before restoring master so unrelated count sources cannot start afterward.
+Native Bash style probes match original Git-proven new-side text and record both DOM span styles and intersecting CSS Custom Highlight ranges, priorities and pseudo-colors, since plain-looking source DOM can still be colored by native highlights.
+Missing styles, unsupported or truncated range coverage and offscreen measurements remain explicit unknowns rather than guessed token mappings or a feature pass.
+A failed discovery master restoration records its failed readback/error and per-case unavailable state before saving the report, while native parent references retain their actual full/prefix precision against Git provenance without claiming native resolution or relaxing the exact main commit hash.
+
+### GitLab native-run shell coloring (bounded cosmetic slice)
+
+`src/gitlab/workflow-syntax.ts` recognizes explicit local native `run[].script` declarations in files whose basename is `.gitlab-ci.yml`, including nested configs and hidden jobs.
+GitLab reverse-deep-merges job keys without merging array values, so a local `run` array supplies its own commands even when `extends` cannot be resolved.
+This is cosmetic shell syntax recognition, not proof that the config is included, valid for the current runner, executed or successful.
+The ordinary job `script` field can use another runner shell and remains native.
+The complete contiguous native prefix must start at line1, parse as one mapping and show a following top-level boundary after the complete job.
+An apparent final hunk/row is not a proven end of file.
+Only native run entry shapes are accepted, with a name and exactly one script or external step.
+External steps are never resolved or painted, and malformed sibling entries, aliases/merges, conflicting classic script fields and arbitrary YAML run keys cannot supply commands.
+Explicit anchor declarations keep their own local source context, but alias callsites are never expanded.
+Only exact plain strings and mapped literal blocks are colored, with expressions, quoted/folded scalars and unknown mappings left native.
+Old and new source sides have independent programs over the original Text nodes, with common context owned by the new side.
+A current GitLab source frame, full native revision tuple, exact path/side and unchanged source offsets are required before and after palette measurement.
+The Rapid Diff renderer may append one terminal LF, which is excluded from all owned ranges without rewriting the original node.
+`src/gitlab/shell-palette.ts` measures the already-loaded same-origin GitLab highlight theme, its active link and effective CSSStyleSheet media and actual Rouge-class cascade.
+The native `--code-text-color` is the code foreground even when the table or enclosing YAML token has another color.
+A strictly owned temporary tbody carries the probes, with no native line-text or hunk selectors, and is always removed even when styles cannot be read.
+Probes must leave native source snapshots, whitespace frames and whole-context witnesses unchanged.
+Missing, disabled, inaccessible or unmatched native theme rules yield no paint, without fetching CSS or substituting a literal palette.
+Native theme load and media changes refresh colors, while cleanup removes only owned CSS highlights/listeners/styles.
+Only color is overlaid: fonts, typography, source nodes, line markers and native controls remain owned by GitLab.
+Retained public MR253 source supplies the positive lexical fixture, but offline tests alone do not establish installed public highlighting or execution.
+
+## GitLab and Bitbucket provider adapters
+
+The cloud content scripts live in `entrypoints/gitlab.content/` and `entrypoints/bitbucket.content/`, with provider adapters in `src/gitlab/` and `src/bitbucket/` behind `src/providers/` interfaces.
+The first pass targets gitlab.com and Bitbucket Cloud, with self-hosted variants requiring separate adapter verification and host permissions.
+GitLab and Bitbucket cloud access is optional, including their content-script registration, so upgrading a GitHub-only installation does not introduce required site access.
+The popup and options expose explicit Enable GitLab and Enable Bitbucket controls;
+a granted origin registers only that provider's isolated script and the supported Bitbucket MAIN helper through the background.
+Firefox MV2 requests the optional scripting capability with that enable action and uses its supported Firefox 128 MAIN registration, without adding a required update permission.
+A failed MAIN registration rolls back the provider registration and cannot produce an enabled acknowledgement.
+Revoking either required Bitbucket origin removes its registration, and initial installed-browser acceptance must use the real extension enable control before visiting the provider.
+Repository identity includes the provider, origin and full repository path, so nested GitLab groups and equally named repositories on different hosts remain separate.
+One synchronized Geld settings object follows the user across providers, with the same core matcher and category definitions.
+Provider-specific surfaces translate settings and sources into shared review and diff models rather than importing GitHub's DOM adapters or Primer styles.
+GitLab Rapid test outlines retain native `expandLines` header rows and Bitbucket outlines retain verified above/below context controls in their native chunk headers as ordered hunk records.
+These boundaries split changed runs before test rename pairing and disclose `shown lines` when a test reaches omitted terminal context.
+Multiple controls in one native header represent one boundary, and owned controls, unknown layouts, no-newline annotations and Bitbucket dummy-chunk controls alone supply no missing-context proof.
+Boundary structure participates in the fold cache signature even when every displayed source line is unchanged.
+This folding reads only displayed source and neither fetches whole files nor activates native context expansion.
+Installed GitLab mixed-file acceptance toggles the real test-outline setting on retained native suite declarations, verifies original row/text/control/Viewed identities and corrected counts, opens one outline with trusted input and restores settings and category state.
+That displayed-outline phase retains an unknown source head explicitly and does not establish whole-file extents or native context expansion.
+  Bitbucket full-hash standalone commits can explicitly load test boundaries through the shared whole-source cache and the original above/below chunk controls.
+  The file action uses Atlassian theme variables, never replaces native rows, shares the persisted API cooldown, and declines dummy-only chunks, stale controls and missing native source authority.
+  Bitbucket pull requests and abbreviated standalone routes still have no whole-file grant until their current native source is independently bound.
+  Bitbucket PR Find test boundaries may prepare that missing source with one explicitly requested original file-menu open and close, or reuse a separately observed trusted native opener, without visiting its source link.
+  A unique newly opened native popup and canonical source URL bind the literal ref and file owner to the same before/after API-resolved full comparison, under a separate resolved-reference provenance rather than a native full-hash claim.
+  Preparation performs no source request until the binding is current, never retries automatically, preserves naturally opened native menus, and cancels on source, comparison, owner or user-input changes.
+  A sealed popup may close normally, but connected source-link or popup-owner mutation withdraws its source binding.
+  A full API head may qualify its matching native abbreviated URL through a distinct full-head-prefix resolution, and a changing API prefix alone with stable full revisions withholds the source grant without breaking counts.
+  Bitbucket Find keeps a focusable aria-disabled state so its own native popup autofocus can return to the original control, while external focus and intervening user input remain untouched.
+  Bitbucket Syntax-on code rows omit their renderer-added terminal LF only when original rowgroup position and exact native gridcell aria text agree, while malformed or ambiguous row text stays unavailable.
+  Shell ranges retain the original Text nodes and exclude that verified terminal LF from their offsets.
+  The literal `bitbucket-whole-context` browser case tests one full-hash public standalone commit using original native source, one observed raw response, real boundary/fold clicks and both context directions.
+  It preserves original source and Viewed/count state, restores settings after closing, and never grants Bitbucket PR source authority.
+  The separate `bitbucket-pr-whole-context` case observes current API refs and native All changes/menu provenance independently;
+  native abbreviated source refs remain distinct from full API hashes.
+  Its PR-only preparation disables unrelated overview/list/config/AI reads, preserves test-category counts, and restores the exact raw settings after the page closes.
+  PR whole-context acceptance opens Tests with actual End/Enter keyboard navigation and hydrates the original target placeholder through its existing file control or anchor before binding native source rows.
+  Fixed preparation phases, boolean file/header hit checks and independent cleanup codes remain in the private receipt even if the outer runner suppresses exception text.
+  Pre-bind placeholder scrolling matches the native file-wrapper start/smooth reveal;
+  centering a tall wrapper can leave its top anchor outside the viewport.
+  Known-target geometry and mount/error enums bracket that scroll, with a sanitized detached target snapshot available as a failure artifact.
+  Browser-decoded PR API304 responses count as revalidation only after an earlier successful200 for the same URL/query fingerprint and body hash in that visit;
+  response-event order is preserved before reading bodies.
+
+
+- **Selected GitLab diffs require immutable comparisons.**
+  An MR's `.diff` endpoint ignores `diff_id` and `start_sha`, so obtain the selected version metadata and request `/-/compare/{base}...{head}?format=diff&straight=true` with its immutable refs.
+  A compare URL ending in `.diff` can return HTML with HTTP 200, so successful HTTP status alone does not establish a raw diff.
+  Keep the selected version, comparison base, commit and whitespace mode in the request/cache identity.
+  Require complete metadata, unique matching file paths and matching per-file addition/deletion counts before replacing native counts or hiding files.
+  Missing, truncated, HTML or mismatched diff responses are unavailable data rather than zero changed files.
+  Git quotes UTF-8 path bytes as octal escapes and can quote only one side of a rename, so decode the byte sequence as UTF-8 and parse each path independently.
+- **GitLab's public discussion fallback differs from its REST API.**
+  Anonymous REST discussion requests can return 401 while the public MR's native web discussion source remains readable.
+  The web source paginates with an opaque `x-next-page-cursor` header and `cursor` query parameter, so do not treat one page or an absent `X-Next-Page` header as complete history.
+  Preserve native note IDs, source permalinks, separate resolved/outdated state and system-event attribution when normalizing discussions.
+  Integration accounts can author ordinary comments and system events, and a system event never becomes a bot review verdict merely because its author is a bot.
+  The MR's `head_pipeline` can run against a synthetic merge-result SHA rather than the source branch's review head.
+  Preserve the pipeline's actual SHA and attach the explicitly established `reviewHeadSha` association separately instead of replacing one SHA with the other.
+- **Quick actions use the provider's native controls and current capabilities.**
+  A GitLab review drawer, approval, request-changes choice, comment writer or per-thread control is available only when the actual native control and applicable permissions exist.
+  Opening a native writer retains the provider's validation and tier constraints, and relaying a click does not prove that the server accepted a write.
+  An asynchronous native action must recheck the review route and selected comparison after hydration so a drawer opened on one MR cannot focus, select or click a writer on another SPA route.
+  Do not synthesize a request-changes endpoint or silently substitute a comment when that review state is unavailable.
+  GitLab's native review summary starts as `input[data-testid="placeholder-input-field"]` and mounts its own `textarea[data-testid="comment-textarea"]` on focus, so select the outcome and writer within the same live `submit-gl-form` rather than focusing the unrelated main note writer.
+  Native outcome disablement, removal and navigation invalidate a pending drawer action without submitting or replacing draft text.
+  GitLab action availability reads current native controls on each pass instead of retaining the fetch-time array, while the fetched approval permission remains a conservative ceiling.
+  A captured native sign-in identity, review route and known head bind both the live reader and retained descriptors, so native sign-out, a changed mounted account, a new revision or a debounced SPA navigation invalidates the previous review's permission.
+  An SSR signed-in flag establishes only flag continuity when mounted current-user metadata is absent, not authenticated account identity or successful native writes.
+  A fresh reader on another tab of the same MR retains its fetched account, canonical review and head ceiling without refetching, while an older descriptor remains bound to the route where it was offered.
+  Request changes remains unavailable until its exact enabled native outcome establishes support, and readonly, hidden, disabled or ambiguous forms and writers never become substitute controls.
+  GitLab's separate Open your review action relays one click to the original enabled review-drawer-toggle button without selecting an outcome, focusing a writer, changing drafts, submitting or discarding.
+  The native trigger can exist for an assigned reviewer with zero drafts, so its availability establishes neither a pending count nor approval or reviewer-management permission.
+  This navigation-only relay requires the original numeric viewer, complete exact full-head MR/project/noteable snapshot and generation, native source/control lifetime and current caller, with every guard rechecked after focus and before the click.
+  The relay reports only a native open intent, with no managed hydration wait, authenticated success claim or zero-request promise.
+  Native discussion and comment nodes remain at home, with only sanitized display copies shown in the digest and source links leading to original controls.
+  GitLab Quote reply maps a selected digest excerpt to exact character offsets in the original native body only when both complete texts and source identities still agree, including repeated words and inline markup.
+  A nonempty excerpt with a changed, disconnected or different-source body fails after revealing the original instead of silently quoting the whole comment.
+  The existing native `quoteReply` handler converts that original DOM range and appends through its own editor, retaining native draft ownership without a Geld formatter or submit/cancel click.
+  Pending quote relays and Geld's delayed focus stop after review, head, source or lifecycle changes and preserve a newer user selection.
+  An overview without a native head attribute uses the captured full API snapshot head instead, while a present mismatching DOM head or a changed API snapshot invalidates the pending relay.
+  Authenticated quote success remains unverified on public signed-out fixtures.
+- **Reviewer standing and current requests are independent native facts.**
+  `ProviderReviewReviewer.reviewRequest` can retain a pending GitLab review beside an approval without lowering approval totals or replacing the verdict's source.
+  GitLab's `unreviewed` reviewer state establishes a pending current review, not a re-request, a request time or a review of the latest push.
+  Join `approved_by` and reviewer state by durable native account ID and preserve an approval over a comment-only state without inferring request history.
+  Bitbucket reviewer membership does not establish a separate pending request, so its request state remains explicitly unknown until a native source proves otherwise.
+  State-only legacy inputs retain their existing labels, while an explicitly unknown request never becomes Review requested or a pending count.
+  Login-only CI reviewer payloads remain non-authoritative and cannot supply these independent native facts to the extension.
+- **Review bot trust is scoped to native account identity.**
+  A GitLab numeric account ID or Bitbucket account UUID is bound to a documented service only after explicit confirmation for that exact provider/origin/repository.
+  User-selected PAT, group-token and service accounts have per-install identities, so GitHub logins, display names, comment markers and configuration files never establish account trust on another provider.
+  The Identify reviewer disclosure shows the actual account ID, original comment and repository scope before its separate Trust action saves shared settings.
+  Provider support, trusted account identity, verified verdict syntax and native write capabilities remain separate requirements for bot controls.
+  CodeRabbit's GitLab command preview offers only the documented `@coderabbitai review` and `@coderabbitai full review`, also observed in native note3436654383, without deriving an alias from its opaque project-bot username.
+  Incremental review considers changes since the last review, while full review asks CodeRabbit to review all changes again, as its command documentation specifies.
+  Greptile's GitLab preview offers one Review command, exactly `@greptileai`, from its primary [Developer Essentials](https://www.greptile.com/docs/code-review/developer-essentials) documentation explicitly covering GitHub and GitLab comments, verified November 2, 2026.
+  Native Greptile summary note3381334808 supplies separate source-account evidence but advertises an app/API retrigger link rather than a comment literal, so that link is never used to infer a command, authenticate the account or start a review.
+  Command descriptor keys include the explicitly bound service ID, and the existing current-settings and snapshot-generation checks invalidate old service or account bindings even when the original native note has not remounted.
+  The existing public Greptile bot case records an exact keyboard Enter command-copy phase before trust withdrawal, restoring clipboard and permissions even on failure and separating incidental or unattributed review JSON from positively extension-attributed or recognized source acquisition.
+  Copy command requires a current explicit repository-scoped account binding, exact original native note author and full known head, while sign-in is required only for the separate Open native comment action.
+  A copied command is a draft aid, never an observed request, running bot, new review round, pending timestamp or server acknowledgement.
+  Open native comment focuses only the captured unique editable main `textarea#note-body`, preserving its draft and selection instead of substituting a review-summary or thread writer.
+  Account, route, selected comparison, head, binding, original-note remount and lifecycle changes invalidate retained command controls before clipboard or focus work.
+  GitLab's thread `note_form.append` and `quoteReply` handlers do not establish a top-level arbitrary insertion contract, so command preparation never appends or submits text.
+  GitLab web discussions can include current `note_html` alongside raw `note` for resolved findings whose original native note is unmounted, so keep optional rendered evidence in an adapter-owned snapshot map bound to the same MR/project/IID/note/author/body/timestamp tuple and full subject head.
+  Raw comment semantics and fingerprints never carry this HTML;
+  a valid unique native author/body remains preferred, while an invalid or ambiguous live note blocks the API fallback rather than being masked.
+  API rendering uses an inert detached template and the bounded copier with verified Markdown/code classes, no native IDs, controls, scripts, positioning hooks or image hydration;
+  lazy badge images retain their alt text without promoting data-src or canonical-src into resource requests.
+  Missing, stale, empty or oversized rendered evidence leaves the honest raw-text fallback, and API-rendered typography is not evidence of native pixels for an absent note.
+  The public Greptile acceptance case independently projects paragraph, inline-code, suggestion-code and emphasis semantics from the three already-observed `note_html` records, requiring absent original notes and API-marked owned bodies without acquiring or hydrating another source.
+  A changed fixture or now-mounted native finding is explicitly unavailable for that proof, while missing or incorrect API output for a validated absent finding fails, with per-phase attributed request evidence and listener cleanup retained.
+  Only a unique native note with its independently matched author header and body outside owned content counts as mounted, so copied IDs, duplicate anchors and owned resource or control hooks fail rather than disguising a renderer regression as fixture unavailability.
+  Other services and Bitbucket command preparation stay unavailable until their provider-specific command, native identity and writer evidence are separately verified.
+  The Pipelines installed check optionally reads the native Global diff settings dialog twice through trusted open/Cancel cycles without toggling, saving or generating a provider fetch.
+  Its original Syntax highlighting checkbox is read as a freshly presented native preference, separately from server persistence, completed native highlighting and Bash palette equivalence.
+  Missing or ambiguous native settings remain diagnostic unavailability, while dialog cleanup, original source/Viewed/URL/node drift, unexpected input/submission and changed counts remain failures.
+  Observed native-disabled settings cannot earn a syntax pass when Geld-owned colors appear after genuine native context expansion, and that contradiction retains its actual source/ranges and screenshot.
+  Pipeline acceptance follows the original native file-tree link and pins its actual fragment-bearing URL through Settings, context, source and selection checks instead of rewriting native file selection.
+  The explicit `bitbucket-pipeline-shell` focus is excluded from default and all-provider visits and keeps complete immutable source/count oracles while omitting separately tested filtering, zoom and overview work.
+  It disables both overview and quick-review acquisition before page creation, retains every other raw setting and restores original flag presence only after the native page closes.
+  Its preflight uses the focused PR240 run41381283702 native_navigation measurement of 16 standard API requests, plus five free, with the existing 40-request cap, rolling timestamp ledger, cooldown carryover and strict context reserve unchanged.
+  The measured requests occurred on 2026-11-02 from 03:07:46.465Z through 03:07:49.455Z.
+  Consent, Settings and later source-selection costs remain unmeasured and must still obey the live request and reserve guards.
+  Retain the expanded native candidate before validating it, and fingerprint the exact source returned by the successful YAML-context validator so a verifier failure cannot erase its evidence.
+  After trusted native Pipeline selection and nonempty row hydration, before shell source or pre-paint baselines and fresh Settings observation, only the focused fresh anonymous profile may dismiss the exact native cookie dialog using its original Only necessary button.
+  That action requires native bootstrap isAuthenticated false, the observed direct layout slot, cookiesTrackingNoticeLink dialog label, exact Atlassian legal URL and unique enabled unobscured button, with the pinned URL, original native tree link, source, head, counts and Viewed guards.
+  Missing consent is a no-op, while changed, covered or ambiguous native modals fail without touching Preferences, Accept all or storage APIs.
+  Retain bounded sanitized all-HTTP request and response metadata around the genuine trusted consent click, including any native consent write, separately from the standard API quota ledger.
+  Consent preparation does not operate Diff Settings controls or establish their hidden values, and independently cleans both native identity probes and its traffic listeners on failure.
+  Focused Pipeline captures remain viewport-only, including final and failure artifacts, to avoid unrelated full-page lazy rendering.
+  Before HTML sanitization, the planned Pipeline visit retains bounded script URL metadata from original script elements and already-issued script ResourceTiming entries on the observed first-party asset origins.
+  This omits query-bearing, credentialed and non-asset URLs, performs no source fetch or execution and does not establish native module or preference behavior.
+  The focused visit also optionally retains the already-issued main-frame app.8c0b6f48dd68c4fd8f958592a0de8efebbdf6d2d.js response, with an exact first-party URL, HTTP200 JavaScript, no redirects and a six MiB decoded-body cap.
+  It performs no fetch, retry, page evaluation or execution, saves only that fixed script artifact with its byte count and SHA256, and treats absent, changed-version, oversized or unreadable bodies as diagnostic unavailability.
+  Its response listener detaches and body acquisition has a bounded settle deadline before normal page close, with any still-pending read explicitly reported and prohibited from starting an artifact write after the deadline.
+
+  Dialog reads share the parent visit and existing `active + 4 < 40` rolling-request guard, which requires at least five free slots and makes no assumption that native actions generate zero requests.
+  Public anonymous fixtures can verify preview, copy and unavailable composer behavior but do not establish authenticated writer persistence or an actual bot run.
+  Running or loading provider bot rows open that bot's newest eligible top-level native summary by creation time, following GitHub PRs #20 and #22, and have no View review link when no report qualifies.
+  Summary targets require the same unambiguous native account binding, verified provider format and canonical review source as verdict parsing, excluding threads, status notes, refusals, commands and acknowledgements.
+  The presentation target never replaces a running verdict's request provenance or a settled finding or refusal's own source.
+- **Provider diff caching and throttling have their own boundaries.**
+  Whole-test source facts distinguish the selected acquisition head from the actual native rendered new-side tree, whose owner, full 40- or 64-character SHA and authoritative new path require a current original file witness.
+  Immutable new-file identity is independent of a comparison's old base when the original raw/context resources, current full project/source-version identity and exact selected target still agree, without granting old-side or comment-coordinate equivalence.
+  An original native non-merge target equal to its selected source ID and acquired full head can identify that immutable source despite a different observed API presentation target, while other targets retain exact tuple checks and all common ownership/source/resource/path/frame guards remain required.
+  Observed response candidates do not establish consumption or an earlier unavailable visit's exact cause.
+  Comment DOM folds decline numeric source coordinates when the same batched native frame and acquired same-project merge-request subject prove a different rendered new-side head, without changing source statistics, semantic counts or test outlines.
+  Missing or legacy provenance retains the existing unprotected comment-coordinate behavior, and no Bitbucket topic destination or old-side file authority is inferred from this negative guard.
+  A retired line-fold control must still belong to the current file state and connected owned row before its callback can change source visibility.
+  GitLab selected source and selected merge heads can differ, and neither matching visible lines nor a complete source diff proves unseen merge-head extents.
+  Schema2 diff-cache records retain only validated acquisition metadata, while schema1 and oversized-provenance fallbacks remain counts-only without forcing new requests.
+  Unknown forks, missing Bitbucket source repositories and headless native PR comparisons supply no whole-file authority, and this metadata layer performs no raw-file loading or context expansion.
+  Matching data hooks inside authored notes, descriptions, forms or editable/inert scopes never establish native source ownership or a current comparison witness.
+  Persistent diff cache storage uses 64 bounded slots of at most 64 KiB each and stores validated file statistics rather than raw source patches.
+  Unknown-head cache entries are provisional until refreshed, and an exact revision's cached result must not leak into a different comparison or whitespace mode.
+  Request priority schedules a real hover promptly but does not make a provisional cache exact, so strict header readers filter their own return value without deleting cached hover totals or refresh errors.
+  Request lanes are scoped by provider and origin and respect numeric or date-form `Retry-After` values rather than reusing GitHub's API assumptions.
+  Bitbucket documents a rolling anonymous limit of 60 requests per hour across API resources, so eagerly resolving every visible review in a public list can exhaust the quota before the native page finishes loading.
+  Anonymous Bitbucket list rows hydrate existing complete cached counts first and fetch only after sustained pointer or keyboard intent, while an explicitly authenticated native bootstrap retains eager list counts.
+  Defer repository configuration with the same passive list demand, preserve explicit intent through cache hydration and lane waits, and never label a failed or paused refresh as Updating.
+  Anonymous Bitbucket live diff and digest snapshots refresh after 30 minutes rather than every minute, with complete pinned revision checks unchanged.
+  A shared persisted Bitbucket cooldown timestamp covers diff, review and configuration sources, uses a one-hour fallback for a 429 without a valid header, and never shortens an explicit longer `Retry-After`.
+  On the exact `https://bitbucket.org` page origin, use the observed same-origin `/!api/2.0/` GET transport with native session credentials and normalize validated response URLs back to canonical API identities.
+  Outside that origin the public API transport omits credentials, and an error never switches transports or follows a redirect.
+  Cache clearing aborts or invalidates pending work so a late response cannot repopulate a cleared visit.
+  GitLab's explicit `w=1` and `w=0` choices take precedence over automatic whitespace defaults, and explicitly choosing `w=1` removes the stored opt-out.
+  A session guard remembers a requested whitespace mode that the site strips from the URL so the extension does not cause a navigation loop.
+  Provider whitespace links retain the exact original and Geld-written href for each original anchor so a later URL opt-out or disabled policy restores only an unchanged Geld edit.
+  Native or reader href changes relinquish custody, disconnected anchors and the bounded oldest entries are restored before release, and runtime retirement restores only remaining exact owned values.
+  A surviving relative href also releases its exact Geld edit when the document route or native base URI changes its original destination, before any new intent prepares that destination.
+  An earlier Geld-added `w=1` must not become a false explicit opt-in after the reader chooses `w=0`.
+- **Bitbucket PR metadata can abbreviate commit hashes.**
+  A public PR's source and destination can carry twelve-character hashes even though the native commit endpoint returns the full SHA.
+  Resolve abbreviated refs in the explicitly identified source or destination repository, including source forks, and require the returned full hash to match the prefix before treating it as immutable.
+  Resolve each snapshot again rather than caching the abbreviation, since a reused prefix, base movement or source-fork change must not inherit the previous snapshot.
+  PR diff and diffstat endpoints redirect to comparison resources, but browser Fetch with `redirect: 'manual'` hides the status and Location behind an `opaqueredirect` response.
+  After resolving the PR snapshot, request the native comparison endpoint directly with `{sourceRepository}:{fullHead}%0D{fullBase}`, `from_pullrequest_id` and `topic=true` instead of trying to follow an unreadable redirect.
+  Keep the exact comparison path and non-pagination query parameters on every diffstat page, so a next link cannot switch refs or merge-base mode within the same repository.
+  The CI runner also pins the source repository and both full commits before acquisition and again before writing a summary.
+  A stored browser fetch function still requires its native Window receiver, so a client invokes it with the global receiver rather than as a method of the client instance.
+  Node mocks can accept that incorrect receiver even when actual Chrome reports Illegal invocation, making installed provider transport checks necessary.
+  Standalone Bitbucket commit cache identities use `/commits/{ref}` independently of PR identities and GitLab's `/-/commit/{ref}` path.
+- **Mutable provider identities require HTTP revalidation.**
+  GitLab MR before/after snapshots and symbolic or abbreviated commit resolution, and Bitbucket PR before/after snapshots and abbreviated commit resolution, use `cache: 'no-cache'` so browser freshness cannot bypass the source-change guard.
+  This permits conditional ETag revalidation and the browser's normal cached-body handling;
+  it does not require two wire-level HTTP 200 responses, bypass immutable pinned diff or configuration caches, or add requests.
+  This is guard hardening rather than evidence of an observed stale Bitbucket API response.
+- **Native branding belongs to each provider.**
+  Set `data-geld-provider` on the document root and use the matching `theme.css` bridge, with shared controls consuming `--geld-provider-*` variables and native inheritance.
+  Preserve provider-selected light, dark and accessibility colors rather than adding a GitHub palette, external font load or OS-theme override.
+  GitLab's live comment body uses GitLab Sans at 14px/21px and native author headers use 14px/20px, while native medium buttons use 14px/16px, weight 400 and an 8px radius.
+  Native body and author typography use `--font-family-sans-serif`, while `--gl-font-family-regular` can repeat GitLab Sans in its computed stack.
+  Bitbucket's native comment bodies can mount or edit independently of the fetched review snapshot, so the digest's render signature includes the verified original body rather than waiting for another API refresh.
+  Existing Bitbucket comment typography bindings refresh independently of the panel's data signature and on viewport resize, preserving the rendered body and releasing refresh listeners with its lifetime.
+  GitLab's rendered Markdown table headers can put their visible labels inside generated `markdown-table-<id>-col_<index>-sort` buttons, as the public Greptile summary note3381334808 does.
+  Preserve only the inert label of that verified sortable column-header shape, including its native table ownership and column index, while dropping the control, IDs, action attributes and icons.
+  Its marked inert span keeps only the observed `gl-font-bold gl-text-inherit` typography classes, and body comparison samples the actual native button's label span rather than assuming the enclosing TH has the same font weight.
+  GitLab also paints sticky Markdown headers through their native `data-sticky-header` wrapper, which is excluded from inert body copies.
+  Only verified sortable cells whose original matches that sticky-header selector receive a Geld paint marker, restoring `--gl-background-color-default` and the native inset shadow from `--gl-border-color-default` without copying sticky position, z-index or operational attributes.
+  Body decoration comparisons include shadows, and the existing trusted-bot case probes OS dark preference on the same mounted body, records whether native colors actually change and restores the original preference without requesting another source.
+  Closed details content remains uncovered even when its descendants retain positive rectangles, while the disclosure summary can still be compared.
+  Unknown buttons remain excluded, and the original native table stays untouched.
+  Installed body comparison treats missing positively presented native words as a mismatch rather than an uncovered sample, and the existing bot-trust case compares the mounted summary's headings, inline code, lists and table without requesting its sources again.
+  Closed Mermaid code and finding notes without mounted native DOM remain uncovered, and offline cloned structure does not establish computed-style parity.
+  Author profile links use the native default text color rather than the generic link color in both themes.
+  Native GitLab default buttons have their own semantic background, foreground, border and interaction-state tokens, including a translucent background and transparent border in dark mode.
+  Match GitLab's reduced-motion behavior as well as its normal button transition, since a copied transition otherwise keeps animating when native controls honor the reader's preference.
+  GitLab focus uses its inner/outer ring tokens, and its informational popovers use the overlap surface, small font and feedback radius tokens.
+  GitLab popovers and dropdowns draw their shadows with three CSS `drop-shadow()` filters using `--gl-shadow-color-default`, so `box-shadow: none` does not mean that the visible overlay has no shadow.
+  GitLab popover body padding is 8px vertically and 12px horizontally in the observed default density, and its small text is 12px/18px.
+  Rapid diff fold rows inherit the selected code theme's `--code-*` colors and `--rd-body-font-size`/line-height with the native monospace font, rather than the surrounding UI's Sans font or surface palette.
+  Define code-theme overrides at the fold row, since variables scoped below the document root cannot resolve in a bridge computed on `html`.
+  GitLab's Changes badge can be pointer-transparent, so bind its surrounding native tab link as the hover and keyboard target while retaining the count span for text updates.
+  Bitbucket's verified pull-request navigation provides a neutral count slot after its direct native tablist, keeping owned overview line counts outside tab badges and hidden sticky headers.
+  The native line-count `aria-label` lives on a wrapper outside the numeric span, so update its count alongside the visible text and restore the latest native wording during teardown.
+  Atlassian typography tokens are complete font shorthands, with semantic font weights, shape, spacing, surface and focus tokens supplied by the host.
+  Current Atlaskit default buttons draw the border on `::after` so it does not add to the button's layout height.
+  Token mappings documented from Atlassian's design system do not establish that Bitbucket has deployed the same component version or typography rollout.
+  The managed workspace VM blocks Bitbucket API/static hosts and unpacked extension installation, while the separate installed-browser GitHub Actions runner supplies hydrated public pages, computed styles and actual Geld extension storage and messaging.
+  TinyFish can inspect native pages separately but cannot load the supplied extension, so its observations remain distinct from installed-browser proof.
+  Browser-agent element reference UUIDs are tool references rather than established native DOM IDs, and guessed font sizes or token meanings are not computed-style measurements.
+  Do not replace those verification gaps with fabricated selectors or claim documented mappings and native browsing as a successful installed-extension test.
+
+- **Provider header rewrites have a guarded prepaint path.**
+  A native counter remount can otherwise display unfiltered totals for one frame before the normal debounced pass.
+  Reuse only a complete settled immutable subject with matching live selection, native filters, settings, configuration and catalog, without fetching or measuring layout in the mutation callback.
+  Compare the small header node and value snapshot first so unrelated streamed diff-line mutations do not repeatedly scan all native files before the debounced pass.
+  Unknown-head Bitbucket reviews and moving comparisons stay on the normal validation path rather than borrowing settled counts from another revision.
+- **Local reviewed marks are personal triage.**
+  `local:providerReviewedItems` binds exact provider, origin, repository, review and head to SHA-256 fingerprints of ordered native source identities, words, times and thread state.
+  Installed round-grouping acceptance records request initiator frames and exact audited source endpoint signatures, because GitLab can load an unrelated test_reports.json during native page work.
+  A missing initiator stays native-or-unattributed rather than becoming native, and positive extension frames or recognized review/diff/config source endpoints still fail the zero-extension-acquisition check.
+  Provider by-push grouping keeps every currently open item in one Needs attention home, using the existing visible-item status semantics, with historical pointers that open and focus that same conversation instead of copying bodies or actions.
+  Pushes display newest first but retain chronological ordinals and typed native boundaries, including an empty latest push, while original item creation clocks, selected head, resolved/outdated state and source links stay unchanged.
+  Deterministic review titles retain same-line concern text after the exact observed inert Greptile P1/P2 badge anchor/image, while unknown HTML lines and markup-only badges remain excluded.
+  This analysis-only prefix handling never rewrites native bodies, source IDs, publication fingerprints, fix text or status, and a badge supplies no bot identity, severity or verdict trust.
+  Provider item clipboard exports keep that personal reviewed flag separate from the canonical source status and any explicitly labeled AI wording or assessment.
+  Copy as Markdown retains every validated native source permalink and actual account spelling, while Copy suggested fix writes exactly the displayed eligible fix text under the unchanged `fixVisible` setting.
+  A queued clipboard action requires the same connected control, review subject and document route before launch, allowing a source-fragment change but refusing a debounced SPA navigation race.
+  Digest refreshes restore keyboard focus to the same enabled item-copy format only while its review, source concern, document route and visible panel remain unchanged.
+  Already-issued clipboard writes cannot be revoked, so a stale completion never patches a replacement review or shows a success on another visit.
+  Native provider button tokens and accessible pending, failure and retry feedback apply to both actions.
+  The existing GitLab bot acceptance requires genuine pointer and keyboard clipboard readback from already fetched source facts with temporary browser permissions, preserving original bodies and restoring permission overrides without another source GET, provider mutation or AI call.
+  Device-local review marks and AI runs now send entry-level mutations through one background-owned queue, so separate provider tabs cannot replace one another's records.
+  The worker asks the initiating content runtime to revalidate its live source before the queued read and again immediately before persistence, with a bounded negative result for closed, navigated or unresponsive tabs.
+  GitHub AI uses the same authority because its records share the provider AI map, including explicit per-review clearing and the existing forty-run cap.
+  Reviewed on this device never resolves the native thread, changes bot findings or CI standing, edits source text or triggers AI.
+  AI wording is excluded from local mark fingerprints so an explicit triage rewrite cannot invalidate unchanged original evidence.
+- **Native source context and comment bodies have different owners.**
+  Bitbucket can place an Outdated badge and code hunk outside the exact native comment body, so synchronize the badge only after the surrounding file path and comment permalink agree.
+  A visible Resolve button on a public page does not establish authentication or permission.
+  Keep sanitized body copies distinct from native writers and preserve a source action leading to the complete original code context.
+  An existing native source on another tab of the same review can be revealed locally, while modified link clicks retain their original browser navigation behavior.
+
+- **Native file trees can recycle rows independently of diff mounting.**
+  GitLab's file tree uses absolute virtualizer offsets, so hiding individual rows would leave gaps even though category counts were correct.
+  The category accordion hides only the verified native file-list root and projects the complete validated file inventory into compact Essential and category panels using copies of available native row visuals.
+  Native rows, search controls, file comments and source controls stay in their original framework ownership, with IDs in visual copies remapped and original actions relayed to connected native controls.
+  Native status or comment-mark updates can rebuild owned accordion rows, so retain focus only for the same subject, provider, active category and exact file, folder or original enabled native-action identity.
+  A trailing comment action never falls back to the file link, and changed subjects, categories, unrelated focus or missing, replaced or disabled actions cancel focus restoration.
+  A nonempty native tree search temporarily restores the native list rather than guessing its wildcard or filter syntax.
+  Temporary search releases owned DOM, layout markers and native action bindings while preserving collapsed folders, category and current file only for the exact provider, review and selected revision.
+  A closed, absent or unverifiable native tree uses an owned category accordion immediately before the verified diff container, restoring the native tree's markers and retaining the same subject's category, folder and current-file choices when the sidebar returns.
+  Window and native-tree resize observations request one debounced projection refresh only when sidebar visibility disagrees with the current placement, so responsive CSS changes do not wait for the periodic refresh or cause sizing loops.
+  Same-subject fallback rows may retain inert native presentation, but unavailable original comment controls are disabled and never fall back to a file-navigation action.
+  GitLab native file rows retain a negative eight-pixel left margin, so each owned category's root list supplies the matching native spacing inset while nested lists and original row styles remain unchanged.
+  Category navigation remains available while a native diff stream is incomplete or cannot safely be grouped, without granting permission to flatten, reorder or hide unsupported source wrappers.
+  The explicit `gitlab-file-search` installed slice uses GitLab's original file-tree search, trusted typing and native result activation on the immutable mixed MR, requiring custom collapsed-folder and current-file recovery after clearing the query.
+  Its pinned source version and rendered native target are independent GitLab facts: a selected merge-result target can have a different head from `source_versions`, so bind both full native selections separately and reject any change during the interaction.
+  PR 220's first installed search attempt failed on the obsolete rendered-head fixture gate before any search action, establishing neither a search pass nor a product defect.
+  Native file-search acceptance waits within its existing deadline for the complete exact result set, since a desired row can preexist asynchronous filtering and its presence alone is not readiness.
+  Keep pending source observations and strict final result checks, and record trusted keyboard clear events, final native ownership/category preferences and owned-listener release separately even after a failed search assertion.
+  Native RecycleScroller pools can retain unused anchors at `translateY(-9999px)` with positive dimensions, so search membership excludes only a validated native pool chain with matching computed translation and genuinely clipping native ancestry.
+  Record every included or excluded original row, count unknown and active offscreen rows conservatively, and activate only the unique included original target through its guarded native element handle.
+  Capture native model indicators, input default prevention and failed query geometry before cleanup, while retaining PR 224's original ninety-second failure and verified cleanup as separate evidence.
+  GitLab's ordinary all-files row handler prevents href navigation and selects the native file in place, so hash-only activation requires verified `file_by_file_mode === false`, the exact trusted original linked path and an independent native `is-active` transition.
+  Any present location `file_path` must still be unique and exact, and all original node, checkbox, source/version/head and folder/category/current preferences remain guarded.
+  Record bounded read-only panel/viewport and original-node chronology around click/capture/clear, sample default prevention in a later task, and retain the original failure separately from cleanup errors without adopting replacement nodes.
+  It is excluded from default and `all` demand, preserves original source/input/list/checkbox identity, allows native recycler result rows to change, and makes no browser Ctrl+F or zero-native-hydration claim.
+  A verified native file reveal during search updates that remembered selection against the complete same-subject inventory, so clearing search cannot restore an older file over the reader's choice.
+  Search suspension still discards removed source paths and folder keys, and a changed subject or provider, explicit teardown or disable clears all remembered choices even with no live owned host.
+  Bitbucket's normal-flow diff wrappers include unloaded placeholders, so a complete file inventory must include those wrappers rather than only mounted articles.
+  Explicit reveal brings a lazy placeholder into view once and waits for genuine native expansion instead of claiming that an unloaded file has expanded.
+  Configured category icons use native provider glyphs with explicit neutral native fallbacks for unsupported mappings, and the bundled third-party license notices ship in extension public assets.
+  GitLab directories switch between native folder and folder-open glyphs, while the observed Bitbucket tree uses chevrons for directories.
+  Inline category hints preserve original native glyph nodes and controls, and folder fading requires complete authoritative descendants rather than a recycled or virtualized subset.
+  Inline files activated by the reader remain under native user control across remounts until an explicit Show or Hide reset for that subject.
+  A grouped diff whose complete unfiltered inventory is entirely hidden starts expanded while its Essential counts remain zero, unless the reader explicitly collapsed that exact subject and revision.
+  Inline mode keeps native file headers and has no grouped bottom section.
+  GitLab can stream normal-flow files through `[data-stream-remaining-diffs] > streaming-element`, so flatten only those verified wrappers after mounted paths match the complete source inventory and restore their owned layout markers on teardown.
+  Native sidebar remounts can retire Geld's category nodes while the diff remains open, so reapply the controller's current category choice when rebuilding the projection instead of resetting the sidebar to Essential independently.
+  Native parent-hover preparation records the actual center hit target and layout bounds, because a consent banner can place the sidebar expansion button behind Bitbucket's native global header.
+  Only a unique first-party layout-slot cookie dialog with its exact Only necessary button and Atlassian legal-cookie link permits a real trusted consent click, after which the original page, parent and sidebar control must still match and become hit-testable without DOM or CSS overrides.
+  Bitbucket can retain selected Details and expanded Parent commits markup behind its native collapsed 64-pixel icon rail, so installed parent-hover verification opens the observed native sidebar expansion button before considering an offscreen Details tab or parent link.
+  Selected and expanded ARIA states alone do not establish that those controls are presented, and verification never forces native sidebar CSS or moves its framework nodes.
+  Bitbucket's original repository commit-list URL can canonicalize to the observed same-repository /commits/branch/master document, so installed discovery records the actual URL even when unavailable and accepts only those two exact queryless, fragmentless routes.
+  The canonical master route additionally requires its unique native master ref selector, and later pointer/Tab identity checks stay bound to the discovered document URL and that original selected ref control rather than the requested URL.
+  Repository commit-list hover acceptance requires the literal `bitbucket-commit-links` focus and stays excluded from both regression and all, selecting only a visible original same-repository link inside an observed native main or table surface.
+  Its count oracle reads already-issued immutable metadata and complete diffstat responses without another GET, and native card observations remain separate from Geld pointer and real Tab acceptance.
+  Commit-list category subtraction derives nonzero README.md additions and deletions from that exact per-file oracle, changes only real shared categoryPatterns, and repeats original-link pointer and Tab checks for filtered and restored rows.
+  Pattern-phase source GETs retain observed initiator attribution without relabeling unknown requests as native or claiming zero network, while exact scoped settings restoration and the final page-close cleanup remain required.
+  Escape intentionally dismisses a keyboard-focused source hover until focus leaves, so later installed pointer phases record the original native focus and require genuine Shift+Tab departure with a trusted source focusout before mouse reentry, preserving native link, selected ref and document identity without JavaScript blur.
+  The eight-request reserve before hover intent is a buffer rather than a claim about native page or source cost, and the shared rolling budget and HTTP429 stop guards remain authoritative.
+  Global settings verification disables repository overrides and AI before navigation, closes the provider page before exact settings restoration, and treats restoration or observed count mismatches as failures rather than optional coverage.
+  Rebuilding a known unchanged review/revision also retains its selected file and folder choices, while a different subject, explicit teardown or a path leaving the complete source inventory clears the corresponding selection.
+  Provider settings refreshes preserve explicit category expansion and inline file ownership when only testOutline changes or the full settings values are structurally identical, including reordered object keys.
+  The displayed-outline harness retains an initial scrolled capture, then requires consecutive real-frame measurements of the same original line-103 control before trusted input, preserving actual center-hit and button ancestor chains, clipping and scroll metrics when the check fails.
+  Each chain is bounded to eight nodes with safe metadata only, including native content-visibility and intrinsic-size diagnostics without causal claims, and persistent coverage remains a failure with the actual observed actor.
+  Rapid Diffs renders its native table and tbody as blocks, so only the owned fold row and its owned cell use full-width block layout inside that exact native structure to avoid an intrinsic anonymous table shrinking the control.
+  Keep native source rows, legacy and Bitbucket table layout, colors, fonts, padding and heights untouched: row and cell border boxes match the original Rapid body and hunk, while the button fills the measured cell content box derived from client width, borders and padding within one CSS pixel.
+  Readiness never retries source, original-button identity, counts or settings drift;
+  initial coverage is retained separately, and the earlier line-103 failure without a captured actor remains unattributed.
+  Table-height acceptance saves its post-capture sample before named guards run, including bounded active-element ownership/focus diagnostics, without weakening any source, focus, height or four-input requirement.
+  Its diagnostic trace retains at most 128 safe records of exact-control focus, reference-identity removal/reinsertion, authority and ancestor visibility changes, with event-driven layout reads coalesced into one pending animation frame rather than continuous polling.
+  The same table phase samples screenshot, detached DOM-read and accessibility-read boundaries with viewport-only table evidence and strict post-capture focus, source and four-input assertions.
+  An installed Chrome trace observed both viewports shrink to 1×1 during the earlier full-page screenshot interval, temporarily removing measured table overflow before the same controls were withdrawn and reinserted with focus on BODY.
+  That record identifies the responsive withdrawal sequence without a viewport-mutator stack claim, and viewport-only table capture avoids requesting that full-page evidence mode without restoring focus or changing product CSS, caps or native authority.
+  Observer/listener/frame cleanup is verified even on capture-stage failure, and callback script frames are observational rather than the asynchronous DOM mutator stack.
+  Every other settings change keeps the existing expansion invalidation, including classification, layout, defaults and master toggles, so outline presentation cannot silently replace a selected Tests category with Essential.
+  Automatic large-diff loading requires an adapter capability that verifies the current native size-only loader, and GitLab Rapid and Bitbucket do not advertise that capability until their native size-placeholder behavior is verified.
+- **CI presentation preserves provider source facts.**
+  Queued and pending checks remain separate from running checks, while native GitLab manual or scheduled jobs and Bitbucket stopped builds keep their own labels without changing bot-check voting semantics.
+  CI-area coverage distinguishes unavailable or partial reads from an authoritative empty result, independently of unavailable approvals or comments.
+  Malformed nonempty pipeline or head-pipeline metadata cannot establish that no CI checks exist.
+  Native job IDs and build-status keys identify Details links, and refresh restores their focus only for the same review, head, key and URL while focus remains in the owned CI interface.
+  Passive GitLab CI glyphs retain the raw native state class so GitLab's own light and dark fill rules apply, while Bitbucket's verified success glyph consumes its icon token and unsupported or allowed-failure mappings remain text-only.
+  An allowed-to-fail job remains a native job fact rather than evidence of a required-check rule or overall pipeline success.
+- **Digest bylines and native merge rules remain source facts.**
+  Native author names, aliases, avatars and role badges normally come from the verified native header belonging to the exact source, and provider classes retain live theme behavior rather than freezing computed colors.
+  An entirely absent GitLab note may reuse account presentation from one independently valid mounted note in the same immutable review snapshot, with exact durable user ID and username matching.
+  Borrowing requires a scoped native selected-latest version with the same full snapshot head, and it declines unknown heads, historical selections, ambiguous donors and any present but invalid or duplicate target.
+  The immutable source index includes ordinary notes and thread replies, while donor discovery looks up current mounted native roots rather than querying every unmounted same-account source for each finding.
+  This performs no metadata requests and introduces no separate observer or cross-review account cache.
+  Borrowed presentation omits all note-specific badges and service labels, while a later valid target header immediately takes precedence and retains its own badges.
+  The donor supplies only its actual native name, profile, alias and independently measured avatar through the existing geometry cache and live provider theme.
+  The public Greptile author-reuse check repeats its independent donor comparison under the original system theme, OS dark preference and restored theme, requiring an actual native gl-dark transition and changed native colors within that validated comparison before accepting dark coverage.
+  Each phase retains its own source and cleanup evidence, while the wrapper watches transition requests and restores the complete original author/theme/source signature in finally without changing native classes, styles or settings.
+  Avatar geometry is measured once per unchanged native image and refreshed through bounded resize and removal observers, without repeated layout reads on every apply.
+  Bitbucket author names use the native body font, medium weight and default text token independently of its smaller subdued timestamps.
+  When that exact native comment is entirely unmounted, its existing API snapshot can supply only a bounded plaintext display name through the presentation seam, matched by full snapshot head, provider, repository, review, immutable source tuple and native UUID.
+  Fetch generations, abort state and current-route guards reject stale names without persistent listeners or observers, while the conversation controller discards its snapshot and panel on clear or disable.
+  An existing invalid or duplicate native target blocks fallback and a valid original header takes precedence.
+  The API name never changes login or account identity and supplies no avatar dimensions, profile, badge, automation or service trust, and the API head grants no new native diff-source authority.
+  Copied Atlassian avatar classes can fill the containing box through logical sizing even when the image has measured physical dimensions, so each verified avatar lives in its own measured, non-growing relative slot rather than directly in the full-width byline.
+  Preserve native avatar classes and theme tokens, and constrain both logical and physical slot dimensions without freezing computed colors.
+  Bitbucket's rendered comment document inherits font settings from a native parent outside the sanitized body, so bind only that verified parent's base-font and normal-text font custom properties to the owned body host.
+  The native root line-height can differ from the paragraph font shorthand, so retain its measured font metric without guessing a constant, rounding the paragraph ratio or copying parent layout styles.
+  Cache that metric for unchanged native source and typography context, invalidate it for source, context, theme and viewport changes, and leave invalid or missing native typography at the existing fallback.
+  Bitbucket's native merge-check list supplies individual rule labels and observed states, including separate minimum approval and default-reviewer approval rules.
+  Those sidebar rules do not establish a numeric approval threshold, complete API availability, review permission or permission to merge.
+- **Unread review sources are not zero approvals.**
+  GitLab's approval and reviewer endpoints can fail independently, so omit reviewer standings only when neither valid list was read, retain known native standings from either successful source and keep each unavailable reason.
+  A missing or malformed `approved_by` list does not prove an empty approval set.
+  The digest and copied text label review-source failures Partial or Unavailable, with positive observed counts rather than aggregate zero claims, while two valid empty lists remain a known empty result.
+  Valid required/remaining approval fractions remain independent known facts, with the existing integer, positive-required and remaining-within-required guards intact.
+- **Reviewer controls are a focus-only native handoff.**
+  GitLab's legacy reviewer dropdown saves on its hidden handler, and modern Edit also submits the selected reviewer list when hidden even without a changed selection.
+  The digest's Reviewer controls button only scrolls to and focuses one actual enabled, presented, positively closed native Edit or Select reviewers button, with no click, toggle, typing, native attribute mutation or automatic cleanup close.
+  GitLab's first-party sidebar also renders `sidebar-reviewers-assign-button` beside Edit, so an Assign-only sidebar uses the same guarded focus-only fallback without clicking the native drawer opener or claiming authenticated assignment.
+  Decline while a native menu or overlay is open, because focus moving outside can close it and save its selection.
+  Require a numeric native viewer captured before the complete review snapshot, matching immutable full head, MR, project and noteable identities from both metadata reads and original native datasets, and the same native scope and control lifetime at activation.
+  `data-current-user=true` is a legacy candidate-filter option rather than authentication, and a generic signed-in flag or missing native head does not enable this handoff.
+  This reaches the existing native control without claiming reviewer assignment, rerequest, dismissal, notification or authenticated management acceptance.
+- **Published summary caches need an unambiguous machine frame.**
+  Suggested source code can contain payload-shaped title attributes, so machine cache readers use `parsePublishedSummaryBody` and require the renderer's marker, heading and sole final canonical footer outside source-code fences.
+  Legacy parsing remains available for older rendered content, while malformed machine caches are rebuilt instead of adopted.
+  Suggestion fences grow longer than nested backtick runs so source code cannot close the publisher's frame.
+  Native summary selection and fresh update rechecks require the exact leading machine prefix and the token's durable author identity, keeping ordinary owner replies that quote a marker untouched.
+  A native discussion containing the owned machine note keeps its human replies and original location and resolution facts when that note is excluded from a summary.
+  Format validation is separate from author, provider, repository, review and head trust.
+  A native bot finding's source-link evidence uses its actual provider origin, full repository and review routes rather than GitHub-only URL patterns, so source-linked findings do not become false repository-access refusals.
+- **The ordinary GitLab CI template ships inert.**
+  Its first unconditional never rule excludes the job for every variable set, and it supplies no image identity or published component address.
+  Installers copy from a full reviewed commit into protected default-branch YAML, add their actual reviewed literal digest image and only then remove the initial disabled rule.
+  The job invokes only the bundled node runner, excludes YAML default inheritance, scripts, hooks and caches, downloads no previous-job artifacts and serializes by full target project and MR IID.
+  Context and target-shape rules do not authorize callers, and inherit:variables:false does not protect predefined, project or pipeline variables from precedence overrides.
+  The entire parent configuration, runner and entrypoint population must remain trusted, with only approved target identity variables accepted from orchestration.
+  Local parser/rules-contract tests and official syntax research do not establish GitLab CI-lint, a published image or authenticated execution.
+- **Native CI summaries require a separate publisher trust decision.**
+  `trustedSummaryPublishers` binds a durable native account ID to one exact cloud repository in personal settings and cannot be supplied by repository configuration.
+  The publisher may be a human token owner, and publisher trust never establishes a reviewer bot identity or grants AI access.
+  Trust saves re-find the original native comment, author, body and timestamps and recheck the review, head and source at the actual serialized settings write.
+  A leading marker only discovers a candidate.
+  Adoption requires its strict sole footer, exact provider, origin, full repository path, native review number and full head, including a matching native footer link.
+  The optional typed `nativePublication` block shares the existing payload and byte budget, and dropping an item also drops its publication proof.
+  Fingerprints cover original native source identities, words, timestamps and containing thread facts.
+  An empty, truncated, ambiguous or changed publication cannot remove unmatched native findings, replace native status or rewrite human wording.
+  Only a validated trusted machine note is excluded, preserving human replies and native source navigation.
+  Device triage and reviewed marks continue to fingerprint original native sources, and old asynchronous source or trust results are discarded after navigation or settings changes.
+  This read-only path consumes the native producer's deterministic items and provenance, without treating prose CI notes, login-only reviewer records or an AI flag as authoritative results.
+- **Comment coverage and known thread state are independent native facts.**
+  `sourceCoverage` records comments and threads independently of missing CI, activity or approval requirements.
+  Failed pagination, invalid source membership, missing parents and unknown thread state cannot establish complete thread coverage.
+  `ProviderReviewThread.stateKnown` permits publication proof only when native resolution and outdated state are both established.
+  GitLab REST resolution comes from the resolvable notes, and a diff position whose head matches the current head does not establish that its line is still active.
+  Bitbucket's explicit null resolution means unresolved, while absent resolution or unknown inline outdated state remains unknown.
+  Unknown state keeps deterministic native items visible and excludes their whole proof rather than manufacturing a current or resolved result.
+  Producer-to-reader protocol fixtures compare native CI and extension normalization over fake HTTP responses and do not prove a live authenticated publication or sanitizer behavior.
+- **Native navigation retains source and reader ownership.**
+  Header hidden-count hints live outside native numeric ARIA wrappers and badges, and only the owned hint has a dotted underline.
+  Count-group hover retains native focus and ARIA ownership while positioning the popover at the visible hint, with a native-host fallback at responsive breakpoints.
+  Moving across wrapped commit-link lines updates only popover geometry after genuine pointer intent, without another source fetch.
+  GitLab's commit reference hook mounts its provider card only once, and Escape can leave that card mounted but hidden, so installed pointer and keyboard tests record separate native visits when the card cannot reopen instead of patching provider state or accepting a hidden chip.
+  The GitLab digest reference index reads only mounted native description links and matching server-system-note events, with full origin, namespace, project, resource ID and IID identity and no extra lookup.
+  GitLab validates its exact native reference routes and note IDs inside its adapter, while shared reference rendering validates review scope and URL safety with a separate canonical Cloud URL branch for Bitbucket.
+  Valid native GitLab trailing-slash target URLs retain their source identity and spelling through extraction, rendering and original-source reacquisition.
+  The same GitLab issue can appear as a native work_item/data-work-item description link and an issue/data-issue system-note link at the same work_items URL, so durable identity joins those aliases while the first actual native URL and label stay intact.
+  A GitLab system note repeats its incoming reference in the headline and collapsed body, so only its verified system-note-content headline is indexed and each note/target pair is counted once.
+  Reference labels and cached native titles do not establish target state, and native GFM initialization attributes and listeners are never copied into the digest.
+  A native title temporarily held in Geld's existing hover-title cache remains the same source title while its count popover owns the tooltip.
+  View in conversation reacquires the current exact native reference, reveals only Geld-owned compaction and rejects changed review, head, selection, source or framework-hidden content before focusing the original anchor.
+  Unknown, ambiguous, localized or unmounted reference shapes stay in ordinary activity rather than being guessed as complete incoming references.
+  Bitbucket outgoing references read only the unique original description and use canonical Cloud PR URLs as destination identity, without inventing GitLab project IDs, repository UUIDs, target existence, titles or states.
+  Preserve GitLab's required native identity fields and rendered attributes, while Bitbucket reference rows explicitly identify their URL basis without native-ID placeholders.
+  Require matching native header repository and PR-number facts before indexing, and decline ambiguous roots or descriptions with more than 200 original link anchors.
+  Original-source reveal revalidates the current route, root, element, raw href and reference text against the latest indexed binding without fetching metadata or moving native nodes.
+  The retained public Bitbucket descriptions and comment bodies contain no outgoing links, so positive reference anchors in tests are synthetic and installed acceptance remains unverified.
+  Bitbucket issue, commit, comment-body and incoming reference indexing remain unsupported in this slice.
+
+  Compacted original conversation entries use `hidden="until-found"` only when the browser supports beforematch and the exact native root can be folded without overriding native visibility or editing controls.
+  Beforematch and exact fragment navigation reveal that original for the visit, while an explicit Hide remains effective until a later changed fragment requests it again.
+  Unsupported or natively owned roots remain visible with their native behavior rather than receiving a misleading owned disclosure control.
+  Unanchored description-tail compaction is a separate path and does not claim browser-find equivalence.
+  Linked code-fold navigation schedules one guarded native scroll after unhide, and a changed selection, removed row, manual refold or teardown cancels it.
+  Human comments stay in their original push round when edited, while an edited automated report can retain its run clock and still displays its actual edit time.
+- **Bitbucket review actions must preserve native selection semantics.**
+  The observed native PR feature bundle (`page.da841cca.js`, modules `LhpXT`, `9nhc6`, `7DKLt`, `auwYK`, `6iVT3`, `7xffk`, `h8u0J` and `lIn13`) distinguishes immediate approval from its separate Finish review popup.
+  Approval calls the native handler immediately;
+  never describe that button as merely opening a review dialog or replace it with a guessed API request.
+  Relay only an explicitly authenticated, connected, unique, enabled native header control, bound to the current PR visit and the same node/state at activation.
+  A selected Approve control becomes Unapprove, and selected Request changes becomes its undo action, so neither is eligible for the corresponding Geld make action.
+  Native request-changes English ARIA strings are reversed relative to their names: the unselected `Request changes` button has `aria-pressed="false"` and `aria-label="Remove changes requested state from this pull request"`;
+  the selected `Changes requested` button has the other ARIA label.
+  Match the exact source-backed text, label and selected state together, and fail unavailable for unsupported localized controls rather than interpreting a partial label.
+  Native eligibility remains authoritative: the source can show approval for an unapproved reviewer on a closed PR, so a generic OPEN-only override would discard actual provider behavior.
+  The digest reads actions live between API refreshes;
+  a replaced native control requires a fresh descriptor rather than retargeting an already captured action.
+  Native collapsed comment composer activation preserves its draft and selection and requires actual focus;
+  public signed-out composer markup alone never proves review permission.
+  The similarly named Code Reviewer status card is Rovo Dev automated review, not the human Approve/Request changes UI, and must never be relayed as a human review action.
+  Public DOM captures plus source-derived unit fixtures establish these guarded bindings, but authenticated approval/request-change writes have not been executed or verified.
+- **Count text and accessibility can have different native owners.**
+  GitLab can put both Added and Removed totals in one native `aria-label`, which must be rewritten as a pair and restored to the latest native wording.
+  Bitbucket's visual Lines updated totals are `aria-hidden`, so an owned screen-reader summary supplies the adjusted totals and the surrounding native summary becomes the keyboard hover target without exposing duplicate visual labels.
+  Zero uses plural wording, one uses singular, and one active category keeps its own short noun even when its count is zero.
+  A link to another review must not inherit the current review's head, diff version or comparison selection merely because its target is described using the current document.
+  GitLab list rows can use important flex utilities that override the user-agent rule for the native `hidden` attribute, so author filtering uses a scoped owned display rule and leaves native hidden state untouched.
+  A counted author-filter notice supplies a keyboard-accessible Show action for its native list, with recovery remembered only for the current visit and filter set.
+  List and table recovery notices use appropriate native container tags without moving rows or taking their handlers, and rows with no reliable author identity stay untouched.
+  Bitbucket list count chips mount beside the verified native title tooltip wrapper on the same title line, because placing them inside its span also triggers the provider's title tooltip over the breakdown.
+  Bitbucket list author filtering uses a separate one-page UUID/name projection only when valid personal author rules are active and the current repository is allowed, independently of list counts.
+  Native public collection requests use 25 entries and a `q=state="MERGED"` predicate, so translate only the validated native state enum into that fixed query shape rather than assuming the generic 100-entry pagination ceiling is supported by this endpoint.
+  Bitbucket can finish hydrating its Deployment Add link after native PR titles appear, so installed author-filter acceptance waits for that observed action and stable native row identities before applying a rule, while keeping all later ID and link comparisons strict.
+  Capture bounded query-validation error fields before an installed assertion rejects a failed author response, without copying arbitrary error JSON or login HTML into evidence.
+  Match `bitbucket.org/uuid/<canonical-uuid>` through the existing author glob grammar and keep the readable API display name separate, without nickname, account-ID, avatar or reviewer inference.
+  Require an explicit documented native list state, decline unsupported query selections, map only exact returned current PR IDs, and leave omitted or unknown identities visible without pagination, diff/config fan-out or automatic retries.
+  Abort obsolete author visits on navigation or relevant settings changes, and a background pause must not turn later mutation refreshes into another metadata request.
+  A bare `@` normalizes to an empty identity in the older matcher, so exclude that normalized-empty line from metadata demand without changing existing login/glob semantics.
+  Native table author notices span only cells whose computed display participates in the table, excluding Bitbucket's hidden responsive title alternate.
+  Cache that small representative-cell calculation across ordinary refreshes and update it on native context or viewport changes, removing its resize listeners with the notice.
+  When that verified title line contains an owned chip, shrink and ellipsize only its native text presentation wrapper and reserve the chip's intrinsic width, so long titles cannot push cold count instructions into the column's clipped area.
+  Removing the owned chip restores the native layout through the conditional stylesheet, while native title links, tooltip anchors and popover accessibility relationships retain their nodes and attributes.
+- **Digest settings operate only on represented native sources.**
+  Compact and minimal modes fold native comment roots only when all their source anchors are represented in the digest and eligible for that mode.
+  Unknown activity, unrepresented comments, composers and pending native review controls stay visible.
+  Show original restores the native root, and source actions reveal it before relaying a native control.
+  Minimal description collapse preserves the first native paragraph and restores the original siblings without moving or cloning the editable source.
+  Review rounds require typed native push events, while generic source links never inherit a GitHub bot login or service identity.
+
 ## Code review bots
 
 Two review bots are installed on the repository, both **manual-trigger only** (community PRs are reviewed on request, not on every push): **Cursor Bugbot** — comment `bugbot run` (or `cursor review`) on the PR;
@@ -1461,6 +2033,134 @@ So does the comment that started a run whose signer another run recorded meanwhi
 
 ## Verifying changes
 
+GitLab web `discussions.json` can serialize note IDs as canonical decimal strings, including CodeRabbit note `3436654383`;
+do not assume the REST notes endpoint's numeric shape in installed response observers.
+Normalize native comment IDs only as positive safe integer numbers or canonical decimal strings, and reject leading zeroes, whitespace, scientific notation and unsafe integers before associating a permalink.
+Typed system LabelNote and StateNote events can instead use SHA-shaped IDs matching their discussion IDs;
+retain those as separate system-event identities and never promote them to comment permalinks or reviewer bindings.
+The retained CodeRabbit corpus spans a 100-discussion page and a 12-discussion cursor continuation;
+a native 20-discussion preview or the first 100-page body alone cannot prove complete source coverage.
+CodeRabbit's command-copy acceptance is an explicit `gitlab-coderabbit` slice, excluded from default and `all` navigation, and must confirm the actual native account/source before real personal trust and clipboard input.
+Missing or invalid fresh fixture data returns an explicit unavailable case after successful cleanup, while confirmed-fixture product invariants and cleanup failures still fail acceptance.
+The native CodeRabbit MR overview can omit `data-noteable-data`, leaving its head unknown;
+bind the exact native MR wrapper and well-formed Rapid Diffs selected/latest source version to the fresh API and installed panel head instead, and reject any present conflicting or malformed head record.
+The first real reviewer-trust save can materialize defaults into a sparse raw settings object;
+compare effective preferences with production `normalizeSettings`, retain unknown raw-key guards, record normalization separately and restore the original trust field's exact raw presence/value without claiming byte-identical settings.
+Bot verdict snapshots exclude nested request controls on an off-DOM clone, retaining actual verdict/account text and original source links while command previews and acknowledgement are checked separately.
+Record each validated input, clipboard and acknowledgement stage before later invariants so a partial failure cannot erase already observed action evidence.
+GitLab can replace a native Markdown-table Vue placeholder with its height control during full-page readiness capture;
+retain the raw transition and API fingerprints, require consecutive frame-separated stable body/node/source/head samples before freezing the action baseline, and keep every later body comparison byte-exact.
+This readiness gate does not establish owned table-height/scroll accessibility or waive the missing native expand interaction.
+When cloning GitLab Markdown, omit the height-control wrapper only when its sole nonwhitespace child is the observed native button bound uniquely to its sibling native table scroll wrapper in the same source;
+preserve authored text, extra children, malformed or duplicate bindings and generic empty DIVs.
+This avoids an empty presentation wrapper appearing on trust-triggered rerenders after native table hydration without copying native controls or changing height/expansion behavior.
+The same narrow canonicalization also recognizes the source-proven expanded native label/class variant, without pruning unknown authored wrappers.
+Owned GitLab table expansion is local to a validated mounted native source and requires actual presented owned 70vh overflow plus either actual native clipping or the exact collapsed native generated height control when its source is explicitly hidden.
+Record actual-native-geometry and hidden-native-generated-control authority separately.
+A hidden native control establishes height intent and never proves current native paint or geometry.
+Treat zero opacity and `visibility: collapse` as hidden states rather than actual native geometry.
+The hidden-source path requires the unique exact native target, wrapper, label, ARIA state and control node, with the current native note author/root/body and provider head revalidated before owned actions.
+Missing, malformed, ambiguous or replaced hidden native controls never grant authority, and native source disclosure/height controls and global preferences stay untouched.
+Owner-scoped toggle and beforematch observations schedule measurements when presentation changes without a dimension change, and disposal removes every listener without dispatching native events.
+API-rendered note HTML never gains live height controls, even if it imitates native table attributes.
+Use the comment render owner's mount/dispose/current namespace and exact comment/head/native-table identity for frames, size observations, state and unique owned ARIA targets.
+The owned button changes only its own height cap and restores its exact class order, never native table nodes, native global expansion events, provider preferences, rows or sorting.
+After owned collapse, center that same focused owned button with inline nearest and automatic scrolling, because nearest-only vertical scrolling can place it behind GitLab's native sticky header.
+Keep the installed Space preinput hit guard unchanged so an occluded focused control remains a product failure rather than being hidden by harness recentering.
+The CodeRabbit height phase uses genuine owned pointer and keyboard input, records actual height and last-row reachability, and restores owned body bytes and disclosures before freezing the command baseline.
+Expanded acceptance requires an absent computed cap, client height covering table and scroll height, and an unobscured actual last cell inside the owned scroll clip, ancestor clips and viewport.
+Recheck exact source/head/control ownership and the actual visible center hit chain before pointer inputs, require the same focused button before keyboard inputs, and retain all phase HTTP GETs with recognized source/extension reads separated from other traffic.
+On authority loss, restore the original owned cap before removing its control and clear the expanded choice.
+Temporary owned hiding also restores the cap and requires fresh overflow proof before reusing the same local choice.
+A visit without supported native authority and measured owned clipping is explicitly unavailable for height acceptance, while command preparation retains its separate scope.
+
+
+GitLab Rapid whole-test context is an explicit per-file `Find test boundaries` action, never an effect of the default-on test-outline setting or a programmatic button click.
+Only a current exact new-side source witness joined to complete acquisition facts grants the file intent, and each queued dispatch, completion and original native context click rebuilds the current provider page, diff view and source binding instead of trusting a held frame.
+The acquired source head and native rendered target head remain distinct, including the observed D03 source versus C871 merge-result comparison, and whole-file authority follows the exact current new-side witness rather than old-base equality.
+The first implementation supports same-project GitLab Rapid new sources only, with no default-branch, fork, deleted-file, old-side or Bitbucket raw fallback.
+Only a standalone app with an absent project_path may use GitLab's distinct text_inline full-ref format without per-file raw path and diff refs, requiring the actual document body project path, project ID and page kind plus exact native full-ref app endpoints and the original generated file-header blob link agreeing with the full-head new-path diff-lines resource.
+The existing rich standalone app with a present correct project_path retains its original raw/ref witness, while a present malformed or conflicting app owner never falls back to the absent-owner format.
+Full commit routes also require the body's full commit ID, while full-ref same-project comparisons require the unique original CompareAppRoot POST form's exact project IDs, live from/to refs and selected comparison mode without reading authentication inputs or changing generic form exclusions.
+Present contradictory owner, ref or resource fields are never repaired by another witness, and body, app, selection, file data and original header identity are rechecked across queued dispatch, async completion and cache reuse.
+The distinct absent-owner format leaves short or symbolic standalone refs unavailable for whole-file authority, and these source-only protocols do not establish public whole-context acceptance or change count acquisition, HTTP admission, MR or fork rules.
+The explicit gitlab-standalone-whole installed focus selects only full13215 commit and same-project full-ref compare visits, excluding default, regression and all, with passive acquisition observers attached before navigation.
+Its retained13215 diff's full new Git blob matches the independently retained8a complete body, which supplies only a byte oracle while each fresh content runtime must still observe its own exact13215 immutable raw response after genuine Find input.
+The independent harness requires the original absent-app-owner body, endpoint, generated-header and compare-selection format, then real owned Show input relaying original UP and BOTH context controls for the two qualified partial tests, with no native direct click, injected row or product hook.
+Use viewport captures and recheck current original source, control clipping and hit target, rows and Text identities, counts, Viewed, focus, settings and theme after input and capture, retaining completed stages even when later invariants or cleanup fail.
+After real Enter unfolds leaf96, require focus on that exact current open owned test control before arming capture, allowing only the source-bound equivalent control across the documented native remount and never refocusing after the action to fabricate a pass.
+Standalone acquisition acceptance still requires an independent complete200 metadata, stats and patch triplet, but a separately retained wire304 metadata or stats observation may coexist only when its actual browser-decoded bytes, digest and full projection exactly match a qualifying200 at the same exact endpoint.
+Missing or failed304 decoded bodies, unmatched endpoints, conflicting200 responses, redirects and other statuses never qualify, and decoded compatibility establishes neither a literal304 server body, a fresh origin round trip nor which response the product consumed.
+Participating runtime GitLab diff and raw reads share per-origin HTTP admission with priority, cancellation and Retry-After cooldown, separate from the existing logical diff permits, while direct source-unit callers can omit admission without global timers.
+Raw bodies are streamed as fatal UTF-8, bounded to 512 KiB and 10,000 lines per file, coalesced by exact repository/head/path and held only in a 16-file, 4 MiB memory cache with cancellation when the final consumer leaves.
+Finding exact test boundaries does not expand GitLab or assert that the whole test is shown, and visible new-side text must agree with the immutable body before the shared outline parser may use it.
+A trusted Show action may relay only the original verified Rapid expandLines controls across ordered TBODY boundaries, with a fresh source lease before each click, at most four progressing activations and a 30-second deadline.
+No-progress, changed source, canceled input, stale controls, text disagreement and exhausted bounds leave the displayed-only disclosure intact without creating source rows or writing Viewed/count/server state.
+The shown-lines disclosure remains until every required new-side line exists on the native page, and an original fragment reveals only mounted native content without initiating raw acquisition or context expansion.
+Owned outline keyboard focus can follow its exact control across a native TBODY remount only while the same test/revision remains open and no unrelated reader focus or new trusted input intervenes.
+Native context insertion can also move an already connected owned fold row within the same original TBODY, where ordinary before insertion blurs its focused button without disconnecting it.
+Use a supported state-preserving move for that owned row, with a synchronous fallback that restores only the exact button focused immediately before our ordinary move while its current document, URL, ownership, placement and source root remain intact, never a later arbitrary BODY focus or another reader control.
+The whole-source ready label precedes a scheduled controller repaint, so installed acceptance waits at most eight seconds for both exact current whole-test controls while rechecking original source, counts, Viewed, settings and theme on every sample.
+Only missing controls may wait, while present contradictory controls or source drift fail immediately and completed Find and immutable-response stages remain recorded.
+The standalone first-Enter diagnostic keeps only the latest128 focus, trusted-input, object-identity, ancestor-mutation, native-relay, render and viewport records with explicit drops, bounded node IDs and unconditional listener, observer and frame disposal.
+This read-only trace records neither stacks, text, HTML, URLs, input values nor arbitrary IDs or classes, and neither restores focus nor assigns a cause from mutation delivery order.
+The first-Enter trace emits numeric old/new line coordinates and side only for an unambiguous direct native line-number anchor in the current exact source row, retaining opaque row/cell identities instead of hrefs, DOM IDs or code text.
+Standalone startup and later count assertions retain their phase and actual runtime/header count projection before asserting, so an early contradiction remains diagnosable without weakening startup requirements or inventing a readiness wait.
+A native context reaction can focus a newly inserted line-number anchor while the original owned Show remains connected;
+fresh266 observed OLD99 on a physical row also carrying NEW99, without identifying its native caller.
+An optional provider-specific recognizer may return only a row newly inserted after its exact original gap activation, bounded by the original physical source neighbors, and shared focus custody separately requires that row's new-side coordinate and text to match the current immutable body and requested missing fold extent.
+One trusted Show can reclaim its same current owned control at most once, only if it held focus immediately before activation and its source generation, lease, URL, root and open fold remain current;
+unrelated focus or subsequent trusted keyboard/pointer input cancels custody, and operation completion, abort or the existing deadline removes the listener.
+An OLD-side anchor supplies no old-source authority, BODY or preexisting links never qualify, and API-only or other provider surfaces gain no generic focus exception.
+A missing native Viewed control is preserved absence and supplies no proof about checkbox state or Viewed-toggle behavior.
+The installed whole-context phase requalifies the complete observed immutable response against its retained fixture digest and actual current native head, records unavailable authority explicitly, and never turns a retained D03 snapshot into proof about an unseen target.
+
+
+Bitbucket's source-backed pending mode replaces ordinary review actions with Discard Review and Finish Review, and Geld may expose only an Open pending review navigation control for the unique current original Finish Review button.
+Its source renders one literal Finish Review label plus an optional numeric badge of pending comments and tasks, so neither a full textContent equality check nor a badge inferred from published comments is valid.
+The pending branch does not inherit the ordinary approval controls' sticky tabindex=-1 prop, so unknown or multiple visible eligible triggers stay unavailable.
+The opener focuses and clicks only the original native trigger, preserves drafts and selection, and never selects status, submits, discards, appends or acknowledges a server review.
+A stable adapter-owned opaque action scope binds the known review snapshot head and original bootstrap node and bytes, header, parent and button, while shared activation refuses to adopt a different native owner at click time.
+A same-head refresh with unchanged native scope retains the owned keyboard control, and changed known heads, metadata, ownership, route or lifecycle retire stale descriptors.
+The boolean-only public bootstrap does not establish a durable viewer UUID or an unseen live native head, and this read-only opener must not become authority for future review mutations.
+Native comment source actions already schedule refresh on completion, while a pending-review opener's relay result is not a submitted or approved notification.
+The Finish Review component and localization evidence are source-only protocols until an authenticated native session verifies popup focus, Escape, drafts, errors and submission separately.
+
+
+`pnpm --filter @geld/extension test:browser` runs the installed Chrome extension against public provider pages after `build:chrome`.
+Its literal gitlab-whitespace-viewed case is excluded from default, regression and all, observes only qualified original anonymous native preferences and keeps natural unauthenticated preference attempts distinct from server persistence or native Viewed writes.
+That case never captures HTML, AX, PNG, arbitrary field values or full bootstrap, and restores exact raw extension settings and local whitespace opt-out key presence after closing the provider page even when observation cleanup fails.
+Actual PR282 observed a qualified bound whitespace menu closed before restoration, so cleanup may reopen the same original native menu once through its trusted opener before restoring the checkbox, with no rebind or new baseline.
+The observed closed state does not identify its cause, and changed owners, actor, source or controls cancel restoration instead of retrying or adopting a replacement.
+The whitespace characterization retains its qualified bound baseline before waiting for independent acquisition, with finite setup and failure phases, fixed-code probe state and bounded source, target and metadata match facts so a setup timeout does not erase its already-observed native selection.
+A selected native nonmerge target with exactly the pinned source version ID and full head can be independently verified from that same immutable source tuple in one pinned versions response, while its complete selected API merge target remains separate endpoint evidence and is never adopted into the native selection.
+Different native merge targets still require an exact same-response target ID, full head and merge-kind match, and source-only identity proof cannot combine responses or accept incomplete or conflicting endpoint targets.
+A trusted native whitespace change may leave its same-owner menu closed, so the post-change observation retains actual openness while requiring the original binding and current source scope, and any later input still needs the same qualified menu reopened first.
+GitLab Rapid can retain its serialized initial selected target while a whitespace reload replaces every rendered file with a different coherent native head, so current native new-side authority uses a separate original-owner reload lease rather than adopting an API target ID or merge kind.
+The supported all-files lease requires a complete eligible mounted inventory, one trusted original control gesture and change, the whole-list clear and loading sequence, no overlapping input or transient error, unchanged actor and selection, and fresh canonical per-file base, start and head refs.
+Qualified native intent is retained even while acquisition is loading, but a missed or ambiguous native epoch cannot be reconstructed from a timer or later inventory, and unavailable new-side authority does not disable ordinary raw path categorization after loading settles.
+Pending native work suspends owned projections while preserving category, folder and selected-file choices, and ready work has a new source epoch that refuses old raw comment coordinates without changing the ordinary raw count dataset or persistent cache schema.
+The existing initial immutable nonmerge source-target alias remains valid before interaction, while a changed same-document owner or failed epoch cannot fall back to that stale initial target or recover through master or cache toggles.
+Native Show or Hide takes precedence over an unchanged stale URL, and a stored Show opt-out requests explicit GitLab w=0 on a fresh no-w destination rather than merely omitting Geld's w=1 default, with exact owned-link restoration and the existing redirect loop guard.
+These product protocols use reduced public tuples and unit-only trusted-event inputs, and require separate installed acceptance before claiming a live native reload or fresh-document Show preference pass.
+A whitespace FILE_DATA_UNQUALIFIED observation retains only a fixed failure reason, known expected path slot and validity or match booleans, with a candidate full head only for a known path and a separate comparison to the already-retained API endpoint target, never source authority or a reason to retry.
+Passive whitespace lifecycle diagnostics retain at most 128 fixed records for the original list, overlay, loading indicator, alert slot and native file references around the existing toggle and restore, without treating remounts, loading completion or removal alone as source authority.
+State booleans are sampled when observations drain, while attribute old-value chains and removed original references preserve same-turn history, including transient native errors, original owner removal or reinsertion and movement inside Geld layout wrappers.
+HappyDOM 21 drops an empty attribute oldValue, so the lifecycle unit fixture uses the equivalent nonempty hidden boolean attribute while actual empty-attribute browser chronology remains an installed verification concern.
+Bounded native file diagnostics compare the current validated bootstrap selection and exact serialized attribute with its binding, and retain at most three known-path candidate base, start and head SHAs plus canonical own-head resource booleans without changing source qualification or adopting an API target.
+Missing or malformed refs remain explicitly incomplete, unknown paths retain no refs or URLs, and an original owner or snapshot change makes the observation unavailable or inconsistent rather than granting source authority.
+The installed-browser workflow path filter excludes Action-only packaging, root package and scripts changes, so normal CI or local image validation may run without an installed artifact and imply neither browser failure nor browser acceptance.
+The `Installed browser tests` workflow uses a separate standard GitHub-hosted runner, read-only repository permissions and no provider credentials or publishing steps.
+The explicit `gitlab-ui` and `bitbucket-ui` acceptance slices reuse the existing mixed-diff and conversation fixtures without broadening default visits or provider request budgets.
+Their assertions require visible adjusted line totals, compact count popovers, custom dashboard controls with native typography, explicit original-conversation restoration and discoverable category controls, including a real GitLab file-browser close and reopen.
+Custom dashboard controls are inspected through their button and region relationships while authored native details remain supported, and a passing overview slice alone does not establish category or full-provider parity.
+Set `GELD_BROWSER_EXECUTABLE` to the Chrome executable and `GELD_BROWSER_ARTIFACTS` to the evidence directory when running it in an extension-enabled test environment.
+The harness requires the installed service worker, real extension storage and tab messaging, and records browser/manifest identity with screenshots, DOM and a JSON report.
+Standalone Bitbucket commit counts use already-issued exact-revision metadata and complete diffstat responses as their independent oracle, retaining only Cache-Control, ETag, Age, Date and Vary response headers.
+An optional parent-link hover requires the real native Details and parent-commit structure, its own complete count oracle and a conservative request reserve, with missing proof reported unverified rather than a pass.
+An inactive provider adapter is an explicit unsupported result rather than a provider-parity pass, and an inaccessible live page must not be substituted with an injected controller or fixture.
+Managed browser installation policies remain in force, so run these tests in an environment configured to permit extension development instead of altering its policies.
+
 There is no GitHub login available to automation here.
 Verify against public pages: `https://github.com/wxt-dev/wxt/pull/2544/files` (classic view, 6 test files), `https://github.com/wxt-dev/wxt/commit/d05ac55ba78b7d01c5ab9feb0e862775e45509ef` (React view), `https://github.com/vitest-dev/vitest/pull/10554/files` (124 files, progressive loading), `https://github.com/wxt-dev/wxt/pulls` (PR list).
 Branded Chrome ignores `--load-extension`;
@@ -1468,3 +2168,447 @@ install the built folder with Puppeteer's `browser.installExtension()` after lau
 the flag is what makes `Extensions.loadUnpacked` available;
 the pipe is required for it), and bring a tab to the front before interacting with it (background tabs stall element handles).
 The full launch recipe, with a service-worker sanity check, is in `.claude/skills/github-surface/SKILL.md` §4.
+
+Standalone native Bash Syntax-On characterization uses its own explicit focus, saved master-off settings and immutable ssh-run commit fixture, with no default or all-slice navigation.
+The source-backed non-PR Settings candidates contain thirteen controls or twelve without Annotations, but remain unverified until the actual original standalone form qualifies.
+An unknown form exposes only bounded field names and types, with no checkbox, Save, Cancel, Escape or generic DOM/AX capture, and page closure precedes exact master/settings restoration.
+Native Syntax Save may rebuild formatter rowgroups, rows, code and line-link nodes only after the exact trusted checkbox, original Save click and same-form submit sequence, with unchanged immutable file/header ownership and complete logical row vectors.
+Fresh pristine On and restoration forms re-lock current group, row, ID, link, code, Text and font identities, and formatter remounts outside that trusted Save transition fail.
+Native On without measured token or native-highlight paint is an unavailable or partial Bash reference, with per-role comparisons retained as diagnostics.
+Bash rowgroup delimiters are observed on that exact file and never inherit the PR YAML token whitelist or row counts.
+Native source-fragment span/highlight colors and installed owned pseudo rules are compared separately from design-system variables, with plain, ambiguous, inaccessible, occluded and unselected-theme coverage explicitly limited.
+Before selecting standalone native-On, root must independently verify and cite the actual prior PR NativeOn run, artifact and report hashes, successful restoration and observed costs in its admission note.
+The harness labels this prior-success requirement ROOT-MANUAL and unverified by the case, while machine-enforcing a fully free forty-request window, eight free before native Save and the existing global quota/cleanup guards.
+
+- **Initial native On acceptance must avoid learning global Settings first**: the literal `bitbucket-pipeline-initial-on` case disables master before creating its fresh anonymous page and performs native Pipeline selection, bounded context expansion and exact Off→SaveOn→fresh-On-read/Cancel while Geld is inactive.
+  Only after the original On form closes does it enable master once and check the same original native source, physical Text ranges, renderer-LF exclusion, selected-theme ADS tokens, real selection and unchanged counts.
+  The distinction from the legacy NativeOn case comes from audited controller/bridge initialization order and first-use progression, never a private preference getter or injected capability.
+  It disables master before restoring the exact native Off field vector, closes the page before restoring raw extension settings and does not claim new Off-observer or native Bash palette acceptance.
+  Unknown forms receive only bounded field-name/type diagnostics and no input, Save, unknown Cancel or generic outer DOM/AX capture.
+  This separate case requires a fully free40-request window and at least eight free immediately before each native Save, with no forecast for first-enable or restoration costs and no navigation from default, all or regression focus.
+  Prior successful NativeOn210 cost and exact restoration review is an external ROOT-MANUAL admission requirement, explicitly not verified by the first-use harness or by literal focus selection.
+
+- **A mounted native Settings dialog is not yet an eligible form**: new standalone Bash and first-use Pipeline harnesses pin the exact original opener, first observed dialog/parent and first form, then wait read-only within a bounded candidate window for the unchanged strict source-backed schema.
+  Two actual frame observations must retain original controls and every known field value before binding is allowed, and a replacement, source drift or early input cannot restart the epoch on a new owner.
+  Progress retains only bounded safe names/types and fixed boolean/numeric presentation diagnostics, with no unknown form values, DOM, AX, screenshots or generic Cancel.
+  A never-ready initial form remains unavailable and untouched, while an unknown fresh form after a prior Save remains failed native restoration.
+  The actual first standalone attempt stopped at one dialog sample that failed its visibility predicate before schema inspection, which establishes no specific visibility cause, empty form, animation or successful native Bash palette reference.
+
+- **Native Settings refusal diagnosis is a separate opener-only literal**: `bitbucket-native-settings-diagnostic` disables Geld before its immutable standalone Bash visit, observes the original source/actor/opener and reports strict form rejection codes without binding or operating a field, Save, Cancel or Escape.
+  The diagnostic preserves the existing12/13-control schemas and NativeOn eligibility predicates, classifies only finite known heading/button phrases and emits evaluated index/boolean/count checks with null for later checks that were not reached.
+  Unknown form values and text, individual checkbox states, full vectors, generic authentication reads, console/error text and DOM/AX/PNG captures are omitted even if the form fully recognizes or cleanup fails.
+  The page closes before exact raw master-settings restoration, and an observer/source failure does not skip the settings-restoration attempt.
+  Its separate read-only budget forecast uses two actual ten-request opener visits plus the existing minimum-five reserve under the unchanged40 cap and429 abort, while every NativeOn full40/immediate-eight gate remains unchanged.
+  A diagnostic-complete result is a report, not Syntax-On, native Bash palette, server-persistence or provider-parity acceptance.
+
+- **An ARIA-blocked tab field is not automatically a read-only combobox**: opener-only diagnostics split self and ancestor aria-disabled/aria-readonly booleans and exact tab id/name/type/role/inputmode/listbox matches without relaxing any eligibility guard.
+  Fixed label association and hidden-companion ancestry checks contain only booleans/counts, with no arbitrary attributes, label text, field values or checkbox state.
+  Historical native13-field PR captures show a self aria-readonly non-searchable tab combobox, while the first12-field standalone diagnostic recorded only a combined ARIA blocker before its later precise diagnostic.
+
+Provider runner image contexts are generated offline from one full reviewed commit, with an independently verified Git commit object/tree, byte-identical esbuild output and an explicit reviewed official Node base digest.
+Never send a full working tree to Docker: only the allowlisted bundle, unchanged license/notice bytes, corresponding-source archives, commit object and provenance are copied under `/geld`.
+The retained Zod4.5.4 source tar is bound to the frozen-lock SHA512 and original MIT notice, and unknown bundled dependencies or versions fail until reviewed.
+The frozen rebuild links the reviewed review package to the reviewed core package, and summary rendering imports only the tracker-label module rather than the core barrel.
+The core barrel pulls YAML initialization into a provider bundle even when only tracker labels are used, so retain the Zod-only bundled-dependency guard and verify the narrowed bundle against tracked source before packaging.
+Offline rebuilding still requires the declared frozen build dependencies installed or cached, rather than a claim that all build tools are shipped.
+The sole reviewed tracked alias `.cursor/skills/github-surface` has Git120000 blob `7bdab2e33869af42ef1a4d5c1a0664a37523a4bc` and target `../../.claude/skills/github-surface`: preserve it inertly in source/tree verification but never materialize or follow it, and reject other archive or selected-input/output links.
+Source-only rebuilding checks the supplied raw commit hash and reconstructed tree before using delivered source, so missing `.git` metadata cannot turn a supplied source label into authority.
+A local image ID and saved tar remain local artifacts, with no implied published registry digest or authenticated producer-write acceptance.
+
+Provider context source verification must agree with actual extraction: accept only USTAR `ustar\0`/`00`, the initial global Git comment and interpreted local PAX path, and reject global paths, size/link/sparse overrides and unknown keys.
+A PAX size override previously let the verifier hash34523 LICENSE bytes while GNU tar extracted34522, and a V7 prefix previously let the verifier retain a Git path while tar listed a root basename.
+Explicit repository reads use `--no-lazy-fetch`, `GIT_NO_LAZY_FETCH=1`, disabled remote protocols, fixed `tar.umask=0022` and no host `core.attributesFile`, so missing promised objects fail locally and host umasks do not vary accepted context bytes.
+The preparer does not copy host credential/config files or serialize environment values, rather than claiming that Git never reads host configuration.
+
+
+- **The untouched native Tab-size combobox has a narrow read-only witness**: the actual standalone diagnostic verifies self aria-readonly on its unique original text combobox, with no actual disabled/readOnly, ancestor ARIA blocker or disabled fieldset.
+  Only the exact native id/name/type/role/inputmode/listbox structure, associated Tab size label and same-parent hidden tabSize companion qualify this untouched-field exception, while Syntax, Save and Cancel retain their original enabled checks.
+  Serialized field vectors are unchanged, and every mode rejects an unknown structural family before reading checkbox or radio values.
+  Captured readiness controls also recheck id/name/type before any later value read, so same-node structural drift cannot expose an unknown getter through progress errors.
+  A private identity witness detects relevant attribute, label and reparent mutations including touched-and-reverted changes through readiness, binding, input hit and exact trusted submit, while unrelated visual classes and loading cosmetics do not invalidate it.
+  The document-root observer filters only relevant witness and fixed ancestor ownership or eligibility mutations for the candidate/action lifetime, rather than treating unrelated document updates as field changes.
+  The witness releases on known Cancel, failed readiness, pagehide and cleanup, and only the exact trusted native submit permits pending loading or formatter remount before an independently qualified fresh On or Off form.
+  Fresh forms must retain the known12/13 semantic family and expected full vector without reusing generated placeholder identities, and the report-only diagnostic never acquires this witness or new form actions.
+
+- **Browser workflow path filters can exclude packaging-only pull requests**: apps/action-only packaging, root package and scripts changes may run normal CI and local image checks without matching the installed-browser pull_request paths.
+  Such a boundary has no expected installed Test start or artifact and must not be reported as either native acceptance or an installed-test failure.
+
+The explicit Bitbucket native-Bash visit may passively inspect one already-issued, exact first-party app script for optional fozrM source research, without changing preference eligibility or making a request.
+Module-only capture retains the asset SHA and one bounded parser-verified registration-shaped source slice, never the full app or runtime/session state, and reports timeout or unsupported syntax as unavailable.
+The six-MiB response check is applied after Puppeteer buffers decoded bytes and is not a streaming allocation limit.
+A captured registration-shaped source slice does not establish loader binding, runtime getter authority or native preference state.
+
+
+- **Owned Bitbucket shell ranges use the actual provider Bash role reference**: the retained standalone Syntax-On sample shows orange strings and blue-bolder variables and builtin read, while every native/Geld comparison in that master-off characterization remains unmeasured.
+  Only owned embedded-shell string, variable and built_in highlight colors use those native accent variables, retaining their previous native code-token variables as fallbacks and keeping title separate from builtin.
+  The installed shell and standalone declared-model oracles select the same primary host variable or absent-property fallback, rejecting present empty or invalid colors instead of treating them as absent.
+  Native ADS variables and YAML token spans are never reassigned, and comment, grammar, plain and initial-On eligibility remain unchanged.
+  Selected-light source/style characterization does not establish enabled embedded-shell palette equivalence, native dark, comment-variable availability or complete classifier equivalence.
+
+Optional module-only research on the explicit native-Bash and initial-On visits selects one already-issued script at the exact public CDN origin and app.<40lowerhex>.js path, retaining its actual URL and body SHA without relaxing frame, redirect, response, size, worker or cleanup guards.
+The default raw collector remains pinned to its original exact URL, and no eligible module response triggers a fetch, retry or change to native preference qualification.
+The separate literal `bitbucket-whitespace-source` workflow focus performs exactly one anonymous GET of the retained public app.6ea3303b1b2659fcb5ca5dc82e17933a815f4108.js CDN asset.
+It skips installed-browser execution entirely, has no provider API request or native preference action, and saves a separate source-research artifact that cannot replace browser cooldown evidence.
+Redirects, wrong MIME/final URL, empty/invalid bodies and declared or streamed bodies above16MiB are refused, with no retries or fallback endpoints.
+Only this static collector opts into the larger worker source allowance and its1GiB old-generation and10s parser bounds, under the existing30s total wall deadline.
+The installed-browser worker keeps its6MiB source,256MiB old-generation and2s parser defaults.
+AST traversal uses an explicit stack so deeply nested minified comma chains do not exhaust JavaScript recursion, and known worker memory exhaustion and parser depth failures receive fixed diagnostics without raw error text.
+Reports retain the valid declared byte length and a streamed bytes-seen count capped at the body limit plus one, with a separate capped flag, without retaining an oversized body.
+The bounded worker extracts only `fozrM` and `h43l2` function registrations, independently recording absent or ambiguous modules, source offsets and SHA256 hashes without executing fetched code.
+Each selected factory is limited to256KiB and written under a fixed filename.
+The static-only job explicitly enables --retain-asset to save the same validated public app body as a bounded gzip under a fixed filename in its private CI artifact, with compressed and uncompressed byte counts and SHA256 receipts.
+The full app body never goes to stdout or a committed fixture, and ordinary browser captures retain their prior limits and output policy.
+Static source capture does not establish native source authority, live preference state or feature acceptance.
+
+
+
+- **Owned shell comments conditionally use the native comment variable**: retained first-party token.comment CSS and historical native root measurements support --ds-comment-refreshed, with the existing native code-comments token as the exact fallback when that property is absent.
+  Only the owned comment highlight and its declared-model oracle prefer this variable, while meta, native YAML styles, grammar, plain ranges and eligibility retain their prior behavior.
+  Current embedded-element availability and enabled comment equality remain unverified, and master-off native Bash evidence does not establish live YAML, dark or complete palette equivalence.
+
+- **First-use Pipeline source qualification is an explicit harness read, not a native full-head witness**: master-disabled native comparison URLs may retain only abbreviated commits and omit the PR pin query.
+  The initial-On case preserves the default passive observer guard and separately records its own public, browser-observed GET IDs, response hashes and purpose.
+  After exact anonymous actor, route, metadata and native comparison HTTP200 receipts, at most four no-store reads resolve the two prefixes and acquire one complete full-reference patch and diffstat page.
+  The independently retained NativeOn210 full base is a rejecting fixture constant for the old-context oracle, never a replacement for resolving the observed base prefix.
+  This qualification happens before selecting the original Pipeline file, so it does not require its lazy article to have mounted first.
+  Every supplied pinned hunk row must match the expanded original native coordinates, kind and text, while extra native context is explicitly checked against the retained native fixture rather than claimed as API raw content.
+  Before the sole master enable, one PR read and two fresh resolutions must preserve the exact tuple after the pristine native-On form has closed.
+  No helper reads occur inside readiness polls, and the seven-read ceiling reserves eight restoration slots plus eight slots for cold product demand under the existing40 cap, full-window admission and immediate native-Save reserve.
+  Standard no-newline EOF annotations follow actual hunk content without adding code rows or advancing line coordinates, and orphan or duplicate annotations decline.
+  Only this case redacts passive response-parser failures to fixed text while retaining error entries and the unchanged identity refusal.
+  These API facts never authorize product PR whole-file source, promote an abbreviated native ref or substitute for the installed product's own counts, source demand and paint.
+
+
+- **Native Bitbucket file-menu research is one opener-only literal**: bitbucket-native-file-menu disables master before its fixed public PR27 page and binds an already-mounted original Pipeline header, source/actor/comparison/count/Viewed lifetime and native Diff actions popup button.
+  It may scroll that original control once, then rechecks source, hit ownership and the minimum-five budget immediately before its sole trusted opener click, without file selection, context, consent, menu-item, source-link, Escape or Viewed input.
+  The eight-request navigation forecast plus reserve is not a future cost bound, and the global40/429 guards and independent root admission remain authoritative.
+  Reports contain only bounded relation/count primitives, fixed label enums and exact same-provider/repository known-file source candidates with explicit abbreviated or full hexadecimal precision, with no native full-head or whole-source authority, arbitrary text/URLs/queries, field values, HTML, AX or PNG.
+  Unknown popups are closed only by page closure before exact raw extension settings restoration, while native prefs and product source bindings remain untouched.
+
+- **Arming a native Save preserves its current validated source**: the first-use cleanup can reach a valid On renderer before it has established a pristine-On baseline.
+  Switching the armed target to Off must snapshot that already-valid native source, or the guard can disable its own original Save with no DOM change.
+  The immutable original-Off code model, actor, source container, Viewed state, links, same form and three trusted checkbox events remain required, and this snapshot grants no pristine-On or product capability.
+  First-use current checks retain only bounded phase, last and first-failure projections of their existing guard read before asserting, without extra DOM/API reads or raw code, bootstrap or field values.
+  Actual293 remains failed with native Off restoration unverified, and this arming correction adds no post-Save wait or mixed-renderer permission.
+
+- **Bounding-box corners are not guaranteed rounded-button hit targets**: an actual offline Chromium synthetic32px button with4px radius rejects the old corner predicate even when unobscured, without establishing the unmeasured295 native failure cause.
+  File-menu arming keeps mandatory original center ownership and bounded cardinal inset hits, with center and edge overlays still rejected, while legacy corner flags and normalized radius numbers are diagnostic only.
+  Fixed operation phases, handle/asElement and actual arm/hit results are retained before assertions, and handle/listener cleanup cannot replace the primary rejected stage.
+  URL-omitted response failures report only safe known-provider and standard-Bitbucket-API enums, without retroactively identifying295's unclassified429 or claiming all HTTP mutations are observed.
+
+The literal installed `gitlab-whitespace-session` case has a separate current-native-reload model and leaves the older `gitlab-whitespace-viewed` selected-target acceptance and historical failures unchanged.
+Its one public diff visit uses the original anonymous Preferences controls for at most two trusted whitespace choices and independently observes the original overlay, whole-list clear, streaming start and finish before accepting fresh known-path files.
+Every completed native frame requires one coherent full base, start and head tuple with canonical raw and context resources at each file's own head, without inventing a target version ID or merge kind from the API.
+The selected bootstrap, independent acquired comparison and current native rendered tuple remain separate report evidence, and a return to the original preference mode does not claim restoration of initial code nodes or head.
+Within each ready native frame, the session harness preserves original code and text nodes, anchors, links and disabled Viewed values before and after Geld count and category observations.
+The independent session retains its original positive sign-in node, parent, URL and presentation, rejects contradictory signed-in title controls and retires on a trusted competing native view choice even when reverted.
+The session-only settings lease enables the real whitespace policy, admits only the observed current-review opt-out update and restores exact raw synchronized settings and local key presence after page closure.
+The case never captures HTML, AX, PNG, raw bootstrap or unknown native field values, and cleanup failures retain fixed diagnostics.
+Full conversation digest acceptance remains the separate Overview regression because the digest is not rendered on the diff route.
+The actual298 Bitbucket file-menu observation measured the original32px button with6px radius, owned center and cardinal hits, and an old bottom-right corner outside the native hit target.
+Its one trusted original opener click succeeded, but the observed popup satisfied none of the four checked associations and exposed only the safe12-character source reference9777bca47119, granting no native full-head authority.
+Those recorded geometry facts do not explain295's unrecorded rejection stage, and the298 URL-omitted429 remains provider-unclassified with the `not_bitbucket_standard` API classification and unknown emitter while any subsequently carried cooldown remains authoritative.
+The retained298 native GitLab header places the literal English label `2 files` in its file-count span, so the session harness parses complete contextual file labels rather than requiring that entire span to be digits.
+Its line-count parser accepts complete unsigned, ASCII-signed and Unicode-minus magnitudes, including the synthetic `-0` counterexample, while malformed or unrelated text remains unrecognized and is never retained.
+Actual299 failed before a checkbox input after qualifying its baseline and acquisition but without retaining a totals substage, so neither the precise failed totals check nor a wrong-count conclusion follows from that report.
+The session harness records bounded numeric and known-slot projections at explicit baseline, tab-total, test-category and native-presentation phases using the same existing reads, without adding source requests or changing expected counts.
+The installed300 session case preserved corrected counts and the known test category after one native reload, but its test file root was visible, and the second independent epoch later exceeded its mutation-history limit.
+That report did not retain layout ownership or positioning, so visible-root observations alone do not identify an adapter or controller cause.
+Native-presentation diagnostics retain only bounded known layout enums, Geld grouping and hiding markers, mount state and at most four ancestors per known file within the existing read.
+The independent observer reports its bounded count when its existing history limit rejects a session, without relaxing the limit or granting source authority.
+The anonymous session witness must remain visible and retain its original node, parent and destination, but unrelated ancestor class or style updates do not themselves change the actor.
+The independent harness rejects actual concealment, removed witnesses, changed destinations and signed-in contradictions while permitting current visible witnesses through benign styling updates.
+Witness-mutation failures retain only a fixed attribute and target kind, current visibility and whether the recorded old value matches the current value, never raw attribute values.
+After a Rapid whitespace reload, GitLab can place `streaming-element` directly under `data-diffs-list`, while the initial page nests it inside `data-stream-remaining-diffs`.
+The layout adapter recognizes both native structures, validates the same children and normal-flow constraints, and applies grouping through CSS without moving native files or controls.
+Treating the direct native stream as an unknown wrapper forced inline fallback: counts stayed correct while category-hidden file roots became visible.
+The independent two-cycle whitespace test gives each validated trusted input a separate mutation budget rather than accumulating unrelated earlier-cycle records.
+The two-input maximum, current-frame and actor checks, and the per-phase 4,096-record refusal remain in force, with the rejected phase recorded on overflow.
+
+The literal installed `gitlab-shell` acceptance is independent of existing GitLab cases and is excluded from default, regression and all selections.
+It uses one pinned public Step Runner MR253 visit, with master initially off, and permits at most one trusted original file-tree reveal when native streaming has not mounted the target nested `.gitlab-ci.yml`.
+The harness must bind the genuine complete new1–15 prefix and full native revision tuple before testing local run scripts on new7 and new9, with no raw-file, root-include, stylesheet-oracle or injected source fallback.
+Mounted old classic scripts, unresolved expression and quoted scripts, final jobs without a following boundary, and renderer line terminators must retain zero owned ranges.
+The acceptance reports bounded observed negative line numbers and does not claim absent old-side or final-job rows were exercised.
+Qualify both native link media and effective stylesheet media through loaded readable CSSOM, compare actual Custom Highlight colors with native Rouge-role colors, and preserve original Text nodes, line anchors, native typography, Viewed state and foreign highlights.
+Only a real mouse drag supplies selection evidence, and unsupported copy remains explicitly unverified.
+Keep the complete original raw settings vector, change only the master flag, remove owned highlighting and test selection, close the native page, then restore exact original storage presence and value.
+Missing native source, original controls or usable native palettes is unavailable rather than a substitute source pass, and failure reporting omits unknown fields, raw bootstrap, console, exception and URL details.
+
+The literal Bitbucket local-reviewed acceptance uses the existing public PR22 outdated human comment and already-issued review/commit responses, with no helper request or fabricated source identity.
+A local mark moves an outdated item to the owned Reviewed on this device group while preserving its separate native Outdated status, and Undo restores the outdated item.
+The case closes its provider page before restoring exact raw settings and local storage presence, and any observed review API write fails acceptance.
+
+A GitLab Rapid Diff page can report idle before its client-side target file and native file tree have hydrated.
+The installed shell acceptance waits within its existing bounded poll for a mounted target or a qualified original reveal control, and records only its final bounded readiness fields when neither becomes available.
+An idle server-rendered page alone does not establish target unavailability or authorize a guessed reveal action.
+
+Native GitLab target-version metadata may omit `base_sha` while retaining exact `head_sha` and `start_sha`;
+source-version and file diff refs still provide the required full base.
+The shell acceptance permits that missing target field but rejects any contradictory present target base.
+Its single initial native URL includes the known unchanged `file_path`, matching retained native file links, so an unmounted virtual tree entry is not a prerequisite for loading that file.
+
+Puppeteer25 passes media-feature reset values to Chromium CDP, which requires an empty array rather than null.
+The shell acceptance uses `emulateMediaFeatures([])` on both normal and failure cleanup paths to restore the browser's baseline light or dark media.
+
+
+### Read-only Bitbucket PR context admission
+
+The literal `bitbucket-pr-whole-context` case disables both `prOverview` and `quickReview` before navigation so its source-only test does not start the unrelated conversation reader.
+Only that case reserves three external requests and stops at47 observed requests, for50 total planned requests below the documented60/hour ceiling.
+The external reservation is a policy margin for reads accounted outside the browser runner, not synthesized events in the observed browser timestamps.
+All other cases retain the existing40-request policy and native preference preflights.
+A read-only cap hit aborts and records a budget hold with the first actual expiry, without manufacturing a provider429 cooldown.
+Actual provider429 handling and inherited server cooldowns remain unchanged.
+Native context inputs require three remaining observed slots for at most two concurrent expansion requests.
+A cached owned fold may omit that request reserve only after a fresh qualified source snapshot proves every leaf line already mounted and source-equal, with the exact closed fold still present.
+The after-request hard stop remains active during cached toggles and every other phase.
+
+
+### Provider bot quota refusals
+
+A CodeRabbit warning alert headed exactly `Review limit reached` describes a refused run even when its explanation is long.
+Completed neutral or successful checks whose actual description says the run was rate limited, paused or skipped also preserve the earlier real review instead of manufacturing a clean result.
+Native provider bot checks still require the existing bound publisher, configured check key and current-head association;
+a description does not supply identity.
+Keep provider code-link evidence guards when sharing the refusal parser, and retain Bitbucket build-status descriptions in both extension and CI normalization without inventing a bot author.
+GitLab pipeline jobs do not provide an equivalent free-text check description;
+do not substitute job names or failure enums.
+
+### Bitbucket whitespace acceptance
+
+The literal installed `bitbucket-whitespace-session` focus uses one public PR22 visit and observes native and extension diff requests independently of the product bridge acknowledgement.
+Its bounded public sequence starts with Geld disabled and activates Geld with its synchronized whitespace setting, reads the original native Settings checkbox after a genuine opener click, and closes the page before restoring exact raw settings;
+it never clicks Save or changes a native form field.
+The eight-request own snapshot and sixteen-request PR22 baseline are retained observations;
+subtracting them to forecast eight requests with Geld disabled is an inference, so the harness measures that baseline and checks remaining room before activation.
+The complete Cancel and disable sequence remains offline protocol coverage until separately admitted within the existing rolling request cap.
+A Bitbucket whitespace acceptance transition may adopt replaced native file nodes only after independent fresh mode-matched diff and diffstat responses, with the original page frame, source references, file paths and Viewed values preserved.
+After that bounded rebind, another unannounced native node or row-text change fails the settled-phase check rather than being silently adopted.
+Fixed native readiness counts and the last source-qualification code are retained on failure without reading a private application store or treating the bridge acknowledgement as proof.
+
+### Browser cooldown attribution
+
+Browser verification keeps observed request-budget holds separate from actual provider cooldowns.
+An unclassified429 does not acquire the containing page's provider, and imported Bitbucket timestamps remain in the global ledger without blocking unrelated provider cases.
+An explicit retained provider deadline, including an expired one, takes precedence over the legacy missing-Retry-After fallback so redacted source receipts cannot extend or revive it.
+A real provider429 retains its rate-limited classification even when the same request reached an internal40- or47-request cap.
+
+### Bitbucket ephemeral whitespace mode
+
+Bitbucket Cloud stores its diff whitespace preference in the native Redux `diffSettings` slice, and the form's checkbox means show whitespace, the inverse of `globalShouldIgnoreWhitespace`.
+The supported cloud PR All changes adapter applies only the audited `UPDATE_GLOBAL_SHOULD_IGNORE_WHITESPACE_SUCCESS` boolean action to the current native store.
+It never dispatches `UPDATE_SETTINGS_REQUEST` or invokes the account preference writer.
+The loaded native `global.locale` field qualifies global preference hydration before acquiring a lease.
+The original Global diff settings button restores Geld's leased value before its native click handler initializes the form.
+Cancel reapplies the Geld choice, while a trusted checkbox change followed by a completed native Save records the native choice for this review visit.
+An independent same-value native state replacement relinquishes ownership instead of being undone by Geld.
+Unrelated native diff settings remain untouched, and disable, navigation, source failure, or store replacement restores only a still-owned whitespace scalar.
+Native Atlaskit alerts can expose additional Settings openers, including retry and file-mode onboarding actions.
+A native alert prevents acquisition, and one appearing during a lease restores the scalar and suspends reacquisition for that visit before an alert action can initialize a form.
+Unknown settings controls, partial comparisons, unqualified stores, and unsupported hosts retain the existing provider behavior.
+The bridge accepts fixed boolean commands and returns only comparison identity, readiness, mode and generation, with no store object or account data crossing worlds.
+Native refetch is debounced, so acknowledgement waits for both native loading cycles and replacement diff/diffstat arrays rather than accepting an older request's completion.
+Already-selected native modes require a quiet interval before acknowledgement.
+Own raw diff and diffstat requests use the same acknowledged `ignore_whitespace` flag, and stale generations cannot populate the source cache.
+The cache key includes both native comparison refs and the source repository, so a target change cannot reuse an old same-head snapshot.
+Native abbreviated refs stay abbreviated and do not make a review immutable.
+The existing API independently resolves full refs and verifies both native prefixes and the source repository before accepting counts.
+This native lease is limited to cloud PR diff pages with the observed All changes and original Settings controls.
+Lists, standalone commits, other tabs, and unsupported browsers keep their existing policy.
+The whole-context acceptance harness explicitly sets `hideWhitespace:false` to preserve its raw source fixture.
+
+Bitbucket's native Connect module lookup uses a JSON POST to its workspace `connect/modules` endpoint for read-only module descriptions, through the retained `fetchModules`, `fetchCachedRequest` and `fetchData` source chain.
+The whitespace acceptance guard permits audited native Connect lookups, signature and commit-status lookups, and the empty-body pipeline run-eligibility read for the fixed public repository, while token, preference, pipeline execution and unknown non-GET requests remain blocked.
+A blocked non-GET receipt records only bounded origin, path, method, owner, phase and fixed reason before aborting, and response failures retain fixed source or transport-stage codes rather than raw error messages.
+A concurrent page-close error is harmless only when the provider page is actually closed before exact raw settings restoration.
+
+The four native startup POST exceptions require the exact audited app source, fixed public paths and bounded endpoint-specific read payloads;
+any other payload records only known schema facts and counts before the existing abort.
+The Bitbucket whitespace acceptance bounds each observed response-body read to five seconds and refuses late qualification after timeout or disposal.
+Its phase checkpoints preserve the current private report before awaited stages, and a separate two-minute case deadline records a local test timeout without inventing a provider cooldown or changing the request cap.
+Checkpoint callers have bounded waits while the underlying report writes share one queue, including the final save, so a late write cannot replace final evidence with an older snapshot.
+A checkpoint remains running until case cleanup finishes, and the dedicated workflow step has a five-minute limit that leaves time for artifact upload inside the job limit.
+The whitespace-only run skips the redundant global settings write because its case already owns bounded preparation and exact restoration.
+It saves a report before browser shutdown and bounds that shutdown, terminating only its own launched browser process if the protocol close stalls.
+Cleanup remains bounded and restores raw settings only after confirmed page closure and completion of any earlier settings write;
+an unconfirmed write or restoration is reported as failure.
+
+The public Bitbucket app asset can change while an acceptance session is running.
+A strict native-request source allowlist must be refreshed from the actual page and its bounded static source capture before a new app hash is trusted.
+The static source collector remains a single fixed CDN GET with no provider API request or executed vendor code.
+
+The November 2 native app refresh from `6ea3303` to `5ff3a9b` changed the bundle URL while preserving all five audited metadata POST factories byte for byte.
+The acceptance guard allows both exact audited URLs and records at most four validated native app paths with match, extension-frame and truncation flags when rejecting an initiator.
+It never records arbitrary stack URLs, function names or request bodies.
+
+The native Atlassian cookie notice uses `role="dialog"` while remaining a passive layout banner.
+Whitespace acceptance excludes only the retained native cookie shape and ownership from its active-dialog guard, preserving every notice node and never choosing consent.
+Unknown dialogs, changed notices and dialogs containing fields remain blockers, and the report separates passive notice counts from actionable Settings matches.
+
+A hydrated anonymous Bitbucket page can have its own `globalShouldIgnoreWhitespace` property set to `undefined` when the bootstrap omits the preference.
+Native controls and requests treat that as Off, so the bridge exposes an effective boolean while retaining the exact raw baseline for internal restoration.
+Only a present data property with boolean or undefined value is accepted after the existing hydration checks, and the external bridge protocol remains boolean-only.
+Bitbucket also retains a hidden sticky-header copy of All changes.
+Whitespace qualification uses the one visible original control in the current diff panel, excluding hidden, inert and Geld-owned copies.
+
+The static Bitbucket source collector has an explicit PR-page mode for the fixed page bundle mapped by the captured native app.
+It performs one credential-free CDN read and retains compressed source with hashes for offline inspection, without navigating a provider page or executing the vendor code.
+
+The PR-renderer source investigation can capture the exact JavaScript dependencies listed by the retained native PR-page loader in one bounded static batch.
+That mode has four concurrent reads, an eight MiB per-file cap, a sixty-four MiB aggregate stream cap and a ninety-second wall limit, with no retries or code execution.
+
+The PR full-context acceptance also scopes All changes to the active native diff panel and keeps the original control identity through scrolling.
+A hidden sticky copy must not discard its file lease or erase the failure diagnostic.
+Its source-menu probe recognizes the same untouched passive cookie notice while rejecting any unknown dialog, and a placeholder text hint is not evidence of a native error.
+
+Provider reviewer standings use one compact identity per account, with native font, colour, spacing and focus tokens.
+An already identity-bound comment avatar may represent that reviewer, otherwise the login initial is shown.
+A known pending request remains separate from the current verdict, while an unknown request stays explicitly unavailable.
+Conversation comment and started-thread counts are labelled as activity in this conversation, with observed counts for incomplete sources, never as one grouped review.
+GitLab reviewer links use only the unique newest matching native system verdict note with the exact account ID and a supplied same-MR note URL.
+Ordinary comments, ambiguous timestamps and missing or foreign note URLs cannot supply that link, and Bitbucket standings remain non-links while its activity source lacks an event permalink.
+
+Bitbucket's native DiffLoader removes the Diff region while either its diff or diffstat request is loading, retaining the surrounding diff panel.
+An already-owned whitespace transition preserves its lease through that exact loading state only with the same store, comparison, original panel and visible native spinner plus the usual route, header, settings and All changes guards.
+When Redux settles before React remounts the Diff region, only the same previously witnessed spinner can retain that pending lease, and no ready receipt is published until the original-panel region returns.
+The missing region cannot authorize initial acquisition or a ready receipt, and errors, duplicate regions, changed custody or a settled missing region still release the exact raw preference.
+
+Bitbucket's native static PR header keeps its original branch metadata inside ActionsWrapper, which switches to visibility:hidden while CompactHeader is shown after scrolling.
+Source-reference custody may read that original closed branch pair while CSS-hidden, but retains exact nodes, parents, text, route and source identities and never clicks those metadata controls.
+The actionable All changes control is scoped to the original unique native diff panel, so a compact-header copy outside that panel does not invalidate source preparation;
+panel replacement or an inner duplicate still does.
+
+Bitbucket's visible Lines updated totals place the signed counts inside aria-hidden presentation spans because the native accessible summary describes them separately.
+The full-context acceptance reads only that original heading's signed numeric span pair while retaining real hidden, owned and interactive-node exclusions.
+Source-row and action qualification must not inherit this visual-counter exception.
+
+Chromium can re-encode charset-less text resource bodies when DevTools returns them as text, so the Bitbucket whole-source acceptance streams original response bytes from request-time Network events instead.
+That observer initializes before source intent, bounds every stream and never changes responses or fetches another copy.
+Native source-menu closure follows its original opener and captured popup, including closed popovers that remain connected during exit animation.
+Unrelated later popups are reported separately rather than counted as a leaked source menu.
+
+The installed Bitbucket context checks scroll original controls and source selection targets instantly before bounded hit testing.
+An inherited smooth-scroll policy can leave their old coordinates immediately after scrollIntoView returns, so a ready source alone does not prove pointer readiness.
+Source ownership is checked again after the hit-test wait and before the trusted click or drag.
+An installed Bitbucket fold can retain an obstructed rectangle center after scrolling even while another part of the original button is visible.
+Acceptance intersects the button with the viewport and bounded clipping ancestors, samples at most nine points and uses a real mouse click only after a descendant hit and a fresh source and point check.
+Fully covered controls still fail, and an obstructed center records bounded hit-owner geometry plus a fixed public-target crop for layout diagnosis.
+
+Bitbucket's native context reducer replaces its diff array even when the idle comparison's whitespace mode is unchanged, so an already-ready receipt retains the same store, panel, subject and exact boolean-or-unset value across that update.
+Native unified rows and chunks use array-index React keys, so prepending or merging context can legitimately replace previously displayed row nodes.
+A sealed PR source permits one eight-second continuation only when Geld activates the qualified original native gap control using the verified full-source lease.
+Every prior semantic row must remain uniquely ordered, added rows must be unchanged context inside both captured old and new gaps, and every new-side row must agree with the immutable full source before the replacement nodes become the strict retained frame.
+Unarmed remounts, changed source identity, duplicate or edited rows, out-of-gap additions and expired transitions still withdraw source authority.
+A ready, still-source-agreeing whole-file intent survives removal of the final native gap so a completed expansion keeps its fold and keyboard focus, but disabled settings, changed revision or mismatched source still remove it.
+
+Bitbucket code cells live inside a separate physical `.lines-wrapper` row that also owns the permalink, so fold presentation uses an adapter-supplied visual root while source custody retains the original inner code cell.
+The shared fold renderer accepts that visual root only as the connected direct parent in the same file and document, places its control before the physical row, and hides or restores the whole row without moving native children.
+This keeps fold controls outside the native code-row layout and includes each row's permalink when hiding or restoring its presentation.
+
+Bitbucket's relatively positioned native code row contains a fixed-height PRE with an inline-block after pseudo-element whose overflow can paint and hit-test over the following fold, even without a trailing line feed.
+The Bitbucket-scoped Geld fold is relatively positioned so normal DOM paint order keeps its full visible button clickable without changing native styles, source text or z-index.
+
+A maintainer-applied `geld:restack` label defers only public browser and static-provider verification while each PR still runs normal CI and packaging.
+Deferred jobs do not claim a public feature pass, and final-tip public verification runs explicitly after removing the label within the carried provider budget.
+
+Provider overview headers can expose a file count without visible signed line totals, and responsive layouts can hide an otherwise valid native counter.
+The owned header hint supplies filtered additions and deletions only where the native sign is not visibly rendered, keeps one keyboard and hover anchor, and restores without changing native visibility.
+Count popovers use intrinsic width bounded by their native column and the viewport, without inline-size containment that would discard their content width.
+
+Provider conversation digests render owned dashboard sections with button disclosures, rather than unstyled native details controls.
+Each disclosure keeps its expanded state across refreshed source snapshots and binds an accessible button to one owned content region.
+Digest replacement follows the overview setting independently of timeline compaction, so represented human comments and push or state events do not remain duplicated below the dashboard.
+Unknown sources, active editors and unsupported native-find layouts remain native until their content can be represented safely.
+The dashboard's explicit original-conversation control and source links reveal retained native nodes without moving them, and disabling the overview restores their original presentation.
+Bitbucket activity cards without native anchors require one uniquely matching exact native timestamp and matching event wording or commit prefix before they can be folded.
+GitLab discussion wrappers are eligible only when every native note anchor is represented and no editor is inside them.
+A provider digest rerender restores focus to its original-conversation or section button only within the same review subject and when no other control has taken focus.
+Batch-history attention pointers retain each section's initial ID so its disclosure button and content region keep reciprocal accessible references.
+
+Bitbucket's navigation bar and file tree can expose separate owned count hints at the same time.
+Browser acceptance resolves the hint associated with the hovered native group for its pointer, keyboard and caret checks, without depending on global DOM order.
+Two full Bitbucket page visits have each used 26 observed anonymous API requests in retained runs, so combining them cannot fit the conservative 40-request window.
+Keep that limit and its carried history intact when arranging focused UI checks, and never report a budget-suppressed case as verified.
+
+GNU tar can finish extracting a requested member before Node has written a full repository archive into its stdin.
+The malicious PAX license fixture uses a temporary archive file to avoid an EPIPE race while preserving its exact extracted-size, hash and verifier-rejection assertions.
+
+Restack and description-only workflow runs can bury the last actual browser result beyond a fixed page of completed runs.
+Cooldown restoration discovers named browser artifacts with bounded pagination and verifies their workflow and repository before selecting the latest retained result.
+Incomplete or ambiguous history must stop provider navigation instead of silently resetting the request budget.
+
+GitLab can render a diff-stat sign separately from its numeric leaf, so visible-count acceptance requires both parts in the same native group.
+Conversation preservation checks retain exact native roots, parents, IDs and semantic body nodes while allowing unrelated live timestamp labels to update.
+Unknown native shapes retain strict whole-root comparison, and changed bodies or replaced source nodes still fail the check.
+
+The bounded Bitbucket UI continuity case starts on public PR22, checkpoints its real comment digest, then clicks the original native Files tab once on the same document.
+Earlier independent PR27 diff and PR22 overview runs each observed 26 standard API requests, so combining two fresh page bootstraps does not fit the unchanged 40-request budget.
+The continuity case corroborates public tab-state totals with the read-only complete-result cache and actual native file inventory, without writing cache entries or issuing an oracle request.
+A changed cache identity, untrusted input, full document navigation, missing native file or exhausted budget leaves the combined case incomplete while preserving its earlier digest checkpoint.
+The independent `bitbucket-diff` and `bitbucket-comment` focuses remain available to verify the unfinished half in a later eligible window.
+
+GitLab CI summary jobs may run on a temporary merged-results commit, so the MR's exact `head_pipeline.id` associates those checks with the source head while `sha` retains the actual pipeline commit and `reviewHeadSha` records the association.
+Provider CI summaries count waiting manual jobs separately from running jobs so an idle deployment does not make completed CI look active.
+
+GitLab may add the already displayed `diff_id` while opening an unmounted file from an unversioned MR URL, so a reveal retains the exact navigator-verified destination before the native click and canonicalises effective selection order for its review identity.
+A pending reveal still rejects other query, file, hash or review changes and checks the same verified destination again before alignment.
+Installed GitLab capture can replace an equivalent inner comment/system-note wrapper while retaining the original source note and exact payload.
+The UI custody probe pins the native source roots, note/event nodes, their parents and IDs, payload count/order, and exact semantic text plus HTML;
+it permits equivalent inner wrapper hydration only.
+Actual body changes, source replacement, source reparenting, changed identity or reordered payloads still fail with fixed mismatch counters.
+
+The GitLab UI corpus MR266334 currently exposes only resolved local-review items, so new UI acceptance does not claim local mark/reload/Undo coverage.
+The dedicated `gitlab-local-reviewed` focus uses the previously observed open human note3412014628 by user9249395 on public MR2117 and must renew that exact source identity and actionability before marking.
+Legacy `gitlab-review`, regression and all-case runs retain local-review coverage separately, and MR266334 round history remains guarded by its native selected Rapid Diff head.
+The ancillary native-fragment check remains with MR266334 legacy round history rather than becoming an undocumented requirement of the independent local-review persistence fixture.
+
+The `provider-access` installed-browser focus grants optional sites through genuine options-page pointer clicks and verifies worker-registered GitLab, Bitbucket and Bitbucket MAIN scripts before opening any public provider page.
+This focus blocks external DNS, skips all public cases and uploads only `geld-provider-access`, so its options-only receipt cannot replace the canonical provider cooldown artifact.
+
+Installed provider opt-in verification reads browser-owned permissions before and after each options click, so a pending permission request is distinct from pending script registration.
+The CI browser runs headed under Xvfb for the native permission prompt, while the existing page viewport sizes remain unchanged inside a larger desktop window.
+Native confirmation is limited to an active dialog owned by the launched Chrome process tree, outside web documents, naming Geld and the exact requested provider hosts with one enabled Allow action.
+Unknown, ambiguous or inaccessible dialogs remain unconfirmed, and no direct permission grant API or blind keyboard input substitutes for that native confirmation.
+
+Installed opt-in verification reads Chrome's permissions and registered content scripts through the verified options page, without attaching a DevTools evaluation context to the transient MV3 service worker.
+Each bounded read checks the exact extension ID and page URL before and after both read-only browser API calls, while the genuine options acknowledgement still proves the worker completed registration.
+
+Provider dashboards show incomplete source coverage as one muted partial-review status rather than repeating API diagnostics in the conversation.
+The copied digest retains every unavailable source reason, including separate missing thread states, while the panel remains explicitly partial.
+
+The read-only provider-evidence exporter accepts only the fixed GitLab captures and Bitbucket dashboard hidden/dark or named UI-failure captures emitted by the installed runner.
+It preserves the existing per-file, compressed-total and chunk limits and reports fixed Bitbucket UI status/custody fields without opening a browser or requesting provider data.
+Chrome's native ATK bridge is separate from renderer accessibility: the owned CI process sets `ACCESSIBILITY_ENABLED=1` and removes `CHROME_HEADLESS`, then uses the same isolated D-Bus session whose `org.a11y.Status.IsEnabled` is explicitly set and read back before Chrome starts.
+The accessibility preflight verifies that the real registry exposes an owned, showing, active native Chrome window with a showing native control outside web-document subtrees before requesting optional provider access.
+Missing native accessibility stops before the options click and records only bounded ownership, role and window-state counters;
+an empty dialog scan cannot prove a product permission failure.
+
+Dashboard pointer acceptance completes source-custody reads before stabilizing the original control's hit box across animation frames.
+It follows the same section key and ID rather than its array position, and records the trusted target plus immediate and microtask expansion state so a missed click is distinct from a later state reset.
+A missed, replaced or persistently moving target fails before result polling without retrying pointer input.
+
+Installed dashboard custody failures include bounded structural diagnostics for the first mismatched native payloads.
+The record names only a validated public note ID, child-node path, change kind, attribute name, and text or HTML lengths and fingerprints.
+Original comment text and attribute values remain in the page, and exact preservation assertions are unchanged.
+
+GitLab lazily adds its native Show full table control after a digest custody baseline, including when a dashboard scroll changes table measurements.
+Installed run41614670790 identified this exact comment-placeholder to height-control transition inside note4118703980, while retained captures preserved the table data.
+The acceptance snapshot normalizes only a height-toggle wrapper bound to its immediately preceding native table-shadow overlay, sticky scroll ID and marked table.
+Table content, native source identity and unrelated controls remain strictly compared.
+
+Installed dashboard theme checks wait for the owned surface to match the native surface after a real OS color-scheme change.
+They still require exact typography and color equality, and failures include the two bounded computed-style records.
+
+Bitbucket lazy file placeholders have no Viewed checkbox until the native diff is hydrated.
+The UI continuity lease retains original anchors, wrapper roots, tree links and existing Viewed controls, while permitting a newly hydrated native Viewed control only in its unchecked state.
+Its final comparison records field-specific identity mismatches and still rejects replaced existing controls, changed links or newly checked files.
+
+GitLab conversation cards use gl-background-color-section and gl-border-color-section, rather than the page-default surface tokens.
+They coincide in light mode but diverge in dark mode, so the provider digest overrides only its own card surface and border with those native section tokens.
+An offline replay of retained GitLab application and notes CSS reproduces the prior dark mismatch and verifies light, dark and restored-light equality.
+
+A refreshed complete provider cache entry receives a new storedAt timestamp even when its immutable source identity and parsed files are unchanged.
+Bitbucket UI continuity compares the exact semantic cache snapshot while recording storage times separately, so a legitimate refresh does not masquerade as source mutation.
+Schema, cache key, revision, source facts, file metadata and unknown extra fields remain compared, with bounded changed-field diagnostics.
+The retained evidence summary exports fixed continuity checkpoint flags, native identity mismatch counts and cache storage times without emitting file paths or source content.

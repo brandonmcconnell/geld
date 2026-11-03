@@ -50,15 +50,15 @@ describe('database lookup admission before channel authentication', () => {
       expect((await fetch(url+'/v1/channels/missing/request',{method:'POST',body:'{}'})).status).toBe(401);
       expect(resolver).not.toHaveBeenCalled();
       const send = (id:string) => {const path=`/v1/channels/${id}/request`;return fetch(url+path,{method:'POST',body:'{}',headers:signRelay(secret,'POST',path,'{}')});};
-      const answered: Response[] = [];
-      const requests = Array.from({length:6},(_,i)=>send(`missing-${i}`).then(response=>{answered.push(response);return response;}));
+      const requests = Array.from({length:2},(_,i)=>send(`missing-${i}`));
       await vi.waitFor(()=>expect(resolver).toHaveBeenCalledTimes(2));
-      // A request still on its way when the hold is released finds a free slot, so wait for the four the limit turns away.
-      await vi.waitFor(()=>expect(answered).toHaveLength(4));
+      const rejected = await Promise.all(Array.from({length:4},(_,i)=>send(`missing-${i+2}`)));
+      expect(rejected.map(response=>response.status)).toEqual([429,429,429,429]);
+      expect(resolver).toHaveBeenCalledTimes(2);
       expect((await send('static')).status).toBe(400);
       blocked=false;release();
       const responses = await Promise.all(requests);
-      expect(responses.filter(r=>r.status===429)).toHaveLength(4);
+      expect(responses.map(response=>response.status)).toEqual([404,404]);
       for(let i=0;i<30;i++)await send(`other-${i}`);
       expect(resolver).toHaveBeenCalledTimes(16);
       expect(broker.channelCount()).toBe(1);

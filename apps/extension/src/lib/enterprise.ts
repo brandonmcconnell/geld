@@ -75,12 +75,17 @@ let firefoxHandle: FirefoxRegisteredScript | null = null;
  * Make the content script run on exactly the granted Enterprise hosts.
  * Idempotent: call it on startup and whenever the host list changes.
  */
-export async function syncEnterpriseHosts(hosts: readonly string[]): Promise<void> {
+export async function syncEnterpriseHosts(hosts: readonly string[], manifestVersion: number = import.meta.env.MANIFEST_VERSION): Promise<void> {
   const matches = (await grantedHosts(hosts)).map(originPattern);
 
-  if (import.meta.env.MANIFEST_VERSION === 3) {
+  if (manifestVersion === 3) {
     try {
       await browser.scripting.unregisterContentScripts({ ids: [GHES_SCRIPT_ID] });
+    } catch {
+      // Nothing registered yet.
+    }
+    try {
+      await browser.scripting.unregisterContentScripts({ ids: [GHES_PORTAL_ID] });
     } catch {
       // Nothing registered yet.
     }
@@ -95,11 +100,6 @@ export async function syncEnterpriseHosts(hosts: readonly string[]): Promise<voi
         persistAcrossSessions: true,
       },
     ]);
-    try {
-      await browser.scripting.unregisterContentScripts({ ids: [GHES_PORTAL_ID] });
-    } catch {
-      // Nothing registered yet.
-    }
     try {
       await browser.scripting.registerContentScripts([{ id: GHES_PORTAL_ID, matches, js: [PORTAL_JS], runAt: 'document_start', world: 'MAIN', persistAcrossSessions: true }]);
     } catch {

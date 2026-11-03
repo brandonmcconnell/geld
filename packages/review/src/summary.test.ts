@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { buildMeta } from './build';
 import type { RawPullRequest } from './build';
-import { encodePayloadAttribute, extractPayloadText, looksLikeSummaryBody, parseSummaryBody, parseSummaryElement } from './summary-parse';
-import { renderSummary } from './summary-render';
+import { encodePayloadAttribute, extractPayloadText, hasPublishedSummaryPrefix, looksLikeSummaryBody, parsePublishedSummaryBody, parseSummaryBody, parseSummaryElement } from './summary-parse';
+import { renderProviderSummary, renderSummary } from './summary-render';
+import { buildProviderReviewItems } from './provider-review';
+import type { ProviderReviewSubject } from './provider-review';
 import { PAYLOAD_BUDGET, parseGeldPrMeta } from './model';
 import { botByTrigger, botsTriggeredBy, botTitle, commandReply, UNKNOWN_SHA, isReviewShaped, isStatusLineComment, looksLikeBotLogin, mergeCheckRuns, parseBotBody, refusalReason, REPORT_GRACE_MS, resolveBotId, verdictsFrom } from './bots';
 import type { BotComment, DerivedBotVerdict, RawCheckRun, VerdictOptions } from './bots';
@@ -102,6 +104,76 @@ function fixturePr(): RawPullRequest {
 }
 
 describe('render / parse round trip', () => {
+  it('recognizes only the exact leading publisher frame, including a damaged machine body', () => {
+    const prefix = '<!-- geld:summary:v1 -->\n### Geld review summary';
+    for (const actual of [prefix, `${prefix}\nBroken JSON`, `${prefix}\n\`\`\`geld\n{}\n\`\`\``, `${prefix}\nBroken JSON`.replace(/\n/g, '\r\n')]) expect(hasPublishedSummaryPrefix(actual)).toBe(true);
+    for (const quoted of ['<!-- geld:summary:v1 -->', `Example: ${prefix}`, `> ${prefix}`, `\`\`\`markdown\n${prefix}\n\`\`\``, `${prefix} extra words`, ` ${prefix}`, `\n${prefix}`]) expect(hasPublishedSummaryPrefix(quoted)).toBe(false);
+  });
+  it('prefers the real terminal footer over a quoted payload in an actual native suggestion', () => {
+    const subject: ProviderReviewSubject = { provider: 'gitlab', origin: 'https://gitlab.com', repository: 'group/subgroup/project', id: '42', headSha: 'a'.repeat(40) };
+    const fake = { ...buildMeta(fixturePr(), { producer: PRODUCER, generatedAt: '2026-09-18T12:00:00.000Z' }), items: [], producer: { ...PRODUCER, version: 'quoted-code' } };
+    const comment = { id: '1', anchor: 'note_1', url: 'https://gitlab.com/group/subgroup/project/-/merge_requests/42#note_1', author: { id: '7', login: 'alice' }, body: `Fix the crash.\n\`\`\`suggestion\ntitle='${encodePayloadAttribute(JSON.stringify(fake))}'\n\`\`\``, createdAt: '2026-09-18T12:00:00.000Z' };
+    const items = buildProviderReviewItems({ subject, threads: [{ id: '12345678', anchor: comment.anchor, url: comment.url, resolved: false, outdated: false, comments: [comment] }] });
+    const meta = { ...fake, producer: PRODUCER, items };
+    expect(items).toHaveLength(1);
+    expect(items[0]?.fix).toBeDefined();
+    const body = renderProviderSummary(meta, subject);
+    expect(parsePublishedSummaryBody(body)).toEqual({ ok: true, value: meta });
+    expect(parseSummaryBody(body)).toEqual({ ok: true, value: meta });
+    expect(extractPayloadText(body)).toBe(JSON.stringify(meta));
+  });
+
+  it('reads exact GitHub and native footer variants, including canonical entities and CRLF', () => {
+    const meta = buildMeta(fixturePr(), { producer: PRODUCER, generatedAt: '2026-09-18T12:00:00.000Z' });
+    for (const body of [renderSummary(meta), renderSummary(meta, { owner: 'acme', repo: 'widgets', number: 123 }), ...(['gitlab', 'bitbucket'] as const).map((provider) => renderProviderSummary(meta, { provider, origin: provider === 'gitlab' ? 'https://gitlab.com' : 'https://bitbucket.org', repository: 'group/project', id: '42', headSha: meta.headSha }))]) {
+      expect(parsePublishedSummaryBody(body)).toEqual({ ok: true, value: meta });
+      expect(parsePublishedSummaryBody(body.trimEnd())).toEqual({ ok: true, value: meta });
+      expect(parsePublishedSummaryBody(body.replace(/\n/g, '\r\n'))).toEqual({ ok: true, value: meta });
+    }
+  });
+
+  it('keeps arbitrary nested fences and footer examples in suggested code out of the published frame', () => {
+    const base = buildMeta(fixturePr(), { producer: PRODUCER, generatedAt: '2026-09-18T12:00:00.000Z' });
+    const footer = renderSummary({ ...base, items: [] }).trimEnd().split('\n').at(-1) ?? '';
+    const meta = { ...base, items: base.items.map((item) => ({ ...item, fix: { source: 'human' as const, text: ['```js', 'const code = `x`;', '``````', '~~~html', footer, '~~~', '```'].join('\n') } })) };
+    const body = renderSummary(meta);
+    expect(body).toContain('```````suggestion');
+    expect(parsePublishedSummaryBody(body)).toEqual({ ok: true, value: meta });
+  });
+
+  it('validates canonical payload escaping and JSON without borrowing a body carrier', () => {
+    const base = buildMeta(fixturePr(), { producer: PRODUCER, generatedAt: '2026-09-18T12:00:00.000Z' });
+    const meta = { ...base, items: base.items.map((item) => ({ ...item, title: `Fix <tag> & "quoted" &amp; 'value'` })) };
+    const body = renderSummary(meta);
+    expect(parsePublishedSummaryBody(body)).toEqual({ ok: true, value: meta });
+    expect(parsePublishedSummaryBody(body.replace(/&#39;/g, '&apos;')).ok).toBe(false);
+    expect(parsePublishedSummaryBody(body.replace("title='geld:{", "title='geld:invalid{")).ok).toBe(false);
+    expect(parsePublishedSummaryBody(body.replace('"v":1', '"v":2')).ok).toBe(false);
+  });
+
+  it('places provider notes structurally after quoted footer examples, before the true final footer', () => {
+    const base = buildMeta(fixturePr(), { producer: PRODUCER, generatedAt: '2026-09-18T12:00:00.000Z' });
+    const quotedFooter = renderSummary({ ...base, items: [] }).trimEnd().split('\n').at(-1) ?? '';
+    const meta = { ...base, items: base.items.map((item) => ({ ...item, fix: { source: 'human' as const, text: quotedFooter } })) };
+    const body = renderProviderSummary(meta, { provider: 'gitlab', origin: 'https://gitlab.com', repository: 'group/project', id: '42', headSha: meta.headSha }, { notes: ['Required approvals: 1', 'CI checks: 1 passed'] });
+    expect(body).toContain(`  ${quotedFooter}\n  \`\`\``);
+    expect(body).toContain('Required approvals: 1\nCI checks: 1 passed\n\n<sub>');
+    expect(body.match(/Required approvals: 1/g)).toHaveLength(1);
+    expect(parsePublishedSummaryBody(body)).toEqual({ ok: true, value: meta });
+  });
+
+  it('rejects non-publisher raw frames while preserving legacy parsing', () => {
+    const meta = buildMeta(fixturePr(), { producer: PRODUCER, generatedAt: '2026-09-18T12:00:00.000Z' });
+    const body = renderSummary(meta);
+    const footer = body.trimEnd().split('\n').at(-1) ?? '';
+    const prefix = '<!-- geld:summary:v1 -->\n### Geld review summary\n';
+    const legacy = `${prefix}\n\`\`\`geld\n${JSON.stringify(meta)}\n\`\`\`\n`;
+    expect(parseSummaryBody(legacy)).toEqual({ ok: true, value: meta });
+    for (const invalid of [legacy, JSON.stringify(meta), footer, `${prefix}\n\`\`\`html\n${footer}\n\`\`\`\n`, `${prefix}\n~~~~html\n${footer}\n~~~~\n`, `${prefix}\n\`\`\`\n${footer}\n`, `${prefix}\n${footer}\n${footer}\n`, `${body}trailing prose`, `${body}\n`, `quoted\n${body}`, body.replace('</span>', 'visible</span>'), body.replace("title='geld:", "title='other:"), body.replace('what is this?', 'other footer'), body.replace('how-it-works#summary', 'elsewhere'), body.replace("title='geld:", "data-title='geld:"), body.replace("title='geld:", 'title="geld:')]) {
+      expect(parsePublishedSummaryBody(invalid).ok, invalid.slice(0, 100)).toBe(false);
+    }
+  });
+
   it('parse(render(meta)) deep-equals meta', () => {
     const meta = buildMeta(fixturePr(), { producer: PRODUCER, generatedAt: '2026-09-18T12:00:00.000Z' });
     const body = renderSummary(meta, { owner: 'acme', repo: 'widgets', number: 123 });

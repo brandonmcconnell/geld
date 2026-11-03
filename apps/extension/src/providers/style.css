@@ -1,0 +1,173 @@
+@import './references.css';
+@import './hover.css';
+
+.geld-provider-diffs { display: flex; flex-direction: column; }
+.geld-provider-diffs [data-geld-provider-flow-wrapper=""] { display: contents !important; }
+.geld-provider-diffs [data-geld-provider-hidden] { order: 2; }
+.geld-provider-diffs [data-geld-provider-hidden="closed"] { display: none !important; }
+html[data-geld-provider] [data-geld-provider-author-hidden] { display: none !important; }
+[data-geld-provider-inline] { color: var(--geld-provider-text-subtle); }
+.geld-provider-hidden, .geld-provider-review {
+  font: var(--geld-provider-font);
+  color: var(--geld-provider-text);
+  background: var(--geld-provider-bg);
+  border: var(--geld-provider-border-width) solid var(--geld-provider-border);
+  border-radius: var(--geld-provider-radius);
+  box-shadow: var(--geld-provider-shadow);
+}
+.geld-provider-hidden {
+  order: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--geld-provider-space-4);
+  margin-block: var(--geld-provider-space-4);
+  padding: var(--geld-provider-space-4);
+}
+.geld-provider-review { margin-block: var(--geld-provider-space-5); padding: var(--geld-provider-space-4); }
+.geld-provider-review__header { display: flex; justify-content: space-between; align-items: baseline; gap: var(--geld-provider-space-4); }
+.geld-provider-review__header strong, .geld-provider-review__section > summary { font-weight: var(--geld-provider-heading-weight); }
+.geld-provider-review__header h2 { margin: 0; font: var(--geld-provider-font); font-weight: var(--geld-provider-heading-weight); }
+.geld-provider-review__section { margin-block: var(--geld-provider-space-4); }
+.geld-provider-review__publication { margin-block: var(--geld-provider-space-4); padding-block: var(--geld-provider-space-3); border-block: var(--geld-provider-border-width) solid var(--geld-provider-border); }
+.geld-provider-review__publication > strong { font-weight: var(--geld-provider-heading-weight); }
+.geld-provider-review__section > summary, .geld-provider-review__item > summary { cursor: pointer; }
+.geld-provider-review__item { border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); padding-block: var(--geld-provider-space-3); }
+.geld-provider-review__item-state { font: var(--geld-provider-font); margin-inline: var(--geld-provider-space-3); color: var(--geld-provider-text-subtle); }
+.geld-provider-review__source { margin-block: var(--geld-provider-space-4); }
+.geld-provider-review__byline, .geld-provider-review__muted { font: var(--geld-provider-byline-font); color: var(--geld-provider-text-subtle); }
+.geld-provider-review__byline { display: flex; flex-wrap: wrap; gap: var(--geld-provider-space-3); align-items: baseline; }
+.geld-provider-review__byline [data-geld-author-name] { font: var(--geld-provider-author-font, var(--geld-provider-byline-font)); font-weight: var(--geld-provider-author-weight, var(--geld-provider-heading-weight)); color: var(--geld-provider-author-text, inherit); }
+.geld-provider-review__avatar-slot { display: inline-flex; position: relative; flex: 0 0 auto; align-self: center; }
+.geld-provider-review__body { padding: var(--geld-provider-space-3); border-inline-start: var(--geld-provider-border-width) solid var(--geld-provider-border); }
+.geld-provider-review__standing, .geld-provider-review__check, .geld-provider-review__event { padding-block: var(--geld-provider-space-2); }
+.geld-provider-review__reviewer-summary { margin-inline-end: var(--geld-provider-space-3); }
+.geld-provider-review__reviewers { display: inline-flex; flex-wrap: wrap; align-items: flex-start; gap: var(--geld-provider-space-3); min-inline-size: 0; }
+.geld-provider-review__reviewers > .geld-provider-review__standing { display: inline-flex; flex-direction: column; gap: var(--geld-provider-space-2); padding: 0; min-inline-size: 0; color: var(--geld-provider-text); }
+.geld-provider-review__reviewer { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--geld-provider-space-2); max-inline-size: 100%; padding: var(--geld-provider-space-2) var(--geld-provider-space-3); border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: var(--geld-provider-button-radius); background: var(--geld-provider-bg-subtle); font: var(--geld-provider-byline-font); color: var(--geld-provider-text); }
+.geld-provider-review__reviewer-avatar { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; inline-size: 1.5em; block-size: 1.5em; overflow: hidden; border-radius: 50%; background: var(--geld-provider-bg); color: var(--geld-provider-text-subtle); }
+.geld-provider-review__reviewer-avatar img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+.geld-provider-review__reviewer-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-inline-size: 16ch; }
+.geld-provider-review__standing[data-state="approved"] .geld-provider-review__reviewer-verdict { color: var(--geld-provider-success); }
+.geld-provider-review__standing[data-state="changes_requested"] .geld-provider-review__reviewer-verdict { color: var(--geld-provider-warning); }
+.geld-provider-review__reviewer-request { display: inline-flex; align-items: center; gap: var(--geld-provider-space-2); color: var(--geld-provider-warning); }
+.geld-provider-review__reviewer-request::before { content: ''; inline-size: .4em; block-size: .4em; border-radius: 50%; background: currentColor; }
+.geld-provider-review__reviewer-activity { font: var(--geld-provider-byline-font); color: var(--geld-provider-text-subtle); }
+.geld-provider-review__check-part { display: inline-flex; align-items: center; gap: var(--geld-provider-space-2); }
+.geld-provider-check-icon { display: inline-flex; flex: 0 0 auto; vertical-align: text-bottom; }
+.geld-provider-check-icon[data-provider="bitbucket"] { color: var(--geld-provider-ci-success); }
+.geld-provider-review__unavailable, .geld-provider-review [data-state="failed"] { color: var(--geld-provider-danger); }
+.geld-provider-review [data-state="passed"], .geld-provider-review [data-state="approved"] { color: var(--geld-provider-success); }
+.geld-provider-review [data-state="changes_requested"] { color: var(--geld-provider-warning); }
+.geld-provider-review a { color: var(--geld-provider-link); }
+.geld-provider-toggle, .geld-provider-review__copy, .geld-provider-actions button, .geld-provider-review__source-actions button {
+  box-sizing: border-box;
+  min-height: var(--geld-provider-button-min-height);
+  padding: var(--geld-provider-button-padding);
+  font: var(--geld-provider-button-font);
+  font-weight: var(--geld-provider-button-weight);
+  color: var(--geld-provider-button-text);
+  background: var(--geld-provider-button-bg);
+  border: var(--geld-provider-button-border-width) solid var(--geld-provider-button-border);
+  border-radius: var(--geld-provider-button-radius);
+  cursor: pointer;
+  transition: var(--geld-provider-button-transition);
+}
+.geld-provider-toggle:hover, .geld-provider-review__copy:hover, .geld-provider-actions button:hover, .geld-provider-review__source-actions button:hover {
+  color: var(--geld-provider-button-hover-text);
+  background: var(--geld-provider-button-hover-bg);
+  border-color: var(--geld-provider-button-hover-border);
+}
+.geld-provider-toggle:active, .geld-provider-review__copy:active, .geld-provider-actions button:active, .geld-provider-review__source-actions button:active {
+  color: var(--geld-provider-button-active-text);
+  background: var(--geld-provider-button-active-bg);
+  border-color: var(--geld-provider-button-active-border);
+}
+.geld-provider-toggle:disabled, .geld-provider-review__copy:disabled, .geld-provider-actions button:disabled, .geld-provider-review__source-actions button:disabled {
+  color: var(--geld-provider-button-disabled-text);
+  background: var(--geld-provider-button-disabled-bg);
+  border-color: var(--geld-provider-button-disabled-border);
+  cursor: default;
+}
+.geld-provider-toggle:focus, .geld-provider-review__copy:focus, .geld-provider-actions button:focus, .geld-provider-review__source-actions button:focus {
+  color: var(--geld-provider-button-focus-text);
+  background: var(--geld-provider-button-focus-bg);
+  border-color: var(--geld-provider-button-focus-border);
+}
+.geld-provider-toggle:focus-visible, .geld-provider-file:focus-visible, .geld-provider-review__copy:focus-visible,
+.geld-provider-actions button:focus-visible, .geld-provider-review__source-actions button:focus-visible, .geld-provider-review summary:focus-visible,
+.geld-provider-review a:focus-visible, .geld-provider-categories summary:focus-visible, .geld-provider-breakdown summary:focus-visible {
+  box-shadow: var(--geld-provider-focus-ring);
+  outline: var(--geld-provider-focus-outline);
+  outline-offset: var(--geld-provider-focus-offset);
+}
+.geld-provider-file { display: block; max-width: 100%; padding: var(--geld-provider-space-2) var(--geld-provider-space-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; font: inherit; text-align: start; background: none; border: 0; cursor: pointer; }
+.geld-provider-file:hover { color: var(--geld-provider-link); text-decoration: underline; }
+.geld-provider-categories { padding-block: var(--geld-provider-space-3); border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); }
+.geld-provider-categories details { padding-block: var(--geld-provider-space-2); }
+.geld-provider-categories summary { padding: var(--geld-provider-space-2) var(--geld-provider-space-3); cursor: pointer; font-weight: var(--geld-provider-heading-weight); }
+.geld-provider-list-counts { display: inline-block; margin-inline: var(--geld-provider-space-3); font: inherit; font-weight: var(--geld-provider-heading-weight); color: var(--geld-provider-text-subtle); white-space: nowrap; }
+.geld-provider-breakdown { font: var(--geld-provider-font); }
+.geld-provider-breakdown summary { cursor: pointer; }
+.geld-provider-actions, .geld-provider-review__source-actions { display: inline-flex; flex-wrap: wrap; gap: var(--geld-provider-space-2); margin-inline: var(--geld-provider-space-3); }
+.geld-provider-review [data-geld-bot-command] { display: block; font-size: inherit; line-height: inherit; white-space: pre-wrap; overflow-wrap: anywhere; margin-block: var(--geld-provider-space-2); }
+
+/* Own the accordion around the native tree; provider file nodes stay in place. */
+[data-geld-provider-category-host] { display: flex; flex-direction: column; min-block-size: 0; }
+[data-geld-provider-category-row] { display: none !important; }
+[data-geld-provider-category-body] { order: 1; min-block-size: 0; overflow: auto; flex: 1 1 auto; }
+[data-geld-provider-category-body="native"] { display: none !important; }
+.geld-provider-category-header { display: flex; align-items: center; gap: var(--geld-provider-space-2); flex: 0 0 auto; inline-size: 100%; border: 0; border-block-start: var(--geld-provider-border-width) solid var(--geld-provider-border); padding: var(--geld-provider-space-3) var(--geld-provider-space-2); text-align: start; color: var(--geld-provider-text); background: var(--geld-provider-bg); font: var(--geld-provider-font); font-weight: var(--geld-provider-heading-weight); cursor: pointer; }
+.geld-provider-category-header:hover, .geld-provider-category-folder:hover { background: var(--geld-provider-bg-subtle); }
+.geld-provider-category-header:focus-visible, .geld-provider-category-folder:focus-visible { outline: var(--geld-provider-focus-outline); box-shadow: var(--geld-provider-focus-ring); outline-offset: var(--geld-provider-focus-offset); }
+.geld-provider-category-header[aria-expanded="true"] { color: var(--geld-provider-link); }
+[data-geld-provider-category-host] > .geld-provider-categories { order: 2; display: flex; flex-direction: column; min-block-size: 0; padding: 0; border: 0; }
+.geld-provider-category { display: flex; flex-direction: column; min-block-size: 0; flex: 0 0 auto; }
+.geld-provider-category[data-active="true"] { flex: 1 1 auto; }
+.geld-provider-category-content { min-block-size: 0; overflow: auto; }
+.geld-provider-category-content[hidden], .geld-provider-category-list[hidden] { display: none !important; }
+.geld-provider-category-list { list-style: none; padding: 0; margin: 0; }
+.geld-provider-category-folder { border: 0; display: flex; align-items: center; gap: var(--geld-provider-space-2); inline-size: 100%; padding: var(--geld-provider-space-2); padding-inline-start: calc(var(--geld-provider-space-2) + var(--geld-category-depth, 0) * var(--geld-provider-space-4)); color: var(--geld-provider-text); background: none; text-align: start; font: var(--geld-provider-font); cursor: pointer; }
+.geld-provider-category-folder::before { content: ''; display: inline-block; inline-size: 6px; block-size: 6px; border-inline-end: 1px solid currentColor; border-block-end: 1px solid currentColor; transform: rotate(-45deg); flex: 0 0 auto; }
+.geld-provider-category-folder[aria-expanded="true"]::before { transform: rotate(45deg); }
+.geld-provider-category-native-row { max-inline-size: 100%; }
+.geld-provider-category-native-row.geld-provider-file { padding-inline-start: calc(var(--geld-provider-space-2) + var(--geld-category-depth, 0) * var(--geld-provider-space-4)); }
+.geld-provider-category-status { font: var(--geld-provider-byline-font); color: var(--geld-provider-text-subtle); }
+.geld-provider-category-native-row [aria-current="true"], .geld-provider-category-native-row[aria-current="true"] { color: var(--geld-provider-link); background: var(--geld-provider-bg-subtle); }
+.geld-provider-list-counts__add { color: var(--geld-provider-success); }
+.geld-provider-list-counts__del { color: var(--geld-provider-danger); }
+
+[data-geld-provider-category-host][data-geld-provider-tree-sized] { max-block-size: var(--geld-provider-tree-max-height); }
+.geld-provider-essential-content { order: 1; min-block-size: 0; overflow: auto; flex: 1 1 auto; }
+.geld-provider-essential-content[hidden] { display: none !important; }
+[data-geld-provider-category-host] > .geld-provider-categories:has(> .geld-provider-category[data-active="true"]) { flex: 1 1 auto; }
+.geld-provider-category[data-active="true"] > .geld-provider-category-content { flex: 1 1 auto; }
+
+.geld-provider-accessible-counts { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* Category glyphs use the provider's own 16px geometry; Bitbucket directories
+ * use its native chevrons while GitLab switches its native folder silhouettes. */
+.geld-provider-category-icon { display: inline-block; inline-size: 16px; block-size: 16px; flex: 0 0 16px; vertical-align: middle; }
+.geld-provider-category-label, .geld-provider-category-folder-label { min-inline-size: 0; }
+.geld-provider-category-folder-visual { display: inline-flex; align-items: center; flex: 0 0 auto; }
+.geld-provider-category-folder[data-geld-folder-glyph]::before { display: none; }
+.geld-provider-category-folder[data-geld-native-folder] { font: inherit; }
+.geld-provider-category-folder[data-geld-native-folder="gitlab"] { padding-inline-start: var(--geld-provider-space-2); }
+
+/* Inline mode fades only individual native rows, never a nested directory's
+ * descendants; annotations and native handlers remain in their own nodes. */
+[data-geld-provider-inline-tree-row] { opacity: 0.5; }
+[data-geld-provider-inline-tree-row]:hover, [data-geld-provider-inline-tree-row]:focus-within { opacity: 0.85; }
+[data-geld-provider-inline-tree-glyph] { display: none !important; }
+.geld-provider-inline-category-icon { vertical-align: middle; color: var(--geld-provider-text-subtle); }
+
+.geld-provider-hidden-authors { display: flex; flex-wrap: wrap; align-items: center; gap: var(--geld-provider-space-3); padding: var(--geld-provider-space-3) var(--geld-provider-space-4); border-block-end: var(--geld-provider-border-width) solid var(--geld-provider-border); color: var(--geld-provider-text-subtle); background: var(--geld-provider-bg-subtle); font: var(--geld-provider-font-small); }
+.geld-provider-hidden-authors__item { list-style: none; }
+.geld-provider-hidden-authors__cell { padding: 0; }
+.geld-provider-hidden-authors__text { min-inline-size: 0; overflow-wrap: anywhere; }
+.geld-provider-hidden-authors__show { flex: 0 0 auto; padding: 0; border: 0; border-radius: var(--geld-provider-button-radius); color: var(--geld-provider-link); background: none; font: inherit; cursor: pointer; }
+.geld-provider-hidden-authors__show:hover { text-decoration: underline; }
+.geld-provider-hidden-authors__show:focus-visible { outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); box-shadow: var(--geld-provider-focus-ring); }
+
+.geld-provider-header-hidden-count { display: inline-flex; align-items: baseline; color: var(--geld-provider-text-subtle); font: inherit; white-space: nowrap; cursor: help; text-decoration: underline dotted; text-underline-offset: 0.15em; }
+.geld-provider-header-hidden-count:focus-visible { outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); box-shadow: var(--geld-provider-focus-ring); }
