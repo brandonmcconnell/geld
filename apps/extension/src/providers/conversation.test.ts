@@ -740,11 +740,11 @@ describe('local reviewed source fingerprints', () => {
 
 
 describe('scoped native review opener lifetime', () => {
-  function opener() {
+  function opener(kind: 'open-pending-review' | 'open-review' = 'open-pending-review') {
     let live = snapshot().input;let scope = 'native-one';let available = true;let context: ProviderReviewActionContext | undefined;
     const first = vi.fn(async (value?: ProviderReviewActionContext) => { context = value;return value?.current() === true; });
     const replacement = vi.fn(async () => true);let activate = first;
-    const source: ProviderReviewSnapshot = { ...snapshot(), get input() { return live; }, get actions(): ProviderReviewSnapshot['actions'] { return [{ kind: 'open-pending-review', scopeKey: scope, available, activate }]; } };
+    const source: ProviderReviewSnapshot = { ...snapshot(), get input() { return live; }, get actions(): ProviderReviewSnapshot['actions'] { return [{ kind, scopeKey: scope, available, activate }]; } };
     const native = document.createElement('header');document.body.append(native);
     const mutablePage = { ...page, headSha: null, version: 'current' };
     const f = fixture(source, {}, { aiEnabled: false, quickReview: true, prOverview: false }, { actionHost: () => native }, mutablePage);
@@ -755,6 +755,13 @@ describe('scoped native review opener lifetime', () => {
     const f = opener();await vi.waitFor(() => expect(f.button()).not.toBeNull());const button = f.button()!;button.focus();expect(button.textContent).toBe('Open pending review');
     f.refreshSameHead();f.apply();expect(f.button()).toBe(button);expect(document.activeElement).toBe(button);expect(f.fetchReview).toHaveBeenCalledOnce();
     button.click();await vi.waitFor(() => expect(f.first).toHaveBeenCalledOnce());expect(f.context()?.current()).toBe(true);expect(button.textContent).toBe('Open pending review');
+  });
+  it('labels the separate GitLab opener neutrally and retains its original scoped activation', async () => {
+    const f = opener('open-review');await vi.waitFor(() => expect(f.button()).not.toBeNull());const button = f.button()!;
+    expect(button.textContent).toBe('Open your review');expect(button.textContent).not.toContain('pending');
+    f.refreshSameHead();f.apply();expect(f.button()).toBe(button);f.changeHandler();button.click();
+    await vi.waitFor(() => expect(f.first).toHaveBeenCalledOnce());expect(f.replacement).not.toHaveBeenCalled();expect(f.context()?.current()).toBe(true);
+    f.scope('new-native-review');expect(f.context()?.current()).toBe(false);f.apply();expect(f.button()).not.toBe(button);expect(f.button()?.textContent).toBe('Open your review');
   });
   it('does not adopt a new native owner or bootstrap scope at click time', async () => {
     const f = opener();await vi.waitFor(() => expect(f.button()).not.toBeNull());const old = f.button()!;f.scope('native-two');old.click();expect(f.first).not.toHaveBeenCalled();
