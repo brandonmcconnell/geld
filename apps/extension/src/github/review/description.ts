@@ -160,7 +160,11 @@ function keyOf(heading: OutlineHeading, element: HTMLElement): string {
   return `${heading.index}:${text}`;
 }
 
-const wired = new WeakSet<HTMLElement>();
+/**
+ * Everything this copy has wired, dropped together on cleanup: a content-script copy that retires must leave no
+ * listener behind, or both copies would handle each click and the second would undo the first.
+ */
+let wiring = { signal: new AbortController(), blocks: new WeakSet<HTMLElement>(), bodies: new WeakSet<HTMLElement>(), buttons: new WeakSet<HTMLButtonElement>() };
 
 function toggleOf(element: HTMLElement): HTMLButtonElement {
   const existing = element.querySelector<HTMLButtonElement>(`:scope > .${TOGGLE_CLASS}`);
@@ -171,8 +175,8 @@ function toggleOf(element: HTMLElement): HTMLButtonElement {
 }
 
 function wire(block: HTMLElement, body: HTMLElement): void {
-  if (wired.has(block)) return;
-  wired.add(block);
+  if (wiring.blocks.has(block)) return;
+  wiring.blocks.add(block);
   block.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -183,7 +187,7 @@ function wire(block: HTMLElement, body: HTMLElement): void {
     if (key === null) return;
     state.open.set(key, block.getAttribute(ATTR_HEADING) !== 'open');
     applyTo(body);
-  });
+  }, { signal: wiring.signal.signal });
 }
 
 /** Lift the cut for good: the reader is reading the description. */
@@ -193,30 +197,43 @@ function uncap(body: HTMLElement): void {
   applyTo(body);
 }
 
-/** The buttons this copy made: a button GitHub re-rendered from a copy of its markup keeps nothing of its listener. */
-const moreButtons = new WeakSet<HTMLButtonElement>();
-
 function syncMoreButton(body: HTMLElement, show: boolean): void {
   const next = body.nextElementSibling;
   const existing = next instanceof HTMLButtonElement && next.classList.contains(MORE_CLASS) ? next : null;
-  if (!show || (existing !== null && !moreButtons.has(existing))) existing?.remove();
-  if (!show || (existing !== null && moreButtons.has(existing))) return;
+  // A button GitHub re-rendered from a copy of its markup, or one a retired copy made, keeps nothing of its listener.
+  if (!show || (existing !== null && !wiring.buttons.has(existing))) existing?.remove();
+  if (!show || (existing !== null && wiring.buttons.has(existing))) return;
   const more = createElement('button', { type: 'button', class: MORE_CLASS, [OWN_UI_ATTRIBUTE]: '' }, [svgFromString(ICON_CHEVRON_DOWN), createElement('span', {}, ['Show full description'])]);
-  more.addEventListener('click', () => uncap(body));
-  moreButtons.add(more);
+  more.addEventListener('click', () => uncap(body), { signal: wiring.signal.signal });
+  wiring.buttons.add(more);
   body.insertAdjacentElement('afterend', more);
 }
 
-const watchedBodies = new WeakSet<HTMLElement>();
-
-/** Opening any collapsible part of a cut description (a `<details>`) is reading it: the cut goes. */
-function watchDisclosures(body: HTMLElement): void {
-  if (watchedBodies.has(body)) return;
-  watchedBodies.add(body);
-  // `toggle` does not bubble, so it is caught on the way down.
+/**
+ * Opening any collapsible part of a cut description (a `<details>`) is reading it: the cut goes. And when the
+ * browser's find-in-page matches text folded under a heading (`hidden="until-found"`), every section around it opens.
+ */
+function watchBody(body: HTMLElement): void {
+  if (wiring.bodies.has(body)) return;
+  wiring.bodies.add(body);
+  const options = { capture: true, signal: wiring.signal.signal };
+  // Neither `toggle` nor `beforematch` bubbles, so both are caught on the way down.
   body.addEventListener('toggle', (event) => {
     if (event.target instanceof HTMLDetailsElement && event.target.open) uncap(body);
-  }, true);
+  }, options);
+  body.addEventListener('beforematch', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const blocks = [...body.children].filter((block) => !block.hasAttribute(OWN_UI_ATTRIBUTE));
+    const index = blocks.findIndex((block) => block === target || block.contains(target));
+    if (index < 0) return;
+    for (const heading of outlineOf(blocks)) {
+      if (heading.index >= index || index >= heading.end) continue;
+      const key = blocks[heading.index]?.getAttribute(ATTR_KEY);
+      if (key !== null && key !== undefined) state.open.set(key, true);
+    }
+    applyTo(body);
+  }, options);
 }
 
 function measure(body: HTMLElement): void {
@@ -289,7 +306,14 @@ function applyTo(body: HTMLElement): void {
   }
   const hidden = hiddenBlocks(outline, (heading) => openNow.get(heading.index) ?? true);
   blocks.forEach((block, index) => {
-    setFlag(block, ATTR_FOLD, hidden.has(index) ? '' : null);
+    // `until-found`, so find-in-page still searches what is folded (see `watchBody`). Only Geld's own `hidden` is lifted.
+    if (hidden.has(index)) {
+      setFlag(block, ATTR_FOLD, '');
+      setFlag(block, 'hidden', 'until-found');
+    } else if (block.hasAttribute(ATTR_FOLD)) {
+      block.removeAttribute(ATTR_FOLD);
+      if (block.getAttribute('hidden') === 'until-found') block.removeAttribute('hidden');
+    }
     if (folding.has(index)) return;
     // A block that no longer heads a section (the description was edited) gives up its control.
     setFlag(block, ATTR_HEADING, null);
@@ -306,18 +330,21 @@ function applyTo(body: HTMLElement): void {
   const cut = state.capped && outline.length === 0;
   setFlag(body, ATTR_CAP, cut ? '' : null);
   syncMoreButton(body, cut);
-  if (cut) watchDisclosures(body);
+  watchBody(body);
   observe(body);
 }
 
 function clear(): void {
-  state.page = '';
+  // The page and its choices stay: showing the full timeline and back keeps what the reader opened.
+  wiring.signal.abort();
+  wiring = { signal: new AbortController(), blocks: new WeakSet(), bodies: new WeakSet(), buttons: new WeakSet() };
   if (observed !== null) resizeObserver?.unobserve(observed);
   observed = null;
   for (const element of document.querySelectorAll(`.${TOGGLE_CLASS}, .${MORE_CLASS}`)) element.remove();
   for (const element of document.querySelectorAll(`[${ATTR_DEPTH}]`)) {
     if (element instanceof HTMLElement) for (const name of RAIL_PROPERTIES) element.style.removeProperty(name);
   }
+  for (const element of document.querySelectorAll(`[${ATTR_FOLD}][hidden='until-found']`)) element.removeAttribute('hidden');
   for (const name of [ATTR_FOLD, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH]) {
     for (const element of document.querySelectorAll(`[${name}]`)) element.removeAttribute(name);
   }

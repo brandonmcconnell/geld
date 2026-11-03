@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hiddenBlocks, outlineOf, railsOf, shortenDescription } from './description';
 
 function blocksOf(html: string): Element[] {
@@ -59,6 +59,12 @@ describe('railsOf', () => {
 });
 
 describe('shortenDescription', () => {
+  // Choices are kept per page, so each test is its own pull request.
+  let page = 0;
+  beforeEach(() => {
+    page += 1;
+    history.replaceState(null, '', `/owner/repo/pull/${page}`);
+  });
   afterEach(() => {
     shortenDescription(false);
     document.body.innerHTML = '';
@@ -93,6 +99,40 @@ describe('shortenDescription', () => {
     // A pass after the click keeps what the reader chose.
     shortenDescription(true);
     expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(false);
+  });
+
+  it('folds with hidden="until-found", and opens every section around text find-in-page matched', () => {
+    const body = mountDescription(`${h(2, 'A')}<p>a</p>${h(3, 'B')}<p>needle</p>`);
+    shortenDescription(true);
+    const needle = body.children[3];
+    expect(needle?.getAttribute('hidden')).toBe('until-found');
+    needle?.removeAttribute('hidden');
+    needle?.dispatchEvent(new Event('beforematch'));
+    expect(body.children[2]?.getAttribute('data-geld-desc-heading')).toBe('open');
+    expect(needle?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(needle?.hasAttribute('hidden')).toBe(false);
+  });
+
+  it('keeps what the reader opened when shortening is turned off and on again on the same page', () => {
+    const body = mountDescription(`${h(2, 'One')}<p>a</p>`);
+    shortenDescription(true);
+    body.querySelector<HTMLElement>('.markdown-heading h2')?.click();
+    shortenDescription(false);
+    expect(body.children[1]?.hasAttribute('hidden')).toBe(false);
+    shortenDescription(true);
+    expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(false);
+  });
+
+  it('leaves no listener behind when a copy retires, so the copy that takes over toggles a heading once', async () => {
+    const body = mountDescription(`${h(2, 'One')}<p>a</p>`);
+    shortenDescription(true);
+    shortenDescription(false);
+    vi.resetModules();
+    const successor = await import('./description');
+    successor.shortenDescription(true);
+    body.querySelector<HTMLElement>('.markdown-heading h2')?.click();
+    expect(body.children[0]?.getAttribute('data-geld-desc-heading')).toBe('open');
+    successor.shortenDescription(false);
   });
 
   it('leaves a click on the heading anchor alone', () => {

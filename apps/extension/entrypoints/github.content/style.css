@@ -2429,6 +2429,23 @@ tr[data-geld-test-fold='hidden'] {
  * `content-visibility: hidden` skips the contents (rail pseudo-elements
  * included), and without padding or borders nothing of the row remains.
  */
+/*
+ * In Primer's own layer: GitHub declares `[hidden][hidden] { display: none !important }` inside
+ * `@layer primer-css-base`, and a layered !important beats any unlayered one whatever its specificity, so this
+ * rule unlayered lost and folded rows were `display: none`, out of find-in-page's reach. In the same layer the
+ * more specific rule wins, and should the layer go, a layered !important still beats an unlayered one.
+ */
+@layer primer-css-base {
+  /* One attribute more than Primer's `[hidden][hidden]`, which comes later in the layer. */
+  [data-geld-folded][data-geld-folded='hidden'][hidden='until-found'] {
+    display: block !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+}
+
 [data-geld-folded='hidden'] {
   display: block !important;
   min-height: 0 !important;
@@ -7277,8 +7294,19 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 
 /* ---- description outline and cap (description.ts) ------------------------- */
 
-[data-geld-desc-fold] {
-  display: none !important;
+/*
+ * A folded block carries `hidden="until-found"` so find-in-page still searches it. As with timeline folds, Primer's
+ * layered `[hidden] { display: none !important }` is undone in its own layer and the box zeroed: the UA's
+ * `content-visibility: hidden` skips the contents, and with no margin, padding or border nothing of the block remains.
+ */
+@layer primer-css-base {
+  [data-geld-desc] > [data-geld-desc-fold][hidden='until-found'] {
+    display: block !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
 }
 
 /*
@@ -7318,6 +7346,7 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 
 [data-geld-desc] > :is(h1, h2, h3, h4, h5, h6, .markdown-heading) {
   --geld-desc-after: 8px;
+  /* The chevron's box spans 10px to 30px: its rail starts just under the glyph's point, not through it. */
   --geld-desc-chevron-y: 28px;
   margin-top: 0 !important;
   margin-bottom: 8px !important;
@@ -7347,21 +7376,22 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   cursor: pointer;
 }
 
-[data-geld-desc-heading] > :is(h1, h2, h3, h4, h5, h6),
-:is(h1, h2, h3, h4, h5, h6)[data-geld-desc-heading] {
-  display: flex;
-  align-items: flex-start;
-  gap: 4px;
+/* The heading's own text, links and code stay in GitHub's inline flow. The chevron stands in the indent beside it. */
+[data-geld-desc] > :is(h1, h2, h3, h4, h5, h6),
+[data-geld-desc] > .markdown-heading > :is(h1, h2, h3, h4, h5, h6) {
+  position: relative;
+  padding-left: 24px !important;
 }
 
 .geld-desc-toggle {
+  position: absolute;
+  top: 10px;
+  left: 0;
   display: inline-flex;
-  flex: none;
   align-items: center;
   justify-content: center;
   width: 20px;
   height: 20px;
-  margin-top: 2px;
   padding: 0;
   border: 0;
   border-radius: 6px;
