@@ -2,8 +2,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hiddenBlocks, outlineOf, railsOf, shortenDescription } from './description';
 
+/** One animation frame. Registered after the click, it runs after the click's own callback in the same frame. */
+const frame = (): Promise<void> => new Promise((resolve) => requestAnimationFrame(() => resolve()));
 /** Two animation frames: a heading click shows its section in the second. */
-const frames = (): Promise<void> => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+const frames = async (): Promise<void> => {
+  await frame();
+  await frame();
+};
 
 function blocksOf(html: string): Element[] {
   const holder = document.createElement('div');
@@ -96,10 +101,12 @@ describe('shortenDescription', () => {
     expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
     expect(document.querySelector('.geld-desc-more')).toBeNull();
     body.querySelector<HTMLElement>('.markdown-heading h2')?.click();
-    // The chevron turns at once, the section shows a frame later.
+    // The chevron turns at once, and the section shows only in the second frame, so the first paints the turn alone.
     expect(body.children[0]?.getAttribute('data-geld-desc-heading')).toBe('open');
     expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(true);
-    await frames();
+    await frame();
+    expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    await frame();
     expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(false);
     expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(true);
     expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
