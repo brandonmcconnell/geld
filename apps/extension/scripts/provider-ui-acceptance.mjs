@@ -220,7 +220,20 @@ export function providerDashboardProbe(mode = 'read') {
       const bodySelector = provider === 'gitlab' ? entry.matches('li.js-timeline-entry.system-note') ? '[data-testid="system-note-content"]' : '.note-body .note-text' : '[data-testid="comment-content"] .ak-renderer-document';
       const bodies = [...entry.querySelectorAll(bodySelector)].filter(node => node.closest(selector) === entry && node.closest('[data-geld-ui]') === null);
       if (bodies.length !== 1) return null;
-      result.push({ owner: entry, body: bodies[0] });
+      const body = bodies[0];
+      const copy = body.cloneNode(true);
+      if (provider === 'gitlab') for (const button of copy.querySelectorAll('button[data-testid="markdown-table-height-toggle"][aria-controls]')) {
+        const wrapper = button.parentElement;
+        const overlay = wrapper?.previousElementSibling;
+        const target = overlay?.firstElementChild;
+        const table = target?.firstElementChild;
+        if (wrapper?.tagName !== 'DIV' || !wrapper.classList.contains('gl-order-1') || wrapper.children.length !== 1
+          || overlay?.getAttribute('data-testid') !== 'table-shadow-overlay' || target?.id !== button.getAttribute('aria-controls')
+          || !target.hasAttribute('data-sticky-header') || table?.tagName !== 'TABLE' || table.getAttribute('data-markdown-table-applied') !== 'true'
+          || !['true', 'false'].includes(button.getAttribute('aria-expanded'))) continue;
+        wrapper.replaceWith(document.createComment(''));
+      }
+      result.push({ owner: entry, body, text: copy.textContent, html: copy.innerHTML });
     }
     return result;
   };
@@ -228,7 +241,7 @@ export function providerDashboardProbe(mode = 'read') {
     const roots = [...document.querySelectorAll('[data-geld-provider-native-find="folded"]')].filter((node) => !panel.contains(node));
     if (roots.length > 0) globalThis[key] = { panel, url: location.href, roots: roots.map((node) => {
       const known = payloads(node);
-      return { node, parent: node.parentElement, id: node.id, qualified: known !== null, payloads: (known ?? [{ owner: node, body: node }]).map(({ owner, body }) => ({ owner, parent: owner.parentElement, id: owner.id, text: body.textContent, html: known === null ? null : body.innerHTML })) };
+      return { node, parent: node.parentElement, id: node.id, qualified: known !== null, payloads: (known ?? [{ owner: node, body: node, text: node.textContent, html: null }]).map(({ owner, text, html }) => ({ owner, parent: owner.parentElement, id: owner.id, text, html })) };
     }) };
   }
   const state = globalThis[key];
@@ -262,7 +275,7 @@ export function providerDashboardProbe(mode = 'read') {
     if (entry.node.parentElement !== entry.parent) custody.parentMismatches++;
     if (entry.node.id !== entry.id) custody.idMismatches++;
     if (!entry.qualified) custody.unqualifiedPayloads++;
-    const current = entry.qualified ? payloads(entry.node) : [{ owner: entry.node, body: entry.node }];
+    const current = entry.qualified ? payloads(entry.node) : [{ owner: entry.node, body: entry.node, text: entry.node.textContent, html: null }];
     if (current === null || current.length !== entry.payloads.length) custody.bodyMismatches++;
     for (const [index, saved] of entry.payloads.entries()) {
       const found = current?.[index];
@@ -274,16 +287,16 @@ export function providerDashboardProbe(mode = 'read') {
       if (found?.owner !== saved.owner) custody.payloadOrderMismatches++;
       // Native hydration can replace equivalent inner wrappers. The original note/event
       // identity and its exact semantic content remain the authority, not that wrapper.
-      if (found === undefined || found.body.textContent !== saved.text || saved.html !== null && found.body.innerHTML !== saved.html) {
+      if (found === undefined || found.text !== saved.text || saved.html !== null && found.html !== saved.html) {
         custody.bodyMismatches++;
         if (bodyChanges.length < 8) {
           const before = document.createElement('template');
           const after = document.createElement('template');
           if (saved.html !== null) before.innerHTML = saved.html;
-          if (found !== undefined) after.innerHTML = found.body.innerHTML;
+          if (found !== undefined) after.innerHTML = found.html ?? found.body.innerHTML;
           bodyChanges.push({ source: /^(?:note_[1-9]\d*|comment-[1-9]\d*)$/.test(saved.id) ? saved.id : null, index,
-            beforeText: fingerprint(saved.text ?? ''), afterText: fingerprint(found?.body.textContent ?? ''),
-            beforeHtml: saved.html === null ? null : fingerprint(saved.html), afterHtml: found === undefined ? null : fingerprint(found.body.innerHTML),
+            beforeText: fingerprint(saved.text ?? ''), afterText: fingerprint(found?.text ?? ''),
+            beforeHtml: saved.html === null ? null : fingerprint(saved.html), afterHtml: found === undefined ? null : fingerprint(found.html ?? found.body.innerHTML),
             difference: saved.html === null || found === undefined ? { kind: 'unavailable' } : difference(before.content, after.content) });
         }
       }

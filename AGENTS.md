@@ -2559,3 +2559,8 @@ A missed, replaced or persistently moving target fails before result polling wit
 Installed dashboard custody failures include bounded structural diagnostics for the first mismatched native payloads.
 The record names only a validated public note ID, child-node path, change kind, attribute name, and text or HTML lengths and fingerprints.
 Original comment text and attribute values remain in the page, and exact preservation assertions are unchanged.
+
+GitLab lazily adds its native Show full table control after a digest custody baseline, including when a dashboard scroll changes table measurements.
+Installed run41614670790 identified this exact comment-placeholder to height-control transition inside note4118703980, while retained captures preserved the table data.
+The acceptance snapshot normalizes only a height-toggle wrapper bound to its immediately preceding native table-shadow overlay, sticky scroll ID and marked table.
+Table content, native source identity and unrelated controls remain strictly compared.

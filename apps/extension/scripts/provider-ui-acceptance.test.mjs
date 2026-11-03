@@ -186,6 +186,29 @@ test('body mismatch diagnostics identify bounded structural changes without expo
   assert.deepEqual(changed.bodyChanges[0].beforeText, changed.bodyChanges[0].afterText);
   assert.doesNotMatch(JSON.stringify(changed), /PRIVATE_ATTRIBUTE_VALUE|Native stable comment body/);
 });
+test('GitLab may hydrate its verified table-height control without changing the retained table payload', () => {
+  semanticDashboard();
+  const body = document.querySelector('.note-text');
+  body.innerHTML = '<div><div data-testid="table-shadow-overlay"><div id="table-scroll" data-sticky-header><table data-markdown-table-applied="true"><tbody><tr><td>Original table text</td></tr></tbody></table></div></div><!----></div>';
+  providerDashboardProbe('bind');
+  const wrapper = body.firstElementChild;
+  wrapper.lastChild.replaceWith(document.createElement('div'));
+  wrapper.lastChild.className = 'gl-order-1 gl-mt-2';
+  wrapper.lastChild.innerHTML = '<button data-testid="markdown-table-height-toggle" aria-controls="table-scroll" aria-expanded="false">Show full table</button>';
+  assertProviderDashboard(providerDashboardProbe());
+  wrapper.querySelector('button').setAttribute('aria-expanded', 'true');
+  wrapper.querySelector('button').textContent = 'Show less';
+  assertProviderDashboard(providerDashboardProbe());
+  wrapper.querySelector('td').textContent = 'Changed table text';
+  assert.equal(providerDashboardProbe().sameOriginals, false);
+});
+test('a lookalike or incorrectly bound height control remains strict native payload', () => {
+  semanticDashboard();
+  document.querySelector('.note-text').innerHTML = '<div><div data-testid="table-shadow-overlay"><div id="table-scroll" data-sticky-header><table data-markdown-table-applied="true"><tbody><tr><td>Original table</td></tr></tbody></table></div></div><!----></div>';
+  providerDashboardProbe('bind');
+  document.querySelector('.note-text > div').insertAdjacentHTML('beforeend', '<div class="gl-order-1"><button data-testid="markdown-table-height-toggle" aria-controls="wrong-table" aria-expanded="false">Changed content</button></div>');
+  assert.equal(providerDashboardProbe().sameOriginals, false);
+});
 test('native root replacement, reparenting, id changes and semantic body changes still fail custody', () => {
   for (const [kind, mutate] of [
     ['identityMismatches', node => node.replaceWith(node.cloneNode(true))],
