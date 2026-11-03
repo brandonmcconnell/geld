@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
 import { Window } from 'happy-dom';
-import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertProviderDashboard, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, providerHeaderHintTarget, openProviderReviewAncestors, providerDashboardProbe, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
+import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertProviderDashboard, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, GITLAB_LOCAL_REVIEW, providerHeaderHintTarget, openProviderReviewAncestors, providerDashboardProbe, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
 
 let window;
 let saved;
@@ -62,6 +62,15 @@ test('local-review selection skips disabled, already reviewed and automated cand
   assert.equal(gitLabLocalReviewedCandidate().candidate?.id, 'item-3');
   buttons[3].setAttribute('aria-disabled', 'true');assert.equal(gitLabLocalReviewedCandidate().candidate, null);
   assert.deepEqual(gitLabLocalReviewedCandidate().counts, { total: 4, truncated: false, human: 3, disabled: 2, pressed: 1, states: { open: 3, 'needs-reply': 0, addressed: 1, resolved: 0, outdated: 0, 'done-manual': 0, other: 0 } });
+});
+test('dedicated local-review fixture renews both the known source identity and actionable state live', () => {
+  reviewCandidates(['open', 'open']);
+  const required = { anchor: 'note_2', authorId: '2' };
+  assert.equal(gitLabLocalReviewedCandidate(required).candidate?.id, 'item-1');
+  assert.equal(gitLabLocalReviewedCandidate({ ...required, authorId: 'foreign' }).candidate, null);
+  document.querySelector('[data-geld-item="item-1"]').setAttribute('data-state', 'resolved');
+  assert.equal(gitLabLocalReviewedCandidate(required).candidate, null, 'a now-resolved retained source does not become a pass');
+  assert.equal(GITLAB_LOCAL_REVIEW.url, 'https://gitlab.com/ark-bitcoin/bark/-/merge_requests/2117');
 });
 test('local-review failure diagnostics use only fixed state counters without source text', () => {
   reviewCandidates(['PRIVATE_CANARY']);

@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
 
+export const GITLAB_LOCAL_REVIEW = Object.freeze({
+  url: 'https://gitlab.com/ark-bitcoin/bark/-/merge_requests/2117',
+  anchor: 'note_3412014628', authorId: '9249395',
+  provenance: 'Retained public installed run41388609871: open human source by ErikDeSmedt; availability must be rechecked live.',
+});
+
 /** Resolve the hint belonging to the actual native count group, never a different header. */
 export function providerHeaderHintTarget(groupSelector, kind = 'anchor') {
   const visible = node => {
@@ -32,7 +38,7 @@ export function providerHeaderHintTarget(groupSelector, kind = 'anchor') {
 }
 
 /** Select a real actionable human item before any local-review interaction. */
-export function gitLabLocalReviewedCandidate() {
+export function gitLabLocalReviewedCandidate(requiredSource = null) {
   const buttons = [...document.querySelectorAll('.geld-provider-review [data-geld-local-reviewed]')];
   const counts = { total: Math.min(buttons.length, 1000), truncated: buttons.length > 1000, human: 0, disabled: 0, pressed: 0,
     states: { open: 0, 'needs-reply': 0, addressed: 0, resolved: 0, outdated: 0, 'done-manual': 0, other: 0 } };
@@ -45,13 +51,14 @@ export function gitLabLocalReviewedCandidate() {
     const pressed = button.getAttribute('aria-pressed') !== 'false';
     if (disabled) counts.disabled++;
     if (pressed) counts.pressed++;
-    const source = [...item?.querySelectorAll('[data-geld-source]') ?? []].find((entry) => {
+    const sources = [...item?.querySelectorAll('[data-geld-source]') ?? []].filter((entry) => {
       const byline = entry.querySelector(':scope > .geld-provider-review__byline');
       const native = document.getElementById(entry.getAttribute('data-geld-source'));
       return byline !== null && ![...byline.children].some((node) => node.textContent.trim() === 'Automated account')
         && native !== null && native.querySelector('.note-header a.author-name-link[data-user-id]') !== null;
     });
-    if (source !== undefined) counts.human++;
+    if (sources.length > 0) counts.human++;
+    const source = requiredSource === null ? sources[0] : sources.find(entry => entry.getAttribute('data-geld-source') === requiredSource.anchor && document.getElementById(requiredSource.anchor)?.querySelector('.note-header a.author-name-link[data-user-id]')?.getAttribute('data-user-id') === requiredSource.authorId);
     const id = button.getAttribute('data-geld-local-reviewed');
     if (candidate === null && id && !disabled && !pressed && ['open', 'needs-reply', 'addressed'].includes(state) && source !== undefined) {
       candidate = { id, humanAnchor: source.getAttribute('data-geld-source'), pressed: button.getAttribute('aria-pressed'), disabled: button.disabled };

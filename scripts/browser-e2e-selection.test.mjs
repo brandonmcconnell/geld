@@ -49,7 +49,7 @@ test('UI acceptance selects one Bitbucket continuity case without broadening def
   assert.deepEqual(Array.from(cases['gitlab-ui']), ['gitlab-mixed', 'gitlab-overview-digest']);
   assert.deepEqual(Array.from(cases['bitbucket-ui']), ['bitbucket-ui-continuity']);
   for (const focus of ['gitlab-ui', 'bitbucket-ui']) assert.deepEqual(select({ body: marker(focus), from: marker('github') }), { focus, run: 'true', failures: [] });
-  assert.deepEqual(Array.from(cases.regression), ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'github-regression', 'bitbucket-diff']);
+  assert.deepEqual(Array.from(cases.regression), ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'gitlab-local-reviewed', 'github-regression', 'bitbucket-diff']);
   assert.match(harness, /conservativeObservedRequestBudget: 40/);
 });
 
@@ -473,4 +473,28 @@ test('provider-evidence is explicit and cannot enter install/build/Chrome/browse
     const block = job.slice(job.indexOf('      - name: ' + step)).split('\n      - ')[0];assert.match(block, /focus != 'provider-evidence'/);
   }
   assert.doesNotMatch(harness, /provider-evidence/);
+});
+
+
+test('GitLab UI and local review are distinct live receipts while legacy suites retain both', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);
+  const cases = new vm.Script(`(${literal})`).runInNewContext();
+  assert.deepEqual(Array.from(cases['gitlab-ui']), ['gitlab-mixed', 'gitlab-overview-digest']);
+  assert.deepEqual(Array.from(cases['gitlab-local-reviewed']), ['gitlab-local-reviewed']);
+  assert.deepEqual(Array.from(cases['gitlab-review']), ['gitlab-overview-digest', 'gitlab-local-reviewed']);
+  assert.equal(cases.regression.includes('gitlab-local-reviewed'), true);
+  assert.deepEqual(select({ body: marker('gitlab-local-reviewed'), from: marker('gitlab-ui') }), { focus: 'gitlab-local-reviewed', run: 'true', failures: [] });
+  assert.match(harness, /if \(focus === 'gitlab-ui'\) return/);
+  assert.match(harness, /await runCase\('gitlab-local-reviewed', GITLAB_LOCAL_REVIEW.url/);
+  assert.match(harness, /headSha: native.selected.headSha/);
+  assert.match(harness, /assert.ok\(\['open', 'needs-reply', 'addressed'\]\.includes\(original.localStatus\)/);
+});
+
+
+test('dedicated local-review receipt retains mark reload Undo while legacy fragment stays on MR266334', () => {
+  const local = harness.slice(harness.indexOf('async function localReviewedFlag('), harness.indexOf('async function nativeFragmentEvidence('));
+  assert.match(local, /await page\.reload/);assert.match(local, /Real Undo removes only the local review mark/);assert.match(local, /Local reviewed flag attempted a native provider mutation/);
+  assert.doesNotMatch(local, /nativeFragmentEvidence/);
+  assert.match(harness, /item.nativeFragment = await nativeFragmentEvidence\(page, 'note_4118584957'/);
+  assert.match(harness, /localReviewedFlag\(page, GITLAB_LOCAL_REVIEW\)/);
 });

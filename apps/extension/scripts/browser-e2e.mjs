@@ -9,7 +9,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
-import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, providerHeaderHintTarget, openProviderReviewAncestors, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
+import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, GITLAB_LOCAL_REVIEW, providerHeaderHintTarget, openProviderReviewAncestors, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
 import { commentBodyPresentationProbe, compareCommentBodyPresentation } from './comment-body-branding.mjs';
 import { BITBUCKET_LOCAL_REVIEW, localReviewStorageScope, observeLocalReview, verifyBitbucketLocalReview } from './bitbucket-local-reviewed.mjs';
 import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-list-row.mjs';
@@ -39,7 +39,7 @@ import { observeStandaloneWhole, standaloneWholeURL, verifyStandaloneWhole } fro
 import { observeGitLabComparisons } from './gitlab-comparison-observer.mjs';
 import { CODERABBIT_FIXTURE, observeCodeRabbitFixture, verifyCodeRabbitCommands } from './gitlab-coderabbit-acceptance.mjs';
 import { verifyGitLabTableHeights } from './gitlab-table-height-acceptance.mjs';
-import { verifyGitLabRoundAttention } from './round-attention-acceptance.mjs';
+import { gitLabRoundSnapshot, verifyGitLabRoundAttention } from './round-attention-acceptance.mjs';
 import { SHARED_SETTINGS_NATIVE_ORACLES, assertPatternOnlySettings, restoreCategoryPatterns, settingsRequestEvidence, sharedSettingsSourceIdentity, sharedSettingsSampleValid } from './three-provider-settings.mjs';
 import { observeInitialOnSource } from './bitbucket-initial-on-source.mjs';
 import { assertInitialNativeOnTraffic, initialNativeOnPreflight, initialNativeOnSettings, verifyInitialNativeOn } from './bitbucket-initial-native-on.mjs';
@@ -56,7 +56,7 @@ const SETTINGS_KEY = 'settings'; // @geld/core SETTINGS_STORAGE_KEY = sync:setti
 const WAIT_MS = 90_000;
 const BITBUCKET_ANONYMOUS_COOLDOWN_MS = 62 * 60 * 1000; // Documented rolling-hour quota, plus a conservative two-minute margin.
 const FOCUSED_CASES = {
-  regression: ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'github-regression', 'bitbucket-diff'],
+  regression: ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'gitlab-local-reviewed', 'github-regression', 'bitbucket-diff'],
   'bitbucket-diff': ['bitbucket-diff'],
   'bitbucket-ui': ['bitbucket-ui-continuity'],
   'gitlab-ui': ['gitlab-mixed', 'gitlab-overview-digest'],
@@ -84,7 +84,8 @@ const FOCUSED_CASES = {
   'bitbucket-whole-context': ['bitbucket-whole-context'],
   'bitbucket-pr-whole-context': ['bitbucket-pr-whole-context'],
   'gitlab-standalone-whole': ['gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'],
-  'gitlab-review': ['gitlab-overview-digest'],
+  'gitlab-review': ['gitlab-overview-digest', 'gitlab-local-reviewed'],
+  'gitlab-local-reviewed': ['gitlab-local-reviewed'],
   'gitlab-bot': ['gitlab-bot-digest'],
   'gitlab-coderabbit': ['gitlab-coderabbit-digest'],
   'gitlab-binary': ['gitlab-binary-counts'],
@@ -2414,11 +2415,11 @@ function assertReviewedStorage(value, itemId, reviewKey, headSha) {
   return selected;
 }
 
-async function localReviewedFlag(page, recordFragment) {
+async function localReviewedFlag(page, requiredSource = null) {
   let lastSelection;
   let selected;
   try {
-    selected = await poll(async () => { lastSelection = await page.evaluate(gitLabLocalReviewedCandidate);return lastSelection; }, (value) => value.candidate !== null, 'An enabled, unpressed actionable human local-review item must become available');
+    selected = await poll(async () => { lastSelection = await page.evaluate(gitLabLocalReviewedCandidate, requiredSource);return lastSelection; }, (value) => value.candidate !== null, 'An enabled, unpressed actionable human local-review item must become available');
   } catch (error) {
     if (lastSelection === undefined) throw error;
     throw new Error(`No enabled, unpressed actionable human local-review item: ${JSON.stringify(lastSelection.counts)}`);
@@ -2487,7 +2488,6 @@ async function localReviewedFlag(page, recordFragment) {
     const stored = await localReviewedStorage();
     assert.ok(assertReviewedStorage(stored, itemId, reviewKey, original.headSha) !== null, 'Actual chrome.storage.local did not persist the current mark');
     const markedArtifacts = await capture(page, 'gitlab-local-reviewed-marked');
-    const nativeFragment = await nativeFragmentEvidence(page, initial.humanAnchor, () => observe().then(unchanged), recordFragment);
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
     const reloaded = await poll(observe, (value) => value !== null && value.pressed === 'true' && !value.disabled && value.group === 'done', 'Actual page reload rehydrates the exact item/head mark through the installed storage service');
     unchanged(reloaded);
@@ -2497,7 +2497,7 @@ async function localReviewedFlag(page, recordFragment) {
     unchanged(undone);
     const afterStorage = await poll(localReviewedStorage, (value) => assertReviewedStorage(value, itemId, reviewKey, original.headSha) === null, 'Actual local storage removes the undone flag');
     assert.deepEqual(mutations, [], 'Local reviewed flag attempted a native provider mutation');
-    return { itemId, reviewKey, sourceHead: original.headSha, openedSummaries, original, marked, stored, markedArtifacts, nativeFragment, reloaded, reopenedSummaries, undone, afterStorage, providerMutations: mutations, undoneArtifacts: await capture(page, 'gitlab-local-reviewed-undone'), storageScope: 'Actual chrome.storage.local metadata and SHA256 fingerprints only, absent from chrome.storage.sync' };
+    return { itemId, reviewKey, sourceHead: original.headSha, openedSummaries, original, marked, stored, markedArtifacts, reloaded, reopenedSummaries, undone, afterStorage, providerMutations: mutations, undoneArtifacts: await capture(page, 'gitlab-local-reviewed-undone'), storageScope: 'Actual chrome.storage.local metadata and SHA256 fingerprints only, absent from chrome.storage.sync' };
   } finally { page.off('request', request); }
 }
 
@@ -3253,11 +3253,20 @@ try {
     assertVisibleProviderCounts(item.headerUi, item.state.visible);
     item.dashboardUi = {};
     await verifyProviderDashboardUi(page, item.dashboardUi, { poll, capture: (name) => capture(page, `gitlab-${name}`) });
+    if (focus === 'gitlab-ui') return { verified: 'MR266334 visible adjusted counts, compact hover, native category navigation and dashboard/original-conversation UI. Local-review persistence and round history are separate cases.' };
     item.authorPresentation = await authorThemeEvidence(page, 'gitlab', 'note_4118584957');
     assertAuthorThemeEvidence(item.authorPresentation);
-    item.localReviewed = await localReviewedFlag(page, (evidence) => { item.nativeFragment = evidence; });
-    await verifyGitLabRoundAttention(page, item, { readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY), patchSettings, poll, openReviewAncestors, capture, headSha: item.localReviewed.sourceHead, diffPageUrl: item.state.diffPageUrl, extensionId });
+    const native = await poll(() => page.evaluate(gitLabRoundSnapshot), value => /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value?.selected?.headSha ?? ''), 'Current native Rapid Diff head for legacy round history');
+    item.nativeFragment = await nativeFragmentEvidence(page, 'note_4118584957', async () => {
+      const current = await page.evaluate(gitLabRoundSnapshot);assert.equal(current?.selected?.headSha, native.selected.headSha, 'Native head changed during legacy fragment verification');
+    }, evidence => { item.nativeFragment = evidence; });
+    await verifyGitLabRoundAttention(page, item, { readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY), patchSettings, poll, openReviewAncestors, capture, headSha: native.selected.headSha, diffPageUrl: item.state.diffPageUrl, extensionId });
     return {};
+  });
+  await runCase('gitlab-local-reviewed', GITLAB_LOCAL_REVIEW.url, async (page, item) => {
+    item.fixture = GITLAB_LOCAL_REVIEW;
+    item.localReviewed = await localReviewedFlag(page, GITLAB_LOCAL_REVIEW);
+    return { verified: 'Live actionable retained human source: local mark, exact native source/head, real reload, Undo, and zero provider mutations.' };
   });
   await runCase('gitlab-bot-digest', GL_BOT, verifyGitLabBot);
   await runCase('gitlab-coderabbit-digest', CODERABBIT_FIXTURE.url, async (page, item) => verifyCodeRabbitCommands(page, item, {

@@ -2519,3 +2519,8 @@ Installed GitLab capture can replace an equivalent inner comment/system-note wra
 The UI custody probe pins the native source roots, note/event nodes, their parents and IDs, payload count/order, and exact semantic text plus HTML;
 it permits equivalent inner wrapper hydration only.
 Actual body changes, source replacement, source reparenting, changed identity or reordered payloads still fail with fixed mismatch counters.
+
+The GitLab UI corpus MR266334 currently exposes only resolved local-review items, so new UI acceptance does not claim local mark/reload/Undo coverage.
+The dedicated `gitlab-local-reviewed` focus uses the previously observed open human note3412014628 by user9249395 on public MR2117 and must renew that exact source identity and actionability before marking.
+Legacy `gitlab-review`, regression and all-case runs retain local-review coverage separately, and MR266334 round history remains guarded by its native selected Rapid Diff head.
+The ancillary native-fragment check remains with MR266334 legacy round history rather than becoming an undocumented requirement of the independent local-review persistence fixture.
