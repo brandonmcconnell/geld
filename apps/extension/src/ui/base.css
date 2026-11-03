@@ -269,6 +269,21 @@ code {
   background: var(--primary-foreground);
 }
 
+/* Small: 28×16, as tall as a checkbox, with the same even 3px of track around an 8px thumb. */
+.geld-switch--small {
+  width: 28px;
+  height: 16px;
+}
+
+.geld-switch--small::after {
+  width: 8px;
+  height: 8px;
+}
+
+.geld-switch--small[aria-checked='true']::after {
+  transform: translateX(12px);
+}
+
 .geld-switch:focus-visible {
   outline: none;
   border-color: var(--ring);
