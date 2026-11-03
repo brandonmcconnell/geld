@@ -2564,3 +2564,6 @@ GitLab lazily adds its native Show full table control after a digest custody bas
 Installed run41614670790 identified this exact comment-placeholder to height-control transition inside note4118703980, while retained captures preserved the table data.
 The acceptance snapshot normalizes only a height-toggle wrapper bound to its immediately preceding native table-shadow overlay, sticky scroll ID and marked table.
 Table content, native source identity and unrelated controls remain strictly compared.
+
+Installed dashboard theme checks wait for the owned surface to match the native surface after a real OS color-scheme change.
+They still require exact typography and color equality, and failures include the two bounded computed-style records.

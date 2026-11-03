@@ -344,7 +344,7 @@ export function assertProviderDashboard(snapshot, originalsVisible = false) {
   assert.ok(snapshot.representedMounted > 0, 'Mounted digest sources must have real native counterparts');
   assert.equal(snapshot.representedVisible, originalsVisible ? snapshot.representedMounted : 0, 'Every represented native source must follow original-conversation visibility');
   assert.equal(snapshot.nativeSurfaceAvailable, true, 'A genuine non-owned native card surface is required');
-  assert.deepEqual(snapshot.appearance, snapshot.nativeAppearance, 'Dashboard typography and colors must match native body text and card surface');
+  assert.deepEqual(snapshot.appearance, snapshot.nativeAppearance, `Dashboard typography and colors must match native body text and card surface: ${JSON.stringify({ actual: snapshot.appearance, native: snapshot.nativeAppearance })}`);
 }
 
 export async function verifyProviderDashboardUi(page, progress, { poll, capture, onOriginalsShown }) {
@@ -436,7 +436,7 @@ export async function verifyProviderDashboardUi(page, progress, { poll, capture,
     }
     await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
     await new Promise((resolve) => setTimeout(resolve, 350));
-    progress.dark = await poll(read, (value) => value.sameOriginals, 'Dashboard remains current under native dark preference');
+    progress.dark = await poll(read, (value) => value.sameOriginals && JSON.stringify(value.appearance) === JSON.stringify(value.nativeAppearance), 'Dashboard matches the settled native dark preference');
     assertProviderDashboard(progress.dark);
     progress.darkMode = progress.dark.nativeAppearance.color !== progress.baseline.nativeAppearance.color || progress.dark.nativeAppearance.background !== progress.baseline.nativeAppearance.background ? 'native_dark_observed' : 'native_did_not_switch';
     if (progress.darkMode === 'native_dark_observed') progress.darkScreenshot = await capture('dashboard-native-dark');
