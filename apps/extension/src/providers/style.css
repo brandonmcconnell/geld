@@ -1,8 +1,9 @@
 @import './hover.css';
 
 .geld-provider-diffs { display: flex; flex-direction: column; }
-.geld-provider-diffs > [data-geld-provider-hidden] { order: 2; }
-.geld-provider-diffs > [data-geld-provider-hidden="closed"] { display: none !important; }
+.geld-provider-diffs [data-geld-provider-flow-wrapper=""] { display: contents !important; }
+.geld-provider-diffs [data-geld-provider-hidden] { order: 2; }
+.geld-provider-diffs [data-geld-provider-hidden="closed"] { display: none !important; }
 html[data-geld-provider] [data-geld-provider-author-hidden] { display: none !important; }
 [data-geld-provider-inline] { color: var(--geld-provider-text-subtle); }
 .geld-provider-hidden, .geld-provider-review {

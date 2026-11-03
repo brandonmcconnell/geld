@@ -89,6 +89,9 @@ export interface ProviderTreeEntry {
 export interface ProviderDiffView {
   readonly kind: string;
   readonly container: HTMLElement;
+  /** Known normal-flow stream wrappers, flattened only after the complete source inventory is mounted. */
+  readonly groupingWrappers?: readonly HTMLElement[];
+  readonly groupingReady?: boolean;
   readonly entries: readonly ProviderDiffEntry[];
   readonly tree: readonly ProviderTreeEntry[];
   readonly treeHost: HTMLElement | null;
