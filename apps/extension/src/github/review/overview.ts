@@ -815,22 +815,26 @@ function checksSection(): HTMLElement | null {
   return checksSectionEl;
 }
 
-const APPROVE_WORKFLOWS = /^approve (?:workflows to run|and run)$/i;
+// "Approve workflows to run" today, "Approve and run" in older markup: any approve-and-run wording counts.
+const APPROVE_WORKFLOWS = /^approve\b.*\brun\b/i;
 const AWAITING_APPROVAL = /\b(\d+) workflows? awaiting approval/i;
 
 /**
- * GitHub's own "Approve workflows to run": a first-time contributor's
- * workflows wait for a maintainer, and the merge box offers the button only
- * to someone who may approve them. Looked for in the merge box and in the
+ * GitHub's own "Approve workflows to run", shown to someone who may approve
+ * whenever the repository's approval policy holds a contributor's workflows
+ * (first-time contributors by default, every outside contributor on every
+ * pull request under the strictest policy). The button itself is the test,
+ * never who the contributor is. Looked for in the merge box and in the
  * checks section wherever quick view has put it.
  */
-function approveWorkflowsButton(): HTMLButtonElement | null {
+function approveWorkflowsButton(): HTMLButtonElement | HTMLInputElement | null {
   const section = checksSection();
   const scopes = [mergeBox() ?? mergeHomeEl, section, ...(section === null ? [] : wornPiecesOf(section))];
   for (const scope of scopes) {
     if (scope === null) continue;
-    for (const button of scope.querySelectorAll('button')) {
-      if (!button.disabled && APPROVE_WORKFLOWS.test((button.textContent ?? '').replace(/\s+/g, ' ').trim())) return button;
+    for (const control of scope.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button, input[type="submit"], input[type="button"]')) {
+      const words = control instanceof HTMLInputElement ? control.value : control.textContent ?? '';
+      if (!control.disabled && APPROVE_WORKFLOWS.test(words.replace(/\s+/g, ' ').trim())) return control;
     }
   }
   return null;

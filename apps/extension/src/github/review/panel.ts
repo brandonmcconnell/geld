@@ -1952,7 +1952,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     if (open) rows.append(slotRow(BOTS_KEY, null, 'list'));
   }
   if (model.reports.latest.length > 0) rows.append(...reportsRow(model, handlers));
-  // Workflows waiting on a maintainer may be the only checks a first-time contributor's pull request has.
+  // Workflows waiting on a maintainer's approval may be the only checks a contributor's pull request has.
   if (model.checks !== null || model.workflowApproval !== null) {
     const counts = model.checks ?? EMPTY_CHECKS;
     const health = checksHealth(counts);

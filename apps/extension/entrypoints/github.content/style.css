@@ -6395,6 +6395,19 @@ a.geld-review__rerun {
   color: var(--fgColor-attention, var(--color-attention-fg));
 }
 
+/* Mona Sans at line-height 1 sits its letters 1.5px above the box's middle: the word's box is trimmed to its cap height
+   and baseline, so centring the box centres the letters. Without `text-box` the word is nudged down instead. */
+.geld-review__approve-run > span {
+  text-box: trim-both cap alphabetic;
+}
+
+@supports not (text-box: trim-both cap alphabetic) {
+  .geld-review__approve-run > span {
+    position: relative;
+    top: 1.5px;
+  }
+}
+
 .geld-review__approve-run:disabled {
   opacity: 0.6;
   cursor: default;
