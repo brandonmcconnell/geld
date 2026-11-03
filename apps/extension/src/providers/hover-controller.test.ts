@@ -84,6 +84,53 @@ afterEach(() => {
 });
 
 describe('provider controller count hover integration', () => {
+  it('defers anonymous Bitbucket list and repository requests until sustained intent on one review', async () => {
+    window.location.href = 'https://bitbucket.org/acme/widgets/pull-requests/';
+    document.body.innerHTML = Array.from({ length: 25 }, (_, i) => `<article id="row-${i + 1}"><div id="host-${i + 1}"></div></article>`).join('');
+    const bitbucketPage = (number: string): ProviderReviewPage => {
+      const url = `https://bitbucket.org/acme/widgets/pull-requests/${number}`;
+      return { ...page(number), provider: 'bitbucket', repository: { provider: 'bitbucket', origin: 'https://bitbucket.org', path: 'acme/widgets' }, url, diffPageUrl: `${url}/diff`, headSha: null, version: 'current' };
+    };
+    const fetchDiff = vi.fn<ProviderAdapter['fetchDiff']>(async () => ({ files: FILES, complete: true, revision: SHA }));
+    const fetchConfig = vi.fn(async (request: Parameters<ProviderAdapter['fetchDiff']>[0]) => ({ repository: request.repository, ref: SHA, files: [
+      { kind: 'repo' as const, path: '.github/geld.yml' as const, url: `${request.repository.origin}/${request.repository.path}/src/${SHA}/.github/geld.yml`, text: null },
+      { kind: 'gitattributes' as const, path: '.gitattributes' as const, url: `${request.repository.origin}/${request.repository.path}/src/${SHA}/.gitattributes`, text: null },
+    ] }));
+    const adapter: ProviderAdapter = {
+      id: 'bitbucket', eagerListDiffs: () => false,
+      describe: (url) => { const number = /\/pull-requests\/(\d+)/.exec(url.pathname)?.[1]; return number === undefined ? null : bitbucketPage(number); },
+      readDiff: () => null, headerTargets: () => [], fetchDiff,
+      listRows: () => Array.from({ length: 25 }, (_, i) => ({ root: node(`#row-${i + 1}`), host: node(`#host-${i + 1}`), url: bitbucketPage(String(i + 1)).url, author: null })),
+    };
+    const configs = new ProviderRepoConfigSource(fetchConfig, () => undefined);
+    const controller = start(adapter, { ...DEFAULT_SETTINGS, repoConfigs: 'always' }, configs);
+    await vi.advanceTimersByTimeAsync(1200);
+    expect(fetchDiff).not.toHaveBeenCalled();
+    expect(fetchConfig).not.toHaveBeenCalled();
+    expect(document.querySelectorAll('.geld-provider-list-counts')).toHaveLength(25);
+    const chip = node('#host-7 .geld-provider-list-counts');
+    expect(chip.textContent).toBe('Hover to count changes');
+    expect(chip.tabIndex).toBe(0);
+    hover(chip);
+    await vi.advanceTimersByTimeAsync(100);
+    chip.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(fetchDiff).not.toHaveBeenCalled();
+    chip.focus();
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(fetchDiff).toHaveBeenCalledOnce();
+    expect(fetchDiff.mock.calls[0]?.[0]).toMatchObject({ number: '7' });
+    expect(fetchConfig).toHaveBeenCalledOnce();
+    expect(chip.textContent).toBe('1 test · +4 −1');
+    expect(tooltip()?.textContent).toContain('Essential 1 file +4 −1');
+    expect(node('#host-8 .geld-provider-list-counts').textContent).toBe('Hover to count changes');
+    controller.updateSettings({ ...DEFAULT_SETTINGS, showListStats: false });
+    await vi.advanceTimersByTimeAsync(120);
+    expect(chip.isConnected).toBe(false);
+    expect(fetchDiff).toHaveBeenCalledOnce();
+    configs.stop();
+  });
+
   it('updates an open native header tooltip from loading to the same complete category totals shown in the page', async () => {
     let complete: ((value: ProviderDiffResult) => void) | null = null;
     const pending = new Promise<ProviderDiffResult>((resolve) => { complete = resolve; });

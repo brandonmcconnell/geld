@@ -1,8 +1,9 @@
-import type { ChangeTotals, FileStats } from '@geld/core';
+import type { CategoryIconName, ChangeTotals, FileStats } from '@geld/core';
 import { formatCount } from '@geld/core';
 import type { HiddenBreakdown } from '../github/breakdown';
 import { element } from './dom';
-import type { ProviderDiffView, ProviderTreeEntry } from './types';
+import { nativeTreeIcon } from './tree-icons';
+import type { ProviderDiffView, ProviderTreeEntry, ReviewProvider } from './types';
 
 export const PROVIDER_CATEGORY_ROW = 'data-geld-provider-category-row';
 const HOST = 'data-geld-provider-category-host';
@@ -42,6 +43,8 @@ function directory(paths: readonly string[]): Directory {
 export class ProviderCategoryTree {
   private readonly id = `geld-provider-tree-${++sequence}`;
   private host: HTMLElement | null = null;
+  private provider: ReviewProvider | null = null;
+  private folderClass: string | null = null;
   private essential: HTMLButtonElement | null = null;
   private nav: HTMLElement | null = null;
   private essentialContent: HTMLElement | null = null;
@@ -69,6 +72,9 @@ export class ProviderCategoryTree {
   update(view: ProviderDiffView, hidden: HiddenBreakdown, all: ChangeTotals, files: readonly FileStats[], actions: ProviderCategoryActions): void {
     const host = view.treeHost;
     const subjectKey = actions.subjectKey ?? null;
+    const provider = host?.ownerDocument.documentElement.getAttribute('data-geld-provider');
+    const nativeProvider = provider === 'gitlab' || provider === 'bitbucket' ? provider : null;
+    if (this.provider !== nativeProvider) this.clear();
     if (this.host !== null && this.subjectKey !== subjectKey) this.clear();
     if (host?.querySelector<HTMLInputElement>('input[type="search"]')?.value.trim()) { this.clear(); return; }
     if (host === null || hidden.categories.length === 0 || (view.virtualized && view.treeContainer == null)) { this.clear(); return; }
@@ -94,6 +100,10 @@ export class ProviderCategoryTree {
     }
     this.actions = actions;
     this.subjectKey = subjectKey;
+    this.provider = nativeProvider;
+    const folderSelector = nativeProvider === 'gitlab' ? 'button[data-testid="file-row"][aria-expanded]' : nativeProvider === 'bitbucket' ? 'button[aria-expanded]:has([aria-label="Directory"])' : null;
+    const nativeFolder = folderSelector === null ? undefined : [...host.querySelectorAll<HTMLButtonElement>(folderSelector)].find((button) => button.closest('[data-geld-ui]') === null);
+    if (nativeFolder !== undefined) this.folderClass = nativeFolder.className;
     const rows = view.tree.filter((row) => row.root.closest('[data-geld-ui]') === null);
     const hiddenPaths = new Set(hidden.categories.flatMap((group) => group.paths));
     const currentNodes = new Set<HTMLElement>([host]);
@@ -112,7 +122,7 @@ export class ProviderCategoryTree {
     const essentialCount = Math.max(0, all.files - hidden.totals.files - hidden.filtered.files);
     if (this.essential !== null) {
       const text = `Essential (${formatCount(essentialCount)} ${essentialCount === 1 ? 'file' : 'files'})`;
-      if (this.essential.textContent !== text) this.essential.textContent = text;
+      this.headerLabel(this.essential, text, 'essential');
     }
     const ids = new Set<string>(hidden.categories.map((group) => group.category.id));
     for (const [id, panel] of this.panels) if (!ids.has(id)) { panel.section.remove(); this.panels.delete(id); }
@@ -120,7 +130,7 @@ export class ProviderCategoryTree {
     this.captureRows(rows, files);
     const stats = new Map(files.map((file) => [file.path, file]));
     const essentialPaths = files.filter((file) => !hiddenPaths.has(file.path) && !view.filteredPaths.has(file.path)).map((file) => file.path);
-    const essentialSignature = JSON.stringify(essentialPaths.map((path) => [path, this.presentations.get(path)?.markup ?? null, stats.get(path)]));
+    const essentialSignature = JSON.stringify([this.folderClass, essentialPaths.map((path) => [path, this.presentations.get(path)?.markup ?? null, stats.get(path)])]);
     if (this.essentialContent !== null && essentialSignature !== this.essentialSignature) {
       this.essentialContent.replaceChildren(this.render(directory(essentialPaths), 'essential', stats));
       this.essentialSignature = essentialSignature;
@@ -145,9 +155,9 @@ export class ProviderCategoryTree {
       }
       const count = group.paths.length;
       const text = `${group.category.title} (${formatCount(count)} ${count === 1 ? group.category.shortNoun : group.category.shortNounPlural})`;
-      if (panel.button.textContent !== text) panel.button.textContent = text;
+      this.headerLabel(panel.button, text, group.category.icon);
       // Source markup changes carry native comment/status/selection updates, even without path changes.
-      const signature = JSON.stringify(group.paths.map((path) => [path, this.presentations.get(path)?.markup ?? null, stats.get(path)]));
+      const signature = JSON.stringify([this.folderClass, group.paths.map((path) => [path, this.presentations.get(path)?.markup ?? null, stats.get(path)])]);
       if (signature !== panel.signature) {
         const focusedPath = panel.content.contains(document.activeElement) ? document.activeElement?.closest<HTMLElement>('[data-geld-category-path]')?.dataset.geldCategoryPath : undefined;
         panel.content.replaceChildren(this.render(directory(group.paths), group.category.id, stats));
@@ -178,7 +188,7 @@ export class ProviderCategoryTree {
     this.essential = null; this.essentialContent = null; this.essentialSignature = ''; this.heightLast = ''; this.heightOriginal = ''; this.heightOriginalPriority = ''; this.nav = null;
     for (const node of [...this.managed.keys()]) this.restoreNode(node);
     this.host = null; this.bodies.clear(); this.panels.clear(); this.collapsed.clear();
-    this.active = 'essential'; this.selected = null; this.subjectKey = null;
+    this.active = 'essential'; this.selected = null; this.subjectKey = null; this.provider = null; this.folderClass = null;
     this.presentations.clear(); this.liveRows.clear();
   }
 
@@ -250,6 +260,18 @@ export class ProviderCategoryTree {
     if (target !== undefined) { event.preventDefault(); target.focus(); }
   };
 
+  private headerLabel(button: HTMLButtonElement, text: string, icon: CategoryIconName | 'essential'): void {
+    const signature = `${this.provider ?? ''}:${icon}`;
+    const label = button.querySelector('.geld-provider-category-label');
+    if (button.dataset.geldCategoryIconSignature === signature && label !== null) {
+      if (label.textContent !== text) label.textContent = text;
+      return;
+    }
+    button.dataset.geldCategoryIconSignature = signature;
+    const nextLabel = element('span', text, 'geld-provider-category-label');
+    button.replaceChildren(...(this.provider === null ? [] : [nativeTreeIcon(this.provider, icon)]), nextLabel);
+  }
+
   private render(dir: Directory, category: string, stats: ReadonlyMap<string, FileStats>, depth = 0): HTMLElement {
     const list = element('ul', '', 'geld-provider-category-list');
     const sorted = [...dir.dirs.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
@@ -257,14 +279,30 @@ export class ProviderCategoryTree {
       let name = folder.name;
       while (folder.files.length === 0 && folder.dirs.size === 1) { const child = folder.dirs.values().next().value; if (child === undefined) break; name += `/${child.name}`; folder = child; }
       const item = element('li');
-      const button = element('button', name, 'geld-provider-category-folder');
+      const button = element('button', '', this.folderClass ?? '');
+      button.classList.add('geld-provider-category-folder');
       button.type = 'button';
       button.style.setProperty('--geld-category-depth', String(depth));
+      button.style.setProperty('--level', String(depth));
+      if (this.folderClass !== null && this.provider !== null) button.dataset.geldNativeFolder = this.provider;
+      const label = element('span', name, 'geld-provider-category-folder-label');
+      if (this.provider === 'gitlab' && this.folderClass !== null) label.classList.add('file-row-name', 'file-row-indentation');
+      const visual = element('span', '', 'geld-provider-category-folder-visual');
+      if (this.provider === 'gitlab') visual.classList.add('gl-mr-2', 'gl-text-subtle');
+      if (this.provider !== null) { button.dataset.geldFolderGlyph = ''; visual.append(nativeTreeIcon(this.provider, 'folder-open')); }
+      if (this.provider === 'gitlab' && this.folderClass !== null) { label.prepend(visual); button.append(label); }
+      else button.append(visual, label);
       const key = `${category}:${folder.path}`;
       const children = this.render(folder, category, stats, depth + 1);
-      const toggle = (): void => { const open = this.collapsed.has(key); if (open) this.collapsed.delete(key); else this.collapsed.add(key); button.setAttribute('aria-expanded', String(open)); children.hidden = !open; };
-      button.setAttribute('aria-expanded', String(!this.collapsed.has(key)));
-      children.hidden = this.collapsed.has(key);
+      const setOpen = (open: boolean): void => {
+        button.setAttribute('aria-expanded', String(open));
+        if (this.provider === 'gitlab') button.classList.toggle('is-open', open);
+        const icon = visual.querySelector('svg');
+        if (this.provider !== null && icon?.getAttribute('data-geld-category-icon') !== (open ? 'folder-open' : 'folder-closed')) visual.replaceChildren(nativeTreeIcon(this.provider, open ? 'folder-open' : 'folder-closed'));
+        children.hidden = !open;
+      };
+      const toggle = (): void => { const open = this.collapsed.has(key); if (open) this.collapsed.delete(key); else this.collapsed.add(key); setOpen(open); };
+      setOpen(!this.collapsed.has(key));
       button.addEventListener('click', toggle);
       button.addEventListener('keydown', (event) => { if ((event.key === 'ArrowLeft' && !children.hidden) || (event.key === 'ArrowRight' && children.hidden)) { event.preventDefault(); toggle(); } });
       item.append(button, children); list.append(item);

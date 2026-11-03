@@ -47,7 +47,7 @@ it('aborts pending and queued lookups and discards a late response after clearin
   pending.resolve();
   await vi.waitFor(() => expect(store.get).toHaveBeenCalledTimes(2));
   expect(store.value).toEqual({});
-  expect(source.get(page, DEFAULT_SETTINGS).status).toBe('loading');
+  expect(source.get(page, DEFAULT_SETTINGS, {}, false).status).toBe('loading');
   expect(fetcher).toHaveBeenCalledTimes(2);
 });
 

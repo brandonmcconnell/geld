@@ -13,6 +13,7 @@ import { readGitLabThreadActions, syncGitLabNativeReviewState } from './thread-a
 import { fetchGitLabConfig } from './config';
 import { renderGitLabComment } from './comment-render';
 import { gitLabConversationRoots, gitLabDescriptionHost } from './conversation';
+import { gitLabAuthorPresentation } from './author-presentation';
 
 export const gitlabAdapter: ProviderAdapter = {
   id: 'gitlab',
@@ -37,6 +38,7 @@ export const gitlabAdapter: ProviderAdapter = {
       get input() { return syncGitLabNativeReviewState(snapshot.input, doc); },
       actions: readGitLabActions(doc, snapshot.capabilities),
       renderComment: (comment: ProviderReviewComment, host: HTMLElement) => renderGitLabComment(comment, host, doc),
+      authorPresentation: (comment: ProviderReviewComment) => gitLabAuthorPresentation(comment, doc),
       sourceActions: (comment: ProviderReviewComment) => {
         const permissions = permissionsForNote.get(comment.id);
         if (permissions === undefined) return [];

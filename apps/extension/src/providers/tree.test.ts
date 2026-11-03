@@ -31,7 +31,7 @@ function fixture() {
   return { tree, host, container, row, link, view, revealPath, setExpanded, update };
 }
 function headers(host: HTMLElement): HTMLButtonElement[] { return [...host.querySelectorAll<HTMLButtonElement>('.geld-provider-category-header')]; }
-afterEach(() => { for (const tree of trees) tree.clear(); trees.length = 0; document.body.replaceChildren(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { for (const tree of trees) tree.clear(); trees.length = 0; document.body.replaceChildren(); document.documentElement.removeAttribute('data-geld-provider'); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 it('projects complete compact Essential/category trees without moving native recycler nodes', () => {
   const { host, container, row, update } = fixture();
@@ -292,4 +292,44 @@ it('preserves a newer owner of the geometry variable when clearing the accordion
   tree.clear();
   expect(host.style.getPropertyValue('--geld-provider-tree-max-height')).toBe('600px');
   expect(host.style.getPropertyPriority('--geld-provider-tree-max-height')).toBe('important');
+});
+
+
+it.each(['gitlab', 'bitbucket'] as const)('uses %s category equivalents and native folder controls without changing their accessible names', (provider) => {
+  document.documentElement.setAttribute('data-geld-provider', provider);
+  const { tree, view, host, container } = fixture();
+  const original = document.createElement('button');
+  original.type = 'button'; original.className = 'observed-native-folder-class'; original.setAttribute('aria-expanded', 'true');
+  if (provider === 'gitlab') original.dataset.testid = 'file-row';
+  else original.innerHTML = '<span role="img" aria-label="Directory"><svg><path d="m14.53 6.03-6 6a.75.75 0 0 1-1.004.052l-.056-.052-6-6 1.06-1.06L8 10.44l5.47-5.47z"></path></svg></span>';
+  original.setAttribute('id', 'native-directory-control'); original.setAttribute('onclick', 'doNotCopy()');
+  container.prepend(original);
+  const group = required(hidden.categories[0]);
+  const update = (icon: typeof group.category.icon) => tree.update(view, { ...hidden, categories: [{ ...group, category: { ...group.category, icon } }] }, all, FILES, { revealPath: vi.fn(), setExpanded: vi.fn(), subjectKey: 'same-review' });
+  update('beaker');
+  expect(headers(host).map((button) => button.textContent)).toEqual(['Essential (1 file)', 'Tests (2 tests)']);
+  const tests = required(headers(host)[1]);
+  expect(tests.querySelector('svg')?.getAttribute('data-geld-native-icon')).toBe(provider === 'gitlab' ? 'work-item-test-case' : 'flask');
+  expect(tests.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+  tests.click();
+  const folder = required(host.querySelector<HTMLButtonElement>('.geld-provider-category-content .geld-provider-category-folder'));
+  expect(folder.classList.contains('observed-native-folder-class')).toBe(true);
+  expect(folder.getAttribute('id')).toBeNull(); expect(folder.getAttribute('onclick')).toBeNull();
+  expect(folder.querySelector('svg')?.getAttribute('data-geld-native-icon')).toBe(provider === 'gitlab' ? 'folder-open' : 'chevron-down');
+  const name = folder.textContent;
+  folder.click();
+  expect(folder.getAttribute('aria-expanded')).toBe('false');
+  expect(folder.textContent).toBe(name);
+  expect(folder.querySelector('svg')?.getAttribute('data-geld-native-icon')).toBe(provider === 'gitlab' ? 'folder' : 'chevron-right');
+  folder.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+  expect(folder.getAttribute('aria-expanded')).toBe('true');
+  expect(folder.querySelector('svg')?.getAttribute('data-geld-native-icon')).toBe(provider === 'gitlab' ? 'folder-open' : 'chevron-down');
+  update('book');
+  expect(tests.querySelector('svg')?.getAttribute('data-geld-native-icon')).toBe(provider === 'gitlab' ? 'book' : 'book-with-bookmark');
+  expect(tests.textContent).toBe('Tests (2 tests)');
+  tree.clear();
+  expect(original.isConnected).toBe(true);
+  expect(original.getAttribute('aria-expanded')).toBe('true');
+  expect(original.getAttribute('onclick')).toBe('doNotCopy()');
+  expect(host.querySelector('.geld-provider-category-icon')).toBeNull();
 });
