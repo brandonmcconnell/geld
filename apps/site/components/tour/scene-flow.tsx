@@ -5,7 +5,7 @@ import type { FlowComponent, FlowRoute } from '@geld/core/file-flow';
 import { flowLinks, layoutFlow } from '@geld/core/file-flow';
 import { cn } from 'cn';
 import { WorkflowIcon, XIcon } from 'lucide-react';
-import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { GeldRowTools, Meter } from '@/components/tour/bits';
 import type { TourFile } from '@/components/tour/data';
@@ -62,6 +62,17 @@ export function FlowScene() {
     return layoutFlow(paths, flowLinks(paths, AFTER, BEFORE));
   }, [files, showHidden]);
 
+  const flowButton = useRef<HTMLButtonElement | null>(null);
+  const dialog = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (flowOpen) dialog.current?.focus({ preventScroll: true });
+  }, [flowOpen]);
+
+  const dismiss = (): void => {
+    setFlowOpen(false);
+    setLit(null);
+    flowButton.current?.focus({ preventScroll: true });
+  };
   const open = (path: string): void => {
     setOpened(path);
     setFlowOpen(false);
@@ -72,7 +83,7 @@ export function FlowScene() {
   return (
     <PrWindow tab={tab} onTab={setTab} disabledTabs={['commits', 'checks']} filesCount={files.filter((file) => file.hiddenAs === null).length} bodyClassName="relative min-h-[26rem]">
       {tab === 'files' ? (
-        <FilesView files={files.filter((file) => file.hiddenAs === null)} opened={opened} />
+        <FilesView files={files.filter((file) => showHidden || file.hiddenAs === null)} opened={opened} />
       ) : (
         <div className="m-3 rounded-lg border text-xs">
           <div className="flex items-center gap-2 px-3 py-2">
@@ -82,11 +93,12 @@ export function FlowScene() {
             <GeldRowTools>
               <Ping on={!flowOpen} className="inline-flex rounded-md">
                 <button
+                  ref={flowButton}
                   type="button"
                   aria-label="Flow, how the changed files connect"
                   aria-expanded={flowOpen}
                   title="Flow"
-                  onClick={() => setFlowOpen((value) => !value)}
+                  onClick={() => (flowOpen ? dismiss() : setFlowOpen(true))}
                   className={cn('grid size-5 place-items-center rounded-md outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60', flowOpen && 'bg-muted text-foreground')}
                 >
                   <WorkflowIcon aria-hidden="true" className="size-3.5" />
@@ -104,11 +116,16 @@ export function FlowScene() {
       )}
 
       <div
+        ref={dialog}
         role="dialog"
         aria-label="Flow"
+        tabIndex={-1}
         inert={!flowOpen}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') dismiss();
+        }}
         className={cn(
-          'absolute inset-x-2 top-2 z-10 flex max-h-[calc(100%-1rem)] flex-col overflow-hidden rounded-xl border bg-card shadow-xl transition-[opacity,transform] duration-200',
+          'absolute inset-x-2 top-2 z-10 flex outline-none max-h-[calc(100%-1rem)] flex-col overflow-hidden rounded-xl border bg-card shadow-xl transition-[opacity,transform] duration-200',
           flowOpen ? 'scale-100 opacity-100' : 'pointer-events-none scale-95 opacity-0',
         )}
       >
@@ -120,7 +137,7 @@ export function FlowScene() {
               <span className="@max-lg:sr-only">Hidden files</span>
               <Switch checked={showHidden} onCheckedChange={setShowHidden} aria-label="Show the files your settings hide" />
             </label>
-            <button type="button" aria-label="Close" onClick={() => setFlowOpen(false)} className="grid size-6 place-items-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60">
+            <button type="button" aria-label="Close" onClick={dismiss} className="grid size-6 place-items-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60">
               <XIcon aria-hidden="true" className="size-3.5" />
             </button>
           </span>
@@ -266,18 +283,25 @@ function Card({ file, left, top, onLight, onOpen }: { readonly file: FlowFile; r
 }
 
 function FilesView({ files, opened }: { readonly files: readonly FlowFile[]; readonly opened: string | null }) {
+  const target = useRef<HTMLLIElement | null>(null);
+  useEffect(() => {
+    target.current?.focus({ preventScroll: true });
+  }, [opened]);
   return (
     <ul aria-label="Files changed" className="py-1">
       {files.map((file) => (
         <li
           key={file.path}
-          className={cn('mx-3 my-1 flex items-center gap-2 rounded-md border px-3 py-1.5 font-mono text-xs transition-colors', file.path === opened ? 'border-[#0969da] bg-[#0969da]/8 dark:border-[#4493f8] dark:bg-[#4493f8]/10' : 'border-transparent')}
+          ref={file.path === opened ? target : undefined}
+          tabIndex={file.path === opened ? -1 : undefined}
+          className={cn('mx-3 my-1 flex items-center gap-2 rounded-md border px-3 py-1.5 font-mono text-xs outline-none transition-colors', file.hiddenAs !== null && 'border-dashed', file.path === opened ? 'border-[#0969da] bg-[#0969da]/8 dark:border-[#4493f8] dark:bg-[#4493f8]/10' : 'border-transparent')}
         >
           <Octicon glyph="file-diff" className="size-3.5 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate">
             <span className="text-muted-foreground">{directoryOf(file.path)}</span>
             {nameOf(file.path)}
           </span>
+          {file.hiddenAs === null ? null : <span className="shrink-0 rounded-full border px-1.5 font-sans text-[0.625rem] text-muted-foreground">{file.hiddenAs}</span>}
           <span className="shrink-0 tabular-nums">
             <span className="text-addition">+{formatCount(file.additions)}</span> <span className="text-deletion">&minus;{formatCount(file.deletions)}</span>
           </span>
