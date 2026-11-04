@@ -2,6 +2,7 @@ import { canReadImports, flowLinks, importSpecifiers, layoutFlow } from '@geld/c
 import type { FlowComponent, FlowEdge, FlowRoute } from '@geld/core/file-flow';
 import { formatCount } from '@geld/core/format';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
+import { cancelIdle, whenIdle } from '../../lib/idle';
 import { looksLikeHtml } from '../../lib/http';
 import { pageFetch } from '../page-fetch';
 import { ICON_CHEVRON_DOWN, ICON_FILE_ADDED, ICON_FILE_MODIFIED, ICON_FILE_MOVED, ICON_FILE_REMOVED, ICON_WORKFLOW, ICON_X } from '../ui/icons';
@@ -35,7 +36,18 @@ export interface FlowSource {
   readonly pullPath: string;
   readonly headSha: string | null;
   readonly files: readonly FlowFile[];
+  /** Whether the files carry the imports the diff removed: `known` from the diff, else GitHub's summaries stand in for it. */
+  readonly removed: FlowRemovedLinks;
 }
+
+/** `pending` while the diff is still on its way, `too-large` past the diff host's limit, `unavailable` when it failed. */
+export type FlowRemovedLinks = 'known' | 'pending' | 'too-large' | 'unavailable';
+
+const REMOVED_NOTE: Readonly<Record<Exclude<FlowRemovedLinks, 'known'>, string>> = {
+  pending: 'Links a change removed are drawn once the pull request\u2019s diff arrives.',
+  'too-large': 'The diff is over 20 MB, so links a change removed are not drawn.',
+  unavailable: 'The diff could not be loaded, so links a change removed are not drawn.',
+};
 
 const NODE_WIDTH = 224;
 const NODE_HEIGHT = 58;
@@ -46,6 +58,11 @@ const CORNER = 8;
 const MAX_READS = 160;
 const MAX_BYTES = 400_000;
 const CONCURRENT_READS = 6;
+const READ_TIMEOUT_MS = 15_000;
+/** Reads at a time before the dialog is opened: the diagram is prepared in the background without crowding the page's own requests. */
+const PREFETCH_READS = 2;
+const PREFETCH_IDLE_MS = 2000;
+const PREFETCH_IDLE_KEY = 'geld-flow-prefetch';
 const RENDER_DEBOUNCE_MS = 120;
 const ZOOM_MIN = 0.3;
 const ZOOM_MAX = 1.5;
@@ -54,14 +71,27 @@ const ZOOM_STEP = 0.1;
 const STATUS_WORD: Readonly<Record<FlowFileStatus, string>> = { added: 'New', deleted: 'Removed', renamed: 'Renamed', modified: 'Changed' };
 const STATUS_ICON: Readonly<Record<FlowFileStatus, string>> = { added: ICON_FILE_ADDED, deleted: ICON_FILE_REMOVED, renamed: ICON_FILE_MOVED, modified: ICON_FILE_MODIFIED };
 
+/** Why the pull request's diff is not here, when its request failed (`retrying` while it is still asked again on its own). */
+export interface FlowFailure {
+  readonly origin: string;
+  readonly pullPath: string;
+  readonly reason: string;
+  readonly retrying: boolean;
+}
+
 let source: FlowSource | null = null;
+let failure: FlowFailure | null = null;
 /** The pull request and head the cached reads belong to. */
 let sourceKey = '';
 
-/** What the diagram is drawn from, set by the controller on every conversation pass (null elsewhere). */
-export function setFlowSource(next: FlowSource | null): void {
+/** What the diagram is drawn from, set by the controller on every conversation pass (null elsewhere), with the diff's failure while it has none. */
+export function setFlowSource(next: FlowSource | null, failed: FlowFailure | null = null): void {
   source = next;
+  const failedBefore = failure;
+  failure = next === null ? failed : null;
+  if (openDialog !== null && failureKey(failure) !== failureKey(failedBefore)) onReadLanded?.();
   const key = next === null ? '' : `${next.origin}/${next.repo}${next.pullPath}@${next.headSha ?? ''}`;
+  prefetch(next, key);
   // Another pull request or a new head: what was read for the last one is never asked for again.
   if (key !== '' && key !== sourceKey) {
     sourceKey = key;
@@ -81,9 +111,39 @@ export function setFlowSource(next: FlowSource | null): void {
   }
 }
 
+function failureKey(from: FlowFailure | null): string {
+  return from === null ? '' : `${from.origin}${from.pullPath}\u0000${from.reason}\u0000${String(from.retrying)}`;
+}
+
+/** What the dialog says in place of the diagram when the diff could not be had, and whether reloading is the way on. */
+function failureCopy(failed: FlowFailure): { readonly text: string; readonly reload: boolean } {
+  if (failed.reason === 'too-large') return { text: 'This pull request\u2019s diff is over 20 MB, too large for Flow to read.', reload: false };
+  if (failed.reason === 'rate-limited') return { text: 'GitHub is limiting diff downloads. Flow tries again shortly.', reload: false };
+  if (failed.retrying) return { text: 'GitHub did not hand over the diff yet. Flow tries again shortly.', reload: false };
+  if (failed.reason === 'signed-out') return { text: 'GitHub answered with its sign-in page instead of the diff. Sign in, or renew your SSO session, and reload.', reload: true };
+  if (failed.reason === 'http-404') return { text: 'GitHub answered 404 for the diff. For a private repository that means you are signed out. Sign in and reload.', reload: true };
+  return { text: `Geld could not load this pull request\u2019s diff (${failed.reason}).`, reload: true };
+}
+
+/** The source a background read was last started for, so each pull request and head is read ahead once. */
+let prefetchedKey = '';
+
+/** Read every file's imports ahead of a click (essential first), so the dialog opens on the finished diagram. */
+function prefetch(next: FlowSource | null, key: string): void {
+  if (next === null || next.headSha === null || key === prefetchedKey) return;
+  prefetchedKey = key;
+  whenIdle(
+    PREFETCH_IDLE_KEY,
+    () => {
+      if (key === sourceKey) readFiles(next, next.files);
+    },
+    PREFETCH_IDLE_MS,
+  );
+}
+
 /** What an open dialog draws from besides the reads: each file's status, category and removed imports. */
 function fileData(from: FlowSource): string {
-  return from.files.map((file) => `${file.path}\u0000${file.status}\u0000${file.hiddenAs ?? ''}\u0000${file.removedImports.join(',')}`).join('\u0001');
+  return from.removed + '\u0002' + from.files.map((file) => `${file.path}\u0000${file.status}\u0000${file.hiddenAs ?? ''}\u0000${file.removedImports.join(',')}`).join('\u0001');
 }
 
 /** Close an open Flow dialog and drop every read still waiting (Geld turned off, or the digest torn down). */
@@ -91,12 +151,9 @@ export function closeFlow(): void {
   openDialog?.close();
   openDialog = null;
   onReadLanded = null;
+  cancelIdle(PREFETCH_IDLE_KEY);
+  prefetchedKey = '';
   forgetReads();
-}
-
-/** Whether the Geld row offers Flow: the diff is in and holds more than one file. */
-export function flowAvailable(): boolean {
-  return source !== null && source.files.length > 1;
 }
 
 /** A file's read, kept as the imports it names: a few strings each, so a whole diagram's worth stays in memory and nothing is read twice. */
@@ -134,7 +191,7 @@ function request(origin: string, repo: string, revision: string, path: string): 
 }
 
 function pump(): void {
-  while (active < CONCURRENT_READS && queue.length > 0) {
+  while (active < (openDialog === null ? PREFETCH_READS : CONCURRENT_READS) && queue.length > 0) {
     const job = queue.shift();
     if (job === undefined) return;
     active += 1;
@@ -153,7 +210,20 @@ function pump(): void {
   }
 }
 
+/** A read that has not answered by then counts as failed: the diagram waits for every read, so one stalled download must not hold it. */
 async function fetchText(url: string): Promise<string | null> {
+  let timer = 0;
+  const deadline = new Promise<null>((resolve) => {
+    timer = window.setTimeout(() => resolve(null), READ_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([readText(url), deadline]);
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function readText(url: string): Promise<string | null> {
   const response = await pageFetch(url, { credentials: 'same-origin', redirect: 'follow' });
   if (!response.ok) return null;
   const text = await response.text();
@@ -402,11 +472,14 @@ let dialogIds = 0;
 
 /** Open the Flow dialog for the current pull request. Escape, the close button or a click on the backdrop closes it. */
 export function openFlowDialog(): void {
-  const opened = source;
-  if (opened === null) return;
-  // What each render draws from: the latest source while it is still this pull request (a push lands, or the
-  // head becomes known, while the dialog is open), else the one it opened with.
-  const latest = (): FlowSource => (source !== null && source.origin === opened.origin && source.pullPath === opened.pullPath ? source : opened);
+  const pullPath = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(location.pathname)?.[0];
+  if (pullPath === undefined) return;
+  const ofThisPull = (candidate: FlowSource | null): FlowSource | null => (candidate !== null && candidate.origin === location.origin && candidate.pullPath === pullPath ? candidate : null);
+  // Flow is offered before the diff has loaded: opened then, it waits, and the source arriving redraws it.
+  const opened = ofThisPull(source);
+  // What each render draws from: the latest source while it is still this pull request (the diff lands, a push
+  // lands, or the head becomes known, while the dialog is open), else the one it opened with.
+  const latest = (): FlowSource | null => ofThisPull(source) ?? opened;
   dialogIds += 1;
   const titleId = `geld-flow-${dialogIds}-title`;
   const dialog = createElement('dialog', { class: 'Overlay Overlay--motion-scaleFade geld-flow', [OWN_UI_ATTRIBUTE]: '', 'aria-labelledby': titleId });
@@ -419,7 +492,6 @@ export function openFlowDialog(): void {
   const scroller = createElement('div', { class: 'geld-flow__scroll' });
   const canvas = createElement('div', { class: 'geld-flow__canvas' });
   scroller.append(canvas);
-  const status = createElement('p', { class: 'geld-flow__reading', role: 'status', hidden: '' });
   const legendList = createElement('div', { class: 'geld-flow__legend', id: `geld-flow-${dialogIds}-legend`, hidden: '' }, (['added', 'modified', 'renamed', 'deleted'] as const).map((key) => createElement('span', { class: 'geld-flow__legend-item' }, [statusIcon(key), STATUS_WORD[key]])));
   const chevron = icon(ICON_CHEVRON_DOWN);
   chevron.classList.add('geld-flow__chevron');
@@ -437,7 +509,7 @@ export function openFlowDialog(): void {
     legendButton,
     createElement('div', { class: 'geld-flow__zoom', role: 'group', 'aria-label': 'Zoom' }, [zoomOut, zoomLevel, zoomIn]),
   ]);
-  const body = createElement('div', { class: 'Overlay-body geld-flow__stage' }, [scroller, status, controls]);
+  const body = createElement('div', { class: 'Overlay-body geld-flow__stage' }, [scroller, controls]);
   let scale: number | null = null;
   const applyScale = (next: number): void => {
     scale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(next * 100) / 100));
@@ -463,7 +535,7 @@ export function openFlowDialog(): void {
     ]),
     body,
   );
-  const filesHref = filesTabHref(opened.pullPath);
+  const filesHref = filesTabHref(pullPath);
   let timer = 0;
   // Closing queues the dialog's `close` event, which removes it: a card's click finishes reaching GitHub's own
   // link handling (a Turbo visit to Files changed) while the card is still in the document.
@@ -474,6 +546,21 @@ export function openFlowDialog(): void {
   let fitted = false;
   const render = (): void => {
     const current = latest();
+    /** Said in the diagram's place: nothing is drawn until it can be drawn whole, so the layout never shifts under the reader. */
+    const message = (text: string, role: 'status' | 'alert', action: HTMLElement | null = null): void => {
+      controls.hidden = true;
+      canvas.replaceChildren(createElement('div', { class: 'geld-flow__message', role }, [createElement('p', {}, [text]), ...(action === null ? [] : [action])]));
+    };
+    if (current === null) {
+      toggle.hidden = true;
+      const failed = failure !== null && failure.origin === location.origin && failure.pullPath === pullPath ? failure : null;
+      if (failed === null) return message('Waiting for the pull request\u2019s diff…', 'status');
+      const copy = failureCopy(failed);
+      const reload = createElement('button', { type: 'button', class: 'btn btn-sm' }, ['Reload']);
+      reload.addEventListener('click', () => location.reload());
+      // A failure still being retried is routine and announced politely. Only one Flow has given up on interrupts.
+      return message(copy.text, failed.retrying ? 'status' : 'alert', copy.reload ? reload : null);
+    }
     const essentialNow = current.files.filter((file) => file.hiddenAs === null).length;
     const hiddenNow = current.files.length - essentialNow;
     // Offered from the counts as they are now: the diff landing (or the settings changing) can hide files that the
@@ -484,6 +571,8 @@ export function openFlowDialog(): void {
     toggle.textContent = showHidden ? `Hide ${plural(hiddenNow, 'hidden file')}` : `Show ${plural(hiddenNow, 'hidden file')}`;
     toggle.setAttribute('aria-pressed', String(showHidden));
     const reading = readFiles(current, files);
+    if (reading.landed < reading.wanted) return message(`Reading ${formatCount(reading.landed)} of ${plural(reading.wanted, 'file')}…`, 'status');
+    controls.hidden = false;
     const edges: FlowEdge[] = flowLinks(
       files.map((file) => file.path),
       reading.after,
@@ -495,9 +584,6 @@ export function openFlowDialog(): void {
       edges,
     );
     const byPath = new Map(files.map((file) => [file.path, file]));
-    const stillReading = reading.landed < reading.wanted;
-    status.hidden = !stillReading;
-    status.textContent = stillReading ? `Reading ${formatCount(reading.landed)} of ${plural(reading.wanted, 'file')}…` : '';
     const scrollTop = scroller.scrollTop;
     const scrollLeft = scroller.scrollLeft;
     canvas.replaceChildren();
@@ -512,11 +598,12 @@ export function openFlowDialog(): void {
       section.append(grid);
       canvas.append(section);
     }
+    if (current.removed !== 'known') canvas.prepend(createElement('p', { class: 'geld-flow__note' }, [REMOVED_NOTE[current.removed]]));
     if (reading.unreadable) canvas.prepend(createElement('p', { class: 'geld-flow__note' }, ['Geld could not tell which commit this page shows, so it drew the files without their links.']));
     scroller.scrollTop = scrollTop;
     scroller.scrollLeft = scrollLeft;
-    // Fitted once the links are in (a diagram drawn while files are still being read is narrower); the reader's own zoom stays.
-    if (!stillReading && !fitted) {
+    // Fitted on the first draw (and after the toggle); the reader's own zoom stays through later redraws.
+    if (!fitted) {
       fitted = true;
       applyScale(fitScale());
     }
@@ -547,7 +634,9 @@ export function openFlowDialog(): void {
   });
   openDialog?.close();
   openDialog = dialog;
-  openData = fileData(opened);
+  // Reads still queued from the background go at full speed now that someone is waiting on them.
+  pump();
+  openData = opened === null ? '' : fileData(opened);
   document.body.append(dialog);
   dialog.showModal();
   applyScale(1);

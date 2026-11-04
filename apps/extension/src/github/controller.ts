@@ -19,7 +19,7 @@ import { debugScopesItem, repoConfigChoicesItem, whitespaceOptOutsItem } from '.
 import type { FileStats, GeldSettings } from '@geld/core';
 import type { Classified, HiddenBreakdown } from './breakdown';
 import { breakdownFromFiles, buildBreakdown, EMPTY_BREAKDOWN } from './breakdown';
-import { DiffSource } from './diff-source';
+import { DiffSource, retriesLater } from './diff-source';
 import type { ResolvedRepoConfig } from './repo-config-source';
 import { RepoConfigSource, validConfigs } from './repo-config-source';
 import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManagedText, svgFromString, writeAttribute } from './dom';
@@ -48,7 +48,6 @@ import { LIVE_CATCH_UP_EVENT, liveCatchUpDue } from './review/live-regions';
 import { catchUpTimeline } from './review/timeline-catchup';
 import { applyReviewOverview, foldDescriptionNow, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
 import { setFlowSource } from './review/flow';
-import type { FlowSource } from './review/flow';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { applyTestFolds, clearTestFolds, forgetLinkedFold, hasHiddenLines } from './ui/test-folds';
 import { wholeFile } from './whole-file';
@@ -884,21 +883,26 @@ export class GeldController {
     return state.status === 'ready' ? state.files.map((file) => file.path) : null;
   }
 
-  /** The changed files the digest's Flow diagram draws, each with the hidden category the reader's settings give it. */
-  private pageFlowSource(page: PageInfo, url: URL, matcher: PathMatcher): FlowSource | null {
-    if (page.kind !== 'pull-conversation' || page.diffUrl === null || !this.settings.prOverview) return null;
+  /** Hand the digest's Flow diagram the changed files (each with the hidden category the reader's settings give it), or why the diff is not here. */
+  private updateFlowSource(page: PageInfo, url: URL, matcher: PathMatcher): void {
+    if (page.kind !== 'pull-conversation' || page.diffUrl === null || !this.settings.prOverview) return setFlowSource(null);
     const pull = /^\/([^/]+\/[^/]+)\/pull\/\d+/.exec(url.pathname);
-    if (pull?.[1] === undefined) return null;
+    if (pull?.[1] === undefined) return setFlowSource(null);
     const sha = this.diffShaFor(page, url);
     const state = this.diffSource.request(page.diffUrl, sha, 'page');
-    if (state.status !== 'ready') return null;
-    return {
+    if (state.status === 'failed') return setFlowSource(null, { origin: url.origin, pullPath: pull[0], reason: state.reason, retrying: retriesLater(state) });
+    if (state.status !== 'ready') return setFlowSource(null);
+    // Summaries know no removed lines. Kept as `ready` from disk, they stand for a diff that was too large to fetch.
+    const failed = state.provisional === true ? this.diffSource.diffFailure(page.diffUrl, sha) : { reason: 'too-large', attempts: 0 };
+    const removed = !state.files.some((file) => file.summaryOnly === true) ? 'known' : failed === null || retriesLater(failed) ? 'pending' : failed.reason === 'too-large' ? 'too-large' : 'unavailable';
+    setFlowSource({
       origin: url.origin,
       repo: pull[1],
       pullPath: pull[0],
       headSha: sha,
+      removed,
       files: state.files.map((file) => ({ path: file.path, status: file.status ?? 'modified', additions: file.additions, deletions: file.deletions, hiddenAs: matcher.categorizeFile(file)?.title ?? null, removedImports: file.removedImports ?? [] })),
-    };
+    });
   }
 
   /**
@@ -1085,7 +1089,7 @@ export class GeldController {
     const trackerConfig=repo!==null&&this.repoDecision(repo)==='use'?this.resolvedConfig(repo):null;
     applyTrackerLinks(this.settings,trackerConfig?validConfigs(trackerConfig):[]);
     if (!skipReview) {
-      setFlowSource(this.pageFlowSource(page, url, matcher));
+      this.updateFlowSource(page, url, matcher);
       applyReviewOverview(this.settings, this.pageDiffPaths(), this.repoBotsHint(page, repo));
     }
 

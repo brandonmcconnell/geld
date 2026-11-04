@@ -8229,25 +8229,28 @@ dialog.geld-flow .geld-flow__title {
   font-size: 12px;
 }
 
-/* Floating over the diagram's lower corners: what is still being read on the left, the legend and zoom on the right. */
-.geld-flow__reading {
-  position: absolute;
-  left: 12px;
-  bottom: 12px;
-  margin: 0;
-  padding: 0 8px;
-  border: 1px solid var(--borderColor-default, var(--color-border-default));
-  border-radius: 6px;
-  background: var(--bgColor-default, var(--color-canvas-default));
+.geld-flow__message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  align-self: stretch;
+  margin: 48px 28px;
   color: var(--fgColor-muted, var(--color-fg-muted));
-  font-size: 12px;
-  line-height: 22px;
+  font-size: 14px;
+  text-align: center;
 }
 
-.geld-flow__reading[hidden] {
+.geld-flow__message > p {
+  max-width: 44ch;
+  margin: 0;
+}
+
+.geld-flow__controls[hidden] {
   display: none;
 }
 
+/* Floating over the diagram's lower right corner: the legend and zoom. */
 .geld-flow__controls {
   position: absolute;
   right: 12px;
