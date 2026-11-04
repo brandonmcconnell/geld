@@ -4,6 +4,7 @@ import { cn } from 'cn';
 import { FileCodeIcon } from 'lucide-react';
 import { useState } from 'react';
 
+import { Ping } from '@/components/tour/ping';
 import { PrWindow } from '@/components/tour/pr-window';
 import { Switch } from '@/components/ui/switch';
 
@@ -92,7 +93,9 @@ export function WorkflowScene() {
           </span>
           <label className="inline-flex shrink-0 items-center gap-2 font-sans text-muted-foreground">
             {geld ? 'With Geld' : 'GitHub only'}
-            <Switch checked={geld} onCheckedChange={setGeld} aria-label="Highlight shell in run blocks" />
+            <Ping>
+              <Switch checked={geld} onCheckedChange={setGeld} aria-label="Highlight shell in run blocks" />
+            </Ping>
           </label>
         </div>
         <div className="py-1 font-mono text-xs">

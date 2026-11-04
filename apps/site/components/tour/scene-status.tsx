@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { PrState } from '@/components/tour/bits';
 import { Avatar, STATE_COLOR } from '@/components/tour/bits';
+import { Ping } from '@/components/tour/ping';
 import { PrWindow, StateIcon, stateWord } from '@/components/tour/pr-window';
 import { useInstantKey } from '@/components/tour/use-instant-key';
 
@@ -77,30 +78,32 @@ export function StatusScene() {
       </span>
     ) : (
       <span className="relative">
-        <button
-          ref={pillRef}
-          type="button"
-          aria-expanded={menuOpen}
-          aria-label={oneClick ? 'Merge now: Squash and merge' : `${stateWord(state)}. Change the status`}
-          onClick={(event) => (event.metaKey || event.ctrlKey) && state === 'open' ? change('merged') : setMenuOpen((value) => !value)}
-          className={cn(
-            'group/pill inline-grid h-7 place-items-center rounded-full px-3 text-xs font-semibold outline-none inset-ring-[1.5px] transition-[background-color,box-shadow,filter] duration-300 hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-            oneClick ? 'bg-transparent text-[#8250df] inset-ring-[#8250df]' : cn('inset-ring-transparent', STATE_COLOR[state]),
-          )}
-        >
-          {/* Both faces always take their room, so the 1-click face never changes the pill's size. */}
-          <span className={cn('col-start-1 row-start-1 inline-flex items-center gap-1.5', oneClick && 'invisible')}>
-            <StateIcon state={state} />
-            {stateWord(state)}
-            <ChevronDownIcon aria-hidden="true" strokeWidth={2.5} className={cn('-mr-1 size-3 opacity-80 transition-transform', menuOpen && 'rotate-180')} />
-          </span>
-          {state === 'open' ? (
-            <span aria-hidden="true" className={cn('col-start-1 row-start-1 inline-flex items-center gap-1.5', !oneClick && 'invisible')}>
-              <StateIcon state="merged" />
-              Merge
+        <Ping tone={oneClick ? ICON_COLOR.merged : ICON_COLOR[state]} className="inline-flex rounded-full">
+          <button
+            ref={pillRef}
+            type="button"
+            aria-expanded={menuOpen}
+            aria-label={oneClick ? 'Merge now: Squash and merge' : `${stateWord(state)}. Change the status`}
+            onClick={(event) => (event.metaKey || event.ctrlKey) && state === 'open' ? change('merged') : setMenuOpen((value) => !value)}
+            className={cn(
+              'group/pill inline-grid h-7 place-items-center rounded-full px-3 text-xs font-semibold outline-none inset-ring-[1.5px] transition-[background-color,box-shadow,filter] duration-300 hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+              oneClick ? 'bg-card text-[#8250df] inset-ring-[#8250df]' : cn('inset-ring-transparent', STATE_COLOR[state]),
+            )}
+          >
+            {/* Both faces always take their room, so the 1-click face never changes the pill's size. */}
+            <span className={cn('col-start-1 row-start-1 inline-flex items-center gap-1.5', oneClick && 'invisible')}>
+              <StateIcon state={state} />
+              {stateWord(state)}
+              <ChevronDownIcon aria-hidden="true" strokeWidth={2.5} className={cn('-mr-1 size-3 opacity-80 transition-transform', menuOpen && 'rotate-180')} />
             </span>
-          ) : null}
-        </button>
+            {state === 'open' ? (
+              <span aria-hidden="true" className={cn('col-start-1 row-start-1 inline-flex items-center gap-1.5', !oneClick && 'invisible')}>
+                <StateIcon state="merged" />
+                Merge
+              </span>
+            ) : null}
+          </button>
+        </Ping>
         <span
           className={cn(
             'absolute top-full left-0 z-20 mt-1.5 flex w-60 origin-top-left flex-col rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl transition-[opacity,transform] duration-200',

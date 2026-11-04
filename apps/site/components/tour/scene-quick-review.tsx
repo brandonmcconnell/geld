@@ -6,6 +6,7 @@ import { useState } from 'react';
 
 import { Avatar } from '@/components/tour/bits';
 import { Octicon } from '@/components/tour/octicons';
+import { Ping } from '@/components/tour/ping';
 import type { PrTab } from '@/components/tour/pr-window';
 import { PrWindow } from '@/components/tour/pr-window';
 import { useInstantKey } from '@/components/tour/use-instant-key';
@@ -90,17 +91,19 @@ export function QuickReviewScene() {
             {commenters}
             <Octicon glyph="comment" className="size-3.5 translate-y-px" />
           </span>
-          <span className="inline-flex overflow-hidden rounded-md border shadow-xs" role="group" aria-label="Review">
-            <Segment label="Approve" pressed={box === 'approve'} current={mine === 'approve'} onClick={(event) => press('approve', event)} tone="good">
-              <Octicon glyph="check" send={instant} />
-            </Segment>
-            <Segment label="Request changes" pressed={box === 'changes'} current={mine === 'changes'} onClick={(event) => press('changes', event)} tone="bad">
-              <Octicon glyph="x" send={instant} />
-            </Segment>
-            <Segment label="Comment" pressed={box === 'comment'} current={false} onClick={(event) => press('comment', event)} tone="plain">
-              <Octicon glyph="comment" className="translate-y-px" />
-            </Segment>
-          </span>
+          <Ping className="inline-flex rounded-md">
+            <span className="inline-flex overflow-hidden rounded-md border shadow-xs" role="group" aria-label="Review">
+              <Segment label="Approve" pressed={box === 'approve'} current={mine === 'approve'} onClick={(event) => press('approve', event)} tone="good">
+                <Octicon glyph="check" send={instant} />
+              </Segment>
+              <Segment label="Request changes" pressed={box === 'changes'} current={mine === 'changes'} onClick={(event) => press('changes', event)} tone="bad">
+                <Octicon glyph="x" send={instant} />
+              </Segment>
+              <Segment label="Comment" pressed={box === 'comment'} current={false} onClick={(event) => press('comment', event)} tone="plain">
+                <Octicon glyph="comment" className="translate-y-px" />
+              </Segment>
+            </span>
+          </Ping>
         </>
       }
       bodyClassName="relative min-h-80"

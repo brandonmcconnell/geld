@@ -7,6 +7,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 
 import { Diffstat } from '@/components/demo/diffstat';
 import { totalsOf } from '@/components/tour/data';
+import { Ping } from '@/components/tour/ping';
 import { PrWindow } from '@/components/tour/pr-window';
 import { hiddenLabel, TOGGLES, useClassified } from '@/components/tour/scene-noise';
 import { Switch } from '@/components/ui/switch';
@@ -90,7 +91,9 @@ export function CountsScene() {
           <span className="font-medium text-foreground">acme/widgets · Pull requests</span>
           <label className="inline-flex items-center gap-2">
             <span>{geld ? 'With Geld' : 'GitHub only'}</span>
-            <Switch checked={geld} onCheckedChange={setGeld} aria-label="Show Geld's counts" />
+            <Ping>
+              <Switch checked={geld} onCheckedChange={setGeld} aria-label="Show Geld's counts" />
+            </Ping>
           </label>
         </div>
         <ul>

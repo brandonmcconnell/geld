@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 
 import type { BotId } from '@/components/tour/bits';
 import { Avatar, BotMark, botName, Chip } from '@/components/tour/bits';
+import { Ping } from '@/components/tour/ping';
 import { PrWindow } from '@/components/tour/pr-window';
 import { Light } from '@/components/tour/scene-digest';
 
@@ -136,14 +137,16 @@ export function RequestScene() {
               <button type="button" onClick={() => setMenuOpen(false)} className="rounded-md px-2 py-1 font-medium hover:bg-muted">
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={run}
-                disabled={pickedCount === 0}
-                className="rounded-md bg-[#1f883d] px-2.5 py-1 font-medium text-white transition-opacity disabled:opacity-50"
-              >
-                {runLabel}
-              </button>
+              <Ping on={menuOpen} tone="text-[#1f883d]" className="inline-flex rounded-md">
+                <button
+                  type="button"
+                  onClick={run}
+                  disabled={pickedCount === 0}
+                  className="rounded-md bg-[#1f883d] px-2.5 py-1 font-medium text-white transition-opacity disabled:opacity-50"
+                >
+                  {runLabel}
+                </button>
+              </Ping>
             </div>
           </div>
         </div>

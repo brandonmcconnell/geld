@@ -6,6 +6,7 @@ import { useState } from 'react';
 
 import type { BotId, Person } from '@/components/tour/bits';
 import { Avatar, BotMark, Chip, Meter } from '@/components/tour/bits';
+import { Ping } from '@/components/tour/ping';
 import { PrWindow } from '@/components/tour/pr-window';
 
 interface Thread {
@@ -254,13 +255,15 @@ function ThreadRow({
           </div>
           <div className="flex items-center justify-end gap-2">
             <span className="flex-1 rounded-md border bg-card px-2 py-0.5 text-muted-foreground">Reply…</span>
-            <button
-              type="button"
-              onClick={onResolve}
-              className="rounded-md border bg-card px-2 py-0.5 font-medium outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40"
-            >
-              {resolved ? 'Unresolve' : 'Resolve conversation'}
-            </button>
+            <Ping on={open} className="inline-flex rounded-md">
+              <button
+                type="button"
+                onClick={onResolve}
+                className="rounded-md border bg-card px-2 py-0.5 font-medium outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40"
+              >
+                {resolved ? 'Unresolve' : 'Resolve conversation'}
+              </button>
+            </Ping>
           </div>
         </div>
       </Collapsible>
