@@ -15,9 +15,10 @@ const EASE_MS = 3000;
 
 /**
  * An endless reel of customer logos. The list is rendered twice and the track
- * slides by exactly one copy, so the loop has no seam. With reduced motion it
- * is one still, wrapping row instead. One copy must stay wider than
- * `container-wide` (1216px of content), or a logo would show twice at once.
+ * slides by exactly one copy, so the loop has no seam; it starts with the
+ * list's last logo before its first (`LeadLogo`). With reduced motion it is one
+ * still, wrapping row instead. One copy must stay wider than `container-wide`
+ * (1216px of content), or a logo would show twice at once.
  *
  * The button beside the heading pauses it (WCAG 2.2.2), and so does keyboard
  * focus on a logo, both at once; under the mouse it eases to a stop instead.
@@ -61,10 +62,14 @@ export function LogoReel({ className }: { readonly className?: string }) {
           <FaIcon icon={paused ? faPlay : faPause} className="size-3" />
         </button>
       </div>
-      <div ref={view} className="logo-reel mt-6" onFocus={onFocus} onBlur={onBlur} onPointerEnter={onPointer} onPointerLeave={onPointer}>
-        <div ref={track} className="flex w-max animate-logo-reel motion-reduce:w-full motion-reduce:animate-none">
-          <LogoList />
-          <LogoList copy />
+      <div ref={view} className="logo-reel relative mt-6" onFocus={onFocus} onBlur={onBlur} onPointerEnter={onPointer} onPointerLeave={onPointer}>
+        <div className="flex w-max pl-(--reel-gap) motion-reduce:w-full motion-reduce:pl-0">
+          <LeadLogo className="invisible" />
+          <div ref={track} className="relative flex w-max animate-logo-reel motion-reduce:w-full motion-reduce:animate-none">
+            <LeadLogo className="absolute top-0 right-full" />
+            <LogoList />
+            <LogoList copy />
+          </div>
         </div>
       </div>
     </section>
@@ -99,7 +104,7 @@ function bringIntoView(track: HTMLElement, view: HTMLElement, target: Element): 
   const box = target.getBoundingClientRect();
   if (box.left >= frame.left && box.right <= frame.right) return;
   const half = track.offsetWidth / 2;
-  const offset = track.getBoundingClientRect().left - frame.left + (frame.left + frame.width / 2 - (box.left + box.width / 2));
+  const offset = track.getBoundingClientRect().left - frame.left - track.offsetLeft + (frame.left + frame.width / 2 - (box.left + box.width / 2));
   animation.currentTime = (Math.min(half, Math.max(0, -offset)) / half) * duration;
 }
 
@@ -150,6 +155,23 @@ function subscribeToMotion(change: () => void): () => void {
   return () => query.removeEventListener('change', change);
 }
 
+/**
+ * The list's last logo, standing just before its first: the reel starts with
+ * it clear of the window's fading edge and the first logo one place in. One
+ * copy rides on the track's left; an invisible one holds its width in front of
+ * the track. Neither is there with reduced motion, so the still row leads with
+ * the first logo.
+ */
+function LeadLogo({ className }: { readonly className: string }) {
+  const last = CUSTOMERS.at(-1);
+  if (last === undefined) return null;
+  return (
+    <div aria-hidden="true" className={cn('flex h-10 shrink-0 items-center pr-(--reel-gap) motion-reduce:hidden', className)}>
+      <CustomerLink customer={last} focusable={false} />
+    </div>
+  );
+}
+
 function LogoList({ copy = false }: { readonly copy?: boolean }) {
   return (
     <ul
@@ -158,7 +180,7 @@ function LogoList({ copy = false }: { readonly copy?: boolean }) {
       aria-hidden={copy || undefined}
     >
       {CUSTOMERS.map((customer) => (
-        <li key={customer.name} className="flex h-10 shrink-0 items-center pr-12 sm:pr-16">
+        <li key={customer.name} className="flex h-10 shrink-0 items-center pr-(--reel-gap)">
           <CustomerLink customer={customer} focusable={!copy} />
         </li>
       ))}
