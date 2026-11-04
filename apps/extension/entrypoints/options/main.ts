@@ -1128,7 +1128,7 @@ async function main(): Promise<void> {
     };
     const cached = await aiGatewayItem.getValue();
     if (cached !== null && cached.baseUrl === settings.aiBaseUrl && settings.aiBaseUrl !== '') {
-      gatewayJev = cached.jevModel ?? jevModelFor(settings.aiBaseUrl);
+      gatewayJev = jevModelFor(settings.aiBaseUrl, cached.models.map((id) => ({ id })));
       fillModels(cached.models.map((id) => cached.details?.[id] ?? { id }));
       setModelsEnabled(true, '');
     } else {

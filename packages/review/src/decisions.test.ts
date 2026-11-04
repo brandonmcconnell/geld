@@ -14,6 +14,23 @@ describe('jev', () => {
     expect(isEvaluationModel('openai/gpt-4.1-mini')).toBe(false);
     expect(jevModelIn([{ id: 'openai/gpt-4.1' }, { id: 'typesafe-ai/jev' }])).toBe('typesafe-ai/jev');
     expect(jevModelIn([{ id: 'openai/gpt-4.1' }])).toBeNull();
+    expect(isEvaluationModel('perplexity/pplx-decider-v1.2', 'decision')).toBe(true);
+  });
+
+  it('picks Jev from a list holding other decision models, the unpinned id first', () => {
+    // Vercel's /v1/models, Nov 2026: every decision model is typed `evaluation`, sorted by id.
+    const vercel = [
+      { id: 'baseten/elephant-1', type: 'evaluation' },
+      { id: 'openai/gpt-4.1', type: 'language' },
+      { id: 'perplexity/pplx-decider-v1.2', type: 'evaluation' },
+      { id: 'typesafe-ai/jev-1.13.0', type: 'evaluation' },
+      { id: 'typesafe-ai/jev', type: 'evaluation' },
+      { id: 'typesafe-ai/jev-1.14.0', type: 'evaluation' },
+    ];
+    expect(jevModelIn(vercel)).toBe('typesafe-ai/jev');
+    expect(jevModelIn(vercel.filter((model) => model.id !== 'typesafe-ai/jev'))).toBe('typesafe-ai/jev-1.13.0');
+    expect(jevModelIn(vercel.filter((model) => !model.id.startsWith('typesafe-ai/')))).toBeNull();
+    expect(jevModelFor('https://ai-gateway.vercel.sh', vercel.slice(0, 3))).toBe('typesafe-ai/jev');
   });
 
   it('posts to the compatibility prefix on a gateway, the Decisions API on OpenRouter and the plain path at TypeSafe', () => {

@@ -178,10 +178,11 @@ function hasWork(meta: GeldPrMeta, comments: readonly RawComment[], settings: Ge
 /** Where a Jev question goes: the gateway when it offers Jev, else TypeSafe with the user's own key; null when neither is set up. */
 async function jevRoute(settings: GeldSettings): Promise<{ readonly baseUrl: string; readonly apiKey: string; readonly model: string } | null> {
   if (!settings.aiJev) return null;
-  // The gateway's Jev: the id its model list named when models were loaded, else what is known about the host
-  // (OpenRouter serves Jev without listing it), so a gateway checked before this was known still routes.
+  // The gateway's Jev: read from its model list as stored when models were loaded (not the stored pick, which earlier
+  // builds made from the first decision model of any maker), else what is known about the host (OpenRouter serves Jev
+  // without listing it), so a gateway checked before this was known still routes.
   const gateway = await aiGatewayItem.getValue();
-  const gatewayJev = (gateway !== null && gateway.baseUrl === settings.aiBaseUrl ? gateway.jevModel : null) ?? jevModelFor(settings.aiBaseUrl);
+  const gatewayJev = jevModelFor(settings.aiBaseUrl, gateway !== null && gateway.baseUrl === settings.aiBaseUrl ? gateway.models.map((id) => ({ id })) : []);
   const jevKey = (await jevKeyItem.getValue()).trim();
   const own = { baseUrl: TYPESAFE_API, apiKey: jevKey, model: JEV_DIRECT_MODEL };
   // The user's own key wins only when they chose it ("Use one anyway"); the gateway is the default whenever it offers Jev.

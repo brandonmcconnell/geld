@@ -41,15 +41,23 @@ export type JevResult =
   | { readonly ok: true; readonly model: string; readonly answers: Readonly<Record<string, JevAnswer>> }
   | { readonly ok: false; readonly reason: string };
 
-/** Does a model id name an evaluation model (Jev)? Such a model must never be offered as the prose model. */
+const JEV_ID = /(^|[/:@-])jev(\b|[-.])/i;
+const UNPINNED_JEV_ID = /(^|\/)jev(-latest)?$/i;
+
+/** Does a model id name an evaluation model (Jev)? Such a model must never be offered as the prose model. Vercel now calls them decision models. */
 export function isEvaluationModel(id: string, type?: string): boolean {
-  if (type !== undefined) return type === 'evaluation';
-  return /(^|[/:@-])jev(\b|[-.])/i.test(id) || /typesafe/i.test(id);
+  if (type !== undefined) return type === 'evaluation' || type === 'decision';
+  return JEV_ID.test(id) || /typesafe/i.test(id);
 }
 
-/** The Jev model id a gateway's model list offers, if any. */
-export function jevModelIn(models: ReadonlyArray<{ readonly id: string; readonly type?: string }>): string | null {
-  return models.find((model) => isEvaluationModel(model.id, model.type) || isEvaluationModel(model.id))?.id ?? null;
+/**
+ * The Jev model id a gateway's model list offers, if any, the unpinned one first. Chosen by name, never by
+ * type: Vercel lists Baseten's, Perplexity's and OpenAI's decision models under the same `evaluation` type,
+ * and Geld's questions are written for Jev.
+ */
+export function jevModelIn(models: ReadonlyArray<{ readonly id: string }>): string | null {
+  const jev = models.filter((model) => JEV_ID.test(model.id));
+  return (jev.find((model) => UNPINNED_JEV_ID.test(model.id)) ?? jev[0])?.id ?? null;
 }
 
 /**

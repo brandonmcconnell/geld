@@ -944,7 +944,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   TypeSafe's own docs call it a "TypeSafe API key" (`TYPESAFE_API_KEY`, from console.typesafe.ai).
   The model picker is `src/ui/model-combobox.ts` (WAI-ARIA combobox: filter by id/name/maker, arrows, Enter, an unlisted id can still be typed);
   options show what the gateway's `/v1/models` says for free (`ModelInfo`: maker, context window, tags;
-  Vercel types Jev as `evaluation`, which `isEvaluationModel(id, type)` honours).
+  Vercel types Jev as `evaluation`, which `isEvaluationModel(id, type)` honours, as it does `decision`, Vercel's newer name for the kind).
+  The gateway's Jev is picked from its list **by name, never by type** (`jevModelIn`, the unpinned `…/jev` first): Vercel lists Baseten's, Perplexity's and OpenAI's decision models under the same `evaluation` type, and taking the first of them sent Geld's Jev questions to `baseten/elephant-1`.
+  Every route speaks TypeSafe's own shapes (`noul`, `choice`, `score`): Vercel's TypeSafe-compatible prefix and OpenRouter's Decisions API accept them, so Geld never uses Vercel's `/v1/evaluate` or the AI SDK's `experimental_decide` (formerly `experimental_evaluate`), which rename `noul` to `boolean` and its answer to `probability`.
   Opened empty, the picker leads with the models `@geld/review/model-guide.ts` recommends for the digest's writing (`RECOMMENDED_MODELS`, matched on the id's *tail* since Vercel spells `zai/` where OpenRouter spells `z-ai/`), each with its reason;
   every option shows Geld's rough intelligence and speed tiers (`tiersFor`, a hand-kept family table, marked "not a benchmark" in the list — no gateway lists these and the benchmark sources sit behind API keys) and, for a variant suffix (`-flash`, `-fast`, `-flashx`, `-pro`, `:batch`, `:free`, `-preview`, `-codex`…), what it means (`variantOf`);
   plain models sort before their variants (`pickerRank`).
