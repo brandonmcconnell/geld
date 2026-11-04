@@ -903,7 +903,10 @@ async function main(): Promise<void> {
           return false;
         }
       }
-      settings = await settingsItem.patch({ aiBaseUrl: value });
+      // A decision model is picked from one gateway's list; another gateway may not serve it, so the pick goes back to automatic.
+      const gatewayChanged = value !== settings.aiBaseUrl && settings.aiDecisionModel !== '';
+      settings = await settingsItem.patch(gatewayChanged ? { aiBaseUrl: value, aiDecisionModel: '' } : { aiBaseUrl: value });
+      if (gatewayChanged) decisionCombo.setValue('');
       urlInput.value = settings.aiBaseUrl;
       urlStatus(value === '' ? 'Cleared' : 'Saved', 'success');
       markPreset();

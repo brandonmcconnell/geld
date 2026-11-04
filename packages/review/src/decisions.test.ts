@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { candidatePairs, classificationRequests, doneFrom, doneKey, laneKey, lanesFrom, pairKey, previewStatusesFrom, previewStatusKey, sameProblemGroups, sameProblemRequest, withSameProblem } from './decisions';
-import { decisionModelsIn, decisionModelsPath, decisionRoute, defaultDecisionModel, evaluateDecision, isEvaluationModel, jevModelFor, jevModelIn, openAiDecisionsBody, parseJevResponse, parseOpenAiDecisions } from './jev';
+import { answersComplete, candidatePairs, classificationRequests, doneFrom, doneKey, laneKey, lanesFrom, pairKey, previewStatusesFrom, previewStatusKey, sameProblemGroups, sameProblemRequest, withSameProblem } from './decisions';
+import { decisionModelsIn, decisionModelsPath, decisionRoute, defaultDecisionModel, evaluateDecision, isEvaluationModel, isJevModel, servesDecisions, jevModelFor, jevModelIn, openAiDecisionsBody, parseJevResponse, parseOpenAiDecisions } from './jev';
 import type { ConsolidateInputItem } from './prompts';
 
 const item = (id: string, path: string, title = `Finding ${id}`): ConsolidateInputItem => ({ id, title, path, sources: [`c-${id}`], excerpts: [`${title} said at length`], wantFix: false });
@@ -200,4 +200,23 @@ it('calls the given fetch on its own, as a browser requires of its native fetch'
   const request = { model: 'typesafe-ai/jev', state: 'Fixture', questions: { a: { type: 'noul' as const, instructions: 'Yes?' } } };
   expect(await evaluateDecision({ fetch: nativeLike, baseUrl: 'https://ai-gateway.vercel.sh', apiKey: 'synthetic', request })).toEqual({ ok: true, model: '', answers: { a: { type: 'noul', noul: 0.9 } } });
   expect(await evaluateDecision({ fetch: nativeLike, baseUrl: 'https://ai-gateway.vercel.sh', apiKey: 'synthetic', request: { ...request, model: 'liquid/d1' } })).toEqual({ ok: true, model: '', answers: { a: { type: 'noul', noul: 0.7 } } });
+});
+
+it('keeps only OpenRouter catalog models that answer on its Decisions API', () => {
+  expect(servesDecisions({ endpoints: ['/api/alpha/decisions'] })).toBe(true);
+  expect(servesDecisions({ endpoints: ['/api/alpha/decisions', '/api/alpha/extractions'] })).toBe(true);
+  expect(servesDecisions({ endpoints: ['/api/alpha/extractions'] })).toBe(false);
+  expect(servesDecisions({})).toBe(true);
+});
+
+it('tells Jev apart under every spelling, so its answers keep their cache key', () => {
+  for (const id of ['typesafe-ai/jev', 'typesafe/jev-latest', '~typesafe/jev-latest', 'jev-latest', 'typesafe-ai/jev-1.14.0']) expect(isJevModel(id)).toBe(true);
+  for (const id of ['liquid/d1', 'gpt-6-luna', 'openai/gpt-6-luna-decisions']) expect(isJevModel(id)).toBe(false);
+});
+
+it('does not take a half-answered check as an answer', () => {
+  const request = { model: 'liquid/d1', state: 's', questions: { a: { type: 'noul' as const, instructions: 'A?' }, b: { type: 'noul' as const, instructions: 'B?' } } };
+  expect(answersComplete(request, { a: { type: 'noul', noul: 0.1 }, b: { type: 'noul', noul: 0.2 } })).toBe(true);
+  expect(answersComplete(request, { a: { type: 'noul', noul: 0.1 } })).toBe(false);
+  expect(answersComplete(request, {})).toBe(false);
 });

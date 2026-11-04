@@ -3,7 +3,7 @@ import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
 import { parseUnifiedDiff } from '@geld/core';
-import { completeChat, decisionModelsPath, evaluateDecision, listModels, TYPESAFE_API } from '@geld/review';
+import { completeChat, decisionModelsPath, evaluateDecision, listModels, servesDecisions, TYPESAFE_API } from '@geld/review';
 import { handleAccountMessage, startAccountSync } from '../src/lib/account-service';
 import { actionIconPaths } from '../src/lib/action-icon';
 import { checkCatalog, startCatalogUpdates } from '../src/lib/catalog';
@@ -565,7 +565,8 @@ export default defineBackground(() => {
         const decisions = await listModels(fetch, message.baseUrl, message.apiKey, decisionsPath);
         if (!decisions.ok) return listed;
         const known = new Set(listed.models.map((model) => model.id));
-        return { ok: true as const, models: [...listed.models, ...decisions.models.filter((model) => !known.has(model.id)).map((model) => ({ ...model, type: 'decision' }))] };
+        const served = decisions.models.filter((model) => !known.has(model.id) && servesDecisions(model));
+        return { ok: true as const, models: [...listed.models, ...served.map((model) => ({ ...model, type: 'decision' }))] };
       })().then(sendResponse);
       return true;
     }

@@ -98,6 +98,19 @@ const TYPESAFE_HOST = /^api\.typesafe\.ai$/i;
 const OPENROUTER_HOST = /(^|\.)openrouter\.ai$/i;
 const OPENAI_HOST = /^api\.openai\.com$/i;
 
+/** Whether an id names Jev, under any gateway's spelling (`typesafe-ai/jev`, `typesafe/jev-latest`, `jev-1.13.0`). */
+export function isJevModel(id: string): boolean {
+  return JEV_ID.test(id);
+}
+
+/**
+ * Whether a model from OpenRouter's decisions catalog answers on its Decisions API: the catalog also holds
+ * extraction-only models (`cloudflare/clairic`, served at `/api/alpha/extractions`). A model naming no endpoints is kept.
+ */
+export function servesDecisions(model: { readonly endpoints?: readonly string[] }): boolean {
+  return model.endpoints === undefined || model.endpoints.some((path) => /\/decisions$/.test(path));
+}
+
 /** The decision models a gateway's list offers: typed as decision models (Vercel), or named as Jev. */
 export function decisionModelsIn<T extends { readonly id: string; readonly type?: string }>(models: readonly T[]): readonly T[] {
   return models.filter((model) => (model.type !== undefined && isEvaluationModel(model.id, model.type)) || JEV_ID.test(model.id));

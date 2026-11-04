@@ -24,7 +24,9 @@ import {
   consolidateUserPrompt,
   isEvaluationModel,
   JEV_DIRECT_MODEL,
+  answersComplete,
   defaultDecisionModel,
+  isJevModel,
   parseConsolidateOutput,
   PREVIEW_STATUSES,
   previewStatusesFrom,
@@ -224,7 +226,8 @@ async function decideScope(settings: GeldSettings, pending: readonly Consolidate
   const request = sameProblemRequest(route.model, pending);
   if (request === null) return [];
   const answers = await evaluate(route, request);
-  if (answers === null) return pending;
+  // Unanswered pairs would read as "no partner" and leave every finding unrewritten; the prose model decides instead.
+  if (answers === null || !answersComplete(request, answers)) return pending;
   return withSameProblem(pending, sameProblemGroups(pending, answers));
 }
 
@@ -396,9 +399,33 @@ export interface ThreadToClassify {
   readonly comments: readonly { readonly author: string; readonly body: string }[];
 }
 
-/** A chosen decision model's answers are its own: the cache key carries it, so switching models asks again. Automatic keeps the bare key Jev's answers were stored under. */
-function modelSalt(settings: GeldSettings): string {
-  return settings.aiDecisionModel === '' ? '' : `${textHash(settings.aiDecisionModel)}.`;
+/** A model's answers are its own: Jev's stay under the bare key they were always stored under, any other model's carry its id. */
+function saltFor(model: string): string {
+  return isJevModel(model) ? '' : `${textHash(model)}.`;
+}
+
+/**
+ * The salt of the model that would answer now, read from the route (the pick, automatic, or the reader's own
+ * TypeSafe key), which takes storage reads; the synchronous pass uses the last one read. It is read again when
+ * something the route depends on changes: the settings it takes, or the gateway list, keys and key choice.
+ */
+let routeSalt: { readonly key: string; readonly salt: string | null } | null = null;
+let routeVersion = 0;
+let routeReading: string | null = null;
+for (const item of [aiGatewayItem, aiKeyItem, jevKeyItem, jevSourceItem]) item.watch(() => (routeVersion += 1));
+
+function currentSalt(settings: GeldSettings, onProgress: () => void): string | null | undefined {
+  const key = `${routeVersion}\n${settings.aiBaseUrl}\n${settings.aiDecisionModel}`;
+  if (routeSalt?.key === key) return routeSalt.salt;
+  if (routeReading !== key) {
+    routeReading = key;
+    void jevRoute(settings).then((route) => {
+      if (routeReading === key) routeReading = null;
+      routeSalt = { key, salt: route === null ? null : saltFor(route.model) };
+      onProgress();
+    });
+  }
+  return undefined;
 }
 
 function commentHash(comment: CommentToClassify, salt: string): string {
@@ -444,7 +471,9 @@ export function jevDecisionsFor(settings: GeldSettings, comments: readonly Comme
     void loadDecisions().then(onProgress);
     return NO_DECISIONS;
   }
-  const salt = modelSalt(settings);
+  const salt = currentSalt(settings, onProgress);
+  // Until the answering model is known (or with none set up), no cached answer can be told apart as its own.
+  if (salt === undefined || salt === null) return NO_DECISIONS;
   const lanes = new Map<string, CommentLane>();
   const done = new Map<string, AddressedEvidence>();
   const previewStatus = new Map<string, Preview['status']>();
@@ -474,13 +503,14 @@ export function jevDecisionsFor(settings: GeldSettings, comments: readonly Comme
   // The submission waits for an idle moment: passes come in bursts while a page loads, and the last one of the
   // burst knows every comment; an earlier request still waiting is replaced, so the batch goes out once.
   if (missingComments.length + missingThreads.length + missingPreviews.length > 0) {
-    whenIdle('jev-submit', () => void classify(settings, missingComments, missingThreads, missingPreviews, onProgress));
+    whenIdle('jev-submit', () => void classify(settings, salt, missingComments, missingThreads, missingPreviews, onProgress));
   }
   return { lanes, done, previewStatus };
 }
 
 async function classify(
   settings: GeldSettings,
+  salt: string,
   comments: ReadonlyArray<{ readonly hash: string; readonly comment: CommentToClassify }>,
   threads: ReadonlyArray<{ readonly hash: string; readonly thread: ThreadToClassify }>,
   previews: ReadonlyArray<{ readonly hash: string; readonly entry: PreviewToClassify }>,
@@ -490,7 +520,8 @@ async function classify(
   for (const entry of threads) asked.add(entry.hash);
   for (const entry of previews) asked.add(entry.hash);
   const route = await jevRoute(settings);
-  if (route === null) return;
+  // The questions were keyed for the model the pass expected; another one answering now would file its answers under them.
+  if (route === null || saltFor(route.model) !== salt) return;
   const laneInputs: LaneInput[] = comments.map((entry) => ({ id: entry.hash, author: entry.comment.author, bot: entry.comment.bot, text: entry.comment.body }));
   const threadInputs: ThreadInput[] = threads.map((entry) => {
     const [first, ...replies] = entry.thread.comments;

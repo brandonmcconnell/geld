@@ -39,6 +39,8 @@ export interface ModelInfo {
   /** `language`, `evaluation`, `embedding`… as the gateway types it. */
   readonly type?: string;
   readonly tags?: readonly string[];
+  /** The API paths that serve it, where the gateway says (OpenRouter: `/api/alpha/decisions`, `/api/alpha/extractions`). */
+  readonly endpoints?: readonly string[];
 }
 
 function modelInfoOf(entry: Record<string, unknown>): ModelInfo | null {
@@ -63,6 +65,7 @@ function modelInfoOf(entry: Record<string, unknown>): ModelInfo | null {
   if (context !== undefined) info.context = context;
   if (typeof entry.type === 'string') info.type = entry.type;
   if (Array.isArray(entry.tags)) info.tags = entry.tags.filter((tag): tag is string => typeof tag === 'string');
+  if (Array.isArray(entry.endpoints)) info.endpoints = entry.endpoints.filter((path): path is string => typeof path === 'string');
   return info;
 }
 

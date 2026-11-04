@@ -116,3 +116,8 @@ it('combines caller cancellation with the completion deadline', async () => {
   abort.abort();
   expect(await result).toEqual({ ok: false, reason: 'The AI provider could not complete the request.' });
 });
+
+it('keeps the endpoints a gateway names for a model', async () => {
+  const listed = await listModels(async () => Response.json({ data: [{ id: 'cloudflare/clairic', endpoints: ['/api/alpha/extractions'] }, { id: 'liquid/d1' }] }), 'https://openrouter.ai/api', 'synthetic');
+  expect(listed).toEqual({ ok: true, models: [{ id: 'cloudflare/clairic', provider: 'cloudflare', endpoints: ['/api/alpha/extractions'] }, { id: 'liquid/d1', provider: 'liquid' }] });
+});
