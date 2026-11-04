@@ -1,6 +1,8 @@
 import { ImageResponse } from 'next/og';
 
+import { BrowserIcon } from '@/components/browser-icons';
 import { loadGeistFont, loadScreenshot, loadWordmark } from '@/lib/brand';
+import { BROWSERS } from '@/lib/downloads';
 import { HEADLINE, SUBHEADLINE, TAGLINE } from '@/lib/site';
 
 export const alt = TAGLINE;
@@ -66,9 +68,13 @@ export default async function OpenGraphImage() {
             <div style={{ fontSize: 30, lineHeight: 1.35, color: '#59636e' }}>{SUBHEADLINE}</div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 18, fontSize: 24, color: '#59636e' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 36, fontSize: 24 }}>
             <span style={{ fontFamily: 'Geist Mono', color: '#1f2328' }}>geld.sh</span>
-            <span>Chrome · Edge · Firefox · Safari</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              {BROWSERS.map((browser) => (
+                <BrowserIcon key={browser.id} browser={browser.id} width={28} height={28} fill="#59636e" />
+              ))}
+            </div>
           </div>
         </div>
 
