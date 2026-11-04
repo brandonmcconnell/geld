@@ -193,7 +193,7 @@ function RowValue({ digest, row }: { readonly digest: Digest; readonly row: Dige
     case 'checks': {
       const { passed, failed, running } = digest.checks;
       return (
-        <span className="flex flex-wrap items-center gap-x-2.5 tabular-nums">
+        <span className="flex flex-wrap items-center gap-x-2.5 tabular-nums @max-[16rem]:gap-x-1.5">
           {passed > 0 && (
             <span className="inline-flex items-center gap-1">
               <CircleCheckIcon aria-hidden="true" className="size-3.5 text-addition" />
@@ -204,8 +204,7 @@ function RowValue({ digest, row }: { readonly digest: Digest; readonly row: Dige
           {failed > 0 && (
             <span className="inline-flex items-center gap-1">
               <CircleXIcon aria-hidden="true" className="size-3.5 text-deletion" />
-              {failed}
-              <Wide> failed</Wide>
+              {failed} failed
             </span>
           )}
           {running > 0 && (
