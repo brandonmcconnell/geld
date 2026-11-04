@@ -1,11 +1,11 @@
 'use client';
 
 import { cn } from 'cn';
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleCheckIcon, CircleIcon, CopyIcon, MessagesSquareIcon, RocketIcon, XIcon } from 'lucide-react';
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleCheckIcon, CircleIcon, MessagesSquareIcon, RocketIcon, XIcon } from 'lucide-react';
 import { useState } from 'react';
 
 import type { BotId, Person } from '@/components/tour/bits';
-import { Avatar, BotMark, Chip, Meter } from '@/components/tour/bits';
+import { Avatar, BotMark, Chip, GeldRowTools, Meter } from '@/components/tour/bits';
 import { Ping } from '@/components/tour/ping';
 import { PrWindow } from '@/components/tour/pr-window';
 
@@ -63,13 +63,13 @@ export function DigestScene() {
           <div className="flex items-center gap-2 border-b px-3 py-2">
             <span className="font-semibold">Geld</span>
             <Meter done={done} total={total} />
-            <span className="text-muted-foreground tabular-nums">
+            <span className="min-w-0 truncate text-muted-foreground tabular-nums">
               {done}/{total} resolved
             </span>
             {open.length > 0 ? (
-              <span className="rounded-full bg-[#9a6700]/12 px-1.5 py-px text-[0.6875rem] font-medium text-[#9a6700] dark:text-[#d29922]">{open.length} need you</span>
+              <span className="shrink-0 rounded-full bg-[#9a6700]/12 px-1.5 py-px text-[0.6875rem] font-medium whitespace-nowrap text-[#9a6700] dark:text-[#d29922]">{open.length} need you</span>
             ) : null}
-            <CopyIcon aria-hidden="true" className="ml-auto size-3.5 text-muted-foreground" />
+            <GeldRowTools />
           </div>
 
           <StatusRow label="Reviews">
