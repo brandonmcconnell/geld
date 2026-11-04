@@ -40,7 +40,7 @@ import { applyFolds, closureKindOf, groupBotRuns, groupClosures, groupDoneHumans
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
 import type { BotRequestClick } from './bot-requests';
-import { botRequestStates, nextRequestDeadline, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
+import { botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
 import { ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
@@ -2161,10 +2161,13 @@ function withRerun(byline: ChatByline, author: string, anchor: string, meta: Gel
 /** The bots the latest panel shows running, kept for controls that outlive the panel they were drawn with. */
 let runningBots: ReadonlySet<string> = new Set();
 
-/** Whether bot `id` is running: by the latest panel's verdicts, or a Rerun a moment ago. */
+/**
+ * Whether bot `id` is running: by the latest panel's verdicts (a request still starting is among them, see
+ * `withBotRequests`), or a request a moment ago that no pass has drawn yet.
+ */
 function botRunningNow(id: string): boolean {
-  const pending = visit.rerunPending.get(id);
-  return runningBots.has(id) || (pending !== undefined && Date.now() - pending < RERUN_PENDING_MS);
+  const request = visit.requests.get(id);
+  return runningBots.has(id) || (request !== undefined && request.posted !== false && Date.now() - request.at < REQUEST_ACK_MS);
 }
 
 function rerunFor(id: string, author: string, meta: GeldPrMeta, reapply: () => void): ChatRerun | null {
