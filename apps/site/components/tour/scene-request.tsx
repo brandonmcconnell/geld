@@ -71,8 +71,8 @@ export function RequestScene() {
             {lines
               .filter((line) => line.state !== 'not-run')
               .map((line) => (
-                <Chip key={line.bot}>
-                  <BotMark bot={line.bot} size={16} pill />
+                <Chip key={line.bot} square>
+                  <BotMark bot={line.bot} size={16} />
                   {botName(line.bot)}
                   {line.state === 'running' ? (
                     <LoaderCircleIcon aria-hidden="true" className="size-3 animate-spin text-[#0969da] dark:text-[#4493f8]" />

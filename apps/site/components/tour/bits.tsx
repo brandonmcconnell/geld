@@ -45,17 +45,13 @@ export function botName(bot: BotId): string {
   return BOTS[bot].name;
 }
 
-/**
- * A bot's square mark, the shape GitHub gives App avatars. At the start of a
- * `Chip` (`pill`) its left corners follow the chip's curve: inset as far from
- * the chip's edge on the left as above and below, half its size is concentric.
- */
-export function BotMark({ bot, size = 18, pill = false, className }: { readonly bot: BotId; readonly size?: number; readonly pill?: boolean; readonly className?: string }) {
+/** A bot's square mark, the shape GitHub gives App avatars. */
+export function BotMark({ bot, size = 18, className }: { readonly bot: BotId; readonly size?: number; readonly className?: string }) {
   return (
     <span
       aria-hidden="true"
-      className={cn('inline-grid shrink-0 place-items-center font-bold', BOTS[bot].className, className)}
-      style={{ width: size, height: size, fontSize: size * 0.55, borderRadius: pill ? `${size / 2}px 4px 4px ${size / 2}px` : 4 }}
+      className={cn('inline-grid shrink-0 place-items-center rounded-[4px] font-bold', BOTS[bot].className, className)}
+      style={{ width: size, height: size, fontSize: size * 0.55 }}
     >
       {BOTS[bot].glyph}
     </span>
@@ -71,12 +67,13 @@ export function Meter({ done, total, className }: { readonly done: number; reado
   );
 }
 
-/** A pill in the digest's status rows: outlined, mark first, then words, then a light. */
-export function Chip({ children, className, dashed = false }: { readonly children: React.ReactNode; readonly className?: string; readonly dashed?: boolean }) {
+/** A pill in the digest's status rows: outlined, mark first, then words, then a light. A bot's mark (4px corners) sits 3px inside the 1px border, so `square` takes 8px corners, concentric with it. */
+export function Chip({ children, className, dashed = false, square = false }: { readonly children: React.ReactNode; readonly className?: string; readonly dashed?: boolean; readonly square?: boolean }) {
   return (
     <span
       className={cn(
-        'inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border bg-card pr-2 pl-[3px] text-xs whitespace-nowrap',
+        'inline-flex h-6 shrink-0 items-center gap-1.5 border bg-card pr-2 pl-[3px] text-xs whitespace-nowrap',
+        square ? 'rounded-[8px]' : 'rounded-full',
         dashed && 'border-dashed',
         className,
       )}

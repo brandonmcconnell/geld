@@ -87,18 +87,18 @@ export function DigestScene() {
             <span className="text-muted-foreground tabular-nums">1/2 approvals</span>
           </StatusRow>
           <StatusRow label="Review bots">
-            <Chip>
-              <BotMark bot="buggy" size={16} pill />
+            <Chip square>
+              <BotMark bot="buggy" size={16} />
               Buggy <span className="text-muted-foreground">{resolved.has('default') ? 'resolved' : '1 issue'}</span>
               <Light tone={resolved.has('default') ? 'good' : 'warn'} />
             </Chip>
-            <Chip>
-              <BotMark bot="codehopper" size={16} pill />
+            <Chip square>
+              <BotMark bot="codehopper" size={16} />
               CodeHopper <span className="text-muted-foreground">{resolved.has('docs') ? 'resolved' : '1 issue'}</span>
               <Light tone={resolved.has('docs') ? 'good' : 'warn'} />
             </Chip>
-            <Chip>
-              <BotMark bot="gecko" size={16} pill />
+            <Chip square>
+              <BotMark bot="gecko" size={16} />
               Gecko <span className="text-muted-foreground">5/5</span>
               <Light tone="good" />
             </Chip>
