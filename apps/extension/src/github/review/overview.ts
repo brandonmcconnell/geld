@@ -35,7 +35,7 @@ import type { ReviewerCandidate } from './reviewers';
 import { nextRunGraceEnd, withRunTimes } from './run-starts';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
-import { shortenDescription } from './description';
+import { descriptionUnshortened, releaseDescription, shortenDescription } from './description';
 import { applyFolds, closureKindOf, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
@@ -62,6 +62,7 @@ import { fitChips, stopFittingChips } from './fit-chips';
 import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrphanedLoans, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 import { pageFetch } from '../page-fetch';
+import { closeFlow, openFlowDialog } from './flow';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
@@ -816,6 +817,41 @@ function checksSection(): HTMLElement | null {
   checksSectionEl = section === box ? null : section;
   if (checksSectionEl !== null) mergeHomeEl = box ?? checksSectionEl.parentElement;
   return checksSectionEl;
+}
+
+// "Approve workflows to run" today, "Approve and run" in older markup: any approve-and-run wording counts.
+const APPROVE_WORKFLOWS = /^approve\b.*\brun\b/i;
+const AWAITING_APPROVAL = /\b(\d+) workflows? awaiting approval/i;
+
+/**
+ * GitHub's own "Approve workflows to run", shown to someone who may approve
+ * whenever the repository's approval policy holds a contributor's workflows
+ * (first-time contributors by default, every outside contributor on every
+ * pull request under the strictest policy). The button itself is the test,
+ * never who the contributor is. Looked for in the merge box and in the
+ * checks section wherever quick view has put it.
+ */
+function approveWorkflowsButton(): HTMLButtonElement | HTMLInputElement | null {
+  const section = checksSection();
+  const scopes = [mergeBox() ?? mergeHomeEl, section, ...(section === null ? [] : wornPiecesOf(section))];
+  for (const scope of scopes) {
+    if (scope === null) continue;
+    for (const control of scope.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button, input[type="submit"], input[type="button"]')) {
+      const words = control instanceof HTMLInputElement ? control.value : control.textContent ?? '';
+      if (!control.disabled && APPROVE_WORKFLOWS.test(words.replace(/\s+/g, ' ').trim())) return control;
+    }
+  }
+  return null;
+}
+
+/** The heading GitHub puts over that button ("1 workflow awaiting approval"), for the Run control's tooltip. */
+function workflowApprovalLabel(button: HTMLElement): string {
+  let node: HTMLElement | null = button.parentElement;
+  for (let depth = 0; node !== null && depth < 8; depth += 1, node = node.parentElement) {
+    const found = AWAITING_APPROVAL.exec((node.textContent ?? '').replace(/\s+/g, ' '));
+    if (found !== null) return `${found[1]} ${found[1] === '1' ? 'workflow' : 'workflows'} awaiting approval`;
+  }
+  return 'Workflows awaiting approval';
 }
 
 /** Merge box text plus the checks section's, wherever quick view has put it. */
@@ -2801,7 +2837,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const page = describePage(new URL(window.location.href));
   if (page.kind !== 'pull-conversation' || !settings.enabled || !settings.prOverview) {
     // Nothing mounted (a files page, a list): the page-wide cleanup queries have nothing to find.
-    if (visit.pageKey !== '') teardownReviewOverview();
+    if (visit.pageKey !== '') teardownReviewOverview(page.kind !== 'pull-conversation' && settings.enabled && settings.prOverview);
     return;
   }
   lastSettings = settings;
@@ -3024,6 +3060,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const modelStart = performance.now();
   const subject = subjectOf();
   const boxText = mergeBoxText();
+  const approvalButton = approveWorkflowsButton();
   const ringSource = checksSection()?.querySelector('svg[viewBox="0 0 100 100"]') ?? null;
   const checksRing = ringSource instanceof SVGElement ? cloneRing(ringSource) : null;
   // The merge box states the requirement only while unmet; the sidebar's Reviewers block ("At least 1 approving
@@ -3101,6 +3138,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     botIconFor: (botId) => botAvatarByLogin(botId) ?? botSourceAvatar(botId, meta) ?? iconByBot.get(botId) ?? botAppAvatarFor(botId),
     checks: checkCountsFrom(checksSectionText() ?? boxText),
     requiredFailing: requiredFailingIn(checksSection()),
+    workflowApproval: approvalButton === null ? null : workflowApprovalLabel(approvalButton),
     previews: latestPreviews(allPreviews),
     reports,
     grouping: settings.reviewGrouping,
@@ -3309,6 +3347,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       // Persisted like any setting; the controller's settings watch re-applies with the new value, in place.
       persist(settingsItem.patch({ reviewGrouping: grouping }));
     },
+    onFlow: () => openFlowDialog(),
     onToggleCommits: (batchKey) => {
       keepInPlace(`commits:${batchKey}`, () => {
         if (visit.openCommits.has(batchKey)) visit.openCommits.delete(batchKey);
@@ -3343,6 +3382,15 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       if (!clickResolve(anchor)) return;
       const owner = meta.items.find((item) => item.sources.some((source) => source.anchor === anchor));
       reapplyAfterResolve(owner === undefined ? null : itemKey(owner.id), done);
+    },
+    onApproveWorkflows: () => {
+      const button = approveWorkflowsButton();
+      if (button === null) {
+        console.warn('[geld] GitHub no longer offers to approve these workflows');
+        return;
+      }
+      button.click();
+      window.setTimeout(reapplySoon, 800);
     },
     onRunAi: () => {
       void runAi(meta, rawComments, settings, reapply).then((run) => {
@@ -3618,10 +3666,32 @@ function alignRevealWithLanding(node: Element, anchor: string, focusKey: string)
   alignAnchorCarriers(anchor, focusKey);
 }
 
-export function teardownReviewOverview(): void {
+/** How long the folds a tab switch leaves on the conversation may stand before they are cleared anyway. */
+const LEAVE_GRACE_MS = 3000;
+let leftoverTimer: number | null = null;
+
+/** Fold the description in the frame GitHub renders it, as on a switch back to the conversation tab, rather than a pass later. */
+export function foldDescriptionNow(settings: GeldSettings): void {
+  if (!settings.enabled || !settings.prOverview || !settings.collapseDescription) return;
+  const page = describePage(new URL(window.location.href));
+  if (page.kind !== 'pull-conversation') return;
+  // The full timeline shows the description whole, and that choice belongs to the visit that made it.
+  if (visit.pageKey === page.stateKey && visit.fullTimeline) return;
+  if (descriptionUnshortened()) shortenDescription(true);
+}
+
+/**
+ * `leaving`: the URL moved to another tab of the pull request (or another page), and GitHub keeps the conversation
+ * on screen until the next page replaces it. Unfolding the description and the timeline then showed them whole for
+ * a moment, so their folds (attributes on GitHub's nodes) stay and go with them. Anything still standing after
+ * {@link LEAVE_GRACE_MS} (GitHub never replaced the page) is cleared then. Loans still go home and the panel still
+ * goes: a moved node left in the panel would be lost to a page GitHub restores from its cache.
+ */
+export function teardownReviewOverview(leaving = false): void {
   // First: nothing asked for earlier may run after this. Pending passes are dropped, fetches in flight cancelled,
   // and every later callback finds the overview unmounted (`lastSettings`).
   lastSettings = null;
+  closeFlow();
   setAutoLoading(false);
   deferredWhileHidden = false;
   window.removeEventListener('load', onDocumentLoaded);
@@ -3642,9 +3712,22 @@ export function teardownReviewOverview(): void {
   stopFittingChips();
   unmountPanel();
   hideSummary(null);
-  applyFolds([], new Set());
-  shortenDescription(false);
+  if (leftoverTimer !== null) window.clearTimeout(leftoverTimer);
+  leftoverTimer = null;
+  // The compact timeline's page-wide styles (tighter commit rows) would reach the next tab's own lists, so they go now.
   setFullTimeline(false);
+  if (leaving) {
+    releaseDescription();
+    leftoverTimer = window.setTimeout(() => {
+      leftoverTimer = null;
+      if (visit.pageKey !== '') return;
+      applyFolds([], new Set());
+      shortenDescription(false);
+    }, LEAVE_GRACE_MS);
+  } else {
+    applyFolds([], new Set());
+    shortenDescription(false);
+  }
   visit.openKey = null;
   visit.pageKey = '';
   visit.pendingAnchor = null;

@@ -88,8 +88,11 @@ export interface CategoriesField extends FieldBase {
     readonly groupsDescription: string;
   };
   readonly extraPatterns: PatternEditorCopy;
-  /** The per-category "mark hidden files as viewed" checkbox, also shown in each custom category's editor. */
-  readonly autoViewed: { readonly label: string; readonly description: string };
+  /**
+   * The per-category "mark hidden files as viewed" checkbox, also shown in each custom category's editor. The popup
+   * has one switch for every category at once, with its own copy.
+   */
+  readonly autoViewed: { readonly label: string; readonly description: string; readonly popupLabel: string; readonly popupDescription: string };
 }
 
 /** Editor for user-defined categories: title, icon and patterns. */
@@ -206,12 +209,29 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       },
       {
         kind: 'toggle',
+        key: 'prOverview',
+        label: 'Pull request digest',
+        description:
+          'A panel under the description on the conversation tab: reviews, what each review bot concluded, CI, reports and previews, then the open threads round by round, so what needs you is clear at a glance.',
+        popup: true,
+        popupDescription: 'Reviews, bots, CI and open threads at a glance.',
+      },
+      {
+        kind: 'toggle',
         key: 'groupHidden',
         label: 'Group hidden files',
         description:
           'On: hidden files move to a collapsible section at the bottom of the diff and get their own panels in the file tree. Off: they stay where they are, collapsed and faded, with their category’s icon in the tree.',
         popup: true,
         popupDescription: 'Off: keep them in place, collapsed and faded.',
+      },
+      {
+        kind: 'toggle',
+        key: 'collapseDescription',
+        label: 'Shorten the description',
+        description: 'Fold each section of the pull request description under its heading. A long description with no headings is cut to 500px with a control to show the rest.',
+        popup: true,
+        popupDescription: 'Fold its sections under their headings.',
       },
       {
         kind: 'toggle',
@@ -311,6 +331,8 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         },
         autoViewed: {
           label: 'Mark as viewed automatically',
+          popupLabel: 'Mark hidden files viewed',
+          popupDescription: 'Tick GitHub’s Viewed box for every hidden file on a pull request. Set it per category in Settings.',
           description:
             'On pull requests, tick GitHub’s Viewed box for this category’s hidden files, so “N of M files viewed” only waits on what is left to review. Untick one by hand and it stays unticked until the next push.',
         },
@@ -472,16 +494,8 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
     id: 'experiments',
     title: 'Experiments',
     intro:
-      'Features still taking shape: off until you turn them on here, and liable to change. The one running now is the review digest for pull request conversations — a panel pinned at the top of the conversation tab that gathers open findings and bot verdicts and folds bot comments out of the timeline. The Geld GitHub Action writes the digest as one comment; without it the extension builds the same panel from the page.',
+      'Features still taking shape, and liable to change. Most of them fine-tune the pull request digest: how much of the timeline it folds, how it groups, which bots it reads, and the AI that can write for it. The Geld GitHub Action writes the digest as one comment. Without it the extension builds the same panel from the page.',
     fields: [
-      {
-        kind: 'toggle',
-        key: 'prOverview',
-        label: 'Review digest on pull requests',
-        description: 'Show a review panel on the conversation tab: open findings, bot verdicts, and (when compacting) a quieter timeline.',
-        // The one experiment in the popup, under its own "Experiments" heading, so it can be switched while testing.
-        popup: true,
-      },
       {
         kind: 'choice',
         key: 'compactTimeline',
@@ -505,13 +519,6 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
           { value: 'type', label: 'Type', description: 'Bots, CI, reviews, rounds and activity, each in its own section.' },
           { value: 'batch', label: 'Push', description: 'One row per push with everything that landed between it and the last.' },
         ],
-      },
-      {
-        kind: 'toggle',
-        key: 'collapseDescription',
-        label: 'Shorten the description',
-        description: 'Fold each section of the pull request description under its heading. A long description with no headings is cut to 500px with a control to show the rest.',
-        popup: false,
       },
       {
         kind: 'toggle',

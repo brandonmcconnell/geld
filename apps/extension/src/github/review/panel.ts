@@ -14,8 +14,8 @@ import { previewHostById, reportsHealth } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
-import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_FILE_DIFF, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
-import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
+import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_FILE_DIFF, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import type { AiState } from './ai';
@@ -360,6 +360,8 @@ export interface PanelModel {
   readonly checks: CheckCounts | null;
   /** Whether a failing check is one GitHub marks Required; null when the list does not say. */
   readonly requiredFailing: boolean | null;
+  /** GitHub's "1 workflow awaiting approval" while its merge box offers the reader "Approve workflows to run"; null otherwise. */
+  readonly workflowApproval: string | null;
   /** Preview deployments: the latest per project, and the ones they superseded. */
   readonly previews: { readonly latest: readonly Preview[]; readonly archived: readonly Preview[] };
   /** Reporter bots' reports (test failures, coverage): the latest per reporter, the earlier ones left in their rounds. */
@@ -466,10 +468,14 @@ export interface PanelHandlers {
   readonly onOpenReport: (anchor: string) => void;
   /** Change how the list is grouped (persisted as the `reviewGrouping` setting). */
   readonly onGrouping: (grouping: 'type' | 'batch') => void;
+  /** Open the Flow diagram of the changed files. */
+  readonly onFlow: () => void;
   /** Resolve/unresolve the thread holding `anchor` (GitHub's own button). */
   readonly onResolveAnchor: (anchor: string, done: boolean) => void;
   /** Open the row holding `anchor` and GitHub's reaction picker for its first comment. */
   readonly onReact: (anchor: string) => void;
+  /** Press GitHub's own "Approve workflows to run". */
+  readonly onApproveWorkflows: () => void;
   /** Run the model for this pull request now (the AI control). */
   readonly onRunAi: () => void;
   /** Forget this device's run: the repository's Action writes the digest with AI now. */
@@ -609,6 +615,35 @@ function pointerChevron(onGo: () => void): HTMLElement {
   return button;
 }
 
+
+let approveIds = 0;
+const APPROVE_RETRY_MS = 5000;
+
+/**
+ * "Run" on the CI row: GitHub's "Approve workflows to run", whose section the
+ * folded merge box hides. One click approves, as GitHub's button does, and
+ * GitHub's own tooltip element carries the heading that section showed.
+ */
+function approveWorkflowsControl(label: string, onApprove: () => void): HTMLElement {
+  approveIds += 1;
+  const id = `geld-approve-workflows-${approveIds}`;
+  const button = createElement('button', { type: 'button', id, class: `${PANEL_CLASS}__rerun ${PANEL_CLASS}__approve-run`, 'aria-label': 'Approve workflows to run', 'aria-describedby': `${id}-tip` }, [icon(ICON_ALERT), createElement('span', {}, ['Run'])]);
+  const tip = document.createElement('tool-tip');
+  for (const [name, value] of Object.entries({ id: `${id}-tip`, for: id, popover: 'manual', 'data-direction': 'n', 'data-type': 'description', class: 'sr-only position-absolute', role: 'tooltip' })) tip.setAttribute(name, value);
+  tip.textContent = label;
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (button.disabled) return;
+    button.disabled = true;
+    onApprove();
+    // An approval that went through takes GitHub's button away and the rebuilt panel drops this control; one that did
+    // not leaves both, and the panel's signature unchanged, so the control is offered again here.
+    window.setTimeout(() => {
+      if (button.isConnected) button.disabled = false;
+    }, APPROVE_RETRY_MS);
+  });
+  return createElement('span', { class: `${PANEL_CLASS}__approve-run-wrap` }, [button, tip]);
+}
 
 /** The check counts with their own state glyphs: "✕ 1 failing · ✓ 8 successful · ⊘ 3 skipped". */
 function checksBreakdown(counts: CheckCounts): HTMLElement {
@@ -1924,17 +1959,24 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     if (open) rows.append(slotRow(BOTS_KEY, null, 'list'));
   }
   if (model.reports.latest.length > 0) rows.append(...reportsRow(model, handlers));
-  if (model.checks !== null) {
-    const health = checksHealth(model.checks);
+  // Workflows waiting on a maintainer's approval may be the only checks a contributor's pull request has.
+  if (model.checks !== null || model.workflowApproval !== null) {
+    const counts = model.checks ?? EMPTY_CHECKS;
+    const health = checksHealth(counts);
     const open = model.openKey === CHECKS_KEY;
     // The breakdown is the information; the total and a second overall glyph on the right only repeated it.
-    const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${CHECKS_KEY}`, 'aria-label': checksSummary(model.checks) }, [checksBreakdown(model.checks)]);
+    // With nothing but waiting workflows there are no counts to show or name the row by: GitHub's heading does both.
+    const waitingOnly = model.checks === null ? model.workflowApproval : null;
+    const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${CHECKS_KEY}`, 'aria-label': waitingOnly ?? checksSummary(counts) }, [
+      waitingOnly === null ? checksBreakdown(counts) : createElement('span', { class: `${PANEL_CLASS}__detail` }, [waitingOnly]),
+    ]);
     mainClickToggles(main, () => handlers.onToggle(CHECKS_KEY));
-    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(checksTone(model.checks, model.requiredFailing) === 'bad' ? 'bad' : null) }, [
-      createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [model.checksRing ?? checksRing(model.checks)]),
+    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(checksTone(counts, model.requiredFailing) === 'bad' ? 'bad' : null) }, [
+      createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [model.checksRing ?? checksRing(counts)]),
       rowLabel('CI checks', 'CI'),
       main,
       createElement('span', { class: `${PANEL_CLASS}__right` }, [
+        ...(model.workflowApproval === null ? [] : [approveWorkflowsControl(model.workflowApproval, handlers.onApproveWorkflows)]),
         createElement('span', { class: `${PANEL_CLASS}__gear-slot`, [ATTR_GEAR_SLOT]: '' }),
         chevron(open, () => handlers.onToggle(CHECKS_KEY)),
       ]),
@@ -2519,6 +2561,7 @@ function signatureOf(model: PanelModel): string {
     botLines: model.botLines.map((line) => `${line.bot.id}:${line.anchor ?? ''}:${line.preview}:${line.time}:${line.avatarSrc ?? ''}:${line.threads.map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('|')}`),
     checks: model.checks,
     requiredFailing: model.requiredFailing,
+    workflowApproval: model.workflowApproval,
     previews: [...model.previews.latest, ...model.previews.archived].map((entry) => `${entry.anchor}:${entry.host}:${entry.project}:${entry.status}:${entry.url ?? ''}:${model.avatarForAnchor(entry.anchor) ?? ''}`),
     archivedPreviewsOpen: model.archivedPreviewsOpen,
     ring: model.checksRing?.outerHTML.length ?? 0,
@@ -2697,6 +2740,12 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   const tools = createElement('div', { class: `${PANEL_CLASS}__tools` });
   const aiControl = aiButton(model.ai, handlers);
   if (aiControl !== null) tools.append(aiControl);
+  const flow = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__flow-btn`, 'aria-label': 'Flow: how the changed files connect', title: 'How the changed files connect', [ATTR_FOCUS]: 'flow' }, [
+    icon(ICON_WORKFLOW),
+    createElement('span', { class: `${PANEL_CLASS}__flow-label` }, ['Flow']),
+  ]);
+  flow.addEventListener('click', () => handlers.onFlow());
+  tools.append(flow);
   tools.append(groupingMenu(model, handlers));
   const copy = iconButton(ICON_COPY, 'Copy digest as Markdown', { [ATTR_FOCUS]: 'copy' });
   copy.addEventListener('click', () => handlers.onCopy());

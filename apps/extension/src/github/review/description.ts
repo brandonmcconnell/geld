@@ -297,12 +297,16 @@ function applyTo(body: HTMLElement): void {
   const outline = outlineOf(blocks);
   const folding = new Set(outline.map((heading) => heading.index));
   const openNow = new Map<number, boolean>();
+  // A description that opens on a heading keeps its substance in that first section, whatever its title says.
+  // One that opens with text has it above the headings, so there every section starts by the outline rule alone.
+  const first = outline[0];
+  const leading = first !== undefined && blocks.slice(0, first.index).every((block) => headingLevelOf(block) !== null) ? first : null;
   for (const heading of outline) {
     const block = blocks[heading.index];
     const element = block === undefined ? null : headingElementOf(block);
     if (!(block instanceof HTMLElement) || element === null) continue;
     const key = keyOf(heading, element);
-    const open = state.open.get(key) ?? heading.hasSubheadings;
+    const open = state.open.get(key) ?? (heading === leading || heading.hasSubheadings);
     openNow.set(heading.index, open);
     setFlag(block, ATTR_KEY, key);
     setFlag(block, ATTR_HEADING, open ? 'open' : 'closed');
@@ -344,12 +348,16 @@ function applyTo(body: HTMLElement): void {
   observe(body);
 }
 
-function clear(): void {
-  // The page and its choices stay: showing the full timeline and back keeps what the reader opened.
+function release(): void {
   wiring.signal.abort();
   wiring = { signal: new AbortController(), blocks: new WeakSet(), bodies: new WeakSet(), buttons: new WeakSet() };
   if (observed !== null) resizeObserver?.unobserve(observed);
   observed = null;
+}
+
+function clear(): void {
+  // The page and its choices stay: showing the full timeline and back keeps what the reader opened.
+  release();
   for (const element of document.querySelectorAll(`.${TOGGLE_CLASS}, .${MORE_CLASS}`)) element.remove();
   for (const element of document.querySelectorAll(`[${ATTR_DEPTH}]`)) {
     if (element instanceof HTMLElement) for (const name of RAIL_PROPERTIES) element.style.removeProperty(name);
@@ -365,7 +373,8 @@ function clear(): void {
 
 /**
  * Shorten the pull request's description so the digest under it is in reach: every section folds under its
- * heading (sections with headings of their own start open, the innermost start closed, so the outline shows).
+ * heading (sections with headings of their own start open, the innermost start closed, so the outline shows, and
+ * the first section starts open too when the description opens on a heading).
  * A description with no headings to fold that is taller than {@link DESCRIPTION_CAP_PX} is cut there behind a
  * fade and "Show full description", until the reader clicks that or opens anything collapsible in it.
  * Only attributes and Geld's own controls are added, GitHub's nodes stay where they are.
@@ -384,4 +393,18 @@ export function shortenDescription(on: boolean): void {
   const body = descriptionBody();
   if (body === null) return;
   applyTo(body);
+}
+
+/** A description GitHub has rendered that is not shortened yet, as on a switch back to the conversation tab. */
+export function descriptionUnshortened(): boolean {
+  const body = descriptionBody();
+  return body !== null && !body.hasAttribute(ATTR_ON);
+}
+
+/**
+ * Stop handling the description but leave it as it is shown. On a switch to another tab GitHub keeps the
+ * conversation on screen until the next page replaces it, and unfolding it then showed it whole for a moment.
+ */
+export function releaseDescription(): void {
+  release();
 }

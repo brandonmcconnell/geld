@@ -14,22 +14,22 @@ import './globals.css';
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: `${SITE_NAME} — ${TAGLINE}`,
+    default: TAGLINE,
     template: `%s · ${SITE_NAME}`,
   },
   description: DESCRIPTION,
   applicationName: SITE_NAME,
-  keywords: ['GitHub', 'pull request', 'code review', 'hide test files', 'browser extension', 'diff', 'Chrome', 'Firefox', 'Edge', 'Safari'],
+  keywords: ['GitHub', 'pull request', 'code review', 'review bots', 'review digest', 'hide test files', 'browser extension', 'diff', 'Chrome', 'Firefox', 'Edge', 'Safari'],
   openGraph: {
     type: 'website',
     siteName: SITE_NAME,
-    title: `${SITE_NAME} — ${TAGLINE}`,
+    title: TAGLINE,
     description: DESCRIPTION,
     url: SITE_URL,
   },
   twitter: {
     card: 'summary_large_image',
-    title: `${SITE_NAME} — ${TAGLINE}`,
+    title: TAGLINE,
     description: DESCRIPTION,
   },
   robots: { index: true, follow: true },

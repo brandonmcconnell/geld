@@ -1879,6 +1879,230 @@ var init_test_outline = __esm({
   }
 });
 
+// ../../packages/core/src/file-flow.ts
+function extensionOf(path) {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  const dot = name.lastIndexOf(".");
+  return dot <= 0 ? "" : name.slice(dot).toLowerCase();
+}
+function languageOf(path) {
+  const extension = extensionOf(path);
+  if (SCRIPT_EXTENSIONS.includes(extension)) return "script";
+  if (STYLE_EXTENSIONS.includes(extension)) return "style";
+  if (extension === ".py") return "python";
+  if (extension === ".rs") return "rust";
+  return null;
+}
+function canReadImports(path) {
+  return languageOf(path) !== null;
+}
+function collect(text, patterns) {
+  const found = [];
+  for (const pattern of patterns) {
+    pattern.lastIndex = 0;
+    for (const match of text.matchAll(pattern)) {
+      const value = match[1];
+      if (value !== void 0 && value !== "") found.push(value);
+    }
+  }
+  return found;
+}
+function pythonNames(list2) {
+  return list2.replace(/[()]/g, " ").split(",").map((part) => part.trim().split(/\s+as\s+/)[0]?.trim() ?? "").filter((name) => name !== "" && name !== "*" && /^[\w.]+$/.test(name));
+}
+function importSpecifiers(path, text) {
+  const language = languageOf(path);
+  if (language === null) return [];
+  const code = scrub(language, text);
+  if (language === "script") return unique(collect(code, SCRIPT_PATTERNS));
+  if (language === "style") return unique(collect(code, STYLE_PATTERNS));
+  if (language === "rust") return unique(collect(code, RUST_PATTERNS).map((name) => `mod:${name}`));
+  const modules = [];
+  PYTHON_FROM.lastIndex = 0;
+  for (const match of code.matchAll(PYTHON_FROM)) {
+    const module2 = match[1] ?? "";
+    if (module2 === "") continue;
+    modules.push(module2);
+    for (const name of pythonNames(match[2] ?? "")) modules.push(/^\.+$/.test(module2) ? module2 + name : `${module2}.${name}`);
+  }
+  PYTHON_IMPORT.lastIndex = 0;
+  for (const match of code.matchAll(PYTHON_IMPORT)) modules.push(...pythonNames(match[1] ?? ""));
+  return unique(modules);
+}
+function blank(text) {
+  return text.replace(/[^\n]/g, " ");
+}
+function templateEnd(text, start) {
+  let index = start + 1;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === "\\") index += 2;
+    else if (char === "`") return index + 1;
+    else if (char === "$" && text[index + 1] === "{") index = expressionEnd(text, index + 2) + 1;
+    else index += 1;
+  }
+  return text.length;
+}
+function regexEnd(text, start) {
+  let index = start + 1;
+  let inClass = false;
+  while (index < text.length && text[index] !== "\n") {
+    const char = text[index];
+    if (char === "\\") index += 2;
+    else {
+      if (char === "[") inClass = true;
+      else if (char === "]") inClass = false;
+      else if (char === "/" && !inClass) {
+        index += 1;
+        while (index < text.length && /[a-z]/i.test(text[index] ?? "")) index += 1;
+        return index;
+      }
+      index += 1;
+    }
+  }
+  return index;
+}
+function expressionEnd(text, start) {
+  let depth = 0;
+  let index = start;
+  while (index < text.length) {
+    const char = text[index];
+    if (text.startsWith("//", index)) {
+      const end = text.indexOf("\n", index);
+      index = end < 0 ? text.length : end;
+      continue;
+    }
+    if (text.startsWith("/*", index)) {
+      const end = text.indexOf("*/", index + 2);
+      index = end < 0 ? text.length : end + 2;
+      continue;
+    }
+    if (char === "/" && REGEX_LEAD.test(text.slice(Math.max(start, index - 12), index))) {
+      index = regexEnd(text, index);
+      continue;
+    }
+    if (char === "`") {
+      index = templateEnd(text, index);
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      index += 1;
+      while (index < text.length && text[index] !== char && text[index] !== "\n") index += text[index] === "\\" ? 2 : 1;
+      index += 1;
+      continue;
+    }
+    if (char === "{") depth += 1;
+    else if (char === "}") {
+      if (depth === 0) return index;
+      depth -= 1;
+    }
+    index += 1;
+  }
+  return text.length;
+}
+function scrubTemplate(literal2) {
+  const out = ["`"];
+  let index = 1;
+  while (index < literal2.length) {
+    const char = literal2[index] ?? "";
+    if (char === "\\") {
+      out.push(blank(literal2.slice(index, index + 2)));
+      index += 2;
+    } else if (char === "`") {
+      out.push("`");
+      index += 1;
+    } else if (char === "$" && literal2[index + 1] === "{") {
+      const end = expressionEnd(literal2, index + 2);
+      out.push("${", scrub("script", literal2.slice(index + 2, end)), end < literal2.length ? "}" : "");
+      index = end + 1;
+    } else {
+      out.push(blank(char));
+      index += 1;
+    }
+  }
+  return out.join("");
+}
+function scrub(language, text) {
+  const out = [];
+  let tail = "";
+  const push = (chunk) => {
+    out.push(chunk);
+    tail = (tail + chunk).slice(-48);
+  };
+  const lineComment = language === "python" ? "#" : "//";
+  const blocks = language !== "python";
+  const strings = language === "script" || language === "python";
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index] ?? "";
+    const lineStart = language !== "style" || index === 0 || /\s/.test(text[index - 1] ?? "");
+    if (text.startsWith(lineComment, index) && lineStart) {
+      const end = text.indexOf("\n", index);
+      const stop = end < 0 ? text.length : end;
+      push(blank(text.slice(index, stop)));
+      index = stop;
+      continue;
+    }
+    if (blocks && text.startsWith("/*", index)) {
+      const end = text.indexOf("*/", index + 2);
+      const stop = end < 0 ? text.length : end + 2;
+      push(blank(text.slice(index, stop)));
+      index = stop;
+      continue;
+    }
+    if (language === "script" && char === "`") {
+      const end = templateEnd(text, index);
+      push(scrubTemplate(text.slice(index, end)));
+      index = end;
+      continue;
+    }
+    if (strings && (char === '"' || char === "'" || char === "`")) {
+      const triple = language === "python" && text.startsWith(char.repeat(3), index) ? char.repeat(3) : null;
+      const open2 = triple ?? char;
+      let cursor = index + open2.length;
+      while (cursor < text.length && !text.startsWith(open2, cursor)) {
+        if (text[cursor] === "\\") cursor += 1;
+        else if (triple === null && char !== "`" && text[cursor] === "\n") break;
+        cursor += 1;
+      }
+      const closed = text.startsWith(open2, cursor);
+      const stop = Math.min(text.length, closed ? cursor + open2.length : cursor);
+      const literal2 = text.slice(index, stop);
+      const keep = language === "script" && char !== "`" && SCRIPT_IMPORT_LEAD.test(tail);
+      push(keep ? literal2 : open2 + blank(literal2.slice(open2.length, closed ? literal2.length - open2.length : literal2.length)) + (closed ? open2 : ""));
+      index = stop;
+      continue;
+    }
+    push(char);
+    index += 1;
+  }
+  return out.join("");
+}
+function unique(values) {
+  return [...new Set(values)];
+}
+var SCRIPT_EXTENSIONS, STYLE_EXTENSIONS, RESOLVABLE_EXTENSIONS, SCRIPT_PATTERNS, STYLE_PATTERNS, PYTHON_FROM, PYTHON_IMPORT, RUST_PATTERNS, REGEX_LEAD, SCRIPT_IMPORT_LEAD;
+var init_file_flow = __esm({
+  "../../packages/core/src/file-flow.ts"() {
+    "use strict";
+    SCRIPT_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte", ".astro"];
+    STYLE_EXTENSIONS = [".css", ".scss", ".sass", ".less"];
+    RESOLVABLE_EXTENSIONS = [...SCRIPT_EXTENSIONS, ...STYLE_EXTENSIONS, ".json"];
+    SCRIPT_PATTERNS = [
+      /\bimport\s+(?:type\s+)?(?:[\w*{}\s,$]+?\s+from\s+)?['"]([^'"\n]+)['"]/g,
+      /\bexport\s+(?:type\s+)?(?:\*(?:\s+as\s+[\w$]+)?|\{[^}]*\})\s*from\s*['"]([^'"\n]+)['"]/g,
+      /\bimport\(\s*['"]([^'"\n]+)['"]\s*\)/g,
+      /\brequire\(\s*['"]([^'"\n]+)['"]\s*\)/g
+    ];
+    STYLE_PATTERNS = [/@(?:import|use|forward)\s+(?:url\()?\s*['"]?([^'")\s;]+)['"]?\s*\)?/g];
+    PYTHON_FROM = /^[ \t]*from[ \t]+(\.+[\w.]*|[\w.]+)[ \t]+import[ \t]+(\([^)]*\)|[^\n#;]+)/gm;
+    PYTHON_IMPORT = /^[ \t]*import[ \t]+([^\n#;]+)/gm;
+    RUST_PATTERNS = [/^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*;/gm];
+    REGEX_LEAD = /(?:^|[(,=:[!&|?{};+\-*%~^<>]|\b(?:return|typeof|case|do|else|in|of|void|yield|await))\s*$/;
+    SCRIPT_IMPORT_LEAD = /(?:\bfrom|\bimport|\brequire\s*\(|\bimport\s*\()\s*$/;
+  }
+});
+
 // ../../packages/core/src/diff-parse.ts
 function pathFromGitHeader(line, side = "new") {
   const rest = line.slice("diff --git ".length);
@@ -1918,6 +2142,13 @@ function parseUnifiedDiff(diffText) {
       let stats = { path: current.path, additions: current.additions, deletions: current.deletions, status };
       if (kinds.length > 0) stats = { ...stats, kinds };
       if (commentCount > 0 && commentCount <= MAX_COMMENT_LINES) stats = { ...stats, commentLines: { added: current.commentAdded, removed: current.commentRemoved } };
+      if (current.oldSide !== null && current.newSide !== null && current.deletions > 0) {
+        const path = current.path;
+        const named = (hunks) => hunks.flatMap((hunk) => importSpecifiers(path, hunk.join("\n")));
+        const kept = new Set(named(current.newSide));
+        const removedImports = [...new Set(named(current.oldSide))].filter((specifier) => !kept.has(specifier));
+        if (removedImports.length > 0) stats = { ...stats, removedImports };
+      }
       files.push(stats);
     }
     current = null;
@@ -1944,7 +2175,9 @@ function parseUnifiedDiff(diffText) {
         oldState: newCommentScanState(),
         newState: newCommentScanState(),
         commentAdded: [],
-        commentRemoved: []
+        commentRemoved: [],
+        oldSide: canReadImports(path) ? [] : null,
+        newSide: canReadImports(path) ? [] : null
       };
       inHunk = false;
       continue;
@@ -1953,6 +2186,8 @@ function parseUnifiedDiff(diffText) {
     if (line.startsWith("@@")) {
       inHunk = true;
       current.hunks += 1;
+      current.oldSide?.push([]);
+      current.newSide?.push([]);
       const header = HUNK_HEADER.exec(line);
       current.oldLine = Number(header?.[1] ?? 1);
       current.newLine = Number(header?.[2] ?? 1);
@@ -1976,16 +2211,20 @@ function parseUnifiedDiff(diffText) {
       current.additions += 1;
       const text = line.slice(1);
       current.added.push(text.replace(WHITESPACE, ""));
+      current.newSide?.at(-1)?.push(text);
       if (current.syntax !== null && isCommentOnlyLine(text, current.syntax, current.newState)) current.commentAdded.push(current.newLine);
       current.newLine += 1;
     } else if (line.startsWith("-")) {
       current.deletions += 1;
       const text = line.slice(1);
       current.removed.push(text.replace(WHITESPACE, ""));
+      current.oldSide?.at(-1)?.push(text);
       if (current.syntax !== null && isCommentOnlyLine(text, current.syntax, current.oldState)) current.commentRemoved.push(current.oldLine);
       current.oldLine += 1;
     } else if (line.startsWith(" ") || line === "") {
       const text = line.slice(1);
+      current.oldSide?.at(-1)?.push(text);
+      current.newSide?.at(-1)?.push(text);
       if (current.syntax !== null) {
         isCommentOnlyLine(text, current.syntax, current.oldState);
         isCommentOnlyLine(text, current.syntax, current.newState);
@@ -2002,6 +2241,7 @@ var init_diff_parse = __esm({
   "../../packages/core/src/diff-parse.ts"() {
     "use strict";
     init_comment_lines();
+    init_file_flow();
     MAX_COMMENT_LINES = 2e3;
     HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
     WHITESPACE = /\s+/g;
@@ -2031,7 +2271,7 @@ function parseDiffSummaries(document) {
     const deletions = typeof entry2.linesDeleted === "number" && Number.isFinite(entry2.linesDeleted) ? entry2.linesDeleted : 0;
     const status = typeof entry2.changeType === "string" ? STATUS_BY_CHANGE_TYPE[entry2.changeType] : void 0;
     const kinds = status === "deleted" ? ["deleted"] : status === "renamed" && additions + deletions === 0 ? ["renames"] : null;
-    files.push({ path: entry2.path, additions, deletions, ...status === void 0 ? {} : { status }, ...kinds === null ? {} : { kinds } });
+    files.push({ path: entry2.path, additions, deletions, ...status === void 0 ? {} : { status }, ...kinds === null ? {} : { kinds }, summaryOnly: true });
   }
   return files;
 }
@@ -2320,6 +2560,15 @@ function isTestGroupEnabled(settings, id) {
 }
 function isAutoViewed(settings, id) {
   return settings.autoViewed[id] === true;
+}
+function isAutoViewedForAll(settings, ids) {
+  const on = ids.filter((id) => isCategoryEnabled(settings, id));
+  return on.length > 0 && on.every((id) => isAutoViewed(settings, id));
+}
+function withAutoViewedForAll(settings, ids, value) {
+  const autoViewed = { ...settings.autoViewed };
+  for (const id of ids) autoViewed[id] = value;
+  return { ...settings, autoViewed };
 }
 function categoryPatternLines(settings, categoryId) {
   return settings.categoryPatterns[categoryId] ?? [];
@@ -10871,11 +11120,27 @@ var init_settings_schema = __esm({
           },
           {
             kind: "toggle",
+            key: "prOverview",
+            label: "Pull request digest",
+            description: "A panel under the description on the conversation tab: reviews, what each review bot concluded, CI, reports and previews, then the open threads round by round, so what needs you is clear at a glance.",
+            popup: true,
+            popupDescription: "Reviews, bots, CI and open threads at a glance."
+          },
+          {
+            kind: "toggle",
             key: "groupHidden",
             label: "Group hidden files",
             description: "On: hidden files move to a collapsible section at the bottom of the diff and get their own panels in the file tree. Off: they stay where they are, collapsed and faded, with their category\u2019s icon in the tree.",
             popup: true,
             popupDescription: "Off: keep them in place, collapsed and faded."
+          },
+          {
+            kind: "toggle",
+            key: "collapseDescription",
+            label: "Shorten the description",
+            description: "Fold each section of the pull request description under its heading. A long description with no headings is cut to 500px with a control to show the rest.",
+            popup: true,
+            popupDescription: "Fold its sections under their headings."
           },
           {
             kind: "toggle",
@@ -10968,6 +11233,8 @@ var init_settings_schema = __esm({
             },
             autoViewed: {
               label: "Mark as viewed automatically",
+              popupLabel: "Mark hidden files viewed",
+              popupDescription: "Tick GitHub\u2019s Viewed box for every hidden file on a pull request. Set it per category in Settings.",
               description: "On pull requests, tick GitHub\u2019s Viewed box for this category\u2019s hidden files, so \u201CN of M files viewed\u201D only waits on what is left to review. Untick one by hand and it stays unticked until the next push."
             }
           }
@@ -11125,16 +11392,8 @@ var init_settings_schema = __esm({
       {
         id: "experiments",
         title: "Experiments",
-        intro: "Features still taking shape: off until you turn them on here, and liable to change. The one running now is the review digest for pull request conversations \u2014 a panel pinned at the top of the conversation tab that gathers open findings and bot verdicts and folds bot comments out of the timeline. The Geld GitHub Action writes the digest as one comment; without it the extension builds the same panel from the page.",
+        intro: "Features still taking shape, and liable to change. Most of them fine-tune the pull request digest: how much of the timeline it folds, how it groups, which bots it reads, and the AI that can write for it. The Geld GitHub Action writes the digest as one comment. Without it the extension builds the same panel from the page.",
         fields: [
-          {
-            kind: "toggle",
-            key: "prOverview",
-            label: "Review digest on pull requests",
-            description: "Show a review panel on the conversation tab: open findings, bot verdicts, and (when compacting) a quieter timeline.",
-            // The one experiment in the popup, under its own "Experiments" heading, so it can be switched while testing.
-            popup: true
-          },
           {
             kind: "choice",
             key: "compactTimeline",
@@ -11157,13 +11416,6 @@ var init_settings_schema = __esm({
               { value: "type", label: "Type", description: "Bots, CI, reviews, rounds and activity, each in its own section." },
               { value: "batch", label: "Push", description: "One row per push with everything that landed between it and the last." }
             ]
-          },
-          {
-            kind: "toggle",
-            key: "collapseDescription",
-            label: "Shorten the description",
-            description: "Fold each section of the pull request description under its heading. A long description with no headings is cut to 500px with a control to show the rest.",
-            popup: false
           },
           {
             kind: "toggle",
@@ -11482,6 +11734,7 @@ __export(src_exports, {
   hiddenCategoryFromCustom: () => hiddenCategoryFromCustom,
   isAnyCategoryId: () => isAnyCategoryId,
   isAutoViewed: () => isAutoViewed,
+  isAutoViewedForAll: () => isAutoViewedForAll,
   isCategoryEnabled: () => isCategoryEnabled,
   isCategoryIconName: () => isCategoryIconName,
   isCategoryId: () => isCategoryId,
@@ -11549,6 +11802,7 @@ __export(src_exports, {
   validateSettingsDocument: () => validateSettingsDocument,
   validateSettingsValue: () => validateSettingsValue,
   verifyCatalogSignature: () => verifyCatalogSignature,
+  withAutoViewedForAll: () => withAutoViewedForAll,
   withCategoryEnabled: () => withCategoryEnabled,
   withCustomCategory: () => withCustomCategory,
   withRepoRule: () => withRepoRule,
@@ -15985,7 +16239,7 @@ function handleIntersectionResults(result, left, right) {
   const unrecKeys = /* @__PURE__ */ new Map();
   let unrecIssue;
   const keyIssues = /* @__PURE__ */ new Map();
-  const collect = (iss, side) => {
+  const collect2 = (iss, side) => {
     let keys;
     if (iss.code === "unrecognized_keys" && !iss.path?.length) {
       unrecIssue ?? (unrecIssue = iss);
@@ -16006,11 +16260,11 @@ function handleIntersectionResults(result, left, right) {
     return true;
   };
   for (const iss of left.issues) {
-    if (!collect(iss, "l"))
+    if (!collect2(iss, "l"))
       result.issues.push(iss);
   }
   for (const iss of right.issues) {
-    if (!collect(iss, "r"))
+    if (!collect2(iss, "r"))
       result.issues.push(iss);
   }
   const bothKeys = [...unrecKeys].filter(([, f]) => f.l && f.r).map(([k]) => k);
@@ -33164,13 +33418,36 @@ function vercelStatus(word) {
   return statusFromText(word);
 }
 function tableRowFor(doc, project) {
-  return lines(doc).find((line) => line.startsWith("|") && line.includes(`| ${project} |`)) ?? null;
+  return lines(doc).find((line) => line.startsWith("|") && line.split("|").some((cell) => cell.trim() === project)) ?? null;
+}
+var MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+function vercelRowTime(row) {
+  const exact = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z\b/.exec(row);
+  if (exact !== null && !Number.isNaN(Date.parse(exact[0]))) return new Date(exact[0]).toISOString();
+  const match = /\b([A-Z][a-z]{2}) (\d{1,2}), (\d{4}) (\d{1,2}):(\d{2})(am|pm) UTC\b/.exec(row);
+  if (match === null) return void 0;
+  const [, monthName = "", day = "", year = "", hour = "", minute = "", half = ""] = match;
+  const month = MONTHS.indexOf(monthName.toLowerCase());
+  if (month === -1) return void 0;
+  return new Date(Date.UTC(Number(year), month, Number(day), Number(hour) % 12 + (half === "pm" ? 12 : 0), Number(minute))).toISOString();
+}
+function withRowTime(entry2, row) {
+  const time3 = row === null ? void 0 : vercelRowTime(row);
+  return time3 === void 0 ? entry2 : { ...entry2, updatedAt: time3 };
 }
 var VERCEL_NOT_A_PROJECT = /^https:\/\/vercel\.com\/(?:account|teams|docs|login|signup|new|dashboard|support|blog|changelog|guides|templates|help)(?:[/?#]|$)/i;
 function parseVercel(doc) {
   const header = vercelHeader(doc.text);
   if (header !== null && header.length > 0) {
-    return header.map((project) => preview("vercel", doc, project.name, vercelStatus(project.nextCommitStatus), project.previewUrl === "" ? null : project.previewUrl, project.inspectorUrl === "" ? null : project.inspectorUrl));
+    return header.map(
+      (project) => withRowTime(preview("vercel", doc, project.name, vercelStatus(project.nextCommitStatus), project.previewUrl === "" ? null : project.previewUrl, project.inspectorUrl === "" ? null : project.inspectorUrl), tableRowFor(doc, project.name))
+    );
+  }
+  const notice = /Deployment failed for project ([\w.-]+) with the following error:?\s*(?:[~`]{3,}\s*)?([^\n]+)/i.exec(doc.text);
+  if (notice?.[1] !== void 0 && notice[2] !== void 0) {
+    const project = doc.links.find((link) => link.text.trim() === notice[1] && /^https:\/\/vercel\.com\//.test(link.href));
+    const reason = /too many requests/i.test(notice[2]) ? "Vercel rate limited this deployment" : notice[2].trim().slice(0, 200);
+    return [{ ...preview("vercel", doc, notice[1], "failed", null, project?.href ?? null), reason }];
   }
   const member = /@?([\w-]+(?:\[bot\])?)\s+must be a member of the\s+\*{0,2}(.+?)\*{0,2}\s+team on Vercel to deploy/i.exec(doc.text);
   if (member?.[1] !== void 0 && member[2] !== void 0) {
@@ -33190,11 +33467,11 @@ function parseVercel(doc) {
       const image = doc.images.find((candidate) => /vercel\.com\/static\/status\//.test(candidate.src) && candidate.alt.trim() !== "");
       if (image !== void 0 && projectLinks.length === 1) status = vercelStatus(image.alt);
     }
-    if (status === "unknown" && row !== null) status = statusFromText(row.replace(`| ${name} |`, "|"));
+    if (status === "unknown" && row !== null) status = statusFromText(row.split("|").filter((cell) => cell.trim() !== name).join("|"));
     const at = inspector === void 0 ? doc.links.indexOf(link) : doc.links.indexOf(inspector);
     const visit2 = doc.links.slice(at + 1).find((candidate) => /^(visit )?preview$/i.test(candidate.text.trim()) && isExternal(candidate.href));
     if (status === "unknown" && visit2 !== void 0) status = "ready";
-    const entry2 = preview("vercel", doc, name, status, visit2?.href ?? null, inspector?.href ?? null);
+    const entry2 = withRowTime(preview("vercel", doc, name, status, visit2?.href ?? null, inspector?.href ?? null), row);
     out.push(inspector !== void 0 && /^ignored$/i.test(inspector.text.trim()) ? { ...entry2, reason: "Unchanged for this project, the previous preview still serves" } : entry2);
   }
   if (out.length === 0 && /attempting to deploy a commit/i.test(doc.text)) {
@@ -33353,7 +33630,7 @@ function previewDocFromMarkdown(author, anchor2, markdown, updatedAt) {
   }
   for (const match of markdown.matchAll(/(?<!!)\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g)) links.push({ text: match[1]?.replace(/<[^>]+>/g, "").trim() ?? "", href: match[2] ?? "" });
   for (const match of markdown.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) links.push({ href: match[1] ?? "", text: (match[2] ?? "").replace(/<[^>]+>/g, "").trim() });
-  const text = markdown.split(/\r?\n/).map((line) => line.trimStart().startsWith("|") ? line.replace(/<br\s*\/?>/gi, " ") : line).join("\n").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(tr|p|li|h[1-6]|div|details|summary)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+  const text = markdown.split(/\r?\n/).map((line) => line.trimStart().startsWith("|") ? line.replace(/<br\s*\/?>/gi, " ").replace(/<relative-time\b[^>]*\bdatetime=["']([^"']+)["'][^>]*>[\s\S]*?<\/relative-time>/gi, "$1") : line).join("\n").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(tr|p|li|h[1-6]|div|details|summary)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
   const doc = { author, anchor: anchor2, text, links, images };
   return updatedAt === void 0 ? doc : { ...doc, updatedAt };
 }

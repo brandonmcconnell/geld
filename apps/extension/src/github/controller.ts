@@ -20,7 +20,7 @@ import { debugScopesItem, repoConfigChoicesItem, whitespaceOptOutsItem } from '.
 import type { FileStats, GeldSettings } from '@geld/core';
 import type { Classified, HiddenBreakdown } from './breakdown';
 import { breakdownFromFiles, buildBreakdown, EMPTY_BREAKDOWN } from './breakdown';
-import { DiffSource } from './diff-source';
+import { DiffSource, retriesLater } from './diff-source';
 import type { ResolvedRepoConfig } from './repo-config-source';
 import { RepoConfigSource, validConfigs } from './repo-config-source';
 import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManagedText, svgFromString, writeAttribute } from './dom';
@@ -47,7 +47,8 @@ import { markCrawlDirty, resetCrawlCache } from './review/crawler';
 import type { RepoBotsHint } from './review/panel-model';
 import { LIVE_CATCH_UP_EVENT, liveCatchUpDue } from './review/live-regions';
 import { catchUpTimeline } from './review/timeline-catchup';
-import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
+import { applyReviewOverview, foldDescriptionNow, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
+import { setFlowSource } from './review/flow';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { applyTestFolds, clearTestFolds, forgetLinkedFold, hasHiddenLines } from './ui/test-folds';
 import { wholeFile } from './whole-file';
@@ -448,6 +449,8 @@ export class GeldController {
       if (chipRemoved(records)) this.applyListChips();
       // The status pill too: a header GitHub (re)rendered shows Geld's pill in its first frame.
       if (this.settings.quickReview && this.mayDressPage()) reassertStatusPills();
+      // The description GitHub just rendered (a switch back to the conversation tab) is folded in its first frame.
+      if (this.mayDressPage()) foldDescriptionNow(this.settings);
       // GitHub's skeleton back in the counts wrapper the group stands in by its fallback: out before this frame paints.
       if (this.settings.quickReview && this.currentPage !== null && quickReviewStandBusy()) this.placeQuickReview(this.currentPage, new URL(window.location.href));
       this.schedule(false);
@@ -881,6 +884,28 @@ export class GeldController {
     return state.status === 'ready' ? state.files.map((file) => file.path) : null;
   }
 
+  /** Hand the digest's Flow diagram the changed files (each with the hidden category the reader's settings give it), or why the diff is not here. */
+  private updateFlowSource(page: PageInfo, url: URL, matcher: PathMatcher): void {
+    if (page.kind !== 'pull-conversation' || page.diffUrl === null || !this.settings.prOverview) return setFlowSource(null);
+    const pull = /^\/([^/]+\/[^/]+)\/pull\/\d+/.exec(url.pathname);
+    if (pull?.[1] === undefined) return setFlowSource(null);
+    const sha = this.diffShaFor(page, url);
+    const state = this.diffSource.request(page.diffUrl, sha, 'page');
+    if (state.status === 'failed') return setFlowSource(null, { origin: url.origin, pullPath: pull[0], reason: state.reason, retrying: retriesLater(state) });
+    if (state.status !== 'ready') return setFlowSource(null);
+    // Summaries know no removed lines. Kept as `ready` from disk, they stand for a diff that was too large to fetch.
+    const failed = state.provisional === true ? this.diffSource.diffFailure(page.diffUrl, sha) : { reason: 'too-large', attempts: 0 };
+    const removed = !state.files.some((file) => file.summaryOnly === true) ? 'known' : failed === null || retriesLater(failed) ? 'pending' : failed.reason === 'too-large' ? 'too-large' : 'unavailable';
+    setFlowSource({
+      origin: url.origin,
+      repo: pull[1],
+      pullPath: pull[0],
+      headSha: sha,
+      removed,
+      files: state.files.map((file) => ({ path: file.path, status: file.status ?? 'modified', additions: file.additions, deletions: file.deletions, hiddenAs: matcher.categorizeFile(file)?.title ?? null, removedImports: file.removedImports ?? [] })),
+    });
+  }
+
   /**
    * What the repository says about its review bots, for the Request a review
    * menu on the conversation tab: the ids its config declares (only once the
@@ -1075,7 +1100,10 @@ export class GeldController {
     }
     const trackerConfig=repo!==null&&this.repoDecision(repo)==='use'?this.resolvedConfig(repo):null;
     applyTrackerLinks(this.settings,trackerConfig?validConfigs(trackerConfig):[]);
-    if (!skipReview) applyReviewOverview(this.settings, this.pageDiffPaths(), this.repoBotsHint(page, repo));
+    if (!skipReview) {
+      this.updateFlowSource(page, url, matcher);
+      applyReviewOverview(this.settings, this.pageDiffPaths(), this.repoBotsHint(page, repo));
+    }
 
     const effectiveHidden = headerHidden ?? hidden;
     this.publish({

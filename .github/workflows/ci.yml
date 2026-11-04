@@ -10,7 +10,7 @@ on:
 jobs:
   # Same-repository pull requests only (a fork's gets no secrets anyway): the
   # pattern catalog is built from the branch here, in a job that holds no
-  # secret, and signed in the next one, which checks out the default branch
+  # signing key, and signed in the next one, which checks out the default branch
   # and runs none of the branch's code. The signing key never shares a runner
   # with pull request code: anything that runs there — the build, pnpm's
   # scripts, a process left behind, a `node` put on $GITHUB_PATH — could read a
@@ -31,6 +31,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        env:
+          FONTAWESOME_PACKAGE_TOKEN: ${{ secrets.FONTAWESOME_PACKAGE_TOKEN }}
       - run: pnpm catalog:build --auto-version
       - uses: actions/upload-artifact@v7
         with:
@@ -113,6 +115,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        env:
+          FONTAWESOME_PACKAGE_TOKEN: ${{ secrets.FONTAWESOME_PACKAGE_TOKEN }}
       # Pattern catalog: when a push changes the built-in patterns, regenerate
       # catalog/patterns.json (bumping CATALOG_VERSION if the author did not),
       # sign it with the key in GELD_CATALOG_PRIVATE_KEY, verify, and commit it

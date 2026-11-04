@@ -4,6 +4,7 @@ import {
   describeAdvancedSettings,
   hasAdvancedSettings,
   isAutoViewed,
+  isAutoViewedForAll,
   mergeCustomCategoryEdit,
   isCategoryEnabled,
   isGroupEnabled,
@@ -13,6 +14,7 @@ import {
   normalizeSettings,
   parsePatternList,
   withCustomCategory,
+  withAutoViewedForAll,
   withoutCustomCategory,
 } from './settings';
 import type { CustomCategory } from './categories';
@@ -27,6 +29,18 @@ describe('autoViewed', () => {
     expect(settings.autoViewed).toEqual({ tests: true, 'custom:agent': true });
     expect(isAutoViewed(settings, 'custom:agent')).toBe(true);
     expect(withoutCustomCategory(settings, 'custom:agent').autoViewed).toEqual({ tests: true });
+  });
+
+  it('reads and sets every category at once for the popup switch, judged by the categories that are on', () => {
+    const ids = ['tests', 'docs', 'generated'] as const;
+    expect(isAutoViewedForAll(DEFAULT_SETTINGS, ids)).toBe(false);
+    const all = withAutoViewedForAll(DEFAULT_SETTINGS, ids, true);
+    expect(all.autoViewed).toEqual({ tests: true, docs: true, generated: true });
+    expect(isAutoViewedForAll(all, ids)).toBe(true);
+    // Only tests is on by default, so a category that is off does not hold the switch back.
+    expect(isAutoViewedForAll({ ...DEFAULT_SETTINGS, autoViewed: { tests: true } }, ids)).toBe(true);
+    expect(isAutoViewedForAll({ ...all, categories: { ...all.categories, tests: false } }, ids)).toBe(false);
+    expect(withAutoViewedForAll(all, ids, false).autoViewed).toEqual({ tests: false, docs: false, generated: false });
   });
 });
 

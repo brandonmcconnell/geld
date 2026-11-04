@@ -77,6 +77,8 @@ export function textWithTableRows(body: HTMLElement): string {
   const clone = body.cloneNode(true);
   if (!(clone instanceof HTMLElement)) return blockText(body);
   for (const row of clone.querySelectorAll('tr')) {
+    // A time in a row is its exact `datetime`, as `previewDocFromMarkdown` writes it: the words drop the seconds.
+    for (const time of row.querySelectorAll('relative-time[datetime]')) time.replaceWith(time.getAttribute('datetime') ?? '');
     const cells = [...row.querySelectorAll('th, td')].map((cell) => (cell.textContent ?? '').replace(/\s+/g, ' ').trim());
     const line = document.createElement('div');
     line.textContent = `| ${cells.join(' | ')} |`;

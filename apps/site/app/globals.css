@@ -60,7 +60,37 @@
   }
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  /* The track holds the logos twice, so sliding it by half lands on an identical frame. */
+  @keyframes logo-reel {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+  --animate-logo-reel: logo-reel 50s linear infinite;
+
+  /* Tailwind's ping, but growing by a fixed reach rather than to twice the size, which on a wide control threw a ring twice its width. */
+  @keyframes ping-ring {
+    0% {
+      box-shadow: 0 0 0 0 currentColor;
+      opacity: 0.5;
+    }
+    75%,
+    100% {
+      box-shadow: 0 0 0 7px currentColor;
+      opacity: 0;
+    }
+  }
+  --animate-ping-ring: ping-ring 1s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
+
+/*
+ * Where the feature tour uses its sticky stage: wide, and tall enough for the
+ * 40rem stage under its 4.5rem sticky offset with a little room below.
+ * Anywhere shorter the tour keeps the inline layout phones get.
+ */
+@custom-variant stage (@media (width >= 64rem) and (height >= 46rem));
+@custom-variant stage-xl (@media (width >= 80rem) and (height >= 46rem));
 
 /* Base UI exposes open/closed state as bare data attributes. */
 @custom-variant data-open (&:where([data-open]:not([data-open="false"])));
@@ -137,6 +167,18 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Headings balance their lines; paragraphs avoid a lone last word. A subtitle opts into balance with `text-balance`. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply text-balance;
+  }
+  p {
+    @apply text-pretty;
+  }
   ::selection {
     @apply bg-foreground/90 text-background;
   }
@@ -160,6 +202,198 @@
 
 @utility container-site {
   @apply mx-auto w-full max-w-5xl px-5 sm:px-8;
+}
+
+/* A wider column for what needs the room beside the page's text: the tour's windows, the logo reel. */
+@utility container-wide {
+  @apply mx-auto w-full max-w-7xl px-5 sm:px-8;
+}
+
+/* A tour scene's ping (tour/ping.tsx) fades once the scene is used and back once it is re-armed; hidden after the fade, the ring is no longer painted. */
+@utility ping-fade {
+  transition:
+    opacity 300ms ease-out,
+    visibility 0s;
+  :where([data-used]) & {
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity 300ms ease-out,
+      visibility 0s 300ms;
+  }
+  /* A ping repaints every frame on the main thread, so it runs only where it can be seen: not off screen (`data-offscreen`, PrWindow), not in a scene the stage hides or a section folded away (`inert`), not once faded. */
+  :where([inert], [data-offscreen], [data-used]) & > .ping-ring {
+    animation-play-state: paused;
+  }
+}
+
+/* The logo reel's window: logos fade in and out at both edges while they move. */
+@utility logo-reel {
+  /* Clip, not hidden: a hidden overflow scrolls itself to a focused link, which the track's transform then throws off. */
+  overflow: clip;
+  mask-image: linear-gradient(to right, transparent, #000 4rem, #000 calc(100% - 4rem), transparent);
+  /* A logo with keyboard focus shows whole, its focus ring included, even at the window's edge. */
+  &:has(:focus-visible) {
+    mask-image: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    mask-image: none;
+  }
+}
+
+/*
+ * The tour's copy of the extension's line-count tooltip (.geld-tooltip in the
+ * extension's style.css), hanging flush from the tab bar as it does on the
+ * pull request header: four grid columns, square top corners, a caret of two
+ * stacked triangles whose bases sit on the padding edge.
+ */
+.geld-breakdown {
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
+  gap: 3px 12px;
+  align-items: baseline;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 0 0 6px 6px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  box-shadow:
+    0 1px 1px rgb(31 35 40 / 0.1),
+    0 3px 6px rgb(31 35 40 / 0.12);
+}
+
+.geld-breakdown__caret {
+  position: absolute;
+  bottom: 100%;
+  width: 0;
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    transform: translateX(-50%);
+    border: 7px solid transparent;
+    border-top-width: 0;
+    border-bottom-color: var(--border);
+  }
+  &::after {
+    border-width: 0 6px 6px;
+    border-bottom-color: var(--popover);
+  }
+}
+
+/*
+ * The phone menu's glyph (nav-menu.tsx). Each segment's transform is
+ * translate, rotate, scale, translate around a pivot in viewBox units, with
+ * the same function list in every state, so the browser interpolates each
+ * number straight from one state to the next. The bends turn at their joints:
+ * (6, 6) on the top bar, (18, 18) on the bottom, (5, 12) and (19, 12) on the
+ * middle. Open, every line straightens: the top bar (0.757 to 19, pivot
+ * 9.879, 6) and the bottom (5 to 23.243, pivot 14.121, 18) shrink to 0.465 of
+ * their length and become the two halves of the stroke from (6, 6) to
+ * (18, 18); the middle (1.172 to 22.828, pivot 12, 12) shrinks to 0.784 and
+ * turns into the whole stroke from (6, 18) to (18, 6). Lengths include the half-stroke
+ * the open ends are drawn long by (nav-menu.tsx), and each joint's dot shares
+ * its bar's transform.
+ */
+.menu-glyph {
+  opacity: 0.75;
+  transition: opacity 150ms ease-out;
+}
+.menu-trigger[aria-expanded='true'] .menu-glyph {
+  opacity: 1;
+}
+.menu-glyph path,
+.menu-glyph circle {
+  transform-box: view-box;
+  transform-origin: 0 0;
+  transition: transform 280ms cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+.menu-glyph path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: butt;
+}
+.menu-glyph circle {
+  fill: currentColor;
+}
+.menu-glyph__top {
+  transform: translate(9.879px, 6px) rotate(0deg) scale(1, 1) translate(-9.879px, -6px);
+}
+.menu-glyph__top-bend {
+  transform: translate(9.879px, 6px) rotate(0deg) scale(1, 1) translate(-9.879px, -6px) translate(6px, 6px) rotate(0deg) translate(-6px, -6px);
+}
+.menu-glyph__middle {
+  transform: translate(12px, 12px) rotate(0deg) scale(1, 1) translate(-12px, -12px);
+}
+.menu-glyph__middle-bend-start {
+  transform: translate(12px, 12px) rotate(0deg) scale(1, 1) translate(-12px, -12px) translate(5px, 12px) rotate(0deg) translate(-5px, -12px);
+}
+.menu-glyph__middle-bend-end {
+  transform: translate(12px, 12px) rotate(0deg) scale(1, 1) translate(-12px, -12px) translate(19px, 12px) rotate(0deg) translate(-19px, -12px);
+}
+.menu-glyph__bottom {
+  transform: translate(14.121px, 18px) rotate(0deg) scale(1, 1) translate(-14.121px, -18px);
+}
+.menu-glyph__bottom-bend {
+  transform: translate(14.121px, 18px) rotate(0deg) scale(1, 1) translate(-14.121px, -18px) translate(18px, 18px) rotate(0deg) translate(-18px, -18px);
+}
+
+/* Hover only where there is a pointer to hover with, so a tap goes straight from idle to open. */
+@media (hover: hover) {
+  .menu-trigger:hover .menu-glyph {
+    opacity: 1;
+  }
+  .menu-trigger:hover .menu-glyph__top-bend {
+    transform: translate(9.879px, 6px) rotate(0deg) scale(1, 1) translate(-9.879px, -6px) translate(6px, 6px) rotate(20deg) translate(-6px, -6px);
+  }
+  .menu-trigger:hover .menu-glyph__middle-bend-start {
+    transform: translate(12px, 12px) rotate(0deg) scale(1, 1) translate(-12px, -12px) translate(5px, 12px) rotate(20deg) translate(-5px, -12px);
+  }
+  .menu-trigger:hover .menu-glyph__middle-bend-end {
+    transform: translate(12px, 12px) rotate(0deg) scale(1, 1) translate(-12px, -12px) translate(19px, 12px) rotate(20deg) translate(-19px, -12px);
+  }
+  .menu-trigger:hover .menu-glyph__bottom-bend {
+    transform: translate(14.121px, 18px) rotate(0deg) scale(1, 1) translate(-14.121px, -18px) translate(18px, 18px) rotate(20deg) translate(-18px, -18px);
+  }
+}
+
+/* Open wins over hover: same specificity, later in the sheet. */
+.menu-trigger[aria-expanded='true'] .menu-glyph__top {
+  transform: translate(9px, 9px) rotate(45deg) scale(0.4651, 1) translate(-9.879px, -6px);
+}
+.menu-trigger[aria-expanded='true'] .menu-glyph__top-bend {
+  transform: translate(9px, 9px) rotate(45deg) scale(0.4651, 1) translate(-9.879px, -6px) translate(6px, 6px) rotate(45deg) translate(-6px, -6px);
+}
+.menu-trigger[aria-expanded='true'] .menu-glyph__middle {
+  transform: translate(12px, 12px) rotate(-45deg) scale(0.7836, 1) translate(-12px, -12px);
+}
+.menu-trigger[aria-expanded='true'] .menu-glyph__middle-bend-start {
+  transform: translate(12px, 12px) rotate(-45deg) scale(0.7836, 1) translate(-12px, -12px) translate(5px, 12px) rotate(45deg) translate(-5px, -12px);
+}
+.menu-trigger[aria-expanded='true'] .menu-glyph__middle-bend-end {
+  transform: translate(12px, 12px) rotate(-45deg) scale(0.7836, 1) translate(-12px, -12px) translate(19px, 12px) rotate(45deg) translate(-19px, -12px);
+}
+.menu-trigger[aria-expanded='true'] .menu-glyph__bottom {
+  transform: translate(15px, 15px) rotate(45deg) scale(0.4651, 1) translate(-14.121px, -18px);
+}
+.menu-trigger[aria-expanded='true'] .menu-glyph__bottom-bend {
+  transform: translate(15px, 15px) rotate(45deg) scale(0.4651, 1) translate(-14.121px, -18px) translate(18px, 18px) rotate(45deg) translate(-18px, -18px);
+}
+
+/* A customer logo: a single-colour SVG mask filled with the text colour. */
+@utility logo-mask {
+  display: block;
+  flex-shrink: 0;
+  background-color: currentColor;
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  mask-position: center;
 }
 
 /*
@@ -222,16 +456,14 @@
 /*
  * Top-bar wordmark: hidden (transparent, blurred) while the page's hero
  * wordmark is still visible beneath the bar; JS sets data-hero after every
- * route change and scroll. Pure CSS for the initial state so it is right
- * before hydration and independent of how the page was rendered.
+ * route change and scroll. Before hydration a page with a hero hides it with
+ * a style of its own (HeroPrehydration in app/page.tsx).
  */
 @utility header-brand {
   transition:
     opacity 500ms ease-out,
     filter 500ms ease-out;
   will-change: opacity, filter;
-  /* Before hydration (no data-hero yet): hidden whenever the page has a hero wordmark. */
-  :root:has(#hero-wordmark) &:not([data-hero]),
   &[data-hero='showing'] {
     opacity: 0;
     filter: blur(5px);
@@ -433,6 +665,32 @@
     to {
       opacity: 0;
     }
+  }
+
+  /* With a hero wordmark (header-divider.tsx) the line fades in over the first half of the scroll that takes the wordmark under the bar. */
+  .hero-divider[data-hero-fade='on'] {
+    animation: hero-divider-in linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0 var(--hero-fade-end, 60px);
+  }
+
+  @keyframes hero-divider-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+/* The hero pile's switch, until it is first used. */
+@keyframes geld-beckon {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary) 45%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 12px transparent;
   }
 }
 

@@ -2,7 +2,7 @@ import { CATEGORIES, TESTS_CATEGORY } from '@geld/core';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { Frame } from '@/components/demo/before-after';
+import { Frame } from '@/components/demo/frame';
 import { FileRow } from '@/components/demo/file-row';
 import { HiddenRow } from '@/components/demo/hidden-row';
 import { PrHeader } from '@/components/demo/pr-header';
@@ -57,7 +57,7 @@ export default function HowItWorksPage() {
       <PageIntro
         eyebrow="How it works"
         title="Everything Geld changes on GitHub, and nothing it doesn't."
-        description="On diffs Geld only inspects file paths, never file contents. It never moves GitHub's DOM around, and can be switched off per repository or organisation."
+        description="Geld reads the diffs and conversations GitHub already serves you, through your own session. File paths and the changed lines decide what folds, anything folded is one click from coming back, and it can be switched off per repository or organisation."
       />
 
       <div className="container-site grid gap-12 pt-4 pb-32 lg:grid-cols-[220px_1fr] lg:gap-20">
@@ -214,7 +214,7 @@ export default function HowItWorksPage() {
                         {category.defaultEnabled ? 'on by default' : 'opt-in'}
                       </span>
                     </p>
-                    <p className="mt-1 text-sm text-pretty text-muted-foreground">
+                    <p className="mt-1 text-sm text-muted-foreground">
                       <RichText copy={category.description} />
                     </p>
                   </div>
@@ -407,7 +407,7 @@ function Step({ id, index, title, children }: { readonly id: string; readonly in
   return (
     <section id={id} aria-labelledby={`${id}-heading`} className="scroll-mt-28">
       <p className="mb-3 font-mono text-base tabular-nums text-muted-foreground">{String(index).padStart(2, '0')}</p>
-      <h2 id={`${id}-heading`} className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
+      <h2 id={`${id}-heading`} className="text-2xl font-semibold tracking-tight sm:text-3xl">
         {title}
       </h2>
       <div className="mt-6">{children}</div>
