@@ -4351,14 +4351,15 @@ svg.geld-lucide {
 .geld-review__avatar[data-shape='cutout'][data-ink='dark'],
 .geld-review__bot-icon[data-shape='cutout'][data-ink='dark'],
 .geld-review-hovercard__avatar[data-shape='cutout'][data-ink='dark'] {
-  background: light-dark(transparent, var(--geld-review-hover));
+  /* Hover cards sit outside `.geld-review`, where `--geld-review-hover` is not defined. */
+  background: light-dark(transparent, var(--geld-review-hover, var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(175, 184, 193, 0.2)))));
   outline-color: light-dark(transparent, rgb(128 128 128 / 15%));
 }
 
 .geld-review__avatar[data-shape='cutout'][data-ink='light'],
 .geld-review__bot-icon[data-shape='cutout'][data-ink='light'],
 .geld-review-hovercard__avatar[data-shape='cutout'][data-ink='light'] {
-  background: light-dark(var(--geld-review-hover), transparent);
+  background: light-dark(var(--geld-review-hover, var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(175, 184, 193, 0.2)))), transparent);
   outline-color: light-dark(rgb(128 128 128 / 15%), transparent);
 }
 
