@@ -3,7 +3,7 @@
 import { faPause, faPlay } from '@awesome.me/kit-2e791c163e/icons/sharp/solid';
 import { cn } from 'cn';
 import type { FocusEvent, PointerEvent, RefObject } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { ExternalLink } from '@/components/external-link';
 import { FaIcon } from '@/components/fa-icon';
@@ -95,7 +95,10 @@ function bringIntoView(track: HTMLElement, view: HTMLElement, target: Element): 
  */
 function useReelSpeed(track: RefObject<HTMLDivElement | null>, stopped: boolean, slowed: boolean): void {
   const rate = useRef(1);
+  // Reduced motion removes the animation, and turning it off makes a new one at full speed, which must be told the state again.
+  const reducedMotion = useSyncExternalStore(subscribeToMotion, prefersReducedMotion, () => false);
   useEffect(() => {
+    if (reducedMotion) return;
     const animation = track.current?.getAnimations()[0];
     if (animation === undefined) return;
     const target = stopped || slowed ? 0 : 1;
@@ -116,7 +119,19 @@ function useReelSpeed(track: RefObject<HTMLDivElement | null>, stopped: boolean,
     };
     frame = requestAnimationFrame(step);
     return () => cancelAnimationFrame(frame);
-  }, [track, stopped, slowed]);
+  }, [track, stopped, slowed, reducedMotion]);
+}
+
+const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
+
+function prefersReducedMotion(): boolean {
+  return window.matchMedia(REDUCED_MOTION).matches;
+}
+
+function subscribeToMotion(change: () => void): () => void {
+  const query = window.matchMedia(REDUCED_MOTION);
+  query.addEventListener('change', change);
+  return () => query.removeEventListener('change', change);
 }
 
 function LogoList({ copy = false }: { readonly copy?: boolean }) {
