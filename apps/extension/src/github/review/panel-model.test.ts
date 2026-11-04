@@ -192,6 +192,10 @@ describe('status rows', () => {
   it('grades bots', () => {
     const base = { id: 'greptile', login: 'greptile-apps[bot]', reviewedSha: 'aaa' } as const;
     expect(botHealth({ ...base, verdict: 'findings', score: 5 })).toBe('good');
+    // A 5/5 run with a finding still open (geld#367) is amber, and green once every thread is resolved.
+    expect(botHealth({ ...base, verdict: 'findings', score: 5, count: 1 })).toBe('warn');
+    expect(botHealth({ ...base, verdict: 'findings', score: 5, count: 0 })).toBe('good');
+    expect(botHealth({ ...base, verdict: 'findings', score: 2, count: 1 })).toBe('bad');
     expect(botHealth({ ...base, verdict: 'findings', score: 4 })).toBe('warn');
     expect(botHealth({ ...base, verdict: 'findings', score: 2 })).toBe('bad');
     expect(botHealth({ ...base, id: 'bugbot', verdict: 'findings', count: 1, severity: 'high' })).toBe('bad');
