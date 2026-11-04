@@ -2581,7 +2581,22 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 }
 
 .geld-review__brand {
-  font-weight: 600;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.geld-review__brand svg {
+  display: block;
+  width: auto;
+  height: 12px;
+}
+
+/* `::selection` never paints the wordmark, so while selected (`syncBrandSelection`) it wears the colours the browser
+   gives selected text on GitHub, which sets no selection style of its own. */
+.geld-review__brand[data-geld-selected] {
+  background-color: Highlight;
+  color: HighlightText;
 }
 
 .geld-review__progress {

@@ -28,6 +28,7 @@ import { reclaimOrphans, restoreAll } from './teleport';
 import { ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import type { ReviewerCandidate } from './reviewers';
 import { shapeMark } from './mark-shape';
+import { brandMark, syncBrandSelection, watchBrandSelection } from './brand';
 import { inlineText } from './inline-text';
 import { relativeTimeElement } from './time';
 
@@ -2756,7 +2757,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   const waiting = model.meta.items.filter((item) => item.status === 'needs-reply').length;
 
   /* Summary strip: the meter only once there is something to measure. */
-  const summary = createElement('div', { class: `${PANEL_CLASS}__summary` }, [createElement('span', { class: `${PANEL_CLASS}__brand` }, ['Geld']), progressMeter(doneCount, total, 'review item')]);
+  const summary = createElement('div', { class: `${PANEL_CLASS}__summary` }, [brandMark(`${PANEL_CLASS}__brand`), progressMeter(doneCount, total, 'review item')]);
   if (waiting > 0) summary.append(createElement('span', { class: `${PANEL_CLASS}__chip`, 'data-tone': 'attention' }, [`${waiting} need${waiting === 1 ? 's' : ''} a reply`]));
   // GitHub's revision marker, said here instead of as a timeline row: a button to that diff (the marker's own
   // "View changes" URL), the same small button the timeline's Compare and Details are; the count is its tooltip.
@@ -2903,6 +2904,8 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     card.insertAdjacentElement('afterend', panel);
   }
   syncSpinners(panel);
+  watchBrandSelection();
+  syncBrandSelection();
   // A card open over the old panel points at a host that just left the document.
   rehostHoverCard();
   // Below the box, not in it: a quiet, persistent pointer to the Action while this repository lacks it.
