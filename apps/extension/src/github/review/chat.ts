@@ -324,6 +324,21 @@ export function takeAgentViewLink(body: HTMLElement): AgentViewLink | null {
 }
 
 /**
+ * Geld's controls for a bot's comment shown outside a chat (a row's hover
+ * card): the bot's own badges in `body`, a copy of the comment, are hidden
+ * there and stand here as View, then Rerun or See latest, as on a byline.
+ */
+export function botCommentControls(body: HTMLElement, byline: Pick<ChatByline, 'rerun' | 'latest'>): readonly HTMLElement[] {
+  if (byline.rerun !== undefined || byline.latest !== undefined) hideAgentRerunControls(body);
+  const view = takeAgentViewLink(body);
+  const controls: HTMLElement[] = [];
+  if (view !== null) controls.push(viewControl(view));
+  if (byline.rerun !== undefined) controls.push(rerunControl(byline.rerun));
+  else if (byline.latest !== undefined) controls.push(latestControl(byline.latest));
+  return controls;
+}
+
+/**
  * "View" with the external-link glyph, in Rerun's box and before it: the
  * bot's own badge, moved out of the bubble to where the chat's controls are.
  * The tooltip keeps the badge's words ("View in Greptile"); a badge that only

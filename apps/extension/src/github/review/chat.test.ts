@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { dressArrivals, hideAgentRerunControls, messagesIn, renderChatView, takeAgentViewLink } from './chat';
+import { botCommentControls, dressArrivals, hideAgentRerunControls, messagesIn, renderChatView, takeAgentViewLink } from './chat';
 
 /**
  * Two shapes carry the `minimized-comment` class. A review's own body card
@@ -103,6 +103,27 @@ describe('takeAgentViewLink', () => {
     expect(body.querySelector('h2')?.hasAttribute('data-geld-agent-rerun')).toBe(false);
     // The switch with no run behind it (a tenant's home) is not the badge.
     expect(takeAgentViewLink(parse('<div><p><a href="https://app.greptile.com/-/switch-tenant?tenant=geld&amp;next=%2F"><img alt="Greptile" src="g.svg"></a></p></div>'))).toBeNull();
+  });
+
+  it('gives a bot comment shown in a hover card Geld\u2019s View and Rerun in place of its badges', () => {
+    const body = parse(GREPTILE_PARAGRAPH);
+    const asked: string[] = [];
+    const controls = botCommentControls(body, { rerun: { bot: 'Greptile', running: false, onRerun: () => asked.push('rerun') } });
+    const words = (list: readonly HTMLElement[]): readonly (string | null | undefined)[] => list.map((control) => control.querySelector('a, button')?.textContent);
+    expect(words(controls)).toEqual(['View', 'Rerun']);
+    expect(controls[0]?.querySelector('a')?.getAttribute('href')).toBe('https://app.greptile.com/org/github/o/r/-/pull/9');
+    // Both badges hidden, and the paragraph they shared with it.
+    expect(body.querySelector('a[href*="retrigger"]')?.hasAttribute('data-geld-agent-rerun')).toBe(true);
+    expect(body.querySelector('a[href*="/pull/9"]')?.hasAttribute('data-geld-agent-view')).toBe(true);
+    expect(body.querySelector('p')?.hasAttribute('data-geld-agent-rerun')).toBe(true);
+    controls[1]?.querySelector('button')?.click();
+    expect(asked).toEqual(['rerun']);
+    // An earlier run's summary: See latest instead of Rerun, and the bot's re-trigger badge hidden all the same.
+    const earlier = parse(GREPTILE);
+    expect(words(botCommentControls(earlier, { latest: { bot: 'Greptile', onOpen: () => undefined } }))).toEqual(['View', 'See latest']);
+    expect(earlier.querySelector('a[href*="retrigger"]')?.hasAttribute('data-geld-agent-rerun')).toBe(true);
+    // A bot with no trigger and no newer summary: View alone, and its re-trigger badge (it has none to stand for) stays.
+    expect(words(botCommentControls(parse(DEVIN), {}))).toEqual(['View']);
   });
 
   it('hides the paragraph both Greptile badges share once both are taken', () => {

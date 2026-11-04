@@ -53,7 +53,7 @@ import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel }
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
-import { chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
+import { botCommentControls, chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
 import type { ChatByline, ChatRerun, ChatThreadLink } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
@@ -2674,6 +2674,17 @@ function hoverPreviewFor(row: HTMLElement, meta: GeldPrMeta, groups: readonly Fo
     preview.removeAttribute('id');
     for (const child of preview.querySelectorAll('[id]')) child.removeAttribute('id');
   }
+  // A review bot's comment wears Geld's View and Rerun (or See latest) in the card as on its chat's byline, in place
+  // of the bot's own badges in the copy.
+  const settings = lastSettings;
+  const extras =
+    author?.bot === true && settings !== null
+      ? withRerun({ login: author.login, bot: true, avatarSrc: null, time: '' }, author.login, anchor, meta, settings, reapplySoon, (latest) => {
+          hideHoverCard();
+          handlers.onOpenAnchor(latest);
+        })
+      : null;
+  const controls = extras !== null && preview instanceof HTMLElement ? botCommentControls(preview, extras) : [];
   return {
     avatarSrc: avatarSrcOf(node),
     name: (author?.login ?? 'ghost').replace(/\[bot\]$/i, ''),
@@ -2686,6 +2697,7 @@ function hoverPreviewFor(row: HTMLElement, meta: GeldPrMeta, groups: readonly Fo
     // A review's card leads to the review, not a comment: its own body may be empty (a bare verdict) and its threads
     // live in the round, so "See full review" is the honest word.
     ...(/^pullrequestreview-/.test(anchor) ? { openLabel: 'See full review' } : {}),
+    ...(controls.length === 0 ? {} : { controls }),
   };
 }
 
