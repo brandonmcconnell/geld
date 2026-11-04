@@ -48,14 +48,14 @@ env:
   GELD_GREPTILE_SECRET_NAME: GREPTILE_API_KEY # the name of your secret, never the key
 ```
 
-- **Names only:** a value that isn't shaped like a secret's name as GitHub lists it (capital letters, digits, underscores) is refused with a 😕, without being repeated anywhere: it is most likely a key pasted into a committed file. Remove it from the workflow and rotate that key.
+- **Names only:** a value that isn't shaped like a secret's name as GitHub lists it (capital letters, digits, underscores) is refused with a 👎, without being repeated anywhere: it is most likely a key pasted into a committed file. Remove it from the workflow and rotate that key.
 
 - **Who can trigger:** secrets are available to every comment's run, so the job checks the commenter's permission first and refuses anyone without write access, and comments from bot accounts.
 - **Whose key it is:** every bot acts for the organization or team the key belongs to, not for the person who commented: none of the three APIs takes a requester. Who asked is on GitHub, in the comment and in the run's log (`review queued for <login>`). Use an organization's key, not a personal one: a Devin personal access token acts as the person who made it, and a Cursor API key belongs to the team.
 - **GitHub Enterprise Server:** Greptile is sent the server's address (`remoteUrl`) so it finds the repository there. Bugbot and Devin take the pull request's own link.
 - **Parallel:** the `trigger` job has no concurrency group, so every command runs, alongside the others and the summary. The `summary` job keeps its own group, which cancels older summary runs so only the newest rewrites the comment.
-- **Result:** a 🚀 reaction on the comment when every bot was queued, 😕 otherwise, with the reason in the run's log. A queued review still runs on the bot's side and posts as usual.
-- **From the extension:** with a bot ticked under "Start review bots by API" in Geld's settings, Rerun and Request a review post `/geld run <bot>` on repositories whose Geld workflow names a secret for that bot (the extension reads the workflow file for the names, never the keys) and the bot's own tag comment everywhere else. The digest reads the workflow's 🚀 as the bot taking the run and its 😕 as no run.
+- **Result:** a 🚀 reaction on the comment when every bot was queued, 👎 otherwise, with the reason in the run's log. A queued review still runs on the bot's side and posts as usual.
+- **From the extension:** on a repository whose Geld workflow names a secret for a bot, Rerun and Request a review post `/geld run <bot>` for that bot instead of its tag comment, with no setting to turn on: the workflow file is the switch, per repository. Bots with no secret named keep their usual tag comment. The extension reads the workflow file for the names, never the keys. The digest reads the workflow's 🚀 as the bot taking the run and its 👎 as no run.
 
 Repositories that copied an earlier version of `examples/geld.yml` need to copy it again to get this job: `uses: …@main` updates the Action's code, not the workflow file.
 

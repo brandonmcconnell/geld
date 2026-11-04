@@ -4,7 +4,7 @@ import { BUNDLED_CATALOG, CATEGORY_IDS, catalogGroupKeys, isCategoryId, isCustom
 import { CATEGORY_ICON_NAMES, isCategoryIconName } from './category-icons';
 import { globToRegExp } from './glob';
 import type { GeldSettings } from './settings';
-import { API_TRIGGER_BOT_ID, COMPACT_TIMELINE_MODES, REPO_CONFIG_MODES, isCompactTimelineMode, isRepoConfigMode, normalizeHost, normalizeSettings, isReviewGrouping, isSuggestedFixMode, REVIEW_GROUPINGS, SUGGESTED_FIX_MODES } from './settings';
+import { COMPACT_TIMELINE_MODES, REPO_CONFIG_MODES, isCompactTimelineMode, isRepoConfigMode, normalizeHost, normalizeSettings, isReviewGrouping, isSuggestedFixMode, REVIEW_GROUPINGS, SUGGESTED_FIX_MODES } from './settings';
 import { authorRuleProblem } from './pr-authors';
 import { TEST_PATTERN_GROUP_IDS, isTestPatternGroupId } from './test-patterns';
 import { parseTestSyntax } from './test-outline';
@@ -286,7 +286,6 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   checkStringList(issues, `${path}.hiddenAuthors`, value.hiddenAuthors, authorRuleProblem);
   checkStringList(issues, `${path}.testSyntaxes`, value.testSyntaxes, testSyntaxProblem);
   checkStringList(issues, `${path}.reviewBots`, value.reviewBots, authorRuleProblem);
-  checkStringList(issues, `${path}.apiTriggerBots`, value.apiTriggerBots, (id) => (API_TRIGGER_BOT_ID.test(id) ? null : `"${id}" is not a review bot id (lowercase letters, digits and dashes).`));
   checkStringList(issues, `${path}.enterpriseHosts`, value.enterpriseHosts, hostProblem);
   return issues;
 }

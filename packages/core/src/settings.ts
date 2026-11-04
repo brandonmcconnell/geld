@@ -142,13 +142,6 @@ export interface GeldSettings {
    */
   readonly reviewBots: readonly string[];
   /**
-   * Review bots that Rerun and Request a review start through the Geld
-   * Action's `/geld run <bot>` command (the bot's own API) instead of its tag
-   * comment, on repositories whose Geld workflow names a key for that bot.
-   * Bot ids (`API_TRIGGER_BOT_IDS` in `@geld/review`, the options of the settings field); none by default.
-   */
-  readonly apiTriggerBots: readonly string[];
-  /**
    * The master switch for every AI feature. Off, the gateway settings below
    * stay as they are and nothing is ever requested; on, they take effect once
    * a gateway URL, key and model are all set (otherwise it behaves as off).
@@ -202,9 +195,6 @@ export function isCompactTimelineMode(value: unknown): value is CompactTimelineM
   return typeof value === 'string' && COMPACT_TIMELINE_MODES.some((mode) => mode === value);
 }
 
-/** The shape of a bot id in {@link GeldSettings.apiTriggerBots}. */
-export const API_TRIGGER_BOT_ID = /^[a-z][a-z0-9-]*$/;
-
 export const DEFAULT_SETTINGS: GeldSettings = {
   enabled: true,
   categories: {},
@@ -234,7 +224,6 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   collapseDescription: true,
   quickReview: true,
   reviewBots: [],
-  apiTriggerBots: [],
   aiEnabled: false,
   aiBaseUrl: '',
   aiModel: '',
@@ -490,8 +479,6 @@ export function normalizeSettings(value: unknown): GeldSettings {
     collapseDescription: bool(record, 'collapseDescription', DEFAULT_SETTINGS.collapseDescription),
     quickReview: bool(record, 'quickReview', DEFAULT_SETTINGS.quickReview),
     reviewBots: isStringArray(record.reviewBots) ? record.reviewBots : DEFAULT_SETTINGS.reviewBots,
-    // Well-formed ids this build does not know are kept: a newer Geld may have written them.
-    apiTriggerBots: isStringArray(record.apiTriggerBots) ? [...new Set(record.apiTriggerBots.filter((id) => API_TRIGGER_BOT_ID.test(id)))] : DEFAULT_SETTINGS.apiTriggerBots,
     aiEnabled: bool(record, 'aiEnabled', DEFAULT_SETTINGS.aiEnabled),
     aiBaseUrl: typeof record.aiBaseUrl === 'string' ? normalizeAiBaseUrl(record.aiBaseUrl) : DEFAULT_SETTINGS.aiBaseUrl,
     issueTracker:parseIssueTracker(record.issueTracker),

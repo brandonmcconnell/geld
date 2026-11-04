@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from './settings';
-import { SETTINGS_SCHEMA, checklistFields, fieldsFor, listFields, plainText, sectionsFor, splitInlineCode, toggleFields, choiceFields, textFields } from './settings-schema';
+import { SETTINGS_SCHEMA, fieldsFor, listFields, plainText, sectionsFor, splitInlineCode, toggleFields, choiceFields, textFields } from './settings-schema';
 
 const allFields = SETTINGS_SCHEMA.flatMap((section) => section.fields);
 
@@ -10,15 +10,13 @@ describe('SETTINGS_SCHEMA', () => {
       .filter(([, value]) => typeof value === 'boolean')
       .map(([key]) => key)
       .sort();
-    // Line lists only: customCategories is a list of objects with its own field kind, checklists pick ids.
-    const checklistKeys = checklistFields(allFields).map((field) => field.key);
+    // Line lists only: customCategories is a list of objects with its own field kind.
     const listKeys = Object.entries(DEFAULT_SETTINGS)
-      .filter(([key, value]) => Array.isArray(value) && key !== 'customCategories' && !checklistKeys.some((checklist) => checklist === key))
+      .filter(([key, value]) => Array.isArray(value) && key !== 'customCategories')
       .map(([key]) => key)
       .sort();
     expect(toggleFields(allFields).map((field) => field.key).sort()).toEqual(booleanKeys);
     expect(listFields(allFields).map((field) => field.key).sort()).toEqual(listKeys);
-    expect(checklistKeys).toEqual(['apiTriggerBots']);
   });
 
   it('covers categories and custom categories with one field each', () => {

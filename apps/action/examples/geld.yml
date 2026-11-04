@@ -97,7 +97,7 @@ jobs:
             if (comment.user.type === 'Bot') return core.notice('Ignored: trigger comments from bots are not run.');
             const { data: access } = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username: comment.user.login });
             if (access.permission !== 'admin' && access.permission !== 'write') {
-              await react('confused');
+              await react('-1');
               return core.setFailed(`${comment.user.login} needs write access to start review bots.`);
             }
 
@@ -105,13 +105,13 @@ jobs:
             const known = ['greptile', 'bugbot', 'devin'];
             const match = /^\/geld[ \t]+run[ \t]+([a-z][a-z0-9-]*(?:[ \t,]+[a-z][a-z0-9-]*)*)[ \t]*$/i.exec(comment.body.trim());
             if (match === null) {
-              await react('confused');
+              await react('-1');
               return core.setFailed(`The command must be the whole comment, on one line: /geld run ${known.join(' | ')}`);
             }
             const bots = [...new Set(match[1].toLowerCase().split(/[ \t,]+/).filter(Boolean))];
             const unknown = bots.filter((bot) => !known.includes(bot));
             if (unknown.length > 0) {
-              await react('confused');
+              await react('-1');
               return core.setFailed(`Unknown bot (${unknown.join(', ')}). Use: /geld run ${known.join(' | ')}`);
             }
 
@@ -198,5 +198,5 @@ jobs:
             const failed = results.flatMap((result, index) => (result.status === 'rejected' ? [`${bots[index]}: ${result.reason.message}`] : []));
             // The bots' APIs act for the organization the key belongs to, so who asked is recorded here, with the run.
             for (const [index, result] of results.entries()) if (result.status === 'fulfilled') core.info(`${bots[index]}: review queued for ${comment.user.login}`);
-            await react(failed.length === 0 ? 'rocket' : 'confused');
+            await react(failed.length === 0 ? 'rocket' : '-1');
             if (failed.length > 0) core.setFailed(failed.join('\n'));

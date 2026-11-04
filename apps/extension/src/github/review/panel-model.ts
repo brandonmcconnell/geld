@@ -31,8 +31,8 @@ export interface RepoBotsHint {
   readonly configured: ReadonlyMap<string, string>;
   /**
    * Bot id → the comment that starts it through the Geld workflow instead
-   * of its tag comment (`/geld run greptile`): the reader turned it on and
-   * the repository's workflow names a key for the bot.
+   * of its tag comment (`/geld run greptile`), for each bot the repository's
+   * Geld workflow names a secret for.
    */
   readonly apiTriggers: ReadonlyMap<string, string>;
 }

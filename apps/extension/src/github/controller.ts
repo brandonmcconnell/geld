@@ -923,14 +923,13 @@ export class GeldController {
   }
 
   /**
-   * The bots the reader asked to start by API (`apiTriggerBots`) that this
-   * repository's Geld workflow has a key for, each with its `/geld run`
-   * command. The workflow is only read once a bot is turned on.
+   * The bots this repository's Geld workflow can start by API (it names the
+   * secret holding the bot's key), each with its `/geld run` command: the
+   * repository decides, so it can differ from one repository to the next.
    */
   private apiTriggers(repo: string): ReadonlyMap<string, string> {
-    if (this.settings.apiTriggerBots.length === 0) return new Map();
     const workflow = this.repoConfigs.workflowTriggers(window.location.origin, repo);
-    return new Map(this.settings.apiTriggerBots.filter((id) => workflow.bots.has(id)).map((id) => [id, geldRunCommand([id])]));
+    return new Map([...workflow.bots].map((id) => [id, geldRunCommand([id])]));
   }
 
   /** Refresh {@link diffFacts} for this page (requesting the diff if it is not here yet; the source re-runs apply when it lands). */

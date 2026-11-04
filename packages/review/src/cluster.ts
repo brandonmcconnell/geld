@@ -22,7 +22,7 @@ export interface RawComment {
   readonly threadAnchors?: readonly ThreadPeer[];
   /** Who reacted to the comment, by login, when the page says (a bot's 👍 on a trigger is its acknowledgement). */
   readonly reactedBy?: readonly string[];
-  /** The same reactions with what each was, as GitHub names it ("rocket", "confused", "thumbs up"). */
+  /** The same reactions with what each was, as GitHub names it ("rocket", "thumbs down", "thumbs up"). */
   readonly reactions?: readonly CommentReaction[];
 }
 

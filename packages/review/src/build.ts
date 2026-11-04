@@ -38,7 +38,7 @@ export interface RawIssueComment {
   readonly createdAt: string;
   /** When it was last rewritten, ISO (the API's `lastEditedAt`): a bot that re-reviews into the same comment reports by editing it. */
   readonly editedAt?: string;
-  /** Its reactions: the Geld workflow's 🚀 or 😕 is its answer to a `/geld run` command (see `geldRunAnswer`). */
+  /** Its reactions: the Geld workflow's 🚀 or 👎 is its answer to a `/geld run` command (see `geldRunAnswer`). */
   readonly reactions?: readonly CommentReaction[];
 }
 

@@ -180,7 +180,7 @@ interface GqlComment {
   readonly createdAt: string;
   /** Issue comments only (the query asks for it there); null when never edited. */
   readonly lastEditedAt?: string | null;
-  /** Issue comments only: the Geld workflow answers a `/geld run` command with a 🚀 or a 😕 reaction. */
+  /** Issue comments only: the Geld workflow answers a `/geld run` command with a 🚀 or a 👎 reaction. */
   readonly reactionGroups?: readonly GqlReactionGroup[] | null;
 }
 

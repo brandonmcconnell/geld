@@ -814,9 +814,9 @@ describe('bots + prompts', () => {
     expect(isTriggerComment('/geld run greptile bugbot')).toBe(true);
     expect(botByTrigger('/geld run devin')?.id).toBe('devin');
     expect(botsTriggeredBy('/geld run greptile bugbot').map((bot) => `${bot.id}:${bot.login}`)).toEqual(['greptile:greptile-apps[bot]', 'bugbot:cursor[bot]']);
-    // Only an App's reaction is the workflow's answer, and a 😕 wins over a 🚀 (one of several bots was not queued).
+    // Only an App's reaction is the workflow's answer, and a 👎 wins over a 🚀 (one of several bots was not queued).
     expect(geldRunAnswer({ reactions: [{ login: 'github-actions[bot]', emoji: 'rocket' }] })).toBe('queued');
-    expect(geldRunAnswer({ reactions: [{ login: 'github-actions[bot]', emoji: 'rocket' }, { login: 'github-actions[bot]', emoji: 'confused' }] })).toBe('failed');
+    expect(geldRunAnswer({ reactions: [{ login: 'github-actions[bot]', emoji: 'rocket' }, { login: 'github-actions[bot]', emoji: 'thumbs down' }] })).toBe('failed');
     expect(geldRunAnswer({ reactions: [{ login: 'brandonmcconnell', emoji: 'rocket' }] })).toBeNull();
     // A workflow offers a bot only when it names the secret holding the bot's key; the copied file names none.
     const workflow = (greptile: string, bugbot: string): string =>
@@ -836,9 +836,9 @@ describe('bots + prompts', () => {
     // Greptile never reacts to the command (the workflow asked it by API): the workflow's 🚀 is its acknowledgement.
     expect(byId(verdictsFrom([], [summary, queued], 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'running', sourceId: 'issuecomment-3' });
     expect(byId(verdictsFrom([], [summary, { ...command, createdAt: at(1) }], 'aaa', [], now), 'greptile')?.verdict).toBe('running');
-    // No answer after the grace (no workflow, or no key for the bot) and a 😕 are no run: the earlier verdict stands.
+    // No answer after the grace (no workflow, or no key for the bot) and a 👎 are no run: the earlier verdict stands.
     expect(byId(verdictsFrom([], [summary, command], 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'clean', sourceId: 'issuecomment-1' });
-    expect(byId(verdictsFrom([], [summary, { ...command, createdAt: at(1), reactions: [{ login: 'github-actions[bot]', emoji: 'confused' }] }], 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'clean', sourceId: 'issuecomment-1' });
+    expect(byId(verdictsFrom([], [summary, { ...command, createdAt: at(1), reactions: [{ login: 'github-actions[bot]', emoji: 'thumbs down' }] }], 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'clean', sourceId: 'issuecomment-1' });
     // The bot's report ends the run, as for its own tag comment.
     const rewritten = { ...summary, body: 'Confidence Score: 4/5\nFound 1 issue.\nReviews (2)', editedAt: at(1) };
     expect(byId(verdictsFrom([], [rewritten, queued], 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'findings', score: 4, sourceId: 'issuecomment-1' });

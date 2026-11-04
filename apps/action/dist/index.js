@@ -2628,8 +2628,6 @@ function normalizeSettings(value) {
     collapseDescription: bool(record4, "collapseDescription", DEFAULT_SETTINGS.collapseDescription),
     quickReview: bool(record4, "quickReview", DEFAULT_SETTINGS.quickReview),
     reviewBots: isStringArray(record4.reviewBots) ? record4.reviewBots : DEFAULT_SETTINGS.reviewBots,
-    // Well-formed ids this build does not know are kept: a newer Geld may have written them.
-    apiTriggerBots: isStringArray(record4.apiTriggerBots) ? [...new Set(record4.apiTriggerBots.filter((id) => API_TRIGGER_BOT_ID.test(id)))] : DEFAULT_SETTINGS.apiTriggerBots,
     aiEnabled: bool(record4, "aiEnabled", DEFAULT_SETTINGS.aiEnabled),
     aiBaseUrl: typeof record4.aiBaseUrl === "string" ? normalizeAiBaseUrl(record4.aiBaseUrl) : DEFAULT_SETTINGS.aiBaseUrl,
     issueTracker: parseIssueTracker(record4.issueTracker),
@@ -2692,7 +2690,7 @@ function withCustomCategory(settings, custom2) {
 function withCategoryEnabled(settings, id, enabled) {
   return id === "large" ? { ...settings, hideLargeDiffs: enabled } : { ...settings, categories: { ...settings.categories, [id]: enabled } };
 }
-var SUGGESTED_FIX_MODES, REPO_CONFIG_MODES, REVIEW_GROUPINGS, COMPACT_TIMELINE_MODES, API_TRIGGER_BOT_ID, DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY, CATEGORY_ORDER;
+var SUGGESTED_FIX_MODES, REPO_CONFIG_MODES, REVIEW_GROUPINGS, COMPACT_TIMELINE_MODES, DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY, CATEGORY_ORDER;
 var init_settings = __esm({
   "../../packages/core/src/settings.ts"() {
     "use strict";
@@ -2704,7 +2702,6 @@ var init_settings = __esm({
     REPO_CONFIG_MODES = ["always", "ask", "never"];
     REVIEW_GROUPINGS = ["type", "batch"];
     COMPACT_TIMELINE_MODES = ["off", "compact", "minimal"];
-    API_TRIGGER_BOT_ID = /^[a-z][a-z0-9-]*$/;
     DEFAULT_SETTINGS = {
       enabled: true,
       categories: {},
@@ -2734,7 +2731,6 @@ var init_settings = __esm({
       collapseDescription: true,
       quickReview: true,
       reviewBots: [],
-      apiTriggerBots: [],
       aiEnabled: false,
       aiBaseUrl: "",
       aiModel: "",
@@ -2955,7 +2951,6 @@ function collectSettingsIssues(value, path = "settings", catalog = BUNDLED_CATAL
   checkStringList(issues, `${path}.hiddenAuthors`, value.hiddenAuthors, authorRuleProblem);
   checkStringList(issues, `${path}.testSyntaxes`, value.testSyntaxes, testSyntaxProblem);
   checkStringList(issues, `${path}.reviewBots`, value.reviewBots, authorRuleProblem);
-  checkStringList(issues, `${path}.apiTriggerBots`, value.apiTriggerBots, (id) => API_TRIGGER_BOT_ID.test(id) ? null : `"${id}" is not a review bot id (lowercase letters, digits and dashes).`);
   checkStringList(issues, `${path}.enterpriseHosts`, value.enterpriseHosts, hostProblem);
   return issues;
 }
@@ -11073,9 +11068,6 @@ function toggleFields(fields) {
 function choiceFields(fields) {
   return fields.filter((field) => field.kind === "choice");
 }
-function checklistFields(fields) {
-  return fields.filter((field) => field.kind === "checklist");
-}
 function listFields(fields) {
   return fields.filter((field) => field.kind === "list");
 }
@@ -11439,18 +11431,6 @@ var init_settings_schema = __esm({
             saveLabel: "Save bots"
           },
           {
-            kind: "checklist",
-            key: "apiTriggerBots",
-            label: "Start review bots by API",
-            description: "For a bot that is not answering its tag comment. On a repository whose Geld workflow names a key for the bot, Rerun and Request a review post `/geld run <bot>` and the workflow starts the bot through its own API. Elsewhere they post the bot\u2019s usual comment.",
-            popup: false,
-            options: [
-              { value: "greptile", label: "Greptile", description: "Through Greptile\u2019s `trigger_code_review` API." },
-              { value: "bugbot", label: "Bugbot", description: "Through Cursor\u2019s Bugbot review API (Cursor Enterprise)." },
-              { value: "devin", label: "Devin", description: "Through Devin\u2019s PR review API." }
-            ]
-          },
-          {
             kind: "choice",
             key: "suggestedFixes",
             label: "Suggested fixes",
@@ -11635,7 +11615,6 @@ var init_diff_hunks = __esm({
 // ../../packages/core/src/index.ts
 var src_exports = {};
 __export(src_exports, {
-  API_TRIGGER_BOT_ID: () => API_TRIGGER_BOT_ID,
   AUTHOR_SOURCE_KINDS: () => AUTHOR_SOURCE_KINDS,
   BUILT_IN_TEST_SYNTAXES: () => BUILT_IN_TEST_SYNTAXES,
   BUNDLED_CATALOG: () => BUNDLED_CATALOG,
@@ -11698,7 +11677,6 @@ __export(src_exports, {
   checkCategoryPatterns: () => checkCategoryPatterns,
   checkCustomCategories: () => checkCustomCategories,
   checkStringList: () => checkStringList,
-  checklistFields: () => checklistFields,
   choiceFields: () => choiceFields,
   collectRepoConfigIssues: () => collectRepoConfigIssues,
   collectSettingsIssues: () => collectSettingsIssues,
@@ -32500,7 +32478,7 @@ function geldRunBots(body) {
 }
 function geldRunAnswer(comment) {
   const fromApps = (comment.reactions ?? []).filter((reaction) => /\[bot\]$/i.test(reaction.login) || reaction.login.toLowerCase() === "github-actions");
-  if (fromApps.some((reaction) => reaction.emoji.toLowerCase() === "confused")) return "failed";
+  if (fromApps.some((reaction) => reaction.emoji.toLowerCase() === "thumbs down")) return "failed";
   if (fromApps.some((reaction) => reaction.emoji.toLowerCase() === "rocket")) return "queued";
   return null;
 }

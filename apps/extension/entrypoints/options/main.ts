@@ -859,40 +859,6 @@ async function main(): Promise<void> {
       });
       reviewBotsArea = area;
       block([head, area, el('div', 'geld-row options__actions', [statusEl, save])]);
-    } else if (field.kind === 'checklist') {
-      const { label, help } = fieldHead(field);
-      const boxes = new Map<string, HTMLInputElement>();
-      const rows = field.options.map((option) => {
-        const checkbox = el('input', 'geld-checkbox options__checkbox');
-        checkbox.type = 'checkbox';
-        checkbox.checked = settings[field.key].includes(option.value);
-        checkbox.addEventListener('change', async () => {
-          settings = await settingsItem.update((current) => {
-            const others = current[field.key].filter((id) => id !== option.value);
-            return { [field.key]: checkbox.checked ? [...others, option.value] : others };
-          });
-          reviewSaved('Saved', 'success');
-        });
-        boxes.set(option.value, checkbox);
-        const text = el('span', '', [el('span', 'options__group-title', [option.label]), el('span', 'options__group-description', richText(option.description))]);
-        return el('div', 'options__group options__group--static', [el('label', 'options__group-heading options__group-heading--checkbox', [checkbox, text])]);
-      });
-      const count = el('span', 'options__customised');
-      const showCount = (): void => {
-        const on = field.options.filter((option) => settings[field.key].includes(option.value)).map((option) => option.label);
-        count.textContent = on.join(' · ');
-      };
-      showCount();
-      // Starts closed: each bot is opt-in, and the help above says what turning one on does.
-      const card = el('details', 'options__category', [
-        el('summary', 'options__category-summary', [el('span', 'options__chevron', ['\u203a']), el('div', 'options__category-text', [label, help]), count]),
-        el('div', 'options__advanced', rows),
-      ]);
-      block([card]);
-      choiceSetters.push((next) => {
-        for (const [value, checkbox] of boxes) checkbox.checked = next[field.key].includes(value);
-        count.textContent = field.options.filter((option) => next[field.key].includes(option.value)).map((option) => option.label).join(' · ');
-      });
     }
   }
 

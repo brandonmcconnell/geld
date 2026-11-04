@@ -1007,9 +1007,9 @@ export interface BotComment {
    */
   readonly reactedBy?: readonly string[];
   /**
-   * The same reactions with what each was ("rocket", "confused"): the Geld
+   * The same reactions with what each was ("rocket", "thumbs down"): the Geld
    * workflow answers a `/geld run` command with 🚀 when the bots were queued
-   * and 😕 when one was not (see {@link geldRunAnswer}).
+   * and 👎 when one was not (see {@link geldRunAnswer}).
    */
   readonly reactions?: readonly CommentReaction[];
   /**
@@ -1248,7 +1248,7 @@ export function verdictsFrom(
     // Greptile just the same, though never itself: a bot's own trigger phrase in its own words is not a request.
     if (comment.resolved === undefined && isTriggerComment(comment.body, extraLogins)) {
       const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
-      // `/geld run <bot>` is answered by the Geld workflow, not the bot: its 🚀 is the bot taking the run, its 😕 (a
+      // `/geld run <bot>` is answered by the Geld workflow, not the bot: its 🚀 is the bot taking the run, its 👎 (a
       // missing key, a refusal) or no answer after the grace (no workflow on this repository) is no run at all.
       const viaWorkflow = geldRunBots(comment.body).length > 0;
       const workflow = viaWorkflow ? geldRunAnswer(comment) : null;
@@ -1684,8 +1684,7 @@ export function rerunTriggerFor(botId: string): string | null {
 
 /**
  * The review bots the Geld workflow's `trigger` job can start through their
- * own APIs. Kept in step with that job in `apps/action/examples/geld.yml` and
- * the `apiTriggerBots` settings field's options.
+ * own APIs. Kept in step with that job in `apps/action/examples/geld.yml`.
  */
 export const API_TRIGGER_BOT_IDS: readonly string[] = ['greptile', 'bugbot', 'devin'];
 
@@ -1726,13 +1725,13 @@ export function workflowApiTriggerBots(text: string): ReadonlySet<string> {
 
 /**
  * What the Geld workflow said about a `/geld run` comment, from its
- * reaction: 🚀 every bot was queued, 😕 one was not. A reaction from a
+ * reaction: 🚀 every bot was queued, 👎 one was not. A reaction from a
  * person is not the workflow's: only an App's counts (the workflow reacts
  * as `github-actions[bot]`, or as the App whose token it was given).
  */
 export function geldRunAnswer(comment: Pick<BotComment, 'reactions'>): 'queued' | 'failed' | null {
   const fromApps = (comment.reactions ?? []).filter((reaction) => /\[bot\]$/i.test(reaction.login) || reaction.login.toLowerCase() === 'github-actions');
-  if (fromApps.some((reaction) => reaction.emoji.toLowerCase() === 'confused')) return 'failed';
+  if (fromApps.some((reaction) => reaction.emoji.toLowerCase() === 'thumbs down')) return 'failed';
   if (fromApps.some((reaction) => reaction.emoji.toLowerCase() === 'rocket')) return 'queued';
   return null;
 }
