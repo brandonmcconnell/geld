@@ -132,15 +132,18 @@ export class RepoConfigSource {
     catalog: Catalog = BUNDLED_CATALOG,
   ) {
     this.catalog = catalog;
-    void cacheItem.getValue().then((value) => {
-      const clean: CacheMap = {};
-      const now = Date.now();
-      for (const [key, entry] of Object.entries(value)) if (isCachedFile(entry) && now - entry.at < TTL_MS) clean[key] = entry;
-      this.persistent = clean;
-      this.cacheReady = true;
-      if (Object.keys(clean).length !== Object.keys(value).length) persist(cacheItem.setValue(clean));
-      this.onChange();
-    });
+    void cacheItem.getValue().then(
+      (value) => {
+        const clean: CacheMap = {};
+        const now = Date.now();
+        for (const [key, entry] of Object.entries(value)) if (isCachedFile(entry) && now - entry.at < TTL_MS) clean[key] = entry;
+        this.persistent = clean;
+        this.cacheReady = true;
+        if (Object.keys(clean).length !== Object.keys(value).length) persist(cacheItem.setValue(clean));
+        this.onChange();
+      },
+      () => undefined,
+    );
   }
 
   /** A new catalog changes which group keys are valid; parse everything again. */
