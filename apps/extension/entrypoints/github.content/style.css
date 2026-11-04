@@ -2580,8 +2580,25 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   gap: 10px;
 }
 
+/* 16px tall in the 40px strip leaves 12px above and below, so it sits 12px from the left too, inside the 16px padding. */
 .geld-review__brand {
-  font-weight: 600;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin-left: -4px;
+}
+
+.geld-review__brand svg {
+  display: block;
+  width: auto;
+  height: 16px;
+}
+
+/* `::selection` never paints the wordmark, so while selected (`syncBrandSelection`) it wears the colours the browser
+   gives selected text on GitHub, which sets no selection style of its own. */
+.geld-review__brand[data-geld-selected] {
+  background-color: Highlight;
+  color: HighlightText;
 }
 
 .geld-review__progress {
