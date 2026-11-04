@@ -254,7 +254,9 @@ export async function evaluateDecision(options: EvaluateOptions): Promise<JevRes
   const timer = controller === null || options.timeoutMs === undefined ? null : setTimeout(() => controller.abort(), options.timeoutMs);
   try {
     const openai = route.wire === 'openai' ? openAiDecisionsBody(options.request) : null;
-    const response = await options.fetch(route.url, {
+    // Detached first: a browser's native fetch called as `options.fetch(…)` throws "Illegal invocation".
+    const fetchImpl = options.fetch;
+    const response = await fetchImpl(route.url, {
       method: 'POST',
       headers: { authorization: `Bearer ${options.apiKey}`, 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify(openai === null ? options.request : openai.body),

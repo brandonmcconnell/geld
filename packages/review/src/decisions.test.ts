@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { candidatePairs, classificationRequests, doneFrom, doneKey, laneKey, lanesFrom, pairKey, previewStatusesFrom, previewStatusKey, sameProblemGroups, sameProblemRequest, withSameProblem } from './decisions';
-import { decisionModelsIn, decisionModelsPath, decisionRoute, defaultDecisionModel, isEvaluationModel, jevModelFor, jevModelIn, openAiDecisionsBody, parseJevResponse, parseOpenAiDecisions } from './jev';
+import { decisionModelsIn, decisionModelsPath, decisionRoute, defaultDecisionModel, evaluateDecision, isEvaluationModel, jevModelFor, jevModelIn, openAiDecisionsBody, parseJevResponse, parseOpenAiDecisions } from './jev';
 import type { ConsolidateInputItem } from './prompts';
 
 const item = (id: string, path: string, title = `Finding ${id}`): ConsolidateInputItem => ({ id, title, path, sources: [`c-${id}`], excerpts: [`${title} said at length`], wantFix: false });
@@ -190,4 +190,14 @@ describe('preview status decisions', () => {
     });
     expect([...statuses.entries()]).toEqual([['p1', 'ready'], ['p2', 'unknown']]);
   });
+});
+
+it('calls the given fetch on its own, as a browser requires of its native fetch', async () => {
+  const nativeLike = function (this: unknown, url: string): Promise<Response> {
+    if (this !== undefined && this !== globalThis) return Promise.reject(new TypeError("Failed to execute 'fetch' on 'WorkerGlobalScope': Illegal invocation"));
+    return Promise.resolve(Response.json(url.endsWith('/v1/decisions') ? { answers: [{ type: 'predicate', name: 'q0', probability: 0.7 }] } : { answers: { a: { type: 'noul', noul: 0.9 } } }));
+  };
+  const request = { model: 'typesafe-ai/jev', state: 'Fixture', questions: { a: { type: 'noul' as const, instructions: 'Yes?' } } };
+  expect(await evaluateDecision({ fetch: nativeLike, baseUrl: 'https://ai-gateway.vercel.sh', apiKey: 'synthetic', request })).toEqual({ ok: true, model: '', answers: { a: { type: 'noul', noul: 0.9 } } });
+  expect(await evaluateDecision({ fetch: nativeLike, baseUrl: 'https://ai-gateway.vercel.sh', apiKey: 'synthetic', request: { ...request, model: 'liquid/d1' } })).toEqual({ ok: true, model: '', answers: { a: { type: 'noul', noul: 0.7 } } });
 });
