@@ -33120,6 +33120,8 @@ function tableRowFor(doc, project) {
 }
 var MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 function vercelRowTime(row) {
+  const exact = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z\b/.exec(row);
+  if (exact !== null && !Number.isNaN(Date.parse(exact[0]))) return new Date(exact[0]).toISOString();
   const match = /\b([A-Z][a-z]{2}) (\d{1,2}), (\d{4}) (\d{1,2}):(\d{2})(am|pm) UTC\b/.exec(row);
   if (match === null) return void 0;
   const [, monthName = "", day = "", year = "", hour = "", minute = "", half = ""] = match;
@@ -33326,7 +33328,7 @@ function previewDocFromMarkdown(author, anchor2, markdown, updatedAt) {
   }
   for (const match of markdown.matchAll(/(?<!!)\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g)) links.push({ text: match[1]?.replace(/<[^>]+>/g, "").trim() ?? "", href: match[2] ?? "" });
   for (const match of markdown.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) links.push({ href: match[1] ?? "", text: (match[2] ?? "").replace(/<[^>]+>/g, "").trim() });
-  const text = markdown.split(/\r?\n/).map((line) => line.trimStart().startsWith("|") ? line.replace(/<br\s*\/?>/gi, " ") : line).join("\n").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(tr|p|li|h[1-6]|div|details|summary)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+  const text = markdown.split(/\r?\n/).map((line) => line.trimStart().startsWith("|") ? line.replace(/<br\s*\/?>/gi, " ").replace(/<relative-time\b[^>]*\bdatetime=["']([^"']+)["'][^>]*>[\s\S]*?<\/relative-time>/gi, "$1") : line).join("\n").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(tr|p|li|h[1-6]|div|details|summary)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
   const doc = { author, anchor: anchor2, text, links, images };
   return updatedAt === void 0 ? doc : { ...doc, updatedAt };
 }

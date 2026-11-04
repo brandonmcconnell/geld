@@ -170,8 +170,10 @@ function tableRowFor(doc: PreviewDoc, project: string): string | null {
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
-/** A Vercel row's Updated cell ("Nov 4, 2026 12:26am UTC") as ISO: the project's last deployment, which the page shows nowhere else for a comment edited in place. */
+/** A Vercel row's Updated cell as ISO, the project's last deployment, which the page shows nowhere else for a comment edited in place: its `relative-time`'s exact `datetime`, which both readers put in the row, else its words ("Nov 4, 2026 12:26am UTC"), which drop the seconds. */
 function vercelRowTime(row: string): string | undefined {
+  const exact = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z\b/.exec(row);
+  if (exact !== null && !Number.isNaN(Date.parse(exact[0]))) return new Date(exact[0]).toISOString();
   const match = /\b([A-Z][a-z]{2}) (\d{1,2}), (\d{4}) (\d{1,2}):(\d{2})(am|pm) UTC\b/.exec(row);
   if (match === null) return undefined;
   const [, monthName = '', day = '', year = '', hour = '', minute = '', half = ''] = match;
@@ -471,10 +473,11 @@ export function previewDocFromMarkdown(author: string, anchor: string, markdown:
   }
   for (const match of markdown.matchAll(/(?<!!)\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g)) links.push({ text: match[1]?.replace(/<[^>]+>/g, '').trim() ?? '', href: match[2] ?? '' });
   for (const match of markdown.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) links.push({ href: match[1] ?? '', text: (match[2] ?? '').replace(/<[^>]+>/g, '').trim() });
-  // A <br> inside a markdown table cell stays on the row's line; anywhere else it is a line break.
+  // A <br> inside a markdown table cell stays on the row's line; anywhere else it is a line break. A time in a row is
+  // its `datetime`, as the page's reader writes it (`textWithTableRows`), since its words drop the seconds.
   const text = markdown
     .split(/\r?\n/)
-    .map((line) => (line.trimStart().startsWith('|') ? line.replace(/<br\s*\/?>/gi, ' ') : line))
+    .map((line) => (line.trimStart().startsWith('|') ? line.replace(/<br\s*\/?>/gi, ' ').replace(/<relative-time\b[^>]*\bdatetime=["']([^"']+)["'][^>]*>[\s\S]*?<\/relative-time>/gi, '$1') : line))
     .join('\n')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(tr|p|li|h[1-6]|div|details|summary)>/gi, '\n')

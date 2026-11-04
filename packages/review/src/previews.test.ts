@@ -109,10 +109,10 @@ describe('Vercel deployments that never ran, and when each row deployed', () => 
 
   it('takes each row its Updated time, from the header and from the table alone', () => {
     const fromHeader = parse('vercel-monorepo', 'vercel[bot]');
-    expect(fromHeader.find((entry) => entry.project === 'geld-site')).toMatchObject({ status: 'ready', updatedAt: '2026-11-04T00:26:00.000Z' });
+    expect(fromHeader.find((entry) => entry.project === 'geld-site')).toMatchObject({ status: 'ready', updatedAt: '2026-11-04T00:26:50.469Z' });
     const table = fixture('vercel-monorepo').replace(/^\[vc\]:.*$/m, '');
     const fromTable = parsePreviews(previewDocFromMarkdown('vercel[bot]', 'issuecomment-1', table, '2026-11-03T11:13:26Z'));
-    expect(fromTable.find((entry) => entry.project === 'geld-site')).toMatchObject({ status: 'ready', url: 'https://geld-site-git-cursor-site-copy-code-review-896d-dreamthinkbuild.vercel.app', updatedAt: '2026-11-04T00:26:00.000Z' });
+    expect(fromTable.find((entry) => entry.project === 'geld-site')).toMatchObject({ status: 'ready', url: 'https://geld-site-git-cursor-site-copy-code-review-896d-dreamthinkbuild.vercel.app', updatedAt: '2026-11-04T00:26:50.469Z' });
   });
 
   it('keeps the summary Vercel edited after a notice posted below it (#367)', () => {
@@ -123,6 +123,20 @@ describe('Vercel deployments that never ran, and when each row deployed', () => 
     const { latest, archived } = latestPreviews([...summary, ...notice]);
     expect(latest.find((entry) => entry.project === 'geld-site')).toMatchObject({ status: 'ready', anchor: 'issuecomment-1' });
     expect(archived.map((entry) => `${entry.project} ${entry.status}`)).toEqual(['geld-site failed']);
+  });
+
+  it('orders a deployment and a notice within the same minute by the second', () => {
+    const table = fixture('vercel-monorepo').replace(/^\[vc\]:.*$/m, '');
+    const summary = parsePreviews(previewDocFromMarkdown('vercel[bot]', 'issuecomment-1', table, '2026-11-03T11:13:26Z'));
+    const notice = parsePreviews(previewDocFromMarkdown('vercel[bot]', 'issuecomment-2', fixture('vercel-rate-limited'), '2026-11-04T00:26:22Z'));
+    expect(latestPreviews([...summary, ...notice]).latest.find((entry) => entry.project === 'geld-site')).toMatchObject({ status: 'ready', anchor: 'issuecomment-1' });
+  });
+
+  it('shows a failure that came after the last deployment, not the deployment before it', () => {
+    const table = fixture('vercel-monorepo').replace(/^\[vc\]:.*$/m, '');
+    const summary = parsePreviews(previewDocFromMarkdown('vercel[bot]', 'issuecomment-1', table, '2026-11-03T11:13:26Z'));
+    const notice = parsePreviews(previewDocFromMarkdown('vercel[bot]', 'issuecomment-2', fixture('vercel-rate-limited'), '2026-11-04T01:10:00Z'));
+    expect(latestPreviews([...summary, ...notice]).latest.find((entry) => entry.project === 'geld-site')).toMatchObject({ status: 'failed', anchor: 'issuecomment-2', reason: 'Vercel rate limited this deployment' });
   });
 });
 
