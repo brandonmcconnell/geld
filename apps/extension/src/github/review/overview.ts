@@ -2133,6 +2133,15 @@ function withRerun(byline: ChatByline, author: string, anchor: string, meta: Gel
 }
 
 /** Geld's Rerun for a bot with a trigger phrase (none: the control cannot ask, so there is none). */
+/** The bots the latest panel shows running, kept for controls that outlive the panel they were drawn with. */
+let runningBots: ReadonlySet<string> = new Set();
+
+/** Whether bot `id` is running: by the latest panel's verdicts, or a Rerun a moment ago. */
+function botRunningNow(id: string): boolean {
+  const pending = visit.rerunPending.get(id);
+  return runningBots.has(id) || (pending !== undefined && Date.now() - pending < RERUN_PENDING_MS);
+}
+
 function rerunFor(id: string, author: string, meta: GeldPrMeta, reapply: () => void): ChatRerun | null {
   const trigger = rerunTriggerFor(id);
   if (trigger === null) return null;
@@ -2141,6 +2150,7 @@ function rerunFor(id: string, author: string, meta: GeldPrMeta, reapply: () => v
   return {
     bot: botTitle(id, author),
     running,
+    isRunning: () => botRunningNow(id),
     onRerun: () => {
       visit.rerunPending.set(id, Date.now());
       void postTopLevelComments([trigger]).then(() => reapplySoon());
@@ -3575,6 +3585,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       showLogins(mounted.root);
     });
   }
+  runningBots = new Set(meta.bots.filter((bot) => bot.verdict === 'running').map((bot) => bot.id));
   setHoverProvider((row) => hoverPreviewFor(row, meta, groups, panelHandlers));
   setWhoProvider((login) => whoCardFor(login, meta, model));
   setReportProvider((anchor) => reportCardFor(anchor, model, panelHandlers));
@@ -3694,6 +3705,7 @@ export function teardownReviewOverview(): void {
   hideHoverCard();
   releaseHold();
   setHoverProvider(null);
+  runningBots = new Set();
   setWhoProvider(null);
   setReportProvider(null);
   unwatchLoans();

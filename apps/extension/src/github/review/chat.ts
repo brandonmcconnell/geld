@@ -257,6 +257,11 @@ export interface ChatRerun {
   readonly running: boolean;
   /** Post the bot's trigger comment. */
   readonly onRerun: () => void;
+  /**
+   * Whether the bot is running now, read at the click: a control drawn while it was idle can outlive that (a hover
+   * card stays open over a rebuilt panel), and must still ask before posting a second trigger.
+   */
+  readonly isRunning?: () => boolean;
 }
 
 /**
@@ -379,11 +384,12 @@ function rerunControl(rerun: ChatRerun): HTMLElement {
   };
   button.addEventListener('click', (event) => {
     event.stopPropagation();
-    if (!button.hasAttribute('data-running')) {
+    if (!button.hasAttribute('data-running') && rerun.isRunning?.() !== true) {
       setRunning();
       rerun.onRerun();
       return;
     }
+    setRunning();
     confirmRerun(rerun.bot, () => rerun.onRerun());
   });
   wrap.append(button, tip);

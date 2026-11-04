@@ -118,6 +118,14 @@ describe('takeAgentViewLink', () => {
     expect(body.querySelector('p')?.hasAttribute('data-geld-agent-rerun')).toBe(true);
     controls[1]?.querySelector('button')?.click();
     expect(asked).toEqual(['rerun']);
+    // Drawn while the bot was idle, clicked once it runs (a card left open over a rebuilt panel): it asks first.
+    let running = false;
+    const stale = botCommentControls(parse(GREPTILE), { rerun: { bot: 'Greptile', running: false, isRunning: () => running, onRerun: () => asked.push('again') } });
+    running = true;
+    stale[1]?.querySelector('button')?.click();
+    expect(asked).toEqual(['rerun']);
+    expect(document.querySelector('dialog')?.textContent).toContain('Greptile is already running');
+    document.querySelector('dialog')?.remove();
     // An earlier run's summary: See latest instead of Rerun, and the bot's re-trigger badge hidden all the same.
     const earlier = parse(GREPTILE);
     expect(words(botCommentControls(earlier, { latest: { bot: 'Greptile', onOpen: () => undefined } }))).toEqual(['View', 'See latest']);
