@@ -36,7 +36,18 @@ export interface FlowSource {
   readonly pullPath: string;
   readonly headSha: string | null;
   readonly files: readonly FlowFile[];
+  /** Whether the files carry the imports the diff removed: `known` from the diff, else GitHub's summaries stand in for it. */
+  readonly removed: FlowRemovedLinks;
 }
+
+/** `pending` while the diff is still on its way, `too-large` past the diff host's limit, `unavailable` when it failed. */
+export type FlowRemovedLinks = 'known' | 'pending' | 'too-large' | 'unavailable';
+
+const REMOVED_NOTE: Readonly<Record<Exclude<FlowRemovedLinks, 'known'>, string>> = {
+  pending: 'Links a change removed are drawn once the pull request\u2019s diff arrives.',
+  'too-large': 'The diff is over 20 MB, so links a change removed are not drawn.',
+  unavailable: 'The diff could not be loaded, so links a change removed are not drawn.',
+};
 
 const NODE_WIDTH = 224;
 const NODE_HEIGHT = 58;
@@ -47,6 +58,7 @@ const CORNER = 8;
 const MAX_READS = 160;
 const MAX_BYTES = 400_000;
 const CONCURRENT_READS = 6;
+const READ_TIMEOUT_MS = 15_000;
 /** Reads at a time before the dialog is opened: the diagram is prepared in the background without crowding the page's own requests. */
 const PREFETCH_READS = 2;
 const PREFETCH_IDLE_MS = 2000;
@@ -131,7 +143,7 @@ function prefetch(next: FlowSource | null, key: string): void {
 
 /** What an open dialog draws from besides the reads: each file's status, category and removed imports. */
 function fileData(from: FlowSource): string {
-  return from.files.map((file) => `${file.path}\u0000${file.status}\u0000${file.hiddenAs ?? ''}\u0000${file.removedImports.join(',')}`).join('\u0001');
+  return from.removed + '\u0002' + from.files.map((file) => `${file.path}\u0000${file.status}\u0000${file.hiddenAs ?? ''}\u0000${file.removedImports.join(',')}`).join('\u0001');
 }
 
 /** Close an open Flow dialog and drop every read still waiting (Geld turned off, or the digest torn down). */
@@ -198,7 +210,20 @@ function pump(): void {
   }
 }
 
+/** A read that has not answered by then counts as failed: the diagram waits for every read, so one stalled download must not hold it. */
 async function fetchText(url: string): Promise<string | null> {
+  let timer = 0;
+  const deadline = new Promise<null>((resolve) => {
+    timer = window.setTimeout(() => resolve(null), READ_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([readText(url), deadline]);
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function readText(url: string): Promise<string | null> {
   const response = await pageFetch(url, { credentials: 'same-origin', redirect: 'follow' });
   if (!response.ok) return null;
   const text = await response.text();
@@ -533,7 +558,8 @@ export function openFlowDialog(): void {
       const copy = failureCopy(failed);
       const reload = createElement('button', { type: 'button', class: 'btn btn-sm' }, ['Reload']);
       reload.addEventListener('click', () => location.reload());
-      return message(copy.text, 'alert', copy.reload ? reload : null);
+      // A failure still being retried is routine and announced politely. Only one Flow has given up on interrupts.
+      return message(copy.text, failed.retrying ? 'status' : 'alert', copy.reload ? reload : null);
     }
     const essentialNow = current.files.filter((file) => file.hiddenAs === null).length;
     const hiddenNow = current.files.length - essentialNow;
@@ -572,6 +598,7 @@ export function openFlowDialog(): void {
       section.append(grid);
       canvas.append(section);
     }
+    if (current.removed !== 'known') canvas.prepend(createElement('p', { class: 'geld-flow__note' }, [REMOVED_NOTE[current.removed]]));
     if (reading.unreadable) canvas.prepend(createElement('p', { class: 'geld-flow__note' }, ['Geld could not tell which commit this page shows, so it drew the files without their links.']));
     scroller.scrollTop = scrollTop;
     scroller.scrollLeft = scrollLeft;

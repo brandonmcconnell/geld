@@ -121,6 +121,12 @@ export class DiffSource {
     return this.stateOf(this.keyFor(diffUrl, sha));
   }
 
+  /** Why the diff itself failed, when it did, even while the summaries stand in for it as `ready`. */
+  diffFailure(diffUrl: string, sha: string | null = null): { readonly reason: string; readonly attempts: number } | null {
+    const current = this.memory.get(this.keyFor(diffUrl, sha));
+    return current?.status === 'failed' ? current : null;
+  }
+
   /** The diff when it is here; the summaries while it is not; whatever the request is at otherwise. */
   private stateOf(key: string): DiffFetchState {
     const current = this.memory.get(key) ?? { status: 'idle' };

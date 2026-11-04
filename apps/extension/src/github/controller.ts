@@ -890,11 +890,15 @@ export class GeldController {
     const state = this.diffSource.request(page.diffUrl, sha, 'page');
     if (state.status === 'failed') return setFlowSource(null, { origin: url.origin, pullPath: pull[0], reason: state.reason, retrying: retriesLater(state) });
     if (state.status !== 'ready') return setFlowSource(null);
+    // Summaries know no removed lines. Kept as `ready` from disk, they stand for a diff that was too large to fetch.
+    const failed = state.provisional === true ? this.diffSource.diffFailure(page.diffUrl, sha) : { reason: 'too-large', attempts: 0 };
+    const removed = !state.files.some((file) => file.summaryOnly === true) ? 'known' : failed === null || retriesLater(failed) ? 'pending' : failed.reason === 'too-large' ? 'too-large' : 'unavailable';
     setFlowSource({
       origin: url.origin,
       repo: pull[1],
       pullPath: pull[0],
       headSha: sha,
+      removed,
       files: state.files.map((file) => ({ path: file.path, status: file.status ?? 'modified', additions: file.additions, deletions: file.deletions, hiddenAs: matcher.categorizeFile(file)?.title ?? null, removedImports: file.removedImports ?? [] })),
     });
   }

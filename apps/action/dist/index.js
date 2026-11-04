@@ -2271,7 +2271,7 @@ function parseDiffSummaries(document) {
     const deletions = typeof entry2.linesDeleted === "number" && Number.isFinite(entry2.linesDeleted) ? entry2.linesDeleted : 0;
     const status = typeof entry2.changeType === "string" ? STATUS_BY_CHANGE_TYPE[entry2.changeType] : void 0;
     const kinds = status === "deleted" ? ["deleted"] : status === "renamed" && additions + deletions === 0 ? ["renames"] : null;
-    files.push({ path: entry2.path, additions, deletions, ...status === void 0 ? {} : { status }, ...kinds === null ? {} : { kinds } });
+    files.push({ path: entry2.path, additions, deletions, ...status === void 0 ? {} : { status }, ...kinds === null ? {} : { kinds }, summaryOnly: true });
   }
   return files;
 }

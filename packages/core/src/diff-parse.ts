@@ -32,6 +32,11 @@ export interface FileStats {
    * is. Absent when there are none (and in cache entries written before this existed).
    */
   readonly removedImports?: readonly string[];
+  /**
+   * From GitHub's files-tab summaries (`parseDiffSummaries`), not the diff: counts, status and the kinds those show,
+   * with no line-level facts (comment lines, removed imports), so their absence here says nothing about the change.
+   */
+  readonly summaryOnly?: true;
 }
 
 /** Above this many comment-only lines in one file the list is dropped (the `comments` kind still applies). */
