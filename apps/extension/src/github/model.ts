@@ -22,6 +22,12 @@ export interface TreeFileNode {
   readonly element: HTMLElement;
   /** GitHub's status icon for the file (file-added / file-removed / file-moved / file-diff; the React tree's leading visual, the classic tree's trailing one), when the view shows one. */
   readonly statusIcon: SVGElement | null;
+  /**
+   * The row's trailing marks, when it has any: the comment count and the
+   * check-annotation icon (warning, notice, failure). Cloned into a category
+   * panel so a hidden file keeps them.
+   */
+  readonly trailingVisual: HTMLElement | null;
   /** GitHub's anchor id for the file's diff (`diff-<sha256>`) when the tree row links to it. */
   readonly anchor: string | null;
 }

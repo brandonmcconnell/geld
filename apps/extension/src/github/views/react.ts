@@ -101,6 +101,12 @@ export function activateTreeItem(item: HTMLElement): void {
   (item.querySelector<HTMLElement>('.PRIVATE_TreeView-item-content') ?? item).click();
 }
 
+/** The last visual of a file row holds its comment count and check annotation; the first is the status icon. */
+export function trailingVisualOf(visuals: NodeListOf<Element>): HTMLElement | null {
+  const trailing = visuals.length >= 2 ? visuals[visuals.length - 1] : null;
+  return trailing instanceof HTMLElement && trailing.querySelector('svg') !== null ? trailing : null;
+}
+
 /** Whether the tree marks this file as the one the page is at (`aria-current`); selecting it again does nothing. */
 export function isSelectedTreeItem(item: HTMLElement): boolean {
   return item.getAttribute('aria-current') === 'true';
@@ -219,9 +225,13 @@ export const reactAdapter: DiffViewAdapter = {
         const path = cleanText(item.id);
         if (path === '') continue;
         // The item's leading visual is GitHub's status icon (file-added, file-removed, file-moved, file-diff).
-        const statusIcon = item.querySelector(':scope > [class*="item-container"] [class*="item-visual"] svg');
+        // A second visual, when there is one, is the trailing marks: the comment count and the check annotation.
+        const visuals = item.querySelectorAll(':scope > [class*="item-container"] [class*="item-content"] > [class*="item-visual"]');
+        const leading = visuals[0]?.querySelector('svg');
+        const statusIcon = leading instanceof SVGElement ? leading : null;
+        const trailingVisual = trailingVisualOf(visuals);
         const href = item.querySelector('a[href^="#diff-"]')?.getAttribute('href') ?? null;
-        treeFiles.push({ path, element: item, statusIcon: statusIcon instanceof SVGElement ? statusIcon : null, anchor: href === null ? null : href.slice(1) });
+        treeFiles.push({ path, element: item, statusIcon, trailingVisual, anchor: href === null ? null : href.slice(1) });
       }
     }
 

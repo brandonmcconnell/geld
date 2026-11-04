@@ -2,7 +2,7 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   // @geld/core, @geld/github and @geld/review ship TypeScript source (see their package.json "exports").
-  transpilePackages: ['@geld/core', '@geld/github', '@geld/review'],
+  transpilePackages: ['@geld/core', '@geld/github', '@geld/review', '@geld/ui', '@geld/domain'],
   // Cache Components: everything is prerendered; the only "dynamic" piece is
   // the latest-release lookup, which is a `use cache` function revalidated in
   // the background so the pages stay static and instant.

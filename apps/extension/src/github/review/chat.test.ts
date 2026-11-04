@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { hideAgentRerunControls, messagesIn, takeAgentViewLink } from './chat';
+import { dressArrivals, hideAgentRerunControls, messagesIn, renderChatView, takeAgentViewLink } from './chat';
 
 /**
  * Two shapes carry the `minimized-comment` class. A review's own body card
@@ -95,6 +95,16 @@ describe('takeAgentViewLink', () => {
     expect(takeAgentViewLink(body)?.label).toBe('View in Greptile');
   });
 
+  it("takes Greptile's badge when it links through the tenant switch", () => {
+    const href = 'https://app.greptile.com/-/switch-tenant?tenant=geld&next=%2Fbrandonmcconnell%2Fgeld%2Fpull%2F367&utm_source=greptile_review&utm_medium=github&utm_campaign=view_in_greptile';
+    const body = parse(`<div><h2><a href="https://app.greptile.com/api/retrigger?id=1"><picture><img alt="Retrigger" src="r.svg"></picture></a><a href="${href.replace(/&/g, '&amp;')}"><picture><img alt="View in Greptile" src="v.svg" align="right"></picture></a>Confidence Score: 5/5</h2><p>Safe.</p></div>`);
+    expect(takeAgentViewLink(body)).toEqual({ href, label: 'View in Greptile' });
+    expect(body.querySelector('a[href*="switch-tenant"]')?.hasAttribute('data-geld-agent-view')).toBe(true);
+    expect(body.querySelector('h2')?.hasAttribute('data-geld-agent-rerun')).toBe(false);
+    // The switch with no run behind it (a tenant's home) is not the badge.
+    expect(takeAgentViewLink(parse('<div><p><a href="https://app.greptile.com/-/switch-tenant?tenant=geld&amp;next=%2F"><img alt="Greptile" src="g.svg"></a></p></div>'))).toBeNull();
+  });
+
   it('hides the paragraph both Greptile badges share once both are taken', () => {
     const body = parse(GREPTILE_PARAGRAPH);
     hideAgentRerunControls(body);
@@ -121,5 +131,60 @@ describe('takeAgentViewLink', () => {
     const cursor = parse('<div><div><a href="https://cursor.com/agents/bc-1?cursor_ref=pr_footer" rel="nofollow"><picture><img alt="Open in Web" src="o.png"></picture></a> <a href="https://cursor.com/automations/au-1"><picture><img alt="View Automation" src="a.png"></picture></a></div></div>');
     expect(takeAgentViewLink(cursor)).toEqual({ href: 'https://cursor.com/agents/bc-1?cursor_ref=pr_footer', label: 'Open in Web' });
     expect(cursor.querySelector('div > div')?.hasAttribute('data-geld-agent-rerun')).toBe(false);
+  });
+});
+
+/** A review thread of one comment, as the classic view renders it (reduced), with a reply box. */
+function threadWith(comments: readonly { id: string; author: string }[]): HTMLElement {
+  return parse(`
+<review-thread-collapsible class="js-resolvable-timeline-thread-container" data-resolved="false">
+  <div class="js-comments-holder">
+    ${comments
+      .map(
+        ({ id, author }) => `
+    <div id="${id}" class="review-comment js-comment js-minimizable-comment-group">
+      <div class="ml-n1 flex-items-center clearfix d-flex flex-row flex-items-start">
+        <h3 class="f5 text-normal py-2" style="flex: 1 1 auto"><div class="d-flex flex-items-center flex-wrap gap-1"><span class="d-inline-flex"><img class="avatar" src="https://avatars.githubusercontent.com/u/1?s=48" alt="@${author}"></span><strong><a class="author Link--primary text-bold" href="/${author}">${author}</a></strong> <a href="#${id}" class="Link--secondary js-timestamp"><relative-time datetime="2026-10-15T20:53:53Z">Oct 15, 2026</relative-time></a></div></h3>
+        <div class="d-flex flex-row-reverse flex-items-center flex-shrink-0"><div class="timeline-comment-actions flex-shrink-0 d-flex flex-items-center"></div></div>
+      </div>
+      <task-lists><div class="comment-body markdown-body js-comment-body soft-wrap d-block"><p>test</p></div></task-lists>
+    </div>`,
+      )
+      .join('')}
+  </div>
+  <div class="review-thread-reply"><form class="js-inline-comment-form"><textarea></textarea><button type="submit">Comment</button></form></div>
+</review-thread-collapsible>`);
+}
+
+describe('dressArrivals', () => {
+  it('dresses a comment GitHub appended to a loaned thread where it stands, and re-reads the run around it', () => {
+    document.head.insertAdjacentHTML('beforeend', '<meta name="user-login" content="brandonmcconnell">');
+    const thread = threadWith([{ id: 'discussion_r1', author: 'cubic-dev-ai[bot]' }, { id: 'discussion_r2', author: 'brandonmcconnell' }]);
+    document.body.append(thread);
+    const slot = document.createElement('div');
+    document.body.append(slot);
+    renderChatView(slot, [thread], {
+      pathOf: () => '',
+      sourceOf: () => null,
+      sourceOpen: () => false,
+      onCopy: () => undefined,
+      onToggleSource: () => undefined,
+      onOpenAnchor: () => undefined,
+    });
+    const before = [...slot.querySelectorAll('[data-geld-message]')].map((message) => `${message.id}:${message.getAttribute('data-geld-run')}:${message.hasAttribute('data-geld-mine')}`);
+    expect(before).toEqual(['discussion_r1:only:false', 'discussion_r2:only:true']);
+    expect(dressArrivals(document)).toBe(false);
+    // The reader's reply lands as GitHub's raw card after the last comment.
+    const reply = threadWith([{ id: 'discussion_r3', author: 'brandonmcconnell' }]).querySelector('#discussion_r3');
+    if (!(reply instanceof HTMLElement)) throw new Error('fixture');
+    thread.querySelector('.js-comments-holder')?.append(reply);
+    expect(reply.hasAttribute('data-geld-message')).toBe(false);
+    expect(dressArrivals(document)).toBe(true);
+    const after = [...slot.querySelectorAll('[data-geld-message]')].map((message) => `${message.id}:${message.getAttribute('data-geld-run')}:${message.hasAttribute('data-geld-mine')}`);
+    expect(after).toEqual(['discussion_r1:only:false', 'discussion_r2:first:true', 'discussion_r3:last:true']);
+    expect(reply.querySelector('[data-geld-part="meta"]')).not.toBeNull();
+    expect(reply.querySelector('[data-geld-part="bubble"]')).not.toBeNull();
+    // Nothing left to dress: the pass that follows has no reason to rebuild the chat.
+    expect(dressArrivals(document)).toBe(false);
   });
 });

@@ -46,6 +46,8 @@ customCategories:
     const result = parseRepoConfig(`
 enabled: false
 repoRules: ["acme/*"]
+autoViewed:
+  tests: true
 categories:
   docs: "yes"
 categoryPatterns:
@@ -53,7 +55,7 @@ categoryPatterns:
 `);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.issues.map((issue) => issue.path)).toEqual(['enabled', 'repoRules', 'categories.docs', 'categoryPatterns.generated[0]']);
+    expect(result.issues.map((issue) => issue.path)).toEqual(['enabled', 'repoRules', 'autoViewed', 'categories.docs', 'categoryPatterns.generated[0]']);
   });
 
   it('reads the review bots a repository declares, checked against the registry when given', () => {
@@ -126,4 +128,17 @@ plain.js diff=js
     expect(createMatcher(merged).categorize('a/b/c.pb.go')?.id).toBe('generated');
     expect(createMatcher(merged).categorize('vendor/keep.js')).toBeNull();
   });
+});
+
+describe('repository AI restrictions', () => {
+  it('reads inline and block YAML policies without allowing malformed booleans', () => {
+    expect(parseRepoConfig('review: { ai: false }')).toMatchObject({ ok: true, config: { review: { ai: false } } });
+    expect(parseRepoConfig('review:\n  ai: false')).toMatchObject({ ok: true, config: { review: { ai: false } } });
+    expect(parseRepoConfig('review: { ai: "false" }')).toMatchObject({ ok: false });
+  });
+});
+
+it('returns a validation issue instead of throwing when YAML aliases cannot resolve',()=>{
+  expect(()=>parseRepoConfig('value: *missing')).not.toThrow();
+  expect(parseRepoConfig('value: *missing')).toMatchObject({ok:false,issues:[{path:'$',message:expect.stringContaining('aliases')}]});
 });

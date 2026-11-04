@@ -1,3 +1,4 @@
+import { recognizeTickets } from '@geld/core';
 import { readFileSync } from 'node:fs';
 import {
   ADDRESSED_JSON_SCHEMA,
@@ -23,7 +24,7 @@ import {
   summaryUserPrompt,
 } from '@geld/review';
 import type { AddressedOutputItem, ConsolidateInputItem, ConsolidateOutputItem, ProducerRecord, ReviewItem, ReviewSummary } from '@geld/review';
-import { filesChangedBetween, findSummaryComment, loadPullRequest, parseActionEvent, shouldSkipSelfEdit, tokenLogin, upsertIssueComment } from './github';
+import { filesChangedBetween, repositoryTracker, trackerStates, findSummaryComment, loadPullRequest, parseActionEvent, shouldSkipSelfEdit, tokenLogin, upsertIssueComment } from './github';
 import type { GithubClient } from './github';
 
 const ACTION_VERSION = '0.2.0';
@@ -186,6 +187,9 @@ export async function run(env: Record<string, string | undefined> = process.env,
       ? await filesChangedBetween(client, event.owner, event.repo, previous.headSha, loaded.headSha)
       : [];
   const pr = { ...loaded, changedPaths: laterPaths };
+  const tracker=await repositoryTracker(client,event.owner,event.repo);
+  const recognizedTickets=recognizeTickets(`${loaded.title??''}\n${loaded.body??''}\n${loaded.headBranch??''}`,{provider:'github',host:'github.com',owner:event.owner,repo:event.repo},tracker);
+  const ticketLinks=await trackerStates(client,recognizedTickets);
   const apiKey = input('ai-key') || env.INPUT_AI_KEY || '';
   const baseUrl = input('ai-base-url') || env.INPUT_AI_BASE_URL || 'https://ai-gateway.vercel.sh';
   const model = input('model') || env.INPUT_MODEL || '';
@@ -201,7 +205,7 @@ export async function run(env: Record<string, string | undefined> = process.env,
   // Deterministic pass first: the same items the extension's crawler would build.
   const draft = buildMeta(pr, { ...common, producer: { ...producer, ai: false }, generatedAt });
   if (!useAi) {
-    const body = renderSummary(draft, { owner: event.owner, repo: event.repo, number: event.number });
+    const body = renderSummary(draft, { owner: event.owner, repo: event.repo, number: event.number,links:ticketLinks });
     const id = await upsertIssueComment(client, event.owner, event.repo, event.number, existing?.commentId ?? null, body);
     console.log(`Upserted Geld summary comment ${id} on ${event.owner}/${event.repo}#${event.number} (${draft.items.length} items).`);
     return;
@@ -219,7 +223,7 @@ export async function run(env: Record<string, string | undefined> = process.env,
   const judged = buildMeta(pr, { ...common, producer, generatedAt, rewritten, carried: plan.carried, semantic });
   const summary = await writeTldr(ai, judged.items, previous?.summary, generatedAt);
   const meta = buildMeta(pr, { ...common, producer, generatedAt, rewritten, carried: plan.carried, semantic, ...(summary === undefined ? {} : { summary }) });
-  const body = renderSummary(meta, { owner: event.owner, repo: event.repo, number: event.number });
+  const body = renderSummary(meta, { owner: event.owner, repo: event.repo, number: event.number,links:ticketLinks });
   const id = await upsertIssueComment(client, event.owner, event.repo, event.number, existing?.commentId ?? null, body);
   console.log(
     `Upserted Geld summary comment ${id} on ${event.owner}/${event.repo}#${event.number} (${meta.items.length} items, ${plan.pending.length} consolidated, ${plan.carried.size} carried${summary === previous?.summary ? ', TL;DR kept' : ', TL;DR written'}).`,

@@ -1,0 +1,43 @@
+Geld is a Safari Web Extension in Apple's required macOS containing app. The app shows whether the extension is enabled, explains setup and opens Safari Settings. Geld itself works inside Safari on GitHub diff pages.
+
+1. Physical-device recording
+
+Recording: {{VIDEO_URL}}
+
+Captured on {{TEST_DEVICE}}, showing Geld {{VIDEO_VERSION}}. This submission is Geld {{VERSION}} (build {{BUILD}}). It covers launch, enabling the extension, granting github.com access, opening a public pull request, hiding and revealing test files, and the toolbar popup and settings.
+
+No account registration, purchases, subscriptions or user-generated content. Optional GitHub sign-in is not needed for any of this and creates no Geld account.
+
+2. Purpose and audience
+
+A free utility for software engineers reviewing code on GitHub. It hides test files and other optional review noise from GitHub diffs, corrects the visible file and line counts, and keeps every hidden file one click away. It never changes repository data.
+
+3. Setup
+
+No login, credentials, payment or sample file is needed.
+
+a. Launch Geld from Applications and click "Open Safari Settings".
+b. In Safari Settings > Extensions, enable Geld and allow it on github.com.
+c. Open https://github.com/wxt-dev/wxt/pull/2544/files
+d. Geld hides the test files and shows a "test files hidden" row.
+e. Reveal them from that row, the Tests panel in the file tree, or the toolbar popup.
+f. Open Geld's settings from the popup to try optional categories and custom patterns.
+
+4. External services
+
+- github.com: the site whose pull request and commit diffs Geld augments.
+- patch-diff.githubusercontent.com: GitHub's diff host, for accurate counts when the page lacks a diff.
+- raw.githubusercontent.com: GitHub's file host, through github.com's raw links, for a repository's optional Geld config and a test file a diff shows only part of.
+- api.github.com: Geld's public signed pattern catalog and, only if the user opts in, GitHub sign-in and settings sync.
+- Geld's GitHub App (optional device-flow sign-in): its token only reads and writes the user's own settings gist.
+- An AI gateway the user configures (optional, experimental, off by default): only when the user enters their own gateway, model and key and asks for a triage are that pull request's review comments sent there, from the browser. Geld runs no AI service.
+
+Geld has no server or database, and no analytics, ads, payments or in-app purchases. Diffs are processed locally, except the optional AI triage, which goes only to the user's gateway. Geld never receives repository content or user data. Synced settings stay in a secret gist on the user's own GitHub account.
+
+5. Regional differences
+
+None. The same features everywhere GitHub and the Mac App Store are available.
+
+6. Regulated services or third-party material
+
+Not applicable. Geld is a developer utility in no regulated industry and does not sell or redistribute GitHub content. The screenshots and recording use a public repository and imply no GitHub endorsement.

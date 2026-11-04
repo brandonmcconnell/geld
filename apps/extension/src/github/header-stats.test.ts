@@ -1,6 +1,6 @@
 import { parseLineStats } from './dom';
 import { replaceCount } from './header-stats';
-import { describePage } from './page';
+import { describePage, narrowedHead } from './page';
 
 describe('replaceCount', () => {
   it('replaces bare counters', () => {
@@ -18,7 +18,22 @@ describe('replaceCount', () => {
   });
 });
 
+describe('replaceCount in the reader\'s locale', () => {
+  it('replaces the whole number and keeps the separator GitHub printed', () => {
+    expect(replaceCount('+8.270', 3776)).toBe('+3.776');
+    expect(replaceCount('1.936 deletions', 1288)).toBe('1.288 deletions');
+    expect(replaceCount('8\u202f270 additions', 3776)).toBe('3\u202f776 additions');
+    expect(replaceCount('+8.270', 42)).toBe('+42');
+  });
+});
+
 describe('parseLineStats', () => {
+  it('reads counts grouped for any locale', () => {
+    expect(parseLineStats('Lines changed: 8.270 additions & 1.936 deletions')).toEqual({ additions: 8270, deletions: 1936 });
+    expect(parseLineStats('Lines changed: 8\u202f270 additions & 1\u202f936 deletions')).toEqual({ additions: 8270, deletions: 1936 });
+    expect(parseLineStats('Lines changed: 8270 additions & 1936 deletions')).toEqual({ additions: 8270, deletions: 1936 });
+  });
+
   it('reads every GitHub phrasing', () => {
     expect(parseLineStats('15 changes: 8 additions & 7 deletions')).toEqual({ additions: 8, deletions: 7 });
     expect(parseLineStats('Lines changed: 1 addition & 0 deletions')).toEqual({ additions: 1, deletions: 0 });
@@ -43,6 +58,22 @@ describe('describePage', () => {
     expect(describePage(new URL('https://github.com/wxt-dev/wxt/pull/2544/commits')).kind).toBe('pull-other');
     expect(describePage(new URL('https://github.com/wxt-dev/wxt/pull/2544/files/abc123')).kind).toBe('pull-files');
     expect(describePage(new URL('https://github.com/wxt-dev/wxt/pull/2544/changes')).kind).toBe('pull-files');
+  });
+
+  it('reads a Files tab narrowed to one commit or a range from that commit’s or range’s diff, keyed by the pull request', () => {
+    const one = describePage(new URL('https://github.com/mintlify/mint/pull/13493/changes/67c30f306dec2cd4ddf5c4bc3884d17c7c714538'));
+    expect(one).toEqual({
+      kind: 'pull-files',
+      diffUrl: 'https://github.com/mintlify/mint/commit/67c30f306dec2cd4ddf5c4bc3884d17c7c714538.diff',
+      stateKey: '/mintlify/mint/pull/13493',
+      commits: '67c30f306dec2cd4ddf5c4bc3884d17c7c714538',
+    });
+    const range = describePage(new URL('https://github.com/o/r/pull/7/files/abc1234..def5678'));
+    expect(range.diffUrl).toBe('https://github.com/o/r/compare/abc1234..def5678.diff');
+    expect(range.stateKey).toBe('/o/r/pull/7');
+    expect(narrowedHead(range.commits ?? '')).toBe('def5678');
+    // The whole pull request's Files tab keeps the pull request's diff.
+    expect(describePage(new URL('https://github.com/o/r/pull/7/changes')).commits).toBeUndefined();
   });
 
   it('recognises commits and compares', () => {

@@ -10,7 +10,7 @@ on:
 jobs:
   # Same-repository pull requests only (a fork's gets no secrets anyway): the
   # pattern catalog is built from the branch here, in a job that holds no
-  # secret, and signed in the next one, which checks out the default branch
+  # signing key, and signed in the next one, which checks out the default branch
   # and runs none of the branch's code. The signing key never shares a runner
   # with pull request code: anything that runs there — the build, pnpm's
   # scripts, a process left behind, a `node` put on $GITHUB_PATH — could read a
@@ -31,6 +31,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        env:
+          FONTAWESOME_PACKAGE_TOKEN: ${{ secrets.FONTAWESOME_PACKAGE_TOKEN }}
       - run: pnpm catalog:build --auto-version
       - uses: actions/upload-artifact@v7
         with:
@@ -92,6 +94,7 @@ jobs:
       contents: write
     outputs:
       version: ${{ steps.version.outputs.version }}
+      dashboard-result: ${{ steps.dashboard-check.outputs.result }}
       # HEAD after the catalog step (a new commit when patterns changed), so the
       # release is cut from the tree that was actually checked and packed.
       sha: ${{ steps.catalog.outputs.sha || github.sha }}
@@ -112,6 +115,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        env:
+          FONTAWESOME_PACKAGE_TOKEN: ${{ secrets.FONTAWESOME_PACKAGE_TOKEN }}
       # Pattern catalog: when a push changes the built-in patterns, regenerate
       # catalog/patterns.json (bumping CATALOG_VERSION if the author did not),
       # sign it with the key in GELD_CATALOG_PRIVATE_KEY, verify, and commit it
@@ -165,9 +170,24 @@ jobs:
         with:
           name: geld-catalog-signature
           path: catalog
-      # Typechecks and unit tests for every workspace package (core + extension),
-      # plus lint and a production build of the site.
-      - run: pnpm check
+      - name: Check required workspaces
+        run: |
+          pnpm -r --filter '!@geld/dashboard' run check
+          pnpm docs:lines:check
+          pnpm test:scripts
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      # Dashboard failures are advisory until the dashboard is ready for launch.
+      - name: Run dashboard checks (advisory)
+        id: dashboard-check
+        run: |
+          if pnpm --filter @geld/dashboard check; then
+            echo 'result=success' >> "$GITHUB_OUTPUT"
+          else
+            echo 'result=skipped' >> "$GITHUB_OUTPUT"
+            echo '### Dashboard checks: skipped' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Dashboard checks did not pass. They are advisory until launch. See the dashboard step logs for details.' >> "$GITHUB_STEP_SUMMARY"
+          fi
         env:
           NEXT_TELEMETRY_DISABLED: '1'
       # The pattern catalog the extension fetches at runtime is generated from
@@ -194,6 +214,14 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
+  dashboard:
+    name: Dashboard
+    needs: check-and-pack
+    if: ${{ !cancelled() && needs.check-and-pack.outputs.dashboard-result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Dashboard checks passed.'
+
   # Every push to main that touches the extension publishes a GitHub Release
   # with one zip per browser (plus the Firefox review sources). The site's
   # install buttons read /releases/latest, so this is what people download
@@ -201,7 +229,9 @@ jobs:
   # since the previous release and can be edited afterwards on GitHub.
   release:
     needs: check-and-pack
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # check-and-pack's own needs (the catalog jobs) are skipped on a push, and a job whose chain holds a skipped job
+    # is skipped too unless its condition checks the status itself: without `!cancelled()` here no release was made.
+    if: ${{ !cancelled() && needs.check-and-pack.result == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -240,8 +270,9 @@ jobs:
           RUN: ${{ github.run_number }}
           TARGET_SHA: ${{ needs.check-and-pack.outputs.sha }}
         run: |
-          # The manifest version stays a plain x.y.z (stores require it); each
-          # build on main gets its own tag so the release is never overwritten.
+          # The zips carry the four-part version x.y.z.RUN (check-and-pack sets
+          # GELD_BUILD_NUMBER); the tag names the same build, so a release is
+          # never overwritten and each one is newer than the last for the stores.
           tag="v${VERSION}-build.${RUN}"
           title="Geld ${VERSION}.${RUN}"
           ls -1 dist

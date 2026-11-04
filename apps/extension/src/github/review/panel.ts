@@ -15,7 +15,7 @@ import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/revie
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
 import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_FILE_DIFF, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_X_CIRCLE_FILL } from '../ui/icons';
-import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
+import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import type { AiState } from './ai';
@@ -27,6 +27,7 @@ import { ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import type { ReviewerCandidate } from './reviewers';
 import { shapeMark } from './mark-shape';
 import { inlineText } from './inline-text';
+import { relativeTimeElement } from './time';
 
 export const PANEL_CLASS = 'geld-review';
 export const ATTR_PANEL = 'data-geld-review-panel';
@@ -34,12 +35,16 @@ export const ATTR_PANEL = 'data-geld-review-panel';
 export const ATTR_ATTACHED = 'data-geld-attached';
 const ATTR_SIG = 'data-geld-review-sig';
 const ATTR_SLOT = 'data-geld-slot';
+/** On every row and slot under a group heading: the group it belongs to, so folding the group is an attribute flip (`syncPanelGroups`). */
+const ATTR_IN_GROUP = 'data-geld-in-group';
 /**
  * On a time cell: the anchor whose `relative-time` it repeats, so the cells
  * can be refreshed on their own when the clocks tick (`refreshReviewTimes`)
  * without a crawl or a render.
  */
 export const ATTR_TIME_FOR = 'data-geld-time-for';
+/** On an edited comment's time: the anchor whose edit log the clock refresh reads again (`refreshEditTimes`). */
+export const ATTR_EDITED_FOR = 'data-geld-edited-for';
 
 /**
  * A row of pills that gives way in two steps when the row is short of room
@@ -57,8 +62,17 @@ export function panelSignature(): string {
 
 /** A row's time cell for `anchor`, or null when the page shows no time for it. */
 function timeCell(model: PanelModel, anchor: string): HTMLElement | null {
-  const time = model.timeFor(anchor);
-  return time === '' ? null : createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: anchor }, [time]);
+  return commentTime(model, anchor, model.timeFor(anchor));
+}
+
+/**
+ * A comment's time in a row: for an edited one the edit's, live, else the page's words, which the time refresh keeps
+ * current. The clock that says when it was first posted is the opened comment's byline's alone (`editedMark`).
+ */
+function commentTime(model: PanelModel, anchor: string, text: string): HTMLElement | null {
+  const edited = model.editedFor(anchor);
+  if (edited !== null) return createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_EDITED_FOR]: anchor }, [relativeTimeElement(edited.editedAt, `${PANEL_CLASS}__time-text`)]);
+  return text === '' ? null : createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: anchor }, [text]);
 }
 
 export type GroupId = 'open' | 'done' | 'hidden' | 'activity' | 'pushes';
@@ -300,8 +314,8 @@ export function reviewerStatuses(entries: readonly ReviewEntry[], sidebar: reado
       continue;
     }
     if (record.settled) {
-      // The sidebar said the verdict; the timeline still names where it is.
-      if (record.verdict === entry.state && record.anchor === null && !isProvisionalAnchor(entry.anchor)) record.anchor = entry.anchor;
+      // The sidebar said the verdict; the timeline still names where it is, its latest review of that verdict.
+      if (record.verdict === entry.state && !isProvisionalAnchor(entry.anchor)) record.anchor = entry.anchor;
       continue;
     }
     if (entry.state === 'commented' && record.verdict !== null && record.verdict !== 'commented') continue;
@@ -332,6 +346,8 @@ export interface PanelModel {
   readonly folds: readonly FoldRow[];
   readonly batches: readonly Batch[];
   readonly requestable: readonly InstalledBot[];
+  /** Bots that reported after the latest push, so on this commit; null when the page shows no push to tell by. */
+  readonly ranSincePush: ReadonlySet<string> | null;
   /** The Review bots row's list: each bot's latest run summary, in the chips' order. */
   readonly botLines: readonly BotLine[];
   /** Bot run summaries (verdict comments) an open item can link to, by bot id. */
@@ -344,6 +360,8 @@ export interface PanelModel {
   readonly checks: CheckCounts | null;
   /** Whether a failing check is one GitHub marks Required; null when the list does not say. */
   readonly requiredFailing: boolean | null;
+  /** GitHub's "1 workflow awaiting approval" while its merge box offers the reader "Approve workflows to run"; null otherwise. */
+  readonly workflowApproval: string | null;
   /** Preview deployments: the latest per project, and the ones they superseded. */
   readonly previews: { readonly latest: readonly Preview[]; readonly archived: readonly Preview[] };
   /** Reporter bots' reports (test failures, coverage): the latest per reporter, the earlier ones left in their rounds. */
@@ -381,6 +399,8 @@ export interface PanelModel {
    * but the lines and the comment count are not yet, and the row says so.
    */
   readonly ingesting: boolean;
+  /** How far Geld's own reading of the timeline has got, 0 to 1, for the bar along the digest's top; null when not reading. */
+  readonly progress: number | null;
   /** Anchor of the comment open inside the Reviews row's list (one level of nesting). */
   readonly openSubKey: string | null;
   /** Threads (by first-comment anchor) whose frame shows the comment they came from. */
@@ -403,6 +423,8 @@ export interface PanelModel {
   readonly myReactionFor: (anchor: string) => string | null;
   /** The comment's time as the page shows it ("yesterday"). */
   readonly timeFor: (anchor: string) => string;
+  /** When the comment was last edited and first posted, and its edit-history log; null when it was never edited. */
+  readonly editedFor: (anchor: string) => { readonly editedAt: string; readonly postedAt: string | null; readonly log: string } | null;
   /** Whether GitHub offers Resolve for this item's thread (else the ⋯ menu says "Mark done"). */
   readonly resolvable: (item: ReviewItem) => boolean;
 }
@@ -421,7 +443,7 @@ export interface PanelHandlers {
   readonly onFullTimeline: () => void;
   /** Post the trigger comment of each bot, in order. */
   readonly onRequest: (botIds: readonly string[]) => void;
-  /** The Request a review menu closed: the panel may have held back a rebuild while it was open. */
+  /** A menu the panel holds rebuilds for (Request a review, an edit history) closed: a rebuild may be waiting. */
   readonly onRequestMenuClosed: () => void;
   /** Everyone who can be asked to review, as GitHub's own menu lists them (fetched when the people menu first needs it). */
   readonly loadReviewerCandidates: () => Promise<readonly ReviewerCandidate[] | null>;
@@ -450,6 +472,8 @@ export interface PanelHandlers {
   readonly onResolveAnchor: (anchor: string, done: boolean) => void;
   /** Open the row holding `anchor` and GitHub's reaction picker for its first comment. */
   readonly onReact: (anchor: string) => void;
+  /** Press GitHub's own "Approve workflows to run". */
+  readonly onApproveWorkflows: () => void;
   /** Run the model for this pull request now (the AI control). */
   readonly onRunAi: () => void;
   /** Forget this device's run: the repository's Action writes the digest with AI now. */
@@ -589,6 +613,35 @@ function pointerChevron(onGo: () => void): HTMLElement {
   return button;
 }
 
+
+let approveIds = 0;
+const APPROVE_RETRY_MS = 5000;
+
+/**
+ * "Run" on the CI row: GitHub's "Approve workflows to run", whose section the
+ * folded merge box hides. One click approves, as GitHub's button does, and
+ * GitHub's own tooltip element carries the heading that section showed.
+ */
+function approveWorkflowsControl(label: string, onApprove: () => void): HTMLElement {
+  approveIds += 1;
+  const id = `geld-approve-workflows-${approveIds}`;
+  const button = createElement('button', { type: 'button', id, class: `${PANEL_CLASS}__rerun ${PANEL_CLASS}__approve-run`, 'aria-label': 'Approve workflows to run', 'aria-describedby': `${id}-tip` }, [icon(ICON_ALERT), createElement('span', {}, ['Run'])]);
+  const tip = document.createElement('tool-tip');
+  for (const [name, value] of Object.entries({ id: `${id}-tip`, for: id, popover: 'manual', 'data-direction': 'n', 'data-type': 'description', class: 'sr-only position-absolute', role: 'tooltip' })) tip.setAttribute(name, value);
+  tip.textContent = label;
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (button.disabled) return;
+    button.disabled = true;
+    onApprove();
+    // An approval that went through takes GitHub's button away and the rebuilt panel drops this control; one that did
+    // not leaves both, and the panel's signature unchanged, so the control is offered again here.
+    window.setTimeout(() => {
+      if (button.isConnected) button.disabled = false;
+    }, APPROVE_RETRY_MS);
+  });
+  return createElement('span', { class: `${PANEL_CLASS}__approve-run-wrap` }, [button, tip]);
+}
 
 /** The check counts with their own state glyphs: "✕ 1 failing · ✓ 8 successful · ⊘ 3 skipped". */
 function checksBreakdown(counts: CheckCounts): HTMLElement {
@@ -753,13 +806,13 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
   const mainChildren: Node[] =
     fold.closure !== undefined
       ? [
-          createElement('span', { class: `${PANEL_CLASS}__name` }, [fold.author ?? '']),
+          createElement('span', { class: `${PANEL_CLASS}__name`, ...whoAttributes(fold.author ?? '', /\[bot\]$/i.test(fold.author ?? '')) }, [fold.author ?? '']),
           createElement('span', { class: 'geld-sr-only' }, [` ${fold.closure.kind} this `]),
           ...(fold.closure.preview === '' ? [] : [createElement('span', { class: `${PANEL_CLASS}__preview` }, inlineText(fold.closure.preview))]),
         ]
       : headline !== undefined
         ? [
-            ...(headline.actor === '' ? [] : [createElement('span', { class: `${PANEL_CLASS}__name` }, [headline.actor])]),
+            ...(headline.actor === '' ? [] : [createElement('span', { class: `${PANEL_CLASS}__name`, ...whoAttributes(headline.actor, /\[bot\]$/i.test(headline.actor)) }, [headline.actor])]),
             createElement('span', { class: `${PANEL_CLASS}__preview ${PANEL_CLASS}__preview--verdict` }, [headlineText(headline)]),
             createElement('span', { class: `${PANEL_CLASS}__preview ${PANEL_CLASS}__preview--count` }, [fold.label]),
           ]
@@ -1206,6 +1259,77 @@ function groupHeading(id: GroupId, label: string, model: PanelModel, handlers: P
   return createElement('li', { class: `${PANEL_CLASS}__group`, 'data-group': id }, [button]);
 }
 
+/**
+ * By type, how the rounds fall into the groups. Rounds with a thread still open come first and stay open; settled
+ * rounds fold away by default. A round is its review content, so a run of commits that nothing followed (the last
+ * pushes of a PR nobody has reviewed yet) is no round at all: its commits are in the Commits fold. By push the same
+ * run is a push and stays, and none of this applies.
+ */
+function roundGroups(model: PanelModel): { readonly current: Batch | null; readonly attention: readonly Batch[]; readonly settled: readonly Batch[] } {
+  if (model.grouping === 'batch') return { current: null, attention: [], settled: [] };
+  const withContent = model.batches.filter((batch) => batch.items.length + batch.comments.length + batch.reviews.length + batch.previews.length > 0);
+  // The latest round with no threads at all is the current one, not a settled one: nothing in it was ever to settle,
+  // and what it holds (a reviewer's remark, a bot's note on the newest push) is the state of the conversation, so it
+  // stands in the open group rather than folding away under "settled rounds".
+  // The newest round of all, not the newest with something to show: a newer round whose only content is seated under
+  // Reports or Review bots is still the newer one, and the round before it is history, not the current conversation.
+  const latest = model.batches[model.batches.length - 1];
+  const current = latest !== undefined && withContent.includes(latest) && latest.items.length === 0 ? latest : null;
+  const attention = withContent.filter((batch) => batch === current || batch.items.some((item) => isOpenStatus(item.status)));
+  const settled = withContent.filter((batch) => !attention.includes(batch));
+  return { current, attention, settled };
+}
+
+/** The group the open row is listed under, or null when nothing is open or the open row (a status row) is in no group. */
+function openRowGroup(model: PanelModel): GroupId | null {
+  const key = model.openKey;
+  if (key === null) return null;
+  if (model.grouping === 'batch') {
+    if (model.meta.items.some((item) => isOpenStatus(item.status) && itemKey(item.id) === key)) return 'open';
+    if (model.batches.some((batch) => batch.key === key)) return 'pushes';
+    return null;
+  }
+  const { attention, settled } = roundGroups(model);
+  if (attention.some((batch) => batch.key === key)) return 'open';
+  if (settled.some((batch) => batch.key === key)) return 'done';
+  if (model.fullTimeline) return null;
+  const fold = model.folds.find((entry) => foldKey(entry.key) === key);
+  if (fold === undefined) return null;
+  return fold.section === 'comments' ? 'hidden' : 'activity';
+}
+
+/** Whether the open row's slot is left out because its group is folded: in the signature, and in what a held rebuild compares. */
+function openRowFolded(model: PanelModel): boolean {
+  const group = openRowGroup(model);
+  return group !== null && model.collapsedGroups.has(group);
+}
+
+const GROUP_IDS: readonly GroupId[] = ['open', 'done', 'hidden', 'activity', 'pushes'];
+
+function isFolded(collapsed: ReadonlySet<GroupId>, id: string | null): boolean {
+  return GROUP_IDS.some((group) => group === id && collapsed.has(group));
+}
+
+function syncGroups(root: HTMLElement, collapsed: ReadonlySet<GroupId>): void {
+  for (const heading of root.querySelectorAll<HTMLElement>(`.${PANEL_CLASS}__rows > .${PANEL_CLASS}__group[data-group]`)) {
+    heading.querySelector(`.${PANEL_CLASS}__group-btn`)?.setAttribute('aria-expanded', String(!isFolded(collapsed, heading.getAttribute('data-group'))));
+  }
+  for (const row of root.querySelectorAll<HTMLElement>(`[${ATTR_IN_GROUP}]`)) {
+    row.toggleAttribute('hidden', isFolded(collapsed, row.getAttribute(ATTR_IN_GROUP)));
+  }
+}
+
+/**
+ * Folds and unfolds the mounted panel's groups to match `collapsed`, in place. True when that is all a group toggle
+ * needs; false when the toggled group holds the open row, whose slot only a render adds or takes away.
+ */
+export function syncPanelGroups(collapsed: ReadonlySet<GroupId>, toggled: GroupId): boolean {
+  const root = document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
+  if (root === null) return false;
+  syncGroups(root, collapsed);
+  return root.querySelector(`[${ATTR_IN_GROUP}="${toggled}"][data-open]`) === null;
+}
+
 function plural(count: number, noun: string, nounPlural = `${noun}s`): string {
   return `${count} ${count === 1 ? noun : nounPlural}`;
 }
@@ -1262,16 +1386,58 @@ function botChip(bot: BotVerdictRecord, model: PanelModel, handlers: PanelHandle
   return createElement('span', { class: `${PANEL_CLASS}__bot`, ...who, ...(current ? {} : { 'data-current': 'false' }) }, children);
 }
 
+const REVIEWER_ORDER: readonly Exclude<ReviewerGroupState, 'awaiting'>[] = ['approved', 'changes_requested', 'commented'];
+
+function reviewerRank(status: ReviewerStatus): number {
+  return status.verdict === null ? REVIEWER_ORDER.length : REVIEWER_ORDER.indexOf(status.verdict);
+}
+
+const REVIEWER_HEALTH: Readonly<Record<ReviewerGroupState, Health>> = {
+  approved: 'good',
+  changes_requested: 'bad',
+  commented: 'pending',
+  awaiting: 'warn',
+};
+
+/**
+ * One person on the Reviews row, shaped like a bot's pill: their picture (GitHub's hovercard on the pill), their
+ * login, which goes first when the row is short of room (`fitChips`), then what their review said. A verdict's glyph,
+ * then the comment glyph when it came with a comment, or the threads glyph and how many threads instead when it opened
+ * any (a comment review's threads take its comment glyph's place), then the awaiting dot when they were asked again.
+ * It opens their review where it sits; someone only awaited has nothing to open.
+ */
+function reviewerPill(status: ReviewerStatus, review: ReviewEntry | undefined, handlers: PanelHandlers): HTMLElement {
+  const threads = review?.threads?.length ?? 0;
+  const commented = review?.hasBody ?? false;
+  const words = [statusWords(status).words];
+  if (threads > 0) words.push(plural(threads, 'thread'));
+  else if (commented && status.verdict !== 'commented') words.push('with a comment');
+  const label = `${status.login}: ${words.join(' · ')}`;
+  const children: Node[] = [];
+  // Without a picture the login's first letter stands in, so a pill whose name the row has dropped still says who.
+  children.push(status.avatar.src !== '' ? markImg(status.avatar.src, true) : createElement('span', { class: `${PANEL_CLASS}__bot-icon ${PANEL_CLASS}__bot-icon--letter`, 'data-shape': 'round', 'aria-hidden': 'true' }, [status.login.charAt(0).toUpperCase() || '?']));
+  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name` }, [status.login]));
+  const glyph = (health: Health, glyphIcon: string, count?: number): HTMLElement =>
+    createElement('span', { class: `${PANEL_CLASS}__health`, 'data-health': health, 'aria-hidden': 'true' }, [icon(glyphIcon), ...(count === undefined ? [] : [createElement('span', { class: `${PANEL_CLASS}__reviewer-threads` }, [String(count)])])]);
+  if (status.verdict !== null && status.verdict !== 'commented') children.push(glyph(REVIEWER_HEALTH[status.verdict], ENTRY_GLYPH[status.verdict]));
+  if (threads > 0) children.push(glyph('pending', ICON_COMMENT_DISCUSSION, threads));
+  else if (status.verdict === 'commented' || commented) children.push(glyph('pending', ENTRY_GLYPH.commented));
+  if (status.awaiting) children.push(glyph(REVIEWER_HEALTH.awaiting, ENTRY_GLYPH.awaiting));
+  const who = whoAttributes(status.login, false);
+  if (status.verdict !== null && status.anchor !== null) return anchorLink(status.anchor, label, handlers, children, who);
+  return createElement('span', { class: `${PANEL_CLASS}__bot`, role: 'img', 'aria-label': label, ...who }, children);
+}
+
 /** What a bot's line in the request menu says about its last run here, and whether it is ticked to begin with. */
-interface BotRunState {
+export interface BotRunState {
   readonly health: Health | null;
   readonly word: string;
-  /** Ticked when the menu opens: a failed run, one on an earlier commit, or one that had findings (resolved since or not). */
+  /** Ticked when the menu opens: a failed run, one on an earlier commit, or one whose findings came before the latest push. */
   readonly preselect: boolean;
 }
 
-function botRunState(bot: InstalledBot, model: PanelModel): BotRunState {
-  const record = model.meta.bots.find((entry) => entry.id === bot.id);
+export function botRunState(botId: string, model: Pick<PanelModel, 'ranSincePush'> & { readonly meta: Pick<PanelModel['meta'], 'bots' | 'headSha'> }): BotRunState {
+  const record = model.meta.bots.find((entry) => entry.id === botId);
   if (record === undefined) return { health: null, word: 'Not run', preselect: false };
   const health = botHealth(record);
   if (health === 'pending') return { health, word: record.verdict === 'loading' ? 'Loading' : record.verdict === 'unknown' ? 'No word' : 'Running', preselect: false };
@@ -1279,12 +1445,13 @@ function botRunState(bot: InstalledBot, model: PanelModel): BotRunState {
   // A refused run ("disabled for this repository") is Skipped, and not ticked: asking again changes nothing until
   // the bot's setup does.
   if (record.verdict === 'failed' && record.reason !== undefined) return { health, word: 'Skipped', preselect: false };
-  // A run that had findings is worth running again whether or not its threads have been resolved since: the chip
-  // shows the green check once they are, but the bot has not looked at the fixes. The line keeps saying "Findings"
-  // beside that check so the tick explains itself.
+  // A run that had findings says "Findings" whether or not its threads have been resolved since (the chip shows the
+  // green check once they are). It is ticked only when the bot has not reported since the latest push: then it has
+  // not seen the fixes, while a bot that already reviewed this commit would say the same again.
   const findings = record.verdict === 'findings';
-  const word = health === 'bad' ? 'Failed' : findings || health === 'warn' ? 'Findings' : 'Passed';
-  return { health, word, preselect: health === 'bad' || findings };
+  const word = record.verdict === 'failed' ? 'Failed' : findings || health === 'warn' || health === 'bad' ? 'Findings' : 'Passed';
+  const reviewedThisCommit = model.ranSincePush?.has(botId) ?? true;
+  return { health, word, preselect: record.verdict === 'failed' || (findings && !reviewedThisCommit) };
 }
 
 /** How Geld knows the bot is here, for the line's tooltip. */
@@ -1305,8 +1472,8 @@ function presenceWords(bot: InstalledBot): string {
  * Request a review: a checkbox per bot, with what its last run here said
  * (failed, findings, passed, running, on an earlier commit, not run), so
  * the reader can run only the ones that need it. Failed and stale runs
- * start ticked, and so does a run that had findings — resolved since or
- * not, the bot has not seen the fixes. Bots with a sign of being here (active on the page,
+ * start ticked, and so does a run whose findings came before the latest
+ * push, resolved since or not: the bot has not seen the fixes. Bots with a sign of being here (active on the page,
  * declared by the repository, configured in it) are listed first; the rest
  * of the registry waits behind "Other bots", since a trigger for a bot that
  * is not installed is a public comment with a handle in it. Run posts one
@@ -1340,7 +1507,7 @@ function requestMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | 
     run.toggleAttribute('disabled', picked === 0);
   };
   const line = (bot: InstalledBot): HTMLElement => {
-    const state = botRunState(bot, model);
+    const state = botRunState(bot.id, model);
     const input = createElement('input', { type: 'checkbox', class: `${PANEL_CLASS}__request-check`, 'aria-label': `${bot.label}, ${state.word.toLowerCase()}` });
     input.checked = state.preselect;
     checks.set(bot.id, input);
@@ -1731,35 +1898,18 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
         ]),
       );
     }
-    // Every reviewer, grouped by their latest verdict: the state's glyph, their avatars, how many (the words go on
-    // narrow screens; the glyph says it).
-    const verdictOf = new Map(model.reviewerGroups.filter((group) => group.state !== 'awaiting').flatMap((group) => group.reviewers.map((reviewer) => [reviewer.login.toLowerCase(), REVIEWER_GROUP_WORD[group.state]] as const)));
-    for (const group of model.reviewerGroups) {
-      // Someone awaited who already gave a verdict was asked again; their verdict still stands in its own group.
-      const names = group.reviewers
-        .map((reviewer) => {
-          const verdict = group.state === 'awaiting' ? verdictOf.get(reviewer.login.toLowerCase()) : undefined;
-          return verdict === undefined ? reviewer.login : `${reviewer.login} (asked again; ${verdict})`;
-        })
-        .join(', ');
-      const label = `${group.reviewers.length} ${REVIEWER_GROUP_WORD[group.state]}`;
-      content.push(
-        createElement('span', { class: `${PANEL_CLASS}__reviewers`, 'data-state': group.state, title: `${REVIEWER_GROUP_TITLE[group.state]}: ${names}`, role: 'img', 'aria-label': `${label}: ${names}` }, [
-          createElement('span', { class: `${PANEL_CLASS}__reviewers-glyph`, 'aria-hidden': 'true' }, [icon(ENTRY_GLYPH[group.state])]),
-          avatarStack(group.reviewers.filter((reviewer) => reviewer.src !== ''), group.reviewers[0]?.login ?? '', false, group.reviewers.length),
-          createElement('span', { class: `${PANEL_CLASS}__status-text ${PANEL_CLASS}__reviewers-text`, 'aria-hidden': 'true' }, [label]),
-        ]),
-      );
-    }
+    // Every reviewer, one pill each in the bots' shape, by verdict and then those only awaited.
+    const pills = model.reviewerStatuses
+      .filter((status) => status.verdict !== null || status.awaiting)
+      .sort((a, b) => reviewerRank(a) - reviewerRank(b))
+      .map((status) => reviewerPill(status, model.comments.find((entry) => entry.anchor === status.anchor), handlers));
+    content.push(...pills);
     const open = model.openKey === REVIEWS_KEY;
     if (content.length === 0) content.push(createElement('span', { class: `${PANEL_CLASS}__status-text` }, [model.ingesting ? 'Reading reviews…' : 'No reviews yet']));
-    // Only comments count here; a bare verdict is already in the approvals.
-    const count = model.comments.filter((entry) => entry.hasBody).length;
-    if (count > 0) content.push(countChip(count, `${plural(count, 'review comment')} from people`));
     // The verdicts above are whole (the sidebar's); the comments are still arriving from the timeline.
     if (model.ingesting) content.push(ingestingMark('Still reading the timeline: review comments are on their way'));
     const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${REVIEWS_KEY}` }, [
-      createElement('span', { class: `${PANEL_CLASS}__status-content` }, content),
+      createElement('span', { class: `${PANEL_CLASS}__status-content`, ...(pills.length > 0 ? { [ATTR_FIT]: '' } : {}) }, content),
     ]);
     mainClickToggles(main, () => handlers.onToggle(REVIEWS_KEY));
     const right: Node[] = [];
@@ -1807,17 +1957,24 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     if (open) rows.append(slotRow(BOTS_KEY, null, 'list'));
   }
   if (model.reports.latest.length > 0) rows.append(...reportsRow(model, handlers));
-  if (model.checks !== null) {
-    const health = checksHealth(model.checks);
+  // Workflows waiting on a maintainer's approval may be the only checks a contributor's pull request has.
+  if (model.checks !== null || model.workflowApproval !== null) {
+    const counts = model.checks ?? EMPTY_CHECKS;
+    const health = checksHealth(counts);
     const open = model.openKey === CHECKS_KEY;
     // The breakdown is the information; the total and a second overall glyph on the right only repeated it.
-    const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${CHECKS_KEY}`, 'aria-label': checksSummary(model.checks) }, [checksBreakdown(model.checks)]);
+    // With nothing but waiting workflows there are no counts to show or name the row by: GitHub's heading does both.
+    const waitingOnly = model.checks === null ? model.workflowApproval : null;
+    const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${CHECKS_KEY}`, 'aria-label': waitingOnly ?? checksSummary(counts) }, [
+      waitingOnly === null ? checksBreakdown(counts) : createElement('span', { class: `${PANEL_CLASS}__detail` }, [waitingOnly]),
+    ]);
     mainClickToggles(main, () => handlers.onToggle(CHECKS_KEY));
-    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(checksTone(model.checks, model.requiredFailing) === 'bad' ? 'bad' : null) }, [
-      createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [model.checksRing ?? checksRing(model.checks)]),
+    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(checksTone(counts, model.requiredFailing) === 'bad' ? 'bad' : null) }, [
+      createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [model.checksRing ?? checksRing(counts)]),
       rowLabel('CI checks', 'CI'),
       main,
       createElement('span', { class: `${PANEL_CLASS}__right` }, [
+        ...(model.workflowApproval === null ? [] : [approveWorkflowsControl(model.workflowApproval, handlers.onApproveWorkflows)]),
         createElement('span', { class: `${PANEL_CLASS}__gear-slot`, [ATTR_GEAR_SLOT]: '' }),
         chevron(open, () => handlers.onToggle(CHECKS_KEY)),
       ]),
@@ -2111,7 +2268,7 @@ function botLine(line: BotLine, model: PanelModel, handlers: PanelHandlers, rese
     else if (firstThread !== null) handlers.onOpenAnchor(firstThread);
   };
   const mainChildren: Node[] = [
-    createElement('span', { class: `${PANEL_CLASS}__name` }, [botTitle(bot.id, bot.login)]),
+    createElement('span', { class: `${PANEL_CLASS}__name`, ...whoAttributes(bot.login, true) }, [botTitle(bot.id, bot.login)]),
     createElement('span', { class: `${PANEL_CLASS}__bot-detail ${PANEL_CLASS}__bot-line-detail` }, [botDetail(bot)]),
   ];
   if (line.preview !== '') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview` }, inlineText(line.preview)));
@@ -2123,7 +2280,8 @@ function botLine(line: BotLine, model: PanelModel, handlers: PanelHandlers, rese
       : createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static`, [ATTR_FOCUS]: focusKey }, mainChildren);
   if (opens || goes) mainClickToggles(main, act);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
-  if (line.time !== '' && line.anchor !== null) right.append(createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: line.anchor }, [line.time]));
+  const lineTime = line.anchor === null ? null : commentTime(model, line.anchor, line.time);
+  if (lineTime !== null) right.append(lineTime);
   const spacer = (): HTMLElement => createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' });
   if (opens && line.anchor !== null) right.append(controlSlot(line.anchor, true), chevron(open, act));
   else if (goes) {
@@ -2224,13 +2382,6 @@ const REVIEWER_GROUP_WORD: Readonly<Record<ReviewerGroupState, string>> = {
   awaiting: 'awaiting',
 };
 
-const REVIEWER_GROUP_TITLE: Readonly<Record<ReviewerGroupState, string>> = {
-  approved: 'Approved',
-  changes_requested: 'Changes requested',
-  commented: 'Reviewed with comments',
-  awaiting: 'Awaiting review',
-};
-
 const ENTRY_LABEL: Readonly<Record<ReviewEntryState, string>> = {
   approved: 'Approved',
   changes_requested: 'Requested changes',
@@ -2303,7 +2454,7 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
     else if (goes && firstThread !== null) handlers.onOpenAnchor(firstThread);
     else handlers.onToggleSub(entry.anchor);
   };
-  const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__name` }, [bot ? botTitle(resolveBotId(entry.author) ?? `custom:${entry.author}`, entry.author) : entry.author])];
+  const mainChildren: Node[] = [createElement('span', { class: `${PANEL_CLASS}__name`, ...whoAttributes(entry.author, bot) }, [bot ? botTitle(resolveBotId(entry.author) ?? `custom:${entry.author}`, entry.author) : entry.author])];
   // A verdict without words shows only the name: the glyph already says approved / requested changes.
   if (entry.preview !== '') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview` }, inlineText(entry.preview)));
   else if (entry.state === 'awaiting') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview ${PANEL_CLASS}__preview--verdict` }, ['awaiting review']));
@@ -2317,7 +2468,8 @@ function entryRow(entry: ReviewEntry, model: PanelModel, handlers: PanelHandlers
       : createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static`, [ATTR_FOCUS]: focusKey }, mainChildren);
   if (opens || goes) mainClickToggles(main, act);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
-  if (entry.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: entry.anchor }, [entry.time]));
+  const entryTime = commentTime(model, entry.anchor, entry.time);
+  if (entryTime !== null) right.append(entryTime);
   // The times read as one column: a line with fewer squares after its time than a sibling leaves the missing
   // ones blank. In a round an opening line has a ⋯ and a chevron (two squares); in the Reviews index every line
   // that goes somewhere has one chevron and nothing else.
@@ -2379,7 +2531,7 @@ function signatureOf(model: PanelModel): string {
     freshness: model.freshness,
     truncated: model.truncated,
     openKey: model.openKey,
-    collapsed: [...model.collapsedGroups].sort(),
+    openFolded: openRowFolded(model),
     fullTimeline: model.fullTimeline,
     compacting: model.compacting,
     nudge: model.nudge,
@@ -2407,6 +2559,7 @@ function signatureOf(model: PanelModel): string {
     botLines: model.botLines.map((line) => `${line.bot.id}:${line.anchor ?? ''}:${line.preview}:${line.time}:${line.avatarSrc ?? ''}:${line.threads.map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('|')}`),
     checks: model.checks,
     requiredFailing: model.requiredFailing,
+    workflowApproval: model.workflowApproval,
     previews: [...model.previews.latest, ...model.previews.archived].map((entry) => `${entry.anchor}:${entry.host}:${entry.project}:${entry.status}:${entry.url ?? ''}:${model.avatarForAnchor(entry.anchor) ?? ''}`),
     archivedPreviewsOpen: model.archivedPreviewsOpen,
     ring: model.checksRing?.outerHTML.length ?? 0,
@@ -2481,11 +2634,60 @@ export interface MountOptions {
 }
 
 export function mountPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions = {}): MountedPanel | null {
+  // A rebuild (the reading ending changes the signature) must not drop the bar mid-way: the new panel takes it.
+  const bar = document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}] > .${PANEL_CLASS}__reading`);
+  const mounted = buildPanel(model, handlers, options);
+  if (mounted === null) return null;
+  if (bar !== null && !mounted.root.contains(bar) && mounted.root.querySelector(`:scope > .${PANEL_CLASS}__reading`) === null) mounted.root.prepend(bar);
+  syncProgress(mounted.root, model.progress);
+  return mounted;
+}
+
+/** The last width the progress bar showed: a rebuilt panel's new bar starts there, so it never jumps back to empty. */
+let shownProgress = 0;
+
+/**
+ * A thin accent bar along the digest's top edge while Geld reads the timeline (`PanelModel.progress`), kept in place
+ * across passes rather than in the signature, so it moves without rebuilding the panel. When the reading ends it fills
+ * and fades out.
+ */
+function syncProgress(root: HTMLElement, progress: number | null): void {
+  let bar = root.querySelector<HTMLElement>(`:scope > .${PANEL_CLASS}__reading`);
+  if (progress === null) {
+    if (bar === null || bar.hasAttribute('data-done')) return;
+    bar.setAttribute('data-done', '');
+    bar.setAttribute('aria-valuenow', '100');
+    bar.style.setProperty('--geld-progress', '1');
+    const leaving = bar;
+    window.setTimeout(() => leaving.remove(), 600);
+    shownProgress = 0;
+    return;
+  }
+  const percent = String(Math.round(progress * 100));
+  if (bar === null || bar.hasAttribute('data-done')) {
+    bar?.remove();
+    bar = createElement('div', { class: `${PANEL_CLASS}__reading`, [OWN_UI_ATTRIBUTE]: '', role: 'progressbar', 'aria-label': 'Reading the timeline', 'aria-valuemin': '0', 'aria-valuemax': '100' }, [createElement('div', { class: `${PANEL_CLASS}__reading-fill` })]);
+    // Never ahead of this visit's own reading: a value above it is a previous pull request's.
+    bar.style.setProperty('--geld-progress', String(Math.min(shownProgress, progress)));
+    root.prepend(bar);
+    const fresh = bar;
+    requestAnimationFrame(() => fresh.style.setProperty('--geld-progress', String(progress)));
+  } else {
+    bar.style.setProperty('--geld-progress', String(progress));
+  }
+  bar.setAttribute('aria-valuenow', percent);
+  shownProgress = progress;
+}
+
+function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions): MountedPanel | null {
   const existing = document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
   const signature = signatureOf(model);
-  const openNow = `${model.openKey ?? ''}|${model.openSubKey ?? ''}`;
+  // What the reader opened, as a held rebuild compares it: folding the group around the open row counts too.
+  const openNow = `${model.openKey ?? ''}|${model.openSubKey ?? ''}|${openRowFolded(model) ? 'folded' : ''}`;
   if (existing !== null && existing.isConnected) {
     const slot = existing.querySelector<HTMLElement>(`[${ATTR_SLOT}] > .${PANEL_CLASS}__slot-body`);
+    // Folded groups are not in the signature: whatever panel stays, it shows the groups as the model has them.
+    syncGroups(existing, model.collapsedGroups);
     if (existing.getAttribute(ATTR_SIG) === signature) return { root: existing, slot };
     if (options.holdRebuild === true && existing.getAttribute(ATTR_OPEN) === openNow) return { root: existing, slot };
     // Someone is typing in GitHub's reply box inside the slot: a rebuild would move it and drop focus. Wait.
@@ -2493,6 +2695,8 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers, options: 
     if (slot !== null && active instanceof Element && slot.contains(active) && active.matches('textarea, input, [contenteditable]')) return { root: existing, slot };
     // The Request a review menu is open with boxes ticked: a rebuild would close it and lose the picks. Wait.
     if (existing.querySelector(`.${PANEL_CLASS}__request[open]`) !== null) return { root: existing, slot };
+    // An edit history is open from a clock: a rebuild would close it and take the reader's focus. Wait.
+    if (existing.querySelector(`.${PANEL_CLASS}__edited-wrap[open]`) !== null) return { root: existing, slot };
   }
   const card = descriptionCard();
   if (card === null) return null;
@@ -2554,10 +2758,22 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers, options: 
 
   /* Groups */
   const rows = createElement('ul', { class: `${PANEL_CLASS}__rows`, role: 'list' });
-  const appendBatches = (batches: readonly Batch[]): void => {
+  // A folded group's rows are built too, hidden, so folding and unfolding it is an attribute flip with no rebuild.
+  // Only the open row's slot is left out while its group is folded: a slot borrows GitHub's nodes, and none of them
+  // should sit away from home where nobody can see them.
+  const inGroup = (id: GroupId, add: (slots: boolean) => void): void => {
+    const folded = model.collapsedGroups.has(id);
+    const from = rows.children.length;
+    add(!folded);
+    for (const child of [...rows.children].slice(from)) {
+      child.setAttribute(ATTR_IN_GROUP, id);
+      if (folded) child.setAttribute('hidden', '');
+    }
+  };
+  const appendBatches = (batches: readonly Batch[], slots: boolean): void => {
     for (const batch of batches) {
       rows.append(batchRow(batch, model, handlers));
-      if (model.openKey === batch.key) rows.append(slotRow(batch.key, null, 'list'));
+      if (slots && model.openKey === batch.key) rows.append(slotRow(batch.key, null, 'list'));
     }
   };
   if (model.grouping === 'batch') {
@@ -2565,56 +2781,44 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers, options: 
     const openItems = model.meta.items.filter((item) => isOpenStatus(item.status));
     if (openItems.length > 0) {
       rows.append(groupHeading('open', `Needs attention · ${plural(openItems.length, 'open thread')}`, model, handlers));
-      if (!model.collapsedGroups.has('open')) {
+      inGroup('open', (slots) => {
         for (const item of openItems) {
           rows.append(itemRow(item, model, handlers));
-          if (model.openKey === itemKey(item.id)) rows.append(slotRow(model.openKey));
+          if (slots && model.openKey === itemKey(item.id)) rows.append(slotRow(model.openKey));
         }
-      }
+      });
     }
     rows.append(groupHeading('pushes', plural(model.batches.length, 'push', 'pushes'), model, handlers));
-    if (!model.collapsedGroups.has('pushes')) appendBatches([...model.batches].reverse());
+    inGroup('pushes', (slots) => appendBatches([...model.batches].reverse(), slots));
   }
-  // Rounds with a thread still open come first and stay open; settled rounds fold away by default. By type a round
-  // is its review content, so a run of commits that nothing followed (the last pushes of a PR nobody has reviewed
-  // yet) is no round at all - its commits are in the Commits fold. By push the same run is a push and stays.
-  const withContent = model.batches.filter((batch) => batch.items.length + batch.comments.length + batch.reviews.length + batch.previews.length > 0);
-  // The latest round with no threads at all is the current one, not a settled one: nothing in it was ever to settle,
-  // and what it holds (a reviewer's remark, a bot's note on the newest push) is the state of the conversation, so it
-  // stands in the open group rather than folding away under "settled rounds".
-  // The newest round of all, not the newest with something to show: a newer round whose only content is seated under
-  // Reports or Review bots is still the newer one, and the round before it is history, not the current conversation.
-  const latest = model.batches[model.batches.length - 1];
-  const current = latest !== undefined && withContent.includes(latest) && latest.items.length === 0 ? latest : null;
-  const attention = model.grouping === 'batch' ? [] : withContent.filter((batch) => batch === current || batch.items.some((item) => isOpenStatus(item.status)));
-  const settled = model.grouping === 'batch' ? [] : withContent.filter((batch) => !attention.includes(batch));
+  const { current, attention, settled } = roundGroups(model);
   if (attention.length > 0) {
     const toReview = attention.filter((batch) => batch !== current).length;
     rows.append(groupHeading('open', toReview === 0 ? 'Current round' : `${plural(toReview, 'round')} to review · ${plural(open.length, 'open thread')}`, model, handlers));
-    if (!model.collapsedGroups.has('open')) appendBatches(attention);
+    inGroup('open', (slots) => appendBatches(attention, slots));
   }
   if (settled.length > 0) {
     rows.append(groupHeading('done', done.length > 0 ? plural(done.length, 'resolved thread') : plural(settled.length, 'settled round'), model, handlers));
-    if (!model.collapsedGroups.has('done')) appendBatches(settled);
+    inGroup('done', (slots) => appendBatches(settled, slots));
   }
   if (!model.fullTimeline && model.grouping !== 'batch') {
     // Comments that need nothing from the reader (bot run summaries, review requests), then the timeline's activity.
     const other = model.folds.filter((fold) => fold.section === 'comments');
     const activity = model.folds.filter((fold) => fold.section === 'activity');
-    const appendFolds = (folds: readonly FoldRow[]): void => {
+    const appendFolds = (folds: readonly FoldRow[], slots: boolean): void => {
       for (const fold of folds) {
         rows.append(foldRowEl(fold, model, handlers));
         // One comment under its row (a closure's too: its event is the row): the row is the header, the slot the body.
-        if (model.openKey === foldKey(fold.key)) rows.append(slotRow(model.openKey, null, fold.count === 1 || fold.closure !== undefined ? 'solo' : null));
+        if (slots && model.openKey === foldKey(fold.key)) rows.append(slotRow(model.openKey, null, fold.count === 1 || fold.closure !== undefined ? 'solo' : null));
       }
     };
     if (other.length > 0) {
       rows.append(groupHeading('hidden', plural(other.reduce((sum, fold) => sum + fold.count, 0), 'other item'), model, handlers));
-      if (!model.collapsedGroups.has('hidden')) appendFolds(other);
+      inGroup('hidden', (slots) => appendFolds(other, slots));
     }
     if (activity.length > 0) {
       rows.append(groupHeading('activity', 'Other activity', model, handlers));
-      if (!model.collapsedGroups.has('activity')) appendFolds(activity);
+      inGroup('activity', (slots) => appendFolds(activity, slots));
     }
   }
 
@@ -2639,6 +2843,14 @@ export function mountPanel(model: PanelModel, handlers: PanelHandlers, options: 
     panel.append(createElement('div', { class: `${PANEL_CLASS}__timeline` }, [toggle]));
   }
 
+  // `toggle` does not bubble, so one capturing listener hears every edit history in the rows and the slot close.
+  panel.addEventListener(
+    'toggle',
+    (event) => {
+      if (event.target instanceof HTMLDetailsElement && !event.target.open && event.target.matches(`.${PANEL_CLASS}__edited-wrap`)) handlers.onRequestMenuClosed();
+    },
+    true,
+  );
   panel.style.marginLeft = cardMargins.left;
   panel.style.marginRight = cardMargins.right;
   const freshBody = carried === null ? null : panel.querySelector<HTMLElement>(`[${ATTR_SLOT}="${CHECKS_KEY}"] > .${PANEL_CLASS}__slot-body`);
@@ -2689,6 +2901,7 @@ function railIndent(nudge: HTMLElement): number {
 }
 
 export function unmountPanel(): void {
+  shownProgress = 0;
   restoreAll();
   const panel = document.querySelector(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
   if (panel !== null) reclaimOrphans(panel);

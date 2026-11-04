@@ -19,13 +19,15 @@ import { authorOf, avatarSrcForLogin } from './crawler';
 import { fitPathInto } from './path-fit';
 import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
-import { ATTR_TIME_FOR } from './panel';
+import { ATTR_EDITED_FOR, ATTR_TIME_FOR } from './panel';
 import { isTeleported, onRestore, teleportInto } from './teleport';
 import { inlineText } from './inline-text';
 import { armViaHovercard } from './via';
 import type { ViaBot } from './via';
+import { isMinimizedWrapper } from './edit-times';
 import type { RevisionView } from './edit-times';
-import { absoluteTimeText, relativeTimeElement } from './time';
+import { editedMark } from './edited-mark';
+import { relativeTimeElement } from './time';
 import { stickyHeaderBottomAt } from './sticky';
 
 /** On a message: `meta` (author line), `bubble` (the body), `edit` (GitHub's edit form), `reactions`. */
@@ -41,8 +43,6 @@ const BODY_SELECTOR = '.comment-body, .js-comment-body, [data-testid="comment-bo
 const MESSAGE_SELECTOR = '.timeline-comment, .js-comment, .review-comment, .react-issue-comment, [data-testid="comment-container"], [data-testid="review-thread-comment"], [id^="discussion_r"]';
 const META_SELECTOR = '.timeline-comment-header, .timeline-comment-actions, [data-testid="comment-header"], h3, a.author, a[data-testid="author-link"]';
 const REACTIONS_SELECTOR = '.comment-reactions, .js-reactions-container, [data-testid="reactions"], [data-testid="comment-reactions"]';
-/** GitHub's wrapper round a minimized comment (its <details> holds the notice and the comment). */
-const MINIMIZED_WRAPPER = '.minimized-comment, .js-minimized-comment';
 /** The compact comment card GitHub renders inside a minimized comment: header (h4) and body as siblings in here. */
 const COMPACT_CARD = '.review-comment-contents';
 /** The signed-in login, from GitHub's own meta tag (empty when signed out: then nothing is "mine"). */
@@ -74,10 +74,9 @@ export interface ChatSource {
   readonly revision?: RevisionView;
   /**
    * The time said on the strip after the label, ISO, when it is worth saying:
-   * the comment is from an earlier run than the thread (the bot posted no
-   * summary with this one), or the live node has been rewritten since it
-   * was posted (then this is the rewrite's time — the reading's own). A
-   * revision shown instead of the live node carries its own time.
+   * the live node has been rewritten since it was posted (then this is the
+   * rewrite's time — the reading's own). A revision shown instead of the
+   * live node carries its own time.
    */
   readonly at?: string;
   /** A review bot's summary that is its latest word: Geld's Rerun stands on the open strip's right. */
@@ -130,6 +129,36 @@ export function chatNeedsRedress(chat: HTMLElement): boolean {
     }
   }
   return false;
+}
+
+/**
+ * Dress what GitHub has just added to a chat on loan, where it stands. A
+ * reply the reader posts (or one that arrives over the socket) is appended
+ * to the loaned thread as GitHub's raw card; the pass that would have read
+ * it (`chatNeedsRedress` → a full re-render of the slot, every loan going
+ * home and coming back) runs after a debounce, so the card showed raw for a
+ * moment and then the whole chat redrew around it (notra#1148). Called from
+ * the loan watcher's MutationObserver callback — a microtask, before the
+ * browser paints — this marks the newcomers and re-reads each message's
+ * place in its author's run (the one before a new reply is no longer the
+ * last of its run), so the reply is a bubble from its first frame and the
+ * pass that follows finds nothing to redress. True when something was dressed.
+ */
+export function dressArrivals(root: ParentNode = document): boolean {
+  let dressed = false;
+  const viewer = viewerLogin();
+  for (const body of root.querySelectorAll<HTMLElement>('.geld-review__chat[data-geld-chat="thread"] .geld-review__chat-body')) {
+    for (const thread of body.children) {
+      if (!(thread instanceof HTMLElement) || !isTeleported(thread)) continue;
+      const messages = messagesIn(thread, true);
+      const fresh = messages.filter((message) => !message.hasAttribute(ATTR_MESSAGE));
+      if (fresh.length === 0) continue;
+      annotateMessages(messages, viewer, false);
+      for (const message of fresh) placeControls(message);
+      dressed = true;
+    }
+  }
+  return dressed;
 }
 
 /** The thread's first comment anchor (its identity across rebuilds). */
@@ -209,6 +238,8 @@ export interface ChatByline {
   readonly edited?: string;
   /** When the comment was first posted (ISO), for that clock; `time` is its relative wording as the page says it. */
   readonly postedAt?: string;
+  /** The comment's edit-history log: the clock then opens GitHub's edit history (`editedMark`). */
+  readonly editLog?: string;
 }
 
 /** An older word of a review bot's: the control that leads to its current one. */
@@ -244,9 +275,17 @@ const ATTR_AGENT_RERUN = 'data-geld-agent-rerun';
  * A review posted by a Cursor cloud agent (an automation, by `cursor[bot]`)
  * ends in "Open in Web", the agent's run on cursor.com. Found Oct 2026 on
  * public pull requests; Bugbot's "Fix All in Cursor" is an action, not a
- * view, and the other bots post none.
+ * view, and the other bots post none. Since Nov 2026 Greptile's badge goes
+ * through its tenant switch, the run's path encoded in `next`
+ * (`/-/switch-tenant?tenant=o&next=%2Fo%2Fr%2Fpull%2F9`).
  */
-const AGENT_VIEW_LINKS = ['a[href^="https://app.greptile.com/"][href*="/pull/"]:not([href*="/api/retrigger"])', 'a[href^="https://app.devin.ai/review/"]', 'a[href^="https://app.coderabbit.ai/change-stack/"]', 'a[href^="https://cursor.com/agents/"]'];
+const AGENT_VIEW_LINKS = [
+  'a[href^="https://app.greptile.com/"][href*="/pull/"]:not([href*="/api/retrigger"])',
+  'a[href^="https://app.greptile.com/-/switch-tenant?"][href*="%2Fpull%2F"]',
+  'a[href^="https://app.devin.ai/review/"]',
+  'a[href^="https://app.coderabbit.ai/change-stack/"]',
+  'a[href^="https://cursor.com/agents/"]',
+];
 const ATTR_AGENT_VIEW = 'data-geld-agent-view';
 
 export function hideAgentRerunControls(body: HTMLElement): void {
@@ -352,42 +391,6 @@ function latestControl(latest: ChatLatest): HTMLElement {
   return createElement('span', { class: 'geld-review__rerun-wrap' }, [button]);
 }
 
-let editedIds = 0;
-
-/**
- * A comment edited after it was posted: a clock beside the byline's time.
- * The byline says the edit's time, since the bubble is the comment as it
- * reads now; the clock's words say when it was first posted ("Originally
- * posted Oct 8, 2026, 5:08 PM"), or, when the page has not said that, when
- * it was edited. The moment is absolute only: a relative age would need
- * re-wording while the chat stays open, and with the date beside it the
- * tooltip ran to two lines. The words come up in GitHub's own tooltip
- * (`tool-tip`, instant and styled like the page's; where the page does not
- * define it they are the title) and are read aloud as the mark's label.
- */
-function editedMark(editedAt: string, postedAt: string | null): HTMLElement {
-  editedIds += 1;
-  const id = `geld-edited-${editedIds}`;
-  const words = editedWords(editedAt, postedAt);
-  const mark = createElement('span', { id, class: 'geld-review__edited', role: 'img', 'aria-label': words }, [icon(ICON_HISTORY)]);
-  // The content script's world has no `customElements` to ask (Chrome leaves it null there); a page that defines
-  // `tool-tip` has rendered some of its own by now (the header's), so their presence stands for the definition.
-  if (document.querySelector('tool-tip') === null) {
-    mark.setAttribute('title', words);
-    return mark;
-  }
-  const tip = document.createElement('tool-tip');
-  for (const [name, value] of Object.entries({ for: id, popover: 'manual', 'data-direction': 'n', 'data-type': 'description', class: 'sr-only position-absolute', role: 'tooltip' })) tip.setAttribute(name, value);
-  tip.textContent = words;
-  return createElement('span', { class: 'geld-review__edited-wrap' }, [mark, tip]);
-}
-
-/** "Originally posted Oct 8, 2026, 5:08 PM"; "Edited Oct 8, 2026, 5:08 PM" when the posting time is not known. */
-function editedWords(editedAt: string, postedAt: string | null): string {
-  const absolute = absoluteTimeText(postedAt ?? editedAt);
-  return `${postedAt === null ? 'Edited' : 'Originally posted'}${absolute === '' ? '' : ` ${absolute}`}`;
-}
-
 /**
  * GitHub's own small dialog (Primer's `Overlay`, as the page's "Verified"
  * and saved-replies dialogs are built), asking whether to trigger a bot that
@@ -475,7 +478,9 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
       // The bubble is the comment as it reads now, so the time beside the name is the edit's (GitHub's own live
       // element, which keeps it current); the clock says when the comment was first posted. The created time is
       // not refreshed into this cell (no `ATTR_TIME_FOR`).
-      line.append(relativeTimeElement(byline.edited, 'geld-review__time'), editedMark(byline.edited, byline.postedAt ?? null));
+      const time = relativeTimeElement(byline.edited, 'geld-review__time');
+      if (byline.timeAnchor !== undefined) time.setAttribute(ATTR_EDITED_FOR, byline.timeAnchor);
+      line.append(time, editedMark(byline.edited, byline.postedAt ?? null, byline.editLog ?? null));
     } else if (byline.time !== '') {
       line.append(createElement('span', { class: 'geld-review__time', ...(byline.timeAnchor === undefined ? {} : { [ATTR_TIME_FOR]: byline.timeAnchor }) }, [byline.time]));
     }
@@ -875,14 +880,28 @@ function installMenuFlip(): void {
   window.addEventListener('resize', replaceOpen, { passive: true });
 }
 
+/** On a minimized comment's <details> the chat opened itself: not the reader's doing, so not an interaction GitHub's refresh must wait for. */
+export const ATTR_OPENED_BY_GELD = 'data-geld-opened';
+
 /** A minimized comment opens here (the row is the reader's choice to look); GitHub's state comes back with the node. */
 export function openMinimized(root: HTMLElement): void {
   // Only the minimizing <details> itself: a comment's ⋯ menu and reaction picker are <details> too.
   for (const details of root.querySelectorAll<HTMLDetailsElement>('.minimized-comment > details, details.minimized-comment')) {
     if (details.open) continue;
     details.open = true;
+    details.setAttribute(ATTR_OPENED_BY_GELD, '');
+    // The reader closing it takes it over: from then on its state is theirs, and an open one counts as an
+    // interaction again. (The `toggle` our own open fires has `open` true and passes.)
+    const taken = (): void => {
+      if (details.open) return;
+      details.removeAttribute(ATTR_OPENED_BY_GELD);
+      details.removeEventListener('toggle', taken);
+    };
+    details.addEventListener('toggle', taken);
     onRestore(() => {
+      details.removeEventListener('toggle', taken);
       details.open = false;
+      details.removeAttribute(ATTR_OPENED_BY_GELD);
     });
   }
 }
@@ -928,8 +947,7 @@ export function messagesIn(root: HTMLElement, thread: boolean): readonly HTMLEle
   // The wrapper of a minimized comment is told by the <details> it holds: a review's own card carries the
   // `minimized-comment` class too (with `timeline-comment` and `js-comment`, the header a direct child), and read
   // as a wrapper it had no message at all — the card showed raw in its chat, header and all (server#7851).
-  const minimizedWrapper = (node: HTMLElement): boolean => node.matches(MINIMIZED_WRAPPER) && (node instanceof HTMLDetailsElement || node.querySelector(':scope > details') !== null);
-  const all = [...candidates, ...compact].filter((node) => node.closest('form') === null && node.querySelector(BODY_SELECTOR) !== null && !minimizedWrapper(node) && (node.matches(COMPACT_CARD) || node.querySelector(COMPACT_CARD) === null));
+  const all = [...candidates, ...compact].filter((node) => node.closest('form') === null && node.querySelector(BODY_SELECTOR) !== null && !isMinimizedWrapper(node) && (node.matches(COMPACT_CARD) || node.querySelector(COMPACT_CARD) === null));
   return all.filter((node) => !all.some((other) => other !== node && other.contains(node)));
 }
 

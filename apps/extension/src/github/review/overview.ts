@@ -5,25 +5,29 @@
  * remounts are handled by applying again. Never scrolls the page.
  */
 
-import { createElement } from '../dom';
+import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
 import type { GeldSettings } from '@geld/core';
-import type { BotVerdictRecord, CommentLane, GeldPrMeta, ReviewItem, ReviewerState } from '@geld/review';
-import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, firstSentence, isOpenStatus, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
+import type { BotVerdictRecord, CommentLane, GeldPrMeta, RawCheckRun, ReviewItem, ReviewerState } from '@geld/review';
+import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, commandReply, firstSentence, isOpenStatus, isReviewShaped, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, mergeCheckRuns, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
-import { describePage } from '../page';
-import { phase, phaseSince } from '../../lib/perf';
+import { describePage, pullRequestStateWords } from '../page';
+import { count, phase, phaseSince } from '../../lib/perf';
 import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
-import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, reviewCommentOf, revisionMarker, THREAD_SELECTOR } from './crawler';
+import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
 import { crawlConversation } from './crawler';
-import { clickLoadMore, fragmentHeaders, hasLoadMore, sourceAnchorFromHash } from './deeplink';
+import { threadFragmentOf } from './thread-fragment';
+import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
-import { editedAt, editsVersion, resetEditTimes, revisionAsOf } from './edit-times';
+import { editedAt, editsVersion, editTimesOf, refreshEditTimes, resetEditTimes, revisionAsOf, revisionTimesOf } from './edit-times';
+import type { SameRunCandidate } from './revisions';
+import { RUN_SETTLE_MS, threadHeadOf } from './thread-head';
+import { headChecks, nextCheckRefresh, resetHeadChecks } from './check-source';
 import { absoluteTimeText, relativeTimeText } from './time';
 import { stickyHeaderBottomAt } from './sticky';
 import { fetchReviewerCandidates, hasReviewActions, pressReviewAction, requestReviewers, reviewRequestForm } from './reviewers';
@@ -31,14 +35,16 @@ import type { ReviewerCandidate } from './reviewers';
 import { nextRunGraceEnd, withRunTimes } from './run-starts';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
-import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
+import { shortenDescription } from './description';
+import { applyFolds, closureKindOf, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
+import { ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
 import { knownMarkShape } from './mark-shape';
+import { loginOfLink, showLogins } from './login';
 import { allResolved, checkCountsFrom, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, standingReviewers } from './panel-model';
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
@@ -47,19 +53,27 @@ import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel }
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
-import { chatNeedsRedress, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
+import { chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
 import type { ChatByline, ChatRerun, ChatThreadLink } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
 import { fitChips, stopFittingChips } from './fit-chips';
 import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
-import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
+import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrphanedLoans, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
+import { pageFetch } from '../page-fetch';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
 /** "Load more" rounds we click while a deeplinked anchor is still off the page. */
 const MAX_LOAD_MORE = 8;
+/** On the root while Geld keeps pressing GitHub's "Load more": the stylesheet hides that bar, fresh copies included. */
+const ATTR_AUTOLOADING = 'data-geld-autoloading';
+
+function setAutoLoading(on: boolean): void {
+  document.documentElement.toggleAttribute(ATTR_AUTOLOADING, on);
+}
+
 /** "Load more" presses per visit in compact mode (each brings a page of hidden items). */
 const MAX_AUTO_LOADS = 40;
 
@@ -96,6 +110,16 @@ interface VisitState {
    * grace period and only given up once the conversation stays gone.
    */
   openSubMissingSince: number | null;
+  /**
+   * The comment anchors of the open item (thread row), with the key they
+   * were read under, as of the last pass that found it. An item's id hashes
+   * every anchor in its conversation, so a reply the reader posts into it
+   * gives the item a new id; the open row follows the conversation by these
+   * anchors (`reseatOpenItem`) instead of closing because its key matched
+   * nothing. Tied to their key so that another thread the reader has just
+   * selected is never reseated onto this one's conversation.
+   */
+  openItemAnchors: { readonly key: string; readonly anchors: ReadonlySet<string> } | null;
   /** "At least N approving reviews" as last stated by the merge box; it stops saying so once met. */
   knownRequired: number | null;
   /** The last reading, kept while React re-renders the merge box (a blank pass must not drop the row). */
@@ -103,6 +127,8 @@ interface VisitState {
   /** GitHub's checks list has been asked to render (its gear lives there). */
   checksExpanded: boolean;
   autoLoads: number;
+  /** The most items GitHub's "Load more" has said it hides this visit, and the furthest the reading has got (0 to 1). */
+  ingest: { hiddenPeak: number; hiddenLast: number; progress: number };
   /** Items marked done here when neither GitHub's Resolve nor a summary checkbox could take it. */
   manualDone: Set<string>;
   /**
@@ -149,10 +175,12 @@ const visit: VisitState = {
   openPreviews: new Set<string>(),
   flash: null,
   openSubMissingSince: null,
+  openItemAnchors: null,
   knownRequired: null,
   lastReviews: null,
   checksExpanded: false,
   autoLoads: 0,
+  ingest: { hiddenPeak: 0, hiddenLast: 0, progress: 0 },
   manualDone: new Set(),
   settling: null,
   pinnedEntry: null,
@@ -305,6 +333,13 @@ function watchLoans(root: Element): void {
   loanWatcher?.disconnect();
   loanWatched = root;
   loanWatcher ??= new MutationObserver((records) => {
+    // A comment GitHub appended to a loaned thread (the reader's reply, one over the socket) is dressed here and
+    // now, before paint, so it never shows as GitHub's raw card and the pass below finds nothing to redress.
+    // `loanWatched`, not `root`: the observer is made once and re-pointed at each mount's root, so the callback's own
+    // `root` is the first mount's, long detached.
+    // Not in a hidden tab: nobody sees the card, and the pass deferred until the tab shows (`reapplySoon`) redresses
+    // the chat then (`chatNeedsRedress`), as before.
+    if (!document.hidden && loanWatched !== null && records.some((record) => record.type === 'childList' && record.addedNodes.length > 0 && record.target instanceof Element && record.target.closest(LOAN_VIEWS) !== null)) dressArrivals(loanWatched);
     // A swap GitHub made of a loaned node *is* the thread changing state (the classic Resolve answers with the
     // whole thread, resolved, in a fresh `<turbo-frame>`). Adoption hands the loan token to the newcomer, and
     // `touchesThreadState` reads a token as the panel's own move — so the adoption itself has to say "changed";
@@ -361,6 +396,46 @@ function reseatOpenLine(batches: readonly Batch[]): void {
   if (home !== undefined) visit.openKey = home.key;
 }
 
+/**
+ * The open item (a thread row, inside a round or by push) follows its
+ * conversation. Its key is `item:<id>` and the id hashes every comment
+ * anchor in the conversation (`itemIdFor`), so the reply the reader has just
+ * posted into the thread — GitHub appends the comment to the loaned node, the
+ * crawl reads one more anchor — gives the item a new id, and the key the
+ * reader opened matched nothing: the row they were writing in closed under
+ * them once the missing-line grace ran out (notra#1148). The anchors are
+ * remembered while the item is found (and seeded when the reader selects a
+ * row, from the model that drew it), under the key they were read for, and
+ * when that key is not found, the item that shares one of them is the same
+ * conversation and takes the open key. Anchors read under another key are
+ * not used: they belong to the thread open before the one just selected.
+ */
+function reseatOpenItem(meta: GeldPrMeta): void {
+  const field = visit.openSubKey?.startsWith('item:') === true ? 'openSubKey' : visit.openKey?.startsWith('item:') === true ? 'openKey' : null;
+  if (field === null) {
+    visit.openItemAnchors = null;
+    return;
+  }
+  const key = visit[field];
+  if (key === null) return;
+  const found = meta.items.find((item) => itemKey(item.id) === key);
+  if (found !== undefined) {
+    visit.openItemAnchors = { key, anchors: new Set(found.sources.map((source) => source.anchor)) };
+    return;
+  }
+  // Only the anchors read under this very key: the reader may have selected another thread since (its row
+  // rendered under an id a reply had already changed), and that thread's missing key must not fall back to
+  // the conversation that was open before it.
+  const remembered = visit.openItemAnchors;
+  if (remembered === null || remembered.key !== key) return;
+  const successor = meta.items.find((item) => item.sources.some((source) => remembered.anchors.has(source.anchor)));
+  if (successor === undefined) return;
+  visit[field] = itemKey(successor.id);
+  visit.openItemAnchors = { key: visit[field], anchors: new Set(successor.sources.map((source) => source.anchor)) };
+  // A settle armed for the old key (the reply mutated the loaned node) is about this same conversation.
+  if (visit.settling !== null && visit.settling.itemKey === key) visit.settling = { ...visit.settling, itemKey: visit[field] };
+}
+
 /** How long an open line's conversation may be absent from the crawl before the line is given up. */
 const OPEN_LINE_GRACE_MS = 5000;
 
@@ -413,13 +488,15 @@ function unique<T>(values: readonly T[]): T[] {
 
 type Crawled = ReturnType<typeof crawlConversation>;
 
-function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: string, generatedAt: string, partial: boolean): GeldPrMeta {
+function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: string, generatedAt: string, partial: boolean, threadsRead: boolean): GeldPrMeta {
   const comments = crawled.comments.map((entry) => entry.comment);
   const items = clusterComments(comments, settings.reviewBots);
-  // The merge box's check rows, as the Action would read them from the API: a bot whose run finished green and
-  // that flagged nothing is clean, whatever its opening comment said. A run's start (shown while it runs, kept
-  // after) is a run asked for as surely as a trigger comment, and a report is a word newer than that start.
-  const checks = withRunTimes(crawlCheckRuns(document, headSha), visit.pageKey, headSha, reapplySoon);
+  // The head's check rows, as the Action would read them from the API: a bot whose run finished green and that
+  // flagged nothing is clean, whatever its opening comment said. A run's start (shown while it runs, kept after)
+  // is a run asked for as surely as a trigger comment, and a report is a word newer than that start. The page's
+  // merge box has the rows only when expanded (and not at all once the pull request is merged or closed), so the
+  // commit's status partial fills in what it does not show (`check-source.ts`).
+  const checks = withRunTimes(pageChecks(headSha), visit.pageKey, headSha, reapplySoon);
   // The grace a finished check's report is given ends on a clock, not on a page change: a pass is due then.
   const graceEnd = nextRunGraceEnd(checks, REPORT_GRACE_MS);
   if (graceEnd !== null) reapplyAt(graceEnd);
@@ -445,7 +522,7 @@ function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: st
     headSha,
     settings.reviewBots,
     Date.now(),
-    { partial, closed: pullRequestClosed() },
+    { partial, closed: pullRequestClosed(), complete: threadsRead },
   );
   return {
     v: 1,
@@ -740,6 +817,41 @@ function checksSection(): HTMLElement | null {
   return checksSectionEl;
 }
 
+// "Approve workflows to run" today, "Approve and run" in older markup: any approve-and-run wording counts.
+const APPROVE_WORKFLOWS = /^approve\b.*\brun\b/i;
+const AWAITING_APPROVAL = /\b(\d+) workflows? awaiting approval/i;
+
+/**
+ * GitHub's own "Approve workflows to run", shown to someone who may approve
+ * whenever the repository's approval policy holds a contributor's workflows
+ * (first-time contributors by default, every outside contributor on every
+ * pull request under the strictest policy). The button itself is the test,
+ * never who the contributor is. Looked for in the merge box and in the
+ * checks section wherever quick view has put it.
+ */
+function approveWorkflowsButton(): HTMLButtonElement | HTMLInputElement | null {
+  const section = checksSection();
+  const scopes = [mergeBox() ?? mergeHomeEl, section, ...(section === null ? [] : wornPiecesOf(section))];
+  for (const scope of scopes) {
+    if (scope === null) continue;
+    for (const control of scope.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button, input[type="submit"], input[type="button"]')) {
+      const words = control instanceof HTMLInputElement ? control.value : control.textContent ?? '';
+      if (!control.disabled && APPROVE_WORKFLOWS.test(words.replace(/\s+/g, ' ').trim())) return control;
+    }
+  }
+  return null;
+}
+
+/** The heading GitHub puts over that button ("1 workflow awaiting approval"), for the Run control's tooltip. */
+function workflowApprovalLabel(button: HTMLElement): string {
+  let node: HTMLElement | null = button.parentElement;
+  for (let depth = 0; node !== null && depth < 8; depth += 1, node = node.parentElement) {
+    const found = AWAITING_APPROVAL.exec((node.textContent ?? '').replace(/\s+/g, ' '));
+    if (found !== null) return `${found[1]} ${found[1] === '1' ? 'workflow' : 'workflows'} awaiting approval`;
+  }
+  return 'Workflows awaiting approval';
+}
+
 /** Merge box text plus the checks section's, wherever quick view has put it. */
 /** The checks section's text with its loaned content included, so counts read the same open or closed. */
 function checksSectionText(): string | null {
@@ -871,7 +983,12 @@ function alignAnchorCarriers(anchor: string, focusKey: string): void {
 }
 
 const MAX_EAGER_FRAGMENTS = 200;
-const FRAGMENT_CONCURRENCY = 4;
+/**
+ * Deferred fragments fetched at once. Each is a ~0.8 s round trip to github.com (HTTP/2, one connection): at 4, a long
+ * conversation's 165 took ~44 s after the page opened (next.js#52514); at 12 they keep up with the "Load more" pages
+ * that reveal them (~24 s, no failures), the pages themselves being the floor.
+ */
+const FRAGMENT_CONCURRENCY = 12;
 /** A fetch that failed (a 5xx, a blip) is tried again after this long, not on the next pass. */
 const FRAGMENT_RETRY_MS = 30_000;
 const requestedFragments = new WeakSet<Element>();
@@ -900,6 +1017,11 @@ function resetFragments(): void {
   fetchedFragments = new Map();
   fragmentsInFlight = new Set();
   failedFragments = new Map();
+}
+
+/** Whether `src` has been read: its fetched markup stands in the page (a failed or skipped fetch has none). */
+function fragmentRead(src: string): boolean {
+  return fetchedFragments.get(src)?.some((node) => node.isConnected) === true;
 }
 
 /** Whether `src` is in the page right now: fetched and still standing, in flight, or failed too recently to try again. */
@@ -939,12 +1061,12 @@ function deferredFragments(): readonly { readonly fragment: Element; readonly sr
   const timeline = document.querySelector('.js-discussion, .pull-discussion-timeline') ?? document;
   // Threads first (they are the items), then minimized reviews and comments.
   for (const thread of timeline.querySelectorAll('review-thread-collapsible[data-deferred-content-url], [data-deferred-content-url].js-resolvable-timeline-thread-container')) {
-    const fragment = thread.querySelector('include-fragment');
+    const fragment = threadFragmentOf(thread);
     const src = thread.getAttribute('data-deferred-content-url');
     // A thread whose first comment shows still defers its replies behind the same fragment. GitHub's element sets
     // the fragment's `src` when the pointer rests on the header (preload); lazy, it then waits to be scrolled into
     // view, which a folded thread never is, so a fragment with a `src` still needs fetching here.
-    if (fragment !== null && src !== null && fragment.closest('.dropdown-menu, details-menu, action-menu, [popover]') === null) pending.push({ fragment, src });
+    if (fragment !== null && src !== null) pending.push({ fragment, src });
   }
   for (const fragment of timeline.querySelectorAll('.minimized-comment include-fragment[src]')) {
     const src = fragment.getAttribute('src');
@@ -971,10 +1093,29 @@ function fragmentWanted(fragment: Element, src: string): boolean {
  * fetches everything; with it off the lazy fragments stay GitHub's, and
  * nothing here is "still coming".
  */
+/**
+ * How far the timeline's reading has got, 0 to 1: the items "Load more" has brought in out of the most it has said it
+ * hides, with the deferred fragments fetched out of those fetched or still wanted. The units differ (a page of items,
+ * a thread's replies) and pages bring more fragments, so it is a rough share, and it never goes back.
+ */
+function ingestProgress(): number {
+  // Between a press and the rows landing GitHub shows no count: that is not "nothing left", so the last reading stands.
+  const read = hiddenTimelineItems();
+  const hiddenNow = read === 0 && loadMorePending() ? visit.ingest.hiddenLast : read;
+  visit.ingest.hiddenLast = hiddenNow;
+  visit.ingest.hiddenPeak = Math.max(visit.ingest.hiddenPeak, hiddenNow);
+  const fetched = Math.max(0, eagerFragments - fragmentsInFlight.size);
+  const wanted = Math.min(Math.max(0, MAX_EAGER_FRAGMENTS - eagerFragments), deferredFragments().filter(({ fragment, src }) => fragmentWanted(fragment, src)).length);
+  const total = visit.ingest.hiddenPeak + eagerFragments + wanted;
+  const done = visit.ingest.hiddenPeak - hiddenNow + fetched;
+  visit.ingest.progress = Math.max(visit.ingest.progress, total === 0 ? 0 : Math.min(1, done / total));
+  return visit.ingest.progress;
+}
+
 function timelineIngesting(hidingTimeline: boolean): boolean {
   if (fragmentsInFlight.size > 0) return true;
   if (!hidingTimeline) return false;
-  if (visit.autoLoads < MAX_AUTO_LOADS && hasLoadMore()) return true;
+  if (visit.autoLoads < MAX_AUTO_LOADS && hasLoadMore() && !loadMoreStalled()) return true;
   if (eagerFragments >= MAX_EAGER_FRAGMENTS) return false;
   return deferredFragments().some(({ fragment, src }) => fragmentWanted(fragment, src));
 }
@@ -988,7 +1129,7 @@ function timelineIngesting(hidingTimeline: boolean): boolean {
 function liveFragmentFor(fragment: Element, src: string): Element | null {
   if (fragment.isConnected) return fragment;
   for (const container of document.querySelectorAll(`[data-deferred-content-url="${CSS.escape(src)}"]`)) {
-    const inner = container.querySelector('include-fragment');
+    const inner = threadFragmentOf(container);
     if (inner !== null && inner.closest('.geld-review__qv, .geld-review__chat') === null) return inner;
   }
   return document.querySelector(`include-fragment[src="${CSS.escape(src)}"]`);
@@ -1033,7 +1174,7 @@ function fragmentLanded(): void {
 async function fetchFragment(fragment: Element, src: string): Promise<void> {
   const { signal } = fragmentAbort;
   try {
-    const response = await fetch(new URL(src, location.href), { headers: fragmentHeaders(), credentials: 'same-origin', signal });
+    const response = await pageFetch(src, { headers: fragmentHeaders(), credentials: 'same-origin', signal });
     if (!response.ok) {
       failedFragments.set(src, Date.now());
       return;
@@ -1388,31 +1529,31 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
   // precede its push (committed Monday, pushed Friday); an edit in that gap would seat early. Accepted: a bot
   // edits its summary in answer to a push, so its edits never fall there, and a human's edit of a bot comment is
   // their own. Doing this exactly needs the API's push times, which belongs in the Action's payload.
-  if (rounds.length > 1) {
-    // Null when no time is known yet — such a round is not a move target, so a missing time never pulls a summary
-    // forward by mistake. Content that landed in the round is the last resort; an anchor not on the page is skipped.
-    const startOf = (round: Round): number | null => {
-      let best: number | null = null;
-      const take = (time: number): void => {
-        if (!Number.isNaN(time)) best = best === null ? time : Math.min(best, time);
-      };
-      for (const row of round.commits) {
-        if (pushRoots.has(row)) {
-          take(Date.parse(createdAtOf(row)));
-          continue;
-        }
-        const sha = /\/commits\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(row.querySelector('a[href*="/commits/"]')?.getAttribute('href') ?? '')?.[1];
-        const times = sha === undefined ? null : commitTimes(sha, reapplySoon);
-        if (times !== null) take(Date.parse(isRewritten(times) ? times.authored : times.committed));
-      }
-      if (best !== null) return best;
-      const at = (anchor: string): number => {
-        const element = document.getElementById(anchor);
-        return element === null ? Number.NaN : Date.parse(createdAtOf(element));
-      };
-      const content = [...[...round.comments, ...round.seatedElsewhere].map((comment) => Date.parse(createdAtOf(comment.node))), ...round.reviews.map((review) => at(review.anchor)), ...round.items.flatMap((item) => item.sources.map((source) => at(source.anchor)))].filter((time) => !Number.isNaN(time));
-      return content.length === 0 ? null : Math.min(...content);
+  // Null when no time is known yet — such a round is not a move target, so a missing time never pulls a summary
+  // forward by mistake. Content that landed in the round is the last resort; an anchor not on the page is skipped.
+  const startOf = (round: Round): number | null => {
+    let best: number | null = null;
+    const take = (time: number): void => {
+      if (!Number.isNaN(time)) best = best === null ? time : Math.min(best, time);
     };
+    for (const row of round.commits) {
+      if (pushRoots.has(row)) {
+        take(Date.parse(createdAtOf(row)));
+        continue;
+      }
+      const sha = /\/commits\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(row.querySelector('a[href*="/commits/"]')?.getAttribute('href') ?? '')?.[1];
+      const times = sha === undefined ? null : commitTimes(sha, reapplySoon);
+      if (times !== null) take(Date.parse(isRewritten(times) ? times.authored : times.committed));
+    }
+    if (best !== null) return best;
+    const at = (anchor: string): number => {
+      const element = document.getElementById(anchor);
+      return element === null ? Number.NaN : Date.parse(createdAtOf(element));
+    };
+    const content = [...[...round.comments, ...round.seatedElsewhere].map((comment) => Date.parse(createdAtOf(comment.node))), ...round.reviews.map((review) => at(review.anchor)), ...round.items.flatMap((item) => item.sources.map((source) => at(source.anchor)))].filter((time) => !Number.isNaN(time));
+    return content.length === 0 ? null : Math.min(...content);
+  };
+  if (rounds.length > 1) {
     const starts = rounds.map(startOf);
     for (let from = 0; from < rounds.length; from += 1) {
       for (const comment of [...rounds[from]?.comments ?? []]) {
@@ -1457,6 +1598,25 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
     const first = round.comments[0]?.anchor ?? round.items[0]?.sources[0]?.anchor ?? round.reviews[0]?.anchor ?? round.previewComments[0]?.anchor ?? round.seatedElsewhere[0]?.anchor;
     return first ?? `at-${position + 1}`;
   };
+  let lastPush: Round | undefined;
+  for (const round of rounds) if (round.commits.length > 0) lastPush = round;
+  latestPush =
+    lastPush === undefined
+      ? null
+      : {
+          anchors: new Set([...lastPush.items.flatMap((item) => item.sources.map((source) => source.anchor)), ...[...lastPush.comments, ...lastPush.previewComments, ...lastPush.seatedElsewhere].map((comment) => comment.anchor), ...lastPush.reviews.map((review) => review.anchor)]),
+          row: lastPush.commits[0] ?? null,
+          at: startOf(lastPush),
+        };
+  // Each thread's head is read once per pass: every comment line of a round asks about every thread in it.
+  const heads = new Map<string, string | null>();
+  const headOf = (source: ReviewItem['sources'][number]): string | null => {
+    const known = heads.get(source.anchor);
+    if (known !== undefined) return known;
+    const head = threadHeadAnchorOf(source.anchor, source.bot ?? resolveBotId(source.author));
+    heads.set(source.anchor, head);
+    return head;
+  };
   return rounds.map((round, position) => {
     const avatars: Avatar[] = [];
     const names: string[] = [];
@@ -1486,12 +1646,11 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
     const firstNode = first === null ? null : document.getElementById(first);
     // CI is read from the last commit row; a force-push event carries none.
     const lastCommit = [...round.commits].reverse().find((row) => !pushRoots.has(row)) ?? null;
-    // The round's threads by the bot that wrote the comment: a run summary leads to its findings as a person's
-    // review leads to its threads (same count on the line, same chips under the opened bubble).
-    const sameBot = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase() || (resolveBotId(a) !== null && resolveBotId(a) === resolveBotId(b));
-    const threadsBy = (author: string): ReviewThreadRef[] =>
+    // A line's threads are the ones posted under it (`threadHeadOf`), as a person's review leads to its own
+    // threads (same count on the line, same chips under the opened bubble), never every thread of its author's.
+    const threadsUnder = (anchor: string): ReviewThreadRef[] =>
       round.items.flatMap((item) => {
-        const source = item.sources.find((candidate) => candidate.kind === 'thread' && sameBot(candidate.author, author)) ?? item.sources.find((candidate) => sameBot(candidate.author, author));
+        const source = item.sources.find((candidate) => candidate.kind === 'thread' && headOf(candidate) === anchor);
         return source === undefined ? [] : [{ anchor: source.anchor, done: !isOpenStatus(item.status) }];
       });
     return {
@@ -1504,7 +1663,7 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
       comments: [...round.comments]
         .sort((a, b) => Number(b.lane === 'finding') - Number(a.lane === 'finding'))
         .map((comment) => {
-          const threads = threadsBy(comment.author);
+          const threads = threadsUnder(comment.anchor);
           return {
             anchor: comment.anchor,
             author: comment.author,
@@ -1582,7 +1741,11 @@ function botTitleFor(login: string): string {
 function botCardLine(record: BotVerdictRecord): string {
   if (record.verdict === 'running') return 'Reviewing this pull request now';
   if (record.verdict === 'loading') return 'Still reading this pull request\u2019s timeline for its review';
-  if (record.verdict === 'unknown') return 'No word from it on this pull request: the run it announced or was asked for never reported here, and nothing on the page says how it went';
+  if (record.verdict === 'unknown') {
+    // A draft is the usual reason a request goes unanswered: most bots skip drafts unless their settings say otherwise.
+    const draft = pullRequestDraft() ? '. This pull request is a draft, which most review bots skip unless their settings allow it' : '';
+    return `No word from it on this pull request: the run it announced or was asked for never reported here, and nothing on the page says how it went${draft}`;
+  }
   if (record.verdict === 'failed') return record.reason === undefined ? 'Its review of this pull request failed' : `Did not review this pull request: ${record.reason}`;
   const scored = record.score === undefined ? '' : `Scored this pull request ${record.score}/5`;
   if (record.verdict === 'clean') return scored === '' ? 'Found nothing on this pull request' : `${scored} and found nothing`;
@@ -1696,6 +1859,8 @@ let sourceFacts = new Map<string, SourceFacts>();
 let botLineAnchors = new Set<string>();
 /** The anchors of the Reports row's lines (each reporter's latest report comment), seated there the same way. */
 let reportLineAnchors = new Set<string>();
+/** What landed after the latest push (the anchors in its round) and when that push was, as the rounds last read; null with no push on the page. */
+let latestPush: { readonly anchors: ReadonlySet<string>; readonly row: HTMLElement | null; readonly at: number | null } | null = null;
 
 /**
  * A bot posts its run summary and its threads moments apart, in either
@@ -1704,15 +1869,11 @@ let reportLineAnchors = new Set<string>();
  * run's.
  */
 const SUMMARY_LAG_MS = 10 * 60 * 1000;
-/** A bot finishes writing its summary in the moments after it posts the run's threads; edits this soon after count as the run's reading. */
-const RUN_SETTLE_MS = 5 * 60 * 1000;
 
 /**
- * The bot's run summary a thread came from: the bot's latest summary written
- * by the thread's time (give or take the lag above). Bots rewrite that one
- * comment run after run, so a thread from an earlier run has a summary that
- * may since say something else — `revisionAsOf` reads it as it was. With
- * `threadAt` NaN there is no cutoff: the bot's newest summary.
+ * The bot's latest summary written by `threadAt` (give or take the lag
+ * above). With `threadAt` NaN there is no cutoff: the bot's newest summary.
+ * Not a thread's head: that is `threadHeadOf`.
  */
 function botSummaryFor(botId: string, threadAt: number): { readonly anchor: string; readonly facts: SourceFacts } | null {
   let best: { readonly anchor: string; readonly facts: SourceFacts } | null = null;
@@ -1723,6 +1884,28 @@ function botSummaryFor(botId: string, threadAt: number): { readonly anchor: stri
     if (best === null || at > Date.parse(best.facts.createdAt)) best = { anchor, facts };
   }
   return best;
+}
+
+/** A thread's opening comment, from the anchor of any comment in it. */
+function threadOpenerOf(anchor: string): HTMLElement | null {
+  return threadRootOf(anchor)?.querySelector<HTMLElement>('[id^="discussion_r"], [data-testid="review-thread-comment"]') ?? document.getElementById(anchor);
+}
+
+/** The bot's summaries with every time each was written, for `threadHeadOf`; null for no bot. */
+function summariesOf(botId: string | null | undefined): SameRunCandidate[] | null {
+  if (botId === null || botId === undefined) return null;
+  const candidates: SameRunCandidate[] = [];
+  for (const [anchor, facts] of sourceFacts) {
+    if (facts.botId !== botId || !facts.summary) continue;
+    candidates.push({ anchor, times: [facts.createdAt, ...(revisionTimesOf(anchor, reapplySoon) ?? [])] });
+  }
+  return candidates;
+}
+
+/** The anchor heading the thread `anchor` belongs to (`threadHeadOf`, read from the thread's opening comment). */
+function threadHeadAnchorOf(anchor: string, botId: string | null | undefined): string | null {
+  const opener = threadOpenerOf(anchor);
+  return opener === null ? null : (threadHeadOf(opener, Date.parse(createdAtOf(opener)), summariesOf(botId))?.anchor ?? null);
 }
 
 /**
@@ -1767,11 +1950,13 @@ function buildBotLines(meta: GeldPrMeta): readonly BotLine[] {
           if (container !== null) {
             if (containers.has(container)) continue;
             containers.add(container);
+            // The thread must be the bot's own: a coding agent under the same login replying in another bot's thread
+            // (Cursor's agents in Greptile's, as `cursor[bot]`) is a source of that item, not a thread of this bot's.
+            const opener = container.querySelector<HTMLElement>('[id^="discussion_r"], [data-testid="review-thread-comment"]');
+            const openedBy = opener === null ? null : authorOf(opener)?.login;
+            if (openedBy !== undefined && openedBy !== null && resolveBotId(openedBy) !== bot.id && openedBy.toLowerCase() !== bot.login.toLowerCase()) continue;
           } else if (threads.some((ref) => ref.anchor === source.anchor)) continue;
-          const threadEl = document.getElementById(source.anchor);
-          const review = threadEl === null ? null : closestAtHome(threadEl, '[id^="pullrequestreview-"]');
-          const at = threadEl === null ? NaN : Date.parse(createdAtOf(threadEl));
-          const owner = review !== null && sourceFacts.get(review.id)?.summary === true ? review.id : (botSummaryFor(bot.id, at)?.anchor ?? null);
+          const owner = threadHeadAnchorOf(source.anchor, bot.id);
           // With no summary at all every thread of the bot's is the line's way in.
           if (anchor === null ? computed === null : owner === anchor) threads.push({ anchor: source.anchor, done: !isOpenStatus(item.status) });
         }
@@ -1823,12 +2008,8 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
     const isBot = facts?.bot ?? ownBot !== undefined;
     const revision = isBot && !Number.isNaN(threadAt) ? revisionAsOf(node, anchor, threadAt, RUN_SETTLE_MS, reapplySoon) : null;
     // The strip says when, where the time tells something: a live summary rewritten since it was posted wears the
-    // rewrite's time (the reading shown is that one's); a summary from well before the thread is an earlier run's
-    // (this run posted none) and wears its own. A past revision wears its own time in chat.ts.
-    const rewritten = isBot && revision?.state !== 'revision' ? editedAt(node, reapplySoon) : null;
-    const summaryAt = facts === undefined ? NaN : Date.parse(facts.createdAt);
-    const earlier = isBot && !Number.isNaN(threadAt) && !Number.isNaN(summaryAt) && threadAt - summaryAt > SUMMARY_LAG_MS && facts !== undefined ? facts.createdAt : null;
-    const at = rewritten ?? earlier;
+    // rewrite's time (the reading shown is that one's). A past revision wears its own time in chat.ts.
+    const at = isBot && revision?.state !== 'revision' ? editedAt(node, reapplySoon) : null;
     // The open strip's control (chat.ts `sourceControl`): the bot's newer summary to lead to, else its Rerun.
     const latestAnchor = ownBot === undefined ? null : newerSummaryOf(ownBot, anchor);
     const rerun = ownBot === undefined || latestAnchor !== null ? null : rerunFor(ownBot, ownAuthor, meta, reapply);
@@ -1847,24 +2028,16 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
       ...(rerun === null ? {} : { rerun }),
     };
   };
-  // GitHub repeats the review's id on nested wrappers (a minimized review, its permalink); climb to the outermost
-  // copy at home and read the comment from the DOM there, not from a map keyed by that id.
-  let review = closestAtHome(thread, '[id^="pullrequestreview-"]');
-  while (review !== null && review.parentElement !== null) {
-    const outer = closestAtHome(review.parentElement, '[id^="pullrequestreview-"]');
-    if (outer === null || outer.id !== review.id) break;
-    review = outer;
-  }
-  const reviewNode = review === null ? null : reviewCommentOf(review);
-  if (review !== null && reviewNode !== null && !reviewNode.contains(thread)) return describe(reviewNode, review.id, (who) => `${who}'s review`);
-  if (bot === undefined) return null;
-  // The bot's summary as of the thread (by time), else the bot's latest word when it is not itself a thread: a bot
-  // that writes no review body has a thread comment for its "summary", and that is a thread, not a source.
-  const summaryAnchor = botSummaryFor(bot, threadAt)?.anchor ?? meta.bots.find((record) => record.id === bot)?.sourceId ?? null;
-  const summaryEl = summaryAnchor === null ? null : document.getElementById(summaryAnchor);
+  // Read from the DOM, not a map keyed by the review's id: GitHub repeats that id, and such a map flips as nodes move.
+  const head = threadHeadOf(thread, threadAt, summariesOf(bot));
+  if (head === null) return null;
+  if (head.review !== null) return describe(head.review, head.anchor, (who) => `${who}'s review`);
+  // The bot's summary from the same run. A bot that writes no review body may have a thread comment for its
+  // "summary", and that is a thread, not a source.
+  const summaryEl = document.getElementById(head.anchor);
   if (summaryEl !== null && closestAtHome(summaryEl, THREAD_SELECTOR) !== null) return null;
-  const summary = summaryAnchor === null ? null : (entryNodes.get(summaryAnchor) ?? summaryEl?.closest<HTMLElement>('.timeline-comment, .js-comment-container, [data-testid="comment-container"]') ?? null);
-  if (summaryAnchor !== null && summary !== null && !summary.contains(thread)) return describe(summary, summaryAnchor, (who) => `${who}'s run summary`);
+  const summary = entryNodes.get(head.anchor) ?? summaryEl?.closest<HTMLElement>('.timeline-comment, .js-comment-container, [data-testid="comment-container"]') ?? null;
+  if (summary !== null && !summary.contains(thread)) return describe(summary, head.anchor, (who) => `${who}'s run summary`);
   return null;
 }
 
@@ -1934,7 +2107,7 @@ function botAvatarByLogin(botId: string): string | null {
 /** The pull request's author, from the page header (the description card when the header is not there). */
 function prAuthorLogin(): string | null {
   const header = document.querySelector('.gh-header-meta a.author, [data-testid="issue-metadata-author"] a, .gh-header-meta a[data-hovercard-type="user"]');
-  const login = header === null ? null : (header.textContent ?? '').trim().replace(/^@/, '');
+  const login = header === null ? null : loginOfLink(header);
   if (login !== null && login !== '') return login;
   const card = document.querySelector('[data-geld-attached]');
   return card === null ? null : (authorOf(card)?.login ?? null);
@@ -1994,20 +2167,17 @@ function dressByline(byline: ChatByline, anchor: string | null): ChatByline {
   // An App's own comment carries the App as its "via" too (GitHub pairs the avatar with itself and hides the pair);
   // only a person's comment posted through an App wears the mark.
   const via = node === null || byline.bot ? null : viaBotOf(node);
-  // Edited after it was posted: the clock beside the time (chat.ts `editedMark`). Read from the comment element
-  // itself (its id is the anchor, which `logUrlOf` matches against the edit-history menu's owner) — not the
-  // timeline row above. `editedAt` asks the log only for a comment the page marks as edited and bumps
-  // `editsVersion` (in the signature) when the time lands.
-  const commentEl = anchor === null ? null : document.getElementById(anchor);
-  const edited = commentEl === null ? null : editedAt(commentEl, reapplySoon);
-  // The clock beside an edited comment's time says when it was first posted: the page's datetime for the anchor.
-  const postedAt = edited === null || anchor === null ? '' : (datetimeByAnchor.get(anchor) ?? (commentEl === null ? '' : createdAtOf(commentEl)));
+  // Edited after it was posted: the edit's time with the clock beside it (`editedMark`), which says when the
+  // comment was first posted and opens GitHub's edit history. `editTimesOf` asks the log only for a comment the
+  // page marks as edited (a minimized one by its node id) and bumps `editsVersion` (in the signature) when it lands.
+  const times = anchor === null ? null : editTimesOf(anchor, reapplySoon);
+  const postedAt = times === null || anchor === null ? '' : (datetimeByAnchor.get(anchor) ?? times.postedAt ?? '');
   return {
     ...byline,
     ...(anchor === null ? {} : { timeAnchor: anchor }),
     ...(author !== null && author.toLowerCase() === byline.login.toLowerCase() ? { author: true } : {}),
     ...(via === null ? {} : { via }),
-    ...(edited === null ? {} : { edited }),
+    ...(times === null ? {} : { edited: times.editedAt, editLog: times.log }),
     ...(postedAt === '' ? {} : { postedAt }),
   };
 }
@@ -2130,8 +2300,20 @@ let timeRefreshTimer: number | null = null;
 /** Keep the cells current while the panel is up; a hidden tab skips the pass (its return re-renders anyway). */
 function scheduleTimeRefresh(): void {
   timeRefreshTimer ??= window.setInterval(() => {
-    if (!document.hidden) refreshReviewTimes();
+    if (document.hidden) return;
+    refreshReviewTimes();
+    refreshEditTimes(shownTimeAnchors(), reapplySoon);
   }, TIME_REFRESH_MS);
+}
+
+/** The comments whose times the panel shows, edited or not. */
+function shownTimeAnchors(): Set<string> {
+  const anchors = new Set<string>();
+  for (const cell of document.querySelectorAll(`.${PANEL_CLASS} [${ATTR_TIME_FOR}], .${PANEL_CLASS} [${ATTR_EDITED_FOR}]`)) {
+    const anchor = cell.getAttribute(ATTR_EDITED_FOR) ?? cell.getAttribute(ATTR_TIME_FOR);
+    if (anchor !== null && anchor !== '') anchors.add(anchor);
+  }
+  return anchors;
 }
 
 function stopTimeRefresh(): void {
@@ -2195,6 +2377,7 @@ function wearControls(root: HTMLElement, handlers: PanelHandlers): void {
     const menu = menuEl === null ? null : (menuEl.closest('details') ?? menuEl);
     if (!(menu instanceof HTMLElement) || menu.closest(THREAD_SELECTOR) !== null) continue;
     teleportInto(slot, [menu]);
+    relayCommentItems(menu, anchor, handlers);
     // A classic details-menu takes Geld's items in GitHub's own style; a React menu renders elsewhere on open, so
     // Geld's ⋯ stays beside it.
     const list = menu.querySelector('details-menu, .dropdown-menu, [role="menu"]');
@@ -2211,6 +2394,82 @@ function wearControls(root: HTMLElement, handlers: PanelHandlers): void {
       });
     }
   }
+}
+
+/** GitHub's menu items whose handler finds the comment from the item itself (`closest('.js-comment')`). */
+const COMMENT_SCOPED_ITEMS = '.js-comment-edit-button, .js-comment-hide-button, .js-comment-quote-reply';
+
+/** The comment's `.js-comment` wherever it stands now: on loan in an open row, or at home. */
+function jsCommentFor(anchor: string): HTMLElement | null {
+  const nodes = [entryNodes.get(anchor), ...document.querySelectorAll<HTMLElement>(`[id="${CSS.escape(anchor)}"]`)];
+  for (const node of nodes) {
+    if (node === undefined || !node.isConnected) continue;
+    const comment = node.matches('.js-comment') ? node : node.querySelector<HTMLElement>('.js-comment');
+    if (comment !== null) return comment;
+  }
+  return null;
+}
+
+/**
+ * Worn on the row, GitHub's ⋯ menu has no comment above it, so Edit, Hide and Quote reply threw (`closest('.js-comment')`
+ * is null) and did nothing. Such a click is replayed from a hidden copy of the item inside the comment, so GitHub's own
+ * handler runs as at home. Edit wants the comment in view: a closed row is opened first.
+ */
+/** Each worn menu's relay, with what the latest wear gave it. */
+const relayedMenus = new WeakMap<HTMLElement, { readonly anchor: string; readonly handlers: PanelHandlers }>();
+
+function relayCommentItems(menu: HTMLElement, anchor: string, handlers: PanelHandlers): void {
+  // One listener per menu, whatever it has been through: a menu can go home without its restore hooks (a rebuild that
+  // keeps the CI slot) and be worn again, and a second listener replayed Quote reply twice. It reads the latest wear.
+  const known = relayedMenus.has(menu);
+  relayedMenus.set(menu, { anchor, handlers });
+  if (known) return;
+  const relay = (event: MouseEvent): void => {
+    // A retired copy (`lastSettings` nulled by teardown) is inert: the copy that took over has its own listener here.
+    const worn = relayedMenus.get(menu);
+    if (lastSettings === null || worn === undefined || menu.closest(`[${ATTR_CTL_SLOT}]`) === null) return;
+    const { anchor, handlers } = worn;
+    const item = event.target instanceof Element ? event.target.closest<HTMLElement>(COMMENT_SCOPED_ITEMS) : null;
+    if (item === null || !menu.contains(item)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (menu instanceof HTMLDetailsElement) menu.open = false;
+    const replay = (comment: HTMLElement): void => {
+      const proxy = item.cloneNode(true);
+      if (!(proxy instanceof HTMLElement)) return;
+      proxy.hidden = true;
+      proxy.setAttribute(OWN_UI_ATTRIBUTE, '');
+      comment.append(proxy);
+      proxy.click();
+      // GitHub's handlers may read the item again after an await (the edit form loads lazily): keep it a moment.
+      window.setTimeout(() => proxy.remove(), 2000);
+    };
+    const shown = (): HTMLElement | null => {
+      const comment = jsCommentFor(anchor);
+      return comment !== null && comment.closest(`.${PANEL_CLASS}`) !== null ? comment : null;
+    };
+    if (!item.matches('.js-comment-edit-button') || shown() !== null) {
+      const comment = shown() ?? jsCommentFor(anchor);
+      if (comment !== null) replay(comment);
+      return;
+    }
+    handlers.onOpenAnchor(anchor);
+    // With the full timeline the anchor only scrolls there and nothing moves into the panel: after a moment, Edit
+    // replays from the comment where it stands, which is then in view.
+    const started = performance.now();
+    const wait = (): void => {
+      if (lastSettings === null) return;
+      const comment = shown();
+      if (comment !== null) replay(comment);
+      else if (performance.now() - started < 1500) requestAnimationFrame(wait);
+      else {
+        const home = jsCommentFor(anchor);
+        if (home !== null) replay(home);
+      }
+    };
+    requestAnimationFrame(wait);
+  };
+  menu.addEventListener('click', relay, { capture: true });
 }
 
 const COMMENT_CONTAINER_SELECTOR = '.js-comment-container, .review-comment, .timeline-comment, .react-issue-comment, [data-testid="comment-container"], [data-testid="comment-viewer-outer-box"], [id^="issuecomment-"], [id^="discussion_r"]';
@@ -2436,9 +2695,12 @@ function hoverPreviewFor(row: HTMLElement, meta: GeldPrMeta, groups: readonly Fo
  * there is no verdict (`VerdictOptions.closed`).
  */
 function pullRequestClosed(): boolean {
-  const label = document.querySelector('[data-component="StateLabel"], .gh-header-meta .State, .State[title]');
-  const words = (label?.getAttribute('title') ?? label?.textContent ?? '').replace(/\s+/g, ' ').trim();
-  return /^(?:status:\s*)?(?:merged|closed)$/i.test(words);
+  return /^(?:status:\s*)?(?:merged|closed)$/i.test(pullRequestStateWords());
+}
+
+/** GitHub's state label reads "Draft" while the pull request is one. */
+function pullRequestDraft(): boolean {
+  return /^(?:status:\s*)?draft$/i.test(pullRequestStateWords());
 }
 
 function subjectOf(): MarkdownSubject | null {
@@ -2447,6 +2709,24 @@ function subjectOf(): MarkdownSubject | null {
   const [, owner, repo, number] = match;
   if (owner === undefined || repo === undefined || number === undefined) return null;
   return { owner, repo, number: Number.parseInt(number, 10), origin: location.origin };
+}
+
+/**
+ * Every check of the head: the merge box's rows (live, with a running check's
+ * start) over the commit's status partial for the rest. The partial is read
+ * again when the merge box's words change and on its own clock
+ * (`headChecks`); that clock gets a pass of its own, as a report's grace does.
+ */
+function pageChecks(headSha: string): readonly RawCheckRun[] {
+  const fromPage = crawlCheckRuns(document, headSha);
+  const subject = subjectOf();
+  // ZERO_SHA stands for a head not read yet: there is no such commit to ask GitHub about.
+  if (subject === null || headSha === '' || headSha === ZERO_SHA) return fromPage;
+  const checkSubject = { origin: subject.origin, owner: subject.owner, repo: subject.repo };
+  const fetched = headChecks(checkSubject, headSha, mergeBoxText(), reapplySoon);
+  const next = nextCheckRefresh(checkSubject, headSha);
+  if (next !== null) reapplyAt(next);
+  return mergeCheckRuns(fromPage, fetched);
 }
 
 /** What an open row shows in its slot: the item's thread(s), a fold's nodes, or the merge box's checks. */
@@ -2523,10 +2803,13 @@ function slotNeedsRender(slot: HTMLElement): boolean {
  * dress phase of this same pass, as after a panel rebuild. Not while the
  * reader types in a reply box inside the slot (a reaction from someone else
  * can refresh a message in the thread they are answering): the render waits
- * for the field to blur, as a panel rebuild does.
+ * for the field to blur, as a panel rebuild does. Nor while an edit history
+ * is open from a byline's clock.
  */
 function readySlotForRender(slot: HTMLElement): boolean {
   if (slot.querySelector(`[${ATTR_TELEPORTED}]`) === null) return true;
+  // An edit history open from a byline's clock: the panel asks for a pass when it closes.
+  if (slot.querySelector('.geld-review__edited-wrap[open]') !== null) return false;
   const active = document.activeElement;
   if (active instanceof Element && slot.contains(active) && active.matches('textarea, input, [contenteditable]')) {
     active.addEventListener('focusout', () => reapplySoon(), { once: true });
@@ -2574,6 +2857,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     visit.openPreviews = new Set<string>();
     visit.flash = null;
     visit.openSubMissingSince = null;
+    visit.openItemAnchors = null;
     visit.knownRequired = null;
     resetRefs();
     resetWholePaths();
@@ -2583,9 +2867,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     visit.lastReviews = null;
     visit.checksExpanded = false;
     visit.autoLoads = 0;
+    visit.ingest = { hiddenPeak: 0, hiddenLast: 0, progress: 0 };
     resetFragments();
     forgetThreads();
     resetEditTimes();
+    resetHeadChecks();
     botLineMemo.clear();
     visit.manualDone = new Set();
     visit.rerunPending = new Map();
@@ -2594,6 +2880,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     // This device's AI run for the pull request, if any; the pass re-applies once it is read.
     loadAiForPage(aiRunKey(page.stateKey), reapplySoon);
   }
+  // A loan whose home GitHub refreshed away is its discarded copy: gone before anything reads the page, so the
+  // crawl, the slots and the fragment loader all see the fresh item at home instead (see `dropOrphanedLoans`).
+  const standing = document.querySelector('.geld-review');
+  if (standing !== null) dropOrphanedLoans(standing);
   const crawledDom = phase('crawl', crawlConversation);
   const rawComments: readonly RawComment[] = crawledDom.comments.map((entry) => entry.comment);
   sourceFacts = new Map(
@@ -2604,11 +2894,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         // What `verdictsFrom` counts as a bot's report: not a status line or a trigger, and from a coding agent that
         // also chats (Replicas) only a review-shaped comment.
         const parsed = botId === null ? null : parseBotBody(entry.comment.body, botId.startsWith('custom:') ? '' : botId);
-        const reviewShaped = parsed === null || botById(botId ?? '')?.conversational !== true || parsed.count !== null || parsed.score !== null || parsed.clean;
+        const reviewShaped = parsed === null || botById(botId ?? '')?.conversational !== true || isReviewShaped(parsed);
         // A refusal ("Skipping Bugbot: …") is review-shaped but not a report — `verdictsFrom` keeps the bot's earlier
         // real review as its last run, so a refusal must not count as a summary, or `botSummaryFor` would offer it as
         // the bot's newest word and "See latest" would open the refusal instead of the last report.
-        const summary = botId !== null && reviewShaped && !isStatusLineComment(entry.comment.body) && !isTriggerComment(entry.comment.body, settings.reviewBots) && refusalReason(entry.comment.body) === null;
+        const summary = botId !== null && reviewShaped && !isStatusLineComment(entry.comment.body) && !isTriggerComment(entry.comment.body, settings.reviewBots) && refusalReason(entry.comment.body) === null && commandReply(entry.comment.body) === null;
         return [entry.comment.anchor, { preview: firstSentence(entry.comment.body), avatarSrc: entry.avatarSrc, login: entry.author.login, bot: entry.author.bot, createdAt: entry.comment.createdAt, botId, summary }];
       }),
   );
@@ -2623,7 +2913,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // open thread is never deferred — GitHub minimizes only reviews whose threads are all resolved — so a thread the
   // crawl cannot see is a resolved one, or one past that fold).
   const complete = !partial && !hasLoadMore();
-  const composed = phase('cluster', () => composeMeta(found, buildFromComments(crawledDom, settings, headSha, visit.generatedAt, partial), complete));
+  // And every thread's comments too: a resolved thread's stay behind its fragment until fetched, which the full timeline,
+  // the fetch limit or a failed fetch leave unread, so a bot's resolved thread may be there unseen. Coverage is what the
+  // page holds (each fragment's fetched markup standing in it), not what is still worth asking for.
+  const threadsRead = complete && deferredFragments().every(({ src }) => fragmentRead(src));
+  const composed = phase('cluster', () => composeMeta(found, buildFromComments(crawledDom, settings, headSha, visit.generatedAt, partial, threadsRead), complete));
   // Then the threads, now that items exist: whether the replies say a thread is done.
   const bodies = new Map(crawledDom.comments.map((entry) => [entry.comment.anchor, { author: entry.author.login, body: entry.comment.body }] as const));
   const threads: ThreadToClassify[] = composed.meta.items
@@ -2660,7 +2954,17 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // Compact mode folds everything, so everything must be on the page: keep pressing GitHub's "Load more", and
   // fetch the reviews GitHub minimized ("marked as resolved") — their threads are behind lazy fragments that
   // would only load when scrolled into view, which a folded row never is.
-  if (hidingTimeline && visit.autoLoads < MAX_AUTO_LOADS && clickLoadMore()) visit.autoLoads += 1;
+  // A press that failed leaves its form standing: pressing it again on every pass would keep the bar hidden through
+  // the whole budget, so Geld stops and the bar is the reader's.
+  const stalled = loadMoreStalled();
+  if (hidingTimeline && !stalled && visit.autoLoads < MAX_AUTO_LOADS && clickLoadMore()) visit.autoLoads += 1;
+  // GitHub's "N hidden items · Load more" bar stays out of sight while Geld is the one pressing it (the reading bar
+  // says how far it has got); once Geld stops (done, or at its limit) it shows again for the reader to load the rest.
+  // While a press is on its way GitHub disables the button ("Loading…"), so that counts too, or the next page's bar flashed.
+  setAutoLoading(hidingTimeline && !stalled && ((visit.autoLoads < MAX_AUTO_LOADS && hasLoadMore()) || loadMorePending()));
+  // A load that fails leaves its form standing: a pass when the press stops counting gives the bar back to the reader.
+  const pressUntil = loadMorePendingUntil();
+  if (hidingTimeline && pressUntil !== null) reapplyAt(pressUntil);
   if (hidingTimeline) loadMinimizedReviews();
   // In compact mode the review threads live in their rows and GitHub's checks section in the CI row:
   // both fold out of the page, so nothing below is left to reveal or scroll to.
@@ -2679,12 +2983,15 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const roundEntries = [...awaiting, ...timelineEntries];
   const comments = pinOpenEntry([...roundEntries, ...provisionalReviewLines(sidebar, timelineEntries)]);
   const ingesting = timelineIngesting(hidingTimeline);
+  // The bar shows only while the digest is Geld's own reading: the Action's summary for this head is whole already, unless
+  // it was truncated, when the page fills in what it left out.
+  const progress = ingesting && (composed.freshness !== 'fresh' || found?.meta.truncated === true) ? ingestProgress() : null;
   const allPreviews = phase('previews', () => previewsOn(crawledDom, meta));
   // Reporter bots' reports (test failures on their runners, coverage), read from the page's comments in timeline order.
   // ...and the services that report through a check whose Details lead to their site (Chromatic), read from the merge box.
   const allReports = phase('reports', () => [
     ...reportsFrom(crawledDom.comments.filter((entry) => entry.author.bot).map((entry) => ({ author: entry.author.login, body: entry.comment.body, anchor: entry.comment.anchor, ...(entry.comment.createdAt === '' ? {} : { createdAt: entry.comment.createdAt }) }))),
-    ...reportsFromChecks(crawlCheckRuns(document, headSha)),
+    ...reportsFromChecks(pageChecks(headSha)),
   ]);
   const reports = latestReports(allReports);
   // A reporter's latest report is the Reports row's line, as a bot's latest summary is the Review bots row's: seated
@@ -2724,6 +3031,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     }),
   );
   settleAfterResolve(meta, batches);
+  reseatOpenItem(meta);
   reseatOpenLine(batches);
   // A round's bot comment lines and its preview pills both stand for their comments: neither needs a fold row too.
   const batchedAnchors = new Set([...batches.flatMap((batch) => [...batch.comments.map((entry) => entry.anchor), ...batch.previews.map((entry) => entry.anchor)]), ...botLineAnchors, ...reportLineAnchors]);
@@ -2749,6 +3057,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const modelStart = performance.now();
   const subject = subjectOf();
   const boxText = mergeBoxText();
+  const approvalButton = approveWorkflowsButton();
   const ringSource = checksSection()?.querySelector('svg[viewBox="0 0 100 100"]') ?? null;
   const checksRing = ringSource instanceof SVGElement ? cloneRing(ringSource) : null;
   // The merge box states the requirement only while unmet; the sidebar's Reviewers block ("At least 1 approving
@@ -2772,6 +3081,28 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     payloadCurrent: composed.freshness === 'fresh' || composed.freshness === 'partial',
   });
   const requestable = phase('bots', () => requestableBots(meta, document, rawComments, repoBots));
+  // A bot has run on this commit when its verdict's source or its latest summary was posted after the latest push or
+  // rewritten since. Posting is read by place, never by time (a round's start may be a commit's date, which can precede
+  // the push): in the push's round, or after its commit row in the timeline — a thread merged into an item seated at an
+  // older thread is still after it. Only a rewrite in place (Greptile's summary) is read by when it was made.
+  const pushed = latestPush;
+  const reportedSince = (anchor: string): boolean => {
+    if (pushed === null) return false;
+    if (pushed.anchors.has(anchor)) return true;
+    const node = document.getElementById(anchor);
+    if (node === null) return false;
+    if (pushed.row !== null && pushed.row.isConnected && compareHome(pushed.row, node) < 0) return true;
+    const edited = pushed.at === null ? Number.NaN : Date.parse(editedAt(node, reapplySoon) ?? '');
+    return !Number.isNaN(edited) && pushed.at !== null && edited >= pushed.at;
+  };
+  const ranSincePush =
+    pushed === null
+      ? null
+      : new Set(
+          meta.bots
+            .filter((bot) => [bot.sourceId, botLines.find((line) => line.bot.id === bot.id)?.anchor].some((anchor) => typeof anchor === 'string' && reportedSince(anchor)))
+            .map((bot) => bot.id),
+        );
   const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
 
   const model: PanelModel = {
@@ -2787,6 +3118,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     folds: foldRows(groups),
     batches,
     requestable,
+    ranSincePush,
     botLines,
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
     // A running/loading bot's sourceId is the "Starting"/trigger line — contentless, and the same line for every bot
@@ -2803,6 +3135,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     botIconFor: (botId) => botAvatarByLogin(botId) ?? botSourceAvatar(botId, meta) ?? iconByBot.get(botId) ?? botAppAvatarFor(botId),
     checks: checkCountsFrom(checksSectionText() ?? boxText),
     requiredFailing: requiredFailingIn(checksSection()),
+    workflowApproval: approvalButton === null ? null : workflowApprovalLabel(approvalButton),
     previews: latestPreviews(allPreviews),
     reports,
     grouping: settings.reviewGrouping,
@@ -2819,6 +3152,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     canRequestReviewers: reviewRequestForm() !== null,
     canDismissReviews: hasReviewActions(),
     ingesting,
+    progress,
     openSubKey: visit.openSubKey,
     openSources: visit.sourcesShown,
     refsVersion: refsVersion(),
@@ -2827,6 +3161,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     reviews: (visit.lastReviews = requiredReviewsFrom(boxText, reviewers, { knownRequired: visit.knownRequired }) ?? visit.lastReviews),
     myReactionFor: (anchor) => myReactionOn(anchor),
     timeFor: (anchor) => timeTextOf(document.getElementById(anchor), anchor),
+    editedFor: (anchor) => editTimesOf(anchor, reapplySoon),
     avatarsFor,
     resolvable: itemResolvable,
     hiddenCount: groups.filter((group) => group.silent !== true).reduce((sum, group) => sum + group.nodes.length, 0),
@@ -2836,10 +3171,16 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   };
   // Asynchronous answers (the AI run's progress and end) re-apply through the mounted check, never past a teardown.
   const reapply = (): void => reapplyNow();
+  /** The reader selected the item row `key`: its conversation's anchors, as the model that drew the row knew them. */
+  const seedOpenItem = (key: string): void => {
+    const item = key.startsWith('item:') ? meta.items.find((entry) => itemKey(entry.id) === key) : undefined;
+    visit.openItemAnchors = item === undefined ? null : { key, anchors: new Set(item.sources.map((source) => source.anchor)) };
+  };
   const panelHandlers: PanelHandlers = {
     onToggle: (key) => {
       keepInPlace(`main:${key}`, () => {
         visit.openKey = visit.openKey === key ? null : key;
+        if (visit.openKey === key) seedOpenItem(key);
         // The line open inside the row that just closed belongs to that row. Left standing, the next pass
         // re-seated the open key into the round that holds it, and the round the reader clicked closed under
         // them while the other opened.
@@ -2848,11 +3189,21 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       });
     },
     onToggleGroup: (group) => {
+      const start = performance.now();
       if (visit.collapsedGroups.has(group)) visit.collapsedGroups.delete(group);
       else visit.collapsedGroups.add(group);
+      let closed = false;
       if (visit.openKey !== null && ((group === 'hidden' && visit.openKey.startsWith('fold:')) || (group !== 'hidden' && visit.openKey.startsWith('item:')))) {
         visit.openKey = null;
+        closed = true;
       }
+      // Folding a group changes no reading: the rows are already built, so this is an attribute flip, not a pass. Only
+      // a group holding the open row renders, for that row's slot (and a row closed above it).
+      if (!closed && syncPanelGroups(visit.collapsedGroups, group)) {
+        phaseSince('group-toggle', start);
+        return;
+      }
+      count('group-toggle-render');
       reapply();
     },
     onCopyLink: (anchor) => {
@@ -2922,8 +3273,18 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       reapply();
     },
     onRequest: (botIds) => {
-      const triggers = botIds.map((id) => rerunTriggerFor(id)).filter((trigger): trigger is string => trigger !== null);
-      void postTopLevelComments(triggers);
+      const requested = botIds.flatMap((id) => {
+        const trigger = rerunTriggerFor(id);
+        return trigger === null ? [] : [{ id, trigger }];
+      });
+      // This visit's map: a move to another pull request while the posts are out gives the new one a map of its own.
+      const rerunPending = visit.rerunPending;
+      for (const { id } of requested) rerunPending.set(id, Date.now());
+      void postTopLevelComments(requested.map(({ trigger }) => trigger)).then((posted) => {
+        // The posts stop at the first refusal: the bots after it were never asked and do not read as running.
+        for (const { id } of requested.slice(posted)) rerunPending.delete(id);
+        reapplySoon();
+      });
     },
     onRequestMenuClosed: () => reapplySoon(),
     loadReviewerCandidates: () => reviewerCandidates(),
@@ -2973,6 +3334,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     onToggleSub: (anchor) => {
       keepInPlace(`main:sub:${anchor}`, () => {
         visit.openSubKey = visit.openSubKey === anchor ? null : anchor;
+        // Seeded from the model the row was drawn from: should a reply have changed the item's id between that
+        // draw and the next pass, the row the reader just opened follows its conversation rather than closing.
+        if (visit.openSubKey === anchor) seedOpenItem(anchor);
         reapply();
       });
     },
@@ -3014,6 +3378,15 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       if (!clickResolve(anchor)) return;
       const owner = meta.items.find((item) => item.sources.some((source) => source.anchor === anchor));
       reapplyAfterResolve(owner === undefined ? null : itemKey(owner.id), done);
+    },
+    onApproveWorkflows: () => {
+      const button = approveWorkflowsButton();
+      if (button === null) {
+        console.warn('[geld] GitHub no longer offers to approve these workflows');
+        return;
+      }
+      button.click();
+      window.setTimeout(reapplySoon, 800);
     },
     onRunAi: () => {
       void runAi(meta, rawComments, settings, reapply).then((run) => {
@@ -3183,6 +3556,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       fitChips(mounted.root);
       // Commit rows on loan get their dates once those land (the slot itself is not rebuilt for that).
       timeCommitRows(mounted.root, reapplySoon);
+      // GitHub's names on loan read as logins, as the panel's own rows do.
+      showLogins(mounted.root);
     });
   }
   setHoverProvider((row) => hoverPreviewFor(row, meta, groups, panelHandlers));
@@ -3237,7 +3612,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     }
   }
   const tailStart = performance.now();
-  collapseDescription(settings.compactTimeline === 'minimal' && settings.collapseDescription && !visit.fullTimeline);
+  shortenDescription(settings.collapseDescription && !visit.fullTimeline);
   setFullTimeline(visit.fullTimeline);
   if (hidingTimeline) document.documentElement.setAttribute('data-geld-timeline', 'compact');
   // Everything on the page has been read: what GitHub inserts from here on waits for the next pass.
@@ -3291,6 +3666,7 @@ export function teardownReviewOverview(): void {
   // First: nothing asked for earlier may run after this. Pending passes are dropped, fetches in flight cancelled,
   // and every later callback finds the overview unmounted (`lastSettings`).
   lastSettings = null;
+  setAutoLoading(false);
   deferredWhileHidden = false;
   window.removeEventListener('load', onDocumentLoaded);
   loadSettleArmed = false;
@@ -3311,7 +3687,7 @@ export function teardownReviewOverview(): void {
   unmountPanel();
   hideSummary(null);
   applyFolds([], new Set());
-  collapseDescription(false);
+  shortenDescription(false);
   setFullTimeline(false);
   visit.openKey = null;
   visit.pageKey = '';

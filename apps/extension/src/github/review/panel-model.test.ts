@@ -192,6 +192,10 @@ describe('status rows', () => {
   it('grades bots', () => {
     const base = { id: 'greptile', login: 'greptile-apps[bot]', reviewedSha: 'aaa' } as const;
     expect(botHealth({ ...base, verdict: 'findings', score: 5 })).toBe('good');
+    // A 5/5 run with a finding still open (geld#367) is amber, and green once every thread is resolved.
+    expect(botHealth({ ...base, verdict: 'findings', score: 5, count: 1 })).toBe('warn');
+    expect(botHealth({ ...base, verdict: 'findings', score: 5, count: 0 })).toBe('good');
+    expect(botHealth({ ...base, verdict: 'findings', score: 2, count: 1 })).toBe('bad');
     expect(botHealth({ ...base, verdict: 'findings', score: 4 })).toBe('warn');
     expect(botHealth({ ...base, verdict: 'findings', score: 2 })).toBe('bad');
     expect(botHealth({ ...base, id: 'bugbot', verdict: 'findings', count: 1, severity: 'high' })).toBe('bad');
@@ -245,6 +249,13 @@ describe('reviewer groups', () => {
       // A later comment-only review sets no verdict aside.
       { login: 'max', avatar: { src: '', bot: false, login: 'max' }, verdict: 'changes_requested', awaiting: false, anchor: 'pullrequestreview-3' },
     ]);
+  });
+
+  it('opens the latest review of the verdict the sidebar states', async () => {
+    const { reviewerStatuses } = await import('./panel');
+    const line = (anchor: string) => ({ anchor, author: 'ana', avatarSrc: null, state: 'approved', preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null }) as const;
+    const statuses = reviewerStatuses([line('pullrequestreview-1'), line('pullrequestreview-2')], [{ login: 'ana', avatarSrc: null, state: 'approved', bot: false }]);
+    expect(statuses.map((status) => status.anchor)).toEqual(['pullrequestreview-2']);
   });
 
   it("shows an approval the sidebar no longer names once the reviewer was asked again", async () => {

@@ -1,3 +1,5 @@
+import { pageFetch } from '../page-fetch';
+
 /**
  * When each commit of the pull request was made. GitHub's commit rows in the
  * conversation timeline carry no time at all (a force-push row does), so the
@@ -54,7 +56,7 @@ function collectCommits(value: unknown, into: Map<string, CommitTimes>, depth = 
 
 async function fetchDates(pull: string, into: Map<string, CommitTimes>): Promise<void> {
   try {
-    const response = await fetch(new URL(`${pull}/commits`, location.href), {
+    const response = await pageFetch(`${pull}/commits`, {
       credentials: 'same-origin',
       headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     });

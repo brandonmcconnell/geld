@@ -1,3 +1,4 @@
+import { isTrackerStatusRequest,readTrackerStatuses } from '../src/lib/tracker-service';
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
@@ -29,6 +30,7 @@ import type { DiffPriority } from '../src/lib/messages';
 import { ensureContentScript, hostOf, tabsOnHosts } from '../src/lib/inject';
 import { grantedHosts } from '../src/lib/enterprise';
 import { looksLikeHtml } from '../src/lib/http';
+import { retireDashboardSession } from '../src/lib/dashboard-session';
 
 /** Refuse to parse diffs larger than this; GitHub's UI is unusable there anyway. */
 const MAX_DIFF_BYTES = 20 * 1024 * 1024;
@@ -516,6 +518,7 @@ export default defineBackground(() => {
   // Each start is a previous stop: a run of these around failing fetches says the worker is being killed mid-request.
   recordDiagnostic({ kind: 'worker-start' });
   browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+    if(isTrackerStatusRequest(message)){void readTrackerStatuses(message,sender.url??sender.tab?.url).then(sendResponse);return true;}
     if (isColorSchemeMessage(message)) {
       applyToolbarIcon(message.dark);
       return undefined;
@@ -624,6 +627,8 @@ export default defineBackground(() => {
 
   // GitHub account: keep settings in the user's secret gist when signed in.
   startAccountSync();
+  // Until the Geld sign-in returns with the dashboard, a Geld session saved by an earlier build is dropped on update.
+  browser.runtime.onInstalled.addListener(() => void retireDashboardSession().catch(() => undefined));
 
   // Pattern catalog: fetch the signed catalog/patterns.json from the repository
   // daily so patterns can improve without a store release.

@@ -8,6 +8,7 @@
 
 import type { PreviewDoc, RawCheckRun, RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
 import { appAvatarForLogin, looksLikeSummaryBody } from '@geld/review';
+import { appLoginOf, loginOfLink } from './login';
 import { closestAtHome, compareHome, homeOf, wornPiecesOf } from './teleport';
 import { count as perfCount } from '../../lib/perf';
 
@@ -59,8 +60,10 @@ export function authorOf(root: Element): Author | null {
   if (text === '') return null;
   const href = link.getAttribute('href') ?? '';
   const labelled = [...(link.parentElement?.querySelectorAll('.Label, [data-testid="bot-label"]') ?? [])].some((label) => /^bot$/i.test((label.textContent ?? '').trim()));
-  const bot = /\[bot\]$/i.test(text) || href.startsWith('/apps/') || labelled;
-  return { login: bot && !/\[bot\]$/i.test(text) ? `${text}[bot]` : text, bot };
+  const bot = /\[bot\]$/i.test(text) || appLoginOf(href) !== null || labelled;
+  if (bot) return { login: appLoginOf(href) ?? (/\[bot\]$/i.test(text) ? text : `${text}[bot]`), bot };
+  // A person by their login, whatever the link reads: "Connor Peet (connor4312)" where full names are shown.
+  return { login: loginOfLink(link) ?? text, bot };
 }
 
 /**
@@ -74,6 +77,8 @@ export function textWithTableRows(body: HTMLElement): string {
   const clone = body.cloneNode(true);
   if (!(clone instanceof HTMLElement)) return blockText(body);
   for (const row of clone.querySelectorAll('tr')) {
+    // A time in a row is its exact `datetime`, as `previewDocFromMarkdown` writes it: the words drop the seconds.
+    for (const time of row.querySelectorAll('relative-time[datetime]')) time.replaceWith(time.getAttribute('datetime') ?? '');
     const cells = [...row.querySelectorAll('th, td')].map((cell) => (cell.textContent ?? '').replace(/\s+/g, ' ').trim());
     const line = document.createElement('div');
     line.textContent = `| ${cells.join(' | ')} |`;
@@ -891,9 +896,12 @@ export function crawlSidebarReviewers(root: ParentNode = document): readonly Sid
     const text = [tip?.textContent ?? '', control?.getAttribute('aria-label') ?? '', row.querySelector('tool-tip')?.textContent ?? ''].join(' ');
     const state = sidebarReviewerState(text, row.querySelector('.reviewers-status-icon svg, .reviewers-status-icon .octicon'));
     if (state === null) continue;
-    const link = who.querySelector('a[href]');
-    const bot = /\[bot\]$/i.test(login) || (link?.getAttribute('href') ?? '').startsWith('/apps/');
-    out.push({ login, avatarSrc: srcOfImage(who.querySelector('img')) ?? avatarSrcForLogin(login), state, bot });
+    const href = who.querySelector('a[href]')?.getAttribute('href') ?? '';
+    const app = /^\/apps\/([^/?#]+)/.exec(href)?.[1];
+    const bot = /\[bot\]$/i.test(login) || app !== undefined;
+    // Copilot's row draws an octicon, not a picture: its App's mark comes from the registry by the App's slug.
+    const appMark = app === undefined ? null : appAvatarForLogin(`${app}[bot]`);
+    out.push({ login, avatarSrc: srcOfImage(who.querySelector('img')) ?? appMark ?? avatarSrcForLogin(login), state, bot });
   }
   return out;
 }
@@ -928,8 +936,19 @@ export function crawlCheckRuns(root: ParentNode = document, headSha = ''): reado
     seen.add(name);
     // Where the check's title (React) or "Details" (classic) leads, and GitHub's one-line description: a status an
     // external service posted links to that service, which the check reporters are known by.
-    const details = row.querySelector<HTMLAnchorElement>('[class*="StatusCheckRow"] h4 a[href], .merge-status-item a.status-actions[href], .merge-status-item a[href]:not([href^="#"])');
-    const description = (row.querySelector('[class*="titleDescription"], [class*="StatusCheckRow"] [class*="description" i], .merge-status-item .status-meta, .merge-status-item .text-small')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    // By preference, not by position: a selector list answers with the first match in document order, and in a
+    // classic row the App's avatar link (`/apps/cursor`) comes before "Details".
+    const details =
+      row.querySelector<HTMLAnchorElement>('[class*="StatusCheckRow"] h4 a[href], .merge-status-item a.status-actions[href]') ??
+      row.querySelector<HTMLAnchorElement>('.merge-status-item a[href]:not([href^="#"]):not([href^="/apps/"]):not([href*="/apps/"])');
+    const described = row.querySelector('[class*="titleDescription"], [class*="StatusCheckRow"] [class*="description" i], .merge-status-item .status-meta, .merge-status-item .text-small');
+    // The commit's status partial (`/commit/<sha>/status-details`) writes the description as loose text beside the
+    // name, in the same truncating cell: the cell's words minus the name's.
+    const cell = described === null ? row.querySelector('.merge-status-item strong')?.parentElement ?? null : null;
+    const nameText = (row.querySelector('.merge-status-item strong')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    const description = (described !== null ? (described.textContent ?? '') : cell === null ? '' : (cell.textContent ?? '').replace(nameText, ''))
+      .replace(/\s+/g, ' ')
+      .trim();
     // A running check's description says when it started ("Started <relative-time>"); a finished one's does not.
     const startedAt = state.status === 'completed' ? null : (row.querySelector('[class*="titleDescription"] relative-time[datetime], .merge-status-item relative-time[datetime]')?.getAttribute('datetime') ?? null);
     out.push({

@@ -1,3 +1,4 @@
+import { parseIssueTracker } from './trackers';
 import type { Catalog } from './categories';
 import { BUNDLED_CATALOG, CATEGORY_IDS, catalogGroupKeys, isCategoryId, isCustomCategoryId, isGroupKey, isWellFormedGroupKey, isWellFormedId } from './categories';
 import { CATEGORY_ICON_NAMES, isCategoryIconName } from './category-icons';
@@ -6,6 +7,7 @@ import type { GeldSettings } from './settings';
 import { COMPACT_TIMELINE_MODES, REPO_CONFIG_MODES, isCompactTimelineMode, isRepoConfigMode, normalizeHost, normalizeSettings, isReviewGrouping, isSuggestedFixMode, REVIEW_GROUPINGS, SUGGESTED_FIX_MODES } from './settings';
 import { authorRuleProblem } from './pr-authors';
 import { TEST_PATTERN_GROUP_IDS, isTestPatternGroupId } from './test-patterns';
+import { parseTestSyntax } from './test-outline';
 
 /**
  * Strict validation of a settings document, used for anything a person may
@@ -56,6 +58,7 @@ const BOOLEAN_KEYS = [
   'groupHidden',
   'expandedByDefault',
   'hideCommentLines',
+  'testOutline',
   'hideLargeDiffs',
   'expandLargeDiffs',
   'showListStats',
@@ -64,10 +67,17 @@ const BOOLEAN_KEYS = [
   'showBadge',
   'autoUpdatePatterns',
   'prOverview',
+  'quickReview',
   'collapseDescription',
   'aiEnabled',
   'aiJev',
 ] as const;
+
+/** Why a custom test syntax line cannot be used, or null. */
+export function testSyntaxProblem(line: string): string | null {
+  const parsed = parseTestSyntax(line);
+  return 'problem' in parsed ? parsed.problem : null;
+}
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -259,11 +269,13 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   if (value.aiBaseUrl !== undefined && typeof value.aiBaseUrl !== 'string') {
     issues.push({ path: `${path}.aiBaseUrl`, message: `Expected a string, got ${describeValue(value.aiBaseUrl)}.` });
   }
+  if (value.issueTracker !== undefined && value.issueTracker !== null && !parseIssueTracker(value.issueTracker)) issues.push({path:`${path}.issueTracker`,message:'Invalid issue tracker configuration.'});
   if (value.aiModel !== undefined && typeof value.aiModel !== 'string') {
     issues.push({ path: `${path}.aiModel`, message: `Expected a string, got ${describeValue(value.aiModel)}.` });
   }
   // Custom ids are accepted here regardless of whether the category still exists: a stale flag is harmless.
   checkBooleanMap(issues, `${path}.categories`, value.categories, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key) || isWellFormedId(key), 'category');
+  checkBooleanMap(issues, `${path}.autoViewed`, value.autoViewed, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key) || isWellFormedId(key), 'category');
   checkBooleanMap(issues, `${path}.groups`, value.groups, catalogGroupKeys(catalog), (key) => isGroupKey(key, catalog) || isWellFormedGroupKey(key), 'pattern group');
   checkCategoryPatterns(issues, `${path}.categoryPatterns`, value.categoryPatterns);
   checkCustomCategories(issues, `${path}.customCategories`, value.customCategories);
@@ -272,6 +284,7 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   checkStringList(issues, `${path}.customPatterns`, value.customPatterns, customPatternProblem);
   checkStringList(issues, `${path}.repoRules`, value.repoRules, repoRuleProblem);
   checkStringList(issues, `${path}.hiddenAuthors`, value.hiddenAuthors, authorRuleProblem);
+  checkStringList(issues, `${path}.testSyntaxes`, value.testSyntaxes, testSyntaxProblem);
   checkStringList(issues, `${path}.reviewBots`, value.reviewBots, authorRuleProblem);
   checkStringList(issues, `${path}.enterpriseHosts`, value.enterpriseHosts, hostProblem);
   return issues;

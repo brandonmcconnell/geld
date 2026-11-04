@@ -1,8 +1,9 @@
 /**
  * User authorization for the Geld **GitHub App**.
  *
- * Geld never acts as the app itself (no private key, no installation tokens);
- * everything happens on behalf of a signed-in user with a *user access token*
+ * Interactive identity authorization uses a signed-in user access token.
+ * Repository installation authentication is separate from these identity flows.
+ * This module works with a *user access token*
  * (`ghu_…`). Two ways to get one, both implemented here without any Geld
  * server in the loop:
  *
@@ -329,6 +330,8 @@ export type TokenAccess =
   | { readonly status: 'unavailable'; readonly message: string };
 
 export interface TokenSource {
+  /** Connected authorizations of the same user, tried after a definitive access denial. */
+  readonly alternatives?: readonly TokenSource[];
   /** A token good for at least `skewMs`, refreshing if needed. `force` refreshes even a fresh-looking token (after a 401). */
   get(options?: { readonly force?: boolean }): Promise<TokenAccess>;
 }

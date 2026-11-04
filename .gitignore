@@ -28,3 +28,9 @@ apps/extension/safari/**/DerivedData/
 # Local env (WXT reads .env files)
 .env
 .env.local
+
+# TypeScript incremental build state
+*.tsbuildinfo
+packages/relay/dist/
+apps/companion/dist/
+apps/dashboard/db/migrate.cjs

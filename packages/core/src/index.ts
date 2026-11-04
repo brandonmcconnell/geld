@@ -9,6 +9,7 @@ export * from './catalog-key';
 export * from './categories';
 export * from './change-kinds';
 export * from './comment-lines';
+export * from './test-outline';
 export * from './category-icons';
 export * from './diff-parse';
 export * from './diff-summaries';
@@ -24,3 +25,6 @@ export * from './settings';
 export * from './settings-schema';
 export * from './settings-validate';
 export * from './test-patterns';
+
+export * from './diff-hunks';
+export * from './trackers';

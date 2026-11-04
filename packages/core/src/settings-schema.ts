@@ -82,6 +82,8 @@ export interface CategoriesField extends FieldBase {
     readonly groupsDescription: string;
   };
   readonly extraPatterns: PatternEditorCopy;
+  /** The per-category "mark hidden files as viewed" checkbox, also shown in each custom category's editor. */
+  readonly autoViewed: { readonly label: string; readonly description: string };
 }
 
 /** Editor for user-defined categories: title, icon and patterns. */
@@ -145,9 +147,22 @@ export interface ActionsField extends FieldBase {
   readonly actions: readonly MaintenanceAction[];
 }
 
-export type SettingsField = ToggleField | ChoiceField | CategoriesField | CustomCategoriesField | ListField | TextField | ActionsField;
+export interface IssueTrackerField extends FieldBase {
+  readonly kind: 'issue-tracker';
+  readonly key: 'issueTracker';
+  readonly providerLabel: string;
+  readonly noneLabel: string;
+  readonly keysLabel: string;
+  readonly keysDescription: string;
+  readonly keysPlaceholder: string;
+  readonly baseUrlLabel: string;
+  readonly workspaceLabel: string;
+  readonly saveLabel: string;
+}
 
-export type SettingsSectionId = 'general' | 'hide' | 'large-diffs' | 'custom-categories' | 'repositories' | 'lists' | 'experiments' | 'enterprise' | 'maintenance';
+export type SettingsField = IssueTrackerField | ToggleField | ChoiceField | CategoriesField | CustomCategoriesField | ListField | TextField | ActionsField;
+
+export type SettingsSectionId = 'general' | 'hide' | 'tests' | 'large-diffs' | 'custom-categories' | 'repositories' | 'lists' | 'experiments' | 'enterprise' | 'maintenance';
 
 export interface SettingsSection {
   readonly id: SettingsSectionId;
@@ -275,6 +290,42 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
           ],
           saveLabel: 'Save patterns',
         },
+        autoViewed: {
+          label: 'Mark as viewed automatically',
+          description:
+            'On pull requests, tick GitHub’s Viewed box for this category’s hidden files, so “N of M files viewed” only waits on what is left to review. Untick one by hand and it stays unticked until the next push.',
+        },
+      },
+    ],
+  },
+  {
+    id: 'tests',
+    title: 'Test files',
+    intro:
+      'In a test file Geld folds each test’s body under its line, so the diff reads as the tests that were added, removed, renamed or changed. Open a test to read its source. Suites stay open so titles nest, and hooks such as `beforeEach` fold too.',
+    fields: [
+      {
+        kind: 'toggle',
+        key: 'testOutline',
+        label: 'Fold tests to their titles',
+        description:
+          'Applies to the files the Tests category recognises, whether hidden or not. Each fold says what changed inside it. Known syntaxes: Jest, Vitest, Mocha, Jasmine, Bun, node:test, Playwright, Cypress, Deno, pytest and unittest, Go and its subtests, Rust, JUnit, TestNG, Kotest, xUnit, NUnit, MSTest, XCTest and Swift Testing, PHPUnit and Pest, RSpec and minitest, ExUnit, Dart, busted, hspec, ScalaTest, clojure.test, testthat and Gherkin.',
+        popup: false,
+      },
+      {
+        kind: 'list',
+        key: 'testSyntaxes',
+        label: 'Your test syntaxes',
+        description: 'Declarations Geld does not know yet, one per line. They are read before the built-in ones.',
+        popup: false,
+        rows: 4,
+        placeholder: 'scenario\nsuite: feature\nhook: givenEach\ntest: /^\\s*verify\\s+"(?<title>[^"]+)"/',
+        syntax: [
+          'A name, such as `scenario` or `t.test`: a call or keyword followed by a quoted title declares a test.',
+          '`suite: feature` declares a suite, which stays open with titles nested under it. `hook: givenEach` declares a hook, which folds under its own name.',
+          'A `/regex/` matches the whole declaration line, with the title in a `(?<title>…)` group or the first group; put a kind before it the same way.',
+        ],
+        saveLabel: 'Save syntaxes',
       },
     ],
   },
@@ -363,6 +414,16 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
           { value: 'never', label: 'Never', description: 'Only your own settings apply.' },
         ],
       },
+      {
+        kind: 'issue-tracker', key: 'issueTracker', popup: false,
+        label: 'Personal issue tracker',
+        description: 'Recognize links using your fallback tracker. Allowed repository configs and a selected Geld team can override it. This does not grant tracker access.',
+        providerLabel: 'Tracker', noneLabel: 'No personal tracker',
+        keysLabel: 'Allowed project keys, repositories or IDs',
+        keysDescription: 'One scope per line. Use project keys for Linear, Jira or YouTrack, owner/repository for Git issues, owner/project-number for GitHub Projects, and workspace or project IDs for Asana or Monday.',
+        keysPlaceholder: 'ENG\nacme/repository\n123456',
+        baseUrlLabel: 'Tracker HTTPS origin', workspaceLabel: 'Linear workspace', saveLabel: 'Save personal tracker',
+      },
     ],
   },
   {
@@ -429,8 +490,15 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       {
         kind: 'toggle',
         key: 'collapseDescription',
-        label: 'Collapse the description',
-        description: 'In Minimal mode, show the first paragraph of the pull request body and a control to expand the rest.',
+        label: 'Shorten the description',
+        description: 'Fold each section of the pull request description under its heading. A long description with no headings is cut to 500px with a control to show the rest.',
+        popup: false,
+      },
+      {
+        kind: 'toggle',
+        key: 'quickReview',
+        label: 'Submit review from any tab',
+        description: 'Put the Submit review button in the pull request’s tab bar, beside the line counts, on every tab. The Files changed tab’s own button gives way to it.',
         popup: false,
       },
       {

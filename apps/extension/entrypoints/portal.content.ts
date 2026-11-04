@@ -1,4 +1,5 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
+import { LIVE_CATCH_UP_EVENT, liveRegionMessages } from '../src/github/review/live-regions';
 
 /**
  * The page-world half of quick view (see `src/github/review/teleport.ts`).
@@ -21,6 +22,10 @@ import { defineContentScript } from 'wxt/utils/define-content-script';
  *
  * The protocol is DOM-only: the loaned node carries `data-geld-teleported=<token>`
  * and a `<!--geld:quick-view:<token>-->` comment holds its place.
+
+ *
+ * It also sends GitHub's live regions the socket messages a hidden tab
+ * missed, when the content script asks (`src/github/review/live-regions.ts`).
  */
 export default defineContentScript({
   matches: ['https://github.com/*'],
@@ -129,6 +134,13 @@ export default defineContentScript({
       if (!(parent instanceof Node)) return;
       unshim(parent);
       for (const [token, loan] of loans) if (loan.placeholder.parentNode === null || loan.placeholder.parentNode === parent) loans.delete(token);
+      // A parent GitHub replaced while its child was on loan is detached for good: its shim and its count go
+      // with it (the content script sends such a return on the document, since nothing on the parent would arrive).
+      for (const lent of [...lending.keys()]) {
+        if (lent.isConnected) continue;
+        lending.set(lent, 1);
+        unshim(lent);
+      }
     });
 
     /** The React root a loaned ancestor of `target` came from, unless that root already contains the target. */
@@ -150,6 +162,10 @@ export default defineContentScript({
       root.dispatchEvent(copy);
       if (copy.defaultPrevented) event.preventDefault();
     }
+
+    document.addEventListener(LIVE_CATCH_UP_EVENT, () => {
+      for (const { region, detail } of liveRegionMessages(document)) region.dispatchEvent(new CustomEvent('socket:message', { detail }));
+    });
 
     for (const type of BRIDGED) {
       document.addEventListener(

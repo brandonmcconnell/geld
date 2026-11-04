@@ -8,10 +8,26 @@ import type { LeftoverKind } from './crawler';
  */
 
 import { botTitle, resolveBotId } from '@geld/review';
-import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
+import { loginOfLink } from './login';
 import { isTeleported } from './teleport';
 
 export const ATTR_FOLDED = 'data-geld-folded';
+/**
+ * On a folded node only where the browser treats `hidden="until-found"` as findable (Chrome, Firefox 139+): the
+ * stylesheet's override of Primer's `[hidden] { display: none }` keys on it. Without that support the attribute
+ * is plain `hidden`, and the override (which relies on the UA's `content-visibility: hidden`) would show the node.
+ */
+export const ATTR_FINDABLE = 'data-geld-findable';
+const untilFoundSupported = typeof document !== 'undefined' && 'onbeforematch' in document.documentElement;
+
+/** Mark (or unmark) a node Geld hides with `hidden="until-found"` as findable, where the browser can find it. */
+export function setFindable(node: Element, folded: boolean): void {
+  if (folded && untilFoundSupported) {
+    if (!node.hasAttribute(ATTR_FINDABLE)) node.setAttribute(ATTR_FINDABLE, '');
+  } else if (node.hasAttribute(ATTR_FINDABLE)) {
+    node.removeAttribute(ATTR_FINDABLE);
+  }
+}
 const ATTR_VISIT = 'data-geld-timeline';
 const ATTR_SEEN = 'data-geld-seen';
 const TIMELINE_ITEM = '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]';
@@ -72,7 +88,8 @@ export function eventHeadline(nodes: readonly HTMLElement[]): EventHeadline | nu
     if (node === undefined) continue;
     const kind = closureKindOf(node);
     if (kind === null) continue;
-    const actor = (node.querySelector(EVENT_ACTOR)?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    const link = node.querySelector(EVENT_ACTOR);
+    const actor = link === null ? '' : (loginOfLink(link) ?? '');
     const avatar = node.querySelector<HTMLImageElement>(EVENT_AVATAR);
     const target = kind === 'merged' ? (node.querySelector('.base-ref')?.textContent ?? '').replace(/\s+/g, '').trim() || null : null;
     return { kind, actor, avatarSrc: avatar === null ? null : avatar.currentSrc || avatar.getAttribute('src') || null, target, anchor: node.id };
@@ -157,9 +174,11 @@ function setFolded(node: HTMLElement, hidden: boolean): void {
   if (hidden) {
     if (node.getAttribute(ATTR_FOLDED) !== 'hidden') node.setAttribute(ATTR_FOLDED, 'hidden');
     if (node.getAttribute('hidden') !== 'until-found') node.setAttribute('hidden', 'until-found');
+    setFindable(node, true);
   } else if (node.hasAttribute(ATTR_FOLDED)) {
     node.removeAttribute(ATTR_FOLDED);
     if (node.getAttribute('hidden') === 'until-found') node.removeAttribute('hidden');
+    setFindable(node, false);
   }
 }
 
@@ -291,26 +310,4 @@ export function groupDoneHumans(
   const nodes = [...new Set(comments.filter((comment) => doneAnchors.has(comment.anchor) && !comment.author.endsWith('[bot]')).map((comment) => comment.root))];
   if (nodes.length === 0) return null;
   return { key: 'done-human', label: `${nodes.length} comment${nodes.length === 1 ? '' : 's'} on done items`, author: null, nodes };
-}
-
-export function collapseDescription(on: boolean): void {
-  const body =
-    document.querySelector('.js-comment-container .js-comment-body') ??
-    document.querySelector('[data-testid="issue-body"] .markdown-body') ??
-    document.querySelector('.timeline-comment .comment-body');
-  if (!(body instanceof HTMLElement)) return;
-  if (!on) {
-    body.removeAttribute('data-geld-desc');
-    body.parentElement?.querySelector('.geld-review-desc')?.remove();
-    return;
-  }
-  if (body.hasAttribute('data-geld-desc')) return;
-  body.setAttribute('data-geld-desc', 'collapsed');
-  const toggle = createElement('button', { type: 'button', class: 'geld-review-desc', [OWN_UI_ATTRIBUTE]: '' }, ['Show full description']);
-  toggle.addEventListener('click', () => {
-    const collapsed = body.getAttribute('data-geld-desc') === 'collapsed';
-    body.setAttribute('data-geld-desc', collapsed ? 'open' : 'collapsed');
-    toggle.textContent = collapsed ? 'Show less' : 'Show full description';
-  });
-  body.insertAdjacentElement('afterend', toggle);
 }

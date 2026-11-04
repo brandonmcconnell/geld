@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import type { BuiltInCategory, Catalog, CategoriesField, CategoryIconName, CustomCategoriesField, CustomCategory, GeldSettings, HiddenCategory, PatternGroup } from '@geld/core';
+import type { AnyCategoryId, BuiltInCategory, Catalog, CategoriesField, CategoryIconName, CustomCategoriesField, CustomCategory, GeldSettings, HiddenCategory, PatternGroup } from '@geld/core';
 import {
   CATEGORY_ICON_NAMES,
   categoryIconLabel,
@@ -16,6 +16,8 @@ import {
   hiddenCategoryFromCustom,
   isCategoryEnabled,
   isCategoryInPicker,
+  isAutoViewed,
+  isCategoryId,
   isGroupEnabled,
   choiceFields,
   listFields,
@@ -30,7 +32,9 @@ import {
   serializeSettingsPayload,
   splitInlineCode,
   toggleFields,
+  testSyntaxProblem,
   validateSettingsDocument,
+  mergeCustomCategoryEdit,
   withCustomCategory,
   withoutCustomCategory,
 } from '@geld/core';
@@ -50,6 +54,7 @@ import type { JevSource } from '../../src/lib/local-state';
 import { aiGatewayItem, aiKeyItem, jevKeyItem, jevSourceItem } from '../../src/lib/local-state';
 import type { ModelInfo } from '@geld/review';
 import { isEvaluationModel, jevModelFor, TYPESAFE_API } from '@geld/review';
+import { issueTrackerEditor } from '../../src/ui/issue-tracker-editor';
 import { modelCombobox } from '../../src/ui/model-combobox';
 import { accountItem, appClientIdItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, syncStateItem } from '../../src/lib/account';
 import type { GitHubAccount, SyncState } from '../../src/lib/account';
@@ -208,6 +213,7 @@ async function main(): Promise<void> {
 
   renderToggleSection('general', 'general-rows');
   applySchemaCopy('hide');
+  renderToggleSection('tests', 'tests-rows');
   renderToggleSection('large-diffs', 'large-diffs-rows');
 
   /* Categories: built-ins with an "advanced" disclosure, then the user's own. */
@@ -250,12 +256,55 @@ async function main(): Promise<void> {
     return el('details', 'options__group', [el('summary', '', [el('span', 'options__chevron', ['\u203a']), heading, count]), patternChips(group.patterns)]);
   }
 
+  /** What a built-in category's summary says is customised: groups, extra patterns, marked as viewed. */
+  function customisedText(id: BuiltInCategory['id']): string | null {
+    return [describeAdvancedSettings(settings, id, catalog), isAutoViewed(settings, id) ? 'marked as viewed' : null].filter((part) => part !== null).join(' · ') || null;
+  }
+
+  /**
+   * A category's checkbox and summary as the settings say, in place: rebuilding the category lists would throw away a
+   * custom category's unsaved name and patterns.
+   */
+  function showAutoViewed(checkbox: HTMLInputElement, id: AnyCategoryId): void {
+    checkbox.checked = isAutoViewed(settings, id);
+    const summary = checkbox.closest('details.options__category')?.querySelector('summary');
+    if (!(summary instanceof HTMLElement) || !isCategoryId(id)) return;
+    const text = customisedText(id);
+    let badge = summary.querySelector('.options__customised');
+    if (text === null) badge?.remove();
+    else if (badge === null) {
+      badge = el('span', 'options__customised', [text]);
+      summary.querySelector('button.geld-switch')?.before(badge);
+    } else badge.textContent = text;
+  }
+
+  /** The category's "Mark as viewed automatically" checkbox (`autoViewed`). */
+  function autoViewedRow(id: AnyCategoryId): HTMLElement {
+    const checkbox = el('input', 'geld-checkbox options__checkbox');
+    checkbox.type = 'checkbox';
+    checkbox.checked = isAutoViewed(settings, id);
+    checkbox.dataset.autoViewed = id;
+    checkbox.addEventListener('change', async () => {
+      // Read now: a storage notice from an earlier save can reset the box before this update runs.
+      const checked = checkbox.checked;
+      settings = await settingsItem.update((current) => ({ autoViewed: { ...current.autoViewed, [id]: checked } }));
+      showAutoViewed(checkbox, id);
+    });
+    const copy = categoriesField.autoViewed;
+    return el('div', 'options__auto-viewed', [
+      el('label', 'options__group-heading options__group-heading--checkbox', [
+        checkbox,
+        el('span', '', [el('span', 'options__group-title', [copy.label]), el('span', 'options__group-description', richText(copy.description))]),
+      ]),
+    ]);
+  }
+
   /** Textarea + save button for a pattern list; `onSave` receives the cleaned lines. */
   function patternEditor(
     copy: { readonly label: string; readonly description: string; readonly placeholder: string; readonly rows: number; readonly syntax: readonly string[]; readonly saveLabel: string },
     lines: readonly string[],
     onSave: (lines: readonly string[]) => Promise<string | null>,
-  ): { readonly root: HTMLElement; readonly textarea: HTMLTextAreaElement } {
+  ): { readonly root: HTMLElement; readonly textarea: HTMLTextAreaElement; readonly status: StatusReporter } {
     const label = el('span', 'geld-label', [copy.label]);
     const help = el('p', 'geld-help', [copy.description]);
     const textarea = el('textarea', 'geld-textarea geld-code options__textarea');
@@ -263,6 +312,8 @@ async function main(): Promise<void> {
     textarea.placeholder = copy.placeholder;
     textarea.spellcheck = false;
     textarea.value = lines.join('\n');
+    // What is saved, so a rebuild caught up later (`catchUpRender`) never replaces text the reader has not saved.
+    textarea.dataset.saved = lines.join('\n');
     textarea.setAttribute('aria-label', copy.label);
     const syntax = el(
       'ul',
@@ -272,7 +323,8 @@ async function main(): Promise<void> {
     const status = statusReporter(el('span', 'geld-status'));
     const save = el('button', 'geld-button geld-button--primary geld-button--small', [copy.saveLabel]);
     save.type = 'button';
-    textarea.addEventListener('input', () => status(parsePatternList(textarea.value).join('\n') !== lines.join('\n') ? 'Unsaved changes' : '', 'neutral'));
+    // Against what was saved last, not what the card was built with: a save keeps this editor on the page.
+    textarea.addEventListener('input', () => status(parsePatternList(textarea.value).join('\n') !== parsePatternList(textarea.dataset.saved ?? '').join('\n') ? 'Unsaved changes' : '', 'neutral'));
     save.addEventListener('click', async () => {
       const cleaned = parsePatternList(textarea.value);
       const problem = validatePatterns(cleaned);
@@ -286,6 +338,7 @@ async function main(): Promise<void> {
         return;
       }
       textarea.value = cleaned.join('\n');
+      textarea.dataset.saved = textarea.value;
       status(`Saved ${cleaned.length} line${cleaned.length === 1 ? '' : 's'}`, 'success');
     });
     const statusNode = el('span', 'geld-status');
@@ -293,6 +346,7 @@ async function main(): Promise<void> {
     return {
       root: el('div', 'options__editor', [label, help, textarea, syntax, el('div', 'geld-row options__actions', [statusNode, save])]),
       textarea,
+      status,
     };
   }
 
@@ -300,7 +354,7 @@ async function main(): Promise<void> {
   function renderBuiltIn(category: BuiltInCategory): HTMLElement {
     const label = el('span', 'geld-label', [category.title]);
     label.id = `category-${category.id}-label`;
-    const customised = describeAdvancedSettings(settings, category.id, catalog);
+    const customised = customisedText(category.id);
     const help = el('p', 'geld-help options__category-description', richText(category.description));
     help.id = `category-${category.id}-help`;
     const button = switchButton(`category-${category.id}`, isCategoryEnabled(settings, category.id), label.id, help.id);
@@ -324,7 +378,7 @@ async function main(): Promise<void> {
       runTester();
       return null;
     });
-    const body = el('div', 'options__advanced', [el('p', 'geld-help options__advanced-intro', [categoriesField.advanced.description]), groups, editor.root]);
+    const body = el('div', 'options__advanced', [el('p', 'geld-help options__advanced-intro', [categoriesField.advanced.description]), autoViewedRow(category.id), groups, editor.root]);
     const card = el('details', 'options__category', [
       el('summary', 'options__category-summary', [
         el('span', 'options__chevron', ['\u203a']),
@@ -337,7 +391,7 @@ async function main(): Promise<void> {
     ]);
     card.dataset.categoryId = category.id;
     // Open when anything beyond the switch is in use, so those settings are seen.
-    card.open = hasAdvancedSettings(settings, category.id, catalog);
+    card.open = hasAdvancedSettings(settings, category.id, catalog) || isAutoViewed(settings, category.id);
     return card;
   }
 
@@ -394,6 +448,7 @@ async function main(): Promise<void> {
     const nameInput = el('input', 'geld-input options__input');
     nameInput.type = 'text';
     nameInput.value = title;
+    nameInput.dataset.saved = title;
     nameInput.placeholder = customField.titlePlaceholder;
     nameInput.maxLength = 40;
     nameInput.setAttribute('aria-label', customField.titleLabel);
@@ -404,6 +459,7 @@ async function main(): Promise<void> {
     const nounInput = el('input', 'geld-input options__input options__input--short');
     nounInput.type = 'text';
     nounInput.value = noun;
+    nounInput.dataset.saved = noun;
     nounInput.placeholder = 'token';
     nounInput.setAttribute('aria-label', 'Count label, singular');
     nounInput.addEventListener('input', () => {
@@ -412,6 +468,7 @@ async function main(): Promise<void> {
     const nounPluralInput = el('input', 'geld-input options__input options__input--short');
     nounPluralInput.type = 'text';
     nounPluralInput.value = nounPlural;
+    nounPluralInput.dataset.saved = nounPlural;
     nounPluralInput.placeholder = 'tokens';
     nounPluralInput.setAttribute('aria-label', 'Count label, plural');
     nounPluralInput.addEventListener('input', () => {
@@ -420,6 +477,7 @@ async function main(): Promise<void> {
     const picker = iconPicker(icon, (next) => {
       icon = next;
       summaryIcon.replaceWith(iconNode(next));
+      picker.closest('details')?.toggleAttribute('data-unsaved', next !== (existing?.icon ?? 'tag'));
     });
 
     const editor = patternEditor(customField.patterns, existing?.patterns ?? [], async (lines) => {
@@ -435,9 +493,30 @@ async function main(): Promise<void> {
         ...(noun.trim() !== '' ? { noun: noun.trim() } : {}),
         ...(nounPlural.trim() !== '' ? { nounPlural: nounPlural.trim() } : {}),
       };
-      settings = await settingsItem.update((current) => ({ customCategories: withCustomCategory(current, custom).customCategories }));
+      // This card may be older than the stored category (a rebuild waits while someone edits): only what was changed
+      // here is written, over the category's latest fields.
+      let saved: CustomCategory | null = custom;
+      settings = await settingsItem.update((current) => {
+        saved = existing === null ? custom : mergeCustomCategoryEdit(existing, custom, current.customCategories.find((entry) => entry.id === existing.id));
+        return saved === null ? {} : { customCategories: withCustomCategory(current, saved).customCategories };
+      });
+      // Said in this editor (a rebuild would detach it). Nothing on this card holds the lists back any more: it goes
+      // once focus leaves it, when the lists catch up.
+      if (saved === null) {
+        nameInput.closest('details')?.setAttribute('data-gone', '');
+        renderDeferred = true;
+        return 'This category was deleted in another window. Its card goes when you leave it.';
+      }
+      const count = saved.patterns.length;
       customStatus(existing === null ? `Added “${cleanTitle}”` : 'Saved', 'success');
+      // The rebuild turns a draft into the saved category (a second Save must not add another) and detaches this card,
+      // so the editor's "Saved N lines" goes to the card that replaces it, open.
       renderAll();
+      const fresh = savedCustomCards.get(id);
+      if (fresh !== undefined) {
+        fresh.card.open = true;
+        fresh.status(`Saved ${count} line${count === 1 ? '' : 's'}`, 'success');
+      }
       return null;
     });
 
@@ -463,18 +542,41 @@ async function main(): Promise<void> {
         el('p', 'geld-help', [customField.nounDescription]),
         el('div', 'options__noun-row', [nounInput, nounPluralInput]),
       ]),
+      ...(existing === null ? [] : [autoViewedRow(existing.id)]),
       editor.root,
       el('div', 'geld-row options__actions options__actions--start', [remove]),
     ]);
     const card = el('details', 'options__category options__category--custom', [el('summary', 'options__category-summary', summaryChildren), body]);
     if (hidden !== null) card.dataset.categoryId = hidden.id;
+    // A new category not saved yet is unsaved work as a whole (`hasUnsavedEdits`).
+    else card.dataset.draft = '';
     // A new draft opens ready to edit; saved categories reopen through renderAll's bookkeeping.
     card.open = existing === null;
+    if (existing !== null) savedCustomCards.set(existing.id, { card, status: editor.status });
     return card;
   }
 
+  /**
+   * Focus is in something being edited: a category's pattern editor (its
+   * textarea, or its Save button, since Chrome focuses a clicked button), or
+   * a custom category's name, count labels and icon picker. Rebuilding then
+   * would eat typed input, an unsaved draft or the "Saved" status the click
+   * is about to show.
+   */
+  function isEditingCategory(): boolean {
+    const active = document.activeElement;
+    return active !== null && active.closest('.options__categories .options__editor, .options__custom-editor') !== null;
+  }
+  /** A rebuild was skipped because someone was editing; it runs once focus moves on (see the focusin listener below). */
+  let renderDeferred = false;
+
+  /** Each saved custom category's card and editor status, as the last rebuild made them. */
+  const savedCustomCards = new Map<string, { readonly card: HTMLDetailsElement; readonly status: StatusReporter }>();
+
   /** Rebuild both category lists from the current settings, keeping open disclosures open. */
   function renderAll(): void {
+    renderDeferred = false;
+    savedCustomCards.clear();
     const wasOpen = new Set(
       Array.from(document.querySelectorAll<HTMLDetailsElement>('details.options__category[open]')).map((card) => card.dataset.categoryId ?? ''),
     );
@@ -588,6 +690,49 @@ async function main(): Promise<void> {
     show(settings);
     choiceSetters.push(show);
     choiceHost.append(el('div', 'options__choice', [el('div', 'geld-row', [el('div', '', [label, help]), group]), note]));
+  }
+
+  const trackerField=sections.find(section=>section.id==='repositories')?.fields.find(field=>field.kind==='issue-tracker');
+  if(trackerField){
+    const editor=issueTrackerEditor(trackerField,settings.issueTracker,async issueTracker=>{settings=await settingsItem.patch({issueTracker});return settings.issueTracker;});
+    choiceHost.append(editor.element);
+    choiceSetters.push(value=>editor.setValue(value.issueTracker));
+  }
+
+  /* Test files: the reader's own test declaration syntaxes. */
+  const syntaxField = listFields(sections.find((candidate) => candidate.id === 'tests')?.fields ?? []).find((field) => field.key === 'testSyntaxes');
+  let syntaxArea: HTMLTextAreaElement | null = null;
+  /** The syntaxes as last saved here or seen saved elsewhere: the box takes a change from elsewhere only while it holds no edit of its own. */
+  let syntaxSaved = settings.testSyntaxes.join('\n');
+  if (syntaxField !== undefined) {
+    const label = el('span', 'geld-label', [syntaxField.label]);
+    const help = el('p', 'geld-help', richText(syntaxField.description));
+    const area = el('textarea', 'geld-textarea geld-code options__textarea');
+    area.rows = syntaxField.rows;
+    area.placeholder = syntaxField.placeholder;
+    area.spellcheck = false;
+    area.value = settings.testSyntaxes.join('\n');
+    area.setAttribute('aria-label', syntaxField.label);
+    syntaxArea = area;
+    const syntax = el('ul', 'geld-help options__syntax', syntaxField.syntax.map((line) => el('li', '', richText(line))));
+    const statusNode = el('span', 'geld-status');
+    const status = statusReporter(statusNode);
+    const save = el('button', 'geld-button geld-button--primary', [syntaxField.saveLabel]);
+    save.type = 'button';
+    area.addEventListener('input', () => status(parsePatternList(area.value).join('\n') !== settings.testSyntaxes.join('\n') ? 'Unsaved changes' : '', 'neutral'));
+    save.addEventListener('click', async () => {
+      const testSyntaxes = parsePatternList(area.value);
+      const problem = testSyntaxes.map(testSyntaxProblem).find((entry): entry is string => entry !== null) ?? null;
+      if (problem !== null) {
+        status(problem, 'error');
+        return;
+      }
+      settings = await settingsItem.patch({ testSyntaxes });
+      syntaxSaved = testSyntaxes.join('\n');
+      area.value = syntaxSaved;
+      status(`Saved ${pluralize(testSyntaxes.length, 'syntax', 'syntaxes')}`, 'success');
+    });
+    requireElement('test-syntaxes', HTMLDivElement).replaceChildren(el('div', 'options__editor', [label, help, area, syntax, el('div', 'geld-row options__actions', [statusNode, save])]));
   }
 
   /* Pull request lists: authors to hide */
@@ -1241,7 +1386,8 @@ async function main(): Promise<void> {
     cachedCatalog = next;
     catalog = catalogFromCache(next);
     renderCatalogStatus();
-    if (!(document.activeElement instanceof HTMLTextAreaElement && document.activeElement.closest('.options__categories') !== null)) renderAll();
+    if (isEditingCategory() || hasUnsavedEdits()) renderDeferred = true;
+    else renderAll();
     runTester();
   }
   catalogItem.watch(applyCatalog);
@@ -1257,16 +1403,63 @@ async function main(): Promise<void> {
     for (const { field, set } of reviewSwitches) set(next[field.key]);
     for (const show of choiceSetters) show(next);
     const signature = categorySignature(next);
-    // Rebuilding while someone types in a pattern box would eat their input.
-    if (signature !== lastSignature && !(document.activeElement instanceof HTMLTextAreaElement && document.activeElement.closest('.options__categories') !== null)) {
-      lastSignature = signature;
-      renderAll();
+    // Rebuilding while someone edits a category would eat their input, draft or Saved status.
+    if (signature !== lastSignature) {
+      if (isEditingCategory() || hasUnsavedEdits()) renderDeferred = true;
+      else {
+        lastSignature = signature;
+        renderAll();
+      }
+    }
+    // Not in the signature (that rebuild would drop unsaved category edits): an import, a reset or another window is shown in place.
+    for (const checkbox of document.querySelectorAll<HTMLInputElement>('input[data-auto-viewed]')) {
+      const id = checkbox.dataset.autoViewed ?? '';
+      const category = isCategoryId(id) ? id : settings.customCategories.find((custom) => custom.id === id)?.id;
+      if (category !== undefined) showAutoViewed(checkbox, category);
     }
     if (document.activeElement !== rulesArea) rulesArea.value = next.repoRules.join('\n');
     if (document.activeElement !== authorsArea) authorsArea.value = next.hiddenAuthors.join('\n');
+    const nextSyntaxes = next.testSyntaxes.join('\n');
+    if (syntaxArea !== null && nextSyntaxes !== syntaxSaved && parsePatternList(syntaxArea.value).join('\n') === syntaxSaved) syntaxArea.value = nextSyntaxes;
+    syntaxSaved = nextSyntaxes;
     if (reviewBotsArea !== null && document.activeElement !== reviewBotsArea) reviewBotsArea.value = next.reviewBots.join('\n');
     if (document.activeElement !== hostsArea) hostsArea.value = next.enterpriseHosts.join('\n');
     runTester();
+  });
+  /**
+   * Something in the category lists the reader has not saved, which a rebuild would replace: a pattern box's text, a
+   * custom category's name, count labels or icon, or a new custom category not saved yet.
+   */
+  function hasUnsavedEdits(): boolean {
+    const lists = '.options__categories';
+    // A card for a category deleted elsewhere (`data-gone`) has nothing left to save.
+    const live = <T extends Element>(selector: string): T[] => Array.from(document.querySelectorAll<T>(selector)).filter((element) => element.closest('[data-gone]') === null);
+    const patterns = live<HTMLTextAreaElement>(`${lists} .options__editor textarea`).some(
+      (textarea) => parsePatternList(textarea.value).join('\n') !== parsePatternList(textarea.dataset.saved ?? textarea.value).join('\n'),
+    );
+    const fields = live<HTMLInputElement>(`${lists} .options__custom-editor input[data-saved]`).some((input) => input.value !== input.dataset.saved);
+    return patterns || fields || live(`${lists} [data-unsaved], ${lists} [data-draft]`).length > 0;
+  }
+  /**
+   * Catch up on a skipped rebuild once focus is outside the category lists and nothing there is unsaved. Not with
+   * focus inside them: focus moves on mousedown, so rebuilding then would pull the control being clicked (another
+   * card's switch or Save) out from under the click. Unsaved text waits until it is saved or put back.
+   */
+  function catchUpRender(): void {
+    if (!renderDeferred || isEditingCategory() || hasUnsavedEdits()) return;
+    if ((document.activeElement?.closest('.options__categories') ?? null) !== null) return;
+    lastSignature = categorySignature(settings);
+    renderAll();
+  }
+  document.addEventListener('focusin', (event) => {
+    if (event.target instanceof Element && event.target.closest('.options__categories') !== null) return;
+    catchUpRender();
+  });
+  // Focus leaving for no element (a click on the page's background fires no focusin): catch up after that click has
+  // run, so a rebuild never removes what it landed on.
+  document.addEventListener('focusout', (event) => {
+    if (!renderDeferred || event.relatedTarget !== null) return;
+    document.addEventListener('click', () => window.setTimeout(catchUpRender, 0), { once: true });
   });
 }
 

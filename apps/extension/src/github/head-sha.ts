@@ -1,27 +1,100 @@
+import { compareHome } from './review/teleport';
+import { pageFetch } from './page-fetch';
+
 const SHA = /^[0-9a-f]{40}$/i;
+
+/** A commit's timeline row, in either UI. Mirrors `COMMIT_ROW` in review/crawler.ts. */
+const COMMIT_ROW = '.js-commits-list-item, .js-commit-group, [data-testid="commit-row"], [data-testid="timeline-commit-row"], .TimelineItem:has(> .TimelineItem-badge .octicon-git-commit), [class*="CommitRow"]';
+/** "X force-pushed the branch from a to b". Mirrors `FORCE_PUSH_ROW` in review/crawler.ts. */
+const FORCE_PUSH_ROW = '.TimelineItem:has(.octicon-repo-push), [data-testid="force-pushed-event"], [class*="ForcePush"]';
+const COMMENT_BODY = '.comment-body, .markdown-body, [data-testid="comment-body"]';
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * The conversation tab's head: the newest push in the timeline, which GitHub
+ * appends live (its socket) when one lands, while the page's stale-comparison
+ * poller and embedded payload keep the head it loaded with. A tab left open
+ * across a push read the old head's checks and never saw the new run
+ * (geld#71). A push is a commit row's own link to this pull request's commits,
+ * or a force-push row's "to" commit (its Compare link, `compare/<from>..<to>`,
+ * in this repository), since a rewrite can land as that one row with no commit
+ * row of its own. A commit URL someone pasted in a comment is not a push, and
+ * a row on loan to the digest is ordered by its home, not where it stands.
+ */
+export function conversationHeadSha(): string | null {
+  const conversation = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/?$/.exec(window.location.pathname);
+  if (conversation === null) return null;
+  const repo = `/${conversation[1]}/${conversation[2]}`;
+  const commits = `${repo}/pull/${conversation[3]}/commits/`;
+  const compare = `${repo}/compare/`;
+  const commitLink = new RegExp(`^(?:https?://[^/]+)?${escapeRegExp(commits)}([0-9a-f]{40})(?:[/?#]|$)`, 'i');
+  const compareLink = new RegExp(`^(?:https?://[^/]+)?${escapeRegExp(compare)}[0-9a-f]{40}\\.\\.([0-9a-f]{40})(?:[/?#]|$)`, 'i');
+  const pushes: { readonly row: Element; readonly sha: string }[] = [];
+  for (const anchor of document.querySelectorAll<HTMLAnchorElement>(`a[href*="${commits}"], a[href*="${compare}"]`)) {
+    const href = anchor.getAttribute('href') ?? '';
+    if (anchor.closest(COMMENT_BODY) !== null) continue;
+    const sha = commitLink.exec(href)?.[1];
+    if (sha !== undefined) {
+      const row = anchor.closest(COMMIT_ROW);
+      if (row !== null) pushes.push({ row, sha: sha.toLowerCase() });
+      continue;
+    }
+    const target = compareLink.exec(href)?.[1];
+    if (target === undefined) continue;
+    const row = anchor.closest(FORCE_PUSH_ROW);
+    if (row !== null && /\bforce-pushed\b/i.test(row.textContent ?? '')) pushes.push({ row, sha: target.toLowerCase() });
+  }
+  if (pushes.length === 0) return null;
+  const ordered = [...pushes].sort((a, b) => compareHome(a.row, b.row));
+  const newest = ordered[ordered.length - 1]?.sha ?? null;
+  // The page names its head before the timeline has streamed in, and the timeline shows older commits first: the newest
+  // row read then is an older commit, and every pass re-keyed the diff, the checks and the header's counts to it as it
+  // moved (vitest#10554 read 0619ed2, then 2a9f6e2, then the head). The page's own head stands until a push lands after
+  // its row, which is a push since the page loaded.
+  const loaded = loadedHeadSha();
+  if (loaded === null) return newest;
+  const at = ordered.findIndex((push) => push.sha === loaded);
+  return at >= 0 && at < ordered.length - 1 ? newest : loaded;
+}
 
 /**
  * Find the head commit of the pull request on the current page without any
  * network request. Both GitHub UIs leak it in a few stable places.
  */
 export function detectHeadSha(): string | null {
+  return conversationHeadSha() ?? loadedHeadSha();
+}
+
+/**
+ * `embeddedHeadSha` for this page, kept while the element that named it is in the document: the regex runs over
+ * GitHub's embedded payload, and this is asked every pass.
+ */
+let loadedHead: { readonly source: Element; readonly sha: string } | null = null;
+function loadedHeadSha(): string | null {
+  if (loadedHead !== null && loadedHead.source.isConnected) return loadedHead.sha;
+  loadedHead = embeddedHeadSha();
+  return loadedHead?.sha ?? null;
+}
+
+/** The head the page itself was rendered for, from the hooks its markup carries, not from the timeline's rows. */
+function embeddedHeadSha(): { readonly source: Element; readonly sha: string } | null {
   // Legacy files view: progressive diff loaders carry `sha2=<head>`.
   for (const element of document.querySelectorAll('[data-fragment-url*="sha2="]')) {
-    const url = element.getAttribute('data-fragment-url') ?? '';
-    const match = /[?&]sha2=([0-9a-f]{40})/i.exec(url);
-    if (match?.[1] !== undefined) return match[1].toLowerCase();
+    const match = /[?&]sha2=([0-9a-f]{40})/i.exec(element.getAttribute('data-fragment-url') ?? '');
+    if (match?.[1] !== undefined) return { source: element, sha: match[1].toLowerCase() };
   }
   // Stale-comparison poller (both views): `end_commit_oid=<head>`.
   for (const element of document.querySelectorAll('[data-url*="end_commit_oid="]')) {
-    const url = element.getAttribute('data-url') ?? '';
-    const match = /[?&]end_commit_oid=([0-9a-f]{40})/i.exec(url);
-    if (match?.[1] !== undefined) return match[1].toLowerCase();
+    const match = /[?&]end_commit_oid=([0-9a-f]{40})/i.exec(element.getAttribute('data-url') ?? '');
+    if (match?.[1] !== undefined) return { source: element, sha: match[1].toLowerCase() };
   }
   // React views embed their initial payload as JSON.
   for (const script of document.querySelectorAll('script[type="application/json"]')) {
-    const text = script.textContent ?? '';
-    const match = /"(?:headSha|headRefOid|headOid)"\s*:\s*"([0-9a-f]{40})"/i.exec(text);
-    if (match?.[1] !== undefined) return match[1].toLowerCase();
+    const match = /"(?:headSha|headRefOid|headOid)"\s*:\s*"([0-9a-f]{40})"/i.exec(script.textContent ?? '');
+    if (match?.[1] !== undefined) return { source: script, sha: match[1].toLowerCase() };
   }
   return null;
 }
@@ -95,7 +168,7 @@ function newestCommit(value: unknown, best: { oid: string; at: number } | null, 
  */
 export async function fetchHeadSha(pullPath: string): Promise<string | null> {
   try {
-    const response = await fetch(new URL(`${pullPath}/commits`, location.href), {
+    const response = await pageFetch(`${pullPath}/commits`, {
       credentials: 'same-origin',
       headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     });

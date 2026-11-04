@@ -1,0 +1,11 @@
+.git
+.private
+node_modules
+**/node_modules
+**/.next
+**/.output
+**/dist
+**/.env*
+!**/.env.example
+**/*.tsbuildinfo
+apps/extension/safari

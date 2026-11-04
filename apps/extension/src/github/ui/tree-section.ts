@@ -21,6 +21,10 @@ export interface TreeSectionFile {
   readonly available: boolean;
   /** GitHub's own status icon for the file, cloned into our tree when present. */
   readonly statusIcon: SVGElement | null;
+  /** GitHub's trailing marks for the file (comment count, check annotation), cloned onto the row. */
+  readonly trailingVisual: HTMLElement | null;
+  /** GitHub's own name for the row when it says more than the file name ("has warning annotations"). */
+  readonly annotationLabel: string | null;
   /** What the diff says happened to the file, for the icon when GitHub's tree shows none. */
   readonly status: FileStatus | null;
 }
@@ -181,15 +185,30 @@ function fileVisual(file: TreeSectionFile): SVGElement {
   return svgFromString(statusIcon(file.status));
 }
 
+/** GitHub's trailing marks, without the ids the tree row owns. */
+function clonedTrailing(visual: HTMLElement): HTMLElement {
+  const clone = visual.cloneNode(true);
+  if (!(clone instanceof HTMLElement)) return createElement('span');
+  clone.removeAttribute('id');
+  for (const element of clone.querySelectorAll('[id]')) element.removeAttribute('id');
+  return clone;
+}
+
 function renderFile(node: FileNode, level: number): HTMLLIElement {
+  const trailing = node.file.trailingVisual;
   const button = row(
     level,
     [
       createElement('span', { class: 'geld-tree__toggle geld-tree__toggle--spacer' }),
       createElement('span', { class: 'geld-tree__visual geld-tree__visual--status' }, [fileVisual(node.file)]),
       createElement('span', { class: 'geld-tree__label' }, [node.name]),
+      ...(trailing === null ? [] : [createElement('span', { class: 'geld-tree__trailing', 'aria-hidden': 'true' }, [clonedTrailing(trailing)])]),
     ],
-    { 'data-path': node.file.path, title: node.file.path },
+    {
+      'data-path': node.file.path,
+      title: node.file.path,
+      ...(node.file.annotationLabel === null ? {} : { 'aria-label': node.file.annotationLabel }),
+    },
   );
   if (!node.file.available) {
     // GitHub has not rendered this diff yet (large PRs load progressively).
@@ -350,7 +369,7 @@ export function renderTreeSection(
   if (section.root.hasAttribute('data-active') !== state.active) section.root.toggleAttribute('data-active', state.active);
 
   const signature = `${state.stateKey}#${state.category.id}\n${state.files
-    .map((file) => `${file.path}\u0000${file.available ? 1 : 0}\u0000${file.statusIcon?.getAttribute('class') ?? file.status ?? ''}`)
+    .map((file) => `${file.path}\u0000${file.available ? 1 : 0}\u0000${file.statusIcon?.getAttribute('class') ?? file.status ?? ''}\u0000${file.annotationLabel ?? ''}\u0000${file.trailingVisual?.innerHTML ?? ''}`)
     .join('\n')}`;
   if (section.group.dataset.signature !== signature) {
     const selected = section.group.querySelector<HTMLElement>('[aria-current]')?.dataset.path;

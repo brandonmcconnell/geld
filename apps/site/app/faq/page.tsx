@@ -187,7 +187,7 @@ export default function FaqPage() {
         <div className="flex min-w-0 flex-col divide-y">
           {QUESTIONS.map((entry) => (
             <section key={entry.id} id={entry.id} aria-labelledby={`${entry.id}-heading`} className="scroll-mt-28 py-12 first:pt-0">
-              <h2 id={`${entry.id}-heading`} className="text-2xl font-semibold tracking-tight text-balance">
+              <h2 id={`${entry.id}-heading`} className="text-2xl font-semibold tracking-tight">
                 {entry.question}
               </h2>
               <Prose className="mt-3">{entry.answer}</Prose>

@@ -1,6 +1,7 @@
 'use client';
 
 import type { AnyCategoryId, CategoryId, CustomCategory, GeldSettings, ListSettingKey, SettingsSection } from '@geld/core';
+import { IssueTrackerEditor } from '@geld/ui/issue-tracker-editor';
 import { categoryPatternLines } from '@geld/core';
 import { useRouter } from 'next/navigation';
 import { useCallback, useState } from 'react';
@@ -173,6 +174,8 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
                         onChange={(value) => void submit({ kind: 'choice', key: field.key, value })}
                       />
                     );
+                  case 'issue-tracker':
+                    return <IssueTrackerEditor key={field.key} field={field} value={settings.issueTracker} disabled={signedOut || remoteInvalid || busy} onSave={value=>submit({kind:'issue-tracker',value})}/>;
                   case 'categories':
                     return (
                       <CategoriesRows

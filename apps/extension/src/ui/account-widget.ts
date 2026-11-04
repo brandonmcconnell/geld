@@ -6,6 +6,7 @@ import { accountItem, authFlowItem, EMPTY_SYNC_STATE, syncStateItem } from '../l
 import type { AccountActionMessage } from '../lib/messages';
 import { isAccountActionResponse } from '../lib/messages';
 import { formatSyncAge } from './sync-age';
+import { ICON_SIGN_OUT, ICON_SYNC } from '../github/ui/icons';
 
 /**
  * The account control shown top-right in the popup and options page:
@@ -54,12 +55,18 @@ function svg(markup: string): Element {
   return template.content.firstElementChild ?? document.createElement('span');
 }
 
+/** An account menu row: the action's words, its glyph at the far right. */
+function menuItem(label: string, icon: string, onClick: () => void): HTMLButtonElement {
+  return button([el('span', 'geld-account__menu-label', [label]), svg(icon)], 'geld-account__menu-item', onClick);
+}
+
 export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOptions): () => void {
   const promptHost = options.promptHost ?? host;
   let account: GitHubAccount | null = null;
   let flow: AuthFlowState = { status: 'idle' };
   let sync: SyncState = EMPTY_SYNC_STATE;
   let localError: string | null = null;
+  let closed=false;
   let syncClock: ReturnType<typeof setInterval> | null = null;
 
   const stopSyncClock = (): void => {
@@ -71,7 +78,7 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
   const startSyncClock = (status: HTMLTimeElement, summary: HTMLElement, timestamp: number): void => {
     const update = (): void => {
       const age = formatSyncAge(timestamp);
-      status.textContent = age.compact;
+      status.textContent = age.accessible;
       status.title = age.accessible;
       status.setAttribute('aria-label', age.accessible);
       summary.title = age.accessible;
@@ -86,6 +93,7 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
   };
 
   function render(): void {
+    if(closed)return;
     stopSyncClock();
     host.replaceChildren();
     for (const stale of promptHost.querySelectorAll('.geld-account__prompt, .geld-account__error, .geld-alert')) stale.remove();
@@ -102,8 +110,7 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
         );
         return;
       }
-      const label = options.variant === 'compact' ? 'Sign in' : 'Sign in with GitHub';
-      const signIn = button([svg(GITHUB_MARK), label], 'geld-button--small geld-account__signin', () => {
+      const signIn = button([svg(GITHUB_MARK), options.variant === 'compact' ? 'Sign in' : 'Sign in with GitHub'], 'geld-button--small geld-account__signin', () => {
         dialogWanted = true;
         void act('sign-in');
       });
@@ -144,8 +151,8 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     }
     const menu = el('div', 'geld-account__menu-body', [
       status,
-      button(['Sync now'], 'geld-account__menu-item', () => void act('sync-now')),
-      button(['Sign out'], 'geld-account__menu-item', () => void act('sign-out')),
+      menuItem('Sync now', ICON_SYNC, () => void act('sync-now')),
+      menuItem('Sign out', ICON_SIGN_OUT, () => void act('sign-out')),
     ]);
     details.append(summary, menu);
     host.append(details);
@@ -305,6 +312,7 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     }),
   ];
   void Promise.all([accountItem.getValue(), authFlowItem.getValue(), syncStateItem.getValue()]).then(([a, f, s]) => {
+    if(closed)return;
     account = a;
     flow = f;
     // State saved by an older version may lack newer fields.
@@ -316,6 +324,8 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
   });
 
   return () => {
+    closed=true;
+    dialog?.remove();
     stopSyncClock();
     unwatchers.forEach((unwatch) => unwatch());
   };

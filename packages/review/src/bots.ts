@@ -17,6 +17,20 @@ export interface ReviewBot {
   readonly title: string;
   readonly logins: readonly string[];
   readonly checkNames: readonly string[];
+  /**
+   * Check runs of the same App that are not its review, by name: a row named
+   * like one of these is left alone though it contains a `checkNames` entry
+   * ("Cursor Bugbot Autofix" is not the Bugbot review).
+   */
+  readonly notCheckNames?: readonly string[];
+  /**
+   * What the bot means by a `neutral` conclusion on its check. Bugbot's
+   * docs: `success` is a run that found nothing, `neutral` one that found
+   * something (its default for findings), `failure` only when configured to
+   * fail on unresolved findings. Unset: neutral is a run that completed
+   * without a word on the code (CodeRabbit's, Claude Code Review's).
+   */
+  readonly neutralConclusion?: 'findings';
   readonly triggers: readonly string[];
   readonly configFiles: readonly string[];
   /**
@@ -56,8 +70,15 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     appId: 1210556,
     logins: ['cursor[bot]', 'cursor-bugs[bot]', 'bugbot[bot]', 'cursor-com[bot]'],
     checkNames: ['Cursor Bugbot', 'Bugbot'],
+    notCheckNames: ['Cursor Bugbot Autofix', 'Bugbot Autofix'],
+    neutralConclusion: 'findings',
     triggers: ['bugbot run', 'cursor review', '@cursor review'],
     configFiles: ['.cursor/BUGBOT.md'],
+    // The login is also Cursor's cloud agents' and automations': they reply in threads, answer other bots
+    // ("@greptileai Both P1 findings are addressed… Please re-review", mint#13111) and post "Verdict: …" reviews.
+    // Bugbot's own summaries are always review-shaped ("found no new issues", "found N potential issues"), so only
+    // those, and an automation's stated verdict, vote.
+    conversational: true,
   },
   {
     id: 'greptile',
@@ -108,6 +129,9 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     checkNames: ['CodeRabbit'],
     triggers: ['@coderabbitai review', '@coderabbitai full review', '@coderabbitai'],
     configFiles: ['.coderabbit.yaml', '.coderabbit.yml'],
+    // "@coderabbitai" anywhere starts a chat, and its replies ("The current code addresses the finding…") are not
+    // reviews; its reviews always say so in their own shape ("Actionable comments posted: N", "No actionable comments").
+    conversational: true,
   },
   {
     id: 'gemini',
@@ -144,6 +168,140 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     configFiles: [],
     conversational: true,
   },
+  {
+    // Claude Code Review (Anthropic's managed GitHub App, `claude[bot]`): findings as inline comments ranked by
+    // severity, a summary review ("I reviewed this PR and found no bugs (no blocking findings)", "Nothing blocking.",
+    // "## Code review / No issues found") and a check run named "Claude Code Review" that never concludes failure.
+    // `@claude review` starts one (`always` subscribes the PR, `once` does not); Claude reacts 👀 when it takes the
+    // comment. The same login is Claude Code's GitHub Action and the "PR Steward", which narrate ("Claude finished
+    // @x's task in 45s", "Picking this one up…"), so only a review-shaped comment votes. REVIEW.md holds the review
+    // rules (CLAUDE.md is read too, but every Claude Code user has one). Docs read Oct 2026 (code.claude.com/docs/en/code-review).
+    id: 'claude',
+    title: 'Claude Code Review',
+    appId: 1236702,
+    logins: ['claude[bot]'],
+    checkNames: ['Claude Code Review'],
+    triggers: ['@claude review', '@claude review always', '@claude review once'],
+    // REVIEW.md only: CLAUDE.md is every Claude Code user's file and says nothing about Code Review being on.
+    configFiles: ['REVIEW.md'],
+    conversational: true,
+    acknowledges: 'reaction',
+  },
+  {
+    // cubic (cubic.dev, `cubic-dev-ai[bot]`): a review per push with a bold count line — "**N issues found** across
+    // M files", "**No issues found**", "**All reported issues were addressed**", "**1 existing issue remains and 3
+    // new issues found**" — sometimes with a "Confidence score: **N/5**". `@cubic-dev-ai review this PR` (or the bare
+    // mention) runs a full review, `@cubic-dev-ai incremental review` the changes since the last; it reacts 👀 to
+    // the comment. `cubic.yaml` at the root configures it; the review shows as a check run that can be cancelled
+    // from the Checks UI. Docs read Oct 2026 (docs.cubic.dev).
+    id: 'cubic',
+    title: 'cubic',
+    appId: 1082092,
+    logins: ['cubic-dev-ai[bot]'],
+    checkNames: ['cubic'],
+    triggers: ['@cubic-dev-ai review this PR', '@cubic-dev-ai review', '@cubic-dev-ai incremental review', '@cubic-dev-ai', '@cubic review'],
+    configFiles: ['cubic.yaml'],
+    acknowledges: 'reaction',
+    conversational: true,
+  },
+  {
+    // Sourcery (`sourcery-ai[bot]`): a "Reviewer's Guide" comment maps the change, then a review — "Hey - I've
+    // reviewed your changes and they look great!" with "### Sourcery assessment **Approved.**", or "Hey - I've found
+    // N issues". A status check named "Sourcery review" reports in progress / success / failure (blocking security
+    // findings) / skipped (rate limit, the five-re-review cap). Budget refusals: "Sorry @x, you've used your own
+    // review budget of 250,000 diff characters for the last 7 days", "your pull request is larger than the review
+    // limit". `@sourcery-ai review` re-reviews from scratch. Docs read Oct 2026 (docs.sourcery.ai/reviews).
+    id: 'sourcery',
+    title: 'Sourcery',
+    appId: 48477,
+    logins: ['sourcery-ai[bot]'],
+    checkNames: ['Sourcery review', 'Sourcery'],
+    triggers: ['@sourcery-ai review', '@sourceryai review'],
+    configFiles: ['.sourcery.yaml'],
+    conversational: true,
+  },
+  {
+    // Qodo (qodo.ai, `qodo-code-review[bot]`; Qodo Merge / PR-Agent before it): a "PR Summary by Qodo" and a "Code
+    // Review by Qodo" headed by counts in code pills ("🐞 Bugs (0)", "📘 Rule violations (0)" …), a "Qodo is busy
+    // working" status line while it runs, and billing notices ("Qodo reviews are paused because your trial has
+    // ended"). `/agentic_review` runs a review (`/review` and `/improve` are the deprecated PR-Agent forms);
+    // `.pr_agent.toml` configures it. Docs read Oct 2026 (docs.qodo.ai/code-review).
+    id: 'qodo',
+    title: 'Qodo',
+    appId: 484649,
+    logins: ['qodo-code-review[bot]', 'qodo-merge-pro[bot]', 'codiumai-pr-agent-pro[bot]', 'qodo-merge-for-open-source[bot]'],
+    checkNames: ['Qodo'],
+    triggers: ['/agentic_review', '/review', '@qodo review'],
+    configFiles: ['.pr_agent.toml'],
+    conversational: true,
+  },
+  {
+    // Amazon Q Developer (`amazon-q-developer[bot]`): a review headed "## Review Summary" with the findings as
+    // threads; "No blocking defects were found", "No blocking issues found", "No logic errors, security
+    // vulnerabilities, crashes, or behavioral regressions were found" when clean. Reviews run on open/reopen only;
+    // `/q review` in a new comment runs one again, `/q <question>` asks. Docs read Oct 2026 (docs.aws.amazon.com/amazonq).
+    id: 'amazon-q',
+    title: 'Amazon Q Developer',
+    appId: 1220912,
+    logins: ['amazon-q-developer[bot]'],
+    checkNames: ['Amazon Q Developer'],
+    triggers: ['/q review'],
+    configFiles: [],
+  },
+  {
+    // Ellipsis (ellipsis.dev, `ellipsis-dev[bot]`): one review per admitted push combining its reviewers' findings;
+    // an important-alert "**Looks good to me! :+1:**" with "Reviewed everything up to <sha>" when clean, a request
+    // for changes with the comments otherwise. Configured by `.ellipsis/code-review.yaml`; reviews are push-driven
+    // (no comment command documented). Docs read Oct 2026 (ellipsis.dev/docs/code-review).
+    id: 'ellipsis',
+    title: 'Ellipsis',
+    appId: 64358,
+    logins: ['ellipsis-dev[bot]'],
+    checkNames: ['Ellipsis'],
+    triggers: ['@ellipsis-dev review'],
+    configFiles: ['.ellipsis/code-review.yaml', 'ellipsis.yaml'],
+  },
+  {
+    // Macroscope (macroscope.com, `macroscopeapp[bot]`): findings as comments, then an "#### Approvability" comment
+    // with "**Verdict:** Approved at `sha`" / "Would Approve" / "Needs Human Approval"; "Macroscope skipped reviewing
+    // this pull request. Per-review cost limit exceeded" when it will not run. `@macroscope-app review` starts one.
+    // Docs read Oct 2026 (docs.macroscope.com).
+    id: 'macroscope',
+    title: 'Macroscope',
+    appId: 900172,
+    logins: ['macroscopeapp[bot]', 'macroscope-app[bot]'],
+    checkNames: ['Macroscope'],
+    triggers: ['@macroscope-app review', '@macroscopeapp review'],
+    configFiles: [],
+    conversational: true,
+  },
+  {
+    // Korbit (korbit.ai, `korbit-ai[bot]`): a review headed "### Review by Korbit AI" with a table of issues and
+    // their fix status ("✅ Fix detected"); "By default, I don't review pull requests opened by bots" when it skips.
+    // `/korbit-review` requests one. Seen on apache/superset, Oct 2026.
+    id: 'korbit',
+    title: 'Korbit',
+    appId: 322216,
+    logins: ['korbit-ai[bot]'],
+    checkNames: ['Korbit'],
+    triggers: ['/korbit-review'],
+    configFiles: ['.korbit/'],
+  },
+  {
+    // Entelligence (entelligence.ai, `entelligence-ai-pr-reviews[bot]`): an "## EntelligenceAI PR Summary", a
+    // "## Walkthrough", findings as threads plus "## Findings outside the diff (N)" comments, and "Starting fresh pr
+    // review. This may take a few minutes" while it runs; "**Automatic Review Skipped** This PR changes N files,
+    // above the 100-file limit" when it will not. `@entelligence review` runs one; `@entelligence help` lists the
+    // commands. Seen Oct 2026.
+    id: 'entelligence',
+    title: 'Entelligence',
+    appId: 932812,
+    logins: ['entelligence-ai-pr-reviews[bot]', 'entelligence-ai[bot]'],
+    checkNames: ['Entelligence'],
+    triggers: ['@entelligence review'],
+    configFiles: [],
+    conversational: true,
+  },
 ];
 
 const LOGIN_INDEX = new Map<string, ReviewBot>();
@@ -161,7 +319,19 @@ export function botByLogin(login: string): ReviewBot | null {
 
 export function botByCheckName(name: string): ReviewBot | null {
   const lower = name.toLowerCase();
-  return REVIEW_BOTS.find((bot) => bot.checkNames.some((check) => lower.includes(check.toLowerCase()))) ?? null;
+  return REVIEW_BOTS.find((bot) => bot.checkNames.some((check) => lower.includes(check.toLowerCase())) && !(bot.notCheckNames ?? []).some((check) => lower.includes(check.toLowerCase()))) ?? null;
+}
+
+/**
+ * Two readings of the same head's checks as one list: `primary` (the page's
+ * merge box rows, live — a running row shows its spinner and start) for
+ * every check it names, `secondary` (the commit's status partial, which
+ * lists every check whether or not the merge box is expanded) for the rest.
+ * Names are compared whole, case-insensitively.
+ */
+export function mergeCheckRuns(primary: readonly RawCheckRun[], secondary: readonly RawCheckRun[]): readonly RawCheckRun[] {
+  const named = new Set(primary.map((check) => check.name.toLowerCase()));
+  return [...primary, ...secondary.filter((check) => !named.has(check.name.toLowerCase()))];
 }
 
 /** GitHub Apps and the `[bot]` suffix, plus any login in the registry. */
@@ -195,24 +365,141 @@ export interface ParsedBotBody {
   readonly clean: boolean;
   /** Worst severity the bot named ("high severity", "critical", "security"). */
   readonly severity: FindingSeverity | null;
+  /**
+   * Findings in `count` that have no review thread of their own and so are never resolved: CodeRabbit's "Outside diff
+   * range comments (N)". The threads of the same review leave them standing.
+   */
+  readonly unthreaded?: number;
+  /**
+   * The comment states a verdict in so many words without a count or a
+   * score to show for it: "Needs a human reviewer." (Sourcery), "Needs Human
+   * Approval" (Macroscope), "Verdict: request changes" (a Cursor automation
+   * under the Bugbot login). Review-shaped (`isReviewShaped`) though nothing
+   * else about it is.
+   */
+  readonly verdict?: 'needs-human' | 'changes-requested';
+}
+
+/**
+ * Whether a bot's comment is its review rather than something else it said:
+ * a conversational bot's chat, guide, summary or progress note votes for
+ * nothing. A count, a score, a clean word or a stated verdict make a review.
+ */
+export function isReviewShaped(parsed: ParsedBotBody): boolean {
+  return parsed.count !== null || parsed.score !== null || parsed.clean || parsed.verdict !== undefined;
 }
 
 /**
  * Pull a findings count or score out of a bot's summary comment. Conservative:
  * unknown shapes return nulls rather than inventing numbers.
  */
+/**
+ * Counts in a bot's own shape, where the generic "N issues" reading misses or
+ * misreads: null when the body is not in that shape.
+ *
+ * - Claude: "Review complete — changes requested (0 P1, 3 P2, 3 P3)" and "Has
+ *   P1/P2 findings, changes requested: 1 P1, 1 P2, 2 P3" — P1 + P2 are the
+ *   findings, P3 the nits ("2 P3" read as two issues otherwise).
+ * - cubic: "**1 existing issue remains and 3 new issues found**" — both.
+ * - Qodo: "🐞 Bugs (0) 📘 Rule violations (0) 📎 Requirement gaps (0) …" — the
+ *   pills' sum.
+ * - Korbit: a "Review by Korbit AI" table, one row per issue, "✅ Fix detected"
+ *   on the rows since fixed.
+ * - Entelligence: the "**Issues found:**" list under its scorecard; a
+ *   scorecard with no such list found nothing.
+ * - CodeRabbit: "Actionable comments posted: N" counts its inline comments
+ *   only; "Outside diff range comments (N)" are findings on top (a review can
+ *   hold nothing else, geld#94).
+ */
+/** CodeRabbit's "Outside diff range comments (N)": findings it could not post as threads. */
+function outsideDiffCount(text: string): number {
+  const match = /\boutside diff range comments\s*\((\d+)\)/i.exec(text);
+  return match?.[1] === undefined ? 0 : Number.parseInt(match[1], 10);
+}
+
+function countShapedBy(botId: string, text: string): number | null {
+  switch (botId) {
+    case 'claude': {
+      const match = /(\d+)\s*P1,\s*(\d+)\s*P2/i.exec(text);
+      return match?.[1] !== undefined && match[2] !== undefined ? Number.parseInt(match[1], 10) + Number.parseInt(match[2], 10) : null;
+    }
+    case 'cubic': {
+      const existing = /(\d+)\s+existing\s+issues?\s+remains?/i.exec(text);
+      const found = /(\d+)\s+(?:new\s+)?issues?\s+found/i.exec(text);
+      if (existing === null && found === null) return /\bno (?:new )?issues found\b|\ball reported issues were addressed\b/i.test(text) ? 0 : null;
+      return (existing?.[1] === undefined ? 0 : Number.parseInt(existing[1], 10)) + (found?.[1] === undefined ? 0 : Number.parseInt(found[1], 10));
+    }
+    case 'qodo': {
+      if (!/code review by qodo/i.test(text)) return null;
+      let sum = 0;
+      let any = false;
+      for (const match of text.matchAll(/(?:bugs|rule violations|requirement gaps|cross-repo conflicts|skill insights)\s*\((\d+)\)/gi)) {
+        sum += Number.parseInt(match[1] ?? '0', 10);
+        any = true;
+      }
+      return any ? sum : null;
+    }
+    case 'korbit': {
+      if (!/review by korbit/i.test(text)) return null;
+      // Each issue row ends its title with "▹ [view](…)" to the thread, raw ("| <sub>![Security](…)</sub> | Overly
+      // broad … ▹ [view](…) | ✅ Fix detected |") and as the page reads it (a `tr` is a line, its cells' words run
+      // together: "Overly broad … ▹ view ✅ Fix detected"); the badge image has no words of its own.
+      const rows = text.split('\n').filter((line) => /\u25b9\s*\[?view\b/i.test(line));
+      return rows.filter((line) => !/fix detected/i.test(line)).length;
+    }
+    case 'entelligence': {
+      if (!/review scorecard/i.test(text)) return null;
+      const lines = text.split('\n');
+      const start = lines.findIndex((line) => /^\s*(?:[-*]\s+)?\*\*Issues found:?\*\*:?\s*$/i.test(line));
+      if (start < 0) return /\bnothing to flag\b|\bno (?:critical or significant |significant )?issues found\b/i.test(text) ? 0 : null;
+      // One item per line — "- **Significant** `path` — title" raw, "**Significant** `path` — title" as the page reads
+      // a list item (blank lines between them there) — until a line that is neither an item nor the "*…plus 23 more,
+      // posted as inline comment(s)*" that closes a long list.
+      let count = 0;
+      for (const line of lines.slice(start + 1)) {
+        if (line.trim() === '') continue;
+        if (/^\s*(?:[-*]\s+)?\*\*[^*\n]+\*\*\s+\S/.test(line)) {
+          count += 1;
+          continue;
+        }
+        const more = /plus (\d+) more/i.exec(line);
+        if (more?.[1] !== undefined) count += Number.parseInt(more[1], 10);
+        break;
+      }
+      return count;
+    }
+    case 'coderabbit': {
+      const actionable = /\bactionable comments posted:\s*(\d+)/i.exec(text);
+      const outside = outsideDiffCount(text);
+      if (actionable === null && outside === 0) return null;
+      return (actionable?.[1] === undefined ? 0 : Number.parseInt(actionable[1], 10)) + outside;
+    }
+    default:
+      return null;
+  }
+}
+
 export function parseBotBody(body: string, botId: string): ParsedBotBody {
   // HTML comments are the bots' own markers (Cursor's automation ids, Greptile's score), never words to weigh.
   const text = body.replace(/\r\n/g, '\n').replace(/<!--[\s\S]*?-->/g, '').trim();
-  const scoreMatch = /(\d+(?:\.\d+)?)\s*\/\s*5\b/.exec(text);
+  // Entelligence's scorecard has two N/5 rows; "Merge Confidence" is the verdict (Code Quality feeds it). Qodo's
+  // summaries carry no score out of five, whatever fraction appears in them.
+  const scoreMatch = botId === 'qodo' ? null : (botId === 'entelligence' ? /merge confidence\W+(?:[\u25cf\u25cb\s]*)\**(\d+(?:\.\d+)?)\s*\/\s*5\b/i.exec(text) : null) ?? /(\d+(?:\.\d+)?)\s*\/\s*5\b/.exec(text);
   const score = scoreMatch?.[1] !== undefined ? Number.parseFloat(scoreMatch[1]) : null;
   // "found 1 potential issue", "2 new bugs": one qualifier between the number and the noun is allowed through.
   // CodeRabbit counts the other way round: "Actionable comments posted: 1" on each review.
   const countMatch =
     botId === 'greptile'
       ? /(?:found|reported)\s+(\d+)\s+(?:issue|finding|comment)/i.exec(text)
-      : (/\bactionable comments posted:\s*(\d+)/i.exec(text) ?? /(\d+)\s+(?:(?:potential|possible|new|actionable|likely|minor|major|critical|significant|remaining|open)\s+){0,2}(?:issue|finding|bug|problem)s?\b/i.exec(text));
+      : (/\bactionable comments posted:\s*(\d+)/i.exec(text) ??
+        // Not a number that is a reference ("#9377", "GH-123"): "both #9377 findings are fixed" names a pull request, not 9,377 findings
+        // (server#9385, where the Bugbot chip read "9377 issues" until its threads settled).
+        /(?<![#\w-])(\d+)\s+(?:(?:potential|possible|new|actionable|likely|minor|major|critical|significant|remaining|open|existing)\s+){0,2}(?:issue|finding|bug|problem)s?\b/i.exec(text));
   let count = countMatch?.[1] !== undefined ? Number.parseInt(countMatch[1], 10) : null;
+  const shaped = countShapedBy(botId, text);
+  // CodeRabbit counts only in its review's shape: "0 issues remain" in a chat reply is no count of its.
+  if (botId === 'coderabbit') count = shaped;
+  else if (shaped !== null) count = shaped;
   // Greptile's summary (the one headed "Confidence Score: N/5") lists what it found under a "Findings" heading, one
   // bold title per finding ("1. **Review cards lack test coverage** ▶" raw, "**Review cards lack test coverage** ▶"
   // as the page reads a list item); a summary with no such section found nothing, whatever its risk sentence says
@@ -228,22 +515,49 @@ export function parseBotBody(body: string, botId: string): ParsedBotBody {
       if (items > 0) count = items;
     }
   }
-  // "found no new issues", "no further problems", "0 potential issues": the adjectives between "no" and the noun
+  // "found no new issues", "no further problems", "0 potential issues", "No open issues" (Copilot's overview once
+  // every finding is resolved, beside "N open findings" while some are): the adjectives between "no" and the noun
   // vary by bot and by run, so a few are allowed through. CodeRabbit's clean word is "No actionable comments were
   // generated in the recent review". A scored summary that lists no findings (Greptile, above) is clean with its score.
   // "Didn't find any major issues" (Codex); a coding agent's review verdict ("Verdict: approve", "Approved."), as
   // Cursor's automations post under the Bugbot login. A verdict beside a count of findings ("Didn't find any major
   // issues. Found 2 minor issues.") is not clean: the count is. The bare "Approved" must be the verdict word — followed
   // by its punctuation or nothing — not the first word of a finding ("Approved users can edit another tenant's settings").
+  // "**Verdict:** Approved at `sha`" / "Would Approve" (Macroscope), "Sourcery assessment **Approved.**", "Review
+  // complete — approved (0 P1, 0 P2, 2 P3)" (Claude): the verdict word after its label, through the bold marks.
   const approved =
     (count === null || count === 0) &&
-    (/\b(?:didn.t|did not|couldn.t|could not) find any(?: \w+)? (?:issues|bugs|problems|findings)\b/i.test(text) || /\bverdict:\s*approved?\b/i.test(text) || /^\s*(?:[#>*_\s]*)approved[*_]*\s*(?:[.!:;\u2014\u2013-]|$)/i.test(text));
+    (/\b(?:didn.t|did not|couldn.t|could not) find any(?: \w+)? (?:issues|bugs|problems|findings)\b/i.test(text) ||
+      /\b(?:verdict|assessment)\W{0,6}(?:would\s+)?approved?\b/i.test(text) ||
+      /\breview complete\s*[\u2014\u2013-]+\s*approved\b/i.test(text) ||
+      /^\s*(?:[#>*_\s]*)approved[*_]*\s*(?:[.!:;\u2014\u2013-]|$)/i.test(text));
+  // A count of findings is findings, whatever else the summary says ("1 existing issue remains and no new issues
+  // found", cubic). "Nothing blocking." (Claude), "No blocking defects were found" (Amazon Q), "they look great"
+  // (Sourcery), "All reported issues were addressed" (cubic: nothing outstanding), "The PR is ready to merge".
+  // "Needs a human reviewer." (Sourcery's assessment), "Needs Human Approval" (Macroscope's verdict): the bot would
+  // not sign off, whatever kind words came before ("they look great!").
+  // ...a negated one ("does not need human approval") is no verdict; "not only needs human approval" is one still.
+  const needsHuman = /\bneeds? (?:a )?human (?:review(?:er)?|approval)\b/i.test(text.replace(/\b(?:not|no|never|without|doesn.t|does not|don.t|do not|didn.t|did not)\b(?!\s+(?:only|just|merely)\b)(?:\s+\w+){0,2}\s+needs? (?:a )?human (?:review(?:er)?|approval)\b/gi, ''));
+  // "The PR is ready to merge" (Amazon Q) — unless the sentence says it is not ("not yet ready to merge", "isn't
+  // ready to merge", "before it is ready to merge").
+  const readyToMerge =
+    /\bready to merge\b/i.test(text) &&
+    !/\b(?:not|isn.t|aren.t|never|before|until|far from|nowhere near)\b(?:\s+\w+){0,3}\s+ready to merge\b/i.test(text) &&
+    // ...nor with a condition after it ("ready to merge after the failing check is fixed", "once …", "if …").
+    !/\bready to merge\s+(?:after|once|when|if|provided|pending|following|as soon as|but|except|unless)\b/i.test(text);
+  // CodeRabbit's chat answers in anyone's words ("The fix is correct. No issues found."): only its review's own clean
+  // word, or a review that counts none, is clean.
   const clean =
-    /\bno(?: (?:new|further|additional|other|remaining|potential|actionable|significant|blocking))* (?:issues|bugs|findings|problems)\b/i.test(text) ||
-    /\bno actionable comments\b/i.test(text) ||
-    /\b(?:looks good|lgtm|all clean|no bugs found)\b/i.test(text) ||
-    approved ||
-    (count === 0 && (score === null || botId === 'greptile'));
+    botId === 'coderabbit'
+      ? (count === null || count === 0) && (/\bno actionable comments were generated\b/i.test(text) || (count === 0 && shaped !== null))
+      : !needsHuman &&
+        (count === null || count === 0) &&
+        (/\bno(?: (?:new|further|additional|other|remaining|potential|actionable|significant|blocking|logic|open))* (?:issues|bugs|findings|problems|defects|errors)\b/i.test(text) ||
+          /\bno actionable comments\b/i.test(text) ||
+          /\b(?:looks good|lgtm|all clean|no bugs found|nothing blocking|they look great|all reported issues were addressed)\b/i.test(text) ||
+          readyToMerge ||
+          approved ||
+          (count === 0 && (score === null || botId === 'greptile' || shaped !== null)));
   // A severity word under a negation is not a severity: "no established behavioral blocker", "no critical issues",
   // "without security risk". The denied phrase goes before the words are weighed.
   const affirmed = text.replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, '');
@@ -254,7 +568,12 @@ export function parseBotBody(body: string, botId: string): ParsedBotBody {
       : /\blow(?: severity| risk)?\b/i.test(affirmed)
         ? 'low'
         : null;
-  return { count: Number.isFinite(count) ? count : null, score: Number.isFinite(score) ? score : null, clean, severity };
+  const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(text);
+  // CodeRabbit scores nothing and states no verdict in words: a "5/5" or "Verdict: …" from it is chat.
+  const coderabbit = botId === 'coderabbit';
+  const verdict = coderabbit ? {} : needsHuman ? ({ verdict: 'needs-human' } as const) : changesRequested ? ({ verdict: 'changes-requested' } as const) : {};
+  const unthreaded = coderabbit ? outsideDiffCount(text) : 0;
+  return { count: Number.isFinite(count) ? count : null, score: !coderabbit && Number.isFinite(score) ? score : null, clean, severity, ...verdict, ...(unthreaded > 0 ? { unthreaded } : {}) };
 }
 
 export interface RawCheckRun {
@@ -297,7 +616,8 @@ export interface DerivedBotVerdict {
    * The verdict was judged against the check's known start: either a report
    * newer than it, or the check alone once the report's grace ran out. Set
    * only when `RawCheckRun.startedAt` was known; a page that opened after the
-   * check finished cannot say and leaves it unset.
+   * check finished cannot say and leaves it unset. Also set when the bot's
+   * refusal ended a check left under way (its own words judged the run).
    */
   readonly runJudged?: true;
 }
@@ -337,17 +657,36 @@ export function refusalReason(body: string): string | null {
   // usage limit reached" and "Bugbot needs on-demand usage enabled" (an <h3>, raw; the first line as the page reads
   // it). The heading is the reason — when it is about the bot or its usage, not about the code ("Cannot run
   // migrations on a fresh database" heads a finding).
-  const heading = untagged
+  // An alert's marker ("[!WARNING]" raw, its title "Warning" as the page reads it) is not the heading under it.
+  const lines = untagged
     .split('\n')
     .map((line) => line.replace(/[`*_>~#]/g, '').replace(/\s+/g, ' ').trim())
-    .find((line) => line !== '');
+    .filter((line) => line !== '');
+  const inAlert = /^(?:\[!(?:note|tip|important|warning|caution)\]|note|tip|important|warning|caution)$/i.test(lines[0] ?? '');
+  const heading = inAlert ? lines[1] : lines[0];
+  // CodeRabbit out of free reviews: a warning alert headed "Review limit reached" and nothing more, over the run
+  // configuration. A finding may be headed with the same words ("Review limit reached counter never resets"), so
+  // only the alert and the whole heading make it the notice.
+  if (/^(?:\[!warning\]|warning)$/i.test(lines[0] ?? '') && heading !== undefined && /^review limits? (?:(?:has|have|was|were) been )?reached[.!]?$/i.test(heading)) {
+    return heading.replace(/[.!]$/, '');
+  }
+  // A bot naming itself in a heading that says it did not run — "**Macroscope skipped reviewing this pull request.**"
+  // over the cost explanation, "**Claude encountered an error after 48s** —— [View job](…)" over what it was doing.
+  // The heading is the reason, without the job link after the dash.
+  if (heading !== undefined && /^[A-Z][\w.-]*(?:\[bot\])?\s+(?:skipped reviewing\b|encountered an error\b)/.test(heading)) {
+    const lower = heading.toLowerCase();
+    if (REVIEW_BOTS.some((bot) => lower.startsWith(bot.title.toLowerCase()) || bot.logins.some((login) => lower.startsWith(login.replace(/\[bot\]$/, '').toLowerCase())))) {
+      const first = heading.replace(/\s*[\u2014\u2013-]{2,}.*$/, '').split(/(?<=[.!?])\s+/)[0] ?? heading;
+      return first.replace(/[.!?]\s*$/, '');
+    }
+  }
   if (heading !== undefined && heading.length <= 120 && /\b(?:couldn.t run|could not run|cannot run|can.t run|needs? [^.]{0,60}\benabled|usage limits? (?:(?:has|have|was|were) been )?reached|quota (?:limit )?reached|out of credits)\b/i.test(heading)) {
     // A run-failure heading ("couldn't run …") must name the bot (a known title or login): "review" or "quota" in it
     // is not enough — "Cannot run review tests on a fresh checkout", "Cannot run quota migrations on a fresh
     // database" head findings. A heading that is itself about usage, credits or quota ("Usage limit reached") may
     // leave the bot unnamed.
     const lower = heading.toLowerCase();
-    const named = REVIEW_BOTS.some((bot) => lower.includes(bot.title.toLowerCase()) || bot.logins.some((login) => lower.includes(login.replace(/\[bot\]$/, '').toLowerCase())));
+    const named = botNamedIn(lower);
     const runFailure = /\b(?:couldn.t run|could not run|cannot run|can.t run)\b/i.test(heading);
     const aboutBot = named || (!runFailure && /\b(?:usage|credits?|quota|billing|limits?)\b/i.test(heading));
     if (aboutBot) return heading.replace(/[.!?]\s*$/, '');
@@ -357,11 +696,21 @@ export function refusalReason(body: string): string | null {
   // cap below. "Auto reviews are disabled on base/target branches other than the default branch"; "Review was skipped
   // as selected files did not have any reviewable changes" (an incremental pass with nothing to read — a refusal only
   // for a bot that never reviewed here, as any refusal is).
-  const skipNotice = /^(?:\[!important\][.\s]*|important[.\s]+)?review skipped[.:]?\s+(.+?)(?:[.!?](?:\s|$)|\s+(?:please|to trigger|⚙)|$)/i.exec(text);
+  const skipNotice = /^(?:\[!important\][.\s]*|important[.\s]+)?(?:automatic\s+)?review skipped[.:]?\s+(.+?)(?:[.!?](?:\s|$)|\s+(?:please|to trigger|trigger a|⚙)|$)/i.exec(text);
   if (skipNotice?.[1] !== undefined && skipNotice[1].trim() !== '') return skipNotice[1].trim();
+  // Its failure notice, rewritten into the same summary over the last review's walkthrough: "Review failed" in a
+  // caution alert, then why ("The pull request is closed", a merge mid-run). The alert's title or the heading's own
+  // block end has to be there, so a sentence that merely opens on the words ("Review failed login attempts…") is not one.
+  const failNotice = /^(?:(?:\[!caution\][.\s]*|caution[.\s]+)review failed[.:]?|review failed[.:])\s+(.+?)(?:[.!?](?:\s|$)|$)/i.exec(text);
+  if (failNotice?.[1] !== undefined && failNotice[1].trim() !== '') return failNotice[1].trim();
   if (text.length > 400) return null;
   // "Skipping Bugbot: …", "Skipped review: …" — a skip of the run, not of something in the code under review.
-  const skipped = /^(?:[\w.-]+(?:\[bot\])?\s*[:,-]\s*)?skipp(?:ing|ed)\s+(?:[A-Z][\w.-]*(?:\[bot\])?\s*[:—–-]|(?:the\s+|this\s+)?(?:review|pull request|pr|run|analysis|scan)\b)/i.test(text);
+  // "Macroscope skipped reviewing this pull request." names itself first; "Claude encountered an error" is a run that
+  // broke, in the bot's own words — the sentence is the reason.
+  const skipped =
+    /^(?:[\w.-]+(?:\[bot\])?\s*[:,-]\s*)?skipp(?:ing|ed)\s+(?:[A-Z][\w.-]*(?:\[bot\])?\s*[:—–-]|(?:the\s+|this\s+)?(?:review|reviewing|pull request|pr|run|analysis|scan)\b)/i.test(text) ||
+    /^[A-Z][\w.-]*(?:\[bot\])?\s+skipped\s+reviewing\b/i.test(text) ||
+    /^[A-Z][\w.-]*(?:\[bot\])?\s+encountered an error\b/i.test(text);
   const sentences = text.split(/(?<=[.!?])\s+/);
   // Otherwise the sentence must say it about the bot or the review, not about the code: "is disabled" alone
   // describes a feature flag as readily as a bot, and a short review can say exactly that. The one exception is
@@ -511,7 +860,9 @@ const BARE_REFUSAL_WORDS = new Set([
 const REFUSAL_PHRASE = new RegExp(
   [
     /\b(?:is|are|was|has been|have been)\s+(?:currently\s+)?(?:disabled|not enabled|not installed|not configured|not set up|not authori[sz]ed|unavailable|turned off|paused)\b/,
-    /\b(?:no|out of|insufficient|exceeded|reached)\s+(?:your\s+)?(?:\w+\s+)?(?:credits?|quota|budget|limit|allowance)\b/,
+    /\b(?:no|out of|insufficient|exceeded|reached|used(?: up)?|exhausted)\s+(?:your\s+)?(?:\w+\s+){0,2}(?:credits?|quota|budget|limit|allowance)\b/,
+    /\b(?:larger|bigger|longer)\s+than\s+(?:the|our|your)\s+(?:\w+\s+)?limit\b/,
+    /\b(?:don.t|do not|won.t|will not)\s+review\s+(?:pull requests|prs|changes)\b/,
     /\b(?:usage|rate|quota|spend(?:ing)?)\s+limits?\s+(?:(?:(?:has|have)\s+been|was|were)\s+)?(?:reached|exceeded|hit)\b/,
     /\b(?:has|have|had)\s+(?:reached|exceeded|hit)\s+(?:its|their|the|a|your)\s+(?:\w+\s+)?(?:usage|rate|quota|spend(?:ing)?)\s+limits?\b/,
     /\b(?:subscription|plan|trial|billing)\b[^.!?]*\b(?:expired|required|needed|inactive|ended|lapsed|upgrade)\b/,
@@ -536,16 +887,27 @@ const REFUSAL_SUBJECT = new RegExp(
   [
     /\b(?:bot|reviewer|reviewing|code reviews?|analysis|scan)\b/,
     /\b(?:this|the|its|my|your|an?|automated|ai|pr|pull request)\s+reviews?\b/,
-    /\b(?:to|cannot|can.t|could not|couldn.t|unable to|failed to|will not|won.t)\s+review\b/,
+    /\b(?:to|cannot|can.t|could not|couldn.t|unable to|failed to|will not|won.t|don.t|do not)\s+review\b/,
     /\b(?:this|the|your)\s+(?:repo(?:sitory)?|org(?:anization)?|account|project|workspace|team|installation|app|plan|subscription|trial)\b/,
     /\byou(?:r)?\b/,
     /\[bot\]/,
-    new RegExp(`\\b(?:${REVIEW_BOTS.flatMap((bot) => [bot.title, ...bot.logins.map((login) => login.replace(/\[bot\]$/i, ''))]).map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`),
+    // A bot's title or login stem — except a title that is a plain lowercase word ("cubic"): "the cubic interpolation
+    // worker cannot run" is about the code; the login stem (`cubic-dev-ai`) still names the bot.
+    new RegExp(`\\b(?:${REVIEW_BOTS.flatMap((bot) => [...(/^[a-z]+$/.test(bot.title) ? [] : [bot.title]), ...bot.logins.map((login) => login.replace(/\[bot\]$/i, ''))]).map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`),
   ]
     .map((part) => part.source)
     .join('|'),
   'i',
 );
+/**
+ * Whether lowercase `text` names a review bot: a title, or a login's stem —
+ * except a title that is a plain lowercase word ("cubic"), which is as often
+ * the word ("cubic interpolation") as the bot; its login stem still names it.
+ */
+function botNamedIn(text: string): boolean {
+  return REVIEW_BOTS.some((bot) => (!/^[a-z]+$/.test(bot.title) && text.includes(bot.title.toLowerCase())) || bot.logins.some((login) => text.includes(login.replace(/\[bot\]$/, '').toLowerCase())));
+}
+
 /** The money words: a subject only inside the refusal phrase itself ("no credits remaining"), see `isRefusalSentence`. */
 const REFUSAL_MONEY = /\b(?:credits?|quota|billing|seats?)\b/i;
 
@@ -570,9 +932,37 @@ function reviewBotIdFor(login: string, extraLogins: readonly string[]): string |
  * Review.", "Bugbot is reviewing your changes", "Review in progress"): a
  * status line, never a verdict. Short, one sentence, and shaped like one.
  */
-export function isStatusLineComment(body: string): boolean {
+/**
+ * CodeRabbit's answer to a command (`@coderabbitai review`, `resume`): "✅ Action performed" in a disclosure, then what
+ * it did, edited in place from "Review triggered." to "Review finished." — the second with "does not re-review already
+ * reviewed commits" when there was nothing new, or "⚠️ Action not completed" with why (the last commit already
+ * reviewed). `started` is a run under way; `done` answers the request and reviews
+ * nothing, so the run before it stands (geld#68 read the inherited count of a resolved finding as "1 issue").
+ */
+export function commandReply(body: string): 'started' | 'done' | null {
   const text = body
     .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[`*_>~#]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // "⚠️ Action not completed" ("Already reviewed the last commit", geld#114) answers the request with no review just the same.
+  if (!/^[^\p{L}\p{N}]*actions? (?:performed|not completed)\b/iu.test(text)) return null;
+  return /\breviews? triggered\b/i.test(text) ? 'started' : 'done';
+}
+
+export function isStatusLineComment(body: string): boolean {
+  if (commandReply(body) === 'started') return true;
+  const untagged = body
+    .replace(/<!--[\s\S]*?-->/g, '')
+    // Qodo's "<h3>Qodo is busy working</h3>" is HTML, raw.
+    .replace(/<[^>]+>/g, ' ');
+  // Claude Code's progress comment: "Reviewing PR #396" on a line of its own (a spinner image beside it, raw), then
+  // the checklist it ticks as it goes — "- [x] Gather context" raw, bare "Gather context" lines as the page reads a
+  // task list (`blockText` keeps no checkbox). The first line alone says it, whatever the length of the list below.
+  const firstLine = untagged.split('\n').find((line) => line.trim() !== '') ?? '';
+  if (/^\s*reviewing (?:pr|pull request) #?\d+\s*$/i.test(firstLine.replace(/[`*_>~#]/g, ' ').replace(/\s+/g, ' '))) return true;
+  const text = untagged
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/[`*_>~#]/g, '')
     .replace(/\s+/g, ' ')
@@ -584,10 +974,14 @@ export function isStatusLineComment(body: string): boolean {
   // "[!NOTE]" in the markdown, behind the "Note" heading GitHub renders it as on the page (`blockText` keeps it,
   // on its own line, no full stop). The whole first sentence must be that line: one that merely begins with the
   // words ("Currently processing changes this way is slow. Found 2 issues…") is a review, not a status.
+  // Qodo's "Qodo is busy working. Check back in a few minutes." is a status line whatever its length.
+  if (/^(?:[\w.-]+\s+)?is busy working\b/i.test(text)) return true;
   if (text.length > 240 || sentences.length > 2) return /^(?:\[!note\]\s*|note\s+)?currently processing (?:new )?changes in this (?:pr|pull request)[.!…]?$/i.test(sentences[0] ?? '');
   // The verb of a run under way, with what it is running on named in the same sentence ("Starting Devin Review.",
   // "Bugbot is reviewing your changes"), never a sentence that merely begins with such a word ("Starting from line 12, …").
   const underWay = /^(?:[\w.-]+(?:\[bot\])?\s+)?(?:is\s+)?(?:now\s+)?(?:starting|started|beginning|kicking off|running|reviewing|analy[sz]ing|looking (?:at|into|over)|working on|scanning|checking)\b[^.!…]*\b(?:review|analysis|scan|changes|pull request|pr|code|diff|your|this)\b/i;
+  // A sentence that reports what was found is a report, however it opens ("Reviewing PR #396 revealed 2 bugs").
+  if (/\b\d+\s+(?:\w+\s+)?(?:issues?|bugs?|findings?|problems?)\b|\b(?:found|revealed|flagged)\b/i.test(text)) return false;
   const stated = /^(?:review|analysis|scan)\s+(?:in progress|started|queued|has started)\b/i;
   const promise = /\b(?:will|I'?ll)\s+(?:post|comment|report|reply|start|begin|review)\b.*\b(?:when|once|shortly|soon)\b/i;
   return underWay.test(text) || stated.test(text) || promise.test(text);
@@ -637,6 +1031,8 @@ interface ThreadRun {
   readonly lastAnchor: string;
   /** When the latest of these threads was posted (epoch ms), when known. */
   readonly lastAt: number | null;
+  /** Findings the run's summary holds with no thread to resolve (`ParsedBotBody.unthreaded`), and that summary. */
+  readonly unthreaded?: { readonly count: number; readonly anchor: string };
 }
 
 /**
@@ -648,6 +1044,21 @@ interface ThreadRun {
  * word.
  */
 export const RERUN_EDIT_GAP_MS = 5 * 60 * 1000;
+
+/**
+ * Why a finished check is a run the bot did not make, or null: a `skipped` conclusion, or a neutral or green one whose
+ * description says so (CodeRabbit's "Review rate limited" once its free reviews are spent; the merge box's timing,
+ * "Completed in 1s — ", goes first). The earlier review then stands, never "clean" from the bare conclusion.
+ */
+function checkRefusal(check: RawCheckRun): string | null {
+  if (check.status !== 'completed') return null;
+  if (check.conclusion === 'skipped') return 'Check skipped';
+  if (check.conclusion !== 'neutral' && check.conclusion !== 'success') return null;
+  const words = (check.description ?? '').replace(/^.*?\s[\u2014\u2013-]\s+/, '').trim();
+  if (words === '') return null;
+  if (/^(?:reviews?\s+)?(?:(?:was|were|is|are)\s+)?(?:rate[- ]limited|skipped|paused)[.!]?$/i.test(words)) return words.replace(/[.!]$/, '');
+  return refusalReason(words);
+}
 
 /**
  * Combine check-run conclusions with the bot's own comments. A green check
@@ -682,6 +1093,11 @@ export interface VerdictOptions {
    * passed as a check the reader can no longer see.
    */
   readonly closed?: boolean;
+  /**
+   * Every thread on the pull request has been read: nothing behind "Load more", no deferred thread left unfetched. A
+   * bot's silence in threads is then evidence (`postedThreads`); with this unset it is not, whatever `partial` says.
+   */
+  readonly complete?: boolean;
 }
 
 export function verdictsFrom(
@@ -693,48 +1109,117 @@ export function verdictsFrom(
   options: VerdictOptions = {},
 ): readonly DerivedBotVerdict[] {
   const byId = new Map<string, DerivedBotVerdict>();
-  /** What each bot's check alone said, for a run its comments have not spoken about. */
-  const checkVerdict = new Map<string, 'clean' | 'failed' | 'running'>();
+  /**
+   * What each bot's check alone said, for a run its comments have not spoken about. `findings` is a neutral
+   * conclusion from a bot whose word that is for a run that found something (Bugbot), with no count until its
+   * threads give one.
+   */
+  const checkVerdict = new Map<string, 'clean' | 'findings' | 'failed' | 'running'>();
   /** When each bot's check began (epoch ms), when the page or the API said: which run a finished check belongs to. */
   const checkStartedAt = new Map<string, number>();
+  /** When each bot's check finished (epoch ms), when known: places the run only when its start is unknown (a commit status). */
+  const checkFinishedAt = new Map<string, number>();
+  /** Bots that have posted a review thread here, resolved or not. */
+  const postedThreads = new Set<string>();
+  /** Bots whose check was a run the bot did not make, with the reason the check gave (`checkRefusal`). */
+  const checkSkipped = new Map<string, string>();
+  /**
+   * The commit an earlier review stands for when it takes over a record: not the skipped check's, which is a commit the
+   * bot did not review; the comments do not say which it is, so it reads as behind (`UNKNOWN_SHA`).
+   */
+  const shaOver = (existing: DerivedBotVerdict): string => (existing.verdict === 'failed' && existing.reason !== undefined && checkSkipped.get(existing.id) === existing.reason ? UNKNOWN_SHA : existing.reviewedSha);
 
   for (const check of checks) {
     const bot = botByCheckName(check.name);
     if (bot === null) continue;
     const login = bot.logins[0] ?? bot.id;
     const running = check.status !== 'completed';
-    const failed = check.conclusion === 'failure' || check.conclusion === 'timed_out' || check.conclusion === 'cancelled';
-    const verdict = running ? 'running' : failed ? 'failed' : 'clean';
+    const failed = check.conclusion === 'failure' || check.conclusion === 'timed_out' || check.conclusion === 'cancelled' || check.conclusion === 'action_required' || check.conclusion === 'stale';
+    // A skipped check is a run the bot did not make; its row is the word on that, as a "Review skipped" comment is.
+    const refused = running ? null : checkRefusal(check);
+    const skipped = refused !== null;
+    // `neutral` is the bot's own word: findings for one whose docs say so (Bugbot), else a run with nothing to say.
+    const neutralFindings = check.conclusion === 'neutral' && bot.neutralConclusion === 'findings';
+    const verdict = running ? 'running' : failed || skipped ? 'failed' : neutralFindings ? 'findings' : 'clean';
     checkVerdict.set(bot.id, verdict);
+    if (refused !== null) checkSkipped.set(bot.id, refused);
+    else checkSkipped.delete(bot.id);
     // The start goes with the verdict: a later check for the same bot with no start of its own must not keep
     // the earlier one's, or its verdict would be read as the earlier run's below.
     const started = check.startedAt === undefined ? NaN : Date.parse(check.startedAt);
     if (Number.isNaN(started)) checkStartedAt.delete(bot.id);
     else checkStartedAt.set(bot.id, started);
+    const finished = check.completedAt === undefined ? NaN : Date.parse(check.completedAt);
+    if (Number.isNaN(finished)) checkFinishedAt.delete(bot.id);
+    else checkFinishedAt.set(bot.id, finished);
     const record: DerivedBotVerdict = {
       id: bot.id,
       login,
       verdict,
       reviewedSha: check.sha || headSha,
       checkName: check.name,
+      ...(refused === null ? {} : { reason: refused }),
     };
     byId.set(bot.id, record);
   }
 
   /** Bots whose latest comment so far is a status line (the run it announced has not reported), with that line. */
-  const statusOnly = new Map<string, { readonly login: string; readonly anchor: string; readonly at: number | null; readonly own: boolean }>();
+  /**
+   * `own`: the line is the bot's ("Currently processing…"), not a person's request. `acknowledged`: the bot said it
+   * took the request (Greptile's 👀) — the one case where its silence afterwards is the run's failure rather than
+   * no word at all.
+   */
+  const statusOnly = new Map<string, { readonly login: string; readonly anchor: string; readonly at: number | null; readonly own: boolean; readonly acknowledged: boolean; readonly triggered?: boolean; readonly askedAt?: number | null }>();
   const threadRuns = new Map<string, ThreadRun>();
+  /** The latest summary's findings with no thread of their own, for the run its threads go on to build. */
+  const unthreadedBy = new Map<string, { readonly count: number; readonly anchor: string }>();
   /** The thread run a request set aside, in case the request is refused and that run is still the bot's last real one. */
   const runsBeforeAsk = new Map<string, ThreadRun>();
   /** When each bot last rewrote one of its comments: a summary edited after a run was asked for is that run's report. */
   const lastEditBy = new Map<string, number>();
   /** When each comment was last rewritten, by anchor: the summary a verdict was read from has an edit of its own. */
   const editedAtOf = new Map<string, number>();
+  /** The summaries whose own words gave a count, by anchor: a later uncounted summary inherits the number, not the reading. */
+  const countedSummaries = new Set<string>();
   /**
    * When each bot last reported: a comment that votes below (a thread, a refusal, a review-shaped summary) posted
    * or rewritten. Its "Starting" lines and a coding agent's conversational replies are not reports.
    */
   const lastWordBy = new Map<string, number>();
+  /** When each bot last refused, posted or rewritten: a run its check still shows under way may be the one it gave up. */
+  const refusedAt = new Map<string, number>();
+  /**
+   * Requests a bot answered with no review ("Review finished"): when it was asked, when the answer was last written, and
+   * whether that time is its rewrite (the run's finish) or only its first posting. A check that ran for that request ends
+   * with nothing new, so the run the request set aside stands over its conclusion.
+   */
+  const answeredBy = new Map<string, { readonly askedAt: number; readonly at: number; readonly finished: boolean; readonly anchor: string }>();
+  /**
+   * Bots whose running check a refusal ended, with the commit that check ran on: their verdict is judged, as one read
+   * against a finished check is, and an earlier review standing in it is not of that commit.
+   */
+  const refusedRuns = new Map<string, string>();
+  /**
+   * Whether a check begun at `started` is the run of a request the bot answered with "Review finished": begun after the
+   * request and before the answer's rewrite (the run's finish), or, with that rewrite not known yet, within the report's
+   * grace of the answer's first posting, since the bot posts the answer moments before it starts the check; and the bot
+   * has voted nothing since. A check begun after that is a newer run (one started on the bot's own site, say).
+   */
+  /**
+   * What an answered request leaves: the run it set aside, or, for a bot with none (a summary, a review, threads), no
+   * word at all — the check that ran for it is all its record holds, and "clean" or "running" from that check would
+   * claim a review the reply says did not happen. It opens the reply.
+   */
+  const afterAnswer = (record: DerivedBotVerdict): DerivedBotVerdict => {
+    const answer = answeredBy.get(record.id);
+    if (record.sourceId !== undefined || answer === undefined) return record;
+    return { id: record.id, login: record.login, verdict: 'unknown', reviewedSha: record.reviewedSha, ...(record.checkName === undefined ? {} : { checkName: record.checkName }), sourceId: answer.anchor };
+  };
+  const ranForAnswer = (id: string, started: number): boolean => {
+    const answer = answeredBy.get(id);
+    if (answer === undefined || started < answer.askedAt || started > (answer.finished ? answer.at : answer.at + REPORT_GRACE_MS)) return false;
+    return (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY) <= answer.at;
+  };
   const reported = (id: string, comment: BotComment): void => {
     for (const at of [comment.createdAt, comment.editedAt]) {
       const time = at === undefined ? NaN : Date.parse(at);
@@ -766,13 +1251,16 @@ export function verdictsFrom(
         const prior = threadRuns.get(asked.id);
         if (prior !== undefined) runsBeforeAsk.set(asked.id, prior);
         threadRuns.delete(asked.id);
-        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false });
+        unthreadedBy.delete(asked.id);
+        // A request, even a retry, asks for a new run: it is when this run was asked for.
+        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged: botById(asked.id)?.acknowledges === 'reaction' && reactedBy(comment, asked.id), askedAt: Number.isNaN(at) ? null : at });
       }
       continue;
     }
     if (id === null) continue;
     if (comment.resolved !== undefined) {
       // The run the bot announced has reported: its findings are these threads.
+      postedThreads.add(id);
       reported(id, comment);
       statusOnly.delete(id);
       runsBeforeAsk.delete(id);
@@ -781,12 +1269,29 @@ export function verdictsFrom(
       const openAnchor = run?.openAnchor ?? (comment.resolved ? null : comment.anchor);
       const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
       const lastAt = Number.isNaN(at) ? (run?.lastAt ?? null) : Math.max(at, run?.lastAt ?? Number.NEGATIVE_INFINITY);
-      threadRuns.set(id, { login: comment.author, open, openAnchor, lastAnchor: comment.anchor, lastAt });
+      const unthreaded = run === undefined ? unthreadedBy.get(id) : run.unthreaded;
+      threadRuns.set(id, { login: comment.author, open, openAnchor, lastAnchor: comment.anchor, lastAt, ...(unthreaded === undefined ? {} : { unthreaded }) });
+      continue;
+    }
+    if (commandReply(comment.body) === 'done') {
+      // The request is answered with no review: the run it set aside is still the bot's last, threads and all.
+      const posted = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
+      const rewritten = comment.editedAt === undefined ? NaN : Date.parse(comment.editedAt);
+      const at = Number.isNaN(rewritten) ? posted : Math.max(rewritten, Number.isNaN(posted) ? rewritten : posted);
+      if (!Number.isNaN(at)) answeredBy.set(id, { askedAt: statusOnly.get(id)?.at ?? (Number.isNaN(posted) ? at : posted), at, finished: !Number.isNaN(rewritten), anchor: comment.anchor });
+      statusOnly.delete(id);
+      const prior = runsBeforeAsk.get(id);
+      if (!threadRuns.has(id) && prior !== undefined) threadRuns.set(id, prior);
+      runsBeforeAsk.delete(id);
       continue;
     }
     const refusal = refusalReason(comment.body);
     if (refusal !== null) {
       reported(id, comment);
+      for (const at of [comment.createdAt, comment.editedAt]) {
+        const time = at === undefined ? NaN : Date.parse(at);
+        if (!Number.isNaN(time) && time > (refusedAt.get(id) ?? Number.NEGATIVE_INFINITY)) refusedAt.set(id, time);
+      }
       // The bot said it would not review: the run that was asked for is answered (not running), and refused. A
       // review the bot did make earlier still stands — the chip shows the last real run, and `reviewedSha` says
       // whether it is behind the head — so the refusal is the verdict only for a bot that never reviewed here.
@@ -805,14 +1310,31 @@ export function verdictsFrom(
       const prior = threadRuns.get(id);
       if (prior !== undefined) runsBeforeAsk.set(id, prior);
       threadRuns.delete(id);
+      unthreadedBy.delete(id);
       const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
-      statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true });
+      // "Review triggered" marks the run, whatever status line follows it before the bot reports.
+      const triggered = commandReply(comment.body) === 'started' || statusOnly.get(id)?.triggered === true;
+      // When the run was first asked for (the request, or this line when there was none) places a skipped check by it.
+      const pending = statusOnly.get(id);
+      statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false, triggered, askedAt: pending === undefined ? (Number.isNaN(at) ? null : at) : (pending.askedAt ?? pending.at) });
       continue;
     }
     const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id);
     // A coding agent's reply to a person or to another bot is not its review; only a review-shaped comment votes.
-    if (botById(id)?.conversational === true && parsed.count === null && parsed.score === null && !parsed.clean) continue;
+    if (botById(id)?.conversational === true && !isReviewShaped(parsed)) continue;
+    // A word with nothing to count, after the run's threads, is more of that run, not a new one: Greptile posts
+    // "Comments Outside Diff" seconds after its threads (geld#352), which used to drop them and carry the summary's
+    // count over a run whose every thread was resolved.
+    if (!isReviewShaped(parsed) && threadRuns.has(id)) {
+      reported(id, comment);
+      statusOnly.delete(id);
+      runsBeforeAsk.delete(id);
+      continue;
+    }
     reported(id, comment);
+    if (parsed.count !== null) countedSummaries.add(comment.anchor);
+    if (parsed.unthreaded !== undefined) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor });
+    else unthreadedBy.delete(id);
     threadRuns.delete(id);
     statusOnly.delete(id);
     // The bot reported: whatever a request set aside is an older run now, not what a later refusal brings back.
@@ -820,20 +1342,62 @@ export function verdictsFrom(
     const existing = byId.get(id);
     const login = comment.author;
     if (existing !== undefined) {
-      const verdict = parsed.clean && existing.verdict === 'failed' ? 'findings' : parsed.clean ? 'clean' : parsed.count === 0 ? 'clean' : 'findings';
+      // A clean word over a failed check is findings; over a skipped one it is clean (the skip is a run not made).
+      const verdict = parsed.clean && existing.verdict === 'failed' && !checkSkipped.has(id) ? 'findings' : parsed.clean ? 'clean' : parsed.count === 0 ? 'clean' : 'findings';
       // A clean run says nothing about counts: the earlier run's number and severity belong to that run, not this one.
+      // A skipped check's reason is about a run not made; the comment is a review, so it does not carry over.
+      const { reason: _skipped, ...reviewed } = existing;
+      const reviewedSha = shaOver(existing);
       const base: DerivedBotVerdict =
-        verdict === 'clean' ? { id: existing.id, login, verdict, reviewedSha: existing.reviewedSha, ...(existing.checkName === undefined ? {} : { checkName: existing.checkName }) } : existing;
+        verdict === 'clean' ? { id: existing.id, login, verdict, reviewedSha, ...(existing.checkName === undefined ? {} : { checkName: existing.checkName }) } : { ...reviewed, reviewedSha };
       byId.set(id, withOptionalCount({ ...base, verdict, sourceId: comment.anchor, login }, parsed));
       continue;
     }
     const verdict = parsed.clean ? 'clean' : 'findings';
     byId.set(id, withOptionalCount({ id, login, verdict, reviewedSha: headSha, sourceId: comment.anchor }, parsed));
   }
+  // A neutral that means findings (Bugbot) is findings only from a bot that has posted them: Bugbot posts every finding
+  // as a review thread, and also concludes neutral when it skips a commit whose patch matches its last review ("Bugbot
+  // skipped this commit because its changes match the last review", mint#13635), which read "findings" with nothing to
+  // open. With no thread from it on the whole timeline the neutral is that last review standing, which found nothing.
+  // Only when every thread has been read (`complete`): behind a "Load more" or an unfetched fragment may be its threads.
+  // The check's own verdict is corrected whatever comment the record came from, so a later pass judging by the check
+  // (a finished run with no report since) does not bring "findings" back over an earlier clean summary.
+  if (options.complete === true) {
+    for (const [id, verdict] of checkVerdict) {
+      if (verdict !== 'findings' || postedThreads.has(id)) continue;
+      checkVerdict.set(id, 'clean');
+      const record = byId.get(id);
+      if (record !== undefined && record.sourceId === undefined) byId.set(id, { ...record, verdict: 'clean' });
+    }
+  }
+  // A check left under way by a run the bot gave up on: CodeRabbit rewrites its summary into "Review failed · The pull
+  // request is closed" when a merge lands mid-run and never closes its commit status (geld#103), so the check alone
+  // would read running for good. The refusal must be the bot's latest word and newer than the check's start; a commit
+  // status carries no start, and then only a closed pull request, where no new run can begin, lets it end the run.
+  for (const [id, verdict] of checkVerdict) {
+    const refused = refusedAt.get(id);
+    if (verdict !== 'running' || refused === undefined || refused < (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY)) continue;
+    const started = checkStartedAt.get(id);
+    if (started !== undefined ? refused > started : options.closed === true) {
+      checkVerdict.delete(id);
+      refusedRuns.set(id, byId.get(id)?.reviewedSha ?? headSha);
+    }
+  }
+  // A check still under way for a request the bot answered with "Review finished": nothing new is coming, so the run
+  // the request set aside stands while the check closes, rather than reading running for as long as it stays open. Only
+  // with a start to place it by; a check begun after the answer is a newer run and reads running as any other.
+  for (const [id, verdict] of checkVerdict) {
+    const started = checkStartedAt.get(id);
+    if (verdict !== 'running' || started === undefined || !ranForAnswer(id, started)) continue;
+    checkVerdict.delete(id);
+    const record = byId.get(id);
+    if (record !== undefined) byId.set(id, afterAnswer(record));
+  }
   // A bot whose latest word is "starting" has a run under way or just finished: what it found before belongs to
   // an earlier run (those threads are items in their own right). The check says how this run ended; with no
   // check to go by the bot is running until it says more.
-  for (const [id, { login, anchor, at, own }] of statusOnly) {
+  for (const [id, { login, anchor, at, own, acknowledged, triggered }] of statusOnly) {
     const existing = byId.get(id);
     // The bot rewrote its summary after the run was asked for: that is the report, and the summary's verdict (read
     // above, from its words as they are now) stands. Greptile re-reviews into the same comment.
@@ -842,11 +1406,20 @@ export function verdictsFrom(
     // Announced long ago, nothing since, no check to say how it went: the run never reported. What the bot said
     // before that stands (from that earlier run); a bot that never said anything else did not review this.
     const stale = at !== null && now - at > STATUS_LINE_STALE_MS;
-    // The check speaks for this run only when it is this run's: one that began before the request is the earlier
-    // run's, and says nothing about whether the bot answered. With no start to go by, the check is taken as the
-    // run's, as before.
+    // The check speaks for this run only when it is this run's: one that began — or, with no start known, finished
+    // (a commit status is set in one moment) — before the request is the earlier run's, and says nothing about
+    // whether the bot answered. With no times to go by, the check is taken as the run's, as before: Devin's status
+    // on the page carries none, flips to pending as it starts and back to green with no comment when it finds
+    // nothing (mint#12256), so an undated green check after "Starting" is that clean run.
     const started = checkStartedAt.get(id);
-    const checkIsThisRun = existing?.checkName !== undefined && !(started !== undefined && at !== null && started < at);
+    const finished = checkFinishedAt.get(id);
+    const before = started !== undefined ? started : finished;
+    // An undated skip after CodeRabbit's answer that the review asked for is triggered is the run before's: a skip is a
+    // run not made, and this one is under way (geld#94 read failed until its check turned in progress). Only that answer:
+    // another bot's "Starting…" over a skipped check may be the skip itself, and must not read running for 45 minutes.
+    // Whose skip it is does not change with time; the run going stale is decided below, as for a run with no check.
+    const skippedBefore = id === 'coderabbit' && triggered === true && before === undefined && checkSkipped.has(id);
+    const checkIsThisRun = existing?.checkName !== undefined && !(before !== undefined && at !== null && before < at) && !skippedBefore;
     // A request that aged unanswered, with no check of its own to say how the run went: the earlier run stands
     // whole, its threads included — the request had set them aside — so a run whose findings were all resolved
     // reads "resolved" below, not as its summary's count from before they were, and a bot that only ever posted
@@ -860,13 +1433,28 @@ export function verdictsFrom(
         continue;
       }
     }
+    // The run asked for was not made: its own check skipped it ("Review rate limited"). As with a refusal in so many
+    // words, a review the bot made earlier stands, the threads the request set aside included, and a bot that never
+    // reviewed here keeps the skip and its reason, never a bare red "failed" from the check's verdict.
+    const skippedThisRun = checkIsThisRun ? checkSkipped.get(id) : undefined;
+    if (existing !== undefined && skippedThisRun !== undefined) {
+      const prior = runsBeforeAsk.get(id);
+      if (prior !== undefined && !threadRuns.has(id)) threadRuns.set(id, prior);
+      const reviewed = threadRuns.has(id) || (existing.sourceId !== undefined && (existing.verdict === 'clean' || existing.verdict === 'findings'));
+      if (!reviewed && !(existing.verdict === 'failed' && existing.reason !== undefined)) {
+        byId.set(id, { id, login, verdict: 'failed', reviewedSha: existing.reviewedSha, ...(existing.checkName === undefined ? {} : { checkName: existing.checkName }), sourceId: anchor, reason: skippedThisRun });
+      }
+      continue;
+    }
     if (existing === undefined) {
-      // With the timeline still loading, an old request and silence is not yet a verdict on the bot. On a merged or
-      // closed pull request the silence is no verdict at all: the checks of the time are gone. And the bot's own
-      // "Currently processing…" that aged with no report is no word either way — nothing on the page says the run
-      // failed (CodeRabbit leaves the note standing when it decides not to review) — where a person's request the
-      // bot never answered is a failure to answer.
-      const silence = options.partial === true ? 'loading' : options.closed === true || own ? 'unknown' : 'failed';
+      // With the timeline still loading, an old request and silence is not yet a verdict on the bot. Otherwise the
+      // silence is no word at all — `unknown`, grey — unless the bot acknowledged the request (Greptile's 👀) and
+      // then never reported: it said it had taken the run, so that silence is the run's failure. A request the bot
+      // never acknowledged says nothing about whether it saw it (Bugbot acknowledges nothing, and skips drafts by
+      // default: six "bugbot run" on mint#12998, a draft, went unanswered and read red), on a closed pull request
+      // the checks of the time are gone, and the bot's own "Currently processing…" left standing is CodeRabbit
+      // deciding not to review (geld#57). A failed check or a refusal still says failed/skipped in so many words.
+      const silence = options.partial === true ? 'loading' : options.closed !== true && !own && acknowledged ? 'failed' : 'unknown';
       byId.set(id, { id, login, verdict: stale ? silence : 'running', reviewedSha: headSha, sourceId: anchor });
       continue;
     }
@@ -881,14 +1469,16 @@ export function verdictsFrom(
   // every one resolved nothing is outstanding, and the check (when there is one) says how that run ended.
   for (const [id, run] of threadRuns) {
     const existing = byId.get(id);
-    const reviewedSha = existing?.reviewedSha ?? headSha;
+    const reviewedSha = existing === undefined ? headSha : shaOver(existing);
     const checkName = existing?.checkName;
     const named = checkName === undefined ? {} : { checkName };
     // The run's summary scored the pull request (Greptile's N/5): that stays with the run, open threads or not.
     const scored = existing?.verdict === 'findings' && existing.score !== undefined ? { score: existing.score } : {};
-    if (run.open > 0) {
+    // Findings the summary holds with no thread (CodeRabbit's outside the diff) stand whatever becomes of its threads.
+    const unthreaded = run.unthreaded?.count ?? 0;
+    if (run.open + unthreaded > 0) {
       const severity = existing?.verdict === 'findings' && existing.severity !== undefined ? { severity: existing.severity } : {};
-      byId.set(id, { id, login: run.login, verdict: 'findings', count: run.open, ...scored, ...severity, reviewedSha, ...named, sourceId: run.openAnchor ?? run.lastAnchor });
+      byId.set(id, { id, login: run.login, verdict: 'findings', count: run.open + unthreaded, ...scored, ...severity, reviewedSha, ...named, sourceId: run.openAnchor ?? run.unthreaded?.anchor ?? run.lastAnchor });
       continue;
     }
     // Every thread resolved, and the bot rewrote its summary well after the last of them: that rewrite reports a
@@ -896,13 +1486,19 @@ export function verdictsFrom(
     // — its verdict, read above from the words as they are now, and its anchor, where the reader should go. The
     // rewrite has to be that summary's own: a bot with two summaries editing the older one says nothing new in the
     // one the verdict was read from.
+    // A rewrite whose own words gave no count (findings the parser could not count) says less than the threads do:
+    // every one of them is resolved, and that is what the chip shows. A rewrite that counts its findings still stands
+    // — counted by that summary, not a number an earlier summary left on the record.
     const edited = existing?.sourceId === undefined ? undefined : editedAtOf.get(existing.sourceId);
-    if (existing?.sourceId !== undefined && (existing.verdict === 'clean' || existing.verdict === 'findings') && edited !== undefined && run.lastAt !== null && edited > run.lastAt + RERUN_EDIT_GAP_MS) continue;
+    const rewriteSpeaks = existing?.verdict === 'clean' || (existing?.verdict === 'findings' && existing.sourceId !== undefined && countedSummaries.has(existing.sourceId));
+    if (existing?.sourceId !== undefined && rewriteSpeaks && edited !== undefined && run.lastAt !== null && edited > run.lastAt + RERUN_EDIT_GAP_MS) continue;
     // A check that failed or is still running says so; one that passed does not turn resolved findings into a run
     // that found nothing — the bot has not looked again — so they read "resolved" (findings, none open), which
     // the request menu still offers a rerun for.
+    // ...and a neutral that means findings says the run found these threads, which are resolved: "resolved" too.
     const fromCheck = checkName === undefined ? null : checkVerdict.get(id) ?? null;
-    if (fromCheck !== null && fromCheck !== 'clean') {
+    // A skipped check is a run not made, not a failed one: the threads' run stands (behind, by `shaOver`).
+    if (fromCheck !== null && fromCheck !== 'clean' && fromCheck !== 'findings' && !checkSkipped.has(id)) {
       byId.set(id, { id, login: run.login, verdict: fromCheck, reviewedSha, ...named, sourceId: run.lastAnchor });
       continue;
     }
@@ -940,6 +1536,22 @@ export function verdictsFrom(
       byId.set(bot.id, { ...existing, runJudged: true });
       continue;
     }
+    // The run this check made was the one the bot answered with "Review finished": nothing new, so the run before it
+    // stands rather than the check's bare conclusion.
+    if (ranForAnswer(bot.id, started)) {
+      byId.set(bot.id, { ...afterAnswer(existing), runJudged: true });
+      continue;
+    }
+    // A skip is a run not made: whatever stands keeps its verdict (an earlier review, already behind by `shaOver`, or the
+    // skip itself with its reason), never the check's "failed" over it. Judged only when the skip is the current run's
+    // (no request or status line after it began) and the whole timeline is read, since what places it may not have loaded.
+    if (checkRefusal(check) !== null) {
+      const pending = statusOnly.get(bot.id);
+      const askedAt = pending === undefined ? undefined : (pending.askedAt ?? pending.at);
+      const thisRun = askedAt === undefined || askedAt === null || started >= askedAt;
+      byId.set(bot.id, { ...existing, ...(options.partial === true || !thisRun ? {} : { runJudged: true }) });
+      continue;
+    }
     const finished = check.completedAt === undefined ? NaN : Date.parse(check.completedAt);
     const awaiting = !Number.isNaN(finished) && now - finished < REPORT_GRACE_MS;
     byId.set(bot.id, {
@@ -952,9 +1564,41 @@ export function verdictsFrom(
       runJudged: true,
     });
   }
+  // Judged by the bot's own words, so a summary the Action wrote while the check still ran gives way to it
+  // (`withLiveRuns` replaces a saved "running" only with a judged verdict).
+  // Requests the bot answered with no review, settled last so no pass before can drop what they leave: the run each set
+  // aside, or no word for a bot with none, marked judged so an Action summary saved while the check ran (running) gives
+  // way to it in `withLiveRuns`. The check is the answered run when its known start falls in the answer's window, or,
+  // with no start (a commit status, which the Action dates by its finish alone), when it finished between the request
+  // and the report's grace after the answer; with no time at all, only a green one, whose "clean" is the claim to undo
+  // (a failure is never hidden behind an old reply). One still under way with no start may be a new run, and reads running.
+  for (const [id, answer] of answeredBy) {
+    const record = byId.get(id);
+    if (record === undefined || (lastWordBy.get(id) ?? Number.NEGATIVE_INFINITY) > answer.at) continue;
+    const started = checkStartedAt.get(id);
+    const finished = checkFinishedAt.get(id);
+    const ours =
+      started !== undefined
+        ? ranForAnswer(id, started)
+        : record.checkName !== undefined &&
+          checkVerdict.get(id) !== 'running' &&
+          (finished !== undefined ? finished >= answer.askedAt && finished <= answer.at + REPORT_GRACE_MS : checkVerdict.get(id) === 'clean');
+    if (ours) byId.set(id, { ...afterAnswer(record), runJudged: true });
+  }
+  // An earlier review standing in a refused run took the refused check's commit with the check's record: it is not of
+  // that commit (the run there was refused), and which one it is the comments do not say, so it reads as behind.
+  for (const [id, refusedSha] of refusedRuns) {
+    const record = byId.get(id);
+    if (record === undefined || record.verdict === 'running') continue;
+    const refusal = record.verdict === 'failed' && record.reason !== undefined;
+    byId.set(id, { ...record, runJudged: true, ...(refusal || record.reviewedSha !== refusedSha ? {} : { reviewedSha: UNKNOWN_SHA }) });
+  }
 
   return [...byId.values()];
 }
+
+/** A commit no head matches (`mergeWithCrawler` reads it as no head at all): a verdict whose commit is not known. */
+export const UNKNOWN_SHA = '0'.repeat(40);
 
 /**
  * How long after a bot's check finishes its report (a summary posted or
@@ -976,8 +1620,24 @@ function reactedBy(comment: BotComment, id: string): boolean {
  * come from: every registered bot whose trigger phrase the comment contains
  * as a whole, and `@handle` for a user-listed bot.
  */
+/**
+ * A comment's words with the emphasis marks off, for matching against trigger
+ * phrases: backticks, asterisks, tildes, quote marks, and underscores that
+ * wrap a word (`_review_`) — not the ones inside one: Qodo's command is
+ * `/agentic_review`.
+ */
+function plainTrigger(text: string): string {
+  return text
+    .replace(/[`*>~]/g, '')
+    .replace(/(^|\s)_+(?=\S)/g, '$1')
+    .replace(/(?<=\S)_+(?=\s|$)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 export function botsTriggeredBy(body: string, extraLogins: readonly string[] = []): readonly { readonly id: string; readonly login: string }[] {
-  const text = ` ${body.replace(/[`*_>~]/g, '').replace(/\s+/g, ' ').trim().toLowerCase()} `;
+  const text = ` ${plainTrigger(body)} `;
   const out: { readonly id: string; readonly login: string }[] = [];
   for (const bot of REVIEW_BOTS) {
     if (bot.triggers.some((trigger) => text.includes(` ${trigger.toLowerCase()} `) || text.includes(` ${trigger.toLowerCase()}.`) || text.includes(` ${trigger.toLowerCase()}!`))) {
@@ -1010,7 +1670,7 @@ export function rerunTriggerFor(botId: string): string | null {
  */
 export function botByTrigger(body: string): ReviewBot | null {
   for (const raw of body.split(/\r?\n/)) {
-    const line = raw.replace(/[`*_>~]/g, '').trim().toLowerCase();
+    const line = plainTrigger(raw);
     if (line === '') continue;
     const bot = REVIEW_BOTS.find((candidate) => candidate.triggers.some((trigger) => trigger.toLowerCase() === line));
     if (bot !== null && bot !== undefined) return bot;
@@ -1047,7 +1707,7 @@ function knownTriggers(extraLogins: readonly string[]): readonly string[] {
 }
 
 function isTriggerSequence(body: string, extraLogins: readonly string[]): boolean {
-  let text = body.replace(/[`*_~]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  let text = plainTrigger(body);
   if (text === '' || text.length > 240) return false;
   const triggers = knownTriggers(extraLogins);
   let count = 0;
@@ -1062,12 +1722,7 @@ function isTriggerSequence(body: string, extraLogins: readonly string[]): boolea
 }
 
 function isSingleTrigger(body: string, extraLogins: readonly string[]): boolean {
-  const text = body
-    .replace(/[`*_~]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/[.!]+$/, '')
-    .toLowerCase();
+  const text = plainTrigger(body).replace(/[.!]+$/, '');
   if (text === '' || text.length > 60) return false;
   for (const bot of REVIEW_BOTS) {
     if (bot.triggers.some((trigger) => trigger.toLowerCase() === text)) return true;

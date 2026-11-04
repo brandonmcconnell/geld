@@ -23,11 +23,14 @@
 import { fragmentHeaders } from './deeplink';
 import { revisionIndexAt } from './revisions';
 import type { Revision } from './revisions';
+import { pageFetch } from '../page-fetch';
 
 export type { Revision } from './revisions';
 
 /** While a run waits on a comment, its log is read again this often. */
 const REFRESH_MS = 60_000;
+/** A row showing an edited comment's time reads its log again this often. */
+const DISPLAY_REFRESH_MS = 5 * 60_000;
 
 interface EditLog {
   editedAt: string | null;
@@ -54,6 +57,8 @@ export function editsVersion(): number {
   return version;
 }
 
+const COMMENT_ANCHOR = '[id^="issuecomment-"], [id^="discussion_r"], [id^="pullrequestreview-"]';
+
 /**
  * The edit-history log URL of the comment `node` (its own header, not a
  * nested comment's), or null when it was never edited. `anchor` is the
@@ -64,16 +69,80 @@ function logUrlOf(node: Element, anchor = node.id): string | null {
   for (const menu of node.querySelectorAll('details-menu[src*="show_edit_history_log"]')) {
     // A review's node holds its threads' comments too, each with a header of its own: only the log whose nearest
     // comment is this one counts (GitHub repeats a comment's id on its wrapper, so ids are compared, not nodes).
-    const owner = menu.closest('[id^="issuecomment-"], [id^="discussion_r"], [id^="pullrequestreview-"]');
+    const owner = menu.closest(COMMENT_ANCHOR);
     if (owner === null || owner.id === anchor) return menu.getAttribute('src');
   }
   return null;
 }
 
+/** GitHub's node-id prefix for each kind of comment anchor. */
+const NODE_KINDS: readonly (readonly [RegExp, string])[] = [
+  [/^issuecomment-(\d+)$/, 'IC'],
+  [/^discussion_r(\d+)$/, 'PRRC'],
+  [/^pullrequestreview-(\d+)$/, 'PRR'],
+];
+
+/** MessagePack's shortest encoding of a non-negative integer, as GitHub's node ids carry them. */
+function packUint(n: number): number[] {
+  if (n < 0x80) return [n];
+  if (n < 0x100) return [0xcc, n];
+  if (n < 0x10000) return [0xcd, n >>> 8, n & 0xff];
+  if (n < 0x100000000) return [0xce, (n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
+  const high = Math.floor(n / 0x100000000);
+  const low = n % 0x100000000;
+  return [0xcf, (high >>> 24) & 0xff, (high >>> 16) & 0xff, (high >>> 8) & 0xff, high & 0xff, (low >>> 24) & 0xff, (low >>> 16) & 0xff, (low >>> 8) & 0xff, low & 0xff];
+}
+
+/**
+ * The node id GitHub's edit log takes for a comment anchor: `IC_`, `PRRC_` or `PRR_` and the base64url of the
+ * MessagePack array `[0, repository id, comment id]` (`IC_kwDOUOpwns8AAAABhvX2ag` is `[0, 1357541534, 6559233642]`).
+ */
+export function nodeIdOf(anchor: string, repositoryId: number): string | null {
+  for (const [pattern, prefix] of NODE_KINDS) {
+    const id = Number(pattern.exec(anchor)?.[1] ?? Number.NaN);
+    if (!Number.isSafeInteger(id) || !Number.isSafeInteger(repositoryId)) continue;
+    const bytes = [0x93, ...packUint(0), ...packUint(repositoryId), ...packUint(id)];
+    return `${prefix}_${btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`;
+  }
+  return null;
+}
+
+function repositoryId(): number {
+  return Number(document.querySelector<HTMLMetaElement>('meta[name="octolytics-dimension-repository_id"]')?.content ?? Number.NaN);
+}
+
+/**
+ * The wrapper of a minimized comment: a `.minimized-comment` that is the `<details>` ("This comment has been
+ * minimized", then the comment proper) or holds one as a direct child. A review's own body card carries the class
+ * too, minimized or not, and its menus are deeper inside, so the class alone says nothing.
+ */
+export function isMinimizedWrapper(node: Element): boolean {
+  return node.matches('.minimized-comment, .js-minimized-comment') && (node instanceof HTMLDetailsElement || node.querySelector(':scope > details') !== null);
+}
+
+/** Whether the comment `anchor` (whose outermost carrier is `node`) is minimized. A nested comment's wrapper does not count. */
+function minimized(node: Element, anchor: string): boolean {
+  const wrappers = [...(node.matches('.minimized-comment, .js-minimized-comment') ? [node] : []), ...node.querySelectorAll('.minimized-comment, .js-minimized-comment')];
+  return wrappers.some((wrapper) => isMinimizedWrapper(wrapper) && wrapper.closest(COMMENT_ANCHOR)?.id === anchor);
+}
+
+/**
+ * The edit-history log of the comment `anchor`: the one its header's "edited" menu loads, or, for a minimized
+ * comment (whose header has none), the same log by the comment's node id. Null when the page shows no edit.
+ */
+export function editLogUrlOf(anchor: string): string | null {
+  const node = document.getElementById(anchor);
+  if (node === null) return null;
+  const listed = logUrlOf(node, anchor);
+  if (listed !== null || !minimized(node, anchor)) return listed;
+  const nodeId = nodeIdOf(anchor, repositoryId());
+  return nodeId === null ? null : `/user_content_edits/show_edit_history_log/${nodeId}`;
+}
+
 /** Reads the log into `log`; true when it says something it did not before. */
 async function fetchLog(url: string, log: EditLog): Promise<boolean> {
   try {
-    const response = await fetch(new URL(url, location.href), { headers: fragmentHeaders(), credentials: 'same-origin' });
+    const response = await pageFetch(url, { headers: fragmentHeaders(), credentials: 'same-origin' });
     if (!response.ok) return false;
     const parsed = new DOMParser().parseFromString(await response.text(), 'text/html');
     // Newest first: "edited <time> (most recent)" leads the list, "created <time>" ends it.
@@ -123,9 +192,52 @@ function logFor(url: string, onChange: () => void, refreshAfter: number): EditLo
  * has landed).
  */
 export function editedAt(node: Element, onChange: () => void): string | null {
-  const url = logUrlOf(node);
+  const url = logUrlOf(node) ?? (node.id === '' ? null : editLogUrlOf(node.id));
   if (url === null) return null;
   return logFor(url, onChange, REFRESH_MS).editedAt;
+}
+
+/**
+ * When the comment `anchor` was last edited and first posted (ISO), for a time shown beside it; null when it was
+ * never edited, or while its log is on its way (`onChange` then runs once it has landed). The log is read again
+ * every few minutes, not every minute: this is for display, and every edited comment on the page has a row.
+ */
+export function editTimesOf(anchor: string, onChange: () => void): { readonly editedAt: string; readonly postedAt: string | null; readonly log: string } | null {
+  const url = editLogUrlOf(anchor);
+  if (url === null) return null;
+  const log = logFor(url, onChange, DISPLAY_REFRESH_MS);
+  const created = log.revisions[0]?.at ?? null;
+  if (log.editedAt === null || log.editedAt === created) return null;
+  return { editedAt: log.editedAt, postedAt: created, log: url };
+}
+
+/**
+ * Every time the comment `anchor` was written (ISO, oldest first: the post, then each rewrite): empty when the page
+ * shows no edit (its creation is then the only time, which the caller knows), null while its log is on its way
+ * (`onChange` then runs once it has landed).
+ */
+export function revisionTimesOf(anchor: string, onChange: () => void): readonly string[] | null {
+  const url = editLogUrlOf(anchor);
+  if (url === null) return [];
+  const log = logFor(url, onChange, DISPLAY_REFRESH_MS);
+  if (log.fetchedAt === 0) return null;
+  return log.revisions.map((revision) => revision.at);
+}
+
+/**
+ * Read again, once stale, the logs of the comments whose times are on screen (`anchors`). A row is built once and
+ * kept while the panel's signature holds, so the refresh `editTimesOf` starts while building it never came for a
+ * later edit, or a first one. `onChange` runs only when a log says something new.
+ */
+export function refreshEditTimes(anchors: Iterable<string>, onChange: () => void): void {
+  for (const anchor of anchors) {
+    const url = editLogUrlOf(anchor);
+    if (url === null) continue;
+    const seen = version;
+    logFor(url, () => {
+      if (version !== seen) onChange();
+    }, DISPLAY_REFRESH_MS);
+  }
 }
 
 /**
@@ -157,7 +269,7 @@ function contentOf(parsed: Document): HTMLElement | null {
 
 async function fetchRevision(url: string, entry: RevisionBody): Promise<void> {
   try {
-    const response = await fetch(new URL(url, location.href), { headers: fragmentHeaders(), credentials: 'same-origin' });
+    const response = await pageFetch(url, { headers: fragmentHeaders(), credentials: 'same-origin' });
     if (!response.ok) {
       entry.failed = true;
       return;

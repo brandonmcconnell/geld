@@ -1,6 +1,9 @@
-import type { AnyCategoryId, BooleanSettingKey, CategoryId, ChoiceSettingKey, CustomCategory, GeldSettings, ListSettingKey } from '@geld/core';
+import type { IssueTrackerConfig, AnyCategoryId, BooleanSettingKey, CategoryId, ChoiceSettingKey, CustomCategory, GeldSettings, ListSettingKey } from '@geld/core';
 import {
   authorRuleProblem,
+  parseIssueTracker,
+  withCategoryEnabled,
+  testSyntaxProblem,
   compileGlobs,
   fieldsFor,
   isAnyCategoryId,
@@ -24,6 +27,7 @@ import {
 export type SettingsPatch =
   | { readonly kind: 'toggle'; readonly key: BooleanSettingKey; readonly value: boolean }
   | { readonly kind: 'choice'; readonly key: ChoiceSettingKey; readonly value: GeldSettings[ChoiceSettingKey] }
+  | { readonly kind: 'issue-tracker'; readonly value: IssueTrackerConfig | null }
   | { readonly kind: 'category'; readonly id: AnyCategoryId; readonly value: boolean }
   | { readonly kind: 'group'; readonly categoryId: CategoryId; readonly groupId: string; readonly value: boolean }
   | { readonly kind: 'category-patterns'; readonly categoryId: CategoryId; readonly lines: readonly string[] }
@@ -88,6 +92,8 @@ export function isSettingsPatch(value: unknown): value is SettingsPatch {
       return isSiteToggleKey(value.key) && typeof value.value === 'boolean';
     case 'choice':
       return isSiteChoice(value.key, value.value);
+    case 'issue-tracker':
+      return SITE_FIELDS.some(field=>field.kind==='issue-tracker') && (value.value===null || parseIssueTracker(value.value)!==null);
     case 'category':
       return isAnyCategoryId(value.id) && typeof value.value === 'boolean';
     case 'group':
@@ -157,6 +163,10 @@ export function validateList(key: ListSettingKey, rawLines: readonly string[]): 
       const problem = lines.map(authorRuleProblem).find((entry): entry is string => entry !== null) ?? null;
       return problem === null ? { ok: true, lines } : { ok: false, message: problem };
     }
+    case 'testSyntaxes': {
+      const problem = lines.map(testSyntaxProblem).find((entry): entry is string => entry !== null) ?? null;
+      return problem === null ? { ok: true, lines } : { ok: false, message: problem };
+    }
   }
 }
 
@@ -193,8 +203,12 @@ export function applyPatch(base: GeldSettings, patch: SettingsPatch): PatchResul
       return { ok: true, settings: { ...base, [patch.key]: patch.value } };
     case 'choice':
       return { ok: true, settings: { ...base, [patch.key]: patch.value } };
+    case 'issue-tracker': {
+      const tracker=patch.value===null?null:parseIssueTracker(patch.value);
+      return patch.value!==null&&!tracker?{ok:false,message:'Invalid personal tracker settings.'}:{ok:true,settings:{...base,issueTracker:tracker}};
+    }
     case 'category':
-      return { ok: true, settings: { ...base, categories: { ...base.categories, [patch.id]: patch.value } } };
+      return { ok: true, settings: withCategoryEnabled(base,patch.id,patch.value) };
     case 'group':
       return { ok: true, settings: { ...base, groups: { ...base.groups, [groupKey(patch.categoryId, patch.groupId)]: patch.value } } };
     case 'category-patterns': {

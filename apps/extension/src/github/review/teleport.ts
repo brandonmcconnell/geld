@@ -65,11 +65,19 @@ function dirtyField(node: Element): boolean {
   return false;
 }
 
-/** What GitHub's guard would count as the reader being busy inside `node`, were it still at home. */
+/**
+ * What GitHub's guard would count as the reader being busy inside `node`,
+ * were it still at home. An open `details` counts only when the reader
+ * opened it (a ⋯ menu, the reaction palette): the minimized comments a chat
+ * unfolds itself (`openMinimized`, `data-geld-opened`) stay open for as long
+ * as the chat does, and counting them kept the item's live refresh away for
+ * the whole time a thread with an outdated comment was open.
+ */
 function hasInteractions(node: HTMLElement): boolean {
   const active = document.activeElement;
   if (active !== null && active !== document.body && node.contains(active)) return true;
-  if (node.matches('details[open]') || node.querySelector('details[open]') !== null) return true;
+  const own = 'details[open]:not([data-geld-opened])';
+  if (node.matches(own) || node.querySelector(own) !== null) return true;
   return dirtyField(node);
 }
 
@@ -112,7 +120,9 @@ export function isTeleported(node: Element): boolean {
  * loaned node.
  */
 function tell(parent: Node, type: 'geld:portal-lend' | 'geld:portal-return'): void {
-  parent.dispatchEvent(new Event(type, { bubbles: true }));
+  // An event on a detached parent (a home GitHub refreshed away, see `dropOrphanedLoans`) reaches no listener;
+  // the portal's is on the document, and on a return it also lets go of every parent that has left the page.
+  (parent.isConnected ? parent : document).dispatchEvent(new Event(type, { bubbles: true }));
 }
 
 /* ---- moving ---------------------------------------------------------------- */
@@ -169,7 +179,50 @@ export function forgetLoan(node: HTMLElement): void {
   if (entry.root !== null) tell(entry.parent, 'geld:portal-return');
 }
 
-/** Put every quick-viewed node back where it came from. */
+/**
+ * Loans whose home is gone: GitHub refreshed the timeline item from its
+ * partial (`js-updatable-content`, on a socket message about the pull
+ * request) and `replaceWith`ed the container, placeholder and all, while
+ * the node stood in the panel. The fresh container holds the item as it is
+ * now — a thread with the reply that was just posted, its comments deferred
+ * again behind their fragment — and the loan is GitHub's discarded copy.
+ * Left standing it shadowed the fresh one: it came first in document order,
+ * so the crawl read it, `getElementById` found it, and the nodes a fragment
+ * fetch had put in it still counted as that URL being in the page, so the
+ * fresh fragment was never fetched. With the tab visible the hydration of
+ * the fresh markup soon ran another pass that happened to rebuild the panel
+ * and drop it; with the tab hidden the one catch-up pass was all there was,
+ * and the chat stayed stale or went blank until a reload (mint#12803).
+ *
+ * Dropped here, before a pass reads anything: removed from the document and
+ * from tracking, the portal told as for a return. Only a loan that still
+ * stands inside the panel: one that another Geld instance has already sent
+ * home is not ours any more. The loans nested in a dropped one (the chat
+ * moves a thread's reaction pickers, ⋯ menus and Resolve form out of it,
+ * with their placeholders inside it) leave the document with it and are
+ * forgotten in the same sweep. Returns how many went.
+ */
+export function dropOrphanedLoans(panel: Element): number {
+  let dropped = 0;
+  for (const [key, entry] of [...moved]) {
+    if (entry.placeholder.isConnected || !panel.contains(entry.node)) continue;
+    moved.delete(key);
+    entry.mark?.remove();
+    entry.node.remove();
+    if (entry.root !== null) tell(entry.parent, 'geld:portal-return');
+    dropped += 1;
+  }
+  if (dropped === 0) return 0;
+  // Nested loans went out with their outer node: their placeholders and the nodes themselves are detached now.
+  for (const [key, entry] of [...moved]) {
+    if (entry.placeholder.isConnected || entry.node.isConnected) continue;
+    moved.delete(key);
+    entry.mark?.remove();
+    if (entry.root !== null) tell(entry.parent, 'geld:portal-return');
+  }
+  return dropped;
+}
+
 /**
  * GitHub replaced a loaned node where it stood, inside the panel: the classic
  * Resolve is a Turbo form whose response swaps the thread for a fresh

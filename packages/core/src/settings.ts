@@ -1,3 +1,5 @@
+import { parseIssueTracker } from './trackers';
+import type { IssueTrackerConfig } from './trackers';
 import type { AnyCategoryId, Catalog, CategoryId, CustomCategory, GroupKey, HiddenCategory } from './categories';
 import { BUNDLED_CATALOG, CATEGORY_IDS, categoryById, groupKey, hiddenCategoryFromCustom, isCategoryId, isCustomCategoryId, isWellFormedGroupKey } from './categories';
 import { isCategoryIconName } from './category-icons';
@@ -29,6 +31,12 @@ export interface GeldSettings {
    * global). Custom categories keep their patterns on the category itself.
    */
   readonly categoryPatterns: Readonly<Partial<Record<CategoryId, readonly string[]>>>;
+  /**
+   * Categories (built-in or custom ids) whose hidden files Geld marks as viewed on pull requests, through GitHub's
+   * own Viewed control, so its "N of M files viewed" counter only waits on the files left to review. Off for every
+   * category unless set.
+   */
+  readonly autoViewed: Readonly<Partial<Record<AnyCategoryId, boolean>>>;
   /** Categories the user defined, in the order they are matched (before built-ins). */
   readonly customCategories: readonly CustomCategory[];
   /**
@@ -52,6 +60,16 @@ export interface GeldSettings {
    * them on click. Header counts exclude those lines.
    */
   readonly hideCommentLines: boolean;
+  /**
+   * In test files, fold each test's body under its declaration line, so the diff reads as the titles that were
+   * added, removed, renamed or changed; a fold opens to the full source.
+   */
+  readonly testOutline: boolean;
+  /**
+   * The reader's own test declaration syntaxes, one per line, read before the built-ins: a name (`scenario`), a
+   * kind and a name (`suite: feature`), or a `/regex/` with a `(?<title>…)` group (`parseTestSyntax`).
+   */
+  readonly testSyntaxes: readonly string[];
   /**
    * Hide files with 1000+ changed lines. Deliberately separate from the normal
    * category picker: large diffs are often the work that most needs review.
@@ -98,8 +116,7 @@ export interface GeldSettings {
   /**
    * How far to fold the PR timeline. `off` only shows the panel. `compact`
    * (default) folds bot review comments and low-signal events. `minimal` also
-   * folds human comments that belong to done items, and may collapse the
-   * description when {@link collapseDescription} is on.
+   * folds human comments that belong to done items.
    */
   readonly compactTimeline: CompactTimelineMode;
   /**
@@ -108,8 +125,17 @@ export interface GeldSettings {
    * holding what landed since the previous one).
    */
   readonly reviewGrouping: ReviewGrouping;
-  /** In `minimal` mode, collapse the PR description to its first paragraph. */
+  /**
+   * Shorten the PR description above the digest: fold each section under its
+   * heading (innermost sections closed), and cut a long description with no
+   * headings to 500px behind a "Show full description" control.
+   */
   readonly collapseDescription: boolean;
+  /**
+   * Put a "Submit review" button in the pull request's tab bar, beside the
+   * line counts, on every tab (the Files changed tab's own button gives way to it).
+   */
+  readonly quickReview: boolean;
   /**
    * Extra bot logins to treat as review bots (one per line). Built-in bots
    * (Bugbot, Greptile, Copilot, …) are always recognised.
@@ -125,6 +151,7 @@ export interface GeldSettings {
   readonly aiBaseUrl: string;
   /** Model id at that gateway for the prose work (consolidation, TL;DR, fixes). Never an evaluation model. */
   readonly aiModel: string;
+  readonly issueTracker:IssueTrackerConfig|null;
   /**
    * Use TypeSafe's Jev (a System One evaluation model: typed, probabilistic
    * answers, no prose) for the decisions in front of the prose model - which
@@ -173,11 +200,14 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   categories: {},
   groups: {},
   categoryPatterns: {},
+  autoViewed: {},
   customCategories: [],
   repoRules: [],
   groupHidden: true,
   expandedByDefault: false,
   hideCommentLines: false,
+  testOutline: true,
+  testSyntaxes: [],
   hideLargeDiffs: false,
   expandLargeDiffs: true,
   showListStats: true,
@@ -191,11 +221,13 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   prOverview: true,
   compactTimeline: 'compact',
   reviewGrouping: 'type',
-  collapseDescription: false,
+  collapseDescription: true,
+  quickReview: true,
   reviewBots: [],
   aiEnabled: false,
   aiBaseUrl: '',
   aiModel: '',
+  issueTracker:null,
   aiJev: false,
   suggestedFixes: 'bots',
 };
@@ -244,6 +276,15 @@ function readCategories(value: unknown, legacyHideTests: unknown, customIds: Rea
   } else if (typeof legacyHideTests === 'boolean') {
     // Settings saved before categories existed.
     result.tests = legacyHideTests;
+  }
+  return result;
+}
+
+function readAutoViewed(value: unknown, customIds: ReadonlySet<string>): Partial<Record<AnyCategoryId, boolean>> {
+  const result: Partial<Record<AnyCategoryId, boolean>> = {};
+  if (!isRecord(value)) return result;
+  for (const [key, on] of Object.entries(value)) {
+    if (typeof on === 'boolean' && (isCategoryId(key) || (isCustomCategoryId(key) && customIds.has(key)))) result[key] = on;
   }
   return result;
 }
@@ -335,6 +376,11 @@ export function isTestGroupEnabled(settings: GeldSettings, id: TestPatternGroupI
   return isGroupEnabled(settings, 'tests', id);
 }
 
+/** Whether hidden files of this category are marked as viewed automatically (off unless set). */
+export function isAutoViewed(settings: GeldSettings, id: AnyCategoryId): boolean {
+  return settings.autoViewed[id] === true;
+}
+
 /** Extra user patterns for a built-in category (possibly empty). */
 export function categoryPatternLines(settings: GeldSettings, categoryId: CategoryId): readonly string[] {
   return settings.categoryPatterns[categoryId] ?? [];
@@ -394,11 +440,14 @@ export function normalizeSettings(value: unknown): GeldSettings {
     categories: readCategories(record.categories, record.hideTests, new Set(customCategories.map((custom) => custom.id))),
     groups: readGroups(record.groups, record.testGroups),
     categoryPatterns: readCategoryPatterns(record.categoryPatterns, record.customPatterns),
+    autoViewed: readAutoViewed(record.autoViewed, new Set(customCategories.map((custom) => custom.id))),
     customCategories,
     repoRules: isStringArray(record.repoRules) ? record.repoRules : DEFAULT_SETTINGS.repoRules,
     groupHidden: bool(record, 'groupHidden', DEFAULT_SETTINGS.groupHidden),
     expandedByDefault: bool(record, 'expandedByDefault', DEFAULT_SETTINGS.expandedByDefault),
     hideCommentLines: bool(record, 'hideCommentLines', DEFAULT_SETTINGS.hideCommentLines),
+    testOutline: bool(record, 'testOutline', DEFAULT_SETTINGS.testOutline),
+    testSyntaxes: isStringArray(record.testSyntaxes) ? record.testSyntaxes : DEFAULT_SETTINGS.testSyntaxes,
     hideLargeDiffs: bool(record, 'hideLargeDiffs', DEFAULT_SETTINGS.hideLargeDiffs),
     expandLargeDiffs: bool(record, 'expandLargeDiffs', DEFAULT_SETTINGS.expandLargeDiffs),
     showListStats: bool(record, 'showListStats', DEFAULT_SETTINGS.showListStats),
@@ -415,9 +464,11 @@ export function normalizeSettings(value: unknown): GeldSettings {
     compactTimeline: isCompactTimelineMode(record.compactTimeline) ? record.compactTimeline : DEFAULT_SETTINGS.compactTimeline,
     reviewGrouping: isReviewGrouping(record.reviewGrouping) ? record.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
     collapseDescription: bool(record, 'collapseDescription', DEFAULT_SETTINGS.collapseDescription),
+    quickReview: bool(record, 'quickReview', DEFAULT_SETTINGS.quickReview),
     reviewBots: isStringArray(record.reviewBots) ? record.reviewBots : DEFAULT_SETTINGS.reviewBots,
     aiEnabled: bool(record, 'aiEnabled', DEFAULT_SETTINGS.aiEnabled),
     aiBaseUrl: typeof record.aiBaseUrl === 'string' ? normalizeAiBaseUrl(record.aiBaseUrl) : DEFAULT_SETTINGS.aiBaseUrl,
+    issueTracker:parseIssueTracker(record.issueTracker),
     aiModel: typeof record.aiModel === 'string' ? record.aiModel.trim() : DEFAULT_SETTINGS.aiModel,
     aiJev: bool(record, 'aiJev', DEFAULT_SETTINGS.aiJev),
     suggestedFixes: isSuggestedFixMode(record.suggestedFixes) ? record.suggestedFixes : DEFAULT_SETTINGS.suggestedFixes,
@@ -468,13 +519,44 @@ export function isCategoryInPicker(category: HiddenCategory): boolean {
 export function withoutCustomCategory(settings: GeldSettings, id: AnyCategoryId): GeldSettings {
   const categories: Partial<Record<AnyCategoryId, boolean>> = { ...settings.categories };
   delete categories[id];
-  return { ...settings, categories, customCategories: settings.customCategories.filter((custom) => custom.id !== id) };
+  const autoViewed: Partial<Record<AnyCategoryId, boolean>> = { ...settings.autoViewed };
+  delete autoViewed[id];
+  return { ...settings, categories, autoViewed, customCategories: settings.customCategories.filter((custom) => custom.id !== id) };
 }
 
 /** Add or replace a custom category (matched by id), keeping the list order for replacements. */
+/**
+ * A saved custom category written from an editor that may be older than the stored one: another window, the popup or
+ * gist sync can change it while the options page holds its editor open (a rebuild waits while someone edits). Each
+ * field the editor changed from what it was built with (`base`) comes from the editor; every other field keeps the
+ * stored category's latest value, so saving a new name never puts back an icon or patterns changed elsewhere. Null
+ * when the category is no longer stored (deleted elsewhere).
+ */
+export function mergeCustomCategoryEdit(base: CustomCategory, edited: CustomCategory, latest: CustomCategory | undefined): CustomCategory | null {
+  if (latest === undefined) return null;
+  // Compared as the editor saves them: a stored list may hold comments, blank lines or spaces the editor drops.
+  const cleanBase = parsePatternList(base.patterns.join('\n'));
+  const cleanEdited = parsePatternList(edited.patterns.join('\n'));
+  const samePatterns = cleanEdited.length === cleanBase.length && cleanEdited.every((pattern, index) => pattern === cleanBase[index]);
+  const noun = (edited.noun ?? '') !== (base.noun ?? '') ? edited.noun : latest.noun;
+  const nounPlural = (edited.nounPlural ?? '') !== (base.nounPlural ?? '') ? edited.nounPlural : latest.nounPlural;
+  return {
+    id: latest.id,
+    title: edited.title !== base.title ? edited.title : latest.title,
+    icon: edited.icon !== base.icon ? edited.icon : latest.icon,
+    patterns: samePatterns ? latest.patterns : edited.patterns,
+    ...(noun !== undefined && noun !== '' ? { noun } : {}),
+    ...(nounPlural !== undefined && nounPlural !== '' ? { nounPlural } : {}),
+  };
+}
+
 export function withCustomCategory(settings: GeldSettings, custom: CustomCategory): GeldSettings {
   const index = settings.customCategories.findIndex((existing) => existing.id === custom.id);
   const customCategories =
     index === -1 ? [...settings.customCategories, custom] : settings.customCategories.map((existing, position) => (position === index ? custom : existing));
   return { ...settings, customCategories };
+}
+
+export function withCategoryEnabled(settings: GeldSettings, id: AnyCategoryId, enabled: boolean): GeldSettings {
+  return id === 'large' ? {...settings,hideLargeDiffs:enabled} : {...settings,categories:{...settings.categories,[id]:enabled}};
 }

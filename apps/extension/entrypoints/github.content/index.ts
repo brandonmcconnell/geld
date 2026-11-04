@@ -34,12 +34,11 @@ export default defineContentScript({
     // would otherwise be missed, and two copies would then fight over the page.
     let retired = false;
     let controller: GeldController | null = null;
-    // Retiring before the controller ran means this copy never showed anything on this tab; the trail says where
-    // it stopped, and the console says so too, since a page with no Geld on it is otherwise silent about why.
+    // Retiring before the controller ran is recorded in the trail only, never the console: a takeover has a newer
+    // copy running and an invalidated context has the extension reloading, and Chrome lists every warning as an error.
     const retireEarly = (why: string): void => {
       retired = true;
       mark(`retired:${why}`);
-      if (controller === null) console.warn(`[geld] stepped aside before starting on this tab (${why}); diagnostics on the options page have the trail.`);
     };
     let retire = (why: string): void => retireEarly(why);
     document.addEventListener(TAKEOVER, () => retire('takeover'), { once: true });

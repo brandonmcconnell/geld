@@ -1,6 +1,6 @@
 import type { HiddenCategory } from '@geld/core';
 import type { ChangeTotals } from '@geld/core';
-import { formatCount, parseCount } from '@geld/core';
+import { COUNT_PATTERN, formatCount, formatCountLike, parseCount } from '@geld/core';
 import type { HiddenBreakdown } from './breakdown';
 import { hidesAnything } from './breakdown';
 import type { StatsBreakdown } from './breakdown';
@@ -21,7 +21,10 @@ export interface HeaderStatGroup {
   readonly sentence: boolean;
 }
 
-const FILE_COUNT_TEXT = /^\s*\(?\d[\d,]*\)?\s*$|\bfiles?\b/i;
+const FILE_COUNT_TEXT = new RegExp(String.raw`^\s*\(?${COUNT_PATTERN}\)?\s*$|\bfiles?\b`, 'i');
+const FILES_CHANGED_TEXT = new RegExp(String.raw`${COUNT_PATTERN}\s+files?\s+changed`, 'i');
+const FIRST_COUNT = new RegExp(COUNT_PATTERN);
+const BARE_COUNT = new RegExp(String.raw`^\s*[+\-\u2212]?\s*${COUNT_PATTERN}\s*$`);
 
 const HEADER_HOST_SELECTOR = '#diffstat, .toc-diff-stats';
 const SR_ONLY_SELECTOR = 'span.sr-only, span[class*="VisuallyHidden"]';
@@ -170,7 +173,7 @@ function findReactFileCounts(host: HTMLElement): HTMLElement[] {
   if (commitContainer !== null) {
     for (const element of queryAll<HTMLElement>('p, span, h2, h3', commitContainer)) {
       if (element.contains(host) || host.contains(element)) continue;
-      if (/\d[\d,]*\s+files?\s+changed/i.test(originalText(element))) counts.push(element);
+      if (FILES_CHANGED_TEXT.test(originalText(element))) counts.push(element);
     }
   }
   // PR header: the "Files changed" tab counter and its visually hidden twin.
@@ -193,6 +196,120 @@ export function findHeaderStatGroups(): HeaderStatGroup[] {
   return groups;
 }
 
+/** Geld's line counts where GitHub shows none (`syncCountsStandIn`), found and rewritten like GitHub's own. */
+export const ATTR_COUNTS_STAND_IN = 'data-geld-counts-stand-in';
+const COUNTS_STAND_CLASS = 'geld-counts-stand';
+
+export function isCountsStandIn(element: Element): boolean {
+  return element.hasAttribute(ATTR_COUNTS_STAND_IN);
+}
+
+/** The pull request header's tab row, where GitHub floats its line counts. */
+function pullTabRow(): HTMLElement | null {
+  return queryAll<HTMLElement>('[data-component="PageHeader"] [class*="PageHeader-Navigation"]').find((row) => row.querySelector('#prs-files-anchor-tab') !== null) ?? null;
+}
+
+/**
+ * Whether GitHub's counts wrapper holds anything of GitHub's own: its counts, or the skeleton it shows while they load
+ * (a Suspense fallback, `skeleton__…`). Geld's group, mark and stand-in do not count. Until it holds nothing of GitHub's,
+ * the counts may yet arrive, and anything Geld put there in their place would stand beside the skeleton, then jump.
+ */
+export function countsWrapperBusy(wrapper: Element): boolean {
+  return [...wrapper.children].some((child) => !child.hasAttribute(OWN_UI_ATTRIBUTE) && !child.hasAttribute(ATTR_COUNTS_STAND_IN));
+}
+
+export interface StandInTotals {
+  readonly additions: number;
+  readonly deletions: number;
+}
+
+function standInKey(totals: StandInTotals): string {
+  return `${totals.additions}:${totals.deletions}`;
+}
+
+/** What stands in the tab bar's empty counts wrapper: Geld's counts, or its skeleton while they are not ready. */
+export type StandIn = StandInTotals | 'skeleton';
+
+const SKELETON = 'skeleton';
+/** The skeleton GitHub showed there last (its class names are hashed per build): Geld's wears the same, so it reads as GitHub's. */
+let githubSkeleton: { readonly className: string; readonly width: string } | null = null;
+
+function noteGithubSkeleton(wrapper: Element): void {
+  const skeleton = [...wrapper.children].find((child) => !child.hasAttribute(ATTR_COUNTS_STAND_IN) && /\bskeleton/i.test(child.className.toString()));
+  if (skeleton instanceof HTMLElement) githubSkeleton = { className: skeleton.className.toString(), width: skeleton.style.width || '80px' };
+}
+
+function standInElement(want: StandIn): HTMLElement {
+  if (want === SKELETON) {
+    const skeleton = createElement('div', { class: githubSkeleton?.className ?? 'geld-counts-skeleton', [ATTR_COUNTS_STAND_IN]: SKELETON, 'aria-hidden': 'true' });
+    skeleton.style.width = githubSkeleton?.width ?? '80px';
+    return skeleton;
+  }
+  return createElement('div', { class: 'd-flex flex-items-center gap-1', [ATTR_COUNTS_STAND_IN]: standInKey(want) }, [
+    createElement('span', { 'aria-hidden': 'true', class: 'f6 fgColor-success text-bold' }, [`+${formatCount(want.additions)}`]),
+    createElement('span', { 'aria-hidden': 'true', class: 'f6 fgColor-danger text-bold' }, [`-${formatCount(want.deletions)}`]),
+    createElement('span', { class: 'sr-only' }, [`Lines changed: ${want.additions} additions & ${want.deletions} deletions`]),
+  ]);
+}
+
+/** Geld's skeleton in the counts wrapper, which the review group stands before as it does before the counts. */
+export function countsSkeletonStandIn(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[${ATTR_COUNTS_STAND_IN}="${SKELETON}"]`);
+}
+
+/**
+ * The tab bar's counts wrapper can hold nothing of GitHub's while Geld already knows its counts: GitHub leaves the
+ * counts out for a change of binary files only (mintlify/landing#886), and signed in its skeleton can resolve to an
+ * empty wrapper seconds before its counts render (mintlify/mint#14204). Geld only rewrote GitHub's counts, so the header
+ * showed nothing. `want` fills the wrapper (or one of Geld's where there is none): Geld's skeleton, in GitHub's own
+ * classes, while Geld's counts are not ready, then counts of GitHub's shape in its very place, which the header pass
+ * reads and rewrites as it does GitHub's, so they show Geld's numbers. GitHub's own counts always win: once they render
+ * the stand-in goes, and they are rewritten to the same numbers before paint. Not marked as Geld's UI, which the header
+ * scan skips (`isInsideDiffEntry`). True when the page changed.
+ */
+export function syncCountsStandIn(want: StandIn | null): boolean {
+  const existing = document.querySelector<HTMLElement>(`[${ATTR_COUNTS_STAND_IN}]`);
+  const row = pullTabRow();
+  const real = row !== null && queryAll<HTMLElement>(SR_ONLY_SELECTOR, row).some((span) => LINES_CHANGED.test(originalText(span)) && span.closest(`[${ATTR_COUNTS_STAND_IN}]`) === null);
+  const wrapper = row?.querySelector(':scope > [class*="rightContentWrapper"]') ?? null;
+  if (wrapper !== null) noteGithubSkeleton(wrapper);
+  if (want === null || row === null || real || (wrapper !== null && countsWrapperBusy(wrapper))) {
+    if (existing === null) return false;
+    removeCountsStandIn();
+    return true;
+  }
+  const key = want === SKELETON ? SKELETON : standInKey(want);
+  if (existing !== null && row.contains(existing) && existing.getAttribute(ATTR_COUNTS_STAND_IN) === key) return false;
+  const next = standInElement(want);
+  // Counts replacing the skeleton take its very place, so what stands before it (the review group) does not move.
+  if (existing !== null && row.contains(existing)) {
+    detachBreakdownTooltip(existing);
+    existing.replaceWith(next);
+    return true;
+  }
+  removeCountsStandIn();
+  let home = row.querySelector<HTMLElement>(':scope > [class*="rightContentWrapper"]');
+  if (home === null) {
+    home = createElement('div', { class: COUNTS_STAND_CLASS });
+    row.prepend(home);
+  }
+  home.append(next);
+  return true;
+}
+
+export function removeCountsStandIn(): void {
+  for (const host of queryAll<HTMLElement>(`[${ATTR_COUNTS_STAND_IN}]`)) {
+    detachBreakdownTooltip(host);
+    host.remove();
+  }
+  for (const stand of queryAll<HTMLElement>(`.${COUNTS_STAND_CLASS}`)) stand.remove();
+  // Its narrow-screen copy in the state row; GitHub's counts, if they took its place, make their own.
+  for (const mirror of queryAll<HTMLElement>(`.${MIRROR_CLASS}`)) {
+    detachBreakdownTooltip(mirror);
+    mirror.remove();
+  }
+}
+
 const COUNT_NOUNS = /\b(files?|additions?|deletions?|changes?|lines?)\b/i;
 
 /**
@@ -200,7 +317,7 @@ const COUNT_NOUNS = /\b(files?|additions?|deletions?|changes?|lines?)\b/i;
  * noun that follows it ("1 file changed", "2 additions", ...).
  */
 export function replaceCount(text: string, count: number): string {
-  const replaced = text.replace(/\d[\d,]*/, formatCount(count));
+  const replaced = text.replace(FIRST_COUNT, formatCountLike(text, count));
   return replaced.replace(COUNT_NOUNS, (word) => {
     const singular = word.endsWith('s') ? word.slice(0, -1) : word;
     return count === 1 ? singular : `${singular}s`;
@@ -218,8 +335,8 @@ function signPrefix(text: string): string {
  * "18 files changed") keep their words.
  */
 function rewriteNumber(original: string, value: number, fallbackSign: string): string {
-  if (/^\s*[+\-\u2212]?\s*\d[\d,]*\s*$/.test(original)) {
-    return `${signPrefix(original) || fallbackSign}${formatCount(value)}`;
+  if (BARE_COUNT.test(original)) {
+    return `${signPrefix(original) || fallbackSign}${formatCountLike(original, value)}`;
   }
   return replaceCount(original, value);
 }
@@ -280,12 +397,17 @@ export function applyHeaderStats(
   }
   const nounPlural = hiddenNounPlural(activeCategories, hidden);
   const tooltipAnchor = renderTestsLabel(group, hiddenLabel(hidden, activeCategories), hidden.totals.files);
+  const all = group.original.files === 0 && files > 0 ? { ...group.original, files } : group.original;
   if (!hidesAnything(hidden)) {
-    restoreNumbers(group);
-    syncNarrowMirror(group, hiddenLabel(hidden, activeCategories), false, group.original, null);
+    // GitHub's numbers stand, and the breakdown is still there to read (the files and their counts) unless there is
+    // nothing at all: a change of binary files only reads "+0 −0" over a file that changed (mintlify/landing#886).
+    const changed = all.files > 0 || all.additions > 0 || all.deletions > 0;
+    const whole = changed ? statsBreakdown(all, hidden, nounPlural, activeCategories) : null;
+    restoreNumbers(group, whole !== null);
+    if (whole !== null) attachBreakdownTooltip(group.host, tooltipAnchor, () => whole, { align: 'end', flush: true });
+    syncNarrowMirror(group, hiddenLabel(hidden, activeCategories), false, group.original, whole === null ? null : () => whole);
     return;
   }
-  const all = group.original.files === 0 && files > 0 ? { ...group.original, files } : group.original;
   const breakdown = statsBreakdown(all, hidden, nounPlural, activeCategories);
   const { visible } = breakdown;
 
@@ -378,7 +500,7 @@ export function restoreHeaderStats(group: HeaderStatGroup): void {
 }
 
 /** Put GitHub's original numbers back and drop the tooltip, keeping the label. */
-function restoreNumbers(group: HeaderStatGroup): void {
+function restoreNumbers(group: HeaderStatGroup, keepTooltip = false): void {
   for (const element of [group.additions, group.deletions, group.srOnly, ...group.fileCounts]) {
     if (element === null) continue;
     restoreManagedText(element);
@@ -388,5 +510,6 @@ function restoreNumbers(group: HeaderStatGroup): void {
       element.removeAttribute('data-geld-original-title');
     }
   }
-  detachBreakdownTooltip(group.host);
+  // Detaching forgets the host while its listeners stay bound, so a tooltip about to be attached again stays attached.
+  if (!keepTooltip) detachBreakdownTooltip(group.host);
 }
