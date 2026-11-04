@@ -167,9 +167,11 @@ function RowValue({ digest, row }: { readonly digest: Digest; readonly row: Dige
             </span>
             {digest.botComments > 0 && (
               <span className="inline-flex items-center gap-1 text-[0.75rem] text-muted-foreground">
-                <BotIcon aria-hidden="true" className="size-3" />
-                {digest.botComments} bot {digest.botComments === 1 ? 'comment' : 'comments'}
-                <Wide> folded</Wide>
+                <BotIcon aria-hidden="true" className="size-4" />
+                <span className="whitespace-nowrap">
+                  {digest.botComments} <Wide>bot {digest.botComments === 1 ? 'comment' : 'comments'} folded</Wide>
+                  <Narrow>{digest.botComments === 1 ? 'bot' : 'bots'}</Narrow>
+                </span>
               </span>
             )}
           </span>
