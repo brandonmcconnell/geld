@@ -1,0 +1,22 @@
+#!/bin/sh
+# AGENTS.md and .cursor/BUGBOT.md are kept one sentence per line (scripts/doc-lines.ts), and CI fails otherwise.
+files=$(git diff --cached --name-only --diff-filter=ACM -- AGENTS.md .cursor/BUGBOT.md)
+[ -z "$files" ] && exit 0
+
+tsx="$(git rev-parse --show-toplevel)/node_modules/.bin/tsx"
+if [ ! -x "$tsx" ]; then
+  echo "pre-commit: dependencies not installed, so AGENTS.md was not checked. Run \`pnpm docs:lines\` before pushing." >&2
+  exit 0
+fi
+
+# A file with unstaged edits is only checked: rewriting and re-staging it would commit the parts left out.
+for file in $files; do
+  if ! git diff --quiet -- "$file"; then
+    "$tsx" scripts/doc-lines.ts --check && exit 0
+    echo "pre-commit: run \`pnpm docs:lines\` and stage the result (it splits sentences sharing a line)." >&2
+    exit 1
+  fi
+done
+
+"$tsx" scripts/doc-lines.ts || exit 1
+git add -- $files

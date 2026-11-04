@@ -99,6 +99,11 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   A line break inside a paragraph renders as a space, so the page reads the same.
   Add a sentence as a new line rather than onto the end of an existing one, and change a sentence in place.
   `pnpm docs:lines` splits whatever shares a line (`scripts/doc-lines.ts`, run as `docs:lines:check` in `pnpm check`).
+  Agents kept adding paragraphs that failed CI, so a pre-commit hook runs it on either file when staged (`.githooks/pre-commit`), and `.cursor/rules/agents-md-lines.mdc` repeats the rule to an agent editing them.
+  The root `prepare` script (`scripts/install-git-hooks.mjs`, on every `pnpm install`) puts a small hook in the repository's own `.git/hooks` that hands off to `.githooks/pre-commit`.
+  It leaves `core.hooksPath` alone: Cursor's cloud agents point it at their own dispatcher, which still runs the hook in `.git/hooks`, so one hook there serves agents and people alike.
+  It never replaces a pre-commit hook that is not Geld's, and a checkout that sets its own `core.hooksPath` (husky and the like) does not get it, which leaves `docs:lines:check` in CI as the backstop.
+  A staged file with unstaged edits is only checked, never rewritten and re-staged, so the hook commits nothing left out.
   A pull request still written the old way meets this layout in one conflict: take its own side of the file, run `pnpm docs:lines`, and re-add anything `main` changed meanwhile.
   Write literal triple backticks in prose as a code span (`` ```geld ``): two bare runs pair up as one code span across everything between them.
 - Website stack (fixed by the owner): latest stable Next.js (App Router, static generation;
