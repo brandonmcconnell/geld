@@ -33,6 +33,9 @@ const CARD_TALL = 400;
 const FILL = 0.6;
 /** No arc peaks higher than this, so nothing is flung up under the header. */
 const HIGHEST = 70;
+/** How much further than its speed explains a card may move in a frame before the rest is eased in, and how fast that eases. */
+const SNAP_SLACK = 4;
+const SNAP_EASE = 0.06;
 
 interface Layout {
   readonly world: World;
@@ -109,6 +112,9 @@ function Playground() {
   const card = useRef<HTMLDivElement | null>(null);
   const rowEls = useRef(new Map<DigestRow, HTMLElement>());
   const els = useRef<(HTMLDivElement | null)[]>([]);
+  /** Where each card is drawn, which trails its body only while an overlap push is eased in. */
+  const shown = useRef<({ x: number; y: number; from: { x: number; y: number }; vx: number; vy: number; free: boolean } | undefined)[]>([]);
+  const easing = useRef(false);
   const bodies = useRef<Body[]>([]);
   /** The items in play: about as many as the free space holds, in the order they fall. */
   const kept = useRef<ReadonlySet<number>>(new Set());
@@ -142,19 +148,38 @@ function Playground() {
     [],
   );
 
-  const paint = useCallback(() => {
+  const paint = useCallback((dt = 0) => {
     const hidden: number[] = [];
+    easing.current = false;
     bodies.current.forEach((body, index) => {
       const el = els.current[index];
       if (!el) return;
+      const seen = shown.current[index];
       if (body.mode === 'hidden') {
         el.style.visibility = 'hidden';
+        shown.current[index] = undefined;
         if (kept.current.has(index) && !pending.current.has(index)) hidden.push(index);
         return;
       }
+      // Drawn as it flies: a frame's move beyond what its speed explains is an overlap pushed apart, eased in rather than shown as a jump.
+      const at = { x: body.x, y: body.y, from: { x: body.x, y: body.y }, vx: body.vx, vy: body.vy };
+      if (seen !== undefined && dt > 0 && body.mode === 'free' && !body.held && seen.free) {
+        const mx = body.x - seen.from.x;
+        const my = body.y - seen.from.y;
+        const moved = Math.hypot(mx, my);
+        const explained = Math.hypot(seen.vx, seen.vy) * dt + SNAP_SLACK;
+        const share = moved > explained ? explained / moved : 1;
+        const ease = 1 - Math.exp(-dt / SNAP_EASE);
+        at.x = seen.x + mx * share;
+        at.y = seen.y + my * share;
+        at.x += (body.x - at.x) * ease;
+        at.y += (body.y - at.y) * ease;
+      }
+      shown.current[index] = { ...at, free: body.mode === 'free' && !body.held };
+      if (Math.hypot(body.x - at.x, body.y - at.y) > 0.5) easing.current = true;
       el.style.visibility = 'visible';
       el.style.opacity = body.mode === 'absorbing' ? String(Math.min(1, (body.scale - 0.25) / 0.5)) : '1';
-      el.style.transform = `translate3d(${body.x - body.w / 2}px, ${body.y - body.h / 2}px, 0) rotate(${body.angle ?? 0}rad) scale(${body.scale})`;
+      el.style.transform = `translate3d(${at.x - body.w / 2}px, ${at.y - body.h / 2}px, 0) rotate(${body.angle ?? 0}rad) scale(${body.scale})`;
     });
     const signature = hidden.join(',');
     setGathered((previous) => (previous === signature ? previous : signature));
@@ -170,10 +195,10 @@ function Playground() {
       const dt = Math.min(1 / 30, (now - last.current) / 1000);
       last.current = now;
       step(bodies.current, current, dt);
-      paint();
+      paint(dt);
       const lastPour = pouredAt.current;
       if (landedAt.current === null && pending.current.size === 0 && bodies.current.length > 0 && (settled(bodies.current) || (lastPour !== null && now - lastPour > 3000))) landedAt.current = now;
-      if (!settled(bodies.current) || drag.current !== null) frame.current = requestAnimationFrame(loop);
+      if (!settled(bodies.current) || drag.current !== null || easing.current) frame.current = requestAnimationFrame(loop);
     };
     frame.current = requestAnimationFrame(loop);
   }, [paint]);

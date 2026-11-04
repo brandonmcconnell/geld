@@ -71,6 +71,8 @@ const SETTLE_AFTER_GHOST = 1;
 const SETTLE_AT_MOST = 2;
 /** The share of an overlap resolved per iteration while settling. */
 const SETTLE_SHARE = 0.15;
+/** A card in flight lands on one only when it meets it this close to its top; deeper in, it falls on through, rather than landing inside it and being pried out. */
+const LAND_DEPTH = 14;
 const SLEEP_SPEED = 50;
 const SLEEP_AFTER = 24;
 /** How far per substep a body overhanging the edge of what it rests on slides off it. */
@@ -189,10 +191,14 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
     let cx = (body.x - own.x) / dt;
     let cy = (body.y - own.y) / dt;
     if ((body.settle ?? 0) > 0) {
-      // Settling: what holding it up took cancels its fall, but no push lifts it faster than a drift, sideways or up; its own flight it keeps.
-      const ownVy = (own.y - start.y) / dt;
-      body.vx = (own.x - start.x) / dt + Math.max(-SETTLE_SPEED, Math.min(SETTLE_SPEED, cx));
-      body.vy = Math.max(Math.min(ownVy, -SETTLE_SPEED), (body.y - start.y) / dt);
+      // Settling: what holding it up took cancels its fall, but no push moves it further than a drift, its position as well as its speed, or the overlap opens in a frame and the card snaps elsewhere; its own flight it keeps, and the floor and words still win.
+      const drift = SETTLE_SPEED * dt;
+      body.x = Math.max(own.x - drift, Math.min(own.x + drift, body.x));
+      body.y = Math.max(start.y + Math.min(own.y - start.y, -drift), Math.min(own.y + drift, body.y));
+      for (const obstacle of world.obstacles) pushOut(body, obstacle, grounded);
+      bound(body, world, grounded);
+      body.vx = (body.x - start.x) / dt;
+      body.vy = (body.y - start.y) / dt;
     } else {
       const correction = Math.hypot(cx, cy);
       if (correction > CORRECTION_SPEED) {
@@ -298,7 +304,7 @@ function separate(a: Body, b: Body, grounded: Set<Body>): void {
     [b, a],
   ] as const) {
     if ((flying.ghost ?? 0) <= 0) continue;
-    if (flying.vy <= 0 || flying.y > other.y) return;
+    if (flying.vy <= 0 || flying.y > other.y || oy > LAND_DEPTH) return;
     flying.ghost = 0;
     flying.settle = SETTLE_AFTER_GHOST;
     flying.settleFor = SETTLE_AT_MOST;
