@@ -94,11 +94,6 @@ export function closeFlow(): void {
   forgetReads();
 }
 
-/** Whether the Geld row offers Flow: the diff is in and holds more than one file. */
-export function flowAvailable(): boolean {
-  return source !== null && source.files.length > 1;
-}
-
 /** A file's read, kept as the imports it names: a few strings each, so a whole diagram's worth stays in memory and nothing is read twice. */
 type Read = { readonly state: 'pending' } | { readonly state: 'ready'; readonly imports: readonly string[] } | { readonly state: 'failed' };
 
@@ -402,11 +397,14 @@ let dialogIds = 0;
 
 /** Open the Flow dialog for the current pull request. Escape, the close button or a click on the backdrop closes it. */
 export function openFlowDialog(): void {
-  const opened = source;
-  if (opened === null) return;
-  // What each render draws from: the latest source while it is still this pull request (a push lands, or the
-  // head becomes known, while the dialog is open), else the one it opened with.
-  const latest = (): FlowSource => (source !== null && source.origin === opened.origin && source.pullPath === opened.pullPath ? source : opened);
+  const pullPath = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(location.pathname)?.[0];
+  if (pullPath === undefined) return;
+  const ofThisPull = (candidate: FlowSource | null): FlowSource | null => (candidate !== null && candidate.origin === location.origin && candidate.pullPath === pullPath ? candidate : null);
+  // Flow is offered before the diff has loaded: opened then, it waits, and the source arriving redraws it.
+  const opened = ofThisPull(source);
+  // What each render draws from: the latest source while it is still this pull request (the diff lands, a push
+  // lands, or the head becomes known, while the dialog is open), else the one it opened with.
+  const latest = (): FlowSource | null => ofThisPull(source) ?? opened;
   dialogIds += 1;
   const titleId = `geld-flow-${dialogIds}-title`;
   const dialog = createElement('dialog', { class: 'Overlay Overlay--motion-scaleFade geld-flow', [OWN_UI_ATTRIBUTE]: '', 'aria-labelledby': titleId });
@@ -463,7 +461,7 @@ export function openFlowDialog(): void {
     ]),
     body,
   );
-  const filesHref = filesTabHref(opened.pullPath);
+  const filesHref = filesTabHref(pullPath);
   let timer = 0;
   // Closing queues the dialog's `close` event, which removes it: a card's click finishes reaching GitHub's own
   // link handling (a Turbo visit to Files changed) while the card is still in the document.
@@ -474,6 +472,12 @@ export function openFlowDialog(): void {
   let fitted = false;
   const render = (): void => {
     const current = latest();
+    if (current === null) {
+      toggle.hidden = true;
+      status.hidden = false;
+      status.textContent = 'Waiting for the pull request\u2019s diff…';
+      return;
+    }
     const essentialNow = current.files.filter((file) => file.hiddenAs === null).length;
     const hiddenNow = current.files.length - essentialNow;
     // Offered from the counts as they are now: the diff landing (or the settings changing) can hide files that the
@@ -547,7 +551,7 @@ export function openFlowDialog(): void {
   });
   openDialog?.close();
   openDialog = dialog;
-  openData = fileData(opened);
+  openData = opened === null ? '' : fileData(opened);
   document.body.append(dialog);
   dialog.showModal();
   applyScale(1);
