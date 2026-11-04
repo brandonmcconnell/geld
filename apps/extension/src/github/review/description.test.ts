@@ -95,24 +95,52 @@ describe('shortenDescription', () => {
     expect(body.querySelectorAll('.geld-desc-toggle')).toHaveLength(3);
   });
 
+  it('opens the first section by default, its innermost subsections still closed, and keeps it closed once the reader closes it', async () => {
+    const body = mountDescription(`${h(2, 'Changes')}<p>a</p>${h(3, 'Notes')}<p>b</p>${h(2, 'Testing')}<p>c</p>${h(2, 'Screenshots')}<p>d</p>`);
+    shortenDescription(true);
+    expect(body.children[0]?.getAttribute('data-geld-desc-heading')).toBe('open');
+    const folded = [...body.children].map((block) => block.hasAttribute('data-geld-desc-fold'));
+    expect(folded).toEqual([false, false, false, true, false, true, false, true]);
+    body.querySelector<HTMLElement>('.markdown-heading h2')?.click();
+    await frames();
+    expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    shortenDescription(true);
+    expect(body.children[0]?.getAttribute('data-geld-desc-heading')).toBe('closed');
+  });
+
+  it('keeps the first section closed when text comes before it, since that text is the description', () => {
+    const body = mountDescription(`<p>intro</p>${h(2, 'Changes')}<p>a</p>${h(2, 'Testing')}<p>b</p>`);
+    shortenDescription(true);
+    expect(body.children[1]?.getAttribute('data-geld-desc-heading')).toBe('closed');
+    expect(body.children[2]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+  });
+
+  it('still opens the first section when only an empty heading comes before it', () => {
+    const body = mountDescription(`${h(2, 'Title')}${h(2, 'Changes')}<p>a</p>${h(2, 'Testing')}<p>b</p>`);
+    shortenDescription(true);
+    expect(body.children[1]?.getAttribute('data-geld-desc-heading')).toBe('open');
+    expect(body.children[2]?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(body.children[4]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+  });
+
   it('opens a section on a click on its heading, independently of the others, and never cuts a description with headings', async () => {
     const body = mountDescription(`${h(2, 'One')}<p>a</p>${h(2, 'Two')}<p>b</p>`);
     shortenDescription(true);
     expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
     expect(document.querySelector('.geld-desc-more')).toBeNull();
-    body.querySelector<HTMLElement>('.markdown-heading h2')?.click();
+    body.querySelectorAll<HTMLElement>('.markdown-heading h2')[1]?.click();
     // The chevron turns at once, and the section shows only in the second frame, so the first paints the turn alone.
-    expect(body.children[0]?.getAttribute('data-geld-desc-heading')).toBe('open');
-    expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(true);
-    await frame();
-    expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(true);
-    await frame();
-    expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(body.children[2]?.getAttribute('data-geld-desc-heading')).toBe('open');
     expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    await frame();
+    expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    await frame();
+    expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(false);
     expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
     // A pass after the click keeps what the reader chose.
     shortenDescription(true);
-    expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(false);
   });
 
   it('folds with hidden="until-found", and opens every section around text find-in-page matched', () => {
@@ -128,35 +156,35 @@ describe('shortenDescription', () => {
   });
 
   it('marks a fold findable only where the browser can find until-found text, so elsewhere it stays plain hidden', () => {
-    const body = mountDescription(`${h(2, 'A')}<p>a</p>`);
+    const body = mountDescription(`${h(2, 'A')}<p>a</p>${h(2, 'B')}<p>b</p>`);
     shortenDescription(true);
-    expect(body.children[1]?.hasAttribute('data-geld-findable')).toBe('onbeforematch' in document.documentElement);
+    expect(body.children[3]?.hasAttribute('data-geld-findable')).toBe('onbeforematch' in document.documentElement);
     shortenDescription(false);
-    expect(body.children[1]?.hasAttribute('data-geld-findable')).toBe(false);
+    expect(body.children[3]?.hasAttribute('data-geld-findable')).toBe(false);
   });
 
   it('keeps what the reader opened when shortening is turned off and on again on the same page', async () => {
-    const body = mountDescription(`${h(2, 'One')}<p>a</p>`);
+    const body = mountDescription(`${h(2, 'One')}<p>a</p>${h(2, 'Two')}<p>b</p>`);
     shortenDescription(true);
-    body.querySelector<HTMLElement>('.markdown-heading h2')?.click();
+    body.querySelectorAll<HTMLElement>('.markdown-heading h2')[1]?.click();
     await frames();
     shortenDescription(false);
-    expect(body.children[1]?.hasAttribute('hidden')).toBe(false);
+    expect(body.children[3]?.hasAttribute('hidden')).toBe(false);
     shortenDescription(true);
-    expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(false);
   });
 
   it('leaves no listener behind when a copy retires, so the copy that takes over toggles a heading once', async () => {
-    const body = mountDescription(`${h(2, 'One')}<p>a</p>`);
+    const body = mountDescription(`${h(2, 'One')}<p>a</p>${h(2, 'Two')}<p>b</p>`);
     shortenDescription(true);
     shortenDescription(false);
     vi.resetModules();
     const successor = await import('./description');
     successor.shortenDescription(true);
-    body.querySelector<HTMLElement>('.markdown-heading h2')?.click();
+    body.querySelectorAll<HTMLElement>('.markdown-heading h2')[1]?.click();
     await frames();
-    expect(body.children[0]?.getAttribute('data-geld-desc-heading')).toBe('open');
-    expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(body.children[2]?.getAttribute('data-geld-desc-heading')).toBe('open');
+    expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(false);
     successor.shortenDescription(false);
   });
 
@@ -170,10 +198,10 @@ describe('shortenDescription', () => {
   });
 
   it('leaves a click on the heading anchor alone', () => {
-    const body = mountDescription(`${h(2, 'One')}<p>a</p>`);
+    const body = mountDescription(`${h(2, 'One')}<p>a</p>${h(2, 'Two')}<p>b</p>`);
     shortenDescription(true);
-    body.querySelector<HTMLElement>('a.anchor')?.click();
-    expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    body.querySelectorAll<HTMLElement>('a.anchor')[1]?.click();
+    expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(true);
   });
 
   it('lifts the cut for good on Show full description', () => {
