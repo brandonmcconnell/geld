@@ -231,7 +231,9 @@
 @utility logo-reel {
   /* Clip, not hidden: a hidden overflow scrolls itself to a focused link, which the track's transform then throws off. */
   overflow: clip;
-  mask-image: linear-gradient(to right, transparent, #000 4rem, #000 calc(100% - 4rem), transparent);
+  /* The track starts this far in (logo-reel.tsx), so its first logo starts clear of the fade. */
+  --reel-fade: 4rem;
+  mask-image: linear-gradient(to right, transparent, #000 var(--reel-fade), #000 calc(100% - var(--reel-fade)), transparent);
   /* A logo with keyboard focus shows whole, its focus ring included, even at the window's edge. */
   &:has(:focus-visible) {
     mask-image: none;
@@ -240,7 +242,7 @@
     mask-image: none;
   }
   /* Off screen it stops, so nothing is composited that nobody sees; the play state leaves the playback rate the hover easing sets alone. */
-  &[data-offscreen] > * {
+  &[data-offscreen] .animate-logo-reel {
     animation-play-state: paused;
   }
 }
