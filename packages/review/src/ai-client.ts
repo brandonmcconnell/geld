@@ -67,9 +67,13 @@ function modelInfoOf(entry: Record<string, unknown>): ModelInfo | null {
 }
 
 /** `https://ai-gateway.vercel.sh/v1` and `https://api.openai.com` both work: a trailing `/v1` is folded into the path. */
+/** A base that already ends in its own OpenAI version (Gemini's `/v1beta/openai`, DeepInfra's `/v1/openai`). */
+const VERSIONED_BASE = /\/v\d+[a-z]*\w*(?:\/openai)?$/i;
+
 export function joinUrl(base: string, path: string): string {
   const origin = base.replace(/\/+$/, '').replace(/\/v1$/i, '');
-  return `${origin}/${path.replace(/^\/+/, '')}`;
+  const rest = path.replace(/^\/+/, '');
+  return `${origin}/${VERSIONED_BASE.test(origin) ? rest.replace(/^v1\//i, '') : rest}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -24,6 +24,9 @@ import {
   normalizeAiBaseUrl,
   normalizeHost,
   parsePatternList,
+  presetBlank,
+  presetGroups,
+  presetMatches,
   actionsFor,
   allHosts,
   authorRuleProblem,
@@ -38,11 +41,11 @@ import {
   withCustomCategory,
   withoutCustomCategory,
 } from '@geld/core';
-import type { ActionsField, ListField, MaintenanceActionId, SettingsSectionId, TextField, ToggleField } from '@geld/core';
+import type { ActionsField, ListField, MaintenanceActionId, SettingsSectionId, TextField, TextPreset, ToggleField } from '@geld/core';
 import { catalogFromCache, catalogItem, catalogStatusItem, describeCatalog, describeCatalogOutcome } from '../../src/lib/catalog';
 import type { CachedCatalog, CatalogStatus } from '../../src/lib/catalog';
 import { grantedHosts, originPattern } from '../../src/lib/enterprise';
-import { hasGatewayPermission, requestGatewayPermission } from '../../src/lib/ai-gateway';
+import { gatewayOriginPattern, hasGatewayPermission, requestGatewayPermission } from '../../src/lib/ai-gateway';
 import type { AiModelsRequest } from '../../src/lib/messages';
 import { isAiModelsResponse } from '../../src/lib/messages';
 import type { CatalogCheckMessage, ClearDiffCacheMessage } from '../../src/lib/messages';
@@ -892,9 +895,19 @@ async function main(): Promise<void> {
     const urlSave = el('button', 'geld-button geld-button--primary geld-button--small', ['Save']);
     urlSave.type = 'button';
     const presets = el('div', 'options__presets');
+    presets.setAttribute('role', 'group');
     presets.setAttribute('aria-label', 'Gateway presets');
+    const presetNote = el('p', 'options__preset-note');
+    presetNote.hidden = true;
     const saveUrl = async (raw: string): Promise<boolean> => {
       const value = normalizeAiBaseUrl(raw);
+      const blank = presetBlank(value);
+      if (blank !== null) {
+        urlStatus(`Fill in ${value.slice(blank.start, blank.end)} first.`, 'error');
+        urlInput.focus();
+        urlInput.setSelectionRange(blank.start, blank.end);
+        return false;
+      }
       if (value !== '') {
         const denied = await requestGatewayPermission(value);
         if (denied !== null) {
@@ -909,16 +922,48 @@ async function main(): Promise<void> {
       void refreshModels();
       return true;
     };
+    const presetButtons: { readonly button: HTMLButtonElement; readonly preset: TextPreset }[] = [];
     const markPreset = (): void => {
-      for (const button of presets.querySelectorAll<HTMLButtonElement>('button')) button.setAttribute('aria-pressed', String(button.dataset.value === settings.aiBaseUrl));
+      let note: string | undefined;
+      for (const { button, preset } of presetButtons) {
+        const pressed = presetMatches(preset, settings.aiBaseUrl);
+        button.setAttribute('aria-pressed', String(pressed));
+        if (pressed) note = preset.note;
+      }
+      presetNote.replaceChildren(...(note === undefined ? [] : richText(note)));
+      presetNote.hidden = note === undefined;
     };
-    for (const preset of urlField.presets ?? []) {
-      const button = el('button', 'options__preset', [preset.label]);
-      button.type = 'button';
-      button.dataset.value = preset.value;
-      button.title = preset.value;
-      button.addEventListener('click', () => void saveUrl(preset.value));
-      presets.append(button);
+    const choosePreset = (preset: TextPreset): void => {
+      const blank = presetBlank(preset.value);
+      if (blank === null) {
+        void saveUrl(preset.value);
+        return;
+      }
+      // A preset with a blank is put in the field with the blank selected, to be typed over; the input's own pause saves it.
+      urlInput.value = preset.value;
+      urlInput.focus();
+      urlInput.setSelectionRange(blank.start, blank.end);
+      presetNote.replaceChildren(...(preset.note === undefined ? [] : richText(preset.note)));
+      presetNote.hidden = preset.note === undefined;
+    };
+    for (const { group, presets: members } of presetGroups(urlField.presets ?? [])) {
+      const links = el('div', 'options__preset-links');
+      for (const preset of members) {
+        const button = el('button', 'options__preset', [preset.label]);
+        button.type = 'button';
+        button.title = preset.value;
+        button.addEventListener('click', () => choosePreset(preset));
+        presetButtons.push({ button, preset });
+        links.append(button);
+      }
+      if (group === null) presets.append(links);
+      else {
+        const label = el('span', 'options__preset-group', [group]);
+        label.id = `ai-presets-${group.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+        links.setAttribute('role', 'group');
+        links.setAttribute('aria-labelledby', label.id);
+        presets.append(label, links);
+      }
     }
     markPreset();
     urlSave.addEventListener('click', () => void saveUrl(urlInput.value));
@@ -927,10 +972,10 @@ async function main(): Promise<void> {
       // A pasted URL is saved by itself once it is a URL and typing has paused; no need to reach for Save.
       if (urlTimer !== null) clearTimeout(urlTimer);
       const value = normalizeAiBaseUrl(urlInput.value);
-      if (value === settings.aiBaseUrl || (value !== '' && !/^https:\/\/[^\s/]+/i.test(value))) return;
+      if (value === settings.aiBaseUrl || presetBlank(value) !== null || (value !== '' && gatewayOriginPattern(value) === null)) return;
       urlTimer = setTimeout(() => void saveUrl(urlInput.value), 900);
     });
-    block([urlHead.head, urlInput, presets, el('div', 'geld-row options__actions', [urlStatusEl, urlSave])]);
+    block([urlHead.head, urlInput, presets, presetNote, el('div', 'geld-row options__actions', [urlStatusEl, urlSave])]);
 
     /* Gateway key: local only; saving it loads the models. */
     const keyLabel = el('label', 'geld-label', ['AI gateway key']);

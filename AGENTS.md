@@ -942,8 +942,13 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `aiEnabled` is the master switch: off, nothing is requested whatever else is set;
   on, it takes effect only once `aiBaseUrl`, `aiModel` and the gateway key (`local:aiKey`) are all there, otherwise it behaves as off (`aiConfigured`).
   `aiBaseUrl` is normalised by `normalizeAiBaseUrl` (trailing slashes and a `/v1`/`/v2`/`/typesafe` tail come off;
-  every request adds its own `/v1/...`);
-  the field offers presets (Vercel AI Gateway, OpenRouter, OpenAI) that save on click, and a pasted URL saves itself once typing pauses.
+  every request adds its own `/v1/...`, except to a base that already ends in its own version, such as Gemini's `/v1beta/openai` — `joinUrl`'s `VERSIONED_BASE`);
+  the field offers presets as plain links, one labelled line per `TextPreset.group` (Gateways: Vercel AI Gateway, OpenRouter, Cloudflare · Providers: OpenAI, Amazon Bedrock, Azure OpenAI, Google Gemini, Groq · On this computer: Ollama), kept as links rather than a combobox so every option is seen at a glance.
+  A preset saves on click unless its value holds a `{blank}` (Bedrock's region, Azure's resource, Cloudflare's account), which is put in the field with the blank selected to type over and saved once typing pauses (`presetBlank`;
+  a URL still holding one is never saved), and `presetMatches` marks the saved preset with its blank filled in, showing its `note` under the links.
+  Bedrock is its OpenAI-compatible `bedrock-mantle` endpoint with a Bedrock API key (the only one that lists models;
+  SigV4 has no place in a key field), and plain http is accepted only on loopback (`LOOPBACK_HOSTS` in `ai-gateway.ts`, mirrored by the optional host permissions in `wxt.config.ts`), for Ollama, which also needs `OLLAMA_ORIGINS` to answer an extension.
+  A pasted URL saves itself once typing pauses.
   Saving the URL or the key loads `/v1/models` into the model `<select>`, which sits disabled with the reason above it until both exist (and offers an "Allow Geld to contact the gateway" control when Chrome has not granted the origin — `permissions.request` needs a click);
   the list is cached in `local:aiGateway` with the id of the gateway's Jev model, if any.
   **The prose tier** (`aiModel`: consolidation, TL;DR, fixes) is any chat model; **evaluation models are never offered for it** (`isEvaluationModel`: Jev produces no text, and picking it made every consolidation fail — and, before `attempted` in `ai.ts`, retry on every pass, shimmering the rows on and off).
