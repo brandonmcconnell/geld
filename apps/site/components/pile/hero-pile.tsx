@@ -4,7 +4,7 @@ import { cn } from 'cn';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useMediaQuery } from '@/components/use-media-query';
-import type { DigestRow } from '@/lib/pile-items';
+import type { DigestRow, PileItem } from '@/lib/pile-items';
 import { DIGEST_ROWS, digestOf, PILE_ITEMS, rowOf } from '@/lib/pile-items';
 import type { Body, Rect, World } from '@/lib/pile-physics';
 import { GRAVITY, seeded, settled, step, wake } from '@/lib/pile-physics';
@@ -115,6 +115,8 @@ function Playground() {
   const toggle = useRef<HTMLButtonElement | null>(null);
   const card = useRef<HTMLDivElement | null>(null);
   const rowEls = useRef(new Map<DigestRow, HTMLElement>());
+  /** Visible on screen; the loop runs only then. */
+  const visible = useRef(false);
   const els = useRef<(HTMLDivElement | null)[]>([]);
   /** Where each card is drawn, which trails its body only while an overlap push is eased in. */
   const shown = useRef<({ x: number; y: number; from: { x: number; y: number }; vx: number; vy: number; free: boolean } | undefined)[]>([]);
@@ -154,6 +156,15 @@ function Playground() {
     [],
   );
 
+  // Where a card being gathered heads: its line of the digest as the page lays it out now, else the card's top, else the sink.
+  const targetFor = useCallback((item: PileItem): { x: number; y: number } => {
+    const origin = layer.current?.getBoundingClientRect();
+    const line = rowEls.current.get(rowOf(item))?.getBoundingClientRect();
+    const into = line ?? card.current?.getBoundingClientRect();
+    if (origin === undefined || into === undefined) return world.current?.sink ?? { x: 0, y: 0 };
+    return { x: into.left - origin.left + Math.min(into.width * 0.5, 150), y: (line ? into.top + into.height / 2 : into.top + 22) - origin.top };
+  }, []);
+
   const paint = useCallback((dt = 0) => {
     const hidden: number[] = [];
     easing.current = false;
@@ -192,7 +203,8 @@ function Playground() {
   }, []);
 
   const run = useCallback(() => {
-    if (frame.current !== null) return;
+    // Offscreen, pours, the gather and resizes still change the world, and it catches up when it is back in view.
+    if (frame.current !== null || !visible.current) return;
     last.current = performance.now();
     const loop = (now: number): void => {
       frame.current = null;
@@ -204,7 +216,7 @@ function Playground() {
       paint(dt);
       const lastPour = pouredAt.current;
       if (landedAt.current === null && pending.current.size === 0 && bodies.current.length > 0 && (settled(bodies.current) || (lastPour !== null && now - lastPour > 3000))) landedAt.current = now;
-      if (!settled(bodies.current) || drag.current !== null || easing.current) frame.current = requestAnimationFrame(loop);
+      if (visible.current && (!settled(bodies.current) || drag.current !== null || easing.current)) frame.current = requestAnimationFrame(loop);
     };
     frame.current = requestAnimationFrame(loop);
   }, [paint]);
@@ -312,6 +324,14 @@ function Playground() {
         wake(bodies.current);
         run();
       }
+      // The digest moves with the layout, a frame later; cards on their way in head for where their lines are now.
+      requestAnimationFrame(() => {
+        if (disposed) return;
+        bodies.current.forEach((body, index) => {
+          const item = PILE_ITEMS[index];
+          if (item && body.mode === 'absorbing') body.target = targetFor(item);
+        });
+      });
     };
 
     const start = (): void => {
@@ -374,6 +394,7 @@ function Playground() {
     };
 
     const observer = new IntersectionObserver(([entry]) => {
+      visible.current = entry?.isIntersecting ?? false;
       if (entry?.isIntersecting) {
         start();
         run();
@@ -398,7 +419,7 @@ function Playground() {
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       frame.current = null;
     };
-  }, [measure, run, paint]);
+  }, [measure, run, paint, targetFor]);
 
   // Geld switches itself on a moment after the pile lands, unless the reader got there first.
   useEffect(() => {
@@ -463,9 +484,7 @@ function Playground() {
         body.held = false;
         timers.push(
           window.setTimeout(() => {
-            const line = rowEls.current.get(rowOf(item))?.getBoundingClientRect();
-            const into = line ?? head;
-            body.target = into ? { x: into.left - origin.left + Math.min(into.width * 0.5, 150), y: (line ? into.top + into.height / 2 : into.top + 22) - origin.top } : current.sink;
+            body.target = targetFor(item);
             body.mode = 'absorbing';
             body.spin = 0;
             run();
@@ -522,7 +541,7 @@ function Playground() {
     wake(bodies.current);
     run();
     return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [geld, run]);
+  }, [geld, run, targetFor]);
 
   // A card picked up comes to the front of the pile, still under the digest and the switch.
   const raise = (index: number): void => {
