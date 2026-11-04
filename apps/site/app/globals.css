@@ -182,6 +182,17 @@
   ::selection {
     @apply bg-foreground/90 text-background;
   }
+  /* The logo is an image, which `::selection` would only tint over. While selected (`BrandSelection`) it gets the
+     selection's background and the inverse of its own colour, as selected text does. */
+  [data-brand-logo] img::selection {
+    @apply bg-transparent;
+  }
+  [data-brand-logo][data-selected] {
+    @apply bg-foreground/90;
+  }
+  [data-brand-logo][data-selected] img {
+    @apply invert;
+  }
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-ring;
   }

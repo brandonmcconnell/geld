@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { BrandSelection } from '@/components/brand-selection';
 import { CornerShapePolyfill } from '@/components/corner-shape-polyfill';
 import { RouteTransition } from '@/components/route-transition';
 import { SiteFooter } from '@/components/site-footer';
@@ -60,6 +61,7 @@ export default function RootLayout({ children }: { readonly children: React.Reac
           Skip to content
         </a>
         <SmoothHashLinks />
+        <BrandSelection />
         <CornerShapePolyfill />
         <TooltipProvider>
           <SiteHeader />

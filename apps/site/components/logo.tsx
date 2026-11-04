@@ -49,7 +49,7 @@ function BrandPicture({ asset, height, alt, className, priority }: BrandImagePro
   // Static SVGs: nothing for next/image to optimise, and both files are ~1 KB.
   /* eslint-disable @next/next/no-img-element */
   return (
-    <span className={cn('inline-block leading-none', className)}>
+    <span data-brand-logo="" className={cn('inline-block leading-none', className)}>
       <img src={asset.light.pathname} alt={text} className="dark:hidden" {...shared} />
       <img src={asset.dark.pathname} alt={text} className="hidden dark:block" {...shared} />
     </span>
