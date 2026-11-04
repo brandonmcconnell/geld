@@ -8006,6 +8006,12 @@ dialog.geld-flow .geld-flow__title {
   gap: 8px;
 }
 
+/* Primer's close button is 32px; here it stands beside a `btn-sm` (28px), so it takes that height as a square. */
+dialog.geld-flow .geld-flow__actions .Overlay-closeButton {
+  width: 28px;
+  height: 28px;
+}
+
 /* The stage holds the scrolling diagram and the controls that float over its corner. */
 .geld-flow__stage {
   position: relative;
