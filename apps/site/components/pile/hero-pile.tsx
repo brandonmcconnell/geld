@@ -469,6 +469,11 @@ function Playground() {
     if (current === null || root === null || bodies.current.length === 0) return;
     const random = seeded(geld ? 3 : 5);
     const timers: number[] = [];
+    // Switched while a card is held (a second finger on the switch): let it go too, or it stays frozen with no pointer left to release it.
+    const dragged = drag.current?.index;
+    bodies.current.forEach((body, index) => {
+      if (index === dragged) body.held = false;
+    });
     drag.current = null;
     // Anything not yet poured goes straight into the card.
     if (geld) {
