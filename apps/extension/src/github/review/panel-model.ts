@@ -298,7 +298,9 @@ export function botHealth(bot: BotVerdictRecord): Health {
   if (bot.verdict === 'failed') return bot.reason === undefined ? 'bad' : 'warn';
   if (bot.verdict === 'clean' || allResolved(bot)) return 'good';
   if (bot.severity === 'high') return 'bad';
-  if (bot.score !== undefined) return bot.score >= 5 ? 'good' : bot.score >= 3 ? 'warn' : 'bad';
+  // A 5/5 with a finding still open is amber until its threads are resolved, as `botDetail`'s "5/5 · 1 issue" says.
+  const open = bot.verdict === 'findings' && bot.count !== undefined && bot.count > 0;
+  if (bot.score !== undefined) return bot.score < 3 ? 'bad' : bot.score >= 5 && !open ? 'good' : 'warn';
   return 'warn';
 }
 
