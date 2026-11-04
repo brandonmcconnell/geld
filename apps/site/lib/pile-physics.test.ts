@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Body, Rect, World } from './pile-physics';
-import { coreOf, rectOf, seeded, settled, step } from './pile-physics';
+import { boundsOf, coreOf, rectOf, seeded, settled, step } from './pile-physics';
 
 function body(x: number, y: number, w = 120, h = 24): Body {
   return { x, y, vx: 0, vy: 0, w, h, scale: 1, mode: 'free', held: false, still: 0 };
@@ -198,6 +198,17 @@ describe('the pile', () => {
     const at = bodies.map((b) => [b.x, b.y]);
     run(bodies, open, 2);
     bodies.forEach((b, i) => expect(Math.hypot(b.x - (at[i]?.[0] ?? 0), b.y - (at[i]?.[1] ?? 0))).toBe(0));
+  });
+
+  it('keeps the drawn corners of a tilted box off the words and above the floor', () => {
+    const onWords = { ...body(450, 200, 200, 40), angle: 0.45 };
+    const onFloor = { ...body(800, 400, 160, 40), angle: -0.45 };
+    run([onWords, onFloor], world, 3);
+    expect(settled([onWords, onFloor])).toBe(true);
+    expect(onWords.angle).toBe(0.45);
+    expect(overlaps(boundsOf(onWords), headline)).toBe(false);
+    expect(boundsOf(onWords).bottom).toBeCloseTo(headline.top, 0);
+    expect(boundsOf(onFloor).bottom).toBeLessThanOrEqual(world.floor + 0.5);
   });
 
   it('slides a box let go inside the words out of them over a few frames, rather than jumping clear in one', () => {

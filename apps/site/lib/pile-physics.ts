@@ -5,7 +5,8 @@
  * without a DOM. Boxes tilt and spin as they tumble, and against each other
  * they collide a little smaller than they are drawn, growing only partway with
  * the tilt, so a pile overlaps at its edges like a heap of papers rather than
- * stacking like bricks. Against obstacles and the walls they are their full size.
+ * stacking like bricks. Against obstacles, the walls and the floor they are the
+ * full box they are drawn in, tilt and all, so no corner covers the words.
  */
 
 export interface Rect {
@@ -90,6 +91,15 @@ const NESTLE_X = 0.82;
 const NESTLE_Y = 0.78;
 /** How much of a tilted box's true bounding height it collides with. */
 const TILT_HEIGHT = 0.45;
+
+/** The box a body is drawn in, tilt and all: what keeps it off the words, inside the walls and above the floor. */
+export function boundsOf(body: Body): Rect {
+  const sin = Math.abs(Math.sin(body.angle ?? 0));
+  const cos = Math.abs(Math.cos(body.angle ?? 0));
+  const hw = ((body.w * cos + body.h * sin) * body.scale) / 2;
+  const hh = ((body.h * cos + body.w * sin) * body.scale) / 2;
+  return { left: body.x - hw, top: body.y - hh, right: body.x + hw, bottom: body.y + hh };
+}
 
 export function rectOf(body: Body): Rect {
   const sin = Math.abs(Math.sin(body.angle ?? 0));
@@ -253,7 +263,7 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
 
 /** Keep a body inside the side walls and above the floor. */
 function bound(body: Body, world: World, grounded: Set<Body>): void {
-  const r = rectOf(body);
+  const r = boundsOf(body);
   const left = body.fence?.left ?? 0;
   const right = Math.min(body.fence?.right ?? world.width, world.width);
   if (r.left < left) body.x += escaping(body, left - r.left);
@@ -273,7 +283,7 @@ function escaping(body: Body, depth: number): number {
 
 /** Push a body out of a fixed rectangle along the shallower axis. */
 function pushOut(body: Body, obstacle: Rect, grounded: Set<Body>): void {
-  const r = rectOf(body);
+  const r = boundsOf(body);
   const ox = Math.min(r.right, obstacle.right) - Math.max(r.left, obstacle.left);
   const oy = Math.min(r.bottom, obstacle.bottom) - Math.max(r.top, obstacle.top);
   if (ox <= 0 || oy <= 0) return;
@@ -309,7 +319,7 @@ function rouse(body: Body, gently = true): void {
 
 /** Whether something is under a body to hold it up: the floor, an obstacle's top, or another body it rests on. */
 function supported(body: Body, bodies: readonly Body[], world: World): boolean {
-  const r = rectOf(body);
+  const r = boundsOf(body);
   if (r.bottom >= world.floor - TOUCH) return true;
   for (const obstacle of world.obstacles) {
     if (r.right > obstacle.left && r.left < obstacle.right && r.bottom >= obstacle.top - TOUCH && r.top < obstacle.top) return true;
