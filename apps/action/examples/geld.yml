@@ -31,7 +31,7 @@ on:
 
 env:
   # Names of repository secrets, never the keys themselves.
-  # Settings > Secrets and variables > Actions holds the keys. Empty leaves that bot off.
+  # Settings > Secrets and variables > Actions holds the keys. Empty keeps that bot's usual tag comment.
   # The Geld extension reads these names (never the keys) to know which bots its Rerun can start here.
   GELD_GREPTILE_SECRET_NAME: '' # e.g. GREPTILE_API_KEY (Greptile > Settings > Organization > API Keys)
   GELD_BUGBOT_SECRET_NAME: ''   # e.g. CURSOR_API_KEY (Cursor Dashboard > API Keys, admin scope, Cursor Enterprise)

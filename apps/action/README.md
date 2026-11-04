@@ -35,7 +35,7 @@ With AI on, the Action consolidates **bot-only** findings (people's comments kee
 
 The example workflow has a second job, `trigger`, that starts review bots through their own APIs when someone with write access comments `/geld run greptile` (or `bugbot`, `devin`, several separated by spaces). It helps when a bot is not picking up its own tag comment, since the bot never has to read the comment.
 
-Every bot is off until you turn it on. Store the bot's key as a repository secret (Settings > Secrets and variables > Actions), then put that secret's **name** in the workflow's `env` block:
+No bot is started by API until you set it up: until then it keeps its usual tag comment. Store the bot's key as a repository secret (Settings > Secrets and variables > Actions), then put that secret's **name** in the workflow's `env` block:
 
 | Bot | Workflow setting | Where the key comes from |
 |---|---|---|

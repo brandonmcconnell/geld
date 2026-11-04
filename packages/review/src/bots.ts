@@ -1710,8 +1710,8 @@ const WORKFLOW_SECRET_NAME = /^[ \t]*GELD_([A-Z]+)_SECRET_NAME:[ \t]*(['"]?)([A-
 /**
  * The bots a Geld workflow file can start by API: its trigger job is there
  * (`/geld run`) and its `GELD_<BOT>_SECRET_NAME` names the repository secret
- * holding that bot's key. Empty names (the default) leave a bot off, and so
- * does a value the workflow would refuse.
+ * holding that bot's key. An empty name (the default) keeps the bot's own tag
+ * comment, and so does a value the workflow would refuse.
  */
 export function workflowApiTriggerBots(text: string): ReadonlySet<string> {
   const bots = new Set<string>();
