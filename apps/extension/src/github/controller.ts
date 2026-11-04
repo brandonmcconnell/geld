@@ -46,7 +46,7 @@ import { markCrawlDirty, resetCrawlCache } from './review/crawler';
 import type { RepoBotsHint } from './review/panel-model';
 import { LIVE_CATCH_UP_EVENT, liveCatchUpDue } from './review/live-regions';
 import { catchUpTimeline } from './review/timeline-catchup';
-import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
+import { applyReviewOverview, foldDescriptionNow, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
 import { setFlowSource } from './review/flow';
 import type { FlowSource } from './review/flow';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
@@ -449,6 +449,8 @@ export class GeldController {
       if (chipRemoved(records)) this.applyListChips();
       // The status pill too: a header GitHub (re)rendered shows Geld's pill in its first frame.
       if (this.settings.quickReview && this.mayDressPage()) reassertStatusPills();
+      // The description GitHub just rendered (a switch back to the conversation tab) is folded in its first frame.
+      if (this.mayDressPage()) foldDescriptionNow(this.settings);
       // GitHub's skeleton back in the counts wrapper the group stands in by its fallback: out before this frame paints.
       if (this.settings.quickReview && this.currentPage !== null && quickReviewStandBusy()) this.placeQuickReview(this.currentPage, new URL(window.location.href));
       this.schedule(false);

@@ -348,12 +348,16 @@ function applyTo(body: HTMLElement): void {
   observe(body);
 }
 
-function clear(): void {
-  // The page and its choices stay: showing the full timeline and back keeps what the reader opened.
+function release(): void {
   wiring.signal.abort();
   wiring = { signal: new AbortController(), blocks: new WeakSet(), bodies: new WeakSet(), buttons: new WeakSet() };
   if (observed !== null) resizeObserver?.unobserve(observed);
   observed = null;
+}
+
+function clear(): void {
+  // The page and its choices stay: showing the full timeline and back keeps what the reader opened.
+  release();
   for (const element of document.querySelectorAll(`.${TOGGLE_CLASS}, .${MORE_CLASS}`)) element.remove();
   for (const element of document.querySelectorAll(`[${ATTR_DEPTH}]`)) {
     if (element instanceof HTMLElement) for (const name of RAIL_PROPERTIES) element.style.removeProperty(name);
@@ -389,4 +393,18 @@ export function shortenDescription(on: boolean): void {
   const body = descriptionBody();
   if (body === null) return;
   applyTo(body);
+}
+
+/** A description GitHub has rendered that is not shortened yet, as on a switch back to the conversation tab. */
+export function descriptionUnshortened(): boolean {
+  const body = descriptionBody();
+  return body !== null && !body.hasAttribute(ATTR_ON);
+}
+
+/**
+ * Stop handling the description but leave it as it is shown. On a switch to another tab GitHub keeps the
+ * conversation on screen until the next page replaces it, and unfolding it then showed it whole for a moment.
+ */
+export function releaseDescription(): void {
+  release();
 }

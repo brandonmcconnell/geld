@@ -614,6 +614,15 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Only that section's own default changes;
   its subsections follow the rule above, and what the reader opens or closes still wins.
   When text comes before the first heading, that text is the description, so every section starts by the outline rule alone.
+  **A tab switch never shows the description or the timeline unfolded.**
+  Signed in, GitHub moves the URL to the next tab first and swaps the page about 100 ms later (measured on geld#363, Nov 2026), and the pass that saw the new URL used to unfold everything in that window.
+  Leaving now keeps the description's and the timeline's folds (attributes on GitHub's nodes) and only stops handling them (`teardownReviewOverview(leaving)`, `releaseDescription`), so they go with the page;
+  anything still standing after `LEAVE_GRACE_MS` (3 s, GitHub never replaced the page) is cleared then, and switching the setting off clears at once.
+  The compact timeline's `<html>` attribute still goes at once, since its page-wide rules (tighter commit rows) would reach the next tab's own lists, and loans still go home with the panel, since a node left in the panel would be lost to a page GitHub restores from its cache.
+  Coming back, the description was shown whole for the 100 to 150 ms until the next pass;
+  the controller's mutation callback now folds a description GitHub has just rendered before the frame paints (`foldDescriptionNow`, `descriptionUnshortened`).
+  The timeline items GitHub's `rails-partial` swaps in about a second after arriving lose their folds, but stay out of sight under the rule for items not yet read (`data-geld-seen`), so they need nothing.
+  What still moves during a switch is the panel itself: it leaves with the loans just before the page goes and arrives with the first pass.
   Sections open and close independently (not the digest's one-open accordion), clicking anywhere on the heading but a link toggles it, and choices are remembered per page by the heading's position and text.
   Headings are slimmed as the chat view slims them (h1 and h2 16px, the rest 14px, no bottom border, a fixed 24px line), every block sits one level in (24px) per open section around it, and each open heading draws a rail from its chevron down to the end of its last visible block (`railsOf`, tested): the rails are custom properties on the block (`--geld-desc-rails`, `-rail-pos`, `-rail-size`, `-depth`) painted by its `::before`, which runs on through the block's bottom margin (`--geld-desc-after`) and 1px past it, since blocks start on fractional pixels and two rail pieces meeting edge to edge left a light seam, and stops at the content on a section's last block.
   Each 1px line starts half a pixel before the chevron's centre so its own centre is under it.
