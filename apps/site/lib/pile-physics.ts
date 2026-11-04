@@ -114,6 +114,7 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
   const before = new Map<Body, { readonly x: number; readonly y: number }>();
   const moved = new Map<Body, { readonly x: number; readonly y: number }>();
   const grounded = new Set<Body>();
+  const landed = new Set<Body>();
   for (const body of bodies) {
     if (body.mode === 'hidden') continue;
     if (body.mode === 'absorbing') {
@@ -149,7 +150,7 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
     }
     body.scale += (1 - body.scale) * Math.min(1, 10 * dt);
     // Resting stops gravity, so a body whose support was taken away (gathered into the digest, dragged off) would hang in the air.
-    if (!body.held && body.still >= SLEEP_AFTER && !supported(body, bodies, world)) body.still = 0;
+    if (!body.held && body.still >= SLEEP_AFTER && !supported(body, bodies, world)) rouse(body);
     if (body.held || body.still >= SLEEP_AFTER) continue;
     body.vy += GRAVITY * dt;
     const speed = Math.hypot(body.vx, body.vy);
@@ -172,7 +173,7 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
       if (first === undefined) continue;
       for (let b = a + 1; b < free.length; b++) {
         const second = free[b];
-        if (second !== undefined) separate(first, second, grounded);
+        if (second !== undefined) separate(first, second, grounded, landed);
       }
     }
     for (const body of free) {
@@ -210,12 +211,19 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
     }
     if (grounded.has(body)) {
       body.vx *= FRICTION;
-      if ((body.ghost ?? 0) > 0) {
-        body.ghost = 0;
-        body.settle = SETTLE_AFTER_GHOST;
-        body.settleFor = SETTLE_AT_MOST;
-      }
+      if ((body.ghost ?? 0) > 0) landed.add(body);
       if (body.spin !== undefined) body.spin *= 0.5;
+    }
+    // A card from the explosion stays where it first comes down, as it landed: the heap is already a heap of papers, and untangling it afterwards only read as cards rising and shoving each other for seconds.
+    if (landed.has(body)) {
+      body.ghost = 0;
+      body.settle = 0;
+      body.settleFor = 0;
+      body.vx = 0;
+      body.vy = 0;
+      body.spin = 0;
+      body.still = SLEEP_AFTER;
+      continue;
     }
     if (body.spin !== undefined && Math.abs(body.spin) < 0.05) body.spin = 0;
     if (Math.hypot(body.vx, body.vy) < SLEEP_SPEED) {
@@ -270,6 +278,14 @@ export function coreOf(body: Body): Rect {
   return { left: r.left + dx, top: r.top + dy, right: r.right - dx, bottom: r.bottom - dy };
 }
 
+/** Wake a resting body, gently unless the pointer is shoving it: a card roused inside a tangle and pushed at full strength shoved the heap apart. */
+function rouse(body: Body, gently = true): void {
+  body.still = 0;
+  if (!gently) return;
+  body.settle = SETTLE_AFTER_GHOST;
+  body.settleFor = SETTLE_AT_MOST;
+}
+
 /** Whether something is under a body to hold it up: the floor, an obstacle's top, or another body it rests on. */
 function supported(body: Body, bodies: readonly Body[], world: World): boolean {
   const r = rectOf(body);
@@ -287,7 +303,7 @@ function supported(body: Body, bodies: readonly Body[], world: World): boolean {
 }
 
 /** Separate two overlapping bodies; a held body does not move, so the other takes all of it. */
-function separate(a: Body, b: Body, grounded: Set<Body>): void {
+function separate(a: Body, b: Body, grounded: Set<Body>, landed: Set<Body>): void {
   const ra = coreOf(a);
   const rb = coreOf(b);
   const ox = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
@@ -298,7 +314,8 @@ function separate(a: Body, b: Body, grounded: Set<Body>): void {
   if (!a.held && !b.held && a.still >= SLEEP_AFTER && b.still >= SLEEP_AFTER) return;
   const slow = !a.held && !b.held && Math.hypot(a.vx - b.vx, a.vy - b.vy) < CONTACT_SPEED;
   if ((a.ghost ?? 0) > 0 && (b.ghost ?? 0) > 0) return;
-  // A card in flight comes down on one already down and rests on it the gentle way; on its way up, or launched from inside the heap, it passes through.
+  // A card in flight comes down on one already down and stays there; on its way up, or launched from inside the heap, it passes through.
+  let lander: Body | null = null;
   for (const [flying, other] of [
     [a, b],
     [b, a],
@@ -306,9 +323,11 @@ function separate(a: Body, b: Body, grounded: Set<Body>): void {
     if ((flying.ghost ?? 0) <= 0) continue;
     if (flying.vy <= 0 || flying.y > other.y || oy > LAND_DEPTH) return;
     flying.ghost = 0;
-    flying.settle = SETTLE_AFTER_GHOST;
-    flying.settleFor = SETTLE_AT_MOST;
+    landed.add(flying);
+    lander = flying;
   }
+  // Landed this step, it stays as it came down: still deep in a card it was passing through, it would otherwise pop out of it at once.
+  if (lander === null && (landed.has(a) || landed.has(b))) return;
   const settling = (a.settle ?? 0) > 0 || (b.settle ?? 0) > 0;
   const gentle = settling ? SETTLE_SHARE : 1;
   // Still tangled: both keep settling until they are apart, so the last of a heap never comes apart at full strength.
@@ -316,12 +335,12 @@ function separate(a: Body, b: Body, grounded: Set<Body>): void {
     if (!a.held && (a.settleFor ?? 0) > 0) a.settle = Math.max(a.settle ?? 0, 0.25);
     if (!b.held && (b.settleFor ?? 0) > 0) b.settle = Math.max(b.settle ?? 0, 0.25);
   }
-  // A resting body pushed by a moving one takes none of the push, so a pile stays put under a single landing; side by side and slow, they make room for each other.
+  // A resting body pushed by a moving one takes none of the push, so a pile stays put under a single landing; side by side, sharing it woke the neighbour, which woke the next, for as long as the walls kept them overlapping.
   const aRests = a.held || a.still >= SLEEP_AFTER;
   const bRests = b.held || b.still >= SLEEP_AFTER;
   let share = a.held ? 0 : b.held ? 1 : aRests && !bRests ? 0 : bRests && !aRests ? 1 : 0.5;
   if (ox < oy) {
-    if (slow) share = 0.5;
+    if (lander !== null) share = lander === a ? 1 : 0;
     const sign = a.x < b.x ? -1 : 1;
     const amount = ox * gentle;
     a.x += sign * amount * share;
@@ -334,6 +353,8 @@ function separate(a: Body, b: Body, grounded: Set<Body>): void {
       if (lowerRests) share = sign < 0 ? 1 : 0;
       else if (slow) share = 0.5;
     }
+    // Landing on a card is landing on the floor: the one underneath does not give, or it was shoved down tens of pixels a frame.
+    if (lander !== null) share = lander === a ? 1 : 0;
     const amount = oy * gentle;
     a.y += sign * amount * share;
     b.y -= sign * amount * (1 - share);
@@ -348,8 +369,8 @@ function separate(a: Body, b: Body, grounded: Set<Body>): void {
   }
   // A resting body that actually got moved (by the pointer, or by another resting body) wakes.
   const push = Math.min(ox, oy);
-  if (aRests && !a.held && push * share > 0.5) a.still = 0;
-  if (bRests && !b.held && push * (1 - share) > 0.5) b.still = 0;
+  if (aRests && !a.held && push * share > 0.5) rouse(a, !b.held);
+  if (bRests && !b.held && push * (1 - share) > 0.5) rouse(b, !a.held);
 }
 
 /** Whether nothing is moving enough to be worth another frame. */

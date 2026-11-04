@@ -171,6 +171,24 @@ describe('the pile', () => {
     expect(rectOf(flying).bottom).toBeLessThan(world.floor - 1);
   });
 
+  it('keeps a card from the explosion where it first comes down, without pushing the card it landed on', () => {
+    const open = { ...world, obstacles: [] };
+    const under = body(450, 588, 150, 24);
+    run([under], open, 1);
+    const at = { x: under.x, y: under.y };
+    const falling = { ...body(470, 400, 150, 24), vy: 900, ghost: 1 };
+    let landedAt: { x: number; y: number } | null = null;
+    for (let t = 0; t < 1.5; t += 1 / 120) {
+      step([under, falling], open, 1 / 120);
+      if (landedAt === null && falling.ghost === 0) landedAt = { x: falling.x, y: falling.y };
+    }
+    expect(landedAt).not.toBeNull();
+    expect(falling.x).toBe(landedAt?.x);
+    expect(falling.y).toBe(landedAt?.y);
+    expect(under).toMatchObject(at);
+    expect(settled([under, falling])).toBe(true);
+  });
+
   it('brings a landed heap to rest for good, with nothing still twitching once it has slept', () => {
     const random = seeded(9);
     const open = { ...world, obstacles: [] };
