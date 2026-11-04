@@ -300,7 +300,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Bugbot's "Fix All in Cursor" is an action, not a view, and the other bots post none).
   The tooltip keeps the badge's words.
   The badge is hidden in the bubble (`data-geld-agent-view`), and the block holding it goes too once nothing else in it shows (`hideAgentBadge`: Greptile's two badges share one paragraph with a `<br clear="all">`, a blank line once both are gone).
-  Running — the bot's verdict, or a click within `RERUN_PENDING_MS` (`visit.rerunPending`), taken on in place at the click before the pass sees the comment — turns the border transparent (never removed: the box keeps its size), fades the control, spins the glyph, keeps the word (so nothing shifts), uses the default pointer and GitHub's own `tool-tip` element ("Greptile is running";
+  Running — the bot's verdict, or a request still starting (`bot-requests.ts`, below), taken on in place at the click before the pass sees the comment — turns the border transparent (never removed: the box keeps its size), fades the control, spins the glyph, keeps the word (so nothing shifts), uses the default pointer and GitHub's own `tool-tip` element ("Greptile is running";
   the page's custom element upgrades ours);
   a click then opens a Primer `Overlay` dialog ("Greptile is already running" · Cancel focused · "Rerun anyway") before posting a second trigger.
   **The same control stands on the pinned strip** over a thread's chat while the strip is open (`ChatSource.rerun`/`latestAnchor`, `sourceControl`, `.geld-review__chat-pin-row`), and the badge is hidden there too.
@@ -311,6 +311,17 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Lines are ordered by how the bot is known (`BotPresence`): `seen` on the page (`/apps/<slug>` links in comments, the checks list and the reviewers box, payload verdicts and item sources, check runs by name, trigger comments), `declared` by the repository's `reviewBots`, `configured` by one of its own files in the repository (both from the controller's `repoBotsHint`, declared only once the config applies under the reader's `repoConfigs` choice), then `other`, the rest of the registry behind an "Other bots (N)" disclosure, since a trigger for a bot that is not installed is a public comment with a handle in it;
   with nothing pointing at any bot the registry is the list.
   Under a separator, Run ("Run Bugbot", "Run 2 bots", disabled with nothing ticked) posts one trigger comment per ticked bot in sequence and Cancel, Escape or a click outside closes.
+  **A request shows from the click, and says so when the bot never takes it** (`bot-requests.ts`: `botRequestStates`, `withBotRequests`;
+  `visit.requests` holds this visit's clicks from the menu and Rerun, with whether the trigger posted).
+  Until the bot shows a sign of life (a reaction on the trigger, any comment or edit of its own since, its check run queued, running or begun since), its pill and line wear Primer's spinner and "starting", and the verdicts read it as `running` (a record is made for a bot that never ran here), so the menu's glyph and Rerun spin too.
+  A bot that acknowledges with a reaction gets `REQUEST_ACK_MS` (20 s), the rest `REQUEST_ACK_SLOW_MS` (60 s: Bugbot's first sign is its check, later than a reaction).
+  Past that with no sign the pill wears the warning triangle and "no response", its card says the bot likely didn't run, and the request menu lists it as "No response", ticked;
+  a trigger that never posted reads "not posted".
+  The window is timed from the click, else from the trigger comment, so a reload or a trigger typed into GitHub's own box behaves the same;
+  past it the state stands only for this visit's own ask or a verdict still `running` on the request alone, so an old unanswered request never hides a settled verdict.
+  Any later sign clears it and the bot's words decide as before.
+  A `/geld run` request is answered by the Geld workflow's reaction, not the bot's: its 🚀 clears the state, its 👎 is "no response" at once, and the window is the longer one, since the workflow's job has to start first.
+  `reapplyAt` draws the switch when the window ends.
   `postTopLevelComments` posts each trigger straight to `page_data/create_timeline_comment` (what GitHub's composer sends, `timeline-comment.ts`), never through the comment box at the foot of the conversation, which scrolled the reader to it and focused it, then catches the timeline up (`catchUpAfterPost`) so the triggers show, and their bots read as running, without a reload.
   `mountPanel` does not rebuild while the menu is open (the picks would be lost);
   closing it calls `onRequestMenuClosed` → `reapplySoon`, so whatever changed meanwhile renders then.
