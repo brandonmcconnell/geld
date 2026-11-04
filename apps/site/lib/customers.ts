@@ -32,5 +32,6 @@ export const CUSTOMERS: readonly Customer[] = [
   { name: 'Mercury', url: 'https://mercury.com', logo: { src: '/logos/mercury.svg', aspect: 139 / 32, height: 36 }, markOnly: false },
   { name: 'CodeRabbit', url: 'https://www.coderabbit.ai', logo: { src: '/logos/coderabbit.svg', aspect: 145 / 18, height: 19 }, markOnly: false },
   { name: 'Notra', url: 'https://www.usenotra.com', logo: { src: '/logos/notra.svg', aspect: 1, height: 24 }, markOnly: true },
+  { name: 'Tripwire', url: 'https://tripwire.sh', logo: { src: '/logos/tripwire.svg', aspect: 485 / 99, height: 24 }, markOnly: false },
   { name: 'Loctax', url: 'https://www.loctax.com', logo: { src: '/logos/loctax.svg', aspect: 1, height: 22 }, markOnly: true },
 ];
