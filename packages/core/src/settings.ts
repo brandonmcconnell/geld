@@ -240,8 +240,10 @@ export const DEFAULT_SETTINGS: GeldSettings = {
  * `https://openrouter.ai/api/v1` both become usable bases.
  */
 export function normalizeAiBaseUrl(value: string): string {
-  return value
-    .trim()
+  const trimmed = value.trim();
+  // A bare host ("api.openai.com") is https; saved without a scheme, every request would be a relative URL.
+  const withScheme = trimmed === '' || /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  return withScheme
     .replace(/\/+$/, '')
     .replace(/\/(?:v\d+|typesafe)$/i, '')
     .replace(/\/+$/, '');
