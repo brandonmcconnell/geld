@@ -1839,7 +1839,7 @@ export class GeldController {
 
   /** The tab bar's "Submit review", before the line counts on every pull request tab (quick-review.ts). */
   private placeQuickReview(page: PageInfo, url: URL): void {
-    applyQuickReview(this.settings.quickReview, { page, groups: this.headerGroupsFor(page), headSha: () => this.headShaFor(page, url), digest: this.settings.prOverview });
+    applyQuickReview(this.settings.quickReview, { page, groups: this.headerGroupsFor(page), headSha: () => this.headShaFor(page, url), digest: this.settings.prOverview, holdToMerge: this.settings.holdToMerge });
   }
 
   private publish(state: TabState): void {
