@@ -53,7 +53,6 @@ export function SiteFooter() {
       </div>
       <div className="container-site flex flex-col gap-2 border-t py-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
         <p>© {AUTHOR.name}. Not affiliated with GitHub.</p>
-        <p>No analytics, no cookies, no tracking on this site either.</p>
       </div>
     </footer>
   );
