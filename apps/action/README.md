@@ -39,14 +39,16 @@ Every bot is off until you turn it on. Store the bot's key as a repository secre
 
 | Bot | Workflow setting | Where the key comes from |
 |---|---|---|
-| `greptile` | `GELD_GREPTILE_KEY_SECRET` | Greptile, Settings > Organization > API Keys. Calls `trigger_code_review` on `api.greptile.com/mcp`. |
-| `bugbot` | `GELD_BUGBOT_KEY_SECRET` | Cursor Dashboard > API Keys, admin scope (Cursor Enterprise). Calls `POST api.cursor.com/bugbot/review`. |
-| `devin` | `GELD_DEVIN_KEY_SECRET` (and `GELD_DEVIN_ORG_ID` for an enterprise-wide key) | A Devin service user with `UseReviewManual`. Its organization is read from the key (`GET /v3/self`); an enterprise-wide key spans several, so name the organization id (not a secret). Calls `POST api.devin.ai/v3/organizations/{org}/pr-reviews`. |
+| `greptile` | `GELD_GREPTILE_SECRET_NAME` | Greptile, Settings > Organization > API Keys. Calls `trigger_code_review` on `api.greptile.com/mcp`. |
+| `bugbot` | `GELD_BUGBOT_SECRET_NAME` | Cursor Dashboard > API Keys, admin scope (Cursor Enterprise). Calls `POST api.cursor.com/bugbot/review`. |
+| `devin` | `GELD_DEVIN_SECRET_NAME` (and `GELD_DEVIN_ORG_ID` for an enterprise-wide key) | A Devin service user with `UseReviewManual`. Its organization is read from the key (`GET /v3/self`); an enterprise-wide key spans several, so name the organization id (not a secret). Calls `POST api.devin.ai/v3/organizations/{org}/pr-reviews`. |
 
 ```yaml
 env:
-  GELD_GREPTILE_KEY_SECRET: GREPTILE_API_KEY # the name of your secret, not the key
+  GELD_GREPTILE_SECRET_NAME: GREPTILE_API_KEY # the name of your secret, never the key
 ```
+
+- **Names only:** a value that isn't shaped like a secret's name as GitHub lists it (capital letters, digits, underscores) is refused with a 😕, without being repeated anywhere: it is most likely a key pasted into a committed file. Remove it from the workflow and rotate that key.
 
 - **Who can trigger:** secrets are available to every comment's run, so the job checks the commenter's permission first and refuses anyone without write access, and comments from bot accounts.
 - **Whose key it is:** every bot acts for the organization or team the key belongs to, not for the person who commented: none of the three APIs takes a requester. Who asked is on GitHub, in the comment and in the run's log (`review queued for <login>`). Use an organization's key, not a personal one: a Devin personal access token acts as the person who made it, and a Cursor API key belongs to the team.

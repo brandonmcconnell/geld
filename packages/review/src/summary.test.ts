@@ -820,14 +820,16 @@ describe('bots + prompts', () => {
     expect(geldRunAnswer({ reactions: [{ login: 'brandonmcconnell', emoji: 'rocket' }] })).toBeNull();
     // A workflow offers a bot only when it names the secret holding the bot's key; the copied file names none.
     const workflow = (greptile: string, bugbot: string): string =>
-      `env:\n  GELD_GREPTILE_KEY_SECRET: ${greptile}\n  GELD_BUGBOT_KEY_SECRET: ${bugbot}\n  GELD_DEVIN_KEY_SECRET: ''\njobs:\n  trigger:\n    if: startsWith(github.event.comment.body, '/geld run')\n`;
+      `env:\n  GELD_GREPTILE_SECRET_NAME: ${greptile}\n  GELD_BUGBOT_SECRET_NAME: ${bugbot}\n  GELD_DEVIN_SECRET_NAME: ''\njobs:\n  trigger:\n    if: startsWith(github.event.comment.body, '/geld run')\n`;
     expect([...workflowApiTriggerBots(workflow("''", "''"))]).toEqual([]);
     expect([...workflowApiTriggerBots(workflow('GREPTILE_API_KEY', "'CURSOR_KEY' # team key"))]).toEqual(['greptile', 'bugbot']);
+    // A key pasted where the name goes is not a name: the workflow refuses it, so the bot is not offered.
+    expect([...workflowApiTriggerBots(workflow('cog_abc123', "'key_9f8e7d'"))]).toEqual([]);
     expect([...workflowApiTriggerBots(workflow('GREPTILE_API_KEY', "''").replace("'/geld run'", "'/other'"))]).toEqual([]);
     // The workflow teams copy names no secret, so it offers no bot until they name one.
     const shipped = readFileSync(new URL('../../../apps/action/examples/geld.yml', import.meta.url), 'utf8');
     expect([...workflowApiTriggerBots(shipped)]).toEqual([]);
-    expect([...workflowApiTriggerBots(shipped.replace("GELD_GREPTILE_KEY_SECRET: ''", 'GELD_GREPTILE_KEY_SECRET: GREPTILE_API_KEY'))]).toEqual(['greptile']);
+    expect([...workflowApiTriggerBots(shipped.replace("GELD_GREPTILE_SECRET_NAME: ''", 'GELD_GREPTILE_SECRET_NAME: GREPTILE_API_KEY'))]).toEqual(['greptile']);
     const summary = { author: 'greptile-apps[bot]', body: 'Confidence Score: 5/5\nNo issues found.', anchor: 'issuecomment-1', createdAt: at(60) };
     const command = { author: 'brandonmcconnell', body: '/geld run greptile', anchor: 'issuecomment-3', createdAt: at(5) };
     const queued = { ...command, reactions: [{ login: 'github-actions[bot]', emoji: 'rocket' }] };

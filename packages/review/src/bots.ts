@@ -1705,17 +1705,19 @@ export function geldRunBots(body: string): readonly string[] {
   return ids.every((id) => API_TRIGGER_BOT_IDS.includes(id)) ? ids : [];
 }
 
-const WORKFLOW_KEY_SECRET = /^[ \t]*GELD_([A-Z]+)_KEY_SECRET:[ \t]*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2[ \t]*(?:#.*)?$/gm;
+// A secret's name as GitHub lists it: the workflow refuses anything else, most likely a key pasted into the file.
+const WORKFLOW_SECRET_NAME = /^[ \t]*GELD_([A-Z]+)_SECRET_NAME:[ \t]*(['"]?)([A-Z_][A-Z0-9_]*)\2[ \t]*(?:#.*)?$/gm;
 
 /**
  * The bots a Geld workflow file can start by API: its trigger job is there
- * (`/geld run`) and its `GELD_<BOT>_KEY_SECRET` names the repository secret
- * holding that bot's key. Empty names (the default) leave a bot off.
+ * (`/geld run`) and its `GELD_<BOT>_SECRET_NAME` names the repository secret
+ * holding that bot's key. Empty names (the default) leave a bot off, and so
+ * does a value the workflow would refuse.
  */
 export function workflowApiTriggerBots(text: string): ReadonlySet<string> {
   const bots = new Set<string>();
   if (!text.includes('/geld run')) return bots;
-  for (const match of text.matchAll(WORKFLOW_KEY_SECRET)) {
+  for (const match of text.matchAll(WORKFLOW_SECRET_NAME)) {
     const id = match[1]?.toLowerCase();
     if (id !== undefined && API_TRIGGER_BOT_IDS.includes(id)) bots.add(id);
   }
