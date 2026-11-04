@@ -226,6 +226,15 @@ A status line, then a refusal:
 }
 ```
 
+### Whole comments
+
+[`examples/`](./examples) holds two comments exactly as a bot would post them, raw Markdown and all, modelled on Greptile's real review of [geld#68](https://github.com/brandonmcconnell/geld/pull/68):
+
+- [`greptile-summary.md`](./examples/greptile-summary.md): the summary comment. Greptile's prose and its own markers (`<!-- greptile_summary -->`, `<!-- greptile_confidence_score:5 -->`) are unchanged, and one `<!-- crf:v0 {…} -->` line at the end adds the score, the merge risk, the finding and the Retrigger and View links.
+- [`greptile-thread.md`](./examples/greptile-thread.md): the thread comment for that finding, carrying the same finding with `kind: "finding"`.
+
+On the page both read as they do today. Through the API, the CLI or GitHub's MCP server, the line at the end is there to parse. A test keeps both examples valid as the schema changes.
+
 ## Rules
 
 1. **One block per comment.** If a comment holds several, readers use the last.

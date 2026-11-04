@@ -139,3 +139,20 @@ describe('JSON Schema', () => {
     expect([...kinds].sort()).toEqual(['finding', 'refusal', 'reply', 'status', 'summary']);
   });
 });
+
+describe('whole-comment examples', () => {
+  const read = (name: string) => readFileSync(new URL(`../examples/${name}`, import.meta.url), 'utf8');
+
+  it('the summary carries a valid summary block beside Greptile’s own markers', () => {
+    const body = read('greptile-summary.md');
+    expect(body).toContain('<!-- greptile_confidence_score:5 -->');
+    const block = parseBlock(body);
+    expect(block?.kind).toBe('summary');
+    expect(block?.kind === 'summary' ? block.result?.findings?.[0]?.id : undefined).toBe('fenced-examples-become-claims');
+  });
+
+  it('the thread comment carries the same finding', () => {
+    const block = parseBlock(read('greptile-thread.md'));
+    expect(block?.kind === 'finding' ? block.finding.id : undefined).toBe('fenced-examples-become-claims');
+  });
+});
