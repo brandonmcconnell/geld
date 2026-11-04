@@ -7,7 +7,7 @@
 
 import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
 import type { GeldSettings } from '@geld/core';
-import type { BotVerdictRecord, CommentLane, GeldPrMeta, RawCheckRun, ReviewItem, ReviewerState } from '@geld/review';
+import type { BotComment, BotVerdictRecord, CommentLane, GeldPrMeta, RawCheckRun, ReviewItem, ReviewerState } from '@geld/review';
 import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, commandReply, firstSentence, isOpenStatus, isReviewShaped, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, mergeCheckRuns, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
@@ -39,6 +39,8 @@ import { descriptionUnshortened, releaseDescription, shortenDescription } from '
 import { applyFolds, closureKindOf, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
+import type { BotRequestClick } from './bot-requests';
+import { botRequestStates, nextRequestDeadline, requestSentence, withBotRequests } from './bot-requests';
 import { ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
@@ -151,11 +153,12 @@ interface VisitState {
    */
   pinnedEntry: { readonly anchor: string; readonly preview: string; readonly time: string; readonly avatarSrc: string | null } | null;
   /**
-   * Bots asked to run again from a chat's Rerun button, with when: the
-   * button spins from the click, before the trigger comment is on the page
-   * and the crawl reads the bot as running (see `RERUN_PENDING_MS`).
+   * Bots asked for a review from Geld this visit (the request menu or a
+   * chat's Rerun), with when and whether the trigger posted: their pills
+   * spin from the click, before the trigger comment is on the page
+   * (`botRequestStates`).
    */
-  rerunPending: Map<string, number>;
+  requests: Map<string, BotRequestClick>;
 }
 
 const visit: VisitState = {
@@ -185,11 +188,8 @@ const visit: VisitState = {
   manualDone: new Set(),
   settling: null,
   pinnedEntry: null,
-  rerunPending: new Map(),
+  requests: new Map(),
 };
-
-/** A Rerun click shows as running for this long on its own; by then the trigger comment is on the page or the post failed. */
-const RERUN_PENDING_MS = 30_000;
 
 /** The open comment line wears the words it opened with (see `VisitState.pinnedEntry`). */
 function pinOpenEntry(entries: readonly ReviewEntry[]): readonly ReviewEntry[] {
@@ -489,37 +489,48 @@ function unique<T>(values: readonly T[]): T[] {
 
 type Crawled = ReturnType<typeof crawlConversation>;
 
-function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: string, generatedAt: string, partial: boolean, threadsRead: boolean): GeldPrMeta {
-  const comments = crawled.comments.map((entry) => entry.comment);
-  const items = clusterComments(comments, settings.reviewBots);
-  // The head's check rows, as the Action would read them from the API: a bot whose run finished green and that
-  // flagged nothing is clean, whatever its opening comment said. A run's start (shown while it runs, kept after)
-  // is a run asked for as surely as a trigger comment, and a report is a word newer than that start. The page's
-  // merge box has the rows only when expanded (and not at all once the pull request is merged or closed), so the
-  // commit's status partial fills in what it does not show (`check-source.ts`).
+/**
+ * The head's check rows, as the Action would read them from the API: a bot whose run finished green and that flagged
+ * nothing is clean, whatever its opening comment said. A run's start (shown while it runs, kept after) is a run asked
+ * for as surely as a trigger comment, and a report is a word newer than that start. The page's merge box has the rows
+ * only when expanded (and not at all once the pull request is merged or closed), so the commit's status partial fills
+ * in what it does not show (`check-source.ts`).
+ */
+function botChecks(headSha: string): readonly RawCheckRun[] {
   const checks = withRunTimes(pageChecks(headSha), visit.pageKey, headSha, reapplySoon);
   // The grace a finished check's report is given ends on a clock, not on a page change: a pass is due then.
   const graceEnd = nextRunGraceEnd(checks, REPORT_GRACE_MS);
   if (graceEnd !== null) reapplyAt(graceEnd);
+  return checks;
+}
+
+/** The crawled comments as the bots' verdicts read them (`verdictsFrom`, `botRequestStates`). */
+function botCommentsOf(crawled: Crawled, settings: GeldSettings): readonly BotComment[] {
+  return crawled.comments.map(({ comment, author }) => {
+    const bot = author.bot ? resolveBotId(author.login, settings.reviewBots) : null;
+    // A review bot's summary: when it was last rewritten says whether a run asked for since has reported into it,
+    // or whether it is the bot's latest word over an older run's threads (`verdictsFrom`). `editedAt` asks the
+    // edit log only for a comment the page marks as edited, and the rounds ask it for the same comments anyway.
+    const node = comment.kind !== 'thread' && bot !== null ? document.getElementById(comment.anchor) : null;
+    const edited = node === null ? null : editedAt(node, reapplySoon);
+    return {
+      author: comment.author,
+      body: comment.body,
+      anchor: comment.anchor,
+      ...(comment.createdAt === '' ? {} : { createdAt: comment.createdAt }),
+      ...(comment.reactedBy === undefined ? {} : { reactedBy: comment.reactedBy }),
+      ...(edited === null ? {} : { editedAt: edited }),
+      ...(comment.kind === 'thread' && comment.isResolved !== undefined ? { resolved: comment.isResolved } : {}),
+    };
+  });
+}
+
+function buildFromComments(crawled: Crawled, botComments: readonly BotComment[], checks: readonly RawCheckRun[], settings: GeldSettings, headSha: string, generatedAt: string, partial: boolean, threadsRead: boolean): GeldPrMeta {
+  const comments = crawled.comments.map((entry) => entry.comment);
+  const items = clusterComments(comments, settings.reviewBots);
   const bots = verdictsFrom(
     checks,
-    crawled.comments.map(({ comment, author }) => {
-      const bot = author.bot ? resolveBotId(author.login, settings.reviewBots) : null;
-      // A review bot's summary: when it was last rewritten says whether a run asked for since has reported into it,
-      // or whether it is the bot's latest word over an older run's threads (`verdictsFrom`). `editedAt` asks the
-      // edit log only for a comment the page marks as edited, and the rounds ask it for the same comments anyway.
-      const node = comment.kind !== 'thread' && bot !== null ? document.getElementById(comment.anchor) : null;
-      const edited = node === null ? null : editedAt(node, reapplySoon);
-      return {
-        author: comment.author,
-        body: comment.body,
-        anchor: comment.anchor,
-        ...(comment.createdAt === '' ? {} : { createdAt: comment.createdAt }),
-        ...(comment.reactedBy === undefined ? {} : { reactedBy: comment.reactedBy }),
-        ...(edited === null ? {} : { editedAt: edited }),
-        ...(comment.kind === 'thread' && comment.isResolved !== undefined ? { resolved: comment.isResolved } : {}),
-      };
-    }),
+    botComments,
     headSha,
     settings.reviewBots,
     Date.now(),
@@ -1774,7 +1785,8 @@ function botCardLine(record: BotVerdictRecord): string {
 function whoCardFor(login: string, meta: GeldPrMeta, model: PanelModel): WhoCard | null {
   const record = meta.bots.find((bot) => bot.login.toLowerCase() === login.toLowerCase()) ?? null;
   const slug = login.replace(/\[bot\]$/i, '');
-  const detail = record === null ? 'GitHub App' : `${botCardLine(record)}${isCurrent(record, meta.headSha) ? '' : ' (an earlier commit)'}`;
+  const request = record === null ? undefined : model.botRequests.get(record.id);
+  const detail = record === null ? 'GitHub App' : request !== undefined ? requestSentence(request) : `${botCardLine(record)}${isCurrent(record, meta.headSha) ? '' : ' (an earlier commit)'}`;
   return {
     avatarSrc: (record === null ? null : model.botIconFor(record.id)) ?? avatarSrcForLogin(login),
     name: record === null ? botTitleFor(login) : botTitle(record.id, record.login),
@@ -2145,14 +2157,19 @@ function withRerun(byline: ChatByline, author: string, anchor: string, meta: Gel
 function rerunFor(id: string, author: string, meta: GeldPrMeta, reapply: () => void): ChatRerun | null {
   const trigger = rerunTriggerFor(id);
   if (trigger === null) return null;
-  const pending = visit.rerunPending.get(id);
-  const running = meta.bots.some((bot) => bot.id === id && bot.verdict === 'running') || (pending !== undefined && Date.now() - pending < RERUN_PENDING_MS);
+  // A request still starting is laid over the verdicts as running (`withBotRequests`), so the click spins it too.
+  const running = meta.bots.some((bot) => bot.id === id && bot.verdict === 'running');
   return {
     bot: botTitle(id, author),
     running,
     onRerun: () => {
-      visit.rerunPending.set(id, Date.now());
-      void postTopLevelComments([trigger]).then(() => reapplySoon());
+      const requests = visit.requests;
+      const at = Date.now();
+      requests.set(id, { at, posted: null });
+      void postTopLevelComments([trigger]).then((posted) => {
+        if (requests.get(id)?.at === at) requests.set(id, { at, posted: posted > 0 });
+        reapplySoon();
+      });
       reapply();
     },
   };
@@ -2884,7 +2901,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     resetHeadChecks();
     botLineMemo.clear();
     visit.manualDone = new Set();
-    visit.rerunPending = new Map();
+    visit.requests = new Map();
     checksSectionEl = null;
     mergeHomeEl = null;
     // This device's AI run for the pull request, if any; the pass re-applies once it is read.
@@ -2927,7 +2944,13 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // the fetch limit or a failed fetch leave unread, so a bot's resolved thread may be there unseen. Coverage is what the
   // page holds (each fragment's fetched markup standing in it), not what is still worth asking for.
   const threadsRead = complete && deferredFragments().every(({ src }) => fragmentRead(src));
-  const composed = phase('cluster', () => composeMeta(found, buildFromComments(crawledDom, settings, headSha, visit.generatedAt, partial, threadsRead), complete));
+  const botComments = botCommentsOf(crawledDom, settings);
+  const checks = botChecks(headSha);
+  const composed = phase('cluster', () => composeMeta(found, buildFromComments(crawledDom, botComments, checks, settings, headSha, visit.generatedAt, partial, threadsRead), complete));
+  // A review asked for and not yet answered: the pill spins from the click, and says so if the bot never shows a sign.
+  const botRequests = botRequestStates({ clicks: visit.requests, comments: botComments, checks, bots: composed.meta.bots, extraLogins: settings.reviewBots, now: Date.now() });
+  const requestDeadline = nextRequestDeadline(botRequests);
+  if (requestDeadline !== null) reapplyAt(requestDeadline);
   // Then the threads, now that items exist: whether the replies say a thread is done.
   const bodies = new Map(crawledDom.comments.map((entry) => [entry.comment.anchor, { author: entry.author.login, body: entry.comment.body }] as const));
   const threads: ThreadToClassify[] = composed.meta.items
@@ -2943,7 +2966,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       .map((entry) => ({ preview: entry, text: docText.get(entry.anchor) ?? '' })),
   );
   jevNow = phase('jev', () => jevDecisionsFor(settings, topLevel, threads, reapplySoon, unknownPreviews));
-  const meta = phase('paths', () => withWholePaths(withManualDone(withJevDone(composed.meta, jevNow.done))));
+  const meta = phase('paths', () => withWholePaths(withManualDone(withJevDone({ ...composed.meta, bots: withBotRequests(composed.meta.bots, botRequests, headSha) }, jevNow.done))));
   // A review's or run summary's threads as chips under its opened bubble, by file, each leading to its row.
   const threadLinks = (threads: readonly ReviewThreadRef[]): ChatThreadLink[] =>
     threads.map((thread) => {
@@ -3168,6 +3191,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     refsVersion: refsVersion(),
     editsVersion: editsVersion(),
     running: meta.bots.some((bot) => bot.verdict === 'running'),
+    botRequests,
     reviews: (visit.lastReviews = requiredReviewsFrom(boxText, reviewers, { knownRequired: visit.knownRequired }) ?? visit.lastReviews),
     myReactionFor: (anchor) => myReactionOn(anchor),
     timeFor: (anchor) => timeTextOf(document.getElementById(anchor), anchor),
@@ -3288,11 +3312,14 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         return trigger === null ? [] : [{ id, trigger }];
       });
       // This visit's map: a move to another pull request while the posts are out gives the new one a map of its own.
-      const rerunPending = visit.rerunPending;
-      for (const { id } of requested) rerunPending.set(id, Date.now());
+      const requests = visit.requests;
+      const at = Date.now();
+      for (const { id } of requested) requests.set(id, { at, posted: null });
       void postTopLevelComments(requested.map(({ trigger }) => trigger)).then((posted) => {
-        // The posts stop at the first refusal: the bots after it were never asked and do not read as running.
-        for (const { id } of requested.slice(posted)) rerunPending.delete(id);
+        // The posts stop at the first refusal: the bots after it were never asked, and their pills say so.
+        requested.forEach(({ id }, index) => {
+          if (requests.get(id)?.at === at) requests.set(id, { at, posted: index < posted });
+        });
         reapplySoon();
       });
     },
