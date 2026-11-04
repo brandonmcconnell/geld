@@ -18,7 +18,7 @@ import { bindSwitch, requireElement } from '../../src/ui/switch';
 import { svgFromString } from '../../src/github/dom';
 import { describePage } from '../../src/github/page';
 import type { PageKind } from '../../src/github/page';
-import { ICON_BEAKER, ICON_EYE_CLOSED } from '../../src/github/ui/icons';
+import { ICON_BEAKER, ICON_EYE_CLOSED, ICON_INFO } from '../../src/github/ui/icons';
 import { wireFeedbackLink } from '../../src/ui/feedback-link';
 
 interface ActiveTab {
@@ -137,20 +137,85 @@ async function main(): Promise<void> {
     return row;
   }
 
-  function renderToggle(field: ToggleField): HTMLElement {
-    const label = document.createElement('span');
-    label.className = 'geld-label';
+  /* One tooltip for every info icon, shown at once on hover or focus, with a caret pointing at the icon. */
+  const tip = document.createElement('div');
+  tip.className = 'popup__tip';
+  tip.setAttribute('role', 'tooltip');
+  tip.hidden = true;
+  document.body.append(tip);
+
+  function showTip(anchor: HTMLElement, text: string): void {
+    tip.textContent = text;
+    tip.hidden = false;
+    const box = anchor.getBoundingClientRect();
+    const margin = 8;
+    const gap = 8;
+    const width = tip.offsetWidth;
+    const height = tip.offsetHeight;
+    const centre = box.left + box.width / 2;
+    const left = Math.min(Math.max(margin, centre - width / 2), window.innerWidth - margin - width);
+    const below = box.bottom + gap + height + margin <= window.innerHeight || box.top - gap - height < margin;
+    tip.dataset.side = below ? 'bottom' : 'top';
+    tip.style.left = `${left}px`;
+    tip.style.top = `${below ? box.bottom + gap : box.top - gap - height}px`;
+    tip.style.setProperty('--caret-x', `${Math.min(Math.max(10, centre - left), width - 10)}px`);
+  }
+
+  function hideTip(): void {
+    tip.hidden = true;
+  }
+
+  // The tooltip is shared, so it follows the hovered icon, else the focused one, and hides only when neither exists.
+  interface TipSource {
+    readonly anchor: HTMLElement;
+    readonly text: string;
+  }
+  let hoveredTip: TipSource | null = null;
+  let focusedTip: TipSource | null = null;
+  function refreshTip(): void {
+    const active = hoveredTip ?? focusedTip;
+    if (active === null) hideTip();
+    else showTip(active.anchor, active.text);
+  }
+
+  /** A setting on one line: its title, an info icon whose tooltip carries the description, and a small switch. */
+  function renderSwitch(field: ToggleField): HTMLElement {
+    const description = plainText(field.popupDescription ?? field.description);
+    const label = document.createElement('label');
+    label.className = 'popup__switch-label';
     label.id = `${field.key}-label`;
+    label.htmlFor = field.key;
     label.textContent = field.label;
-    const help = document.createElement('p');
-    help.className = 'geld-help';
+    const info = document.createElement('button');
+    info.type = 'button';
+    info.className = 'popup__info';
+    info.setAttribute('aria-label', `About ${field.label}`);
+    info.append(svgFromString(ICON_INFO));
+    const source: TipSource = { anchor: info, text: description };
+    info.addEventListener('pointerenter', () => {
+      hoveredTip = source;
+      refreshTip();
+    });
+    info.addEventListener('pointerleave', () => {
+      if (hoveredTip === source) hoveredTip = null;
+      refreshTip();
+    });
+    info.addEventListener('focus', () => {
+      focusedTip = source;
+      refreshTip();
+    });
+    info.addEventListener('blur', () => {
+      if (focusedTip === source) focusedTip = null;
+      refreshTip();
+    });
+    const help = document.createElement('span');
+    help.className = 'popup__sr-only';
     help.id = `${field.key}-help`;
-    help.textContent = field.popupDescription ?? field.description;
-    const text = document.createElement('div');
-    text.append(label, help);
+    help.textContent = description;
+    info.setAttribute('aria-describedby', help.id);
     const button = document.createElement('button');
     button.id = field.key;
-    button.className = 'geld-switch';
+    button.className = 'geld-switch geld-switch--small';
     button.type = 'button';
     button.setAttribute('role', 'switch');
     button.setAttribute('aria-checked', String(settings[field.key]));
@@ -162,12 +227,9 @@ async function main(): Promise<void> {
     });
     toggles.push({ field, set: bound.set });
     const row = document.createElement('div');
-    row.className = 'geld-row';
-    row.append(text, button);
-    const section = document.createElement('section');
-    section.className = 'popup__section';
-    section.append(row);
-    return section;
+    row.className = 'popup__switch';
+    row.append(label, info, help, button);
+    return row;
   }
 
   function renderCategories(field: CategoriesField): HTMLElement {
@@ -201,10 +263,12 @@ async function main(): Promise<void> {
   }
 
   // Sections whose popup fields are experiments get a heading, so an experiment is never taken for a settled setting.
+  let switches: HTMLElement | null = null;
   for (const section of sectionsFor('extension')) {
     const fields = section.fields.filter((field) => field.popup);
     if (fields.length === 0) continue;
     if (section.id === 'experiments') {
+      switches = null;
       const experiments = document.createElement('section');
       experiments.className = 'popup__section popup__experiments';
       experiments.setAttribute('aria-label', section.title);
@@ -214,11 +278,22 @@ async function main(): Promise<void> {
       continue;
     }
     for (const field of fields) {
-      if (field.kind === 'toggle') settingsHost.append(renderToggle(field));
-      else if (field.kind === 'categories') settingsHost.append(renderCategories(field));
+      if (field.kind === 'toggle') {
+        // Neighbouring switches share one section, a line each.
+        if (switches === null) {
+          switches = document.createElement('section');
+          switches.className = 'popup__section popup__switches';
+          settingsHost.append(switches);
+        }
+        switches.append(renderSwitch(field));
+        continue;
+      }
+      switches = null;
+      if (field.kind === 'categories') settingsHost.append(renderCategories(field));
       // Test groups and list fields are never flagged for the popup; the options page renders them.
     }
   }
+  requireElement('popup-body', HTMLDivElement).addEventListener('scroll', hideTip, { passive: true });
 
   /* Tab context */
   const contextRepo = requireElement('context-repo', HTMLSpanElement);
@@ -565,12 +640,15 @@ async function main(): Promise<void> {
 }
 
 document.documentElement.style.setProperty('--geld-popup-max-height', `${popupMaxHeight(window.screen.availHeight)}px`);
-const popup = document.querySelector<HTMLElement>('.popup');
-if (popup !== null) {
+const popupBody = document.querySelector<HTMLElement>('.popup__body');
+if (popupBody !== null) {
   const updateScrollState = (): void => {
-    popup.toggleAttribute('data-scrollable', popupNeedsScroll(popup.scrollHeight, popup.clientHeight));
+    popupBody.toggleAttribute('data-scrollable', popupNeedsScroll(popupBody.scrollHeight, popupBody.clientHeight));
   };
-  new ResizeObserver(updateScrollState).observe(popup);
+  // The body's own box stops growing at the popup's cap, so its contents are watched too.
+  const observer = new ResizeObserver(updateScrollState);
+  observer.observe(popupBody);
+  for (const child of popupBody.children) observer.observe(child);
   requestAnimationFrame(updateScrollState);
 }
 polyfillCornerShape();
