@@ -200,6 +200,20 @@ describe('the pile', () => {
     bodies.forEach((b, i) => expect(Math.hypot(b.x - (at[i]?.[0] ?? 0), b.y - (at[i]?.[1] ?? 0))).toBe(0));
   });
 
+  it('slides a box let go inside the words out of them over a few frames, rather than jumping clear in one', () => {
+    const dropped = { ...body(450, 318, 120, 24), escape: 0.3 };
+    let largest = 0;
+    for (let t = 0; t < 1.5; t += 1 / 60) {
+      const from = { x: dropped.x, y: dropped.y };
+      const inside = overlaps(rectOf(dropped), headline);
+      step([dropped], world, 1 / 60);
+      if (inside) largest = Math.max(largest, Math.hypot(dropped.x - from.x, dropped.y - from.y));
+    }
+    expect(largest).toBeLessThan(10);
+    expect(rectOf(dropped).bottom).toBeCloseTo(headline.top, 0);
+    expect(overlaps(rectOf(dropped), headline)).toBe(false);
+  });
+
   it('carries a thrown box sideways until friction stops it', () => {
     const thrown = body(100, 580);
     thrown.vx = 900;

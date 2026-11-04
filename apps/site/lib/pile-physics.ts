@@ -43,6 +43,8 @@ export interface Body {
   settle?: number;
   /** How much longer a tangle can keep it settling, so a heap that never quite comes apart still comes to rest. */
   settleFor?: number;
+  /** Seconds in which it comes out of the words and walls gently: let go over them, it slid out rather than jumping clear in a step. */
+  escape?: number;
   /** Side walls of its own, inside the world's: where it falls is kept to a part of the page until someone moves it. */
   fence?: { readonly left: number; readonly right: number } | undefined;
 }
@@ -77,6 +79,9 @@ const SLEEP_SPEED = 50;
 const SLEEP_AFTER = 24;
 /** How far per substep a body overhanging the edge of what it rests on slides off it. */
 const SPILL = 0.7;
+/** How far per iteration a body let go inside the words or past the walls is pushed out of them, about 430px/s. */
+const ESCAPE_STEP = 0.6;
+const ESCAPE_BOUNCE = 60;
 const ABSORBED_SCALE = 0.25;
 const SWALLOW_DISTANCE = 10;
 const MAX_TILT = 0.45;
@@ -138,6 +143,7 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
     }
     free.push(body);
     before.set(body, { x: body.x, y: body.y });
+    if (body.escape !== undefined && body.escape > 0) body.escape = Math.max(0, body.escape - dt);
     if (body.ghost !== undefined && body.ghost > 0) {
       body.ghost = Math.max(0, body.ghost - dt);
       if (body.ghost === 0) {
@@ -206,8 +212,15 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
         cx *= CORRECTION_SPEED / correction;
         cy *= CORRECTION_SPEED / correction;
       }
-      body.vx = (own.x - start.x) / dt + cx;
-      body.vy = (own.y - start.y) / dt + cy;
+      const ownVx = (own.x - start.x) / dt;
+      const ownVy = (own.y - start.y) / dt;
+      body.vx = ownVx + cx;
+      body.vy = ownVy + cy;
+      if ((body.escape ?? 0) > 0) {
+        // Coming out of the words: a push stops its motion into them and adds a light bounce at most, or the pushes stacked up and launched it.
+        body.vx = Math.max(Math.min(ownVx, -ESCAPE_BOUNCE), Math.min(Math.max(ownVx, ESCAPE_BOUNCE), body.vx));
+        body.vy = Math.max(Math.min(ownVy, -ESCAPE_BOUNCE), Math.min(Math.max(ownVy, ESCAPE_BOUNCE), body.vy));
+      }
     }
     if (grounded.has(body)) {
       body.vx *= FRICTION;
@@ -243,12 +256,19 @@ function bound(body: Body, world: World, grounded: Set<Body>): void {
   const r = rectOf(body);
   const left = body.fence?.left ?? 0;
   const right = Math.min(body.fence?.right ?? world.width, world.width);
-  if (r.left < left) body.x += left - r.left;
-  else if (r.right > right) body.x -= r.right - right;
+  if (r.left < left) body.x += escaping(body, left - r.left);
+  else if (r.right > right) body.x -= escaping(body, r.right - right);
   if (r.bottom > world.floor) {
-    body.y -= r.bottom - world.floor;
+    body.y -= escaping(body, r.bottom - world.floor);
     grounded.add(body);
   }
+}
+
+/** How much of a push out of the words or walls a body takes now: all of it, or a little while it is escaping, which lasts until it is clear. */
+function escaping(body: Body, depth: number): number {
+  if ((body.escape ?? 0) <= 0 || depth <= ESCAPE_STEP) return depth;
+  body.escape = Math.max(body.escape ?? 0, 0.1);
+  return ESCAPE_STEP;
 }
 
 /** Push a body out of a fixed rectangle along the shallower axis. */
@@ -258,15 +278,16 @@ function pushOut(body: Body, obstacle: Rect, grounded: Set<Body>): void {
   const oy = Math.min(r.bottom, obstacle.bottom) - Math.max(r.top, obstacle.top);
   if (ox <= 0 || oy <= 0) return;
   if (ox < oy) {
-    body.x += body.x < (obstacle.left + obstacle.right) / 2 ? -ox : ox;
+    const amount = escaping(body, ox);
+    body.x += body.x < (obstacle.left + obstacle.right) / 2 ? -amount : amount;
   } else if (body.y < (obstacle.top + obstacle.bottom) / 2) {
-    body.y -= oy;
+    body.y -= escaping(body, oy);
     grounded.add(body);
     // Resting with its middle past the edge: it slides off, since a box that cannot tip would balance there forever.
     if (body.x < obstacle.left) body.x -= SPILL;
     else if (body.x > obstacle.right) body.x += SPILL;
   } else {
-    body.y += oy;
+    body.y += escaping(body, oy);
   }
 }
 

@@ -181,7 +181,7 @@ function Playground() {
         at.x += (body.x - at.x) * ease;
         at.y += (body.y - at.y) * ease;
       }
-      shown.current[index] = { ...at, free: body.mode === 'free' && !body.held };
+      shown.current[index] = { ...at, free: body.mode === 'free' };
       if (Math.hypot(body.x - at.x, body.y - at.y) > 0.5) easing.current = true;
       el.style.visibility = 'visible';
       el.style.opacity = body.mode === 'absorbing' ? String(Math.min(1, (body.scale - 0.25) / 0.5)) : '1';
@@ -585,6 +585,7 @@ function Playground() {
       body.vy = Math.max(-2400, Math.min(2400, held.vy));
       body.spin = Math.max(-8, Math.min(8, body.vx * 0.004));
       body.still = 0;
+      body.escape = 0.3;
     }
     drag.current = null;
     run();
