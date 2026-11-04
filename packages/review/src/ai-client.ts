@@ -149,7 +149,9 @@ export async function completeChat(options: ChatCompletionOptions): Promise<Chat
       ? AbortSignal.any([options.signal, controller.signal])
       : (options.signal ?? controller?.signal ?? null);
   try {
-    const response = await options.fetch(joinUrl(options.baseUrl, '/v1/chat/completions'), {
+    // Detached first: a browser's native fetch called as `options.fetch(…)` throws "Illegal invocation".
+    const fetchImpl = options.fetch;
+    const response = await fetchImpl(joinUrl(options.baseUrl, '/v1/chat/completions'), {
       method: 'POST',
       headers: {
         authorization: `Bearer ${options.apiKey}`,

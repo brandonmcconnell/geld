@@ -147,7 +147,9 @@ export async function evaluateJev(options: EvaluateOptions): Promise<JevResult> 
   const controller = options.timeoutMs === undefined ? null : new AbortController();
   const timer = controller === null || options.timeoutMs === undefined ? null : setTimeout(() => controller.abort(), options.timeoutMs);
   try {
-    const response = await options.fetch(jevEndpoint(options.baseUrl), {
+    // Detached first: a browser's native fetch called as `options.fetch(…)` throws "Illegal invocation".
+    const fetchImpl = options.fetch;
+    const response = await fetchImpl(jevEndpoint(options.baseUrl), {
       method: 'POST',
       headers: { authorization: `Bearer ${options.apiKey}`, 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify(options.request),
