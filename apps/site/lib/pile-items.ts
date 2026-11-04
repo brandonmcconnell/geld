@@ -87,6 +87,8 @@ export function rowOf(item: PileItem): DigestRow {
 export interface Digest {
   readonly files: readonly { readonly path: string; readonly additions: number; readonly deletions: number }[];
   readonly setAside: number;
+  /** The categories the set-aside files fall under, in a fixed order. */
+  readonly setAsideKinds: readonly string[];
   readonly reviews: { readonly approved: readonly Person[]; readonly changes: readonly Person[] };
   readonly commenters: readonly Person[];
   readonly comments: number;
@@ -99,10 +101,13 @@ export interface Digest {
   readonly security: readonly { readonly text: string; readonly short: string }[];
 }
 
+const SET_ASIDE_ORDER = ['tests', 'generated', 'docs', 'tooling'];
+
 /** What the items gathered so far add up to. */
 export function digestOf(items: readonly PileItem[]): Digest {
   const files: { path: string; additions: number; deletions: number }[] = [];
   let setAside = 0;
+  const kinds = new Set<string>();
   const approved: Person[] = [];
   const changes: Person[] = [];
   const commenters: Person[] = [];
@@ -115,10 +120,15 @@ export function digestOf(items: readonly PileItem[]): Digest {
   const security: { text: string; short: string }[] = [];
   for (const item of items) {
     switch (item.kind) {
-      case 'file':
-        if (setAsideAs(item.path) === null) files.push({ path: item.path, additions: item.additions, deletions: item.deletions });
-        else setAside += 1;
+      case 'file': {
+        const aside = setAsideAs(item.path);
+        if (aside === null) files.push({ path: item.path, additions: item.additions, deletions: item.deletions });
+        else {
+          setAside += 1;
+          kinds.add(aside.id);
+        }
         break;
+      }
       case 'review':
         (item.verdict === 'approved' ? approved : changes).push(item.who);
         break;
@@ -147,5 +157,6 @@ export function digestOf(items: readonly PileItem[]): Digest {
         break;
     }
   }
-  return { files, setAside, reviews: { approved, changes }, commenters, comments, needsYou, botComments, agent, checks, previews, security };
+  const setAsideKinds = SET_ASIDE_ORDER.filter((kind) => kinds.has(kind));
+  return { files, setAside, setAsideKinds, reviews: { approved, changes }, commenters, comments, needsYou, botComments, agent, checks, previews, security };
 }

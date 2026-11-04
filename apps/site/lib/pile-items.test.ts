@@ -15,6 +15,7 @@ describe('the pile and its digest', () => {
     const digest = digestOf(PILE_ITEMS);
     expect(digest.files.map((file) => file.path)).toEqual(['src/Button.tsx', 'src/hooks/useToggle.ts', 'src/index.ts']);
     expect(digest.setAside).toBe(6);
+    expect(digest.setAsideKinds).toEqual(['tests', 'generated', 'docs', 'tooling']);
     expect(digest.reviews).toEqual({ approved: ['mona'], changes: ['hubot'] });
     expect(digest.comments).toBe(4);
     expect(digest.commenters).toEqual(['mona', 'octocat', 'hubot', 'nadia']);
@@ -33,6 +34,7 @@ describe('the pile and its digest', () => {
     const digest = digestOf(PILE_ITEMS.slice(0, 4));
     expect(digest.files).toHaveLength(1);
     expect(digest.setAside).toBe(1);
+    expect(digest.setAsideKinds).toHaveLength(1);
     expect(digest.comments).toBe(1);
     expect(digest.checks.failed).toBe(1);
     expect(digest.agent).toBeNull();

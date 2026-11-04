@@ -126,7 +126,8 @@ function RowValue({ digest, row }: { readonly digest: Digest; readonly row: Dige
             <span className="text-[0.75rem] text-muted-foreground tabular-nums">
               <Wide>{digest.setAside} set aside · </Wide>
               <Narrow>+ </Narrow>
-              tests, generated, docs
+              {digest.setAsideKinds.slice(0, 3).join(', ')}
+              {digest.setAsideKinds.length > 3 && ` +${digest.setAsideKinds.length - 3}`}
             </span>
           )}
         </span>
