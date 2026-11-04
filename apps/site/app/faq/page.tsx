@@ -48,7 +48,7 @@ const QUESTIONS: readonly Question[] = [
     question: 'What does Geld collect or send?',
     answer: (
       <p>
-        Nothing. There is no analytics, no error reporting and no server of ours. The only network requests Geld makes are to GitHub (
+        The only network requests Geld makes are to GitHub (
         {allHosts(DEFAULT_SETTINGS).join(', ')} plus any Enterprise hosts you add): to fetch diffs GitHub would serve you anyway and, if you opt into
         sign-in, to read and write a secret gist on your own account. Settings live in your browser&apos;s sync storage. See the{' '}
         <Link href="/privacy">privacy policy</Link>.

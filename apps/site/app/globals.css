@@ -231,13 +231,22 @@
 @utility logo-reel {
   /* Clip, not hidden: a hidden overflow scrolls itself to a focused link, which the track's transform then throws off. */
   overflow: clip;
-  mask-image: linear-gradient(to right, transparent, #000 4rem, #000 calc(100% - 4rem), transparent);
+  /* The space after each logo, the fade's width and the track's inset (logo-reel.tsx) are one, so the reel starts with its lead logo clear of the fade and nothing in the fade before it, as the loop's last frame has. */
+  --reel-gap: 3rem;
+  @media (width >= 40rem) {
+    --reel-gap: 4rem;
+  }
+  mask-image: linear-gradient(to right, transparent, #000 var(--reel-gap), #000 calc(100% - var(--reel-gap)), transparent);
   /* A logo with keyboard focus shows whole, its focus ring included, even at the window's edge. */
   &:has(:focus-visible) {
     mask-image: none;
   }
   @media (prefers-reduced-motion: reduce) {
     mask-image: none;
+  }
+  /* Off screen it stops, so nothing is composited that nobody sees; the play state leaves the playback rate the hover easing sets alone. */
+  &[data-offscreen] .animate-logo-reel {
+    animation-play-state: paused;
   }
 }
 

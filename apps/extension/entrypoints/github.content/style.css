@@ -2739,6 +2739,11 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   cursor: progress;
 }
 
+.geld-review__ai-btn[data-state='nothing'] {
+  color: var(--geld-review-muted);
+  cursor: default;
+}
+
 .geld-review__ai-btn[data-state='running'] .octicon {
   animation: geld-ai-pulse 1.2s ease-in-out infinite;
 }
@@ -3729,6 +3734,28 @@ svg.geld-lucide {
   align-items: center;
   gap: 8px;
   margin-bottom: 6px;
+}
+
+/* View and Rerun (or See latest) on a bot comment's card, on the head's right as on the chat's byline. The card is
+   outside the panel, so the colours Rerun's box reads from the panel are set here. */
+.geld-review-hovercard__controls {
+  --geld-review-border: var(--borderColor-default, var(--color-border-default, #d1d9e0));
+  --geld-review-muted: var(--fgColor-muted, var(--color-fg-muted, #59636e));
+  --geld-review-bg: var(--bgColor-default, var(--color-canvas-default, #fff));
+  --geld-review-subtle: var(--bgColor-muted, var(--color-canvas-subtle, #f6f8fa));
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin-left: auto;
+}
+
+.geld-review-hovercard__controls > .geld-review__rerun-wrap {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.geld-review-hovercard__controls > .geld-review__rerun-wrap ~ .geld-review__rerun-wrap {
+  margin-left: 6px;
 }
 
 .geld-review-hovercard__avatar {
@@ -6388,9 +6415,12 @@ summary.geld-review__edited--menu:hover,
 }
 
 /* A bot's own badges inside its comment: Geld's Rerun stands for its re-trigger badge (chat.ts,
-   `AGENT_RERUN_CONTROLS`) and View for its "View in <bot>" badge (`AGENT_VIEW_LINKS`). */
+   `AGENT_RERUN_CONTROLS`) and View for its "View in <bot>" badge (`AGENT_VIEW_LINKS`), in the chat and in a row's
+   hover card alike. */
 .geld-review__chat [data-geld-agent-rerun],
-.geld-review__chat [data-geld-agent-view] {
+.geld-review__chat [data-geld-agent-view],
+.geld-review-hovercard__body [data-geld-agent-rerun],
+.geld-review-hovercard__body [data-geld-agent-view] {
   display: none !important;
 }
 

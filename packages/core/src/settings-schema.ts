@@ -126,7 +126,43 @@ export interface TextField extends FieldBase {
 
 export interface TextPreset {
   readonly label: string;
+  /** May hold `{blanks}` the reader fills in (a region, a resource name) before it is saved. */
   readonly value: string;
+  /** Presets sharing a group are listed on one labelled line, in schema order. */
+  readonly group?: string;
+  /** Shown under the presets while this one is the saved value. Copy may use `backticks`. */
+  readonly note?: string;
+}
+
+const PRESET_BLANK = /\{[a-z]+\}/i;
+
+/** Where the first `{blank}` sits in a preset value, so a click can select it for typing over. */
+export function presetBlank(value: string): { readonly start: number; readonly end: number } | null {
+  const match = PRESET_BLANK.exec(value);
+  return match === null ? null : { start: match.index, end: match.index + match[0].length };
+}
+
+/** Whether a saved value is this preset, with its blanks filled in by anything that stays inside one URL segment. */
+export function presetMatches(preset: TextPreset, value: string): boolean {
+  if (value === '') return false;
+  if (presetBlank(preset.value) === null) return value === preset.value;
+  const pattern = preset.value
+    .split(/(\{[a-z]+\})/i)
+    .map((part) => (PRESET_BLANK.test(part) ? '[^/.{}\\s]+' : part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    .join('');
+  return new RegExp(`^${pattern}$`, 'i').test(value);
+}
+
+/** Presets grouped for display: one entry per group in first-seen order, ungrouped presets under `null`. */
+export function presetGroups(presets: readonly TextPreset[]): readonly { readonly group: string | null; readonly presets: readonly TextPreset[] }[] {
+  const groups = new Map<string | null, TextPreset[]>();
+  for (const preset of presets) {
+    const key = preset.group ?? null;
+    const list = groups.get(key);
+    if (list === undefined) groups.set(key, [preset]);
+    else list.push(preset);
+  }
+  return [...groups].map(([group, list]) => ({ group, presets: list }));
 }
 
 export type MaintenanceActionId = 'export' | 'import' | 'clear-cache' | 'copy-diagnostics' | 'report-diagnostics' | 'reset';
@@ -509,6 +545,13 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         popup: false,
       },
       {
+        kind: 'toggle',
+        key: 'holdToMerge',
+        label: 'Hold ⌘ to merge from the status pill',
+        description: 'While ⌘ (Ctrl on Windows and Linux) is held, the pull request’s status pill becomes a Merge button whenever GitHub would merge it now. Off, the pill only opens its menu of statuses.',
+        popup: false,
+      },
+      {
         kind: 'list',
         key: 'reviewBots',
         label: 'Extra review bots',
@@ -549,15 +592,41 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         key: 'aiBaseUrl',
         label: 'AI gateway URL',
         description:
-          'An OpenAI-compatible base URL: Vercel AI Gateway, OpenRouter, OpenAI, or your own. Paste it with or without the `/v1`; requests add their own path. The key stays on this device (`storage.local`, never the gist).',
+          'Any OpenAI-compatible base URL: a gateway, a provider, a model on this computer, or your own. Paste it with or without the `/v1`, requests add their own path. The key stays on this device (`storage.local`, never the gist).',
         popup: false,
         placeholder: 'https://ai-gateway.vercel.sh',
         autocomplete: 'off',
         surfaces: ['extension'],
         presets: [
-          { label: 'Vercel AI Gateway', value: 'https://ai-gateway.vercel.sh' },
-          { label: 'OpenRouter', value: 'https://openrouter.ai/api' },
-          { label: 'OpenAI', value: 'https://api.openai.com' },
+          { group: 'Gateways', label: 'Vercel AI Gateway', value: 'https://ai-gateway.vercel.sh' },
+          { group: 'Gateways', label: 'OpenRouter', value: 'https://openrouter.ai/api' },
+          {
+            group: 'Gateways',
+            label: 'Cloudflare AI Gateway',
+            value: 'https://api.cloudflare.com/client/v4/accounts/{account}/ai',
+            note: 'Fill in your Cloudflare account ID. The key is a Cloudflare API token, and models are named like `openai/gpt-4.1`.',
+          },
+          { group: 'Providers', label: 'OpenAI', value: 'https://api.openai.com' },
+          {
+            group: 'Providers',
+            label: 'Amazon Bedrock',
+            value: 'https://bedrock-mantle.{region}.api.aws',
+            note: 'Fill in your AWS region, such as `us-east-1`. The key is an Amazon Bedrock API key.',
+          },
+          {
+            group: 'Providers',
+            label: 'Azure OpenAI',
+            value: 'https://{resource}.openai.azure.com/openai',
+            note: 'Fill in your Azure OpenAI resource name. Models are your deployment names.',
+          },
+          { group: 'Providers', label: 'Google Gemini', value: 'https://generativelanguage.googleapis.com/v1beta/openai' },
+          { group: 'Providers', label: 'Groq', value: 'https://api.groq.com/openai' },
+          {
+            group: 'On this computer',
+            label: 'Ollama',
+            value: 'http://localhost:11434',
+            note: 'Ollama ignores the key, so any text will do. Start it with `OLLAMA_ORIGINS=chrome-extension://*,moz-extension://*` so it answers browser extensions.',
+          },
         ],
       },
       {

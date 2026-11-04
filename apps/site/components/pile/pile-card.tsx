@@ -19,7 +19,8 @@ export function Face({ who, size = 22, className }: { readonly who: Person; read
       className={cn('inline-grid shrink-0 place-items-center rounded-full font-semibold text-white uppercase ring-2 ring-card', PEOPLE[who], className)}
       style={{ width: size, height: size, fontSize: size * 0.46 }}
     >
-      {who[0]}
+      {/* Trimmed to the capital, so it is centred in the circle whatever small font sizes round its line box to (at 9.2px the letter sat 1px high). A block, since the trim does not reach a grid's text. */}
+      <span className="block [text-box:trim-both_cap_alphabetic]">{who[0]}</span>
     </span>
   );
 }

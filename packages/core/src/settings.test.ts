@@ -149,6 +149,10 @@ describe('normalizeAiBaseUrl', () => {
     expect(normalizeAiBaseUrl('https://ai-gateway.vercel.sh/typesafe')).toBe('https://ai-gateway.vercel.sh');
     expect(normalizeAiBaseUrl('  https://api.openai.com  ')).toBe('https://api.openai.com');
     expect(normalizeAiBaseUrl('https://gw.example.com/v2beta')).toBe('https://gw.example.com/v2beta');
+    expect(normalizeAiBaseUrl('api.openai.com')).toBe('https://api.openai.com');
+    expect(normalizeAiBaseUrl('openrouter.ai/api/v1/')).toBe('https://openrouter.ai/api');
+    expect(normalizeAiBaseUrl('http://localhost:11434')).toBe('http://localhost:11434');
+    expect(normalizeAiBaseUrl('  ')).toBe('');
   });
 
   it('is what normalizeSettings applies to aiBaseUrl', () => {

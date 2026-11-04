@@ -72,44 +72,7 @@ export function DigestScene() {
             <GeldRowTools />
           </div>
 
-          <StatusRow label="Reviews">
-            <Chip>
-              <Avatar who="mona" size={16} className="ring-0" />
-              mona
-              <CheckIcon aria-hidden="true" className="size-3 text-addition" strokeWidth={3} />
-            </Chip>
-            <Chip>
-              <Avatar who="hubot" size={16} className="ring-0" />
-              hubot
-              <XIcon aria-hidden="true" className="size-3 text-deletion" strokeWidth={3} />
-              <MessagesSquareIcon aria-hidden="true" className="size-3 text-muted-foreground" />1
-            </Chip>
-            <span className="text-muted-foreground tabular-nums">1/2 approvals</span>
-          </StatusRow>
-          <StatusRow label="Review bots">
-            <Chip square>
-              <BotMark bot="buggy" size={16} />
-              Buggy <span className="text-muted-foreground">{resolved.has('default') ? 'resolved' : '1 issue'}</span>
-              <Light tone={resolved.has('default') ? 'good' : 'warn'} />
-            </Chip>
-            <Chip square>
-              <BotMark bot="codehopper" size={16} />
-              CodeHopper <span className="text-muted-foreground">{resolved.has('docs') ? 'resolved' : '1 issue'}</span>
-              <Light tone={resolved.has('docs') ? 'good' : 'warn'} />
-            </Chip>
-            <Chip square>
-              <BotMark bot="gecko" size={16} />
-              Gecko <span className="text-muted-foreground">5/5</span>
-              <Light tone="good" />
-            </Chip>
-          </StatusRow>
-          <StatusRow label="CI checks">
-            <span aria-hidden="true" className="size-3.5 rounded-full border-[3px] border-addition" />
-            <span>18 successful checks</span>
-            <span className="text-muted-foreground">·</span>
-            <RocketIcon aria-hidden="true" className="size-3 text-muted-foreground" />
-            <span>1 preview ready</span>
-          </StatusRow>
+          <DigestStatusRows resolved={resolved} />
 
           <GroupBand
             open={roundOpen}
@@ -181,11 +144,57 @@ export function DigestScene() {
   );
 }
 
+/** The digest's status rows, shared with the Flow scene so the two windows' rows read and measure the same. `resolved` is the digest's threads resolved so far. */
+export function DigestStatusRows({ resolved }: { readonly resolved: ReadonlySet<string> }) {
+  return (
+    <>
+      <StatusRow label="Reviews">
+        <Chip>
+          <Avatar who="mona" size={16} className="ring-0" />
+          mona
+          <CheckIcon aria-hidden="true" className="size-3 text-addition" strokeWidth={3} />
+        </Chip>
+        <Chip>
+          <Avatar who="hubot" size={16} className="ring-0" />
+          hubot
+          <XIcon aria-hidden="true" className="size-3 text-deletion" strokeWidth={3} />
+          <MessagesSquareIcon aria-hidden="true" className="size-3 text-muted-foreground" />1
+        </Chip>
+        <span className="text-muted-foreground tabular-nums">1/2 approvals</span>
+      </StatusRow>
+      <StatusRow label="Review bots">
+        <Chip square>
+          <BotMark bot="buggy" size={16} />
+          Buggy <span className="text-muted-foreground">{resolved.has('default') ? 'resolved' : '1 issue'}</span>
+          <Light tone={resolved.has('default') ? 'good' : 'warn'} />
+        </Chip>
+        <Chip square>
+          <BotMark bot="codehopper" size={16} />
+          CodeHopper <span className="text-muted-foreground">{resolved.has('docs') ? 'resolved' : '1 issue'}</span>
+          <Light tone={resolved.has('docs') ? 'good' : 'warn'} />
+        </Chip>
+        <Chip square>
+          <BotMark bot="gecko" size={16} />
+          Gecko <span className="text-muted-foreground">5/5</span>
+          <Light tone="good" />
+        </Chip>
+      </StatusRow>
+      <StatusRow label="CI checks">
+        <span aria-hidden="true" className="size-3.5 shrink-0 rounded-full border-[3px] border-addition" />
+        <span>18 successful checks</span>
+        <span className="text-muted-foreground">·</span>
+        <RocketIcon aria-hidden="true" className="size-3 shrink-0 text-muted-foreground" />
+        <span>1 preview ready</span>
+      </StatusRow>
+    </>
+  );
+}
+
 function StatusRow({ label, children }: { readonly label: string; readonly children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3 border-b px-3 py-1">
+    <div className="flex min-h-8 items-center gap-3 border-b px-3 py-1 last:border-b-0">
       <span className="w-20 shrink-0 text-muted-foreground">{label}</span>
-      <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">{children}</div>
+      <div className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">{children}</div>
     </div>
   );
 }

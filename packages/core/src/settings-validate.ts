@@ -68,6 +68,7 @@ const BOOLEAN_KEYS = [
   'autoUpdatePatterns',
   'prOverview',
   'quickReview',
+  'holdToMerge',
   'collapseDescription',
   'aiEnabled',
   'aiJev',
