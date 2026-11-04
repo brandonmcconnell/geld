@@ -56,7 +56,8 @@ export function FlowScene() {
     const matcher = createMatcher(DEFAULT_SETTINGS);
     return TOUR_FILES.map((file) => ({ ...file, hiddenAs: matcher.categorize(file.path)?.title ?? null }));
   }, []);
-  const byPath = new Map(files.filter((file) => showHidden || file.hiddenAs === null).map((file) => [file.path, file]));
+  const listed = files.filter((file) => showHidden || file.hiddenAs === null);
+  const byPath = new Map(listed.map((file) => [file.path, file]));
   const layout = useMemo(() => {
     const paths = files.filter((file) => showHidden || file.hiddenAs === null).map((file) => file.path);
     return layoutFlow(paths, flowLinks(paths, AFTER, BEFORE));
@@ -73,6 +74,11 @@ export function FlowScene() {
     setLit(null);
     flowButton.current?.focus({ preventScroll: true });
   };
+  const switchTab = (next: PrTab): void => {
+    setFlowOpen(false);
+    setLit(null);
+    setTab(next);
+  };
   const open = (path: string): void => {
     setOpened(path);
     setFlowOpen(false);
@@ -81,9 +87,9 @@ export function FlowScene() {
   };
 
   return (
-    <PrWindow tab={tab} onTab={setTab} disabledTabs={['commits', 'checks']} filesCount={files.filter((file) => file.hiddenAs === null).length} bodyClassName="relative min-h-[26rem]">
+    <PrWindow tab={tab} onTab={switchTab} disabledTabs={['commits', 'checks']} filesCount={listed.length} bodyClassName="relative min-h-[26rem]">
       {tab === 'files' ? (
-        <FilesView files={files.filter((file) => showHidden || file.hiddenAs === null)} opened={opened} />
+        <FilesView files={listed} opened={opened} />
       ) : (
         <div className="m-3 rounded-lg border text-xs">
           <div className="flex items-center gap-2 px-3 py-2">
