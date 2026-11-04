@@ -4,7 +4,8 @@
  */
 
 import type { GeldPrMeta, ParseResult } from '@geld/review';
-import { ALLOWED_SUMMARY_AUTHORS, isAllowedSummaryAuthor, parseSummaryElement, PAYLOAD_CARRIER_SELECTOR, SUMMARY_HEADING } from '@geld/review';
+import { isAllowedSummaryAuthor, parseSummaryElement, PAYLOAD_CARRIER_SELECTOR, SUMMARY_HEADING } from '@geld/review';
+import { count as perfCount } from '../../lib/perf';
 import { detectHeadSha } from '../head-sha';
 import { authorOf as crawlAuthor } from './crawler';
 
@@ -53,9 +54,7 @@ export function findSummaryComment(doc: Document = document): FoundSummary | nul
     if (root === null) continue;
     const author = authorOf(root);
     if (!isAllowedSummaryAuthor(author)) {
-      if (author !== '' && headingLooksLikeSummary(root)) {
-        console.warn('[geld] Ignoring review summary from', author, '— allowed:', ALLOWED_SUMMARY_AUTHORS.join(', '));
-      }
+      if (author !== '' && headingLooksLikeSummary(root)) perfCount('summary:foreign-author');
       continue;
     }
     const parsed = parseSummaryElement(root);
@@ -152,7 +151,7 @@ export function mergeWithCrawler(payload: GeldPrMeta, crawled: GeldPrMeta, compl
 export function usableMeta(found: Pick<FoundSummary, 'meta' | 'missingAnchors'>): GeldPrMeta {
   if (found.missingAnchors.length === 0) return found.meta;
   const missing = new Set(found.missingAnchors);
-  for (const anchor of missing) console.warn('[geld] Summary item refers to missing anchor', anchor);
+  perfCount('summary:missing-anchors', missing.size);
   return {
     ...found.meta,
     items: found.meta.items.filter((item) => item.sources.every((source) => !missing.has(source.anchor))),

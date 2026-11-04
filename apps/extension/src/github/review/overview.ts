@@ -12,7 +12,7 @@ import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, 
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage } from '../page';
-import { phase, phaseSince } from '../../lib/perf';
+import { mark, phase, phaseSince } from '../../lib/perf';
 import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
@@ -3045,9 +3045,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     onDismissReview: (login) => {
       void pressReviewAction(login, 'Dismiss review')
         .then((pressed) => {
-          if (!pressed) console.warn('[geld] GitHub offers no way to dismiss that review here');
+          if (!pressed) mark('dismiss-review:not-offered');
         })
-        .catch(() => console.warn('[geld] Dismiss review did not open'));
+        .catch(() => mark('dismiss-review:failed'));
     },
     onReRequestReview: (login) => {
       // GitHub's own action when its merge box lists the verdict; else the request form with their id, the same post.
@@ -3059,20 +3059,20 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           }
           const found = await fetchReviewerCandidates().catch(() => null);
           if (found === null) {
-            console.warn('[geld] GitHub did not list the reviewers; nothing was re-requested');
+            mark('re-request:no-candidates');
             return;
           }
           const person = found.find((candidate) => !candidate.team && candidate.login.toLowerCase() === login.toLowerCase());
           if (person === undefined) {
-            console.warn('[geld] GitHub does not list that reviewer among those that can be asked here');
+            mark('re-request:not-listed');
             return;
           }
           const posted = await requestReviewers([person.id], [], found);
           candidatesCache = null;
           if (posted) window.setTimeout(reapplySoon, 800);
-          else console.warn('[geld] GitHub did not take the re-request');
+          else mark('re-request:refused');
         })
-        .catch(() => console.warn('[geld] Re-request review failed'));
+        .catch(() => mark('re-request:failed'));
     },
     onToggleSub: (anchor) => {
       keepInPlace(`main:sub:${anchor}`, () => {

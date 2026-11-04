@@ -35,11 +35,12 @@ export default defineContentScript({
     let retired = false;
     let controller: GeldController | null = null;
     // Retiring before the controller ran means this copy never showed anything on this tab; the trail says where
-    // it stopped, and the console says so too, since a page with no Geld on it is otherwise silent about why.
+    // it stopped, and the console says so too, since a page with no Geld on it is otherwise silent about why. At info
+    // level: Chrome files warnings on the extension's Errors card, and an extension reload makes every open tab say this.
     const retireEarly = (why: string): void => {
       retired = true;
       mark(`retired:${why}`);
-      if (controller === null) console.warn(`[geld] stepped aside before starting on this tab (${why}); diagnostics on the options page have the trail.`);
+      if (controller === null) console.info(`[geld] stepped aside before starting on this tab (${why}); diagnostics on the options page have the trail.`);
     };
     let retire = (why: string): void => retireEarly(why);
     document.addEventListener(TAKEOVER, () => retire('takeover'), { once: true });

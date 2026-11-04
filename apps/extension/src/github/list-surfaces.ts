@@ -1,4 +1,5 @@
 import type { Catalog, ChipPlacement, ListSurfaceSpec } from '@geld/core';
+import { mark } from '../lib/perf';
 import { cleanText, OWN_UI_ATTRIBUTE } from './dom';
 
 /**
@@ -66,7 +67,7 @@ function compileSurface(spec: ListSurfaceSpec): ListSurface | null {
   ];
   const broken = selectors.find((selector) => !selectorIsValid(selector));
   if (broken !== undefined) {
-    console.warn(`Geld: list surface "${spec.id}" has an invalid selector and is skipped: ${broken}`);
+    mark(`surface-skipped:${spec.id}`);
     return null;
   }
   const { inside, notInside } = spec;
