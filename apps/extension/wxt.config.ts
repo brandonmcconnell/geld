@@ -57,10 +57,11 @@ export default defineConfig({
     // signed pattern catalog (catalog/patterns.json via the contents API).
     web_accessible_resources:[{resources:['tracker-icons/*.svg'],matches:['https://*/*']}],
     host_permissions: ['https://github.com/*', 'https://patch-diff.githubusercontent.com/*', 'https://api.github.com/*'],
-    // GitHub Enterprise Server: the user grants specific hosts from the options page.
+    // GitHub Enterprise Server and AI gateways: the user grants specific hosts from the options page.
+    // Loopback http is for a model served on this computer (mirrors LOOPBACK_HOSTS in src/lib/ai-gateway.ts).
     ...(mv === 3
-      ? { optional_host_permissions: ['https://*/*'] }
-      : { optional_permissions: ['https://*/*'] }),
+      ? { optional_host_permissions: ['https://*/*', 'http://localhost/*', 'http://127.0.0.1/*'] }
+      : { optional_permissions: ['https://*/*', 'http://localhost/*', 'http://127.0.0.1/*'] }),
     commands: {
       'toggle-hidden': {
         suggested_key: { default: 'Alt+Shift+T' },
