@@ -24,6 +24,7 @@ export interface Customer {
 export const CUSTOMERS: readonly Customer[] = [
   { name: 'OpenAI', url: 'https://openai.com', logo: { src: '/logos/openai.svg', aspect: 1, height: 24 }, markOnly: true },
   { name: 'Replicas', url: 'https://replicas.dev', logo: { src: '/logos/replicas.svg', aspect: 225 / 300, height: 22 }, markOnly: true },
+  { name: 'Greptile', url: 'https://www.greptile.com', logo: { src: '/logos/greptile.svg', aspect: 1447 / 348, height: 30 }, markOnly: false },
   { name: 'Tesser', url: 'https://tesser.sh', logo: { src: '/logos/tesser.svg', aspect: 1, height: 22 }, markOnly: true },
   { name: 'Vercel', url: 'https://vercel.com', logo: { src: '/logos/vercel.svg', aspect: 261 / 52, height: 20 }, markOnly: false },
   { name: 'Autumn', url: 'https://useautumn.com', logo: { src: '/logos/autumn.svg', aspect: 114 / 28, height: 26 }, markOnly: false },
