@@ -1,29 +1,33 @@
 import { ImageResponse } from 'next/og';
 
+import { BrowserIcon } from '@/components/browser-icons';
 import { loadGeistFont, loadScreenshot, loadWordmark } from '@/lib/brand';
-import { HEADLINE, TAGLINE } from '@/lib/site';
+import { BROWSERS } from '@/lib/downloads';
+import { HEADLINE, SUBHEADLINE, TAGLINE } from '@/lib/site';
 
 export const alt = TAGLINE;
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
 /**
- * Wordmark and tagline on the left; on the right, a real capture of the
- * extension on a 124-file pull request (39 test files hidden, +3,485 → +2,766)
- * with the hover breakdown open. The card bleeds off the right edge so the
- * numbers stay large enough to read in a timeline preview.
+ * Wordmark, headline and the home page's short line on the left; on the right,
+ * the digest Geld makes of a pull request, captured from the home page's hero
+ * (`assets/screenshots/hero-digest.png`, 2×), so the picture is the idea rather
+ * than a GitHub screenshot. Re-capture it when the digest card changes.
  */
 export default async function OpenGraphImage() {
   const [wordmark, screenshot, sans, mono] = await Promise.all([
     loadWordmark(),
-    loadScreenshot('pr-header-breakdown.png'),
+    loadScreenshot('hero-digest.png'),
     loadGeistFont('Geist-SemiBold.ttf'),
     loadGeistFont('GeistMono-Medium.ttf'),
   ]);
   const wordmarkHeight = 64;
   const wordmarkWidth = (wordmark.width / wordmark.height) * wordmarkHeight;
-  const shotWidth = 640;
+  const shotWidth = 540;
   const shotHeight = Math.round((screenshot.height / screenshot.width) * shotWidth);
+  // The card's own corner (rounded-xl at its natural 380px), scaled with it.
+  const shotRadius = Math.round((12 * shotWidth) / 380);
 
   return new ImageResponse(
     (
@@ -43,9 +47,10 @@ export default async function OpenGraphImage() {
           style={{
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'space-between',
+            gap: 56,
             width: 572,
-            padding: '64px 0 56px 72px',
+            // Stacked from the top, so the bottom left stays clear: X lays the link's domain over that corner.
+            padding: '64px 0 0 72px',
           }}
         >
           <svg width={wordmarkWidth} height={wordmarkHeight} viewBox={wordmark.viewBox} fill="#000000">
@@ -60,28 +65,29 @@ export default async function OpenGraphImage() {
                 <span key={line}>{line}</span>
               ))}
             </div>
-            <div style={{ fontSize: 26, lineHeight: 1.35, color: '#59636e' }}>
-              One digest of every thread, bot verdict and review, and a diff that starts with the code.
-            </div>
+            <div style={{ fontSize: 30, lineHeight: 1.35, color: '#59636e' }}>{SUBHEADLINE}</div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 18, fontSize: 24, color: '#59636e' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 36, fontSize: 24 }}>
             <span style={{ fontFamily: 'Geist Mono', color: '#1f2328' }}>geld.sh</span>
-            <span>Chrome · Edge · Firefox · Safari</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              {BROWSERS.map((browser) => (
+                <BrowserIcon key={browser.id} browser={browser.id} width={28} height={28} fill="#59636e" />
+              ))}
+            </div>
           </div>
         </div>
 
         <div
           style={{
             position: 'absolute',
-            right: -56,
+            right: 48,
             top: (size.height - shotHeight) / 2,
             display: 'flex',
             width: shotWidth,
             height: shotHeight,
             overflow: 'hidden',
-            border: '2px solid #d0d7de',
-            borderRadius: 16,
+            borderRadius: shotRadius,
             boxShadow: '0 28px 70px rgba(31, 35, 40, 0.16)',
             background: '#ffffff',
           }}
