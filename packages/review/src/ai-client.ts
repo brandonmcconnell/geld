@@ -92,12 +92,13 @@ export async function listModels(
   fetchImpl: FetchLike,
   baseUrl: string,
   apiKey: string,
+  path = '/v1/models',
 ): Promise<
   { readonly ok: true; readonly models: readonly ModelInfo[] } | { readonly ok: false; readonly reason: string }
 > {
   if (apiKey === '') return { ok: false, reason: 'No API key.' };
   try {
-    const response = await fetchImpl(joinUrl(baseUrl, '/v1/models'), {
+    const response = await fetchImpl(joinUrl(baseUrl, path), {
       headers: {
         authorization: `Bearer ${apiKey}`,
         accept: 'application/json',

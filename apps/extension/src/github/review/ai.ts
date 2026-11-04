@@ -24,7 +24,7 @@ import {
   consolidateUserPrompt,
   isEvaluationModel,
   JEV_DIRECT_MODEL,
-  jevModelFor,
+  defaultDecisionModel,
   parseConsolidateOutput,
   PREVIEW_STATUSES,
   previewStatusesFrom,
@@ -175,21 +175,27 @@ function hasWork(meta: GeldPrMeta, comments: readonly RawComment[], settings: Ge
   return input.length > 0 && !summaryIsCurrent(known.summary ?? summary, known.items);
 }
 
-/** Where a Jev question goes: the gateway when it offers Jev, else TypeSafe with the user's own key; null when neither is set up. */
+/**
+ * Where a decision goes: the model the reader chose, at the gateway; else, automatically, the gateway's Jev or
+ * its own decision model; else Jev at TypeSafe with the reader's own key. Null when none of these is set up.
+ */
 async function jevRoute(settings: GeldSettings): Promise<{ readonly baseUrl: string; readonly apiKey: string; readonly model: string } | null> {
   if (!settings.aiJev) return null;
-  // The gateway's Jev: read from its model list as stored when models were loaded (not the stored pick, which earlier
-  // builds made from the first decision model of any maker), else what is known about the host (OpenRouter serves Jev
-  // without listing it), so a gateway checked before this was known still routes.
+  // Read from the gateway's model list as stored when models were loaded (not the stored pick, which earlier builds
+  // made from the first decision model of any maker), else from what is known about the host, so a gateway checked
+  // before this was known still routes.
   const gateway = await aiGatewayItem.getValue();
-  const gatewayJev = jevModelFor(settings.aiBaseUrl, gateway !== null && gateway.baseUrl === settings.aiBaseUrl ? gateway.models.map((id) => ({ id })) : []);
+  const listed = gateway !== null && gateway.baseUrl === settings.aiBaseUrl ? gateway.models.map((id) => gateway.details?.[id] ?? { id }) : [];
+  const automatic = defaultDecisionModel(settings.aiBaseUrl, listed);
+  // A pick made for another gateway is not sent to one that serves no decision model.
+  const gatewayModel = automatic !== null && settings.aiDecisionModel !== '' ? settings.aiDecisionModel : automatic;
   const jevKey = (await jevKeyItem.getValue()).trim();
   const own = { baseUrl: TYPESAFE_API, apiKey: jevKey, model: JEV_DIRECT_MODEL };
-  // The user's own key wins only when they chose it ("Use one anyway"); the gateway is the default whenever it offers Jev.
+  // The user's own key wins only when they chose it ("Use one anyway"); the gateway is the default whenever it serves a decision model.
   if (jevKey !== '' && (await jevSourceItem.getValue()) === 'own') return own;
-  if (settings.aiBaseUrl !== '' && gatewayJev !== null) {
+  if (settings.aiBaseUrl !== '' && gatewayModel !== null) {
     const apiKey = (await aiKeyItem.getValue()).trim();
-    return apiKey === '' ? null : { baseUrl: settings.aiBaseUrl, apiKey, model: gatewayJev };
+    return apiKey === '' ? null : { baseUrl: settings.aiBaseUrl, apiKey, model: gatewayModel };
   }
   return jevKey === '' ? null : own;
 }
@@ -390,12 +396,17 @@ export interface ThreadToClassify {
   readonly comments: readonly { readonly author: string; readonly body: string }[];
 }
 
-function commentHash(comment: CommentToClassify): string {
-  return `c:${textHash(`${comment.author}\n${comment.bot ? 1 : 0}\n${comment.body}`)}`;
+/** A chosen decision model's answers are its own: the cache key carries it, so switching models asks again. Automatic keeps the bare key Jev's answers were stored under. */
+function modelSalt(settings: GeldSettings): string {
+  return settings.aiDecisionModel === '' ? '' : `${textHash(settings.aiDecisionModel)}.`;
 }
 
-function threadHash(thread: ThreadToClassify): string {
-  return `t:${textHash(thread.comments.map((comment) => `${comment.author}\n${comment.body}`).join('\n\u0000'))}`;
+function commentHash(comment: CommentToClassify, salt: string): string {
+  return `c:${salt}${textHash(`${comment.author}\n${comment.bot ? 1 : 0}\n${comment.body}`)}`;
+}
+
+function threadHash(thread: ThreadToClassify, salt: string): string {
+  return `t:${salt}${textHash(thread.comments.map((comment) => `${comment.author}\n${comment.body}`).join('\n\u0000'))}`;
 }
 
 /** A preview whose status the parser left `unknown`, with the comment text it came from. */
@@ -404,8 +415,8 @@ export interface PreviewToClassify {
   readonly text: string;
 }
 
-function previewHash(entry: PreviewToClassify): string {
-  return `p:${textHash(`${entry.preview.host}\n${entry.preview.project}\n${entry.text}`)}`;
+function previewHash(entry: PreviewToClassify, salt: string): string {
+  return `p:${salt}${textHash(`${entry.preview.host}\n${entry.preview.project}\n${entry.text}`)}`;
 }
 
 /** Jev's decisions as the current pass can use them: lanes by anchor, thread state by item id, preview states by `host:project@anchor`. */
@@ -433,6 +444,7 @@ export function jevDecisionsFor(settings: GeldSettings, comments: readonly Comme
     void loadDecisions().then(onProgress);
     return NO_DECISIONS;
   }
+  const salt = modelSalt(settings);
   const lanes = new Map<string, CommentLane>();
   const done = new Map<string, AddressedEvidence>();
   const previewStatus = new Map<string, Preview['status']>();
@@ -440,20 +452,20 @@ export function jevDecisionsFor(settings: GeldSettings, comments: readonly Comme
   const missingThreads: Array<{ readonly hash: string; readonly thread: ThreadToClassify }> = [];
   const missingPreviews: Array<{ readonly hash: string; readonly entry: PreviewToClassify }> = [];
   for (const comment of comments) {
-    const hash = commentHash(comment);
+    const hash = commentHash(comment, salt);
     const known = cache.get(hash);
     if (known?.lane !== undefined && isCommentLane(known.lane)) lanes.set(comment.anchor, known.lane);
     else if (known === undefined && !asked.has(hash)) missingComments.push({ hash, comment });
   }
   for (const thread of threads) {
     if (thread.comments.length < 2) continue;
-    const hash = threadHash(thread);
+    const hash = threadHash(thread, salt);
     const known = cache.get(hash);
     if (known?.done !== undefined) done.set(thread.itemId, { verdict: known.done.verdict, evidence: [`Jev: ${Math.round(known.done.probability * 100)}% addressed`] });
     else if (known === undefined && !asked.has(hash)) missingThreads.push({ hash, thread });
   }
   for (const entry of previews) {
-    const hash = previewHash(entry);
+    const hash = previewHash(entry, salt);
     const known = cache.get(hash);
     const status = known?.preview === undefined ? undefined : PREVIEW_STATUSES.find((candidate) => candidate === known.preview);
     if (status !== undefined) previewStatus.set(previewDecisionKey(entry.preview), status);

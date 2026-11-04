@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { candidatePairs, classificationRequests, doneFrom, doneKey, laneKey, lanesFrom, pairKey, previewStatusesFrom, previewStatusKey, sameProblemGroups, sameProblemRequest, withSameProblem } from './decisions';
-import { isEvaluationModel, jevEndpoint, jevModelFor, jevModelIn, parseJevResponse } from './jev';
+import { decisionModelsIn, decisionModelsPath, decisionRoute, defaultDecisionModel, isEvaluationModel, jevModelFor, jevModelIn, openAiDecisionsBody, parseJevResponse, parseOpenAiDecisions } from './jev';
 import type { ConsolidateInputItem } from './prompts';
 
 const item = (id: string, path: string, title = `Finding ${id}`): ConsolidateInputItem => ({ id, title, path, sources: [`c-${id}`], excerpts: [`${title} said at length`], wantFix: false });
@@ -33,10 +33,63 @@ describe('jev', () => {
     expect(jevModelFor('https://ai-gateway.vercel.sh', vercel.slice(0, 3))).toBe('typesafe-ai/jev');
   });
 
-  it('posts to the compatibility prefix on a gateway, the Decisions API on OpenRouter and the plain path at TypeSafe', () => {
-    expect(jevEndpoint('https://ai-gateway.vercel.sh')).toBe('https://ai-gateway.vercel.sh/typesafe/v1/systemone');
-    expect(jevEndpoint('https://openrouter.ai/api')).toBe('https://openrouter.ai/api/alpha/decisions');
-    expect(jevEndpoint('https://api.typesafe.ai')).toBe('https://api.typesafe.ai/v1/systemone');
+  it('routes each gateway and model to the format it speaks', () => {
+    expect(decisionRoute('https://api.typesafe.ai', 'jev-latest')).toEqual({ url: 'https://api.typesafe.ai/v1/systemone', wire: 'typesafe' });
+    expect(decisionRoute('https://openrouter.ai/api', 'typesafe/jev-latest')).toEqual({ url: 'https://openrouter.ai/api/alpha/decisions', wire: 'typesafe' });
+    expect(decisionRoute('https://openrouter.ai/api', 'perplexity/pplx-decider-v1.2')).toEqual({ url: 'https://openrouter.ai/api/alpha/decisions', wire: 'typesafe' });
+    expect(decisionRoute('https://ai-gateway.vercel.sh', 'typesafe-ai/jev')).toEqual({ url: 'https://ai-gateway.vercel.sh/typesafe/v1/systemone', wire: 'typesafe' });
+    expect(decisionRoute('https://ai-gateway.vercel.sh', 'liquid/d1')).toEqual({ url: 'https://ai-gateway.vercel.sh/v1/decisions', wire: 'openai' });
+    expect(decisionRoute('https://api.openai.com', 'gpt-6-luna')).toEqual({ url: 'https://api.openai.com/v1/decisions', wire: 'openai' });
+  });
+
+  it('lists decision models where each gateway keeps them, and picks one when the reader does not', () => {
+    const vercel = [
+      { id: 'baseten/elephant-1', type: 'evaluation' },
+      { id: 'openai/gpt-4.1', type: 'language' },
+      { id: 'typesafe-ai/jev', type: 'evaluation' },
+    ];
+    expect(decisionModelsIn(vercel).map((model) => model.id)).toEqual(['baseten/elephant-1', 'typesafe-ai/jev']);
+    expect(decisionModelsIn([{ id: 'typesafe/jev-latest' }, { id: 'openai/gpt-4.1' }]).map((model) => model.id)).toEqual(['typesafe/jev-latest']);
+    expect(decisionModelsPath('https://openrouter.ai/api')).toBe('/v1/models?output_modalities=decisions');
+    expect(decisionModelsPath('https://ai-gateway.vercel.sh')).toBeNull();
+    expect(defaultDecisionModel('https://ai-gateway.vercel.sh', vercel)).toBe('typesafe-ai/jev');
+    expect(defaultDecisionModel('https://api.openai.com', [{ id: 'gpt-6-luna' }])).toBe('gpt-6-luna');
+    expect(defaultDecisionModel('https://gw.example.com', [{ id: 'acme/decide-1', type: 'decision' }])).toBe('acme/decide-1');
+    expect(defaultDecisionModel('https://bedrock-mantle.us-east-1.api.aws', [{ id: 'openai.gpt-oss-120b' }])).toBeNull();
+  });
+
+  it('speaks OpenAI\'s Decisions format and reads its answers back under Geld\'s ids', () => {
+    const { body, names } = openAiDecisionsBody({
+      model: 'liquid/d1',
+      state: { comments: [{ id: 'c:1', text: 'LGTM' }] },
+      questions: {
+        'done:t:1': { type: 'noul', instructions: 'Is `thread` resolved?', criteria: { true: 'The replies say it is fixed', false: 'It is still open' } },
+        'lane:c:1': { type: 'choice', instructions: 'What is `comment`?', criteria: { trigger: 'Asks a bot to run', discussion: 'Anything else' } },
+        'rank:x': { type: 'score', instructions: 'How severe?', criteria: ['low', 'high'] },
+      },
+    });
+    expect(body.input).toBe('{"comments":[{"id":"c:1","text":"LGTM"}]}');
+    expect(body.questions).toEqual([
+      { type: 'predicate', name: 'q0', instructions: 'Is `thread` resolved?\nYes means: The replies say it is fixed\nNo means: It is still open' },
+      { type: 'choice', name: 'q1', instructions: 'What is `comment`?', choices: [{ value: 'trigger', description: 'Asks a bot to run' }, { value: 'discussion', description: 'Anything else' }] },
+      { type: 'score', name: 'q2', instructions: 'How severe?', levels: [{ label: 'low' }, { label: 'high' }] },
+    ]);
+    const parsed = parseOpenAiDecisions(
+      {
+        model: 'liquid/d1',
+        answers: [
+          { type: 'predicate', name: 'q0', probability: 0.93 },
+          { type: 'choice', name: 'q1', choice: 'discussion', confidence: 0.8, probabilities: [{ value: 'trigger', probability: 0.1 }, { value: 'discussion', probability: 0.9 }] },
+          { type: 'refusal', name: 'q2' },
+        ],
+      },
+      names,
+    );
+    expect(parsed?.answers).toEqual({
+      'done:t:1': { type: 'noul', noul: 0.93 },
+      'lane:c:1': { type: 'choice', choice: 'discussion', confidence: 0.8, probabilities: { trigger: 0.1, discussion: 0.9 } },
+    });
+    expect(parseOpenAiDecisions({ answers: 'no' }, names)).toBeNull();
   });
 
   it('knows the Jev model of gateways that do not list it', () => {

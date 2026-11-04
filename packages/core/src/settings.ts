@@ -153,12 +153,15 @@ export interface GeldSettings {
   readonly aiModel: string;
   readonly issueTracker:IssueTrackerConfig|null;
   /**
-   * Use TypeSafe's Jev (a System One evaluation model: typed, probabilistic
-   * answers, no prose) for the decisions in front of the prose model - which
+   * Use a decision model (typed, probabilistic answers, no prose; TypeSafe's
+   * Jev by default) for the decisions in front of the prose model - which
    * items report the same problem, what a folded comment is. Through the
-   * gateway when it offers Jev, else with the user's own TypeSafe key.
+   * gateway when it serves one, else Jev with the user's own TypeSafe key.
+   * The key keeps its old name: settings ids are permanent.
    */
   readonly aiJev: boolean;
+  /** Decision model at the gateway for those decisions. Empty means automatic: Jev where the gateway offers it, else the gateway's own. */
+  readonly aiDecisionModel: string;
   /**
    * Suggested fixes on review items. `bots`: show the fix a review bot
    * attached (a ```suggestion block). `ai`: only fixes the consolidation
@@ -229,6 +232,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   aiModel: '',
   issueTracker:null,
   aiJev: false,
+  aiDecisionModel: '',
   suggestedFixes: 'bots',
 };
 
@@ -484,6 +488,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     issueTracker:parseIssueTracker(record.issueTracker),
     aiModel: typeof record.aiModel === 'string' ? record.aiModel.trim() : DEFAULT_SETTINGS.aiModel,
     aiJev: bool(record, 'aiJev', DEFAULT_SETTINGS.aiJev),
+    aiDecisionModel: typeof record.aiDecisionModel === 'string' ? record.aiDecisionModel.trim() : DEFAULT_SETTINGS.aiDecisionModel,
     suggestedFixes: isSuggestedFixMode(record.suggestedFixes) ? record.suggestedFixes : DEFAULT_SETTINGS.suggestedFixes,
   };
 }

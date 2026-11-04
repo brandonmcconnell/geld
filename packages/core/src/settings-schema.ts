@@ -23,7 +23,7 @@ export type ListSettingKey = {
 export type ChoiceSettingKey = 'repoConfigs' | 'compactTimeline' | 'reviewGrouping' | 'suggestedFixes';
 
 /** Freeform string settings (URLs, model ids). Distinct from {@link ChoiceSettingKey}. */
-export type TextSettingKey = 'aiBaseUrl' | 'aiModel';
+export type TextSettingKey = 'aiBaseUrl' | 'aiModel' | 'aiDecisionModel';
 
 export type SettingsSurface = 'extension' | 'site';
 
@@ -573,10 +573,20 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       {
         kind: 'toggle',
         key: 'aiJev',
-        label: 'Use Jev for decisions',
+        label: 'Use a decision model',
         description:
-          'TypeSafe’s Jev answers typed questions with calibrated probabilities instead of prose, in milliseconds and for a fraction of the cost. With it on, Geld asks Jev which findings report the same problem before the AI model rewrites them; off, the AI model decides that itself.',
+          'A decision model answers typed questions with calibrated probabilities instead of prose, in milliseconds and for a fraction of the cost. With it on, Geld asks it which findings report the same problem before the AI model rewrites them, and what each folded comment is. Off, the AI model decides that itself.',
         popup: false,
+        surfaces: ['extension'],
+      },
+      {
+        kind: 'text',
+        key: 'aiDecisionModel',
+        label: 'Decision model',
+        description: 'Listed from the gateway when it serves decision models (Vercel AI Gateway, OpenRouter, OpenAI). Leave it on automatic for TypeSafe’s Jev where the gateway offers it, the gateway’s own decision model otherwise, or Jev with a TypeSafe key of your own.',
+        popup: false,
+        placeholder: 'Automatic',
+        autocomplete: 'off',
         surfaces: ['extension'],
       },
     ],
