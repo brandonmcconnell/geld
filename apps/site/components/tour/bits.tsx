@@ -19,13 +19,13 @@ const PEOPLE = {
 
 export type Person = keyof typeof PEOPLE;
 
-/** A person's round picture: a tinted disc with their initial, so no faces are borrowed. */
+/** A person's round picture: a tinted disc with their initial, so no faces are borrowed. The initial is set as a bot's mark sets its letter. */
 export function Avatar({ who, size = 20, className }: { readonly who: Person; readonly size?: number; readonly className?: string }) {
   return (
     <span
       aria-hidden="true"
-      className={cn('inline-grid shrink-0 place-items-center rounded-full font-semibold text-white uppercase ring-2 ring-card', PEOPLE[who], className)}
-      style={{ width: size, height: size, fontSize: size * 0.48 }}
+      className={cn('inline-grid shrink-0 place-items-center rounded-full font-bold text-white uppercase ring-2 ring-card', PEOPLE[who], className)}
+      style={{ width: size, height: size, fontSize: size * 0.55 }}
     >
       {who[0]}
     </span>
@@ -33,11 +33,10 @@ export function Avatar({ who, size = 20, className }: { readonly who: Person; re
 }
 
 const BOTS = {
-  bugbot: { name: 'Bugbot', className: 'bg-[#14120b] text-white dark:bg-white dark:text-[#14120b]', glyph: 'B' },
-  coderabbit: { name: 'CodeRabbit', className: 'bg-[#ff570a] text-white', glyph: 'C' },
-  greptile: { name: 'Greptile', className: 'bg-[#22c55e] text-white', glyph: 'G' },
-  devin: { name: 'Devin', className: 'bg-[#0294de] text-white', glyph: 'D' },
-  copilot: { name: 'Copilot', className: 'bg-[#8250df] text-white', glyph: 'C' },
+  buggy: { name: 'Buggy', className: 'bg-[#14120b] text-white dark:bg-white dark:text-[#14120b]', glyph: 'B' },
+  codehopper: { name: 'CodeHopper', className: 'bg-[#ff570a] text-white', glyph: 'C' },
+  gecko: { name: 'Gecko', className: 'bg-[#22c55e] text-white', glyph: 'G' },
+  devlin: { name: 'Devlin', className: 'bg-[#0294de] text-white', glyph: 'D' },
 } as const;
 
 export type BotId = keyof typeof BOTS;
@@ -68,12 +67,13 @@ export function Meter({ done, total, className }: { readonly done: number; reado
   );
 }
 
-/** A pill in the digest's status rows: outlined, mark first, then words, then a light. */
-export function Chip({ children, className, dashed = false }: { readonly children: React.ReactNode; readonly className?: string; readonly dashed?: boolean }) {
+/** A pill in the digest's status rows: outlined, mark first, then words, then a light. A bot's mark (4px corners) sits 3px inside the 1px border, so `square` takes 8px corners, concentric with it. */
+export function Chip({ children, className, dashed = false, square = false }: { readonly children: React.ReactNode; readonly className?: string; readonly dashed?: boolean; readonly square?: boolean }) {
   return (
     <span
       className={cn(
-        'inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border bg-card pr-2 pl-1 text-xs whitespace-nowrap',
+        'inline-flex h-6 shrink-0 items-center gap-1.5 border bg-card pr-2 pl-[3px] text-xs whitespace-nowrap',
+        square ? 'rounded-[8px]' : 'rounded-full',
         dashed && 'border-dashed',
         className,
       )}

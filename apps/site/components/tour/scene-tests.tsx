@@ -5,6 +5,7 @@ import { ChevronRightIcon, FileCodeIcon } from 'lucide-react';
 import { useState } from 'react';
 
 import { TOUR_FILES } from '@/components/tour/data';
+import { Ping } from '@/components/tour/ping';
 import { PrWindow } from '@/components/tour/pr-window';
 
 type Kind = 'add' | 'del' | 'ctx';
@@ -66,8 +67,10 @@ function countsOf(lines: readonly Line[]): { readonly additions: number; readonl
   return { additions: lines.filter((line) => line.kind === 'add').length, deletions: lines.filter((line) => line.kind === 'del').length };
 }
 
+const OPENED = 'calls onChange when controlled';
+
 export function TestsScene() {
-  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set(['calls onChange when controlled']));
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set([OPENED]));
   // One test open at a time keeps the file inside the window.
   const toggle = (title: string): void => setOpen((previous) => (previous.has(title) ? new Set() : new Set([title])));
   // The whole file's count, as every other scene shows it; the tests below are only the hunks that changed most.
@@ -92,19 +95,21 @@ export function TestsScene() {
             const counts = countsOf(test.lines);
             return (
               <div key={test.title} className="border-t first:border-t-0">
-                <button
-                  type="button"
-                  aria-expanded={isOpen}
-                  onClick={() => toggle(test.title)}
-                  className="flex w-full items-center gap-3 py-1.5 pr-3 text-left font-sans outline-none transition-colors hover:bg-muted/60 focus-visible:bg-muted"
-                >
-                  <span className="w-10 shrink-0 pr-2 text-right font-mono text-[0.6875rem] text-muted-foreground tabular-nums">{test.start}</span>
-                  <span className={cn('min-w-0 flex-1 truncate text-[0.8125rem]', test.title === 'beforeEach' ? 'font-mono text-xs' : 'font-medium')}>{test.title}</span>
-                  <span className="shrink-0 font-mono text-[0.6875rem] tabular-nums">
-                    <span className="text-addition">+{counts.additions}</span> <span className="text-deletion">&minus;{counts.deletions}</span>
-                  </span>
-                  <ChevronRightIcon aria-hidden="true" className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', isOpen && 'rotate-90')} />
-                </button>
+                <Ping on={test.title === OPENED} className="flex">
+                  <button
+                    type="button"
+                    aria-expanded={isOpen}
+                    onClick={() => toggle(test.title)}
+                    className={cn('flex w-full items-center gap-3 py-1.5 pr-3 text-left font-sans outline-none transition-colors hover:bg-muted/60 focus-visible:bg-muted', isOpen && 'border-b')}
+                  >
+                    <span className="w-10 shrink-0 pr-2 text-right font-mono text-[0.6875rem] text-muted-foreground tabular-nums">{test.start}</span>
+                    <span className={cn('min-w-0 flex-1 truncate text-[0.8125rem]', test.title === 'beforeEach' ? 'font-mono text-xs' : 'font-medium')}>{test.title}</span>
+                    <span className="shrink-0 font-mono text-[0.6875rem] tabular-nums">
+                      <span className="text-addition">+{counts.additions}</span> <span className="text-deletion">&minus;{counts.deletions}</span>
+                    </span>
+                    <ChevronRightIcon aria-hidden="true" className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', isOpen && 'rotate-90')} />
+                  </button>
+                </Ping>
                 <div className={cn('grid transition-[grid-template-rows] duration-300 ease-out', isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
                   <div className="overflow-hidden" inert={!isOpen}>
                     {test.lines.map((line, index) => (

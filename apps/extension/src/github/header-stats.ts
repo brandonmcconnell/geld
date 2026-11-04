@@ -1,6 +1,6 @@
 import type { HiddenCategory } from '@geld/core';
 import type { ChangeTotals } from '@geld/core';
-import { formatCount, parseCount } from '@geld/core';
+import { COUNT_PATTERN, formatCount, formatCountLike, parseCount } from '@geld/core';
 import type { HiddenBreakdown } from './breakdown';
 import { hidesAnything } from './breakdown';
 import type { StatsBreakdown } from './breakdown';
@@ -21,7 +21,10 @@ export interface HeaderStatGroup {
   readonly sentence: boolean;
 }
 
-const FILE_COUNT_TEXT = /^\s*\(?\d[\d,]*\)?\s*$|\bfiles?\b/i;
+const FILE_COUNT_TEXT = new RegExp(String.raw`^\s*\(?${COUNT_PATTERN}\)?\s*$|\bfiles?\b`, 'i');
+const FILES_CHANGED_TEXT = new RegExp(String.raw`${COUNT_PATTERN}\s+files?\s+changed`, 'i');
+const FIRST_COUNT = new RegExp(COUNT_PATTERN);
+const BARE_COUNT = new RegExp(String.raw`^\s*[+\-\u2212]?\s*${COUNT_PATTERN}\s*$`);
 
 const HEADER_HOST_SELECTOR = '#diffstat, .toc-diff-stats';
 const SR_ONLY_SELECTOR = 'span.sr-only, span[class*="VisuallyHidden"]';
@@ -170,7 +173,7 @@ function findReactFileCounts(host: HTMLElement): HTMLElement[] {
   if (commitContainer !== null) {
     for (const element of queryAll<HTMLElement>('p, span, h2, h3', commitContainer)) {
       if (element.contains(host) || host.contains(element)) continue;
-      if (/\d[\d,]*\s+files?\s+changed/i.test(originalText(element))) counts.push(element);
+      if (FILES_CHANGED_TEXT.test(originalText(element))) counts.push(element);
     }
   }
   // PR header: the "Files changed" tab counter and its visually hidden twin.
@@ -314,7 +317,7 @@ const COUNT_NOUNS = /\b(files?|additions?|deletions?|changes?|lines?)\b/i;
  * noun that follows it ("1 file changed", "2 additions", ...).
  */
 export function replaceCount(text: string, count: number): string {
-  const replaced = text.replace(/\d[\d,]*/, formatCount(count));
+  const replaced = text.replace(FIRST_COUNT, formatCountLike(text, count));
   return replaced.replace(COUNT_NOUNS, (word) => {
     const singular = word.endsWith('s') ? word.slice(0, -1) : word;
     return count === 1 ? singular : `${singular}s`;
@@ -332,8 +335,8 @@ function signPrefix(text: string): string {
  * "18 files changed") keep their words.
  */
 function rewriteNumber(original: string, value: number, fallbackSign: string): string {
-  if (/^\s*[+\-\u2212]?\s*\d[\d,]*\s*$/.test(original)) {
-    return `${signPrefix(original) || fallbackSign}${formatCount(value)}`;
+  if (BARE_COUNT.test(original)) {
+    return `${signPrefix(original) || fallbackSign}${formatCountLike(original, value)}`;
   }
   return replaceCount(original, value);
 }

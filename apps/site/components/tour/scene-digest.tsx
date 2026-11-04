@@ -6,6 +6,7 @@ import { useState } from 'react';
 
 import type { BotId, Person } from '@/components/tour/bits';
 import { Avatar, BotMark, Chip, Meter } from '@/components/tour/bits';
+import { Ping } from '@/components/tour/ping';
 import { PrWindow } from '@/components/tour/pr-window';
 
 interface Thread {
@@ -22,7 +23,7 @@ const THREADS: readonly Thread[] = [
     id: 'default',
     title: 'Controlled value ignores defaultPressed',
     path: 'src/Button.tsx',
-    by: { bot: 'bugbot' },
+    by: { bot: 'buggy' },
     said: '`defaultPressed` is dropped once `pressed` is set. Warn in development.',
     reply: 'Added a dev warning in 3f2a91c.',
   },
@@ -38,7 +39,7 @@ const THREADS: readonly Thread[] = [
     id: 'docs',
     title: 'Docs example still uses onClick',
     path: 'docs/button.mdx',
-    by: { bot: 'coderabbit' },
+    by: { bot: 'codehopper' },
     said: 'The example passes `onClick`, which no longer toggles. Use `onChange`.',
     reply: 'Updated the example.',
   },
@@ -86,19 +87,19 @@ export function DigestScene() {
             <span className="text-muted-foreground tabular-nums">1/2 approvals</span>
           </StatusRow>
           <StatusRow label="Review bots">
-            <Chip>
-              <BotMark bot="bugbot" size={16} />
-              Bugbot <span className="text-muted-foreground">{resolved.has('default') ? 'resolved' : '1 issue'}</span>
+            <Chip square>
+              <BotMark bot="buggy" size={16} />
+              Buggy <span className="text-muted-foreground">{resolved.has('default') ? 'resolved' : '1 issue'}</span>
               <Light tone={resolved.has('default') ? 'good' : 'warn'} />
             </Chip>
-            <Chip>
-              <BotMark bot="coderabbit" size={16} />
-              CodeRabbit <span className="text-muted-foreground">{resolved.has('docs') ? 'resolved' : '1 issue'}</span>
+            <Chip square>
+              <BotMark bot="codehopper" size={16} />
+              CodeHopper <span className="text-muted-foreground">{resolved.has('docs') ? 'resolved' : '1 issue'}</span>
               <Light tone={resolved.has('docs') ? 'good' : 'warn'} />
             </Chip>
-            <Chip>
-              <BotMark bot="greptile" size={16} />
-              Greptile <span className="text-muted-foreground">5/5</span>
+            <Chip square>
+              <BotMark bot="gecko" size={16} />
+              Gecko <span className="text-muted-foreground">5/5</span>
               <Light tone="good" />
             </Chip>
           </StatusRow>
@@ -123,9 +124,9 @@ export function DigestScene() {
             <div className="flex items-center gap-2 border-b px-3 py-1.5 text-[0.8125rem]">
               {open.length === 0 ? <CircleCheckIcon aria-hidden="true" className="size-4 text-addition" /> : <CircleIcon aria-hidden="true" className="size-4 text-muted-foreground" />}
               <span className="flex -space-x-1">
-                <BotMark bot="bugbot" size={18} />
+                <BotMark bot="buggy" size={18} className="ring-2 ring-card" />
                 <Avatar who="hubot" size={18} />
-                <BotMark bot="coderabbit" size={18} />
+                <BotMark bot="codehopper" size={18} className="ring-2 ring-card" />
               </span>
               <span className="font-semibold">Round 3</span>
               <Meter done={resolved.size} total={THREADS.length} />
@@ -235,7 +236,7 @@ function ThreadRow({
   const author = 'bot' in thread.by ? <BotMark bot={thread.by.bot} size={16} /> : <Avatar who={thread.by.person} size={16} className="ring-0" />;
   return (
     <li className="border-t first:border-t-0">
-      <button type="button" aria-expanded={open} onClick={onToggle} className="flex w-full items-center gap-2 py-1.5 pr-3 pl-6 text-left outline-none hover:bg-muted/60 focus-visible:bg-muted">
+      <button type="button" aria-expanded={open} onClick={onToggle} className={cn('flex w-full items-center gap-2 py-1.5 pr-3 pl-6 text-left outline-none hover:bg-muted/60 focus-visible:bg-muted', open && 'border-b')}>
         {resolved ? <CircleCheckIcon aria-hidden="true" className="size-3.5 shrink-0 text-addition" /> : <CircleIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />}
         {author}
         <span className={cn('min-w-0 truncate font-medium', resolved && 'text-muted-foreground')}>{thread.title}</span>
@@ -254,13 +255,15 @@ function ThreadRow({
           </div>
           <div className="flex items-center justify-end gap-2">
             <span className="flex-1 rounded-md border bg-card px-2 py-0.5 text-muted-foreground">Reply…</span>
-            <button
-              type="button"
-              onClick={onResolve}
-              className="rounded-md border bg-card px-2 py-0.5 font-medium outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40"
-            >
-              {resolved ? 'Unresolve' : 'Resolve conversation'}
-            </button>
+            <Ping on={open} className="inline-flex rounded-md">
+              <button
+                type="button"
+                onClick={onResolve}
+                className="rounded-md border bg-card px-2 py-0.5 font-medium outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40"
+              >
+                {resolved ? 'Unresolve' : 'Resolve conversation'}
+              </button>
+            </Ping>
           </div>
         </div>
       </Collapsible>

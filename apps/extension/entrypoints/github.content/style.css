@@ -2465,10 +2465,16 @@ html[data-geld-timeline='full'] [data-geld-folded] {
  * stamps `data-geld-seen` on everything present when a pass ends), so the
  * time between arrival and fold never paints it. Only once the panel is up,
  * so the first paint of the page is GitHub's own; items on loan to the
- * panel are exempt.
+ * panel are exempt. Never `display: none`: a Mermaid diagram GitHub renders in
+ * that window has no layout in its iframe, fails with "svg element not in
+ * render tree" and stays failed when the item shows.
  */
 html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-timeline-item, .TimelineItem, [data-testid='timeline-row']):not([data-geld-seen]):not(.geld-review *) {
-  display: none !important;
+  content-visibility: hidden !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
 }
 
 /* The description card the panel grows out of: one box, shared border. */
@@ -6379,6 +6385,43 @@ a.geld-review__rerun {
   text-decoration: none;
 }
 
+/* "Run" on the CI row (GitHub's "Approve workflows to run"): Rerun's box beside the gear, its alert glyph in
+   GitHub's attention colour. Pressed, it fades until the pass after GitHub's own button has gone. */
+.geld-review__approve-run-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
+}
+
+/* The row's other controls (⋯, the gear, the chevron) are 28px squares; Run stands as tall, not at Rerun's 24px. */
+.geld-review__approve-run {
+  height: 28px;
+  padding: 0 8px;
+}
+
+.geld-review__approve-run .octicon {
+  color: var(--fgColor-attention, var(--color-attention-fg));
+}
+
+/* Mona Sans at line-height 1 sits its letters 1.5px above the box's middle: the word's box is trimmed to its cap height
+   and baseline, so centring the box centres the letters. Without `text-box` the word is nudged down instead. */
+.geld-review__approve-run > span {
+  text-box: trim-both cap alphabetic;
+}
+
+@supports not (text-box: trim-both cap alphabetic) {
+  .geld-review__approve-run > span {
+    position: relative;
+    top: 1.5px;
+  }
+}
+
+.geld-review__approve-run:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 a.geld-review__rerun:hover {
   text-decoration: none;
   color: var(--fgColor-default, var(--color-fg-default));
@@ -7304,6 +7347,15 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 :is(.comment-body, .js-comment-body, [data-testid='comment-body'], [data-testid='issue-body'], [data-testid='review-thread-comment'])
   :is(pre, .highlight, .blob-code, .blob-num) {
   text-wrap-style: auto;
+}
+
+/*
+ * GitHub sets inline code to `white-space: break-spaces`, and Chrome turns `pretty` off for any paragraph holding
+ * one, which is most of them. `pre-wrap` keeps the code's spaces as `break-spaces` does and leaves `pretty` working.
+ */
+:is(.comment-body, .js-comment-body, [data-testid='comment-body'], [data-testid='issue-body'], [data-testid='review-thread-comment'])
+  :is(code, tt):not(pre *) {
+  white-space: pre-wrap;
 }
 
 /* ---- description outline and cap (description.ts) ------------------------- */

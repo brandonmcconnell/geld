@@ -9,6 +9,7 @@ import { useMemo, useState } from 'react';
 import { Diffstat } from '@/components/demo/diffstat';
 import type { TourFile } from '@/components/tour/data';
 import { TOUR_FILES, totalsOf } from '@/components/tour/data';
+import { Ping } from '@/components/tour/ping';
 import { PrWindow } from '@/components/tour/pr-window';
 
 export const TOGGLES: readonly CategoryId[] = ['tests', 'generated', 'docs', 'tooling'];
@@ -73,7 +74,7 @@ export function NoiseScene() {
               aria-pressed={on}
               onClick={() => toggle(id)}
               className={cn(
-                'inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/40',
+                'inline-flex h-7 items-center gap-1.5 rounded-full border pr-2.5 pl-1.5 text-xs font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/40',
                 on ? 'border-foreground bg-foreground text-background' : 'bg-card text-muted-foreground hover:text-foreground',
               )}
             >
@@ -108,18 +109,20 @@ export function NoiseScene() {
               </span>
             </span>
           </span>
-          <button
-            type="button"
-            aria-expanded={showHidden}
-            onClick={() => setShowHidden((value) => !value)}
-            disabled={hidden.length === 0}
-            className="inline-flex shrink-0 items-center gap-1 rounded-md border bg-background px-2 py-1 font-medium text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40"
-          >
-            {showHidden ? 'Hide' : 'Show'}
-            <ChevronDownIcon aria-hidden="true" className={cn('size-3.5 transition-transform', showHidden && 'rotate-180')} />
-          </button>
+          <Ping on={hidden.length > 0} className="inline-flex shrink-0 rounded-md">
+            <button
+              type="button"
+              aria-expanded={showHidden}
+              onClick={() => setShowHidden((value) => !value)}
+              disabled={hidden.length === 0}
+              className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 font-medium text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/40"
+            >
+              {showHidden ? 'Hide' : 'Show'}
+              <ChevronDownIcon aria-hidden="true" className={cn('size-3.5 transition-transform', showHidden && 'rotate-180')} />
+            </button>
+          </Ping>
         </div>
-        <ul aria-label="Hidden files" className="bg-muted/40">
+        <ul aria-label="Hidden files" className={cn('bg-muted/40', showHidden && hidden.length > 0 && 'border-t')}>
           {files.map((file) => (
             <Collapse key={file.path} open={showHidden && file.category !== null}>
               <FileLine file={file} dim />

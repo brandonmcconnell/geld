@@ -1,5 +1,8 @@
+'use client';
+
 import { cn } from 'cn';
 import { GitMergeIcon, GitPullRequestClosedIcon, GitPullRequestDraftIcon, GitPullRequestIcon } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 
 import type { PrState } from '@/components/tour/bits';
 import { TOUR_FILES } from '@/components/tour/data';
@@ -39,6 +42,8 @@ export function stateWord(state: PrState): string {
  * A browser window holding a trimmed GitHub pull request: address bar, title,
  * state label, tabs, then whatever the scene puts in the body.
  */
+const CONTROL = 'a[href], button, input, select, [role="switch"], [role="checkbox"]';
+
 export function PrWindow({
   tab,
   onTab,
@@ -64,8 +69,28 @@ export function PrWindow({
   readonly bodyClassName?: string;
 }) {
   const path = TABS.find((entry) => entry.id === tab)?.path ?? '';
+  const root = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const node = root.current;
+    if (node === null) return;
+    // Out of view, the window's ping pauses (`ping-fade`) and is re-armed, so it is there again when the reader comes back.
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry === undefined) return;
+      node.toggleAttribute('data-offscreen', !entry.isIntersecting);
+      if (!entry.isIntersecting) delete node.dataset.used;
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
   return (
-    <div className={cn('@container flex flex-col overflow-hidden rounded-xl border bg-card text-card-foreground shadow-[0_24px_60px_-28px_rgb(0_0_0/0.35)]', className)}>
+    <div
+      ref={root}
+      onClickCapture={(event) => {
+        // The first press on a control marks the scene used, which fades its ping (`ping-fade`).
+        if (event.target instanceof Element && event.target.closest(CONTROL)) event.currentTarget.dataset.used = '';
+      }}
+      className={cn('@container flex flex-col overflow-hidden rounded-xl border bg-card text-card-foreground shadow-[0_24px_60px_-28px_rgb(0_0_0/0.35)]', className)}
+    >
       <div className="flex h-9 shrink-0 items-center gap-3 border-b bg-muted/60 px-3">
         <span aria-hidden="true" className="flex gap-1.5">
           <span className="size-2.5 rounded-full bg-foreground/15" />

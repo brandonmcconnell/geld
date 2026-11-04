@@ -1,10 +1,12 @@
 'use client';
 
 import { cn } from 'cn';
-import { CheckIcon, CircleCheckIcon, FileCodeIcon, FileDiffIcon, GitCommitHorizontalIcon, MessageSquareIcon, XIcon } from 'lucide-react';
+import { CheckIcon, CircleCheckIcon, FileCodeIcon, FileDiffIcon, GitCommitHorizontalIcon, MessageSquareIcon } from 'lucide-react';
 import { useState } from 'react';
 
 import { Avatar } from '@/components/tour/bits';
+import { Octicon } from '@/components/tour/octicons';
+import { Ping } from '@/components/tour/ping';
 import type { PrTab } from '@/components/tour/pr-window';
 import { PrWindow } from '@/components/tour/pr-window';
 import { useInstantKey } from '@/components/tour/use-instant-key';
@@ -36,8 +38,8 @@ const TAB_BODY: Record<PrTab, readonly { readonly icon: React.ReactNode; readonl
     { icon: <CircleCheckIcon aria-hidden="true" className="size-4 text-addition" />, text: 'CI / test (pull_request)' },
     { icon: <CircleCheckIcon aria-hidden="true" className="size-4 text-addition" />, text: 'CI / lint (pull_request)' },
     { icon: <CircleCheckIcon aria-hidden="true" className="size-4 text-addition" />, text: 'Vercel · widgets-docs' },
-    { icon: <CircleCheckIcon aria-hidden="true" className="size-4 text-addition" />, text: 'Cursor Bugbot' },
-    { icon: <CircleCheckIcon aria-hidden="true" className="size-4 text-addition" />, text: 'CodeRabbit' },
+    { icon: <CircleCheckIcon aria-hidden="true" className="size-4 text-addition" />, text: 'Buggy' },
+    { icon: <CircleCheckIcon aria-hidden="true" className="size-4 text-addition" />, text: 'CodeHopper' },
   ],
   files: [
     { icon: <FileCodeIcon aria-hidden="true" className="size-4 text-muted-foreground" />, text: 'src/Button.tsx' },
@@ -79,27 +81,29 @@ export function QuickReviewScene() {
         <>
           <span className="hidden items-center gap-1.5 text-xs text-muted-foreground tabular-nums sm:inline-flex" aria-label={`${approvals} approvals, ${requests} requests for changes, ${commenters} commented`}>
             {approvals}
-            <CheckIcon aria-hidden="true" className="size-3.5 text-addition" strokeWidth={2.5} />
+            <Octicon glyph="check" className="size-3.5 text-addition" />
             {requests > 0 ? (
               <>
                 {requests}
-                <XIcon aria-hidden="true" className="size-3.5 text-deletion" strokeWidth={2.5} />
+                <Octicon glyph="x" className="size-3.5 text-deletion" />
               </>
             ) : null}
             {commenters}
-            <MessageSquareIcon aria-hidden="true" className="size-3.5" />
+            <Octicon glyph="comment" className="size-3.5 translate-y-px" />
           </span>
-          <span className="inline-flex overflow-hidden rounded-md border shadow-xs" role="group" aria-label="Review">
-            <Segment label="Approve" pressed={box === 'approve'} current={mine === 'approve'} onClick={(event) => press('approve', event)} tone="good" instant={instant}>
-              <CheckIcon aria-hidden="true" className="size-4" strokeWidth={2.25} />
-            </Segment>
-            <Segment label="Request changes" pressed={box === 'changes'} current={mine === 'changes'} onClick={(event) => press('changes', event)} tone="bad" instant={instant}>
-              <XIcon aria-hidden="true" className="size-4" strokeWidth={2.25} />
-            </Segment>
-            <Segment label="Comment" pressed={box === 'comment'} current={false} onClick={(event) => press('comment', event)} tone="plain" instant={false}>
-              <MessageSquareIcon aria-hidden="true" className="size-4" />
-            </Segment>
-          </span>
+          <Ping className="inline-flex rounded-md">
+            <span className="inline-flex overflow-hidden rounded-md border shadow-xs" role="group" aria-label="Review">
+              <Segment label="Approve" pressed={box === 'approve'} current={mine === 'approve'} onClick={(event) => press('approve', event)} tone="good">
+                <Octicon glyph="check" send={instant} />
+              </Segment>
+              <Segment label="Request changes" pressed={box === 'changes'} current={mine === 'changes'} onClick={(event) => press('changes', event)} tone="bad">
+                <Octicon glyph="x" send={instant} />
+              </Segment>
+              <Segment label="Comment" pressed={box === 'comment'} current={false} onClick={(event) => press('comment', event)} tone="plain">
+                <Octicon glyph="comment" className="translate-y-px" />
+              </Segment>
+            </span>
+          </Ping>
         </>
       }
       bodyClassName="relative min-h-80"
@@ -162,7 +166,6 @@ function Segment({
   current,
   onClick,
   tone,
-  instant,
   children,
 }: {
   readonly label: string;
@@ -170,7 +173,6 @@ function Segment({
   readonly current: boolean;
   readonly onClick: (event: React.MouseEvent) => void;
   readonly tone: 'good' | 'bad' | 'plain';
-  readonly instant: boolean;
   readonly children: React.ReactNode;
 }) {
   return (
@@ -189,7 +191,6 @@ function Segment({
       )}
     >
       {children}
-      {instant ? <span aria-hidden="true" className="absolute right-0.5 bottom-0.5 text-[0.5rem] leading-none font-bold">↗</span> : null}
     </button>
   );
 }

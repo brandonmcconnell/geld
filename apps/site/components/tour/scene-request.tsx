@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 
 import type { BotId } from '@/components/tour/bits';
 import { Avatar, BotMark, botName, Chip } from '@/components/tour/bits';
+import { Ping } from '@/components/tour/ping';
 import { PrWindow } from '@/components/tour/pr-window';
 import { Light } from '@/components/tour/scene-digest';
 
@@ -18,10 +19,10 @@ interface BotLine {
 }
 
 const START: readonly BotLine[] = [
-  { bot: 'bugbot', trigger: 'bugbot run', state: 'findings' },
-  { bot: 'coderabbit', trigger: '@coderabbitai review', state: 'earlier' },
-  { bot: 'greptile', trigger: '@greptileai', state: 'passed' },
-  { bot: 'devin', trigger: '/devin review', state: 'not-run' },
+  { bot: 'buggy', trigger: 'buggy run', state: 'findings' },
+  { bot: 'codehopper', trigger: '@codehopper review', state: 'earlier' },
+  { bot: 'gecko', trigger: '@gecko', state: 'passed' },
+  { bot: 'devlin', trigger: '/devlin review', state: 'not-run' },
 ];
 
 const STATE_WORD: Record<RunState, string> = { findings: 'Findings', earlier: 'Earlier commit', passed: 'Passed', 'not-run': 'Not run', running: 'Running' };
@@ -33,11 +34,11 @@ const STATE_CLASS: Record<RunState, string> = {
   running: 'text-[#0969da] dark:text-[#4493f8]',
 };
 
-const OTHER_BOTS = ['Copilot', 'Claude Code Review', 'cubic', 'Qodo', 'Sourcery', 'Gemini Code Assist'];
+const OTHER_BOTS = ['Wingman', 'Clawed Review', 'cuboid', 'Kodo', 'Sorcery', 'Gemstone Code Assist'];
 
 export function RequestScene() {
   const [lines, setLines] = useState<readonly BotLine[]>(START);
-  const [ticked, setTicked] = useState<ReadonlySet<BotId>>(() => new Set<BotId>(['bugbot', 'coderabbit']));
+  const [ticked, setTicked] = useState<ReadonlySet<BotId>>(() => new Set<BotId>(['buggy', 'codehopper']));
   const [menuOpen, setMenuOpen] = useState(true);
   const [othersOpen, setOthersOpen] = useState(false);
   const [posted, setPosted] = useState<readonly string[]>([]);
@@ -70,7 +71,7 @@ export function RequestScene() {
             {lines
               .filter((line) => line.state !== 'not-run')
               .map((line) => (
-                <Chip key={line.bot}>
+                <Chip key={line.bot} square>
                   <BotMark bot={line.bot} size={16} />
                   {botName(line.bot)}
                   {line.state === 'running' ? (
@@ -136,29 +137,31 @@ export function RequestScene() {
               <button type="button" onClick={() => setMenuOpen(false)} className="rounded-md px-2 py-1 font-medium hover:bg-muted">
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={run}
-                disabled={pickedCount === 0}
-                className="rounded-md bg-[#1f883d] px-2.5 py-1 font-medium text-white transition-opacity disabled:opacity-50"
-              >
-                {runLabel}
-              </button>
+              <Ping on={menuOpen} tone="text-[#1f883d]" className="inline-flex rounded-md">
+                <button
+                  type="button"
+                  onClick={run}
+                  disabled={pickedCount === 0}
+                  className="rounded-md bg-[#1f883d] px-2.5 py-1 font-medium text-white transition-opacity disabled:opacity-50"
+                >
+                  {runLabel}
+                </button>
+              </Ping>
             </div>
           </div>
         </div>
       </div>
 
       <div className="mx-3 mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-        <BotMark bot="bugbot" size={18} />
+        <BotMark bot="buggy" size={18} />
         <span className="min-w-0 truncate">
-          <span className="font-medium text-foreground">Bugbot</span> reviewed · found 1 potential issue
+          <span className="font-medium text-foreground">Buggy</span> reviewed · found 1 potential issue
         </span>
       </div>
       <div className="mx-3 mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-        <BotMark bot="coderabbit" size={18} />
+        <BotMark bot="codehopper" size={18} />
         <span className="min-w-0 truncate">
-          <span className="font-medium text-foreground">CodeRabbit</span> reviewed · Actionable comments posted: 0
+          <span className="font-medium text-foreground">CodeHopper</span> reviewed · Actionable comments posted: 0
         </span>
       </div>
       <div className="mx-3 mt-2 flex items-center gap-2 text-xs text-muted-foreground">

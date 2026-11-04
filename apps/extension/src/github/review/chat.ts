@@ -275,9 +275,17 @@ const ATTR_AGENT_RERUN = 'data-geld-agent-rerun';
  * A review posted by a Cursor cloud agent (an automation, by `cursor[bot]`)
  * ends in "Open in Web", the agent's run on cursor.com. Found Oct 2026 on
  * public pull requests; Bugbot's "Fix All in Cursor" is an action, not a
- * view, and the other bots post none.
+ * view, and the other bots post none. Since Nov 2026 Greptile's badge goes
+ * through its tenant switch, the run's path encoded in `next`
+ * (`/-/switch-tenant?tenant=o&next=%2Fo%2Fr%2Fpull%2F9`).
  */
-const AGENT_VIEW_LINKS = ['a[href^="https://app.greptile.com/"][href*="/pull/"]:not([href*="/api/retrigger"])', 'a[href^="https://app.devin.ai/review/"]', 'a[href^="https://app.coderabbit.ai/change-stack/"]', 'a[href^="https://cursor.com/agents/"]'];
+const AGENT_VIEW_LINKS = [
+  'a[href^="https://app.greptile.com/"][href*="/pull/"]:not([href*="/api/retrigger"])',
+  'a[href^="https://app.greptile.com/-/switch-tenant?"][href*="%2Fpull%2F"]',
+  'a[href^="https://app.devin.ai/review/"]',
+  'a[href^="https://app.coderabbit.ai/change-stack/"]',
+  'a[href^="https://cursor.com/agents/"]',
+];
 const ATTR_AGENT_VIEW = 'data-geld-agent-view';
 
 export function hideAgentRerunControls(body: HTMLElement): void {

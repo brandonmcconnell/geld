@@ -2058,6 +2058,10 @@ var init_diff_summaries = __esm({
 function formatCount(value) {
   return numberFormatter.format(Math.max(0, value));
 }
+function formatCountLike(original, value) {
+  const separator = GROUP_SEPARATOR.exec(original)?.[1];
+  return separator === void 0 ? formatCount(value) : formatCount(value).replace(/,/g, separator);
+}
 function parseCount(text) {
   if (text === null || text === void 0) return null;
   const digits = text.replace(/[^\d]/g, "");
@@ -2085,11 +2089,13 @@ function subtractTotals(a, b) {
 function formatDiffstat(totals) {
   return `+${formatCount(totals.additions)} \u2212${formatCount(totals.deletions)}`;
 }
-var numberFormatter, EMPTY_TOTALS;
+var numberFormatter, COUNT_PATTERN, GROUP_SEPARATOR, EMPTY_TOTALS;
 var init_format = __esm({
   "../../packages/core/src/format.ts"() {
     "use strict";
     numberFormatter = new Intl.NumberFormat("en-US");
+    COUNT_PATTERN = String.raw`\d+(?:[.,'’\u00a0\u202f]\d{2,3})*`;
+    GROUP_SEPARATOR = /\d([.,'’\u00a0\u202f])\d{2,3}(?!\d)/;
     EMPTY_TOTALS = { files: 0, additions: 0, deletions: 0 };
   }
 });
@@ -11376,6 +11382,7 @@ __export(src_exports, {
   CHIP_PLACEMENTS: () => CHIP_PLACEMENTS,
   COMPACT_TIMELINE_MODES: () => COMPACT_TIMELINE_MODES,
   CORRUPTED_SETTINGS_COPY: () => CORRUPTED_SETTINGS_COPY,
+  COUNT_PATTERN: () => COUNT_PATTERN,
   CUSTOM_GROUP_ID: () => CUSTOM_GROUP_ID,
   DEFAULT_SETTINGS: () => DEFAULT_SETTINGS,
   EMPTY_REPO_CONFIG: () => EMPTY_REPO_CONFIG,
@@ -11444,6 +11451,7 @@ __export(src_exports, {
   findSettingsGist: () => findSettingsGist,
   formatCatalogVersion: () => formatCatalogVersion,
   formatCount: () => formatCount,
+  formatCountLike: () => formatCountLike,
   formatDiffstat: () => formatDiffstat,
   generatedConfigFrom: () => generatedConfigFrom,
   globToRegExp: () => globToRegExp,
@@ -33108,13 +33116,36 @@ function vercelStatus(word) {
   return statusFromText(word);
 }
 function tableRowFor(doc, project) {
-  return lines(doc).find((line) => line.startsWith("|") && line.includes(`| ${project} |`)) ?? null;
+  return lines(doc).find((line) => line.startsWith("|") && line.split("|").some((cell) => cell.trim() === project)) ?? null;
+}
+var MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+function vercelRowTime(row) {
+  const exact = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z\b/.exec(row);
+  if (exact !== null && !Number.isNaN(Date.parse(exact[0]))) return new Date(exact[0]).toISOString();
+  const match = /\b([A-Z][a-z]{2}) (\d{1,2}), (\d{4}) (\d{1,2}):(\d{2})(am|pm) UTC\b/.exec(row);
+  if (match === null) return void 0;
+  const [, monthName = "", day = "", year = "", hour = "", minute = "", half = ""] = match;
+  const month = MONTHS.indexOf(monthName.toLowerCase());
+  if (month === -1) return void 0;
+  return new Date(Date.UTC(Number(year), month, Number(day), Number(hour) % 12 + (half === "pm" ? 12 : 0), Number(minute))).toISOString();
+}
+function withRowTime(entry2, row) {
+  const time3 = row === null ? void 0 : vercelRowTime(row);
+  return time3 === void 0 ? entry2 : { ...entry2, updatedAt: time3 };
 }
 var VERCEL_NOT_A_PROJECT = /^https:\/\/vercel\.com\/(?:account|teams|docs|login|signup|new|dashboard|support|blog|changelog|guides|templates|help)(?:[/?#]|$)/i;
 function parseVercel(doc) {
   const header = vercelHeader(doc.text);
   if (header !== null && header.length > 0) {
-    return header.map((project) => preview("vercel", doc, project.name, vercelStatus(project.nextCommitStatus), project.previewUrl === "" ? null : project.previewUrl, project.inspectorUrl === "" ? null : project.inspectorUrl));
+    return header.map(
+      (project) => withRowTime(preview("vercel", doc, project.name, vercelStatus(project.nextCommitStatus), project.previewUrl === "" ? null : project.previewUrl, project.inspectorUrl === "" ? null : project.inspectorUrl), tableRowFor(doc, project.name))
+    );
+  }
+  const notice = /Deployment failed for project ([\w.-]+) with the following error:?\s*(?:[~`]{3,}\s*)?([^\n]+)/i.exec(doc.text);
+  if (notice?.[1] !== void 0 && notice[2] !== void 0) {
+    const project = doc.links.find((link) => link.text.trim() === notice[1] && /^https:\/\/vercel\.com\//.test(link.href));
+    const reason = /too many requests/i.test(notice[2]) ? "Vercel rate limited this deployment" : notice[2].trim().slice(0, 200);
+    return [{ ...preview("vercel", doc, notice[1], "failed", null, project?.href ?? null), reason }];
   }
   const member = /@?([\w-]+(?:\[bot\])?)\s+must be a member of the\s+\*{0,2}(.+?)\*{0,2}\s+team on Vercel to deploy/i.exec(doc.text);
   if (member?.[1] !== void 0 && member[2] !== void 0) {
@@ -33134,11 +33165,11 @@ function parseVercel(doc) {
       const image = doc.images.find((candidate) => /vercel\.com\/static\/status\//.test(candidate.src) && candidate.alt.trim() !== "");
       if (image !== void 0 && projectLinks.length === 1) status = vercelStatus(image.alt);
     }
-    if (status === "unknown" && row !== null) status = statusFromText(row.replace(`| ${name} |`, "|"));
+    if (status === "unknown" && row !== null) status = statusFromText(row.split("|").filter((cell) => cell.trim() !== name).join("|"));
     const at = inspector === void 0 ? doc.links.indexOf(link) : doc.links.indexOf(inspector);
     const visit2 = doc.links.slice(at + 1).find((candidate) => /^(visit )?preview$/i.test(candidate.text.trim()) && isExternal(candidate.href));
     if (status === "unknown" && visit2 !== void 0) status = "ready";
-    const entry2 = preview("vercel", doc, name, status, visit2?.href ?? null, inspector?.href ?? null);
+    const entry2 = withRowTime(preview("vercel", doc, name, status, visit2?.href ?? null, inspector?.href ?? null), row);
     out.push(inspector !== void 0 && /^ignored$/i.test(inspector.text.trim()) ? { ...entry2, reason: "Unchanged for this project, the previous preview still serves" } : entry2);
   }
   if (out.length === 0 && /attempting to deploy a commit/i.test(doc.text)) {
@@ -33297,7 +33328,7 @@ function previewDocFromMarkdown(author, anchor2, markdown, updatedAt) {
   }
   for (const match of markdown.matchAll(/(?<!!)\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g)) links.push({ text: match[1]?.replace(/<[^>]+>/g, "").trim() ?? "", href: match[2] ?? "" });
   for (const match of markdown.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) links.push({ href: match[1] ?? "", text: (match[2] ?? "").replace(/<[^>]+>/g, "").trim() });
-  const text = markdown.split(/\r?\n/).map((line) => line.trimStart().startsWith("|") ? line.replace(/<br\s*\/?>/gi, " ") : line).join("\n").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(tr|p|li|h[1-6]|div|details|summary)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+  const text = markdown.split(/\r?\n/).map((line) => line.trimStart().startsWith("|") ? line.replace(/<br\s*\/?>/gi, " ").replace(/<relative-time\b[^>]*\bdatetime=["']([^"']+)["'][^>]*>[\s\S]*?<\/relative-time>/gi, "$1") : line).join("\n").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(tr|p|li|h[1-6]|div|details|summary)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
   const doc = { author, anchor: anchor2, text, links, images };
   return updatedAt === void 0 ? doc : { ...doc, updatedAt };
 }
