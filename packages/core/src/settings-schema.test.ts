@@ -47,10 +47,11 @@ describe('SETTINGS_SCHEMA', () => {
       'enabled',
       'groupHidden',
       'expandedByDefault',
-      'categories',
-      // The one experiment in the popup, under an "Experiments" heading the popup draws for that section.
       'prOverview',
+      'categories',
     ]);
+    expect(sectionsFor('extension').find((section) => section.id === 'general')?.fields.some((field) => field.kind === 'toggle' && field.key === 'prOverview')).toBe(true);
+    expect(sectionsFor('extension').find((section) => section.id === 'experiments')?.fields.some((field) => field.kind === 'toggle' && field.key === 'prOverview')).toBe(false);
   });
 });
 

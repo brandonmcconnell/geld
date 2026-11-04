@@ -755,7 +755,7 @@ async function main(): Promise<void> {
     authorsStatus(`Saved ${pluralize(hiddenAuthors.length, 'author', 'authors')}`, 'success');
   });
 
-  /* Experiments — the pull request conversation digest: panel, timeline, extra bots, and the AI that can write for it. */
+  /* Experiments: the digest's fine-tuning (timeline, grouping, extra bots) and the AI that can write for it. */
   applySchemaCopy('experiments');
   const reviewSection = sections.find((candidate) => candidate.id === 'experiments');
   const reviewStack = requireElement('review-stack', HTMLDivElement);

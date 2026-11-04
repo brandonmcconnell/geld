@@ -381,6 +381,19 @@ export function isAutoViewed(settings: GeldSettings, id: AnyCategoryId): boolean
   return settings.autoViewed[id] === true;
 }
 
+/** Whether every category that is on marks its hidden files as viewed (false while none is on). */
+export function isAutoViewedForAll(settings: GeldSettings, ids: readonly AnyCategoryId[]): boolean {
+  const on = ids.filter((id) => isCategoryEnabled(settings, id));
+  return on.length > 0 && on.every((id) => isAutoViewed(settings, id));
+}
+
+/** Sets {@link isAutoViewed} for every category in `ids`, on or off, so one turned on later already follows. */
+export function withAutoViewedForAll(settings: GeldSettings, ids: readonly AnyCategoryId[], value: boolean): GeldSettings {
+  const autoViewed: Partial<Record<AnyCategoryId, boolean>> = { ...settings.autoViewed };
+  for (const id of ids) autoViewed[id] = value;
+  return { ...settings, autoViewed };
+}
+
 /** Extra user patterns for a built-in category (possibly empty). */
 export function categoryPatternLines(settings: GeldSettings, categoryId: CategoryId): readonly string[] {
   return settings.categoryPatterns[categoryId] ?? [];
