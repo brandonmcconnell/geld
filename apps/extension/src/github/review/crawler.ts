@@ -6,7 +6,7 @@
  * comments and review bodies as single comments.
  */
 
-import type { PreviewDoc, RawCheckRun, RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
+import type { CommentReaction, PreviewDoc, RawCheckRun, RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
 import { appAvatarForLogin, looksLikeSummaryBody } from '@geld/review';
 import { appLoginOf, loginOfLink } from './login';
 import { closestAtHome, compareHome, homeOf, wornPiecesOf } from './teleport';
@@ -530,35 +530,44 @@ function readComment(node: Element): CommentReading {
   if (author === null) return { usable: true, crawled: null };
   const body = textOf(bodyElementOf(node));
   if (looksLikeSummaryBody(body)) return { usable: true, crawled: null };
-  const reactors = reactorsOf(node);
-  const base: RawComment = { anchor: node.id, kind: kindOf(node.id), author: author.login, body, createdAt: createdAtOf(node), ...(reactors.length === 0 ? {} : { reactedBy: reactors }) };
+  const reactions = reactionsOf(node);
+  const reactors = [...new Set(reactions.map((reaction) => reaction.login))];
+  const base: RawComment = {
+    anchor: node.id,
+    kind: kindOf(node.id),
+    author: author.login,
+    body,
+    createdAt: createdAtOf(node),
+    ...(reactions.length === 0 ? {} : { reactedBy: reactors, reactions }),
+  };
   return { usable: true, crawled: { comment: withLocation(base, pathLineOf(node)), root: timelineRootOf(node), author, avatarSrc: avatarSrcOf(node), previewDoc: previewDocOf(node, author.login, node.id) } };
 }
 
 /**
- * Who reacted to the comment, from GitHub's reaction buttons: each one is
+ * Who reacted to the comment and with what, from GitHub's reaction buttons: each one is
  * described by a `tool-tip` ("greptile-apps[bot] reacted with thumbs up
  * emoji", "alice, bob and 3 more reacted with eyes emoji"). Only the
  * comment's own reactions (a review's node holds its threads' comments too),
  * from wherever quick view has put its pieces; "N more" are not names.
  */
-export function reactorsOf(node: Element): readonly string[] {
-  const out = new Set<string>();
+export function reactionsOf(node: Element): readonly CommentReaction[] {
+  const out = new Map<string, CommentReaction>();
   for (const scope of [node, ...wornPiecesOf(node)]) {
     for (const container of scope.querySelectorAll('.js-reactions-container, .comment-reactions, [data-testid="comment-reactions"]')) {
       const owner = container.closest('[id^="issuecomment-"], [id^="discussion_r"], [id^="pullrequestreview-"]');
       if (owner !== null && owner.id !== node.id) continue;
       for (const tip of container.querySelectorAll('tool-tip, [role="tooltip"]')) {
-        const match = /^\s*(.+?)\s+reacted with\b/i.exec(tip.textContent ?? '');
-        if (match?.[1] === undefined) continue;
+        const match = /^\s*(.+?)\s+reacted with\s+(.+?)(?:\s+emoji)?\s*$/i.exec(tip.textContent ?? '');
+        if (match?.[1] === undefined || match[2] === undefined) continue;
+        const emoji = match[2].toLowerCase();
         for (const name of match[1].split(/,\s*|\s+and\s+/)) {
           const login = name.trim();
-          if (login !== '' && !/^\d+\s+(?:more|others?)$/i.test(login)) out.add(login);
+          if (login !== '' && !/^\d+\s+(?:more|others?)$/i.test(login)) out.set(`${login}\n${emoji}`, { login, emoji });
         }
       }
     }
   }
-  return [...out];
+  return [...out.values()];
 }
 
 function readEvent(node: Element): EventReading {

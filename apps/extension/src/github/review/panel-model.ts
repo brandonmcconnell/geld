@@ -29,9 +29,20 @@ export interface InstalledBot {
 export interface RepoBotsHint {
   readonly declared: readonly string[] | null;
   readonly configured: ReadonlyMap<string, string>;
+  /**
+   * Bot id → the comment that starts it through the Geld workflow instead
+   * of its tag comment (`/geld run greptile`), for each bot the repository's
+   * Geld workflow names a secret for.
+   */
+  readonly apiTriggers: ReadonlyMap<string, string>;
 }
 
-export const NO_REPO_BOTS: RepoBotsHint = { declared: null, configured: new Map() };
+export const NO_REPO_BOTS: RepoBotsHint = { declared: null, configured: new Map(), apiTriggers: new Map() };
+
+/** The comment that asks bot `id` to run here: the Geld workflow's command where it applies, else the bot's own trigger. */
+export function triggerFor(id: string, hint: RepoBotsHint): string | null {
+  return hint.apiTriggers.get(id) ?? rerunTriggerFor(id);
+}
 
 /**
  * The picture's URL when it is an App's mark. GitHub serves App avatars
@@ -65,7 +76,7 @@ function appAvatarSrc(img: HTMLImageElement | null | undefined): string | null {
 export function requestableBots(meta: GeldPrMeta, doc: ParentNode, comments: readonly RawComment[] = [], hint: RepoBotsHint = NO_REPO_BOTS): readonly InstalledBot[] {
   const found = new Map<string, InstalledBot>();
   const add = (id: string, login: string, iconSrc: string | null): void => {
-    const trigger = rerunTriggerFor(id);
+    const trigger = triggerFor(id, hint);
     if (trigger === null) return;
     const existing = found.get(id);
     if (existing !== undefined) {
@@ -100,7 +111,7 @@ export function requestableBots(meta: GeldPrMeta, doc: ParentNode, comments: rea
   }
   for (const bot of REVIEW_BOTS) {
     if (found.has(bot.id)) continue;
-    const trigger = rerunTriggerFor(bot.id);
+    const trigger = triggerFor(bot.id, hint);
     if (trigger === null) continue;
     const login = bot.logins[0] ?? `${bot.id}[bot]`;
     const configFile = hint.configured.get(bot.id);

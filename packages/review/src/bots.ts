@@ -11,6 +11,7 @@
  */
 
 import type { BotVerdict } from './model';
+import type { CommentReaction } from './cluster';
 
 export interface ReviewBot {
   readonly id: string;
@@ -1006,6 +1007,12 @@ export interface BotComment {
    */
   readonly reactedBy?: readonly string[];
   /**
+   * The same reactions with what each was ("rocket", "thumbs down"): the Geld
+   * workflow answers a `/geld run` command with 🚀 when the bots were queued
+   * and 👎 when one was not (see {@link geldRunAnswer}).
+   */
+  readonly reactions?: readonly CommentReaction[];
+  /**
    * When it was last edited, ISO, when the reader of the page knows. A bot
    * that reports a re-run by rewriting its summary in place (Greptile's
    * "Reviews (2)", a new confidence score) posts nothing new, so the edit is
@@ -1241,10 +1248,15 @@ export function verdictsFrom(
     // Greptile just the same, though never itself: a bot's own trigger phrase in its own words is not a request.
     if (comment.resolved === undefined && isTriggerComment(comment.body, extraLogins)) {
       const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
+      // `/geld run <bot>` is answered by the Geld workflow, not the bot: its 🚀 is the bot taking the run, its 👎 (a
+      // missing key, a refusal) or no answer after the grace (no workflow on this repository) is no run at all.
+      const viaWorkflow = geldRunBots(comment.body).length > 0;
+      const workflow = viaWorkflow ? geldRunAnswer(comment) : null;
       for (const asked of botsTriggeredBy(comment.body, extraLogins)) {
         if (asked.id === id) continue;
+        if (viaWorkflow && (workflow === 'failed' || (workflow === null && !Number.isNaN(at) && now - at > ACK_GRACE_MS))) continue;
         // A bot that reacts when it takes a trigger, and has not after the grace: it never saw this one.
-        if (!Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === 'reaction' && !reactedBy(comment, asked.id)) continue;
+        if (!viaWorkflow && !Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === 'reaction' && !reactedBy(comment, asked.id)) continue;
         // The threads set aside here are what a refusal brings back. Only a report from the bot clears the
         // stash (below): a second request, or the bot's own "Starting", before any report leaves it the last
         // real run.
@@ -1253,7 +1265,8 @@ export function verdictsFrom(
         threadRuns.delete(asked.id);
         unthreadedBy.delete(asked.id);
         // A request, even a retry, asks for a new run: it is when this run was asked for.
-        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged: botById(asked.id)?.acknowledges === 'reaction' && reactedBy(comment, asked.id), askedAt: Number.isNaN(at) ? null : at });
+        const acknowledged = viaWorkflow ? workflow === 'queued' : botById(asked.id)?.acknowledges === 'reaction' && reactedBy(comment, asked.id);
+        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged, askedAt: Number.isNaN(at) ? null : at });
       }
       continue;
     }
@@ -1637,6 +1650,13 @@ function plainTrigger(text: string): string {
 }
 
 export function botsTriggeredBy(body: string, extraLogins: readonly string[] = []): readonly { readonly id: string; readonly login: string }[] {
+  const viaWorkflow = geldRunBots(body);
+  if (viaWorkflow.length > 0) {
+    return viaWorkflow.flatMap((id) => {
+      const bot = botById(id);
+      return bot === null ? [] : [{ id: bot.id, login: bot.logins[0] ?? bot.id }];
+    });
+  }
   const text = ` ${plainTrigger(body)} `;
   const out: { readonly id: string; readonly login: string }[] = [];
   for (const bot of REVIEW_BOTS) {
@@ -1663,12 +1683,68 @@ export function rerunTriggerFor(botId: string): string | null {
 }
 
 /**
+ * The review bots the Geld workflow's `trigger` job can start through their
+ * own APIs. Kept in step with that job in `apps/action/examples/geld.yml`.
+ */
+export const API_TRIGGER_BOT_IDS: readonly string[] = ['greptile', 'bugbot', 'devin'];
+
+/** The comment that asks the Geld workflow to start `ids` through their APIs. */
+export function geldRunCommand(ids: readonly string[]): string {
+  return `/geld run ${ids.join(' ')}`;
+}
+
+// Mirrored by the `trigger` job's script in `apps/action/examples/geld.yml`: one line, the whole comment.
+const GELD_RUN = /^\/geld[ \t]+run[ \t]+([a-z][a-z0-9-]*(?:[ \t,]+[a-z][a-z0-9-]*)*)[ \t]*$/i;
+
+/** The bots a `/geld run` comment asks for (the whole comment, on one line, as the workflow reads it), else none. */
+export function geldRunBots(body: string): readonly string[] {
+  const match = GELD_RUN.exec(body.trim());
+  if (match?.[1] === undefined) return [];
+  const ids = [...new Set(match[1].toLowerCase().split(/[ \t,]+/).filter((id) => id !== ''))];
+  return ids.every((id) => API_TRIGGER_BOT_IDS.includes(id)) ? ids : [];
+}
+
+// A secret's name as GitHub lists it: the workflow refuses anything else, most likely a key pasted into the file.
+const WORKFLOW_SECRET_NAME = /^[ \t]*GELD_([A-Z]+)_SECRET_NAME:[ \t]*(['"]?)([A-Z_][A-Z0-9_]*)\2[ \t]*(?:#.*)?$/gm;
+
+/**
+ * The bots a Geld workflow file can start by API: its trigger job is there
+ * (`/geld run`) and its `GELD_<BOT>_SECRET_NAME` names the repository secret
+ * holding that bot's key. An empty name (the default) keeps the bot's own tag
+ * comment, and so does a value the workflow would refuse.
+ */
+export function workflowApiTriggerBots(text: string): ReadonlySet<string> {
+  const bots = new Set<string>();
+  if (!text.includes('/geld run')) return bots;
+  for (const match of text.matchAll(WORKFLOW_SECRET_NAME)) {
+    const id = match[1]?.toLowerCase();
+    if (id !== undefined && API_TRIGGER_BOT_IDS.includes(id)) bots.add(id);
+  }
+  return bots;
+}
+
+/**
+ * What the Geld workflow said about a `/geld run` comment, from its
+ * reaction: 🚀 every bot was queued, 👎 one was not. A reaction from a
+ * person is not the workflow's: only an App's counts (the workflow reacts
+ * as `github-actions[bot]`, or as the App whose token it was given).
+ */
+export function geldRunAnswer(comment: Pick<BotComment, 'reactions'>): 'queued' | 'failed' | null {
+  const fromApps = (comment.reactions ?? []).filter((reaction) => /\[bot\]$/i.test(reaction.login) || reaction.login.toLowerCase() === 'github-actions');
+  if (fromApps.some((reaction) => reaction.emoji.toLowerCase() === 'thumbs down')) return 'failed';
+  if (fromApps.some((reaction) => reaction.emoji.toLowerCase() === 'rocket')) return 'queued';
+  return null;
+}
+
+/**
  * The bot a trigger comment asks for: a body that is one of a bot's trigger
  * phrases (one per line, markdown noise around it ignored), else null. A
  * person typing "bugbot run" on a pull request is as clear a sign the bot is
  * installed as any comment the bot itself posts.
  */
 export function botByTrigger(body: string): ReviewBot | null {
+  const [viaWorkflow] = geldRunBots(body);
+  if (viaWorkflow !== undefined) return botById(viaWorkflow) ?? null;
   for (const raw of body.split(/\r?\n/)) {
     const line = plainTrigger(raw);
     if (line === '') continue;
@@ -1691,6 +1767,7 @@ const GENERIC_TRIGGER = /^(?:@[\w-]+(?:\[bot\])?|\/[\w-]+)(?:\s+(?:review|run|re
  * every registered trigger and the generic "@handle verb" shape.
  */
 export function isTriggerComment(body: string, extraLogins: readonly string[] = []): boolean {
+  if (geldRunBots(body).length > 0) return true;
   // One trigger per line is still only triggers ("/devin review\nbugbot run\n@greptileai").
   const lines = body.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== '');
   if (lines.length > 1) return lines.length <= 6 && lines.every((line) => isTriggerComment(line, extraLogins));

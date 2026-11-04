@@ -21,7 +21,10 @@ packages/github/     @geld/github — pure TypeScript, no browser APIs. Geld Git
 apps/extension/      @geld/extension — the WXT extension (Chrome, Edge, Firefox, Safari).
 apps/action/         @geld/action — GitHub Action that upserts one review-summary comment per PR
                      (`pull_request_target`, GraphQL, never checks out PR code). `dist/` is a
-                     committed esbuild bundle; Actions require built JS.
+                     committed esbuild bundle; Actions require built JS. Its example workflow
+                     (`examples/geld.yml`) also has a `trigger` job: `/geld run greptile|bugbot|devin` from
+                     a writer starts the bot through its API with the repository secret its
+                     `GELD_<BOT>_SECRET_NAME` names (empty by default: off), unqueued and in parallel.
 apps/site/           @geld/site — Next.js site for geld.sh (see "Website" below).
 apps/dashboard/      @geld/dashboard — independent Next.js review workspace, Better Auth accounts
                      and Postgres team metadata. Provider authority and privacy are mandatory.
@@ -570,6 +573,13 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `loginOfLink` (`review/login.ts`) reads a person from where the link leads (the profile path, the `/users/<login>/hovercard` URL, else the parenthesis after the name), for `authorOf` and the events headline's actor;
   An App is read from its `/apps/<slug>` path as `<slug>[bot]` (`appLoginOf`), whatever name it shows ("Copilot"), as the API and the Action's payload spell it.
   The panel's name spans carry `whoAttributes` as its avatars do (GitHub's user hovercard, Geld's identity card for an App), and GitHub's own links on loan to the panel (an events list, a comment's author line) show the login too (`showLogins` in the dress phase: a text node "Name (login)" inside a link to that person becomes "login", put back by `onRestore`), so a loaned node still reads the same to the crawl.
+- **Starting a bot by API instead of its tag comment** (no setting: the repository's Geld workflow is the switch, per repository).
+  For a bot whose comment trigger is unreliable (Greptile ignored `@greptileai` for some teams in Nov 2026), the Geld workflow's `trigger` job starts it through the bot's own API on a `/geld run <bot>` comment from a writer.
+  The extension posts that command instead of the tag comment whenever the repository's Geld workflow names a secret for the bot (`RepoConfigSource.workflowTriggers` reads `.github/workflows/*geld*.yml` through the listings, as config files are read, and `workflowApiTriggerBots` takes the non-empty `GELD_<BOT>_SECRET_NAME` values shaped like a secret's name (a pasted key is not, and the workflow refuses it);
+  the extension never sees a key).
+  The controller turns that into `RepoBotsHint.apiTriggers` (bot id → command), and `triggerFor` is what Rerun, the request menu and its line titles post.
+  `/geld run` is a trigger like any other (`isTriggerComment`, `botsTriggeredBy`, `botByTrigger`: the whole comment on one line, known ids only, the same grammar the workflow's script uses), but it is acknowledged by the workflow, not the bot: the crawler keeps each reaction's emoji (`reactionsOf` → `RawComment.reactions`, from "github-actions[bot] reacted with rocket emoji") and the Action reads the same from the API (`reactionGroups` → `RawIssueComment.reactions`), an App's 🚀 is the run taken and its 👎 or no answer after `ACK_GRACE_MS` is no run (`geldRunAnswer`), so a repository without the workflow, or without the key, leaves the earlier verdict standing.
+  Rerun reads its trigger at the click and the request menu's triggers are in the panel signature, so a workflow found after the panel was drawn is used at once.
 - **Flow: the changed files as a diagram of what imports what** (`review/flow.ts`, `@geld/core/file-flow.ts`).
   A "Flow" button (Lucide's `workflow` mark, `ICON_WORKFLOW`;
   Lucide marks are outlines and `svg.geld-lucide` sets `fill: none !important`, since GitHub's `.octicon { fill: currentColor }` otherwise fills their shapes solid) stands in the Geld row just left of the grouping control wherever the digest does (`prOverview`), on every pull request, one file or many: opened before the diff has loaded, the dialog says it is waiting for the diff and draws when the source arrives.

@@ -374,6 +374,17 @@ reviewBots:                     # offered in Request a review on every PR
                 comments that belong to finished items. Task-list checkboxes on the digest are a feedback channel: ticking one marks that finding
                 done without the extension.
               </p>
+              <p>
+                The same workflow can start review bots through their own APIs, for when a bot is not answering its tag comment. Comment{' '}
+                <code>/geld run greptile</code> on a pull request (or <code>bugbot</code>, <code>devin</code>, several at once) and the workflow asks
+                each bot to review it, in parallel. Each bot keeps its usual tag comment until you store its key as a repository secret and put that secret&apos;s name in
+                the workflow: <code>GELD_GREPTILE_SECRET_NAME</code>, <code>GELD_BUGBOT_SECRET_NAME</code> or <code>GELD_DEVIN_SECRET_NAME</code>, the
+                name only, never the key (the workflow refuses anything shaped like a key). Only people with
+                write access to the repository can start a bot this way, and the run&apos;s log names who asked, since the bots see only the key. The workflow reacts to the
+                comment with 🚀 when every bot was queued and 👎 when one was not, and the run&apos;s log says why. Wherever the workflow names a
+                bot&apos;s secret, Geld&apos;s Rerun posts the command for you instead of the bot&apos;s usual comment, with nothing to turn on. Geld
+                reads only the secret&apos;s name from the workflow, never the key.
+              </p>
             </Prose>
           </Step>
 
