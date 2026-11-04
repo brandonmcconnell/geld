@@ -576,7 +576,10 @@ function whoAttributes(login: string, bot: boolean): Readonly<Record<string, str
 }
 
 function avatarImg(entry: Avatar): HTMLElement {
-  return createElement('img', { class: `${PANEL_CLASS}__avatar`, 'data-kind': entry.bot ? 'bot' : 'user', src: entry.src, alt: '', width: '20', height: '20', loading: 'lazy', ...whoAttributes(entry.login, entry.bot) });
+  const img = createElement('img', { class: `${PANEL_CLASS}__avatar`, 'data-kind': entry.bot ? 'bot' : 'user', src: entry.src, alt: '', width: '20', height: '20', loading: 'lazy', ...whoAttributes(entry.login, entry.bot) });
+  // A bot's mark takes the shape of its picture (`shapeMark`), a person's stays GitHub's circle.
+  if (entry.bot) shapeMark(img, entry.src, false);
+  return img;
 }
 
 /** Bots and Apps are rounded squares on GitHub, people are circles; the same pictures the page shows. */
@@ -2211,9 +2214,6 @@ function reportLine(entry: Report, model: PanelModel, handlers: PanelHandlers): 
   const avatar = reportAvatar(entry, model);
   const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-report-state': entry.state, role: 'img', 'aria-label': REPORT_STATE_LABEL[entry.state] }, [icon(REPORT_GLYPH[entry.state])]);
   const picture = avatarStack(avatar === null ? [] : [{ src: avatar.src, bot: !avatar.round, login: entry.author }], entry.title, true);
-  // The picture takes the shape of its mark, as the pill's does.
-  const pictureImg = picture.querySelector('img');
-  if (avatar !== null && pictureImg !== null) shapeMark(pictureImg, avatar.src, avatar.round);
   const open = model.openSubKey === entry.anchor;
   const act = (): void => handlers.onToggleSub(entry.anchor);
   const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:sub:${entry.anchor}` }, [
@@ -2264,8 +2264,6 @@ function botLine(line: BotLine, model: PanelModel, handlers: PanelHandlers, rese
   const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-health': health, role: 'img', 'aria-label': label, title: label }, [icon(bot.verdict === 'failed' ? ICON_ALERT : HEALTH_ICON[health])]);
   const iconSrc = model.botIconFor(bot.id) ?? line.avatarSrc;
   const picture = avatarStack(iconSrc === null ? [] : [{ src: iconSrc, bot: true, login: bot.login }], botTitle(bot.id, bot.login), true);
-  const pictureImg = picture.querySelector('img');
-  if (iconSrc !== null && pictureImg !== null) shapeMark(pictureImg, iconSrc, false);
   const opens = line.anchor !== null;
   const firstThread = line.threads[0]?.anchor ?? null;
   const goes = !opens && firstThread !== null;
