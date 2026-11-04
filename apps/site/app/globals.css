@@ -239,6 +239,10 @@
   @media (prefers-reduced-motion: reduce) {
     mask-image: none;
   }
+  /* Off screen it stops, so nothing is composited that nobody sees; the play state leaves the playback rate the hover easing sets alone. */
+  &[data-offscreen] > * {
+    animation-play-state: paused;
+  }
 }
 
 /*

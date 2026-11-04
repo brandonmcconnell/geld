@@ -25,11 +25,13 @@ const EASE_MS = 3000;
  * always on a touch screen, which has no hover to reveal it.
  */
 export function LogoReel({ className }: { readonly className?: string }) {
+  const view = useRef<HTMLDivElement | null>(null);
   const track = useRef<HTMLDivElement | null>(null);
   const [paused, setPaused] = useState(false);
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
   useReelSpeed(track, paused || focused, hovered);
+  usePauseOffscreen(view);
 
   const onFocus = (event: FocusEvent<HTMLDivElement>): void => {
     if (!event.target.matches(':focus-visible')) return;
@@ -59,7 +61,7 @@ export function LogoReel({ className }: { readonly className?: string }) {
           <FaIcon icon={paused ? faPlay : faPause} className="size-3" />
         </button>
       </div>
-      <div className="logo-reel mt-6" onFocus={onFocus} onBlur={onBlur} onPointerEnter={onPointer} onPointerLeave={onPointer}>
+      <div ref={view} className="logo-reel mt-6" onFocus={onFocus} onBlur={onBlur} onPointerEnter={onPointer} onPointerLeave={onPointer}>
         <div ref={track} className="flex w-max animate-logo-reel motion-reduce:w-full motion-reduce:animate-none">
           <LogoList />
           <LogoList copy />
@@ -67,6 +69,20 @@ export function LogoReel({ className }: { readonly className?: string }) {
       </div>
     </section>
   );
+}
+
+/** Out of view the window is marked `data-offscreen` and the reel stops there (`logo-reel` in globals.css), taking up again where it left off. */
+function usePauseOffscreen(view: RefObject<HTMLDivElement | null>): void {
+  useEffect(() => {
+    const node = view.current;
+    if (node === null) return;
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries.at(-1);
+      if (entry !== undefined) node.toggleAttribute('data-offscreen', !entry.isIntersecting);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [view]);
 }
 
 /**

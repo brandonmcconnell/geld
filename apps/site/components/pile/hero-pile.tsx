@@ -395,7 +395,8 @@ function Playground() {
       paint();
     };
 
-    const observer = new IntersectionObserver(([entry]) => {
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries.at(-1);
       visible.current = entry?.isIntersecting ?? false;
       if (entry?.isIntersecting) {
         start();
@@ -435,6 +436,18 @@ function Playground() {
       }
     }, 200);
     return () => window.clearInterval(timer);
+  }, []);
+
+  // The button's beckon is a box-shadow, repainted every frame, so it pauses while the button is out of view.
+  useEffect(() => {
+    const node = toggle.current;
+    if (node === null) return;
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries.at(-1);
+      if (entry !== undefined) node.toggleAttribute('data-offscreen', !entry.isIntersecting);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
   }, []);
 
   // The digest's lines: only kinds in the pile, as many as the room holds, the ones that matter first.
@@ -672,7 +685,7 @@ function Playground() {
         className={cn(
           'geld-corners geld-cut-[8px] pointer-events-auto absolute z-40 inline-flex h-11 items-center gap-3 pr-4 pl-3 text-sm font-semibold shadow-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50',
           geld ? 'border bg-card hover:bg-muted' : 'bg-primary text-primary-foreground hover:bg-primary/85',
-          !geld && !used && 'animate-[geld-beckon_1.8s_ease-out_infinite]',
+          !geld && !used && 'animate-[geld-beckon_1.8s_ease-out_infinite] data-offscreen:[animation-play-state:paused]',
         )}
       >
         <span aria-hidden="true" className={cn('relative h-5 w-9 shrink-0 border transition-colors', geld ? 'border-transparent bg-foreground' : 'border-primary-foreground/50 bg-primary-foreground/10')}>
