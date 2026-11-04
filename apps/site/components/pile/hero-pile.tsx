@@ -395,10 +395,9 @@ function Playground() {
       paint();
     };
 
-    const observer = new IntersectionObserver(([entry]) => {
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries.at(-1);
       visible.current = entry?.isIntersecting ?? false;
-      // The button's beckon is a box-shadow, repainted every frame, so it pauses with the pile.
-      toggle.current?.toggleAttribute('data-offscreen', !visible.current);
       if (entry?.isIntersecting) {
         start();
         run();
@@ -437,6 +436,18 @@ function Playground() {
       }
     }, 200);
     return () => window.clearInterval(timer);
+  }, []);
+
+  // The button's beckon is a box-shadow, repainted every frame, so it pauses while the button is out of view.
+  useEffect(() => {
+    const node = toggle.current;
+    if (node === null) return;
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries.at(-1);
+      if (entry !== undefined) node.toggleAttribute('data-offscreen', !entry.isIntersecting);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
   }, []);
 
   // The digest's lines: only kinds in the pile, as many as the room holds, the ones that matter first.

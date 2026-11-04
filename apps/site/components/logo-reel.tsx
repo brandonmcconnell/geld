@@ -76,7 +76,8 @@ function usePauseOffscreen(view: RefObject<HTMLDivElement | null>): void {
   useEffect(() => {
     const node = view.current;
     if (node === null) return;
-    const observer = new IntersectionObserver(([entry]) => {
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries.at(-1);
       if (entry !== undefined) node.toggleAttribute('data-offscreen', !entry.isIntersecting);
     });
     observer.observe(node);
