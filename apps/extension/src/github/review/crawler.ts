@@ -649,6 +649,11 @@ const MARKER_LINK = 'a[data-ga-click*="revision marker"], a[href*="/files/"][hre
 /** A review thread GitHub sent as its header alone (a resolved one), its comments behind a fragment `loadMinimizedReviews` fetches. */
 const DEFERRED_THREAD = 'review-thread-collapsible[data-deferred-content-url], [data-deferred-content-url].js-resolvable-timeline-thread-container';
 
+function isWaitingThread(row: Element, commentsComing: (thread: Element) => boolean): boolean {
+  const thread = row.querySelector(DEFERRED_THREAD);
+  return thread !== null && row.querySelector('[id^="discussion_r"]') === null && commentsComing(thread);
+}
+
 /** GitHub's "New changes since you last viewed" row: the `+` badge with a link to the diff since the reader's last visit. */
 export function isRevisionMarkerRow(row: Element): boolean {
   return row.querySelector(MARKER_LINK) !== null && /\bsince you last viewed/i.test(row.textContent ?? '');
@@ -694,7 +699,7 @@ const MENTION_ROW = '.TimelineItem:has(.octicon-cross-reference), [data-testid="
  * bots' bare "reviewed" rows, anything else — so compact mode can fold the
  * whole timeline and offer each kind its own place in the panel.
  */
-export function crawlLeftovers(claimed: ReadonlySet<HTMLElement>, root: ParentNode = document): readonly CrawledLeftover[] {
+export function crawlLeftovers(claimed: ReadonlySet<HTMLElement>, commentsComing: (thread: Element) => boolean, root: ParentNode = document): readonly CrawledLeftover[] {
   const list: CrawledLeftover[] = [];
   const timeline = root.querySelector('.js-discussion, [data-testid="issue-timeline-container"], [data-testid="pull-request-timeline"], .pull-discussion-timeline');
   if (timeline === null) return list;
@@ -731,8 +736,9 @@ export function crawlLeftovers(claimed: ReadonlySet<HTMLElement>, root: ParentNo
     let kind: CrawledLeftover['kind'] = 'other';
     if (row.querySelector('a[href^="#commits-pushed-"], [id^="commits-pushed-"]') !== null || /\badded \d+ commits?\b/.test(row.textContent ?? '')) kind = 'noise';
     else if (row.querySelector('.minimized-comment include-fragment[src]') !== null) kind = 'pending';
-    // Its comments still loading, nothing reads it as a thread yet. Once they land the thread claims the row.
-    else if (row.querySelector(DEFERRED_THREAD) !== null && row.querySelector('[id^="discussion_r"]') === null) kind = 'pending';
+    // Its comments still loading, nothing reads it as a thread yet. Once they land the thread claims the row. One whose
+    // comments will not come (the fetch failed, or the visit's budget is spent) stays listed, the only way to reach it.
+    else if (isWaitingThread(row, commentsComing)) kind = 'pending';
     // What someone minimized (resolved, outdated, off-topic) is noise here; its comment, once loaded, is crawled on its own.
     else if (minimized || row.querySelector('.minimized-comment') !== null) kind = 'noise';
     else if (isRevisionMarkerRow(row)) kind = 'marker';
