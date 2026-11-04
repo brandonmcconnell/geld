@@ -35,7 +35,7 @@ import type { ReviewerCandidate } from './reviewers';
 import { nextRunGraceEnd, withRunTimes } from './run-starts';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
-import { shortenDescription } from './description';
+import { descriptionUnshortened, releaseDescription, shortenDescription } from './description';
 import { applyFolds, closureKindOf, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
@@ -2835,7 +2835,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const page = describePage(new URL(window.location.href));
   if (page.kind !== 'pull-conversation' || !settings.enabled || !settings.prOverview) {
     // Nothing mounted (a files page, a list): the page-wide cleanup queries have nothing to find.
-    if (visit.pageKey !== '') teardownReviewOverview();
+    if (visit.pageKey !== '') teardownReviewOverview(page.kind !== 'pull-conversation' && settings.enabled && settings.prOverview);
     return;
   }
   lastSettings = settings;
@@ -3665,7 +3665,28 @@ function alignRevealWithLanding(node: Element, anchor: string, focusKey: string)
   alignAnchorCarriers(anchor, focusKey);
 }
 
-export function teardownReviewOverview(): void {
+/** How long the folds a tab switch leaves on the conversation may stand before they are cleared anyway. */
+const LEAVE_GRACE_MS = 3000;
+let leftoverTimer: number | null = null;
+
+/** Fold the description in the frame GitHub renders it, as on a switch back to the conversation tab, rather than a pass later. */
+export function foldDescriptionNow(settings: GeldSettings): void {
+  if (!settings.enabled || !settings.prOverview || !settings.collapseDescription) return;
+  const page = describePage(new URL(window.location.href));
+  if (page.kind !== 'pull-conversation') return;
+  // The full timeline shows the description whole, and that choice belongs to the visit that made it.
+  if (visit.pageKey === page.stateKey && visit.fullTimeline) return;
+  if (descriptionUnshortened()) shortenDescription(true);
+}
+
+/**
+ * `leaving`: the URL moved to another tab of the pull request (or another page), and GitHub keeps the conversation
+ * on screen until the next page replaces it. Unfolding the description and the timeline then showed them whole for
+ * a moment, so their folds (attributes on GitHub's nodes) stay and go with them. Anything still standing after
+ * {@link LEAVE_GRACE_MS} (GitHub never replaced the page) is cleared then. Loans still go home and the panel still
+ * goes: a moved node left in the panel would be lost to a page GitHub restores from its cache.
+ */
+export function teardownReviewOverview(leaving = false): void {
   // First: nothing asked for earlier may run after this. Pending passes are dropped, fetches in flight cancelled,
   // and every later callback finds the overview unmounted (`lastSettings`).
   lastSettings = null;
@@ -3690,9 +3711,22 @@ export function teardownReviewOverview(): void {
   stopFittingChips();
   unmountPanel();
   hideSummary(null);
-  applyFolds([], new Set());
-  shortenDescription(false);
+  if (leftoverTimer !== null) window.clearTimeout(leftoverTimer);
+  leftoverTimer = null;
+  // The compact timeline's page-wide styles (tighter commit rows) would reach the next tab's own lists, so they go now.
   setFullTimeline(false);
+  if (leaving) {
+    releaseDescription();
+    leftoverTimer = window.setTimeout(() => {
+      leftoverTimer = null;
+      if (visit.pageKey !== '') return;
+      applyFolds([], new Set());
+      shortenDescription(false);
+    }, LEAVE_GRACE_MS);
+  } else {
+    applyFolds([], new Set());
+    shortenDescription(false);
+  }
   visit.openKey = null;
   visit.pageKey = '';
   visit.pendingAnchor = null;

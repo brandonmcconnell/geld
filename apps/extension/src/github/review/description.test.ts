@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { hiddenBlocks, outlineOf, railsOf, shortenDescription } from './description';
+import { descriptionUnshortened, hiddenBlocks, outlineOf, railsOf, releaseDescription, shortenDescription } from './description';
 
 /** One animation frame. Registered after the click, it runs after the click's own callback in the same frame. */
 const frame = (): Promise<void> => new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -202,6 +202,30 @@ describe('shortenDescription', () => {
     shortenDescription(true);
     body.querySelectorAll<HTMLElement>('a.anchor')[1]?.click();
     expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+  });
+
+  it('says a rendered description is unshortened until it is shortened', () => {
+    mountDescription(`${h(2, 'One')}<p>a</p>${h(2, 'Two')}<p>b</p>`);
+    expect(descriptionUnshortened()).toBe(true);
+    shortenDescription(true);
+    expect(descriptionUnshortened()).toBe(false);
+  });
+
+  it('leaves the description folded when released, so a tab switch never shows it whole, and stops handling it', async () => {
+    const body = mountDescription(`${h(2, 'One')}<p>a</p>${h(2, 'Two')}<p>b</p>`);
+    shortenDescription(true);
+    releaseDescription();
+    expect(body.hasAttribute('data-geld-desc')).toBe(true);
+    expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    expect(body.querySelectorAll('.geld-desc-toggle')).toHaveLength(2);
+    body.querySelectorAll<HTMLElement>('.markdown-heading h2')[1]?.click();
+    await frames();
+    expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    // Shortening again (back on the conversation) wires the same controls once more.
+    shortenDescription(true);
+    body.querySelectorAll<HTMLElement>('.markdown-heading h2')[1]?.click();
+    await frames();
+    expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(false);
   });
 
   it('lifts the cut for good on Show full description', () => {
