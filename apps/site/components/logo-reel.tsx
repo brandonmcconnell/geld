@@ -169,7 +169,7 @@ function LogoList({ copy = false }: { readonly copy?: boolean }) {
 function CustomerLink({ customer, focusable }: { readonly customer: Customer; readonly focusable: boolean }) {
   const { logo } = customer;
   return (
-    <ExternalLink href={customer.url} tabIndex={focusable ? undefined : -1} className="flex items-center gap-2 text-foreground/65 transition-colors hover:text-foreground">
+    <ExternalLink href={customer.url} tabIndex={focusable ? undefined : -1} className="flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground">
       <span
         aria-hidden="true"
         className="logo-mask"
