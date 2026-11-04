@@ -251,6 +251,18 @@
 }
 
 /*
+ * The light at the reel's middle: a copy of the logos in a brighter tint
+ * (logo-reel.tsx), seen only through a still, slanted band at the window's
+ * centre. The logos slide through it, so the sheen crosses each one as it
+ * passes, and the page behind never lights up because the copy is only the
+ * logos' shapes.
+ */
+@utility logo-shine {
+  color: light-dark(oklch(0.86 0.01 260), oklch(1 0 0));
+  mask-image: linear-gradient(110deg, transparent calc(50% - 3rem), rgb(0 0 0 / 0.35) calc(50% - 1rem), #000 50%, rgb(0 0 0 / 0.35) calc(50% + 1rem), transparent calc(50% + 3rem));
+}
+
+/*
  * The tour's copy of the extension's line-count tooltip (.geld-tooltip in the
  * extension's style.css), hanging flush from the tab bar as it does on the
  * pull request header: four grid columns, square top corners, a caret of two
