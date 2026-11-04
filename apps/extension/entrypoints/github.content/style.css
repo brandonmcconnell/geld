@@ -2739,6 +2739,11 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   cursor: progress;
 }
 
+.geld-review__ai-btn[data-state='nothing'] {
+  color: var(--geld-review-muted);
+  cursor: default;
+}
+
 .geld-review__ai-btn[data-state='running'] .octicon {
   animation: geld-ai-pulse 1.2s ease-in-out infinite;
 }
