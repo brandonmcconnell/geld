@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { descriptionUnshortened, hiddenBlocks, outlineOf, railsOf, releaseDescription, shortenDescription } from './description';
+import { descriptionUnshortened, hiddenBlocks, isBlankHeading, outlineOf, railsOf, releaseDescription, shortenDescription } from './description';
 
 /** One animation frame. Registered after the click, it runs after the click's own callback in the same frame. */
 const frame = (): Promise<void> => new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -37,6 +37,21 @@ describe('outlineOf', () => {
 
   it('finds nothing to fold in a description without headings', () => {
     expect(outlineOf(blocksOf('<p>one</p><p>two</p>'))).toEqual([]);
+  });
+});
+
+describe('isBlankHeading', () => {
+  it('reads a heading with only whitespace, invisible characters, comments or its anchor as a divider', () => {
+    const blocks = blocksOf(
+      '<h2>&nbsp;</h2><h1>\u200b</h1><h2><!-- rule --></h2>' +
+        '<div class="markdown-heading"><h2 class="heading-element"> </h2><a class="anchor" href="#"><svg class="octicon octicon-link"></svg></a></div>' +
+        '<h2><a class="anchor" href="#x"><svg class="octicon octicon-link"></svg></a></h2>',
+    );
+    expect(blocks.map(isBlankHeading)).toEqual([true, true, true, true, true]);
+  });
+
+  it('keeps a heading with words or a picture, and a paragraph is never a heading', () => {
+    expect(blocksOf(`${h(2, 'Summary')}<h2><img src="logo.png" alt=""></h2><p> </p>`).map(isBlankHeading)).toEqual([false, false, false]);
   });
 });
 
@@ -121,6 +136,29 @@ describe('shortenDescription', () => {
     expect(body.children[1]?.getAttribute('data-geld-desc-heading')).toBe('open');
     expect(body.children[2]?.hasAttribute('data-geld-desc-fold')).toBe(false);
     expect(body.children[4]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+  });
+
+  it('hides a heading used as a divider and folds the section around it as if it were not there', () => {
+    const body = mountDescription(`${h(2, 'Summary')}<p>a</p><h2>&nbsp;</h2><p>b</p>${h(2, 'Testing')}<p>c</p>`);
+    shortenDescription(true);
+    const divider = body.children[2];
+    expect(divider?.hasAttribute('data-geld-desc-blank')).toBe(true);
+    expect(divider?.hasAttribute('data-geld-desc-heading')).toBe(false);
+    expect(divider?.querySelector('.geld-desc-toggle')).toBeNull();
+    expect(body.querySelectorAll('.geld-desc-toggle')).toHaveLength(2);
+    // Summary is the first section and starts open, through to Testing.
+    expect(body.children[0]?.getAttribute('data-geld-desc-heading')).toBe('open');
+    expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(body.children[5]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    shortenDescription(false);
+    expect(divider?.hasAttribute('data-geld-desc-blank')).toBe(false);
+  });
+
+  it('still opens the first section when a divider comes before it', () => {
+    const body = mountDescription(`<h2>&nbsp;</h2>${h(2, 'Changes')}<p>a</p>${h(2, 'Testing')}<p>b</p>`);
+    shortenDescription(true);
+    expect(body.children[1]?.getAttribute('data-geld-desc-heading')).toBe('open');
+    expect(body.children[2]?.hasAttribute('data-geld-desc-fold')).toBe(false);
   });
 
   it('opens a section on a click on its heading, independently of the others, and never cuts a description with headings', async () => {
