@@ -1056,6 +1056,15 @@ function loadMinimizedReviews(): void {
   }
 }
 
+/** Whether a deferred thread's comments are on their way: being fetched, or still to be asked for this visit. */
+function threadCommentsComing(thread: Element): boolean {
+  const src = thread.getAttribute('data-deferred-content-url');
+  if (src === null) return false;
+  if (fragmentsInFlight.has(src)) return true;
+  const fragment = threadFragmentOf(thread);
+  return fragment !== null && eagerFragments < MAX_EAGER_FRAGMENTS && fragmentWanted(fragment, src);
+}
+
 /** The timeline's lazy fragments that hold conversation (threads' comments, minimized reviews and comments), in timeline order. */
 function deferredFragments(): readonly { readonly fragment: Element; readonly src: string }[] {
   const pending: { readonly fragment: Element; readonly src: string }[] = [];
@@ -3015,7 +3024,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // Whatever is left in the timeline — commits, mentions, bots' bare "reviewed" lines — folds too, so nothing
   // stands under the panel but the merge box; commits and mentions get rows in the activity section.
   const claimed = new Set<HTMLElement>(foldTargets.flatMap((group) => [...group.nodes]));
-  const leftoverList = phase('leftovers', () => crawlLeftovers(claimed));
+  const leftoverList = phase('leftovers', () => crawlLeftovers(claimed, threadCommentsComing));
   if (hidingTimeline) {
     const leftovers = groupLeftovers(leftoverList);
     groups.push(...leftovers);

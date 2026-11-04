@@ -278,8 +278,8 @@ export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: Leftove
   if (mentions.length > 0) groups.push({ key: 'mentions', label: `${mentions.length} mention${mentions.length === 1 ? '' : 's'}`, author: null, nodes: mentions, section: 'activity' });
   const silent = by('review-event');
   if (silent.length > 0) groups.push({ key: 'bot-reviews', label: '', author: null, nodes: silent, silent: true });
-  // "X added 2 commits" headers say nothing the commits row does not; a minimized comment still fetching its
-  // content is not yet anything — listing it would only have it change kind (and the counts) a moment later.
+  // "X added 2 commits" headers say nothing the commits row does not; a minimized comment or a resolved thread still
+  // fetching its content is not yet anything — listing it would only have it change kind (and the counts) a moment later.
   const noise = [...by('noise'), ...by('pending')];
   if (noise.length > 0) groups.push({ key: 'noise', label: '', author: null, nodes: noise, silent: true });
   // "New changes since you last viewed": the panel's summary strip says it (`revisionMarker`); the row itself folds.
