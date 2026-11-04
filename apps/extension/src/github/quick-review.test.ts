@@ -258,7 +258,7 @@ describe('the tab bar button', () => {
   });
 
   const page = { kind: 'pull-conversation' as const, diffUrl: null, stateKey: '/acme/widgets/pull/7' };
-  const mount = (): void => applyQuickReview(true, { page, groups: [groupAt(counts())], headSha: () => SHA });
+  const mount = (holdToMerge = false): void => applyQuickReview(true, { page, groups: [groupAt(counts())], headSha: () => SHA, holdToMerge });
   const segment = (event: string): HTMLButtonElement => {
     const button = document.querySelector(`.geld-quick-review__segment[data-event="${event}"]`);
     if (!(button instanceof HTMLButtonElement)) throw new Error(`no ${event} segment`);
@@ -1329,6 +1329,23 @@ describe('the tab bar button', () => {
     expect(document.querySelector('.geld-quick-review__panel .geld-quick-review__error')?.textContent).toBe('GitHub could not convert the pull request to a draft: Not allowed');
   });
 
+  it('keeps the status pill a menu with ⌘ (Ctrl) held unless holding to merge is turned on', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    const sent = stubBox(() => mergeBox('MERGEABLE', true, { reviews: [{ author: { login: 'ann' }, state: 'APPROVED' }] }));
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 4; i += 1) await settle();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, ctrlKey: true }));
+    expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(false);
+    expect(pill()?.hasAttribute('aria-label')).toBe(false);
+    pill()?.dispatchEvent(new MouseEvent('click', instant));
+    await settle();
+    expect(sent).toEqual([]);
+    expect(menuRows().map((row) => row[0])).toEqual(['merged', 'closed']);
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta' }));
+  });
+
   it('is a 1-click merge while ⌘ (Ctrl) is held on a pull request GitHub would merge now, and turns Merged when it goes through', async () => {
     window.localStorage.clear();
     resetStatusHints();
@@ -1349,7 +1366,7 @@ describe('the tab bar button', () => {
     const reload = vi.fn();
     vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '', href: window.location.href, origin: window.location.origin });
     withLabel('Open', 'pullOpened');
-    mount();
+    mount(true);
     for (let i = 0; i < 4; i += 1) await settle();
     expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(false);
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, ctrlKey: true }));
@@ -1389,7 +1406,7 @@ describe('the tab bar button', () => {
     // A repository that requires the approval: dismissed, GitHub would no longer merge it.
     const sent = stubBox(() => mergeBox(approved ? 'MERGEABLE' : 'BLOCKED', true, { reviews: approved ? [{ author: { login: 'ann' }, state: 'APPROVED' }] : [] }));
     withLabel('Open', 'pullOpened');
-    mount();
+    mount(true);
     for (let i = 0; i < 4; i += 1) await settle();
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, ctrlKey: true }));
     expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(true);
@@ -1408,7 +1425,7 @@ describe('the tab bar button', () => {
     resetStatusHints();
     const sent = stubBox(() => mergeBox('MERGEABLE', true));
     withLabel('Open', 'pullOpened');
-    mount();
+    mount(true);
     for (let i = 0; i < 4; i += 1) await settle();
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, ctrlKey: true }));
     expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(true);
@@ -1421,7 +1438,7 @@ describe('the tab bar button', () => {
     resetStatusHints();
     const sent = stubBox(() => mergeBox('BLOCKED', true));
     withLabel('Open', 'pullOpened');
-    mount();
+    mount(true);
     for (let i = 0; i < 4; i += 1) await settle();
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, ctrlKey: true }));
     expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(false);
@@ -1436,7 +1453,7 @@ describe('the tab bar button', () => {
     resetStatusHints();
     const sent = stubBox(() => mergeBox('MERGEABLE', true, { reviews: [{ author: { login: 'ann' }, state: 'CHANGES_REQUESTED' }] }));
     withLabel('Open', 'pullOpened');
-    mount();
+    mount(true);
     for (let i = 0; i < 4; i += 1) await settle();
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, ctrlKey: true }));
     expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(false);
@@ -1462,7 +1479,7 @@ describe('the tab bar button', () => {
       }),
     );
     withLabel('Open', 'pullOpened');
-    mount();
+    mount(true);
     for (let i = 0; i < 4; i += 1) await settle();
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, ctrlKey: true }));
     expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(false);
@@ -1481,7 +1498,7 @@ describe('the tab bar button', () => {
       return JSON.stringify(payload);
     });
     withLabel('Open', 'pullOpened');
-    mount();
+    mount(true);
     for (let i = 0; i < 4; i += 1) await settle();
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, ctrlKey: true }));
     expect(pill()?.hasAttribute('data-geld-instant-merge')).toBe(false);

@@ -101,7 +101,7 @@ const STEPS: readonly Step[] = [
     id: 'status',
     chapter: 'Act from anywhere',
     title: 'Change status from the pill',
-    body: 'The state label is a menu. Merge, convert to draft, mark ready, close or reopen without scrolling to the merge box. Hold ⌘ and it merges in one click.',
+    body: 'The state label is a menu. Merge, convert to draft, mark ready, close or reopen without scrolling to the merge box.',
     hint: 'Open the pill',
     Scene: StatusScene,
   },

@@ -19,6 +19,8 @@ import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checks
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import type { AiState } from './ai';
+import type { BotRequestState } from './bot-requests';
+import { requestDetail, requestSentence } from './bot-requests';
 import { formatSyncAge } from '../../ui/sync-age';
 import type { Closure, ClosureKind, EventHeadline } from './fold';
 import { headlineText } from './fold';
@@ -411,6 +413,8 @@ export interface PanelModel {
   readonly editsVersion: number;
   /** A review bot is still running: the re-run control spins. */
   readonly running: boolean;
+  /** Reviews asked for that the bot has not yet shown a sign of taking (`botRequestStates`): the pill spins, then warns. */
+  readonly botRequests: ReadonlyMap<string, BotRequestState>;
   /** Avatars (up to two) for a row, read from the source comments on the page. */
   readonly avatarsFor: (item: ReviewItem) => readonly Avatar[];
   /** Timeline nodes hidden by compaction (for the "show full timeline" row). */
@@ -1365,22 +1369,38 @@ function anchorLink(anchor: string, label: string, handlers: PanelHandlers, chil
 }
 
 /**
+ * How a bot's pill and line look: its verdict's light, word and label, or,
+ * while a review asked for has had no sign from the bot, the spinner
+ * (`starting`) and then the warning triangle (`unanswered`).
+ */
+function botLook(bot: BotVerdictRecord, model: Pick<PanelModel, 'botRequests'>): { readonly health: Health; readonly glyph: string; readonly detail: string; readonly label: string } {
+  const request = model.botRequests.get(bot.id);
+  const title = botTitle(bot.id, bot.login);
+  if (request !== undefined) {
+    const label = `${title}: ${requestSentence(request)}`;
+    return request.kind === 'starting' ? { health: 'pending', glyph: ICON_IN_PROGRESS, detail: requestDetail(request), label } : { health: 'warn', glyph: ICON_ALERT, detail: requestDetail(request), label };
+  }
+  const health = botHealth(bot);
+  // A run that did not happen (refused, or broken) wears the warning triangle, not a verdict's light: nothing was
+  // reviewed, and the chip opens the bot's own words on why.
+  return { health, glyph: bot.verdict === 'failed' ? ICON_ALERT : HEALTH_ICON[health], detail: botDetail(bot), label: verdictLabel(bot) };
+}
+
+/**
  * One bot: its icon, name, detail and a traffic-light glyph; clicking opens
  * its run summary where the reader is. Resting on it shows the identity
  * card (the verdict is in there too, so no native tooltip competes with it).
  */
 function botChip(bot: BotVerdictRecord, model: PanelModel, handlers: PanelHandlers): HTMLElement {
-  const health = botHealth(bot);
+  const look = botLook(bot, model);
   const current = isCurrent(bot, model.meta.headSha);
-  const label = `${verdictLabel(bot)}${current ? '' : ' (earlier commit)'}`;
+  const label = `${look.label}${current ? '' : ' (earlier commit)'}`;
   const children: Node[] = [];
   const iconSrc = model.botIconFor(bot.id);
   if (iconSrc !== null) children.push(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: iconSrc, alt: '', width: '16', height: '16' }));
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name` }, [botTitle(bot.id, bot.login)]));
-  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-detail` }, [botDetail(bot)]));
-  // A run that did not happen (refused, or broken) wears the warning triangle, not a verdict's light: nothing was
-  // reviewed, and the chip opens the bot's own words on why.
-  const glyph = healthGlyph(health, label, bot.verdict === 'failed' ? ICON_ALERT : HEALTH_ICON[health]);
+  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-detail` }, [look.detail]));
+  const glyph = healthGlyph(look.health, label, look.glyph);
   glyph.removeAttribute('title');
   children.push(glyph);
   const who = whoAttributes(bot.login, true);
@@ -1441,7 +1461,10 @@ export interface BotRunState {
   readonly preselect: boolean;
 }
 
-export function botRunState(botId: string, model: Pick<PanelModel, 'ranSincePush'> & { readonly meta: Pick<PanelModel['meta'], 'bots' | 'headSha'> }): BotRunState {
+export function botRunState(botId: string, model: Pick<PanelModel, 'ranSincePush'> & Partial<Pick<PanelModel, 'botRequests'>> & { readonly meta: Pick<PanelModel['meta'], 'bots' | 'headSha'> }): BotRunState {
+  // A request the bot never answered is worth asking again (ticked); one still starting is not.
+  const request = model.botRequests?.get(botId);
+  if (request !== undefined) return request.kind === 'starting' ? { health: 'pending', word: 'Starting', preselect: false } : { health: 'warn', word: request.reason === 'not-posted' ? 'Not posted' : 'No response', preselect: true };
   const record = model.meta.bots.find((entry) => entry.id === botId);
   if (record === undefined) return { health: null, word: 'Not run', preselect: false };
   const health = botHealth(record);
@@ -2258,10 +2281,11 @@ function reportAvatar(entry: Report, model: PanelModel): CheckAvatar | null {
  */
 function botLine(line: BotLine, model: PanelModel, handlers: PanelHandlers, reserveChevron: boolean): { readonly row: HTMLElement; readonly open: boolean } {
   const { bot } = line;
-  const health = botHealth(bot);
+  const look = botLook(bot, model);
+  const health = look.health;
   const current = isCurrent(bot, model.meta.headSha);
-  const label = `${verdictLabel(bot)}${current ? '' : ' (earlier commit)'}`;
-  const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-health': health, role: 'img', 'aria-label': label, title: label }, [icon(bot.verdict === 'failed' ? ICON_ALERT : HEALTH_ICON[health])]);
+  const label = `${look.label}${current ? '' : ' (earlier commit)'}`;
+  const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-health': health, role: 'img', 'aria-label': label, title: label }, [icon(look.glyph)]);
   const iconSrc = model.botIconFor(bot.id) ?? line.avatarSrc;
   const picture = avatarStack(iconSrc === null ? [] : [{ src: iconSrc, bot: true, login: bot.login }], botTitle(bot.id, bot.login), true);
   const opens = line.anchor !== null;
@@ -2274,7 +2298,7 @@ function botLine(line: BotLine, model: PanelModel, handlers: PanelHandlers, rese
   };
   const mainChildren: Node[] = [
     createElement('span', { class: `${PANEL_CLASS}__name`, ...whoAttributes(bot.login, true) }, [botTitle(bot.id, bot.login)]),
-    createElement('span', { class: `${PANEL_CLASS}__bot-detail ${PANEL_CLASS}__bot-line-detail` }, [botDetail(bot)]),
+    createElement('span', { class: `${PANEL_CLASS}__bot-detail ${PANEL_CLASS}__bot-line-detail` }, [look.detail]),
   ];
   if (line.preview !== '') mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__preview` }, inlineText(line.preview)));
   if (line.threads.length > 0) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__pill` }, [plural(line.threads.length, 'thread')]));
@@ -2553,6 +2577,7 @@ function signatureOf(model: PanelModel): string {
     ai: model.ai,
     tldr: model.meta.summary?.tldr ?? '',
     bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.severity ?? ''}:${bot.reviewedSha}:${bot.sourceId ?? ''}`),
+    botRequests: [...model.botRequests].map(([id, state]) => `${id}:${state.kind === 'starting' ? 'starting' : state.reason}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
     folds: model.folds.map((fold) => `${fold.key}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}:${fold.closure?.preview ?? ''}:${fold.headline === undefined ? '' : `${fold.headline.kind}${fold.headline.actor}${fold.headline.target ?? ''}${fold.headline.avatarSrc ?? ''}`}`),
     batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.commits.length}/${batch.commitCount}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),

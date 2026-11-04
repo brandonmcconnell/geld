@@ -59,6 +59,8 @@ export interface QuickReviewContext {
   readonly headSha: () => string | null;
   /** Whether the conversation digest is on: then `#geld-reviews` waits for its Reviews row rather than settle for the sidebar. */
   readonly digest?: boolean;
+  /** Whether a held ⌘ (Ctrl) turns the status pill into a 1-click merge (`holdToMerge`). */
+  readonly holdToMerge?: boolean;
 }
 
 const GROUP_CLASS = 'geld-quick-review';
@@ -1135,9 +1137,9 @@ function openFromPill(pill: HTMLButtonElement, click: MouseEvent): void {
 }
 
 /**
- * Whether a held ⌘ (Ctrl) makes the pill a 1-click merge: GitHub would merge
- * it now, for this reader, with its default method, and nobody's request for
- * changes stands. GitHub's answer already holds the repository's rules as
+ * Whether a held ⌘ (Ctrl) makes the pill a 1-click merge: the reader turned
+ * that on (`holdToMerge`), GitHub would merge it now, for this reader, with
+ * its default method, and nobody's request for changes stands. GitHub's answer already holds the repository's rules as
  * they apply to the reader: where approvals are required it is not mergeable
  * without one, and for an admin the rules exempt (or a repository that asks
  * for none) it is mergeable as GitHub's own merge button is. A merge only
@@ -1145,6 +1147,7 @@ function openFromPill(pill: HTMLButtonElement, click: MouseEvent): void {
  * for GitHub's checkbox.
  */
 function instantMergeReady(state: Mounted): boolean {
+  if (state.context.holdToMerge !== true) return false;
   const actions = state.mergeActions;
   // A stacked pull request merges the stack below it too: that wants the merge box's sentence, not a 1-click merge.
   if (actions === null || actions.offer !== 'merge' || actions.box.stacked || state.sending) return false;
