@@ -14,7 +14,7 @@ import { previewHostById, reportsHealth } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
-import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_FILE_DIFF, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -477,6 +477,8 @@ export interface PanelHandlers {
   readonly onGrouping: (grouping: 'type' | 'batch') => void;
   /** Open the Flow diagram of the changed files. */
   readonly onFlow: () => void;
+  /** Open Geld's settings: the toolbar popup where the browser allows it, else the options page. */
+  readonly onSettings: () => void;
   /** Resolve/unresolve the thread holding `anchor` (GitHub's own button). */
   readonly onResolveAnchor: (anchor: string, done: boolean) => void;
   /** Open the row holding `anchor` and GitHub's reaction picker for its first comment. */
@@ -2781,6 +2783,9 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   const copy = iconButton(ICON_COPY, 'Copy digest as Markdown', { [ATTR_FOCUS]: 'copy' });
   copy.addEventListener('click', () => handlers.onCopy());
   tools.append(copy);
+  const settings = iconButton(ICON_GEAR, 'Geld Settings', { [ATTR_FOCUS]: 'settings' });
+  settings.addEventListener('click', () => handlers.onSettings());
+  tools.append(settings);
   const head = createElement('div', { class: `${PANEL_CLASS}__head`, [ATTR_FIT_TOOLS]: '' }, [summary, tools]);
   const aiNote = aiNotice(model.ai, handlers);
   const status = statusRows(model, handlers);

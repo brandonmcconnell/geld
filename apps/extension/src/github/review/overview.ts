@@ -5,6 +5,7 @@
  * remounts are handled by applying again. Never scrolls the page.
  */
 
+import { browser } from 'wxt/browser';
 import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import type { BotComment, BotVerdictRecord, CommentLane, GeldPrMeta, RawCheckRun, ReviewItem, ReviewerState } from '@geld/review';
@@ -15,6 +16,7 @@ import { describePage, pullRequestStateWords } from '../page';
 import { count, phase, phaseSince } from '../../lib/perf';
 import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
+import type { OpenSettingsMessage } from '../../lib/messages';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
 import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
@@ -3416,6 +3418,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       persist(settingsItem.patch({ reviewGrouping: grouping }));
     },
     onFlow: () => openFlowDialog(),
+    onSettings: () => {
+      const message: OpenSettingsMessage = { type: 'geld:open-settings' };
+      void browser.runtime.sendMessage(message).catch(() => undefined);
+    },
     onToggleCommits: (batchKey) => {
       keepInPlace(`commits:${batchKey}`, () => {
         if (visit.openCommits.has(batchKey)) visit.openCommits.delete(batchKey);

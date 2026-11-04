@@ -24,6 +24,7 @@ import {
   isFetchDiffRequest,
   isFetchFileRequest,
   isClearDiffCacheMessage,
+  isOpenSettingsMessage,
   isTabStateMessage,
 } from '../src/lib/messages';
 import type { DiffPriority } from '../src/lib/messages';
@@ -462,6 +463,23 @@ function applyToolbarIcon(dark: boolean): void {
   void browser.action.setIcon({ path: actionIconPaths(dark ? 'white' : 'black') }).catch(() => undefined);
 }
 
+/**
+ * The digest's gear: the toolbar popup over the tab that asked, else the options page. Chrome and Edge open the popup
+ * from here; Firefox opens it only from the extension's own user actions (and its MV2 build has no `action`), and
+ * Safari may not offer it, so a refusal falls back.
+ */
+async function openSettings(windowId: number | undefined): Promise<void> {
+  if (import.meta.env.MANIFEST_VERSION === 3 && typeof browser.action.openPopup === 'function') {
+    try {
+      await browser.action.openPopup(windowId === undefined ? undefined : { windowId });
+      return;
+    } catch {
+      // Not allowed here: the full page instead.
+    }
+  }
+  await browser.runtime.openOptionsPage().catch(() => undefined);
+}
+
 /** The subset of the action API we use, shared by MV3 `action` and MV2 `browserAction`. */
 interface BadgeApi {
   setBadgeText(details: { tabId: number; text: string }): Promise<void> | void;
@@ -531,6 +549,10 @@ export default defineBackground(() => {
     }
     if (isTabStateMessage(message)) {
       if (sender.tab?.id !== undefined) updateBadge(sender.tab.id, message.state);
+      return undefined;
+    }
+    if (isOpenSettingsMessage(message)) {
+      void openSettings(sender.tab?.windowId);
       return undefined;
     }
     if (isAccountActionMessage(message)) {
