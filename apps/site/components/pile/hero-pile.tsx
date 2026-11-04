@@ -40,6 +40,8 @@ const SNAP_SLACK = 4;
 const SNAP_EASE = 0.06;
 /** Cards stack below this; the digest and the switch are `z-40`. */
 const CARD_Z_CEILING = 40;
+/** How long a pointer held still before release takes for the throw it was making to fade to nothing. */
+const THROW_FADE_MS = 100;
 
 interface Layout {
   readonly world: World;
@@ -140,7 +142,7 @@ function Playground() {
   const landedAt = useRef<number | null>(null);
   /** When the last card was poured; a pile still jostling this long after counts as landed. */
   const pouredAt = useRef<number | null>(null);
-  const drag = useRef<{ index: number; dx: number; dy: number; x: number; y: number; t: number; vx: number; vy: number } | null>(null);
+  const drag = useRef<{ pointer: number; index: number; dx: number; dy: number; x: number; y: number; t: number; vx: number; vy: number } | null>(null);
 
   const [geld, setGeld] = useState(false);
   const [used, setUsed] = useState(false);
@@ -559,7 +561,8 @@ function Playground() {
 
   const onPointerDown = (index: number) => (event: React.PointerEvent<HTMLDivElement>) => {
     const body = bodies.current[index];
-    if (!body || body.mode !== 'free') return;
+    // One card at a time: a second finger taking over the drag left the first card held, frozen in place.
+    if (!body || body.mode !== 'free' || drag.current !== null) return;
     raise(index);
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -570,13 +573,13 @@ function Playground() {
     body.held = true;
     body.fence = undefined;
     body.still = 0;
-    drag.current = { index, dx: body.x - x, dy: body.y - y, x, y, t: performance.now(), vx: 0, vy: 0 };
+    drag.current = { pointer: event.pointerId, index, dx: body.x - x, dy: body.y - y, x, y, t: performance.now(), vx: 0, vy: 0 };
     run();
   };
 
   const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const held = drag.current;
-    if (!held) return;
+    if (!held || event.pointerId !== held.pointer) return;
     const body = bodies.current[held.index];
     if (!body) return;
     const origin = layer.current?.getBoundingClientRect();
@@ -594,14 +597,16 @@ function Playground() {
     run();
   };
 
-  const onPointerUp = () => {
+  const onPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     const held = drag.current;
-    if (!held) return;
+    if (!held || event.pointerId !== held.pointer) return;
     const body = bodies.current[held.index];
     if (body) {
+      // The speed is the last move's; held still before letting go, the card is dropped rather than thrown.
+      const keep = Math.max(0, 1 - (performance.now() - held.t) / THROW_FADE_MS);
       body.held = false;
-      body.vx = Math.max(-2400, Math.min(2400, held.vx));
-      body.vy = Math.max(-2400, Math.min(2400, held.vy));
+      body.vx = Math.max(-2400, Math.min(2400, held.vx * keep));
+      body.vy = Math.max(-2400, Math.min(2400, held.vy * keep));
       body.spin = Math.max(-8, Math.min(8, body.vx * 0.004));
       body.still = 0;
       body.escape = 0.3;
@@ -609,7 +614,6 @@ function Playground() {
     drag.current = null;
     run();
   };
-
 
   return (
     <div ref={layer} className="pointer-events-none absolute inset-0 z-10 [overflow-x:clip]">
