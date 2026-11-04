@@ -1064,6 +1064,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **A mark's frame takes the shape of its picture, read from the pixels** (`mark-shape.ts`, `shapeMark`): GitHub squares every App's and OAuth App's avatar (`data-square`, Chromatic's included), but Chromatic's image is a disc on transparent corners, and a square frame around a disc shows at the corners.
   Nothing in the markup says which, so the picture is drawn on a canvas (avatars.githubusercontent.com answers CORS with `*`) and the pixels a tenth of the way in along each diagonal are sampled - outside an inscribed circle, inside a square or a rounded square of any usual radius;
   all four transparent → `data-shape="round"` (circle, the 1px ring following it) on `.geld-review__bot-icon` and `.geld-review__avatar`.
+  First, though, the middle of each edge is read: a picture that does not reach an edge (alpha under 128 there) is a glyph on a transparent ground (Codex, Gemini, Sourcery, Qodo, Amazon Q, Entelligence, measured on the registry's App avatars in Nov 2026) and is `data-shape="cutout"`: no ring and no muted fill, since both drew a square around a picture that is not one.
+  Whether any pixel is transparent is not the test: Claude's solid tile has anti-aliased edges and cubic's rounded corners are clear, and both are tiles.
+  A cutout whose ink averages near black or near white (`data-ink="dark"`/`"light"`, Codex's black knot) keeps the tile on a ground of its own tone only (`light-dark()`), where it would vanish.
+  Every bot mark goes through `shapeMark`: the chips, the request menu and a push's preview hosts (`markImg`), every bot avatar in a row (`avatarImg`, so rounds, pushes, bot lines and reports alike) and the hover cards (`cardAvatar`).
   Answers are kept per URL for the page's life and written onto every mark showing that picture when they land, so a panel rebuilt meanwhile catches up;
   a tainted canvas keeps the square frame.
   **A bot's pill never wears a person's face**: `avatarSrcOf` (crawler.ts) is bound to the author (the picture captioned with the author's login, through worn pieces;

@@ -580,7 +580,10 @@ function whoAttributes(login: string, bot: boolean): Readonly<Record<string, str
 }
 
 function avatarImg(entry: Avatar): HTMLElement {
-  return createElement('img', { class: `${PANEL_CLASS}__avatar`, 'data-kind': entry.bot ? 'bot' : 'user', src: entry.src, alt: '', width: '20', height: '20', loading: 'lazy', ...whoAttributes(entry.login, entry.bot) });
+  const img = createElement('img', { class: `${PANEL_CLASS}__avatar`, 'data-kind': entry.bot ? 'bot' : 'user', src: entry.src, alt: '', width: '20', height: '20', loading: 'lazy', ...whoAttributes(entry.login, entry.bot) });
+  // A bot's mark takes the shape of its picture (`shapeMark`), a person's stays GitHub's circle.
+  if (entry.bot) shapeMark(img, entry.src, false);
+  return img;
 }
 
 /** Bots and Apps are rounded squares on GitHub, people are circles; the same pictures the page shows. */
@@ -954,7 +957,7 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
     }
     mainChildren.push(
       createElement('span', { class: `${PANEL_CLASS}__deploy-sum`, 'aria-hidden': 'true' }, [
-        createElement('span', { class: `${PANEL_CLASS}__deploy-sum-hosts` }, hosts.slice(0, 3).map((src) => createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src, alt: '', width: '16', height: '16' }))),
+        createElement('span', { class: `${PANEL_CLASS}__deploy-sum-hosts` }, hosts.slice(0, 3).map((src) => markImg(src, false))),
         createElement('span', { class: `${PANEL_CLASS}__deploy-sum-text` }, [plural(batch.previews.length, 'preview')]),
       ]),
     );
@@ -1397,7 +1400,7 @@ function botChip(bot: BotVerdictRecord, model: PanelModel, handlers: PanelHandle
   const label = `${look.label}${current ? '' : ' (earlier commit)'}`;
   const children: Node[] = [];
   const iconSrc = model.botIconFor(bot.id);
-  if (iconSrc !== null) children.push(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: iconSrc, alt: '', width: '16', height: '16' }));
+  if (iconSrc !== null) children.push(markImg(iconSrc, false));
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name` }, [botTitle(bot.id, bot.login)]));
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-detail` }, [look.detail]));
   const glyph = healthGlyph(look.health, label, look.glyph);
@@ -1543,7 +1546,7 @@ function requestMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | 
     // The same mark the bot's chip wears: `botIconFor` looks beyond the `/apps/` link `requestableBots` saw (the run
     // summary's avatar, a review comment of the bot's); a bot with no picture on the page gets an empty square.
     const iconSrc = model.botIconFor(bot.id) ?? bot.iconSrc;
-    const mark = iconSrc !== null ? createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: iconSrc, alt: '', width: '16', height: '16' }) : createElement('span', { class: `${PANEL_CLASS}__bot-icon ${PANEL_CLASS}__bot-icon--blank`, 'aria-hidden': 'true' });
+    const mark = iconSrc !== null ? markImg(iconSrc, false) : createElement('span', { class: `${PANEL_CLASS}__bot-icon ${PANEL_CLASS}__bot-icon--blank`, 'aria-hidden': 'true' });
     const stateNode = createElement('span', { class: `${PANEL_CLASS}__request-state`, ...(state.health === null ? {} : { 'data-health': state.health }) }, [
       ...(state.health === null ? [] : [createElement('span', { class: `${PANEL_CLASS}__health`, 'data-health': state.health, 'aria-hidden': 'true' }, [icon(HEALTH_ICON[state.health])])]),
       state.word,
@@ -2128,9 +2131,9 @@ const REPORT_STATE_LABEL: Readonly<Record<Report['state'], string>> = {
 };
 
 /**
- * A service's mark in a pill, framed in the shape of its picture: GitHub
- * squares every App's avatar, but a disc on transparent corners (Chromatic's)
- * showed that square frame around a circle, so the picture itself decides
+ * A service's mark, framed in the shape of its picture: GitHub squares every
+ * App's avatar, but a disc (Chromatic's) or a glyph on a transparent ground
+ * (Codex's) showed that square frame around it, so the picture itself decides
  * (`shapeMark`), the page's own rounding (a person's) taken as read.
  */
 function markImg(src: string, roundOnPage: boolean): HTMLElement {
@@ -2234,9 +2237,6 @@ function reportLine(entry: Report, model: PanelModel, handlers: PanelHandlers): 
   const avatar = reportAvatar(entry, model);
   const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-report-state': entry.state, role: 'img', 'aria-label': REPORT_STATE_LABEL[entry.state] }, [icon(REPORT_GLYPH[entry.state])]);
   const picture = avatarStack(avatar === null ? [] : [{ src: avatar.src, bot: !avatar.round, login: entry.author }], entry.title, true);
-  // The picture takes the shape of its mark, as the pill's does.
-  const pictureImg = picture.querySelector('img');
-  if (avatar !== null && pictureImg !== null) shapeMark(pictureImg, avatar.src, avatar.round);
   const open = model.openSubKey === entry.anchor;
   const act = (): void => handlers.onToggleSub(entry.anchor);
   const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:sub:${entry.anchor}` }, [
