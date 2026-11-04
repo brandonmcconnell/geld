@@ -52,6 +52,11 @@ function isDefinitive(reason: string): boolean {
   return reason === 'too-large' || reason === 'invalid-url' || reason === 'disallowed-url' || reason === 'signed-out' || reason === 'not-a-diff' || /^http-4\d\d$/.test(reason);
 }
 
+/** Whether a failed request is asked again on its own; otherwise it stays failed until the page reloads. */
+export function retriesLater(state: { readonly reason: string; readonly attempts: number }): boolean {
+  return state.reason === 'rate-limited' || (!isDefinitive(state.reason) && state.attempts < TRANSIENT_MAX_ATTEMPTS);
+}
+
 /**
  * Lazily asks the background script for `<page>.diff` and caches the per-file
  * statistics — in memory for this page, and on disk keyed by commit SHA so a
@@ -266,7 +271,7 @@ export class DiffSource {
     const delay =
       reason === 'rate-limited'
         ? (retryAfterMs ?? RATE_LIMIT_RETRY_MS) + RATE_LIMIT_SLACK_MS
-        : isDefinitive(reason) || attempts >= TRANSIENT_MAX_ATTEMPTS
+        : !retriesLater({ reason, attempts })
           ? null
           : (TRANSIENT_RETRY_MS[Math.min(attempts, TRANSIENT_RETRY_MS.length) - 1] ?? null);
     if (delay !== null) {

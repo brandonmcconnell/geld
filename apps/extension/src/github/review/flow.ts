@@ -54,13 +54,25 @@ const ZOOM_STEP = 0.1;
 const STATUS_WORD: Readonly<Record<FlowFileStatus, string>> = { added: 'New', deleted: 'Removed', renamed: 'Renamed', modified: 'Changed' };
 const STATUS_ICON: Readonly<Record<FlowFileStatus, string>> = { added: ICON_FILE_ADDED, deleted: ICON_FILE_REMOVED, renamed: ICON_FILE_MOVED, modified: ICON_FILE_MODIFIED };
 
+/** Why the pull request's diff is not here, when its request failed (`retrying` while it is still asked again on its own). */
+export interface FlowFailure {
+  readonly origin: string;
+  readonly pullPath: string;
+  readonly reason: string;
+  readonly retrying: boolean;
+}
+
 let source: FlowSource | null = null;
+let failure: FlowFailure | null = null;
 /** The pull request and head the cached reads belong to. */
 let sourceKey = '';
 
-/** What the diagram is drawn from, set by the controller on every conversation pass (null elsewhere). */
-export function setFlowSource(next: FlowSource | null): void {
+/** What the diagram is drawn from, set by the controller on every conversation pass (null elsewhere), with the diff's failure while it has none. */
+export function setFlowSource(next: FlowSource | null, failed: FlowFailure | null = null): void {
   source = next;
+  const failedBefore = failure;
+  failure = next === null ? failed : null;
+  if (openDialog !== null && failureKey(failure) !== failureKey(failedBefore)) onReadLanded?.();
   const key = next === null ? '' : `${next.origin}/${next.repo}${next.pullPath}@${next.headSha ?? ''}`;
   // Another pull request or a new head: what was read for the last one is never asked for again.
   if (key !== '' && key !== sourceKey) {
@@ -79,6 +91,20 @@ export function setFlowSource(next: FlowSource | null): void {
       onReadLanded?.();
     }
   }
+}
+
+function failureKey(from: FlowFailure | null): string {
+  return from === null ? '' : `${from.origin}${from.pullPath}\u0000${from.reason}\u0000${String(from.retrying)}`;
+}
+
+/** What the dialog says in place of the diagram when the diff could not be had, and whether reloading is the way on. */
+function failureCopy(failed: FlowFailure): { readonly text: string; readonly reload: boolean } {
+  if (failed.reason === 'too-large') return { text: 'This pull request\u2019s diff is over 20 MB, too large for Flow to read.', reload: false };
+  if (failed.reason === 'rate-limited') return { text: 'GitHub is limiting diff downloads. Flow tries again shortly.', reload: false };
+  if (failed.retrying) return { text: 'GitHub did not hand over the diff yet. Flow tries again shortly.', reload: false };
+  if (failed.reason === 'signed-out') return { text: 'GitHub answered with its sign-in page instead of the diff. Sign in, or renew your SSO session, and reload.', reload: true };
+  if (failed.reason === 'http-404') return { text: 'GitHub answered 404 for the diff. For a private repository that means you are signed out. Sign in and reload.', reload: true };
+  return { text: `Geld could not load this pull request\u2019s diff (${failed.reason}).`, reload: true };
 }
 
 /** What an open dialog draws from besides the reads: each file's status, category and removed imports. */
@@ -472,10 +498,20 @@ export function openFlowDialog(): void {
   let fitted = false;
   const render = (): void => {
     const current = latest();
+    controls.hidden = current === null;
     if (current === null) {
       toggle.hidden = true;
-      status.hidden = false;
-      status.textContent = 'Waiting for the pull request\u2019s diff…';
+      const failed = failure !== null && failure.origin === location.origin && failure.pullPath === pullPath ? failure : null;
+      status.hidden = failed !== null;
+      status.textContent = failed === null ? 'Waiting for the pull request\u2019s diff…' : '';
+      if (failed === null) {
+        canvas.replaceChildren();
+        return;
+      }
+      const copy = failureCopy(failed);
+      const reload = createElement('button', { type: 'button', class: 'btn btn-sm' }, ['Reload']);
+      reload.addEventListener('click', () => location.reload());
+      canvas.replaceChildren(createElement('div', { class: 'geld-flow__failed', role: 'alert' }, [createElement('p', {}, [copy.text]), ...(copy.reload ? [reload] : [])]));
       return;
     }
     const essentialNow = current.files.filter((file) => file.hiddenAs === null).length;

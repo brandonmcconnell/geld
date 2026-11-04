@@ -8229,6 +8229,23 @@ dialog.geld-flow .geld-flow__title {
   font-size: 12px;
 }
 
+.geld-flow__failed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  align-self: stretch;
+  margin: 48px 28px;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font-size: 14px;
+  text-align: center;
+}
+
+.geld-flow__failed > p {
+  max-width: 44ch;
+  margin: 0;
+}
+
 /* Floating over the diagram's lower corners: what is still being read on the left, the legend and zoom on the right. */
 .geld-flow__reading {
   position: absolute;
@@ -8244,7 +8261,8 @@ dialog.geld-flow .geld-flow__title {
   line-height: 22px;
 }
 
-.geld-flow__reading[hidden] {
+.geld-flow__reading[hidden],
+.geld-flow__controls[hidden] {
   display: none;
 }
 
