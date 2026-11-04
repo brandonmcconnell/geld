@@ -7,7 +7,8 @@
   "license": "AGPL-3.0-only",
   "exports": {
     ".": "./src/index.ts",
-    "./schema.json": "./schema/crf-v0.schema.json"
+    "./schema.json": "./schema/crf-v0.schema.json",
+    "./types": "./schema/crf-v0.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type * as Spec from '../schema/crf-v0';
 import {
   EXAMPLE_FINDING,
   EXAMPLE_REFUSAL,
@@ -154,5 +155,20 @@ describe('whole-comment examples', () => {
   it('the thread comment carries the same finding', () => {
     const block = parseBlock(read('greptile-thread.md'));
     expect(block?.kind === 'finding' ? block.finding.id : undefined).toBe('fenced-examples-become-claims');
+  });
+});
+
+describe('the readable TypeScript schema', () => {
+  // Optional fields read `?: T` there and `?: T | undefined` from Zod under exactOptionalPropertyTypes; compare without that difference.
+  type Strict<T> = T extends readonly (infer U)[] ? Strict<U>[] : T extends object ? { [K in keyof T]: Strict<Exclude<T[K], undefined>> } : T;
+
+  it('describes exactly the shape the Zod schema validates', () => {
+    expectTypeOf<Strict<Spec.CrfBlock>>().toEqualTypeOf<Strict<CrfBlock>>();
+  });
+
+  it('is in the README word for word', () => {
+    const types = readFileSync(new URL('../schema/crf-v0.ts', import.meta.url), 'utf8').trim();
+    const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+    expect(readme).toContain(`\`\`\`ts\n${types}\n\`\`\``);
   });
 });
