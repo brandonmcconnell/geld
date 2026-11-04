@@ -130,10 +130,10 @@ export function FlowScene() {
           flowOpen ? 'scale-100 opacity-100' : 'pointer-events-none scale-95 opacity-0',
         )}
       >
-        <div className="relative flex h-10 shrink-0 items-center justify-center gap-1.5 border-b bg-muted/40 px-3 text-xs">
+        <div className="flex h-10 shrink-0 items-center gap-1.5 border-b bg-muted/40 pr-2 pl-3 text-xs">
           <WorkflowIcon aria-hidden="true" className="size-3.5 text-muted-foreground" />
           <span className="font-semibold">Flow</span>
-          <span className="absolute right-2 flex items-center gap-2">
+          <span className="ml-auto flex items-center gap-2">
             <label className="inline-flex items-center gap-2 text-muted-foreground">
               <span className="@max-lg:sr-only">Hidden files</span>
               <Switch checked={showHidden} onCheckedChange={setShowHidden} aria-label="Show the files your settings hide" />
