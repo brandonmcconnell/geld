@@ -1371,6 +1371,11 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
 `pnpm --filter @geld/site check` runs typecheck, lint, unit tests and a production build, and is part of root `pnpm check`.
 
 - **Stack:** Next.js 16 App Router with `cacheComponents: true`, Tailwind CSS 4, shadcn components generated on **Base UI** (`components/ui/`), the `cn` package for class merging, Geist via the `geist` package, `lucide-react` icons.
+  **Font Awesome Sharp is replacing Lucide**, one icon at a time, from the Geld kit (`@awesome.me/kit-2e791c163e`, shared with the dashboard, imported by style: `icons/sharp/solid`, `icons/sharp/regular`) and drawn by `components/fa-icon.tsx` from the icon's path data, with no Font Awesome runtime.
+  The kit is a private package on Font Awesome's registry: the root `.npmrc` reads its token from `FONTAWESOME_PACKAGE_TOKEN`, set as a GitHub Actions secret (every `pnpm install` step passes it), on the `geld-site` and `geld-dashboard` Vercel projects, and as a Cursor secret for agents.
+  An install without the token fetches every public package and then stops at the kit, so a fork's pull request, which gets no secrets, cannot install.
+  The kit's icons and styles are chosen on fontawesome.com, and each change there publishes a new version;
+  both apps pin it exactly, so `pnpm --filter @geld/site --filter @geld/dashboard update @awesome.me/kit-2e791c163e --latest` takes it (a plain `update` stays on the pinned version).
   Everything is prerendered;
   the only cached-async piece is the latest-release lookup (`lib/release.ts`, `use cache`, revalidated hourly, falls back to the Releases page when there is no release yet).
   Light/dark follows `prefers-color-scheme` by default;
@@ -1381,20 +1386,40 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
   hover deepens the cut by 3px (a child inside `group/geld`, like the account avatar, follows its parent's hover), and an `::after` pseudo-element makes the hit area the full square plus 1px so the cut-away corners are still clickable.
   Browsers without `corner-shape` get plain square corners.
   Form fields, chips, cards, popups and badges are plain squares.
+  On a page with a hero wordmark the header's bottom line starts invisible and is fully drawn halfway to the scroll that takes the wordmark under the bar (`header-divider.tsx` measures that point, a scroll-driven animation draws it, a scroll listener stands in where those are missing);
+  below `sm` the header's links fold into one menu left of the wordmark (`nav-menu.tsx`), and the account control stays on the right.
+  Every heading is `text-wrap: balance` and every paragraph `pretty`, from the base layer in globals.css, so neither needs a class;
+  a subtitle (a section's or page intro's description, the hero's line) adds `text-balance`.
   Hover details that phones must reach (the count breakdowns) use `components/ui/popover.tsx` (opens on hover and tap), not the tooltip.
   The white brand SVGs are shown in dark mode by toggling two `<img>`s with that variant (`components/logo.tsx` references `assets/brand/` via `new URL(..., import.meta.url)`);
   the SVG favicon can only follow the OS.
 - **Feedback goes through the site.**
   The extension's Feedback links (popup footer, options footer, `src/ui/feedback-link.ts`) point at `https://www.geld.sh/feedback?version=…&browser=…&page=…` (never a URL or a login), and `app/feedback/route.ts` forwards to a new issue on the repository with the issue form `.github/ISSUE_TEMPLATE/feedback.yml` pre-filled.
   The hop exists so the destination can change (a form on the site opening issues through the Geld App on a private tracker, once the source is closed) without a store release.
-- **Pages:** `/` (hero, before/after PR header + hidden row built from `components/demo/sample-pr.ts`, which classifies its sample files with `createMatcher(DEFAULT_SETTINGS)` so the picture cannot lie;
+- **Pages:** `/` (hero with the two lines of `HEADLINE`, sized in container units so each fills the column at most and never wraps;
   install buttons;
+  the customer logo reel, which with the hero fills the first screen below the header (capped at 60rem), so the border under it lands just past the fold, the space above the wordmark shrinking to 1px on a short screen;
+  the feature tour;
   live "try a path" demo in `components/path-tester.tsx`), `/how-it-works`, `/patterns` (rendered from `CATEGORIES` — the same source `catalog/patterns.json` is generated from — never hand-written;
   no runtime fetch, so a catalog change reaches the site with the next deploy), `/faq`, `/privacy` (doubles as the store privacy policy).
   Favicons are drawn from the brand SVGs at build time (`lib/brand.ts`);
   the OG image (`app/opengraph-image.tsx`) combines the wordmark with a real 2× screenshot from `assets/screenshots/` (embedded as a data URL, `loadScreenshot`).
   Re-capture that screenshot with the extension on a public PR when the header UI changes;
   the Vercel ignore script watches the folder.
+  The logo reel (`components/logo-reel.tsx`) lists `lib/customers.ts` twice on one track that slides by half, so the loop has no seam;
+  with reduced motion it is one still, wrapping row.
+  Moving content that runs on beside the page needs a way to stop it (WCAG 2.2.2), so a pause button stands beside the reel's heading, and keyboard focus on a logo stops it too, both at once, while the mouse resting on it eases it to a stop and leaving eases it back over three seconds (`useReelSpeed`, through the CSS animation's `playbackRate`, so it stops where it is).
+  The button fades in while the section is hovered or the button has keyboard focus, and stays shown where nothing can hover (`hover: none`), since a control nobody can see would not count as one.
+  The reel and the tour share `container-wide` (globals.css), wider than the page's column, and one copy of the list must stay wider than it, or a logo would show twice at once.
+  Each logo is a single-colour SVG in `public/logos/` drawn as a CSS mask in the text colour, so it follows both schemes;
+  a company whose logo is a mark alone gets its name set beside it, as its own site does.
+  The feature tour (`components/tour/`) walks nine features in three chapters, each a live scene in a trimmed GitHub window (`PrWindow`): categories, counts, test titles, workflow shell highlighting, the description outline, the digest, Request a review, the review group and the status pill.
+  On screens wide and tall enough for it (the `stage` custom variant, 64rem by 46rem) the steps scroll past one sticky stage that changes scene in place: the arriving scene is opaque underneath from the start and only the leaving one fades out on top, so the chrome the windows share never changes, and the stage draws the one shadow, to the last step whose top has passed the middle of the viewport, read from the scroll position each frame so a jump (End, a restored scroll) lands on the right scene;
+  a scene's body is never a scroll container, since a wheel over the stage must scroll the page, so every scene is laid out to fit its window with anything a reader can open opened (one test, one group, one thread at a time where needed).
+  on narrow or short ones each step carries its own scene, so every scene is rendered twice and the copy that is not displayed is `display: none`.
+  The categories and counts scenes classify their files with the real matcher (`createMatcher`), so the picture follows the catalog;
+  the counts scene's breakdown mirrors the extension's tooltip (`.geld-breakdown`, from `.geld-tooltip`, hung flush from the tab bar), and the workflow scene's tokens use the extension's Bash scope colours, tagged by hand so the site takes no highlight.js (a lockfile change on `main` releases the extension);
+  everything else in a scene is sample data, and a scene that copies an extension behaviour (what the pill offers from each state, what the request menu pre-ticks) follows the extension's rules as AGENTS.md states them.
 - **Data that must stay in sync with the extension:** the version comes from `apps/extension/package.json` (`lib/version.ts`);
   patterns and categories from `@geld/core`;
   install links from the latest GitHub Release until store listings exist — set a URL in `STORE_URLS` (`lib/downloads.ts`) to switch a browser over.
