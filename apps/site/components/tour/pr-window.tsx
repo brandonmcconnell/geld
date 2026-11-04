@@ -73,9 +73,11 @@ export function PrWindow({
   useEffect(() => {
     const node = root.current;
     if (node === null) return;
-    // Out of view, the window's ping pauses (`ping-fade`).
+    // Out of view, the window's ping pauses (`ping-fade`) and is re-armed, so it is there again when the reader comes back.
     const observer = new IntersectionObserver(([entry]) => {
-      if (entry) node.toggleAttribute('data-offscreen', !entry.isIntersecting);
+      if (entry === undefined) return;
+      node.toggleAttribute('data-offscreen', !entry.isIntersecting);
+      if (!entry.isIntersecting) delete node.dataset.used;
     });
     observer.observe(node);
     return () => observer.disconnect();

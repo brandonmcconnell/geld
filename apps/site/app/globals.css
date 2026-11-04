@@ -209,14 +209,17 @@
   @apply mx-auto w-full max-w-7xl px-5 sm:px-8;
 }
 
-/* A tour scene's ping (tour/ping.tsx) fades once the scene is used; hidden after the fade, the ring is no longer painted. */
+/* A tour scene's ping (tour/ping.tsx) fades once the scene is used and back once it is re-armed; hidden after the fade, the ring is no longer painted. */
 @utility ping-fade {
   transition:
     opacity 300ms ease-out,
-    visibility 0s 300ms;
+    visibility 0s;
   :where([data-used]) & {
     opacity: 0;
     visibility: hidden;
+    transition:
+      opacity 300ms ease-out,
+      visibility 0s 300ms;
   }
   /* A ping repaints every frame on the main thread, so it runs only where it can be seen: not off screen (`data-offscreen`, PrWindow), not in a scene the stage hides or a section folded away (`inert`), not once faded. */
   :where([inert], [data-offscreen], [data-used]) & > .ping-ring {

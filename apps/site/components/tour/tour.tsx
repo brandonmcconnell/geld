@@ -108,6 +108,13 @@ export function Tour() {
   const [stage, setStage] = useState<{ readonly active: number; readonly leaving: number | null }>({ active: 0, leaving: null });
   const active = stage.active;
   const steps = useRef<(HTMLLIElement | null)[]>([]);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+
+  // The stage's scenes never leave the screen, so a scene's ping is re-armed when its step comes back to the stage.
+  useEffect(() => {
+    const id = STEPS[active]?.id;
+    if (id !== undefined) stageRef.current?.querySelector(`[data-scene="${id}"] [data-used]`)?.removeAttribute('data-used');
+  }, [active]);
 
   // Read from where the page is, not from a step crossing the middle: a jump (End, a restored scroll) crosses nothing.
   useEffect(() => {
@@ -173,7 +180,7 @@ export function Tour() {
         })}
       </ol>
 
-      <div className="hidden stage:block" data-tour-stage>
+      <div ref={stageRef} className="hidden stage:block" data-tour-stage>
         <div className="sticky top-[max(4.5rem,calc(50vh-18.25rem))]">
           <Plate className="h-[40rem]">
             {/* One shadow for the stage, not one per window: two half-faded shadows over each other would darken mid-fade. */}
