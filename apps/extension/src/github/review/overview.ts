@@ -817,6 +817,41 @@ function checksSection(): HTMLElement | null {
   return checksSectionEl;
 }
 
+// "Approve workflows to run" today, "Approve and run" in older markup: any approve-and-run wording counts.
+const APPROVE_WORKFLOWS = /^approve\b.*\brun\b/i;
+const AWAITING_APPROVAL = /\b(\d+) workflows? awaiting approval/i;
+
+/**
+ * GitHub's own "Approve workflows to run", shown to someone who may approve
+ * whenever the repository's approval policy holds a contributor's workflows
+ * (first-time contributors by default, every outside contributor on every
+ * pull request under the strictest policy). The button itself is the test,
+ * never who the contributor is. Looked for in the merge box and in the
+ * checks section wherever quick view has put it.
+ */
+function approveWorkflowsButton(): HTMLButtonElement | HTMLInputElement | null {
+  const section = checksSection();
+  const scopes = [mergeBox() ?? mergeHomeEl, section, ...(section === null ? [] : wornPiecesOf(section))];
+  for (const scope of scopes) {
+    if (scope === null) continue;
+    for (const control of scope.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button, input[type="submit"], input[type="button"]')) {
+      const words = control instanceof HTMLInputElement ? control.value : control.textContent ?? '';
+      if (!control.disabled && APPROVE_WORKFLOWS.test(words.replace(/\s+/g, ' ').trim())) return control;
+    }
+  }
+  return null;
+}
+
+/** The heading GitHub puts over that button ("1 workflow awaiting approval"), for the Run control's tooltip. */
+function workflowApprovalLabel(button: HTMLElement): string {
+  let node: HTMLElement | null = button.parentElement;
+  for (let depth = 0; node !== null && depth < 8; depth += 1, node = node.parentElement) {
+    const found = AWAITING_APPROVAL.exec((node.textContent ?? '').replace(/\s+/g, ' '));
+    if (found !== null) return `${found[1]} ${found[1] === '1' ? 'workflow' : 'workflows'} awaiting approval`;
+  }
+  return 'Workflows awaiting approval';
+}
+
 /** Merge box text plus the checks section's, wherever quick view has put it. */
 /** The checks section's text with its loaned content included, so counts read the same open or closed. */
 function checksSectionText(): string | null {
@@ -3022,6 +3057,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const modelStart = performance.now();
   const subject = subjectOf();
   const boxText = mergeBoxText();
+  const approvalButton = approveWorkflowsButton();
   const ringSource = checksSection()?.querySelector('svg[viewBox="0 0 100 100"]') ?? null;
   const checksRing = ringSource instanceof SVGElement ? cloneRing(ringSource) : null;
   // The merge box states the requirement only while unmet; the sidebar's Reviewers block ("At least 1 approving
@@ -3099,6 +3135,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     botIconFor: (botId) => botAvatarByLogin(botId) ?? botSourceAvatar(botId, meta) ?? iconByBot.get(botId) ?? botAppAvatarFor(botId),
     checks: checkCountsFrom(checksSectionText() ?? boxText),
     requiredFailing: requiredFailingIn(checksSection()),
+    workflowApproval: approvalButton === null ? null : workflowApprovalLabel(approvalButton),
     previews: latestPreviews(allPreviews),
     reports,
     grouping: settings.reviewGrouping,
@@ -3341,6 +3378,15 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       if (!clickResolve(anchor)) return;
       const owner = meta.items.find((item) => item.sources.some((source) => source.anchor === anchor));
       reapplyAfterResolve(owner === undefined ? null : itemKey(owner.id), done);
+    },
+    onApproveWorkflows: () => {
+      const button = approveWorkflowsButton();
+      if (button === null) {
+        console.warn('[geld] GitHub no longer offers to approve these workflows');
+        return;
+      }
+      button.click();
+      window.setTimeout(reapplySoon, 800);
     },
     onRunAi: () => {
       void runAi(meta, rawComments, settings, reapply).then((run) => {
