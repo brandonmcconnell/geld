@@ -101,8 +101,8 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
      * null): removed imports are read with the context around them, so a removed line inside a comment that stays is
      * not taken for an import.
      */
-    oldSide: string[] | null;
-    newSide: string[] | null;
+    oldSide: string[][] | null;
+    newSide: string[][] | null;
   }
   let current: Current | null = null;
   let inHunk = false;
@@ -122,8 +122,12 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
       if (kinds.length > 0) stats = { ...stats, kinds };
       if (commentCount > 0 && commentCount <= MAX_COMMENT_LINES) stats = { ...stats, commentLines: { added: current.commentAdded, removed: current.commentRemoved } };
       if (current.oldSide !== null && current.newSide !== null && current.deletions > 0) {
-        const kept = new Set(importSpecifiers(current.path, current.newSide.join('\n')));
-        const removedImports = importSpecifiers(current.path, current.oldSide.join('\n')).filter((specifier) => !kept.has(specifier));
+        // Each hunk is read on its own: the lines between hunks are not in the diff, so a comment one hunk opens
+        // must not run on into the next.
+        const path = current.path;
+        const named = (hunks: readonly string[][]): string[] => hunks.flatMap((hunk) => importSpecifiers(path, hunk.join('\n')));
+        const kept = new Set(named(current.newSide));
+        const removedImports = [...new Set(named(current.oldSide))].filter((specifier) => !kept.has(specifier));
         if (removedImports.length > 0) stats = { ...stats, removedImports };
       }
       files.push(stats);
@@ -168,6 +172,8 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
     if (line.startsWith('@@')) {
       inHunk = true;
       current.hunks += 1;
+      current.oldSide?.push([]);
+      current.newSide?.push([]);
       const header = HUNK_HEADER.exec(line);
       current.oldLine = Number(header?.[1] ?? 1);
       current.newLine = Number(header?.[2] ?? 1);
@@ -196,21 +202,21 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
       current.additions += 1;
       const text = line.slice(1);
       current.added.push(text.replace(WHITESPACE, ''));
-      current.newSide?.push(text);
+      current.newSide?.at(-1)?.push(text);
       if (current.syntax !== null && isCommentOnlyLine(text, current.syntax, current.newState)) current.commentAdded.push(current.newLine);
       current.newLine += 1;
     } else if (line.startsWith('-')) {
       current.deletions += 1;
       const text = line.slice(1);
       current.removed.push(text.replace(WHITESPACE, ''));
-      current.oldSide?.push(text);
+      current.oldSide?.at(-1)?.push(text);
       if (current.syntax !== null && isCommentOnlyLine(text, current.syntax, current.oldState)) current.commentRemoved.push(current.oldLine);
       current.oldLine += 1;
     } else if (line.startsWith(' ') || line === '') {
       // Context: advances both sides and carries block-comment state along.
       const text = line.slice(1);
-      current.oldSide?.push(text);
-      current.newSide?.push(text);
+      current.oldSide?.at(-1)?.push(text);
+      current.newSide?.at(-1)?.push(text);
       if (current.syntax !== null) {
         isCommentOnlyLine(text, current.syntax, current.oldState);
         isCommentOnlyLine(text, current.syntax, current.newState);

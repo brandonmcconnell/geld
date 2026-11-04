@@ -151,4 +151,20 @@ describe('parseUnifiedDiff removedImports', () => {
     ].join('\n');
     expect(parseUnifiedDiff(diff)[0]?.removedImports).toEqual(['./c']);
   });
+
+  it('reads each hunk on its own, so a comment one hunk opens does not hide a removed import in the next', () => {
+    const diff = [
+      'diff --git a/src/a.ts b/src/a.ts',
+      'index 1111111..2222222 100644',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -1,2 +1,1 @@',
+      ' /*',
+      '- * old note',
+      '@@ -40,2 +39,1 @@',
+      ' const x = 1;',
+      "-import { b } from './b';",
+    ].join('\n');
+    expect(parseUnifiedDiff(diff)[0]?.removedImports).toEqual(['./b']);
+  });
 });

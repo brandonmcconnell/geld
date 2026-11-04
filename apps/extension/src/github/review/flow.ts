@@ -411,11 +411,9 @@ export function openFlowDialog(): void {
   const titleId = `geld-flow-${dialogIds}-title`;
   const dialog = createElement('dialog', { class: 'Overlay Overlay--motion-scaleFade geld-flow', [OWN_UI_ATTRIBUTE]: '', 'aria-labelledby': titleId });
   const close = createElement('button', { type: 'button', class: 'close-button Overlay-closeButton', 'aria-label': 'Close' }, [icon(ICON_X)]);
-  const hiddenCount = opened.files.filter((file) => file.hiddenAs !== null).length;
-  const essentialCount = opened.files.length - hiddenCount;
-  let showHidden = essentialCount === 0;
+  let showHidden = false;
   const toggle = createElement('button', { type: 'button', class: 'btn btn-sm geld-flow__toggle', 'aria-pressed': String(showHidden) });
-  const actions = createElement('div', { class: 'Overlay-actionWrap geld-flow__actions' }, [...(hiddenCount > 0 && essentialCount > 0 ? [toggle] : []), close]);
+  const actions = createElement('div', { class: 'Overlay-actionWrap geld-flow__actions' }, [toggle, close]);
 
   // The diagram scrolls inside the stage; the controls (the legend, then zoom) float over its lower right corner and stay put.
   const scroller = createElement('div', { class: 'geld-flow__scroll' });
@@ -476,8 +474,13 @@ export function openFlowDialog(): void {
   let fitted = false;
   const render = (): void => {
     const current = latest();
-    const files = current.files.filter((file) => showHidden || file.hiddenAs === null);
-    const hiddenNow = current.files.length - current.files.filter((file) => file.hiddenAs === null).length;
+    const essentialNow = current.files.filter((file) => file.hiddenAs === null).length;
+    const hiddenNow = current.files.length - essentialNow;
+    // Offered from the counts as they are now: the diff landing (or the settings changing) can hide files that the
+    // summaries the dialog opened with did not.
+    toggle.hidden = hiddenNow === 0 || essentialNow === 0;
+    // With every file hidden there is nothing essential to show, so all of them are.
+    const files = current.files.filter((file) => showHidden || essentialNow === 0 || file.hiddenAs === null);
     toggle.textContent = showHidden ? `Hide ${plural(hiddenNow, 'hidden file')}` : `Show ${plural(hiddenNow, 'hidden file')}`;
     toggle.setAttribute('aria-pressed', String(showHidden));
     const reading = readFiles(current, files);
