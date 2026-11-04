@@ -144,7 +144,8 @@ export async function clearAiForPage(): Promise<void> {
 /**
  * Where AI stands for this pull request, for the panel's control and its
  * notices. `app`: the digest comment was written with AI by the repository's
- * Action, which wins over anything local. `stale`: the model ran here, and
+ * Action, which wins over anything local. `nothing`: no review thread is open,
+ * so there is nothing to ask the model about. `stale`: the model ran here, and
  * comments or threads have arrived since. `failed`: the last run here could
  * not get an answer, with the reason.
  */
@@ -152,6 +153,7 @@ export type AiState =
   | { readonly kind: 'off' }
   | { readonly kind: 'app'; readonly hasLocal: boolean }
   | { readonly kind: 'ready' }
+  | { readonly kind: 'nothing' }
   | { readonly kind: 'running' }
   | { readonly kind: 'current'; readonly ranAt: string }
   | { readonly kind: 'stale'; readonly ranAt: string }
@@ -161,6 +163,8 @@ export function aiStateFor(meta: GeldPrMeta, comments: readonly RawComment[], se
   if (meta.producer.ai) return { kind: 'app', hasLocal: lastRun !== null };
   if (!aiSwitchedOn(settings)) return { kind: 'off' };
   if (inFlight.size > 0) return { kind: 'running' };
+  // The model is only ever asked about open review threads: with none, a click would ask it nothing.
+  if (summaryInput(withAi(meta).items).length === 0) return { kind: 'nothing' };
   if (lastRun === null) return { kind: 'ready' };
   if (lastRun.error !== undefined) return { kind: 'failed', ranAt: lastRun.ranAt, error: lastRun.error };
   return hasWork(meta, comments, settings) ? { kind: 'stale', ranAt: lastRun.ranAt } : { kind: 'current', ranAt: lastRun.ranAt };

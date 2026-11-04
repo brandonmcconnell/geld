@@ -1144,22 +1144,25 @@ function ranAgo(iso: string): string {
  */
 function aiButton(state: AiState, handlers: PanelHandlers): HTMLElement | null {
   if (state.kind === 'off' || state.kind === 'app') return null;
-  const label = state.kind === 'ready' ? 'Triage with AI' : state.kind === 'running' ? 'AI is reading…' : `AI · ${ranAgo(state.ranAt)}`;
+  const label = state.kind === 'ready' ? 'Triage with AI' : state.kind === 'nothing' ? 'Nothing to triage' : state.kind === 'running' ? 'AI is reading…' : `AI · ${ranAgo(state.ranAt)}`;
   const title =
     state.kind === 'ready'
       ? 'Ask the model to title the open bot threads and write a summary. Kept on this device only.'
-      : state.kind === 'running'
+      : state.kind === 'nothing'
+        ? 'AI titles open review threads and summarizes what is still open. No review thread here is open, so there is nothing to ask it.'
+        : state.kind === 'running'
         ? 'The model is reading the open threads'
         : state.kind === 'stale'
           ? 'Comments or threads arrived since the model last ran here. Run it again for the new ones.'
           : state.kind === 'failed'
             ? `The last run could not get an answer: ${state.error}`
             : 'Run the model again';
-  const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__ai-btn`, 'data-state': state.kind, 'aria-label': `${label}. ${title}`, title, [ATTR_FOCUS]: 'ai', ...(state.kind === 'running' ? { 'aria-busy': 'true', disabled: '' } : {}) }, [
+  // `aria-disabled` rather than `disabled` for nothing-to-triage: a disabled button gets no hover, and the title is the explanation.
+  const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__ai-btn`, 'data-state': state.kind, 'aria-label': `${label}. ${title}`, title, [ATTR_FOCUS]: 'ai', ...(state.kind === 'running' ? { 'aria-busy': 'true', disabled: '' } : state.kind === 'nothing' ? { 'aria-disabled': 'true' } : {}) }, [
     icon(ICON_SPARKLE_FILL),
     createElement('span', { class: `${PANEL_CLASS}__ai-label` }, [label]),
   ]);
-  button.addEventListener('click', () => handlers.onRunAi());
+  if (state.kind !== 'nothing') button.addEventListener('click', () => handlers.onRunAi());
   return button;
 }
 
