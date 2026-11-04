@@ -153,12 +153,14 @@ export function DigestStatusRows({ resolved }: { readonly resolved: ReadonlySet<
           <Avatar who="mona" size={16} className="ring-0" />
           mona
           <CheckIcon aria-hidden="true" className="size-3 text-addition" strokeWidth={3} />
+          <span className="sr-only">{' approved'}</span>
         </Chip>
         <Chip>
           <Avatar who="hubot" size={16} className="ring-0" />
           hubot
           <XIcon aria-hidden="true" className="size-3 text-deletion" strokeWidth={3} />
-          <MessagesSquareIcon aria-hidden="true" className="size-3 text-muted-foreground" />1
+          <span className="sr-only">{' requested changes,'}</span>
+          <MessagesSquareIcon aria-hidden="true" className="size-3 text-muted-foreground" />1<span className="sr-only">{' comment'}</span>
         </Chip>
         <span className="text-muted-foreground tabular-nums">1/2 approvals</span>
       </StatusRow>
