@@ -63,7 +63,7 @@ export function LogoReel({ className }: { readonly className?: string }) {
         </button>
       </div>
       <div ref={view} className="logo-reel relative mt-6" onFocus={onFocus} onBlur={onBlur} onPointerEnter={onPointer} onPointerLeave={onPointer}>
-        <div className="flex w-max pl-(--reel-fade) motion-reduce:w-full motion-reduce:pl-0">
+        <div className="flex w-max pl-(--reel-gap) motion-reduce:w-full motion-reduce:pl-0">
           <LeadLogo className="invisible" />
           <div ref={track} className="relative flex w-max animate-logo-reel motion-reduce:w-full motion-reduce:animate-none">
             <LeadLogo className="absolute top-0 right-full" />
@@ -166,7 +166,7 @@ function LeadLogo({ className }: { readonly className: string }) {
   const last = CUSTOMERS.at(-1);
   if (last === undefined) return null;
   return (
-    <div aria-hidden="true" className={cn('flex h-10 shrink-0 items-center pr-12 sm:pr-16 motion-reduce:hidden', className)}>
+    <div aria-hidden="true" className={cn('flex h-10 shrink-0 items-center pr-(--reel-gap) motion-reduce:hidden', className)}>
       <CustomerLink customer={last} focusable={false} />
     </div>
   );
@@ -180,7 +180,7 @@ function LogoList({ copy = false }: { readonly copy?: boolean }) {
       aria-hidden={copy || undefined}
     >
       {CUSTOMERS.map((customer) => (
-        <li key={customer.name} className="flex h-10 shrink-0 items-center pr-12 sm:pr-16">
+        <li key={customer.name} className="flex h-10 shrink-0 items-center pr-(--reel-gap)">
           <CustomerLink customer={customer} focusable={!copy} />
         </li>
       ))}
