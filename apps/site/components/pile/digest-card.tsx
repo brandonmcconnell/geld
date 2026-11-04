@@ -278,7 +278,7 @@ function ChipValue({ digest, row }: { readonly digest: Digest; readonly row: Dig
       return (
         <>
           <AgentMark size={14} />
-          <span className="font-semibold">{digest.agent ? `${digest.agent.score}/5` : '–'}</span>
+          <span className="font-semibold">{digest.agent ? `${digest.agent.score}/5` : '…'}</span>
         </>
       );
     case 'checks':
@@ -290,7 +290,7 @@ function ChipValue({ digest, row }: { readonly digest: Digest; readonly row: Dig
           {digest.checks.failed > 0 && digest.checks.failed}
           {digest.checks.running > 0 && <LoaderCircleIcon aria-hidden="true" className="size-3.5 text-[oklch(0.7_0.14_75)]" />}
           {digest.checks.running > 0 && digest.checks.running}
-          {digest.checks.passed + digest.checks.failed + digest.checks.running === 0 && <span className="text-muted-foreground">–</span>}
+          {digest.checks.passed + digest.checks.failed + digest.checks.running === 0 && <span className="text-muted-foreground">…</span>}
         </>
       );
     case 'preview':
