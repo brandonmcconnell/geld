@@ -14,7 +14,7 @@ import { previewHostById, reportsHealth } from '@geld/review';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
-import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_FILE_DIFF, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -56,6 +56,9 @@ export const ATTR_EDITED_FOR = 'data-geld-edited-for';
  * the mark cannot.
  */
 export const ATTR_FIT = 'data-geld-fit';
+
+/** The Geld row, which sets its buttons to their marks alone (`icons`) when its contents would otherwise wrap (`fit-chips.ts`). */
+export const ATTR_FIT_TOOLS = 'data-geld-fit-tools';
 
 /** The mounted panel's render signature (what `mountPanel` compared last), or '' without a panel: for the harness's scope check. */
 export function panelSignature(): string {
@@ -474,6 +477,8 @@ export interface PanelHandlers {
   readonly onGrouping: (grouping: 'type' | 'batch') => void;
   /** Open the Flow diagram of the changed files. */
   readonly onFlow: () => void;
+  /** Open Geld's settings: the toolbar popup where the browser allows it, else the options page. */
+  readonly onSettings: () => void;
   /** Resolve/unresolve the thread holding `anchor` (GitHub's own button). */
   readonly onResolveAnchor: (anchor: string, done: boolean) => void;
   /** Open the row holding `anchor` and GitHub's reaction picker for its first comment. */
@@ -2762,7 +2767,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   // "View changes" URL), the same small button the timeline's Compare and Details are; the count is its tooltip.
   if (model.sinceLastVisit !== null) {
     const title = model.sinceLastVisit.commits > 0 ? `${plural(model.sinceLastVisit.commits, 'new commit')} since you last viewed this pull request` : 'New changes since you last viewed this pull request';
-    summary.append(createElement('a', { class: `btn btn-sm ${PANEL_CLASS}__since-visit`, href: model.sinceLastVisit.href, title, 'aria-label': title, [ATTR_FOCUS]: 'since-last-visit' }, [icon(ICON_FILE_DIFF), createElement('span', {}, ['New changes'])]));
+    summary.append(createElement('a', { class: `btn btn-sm ${PANEL_CLASS}__since-visit`, href: model.sinceLastVisit.href, title, 'aria-label': title, [ATTR_FOCUS]: 'since-last-visit' }, [icon(ICON_FILE_DIFF), createElement('span', { class: `${PANEL_CLASS}__since-visit-label` }, ['New changes'])]));
   }
   if (model.freshness === 'stale' || model.freshness === 'partial') summary.append(createElement('span', { class: `${PANEL_CLASS}__fresh` }, ['Updating…']));
   const tools = createElement('div', { class: `${PANEL_CLASS}__tools` });
@@ -2778,7 +2783,10 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   const copy = iconButton(ICON_COPY, 'Copy digest as Markdown', { [ATTR_FOCUS]: 'copy' });
   copy.addEventListener('click', () => handlers.onCopy());
   tools.append(copy);
-  const head = createElement('div', { class: `${PANEL_CLASS}__head` }, [summary, tools]);
+  const settings = iconButton(ICON_GEAR, 'Geld Settings', { [ATTR_FOCUS]: 'settings' });
+  settings.addEventListener('click', () => handlers.onSettings());
+  tools.append(settings);
+  const head = createElement('div', { class: `${PANEL_CLASS}__head`, [ATTR_FIT_TOOLS]: '' }, [summary, tools]);
   const aiNote = aiNotice(model.ai, handlers);
   const status = statusRows(model, handlers);
   const tldrPending = model.aiPending.has('tldr');

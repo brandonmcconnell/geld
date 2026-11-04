@@ -50,6 +50,11 @@ export interface ClearDiffCacheMessage {
   readonly type: 'geld:clear-diff-cache';
 }
 
+/** Content script → background: the digest's gear asks for Geld's settings (the toolbar popup, else the options page). */
+export interface OpenSettingsMessage {
+  readonly type: 'geld:open-settings';
+}
+
 /** Background → content script: the keyboard shortcut was pressed. */
 export interface ToggleHiddenMessage {
   readonly type: 'geld:toggle-hidden';
@@ -214,6 +219,10 @@ export function isColorSchemeMessage(value: unknown): value is ColorSchemeMessag
 
 export function isClearDiffCacheMessage(value: unknown): value is ClearDiffCacheMessage {
   return isRecord(value) && value.type === 'geld:clear-diff-cache';
+}
+
+export function isOpenSettingsMessage(value: unknown): value is OpenSettingsMessage {
+  return isRecord(value) && value.type === 'geld:open-settings';
 }
 
 export function isToggleHiddenMessage(value: unknown): value is ToggleHiddenMessage {
