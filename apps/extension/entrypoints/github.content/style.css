@@ -3882,7 +3882,7 @@ svg.geld-lucide {
   margin-bottom: 2px;
 }
 
-.geld-review-hovercard--report .geld-review-hovercard__avatar[data-shape='round'] {
+.geld-review-hovercard__avatar[data-shape='round'] {
   border-radius: 50%;
 }
 
@@ -4336,6 +4336,30 @@ svg.geld-lucide {
 /* A bot's mark that is itself a disc (read from its pixels, see mark-shape.ts): framed as a circle, ring and all. */
 .geld-review__avatar[data-shape='round'] {
   border-radius: 50%;
+}
+
+/* A bot's mark that is a glyph on a transparent ground (see mark-shape.ts) is its own shape: no ring, no fill.
+ * Near-black or near-white ink keeps the tile on a ground of its own tone, where it would otherwise vanish. */
+.geld-review__avatar[data-shape='cutout'],
+.geld-review__bot-icon[data-shape='cutout'],
+.geld-review-hovercard__avatar[data-shape='cutout'] {
+  border-radius: 4px;
+  background: none;
+  outline-color: transparent;
+}
+
+.geld-review__avatar[data-shape='cutout'][data-ink='dark'],
+.geld-review__bot-icon[data-shape='cutout'][data-ink='dark'],
+.geld-review-hovercard__avatar[data-shape='cutout'][data-ink='dark'] {
+  background: light-dark(transparent, var(--geld-review-hover));
+  outline-color: light-dark(transparent, rgb(128 128 128 / 15%));
+}
+
+.geld-review__avatar[data-shape='cutout'][data-ink='light'],
+.geld-review__bot-icon[data-shape='cutout'][data-ink='light'],
+.geld-review-hovercard__avatar[data-shape='cutout'][data-ink='light'] {
+  background: light-dark(var(--geld-review-hover), transparent);
+  outline-color: light-dark(rgb(128 128 128 / 15%), transparent);
 }
 
 .geld-review__row {

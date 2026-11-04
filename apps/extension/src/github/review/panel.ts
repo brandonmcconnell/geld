@@ -950,7 +950,7 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
     }
     mainChildren.push(
       createElement('span', { class: `${PANEL_CLASS}__deploy-sum`, 'aria-hidden': 'true' }, [
-        createElement('span', { class: `${PANEL_CLASS}__deploy-sum-hosts` }, hosts.slice(0, 3).map((src) => createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src, alt: '', width: '16', height: '16' }))),
+        createElement('span', { class: `${PANEL_CLASS}__deploy-sum-hosts` }, hosts.slice(0, 3).map((src) => markImg(src, false))),
         createElement('span', { class: `${PANEL_CLASS}__deploy-sum-text` }, [plural(batch.previews.length, 'preview')]),
       ]),
     );
@@ -1375,7 +1375,7 @@ function botChip(bot: BotVerdictRecord, model: PanelModel, handlers: PanelHandle
   const label = `${verdictLabel(bot)}${current ? '' : ' (earlier commit)'}`;
   const children: Node[] = [];
   const iconSrc = model.botIconFor(bot.id);
-  if (iconSrc !== null) children.push(createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: iconSrc, alt: '', width: '16', height: '16' }));
+  if (iconSrc !== null) children.push(markImg(iconSrc, false));
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name` }, [botTitle(bot.id, bot.login)]));
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-detail` }, [botDetail(bot)]));
   // A run that did not happen (refused, or broken) wears the warning triangle, not a verdict's light: nothing was
@@ -1520,7 +1520,7 @@ function requestMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | 
     // The same mark the bot's chip wears: `botIconFor` looks beyond the `/apps/` link `requestableBots` saw (the run
     // summary's avatar, a review comment of the bot's); a bot with no picture on the page gets an empty square.
     const iconSrc = model.botIconFor(bot.id) ?? bot.iconSrc;
-    const mark = iconSrc !== null ? createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: iconSrc, alt: '', width: '16', height: '16' }) : createElement('span', { class: `${PANEL_CLASS}__bot-icon ${PANEL_CLASS}__bot-icon--blank`, 'aria-hidden': 'true' });
+    const mark = iconSrc !== null ? markImg(iconSrc, false) : createElement('span', { class: `${PANEL_CLASS}__bot-icon ${PANEL_CLASS}__bot-icon--blank`, 'aria-hidden': 'true' });
     const stateNode = createElement('span', { class: `${PANEL_CLASS}__request-state`, ...(state.health === null ? {} : { 'data-health': state.health }) }, [
       ...(state.health === null ? [] : [createElement('span', { class: `${PANEL_CLASS}__health`, 'data-health': state.health, 'aria-hidden': 'true' }, [icon(HEALTH_ICON[state.health])])]),
       state.word,
@@ -2105,9 +2105,9 @@ const REPORT_STATE_LABEL: Readonly<Record<Report['state'], string>> = {
 };
 
 /**
- * A service's mark in a pill, framed in the shape of its picture: GitHub
- * squares every App's avatar, but a disc on transparent corners (Chromatic's)
- * showed that square frame around a circle, so the picture itself decides
+ * A service's mark, framed in the shape of its picture: GitHub squares every
+ * App's avatar, but a disc (Chromatic's) or a glyph on a transparent ground
+ * (Codex's) showed that square frame around it, so the picture itself decides
  * (`shapeMark`), the page's own rounding (a person's) taken as read.
  */
 function markImg(src: string, roundOnPage: boolean): HTMLElement {
@@ -2264,6 +2264,8 @@ function botLine(line: BotLine, model: PanelModel, handlers: PanelHandlers, rese
   const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-health': health, role: 'img', 'aria-label': label, title: label }, [icon(bot.verdict === 'failed' ? ICON_ALERT : HEALTH_ICON[health])]);
   const iconSrc = model.botIconFor(bot.id) ?? line.avatarSrc;
   const picture = avatarStack(iconSrc === null ? [] : [{ src: iconSrc, bot: true, login: bot.login }], botTitle(bot.id, bot.login), true);
+  const pictureImg = picture.querySelector('img');
+  if (iconSrc !== null && pictureImg !== null) shapeMark(pictureImg, iconSrc, false);
   const opens = line.anchor !== null;
   const firstThread = line.threads[0]?.anchor ?? null;
   const goes = !opens && firstThread !== null;

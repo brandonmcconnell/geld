@@ -14,6 +14,7 @@
 
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { ICON_REPLY } from '../ui/icons';
+import { shapeMark } from './mark-shape';
 
 export const HOVER_DELAY_MS = 300;
 /** Leaving the host toward the card: the card waits this long for the pointer to arrive. */
@@ -217,6 +218,13 @@ function mount(host: HTMLElement, node: HTMLElement, width: number): void {
   place(host, node, width);
 }
 
+/** A card's picture: a bot's mark takes the shape of its picture (`shapeMark`), a person's stays GitHub's. */
+function cardAvatar(src: string, bot: boolean, round: boolean): HTMLElement {
+  const img = createElement('img', { class: `${CARD_CLASS}__avatar`, 'data-kind': bot ? 'bot' : 'user', src, alt: '', width: '20', height: '20' });
+  if (bot) shapeMark(img, src, round);
+  return img;
+}
+
 function showWho(host: HTMLElement, login: string): void {
   const who = whoProvider?.(login, host) ?? null;
   if (who === null) return;
@@ -224,7 +232,7 @@ function showWho(host: HTMLElement, login: string): void {
   current = host;
   const head = createElement('div', { class: `${CARD_CLASS}__head` });
   if (who.avatarSrc !== null) {
-    head.append(createElement('img', { class: `${CARD_CLASS}__avatar`, 'data-kind': who.bot ? 'bot' : 'user', src: who.avatarSrc, alt: '', width: '20', height: '20' }));
+    head.append(cardAvatar(who.avatarSrc, who.bot, false));
   }
   head.append(createElement('span', { class: `${CARD_CLASS}__name` }, [who.name]));
   if (who.bot) head.append(createElement('span', { class: `${CARD_CLASS}__bot` }, ['bot']));
@@ -248,7 +256,7 @@ function showReport(host: HTMLElement, anchor: string): void {
   current = host;
   const head = createElement('div', { class: `${CARD_CLASS}__head` });
   if (report.avatarSrc !== null) {
-    head.append(createElement('img', { class: `${CARD_CLASS}__avatar`, 'data-kind': 'bot', ...(report.round ? { 'data-shape': 'round' } : {}), src: report.avatarSrc, alt: '', width: '20', height: '20' }));
+    head.append(cardAvatar(report.avatarSrc, true, report.round));
   }
   head.append(createElement('span', { class: `${CARD_CLASS}__name` }, [report.name]), createElement('span', { class: `${CARD_CLASS}__bot` }, ['bot']));
   if (report.time !== '') head.append(createElement('span', { class: `${CARD_CLASS}__time` }, [report.time]));
@@ -289,7 +297,7 @@ function showRow(row: HTMLElement): void {
   current = row;
   const head = createElement('div', { class: `${CARD_CLASS}__head` });
   if (preview.avatarSrc !== null) {
-    head.append(createElement('img', { class: `${CARD_CLASS}__avatar`, 'data-kind': preview.bot ? 'bot' : 'user', src: preview.avatarSrc, alt: '', width: '20', height: '20' }));
+    head.append(cardAvatar(preview.avatarSrc, preview.bot, false));
   }
   head.append(createElement('span', { class: `${CARD_CLASS}__name` }, [preview.name]));
   if (preview.bot) head.append(createElement('span', { class: `${CARD_CLASS}__bot` }, ['bot']));
