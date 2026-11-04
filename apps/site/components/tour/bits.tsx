@@ -66,8 +66,10 @@ export function GeldRowTools({ children }: { readonly children?: React.ReactNode
       {children}
       <button type="button" disabled aria-label="Group the digest by type" className="inline-flex h-5 cursor-not-allowed items-center gap-1 rounded-md px-1 opacity-50">
         <Rows3Icon aria-hidden="true" className="size-3.5" />
-        type
-        <ChevronDownIcon aria-hidden="true" className="size-3" />
+        <span className="inline-flex items-center gap-1 @max-[26rem]:hidden">
+          type
+          <ChevronDownIcon aria-hidden="true" className="size-3" />
+        </span>
       </button>
       <button type="button" disabled aria-label="Copy digest" className="grid size-5 cursor-not-allowed place-items-center rounded-md opacity-50">
         <CopyIcon aria-hidden="true" className="size-3.5" />

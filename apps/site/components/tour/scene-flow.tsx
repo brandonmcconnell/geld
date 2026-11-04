@@ -89,19 +89,20 @@ export function FlowScene() {
           <div className="flex items-center gap-2 px-3 py-2">
             <span className="font-semibold">Geld</span>
             <Meter done={3} total={5} />
-            <span className="text-muted-foreground tabular-nums">3/5 resolved</span>
+            <span className="min-w-0 truncate text-muted-foreground tabular-nums">3/5 resolved</span>
             <GeldRowTools>
               <Ping on={!flowOpen} className="inline-flex rounded-md">
                 <button
                   ref={flowButton}
                   type="button"
-                  aria-label="Flow, how the changed files connect"
+                  aria-label="Flow: how the changed files connect"
                   aria-expanded={flowOpen}
-                  title="Flow"
+                  title="How the changed files connect"
                   onClick={() => (flowOpen ? dismiss() : setFlowOpen(true))}
-                  className={cn('grid size-5 place-items-center rounded-md outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60', flowOpen && 'bg-muted text-foreground')}
+                  className={cn('inline-flex h-5 items-center gap-1 rounded-md px-1.5 font-medium outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60', flowOpen && 'bg-muted text-foreground')}
                 >
                   <WorkflowIcon aria-hidden="true" className="size-3.5" />
+                  <span className="@max-[26rem]:hidden">Flow</span>
                 </button>
               </Ping>
             </GeldRowTools>

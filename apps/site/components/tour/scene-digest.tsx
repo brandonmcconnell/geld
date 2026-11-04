@@ -63,11 +63,11 @@ export function DigestScene() {
           <div className="flex items-center gap-2 border-b px-3 py-2">
             <span className="font-semibold">Geld</span>
             <Meter done={done} total={total} />
-            <span className="text-muted-foreground tabular-nums">
+            <span className="min-w-0 truncate text-muted-foreground tabular-nums">
               {done}/{total} resolved
             </span>
             {open.length > 0 ? (
-              <span className="rounded-full bg-[#9a6700]/12 px-1.5 py-px text-[0.6875rem] font-medium text-[#9a6700] dark:text-[#d29922]">{open.length} need you</span>
+              <span className="shrink-0 rounded-full bg-[#9a6700]/12 px-1.5 py-px text-[0.6875rem] font-medium whitespace-nowrap text-[#9a6700] dark:text-[#d29922]">{open.length} need you</span>
             ) : null}
             <GeldRowTools />
           </div>
