@@ -45,6 +45,11 @@ describe('importSpecifiers', () => {
     expect(importSpecifiers('src/a.ts', text)).toEqual(['./b', './c']);
   });
 
+  it('finds the end of a template expression past braces in comments and regular expressions', () => {
+    const text = "const label = `${/* { */ value}`;\nconst match = `${value.replace(/[{]/g, '')}`;\nconst dependency = require('./b');";
+    expect(importSpecifiers('src/a.ts', text)).toEqual(['./b']);
+  });
+
   it('reads the modules a Python relative import lists', () => {
     expect(importSpecifiers('pkg/view.py', 'from . import helper, models as m\nfrom .api import (\n  client,\n  types,\n)\nfrom x import *\n')).toEqual(['.', '.helper', '.models', '.api', '.api.client', '.api.types', 'x']);
     const known = new Set(['pkg/helper.py', 'pkg/api/client.py']);

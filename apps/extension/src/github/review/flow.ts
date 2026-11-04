@@ -65,6 +65,8 @@ export function setFlowSource(next: FlowSource | null): void {
   if (key !== '' && key !== sourceKey) {
     sourceKey = key;
     forgetReads();
+    // An open dialog reads again at the new head instead of waiting on answers that are now thrown away.
+    onReadLanded?.();
   }
 }
 
@@ -399,14 +401,17 @@ let dialogIds = 0;
 
 /** Open the Flow dialog for the current pull request. Escape, the close button or a click on the backdrop closes it. */
 export function openFlowDialog(): void {
-  const current = source;
-  if (current === null) return;
+  const opened = source;
+  if (opened === null) return;
+  // What each render draws from: the latest source while it is still this pull request (a push lands, or the
+  // head becomes known, while the dialog is open), else the one it opened with.
+  const latest = (): FlowSource => (source !== null && source.origin === opened.origin && source.pullPath === opened.pullPath ? source : opened);
   dialogIds += 1;
   const titleId = `geld-flow-${dialogIds}-title`;
   const dialog = createElement('dialog', { class: 'Overlay Overlay--motion-scaleFade geld-flow', [OWN_UI_ATTRIBUTE]: '', 'aria-labelledby': titleId });
   const close = createElement('button', { type: 'button', class: 'close-button Overlay-closeButton', 'aria-label': 'Close' }, [icon(ICON_X)]);
-  const hiddenCount = current.files.filter((file) => file.hiddenAs !== null).length;
-  const essentialCount = current.files.length - hiddenCount;
+  const hiddenCount = opened.files.filter((file) => file.hiddenAs !== null).length;
+  const essentialCount = opened.files.length - hiddenCount;
   let showHidden = essentialCount === 0;
   const toggle = createElement('button', { type: 'button', class: 'btn btn-sm geld-flow__toggle', 'aria-pressed': String(showHidden) });
   const actions = createElement('div', { class: 'Overlay-actionWrap geld-flow__actions' }, [...(hiddenCount > 0 && essentialCount > 0 ? [toggle] : []), close]);
@@ -459,7 +464,7 @@ export function openFlowDialog(): void {
     ]),
     body,
   );
-  const filesHref = filesTabHref(current.pullPath);
+  const filesHref = filesTabHref(opened.pullPath);
   let timer = 0;
   // Closing queues the dialog's `close` event, which removes it: a card's click finishes reaching GitHub's own
   // link handling (a Turbo visit to Files changed) while the card is still in the document.
@@ -469,8 +474,10 @@ export function openFlowDialog(): void {
   };
   let fitted = false;
   const render = (): void => {
+    const current = latest();
     const files = current.files.filter((file) => showHidden || file.hiddenAs === null);
-    toggle.textContent = showHidden ? `Hide ${plural(hiddenCount, 'hidden file')}` : `Show ${plural(hiddenCount, 'hidden file')}`;
+    const hiddenNow = current.files.length - current.files.filter((file) => file.hiddenAs === null).length;
+    toggle.textContent = showHidden ? `Hide ${plural(hiddenNow, 'hidden file')}` : `Show ${plural(hiddenNow, 'hidden file')}`;
     toggle.setAttribute('aria-pressed', String(showHidden));
     const reading = readFiles(current, files);
     const edges: FlowEdge[] = flowLinks(

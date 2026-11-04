@@ -113,12 +113,53 @@ function templateEnd(text: string, start: number): number {
   return text.length;
 }
 
-/** The index of the `}` closing a template expression that starts at `start`, past nested braces, strings and templates. */
+/** What a `/` follows when it opens a regular expression rather than dividing: an operator, an opening bracket, a keyword, or nothing. */
+const REGEX_LEAD = /(?:^|[(,=:[!&|?{};+\-*%~^<>]|\b(?:return|typeof|case|do|else|in|of|void|yield|await))\s*$/;
+
+/** Just past the regular expression literal opening at `start` (its closing `/` and flags), or the end of the line. */
+function regexEnd(text: string, start: number): number {
+  let index = start + 1;
+  let inClass = false;
+  while (index < text.length && text[index] !== '\n') {
+    const char = text[index];
+    if (char === '\\') index += 2;
+    else {
+      if (char === '[') inClass = true;
+      else if (char === ']') inClass = false;
+      else if (char === '/' && !inClass) {
+        index += 1;
+        while (index < text.length && /[a-z]/i.test(text[index] ?? '')) index += 1;
+        return index;
+      }
+      index += 1;
+    }
+  }
+  return index;
+}
+
+/**
+ * The index of the `}` closing a template expression that starts at `start`, past nested braces, strings,
+ * templates, comments and regular expressions: a `{` in `/* { *\/` or `/[{]/` is not a brace of the code.
+ */
 function expressionEnd(text: string, start: number): number {
   let depth = 0;
   let index = start;
   while (index < text.length) {
     const char = text[index];
+    if (text.startsWith('//', index)) {
+      const end = text.indexOf('\n', index);
+      index = end < 0 ? text.length : end;
+      continue;
+    }
+    if (text.startsWith('/*', index)) {
+      const end = text.indexOf('*/', index + 2);
+      index = end < 0 ? text.length : end + 2;
+      continue;
+    }
+    if (char === '/' && REGEX_LEAD.test(text.slice(Math.max(start, index - 12), index))) {
+      index = regexEnd(text, index);
+      continue;
+    }
     if (char === '`') {
       index = templateEnd(text, index);
       continue;
