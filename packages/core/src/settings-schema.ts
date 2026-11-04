@@ -509,6 +509,13 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         popup: false,
       },
       {
+        kind: 'toggle',
+        key: 'holdToMerge',
+        label: 'Hold ⌘ to merge from the status pill',
+        description: 'While ⌘ (Ctrl on Windows and Linux) is held, the pull request’s status pill becomes a Merge button whenever GitHub would merge it now. Off, the pill only opens its menu of statuses.',
+        popup: false,
+      },
+      {
         kind: 'list',
         key: 'reviewBots',
         label: 'Extra review bots',

@@ -137,6 +137,12 @@ export interface GeldSettings {
    */
   readonly quickReview: boolean;
   /**
+   * Holding ⌘ (Ctrl off a Mac) turns the header's status pill into a 1-click
+   * merge where GitHub would merge the pull request now. Off, the pill only
+   * opens its menu of statuses.
+   */
+  readonly holdToMerge: boolean;
+  /**
    * Extra bot logins to treat as review bots (one per line). Built-in bots
    * (Bugbot, Greptile, Copilot, …) are always recognised.
    */
@@ -223,6 +229,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   reviewGrouping: 'type',
   collapseDescription: true,
   quickReview: true,
+  holdToMerge: false,
   reviewBots: [],
   aiEnabled: false,
   aiBaseUrl: '',
@@ -478,6 +485,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     reviewGrouping: isReviewGrouping(record.reviewGrouping) ? record.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
     collapseDescription: bool(record, 'collapseDescription', DEFAULT_SETTINGS.collapseDescription),
     quickReview: bool(record, 'quickReview', DEFAULT_SETTINGS.quickReview),
+    holdToMerge: bool(record, 'holdToMerge', DEFAULT_SETTINGS.holdToMerge),
     reviewBots: isStringArray(record.reviewBots) ? record.reviewBots : DEFAULT_SETTINGS.reviewBots,
     aiEnabled: bool(record, 'aiEnabled', DEFAULT_SETTINGS.aiEnabled),
     aiBaseUrl: typeof record.aiBaseUrl === 'string' ? normalizeAiBaseUrl(record.aiBaseUrl) : DEFAULT_SETTINGS.aiBaseUrl,
