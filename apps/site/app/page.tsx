@@ -2,6 +2,7 @@ import { ArrowRightIcon } from 'lucide-react';
 import Link from 'next/link';
 
 import { ExternalLink } from '@/components/external-link';
+import { HeroPile } from '@/components/pile/hero-pile';
 import { HERO_WORDMARK_ID } from '@/components/header-brand';
 import { InstallButtons } from '@/components/install-buttons';
 import { LogoReel } from '@/components/logo-reel';
@@ -21,9 +22,9 @@ export default function HomePage() {
         The two spacers share what is left: the top one from 1px to 10rem, the middle one from 3rem up. Capped at 60rem so a
         tall monitor sees more of the page rather than a stretched hero; too short to fit, the block grows and the reel drops below.
       */}
-      <div className="flex min-h-[min(calc(100svh-3.5rem-1px),60rem)] flex-col">
+      <div className="relative flex min-h-[min(calc(100svh-3.5rem-1px),60rem)] flex-col">
         <div aria-hidden="true" className="max-h-40 min-h-px grow basis-0" />
-        <section aria-labelledby="hero-heading" className="container-site">
+        <section aria-labelledby="hero-heading" className="container-site" data-pile-hero>
           <div className="max-w-3xl @container">
             <HeroPrehydration />
             <div id={HERO_WORDMARK_ID} className="mb-8 w-fit sm:mb-10">
@@ -39,6 +40,7 @@ export default function HomePage() {
         </section>
         <div aria-hidden="true" className="min-h-12 grow basis-0" />
         <LogoReel className="pb-10 sm:pb-12" />
+        <HeroPile />
       </div>
 
       <section id="tour" aria-labelledby="tour-heading" className="pb-16 sm:pb-20">
