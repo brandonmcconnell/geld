@@ -2,6 +2,7 @@ import { canReadImports, flowLinks, importSpecifiers, layoutFlow } from '@geld/c
 import type { FlowComponent, FlowEdge, FlowRoute } from '@geld/core/file-flow';
 import { formatCount } from '@geld/core/format';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
+import { cancelIdle, whenIdle } from '../../lib/idle';
 import { looksLikeHtml } from '../../lib/http';
 import { pageFetch } from '../page-fetch';
 import { ICON_CHEVRON_DOWN, ICON_FILE_ADDED, ICON_FILE_MODIFIED, ICON_FILE_MOVED, ICON_FILE_REMOVED, ICON_WORKFLOW, ICON_X } from '../ui/icons';
@@ -46,6 +47,10 @@ const CORNER = 8;
 const MAX_READS = 160;
 const MAX_BYTES = 400_000;
 const CONCURRENT_READS = 6;
+/** Reads at a time before the dialog is opened: the diagram is prepared in the background without crowding the page's own requests. */
+const PREFETCH_READS = 2;
+const PREFETCH_IDLE_MS = 2000;
+const PREFETCH_IDLE_KEY = 'geld-flow-prefetch';
 const RENDER_DEBOUNCE_MS = 120;
 const ZOOM_MIN = 0.3;
 const ZOOM_MAX = 1.5;
@@ -74,6 +79,7 @@ export function setFlowSource(next: FlowSource | null, failed: FlowFailure | nul
   failure = next === null ? failed : null;
   if (openDialog !== null && failureKey(failure) !== failureKey(failedBefore)) onReadLanded?.();
   const key = next === null ? '' : `${next.origin}/${next.repo}${next.pullPath}@${next.headSha ?? ''}`;
+  prefetch(next, key);
   // Another pull request or a new head: what was read for the last one is never asked for again.
   if (key !== '' && key !== sourceKey) {
     sourceKey = key;
@@ -107,6 +113,22 @@ function failureCopy(failed: FlowFailure): { readonly text: string; readonly rel
   return { text: `Geld could not load this pull request\u2019s diff (${failed.reason}).`, reload: true };
 }
 
+/** The source a background read was last started for, so each pull request and head is read ahead once. */
+let prefetchedKey = '';
+
+/** Read every file's imports ahead of a click (essential first), so the dialog opens on the finished diagram. */
+function prefetch(next: FlowSource | null, key: string): void {
+  if (next === null || next.headSha === null || key === prefetchedKey) return;
+  prefetchedKey = key;
+  whenIdle(
+    PREFETCH_IDLE_KEY,
+    () => {
+      if (key === sourceKey) readFiles(next, next.files);
+    },
+    PREFETCH_IDLE_MS,
+  );
+}
+
 /** What an open dialog draws from besides the reads: each file's status, category and removed imports. */
 function fileData(from: FlowSource): string {
   return from.files.map((file) => `${file.path}\u0000${file.status}\u0000${file.hiddenAs ?? ''}\u0000${file.removedImports.join(',')}`).join('\u0001');
@@ -117,6 +139,8 @@ export function closeFlow(): void {
   openDialog?.close();
   openDialog = null;
   onReadLanded = null;
+  cancelIdle(PREFETCH_IDLE_KEY);
+  prefetchedKey = '';
   forgetReads();
 }
 
@@ -155,7 +179,7 @@ function request(origin: string, repo: string, revision: string, path: string): 
 }
 
 function pump(): void {
-  while (active < CONCURRENT_READS && queue.length > 0) {
+  while (active < (openDialog === null ? PREFETCH_READS : CONCURRENT_READS) && queue.length > 0) {
     const job = queue.shift();
     if (job === undefined) return;
     active += 1;
@@ -443,7 +467,6 @@ export function openFlowDialog(): void {
   const scroller = createElement('div', { class: 'geld-flow__scroll' });
   const canvas = createElement('div', { class: 'geld-flow__canvas' });
   scroller.append(canvas);
-  const status = createElement('p', { class: 'geld-flow__reading', role: 'status', hidden: '' });
   const legendList = createElement('div', { class: 'geld-flow__legend', id: `geld-flow-${dialogIds}-legend`, hidden: '' }, (['added', 'modified', 'renamed', 'deleted'] as const).map((key) => createElement('span', { class: 'geld-flow__legend-item' }, [statusIcon(key), STATUS_WORD[key]])));
   const chevron = icon(ICON_CHEVRON_DOWN);
   chevron.classList.add('geld-flow__chevron');
@@ -461,7 +484,7 @@ export function openFlowDialog(): void {
     legendButton,
     createElement('div', { class: 'geld-flow__zoom', role: 'group', 'aria-label': 'Zoom' }, [zoomOut, zoomLevel, zoomIn]),
   ]);
-  const body = createElement('div', { class: 'Overlay-body geld-flow__stage' }, [scroller, status, controls]);
+  const body = createElement('div', { class: 'Overlay-body geld-flow__stage' }, [scroller, controls]);
   let scale: number | null = null;
   const applyScale = (next: number): void => {
     scale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(next * 100) / 100));
@@ -498,21 +521,19 @@ export function openFlowDialog(): void {
   let fitted = false;
   const render = (): void => {
     const current = latest();
-    controls.hidden = current === null;
+    /** Said in the diagram's place: nothing is drawn until it can be drawn whole, so the layout never shifts under the reader. */
+    const message = (text: string, role: 'status' | 'alert', action: HTMLElement | null = null): void => {
+      controls.hidden = true;
+      canvas.replaceChildren(createElement('div', { class: 'geld-flow__message', role }, [createElement('p', {}, [text]), ...(action === null ? [] : [action])]));
+    };
     if (current === null) {
       toggle.hidden = true;
       const failed = failure !== null && failure.origin === location.origin && failure.pullPath === pullPath ? failure : null;
-      status.hidden = failed !== null;
-      status.textContent = failed === null ? 'Waiting for the pull request\u2019s diff…' : '';
-      if (failed === null) {
-        canvas.replaceChildren();
-        return;
-      }
+      if (failed === null) return message('Waiting for the pull request\u2019s diff…', 'status');
       const copy = failureCopy(failed);
       const reload = createElement('button', { type: 'button', class: 'btn btn-sm' }, ['Reload']);
       reload.addEventListener('click', () => location.reload());
-      canvas.replaceChildren(createElement('div', { class: 'geld-flow__failed', role: 'alert' }, [createElement('p', {}, [copy.text]), ...(copy.reload ? [reload] : [])]));
-      return;
+      return message(copy.text, 'alert', copy.reload ? reload : null);
     }
     const essentialNow = current.files.filter((file) => file.hiddenAs === null).length;
     const hiddenNow = current.files.length - essentialNow;
@@ -524,6 +545,8 @@ export function openFlowDialog(): void {
     toggle.textContent = showHidden ? `Hide ${plural(hiddenNow, 'hidden file')}` : `Show ${plural(hiddenNow, 'hidden file')}`;
     toggle.setAttribute('aria-pressed', String(showHidden));
     const reading = readFiles(current, files);
+    if (reading.landed < reading.wanted) return message(`Reading ${formatCount(reading.landed)} of ${plural(reading.wanted, 'file')}…`, 'status');
+    controls.hidden = false;
     const edges: FlowEdge[] = flowLinks(
       files.map((file) => file.path),
       reading.after,
@@ -535,9 +558,6 @@ export function openFlowDialog(): void {
       edges,
     );
     const byPath = new Map(files.map((file) => [file.path, file]));
-    const stillReading = reading.landed < reading.wanted;
-    status.hidden = !stillReading;
-    status.textContent = stillReading ? `Reading ${formatCount(reading.landed)} of ${plural(reading.wanted, 'file')}…` : '';
     const scrollTop = scroller.scrollTop;
     const scrollLeft = scroller.scrollLeft;
     canvas.replaceChildren();
@@ -555,8 +575,8 @@ export function openFlowDialog(): void {
     if (reading.unreadable) canvas.prepend(createElement('p', { class: 'geld-flow__note' }, ['Geld could not tell which commit this page shows, so it drew the files without their links.']));
     scroller.scrollTop = scrollTop;
     scroller.scrollLeft = scrollLeft;
-    // Fitted once the links are in (a diagram drawn while files are still being read is narrower); the reader's own zoom stays.
-    if (!stillReading && !fitted) {
+    // Fitted on the first draw (and after the toggle); the reader's own zoom stays through later redraws.
+    if (!fitted) {
       fitted = true;
       applyScale(fitScale());
     }
@@ -587,6 +607,8 @@ export function openFlowDialog(): void {
   });
   openDialog?.close();
   openDialog = dialog;
+  // Reads still queued from the background go at full speed now that someone is waiting on them.
+  pump();
   openData = opened === null ? '' : fileData(opened);
   document.body.append(dialog);
   dialog.showModal();

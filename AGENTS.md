@@ -573,8 +573,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Lucide marks are outlines and `svg.geld-lucide` sets `fill: none !important`, since GitHub's `.octicon { fill: currentColor }` otherwise fills their shapes solid) stands in the Geld row just left of the grouping control wherever the digest does (`prOverview`), on every pull request, one file or many: opened before the diff has loaded, the dialog says it is waiting for the diff and draws when the source arrives.
   When the diff cannot be had, the dialog says so in the diagram's place instead of waiting forever (`FlowFailure`, `retriesLater` in diff-source.ts): a failure the diff source still retries says Flow tries again shortly, one it has given up on says why (signed out, a 404, the error) with a Reload button, and an over-20 MB diff says it is too large.
   The controller hands the digest its source each conversation pass (`setFlowSource`, `updateFlowSource`: the diff's `FileStats` with each file's hidden category from the reader's matcher and its `removedImports`).
-  Opening it reads, at the head, the surviving files whose imports Geld can read (`canReadImports`: scripts, styles, Python, Rust), whole, from the page's own `raw` route through `pageFetch` (same origin, so private repositories work;
-  six at a time, essential files first, at most 160 scheduled reads and 400 KB a file).
+  It reads ahead, before anyone clicks (`prefetch`: once per pull request and head, when the browser is idle, two at a time while the dialog is closed and six once it is open), so the dialog opens on the finished diagram: it reads, at the head, the surviving files whose imports Geld can read (`canReadImports`: scripts, styles, Python, Rust), whole, from the page's own `raw` route through `pageFetch` (same origin, so private repositories work;
+  essential files first, at most 160 scheduled reads and 400 KB a file).
   A file it cannot read (another language, past the cap, too large, a failed read) still gets its card, only without links of its own.
   What is kept is each file's import list, not its text (`flowLinks` takes the lists), per pull request head and dropped when the head or the pull request changes, so files are not read again and a large diagram still finishes;
   an open dialog draws from the latest source for its pull request, reads again when the head moves under it, and redraws when the same head's file data changes (the diff landing after GitHub's file summaries, which carry no removed imports).
@@ -593,8 +593,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Links are an SVG layer of rounded orthogonal paths whose ends are spread per side, and resting on a card lights its links.
   The diagram scrolls inside a stage whose lower right corner holds the controls, floating: "Legend" on the left (GitHub's button tokens;
   open, only its border turns accent), which opens upward to the four icons in two columns as one of GitHub's small overlays exactly as wide as the row (the legend's left edge to zoom's right), and zoom (−, the level, which fits, + at one 24px height;
-  CSS `zoom` on the canvas, fitted to the width once the reading ends and again when hidden files are toggled);
-  while files are still being read, the lower left says how many.
+  CSS `zoom` on the canvas, fitted to the width on the first draw and again when hidden files are toggled).
+  Nothing is drawn until every read it needs has landed: a diagram drawn as links arrive re-lays itself out with each one, so while reading the dialog says how many files are left in the diagram's place, as it does while waiting for the diff or when the diff failed (`.geld-flow__message`), and the controls are hidden until there is a diagram.
   A card is a link to its file in Files changed (`#diff-<sha256 of the path>` on the page's own Files tab URL, so `?w=1` stays): the click closes the dialog and GitHub's own navigation goes there.
   The legend button carries a chevron pointing up, the way the legend opens, turned over while it is open.
   `teardownReviewOverview` calls `closeFlow`, which closes the dialog and drops the reads still queued, so Geld turned off leaves nothing over the page.
