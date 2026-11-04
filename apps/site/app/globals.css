@@ -230,6 +230,10 @@
     opacity: 0;
     visibility: hidden;
   }
+  /* A ping repaints every frame on the main thread, so it runs only where it can be seen: not off screen (`data-offscreen`, PrWindow), not in a scene the stage hides or a section folded away (`inert`), not once faded. */
+  :where([inert], [data-offscreen], [data-used]) & > .ping-ring {
+    animation-play-state: paused;
+  }
 }
 
 /* The logo reel's window: logos fade in and out at both edges while they move. */

@@ -25,7 +25,7 @@ export function Ping({
       {children}
       {on ? (
         <span aria-hidden="true" className="ping-fade pointer-events-none absolute inset-0 rounded-[inherit]">
-          <span className={cn('absolute inset-0 rounded-[inherit]', inset ? 'motion-safe:animate-ping-ring-inset' : 'motion-safe:animate-ping-ring', tone)} />
+          <span className={cn('ping-ring absolute inset-0 rounded-[inherit]', inset ? 'motion-safe:animate-ping-ring-inset' : 'motion-safe:animate-ping-ring', tone)} />
         </span>
       ) : null}
     </span>

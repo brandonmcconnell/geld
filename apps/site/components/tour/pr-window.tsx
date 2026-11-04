@@ -1,5 +1,8 @@
+'use client';
+
 import { cn } from 'cn';
 import { GitMergeIcon, GitPullRequestClosedIcon, GitPullRequestDraftIcon, GitPullRequestIcon } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 
 import type { PrState } from '@/components/tour/bits';
 import { TOUR_FILES } from '@/components/tour/data';
@@ -66,8 +69,20 @@ export function PrWindow({
   readonly bodyClassName?: string;
 }) {
   const path = TABS.find((entry) => entry.id === tab)?.path ?? '';
+  const root = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const node = root.current;
+    if (node === null) return;
+    // Out of view, the window's ping pauses (`ping-fade`).
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry) node.toggleAttribute('data-offscreen', !entry.isIntersecting);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
   return (
     <div
+      ref={root}
       onClickCapture={(event) => {
         // The first press on a control marks the scene used, which fades its ping (`ping-fade`).
         if (event.target instanceof Element && event.target.closest(CONTROL)) event.currentTarget.dataset.used = '';
