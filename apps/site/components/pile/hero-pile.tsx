@@ -36,6 +36,8 @@ const HIGHEST = 70;
 /** How much further than its speed explains a card may move in a frame before the rest is eased in, and how fast that eases. */
 const SNAP_SLACK = 4;
 const SNAP_EASE = 0.06;
+/** Cards stack below this; the digest and the switch are `z-40`. */
+const CARD_Z_CEILING = 40;
 
 interface Layout {
   readonly world: World;
@@ -517,9 +519,24 @@ function Playground() {
     return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [geld, run]);
 
+  // A card picked up comes to the front of the pile, still under the digest and the switch.
+  const raise = (index: number): void => {
+    const el = els.current[index];
+    if (!el) return;
+    const others = els.current.flatMap((other, i) => (other && i !== index ? [{ el: other, z: Number(other.style.zIndex) || 0 }] : []));
+    const top = Math.max(0, ...others.map((other) => other.z));
+    if (top + 1 < CARD_Z_CEILING) {
+      el.style.zIndex = String(top + 1);
+      return;
+    }
+    others.sort((p, q) => p.z - q.z).forEach((other, order) => (other.el.style.zIndex = String(order)));
+    el.style.zIndex = String(others.length);
+  };
+
   const onPointerDown = (index: number) => (event: React.PointerEvent<HTMLDivElement>) => {
     const body = bodies.current[index];
     if (!body || body.mode !== 'free') return;
+    raise(index);
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     interacted.current = true;
