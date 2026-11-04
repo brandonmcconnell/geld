@@ -322,7 +322,7 @@ function Narrow({ children }: { readonly children: React.ReactNode }) {
 function Stack({ people, fallback, size = 20 }: { readonly people: readonly Person[]; readonly fallback: React.ReactNode; readonly size?: number }) {
   if (people.length === 0) return <span className="grid shrink-0 place-items-center text-muted-foreground">{fallback}</span>;
   return (
-    <span className="flex shrink-0 -space-x-1.5">
+    <span className="flex shrink-0 -space-x-1.5 @max-[17rem]:-space-x-2.5 @max-[15.5rem]:-space-x-3.5">
       {people.map((who) => (
         <Face key={who} who={who} size={size} />
       ))}
