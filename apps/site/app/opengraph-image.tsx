@@ -45,9 +45,10 @@ export default async function OpenGraphImage() {
           style={{
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'space-between',
+            gap: 56,
             width: 572,
-            padding: '64px 0 56px 72px',
+            // Stacked from the top, so the bottom left stays clear: X lays the link's domain over that corner.
+            padding: '64px 0 0 72px',
           }}
         >
           <svg width={wordmarkWidth} height={wordmarkHeight} viewBox={wordmark.viewBox} fill="#000000">
