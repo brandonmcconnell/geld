@@ -190,6 +190,15 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       },
       {
         kind: 'toggle',
+        key: 'prOverview',
+        label: 'Pull request digest',
+        description:
+          'A panel under the description on the conversation tab: reviews, what each review bot concluded, CI, reports and previews, then the open threads round by round, so what needs you is clear at a glance.',
+        popup: true,
+        popupDescription: 'Reviews, bots, CI and open threads at a glance.',
+      },
+      {
+        kind: 'toggle',
         key: 'groupHidden',
         label: 'Group hidden files',
         description:
@@ -199,21 +208,20 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       },
       {
         kind: 'toggle',
+        key: 'collapseDescription',
+        label: 'Shorten the description',
+        description: 'Fold each section of the pull request description under its heading. A long description with no headings is cut to 500px with a control to show the rest.',
+        popup: true,
+        popupDescription: 'Fold its sections under their headings.',
+      },
+      {
+        kind: 'toggle',
         key: 'expandedByDefault',
         label: 'Show hidden files expanded',
         description:
           'Hidden files still move to the bottom and are excluded from the counts, but stay visible. Pages where every file is hidden always start expanded.',
         popup: true,
         popupDescription: 'Grouped at the bottom, but not collapsed.',
-      },
-      {
-        kind: 'toggle',
-        key: 'prOverview',
-        label: 'Pull request digest',
-        description:
-          'A panel under the description on the conversation tab: reviews, what each review bot concluded, CI, reports and previews, then the open threads round by round, so what needs you is clear at a glance.',
-        popup: true,
-        popupDescription: 'Reviews, bots, CI and open threads at a glance.',
       },
       {
         kind: 'toggle',
@@ -492,13 +500,6 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
           { value: 'type', label: 'Type', description: 'Bots, CI, reviews, rounds and activity, each in its own section.' },
           { value: 'batch', label: 'Push', description: 'One row per push with everything that landed between it and the last.' },
         ],
-      },
-      {
-        kind: 'toggle',
-        key: 'collapseDescription',
-        label: 'Shorten the description',
-        description: 'Fold each section of the pull request description under its heading. A long description with no headings is cut to 500px with a control to show the rest.',
-        popup: false,
       },
       {
         kind: 'toggle',
