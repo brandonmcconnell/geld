@@ -236,7 +236,7 @@ function ThreadRow({
   const author = 'bot' in thread.by ? <BotMark bot={thread.by.bot} size={16} /> : <Avatar who={thread.by.person} size={16} className="ring-0" />;
   return (
     <li className="border-t first:border-t-0">
-      <button type="button" aria-expanded={open} onClick={onToggle} className="flex w-full items-center gap-2 py-1.5 pr-3 pl-6 text-left outline-none hover:bg-muted/60 focus-visible:bg-muted">
+      <button type="button" aria-expanded={open} onClick={onToggle} className={cn('flex w-full items-center gap-2 py-1.5 pr-3 pl-6 text-left outline-none hover:bg-muted/60 focus-visible:bg-muted', open && 'border-b')}>
         {resolved ? <CircleCheckIcon aria-hidden="true" className="size-3.5 shrink-0 text-addition" /> : <CircleIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />}
         {author}
         <span className={cn('min-w-0 truncate font-medium', resolved && 'text-muted-foreground')}>{thread.title}</span>

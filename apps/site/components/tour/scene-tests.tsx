@@ -95,12 +95,12 @@ export function TestsScene() {
             const counts = countsOf(test.lines);
             return (
               <div key={test.title} className="border-t first:border-t-0">
-                <Ping on={test.title === OPENED} inset className="flex">
+                <Ping on={test.title === OPENED} className="flex">
                   <button
                     type="button"
                     aria-expanded={isOpen}
                     onClick={() => toggle(test.title)}
-                    className="flex w-full items-center gap-3 py-1.5 pr-3 text-left font-sans outline-none transition-colors hover:bg-muted/60 focus-visible:bg-muted"
+                    className={cn('flex w-full items-center gap-3 py-1.5 pr-3 text-left font-sans outline-none transition-colors hover:bg-muted/60 focus-visible:bg-muted', isOpen && 'border-b')}
                   >
                     <span className="w-10 shrink-0 pr-2 text-right font-mono text-[0.6875rem] text-muted-foreground tabular-nums">{test.start}</span>
                     <span className={cn('min-w-0 flex-1 truncate text-[0.8125rem]', test.title === 'beforeEach' ? 'font-mono text-xs' : 'font-medium')}>{test.title}</span>
