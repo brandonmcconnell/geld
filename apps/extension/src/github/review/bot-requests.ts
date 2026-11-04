@@ -136,18 +136,22 @@ export function botRequestStates(input: BotRequestInput): ReadonlyMap<string, Bo
     const viaWorkflow = posted !== null && geldRunBots(posted.comment.body).length > 0;
     const workflow = viaWorkflow && posted !== null ? geldRunAnswer(posted.comment) : null;
     if (workflow === 'queued' || acknowledged(id, logins, posted?.comment ?? null, since, input)) continue;
-    if (workflow === 'failed') {
-      out.set(id, { kind: 'unanswered', reason: 'silent' });
-      continue;
-    }
     const start = click?.at ?? since;
     // The workflow's job has to start before it can answer, which takes longer than a bot's reaction.
     const window = !viaWorkflow && botById(id)?.acknowledges === 'reaction' ? REQUEST_ACK_MS : REQUEST_ACK_SLOW_MS;
-    if (input.now - start < window) {
+    const within = input.now - start < window;
+    // Past its window a request is told unanswered only while nothing else has settled it: this visit's own ask, or a
+    // verdict still running on the request alone. An old refusal (`verdictsFrom` skips it) never hides a settled review.
+    const unsettled = click !== undefined || record?.verdict === 'running';
+    if (workflow === 'failed') {
+      if (within || unsettled) out.set(id, { kind: 'unanswered', reason: 'silent' });
+      continue;
+    }
+    if (within) {
       out.set(id, { kind: 'starting', until: start + window });
       continue;
     }
-    if (click !== undefined || record?.verdict === 'running') out.set(id, { kind: 'unanswered', reason: 'silent' });
+    if (unsettled) out.set(id, { kind: 'unanswered', reason: 'silent' });
   }
   return out;
 }

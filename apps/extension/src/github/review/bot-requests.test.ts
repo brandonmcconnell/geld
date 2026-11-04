@@ -82,6 +82,12 @@ describe('botRequestStates', () => {
     expect(botRequestStates(input({ comments: [run, answer], now: T0 + 100_000 })).has('greptile')).toBe(false);
   });
 
+  it('leaves a settled review alone after an old /geld run refusal, outside the visit that asked', () => {
+    const run: BotComment = { ...trigger(T0, '/geld run greptile'), reactions: [{ login: 'github-actions[bot]', emoji: 'thumbs down' }] };
+    expect(botRequestStates(input({ comments: [run], bots: [record('greptile', 'greptile-apps[bot]', 'clean')], now: T0 + 10 * 60_000 })).has('greptile')).toBe(false);
+    expect(botRequestStates(input({ comments: [run], bots: [record('greptile', 'greptile-apps[bot]', 'clean')], now: T0 + 5_000 })).get('greptile')).toEqual({ kind: 'unanswered', reason: 'silent' });
+  });
+
   it('does not read a mention of a trigger in prose as a request', () => {
     const prose = trigger(T0, 'The previous bugbot run found nothing, so this looks fine to me.');
     expect(botRequestStates(input({ comments: [prose], now: T0 + 1_000 })).size).toBe(0);
