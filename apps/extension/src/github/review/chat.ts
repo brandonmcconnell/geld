@@ -257,6 +257,11 @@ export interface ChatRerun {
   readonly running: boolean;
   /** Post the bot's trigger comment. */
   readonly onRerun: () => void;
+  /**
+   * Whether the bot is running now, read at the click: a control drawn while it was idle can outlive that (a hover
+   * card stays open over a rebuilt panel), and must still ask before posting a second trigger.
+   */
+  readonly isRunning?: () => boolean;
 }
 
 /**
@@ -324,6 +329,21 @@ export function takeAgentViewLink(body: HTMLElement): AgentViewLink | null {
 }
 
 /**
+ * Geld's controls for a bot's comment shown outside a chat (a row's hover
+ * card): the bot's own badges in `body`, a copy of the comment, are hidden
+ * there and stand here as View, then Rerun or See latest, as on a byline.
+ */
+export function botCommentControls(body: HTMLElement, byline: Pick<ChatByline, 'rerun' | 'latest'>): readonly HTMLElement[] {
+  if (byline.rerun !== undefined || byline.latest !== undefined) hideAgentRerunControls(body);
+  const view = takeAgentViewLink(body);
+  const controls: HTMLElement[] = [];
+  if (view !== null) controls.push(viewControl(view));
+  if (byline.rerun !== undefined) controls.push(rerunControl(byline.rerun));
+  else if (byline.latest !== undefined) controls.push(latestControl(byline.latest));
+  return controls;
+}
+
+/**
  * "View" with the external-link glyph, in Rerun's box and before it: the
  * bot's own badge, moved out of the bubble to where the chat's controls are.
  * The tooltip keeps the badge's words ("View in Greptile"); a badge that only
@@ -364,11 +384,12 @@ function rerunControl(rerun: ChatRerun): HTMLElement {
   };
   button.addEventListener('click', (event) => {
     event.stopPropagation();
-    if (!button.hasAttribute('data-running')) {
+    if (!button.hasAttribute('data-running') && rerun.isRunning?.() !== true) {
       setRunning();
       rerun.onRerun();
       return;
     }
+    setRunning();
     confirmRerun(rerun.bot, () => rerun.onRerun());
   });
   wrap.append(button, tip);

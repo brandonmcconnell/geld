@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { completeChat, joinUrl, listModels } from './ai-client';
+import { evaluateJev } from './jev';
 
 describe('ai-client', () => {
   it('does not call the network without a key', async () => {
@@ -115,4 +116,32 @@ it('combines caller cancellation with the completion deadline', async () => {
   await ready;
   abort.abort();
   expect(await result).toEqual({ ok: false, reason: 'The AI provider could not complete the request.' });
+});
+
+/** Fails as Chrome's native fetch does when called as a method of another object. */
+function nativeLikeFetch(answer: unknown): (this: unknown, input: string, init?: RequestInit) => Promise<Response> {
+  return function (this: unknown) {
+    if (this !== undefined && this !== globalThis) return Promise.reject(new TypeError("Failed to execute 'fetch' on 'WorkerGlobalScope': Illegal invocation"));
+    return Promise.resolve(Response.json(answer));
+  };
+}
+
+it('calls the given fetch on its own, as a browser requires of its native fetch', async () => {
+  expect(
+    await completeChat({
+      fetch: nativeLikeFetch({ model: 'fixture', choices: [{ message: { content: '{"tldr":"ok"}' } }] }),
+      baseUrl: 'https://ai-gateway.vercel.sh',
+      apiKey: 'synthetic',
+      model: 'fixture',
+      messages: [{ role: 'user', content: 'Fixture' }],
+    }),
+  ).toEqual({ ok: true, text: '{"tldr":"ok"}', model: 'fixture' });
+  expect(
+    await evaluateJev({
+      fetch: nativeLikeFetch({ model: 'jev', answers: { a: { type: 'noul', noul: 0.9 } } }),
+      baseUrl: 'https://api.typesafe.ai',
+      apiKey: 'synthetic',
+      request: { model: 'jev-latest', state: 'Fixture', questions: { a: { type: 'noul', instructions: 'Yes?' } } },
+    }),
+  ).toEqual({ ok: true, model: 'jev', answers: { a: { type: 'noul', noul: 0.9 } } });
 });

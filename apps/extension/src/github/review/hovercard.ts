@@ -43,6 +43,8 @@ export interface HoverPreview {
   readonly onOpen: () => void;
   /** The open button's words, when not the default ("See full comment" / "See full thread"): a review says "See full review". */
   readonly openLabel?: string;
+  /** A review bot's comment: Geld's View and Rerun (or See latest), standing for the bot's own badges in `body`. */
+  readonly controls?: readonly HTMLElement[];
 }
 
 /** Who a bot is: what its (missing) GitHub hovercard would say. */
@@ -294,6 +296,7 @@ function showRow(row: HTMLElement): void {
   head.append(createElement('span', { class: `${CARD_CLASS}__name` }, [preview.name]));
   if (preview.bot) head.append(createElement('span', { class: `${CARD_CLASS}__bot` }, ['bot']));
   if (preview.time !== '') head.append(createElement('span', { class: `${CARD_CLASS}__time` }, [preview.time]));
+  if (preview.controls !== undefined && preview.controls.length > 0) head.append(createElement('span', { class: `${CARD_CLASS}__controls` }, [...preview.controls]));
   // Capped and faded rather than line-clamped: tables and code blocks ignore line clamps.
   const body = createElement('div', { class: `${CARD_CLASS}__body` });
   if (preview.body !== null) body.append(preview.body);
