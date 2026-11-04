@@ -45,12 +45,14 @@ describe('SETTINGS_SCHEMA', () => {
     const popup = fieldsFor('extension', true);
     expect(popup.map((field) => (field.kind === 'toggle' ? field.key : field.kind))).toEqual([
       'enabled',
+      'prOverview',
       'groupHidden',
+      'collapseDescription',
       'expandedByDefault',
       'categories',
-      // The one experiment in the popup, under an "Experiments" heading the popup draws for that section.
-      'prOverview',
     ]);
+    expect(sectionsFor('extension').find((section) => section.id === 'general')?.fields.some((field) => field.kind === 'toggle' && field.key === 'prOverview')).toBe(true);
+    expect(sectionsFor('extension').find((section) => section.id === 'experiments')?.fields.some((field) => field.kind === 'toggle' && field.key === 'prOverview')).toBe(false);
   });
 });
 

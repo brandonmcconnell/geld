@@ -5,8 +5,8 @@ import type { EnsureContentMessage, GetTabStateMessage, RevealFileMessage, TabSt
 import { isEnsureContentResponse, isTabState, REVEAL_HASH_PREFIX } from '../../src/lib/messages';
 import { fitMiddleTruncated } from '../../src/ui/middle-truncate';
 import { compileRepoRules, decideRepo, ownerProbe, repoFromPathname, withRepoRule } from '@geld/core';
-import { allHosts, isCategoryEnabled, isCategoryInPicker, plainText, sectionsFor } from '@geld/core';
-import type { CategoriesField, ToggleField } from '@geld/core';
+import { allHosts, isAutoViewedForAll, isCategoryEnabled, isCategoryInPicker, plainText, sectionsFor, withAutoViewedForAll } from '@geld/core';
+import type { AnyCategoryId, CategoriesField, GeldSettings, ToggleField } from '@geld/core';
 import type { TabRepoConfig, TabRepoConfigFile } from '../../src/lib/messages';
 import { loadCatalog } from '../../src/lib/catalog';
 import { repoConfigChoicesItem } from '../../src/lib/local-state';
@@ -178,18 +178,26 @@ async function main(): Promise<void> {
     else showTip(active.anchor, active.text);
   }
 
+  interface SwitchSpec {
+    readonly id: string;
+    readonly label: string;
+    readonly description: string;
+    readonly checked: boolean;
+    readonly onChange: (value: boolean) => Promise<void>;
+  }
+
   /** A setting on one line: its title, an info icon whose tooltip carries the description, and a small switch. */
-  function renderSwitch(field: ToggleField): HTMLElement {
-    const description = plainText(field.popupDescription ?? field.description);
+  function switchRow(spec: SwitchSpec): { readonly row: HTMLElement; readonly set: (checked: boolean) => void } {
+    const description = spec.description;
     const label = document.createElement('label');
     label.className = 'popup__switch-label';
-    label.id = `${field.key}-label`;
-    label.htmlFor = field.key;
-    label.textContent = field.label;
+    label.id = `${spec.id}-label`;
+    label.htmlFor = spec.id;
+    label.textContent = spec.label;
     const info = document.createElement('button');
     info.type = 'button';
     info.className = 'popup__info';
-    info.setAttribute('aria-label', `About ${field.label}`);
+    info.setAttribute('aria-label', `About ${spec.label}`);
     info.append(svgFromString(ICON_INFO));
     const source: TipSource = { anchor: info, text: description };
     info.addEventListener('pointerenter', () => {
@@ -210,25 +218,55 @@ async function main(): Promise<void> {
     });
     const help = document.createElement('span');
     help.className = 'popup__sr-only';
-    help.id = `${field.key}-help`;
+    help.id = `${spec.id}-help`;
     help.textContent = description;
     info.setAttribute('aria-describedby', help.id);
     const button = document.createElement('button');
-    button.id = field.key;
+    button.id = spec.id;
     button.className = 'geld-switch geld-switch--small';
     button.type = 'button';
     button.setAttribute('role', 'switch');
-    button.setAttribute('aria-checked', String(settings[field.key]));
+    button.setAttribute('aria-checked', String(spec.checked));
     button.setAttribute('aria-labelledby', label.id);
     button.setAttribute('aria-describedby', help.id);
-    const bound = bindSwitch(button, settings[field.key], async (value) => {
-      settings = await settingsItem.patch({ [field.key]: value });
+    const bound = bindSwitch(button, spec.checked, async (value) => {
+      await spec.onChange(value);
       saved();
     });
-    toggles.push({ field, set: bound.set });
     const row = document.createElement('div');
     row.className = 'popup__switch';
     row.append(label, info, help, button);
+    return { row, set: bound.set };
+  }
+
+  function renderSwitch(field: ToggleField): HTMLElement {
+    const { row, set } = switchRow({
+      id: field.key,
+      label: field.label,
+      description: plainText(field.popupDescription ?? field.description),
+      checked: settings[field.key],
+      onChange: async (value) => {
+        settings = await settingsItem.patch({ [field.key]: value });
+      },
+    });
+    toggles.push({ field, set });
+    return row;
+  }
+
+  /** Every category's `autoViewed` at once; the options page and geld.sh set it per category. */
+  let setAutoViewedSwitch: ((checked: boolean) => void) | null = null;
+  const categoryIds = (current: GeldSettings): readonly AnyCategoryId[] => allCategories(current, catalog).map((category) => category.id);
+  function renderAutoViewedSwitch(field: CategoriesField): HTMLElement {
+    const { row, set } = switchRow({
+      id: 'autoViewed',
+      label: field.autoViewed.popupLabel,
+      description: field.autoViewed.popupDescription,
+      checked: isAutoViewedForAll(settings, categoryIds(settings)),
+      onChange: async (value) => {
+        settings = await settingsItem.update((current) => ({ autoViewed: withAutoViewedForAll(current, categoryIds(current), value).autoViewed }));
+      },
+    });
+    setAutoViewedSwitch = set;
     return row;
   }
 
@@ -264,6 +302,14 @@ async function main(): Promise<void> {
 
   // Sections whose popup fields are experiments get a heading, so an experiment is never taken for a settled setting.
   let switches: HTMLElement | null = null;
+  const switchesSection = (): HTMLElement => {
+    if (switches === null) {
+      switches = document.createElement('section');
+      switches.className = 'popup__section popup__switches';
+      settingsHost.append(switches);
+    }
+    return switches;
+  };
   for (const section of sectionsFor('extension')) {
     const fields = section.fields.filter((field) => field.popup);
     if (fields.length === 0) continue;
@@ -280,14 +326,11 @@ async function main(): Promise<void> {
     for (const field of fields) {
       if (field.kind === 'toggle') {
         // Neighbouring switches share one section, a line each.
-        if (switches === null) {
-          switches = document.createElement('section');
-          switches.className = 'popup__section popup__switches';
-          settingsHost.append(switches);
-        }
-        switches.append(renderSwitch(field));
+        switchesSection().append(renderSwitch(field));
         continue;
       }
+      // The viewed switch closes the row of switches above Hide, since it acts on every category at once.
+      if (field.kind === 'categories') switchesSection().append(renderAutoViewedSwitch(field));
       switches = null;
       if (field.kind === 'categories') settingsHost.append(renderCategories(field));
       // Test groups and list fields are never flagged for the popup; the options page renders them.
@@ -626,6 +669,7 @@ async function main(): Promise<void> {
   settingsItem.watch((next) => {
     settings = next;
     for (const { field, set } of toggles) set(next[field.key]);
+    setAutoViewedSwitch?.(isAutoViewedForAll(next, categoryIds(next)));
     for (const category of allCategories(next, catalog).filter(isCategoryInPicker)) {
       const input = categoryInputs.get(category.id);
       if (input !== undefined) input.checked = isCategoryEnabled(next, category.id);
