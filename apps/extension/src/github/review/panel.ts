@@ -2582,7 +2582,7 @@ function signatureOf(model: PanelModel): string {
     openCommits: [...model.openCommits].sort(),
     openPreviews: [...model.openPreviews].sort(),
     reports: model.reports.latest.map((entry) => `${entry.anchor}${entry.state}${entry.headline}${entry.project ?? ''}${(entry.short ?? []).map((part) => part.text).join('|')}`),
-    requestable: model.requestable.map((bot) => `${bot.id}:${bot.presence}:${model.botIconFor(bot.id) ?? ''}`),
+    requestable: model.requestable.map((bot) => `${bot.id}:${bot.presence}:${bot.trigger}:${model.botIconFor(bot.id) ?? ''}`),
     botLines: model.botLines.map((line) => `${line.bot.id}:${line.anchor ?? ''}:${line.preview}:${line.time}:${line.avatarSrc ?? ''}:${line.threads.map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('|')}`),
     checks: model.checks,
     requiredFailing: model.requiredFailing,

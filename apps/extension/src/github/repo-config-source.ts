@@ -3,7 +3,7 @@ import { storage } from 'wxt/utils/storage';
 import type { RepoConfig, RepoConfigParse, SettingsIssue } from '@geld/core';
 import { BUNDLED_CATALOG, ORG_CONFIG_PATHS, ORG_CONFIG_REPO, REPO_CONFIG_PATH, generatedConfigFrom, isEmptyRepoConfig, parseRepoConfig } from '@geld/core';
 import type { Catalog } from '@geld/core';
-import { REVIEW_BOTS } from '@geld/review';
+import { REVIEW_BOTS, workflowApiTriggerBots } from '@geld/review';
 import { persist } from '../lib/context';
 import { looksLikeHtml } from '../lib/http';
 import type { FetchFileRequest } from '../lib/messages';
@@ -81,6 +81,17 @@ export interface ResolvedRepoConfig {
 /** The registry's ids, for validating a config's `reviewBots`. */
 const KNOWN_BOT_IDS: readonly string[] = REVIEW_BOTS.map((bot) => bot.id);
 
+/** Which bots a repository's Geld workflow can start by API, as far as the files have answered. */
+export interface WorkflowTriggers {
+  readonly loading: boolean;
+  readonly bots: ReadonlySet<string>;
+}
+
+const WORKFLOWS_DIRECTORY = '.github/workflows';
+/** The workflow files read for the trigger job: Geld's docs name it `geld.yml`, a team may rename it. */
+const GELD_WORKFLOW = /(^|\/)[^/]*geld[^/]*\.ya?ml$/i;
+const MAX_WORKFLOW_FILES = 4;
+
 /** Which review bots have a config file in a repository, as far as the listings have answered. */
 export interface BotConfigs {
   readonly loading: boolean;
@@ -126,6 +137,8 @@ export class RepoConfigSource {
   private readonly resolved = new Map<string, ResolvedRepoConfig>();
   /** Bot config detection per `origin/repo`, for {@link TTL_MS}. */
   private readonly botConfigsByRepo = new Map<string, { readonly at: number; value: BotConfigs }>();
+  /** The Geld workflow files of each `origin/repo` (`null` while the listings are read), for {@link TTL_MS}. */
+  private readonly workflowFilesByRepo = new Map<string, { readonly at: number; paths: readonly string[] | null }>();
 
   constructor(
     private readonly onChange: () => void,
@@ -212,6 +225,41 @@ export class RepoConfigSource {
       this.onChange();
     });
     return entry.value;
+  }
+
+  /**
+   * Which bots `repo`'s Geld workflow can start by API: the files in
+   * `.github/workflows` named like Geld's, read the way config files are
+   * (listings first, so a repository without them costs no 404), each
+   * answered from memory with `onChange` when it lands.
+   */
+  workflowTriggers(origin: string, repo: string): WorkflowTriggers {
+    const key = `${origin}/${repo}`;
+    let entry = this.workflowFilesByRepo.get(key);
+    if (entry === undefined || Date.now() - entry.at >= TTL_MS) {
+      const fresh: { readonly at: number; paths: readonly string[] | null } = { at: Date.now(), paths: null };
+      this.workflowFilesByRepo.set(key, fresh);
+      void this.workflowFiles(origin, repo).then((paths) => {
+        fresh.paths = paths;
+        this.onChange();
+      });
+      entry = fresh;
+    }
+    if (entry.paths === null) return { loading: true, bots: new Set() };
+    const bots = new Set<string>();
+    let loading = false;
+    for (const path of entry.paths) {
+      const found = this.lookup(origin, repo, path);
+      if (found.status === 'loading') loading = true;
+      else if (found.text !== null) for (const bot of workflowApiTriggerBots(found.text)) bots.add(bot);
+    }
+    return { loading, bots };
+  }
+
+  private async workflowFiles(origin: string, repo: string): Promise<readonly string[]> {
+    if (!(await this.pathExists(origin, repo, `${WORKFLOWS_DIRECTORY}/`))) return [];
+    const paths = await this.listing(origin, repo, WORKFLOWS_DIRECTORY);
+    return [...(paths ?? [])].filter((path) => GELD_WORKFLOW.test(path)).slice(0, MAX_WORKFLOW_FILES);
   }
 
   private async detectBotConfigs(origin: string, repo: string): Promise<ReadonlyMap<string, string>> {

@@ -2561,6 +2561,15 @@ function isTestGroupEnabled(settings, id) {
 function isAutoViewed(settings, id) {
   return settings.autoViewed[id] === true;
 }
+function isAutoViewedForAll(settings, ids) {
+  const on = ids.filter((id) => isCategoryEnabled(settings, id));
+  return on.length > 0 && on.every((id) => isAutoViewed(settings, id));
+}
+function withAutoViewedForAll(settings, ids, value) {
+  const autoViewed = { ...settings.autoViewed };
+  for (const id of ids) autoViewed[id] = value;
+  return { ...settings, autoViewed };
+}
 function categoryPatternLines(settings, categoryId) {
   return settings.categoryPatterns[categoryId] ?? [];
 }
@@ -11103,11 +11112,27 @@ var init_settings_schema = __esm({
           },
           {
             kind: "toggle",
+            key: "prOverview",
+            label: "Pull request digest",
+            description: "A panel under the description on the conversation tab: reviews, what each review bot concluded, CI, reports and previews, then the open threads round by round, so what needs you is clear at a glance.",
+            popup: true,
+            popupDescription: "Reviews, bots, CI and open threads at a glance."
+          },
+          {
+            kind: "toggle",
             key: "groupHidden",
             label: "Group hidden files",
             description: "On: hidden files move to a collapsible section at the bottom of the diff and get their own panels in the file tree. Off: they stay where they are, collapsed and faded, with their category\u2019s icon in the tree.",
             popup: true,
             popupDescription: "Off: keep them in place, collapsed and faded."
+          },
+          {
+            kind: "toggle",
+            key: "collapseDescription",
+            label: "Shorten the description",
+            description: "Fold each section of the pull request description under its heading. A long description with no headings is cut to 500px with a control to show the rest.",
+            popup: true,
+            popupDescription: "Fold its sections under their headings."
           },
           {
             kind: "toggle",
@@ -11200,6 +11225,8 @@ var init_settings_schema = __esm({
             },
             autoViewed: {
               label: "Mark as viewed automatically",
+              popupLabel: "Mark hidden files viewed",
+              popupDescription: "Tick GitHub\u2019s Viewed box for every hidden file on a pull request. Set it per category in Settings.",
               description: "On pull requests, tick GitHub\u2019s Viewed box for this category\u2019s hidden files, so \u201CN of M files viewed\u201D only waits on what is left to review. Untick one by hand and it stays unticked until the next push."
             }
           }
@@ -11357,16 +11384,8 @@ var init_settings_schema = __esm({
       {
         id: "experiments",
         title: "Experiments",
-        intro: "Features still taking shape: off until you turn them on here, and liable to change. The one running now is the review digest for pull request conversations \u2014 a panel pinned at the top of the conversation tab that gathers open findings and bot verdicts and folds bot comments out of the timeline. The Geld GitHub Action writes the digest as one comment; without it the extension builds the same panel from the page.",
+        intro: "Features still taking shape, and liable to change. Most of them fine-tune the pull request digest: how much of the timeline it folds, how it groups, which bots it reads, and the AI that can write for it. The Geld GitHub Action writes the digest as one comment. Without it the extension builds the same panel from the page.",
         fields: [
-          {
-            kind: "toggle",
-            key: "prOverview",
-            label: "Review digest on pull requests",
-            description: "Show a review panel on the conversation tab: open findings, bot verdicts, and (when compacting) a quieter timeline.",
-            // The one experiment in the popup, under its own "Experiments" heading, so it can be switched while testing.
-            popup: true
-          },
           {
             kind: "choice",
             key: "compactTimeline",
@@ -11389,13 +11408,6 @@ var init_settings_schema = __esm({
               { value: "type", label: "Type", description: "Bots, CI, reviews, rounds and activity, each in its own section." },
               { value: "batch", label: "Push", description: "One row per push with everything that landed between it and the last." }
             ]
-          },
-          {
-            kind: "toggle",
-            key: "collapseDescription",
-            label: "Shorten the description",
-            description: "Fold each section of the pull request description under its heading. A long description with no headings is cut to 500px with a control to show the rest.",
-            popup: false
           },
           {
             kind: "toggle",
@@ -11700,6 +11712,7 @@ __export(src_exports, {
   hiddenCategoryFromCustom: () => hiddenCategoryFromCustom,
   isAnyCategoryId: () => isAnyCategoryId,
   isAutoViewed: () => isAutoViewed,
+  isAutoViewedForAll: () => isAutoViewedForAll,
   isCategoryEnabled: () => isCategoryEnabled,
   isCategoryIconName: () => isCategoryIconName,
   isCategoryId: () => isCategoryId,
@@ -11767,6 +11780,7 @@ __export(src_exports, {
   validateSettingsDocument: () => validateSettingsDocument,
   validateSettingsValue: () => validateSettingsValue,
   verifyCatalogSignature: () => verifyCatalogSignature,
+  withAutoViewedForAll: () => withAutoViewedForAll,
   withCategoryEnabled: () => withCategoryEnabled,
   withCustomCategory: () => withCustomCategory,
   withRepoRule: () => withRepoRule,
@@ -32179,14 +32193,18 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     }
     if (comment.resolved === void 0 && isTriggerComment(comment.body, extraLogins)) {
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
+      const viaWorkflow = geldRunBots(comment.body).length > 0;
+      const workflow = viaWorkflow ? geldRunAnswer(comment) : null;
       for (const asked of botsTriggeredBy(comment.body, extraLogins)) {
         if (asked.id === id) continue;
-        if (!Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === "reaction" && !reactedBy(comment, asked.id)) continue;
+        if (viaWorkflow && (workflow === "failed" || workflow === null && !Number.isNaN(at) && now - at > ACK_GRACE_MS)) continue;
+        if (!viaWorkflow && !Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === "reaction" && !reactedBy(comment, asked.id)) continue;
         const prior = threadRuns.get(asked.id);
         if (prior !== void 0) runsBeforeAsk.set(asked.id, prior);
         threadRuns.delete(asked.id);
         unthreadedBy.delete(asked.id);
-        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged: botById(asked.id)?.acknowledges === "reaction" && reactedBy(comment, asked.id), askedAt: Number.isNaN(at) ? null : at });
+        const acknowledged = viaWorkflow ? workflow === "queued" : botById(asked.id)?.acknowledges === "reaction" && reactedBy(comment, asked.id);
+        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged, askedAt: Number.isNaN(at) ? null : at });
       }
       continue;
     }
@@ -32430,6 +32448,13 @@ function plainTrigger(text) {
   return text.replace(/[`*>~]/g, "").replace(/(^|\s)_+(?=\S)/g, "$1").replace(/(?<=\S)_+(?=\s|$)/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 function botsTriggeredBy(body, extraLogins = []) {
+  const viaWorkflow = geldRunBots(body);
+  if (viaWorkflow.length > 0) {
+    return viaWorkflow.flatMap((id) => {
+      const bot = botById(id);
+      return bot === null ? [] : [{ id: bot.id, login: bot.logins[0] ?? bot.id }];
+    });
+  }
   const text = ` ${plainTrigger(body)} `;
   const out = [];
   for (const bot of REVIEW_BOTS) {
@@ -32443,8 +32468,23 @@ function botsTriggeredBy(body, extraLogins = []) {
   }
   return out;
 }
+var API_TRIGGER_BOT_IDS = ["greptile", "bugbot", "devin"];
+var GELD_RUN = /^\/geld[ \t]+run[ \t]+([a-z][a-z0-9-]*(?:[ \t,]+[a-z][a-z0-9-]*)*)[ \t]*$/i;
+function geldRunBots(body) {
+  const match = GELD_RUN.exec(body.trim());
+  if (match?.[1] === void 0) return [];
+  const ids = [...new Set(match[1].toLowerCase().split(/[ \t,]+/).filter((id) => id !== ""))];
+  return ids.every((id) => API_TRIGGER_BOT_IDS.includes(id)) ? ids : [];
+}
+function geldRunAnswer(comment) {
+  const fromApps = (comment.reactions ?? []).filter((reaction) => /\[bot\]$/i.test(reaction.login) || reaction.login.toLowerCase() === "github-actions");
+  if (fromApps.some((reaction) => reaction.emoji.toLowerCase() === "thumbs down")) return "failed";
+  if (fromApps.some((reaction) => reaction.emoji.toLowerCase() === "rocket")) return "queued";
+  return null;
+}
 var GENERIC_TRIGGER = /^(?:@[\w-]+(?:\[bot\])?|\/[\w-]+)(?:\s+(?:review|run|rerun|re-run|retrigger|full review|summary))?$/i;
 function isTriggerComment(body, extraLogins = []) {
+  if (geldRunBots(body).length > 0) return true;
   const lines2 = body.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "");
   if (lines2.length > 1) return lines2.length <= 6 && lines2.every((line) => isTriggerComment(line, extraLogins));
   if (isSingleTrigger(body, extraLogins)) return true;
@@ -33726,7 +33766,7 @@ function buildMeta(pr, options) {
     return review === void 0 ? created : review.at;
   };
   const ordered = [
-    ...pr.comments.map((comment) => ({ comment: { author: comment.author, body: comment.body, anchor: `issuecomment-${comment.databaseId}`, createdAt: comment.createdAt, ...comment.editedAt === void 0 ? {} : { editedAt: comment.editedAt } }, at: Date.parse(comment.createdAt), rank: 0 })),
+    ...pr.comments.map((comment) => ({ comment: { author: comment.author, body: comment.body, anchor: `issuecomment-${comment.databaseId}`, createdAt: comment.createdAt, ...comment.editedAt === void 0 ? {} : { editedAt: comment.editedAt }, ...comment.reactions === void 0 ? {} : { reactions: comment.reactions } }, at: Date.parse(comment.createdAt), rank: 0 })),
     ...pr.reviews.map((review) => ({ comment: { author: review.author, body: review.body, anchor: `pullrequestreview-${review.databaseId}`, ...review.submittedAt === null ? {} : { createdAt: review.submittedAt } }, at: Date.parse(review.submittedAt ?? ""), rank: 0 })),
     ...pr.threads.flatMap((thread) => {
       const first = thread.comments[0];
@@ -34156,7 +34196,10 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
       }
       comments(first: 50, after: $commentCursor) {
         pageInfo { hasNextPage endCursor }
-        nodes { databaseId author { login __typename } body createdAt lastEditedAt }
+        nodes {
+          databaseId author { login __typename } body createdAt lastEditedAt
+          reactionGroups { content reactors(first: 10) { nodes { __typename ... on Bot { login } ... on User { login } } } }
+        }
       }
       reviews(first: 50, after: $reviewCursor) {
         pageInfo { hasNextPage endCursor }
@@ -34211,6 +34254,12 @@ async function remainingThreadComments(client, threadId, first) {
     cursor = data.node.comments.pageInfo.endCursor;
   }
   return nodes;
+}
+function reactionsOf(groups) {
+  return (groups ?? []).flatMap((group) => {
+    const emoji3 = group.content.toLowerCase().replace(/_/g, " ");
+    return group.reactors.nodes.flatMap((reactor) => typeof reactor.login === "string" ? [{ login: loginOf({ login: reactor.login, ...reactor.__typename === void 0 ? {} : { __typename: reactor.__typename } }), emoji: emoji3 }] : []);
+  });
 }
 var CHECK_CONTEXTS_QUERY = `
 query GeldCheckContexts($owner: String!, $name: String!, $oid: GitObjectID!, $cursor: String) {
@@ -34320,12 +34369,14 @@ async function loadPullRequest(client, owner, repo, number4) {
       });
     }
     for (const node2 of pr.comments.nodes) {
+      const reactions = reactionsOf(node2.reactionGroups);
       comments.push({
         databaseId: node2.databaseId,
         author: loginOf(node2.author),
         body: node2.body,
         createdAt: node2.createdAt,
-        ...typeof node2.lastEditedAt === "string" ? { editedAt: node2.lastEditedAt } : {}
+        ...typeof node2.lastEditedAt === "string" ? { editedAt: node2.lastEditedAt } : {},
+        ...reactions.length === 0 ? {} : { reactions }
       });
     }
     for (const node2 of pr.reviews.nodes) {

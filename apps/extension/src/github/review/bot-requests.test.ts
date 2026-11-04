@@ -58,6 +58,13 @@ describe('botRequestStates', () => {
     expect(states.has('bugbot')).toBe(false);
   });
 
+  it('reads the Geld workflow\u2019s answer to a /geld run command, not the bot\u2019s', () => {
+    const run = (reactions: BotComment['reactions']): BotComment => ({ ...trigger(T0, '/geld run greptile'), ...(reactions === undefined ? {} : { reactions }) });
+    expect(botRequestStates(input({ comments: [run(undefined)], bots: [record('greptile', 'greptile-apps[bot]', 'running')], now: T0 + 30_000 })).get('greptile')).toEqual({ kind: 'starting', until: T0 + REQUEST_ACK_SLOW_MS });
+    expect(botRequestStates(input({ comments: [run([{ login: 'github-actions[bot]', emoji: 'rocket' }])], now: T0 + 30_000 })).has('greptile')).toBe(false);
+    expect(botRequestStates(input({ comments: [run([{ login: 'github-actions[bot]', emoji: 'thumbs down' }])], now: T0 + 5_000 })).get('greptile')).toEqual({ kind: 'unanswered', reason: 'silent' });
+  });
+
   it('does not read a bot quoting its own command as a request', () => {
     const own: BotComment = { author: 'greptile-apps[bot]', body: 'Comment @greptileai to re-run', anchor: 'issuecomment-3', createdAt: iso(T0) };
     expect(botRequestStates(input({ comments: [own], now: T0 + 1_000 })).size).toBe(0);

@@ -1,5 +1,5 @@
 import type { BotComment, BotVerdictRecord, RawCheckRun } from '@geld/review';
-import { botByCheckName, botById, botsTriggeredBy } from '@geld/review';
+import { botByCheckName, botById, botsTriggeredBy, geldRunAnswer, geldRunBots } from '@geld/review';
 
 /** A bot that answers a trigger with a reaction does so within seconds: past this it most likely never saw the request. */
 export const REQUEST_ACK_MS = 20_000;
@@ -95,9 +95,17 @@ export function botRequestStates(input: BotRequestInput): ReadonlyMap<string, Bo
     const record = input.bots.find((bot) => bot.id === id);
     const logins = loginsOf(id, posted?.login ?? record?.login ?? id);
     const since = posted?.at ?? click?.at ?? input.now;
-    if (acknowledged(id, logins, posted?.comment ?? null, since, input)) continue;
+    // A `/geld run` command is answered by the Geld workflow, not the bot: its 🚀 is the run taken, its 👎 no run.
+    const viaWorkflow = posted !== null && geldRunBots(posted.comment.body).length > 0;
+    const workflow = viaWorkflow && posted !== null ? geldRunAnswer(posted.comment) : null;
+    if (workflow === 'failed') {
+      out.set(id, { kind: 'unanswered', reason: 'silent' });
+      continue;
+    }
+    if (workflow === 'queued' || acknowledged(id, logins, posted?.comment ?? null, since, input)) continue;
     const start = click?.at ?? since;
-    const window = botById(id)?.acknowledges === 'reaction' ? REQUEST_ACK_MS : REQUEST_ACK_SLOW_MS;
+    // The workflow's job has to start before it can answer, which takes longer than a bot's reaction.
+    const window = !viaWorkflow && botById(id)?.acknowledges === 'reaction' ? REQUEST_ACK_MS : REQUEST_ACK_SLOW_MS;
     if (input.now - start < window) {
       out.set(id, { kind: 'starting', until: start + window });
       continue;

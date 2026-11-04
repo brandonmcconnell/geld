@@ -8,7 +8,7 @@
 import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import type { BotComment, BotVerdictRecord, CommentLane, GeldPrMeta, RawCheckRun, ReviewItem, ReviewerState } from '@geld/review';
-import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, commandReply, firstSentence, isOpenStatus, isReviewShaped, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, mergeCheckRuns, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
+import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, commandReply, firstSentence, isOpenStatus, isReviewShaped, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, mergeCheckRuns, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage, pullRequestStateWords } from '../page';
@@ -53,7 +53,7 @@ import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import type { RepoBotsHint } from './panel-model';
-import { NO_REPO_BOTS, requestableBots } from './panel-model';
+import { NO_REPO_BOTS, requestableBots, triggerFor } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
 import { chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
 import type { ChatByline, ChatRerun, ChatThreadLink } from './chat';
@@ -519,6 +519,7 @@ function botCommentsOf(crawled: Crawled, settings: GeldSettings): readonly BotCo
       anchor: comment.anchor,
       ...(comment.createdAt === '' ? {} : { createdAt: comment.createdAt }),
       ...(comment.reactedBy === undefined ? {} : { reactedBy: comment.reactedBy }),
+      ...(comment.reactions === undefined ? {} : { reactions: comment.reactions }),
       ...(edited === null ? {} : { editedAt: edited }),
       ...(comment.kind === 'thread' && comment.isResolved !== undefined ? { resolved: comment.isResolved } : {}),
     };
@@ -2155,7 +2156,7 @@ function withRerun(byline: ChatByline, author: string, anchor: string, meta: Gel
 
 /** Geld's Rerun for a bot with a trigger phrase (none: the control cannot ask, so there is none). */
 function rerunFor(id: string, author: string, meta: GeldPrMeta, reapply: () => void): ChatRerun | null {
-  const trigger = rerunTriggerFor(id);
+  const trigger = triggerFor(id, repoBots);
   if (trigger === null) return null;
   // A request still starting is laid over the verdicts as running (`withBotRequests`), so the click spins it too.
   const running = meta.bots.some((bot) => bot.id === id && bot.verdict === 'running');
@@ -2166,7 +2167,8 @@ function rerunFor(id: string, author: string, meta: GeldPrMeta, reapply: () => v
       const requests = visit.requests;
       const at = Date.now();
       requests.set(id, { at, posted: null });
-      void postTopLevelComments([trigger]).then((posted) => {
+      // Read at the click: the repository's workflow may have been found since this control was drawn.
+      void postTopLevelComments([triggerFor(id, repoBots) ?? trigger]).then((posted) => {
         if (requests.get(id)?.at === at) requests.set(id, { at, posted: posted > 0 });
         reapplySoon();
       });
@@ -3308,7 +3310,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     },
     onRequest: (botIds) => {
       const requested = botIds.flatMap((id) => {
-        const trigger = rerunTriggerFor(id);
+        const trigger = triggerFor(id, repoBots);
         return trigger === null ? [] : [{ id, trigger }];
       });
       // This visit's map: a move to another pull request while the posts are out gives the new one a map of its own.
