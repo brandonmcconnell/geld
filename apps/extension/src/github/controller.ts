@@ -47,6 +47,8 @@ import type { RepoBotsHint } from './review/panel-model';
 import { LIVE_CATCH_UP_EVENT, liveCatchUpDue } from './review/live-regions';
 import { catchUpTimeline } from './review/timeline-catchup';
 import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
+import { setFlowSource } from './review/flow';
+import type { FlowSource } from './review/flow';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { applyTestFolds, clearTestFolds, forgetLinkedFold, hasHiddenLines } from './ui/test-folds';
 import { wholeFile } from './whole-file';
@@ -880,6 +882,23 @@ export class GeldController {
     return state.status === 'ready' ? state.files.map((file) => file.path) : null;
   }
 
+  /** The changed files the digest's Flow diagram draws, each with the hidden category the reader's settings give it. */
+  private pageFlowSource(page: PageInfo, url: URL, matcher: PathMatcher): FlowSource | null {
+    if (page.kind !== 'pull-conversation' || page.diffUrl === null || !this.settings.prOverview) return null;
+    const pull = /^\/([^/]+\/[^/]+)\/pull\/\d+/.exec(url.pathname);
+    if (pull?.[1] === undefined) return null;
+    const sha = this.diffShaFor(page, url);
+    const state = this.diffSource.request(page.diffUrl, sha, 'page');
+    if (state.status !== 'ready') return null;
+    return {
+      origin: url.origin,
+      repo: pull[1],
+      pullPath: pull[0],
+      headSha: sha,
+      files: state.files.map((file) => ({ path: file.path, status: file.status ?? 'modified', additions: file.additions, deletions: file.deletions, hiddenAs: matcher.categorizeFile(file)?.title ?? null, removedImports: file.removedImports ?? [] })),
+    };
+  }
+
   /**
    * What the repository says about its review bots, for the Request a review
    * menu on the conversation tab: the ids its config declares (only once the
@@ -1063,7 +1082,10 @@ export class GeldController {
     }
     const trackerConfig=repo!==null&&this.repoDecision(repo)==='use'?this.resolvedConfig(repo):null;
     applyTrackerLinks(this.settings,trackerConfig?validConfigs(trackerConfig):[]);
-    if (!skipReview) applyReviewOverview(this.settings, this.pageDiffPaths(), this.repoBotsHint(page, repo));
+    if (!skipReview) {
+      setFlowSource(this.pageFlowSource(page, url, matcher));
+      applyReviewOverview(this.settings, this.pageDiffPaths(), this.repoBotsHint(page, repo));
+    }
 
     const effectiveHidden = headerHidden ?? hidden;
     this.publish({

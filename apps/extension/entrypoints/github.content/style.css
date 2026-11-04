@@ -2819,6 +2819,25 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   background: var(--geld-review-hover);
 }
 
+/* Lucide's marks are outlines: GitHub's `.octicon { fill: currentColor }` would fill their shapes solid (the Flow mark's two boxes rendered as blobs). */
+svg.geld-lucide {
+  fill: none !important;
+}
+
+/* The Flow control: the same icon button as the grouping control, its mark and its name. */
+.geld-review__icon.geld-review__flow-btn {
+  width: auto;
+  gap: 5px;
+  padding: 0 8px 0 7px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.geld-review__flow-btn .octicon {
+  width: 16px;
+  height: 16px;
+}
+
 /* The grouping control: an icon button like the copy button beside it, widened by the current choice's name. */
 .geld-review__grouping {
   position: relative;
@@ -7868,11 +7887,13 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 
   /* The grouping and AI controls are their marks alone, the copy button's square. */
   .geld-review__grouping-label,
+  .geld-review__flow-label,
   .geld-review__ai-label {
     display: none;
   }
 
   .geld-review__icon.geld-review__grouping-btn,
+  .geld-review__icon.geld-review__flow-btn,
   .geld-review__icon.geld-review__ai-btn {
     width: 28px;
     padding: 0;
@@ -7927,3 +7948,446 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 .geld-links-row a { display: inline-flex; align-items: center; gap: 5px; }
 .geld-tracker-icon { display: inline-flex; width: 16px; height: 16px; overflow: hidden; }
 .geld-tracker-icon svg { width: 16px; height: 16px; flex: none; }
+
+
+/* Flow: the changed files as cards, linked from each file to what it imports. */
+.geld-flow.Overlay {
+  display: flex;
+  flex-direction: column;
+  width: min(1240px, calc(100vw - 48px));
+  max-width: none;
+  height: min(880px, calc(100vh - 48px));
+  max-height: none;
+  padding: 0;
+}
+
+.geld-flow::backdrop {
+  background-color: var(--overlay-backdrop-bgColor, rgba(31, 35, 40, 0.5));
+}
+
+.geld-flow__header {
+  border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));
+}
+
+/*
+ * Primer's header leaves its bottom padding to the body below, which here is the diagram: even it out so the title
+ * and the buttons sit centred in the bar. Prefixed with the dialog: GitHub's `.Overlay-header .Overlay-headerContentWrap`
+ * has the same weight and loads after the extension's sheet, so an equal selector loses.
+ */
+dialog.geld-flow .geld-flow__header > .Overlay-headerContentWrap {
+  align-items: center;
+  padding: 8px;
+}
+
+dialog.geld-flow .geld-flow__actions {
+  align-self: center;
+}
+
+dialog.geld-flow .geld-flow__header .Overlay-titleWrap {
+  align-self: center;
+  padding: 0 0 0 8px;
+}
+
+dialog.geld-flow .geld-flow__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  line-height: 20px;
+}
+
+.geld-flow__title .octicon {
+  color: var(--fgColor-muted, var(--color-fg-muted));
+}
+
+.geld-flow__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The stage holds the scrolling diagram and the controls that float over its corner. */
+.geld-flow__stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 !important;
+  overflow: hidden;
+  background-color: var(--bgColor-muted, var(--color-canvas-subtle));
+  background-image: radial-gradient(var(--borderColor-default, var(--color-border-default)) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+.geld-flow__scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  padding: 8px 0 72px;
+}
+
+.geld-flow__canvas {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: max-content;
+  min-width: 100%;
+}
+
+.geld-flow__canvas > .geld-flow__loose,
+.geld-flow__canvas > .geld-flow__note {
+  align-self: stretch;
+}
+
+.geld-flow__graph {
+  position: relative;
+  flex: 0 0 auto;
+  margin: 0 auto 16px;
+}
+
+.geld-flow__links {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.geld-flow__link {
+  fill: none;
+  stroke: var(--borderColor-emphasis, var(--color-border-default));
+  stroke-width: 1.5;
+  transition: opacity 120ms ease, stroke 120ms ease;
+}
+
+.geld-flow__arrow {
+  fill: var(--borderColor-emphasis, var(--color-border-default));
+}
+
+.geld-flow__link[data-removed] {
+  stroke: var(--fgColor-danger, var(--color-danger-fg));
+  stroke-dasharray: 4 4;
+}
+
+.geld-flow__graph[data-focus] .geld-flow__link {
+  opacity: 0.2;
+}
+
+.geld-flow__graph[data-focus] .geld-flow__link[data-lit] {
+  opacity: 1;
+  stroke: var(--fgColor-accent, var(--color-accent-fg));
+}
+
+.geld-flow__node {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 224px;
+  height: 58px;
+  padding: 8px 12px;
+  border: 1px solid var(--borderColor-default, var(--color-border-default));
+  border-radius: 8px;
+  background: var(--bgColor-default, var(--color-canvas-default));
+  box-shadow: var(--shadow-resting-small, 0 1px 1px rgba(31, 35, 40, 0.04));
+  color: var(--fgColor-default, var(--color-fg-default));
+  text-decoration: none !important;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.geld-flow__node:hover {
+  border-color: var(--borderColor-accent-emphasis, var(--color-accent-emphasis));
+  box-shadow: var(--shadow-floating-small, 0 3px 6px rgba(140, 149, 159, 0.15));
+}
+
+.geld-flow__node:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, var(--color-accent-fg));
+  outline-offset: 2px;
+}
+
+.geld-flow__node[data-status='added'] {
+  border-color: var(--borderColor-success-muted, var(--color-success-muted));
+}
+
+.geld-flow__node[data-status='deleted'] {
+  border-color: var(--borderColor-danger-muted, var(--color-danger-muted));
+}
+
+.geld-flow__node[data-status='renamed'] {
+  border-color: var(--borderColor-attention-muted, var(--color-attention-muted));
+}
+
+.geld-flow__node[data-hidden] {
+  border-style: dashed;
+}
+
+.geld-flow__meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+/* GitHub's file-tree icons, at the size of the line they lead (the svg's own box, so it centres on the text). */
+.geld-flow__status-icon {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  vertical-align: middle !important;
+}
+
+.geld-flow__status {
+  flex: 0 0 auto;
+}
+
+.geld-flow__dir {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.geld-flow__tag {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 6px;
+  border: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.geld-flow__name-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.geld-flow__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-flow__node[data-status='deleted'] .geld-flow__name {
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  text-decoration: line-through;
+}
+
+.geld-flow__counts {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+}
+
+.geld-flow__add {
+  color: var(--fgColor-success, var(--color-success-fg));
+}
+
+.geld-flow__del {
+  color: var(--fgColor-danger, var(--color-danger-fg));
+}
+
+.geld-flow__loose {
+  padding: 8px 28px 0;
+}
+
+.geld-flow__loose-title {
+  margin: 8px 0 10px;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.geld-flow__loose-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 224px);
+  gap: 12px;
+}
+
+.geld-flow__loose-grid > .geld-flow__node {
+  position: relative;
+}
+
+.geld-flow__note {
+  margin: 12px 28px 0;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font-size: 12px;
+}
+
+/* Floating over the diagram's lower corners: what is still being read on the left, the legend and zoom on the right. */
+.geld-flow__reading {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--borderColor-default, var(--color-border-default));
+  border-radius: 6px;
+  background: var(--bgColor-default, var(--color-canvas-default));
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font-size: 12px;
+  line-height: 22px;
+}
+
+.geld-flow__reading[hidden] {
+  display: none;
+}
+
+.geld-flow__controls {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.geld-flow__ctl {
+  box-sizing: border-box;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--button-default-borderColor-rest, var(--color-btn-border));
+  border-radius: var(--borderRadius-medium, 6px);
+  background: var(--button-default-bgColor-rest, var(--color-btn-bg));
+  box-shadow: var(--button-default-shadow-resting, var(--color-btn-shadow));
+  color: var(--button-default-fgColor-rest, var(--color-btn-text));
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 22px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.geld-flow__ctl:hover:not(:disabled) {
+  border-color: var(--button-default-borderColor-hover, var(--color-btn-hover-border));
+  background: var(--button-default-bgColor-hover, var(--color-btn-hover-bg));
+}
+
+.geld-flow__ctl:active:not(:disabled) {
+  background: var(--button-default-bgColor-active, var(--color-btn-active-bg));
+}
+
+.geld-flow__ctl:disabled {
+  color: var(--fgColor-disabled, var(--color-primer-fg-disabled));
+  cursor: default;
+}
+
+.geld-flow__ctl:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, var(--color-accent-fg));
+  outline-offset: 1px;
+  position: relative;
+  z-index: 1;
+}
+
+.geld-flow__ctl--square {
+  width: 24px;
+  padding: 0;
+}
+
+.geld-flow__zoom {
+  display: inline-flex;
+}
+
+.geld-flow__zoom > .geld-flow__ctl {
+  box-shadow: none;
+}
+
+.geld-flow__zoom > .geld-flow__ctl:not(:first-child) {
+  margin-left: -1px;
+}
+
+.geld-flow__zoom > .geld-flow__ctl:not(:first-child, :last-child) {
+  border-radius: 0;
+}
+
+.geld-flow__zoom > .geld-flow__ctl:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.geld-flow__zoom > .geld-flow__ctl:last-child {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.geld-flow__zoom-level {
+  min-width: 56px;
+}
+
+/* The legend opens upward, as wide as the whole control row (the legend button's left to zoom's right), in two columns, as one of GitHub's small overlays. */
+.geld-flow__legend {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  border-radius: var(--borderRadius-large, 12px);
+  background: var(--overlay-bgColor, var(--color-canvas-overlay));
+  box-shadow: var(--shadow-floating-small, 0 0 0 1px rgba(209, 217, 224, 0.5), 0 6px 12px -3px rgba(37, 41, 46, 0.04), 0 6px 18px 0 rgba(37, 41, 46, 0.12));
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.geld-flow__legend[hidden] {
+  display: none;
+}
+
+.geld-flow__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Open, only the border says so: the button keeps GitHub's own face. */
+.geld-flow__legend-btn[aria-expanded='true'],
+.geld-flow__legend-btn[aria-expanded='true']:hover {
+  border-color: var(--borderColor-accent-emphasis, var(--color-accent-emphasis));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .geld-flow__link,
+  .geld-flow__node {
+    transition: none;
+  }
+}
+
+/* The legend button's chevron points the way the legend opens (up), and turns over once it is open. */
+.geld-flow__legend-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 6px;
+}
+
+.geld-flow__chevron {
+  width: 12px;
+  height: 12px;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  transform: rotate(180deg);
+}
+
+.geld-flow__legend-btn[aria-expanded='true'] .geld-flow__chevron {
+  transform: none;
+}
