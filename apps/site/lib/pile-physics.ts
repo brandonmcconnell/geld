@@ -61,13 +61,17 @@ const FRICTION = 0.8;
 const ITERATIONS = 6;
 const MAX_SPEED = 3200;
 /** The most speed a body takes from being pushed out of an overlap, so untangling a heap never launches it. */
-const CORRECTION_SPEED = 900;
+const CORRECTION_SPEED = 250;
+/** Two bodies meeting slower than this are resting against each other rather than colliding. */
+const CONTACT_SPEED = 150;
+/** How close a resting body's bottom must be to what is under it to count as held up. */
+const TOUCH = 2;
 const SETTLE_SPEED = 90;
 const SETTLE_AFTER_GHOST = 1;
 const SETTLE_AT_MOST = 2;
 /** The share of an overlap resolved per iteration while settling. */
 const SETTLE_SHARE = 0.15;
-const SLEEP_SPEED = 12;
+const SLEEP_SPEED = 50;
 const SLEEP_AFTER = 24;
 /** How far per substep a body overhanging the edge of what it rests on slides off it. */
 const SPILL = 0.7;
@@ -122,6 +126,11 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
       body.scale += (ABSORBED_SCALE - body.scale) * Math.min(1, 7 * dt);
       if (body.angle !== undefined) body.angle *= Math.exp(-8 * dt);
       if (Math.hypot(dx, dy) < SWALLOW_DISTANCE) body.mode = 'hidden';
+      // Whatever it was doing on the floor is over: let go mid-flight, it falls as a body that has just been thrown.
+      body.ghost = 0;
+      body.settle = 0;
+      body.settleFor = 0;
+      body.still = 0;
       continue;
     }
     free.push(body);
@@ -137,6 +146,8 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
       body.settleFor = Math.max(0, (body.settleFor ?? 0) - dt);
     }
     body.scale += (1 - body.scale) * Math.min(1, 10 * dt);
+    // Resting stops gravity, so a body whose support was taken away (gathered into the digest, dragged off) would hang in the air.
+    if (!body.held && body.still >= SLEEP_AFTER && !supported(body, bodies, world)) body.still = 0;
     if (body.held || body.still >= SLEEP_AFTER) continue;
     body.vy += GRAVITY * dt;
     const speed = Math.hypot(body.vx, body.vy);
@@ -252,6 +263,22 @@ export function coreOf(body: Body): Rect {
   return { left: r.left + dx, top: r.top + dy, right: r.right - dx, bottom: r.bottom - dy };
 }
 
+/** Whether something is under a body to hold it up: the floor, an obstacle's top, or another body it rests on. */
+function supported(body: Body, bodies: readonly Body[], world: World): boolean {
+  const r = rectOf(body);
+  if (r.bottom >= world.floor - TOUCH) return true;
+  for (const obstacle of world.obstacles) {
+    if (r.right > obstacle.left && r.left < obstacle.right && r.bottom >= obstacle.top - TOUCH && r.top < obstacle.top) return true;
+  }
+  const core = coreOf(body);
+  for (const other of bodies) {
+    if (other === body || other.mode !== 'free') continue;
+    const under = coreOf(other);
+    if (core.right > under.left && core.left < under.right && core.bottom >= under.top - TOUCH && core.top < under.top) return true;
+  }
+  return false;
+}
+
 /** Separate two overlapping bodies; a held body does not move, so the other takes all of it. */
 function separate(a: Body, b: Body, grounded: Set<Body>): void {
   const ra = coreOf(a);
@@ -260,6 +287,9 @@ function separate(a: Body, b: Body, grounded: Set<Body>): void {
   const oy = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
   if (ox <= 0 || oy <= 0) return;
   if (a.held && b.held) return;
+  // Two resting bodies are a heap of papers, left overlapping however they came to rest: prying them apart only ever reads as the heap shaking.
+  if (!a.held && !b.held && a.still >= SLEEP_AFTER && b.still >= SLEEP_AFTER) return;
+  const slow = !a.held && !b.held && Math.hypot(a.vx - b.vx, a.vy - b.vy) < CONTACT_SPEED;
   if ((a.ghost ?? 0) > 0 && (b.ghost ?? 0) > 0) return;
   // A card in flight that meets one already down comes to rest on it the gentle way.
   for (const body of [a, b]) {
@@ -276,18 +306,27 @@ function separate(a: Body, b: Body, grounded: Set<Body>): void {
     if (!a.held && (a.settleFor ?? 0) > 0) a.settle = Math.max(a.settle ?? 0, 0.25);
     if (!b.held && (b.settleFor ?? 0) > 0) b.settle = Math.max(b.settle ?? 0, 0.25);
   }
-  // A resting body pushed by a moving one takes the whole push, so a pile stays put under a single landing.
+  // A resting body pushed by a moving one takes none of the push, so a pile stays put under a single landing; side by side and slow, they make room for each other.
   const aRests = a.held || a.still >= SLEEP_AFTER;
   const bRests = b.held || b.still >= SLEEP_AFTER;
-  const share = a.held ? 0 : b.held ? 1 : aRests && !bRests ? 0 : bRests && !aRests ? 1 : 0.5;
+  let share = a.held ? 0 : b.held ? 1 : aRests && !bRests ? 0 : bRests && !aRests ? 1 : 0.5;
   if (ox < oy) {
+    if (slow) share = 0.5;
     const sign = a.x < b.x ? -1 : 1;
-    a.x += sign * ox * share * gentle;
-    b.x -= sign * ox * (1 - share) * gentle;
+    const amount = ox * gentle;
+    a.x += sign * amount * share;
+    b.x -= sign * amount * (1 - share);
   } else {
     const sign = a.y < b.y ? -1 : 1;
-    a.y += sign * oy * share * gentle;
-    b.y -= sign * oy * (1 - share) * gentle;
+    // What lies underneath stays put and the one on top gives way, so nothing is pressed down into what holds it up; one rising slowly lifts what rests on it rather than being squeezed under it.
+    if (!a.held && !b.held && (aRests || bRests)) {
+      const lowerRests = sign < 0 ? bRests : aRests;
+      if (lowerRests) share = sign < 0 ? 1 : 0;
+      else if (slow) share = 0.5;
+    }
+    const amount = oy * gentle;
+    a.y += sign * amount * share;
+    b.y -= sign * amount * (1 - share);
     const upper = sign < 0 ? a : b;
     const lower = sign < 0 ? b : a;
     grounded.add(upper);

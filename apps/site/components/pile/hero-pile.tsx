@@ -417,7 +417,8 @@ export function HeroPile() {
         delay += 70;
       } else if (!geld && body.mode !== 'free') {
         // Every item flies out of its line at once, each aimed at a random spot across the free space and launched on the arc that lands it there under ordinary gravity, so the mess lands all over rather than heaped on one side.
-        const from = body.target ?? centre;
+        // Caught on its way in, it flies out from where it is; one already swallowed comes out of its line.
+        const from = body.mode === 'absorbing' ? { x: body.x, y: body.y } : (body.target ?? centre);
         const choices = landing.current?.regions.filter((region) => region.right - region.left >= body.w * 0.6) ?? [];
         const total = choices.reduce((sum, region) => sum + (region.right - region.left) * region.depth, 0);
         // A few spots tried in turn, each with arcs from low to high, until one clears the hero's words all the way.
@@ -436,23 +437,29 @@ export function HeroPile() {
           shot = { vx: Math.cos(away) * (500 + random() * 1400), vy: -150 - random() * 650, flight: 0.5 };
         }
         const { vx, vy, flight } = shot;
-        timers.push(
-          window.setTimeout(() => {
-            body.mode = 'free';
+        const inFlight = body.mode === 'absorbing';
+        const launch = () => {
+          body.mode = 'free';
+          // One on its way in grows back as it flies, rather than snapping to size and to a new tilt where it is.
+          if (!inFlight) {
             body.scale = 1;
-            body.x = from.x;
-            body.y = from.y;
-            body.vx = vx;
-            body.vy = vy;
             body.angle = (random() - 0.5) * 0.8;
-            body.spin = (random() < 0.5 ? -1 : 1) * (6 + random() * 14);
-            // Through the others still in flight, so the arcs are not knocked off course; onto those already down, and solid once it lands.
-            body.ghost = flight * 1.5;
-            body.fence = fence.current;
-            body.still = 0;
-            run();
-          }, random() * 50),
-        );
+          }
+          body.x = from.x;
+          body.y = from.y;
+          body.vx = vx;
+          body.vy = vy;
+          body.spin = (random() < 0.5 ? -1 : 1) * (6 + random() * 14);
+          // Through the others still in flight, so the arcs are not knocked off course; onto those already down, and solid once it lands.
+          body.ghost = flight * 1.5;
+          body.settle = 0;
+          body.settleFor = 0;
+          body.fence = fence.current;
+          body.still = 0;
+          run();
+        };
+        if (inFlight) launch();
+        else timers.push(window.setTimeout(launch, random() * 50));
       }
     });
     wake(bodies.current);
