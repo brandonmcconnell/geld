@@ -370,8 +370,6 @@ export interface PanelModel {
   readonly archivedPreviewsOpen: boolean;
   /** How the main list is arranged (`reviewGrouping`). */
   readonly grouping: 'type' | 'batch';
-  /** Whether the Geld row offers the Flow diagram (the pull request's diff is in, with more than one file). */
-  readonly flow: boolean;
   /** Rounds whose commit rows are unfolded (batch grouping). */
   readonly openCommits: ReadonlySet<string>;
   /** Rounds whose Previews line is unfolded into the per-preview list. */
@@ -2556,7 +2554,6 @@ function signatureOf(model: PanelModel): string {
     folds: model.folds.map((fold) => `${fold.key}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}:${fold.closure?.preview ?? ''}:${fold.headline === undefined ? '' : `${fold.headline.kind}${fold.headline.actor}${fold.headline.target ?? ''}${fold.headline.avatarSrc ?? ''}`}`),
     batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.commits.length}/${batch.commitCount}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
     grouping: model.grouping,
-    flow: model.flow,
     openCommits: [...model.openCommits].sort(),
     openPreviews: [...model.openPreviews].sort(),
     reports: model.reports.latest.map((entry) => `${entry.anchor}${entry.state}${entry.headline}${entry.project ?? ''}${(entry.short ?? []).map((part) => part.text).join('|')}`),
@@ -2743,14 +2740,12 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   const tools = createElement('div', { class: `${PANEL_CLASS}__tools` });
   const aiControl = aiButton(model.ai, handlers);
   if (aiControl !== null) tools.append(aiControl);
-  if (model.flow) {
-    const flow = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__flow-btn`, 'aria-label': 'Flow: how the changed files connect', title: 'How the changed files connect', [ATTR_FOCUS]: 'flow' }, [
-      icon(ICON_WORKFLOW),
-      createElement('span', { class: `${PANEL_CLASS}__flow-label` }, ['Flow']),
-    ]);
-    flow.addEventListener('click', () => handlers.onFlow());
-    tools.append(flow);
-  }
+  const flow = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__flow-btn`, 'aria-label': 'Flow: how the changed files connect', title: 'How the changed files connect', [ATTR_FOCUS]: 'flow' }, [
+    icon(ICON_WORKFLOW),
+    createElement('span', { class: `${PANEL_CLASS}__flow-label` }, ['Flow']),
+  ]);
+  flow.addEventListener('click', () => handlers.onFlow());
+  tools.append(flow);
   tools.append(groupingMenu(model, handlers));
   const copy = iconButton(ICON_COPY, 'Copy digest as Markdown', { [ATTR_FOCUS]: 'copy' });
   copy.addEventListener('click', () => handlers.onCopy());
