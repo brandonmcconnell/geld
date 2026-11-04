@@ -14,6 +14,7 @@ import { Octicon } from '@/components/tour/octicons';
 import { Ping } from '@/components/tour/ping';
 import type { PrTab } from '@/components/tour/pr-window';
 import { PrWindow } from '@/components/tour/pr-window';
+import { DigestStatusRows } from '@/components/tour/scene-digest';
 import { Switch } from '@/components/ui/switch';
 
 /** What each of the tour's files imports now, and (for `src/index.ts`) what it imported before: it no longer reaches `useToggle` itself. */
@@ -35,11 +36,8 @@ const PAD = 14;
 const PORT_SPREAD = 10;
 const CORNER = 8;
 
-const SUMMARY: readonly (readonly [string, string])[] = [
-  ['Reviews', '1/2 approvals · mona approved'],
-  ['Review bots', 'Buggy 1 issue · CodeHopper resolved · Gecko 5/5'],
-  ['CI checks', '18 successful checks'],
-];
+/** The digest scene's own state when it opens, so its rows read the same here. */
+const DIGEST_RESOLVED: ReadonlySet<string> = new Set(['docs']);
 
 interface FlowFile extends TourFile {
   readonly hiddenAs: string | null;
@@ -92,10 +90,11 @@ export function FlowScene() {
         <FilesView files={listed} opened={opened} />
       ) : (
         <div className="m-3 rounded-lg border text-xs">
-          <div className="flex items-center gap-2 px-3 py-2">
+          <div className="flex items-center gap-2 border-b px-3 py-2">
             <span className="font-semibold">Geld</span>
             <Meter done={3} total={5} />
             <span className="min-w-0 truncate text-muted-foreground tabular-nums">3/5 resolved</span>
+            <span className="shrink-0 rounded-full bg-[#9a6700]/12 px-1.5 py-px text-[0.6875rem] font-medium whitespace-nowrap text-[#9a6700] dark:text-[#d29922]">2 need you</span>
             <GeldRowTools>
               <Ping on={!flowOpen} className="inline-flex rounded-md">
                 <button
@@ -113,12 +112,7 @@ export function FlowScene() {
               </Ping>
             </GeldRowTools>
           </div>
-          {SUMMARY.map(([label, text]) => (
-            <div key={label} className="flex items-center gap-3 border-t px-3 py-1.5">
-              <span className="w-20 shrink-0 text-muted-foreground">{label}</span>
-              <span className="min-w-0 truncate">{text}</span>
-            </div>
-          ))}
+          <DigestStatusRows resolved={DIGEST_RESOLVED} />
         </div>
       )}
 
@@ -136,10 +130,10 @@ export function FlowScene() {
           flowOpen ? 'scale-100 opacity-100' : 'pointer-events-none scale-95 opacity-0',
         )}
       >
-        <div className="relative flex h-10 shrink-0 items-center justify-center gap-1.5 border-b bg-muted/40 px-3 text-xs">
+        <div className="flex h-10 shrink-0 items-center gap-1.5 border-b bg-muted/40 pr-2 pl-3 text-xs">
           <WorkflowIcon aria-hidden="true" className="size-3.5 text-muted-foreground" />
           <span className="font-semibold">Flow</span>
-          <span className="absolute right-2 flex items-center gap-2">
+          <span className="ml-auto flex items-center gap-2">
             <label className="inline-flex items-center gap-2 text-muted-foreground">
               <span className="@max-lg:sr-only">Hidden files</span>
               <Switch checked={showHidden} onCheckedChange={setShowHidden} aria-label="Show the files your settings hide" />
