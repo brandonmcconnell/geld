@@ -569,7 +569,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   An App is read from its `/apps/<slug>` path as `<slug>[bot]` (`appLoginOf`), whatever name it shows ("Copilot"), as the API and the Action's payload spell it.
   The panel's name spans carry `whoAttributes` as its avatars do (GitHub's user hovercard, Geld's identity card for an App), and GitHub's own links on loan to the panel (an events list, a comment's author line) show the login too (`showLogins` in the dress phase: a text node "Name (login)" inside a link to that person becomes "login", put back by `onRestore`), so a loaned node still reads the same to the crawl.
 - **Flow: the changed files as a diagram of what imports what** (`review/flow.ts`, `@geld/core/file-flow.ts`).
-  A "Flow" button (Lucide's `workflow` mark, `ICON_WORKFLOW`) stands in the Geld row just left of the grouping control whenever the pull request's diff is in with more than one file (`PanelModel.flow` from `flowAvailable()`).
+  A "Flow" button (Lucide's `workflow` mark, `ICON_WORKFLOW`;
+  Lucide marks are outlines and `svg.geld-lucide` sets `fill: none !important`, since GitHub's `.octicon { fill: currentColor }` otherwise fills their shapes solid) stands in the Geld row just left of the grouping control whenever the pull request's diff is in with more than one file (`PanelModel.flow` from `flowAvailable()`).
   The controller hands the digest its source each conversation pass (`setFlowSource`, `pageFlowSource`: the diff's `FileStats` with each file's hidden category from the reader's matcher).
   Opening it reads every changed file whole at the head from the page's own `raw` route through `pageFetch` (same origin, so private repositories work;
   six at a time, at most 160, 400 KB each;

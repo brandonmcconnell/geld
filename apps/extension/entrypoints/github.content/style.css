@@ -2819,6 +2819,11 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   background: var(--geld-review-hover);
 }
 
+/* Lucide's marks are outlines: GitHub's `.octicon { fill: currentColor }` would fill their shapes solid (the Flow mark's two boxes rendered as blobs). */
+svg.geld-lucide {
+  fill: none !important;
+}
+
 /* The Flow control: the same icon button as the grouping control, its mark and its name. */
 .geld-review__icon.geld-review__flow-btn {
   width: auto;
