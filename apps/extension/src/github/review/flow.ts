@@ -8,11 +8,10 @@ import { ICON_CHEVRON_DOWN, ICON_FILE_ADDED, ICON_FILE_MODIFIED, ICON_FILE_MOVED
 
 /**
  * The Flow dialog: the pull request's changed files as a diagram of which
- * file imports which. Each file is read whole at the head (and, for removed
- * files and the files that may have imported them, at the base) from the
- * page's own `raw` route, its imports resolved against the other changed
- * files by `@geld/core/file-flow`, and the result drawn as cards with SVG
- * links. A card opens its file in the Files changed tab.
+ * file imports which. Each surviving file is read whole at the head from the
+ * page's own `raw` route and removed imports come from the diff itself; both
+ * are resolved against the other changed files by `@geld/core/file-flow` and
+ * drawn as cards with SVG links. A card opens its file in Files changed.
  */
 
 export type FlowFileStatus = 'added' | 'deleted' | 'renamed' | 'modified';
@@ -24,6 +23,8 @@ export interface FlowFile {
   readonly deletions: number;
   /** The hidden category the reader's settings put the file in ("Tests"), or null for an essential file. */
   readonly hiddenAs: string | null;
+  /** The imports the diff's removed lines name (`FileStats.removedImports`): all of a deleted file's, those a surviving file dropped. */
+  readonly removedImports: readonly string[];
 }
 
 export interface FlowSource {
@@ -143,21 +144,6 @@ async function fetchText(url: string): Promise<string | null> {
   return text;
 }
 
-/** The base the pull request merges into, as the page names it: a commit id when the payload carries one, else the branch. */
-function baseRevision(): string | null {
-  for (const script of document.querySelectorAll('script[type="application/json"]')) {
-    const text = script.textContent ?? '';
-    const oid = /"(?:baseRefOid|baseOid|baseSha)"\s*:\s*"([0-9a-f]{40})"/i.exec(text);
-    if (oid?.[1] !== undefined) return oid[1];
-    const name = /"baseRefName"\s*:\s*"([^"]+)"/.exec(text);
-    if (name?.[1] !== undefined) return name[1];
-  }
-  const ref = document.querySelector('.base-ref')?.textContent?.replace(/\s+/g, '').trim() ?? '';
-  if (ref === '') return null;
-  const colon = ref.indexOf(':');
-  return colon < 0 ? ref : ref.slice(colon + 1);
-}
-
 interface Reading {
   readonly after: ReadonlyMap<string, readonly string[]>;
   readonly before: ReadonlyMap<string, readonly string[]>;
@@ -167,31 +153,29 @@ interface Reading {
   readonly unreadable: boolean;
 }
 
+/**
+ * Each file's imports after the change, read whole at the head (surviving files only, in essential-first order,
+ * at most `MAX_READS`), and the imports the diff's removed lines name (`FlowFile.removedImports`: all of a deleted
+ * file's, those a surviving file dropped). The diff is against the merge base, so a link drawn as removed was there
+ * when the pull request branched off, not merely on the base branch's tip.
+ */
 function readFiles(current: FlowSource, files: readonly FlowFile[]): Reading {
   const after = new Map<string, readonly string[]>();
   const before = new Map<string, readonly string[]>();
   const readable = files.filter((file) => canReadImports(file.path));
   const deleted = new Set(files.filter((file) => file.status === 'deleted').map((file) => file.path));
-  if (current.headSha === null) return { after, before, deleted, wanted: 0, landed: 0, unreadable: readable.length > 0 };
-  const removed = readable.filter((file) => file.status === 'deleted');
-  const base = removed.length > 0 ? baseRevision() : null;
+  for (const file of readable) if (file.removedImports.length > 0) before.set(file.path, file.removedImports);
+  if (current.headSha === null) return { after, before, deleted, wanted: 0, landed: 0, unreadable: readable.some((file) => file.status !== 'deleted') };
+  const headSha = current.headSha;
   let wanted = 0;
   let landed = 0;
-  const take = (revision: string, path: string, into: Map<string, readonly string[]>): void => {
-    if (wanted >= MAX_READS) return;
-    wanted += 1;
-    const read = request(current.origin, current.repo, revision, path);
-    if (read.state !== 'pending') landed += 1;
-    if (read.state === 'ready') into.set(path, read.imports);
-  };
   const ordered = [...readable].sort((a, b) => Number(a.hiddenAs !== null) - Number(b.hiddenAs !== null));
   for (const file of ordered) {
-    if (file.status !== 'deleted') take(current.headSha, file.path, after);
-  }
-  if (base !== null) {
-    for (const file of ordered) {
-      if (file.status === 'deleted' || file.status === 'modified') take(base, file.path, before);
-    }
+    if (file.status === 'deleted' || wanted >= MAX_READS) continue;
+    wanted += 1;
+    const read = request(current.origin, current.repo, headSha, file.path);
+    if (read.state !== 'pending') landed += 1;
+    if (read.state === 'ready') after.set(file.path, read.imports);
   }
   return { after, before, deleted, wanted, landed, unreadable: false };
 }

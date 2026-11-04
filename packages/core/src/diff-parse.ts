@@ -1,6 +1,7 @@
 import type { ChangeKindId } from './change-kinds';
 import type { CommentLines, CommentScanState, CommentSyntax } from './comment-lines';
 import { commentSyntaxFor, isCommentOnlyLine, newCommentScanState } from './comment-lines';
+import { canReadImports, importSpecifiers } from './file-flow';
 
 /** What happened to the file as a whole — the icon GitHub's file tree shows for it. */
 export type FileStatus = 'added' | 'deleted' | 'renamed' | 'modified';
@@ -25,6 +26,12 @@ export interface FileStats {
    * is unknown, or when there are too many to be worth carrying around.
    */
   readonly commentLines?: CommentLines;
+  /**
+   * The import specifiers the diff's removed lines name (`importSpecifiers`), for files whose imports Geld can read:
+   * all of a deleted file's, and those a surviving file dropped or rewrote. Read against the merge base, as the diff
+   * is. Absent when there are none (and in cache entries written before this existed).
+   */
+  readonly removedImports?: readonly string[];
 }
 
 /** Above this many comment-only lines in one file the list is dropped (the `comments` kind still applies). */
@@ -89,6 +96,8 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
     newState: CommentScanState;
     commentAdded: number[];
     commentRemoved: number[];
+    /** The removed lines as written, for a file whose imports can be read (else null). */
+    removedLines: string[] | null;
   }
   let current: Current | null = null;
   let inHunk = false;
@@ -107,6 +116,10 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
       let stats: FileStats = { path: current.path, additions: current.additions, deletions: current.deletions, status };
       if (kinds.length > 0) stats = { ...stats, kinds };
       if (commentCount > 0 && commentCount <= MAX_COMMENT_LINES) stats = { ...stats, commentLines: { added: current.commentAdded, removed: current.commentRemoved } };
+      if (current.removedLines !== null && current.removedLines.length > 0) {
+        const removedImports = importSpecifiers(current.path, current.removedLines.join('\n'));
+        if (removedImports.length > 0) stats = { ...stats, removedImports };
+      }
       files.push(stats);
     }
     current = null;
@@ -138,6 +151,7 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
               newState: newCommentScanState(),
               commentAdded: [],
               commentRemoved: [],
+              removedLines: canReadImports(path) ? [] : null,
             };
       inHunk = false;
       continue;
@@ -181,6 +195,7 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
       current.deletions += 1;
       const text = line.slice(1);
       current.removed.push(text.replace(WHITESPACE, ''));
+      current.removedLines?.push(text);
       if (current.syntax !== null && isCommentOnlyLine(text, current.syntax, current.oldState)) current.commentRemoved.push(current.oldLine);
       current.oldLine += 1;
     } else if (line.startsWith(' ') || line === '') {

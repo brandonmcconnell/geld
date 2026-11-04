@@ -100,3 +100,38 @@ describe('parseUnifiedDiff', () => {
     expect(parseUnifiedDiff('')).toEqual([]);
   });
 });
+
+describe('parseUnifiedDiff removedImports', () => {
+  it('reads the imports a surviving file dropped and every import of a deleted one', () => {
+    const diff = [
+      'diff --git a/src/a.ts b/src/a.ts',
+      'index 1111111..2222222 100644',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -1,3 +1,2 @@',
+      " import { c } from './c';",
+      "-import { b } from './b';",
+      '-const x = 1;',
+      '+const x = 2;',
+      'diff --git a/src/gone.ts b/src/gone.ts',
+      'deleted file mode 100644',
+      'index 3333333..0000000',
+      '--- a/src/gone.ts',
+      '+++ /dev/null',
+      '@@ -1,2 +0,0 @@',
+      "-import { a } from './a';",
+      "-export * from './c';",
+      'diff --git a/README.md b/README.md',
+      'index 4444444..5555555 100644',
+      '--- a/README.md',
+      '+++ b/README.md',
+      '@@ -1 +1 @@',
+      "-import x from './nope'",
+      '+text',
+    ].join('\n');
+    const files = parseUnifiedDiff(diff);
+    expect(files.find((file) => file.path === 'src/a.ts')?.removedImports).toEqual(['./b']);
+    expect(files.find((file) => file.path === 'src/gone.ts')?.removedImports).toEqual(['./a', './c']);
+    expect(files.find((file) => file.path === 'README.md')?.removedImports).toBeUndefined();
+  });
+});

@@ -1879,6 +1879,230 @@ var init_test_outline = __esm({
   }
 });
 
+// ../../packages/core/src/file-flow.ts
+function extensionOf(path) {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  const dot = name.lastIndexOf(".");
+  return dot <= 0 ? "" : name.slice(dot).toLowerCase();
+}
+function languageOf(path) {
+  const extension = extensionOf(path);
+  if (SCRIPT_EXTENSIONS.includes(extension)) return "script";
+  if (STYLE_EXTENSIONS.includes(extension)) return "style";
+  if (extension === ".py") return "python";
+  if (extension === ".rs") return "rust";
+  return null;
+}
+function canReadImports(path) {
+  return languageOf(path) !== null;
+}
+function collect(text, patterns) {
+  const found = [];
+  for (const pattern of patterns) {
+    pattern.lastIndex = 0;
+    for (const match of text.matchAll(pattern)) {
+      const value = match[1];
+      if (value !== void 0 && value !== "") found.push(value);
+    }
+  }
+  return found;
+}
+function pythonNames(list2) {
+  return list2.replace(/[()]/g, " ").split(",").map((part) => part.trim().split(/\s+as\s+/)[0]?.trim() ?? "").filter((name) => name !== "" && name !== "*" && /^[\w.]+$/.test(name));
+}
+function importSpecifiers(path, text) {
+  const language = languageOf(path);
+  if (language === null) return [];
+  const code = scrub(language, text);
+  if (language === "script") return unique(collect(code, SCRIPT_PATTERNS));
+  if (language === "style") return unique(collect(code, STYLE_PATTERNS));
+  if (language === "rust") return unique(collect(code, RUST_PATTERNS).map((name) => `mod:${name}`));
+  const modules = [];
+  PYTHON_FROM.lastIndex = 0;
+  for (const match of code.matchAll(PYTHON_FROM)) {
+    const module2 = match[1] ?? "";
+    if (module2 === "") continue;
+    modules.push(module2);
+    for (const name of pythonNames(match[2] ?? "")) modules.push(/^\.+$/.test(module2) ? module2 + name : `${module2}.${name}`);
+  }
+  PYTHON_IMPORT.lastIndex = 0;
+  for (const match of code.matchAll(PYTHON_IMPORT)) modules.push(...pythonNames(match[1] ?? ""));
+  return unique(modules);
+}
+function blank(text) {
+  return text.replace(/[^\n]/g, " ");
+}
+function templateEnd(text, start) {
+  let index = start + 1;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === "\\") index += 2;
+    else if (char === "`") return index + 1;
+    else if (char === "$" && text[index + 1] === "{") index = expressionEnd(text, index + 2) + 1;
+    else index += 1;
+  }
+  return text.length;
+}
+function regexEnd(text, start) {
+  let index = start + 1;
+  let inClass = false;
+  while (index < text.length && text[index] !== "\n") {
+    const char = text[index];
+    if (char === "\\") index += 2;
+    else {
+      if (char === "[") inClass = true;
+      else if (char === "]") inClass = false;
+      else if (char === "/" && !inClass) {
+        index += 1;
+        while (index < text.length && /[a-z]/i.test(text[index] ?? "")) index += 1;
+        return index;
+      }
+      index += 1;
+    }
+  }
+  return index;
+}
+function expressionEnd(text, start) {
+  let depth = 0;
+  let index = start;
+  while (index < text.length) {
+    const char = text[index];
+    if (text.startsWith("//", index)) {
+      const end = text.indexOf("\n", index);
+      index = end < 0 ? text.length : end;
+      continue;
+    }
+    if (text.startsWith("/*", index)) {
+      const end = text.indexOf("*/", index + 2);
+      index = end < 0 ? text.length : end + 2;
+      continue;
+    }
+    if (char === "/" && REGEX_LEAD.test(text.slice(Math.max(start, index - 12), index))) {
+      index = regexEnd(text, index);
+      continue;
+    }
+    if (char === "`") {
+      index = templateEnd(text, index);
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      index += 1;
+      while (index < text.length && text[index] !== char && text[index] !== "\n") index += text[index] === "\\" ? 2 : 1;
+      index += 1;
+      continue;
+    }
+    if (char === "{") depth += 1;
+    else if (char === "}") {
+      if (depth === 0) return index;
+      depth -= 1;
+    }
+    index += 1;
+  }
+  return text.length;
+}
+function scrubTemplate(literal2) {
+  const out = ["`"];
+  let index = 1;
+  while (index < literal2.length) {
+    const char = literal2[index] ?? "";
+    if (char === "\\") {
+      out.push(blank(literal2.slice(index, index + 2)));
+      index += 2;
+    } else if (char === "`") {
+      out.push("`");
+      index += 1;
+    } else if (char === "$" && literal2[index + 1] === "{") {
+      const end = expressionEnd(literal2, index + 2);
+      out.push("${", scrub("script", literal2.slice(index + 2, end)), end < literal2.length ? "}" : "");
+      index = end + 1;
+    } else {
+      out.push(blank(char));
+      index += 1;
+    }
+  }
+  return out.join("");
+}
+function scrub(language, text) {
+  const out = [];
+  let tail = "";
+  const push = (chunk) => {
+    out.push(chunk);
+    tail = (tail + chunk).slice(-48);
+  };
+  const lineComment = language === "python" ? "#" : "//";
+  const blocks = language !== "python";
+  const strings = language === "script" || language === "python";
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index] ?? "";
+    const lineStart = language !== "style" || index === 0 || /\s/.test(text[index - 1] ?? "");
+    if (text.startsWith(lineComment, index) && lineStart) {
+      const end = text.indexOf("\n", index);
+      const stop = end < 0 ? text.length : end;
+      push(blank(text.slice(index, stop)));
+      index = stop;
+      continue;
+    }
+    if (blocks && text.startsWith("/*", index)) {
+      const end = text.indexOf("*/", index + 2);
+      const stop = end < 0 ? text.length : end + 2;
+      push(blank(text.slice(index, stop)));
+      index = stop;
+      continue;
+    }
+    if (language === "script" && char === "`") {
+      const end = templateEnd(text, index);
+      push(scrubTemplate(text.slice(index, end)));
+      index = end;
+      continue;
+    }
+    if (strings && (char === '"' || char === "'" || char === "`")) {
+      const triple = language === "python" && text.startsWith(char.repeat(3), index) ? char.repeat(3) : null;
+      const open2 = triple ?? char;
+      let cursor = index + open2.length;
+      while (cursor < text.length && !text.startsWith(open2, cursor)) {
+        if (text[cursor] === "\\") cursor += 1;
+        else if (triple === null && char !== "`" && text[cursor] === "\n") break;
+        cursor += 1;
+      }
+      const closed = text.startsWith(open2, cursor);
+      const stop = Math.min(text.length, closed ? cursor + open2.length : cursor);
+      const literal2 = text.slice(index, stop);
+      const keep = language === "script" && char !== "`" && SCRIPT_IMPORT_LEAD.test(tail);
+      push(keep ? literal2 : open2 + blank(literal2.slice(open2.length, closed ? literal2.length - open2.length : literal2.length)) + (closed ? open2 : ""));
+      index = stop;
+      continue;
+    }
+    push(char);
+    index += 1;
+  }
+  return out.join("");
+}
+function unique(values) {
+  return [...new Set(values)];
+}
+var SCRIPT_EXTENSIONS, STYLE_EXTENSIONS, RESOLVABLE_EXTENSIONS, SCRIPT_PATTERNS, STYLE_PATTERNS, PYTHON_FROM, PYTHON_IMPORT, RUST_PATTERNS, REGEX_LEAD, SCRIPT_IMPORT_LEAD;
+var init_file_flow = __esm({
+  "../../packages/core/src/file-flow.ts"() {
+    "use strict";
+    SCRIPT_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte", ".astro"];
+    STYLE_EXTENSIONS = [".css", ".scss", ".sass", ".less"];
+    RESOLVABLE_EXTENSIONS = [...SCRIPT_EXTENSIONS, ...STYLE_EXTENSIONS, ".json"];
+    SCRIPT_PATTERNS = [
+      /\bimport\s+(?:type\s+)?(?:[\w*{}\s,$]+?\s+from\s+)?['"]([^'"\n]+)['"]/g,
+      /\bexport\s+(?:type\s+)?(?:\*(?:\s+as\s+[\w$]+)?|\{[^}]*\})\s*from\s*['"]([^'"\n]+)['"]/g,
+      /\bimport\(\s*['"]([^'"\n]+)['"]\s*\)/g,
+      /\brequire\(\s*['"]([^'"\n]+)['"]\s*\)/g
+    ];
+    STYLE_PATTERNS = [/@(?:import|use|forward)\s+(?:url\()?\s*['"]?([^'")\s;]+)['"]?\s*\)?/g];
+    PYTHON_FROM = /^[ \t]*from[ \t]+(\.+[\w.]*|[\w.]+)[ \t]+import[ \t]+(\([^)]*\)|[^\n#;]+)/gm;
+    PYTHON_IMPORT = /^[ \t]*import[ \t]+([^\n#;]+)/gm;
+    RUST_PATTERNS = [/^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*;/gm];
+    REGEX_LEAD = /(?:^|[(,=:[!&|?{};+\-*%~^<>]|\b(?:return|typeof|case|do|else|in|of|void|yield|await))\s*$/;
+    SCRIPT_IMPORT_LEAD = /(?:\bfrom|\bimport|\brequire\s*\(|\bimport\s*\()\s*$/;
+  }
+});
+
 // ../../packages/core/src/diff-parse.ts
 function pathFromGitHeader(line, side = "new") {
   const rest = line.slice("diff --git ".length);
@@ -1918,6 +2142,10 @@ function parseUnifiedDiff(diffText) {
       let stats = { path: current.path, additions: current.additions, deletions: current.deletions, status };
       if (kinds.length > 0) stats = { ...stats, kinds };
       if (commentCount > 0 && commentCount <= MAX_COMMENT_LINES) stats = { ...stats, commentLines: { added: current.commentAdded, removed: current.commentRemoved } };
+      if (current.removedLines !== null && current.removedLines.length > 0) {
+        const removedImports = importSpecifiers(current.path, current.removedLines.join("\n"));
+        if (removedImports.length > 0) stats = { ...stats, removedImports };
+      }
       files.push(stats);
     }
     current = null;
@@ -1944,7 +2172,8 @@ function parseUnifiedDiff(diffText) {
         oldState: newCommentScanState(),
         newState: newCommentScanState(),
         commentAdded: [],
-        commentRemoved: []
+        commentRemoved: [],
+        removedLines: canReadImports(path) ? [] : null
       };
       inHunk = false;
       continue;
@@ -1982,6 +2211,7 @@ function parseUnifiedDiff(diffText) {
       current.deletions += 1;
       const text = line.slice(1);
       current.removed.push(text.replace(WHITESPACE, ""));
+      current.removedLines?.push(text);
       if (current.syntax !== null && isCommentOnlyLine(text, current.syntax, current.oldState)) current.commentRemoved.push(current.oldLine);
       current.oldLine += 1;
     } else if (line.startsWith(" ") || line === "") {
@@ -2002,6 +2232,7 @@ var init_diff_parse = __esm({
   "../../packages/core/src/diff-parse.ts"() {
     "use strict";
     init_comment_lines();
+    init_file_flow();
     MAX_COMMENT_LINES = 2e3;
     HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
     WHITESPACE = /\s+/g;
@@ -15963,7 +16194,7 @@ function handleIntersectionResults(result, left, right) {
   const unrecKeys = /* @__PURE__ */ new Map();
   let unrecIssue;
   const keyIssues = /* @__PURE__ */ new Map();
-  const collect = (iss, side) => {
+  const collect2 = (iss, side) => {
     let keys;
     if (iss.code === "unrecognized_keys" && !iss.path?.length) {
       unrecIssue ?? (unrecIssue = iss);
@@ -15984,11 +16215,11 @@ function handleIntersectionResults(result, left, right) {
     return true;
   };
   for (const iss of left.issues) {
-    if (!collect(iss, "l"))
+    if (!collect2(iss, "l"))
       result.issues.push(iss);
   }
   for (const iss of right.issues) {
-    if (!collect(iss, "r"))
+    if (!collect2(iss, "r"))
       result.issues.push(iss);
   }
   const bothKeys = [...unrecKeys].filter(([, f]) => f.l && f.r).map(([k]) => k);

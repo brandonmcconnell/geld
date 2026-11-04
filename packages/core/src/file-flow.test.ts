@@ -126,6 +126,15 @@ describe('flowLinks', () => {
   });
 });
 
+describe('flowLinks from removed lines', () => {
+  it('draws an import a surviving file dropped as removed', () => {
+    const paths = ['src/a.ts', 'src/b.ts'];
+    const after = new Map([['src/a.ts', ['./c']], ['src/b.ts', []]]);
+    const removed = new Map([['src/a.ts', ['./b']]]);
+    expect(flowLinks(paths, after, removed)).toEqual([{ from: 'src/a.ts', to: 'src/b.ts', removed: true }]);
+  });
+});
+
 describe('flowEdges with unread files', () => {
   it('does not call the imports of a file it could not read removed', () => {
     const paths = ['src/a.ts', 'src/b.ts', 'src/gone.ts'];

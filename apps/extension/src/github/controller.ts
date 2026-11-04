@@ -895,7 +895,7 @@ export class GeldController {
       repo: pull[1],
       pullPath: pull[0],
       headSha: sha,
-      files: state.files.map((file) => ({ path: file.path, status: file.status ?? 'modified', additions: file.additions, deletions: file.deletions, hiddenAs: matcher.categorizeFile(file)?.title ?? null })),
+      files: state.files.map((file) => ({ path: file.path, status: file.status ?? 'modified', additions: file.additions, deletions: file.deletions, hiddenAs: matcher.categorizeFile(file)?.title ?? null, removedImports: file.removedImports ?? [] })),
     };
   }
 
