@@ -68,7 +68,22 @@ export function setFlowSource(next: FlowSource | null): void {
     forgetReads();
     // An open dialog reads again at the new head instead of waiting on answers that are now thrown away.
     onReadLanded?.();
+    return;
   }
+  // Same head, other file data: the diff landed after GitHub's file summaries (which carry no removed imports), or
+  // the reader's settings now hide other files. Only worked out while a dialog is open, since this runs every pass.
+  if (openDialog !== null && next !== null) {
+    const data = fileData(next);
+    if (data !== openData) {
+      openData = data;
+      onReadLanded?.();
+    }
+  }
+}
+
+/** What an open dialog draws from besides the reads: each file's status, category and removed imports. */
+function fileData(from: FlowSource): string {
+  return from.files.map((file) => `${file.path}\u0000${file.status}\u0000${file.hiddenAs ?? ''}\u0000${file.removedImports.join(',')}`).join('\u0001');
 }
 
 /** Close an open Flow dialog and drop every read still waiting (Geld turned off, or the digest torn down). */
@@ -94,6 +109,8 @@ let active = 0;
 let readGeneration = 0;
 let onReadLanded: (() => void) | null = null;
 let openDialog: HTMLDialogElement | null = null;
+/** {@link fileData} of the source the open dialog last drew. */
+let openData = '';
 
 function forgetReads(): void {
   reads.clear();
@@ -527,6 +544,7 @@ export function openFlowDialog(): void {
   });
   openDialog?.close();
   openDialog = dialog;
+  openData = fileData(opened);
   document.body.append(dialog);
   dialog.showModal();
   applyScale(1);

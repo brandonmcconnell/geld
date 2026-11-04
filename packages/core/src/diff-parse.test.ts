@@ -134,4 +134,21 @@ describe('parseUnifiedDiff removedImports', () => {
     expect(files.find((file) => file.path === 'src/gone.ts')?.removedImports).toEqual(['./a', './c']);
     expect(files.find((file) => file.path === 'README.md')?.removedImports).toBeUndefined();
   });
+
+  it('reads a removed line with the context around it, so a line inside a kept comment is no import', () => {
+    const diff = [
+      'diff --git a/src/a.ts b/src/a.ts',
+      'index 1111111..2222222 100644',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -1,5 +1,4 @@',
+      ' /*',
+      "-import './b';",
+      ' */',
+      "-import { c } from './c';",
+      "+import { c } from './c.js';",
+      " import { d } from './d';",
+    ].join('\n');
+    expect(parseUnifiedDiff(diff)[0]?.removedImports).toEqual(['./c']);
+  });
 });
