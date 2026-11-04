@@ -54,6 +54,7 @@ export function PrWindow({
   children,
   className,
   bodyClassName,
+  disabledTabs = [],
 }: {
   readonly tab: PrTab;
   readonly onTab?: (tab: PrTab) => void;
@@ -67,6 +68,8 @@ export function PrWindow({
   readonly children: React.ReactNode;
   readonly className?: string;
   readonly bodyClassName?: string;
+  /** Tabs the scene has nothing for: shown greyed and not pressable, so the ones that do something stand out. */
+  readonly disabledTabs?: readonly PrTab[];
 }) {
   const path = TABS.find((entry) => entry.id === tab)?.path ?? '';
   const root = useRef<HTMLDivElement | null>(null);
@@ -137,7 +140,13 @@ export function PrWindow({
             return (
               <li key={entry.id} className={cn('shrink-0', !onTab && entry.id !== 'files' && entry.id !== tab && '@max-xl:hidden')}>
                 {onTab ? (
-                  <button type="button" aria-current={active ? 'page' : undefined} onClick={() => onTab(entry.id)} className={cn(classes, 'outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50')}>
+                  <button
+                    type="button"
+                    aria-current={active ? 'page' : undefined}
+                    disabled={disabledTabs.includes(entry.id)}
+                    onClick={() => onTab(entry.id)}
+                    className={cn(classes, 'outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-muted-foreground')}
+                  >
                     {content}
                   </button>
                 ) : (

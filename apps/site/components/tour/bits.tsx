@@ -1,4 +1,5 @@
 import { cn } from 'cn';
+import { ChevronDownIcon, CopyIcon, Rows3Icon } from 'lucide-react';
 
 /** GitHub's pull request state colours; one set for both schemes, as GitHub's labels are. */
 export const STATE_COLOR = {
@@ -54,6 +55,23 @@ export function BotMark({ bot, size = 18, className }: { readonly bot: BotId; re
       style={{ width: size, height: size, fontSize: size * 0.55 }}
     >
       {BOTS[bot].glyph}
+    </span>
+  );
+}
+
+/** The end of the digest's Geld row: a scene's own control (Flow's button), then the grouping picker and Copy digest, which no scene uses, greyed and disabled. All 20px tall, so every scene's Geld row is the same height. */
+export function GeldRowTools({ children }: { readonly children?: React.ReactNode }) {
+  return (
+    <span className="ml-auto flex items-center gap-1 text-muted-foreground">
+      {children}
+      <button type="button" disabled aria-label="Group the digest by type" className="inline-flex h-5 cursor-not-allowed items-center gap-1 rounded-md px-1 opacity-50">
+        <Rows3Icon aria-hidden="true" className="size-3.5" />
+        type
+        <ChevronDownIcon aria-hidden="true" className="size-3" />
+      </button>
+      <button type="button" disabled aria-label="Copy digest" className="grid size-5 cursor-not-allowed place-items-center rounded-md opacity-50">
+        <CopyIcon aria-hidden="true" className="size-3.5" />
+      </button>
     </span>
   );
 }

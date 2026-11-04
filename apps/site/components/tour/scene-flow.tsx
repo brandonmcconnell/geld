@@ -4,10 +4,10 @@ import { createMatcher, DEFAULT_SETTINGS, formatCount } from '@geld/core';
 import type { FlowComponent, FlowRoute } from '@geld/core/file-flow';
 import { flowLinks, layoutFlow } from '@geld/core/file-flow';
 import { cn } from 'cn';
-import { CopyIcon, Rows3Icon, WorkflowIcon, XIcon } from 'lucide-react';
+import { WorkflowIcon, XIcon } from 'lucide-react';
 import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { Meter } from '@/components/tour/bits';
+import { GeldRowTools, Meter } from '@/components/tour/bits';
 import type { TourFile } from '@/components/tour/data';
 import { TOUR_FILES } from '@/components/tour/data';
 import { Octicon } from '@/components/tour/octicons';
@@ -70,7 +70,7 @@ export function FlowScene() {
   };
 
   return (
-    <PrWindow tab={tab} onTab={setTab} filesCount={files.filter((file) => file.hiddenAs === null).length} bodyClassName="relative min-h-[26rem]">
+    <PrWindow tab={tab} onTab={setTab} disabledTabs={['commits', 'checks']} filesCount={files.filter((file) => file.hiddenAs === null).length} bodyClassName="relative min-h-[26rem]">
       {tab === 'files' ? (
         <FilesView files={files.filter((file) => file.hiddenAs === null)} opened={opened} />
       ) : (
@@ -79,7 +79,7 @@ export function FlowScene() {
             <span className="font-semibold">Geld</span>
             <Meter done={3} total={5} />
             <span className="text-muted-foreground tabular-nums">3/5 resolved</span>
-            <span className="ml-auto flex items-center gap-0.5 text-muted-foreground">
+            <GeldRowTools>
               <Ping on={!flowOpen} className="inline-flex rounded-md">
                 <button
                   type="button"
@@ -87,19 +87,12 @@ export function FlowScene() {
                   aria-expanded={flowOpen}
                   title="Flow"
                   onClick={() => setFlowOpen((value) => !value)}
-                  className={cn('grid size-7 place-items-center rounded-md outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60', flowOpen && 'bg-muted text-foreground')}
+                  className={cn('grid size-5 place-items-center rounded-md outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60', flowOpen && 'bg-muted text-foreground')}
                 >
-                  <WorkflowIcon aria-hidden="true" className="size-4" />
+                  <WorkflowIcon aria-hidden="true" className="size-3.5" />
                 </button>
               </Ping>
-              <span aria-hidden="true" className="inline-flex h-7 items-center gap-1 px-1.5">
-                <Rows3Icon className="size-3.5" />
-                type
-              </span>
-              <span aria-hidden="true" className="grid size-7 place-items-center">
-                <CopyIcon className="size-3.5" />
-              </span>
-            </span>
+            </GeldRowTools>
           </div>
           {SUMMARY.map(([label, text]) => (
             <div key={label} className="flex items-center gap-3 border-t px-3 py-1.5">
