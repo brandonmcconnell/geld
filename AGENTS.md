@@ -481,6 +481,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   made again on every pass (`fitChips` in the dress phase) and whenever the panel changes width (one `ResizeObserver` on the panel root, width changes only;
   `stopFittingChips` on teardown).
   The previews row is not fitted: its names are the deployments' and say what the mark cannot.
+  **The Geld row at the top of the digest is fitted the same way, in one step** (`ATTR_FIT_TOOLS`, `data-geld-fit-tools="icons"`): when its summary and its buttons would wrap, every button (AI, Flow, the grouping menu, "New changes") drops its words for its mark, its tooltip still naming it, and only a row too narrow even for the marks wraps. This replaced a fixed 640px rule that hid the words on every narrow panel whether they fitted or not.
   A round's row shows a progress glyph (circle → filled check when every thread is resolved), the avatars of everyone who posted (one per login — no names, the avatars say it;
   bots get Geld's identity hover card via `data-geld-who`, people GitHub's), "Round N", the Geld row's meter with `d/N resolved`, a count chip with every comment in the round (run summaries plus thread comments) and the time;
   "N rounds to review" (rounds with an open thread, expanded by default) comes before "N settled rounds" (collapsed).

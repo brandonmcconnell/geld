@@ -57,6 +57,9 @@ export const ATTR_EDITED_FOR = 'data-geld-edited-for';
  */
 export const ATTR_FIT = 'data-geld-fit';
 
+/** The Geld row, which sets its buttons to their marks alone (`icons`) when its contents would otherwise wrap (`fit-chips.ts`). */
+export const ATTR_FIT_TOOLS = 'data-geld-fit-tools';
+
 /** The mounted panel's render signature (what `mountPanel` compared last), or '' without a panel: for the harness's scope check. */
 export function panelSignature(): string {
   return document.querySelector(`[${ATTR_SIG}]`)?.getAttribute(ATTR_SIG) ?? '';
@@ -2762,7 +2765,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   // "View changes" URL), the same small button the timeline's Compare and Details are; the count is its tooltip.
   if (model.sinceLastVisit !== null) {
     const title = model.sinceLastVisit.commits > 0 ? `${plural(model.sinceLastVisit.commits, 'new commit')} since you last viewed this pull request` : 'New changes since you last viewed this pull request';
-    summary.append(createElement('a', { class: `btn btn-sm ${PANEL_CLASS}__since-visit`, href: model.sinceLastVisit.href, title, 'aria-label': title, [ATTR_FOCUS]: 'since-last-visit' }, [icon(ICON_FILE_DIFF), createElement('span', {}, ['New changes'])]));
+    summary.append(createElement('a', { class: `btn btn-sm ${PANEL_CLASS}__since-visit`, href: model.sinceLastVisit.href, title, 'aria-label': title, [ATTR_FOCUS]: 'since-last-visit' }, [icon(ICON_FILE_DIFF), createElement('span', { class: `${PANEL_CLASS}__since-visit-label` }, ['New changes'])]));
   }
   if (model.freshness === 'stale' || model.freshness === 'partial') summary.append(createElement('span', { class: `${PANEL_CLASS}__fresh` }, ['Updating…']));
   const tools = createElement('div', { class: `${PANEL_CLASS}__tools` });
@@ -2778,7 +2781,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   const copy = iconButton(ICON_COPY, 'Copy digest as Markdown', { [ATTR_FOCUS]: 'copy' });
   copy.addEventListener('click', () => handlers.onCopy());
   tools.append(copy);
-  const head = createElement('div', { class: `${PANEL_CLASS}__head` }, [summary, tools]);
+  const head = createElement('div', { class: `${PANEL_CLASS}__head`, [ATTR_FIT_TOOLS]: '' }, [summary, tools]);
   const aiNote = aiNotice(model.ai, handlers);
   const status = statusRows(model, handlers);
   const tldrPending = model.aiPending.has('tldr');
