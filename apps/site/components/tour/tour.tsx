@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { CountsScene } from '@/components/tour/scene-counts';
 import { DigestScene } from '@/components/tour/scene-digest';
+import { FlowScene } from '@/components/tour/scene-flow';
 import { NoiseScene } from '@/components/tour/scene-noise';
 import { OutlineScene } from '@/components/tour/scene-outline';
 import { QuickReviewScene } from '@/components/tour/scene-quick-review';
@@ -71,6 +72,14 @@ const STEPS: readonly Step[] = [
     body: "Under the description, one panel says how the pull request stands: reviews, every bot's verdict, CI and previews. Then each push is a round with its threads, open ones first, and a thread opens as a chat.",
     hint: 'Open a thread and resolve it',
     Scene: DigestScene,
+  },
+  {
+    id: 'flow',
+    chapter: 'Know where it stands',
+    title: 'See how the changes connect',
+    body: 'Flow draws the changed files as cards, each linked to the files it imports, so you can see where a change starts and what leans on it. A link the change removed is dashed. Click a file to open it in Files changed.',
+    hint: 'Open Flow and rest on a file',
+    Scene: FlowScene,
   },
   {
     id: 'request',
