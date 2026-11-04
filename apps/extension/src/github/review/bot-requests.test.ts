@@ -10,8 +10,8 @@ function input(overrides: Partial<BotRequestInput>): BotRequestInput {
   return { clicks: new Map(), comments: [], checks: [], bots: [], extraLogins: [], now: T0, ...overrides };
 }
 
-const click = (at: number, posted: boolean | null = true): ReadonlyMap<string, BotRequestClick> => new Map([['greptile', { at, posted }]]);
-const trigger = (at: number, body: string, reactedBy?: readonly string[]): BotComment => ({ author: 'brandonmcconnell', body, anchor: 'issuecomment-1', createdAt: iso(at), ...(reactedBy === undefined ? {} : { reactedBy }) });
+const click = (at: number, posted: boolean | null = true, before: readonly string[] = []): ReadonlyMap<string, BotRequestClick> => new Map([['greptile', { at, posted, before: new Set(before) }]]);
+const trigger = (at: number, body: string, reactedBy?: readonly string[], anchor = 'issuecomment-1'): BotComment => ({ author: 'brandonmcconnell', body, anchor, createdAt: iso(at), ...(reactedBy === undefined ? {} : { reactedBy }) });
 const record = (id: string, login: string, verdict: BotVerdictRecord['verdict']): BotVerdictRecord => ({ id, login, verdict, reviewedSha: 'abc' });
 
 describe('botRequestStates', () => {
@@ -63,6 +63,28 @@ describe('botRequestStates', () => {
     expect(botRequestStates(input({ comments: [run(undefined)], bots: [record('greptile', 'greptile-apps[bot]', 'running')], now: T0 + 30_000 })).get('greptile')).toEqual({ kind: 'starting', until: T0 + REQUEST_ACK_SLOW_MS });
     expect(botRequestStates(input({ comments: [run([{ login: 'github-actions[bot]', emoji: 'rocket' }])], now: T0 + 30_000 })).has('greptile')).toBe(false);
     expect(botRequestStates(input({ comments: [run([{ login: 'github-actions[bot]', emoji: 'thumbs down' }])], now: T0 + 5_000 })).get('greptile')).toEqual({ kind: 'unanswered', reason: 'silent' });
+  });
+
+  it('never lends a retry the reaction of the request before it, nor hides that the retry did not post', () => {
+    const earlier = trigger(T0 - 60_000, '@greptileai', ['greptile-apps[bot]'], 'issuecomment-9');
+    expect(botRequestStates(input({ clicks: click(T0, null, ['issuecomment-9']), comments: [earlier], now: T0 + 1_000 })).get('greptile')).toEqual({ kind: 'starting', until: T0 + REQUEST_ACK_MS });
+    expect(botRequestStates(input({ clicks: click(T0, false, ['issuecomment-9']), comments: [earlier], now: T0 + 1_000 })).get('greptile')).toEqual({ kind: 'unanswered', reason: 'not-posted' });
+  });
+
+  it('gives a trigger typed into GitHub after a stale click a window of its own', () => {
+    const typed = trigger(T0 + 10 * 60_000, '@greptileai', undefined, 'issuecomment-7');
+    expect(botRequestStates(input({ clicks: click(T0, false), comments: [typed], now: T0 + 10 * 60_000 + 1_000 })).get('greptile')).toEqual({ kind: 'starting', until: T0 + 10 * 60_000 + REQUEST_ACK_MS });
+  });
+
+  it('lets the bot\u2019s own answer win over a workflow \u{1F44E} that covered another bot', () => {
+    const run: BotComment = { ...trigger(T0, '/geld run greptile bugbot'), reactions: [{ login: 'github-actions[bot]', emoji: 'thumbs down' }] };
+    const answer: BotComment = { author: 'greptile-apps[bot]', body: 'Confidence Score: 5/5', anchor: 'issuecomment-2', createdAt: iso(T0 + 90_000) };
+    expect(botRequestStates(input({ comments: [run, answer], now: T0 + 100_000 })).has('greptile')).toBe(false);
+  });
+
+  it('does not read a mention of a trigger in prose as a request', () => {
+    const prose = trigger(T0, 'The previous bugbot run found nothing, so this looks fine to me.');
+    expect(botRequestStates(input({ comments: [prose], now: T0 + 1_000 })).size).toBe(0);
   });
 
   it('does not read a bot quoting its own command as a request', () => {

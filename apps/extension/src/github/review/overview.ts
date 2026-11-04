@@ -40,7 +40,7 @@ import { applyFolds, closureKindOf, groupBotRuns, groupClosures, groupDoneHumans
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
 import type { BotRequestClick } from './bot-requests';
-import { botRequestStates, nextRequestDeadline, requestSentence, withBotRequests } from './bot-requests';
+import { botRequestStates, nextRequestDeadline, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
 import { ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
@@ -160,6 +160,9 @@ interface VisitState {
    */
   requests: Map<string, BotRequestClick>;
 }
+
+/** Each bot's trigger comments as the last pass read them: what a request recorded at a click was already there. */
+let triggersOnPage: ReadonlyMap<string, ReadonlySet<string>> = new Map();
 
 const visit: VisitState = {
   fullTimeline: false,
@@ -2166,10 +2169,11 @@ function rerunFor(id: string, author: string, meta: GeldPrMeta, reapply: () => v
     onRerun: () => {
       const requests = visit.requests;
       const at = Date.now();
-      requests.set(id, { at, posted: null });
+      requests.set(id, { at, posted: null, before: triggersOnPage.get(id) ?? new Set() });
       // Read at the click: the repository's workflow may have been found since this control was drawn.
       void postTopLevelComments([triggerFor(id, repoBots) ?? trigger]).then((posted) => {
-        if (requests.get(id)?.at === at) requests.set(id, { at, posted: posted > 0 });
+        const request = requests.get(id);
+        if (request?.at === at) requests.set(id, { ...request, posted: posted > 0 });
         reapplySoon();
       });
       reapply();
@@ -2904,6 +2908,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     botLineMemo.clear();
     visit.manualDone = new Set();
     visit.requests = new Map();
+    triggersOnPage = new Map();
     checksSectionEl = null;
     mergeHomeEl = null;
     // This device's AI run for the pull request, if any; the pass re-applies once it is read.
@@ -2951,6 +2956,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const composed = phase('cluster', () => composeMeta(found, buildFromComments(crawledDom, botComments, checks, settings, headSha, visit.generatedAt, partial, threadsRead), complete));
   // A review asked for and not yet answered: the pill spins from the click, and says so if the bot never shows a sign.
   const botRequests = botRequestStates({ clicks: visit.requests, comments: botComments, checks, bots: composed.meta.bots, extraLogins: settings.reviewBots, now: Date.now() });
+  triggersOnPage = triggerAnchors(botComments, settings.reviewBots);
   const requestDeadline = nextRequestDeadline(botRequests);
   if (requestDeadline !== null) reapplyAt(requestDeadline);
   // Then the threads, now that items exist: whether the replies say a thread is done.
@@ -3316,11 +3322,12 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       // This visit's map: a move to another pull request while the posts are out gives the new one a map of its own.
       const requests = visit.requests;
       const at = Date.now();
-      for (const { id } of requested) requests.set(id, { at, posted: null });
+      for (const { id } of requested) requests.set(id, { at, posted: null, before: triggersOnPage.get(id) ?? new Set() });
       void postTopLevelComments(requested.map(({ trigger }) => trigger)).then((posted) => {
         // The posts stop at the first refusal: the bots after it were never asked, and their pills say so.
         requested.forEach(({ id }, index) => {
-          if (requests.get(id)?.at === at) requests.set(id, { at, posted: index < posted });
+          const request = requests.get(id);
+          if (request?.at === at) requests.set(id, { ...request, posted: index < posted });
         });
         reapplySoon();
       });

@@ -1,11 +1,11 @@
 import type { BotComment, BotVerdictRecord, RawCheckRun } from '@geld/review';
-import { botByCheckName, botById, botsTriggeredBy, geldRunAnswer, geldRunBots } from '@geld/review';
+import { botByCheckName, botById, botsTriggeredBy, geldRunAnswer, geldRunBots, isTriggerComment } from '@geld/review';
 
 /** A bot that answers a trigger with a reaction does so within seconds: past this it most likely never saw the request. */
 export const REQUEST_ACK_MS = 20_000;
 /** A bot whose first sign is a comment or its check run is given longer, since those land later than a reaction. */
 export const REQUEST_ACK_SLOW_MS = 60_000;
-/** A trigger comment posted within this long of a click is that click's post (GitHub's clock against the reader's). */
+/** A new trigger comment posted more than this long after a click is not that click's post (GitHub's clock against the reader's). */
 const POST_MATCH_MS = 2 * 60_000;
 /** A bot's word or check this long before the request it answers still counts (the two clocks differ by seconds). */
 const CLOCK_SLACK_MS = 5_000;
@@ -18,10 +18,48 @@ const CLOCK_SLACK_MS = 5_000;
  */
 export type BotRequestState = { readonly kind: 'starting'; readonly until: number } | { readonly kind: 'unanswered'; readonly reason: 'silent' | 'not-posted' };
 
-/** A request made from Geld this visit: when, and whether its trigger comment posted (null while the post is out). */
+/**
+ * A request made from Geld this visit: when, whether its trigger comment
+ * posted (null while the post is out), and the bot's trigger comments already
+ * on the page at the click (`triggerAnchors`), none of which is this click's.
+ */
 export interface BotRequestClick {
   readonly at: number;
   readonly posted: boolean | null;
+  readonly before: ReadonlySet<string>;
+}
+
+interface Ask {
+  readonly at: number;
+  readonly comment: BotComment;
+  readonly login: string;
+}
+
+/**
+ * Every bot's trigger comments, oldest first: whole-comment requests only,
+ * as `verdictsFrom` reads them ("the previous bugbot run found nothing" is
+ * prose), never a thread reply and never a bot asking itself.
+ */
+function triggerAsks(comments: readonly BotComment[], extraLogins: readonly string[]): ReadonlyMap<string, readonly Ask[]> {
+  const asks = new Map<string, Ask[]>();
+  for (const comment of comments) {
+    if (comment.resolved !== undefined || !isTriggerComment(comment.body, extraLogins)) continue;
+    const at = timeOf(comment.createdAt);
+    if (Number.isNaN(at)) continue;
+    for (const { id, login } of botsTriggeredBy(comment.body, extraLogins)) {
+      if (loginsOf(id, login).has(loginKey(comment.author))) continue;
+      const list = asks.get(id) ?? [];
+      list.push({ at, comment, login });
+      asks.set(id, list);
+    }
+  }
+  for (const list of asks.values()) list.sort((a, b) => a.at - b.at);
+  return asks;
+}
+
+/** The trigger comments on the page for each bot, by anchor: what a click records as already there (`BotRequestClick.before`). */
+export function triggerAnchors(comments: readonly BotComment[], extraLogins: readonly string[]): ReadonlyMap<string, ReadonlySet<string>> {
+  return new Map([...triggerAsks(comments, extraLogins)].map(([id, list]) => [id, new Set(list.map((ask) => ask.comment.anchor))]));
 }
 
 export interface BotRequestInput {
@@ -71,22 +109,20 @@ function acknowledged(id: string, logins: ReadonlySet<string>, trigger: BotComme
  * as the bot's words say.
  */
 export function botRequestStates(input: BotRequestInput): ReadonlyMap<string, BotRequestState> {
-  const asks = new Map<string, { readonly at: number; readonly comment: BotComment; readonly login: string }>();
-  for (const comment of input.comments) {
-    const at = timeOf(comment.createdAt);
-    if (Number.isNaN(at)) continue;
-    for (const { id, login } of botsTriggeredBy(comment.body, input.extraLogins)) {
-      // A bot never asks itself: its own reply quoting the command is not a request.
-      if (loginsOf(id, login).has(loginKey(comment.author))) continue;
-      const previous = asks.get(id);
-      if (previous === undefined || at > previous.at) asks.set(id, { at, comment, login });
-    }
-  }
+  const asks = triggerAsks(input.comments, input.extraLogins);
   const out = new Map<string, BotRequestState>();
   for (const id of new Set([...asks.keys(), ...input.clicks.keys()])) {
-    const click = input.clicks.get(id);
-    const ask = asks.get(id);
-    const posted = ask !== undefined && (click === undefined || ask.at >= click.at - POST_MATCH_MS) ? ask : null;
+    const all = asks.get(id) ?? [];
+    let click = input.clicks.get(id);
+    // A click's post is the first trigger that was not on the page at the click, posted soon after it; a trigger that
+    // was there already is a request before it, and would lend this one its reaction or hide a failed post.
+    const before = click?.before;
+    const fresh = before === undefined ? [] : all.filter((ask) => !before.has(ask.comment.anchor));
+    const first = fresh[0];
+    const own = click !== undefined && first !== undefined && first.at <= click.at + POST_MATCH_MS ? first : undefined;
+    // Any other new trigger (typed into GitHub's own box since) is a request of its own, timed by its comment.
+    if (fresh.length > 0 && (own === undefined || fresh[fresh.length - 1] !== own)) click = undefined;
+    const posted = click === undefined ? all[all.length - 1] ?? null : own ?? null;
     if (click === undefined && posted === null) continue;
     if (click !== undefined && click.posted === false && posted === null) {
       out.set(id, { kind: 'unanswered', reason: 'not-posted' });
@@ -96,13 +132,14 @@ export function botRequestStates(input: BotRequestInput): ReadonlyMap<string, Bo
     const logins = loginsOf(id, posted?.login ?? record?.login ?? id);
     const since = posted?.at ?? click?.at ?? input.now;
     // A `/geld run` command is answered by the Geld workflow, not the bot: its 🚀 is the run taken, its 👎 no run.
+    // The bot's own sign still wins: one 👎 covers every bot the command named, and the others may well have run.
     const viaWorkflow = posted !== null && geldRunBots(posted.comment.body).length > 0;
     const workflow = viaWorkflow && posted !== null ? geldRunAnswer(posted.comment) : null;
+    if (workflow === 'queued' || acknowledged(id, logins, posted?.comment ?? null, since, input)) continue;
     if (workflow === 'failed') {
       out.set(id, { kind: 'unanswered', reason: 'silent' });
       continue;
     }
-    if (workflow === 'queued' || acknowledged(id, logins, posted?.comment ?? null, since, input)) continue;
     const start = click?.at ?? since;
     // The workflow's job has to start before it can answer, which takes longer than a bot's reaction.
     const window = !viaWorkflow && botById(id)?.acknowledges === 'reaction' ? REQUEST_ACK_MS : REQUEST_ACK_SLOW_MS;
