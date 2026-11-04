@@ -14,6 +14,8 @@ import { PileCard } from './pile-card';
 
 /** Seconds after the pile lands before Geld switches itself on, unless the reader has already played. */
 const AUTO_GELD_AFTER = 2.4;
+/** A first click this soon after Geld switched itself on was reaching for the switch as it moved: it confirms rather than undoes. */
+const AUTO_CLICK_GRACE = 1200;
 /** Gaps between lines of the hero's words narrower than this are filled, so no card wedges into one. */
 const LINE_GAP = 44;
 /** The card's natural width; narrower than this it says less (digest-card's `@max-[23rem]`). */
@@ -131,6 +133,8 @@ function Playground() {
   const frame = useRef<number | null>(null);
   const last = useRef(0);
   const interacted = useRef(false);
+  /** When Geld last switched itself on, until the next click. */
+  const autoOnAt = useRef<number | null>(null);
   const landedAt = useRef<number | null>(null);
   /** When the last card was poured; a pile still jostling this long after counts as landed. */
   const pouredAt = useRef<number | null>(null);
@@ -403,6 +407,7 @@ function Playground() {
       if (at === null || interacted.current) return;
       if (performance.now() - at > AUTO_GELD_AFTER * 1000) {
         window.clearInterval(timer);
+        autoOnAt.current = performance.now();
         setGeld(true);
       }
     }, 200);
@@ -629,6 +634,9 @@ function Playground() {
         onClick={() => {
           interacted.current = true;
           setUsed(true);
+          const autoOn = autoOnAt.current;
+          autoOnAt.current = null;
+          if (autoOn !== null && performance.now() - autoOn < AUTO_CLICK_GRACE) return;
           setGeld((value) => !value);
         }}
         style={layout === null ? { visibility: 'hidden' } : { right: layout.toggle.right, top: layout.toggle.top }}
