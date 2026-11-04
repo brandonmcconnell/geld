@@ -151,6 +151,26 @@ describe('the pile', () => {
     expect(from - b.y).toBeGreaterThan(150);
   });
 
+  it('flies a card launched from inside a heap out at full speed, leaves the heap be, and lands it on top', () => {
+    const open = { ...world, obstacles: [] };
+    const heap = [body(450, 588, 150, 24), body(450, 566, 150, 24), body(450, 544, 150, 24)];
+    run(heap, open, 2);
+    expect(settled(heap)).toBe(true);
+    const at = heap.map((b) => b.y);
+    const flying = { ...body(450, 566, 150, 24), vx: 20, vy: -1400, ghost: 1.2 };
+    const all = [...heap, flying];
+    let highest = flying.y;
+    for (let t = 0; t < 0.4; t += 1 / 60) {
+      step(all, open, 1 / 60);
+      highest = Math.min(highest, flying.y);
+    }
+    expect(566 - highest).toBeGreaterThan(300);
+    heap.forEach((b, i) => expect(b.y).toBeCloseTo(at[i] ?? 0, 0));
+    run(all, open, 4);
+    expect(settled(all)).toBe(true);
+    expect(rectOf(flying).bottom).toBeLessThan(world.floor - 1);
+  });
+
   it('brings a landed heap to rest for good, with nothing still twitching once it has slept', () => {
     const random = seeded(9);
     const open = { ...world, obstacles: [] };

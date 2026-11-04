@@ -189,9 +189,10 @@ function substep(bodies: readonly Body[], world: World, dt: number): void {
     let cx = (body.x - own.x) / dt;
     let cy = (body.y - own.y) / dt;
     if ((body.settle ?? 0) > 0) {
-      // Settling: what holding it up took cancels its fall, but nothing lifts it faster than a drift, sideways or up.
+      // Settling: what holding it up took cancels its fall, but no push lifts it faster than a drift, sideways or up; its own flight it keeps.
+      const ownVy = (own.y - start.y) / dt;
       body.vx = (own.x - start.x) / dt + Math.max(-SETTLE_SPEED, Math.min(SETTLE_SPEED, cx));
-      body.vy = Math.max(-SETTLE_SPEED, (body.y - start.y) / dt);
+      body.vy = Math.max(Math.min(ownVy, -SETTLE_SPEED), (body.y - start.y) / dt);
     } else {
       const correction = Math.hypot(cx, cy);
       if (correction > CORRECTION_SPEED) {
@@ -291,13 +292,16 @@ function separate(a: Body, b: Body, grounded: Set<Body>): void {
   if (!a.held && !b.held && a.still >= SLEEP_AFTER && b.still >= SLEEP_AFTER) return;
   const slow = !a.held && !b.held && Math.hypot(a.vx - b.vx, a.vy - b.vy) < CONTACT_SPEED;
   if ((a.ghost ?? 0) > 0 && (b.ghost ?? 0) > 0) return;
-  // A card in flight that meets one already down comes to rest on it the gentle way.
-  for (const body of [a, b]) {
-    if ((body.ghost ?? 0) > 0) {
-      body.ghost = 0;
-      body.settle = SETTLE_AFTER_GHOST;
-      body.settleFor = SETTLE_AT_MOST;
-    }
+  // A card in flight comes down on one already down and rests on it the gentle way; on its way up, or launched from inside the heap, it passes through.
+  for (const [flying, other] of [
+    [a, b],
+    [b, a],
+  ] as const) {
+    if ((flying.ghost ?? 0) <= 0) continue;
+    if (flying.vy <= 0 || flying.y > other.y) return;
+    flying.ghost = 0;
+    flying.settle = SETTLE_AFTER_GHOST;
+    flying.settleFor = SETTLE_AT_MOST;
   }
   const settling = (a.settle ?? 0) > 0 || (b.settle ?? 0) > 0;
   const gentle = settling ? SETTLE_SHARE : 1;

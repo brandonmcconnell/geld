@@ -26,10 +26,9 @@ const ROW_HEIGHT = 50;
 const CARD_CHROME = 48;
 const CHIP_LINE = 34;
 const GAP_ABOVE_SWITCH = 12;
-/** Under the words, the card narrows down to this to rise beside them, height counting up to about its natural height; with less than `CARD_LEAST` it hangs under the switch. */
+/** Under the words, the card narrows down to this to rise beside them, height counting up to about its natural height. */
 const CARD_NARROWEST = 200;
 const CARD_TALL = 400;
-const CARD_LEAST = 84;
 /** How much of the free space the pile fills; cards overlap at their edges, so it can be most of it. */
 const FILL = 0.6;
 /** No arc peaks higher than this, so nothing is flung up under the header. */
@@ -40,8 +39,7 @@ interface Layout {
   readonly height: number;
   /** Anchored by its right edge, so the label changing never moves it. */
   readonly toggle: { readonly right: number; readonly top: number };
-  /** Over the switch, or `below` it where there is no room above. */
-  readonly card: { readonly left: number; readonly width: number; readonly maxHeight: number; readonly below: boolean };
+  readonly card: { readonly left: number; readonly width: number; readonly maxHeight: number };
   readonly words: Rect;
 }
 
@@ -94,10 +92,17 @@ function arc(from: { readonly x: number; readonly y: number }, to: { readonly x:
  * gathers each into its line of a digest card beside the switch; off, the
  * card explodes and the mess lands all over again. Every card can be dragged
  * and thrown. Lives on a layer over the hero that takes no room, with the
- * hero's words as obstacles; with reduced motion there is no pile at all.
+ * hero's words as obstacles. Not with reduced motion, and not narrower than
+ * 640px, where the hero has no room beside its words for either the pile or
+ * the digest.
  */
 export function HeroPile() {
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const wide = useMediaQuery('(min-width: 40rem)');
+  return reduced || !wide ? null : <Playground />;
+}
+
+function Playground() {
 
   const layer = useRef<HTMLDivElement | null>(null);
   const toggle = useRef<HTMLButtonElement | null>(null);
@@ -222,7 +227,7 @@ export function HeroPile() {
     if (reach - nearest >= CARD_MIN) {
       // Beside the words: centred over the switch, pushed right as the heading comes near until it is flush with the switch, then narrower.
       const width = Math.min(CARD_WIDTH, reach - nearest);
-      card = { left: Math.max(nearest, Math.min(reach - width, right - tw / 2 - width / 2)), width, maxHeight: Math.max(0, top - GAP_ABOVE_SWITCH - 8), below: false };
+      card = { left: Math.max(nearest, Math.min(reach - width, right - tw / 2 - width / 2)), width, maxHeight: Math.max(0, top - GAP_ABOVE_SWITCH - 8) };
     } else {
       // Over the switch, under whichever words are in its way: the heading's last line or the buttons end well short of the right edge, so it can rise beside them, narrower where that buys more of a card than it costs.
       const roomAbove = (width: number) => {
@@ -237,12 +242,7 @@ export function HeroPile() {
         const room = roomAbove(width);
         if (area(width, room) > area(best.width, best.room)) best = { width, room };
       }
-      // Not even a couple of lines above it (a short phone): it hangs under the switch instead, over the logos.
-      const roomBelow = origin.height - floor - GAP_ABOVE_SWITCH - 8;
-      card =
-        best.room < CARD_LEAST && roomBelow > best.room
-          ? { left: right - widest, width: widest, maxHeight: roomBelow, below: true }
-          : { left: right - best.width, width: best.width, maxHeight: Math.max(0, best.room), below: false };
+      card = { left: right - best.width, width: best.width, maxHeight: Math.max(0, best.room) };
     }
     return {
       world: { width: origin.width, floor, obstacles, sink: { x: right - tw / 2, y: top + th / 2 } },
@@ -255,7 +255,6 @@ export function HeroPile() {
 
   // Lay the world out, pour the pile once it is in view, and keep up with resizes.
   useEffect(() => {
-    if (reduced) return;
     const root = layer.current;
     if (!root) return;
     let started = false;
@@ -368,11 +367,10 @@ export function HeroPile() {
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       frame.current = null;
     };
-  }, [reduced, measure, run, paint]);
+  }, [measure, run, paint]);
 
   // Geld switches itself on a moment after the pile lands, unless the reader got there first.
   useEffect(() => {
-    if (reduced) return;
     const timer = window.setInterval(() => {
       const at = landedAt.current;
       if (at === null || interacted.current) return;
@@ -382,7 +380,7 @@ export function HeroPile() {
       }
     }, 200);
     return () => window.clearInterval(timer);
-  }, [reduced]);
+  }, []);
 
   // The digest's lines: only kinds in the pile, as many as the room holds, the ones that matter first.
   const rows = useMemo(() => {
@@ -545,7 +543,6 @@ export function HeroPile() {
     run();
   };
 
-  if (reduced) return null;
 
   return (
     <div ref={layer} className="pointer-events-none absolute inset-0 z-10 [overflow-x:clip]">
@@ -568,13 +565,8 @@ export function HeroPile() {
         ))}
       </div>
       {layout !== null && (
-        <div
-          aria-hidden="true"
-          className="absolute z-40"
-          style={layout.card.below ? { left: layout.card.left, top: layout.world.floor + GAP_ABOVE_SWITCH } : { left: layout.card.left, bottom: layout.height - layout.toggle.top + GAP_ABOVE_SWITCH }}
-        >
+        <div aria-hidden="true" className="absolute z-40" style={{ left: layout.card.left, bottom: layout.height - layout.toggle.top + GAP_ABOVE_SWITCH }}>
           <DigestCard
-            below={layout.card.below}
             digest={digest}
             rows={rows.rows}
             compact={rows.compact}
