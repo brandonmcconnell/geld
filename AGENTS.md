@@ -1473,8 +1473,8 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
   live "try a path" demo in `components/path-tester.tsx`), `/how-it-works`, `/patterns` (rendered from `CATEGORIES` — the same source `catalog/patterns.json` is generated from — never hand-written;
   no runtime fetch, so a catalog change reaches the site with the next deploy), `/faq`, `/privacy` (doubles as the store privacy policy).
   Favicons are drawn from the brand SVGs at build time (`lib/brand.ts`);
-  the OG image (`app/opengraph-image.tsx`) combines the wordmark with a real 2× screenshot from `assets/screenshots/` (embedded as a data URL, `loadScreenshot`).
-  Re-capture that screenshot with the extension on a public PR when the header UI changes;
+  the OG image (`app/opengraph-image.tsx`) sets the wordmark, `HEADLINE` and `SUBHEADLINE` (`lib/site.ts`, the hero's own lines, so the image never says something the home page does not) beside a 2× capture of the hero's digest card from `assets/screenshots/hero-digest.png` (embedded as a data URL, `loadScreenshot`).
+  Re-capture that card from the home page (light scheme, after the gather) when the digest card changes;
   the Vercel ignore script watches the folder.
   The logo reel (`components/logo-reel.tsx`) lists `lib/customers.ts` twice on one track that slides by half, so the loop has no seam;
   with reduced motion it is one still, wrapping row.

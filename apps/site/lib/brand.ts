@@ -68,7 +68,7 @@ function pngDimensions(png: Buffer, file: string): { readonly width: number; rea
  * Product screenshots in `assets/screenshots/` (2× captures of the extension
  * on github.com), embedded in the Open Graph image at build time.
  */
-export async function loadScreenshot(file: 'pr-header-breakdown.png'): Promise<Screenshot> {
+export async function loadScreenshot(file: 'hero-digest.png'): Promise<Screenshot> {
   'use cache';
   cacheLife('max');
   const png = await readFile(/* turbopackIgnore: true */ path.join(REPO_ROOT, 'assets', 'screenshots', file));
