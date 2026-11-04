@@ -2429,6 +2429,23 @@ tr[data-geld-test-fold='hidden'] {
  * `content-visibility: hidden` skips the contents (rail pseudo-elements
  * included), and without padding or borders nothing of the row remains.
  */
+/*
+ * In Primer's own layer: GitHub declares `[hidden][hidden] { display: none !important }` inside
+ * `@layer primer-css-base`, and a layered !important beats any unlayered one whatever its specificity, so this
+ * rule unlayered lost and folded rows were `display: none`, out of find-in-page's reach. In the same layer the
+ * more specific rule wins, and should the layer go, a layered !important still beats an unlayered one.
+ */
+@layer primer-css-base {
+  /* Only where `until-found` is findable (`data-geld-findable`, fold.ts): elsewhere it is plain hidden and must stay so. */
+  [data-geld-folded='hidden'][data-geld-findable][hidden='until-found'] {
+    display: block !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+}
+
 [data-geld-folded='hidden'] {
   display: block !important;
   min-height: 0 !important;
@@ -2448,10 +2465,16 @@ html[data-geld-timeline='full'] [data-geld-folded] {
  * stamps `data-geld-seen` on everything present when a pass ends), so the
  * time between arrival and fold never paints it. Only once the panel is up,
  * so the first paint of the page is GitHub's own; items on loan to the
- * panel are exempt.
+ * panel are exempt. Never `display: none`: a Mermaid diagram GitHub renders in
+ * that window has no layout in its iframe, fails with "svg element not in
+ * render tree" and stays failed when the item shows.
  */
 html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-timeline-item, .TimelineItem, [data-testid='timeline-row']):not([data-geld-seen]):not(.geld-review *) {
-  display: none !important;
+  content-visibility: hidden !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
 }
 
 /* The description card the panel grows out of: one box, shared border. */
@@ -4000,6 +4023,11 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* A folded group's rows stay built and are hidden: rows set their own display, which would outrank `hidden`. */
+.geld-review__rows > [data-geld-in-group][hidden] {
+  display: none !important;
 }
 
 .geld-review__group + .geld-review__group,
@@ -6226,6 +6254,11 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   margin-left: -5px;
 }
 
+/* The history menu and its tooltip, side by side: no box of its own, so the menu stands in the byline as before. */
+.geld-review__edited-pair {
+  display: contents;
+}
+
 .geld-review__edited {
   display: inline-flex;
   align-items: center;
@@ -6242,17 +6275,6 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 .geld-review__edited svg {
   width: 12px;
   height: 12px;
-}
-
-/* An edited comment's time in a row: the edit's, then the clock, on the time's own line. */
-.geld-review__time--edited {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.geld-review__time--edited > .geld-review__edited-wrap {
-  margin-left: 0;
 }
 
 /* The clock that opens GitHub's edit history is GitHub's dropdown: a summary, so no marker and the pointer. */
@@ -6273,7 +6295,10 @@ summary.geld-review__edited--menu:hover,
   color: var(--fgColor-accent, var(--color-accent-fg));
 }
 
+/* GitHub's `dropdown-menu-sw` caret sits about 15px in from the menu's right edge, centred on its own wider "edited ▾"
+ * control. Ours is a 12px clock whose centre is 6px in, so the menu moves 9px right to put the caret's tip on it. */
 .geld-review__edited-wrap > details-menu {
+  right: -9px;
   font-size: 12px;
   font-weight: 400;
   text-align: left;
@@ -6372,6 +6397,43 @@ summary.geld-review__edited--menu:hover,
 
 a.geld-review__rerun {
   text-decoration: none;
+}
+
+/* "Run" on the CI row (GitHub's "Approve workflows to run"): Rerun's box beside the gear, its alert glyph in
+   GitHub's attention colour. Pressed, it fades until the pass after GitHub's own button has gone. */
+.geld-review__approve-run-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
+}
+
+/* The row's other controls (⋯, the gear, the chevron) are 28px squares; Run stands as tall, not at Rerun's 24px. */
+.geld-review__approve-run {
+  height: 28px;
+  padding: 0 8px;
+}
+
+.geld-review__approve-run .octicon {
+  color: var(--fgColor-attention, var(--color-attention-fg));
+}
+
+/* Mona Sans at line-height 1 sits its letters 1.5px above the box's middle: the word's box is trimmed to its cap height
+   and baseline, so centring the box centres the letters. Without `text-box` the word is nudged down instead. */
+.geld-review__approve-run > span {
+  text-box: trim-both cap alphabetic;
+}
+
+@supports not (text-box: trim-both cap alphabetic) {
+  .geld-review__approve-run > span {
+    position: relative;
+    top: 1.5px;
+  }
+}
+
+.geld-review__approve-run:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 a.geld-review__rerun:hover {
@@ -7284,32 +7346,192 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   text-decoration: underline;
 }
 
-/* ---- description collapse (minimal mode) ---------------------------------- */
+/* ---- comment text wraps pretty ------------------------------------------- */
 
-[data-geld-desc='collapsed'] > :not(:first-child) {
-  display: none;
+/*
+ * Rendered comment text (the description, comments, review threads, and the same nodes on loan to the digest's chats)
+ * avoids a lone last word. The longhand only: the `text-wrap` shorthand also sets the wrap mode, which a code cell
+ * matched here would lose. The style is inherited, so code keeps its own wrapping. Browsers without `pretty` ignore it.
+ */
+:is(.comment-body, .js-comment-body, [data-testid='comment-body'], [data-testid='issue-body'], [data-testid='review-thread-comment'])
+  :is(p, h1, h2, h3, h4, h5, h6, li, blockquote, td, th, dt, dd, summary, figcaption) {
+  text-wrap-style: pretty;
 }
 
-.geld-review-desc {
-  display: inline-block;
-  margin: 4px 0 12px;
+:is(.comment-body, .js-comment-body, [data-testid='comment-body'], [data-testid='issue-body'], [data-testid='review-thread-comment'])
+  :is(pre, .highlight, .blob-code, .blob-num) {
+  text-wrap-style: auto;
+}
+
+/*
+ * GitHub sets inline code to `white-space: break-spaces`, and Chrome turns `pretty` off for any paragraph holding
+ * one, which is most of them. `pre-wrap` keeps the code's spaces as `break-spaces` does and leaves `pretty` working.
+ */
+:is(.comment-body, .js-comment-body, [data-testid='comment-body'], [data-testid='issue-body'], [data-testid='review-thread-comment'])
+  :is(code, tt):not(pre *) {
+  white-space: pre-wrap;
+}
+
+/* ---- description outline and cap (description.ts) ------------------------- */
+
+/*
+ * A folded block carries `hidden="until-found"` so find-in-page still searches it. As with timeline folds, Primer's
+ * layered `[hidden] { display: none !important }` is undone in its own layer and the box zeroed: the UA's
+ * `content-visibility: hidden` skips the contents, and with no margin, padding or border nothing of the block remains.
+ */
+@layer primer-css-base {
+  [data-geld-desc] > [data-geld-desc-fold][data-geld-findable][hidden='until-found'] {
+    display: block !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+}
+
+/*
+ * Headings are slimmed as the chat view slims them, and every block sits a
+ * level in per open section, with a rail from each open heading's chevron to
+ * the end of its section. A block's rails are custom properties description.ts
+ * writes (one line per open section around it), painted by its ::before, which
+ * runs on through the block's bottom margin so a section's rail has no gaps.
+ * INDENT (24px) and the chevron centre (10px) are mirrored in description.ts.
+ */
+[data-geld-desc] {
+  --geld-desc-rail: var(--borderColor-default, var(--color-border-default, #d0d7de));
+}
+
+[data-geld-desc] > * {
+  --geld-desc-after: 16px;
+}
+
+[data-geld-desc] > :last-child {
+  --geld-desc-after: 0px;
+}
+
+[data-geld-desc] :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0 !important;
+  padding: 8px 0 0 !important;
+  border-bottom: 0 !important;
+  line-height: 24px !important;
+}
+
+[data-geld-desc] :is(h1, h2) {
+  font-size: 16px !important;
+}
+
+[data-geld-desc] :is(h3, h4, h5, h6) {
+  font-size: 14px !important;
+}
+
+[data-geld-desc] > :is(h1, h2, h3, h4, h5, h6, .markdown-heading) {
+  --geld-desc-after: 8px;
+  /* The chevron's box spans 10px to 30px: its rail starts just under the glyph's point, not through it. */
+  --geld-desc-chevron-y: 28px;
+  margin-top: 0 !important;
+  margin-bottom: 8px !important;
+}
+
+[data-geld-desc] > [data-geld-desc-depth] {
+  position: relative;
+  margin-left: calc(var(--geld-desc-depth, 0) * 24px) !important;
+}
+
+[data-geld-desc] > [data-geld-desc-depth]::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  /* 1px past the gap: blocks start on fractional pixels, and two rail pieces meeting edge to edge leave a light seam. */
+  bottom: calc(-1 * var(--geld-desc-after) - 1px);
+  left: calc(var(--geld-desc-depth, 0) * -24px);
+  width: calc((var(--geld-desc-depth, 0) + 1) * 24px);
+  background-image: var(--geld-desc-rails, none);
+  background-position: var(--geld-desc-rail-pos, 0 0);
+  background-size: var(--geld-desc-rail-size, auto);
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+[data-geld-desc-heading] {
+  cursor: pointer;
+}
+
+/* The heading's own text, links and code stay in GitHub's inline flow. The chevron stands in the indent beside it. */
+/* Every top-level heading, foldable or not, so titles line up: but only in a description that has a chevron at all. */
+[data-geld-desc]:has(> [data-geld-desc-heading]) > :is(h1, h2, h3, h4, h5, h6),
+[data-geld-desc]:has(> [data-geld-desc-heading]) > .markdown-heading > :is(h1, h2, h3, h4, h5, h6) {
+  position: relative;
+  padding-left: 24px !important;
+}
+
+.geld-desc-toggle {
+  position: absolute;
+  top: 10px;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  cursor: pointer;
+}
+
+.geld-desc-toggle:hover {
+  background: var(--bgColor-neutral-muted, rgba(175, 184, 193, 0.2));
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+/* Its own layer from the start, so the turn runs on the compositor whatever the page lays out meanwhile. */
+.geld-desc-toggle .octicon {
+  transition: transform 120ms ease;
+  will-change: transform;
+}
+
+[data-geld-desc-heading='closed'] .geld-desc-toggle .octicon {
+  transform: rotate(-90deg);
+}
+
+[data-geld-desc-cap][data-geld-desc-long] {
+  max-height: 500px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 96px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 96px), transparent);
+}
+
+.geld-desc-more {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  margin: 0 16px 12px;
   padding: 0;
   border: 0;
   background: none;
   color: var(--fgColor-accent, var(--color-accent-fg));
   font: inherit;
   font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
 }
 
-.geld-review-desc:hover {
+[data-geld-desc-long] + .geld-desc-more {
+  display: inline-flex;
+}
+
+.geld-desc-more:hover span {
   text-decoration: underline;
 }
+
 
 @media (prefers-reduced-motion: reduce) {
   .geld-review__meter > i,
   .geld-review__group-btn .octicon,
-  .geld-review__chevron .octicon {
+  .geld-review__chevron .octicon,
+  .geld-desc-toggle .octicon {
     transition: none;
   }
 

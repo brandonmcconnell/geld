@@ -2058,6 +2058,10 @@ var init_diff_summaries = __esm({
 function formatCount(value) {
   return numberFormatter.format(Math.max(0, value));
 }
+function formatCountLike(original, value) {
+  const separator = GROUP_SEPARATOR.exec(original)?.[1];
+  return separator === void 0 ? formatCount(value) : formatCount(value).replace(/,/g, separator);
+}
 function parseCount(text) {
   if (text === null || text === void 0) return null;
   const digits = text.replace(/[^\d]/g, "");
@@ -2085,11 +2089,13 @@ function subtractTotals(a, b) {
 function formatDiffstat(totals) {
   return `+${formatCount(totals.additions)} \u2212${formatCount(totals.deletions)}`;
 }
-var numberFormatter, EMPTY_TOTALS;
+var numberFormatter, COUNT_PATTERN, GROUP_SEPARATOR, EMPTY_TOTALS;
 var init_format = __esm({
   "../../packages/core/src/format.ts"() {
     "use strict";
     numberFormatter = new Intl.NumberFormat("en-US");
+    COUNT_PATTERN = String.raw`\d+(?:[.,'’\u00a0\u202f]\d{2,3})*`;
+    GROUP_SEPARATOR = /\d([.,'’\u00a0\u202f])\d{2,3}(?!\d)/;
     EMPTY_TOTALS = { files: 0, additions: 0, deletions: 0 };
   }
 });
@@ -2473,7 +2479,7 @@ var init_settings = __esm({
       prOverview: true,
       compactTimeline: "compact",
       reviewGrouping: "type",
-      collapseDescription: false,
+      collapseDescription: true,
       quickReview: true,
       reviewBots: [],
       aiEnabled: false,
@@ -11147,8 +11153,8 @@ var init_settings_schema = __esm({
           {
             kind: "toggle",
             key: "collapseDescription",
-            label: "Collapse the description",
-            description: "In Minimal mode, show the first paragraph of the pull request body and a control to expand the rest.",
+            label: "Shorten the description",
+            description: "Fold each section of the pull request description under its heading. A long description with no headings is cut to 500px with a control to show the rest.",
             popup: false
           },
           {
@@ -11376,6 +11382,7 @@ __export(src_exports, {
   CHIP_PLACEMENTS: () => CHIP_PLACEMENTS,
   COMPACT_TIMELINE_MODES: () => COMPACT_TIMELINE_MODES,
   CORRUPTED_SETTINGS_COPY: () => CORRUPTED_SETTINGS_COPY,
+  COUNT_PATTERN: () => COUNT_PATTERN,
   CUSTOM_GROUP_ID: () => CUSTOM_GROUP_ID,
   DEFAULT_SETTINGS: () => DEFAULT_SETTINGS,
   EMPTY_REPO_CONFIG: () => EMPTY_REPO_CONFIG,
@@ -11444,6 +11451,7 @@ __export(src_exports, {
   findSettingsGist: () => findSettingsGist,
   formatCatalogVersion: () => formatCatalogVersion,
   formatCount: () => formatCount,
+  formatCountLike: () => formatCountLike,
   formatDiffstat: () => formatDiffstat,
   generatedConfigFrom: () => generatedConfigFrom,
   globToRegExp: () => globToRegExp,
@@ -31997,6 +32005,12 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     }
     const parsed = parseBotBody(comment.body, id.startsWith("custom:") ? "" : id);
     if (botById(id)?.conversational === true && !isReviewShaped(parsed)) continue;
+    if (!isReviewShaped(parsed) && threadRuns.has(id)) {
+      reported(id, comment);
+      statusOnly.delete(id);
+      runsBeforeAsk.delete(id);
+      continue;
+    }
     reported(id, comment);
     if (parsed.count !== null) countedSummaries.add(comment.anchor);
     if (parsed.unthreaded !== void 0) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor });

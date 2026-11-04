@@ -8,6 +8,11 @@ describe('hiddenTimelineItems', () => {
     expect(hiddenTimelineItems()).toBe(1169);
   });
 
+  it('reads a count grouped for another locale', () => {
+    document.body.innerHTML = `<form class="ajax-pagination-form js-ajax-pagination"><button type="submit" class="ajax-pagination-btn"> 1.169 hidden items </button></form>`;
+    expect(hiddenTimelineItems()).toBe(1169);
+  });
+
   it('is nothing with no "Load more" on the page', () => {
     document.body.innerHTML = '<div class="js-discussion"></div>';
     expect(hiddenTimelineItems()).toBe(0);

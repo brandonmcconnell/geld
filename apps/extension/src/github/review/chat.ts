@@ -74,10 +74,9 @@ export interface ChatSource {
   readonly revision?: RevisionView;
   /**
    * The time said on the strip after the label, ISO, when it is worth saying:
-   * the comment is from an earlier run than the thread (the bot posted no
-   * summary with this one), or the live node has been rewritten since it
-   * was posted (then this is the rewrite's time — the reading's own). A
-   * revision shown instead of the live node carries its own time.
+   * the live node has been rewritten since it was posted (then this is the
+   * rewrite's time — the reading's own). A revision shown instead of the
+   * live node carries its own time.
    */
   readonly at?: string;
   /** A review bot's summary that is its latest word: Geld's Rerun stands on the open strip's right. */
@@ -276,9 +275,17 @@ const ATTR_AGENT_RERUN = 'data-geld-agent-rerun';
  * A review posted by a Cursor cloud agent (an automation, by `cursor[bot]`)
  * ends in "Open in Web", the agent's run on cursor.com. Found Oct 2026 on
  * public pull requests; Bugbot's "Fix All in Cursor" is an action, not a
- * view, and the other bots post none.
+ * view, and the other bots post none. Since Nov 2026 Greptile's badge goes
+ * through its tenant switch, the run's path encoded in `next`
+ * (`/-/switch-tenant?tenant=o&next=%2Fo%2Fr%2Fpull%2F9`).
  */
-const AGENT_VIEW_LINKS = ['a[href^="https://app.greptile.com/"][href*="/pull/"]:not([href*="/api/retrigger"])', 'a[href^="https://app.devin.ai/review/"]', 'a[href^="https://app.coderabbit.ai/change-stack/"]', 'a[href^="https://cursor.com/agents/"]'];
+const AGENT_VIEW_LINKS = [
+  'a[href^="https://app.greptile.com/"][href*="/pull/"]:not([href*="/api/retrigger"])',
+  'a[href^="https://app.greptile.com/-/switch-tenant?"][href*="%2Fpull%2F"]',
+  'a[href^="https://app.devin.ai/review/"]',
+  'a[href^="https://app.coderabbit.ai/change-stack/"]',
+  'a[href^="https://cursor.com/agents/"]',
+];
 const ATTR_AGENT_VIEW = 'data-geld-agent-view';
 
 export function hideAgentRerunControls(body: HTMLElement): void {

@@ -12,11 +12,11 @@ import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, 
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage, pullRequestStateWords } from '../page';
-import { phase, phaseSince } from '../../lib/perf';
+import { count, phase, phaseSince } from '../../lib/perf';
 import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
-import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, reviewCommentOf, revisionMarker, THREAD_SELECTOR } from './crawler';
+import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
@@ -24,7 +24,9 @@ import { crawlConversation } from './crawler';
 import { threadFragmentOf } from './thread-fragment';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
-import { editedAt, editsVersion, editTimesOf, refreshEditTimes, resetEditTimes, revisionAsOf } from './edit-times';
+import { editedAt, editsVersion, editTimesOf, refreshEditTimes, resetEditTimes, revisionAsOf, revisionTimesOf } from './edit-times';
+import type { SameRunCandidate } from './revisions';
+import { RUN_SETTLE_MS, threadHeadOf } from './thread-head';
 import { headChecks, nextCheckRefresh, resetHeadChecks } from './check-source';
 import { absoluteTimeText, relativeTimeText } from './time';
 import { stickyHeaderBottomAt } from './sticky';
@@ -33,10 +35,11 @@ import type { ReviewerCandidate } from './reviewers';
 import { nextRunGraceEnd, withRunTimes } from './run-starts';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
-import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
+import { shortenDescription } from './description';
+import { applyFolds, closureKindOf, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncSpinners, unmountPanel } from './panel';
+import { ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -815,6 +818,41 @@ function checksSection(): HTMLElement | null {
   return checksSectionEl;
 }
 
+// "Approve workflows to run" today, "Approve and run" in older markup: any approve-and-run wording counts.
+const APPROVE_WORKFLOWS = /^approve\b.*\brun\b/i;
+const AWAITING_APPROVAL = /\b(\d+) workflows? awaiting approval/i;
+
+/**
+ * GitHub's own "Approve workflows to run", shown to someone who may approve
+ * whenever the repository's approval policy holds a contributor's workflows
+ * (first-time contributors by default, every outside contributor on every
+ * pull request under the strictest policy). The button itself is the test,
+ * never who the contributor is. Looked for in the merge box and in the
+ * checks section wherever quick view has put it.
+ */
+function approveWorkflowsButton(): HTMLButtonElement | HTMLInputElement | null {
+  const section = checksSection();
+  const scopes = [mergeBox() ?? mergeHomeEl, section, ...(section === null ? [] : wornPiecesOf(section))];
+  for (const scope of scopes) {
+    if (scope === null) continue;
+    for (const control of scope.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button, input[type="submit"], input[type="button"]')) {
+      const words = control instanceof HTMLInputElement ? control.value : control.textContent ?? '';
+      if (!control.disabled && APPROVE_WORKFLOWS.test(words.replace(/\s+/g, ' ').trim())) return control;
+    }
+  }
+  return null;
+}
+
+/** The heading GitHub puts over that button ("1 workflow awaiting approval"), for the Run control's tooltip. */
+function workflowApprovalLabel(button: HTMLElement): string {
+  let node: HTMLElement | null = button.parentElement;
+  for (let depth = 0; node !== null && depth < 8; depth += 1, node = node.parentElement) {
+    const found = AWAITING_APPROVAL.exec((node.textContent ?? '').replace(/\s+/g, ' '));
+    if (found !== null) return `${found[1]} ${found[1] === '1' ? 'workflow' : 'workflows'} awaiting approval`;
+  }
+  return 'Workflows awaiting approval';
+}
+
 /** Merge box text plus the checks section's, wherever quick view has put it. */
 /** The checks section's text with its loaned content included, so counts read the same open or closed. */
 function checksSectionText(): string | null {
@@ -1571,6 +1609,15 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
           row: lastPush.commits[0] ?? null,
           at: startOf(lastPush),
         };
+  // Each thread's head is read once per pass: every comment line of a round asks about every thread in it.
+  const heads = new Map<string, string | null>();
+  const headOf = (source: ReviewItem['sources'][number]): string | null => {
+    const known = heads.get(source.anchor);
+    if (known !== undefined) return known;
+    const head = threadHeadAnchorOf(source.anchor, source.bot ?? resolveBotId(source.author));
+    heads.set(source.anchor, head);
+    return head;
+  };
   return rounds.map((round, position) => {
     const avatars: Avatar[] = [];
     const names: string[] = [];
@@ -1600,12 +1647,11 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
     const firstNode = first === null ? null : document.getElementById(first);
     // CI is read from the last commit row; a force-push event carries none.
     const lastCommit = [...round.commits].reverse().find((row) => !pushRoots.has(row)) ?? null;
-    // The round's threads by the bot that wrote the comment: a run summary leads to its findings as a person's
-    // review leads to its threads (same count on the line, same chips under the opened bubble).
-    const sameBot = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase() || (resolveBotId(a) !== null && resolveBotId(a) === resolveBotId(b));
-    const threadsBy = (author: string): ReviewThreadRef[] =>
+    // A line's threads are the ones posted under it (`threadHeadOf`), as a person's review leads to its own
+    // threads (same count on the line, same chips under the opened bubble), never every thread of its author's.
+    const threadsUnder = (anchor: string): ReviewThreadRef[] =>
       round.items.flatMap((item) => {
-        const source = item.sources.find((candidate) => candidate.kind === 'thread' && sameBot(candidate.author, author)) ?? item.sources.find((candidate) => sameBot(candidate.author, author));
+        const source = item.sources.find((candidate) => candidate.kind === 'thread' && headOf(candidate) === anchor);
         return source === undefined ? [] : [{ anchor: source.anchor, done: !isOpenStatus(item.status) }];
       });
     return {
@@ -1618,7 +1664,7 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
       comments: [...round.comments]
         .sort((a, b) => Number(b.lane === 'finding') - Number(a.lane === 'finding'))
         .map((comment) => {
-          const threads = threadsBy(comment.author);
+          const threads = threadsUnder(comment.anchor);
           return {
             anchor: comment.anchor,
             author: comment.author,
@@ -1824,15 +1870,11 @@ let latestPush: { readonly anchors: ReadonlySet<string>; readonly row: HTMLEleme
  * run's.
  */
 const SUMMARY_LAG_MS = 10 * 60 * 1000;
-/** A bot finishes writing its summary in the moments after it posts the run's threads; edits this soon after count as the run's reading. */
-const RUN_SETTLE_MS = 5 * 60 * 1000;
 
 /**
- * The bot's run summary a thread came from: the bot's latest summary written
- * by the thread's time (give or take the lag above). Bots rewrite that one
- * comment run after run, so a thread from an earlier run has a summary that
- * may since say something else — `revisionAsOf` reads it as it was. With
- * `threadAt` NaN there is no cutoff: the bot's newest summary.
+ * The bot's latest summary written by `threadAt` (give or take the lag
+ * above). With `threadAt` NaN there is no cutoff: the bot's newest summary.
+ * Not a thread's head: that is `threadHeadOf`.
  */
 function botSummaryFor(botId: string, threadAt: number): { readonly anchor: string; readonly facts: SourceFacts } | null {
   let best: { readonly anchor: string; readonly facts: SourceFacts } | null = null;
@@ -1843,6 +1885,28 @@ function botSummaryFor(botId: string, threadAt: number): { readonly anchor: stri
     if (best === null || at > Date.parse(best.facts.createdAt)) best = { anchor, facts };
   }
   return best;
+}
+
+/** A thread's opening comment, from the anchor of any comment in it. */
+function threadOpenerOf(anchor: string): HTMLElement | null {
+  return threadRootOf(anchor)?.querySelector<HTMLElement>('[id^="discussion_r"], [data-testid="review-thread-comment"]') ?? document.getElementById(anchor);
+}
+
+/** The bot's summaries with every time each was written, for `threadHeadOf`; null for no bot. */
+function summariesOf(botId: string | null | undefined): SameRunCandidate[] | null {
+  if (botId === null || botId === undefined) return null;
+  const candidates: SameRunCandidate[] = [];
+  for (const [anchor, facts] of sourceFacts) {
+    if (facts.botId !== botId || !facts.summary) continue;
+    candidates.push({ anchor, times: [facts.createdAt, ...(revisionTimesOf(anchor, reapplySoon) ?? [])] });
+  }
+  return candidates;
+}
+
+/** The anchor heading the thread `anchor` belongs to (`threadHeadOf`, read from the thread's opening comment). */
+function threadHeadAnchorOf(anchor: string, botId: string | null | undefined): string | null {
+  const opener = threadOpenerOf(anchor);
+  return opener === null ? null : (threadHeadOf(opener, Date.parse(createdAtOf(opener)), summariesOf(botId))?.anchor ?? null);
 }
 
 /**
@@ -1893,10 +1957,7 @@ function buildBotLines(meta: GeldPrMeta): readonly BotLine[] {
             const openedBy = opener === null ? null : authorOf(opener)?.login;
             if (openedBy !== undefined && openedBy !== null && resolveBotId(openedBy) !== bot.id && openedBy.toLowerCase() !== bot.login.toLowerCase()) continue;
           } else if (threads.some((ref) => ref.anchor === source.anchor)) continue;
-          const threadEl = document.getElementById(source.anchor);
-          const review = threadEl === null ? null : closestAtHome(threadEl, '[id^="pullrequestreview-"]');
-          const at = threadEl === null ? NaN : Date.parse(createdAtOf(threadEl));
-          const owner = review !== null && sourceFacts.get(review.id)?.summary === true ? review.id : (botSummaryFor(bot.id, at)?.anchor ?? null);
+          const owner = threadHeadAnchorOf(source.anchor, bot.id);
           // With no summary at all every thread of the bot's is the line's way in.
           if (anchor === null ? computed === null : owner === anchor) threads.push({ anchor: source.anchor, done: !isOpenStatus(item.status) });
         }
@@ -1948,12 +2009,8 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
     const isBot = facts?.bot ?? ownBot !== undefined;
     const revision = isBot && !Number.isNaN(threadAt) ? revisionAsOf(node, anchor, threadAt, RUN_SETTLE_MS, reapplySoon) : null;
     // The strip says when, where the time tells something: a live summary rewritten since it was posted wears the
-    // rewrite's time (the reading shown is that one's); a summary from well before the thread is an earlier run's
-    // (this run posted none) and wears its own. A past revision wears its own time in chat.ts.
-    const rewritten = isBot && revision?.state !== 'revision' ? editedAt(node, reapplySoon) : null;
-    const summaryAt = facts === undefined ? NaN : Date.parse(facts.createdAt);
-    const earlier = isBot && !Number.isNaN(threadAt) && !Number.isNaN(summaryAt) && threadAt - summaryAt > SUMMARY_LAG_MS && facts !== undefined ? facts.createdAt : null;
-    const at = rewritten ?? earlier;
+    // rewrite's time (the reading shown is that one's). A past revision wears its own time in chat.ts.
+    const at = isBot && revision?.state !== 'revision' ? editedAt(node, reapplySoon) : null;
     // The open strip's control (chat.ts `sourceControl`): the bot's newer summary to lead to, else its Rerun.
     const latestAnchor = ownBot === undefined ? null : newerSummaryOf(ownBot, anchor);
     const rerun = ownBot === undefined || latestAnchor !== null ? null : rerunFor(ownBot, ownAuthor, meta, reapply);
@@ -1972,24 +2029,16 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
       ...(rerun === null ? {} : { rerun }),
     };
   };
-  // GitHub repeats the review's id on nested wrappers (a minimized review, its permalink); climb to the outermost
-  // copy at home and read the comment from the DOM there, not from a map keyed by that id.
-  let review = closestAtHome(thread, '[id^="pullrequestreview-"]');
-  while (review !== null && review.parentElement !== null) {
-    const outer = closestAtHome(review.parentElement, '[id^="pullrequestreview-"]');
-    if (outer === null || outer.id !== review.id) break;
-    review = outer;
-  }
-  const reviewNode = review === null ? null : reviewCommentOf(review);
-  if (review !== null && reviewNode !== null && !reviewNode.contains(thread)) return describe(reviewNode, review.id, (who) => `${who}'s review`);
-  if (bot === undefined) return null;
-  // The bot's summary as of the thread (by time), else the bot's latest word when it is not itself a thread: a bot
-  // that writes no review body has a thread comment for its "summary", and that is a thread, not a source.
-  const summaryAnchor = botSummaryFor(bot, threadAt)?.anchor ?? meta.bots.find((record) => record.id === bot)?.sourceId ?? null;
-  const summaryEl = summaryAnchor === null ? null : document.getElementById(summaryAnchor);
+  // Read from the DOM, not a map keyed by the review's id: GitHub repeats that id, and such a map flips as nodes move.
+  const head = threadHeadOf(thread, threadAt, summariesOf(bot));
+  if (head === null) return null;
+  if (head.review !== null) return describe(head.review, head.anchor, (who) => `${who}'s review`);
+  // The bot's summary from the same run. A bot that writes no review body may have a thread comment for its
+  // "summary", and that is a thread, not a source.
+  const summaryEl = document.getElementById(head.anchor);
   if (summaryEl !== null && closestAtHome(summaryEl, THREAD_SELECTOR) !== null) return null;
-  const summary = summaryAnchor === null ? null : (entryNodes.get(summaryAnchor) ?? summaryEl?.closest<HTMLElement>('.timeline-comment, .js-comment-container, [data-testid="comment-container"]') ?? null);
-  if (summaryAnchor !== null && summary !== null && !summary.contains(thread)) return describe(summary, summaryAnchor, (who) => `${who}'s run summary`);
+  const summary = entryNodes.get(head.anchor) ?? summaryEl?.closest<HTMLElement>('.timeline-comment, .js-comment-container, [data-testid="comment-container"]') ?? null;
+  if (summary !== null && !summary.contains(thread)) return describe(summary, head.anchor, (who) => `${who}'s run summary`);
   return null;
 }
 
@@ -3009,6 +3058,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const modelStart = performance.now();
   const subject = subjectOf();
   const boxText = mergeBoxText();
+  const approvalButton = approveWorkflowsButton();
   const ringSource = checksSection()?.querySelector('svg[viewBox="0 0 100 100"]') ?? null;
   const checksRing = ringSource instanceof SVGElement ? cloneRing(ringSource) : null;
   // The merge box states the requirement only while unmet; the sidebar's Reviewers block ("At least 1 approving
@@ -3086,6 +3136,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     botIconFor: (botId) => botAvatarByLogin(botId) ?? botSourceAvatar(botId, meta) ?? iconByBot.get(botId) ?? botAppAvatarFor(botId),
     checks: checkCountsFrom(checksSectionText() ?? boxText),
     requiredFailing: requiredFailingIn(checksSection()),
+    workflowApproval: approvalButton === null ? null : workflowApprovalLabel(approvalButton),
     previews: latestPreviews(allPreviews),
     reports,
     grouping: settings.reviewGrouping,
@@ -3140,11 +3191,21 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       });
     },
     onToggleGroup: (group) => {
+      const start = performance.now();
       if (visit.collapsedGroups.has(group)) visit.collapsedGroups.delete(group);
       else visit.collapsedGroups.add(group);
+      let closed = false;
       if (visit.openKey !== null && ((group === 'hidden' && visit.openKey.startsWith('fold:')) || (group !== 'hidden' && visit.openKey.startsWith('item:')))) {
         visit.openKey = null;
+        closed = true;
       }
+      // Folding a group changes no reading: the rows are already built, so this is an attribute flip, not a pass. Only
+      // a group holding the open row renders, for that row's slot (and a row closed above it).
+      if (!closed && syncPanelGroups(visit.collapsedGroups, group)) {
+        phaseSince('group-toggle', start);
+        return;
+      }
+      count('group-toggle-render');
       reapply();
     },
     onCopyLink: (anchor) => {
@@ -3320,6 +3381,15 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       if (!clickResolve(anchor)) return;
       const owner = meta.items.find((item) => item.sources.some((source) => source.anchor === anchor));
       reapplyAfterResolve(owner === undefined ? null : itemKey(owner.id), done);
+    },
+    onApproveWorkflows: () => {
+      const button = approveWorkflowsButton();
+      if (button === null) {
+        console.warn('[geld] GitHub no longer offers to approve these workflows');
+        return;
+      }
+      button.click();
+      window.setTimeout(reapplySoon, 800);
     },
     onRunAi: () => {
       void runAi(meta, rawComments, settings, reapply).then((run) => {
@@ -3545,7 +3615,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     }
   }
   const tailStart = performance.now();
-  collapseDescription(settings.compactTimeline === 'minimal' && settings.collapseDescription && !visit.fullTimeline);
+  shortenDescription(settings.collapseDescription && !visit.fullTimeline);
   setFullTimeline(visit.fullTimeline);
   if (hidingTimeline) document.documentElement.setAttribute('data-geld-timeline', 'compact');
   // Everything on the page has been read: what GitHub inserts from here on waits for the next pass.
@@ -3621,7 +3691,7 @@ export function teardownReviewOverview(): void {
   unmountPanel();
   hideSummary(null);
   applyFolds([], new Set());
-  collapseDescription(false);
+  shortenDescription(false);
   setFullTimeline(false);
   visit.openKey = null;
   visit.pageKey = '';

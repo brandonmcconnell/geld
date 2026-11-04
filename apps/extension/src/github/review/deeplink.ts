@@ -5,8 +5,10 @@
  * timeline yet, its "Load more" control is clicked so the target appears.
  */
 
+import { COUNT_PATTERN, parseCount } from '@geld/core';
 import { quietClick } from './quiet-click';
 
+const HIDDEN_ITEMS_TEXT = new RegExp(String.raw`(${COUNT_PATTERN})\s+(?:hidden|remaining)\s+items?\b`, 'i');
 const LOAD_MORE = 'button[data-testid="load-more-timeline"], .ajax-pagination-btn, button.js-ajax-pagination-btn';
 
 export function sourceAnchorFromHash(hash: string): string | null {
@@ -75,8 +77,7 @@ export function hiddenTimelineItems(root: ParentNode = document): number {
   }
   let total = 0;
   for (const scope of scopes) {
-    const count = /(\d[\d,]*)\s+(?:hidden|remaining)\s+items?\b/i.exec(scope.textContent ?? '')?.[1];
-    if (count !== undefined) total += Number.parseInt(count.replace(/,/g, ''), 10);
+    total += parseCount(HIDDEN_ITEMS_TEXT.exec(scope.textContent ?? '')?.[1]) ?? 0;
   }
   return total;
 }

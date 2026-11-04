@@ -15,7 +15,7 @@ import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/revie
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
 import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_FILE_DIFF, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL } from '../ui/icons';
-import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
+import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import type { AiState } from './ai';
@@ -27,7 +27,6 @@ import { ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import type { ReviewerCandidate } from './reviewers';
 import { shapeMark } from './mark-shape';
 import { inlineText } from './inline-text';
-import { editedMark } from './edited-mark';
 import { relativeTimeElement } from './time';
 
 export const PANEL_CLASS = 'geld-review';
@@ -36,6 +35,8 @@ export const ATTR_PANEL = 'data-geld-review-panel';
 export const ATTR_ATTACHED = 'data-geld-attached';
 const ATTR_SIG = 'data-geld-review-sig';
 const ATTR_SLOT = 'data-geld-slot';
+/** On every row and slot under a group heading: the group it belongs to, so folding the group is an attribute flip (`syncPanelGroups`). */
+const ATTR_IN_GROUP = 'data-geld-in-group';
 /**
  * On a time cell: the anchor whose `relative-time` it repeats, so the cells
  * can be refreshed on their own when the clocks tick (`refreshReviewTimes`)
@@ -65,12 +66,12 @@ function timeCell(model: PanelModel, anchor: string): HTMLElement | null {
 }
 
 /**
- * A comment's time in a row: for an edited one the edit's, live, with the clock that says when it was first posted
- * and opens GitHub's edit history (`editedMark`); else the page's words, which the time refresh keeps current.
+ * A comment's time in a row: for an edited one the edit's, live, else the page's words, which the time refresh keeps
+ * current. The clock that says when it was first posted is the opened comment's byline's alone (`editedMark`).
  */
 function commentTime(model: PanelModel, anchor: string, text: string): HTMLElement | null {
   const edited = model.editedFor(anchor);
-  if (edited !== null) return createElement('span', { class: `${PANEL_CLASS}__time ${PANEL_CLASS}__time--edited`, [ATTR_EDITED_FOR]: anchor }, [relativeTimeElement(edited.editedAt, `${PANEL_CLASS}__time-text`), editedMark(edited.editedAt, edited.postedAt, edited.log)]);
+  if (edited !== null) return createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_EDITED_FOR]: anchor }, [relativeTimeElement(edited.editedAt, `${PANEL_CLASS}__time-text`)]);
   return text === '' ? null : createElement('span', { class: `${PANEL_CLASS}__time`, [ATTR_TIME_FOR]: anchor }, [text]);
 }
 
@@ -359,6 +360,8 @@ export interface PanelModel {
   readonly checks: CheckCounts | null;
   /** Whether a failing check is one GitHub marks Required; null when the list does not say. */
   readonly requiredFailing: boolean | null;
+  /** GitHub's "1 workflow awaiting approval" while its merge box offers the reader "Approve workflows to run"; null otherwise. */
+  readonly workflowApproval: string | null;
   /** Preview deployments: the latest per project, and the ones they superseded. */
   readonly previews: { readonly latest: readonly Preview[]; readonly archived: readonly Preview[] };
   /** Reporter bots' reports (test failures, coverage): the latest per reporter, the earlier ones left in their rounds. */
@@ -473,6 +476,8 @@ export interface PanelHandlers {
   readonly onResolveAnchor: (anchor: string, done: boolean) => void;
   /** Open the row holding `anchor` and GitHub's reaction picker for its first comment. */
   readonly onReact: (anchor: string) => void;
+  /** Press GitHub's own "Approve workflows to run". */
+  readonly onApproveWorkflows: () => void;
   /** Run the model for this pull request now (the AI control). */
   readonly onRunAi: () => void;
   /** Forget this device's run: the repository's Action writes the digest with AI now. */
@@ -612,6 +617,35 @@ function pointerChevron(onGo: () => void): HTMLElement {
   return button;
 }
 
+
+let approveIds = 0;
+const APPROVE_RETRY_MS = 5000;
+
+/**
+ * "Run" on the CI row: GitHub's "Approve workflows to run", whose section the
+ * folded merge box hides. One click approves, as GitHub's button does, and
+ * GitHub's own tooltip element carries the heading that section showed.
+ */
+function approveWorkflowsControl(label: string, onApprove: () => void): HTMLElement {
+  approveIds += 1;
+  const id = `geld-approve-workflows-${approveIds}`;
+  const button = createElement('button', { type: 'button', id, class: `${PANEL_CLASS}__rerun ${PANEL_CLASS}__approve-run`, 'aria-label': 'Approve workflows to run', 'aria-describedby': `${id}-tip` }, [icon(ICON_ALERT), createElement('span', {}, ['Run'])]);
+  const tip = document.createElement('tool-tip');
+  for (const [name, value] of Object.entries({ id: `${id}-tip`, for: id, popover: 'manual', 'data-direction': 'n', 'data-type': 'description', class: 'sr-only position-absolute', role: 'tooltip' })) tip.setAttribute(name, value);
+  tip.textContent = label;
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (button.disabled) return;
+    button.disabled = true;
+    onApprove();
+    // An approval that went through takes GitHub's button away and the rebuilt panel drops this control; one that did
+    // not leaves both, and the panel's signature unchanged, so the control is offered again here.
+    window.setTimeout(() => {
+      if (button.isConnected) button.disabled = false;
+    }, APPROVE_RETRY_MS);
+  });
+  return createElement('span', { class: `${PANEL_CLASS}__approve-run-wrap` }, [button, tip]);
+}
 
 /** The check counts with their own state glyphs: "✕ 1 failing · ✓ 8 successful · ⊘ 3 skipped". */
 function checksBreakdown(counts: CheckCounts): HTMLElement {
@@ -1227,6 +1261,77 @@ function groupHeading(id: GroupId, label: string, model: PanelModel, handlers: P
   ]);
   button.addEventListener('click', () => handlers.onToggleGroup(id));
   return createElement('li', { class: `${PANEL_CLASS}__group`, 'data-group': id }, [button]);
+}
+
+/**
+ * By type, how the rounds fall into the groups. Rounds with a thread still open come first and stay open; settled
+ * rounds fold away by default. A round is its review content, so a run of commits that nothing followed (the last
+ * pushes of a PR nobody has reviewed yet) is no round at all: its commits are in the Commits fold. By push the same
+ * run is a push and stays, and none of this applies.
+ */
+function roundGroups(model: PanelModel): { readonly current: Batch | null; readonly attention: readonly Batch[]; readonly settled: readonly Batch[] } {
+  if (model.grouping === 'batch') return { current: null, attention: [], settled: [] };
+  const withContent = model.batches.filter((batch) => batch.items.length + batch.comments.length + batch.reviews.length + batch.previews.length > 0);
+  // The latest round with no threads at all is the current one, not a settled one: nothing in it was ever to settle,
+  // and what it holds (a reviewer's remark, a bot's note on the newest push) is the state of the conversation, so it
+  // stands in the open group rather than folding away under "settled rounds".
+  // The newest round of all, not the newest with something to show: a newer round whose only content is seated under
+  // Reports or Review bots is still the newer one, and the round before it is history, not the current conversation.
+  const latest = model.batches[model.batches.length - 1];
+  const current = latest !== undefined && withContent.includes(latest) && latest.items.length === 0 ? latest : null;
+  const attention = withContent.filter((batch) => batch === current || batch.items.some((item) => isOpenStatus(item.status)));
+  const settled = withContent.filter((batch) => !attention.includes(batch));
+  return { current, attention, settled };
+}
+
+/** The group the open row is listed under, or null when nothing is open or the open row (a status row) is in no group. */
+function openRowGroup(model: PanelModel): GroupId | null {
+  const key = model.openKey;
+  if (key === null) return null;
+  if (model.grouping === 'batch') {
+    if (model.meta.items.some((item) => isOpenStatus(item.status) && itemKey(item.id) === key)) return 'open';
+    if (model.batches.some((batch) => batch.key === key)) return 'pushes';
+    return null;
+  }
+  const { attention, settled } = roundGroups(model);
+  if (attention.some((batch) => batch.key === key)) return 'open';
+  if (settled.some((batch) => batch.key === key)) return 'done';
+  if (model.fullTimeline) return null;
+  const fold = model.folds.find((entry) => foldKey(entry.key) === key);
+  if (fold === undefined) return null;
+  return fold.section === 'comments' ? 'hidden' : 'activity';
+}
+
+/** Whether the open row's slot is left out because its group is folded: in the signature, and in what a held rebuild compares. */
+function openRowFolded(model: PanelModel): boolean {
+  const group = openRowGroup(model);
+  return group !== null && model.collapsedGroups.has(group);
+}
+
+const GROUP_IDS: readonly GroupId[] = ['open', 'done', 'hidden', 'activity', 'pushes'];
+
+function isFolded(collapsed: ReadonlySet<GroupId>, id: string | null): boolean {
+  return GROUP_IDS.some((group) => group === id && collapsed.has(group));
+}
+
+function syncGroups(root: HTMLElement, collapsed: ReadonlySet<GroupId>): void {
+  for (const heading of root.querySelectorAll<HTMLElement>(`.${PANEL_CLASS}__rows > .${PANEL_CLASS}__group[data-group]`)) {
+    heading.querySelector(`.${PANEL_CLASS}__group-btn`)?.setAttribute('aria-expanded', String(!isFolded(collapsed, heading.getAttribute('data-group'))));
+  }
+  for (const row of root.querySelectorAll<HTMLElement>(`[${ATTR_IN_GROUP}]`)) {
+    row.toggleAttribute('hidden', isFolded(collapsed, row.getAttribute(ATTR_IN_GROUP)));
+  }
+}
+
+/**
+ * Folds and unfolds the mounted panel's groups to match `collapsed`, in place. True when that is all a group toggle
+ * needs; false when the toggled group holds the open row, whose slot only a render adds or takes away.
+ */
+export function syncPanelGroups(collapsed: ReadonlySet<GroupId>, toggled: GroupId): boolean {
+  const root = document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
+  if (root === null) return false;
+  syncGroups(root, collapsed);
+  return root.querySelector(`[${ATTR_IN_GROUP}="${toggled}"][data-open]`) === null;
 }
 
 function plural(count: number, noun: string, nounPlural = `${noun}s`): string {
@@ -1856,17 +1961,24 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     if (open) rows.append(slotRow(BOTS_KEY, null, 'list'));
   }
   if (model.reports.latest.length > 0) rows.append(...reportsRow(model, handlers));
-  if (model.checks !== null) {
-    const health = checksHealth(model.checks);
+  // Workflows waiting on a maintainer's approval may be the only checks a contributor's pull request has.
+  if (model.checks !== null || model.workflowApproval !== null) {
+    const counts = model.checks ?? EMPTY_CHECKS;
+    const health = checksHealth(counts);
     const open = model.openKey === CHECKS_KEY;
     // The breakdown is the information; the total and a second overall glyph on the right only repeated it.
-    const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${CHECKS_KEY}`, 'aria-label': checksSummary(model.checks) }, [checksBreakdown(model.checks)]);
+    // With nothing but waiting workflows there are no counts to show or name the row by: GitHub's heading does both.
+    const waitingOnly = model.checks === null ? model.workflowApproval : null;
+    const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${CHECKS_KEY}`, 'aria-label': waitingOnly ?? checksSummary(counts) }, [
+      waitingOnly === null ? checksBreakdown(counts) : createElement('span', { class: `${PANEL_CLASS}__detail` }, [waitingOnly]),
+    ]);
     mainClickToggles(main, () => handlers.onToggle(CHECKS_KEY));
-    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(checksTone(model.checks, model.requiredFailing) === 'bad' ? 'bad' : null) }, [
-      createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [model.checksRing ?? checksRing(model.checks)]),
+    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(checksTone(counts, model.requiredFailing) === 'bad' ? 'bad' : null) }, [
+      createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [model.checksRing ?? checksRing(counts)]),
       rowLabel('CI checks', 'CI'),
       main,
       createElement('span', { class: `${PANEL_CLASS}__right` }, [
+        ...(model.workflowApproval === null ? [] : [approveWorkflowsControl(model.workflowApproval, handlers.onApproveWorkflows)]),
         createElement('span', { class: `${PANEL_CLASS}__gear-slot`, [ATTR_GEAR_SLOT]: '' }),
         chevron(open, () => handlers.onToggle(CHECKS_KEY)),
       ]),
@@ -2423,7 +2535,7 @@ function signatureOf(model: PanelModel): string {
     freshness: model.freshness,
     truncated: model.truncated,
     openKey: model.openKey,
-    collapsed: [...model.collapsedGroups].sort(),
+    openFolded: openRowFolded(model),
     fullTimeline: model.fullTimeline,
     compacting: model.compacting,
     nudge: model.nudge,
@@ -2452,6 +2564,7 @@ function signatureOf(model: PanelModel): string {
     botLines: model.botLines.map((line) => `${line.bot.id}:${line.anchor ?? ''}:${line.preview}:${line.time}:${line.avatarSrc ?? ''}:${line.threads.map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('|')}`),
     checks: model.checks,
     requiredFailing: model.requiredFailing,
+    workflowApproval: model.workflowApproval,
     previews: [...model.previews.latest, ...model.previews.archived].map((entry) => `${entry.anchor}:${entry.host}:${entry.project}:${entry.status}:${entry.url ?? ''}:${model.avatarForAnchor(entry.anchor) ?? ''}`),
     archivedPreviewsOpen: model.archivedPreviewsOpen,
     ring: model.checksRing?.outerHTML.length ?? 0,
@@ -2574,9 +2687,12 @@ function syncProgress(root: HTMLElement, progress: number | null): void {
 function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions): MountedPanel | null {
   const existing = document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
   const signature = signatureOf(model);
-  const openNow = `${model.openKey ?? ''}|${model.openSubKey ?? ''}`;
+  // What the reader opened, as a held rebuild compares it: folding the group around the open row counts too.
+  const openNow = `${model.openKey ?? ''}|${model.openSubKey ?? ''}|${openRowFolded(model) ? 'folded' : ''}`;
   if (existing !== null && existing.isConnected) {
     const slot = existing.querySelector<HTMLElement>(`[${ATTR_SLOT}] > .${PANEL_CLASS}__slot-body`);
+    // Folded groups are not in the signature: whatever panel stays, it shows the groups as the model has them.
+    syncGroups(existing, model.collapsedGroups);
     if (existing.getAttribute(ATTR_SIG) === signature) return { root: existing, slot };
     if (options.holdRebuild === true && existing.getAttribute(ATTR_OPEN) === openNow) return { root: existing, slot };
     // Someone is typing in GitHub's reply box inside the slot: a rebuild would move it and drop focus. Wait.
@@ -2655,10 +2771,22 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
 
   /* Groups */
   const rows = createElement('ul', { class: `${PANEL_CLASS}__rows`, role: 'list' });
-  const appendBatches = (batches: readonly Batch[]): void => {
+  // A folded group's rows are built too, hidden, so folding and unfolding it is an attribute flip with no rebuild.
+  // Only the open row's slot is left out while its group is folded: a slot borrows GitHub's nodes, and none of them
+  // should sit away from home where nobody can see them.
+  const inGroup = (id: GroupId, add: (slots: boolean) => void): void => {
+    const folded = model.collapsedGroups.has(id);
+    const from = rows.children.length;
+    add(!folded);
+    for (const child of [...rows.children].slice(from)) {
+      child.setAttribute(ATTR_IN_GROUP, id);
+      if (folded) child.setAttribute('hidden', '');
+    }
+  };
+  const appendBatches = (batches: readonly Batch[], slots: boolean): void => {
     for (const batch of batches) {
       rows.append(batchRow(batch, model, handlers));
-      if (model.openKey === batch.key) rows.append(slotRow(batch.key, null, 'list'));
+      if (slots && model.openKey === batch.key) rows.append(slotRow(batch.key, null, 'list'));
     }
   };
   if (model.grouping === 'batch') {
@@ -2666,56 +2794,44 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     const openItems = model.meta.items.filter((item) => isOpenStatus(item.status));
     if (openItems.length > 0) {
       rows.append(groupHeading('open', `Needs attention · ${plural(openItems.length, 'open thread')}`, model, handlers));
-      if (!model.collapsedGroups.has('open')) {
+      inGroup('open', (slots) => {
         for (const item of openItems) {
           rows.append(itemRow(item, model, handlers));
-          if (model.openKey === itemKey(item.id)) rows.append(slotRow(model.openKey));
+          if (slots && model.openKey === itemKey(item.id)) rows.append(slotRow(model.openKey));
         }
-      }
+      });
     }
     rows.append(groupHeading('pushes', plural(model.batches.length, 'push', 'pushes'), model, handlers));
-    if (!model.collapsedGroups.has('pushes')) appendBatches([...model.batches].reverse());
+    inGroup('pushes', (slots) => appendBatches([...model.batches].reverse(), slots));
   }
-  // Rounds with a thread still open come first and stay open; settled rounds fold away by default. By type a round
-  // is its review content, so a run of commits that nothing followed (the last pushes of a PR nobody has reviewed
-  // yet) is no round at all - its commits are in the Commits fold. By push the same run is a push and stays.
-  const withContent = model.batches.filter((batch) => batch.items.length + batch.comments.length + batch.reviews.length + batch.previews.length > 0);
-  // The latest round with no threads at all is the current one, not a settled one: nothing in it was ever to settle,
-  // and what it holds (a reviewer's remark, a bot's note on the newest push) is the state of the conversation, so it
-  // stands in the open group rather than folding away under "settled rounds".
-  // The newest round of all, not the newest with something to show: a newer round whose only content is seated under
-  // Reports or Review bots is still the newer one, and the round before it is history, not the current conversation.
-  const latest = model.batches[model.batches.length - 1];
-  const current = latest !== undefined && withContent.includes(latest) && latest.items.length === 0 ? latest : null;
-  const attention = model.grouping === 'batch' ? [] : withContent.filter((batch) => batch === current || batch.items.some((item) => isOpenStatus(item.status)));
-  const settled = model.grouping === 'batch' ? [] : withContent.filter((batch) => !attention.includes(batch));
+  const { current, attention, settled } = roundGroups(model);
   if (attention.length > 0) {
     const toReview = attention.filter((batch) => batch !== current).length;
     rows.append(groupHeading('open', toReview === 0 ? 'Current round' : `${plural(toReview, 'round')} to review · ${plural(open.length, 'open thread')}`, model, handlers));
-    if (!model.collapsedGroups.has('open')) appendBatches(attention);
+    inGroup('open', (slots) => appendBatches(attention, slots));
   }
   if (settled.length > 0) {
     rows.append(groupHeading('done', done.length > 0 ? plural(done.length, 'resolved thread') : plural(settled.length, 'settled round'), model, handlers));
-    if (!model.collapsedGroups.has('done')) appendBatches(settled);
+    inGroup('done', (slots) => appendBatches(settled, slots));
   }
   if (!model.fullTimeline && model.grouping !== 'batch') {
     // Comments that need nothing from the reader (bot run summaries, review requests), then the timeline's activity.
     const other = model.folds.filter((fold) => fold.section === 'comments');
     const activity = model.folds.filter((fold) => fold.section === 'activity');
-    const appendFolds = (folds: readonly FoldRow[]): void => {
+    const appendFolds = (folds: readonly FoldRow[], slots: boolean): void => {
       for (const fold of folds) {
         rows.append(foldRowEl(fold, model, handlers));
         // One comment under its row (a closure's too: its event is the row): the row is the header, the slot the body.
-        if (model.openKey === foldKey(fold.key)) rows.append(slotRow(model.openKey, null, fold.count === 1 || fold.closure !== undefined ? 'solo' : null));
+        if (slots && model.openKey === foldKey(fold.key)) rows.append(slotRow(model.openKey, null, fold.count === 1 || fold.closure !== undefined ? 'solo' : null));
       }
     };
     if (other.length > 0) {
       rows.append(groupHeading('hidden', plural(other.reduce((sum, fold) => sum + fold.count, 0), 'other item'), model, handlers));
-      if (!model.collapsedGroups.has('hidden')) appendFolds(other);
+      inGroup('hidden', (slots) => appendFolds(other, slots));
     }
     if (activity.length > 0) {
       rows.append(groupHeading('activity', 'Other activity', model, handlers));
-      if (!model.collapsedGroups.has('activity')) appendFolds(activity);
+      inGroup('activity', (slots) => appendFolds(activity, slots));
     }
   }
 

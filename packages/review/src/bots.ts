@@ -1322,6 +1322,15 @@ export function verdictsFrom(
     const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id);
     // A coding agent's reply to a person or to another bot is not its review; only a review-shaped comment votes.
     if (botById(id)?.conversational === true && !isReviewShaped(parsed)) continue;
+    // A word with nothing to count, after the run's threads, is more of that run, not a new one: Greptile posts
+    // "Comments Outside Diff" seconds after its threads (geld#352), which used to drop them and carry the summary's
+    // count over a run whose every thread was resolved.
+    if (!isReviewShaped(parsed) && threadRuns.has(id)) {
+      reported(id, comment);
+      statusOnly.delete(id);
+      runsBeforeAsk.delete(id);
+      continue;
+    }
     reported(id, comment);
     if (parsed.count !== null) countedSummaries.add(comment.anchor);
     if (parsed.unthreaded !== undefined) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor });
