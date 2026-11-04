@@ -516,12 +516,16 @@ async function classify(
   previews: ReadonlyArray<{ readonly hash: string; readonly entry: PreviewToClassify }>,
   onProgress: () => void,
 ): Promise<void> {
-  for (const entry of comments) asked.add(entry.hash);
-  for (const entry of threads) asked.add(entry.hash);
-  for (const entry of previews) asked.add(entry.hash);
+  // Marked before the route is read, so a pass meanwhile does not submit them again.
+  const hashes = [...comments, ...threads, ...previews].map((entry) => entry.hash);
+  for (const hash of hashes) asked.add(hash);
   const route = await jevRoute(settings);
   // The questions were keyed for the model the pass expected; another one answering now would file its answers under them.
-  if (route === null || saltFor(route.model) !== salt) return;
+  // Nothing was sent, so they were not asked: a later pass under that model asks them again.
+  if (route === null || saltFor(route.model) !== salt) {
+    for (const hash of hashes) asked.delete(hash);
+    return;
+  }
   const laneInputs: LaneInput[] = comments.map((entry) => ({ id: entry.hash, author: entry.comment.author, bot: entry.comment.bot, text: entry.comment.body }));
   const threadInputs: ThreadInput[] = threads.map((entry) => {
     const [first, ...replies] = entry.thread.comments;
