@@ -646,6 +646,8 @@ export interface CrawledLeftover {
 export type LeftoverKind = 'commit' | 'push' | 'mention' | 'review-event' | 'noise' | 'pending' | 'marker' | 'other';
 
 const MARKER_LINK = 'a[data-ga-click*="revision marker"], a[href*="/files/"][href*=".."]';
+/** A review thread GitHub sent as its header alone (a resolved one), its comments behind a fragment `loadMinimizedReviews` fetches. */
+const DEFERRED_THREAD = 'review-thread-collapsible[data-deferred-content-url], [data-deferred-content-url].js-resolvable-timeline-thread-container';
 
 /** GitHub's "New changes since you last viewed" row: the `+` badge with a link to the diff since the reader's last visit. */
 export function isRevisionMarkerRow(row: Element): boolean {
@@ -729,6 +731,8 @@ export function crawlLeftovers(claimed: ReadonlySet<HTMLElement>, root: ParentNo
     let kind: CrawledLeftover['kind'] = 'other';
     if (row.querySelector('a[href^="#commits-pushed-"], [id^="commits-pushed-"]') !== null || /\badded \d+ commits?\b/.test(row.textContent ?? '')) kind = 'noise';
     else if (row.querySelector('.minimized-comment include-fragment[src]') !== null) kind = 'pending';
+    // Its comments still loading, nothing reads it as a thread yet. Once they land the thread claims the row.
+    else if (row.querySelector(DEFERRED_THREAD) !== null && row.querySelector('[id^="discussion_r"]') === null) kind = 'pending';
     // What someone minimized (resolved, outdated, off-topic) is noise here; its comment, once loaded, is crawled on its own.
     else if (minimized || row.querySelector('.minimized-comment') !== null) kind = 'noise';
     else if (isRevisionMarkerRow(row)) kind = 'marker';
