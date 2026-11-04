@@ -461,16 +461,14 @@
 /*
  * Top-bar wordmark: hidden (transparent, blurred) while the page's hero
  * wordmark is still visible beneath the bar; JS sets data-hero after every
- * route change and scroll. Pure CSS for the initial state so it is right
- * before hydration and independent of how the page was rendered.
+ * route change and scroll. Before hydration a page with a hero hides it with
+ * a style of its own (HeroPrehydration in app/page.tsx).
  */
 @utility header-brand {
   transition:
     opacity 500ms ease-out,
     filter 500ms ease-out;
   will-change: opacity, filter;
-  /* Before hydration (no data-hero yet): hidden whenever the page has a hero wordmark. */
-  :root:has(#hero-wordmark) &:not([data-hero]),
   &[data-hero='showing'] {
     opacity: 0;
     filter: blur(5px);
@@ -689,11 +687,6 @@
       opacity: 1;
     }
   }
-}
-
-/* Before hydration measures anything: a page with a hero wordmark opens with no line. */
-:root:has(#hero-wordmark) .hero-divider:not([data-hero-fade]) {
-  opacity: 0;
 }
 
 /* Inline code chips used for patterns and paths. */

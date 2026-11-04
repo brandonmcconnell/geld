@@ -25,6 +25,7 @@ export default function HomePage() {
         <div aria-hidden="true" className="max-h-40 min-h-px grow basis-0" />
         <section aria-labelledby="hero-heading" className="container-site">
           <div className="max-w-3xl @container">
+            <HeroPrehydration />
             <div id={HERO_WORDMARK_ID} className="mb-8 w-fit sm:mb-10">
               <Wordmark height={44} alt="Geld" priority />
             </div>
@@ -101,4 +102,13 @@ export default function HomePage() {
       </Section>
     </>
   );
+}
+
+/**
+ * Before hydration sets `data-hero` and `data-hero-fade`, the top bar's wordmark and line stay hidden behind this page's
+ * hero. Rendered by the page rather than keyed on `:root:has(#hero-wordmark)`: a `:has()` on the root restyled the
+ * whole document on every element added anywhere, which made the tour's menus slow to open.
+ */
+function HeroPrehydration() {
+  return <style>{'.header-brand:not([data-hero]){opacity:0;filter:blur(5px);pointer-events:none}.hero-divider:not([data-hero-fade]){opacity:0}'}</style>;
 }
