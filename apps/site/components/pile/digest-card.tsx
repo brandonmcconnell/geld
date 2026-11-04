@@ -31,6 +31,7 @@ export function DigestCard({
   width,
   compact,
   maxHeight,
+  below = false,
 }: {
   readonly digest: Digest;
   readonly rows: readonly DigestRow[];
@@ -42,13 +43,16 @@ export function DigestCard({
   readonly compact: boolean;
   /** The room it has; never more, so it never covers the hero's words. */
   readonly maxHeight: number;
+  /** Hung under the switch rather than standing on it, so it grows from its top. */
+  readonly below?: boolean;
 }) {
   return (
     <div
       ref={cardRef}
       style={{ width, maxHeight }}
       className={cn(
-        '@container pointer-events-auto flex origin-bottom flex-col overflow-hidden rounded-xl border bg-card text-[0.8125rem] shadow-xl transition-[opacity,scale] duration-300',
+        '@container pointer-events-auto flex flex-col overflow-hidden rounded-xl border bg-card text-[0.8125rem] shadow-xl transition-[opacity,scale] duration-300',
+        below ? 'origin-top' : 'origin-bottom',
         open ? 'scale-100 opacity-100' : 'pointer-events-none scale-95 opacity-0',
       )}
     >

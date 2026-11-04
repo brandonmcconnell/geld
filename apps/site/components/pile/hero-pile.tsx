@@ -26,6 +26,10 @@ const ROW_HEIGHT = 50;
 const CARD_CHROME = 48;
 const CHIP_LINE = 34;
 const GAP_ABOVE_SWITCH = 12;
+/** Under the words, the card narrows down to this to rise beside them, height counting up to about its natural height; with less than `CARD_LEAST` it hangs under the switch. */
+const CARD_NARROWEST = 200;
+const CARD_TALL = 400;
+const CARD_LEAST = 84;
 /** How much of the free space the pile fills; cards overlap at their edges, so it can be most of it. */
 const FILL = 0.6;
 /** No arc peaks higher than this, so nothing is flung up under the header. */
@@ -36,7 +40,8 @@ interface Layout {
   readonly height: number;
   /** Anchored by its right edge, so the label changing never moves it. */
   readonly toggle: { readonly right: number; readonly top: number };
-  readonly card: { readonly left: number; readonly width: number; readonly maxHeight: number };
+  /** Over the switch, or `below` it where there is no room above. */
+  readonly card: { readonly left: number; readonly width: number; readonly maxHeight: number; readonly below: boolean };
   readonly words: Rect;
 }
 
@@ -208,20 +213,42 @@ export function HeroPile() {
     const th = toggle.current?.offsetHeight ?? 44;
     const right = heroBox.right - origin.left - padRight;
     const top = floor - th;
+    const text = [...obstacles];
     obstacles.push({ left: right - tw - 4, top: top - 4, right: right + 4, bottom: floor + 8 });
-    // Beside the words where there is room: centred over the switch, pushed right as the heading comes near until it is flush with the switch, then narrower. Else under the words.
     const toggleRight = origin.width - right;
     const reach = right + Math.max(0, Math.min(120, toggleRight - 24));
     const nearest = words.right + CARD_GAP;
-    const fitsBeside = reach - nearest >= CARD_MIN;
-    const width = fitsBeside ? Math.min(CARD_WIDTH, reach - nearest) : Math.min(CARD_WIDTH, right - 8);
-    const left = fitsBeside ? Math.max(nearest, Math.min(reach - width, right - tw / 2 - width / 2)) : right - width;
-    const ceiling = fitsBeside ? 8 : words.bottom + 8;
+    let card: Layout['card'];
+    if (reach - nearest >= CARD_MIN) {
+      // Beside the words: centred over the switch, pushed right as the heading comes near until it is flush with the switch, then narrower.
+      const width = Math.min(CARD_WIDTH, reach - nearest);
+      card = { left: Math.max(nearest, Math.min(reach - width, right - tw / 2 - width / 2)), width, maxHeight: Math.max(0, top - GAP_ABOVE_SWITCH - 8), below: false };
+    } else {
+      // Over the switch, under whichever words are in its way: the heading's last line or the buttons end well short of the right edge, so it can rise beside them, narrower where that buys more of a card than it costs.
+      const roomAbove = (width: number) => {
+        const left = right - width;
+        const inWay = text.filter((r) => r.right + CARD_GAP > left && r.left - CARD_GAP < right);
+        return top - GAP_ABOVE_SWITCH - (Math.max(0, ...inWay.map((r) => r.bottom)) + 8);
+      };
+      const widest = Math.min(CARD_WIDTH, right - 8);
+      const area = (width: number, room: number) => width * Math.min(room, CARD_TALL);
+      let best = { width: widest, room: roomAbove(widest) };
+      for (let width = widest - 10; width >= CARD_NARROWEST; width -= 10) {
+        const room = roomAbove(width);
+        if (area(width, room) > area(best.width, best.room)) best = { width, room };
+      }
+      // Not even a couple of lines above it (a short phone): it hangs under the switch instead, over the logos.
+      const roomBelow = origin.height - floor - GAP_ABOVE_SWITCH - 8;
+      card =
+        best.room < CARD_LEAST && roomBelow > best.room
+          ? { left: right - widest, width: widest, maxHeight: roomBelow, below: true }
+          : { left: right - best.width, width: best.width, maxHeight: Math.max(0, best.room), below: false };
+    }
     return {
       world: { width: origin.width, floor, obstacles, sink: { x: right - tw / 2, y: top + th / 2 } },
       height: origin.height,
       toggle: { right: toggleRight, top },
-      card: { left, width, maxHeight: Math.max(0, top - GAP_ABOVE_SWITCH - ceiling) },
+      card,
       words,
     };
   }, []);
@@ -541,8 +568,13 @@ export function HeroPile() {
         ))}
       </div>
       {layout !== null && (
-        <div aria-hidden="true" className="absolute z-40" style={{ left: layout.card.left, bottom: layout.height - layout.toggle.top + GAP_ABOVE_SWITCH }}>
+        <div
+          aria-hidden="true"
+          className="absolute z-40"
+          style={layout.card.below ? { left: layout.card.left, top: layout.world.floor + GAP_ABOVE_SWITCH } : { left: layout.card.left, bottom: layout.height - layout.toggle.top + GAP_ABOVE_SWITCH }}
+        >
           <DigestCard
+            below={layout.card.below}
             digest={digest}
             rows={rows.rows}
             compact={rows.compact}
