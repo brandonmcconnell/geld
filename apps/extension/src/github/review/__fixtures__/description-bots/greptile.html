@@ -1,0 +1,36 @@
+<p dir="auto">Stop the metric detail tile from scrolling horizontally.</p>
+
+
+<details open=""><summary>Greptile Summary</summary>
+<p dir="auto">This PR removes horizontal-overflow protection from the metric detail description.</p>
+<ul dir="auto">
+<li>Removes explicit horizontal clipping.</li>
+<li>Removes forced wrapping for long, unbroken help text.</li>
+<li>As written, the change can restore horizontal scrolling rather than prevent it.</li>
+</ul>
+</details>
+<details open=""><summary>Confidence Score: 4/5</summary>
+<p dir="auto">This PR is not safe to merge until metric descriptions are prevented from overflowing horizontally.</p>
+<p dir="auto">Unbounded metric help text can contain long unbroken content, and retaining vertical auto-overflow while removing wrapping and horizontal clipping makes the description horizontally scrollable.</p>
+<p dir="auto"><strong>Files Needing Attention:</strong> public/app/features/explore/SignalExplorer/MetricDetailPanel.tsx</p>
+</details>
+<details open=""><summary>Important Files Changed</summary>
+<markdown-accessiblity-table><table role="table">
+<thead>
+<tr>
+<th>Filename</th>
+<th>Overview</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>public/app/features/explore/SignalExplorer/MetricDetailPanel.tsx</td>
+<td>Removes wrapping and horizontal-overflow constraints from unbounded metric help text, allowing the description region to scroll horizontally.</td>
+</tr>
+</tbody>
+</table></markdown-accessiblity-table>
+</details>
+<p dir="auto"><sub>Reviews (1): Last reviewed commit: <a href="https://github.com/goosy-benchmark/grafana-greptile/commit/36f863274eb601214b83fe47fa5d59ee35a0cdbb">"Stop the metric detail tile from scrolli..."</a> | <a href="https://app.greptile.com/api/retrigger?id=65056935" rel="nofollow">Re-trigger Greptile</a></sub></p>
+<blockquote>
+<p dir="auto">Greptile also left <strong>1 inline comment</strong> on this PR.</p>
+</blockquote>

@@ -1,6 +1,8 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { ICON_CHEVRON_DOWN } from '../ui/icons';
 import { ATTR_FINDABLE, setFindable } from './fold';
+import type { BotSection } from './description-bots';
+import { ATTR_BOT_HEAD, botSectionsOf } from './description-bots';
 
 /** A long description with no headings to fold is cut to this height, behind a fade and "Show full description". */
 export const DESCRIPTION_CAP_PX = 500;
@@ -40,6 +42,8 @@ export interface OutlineHeading {
   readonly end: number;
   /** The section holds headings of its own (it is open by default, so the tree shows). */
   readonly hasSubheadings: boolean;
+  /** A bot's block (`description-bots.ts`): above every heading of the author's, and closed by default. */
+  readonly bot?: true;
 }
 
 /**
@@ -74,9 +78,9 @@ export function isBlankHeading(block: Element): boolean {
   return BLANK_TEXT.test(copy.textContent ?? '');
 }
 
-/** The description's own top-level blocks, without Geld's controls. */
+/** The description's own top-level blocks, without Geld's controls (but with the headings it adds for bots' blocks). */
 function blocksOf(body: HTMLElement): Element[] {
-  return [...body.children].filter((block) => !block.hasAttribute(OWN_UI_ATTRIBUTE));
+  return [...body.children].filter((block) => !block.hasAttribute(OWN_UI_ATTRIBUTE) || block.hasAttribute(ATTR_BOT_HEAD));
 }
 
 /** The blocks the outline is built from: dividers neither fold nor head anything. */
@@ -87,15 +91,19 @@ function sectionBlocks(body: HTMLElement): Element[] {
 /**
  * Every heading that has something under it, with the blocks its section runs to: up to the next heading of the
  * same or a higher level. A heading with nothing under it has nothing to fold and is left out.
+ * A bot's block (`bots`, from `botSectionsOf`) is a section of its own above every level: it ends the author's
+ * section before it, so it never shows because that one is open, and the headings inside it head nothing.
  */
-export function outlineOf(blocks: readonly Element[]): OutlineHeading[] {
-  const levels = blocks.map(headingLevelOf);
+export function outlineOf(blocks: readonly Element[], bots: readonly Pick<BotSection, 'start' | 'end'>[] = []): OutlineHeading[] {
+  const botAt = (index: number): boolean => bots.some((bot) => bot.start <= index && index < bot.end);
+  const levels = blocks.map((block, index) => (botAt(index) ? null : headingLevelOf(block)));
   const outline: OutlineHeading[] = [];
   levels.forEach((level, index) => {
     if (level === null) return;
     let end = index + 1;
     let hasSubheadings = false;
     for (; end < levels.length; end++) {
+      if (botAt(end)) break;
       const next = levels[end];
       if (next === null || next === undefined) continue;
       if (next <= level) break;
@@ -103,7 +111,10 @@ export function outlineOf(blocks: readonly Element[]): OutlineHeading[] {
     }
     if (end > index + 1) outline.push({ index, level, end, hasSubheadings });
   });
-  return outline;
+  for (const bot of bots) {
+    if (bot.end > bot.start + 1) outline.push({ index: bot.start, level: 0, end: bot.end, hasSubheadings: false, bot: true });
+  }
+  return outline.sort((a, b) => a.index - b.index);
 }
 
 /** The blocks hidden when the headings `isOpen` says are closed are folded: everything inside a closed section. */
@@ -170,6 +181,49 @@ function descriptionBody(): HTMLElement | null {
     document.querySelector('[data-testid="issue-body"] .markdown-body') ??
     document.querySelector('.timeline-comment .comment-body');
   return body instanceof HTMLElement ? body : null;
+}
+
+/** The description's Markdown, from GitHub's own "Copy Markdown" item in its ⋯ menu: the one place its HTML comments survive. */
+function descriptionMarkdown(body: HTMLElement): string | null {
+  const copy = body.closest('.timeline-comment, .js-comment-container')?.querySelector('clipboard-copy[data-dd-action-name="pr.description.copy_markdown"]');
+  return copy?.getAttribute('value') ?? null;
+}
+
+/** The blocks the outline is read from, and the outline with the bots' blocks as sections of their own. */
+function layoutOf(body: HTMLElement): { blocks: Element[]; outline: OutlineHeading[] } {
+  const blocks = sectionBlocks(body);
+  return { blocks, outline: outlineOf(blocks, botSectionsOf(blocks, descriptionMarkdown(body))) };
+}
+
+/** The heading's words, leaving Geld's chevron in it alone. */
+function setHeadingWords(heading: Element, words: string): void {
+  const text = [...heading.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE);
+  if (text.map((node) => node.textContent).join('') === words) return;
+  for (const node of text) node.remove();
+  heading.append(words);
+}
+
+/**
+ * A bot's block that opens on no heading of its own (Greptile's open `<details>`, Bugbot's note) gets one of
+ * Geld's just before it, so it folds like any section; a heading no block needs any more goes.
+ */
+function syncBotHeads(body: HTMLElement): void {
+  const blocks = sectionBlocks(body);
+  const wanted = new Set<Element>();
+  for (const section of botSectionsOf(blocks, descriptionMarkdown(body))) {
+    const first = blocks[section.start];
+    if (section.title === null || first === undefined) continue;
+    if (first.getAttribute(ATTR_BOT_HEAD) === section.bot) {
+      const heading = first.firstElementChild;
+      if (heading !== null) setHeadingWords(heading, section.title);
+      wanted.add(first);
+      continue;
+    }
+    const head = createElement('div', { class: 'markdown-heading', [OWN_UI_ATTRIBUTE]: '', [ATTR_BOT_HEAD]: section.bot }, [createElement('h2', { class: 'heading-element' }, [section.title])]);
+    first.before(head);
+    wanted.add(head);
+  }
+  for (const head of body.querySelectorAll(`:scope > [${ATTR_BOT_HEAD}]`)) if (!wanted.has(head)) head.remove();
 }
 
 function setFlag(element: Element, name: string, value: string | null): void {
@@ -261,10 +315,10 @@ function watchBody(body: HTMLElement): void {
   body.addEventListener('beforematch', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
-    const blocks = sectionBlocks(body);
+    const { blocks, outline } = layoutOf(body);
     const index = blocks.findIndex((block) => block === target || block.contains(target));
     if (index < 0) return;
-    for (const heading of outlineOf(blocks)) {
+    for (const heading of outline) {
       if (heading.index >= index || index >= heading.end) continue;
       const key = blocks[heading.index]?.getAttribute(ATTR_KEY);
       if (key !== null && key !== undefined) state.open.set(key, true);
@@ -322,9 +376,10 @@ function dressRails(block: HTMLElement, rails: BlockRails | null): void {
 }
 
 function applyTo(body: HTMLElement): void {
+  syncBotHeads(body);
   const all = blocksOf(body);
   // A divider is no section: it neither folds nor heads anything, nor counts as text before the first heading.
-  const blocks = sectionBlocks(body);
+  const { blocks, outline } = layoutOf(body);
   for (const block of all) setFlag(block, ATTR_BLANK, blocks.includes(block) ? null : '');
   for (const block of all) {
     if (!block.hasAttribute(ATTR_BLANK) || !(block instanceof HTMLElement)) continue;
@@ -338,19 +393,20 @@ function applyTo(body: HTMLElement): void {
     }
     dressRails(block, null);
   }
-  const outline = outlineOf(blocks);
   const folding = new Set(outline.map((heading) => heading.index));
   const openNow = new Map<number, boolean>();
   // A description that opens on a heading keeps its substance in that first section, whatever its title says.
   // One that opens with text has it above the headings, so there every section starts by the outline rule alone.
-  const first = outline[0];
-  const leading = first !== undefined && blocks.slice(0, first.index).every((block) => headingLevelOf(block) !== null) ? first : null;
+  // A bot's block is never the description proper, nor does one before the first heading make that heading the lead.
+  const first = outline.find((heading) => heading.bot !== true);
+  const botFirst = first !== undefined && outline.some((heading) => heading.bot === true && heading.index < first.index);
+  const leading = first !== undefined && !botFirst && blocks.slice(0, first.index).every((block) => headingLevelOf(block) !== null) ? first : null;
   for (const heading of outline) {
     const block = blocks[heading.index];
     const element = block === undefined ? null : headingElementOf(block);
     if (!(block instanceof HTMLElement) || element === null) continue;
     const key = keyOf(all.indexOf(block), element);
-    const open = state.open.get(key) ?? (heading === leading || heading.hasSubheadings);
+    const open = state.open.get(key) ?? (heading.bot !== true && (heading === leading || heading.hasSubheadings));
     openNow.set(heading.index, open);
     setFlag(block, ATTR_KEY, key);
     setFlag(block, ATTR_HEADING, open ? 'open' : 'closed');
@@ -384,8 +440,8 @@ function applyTo(body: HTMLElement): void {
     if (block instanceof HTMLElement) dressRails(block, rails.get(index) ?? null);
   });
   setFlag(body, ATTR_ON, '');
-  // Only a description with no headings to fold is cut: one with headings is already short once folded.
-  const cut = state.capped && outline.length === 0;
+  // Only a description with no headings of the author's to fold is cut: one with headings is already short once folded.
+  const cut = state.capped && outline.every((heading) => heading.bot === true);
   setFlag(body, ATTR_CAP, cut ? '' : null);
   syncMoreButton(body, cut);
   watchBody(body);
@@ -402,7 +458,7 @@ function release(): void {
 function clear(): void {
   // The page and its choices stay: showing the full timeline and back keeps what the reader opened.
   release();
-  for (const element of document.querySelectorAll(`.${TOGGLE_CLASS}, .${MORE_CLASS}`)) element.remove();
+  for (const element of document.querySelectorAll(`.${TOGGLE_CLASS}, .${MORE_CLASS}, [${ATTR_BOT_HEAD}]`)) element.remove();
   for (const element of document.querySelectorAll(`[${ATTR_DEPTH}]`)) {
     if (element instanceof HTMLElement) for (const name of RAIL_PROPERTIES) element.style.removeProperty(name);
   }
