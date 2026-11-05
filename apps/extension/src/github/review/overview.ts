@@ -39,12 +39,14 @@ import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
 import { descriptionUnshortened, releaseDescription, shortenDescription } from './description';
 import { compactDescriptionByline } from './description-byline';
+import { agentNotes, noteCopy, resetAgentNotes } from './agent-notes';
+import { openNoteHistory } from './note-history';
 import { applyFolds, closureKindOf, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
 import type { BotRequestClick } from './bot-requests';
 import { botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
-import { ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
+import { AGENT_NOTES_KEY, ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -1342,7 +1344,7 @@ function openRow(key: string, batches: readonly Batch[], grouping: GeldSettings[
     visit.openSubKey = sub;
   }
   // A line in the Review bots or Reports list opens inside its row the same way.
-  if (key === BOTS_KEY || key === REPORTS_KEY) visit.openSubKey = sub;
+  if (key === BOTS_KEY || key === REPORTS_KEY || key === AGENT_NOTES_KEY) visit.openSubKey = sub;
   visit.openKey = key;
 }
 
@@ -2794,7 +2796,7 @@ function pageChecks(headSha: string): readonly RawCheckRun[] {
 /** What an open row shows in its slot: the item's thread(s), a fold's nodes, or the merge box's checks. */
 function quickViewFor(key: string, meta: GeldPrMeta, groups: readonly FoldGroup[]): readonly HTMLElement[] {
   // The Reviews and Previews rows render their own lists; the panel itself stands in for "something to show".
-  if (key === REVIEWS_KEY || key === PREVIEWS_KEY || key === REPORTS_KEY || key === BOTS_KEY || key.startsWith('batch:')) return [document.documentElement];
+  if (key === REVIEWS_KEY || key === PREVIEWS_KEY || key === REPORTS_KEY || key === BOTS_KEY || key === AGENT_NOTES_KEY || key.startsWith('batch:')) return [document.documentElement];
   if (key === CHECKS_KEY) {
     const section = checksSection();
     if (section === null) return [];
@@ -2934,6 +2936,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     resetFragments();
     forgetThreads();
     resetEditTimes();
+    resetAgentNotes();
     resetHeadChecks();
     botLineMemo.clear();
     visit.manualDone = new Set();
@@ -3176,6 +3179,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         );
   const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
 
+  const notes = agentNotes(reapplySoon);
   const model: PanelModel = {
     meta,
     freshness: composed.freshness,
@@ -3191,6 +3195,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     requestable,
     ranSincePush,
     botLines,
+    agentNotes: notes.notes,
+    agentNotesReading: notes.reading,
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
     // A running/loading bot's sourceId is the "Starting"/trigger line — contentless, and the same line for every bot
     // one comment asked for at once, so looking a bot up by it opens the wrong bot. Open this bot's own latest
@@ -3407,6 +3413,12 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         })
         .catch(() => mark('re-request:failed'));
     },
+    onNoteHistory: (id) => {
+      openNoteHistory(() => {
+        const now = agentNotes(reapplySoon);
+        return { note: now.notes.find((note) => note.id === id), reading: now.reading };
+      });
+    },
     onToggleSub: (anchor) => {
       keepInPlace(`main:sub:${anchor}`, () => {
         visit.openSubKey = visit.openSubKey === anchor ? null : anchor;
@@ -3431,6 +3443,17 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         else visit.openCommits.add(batchKey);
         reapply();
       });
+    },
+    onOpenNote: (id) => {
+      const key = noteSubKey(id);
+      keepInPlace(`main:${AGENT_NOTES_KEY}`, () => {
+        // The pill of the note already open closes it; any other opens the row to that note.
+        const wasOpen = visit.openKey === AGENT_NOTES_KEY && visit.openSubKey === key;
+        visit.openKey = AGENT_NOTES_KEY;
+        visit.openSubKey = wasOpen ? null : key;
+        reapply();
+      });
+      revealRow(`main:sub:${key}`);
     },
     onOpenReport: (anchor) => {
       keepInPlace(`main:${REPORTS_KEY}`, () => {
@@ -3549,6 +3572,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           // A comment that left the page, or a summary no longer the bot's latest: nothing to keep open.
           visit.openSubKey = null;
         }
+      } else if (visit.openKey === AGENT_NOTES_KEY) {
+        // What agents and review bots wrote into the description, each tool's note opening in place.
+        renderAgentNotesList(mounted.slot, model, panelHandlers, (note) => noteCopy(note.versions.at(-1)?.blocks ?? []));
+        if (visit.openSubKey !== null && !model.agentNotes.some((note) => noteSubKey(note.id) === visit.openSubKey)) visit.openSubKey = null;
       } else if (visit.openKey === REPORTS_KEY) {
         // The reporters' latest reports; the open line's comment stands under it as a one-bubble chat (a check's
         // report has no comment: the list shows its detail itself).
@@ -3695,7 +3722,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     }
   }
   const tailStart = performance.now();
-  shortenDescription(settings.collapseDescription && !visit.fullTimeline);
+  // What tools appended is the Agent notes row's: the description keeps the author's words.
+  shortenDescription(settings.collapseDescription && !visit.fullTimeline, { toolsAway: true });
   compactDescriptionByline(true, reapplySoon);
   setFullTimeline(visit.fullTimeline);
   if (hidingTimeline) document.documentElement.setAttribute('data-geld-timeline', 'compact');
@@ -3757,7 +3785,7 @@ export function foldDescriptionNow(settings: GeldSettings): void {
   if (page.kind !== 'pull-conversation') return;
   // The full timeline shows the description whole, and that choice belongs to the visit that made it.
   if (visit.pageKey === page.stateKey && visit.fullTimeline) return;
-  if (descriptionUnshortened()) shortenDescription(true);
+  if (descriptionUnshortened()) shortenDescription(true, { toolsAway: true });
 }
 
 /**

@@ -205,14 +205,14 @@ describe('shortenDescription', () => {
 
   const order = (node: Element | undefined | null): string => (node instanceof HTMLElement ? node.style.getPropertyValue('--geld-desc-order') : '');
 
-  it('gathers what tools appended at the foot under Agent summaries, one closed heading per tool with its logo', () => {
+  it('gathers what tools appended at the foot under Agent notes, one closed heading per tool with its logo', () => {
     const { body, blocks } = mountWithTools();
     const [, , , , , c, coderabbit, list, badges, after] = blocks;
     shortenDescription(true);
     expect(body.hasAttribute('data-geld-desc-agents')).toBe(true);
     const agents = body.querySelector('.geld-desc-agents');
     expect(agents?.tagName).toBe('H2');
-    expect(agents?.textContent).toBe('Agent summaries');
+    expect(agents?.textContent).toBe('Agent notes');
     // The section heading over them folds nothing.
     expect(agents?.querySelector('.geld-desc-toggle')).toBeNull();
     const headings = [...body.querySelectorAll('.geld-desc-agent')];
@@ -235,6 +235,31 @@ describe('shortenDescription', () => {
     expect(c?.hasAttribute('data-geld-desc-fold')).toBe(true);
     expect(after?.hasAttribute('data-geld-desc-fold')).toBe(false);
     expect(after?.hasAttribute('data-geld-desc-depth')).toBe(false);
+  });
+
+  it('hides what tools appended while the digest’s Agent notes row shows it, and keeps the author’s text top level', () => {
+    const { body, blocks } = mountWithTools();
+    const [, , , , , c, coderabbit, list, badges, after] = blocks;
+    shortenDescription(true, { toolsAway: true });
+    expect(body.hasAttribute('data-geld-desc-tools')).toBe(true);
+    expect([coderabbit, list, badges].map((block) => block?.getAttribute('data-geld-desc-tool'))).toEqual(['coderabbit', 'coderabbit', 'cursor-agent']);
+    // No Agent notes heading is drawn, and the tool's own heading heads nothing.
+    expect(body.querySelector('.geld-desc-agents, .geld-desc-agent')).toBeNull();
+    expect(coderabbit?.querySelector('.geld-desc-toggle')).toBeNull();
+    expect(coderabbit?.hasAttribute('data-geld-desc-heading')).toBe(false);
+    expect(c?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    expect(after?.hasAttribute('data-geld-desc-tool')).toBe(false);
+    expect(after?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(after?.hasAttribute('data-geld-desc-depth')).toBe(false);
+    // The hidden blocks come after it in the DOM, so the author's last block is marked to end the box.
+    expect(after?.hasAttribute('data-geld-desc-last')).toBe(true);
+    // Without the digest's row, the same description gets its Agent notes again.
+    shortenDescription(true);
+    expect(body.hasAttribute('data-geld-desc-tools')).toBe(false);
+    expect(body.querySelector('[data-geld-desc-tool]')).toBeNull();
+    expect(body.querySelectorAll('.geld-desc-agent')).toHaveLength(2);
+    shortenDescription(false);
+    expect(body.querySelector('[data-geld-desc-tool], .geld-desc-agents')).toBeNull();
   });
 
   it('opens a tool’s content under its heading, as a section opens', async () => {
@@ -315,13 +340,13 @@ describe('shortenDescription', () => {
     expect(row.style.getPropertyValue('--geld-desc-lift')).toBe('-200px');
     expect(body.style.getPropertyValue('--geld-desc-drop')).toBe('42px');
     // The last block shown is the agents' last: the box ends the body's own padding below it.
-    expect(body.querySelectorAll('[data-geld-desc-agent-last]')).toHaveLength(1);
-    expect(body.querySelector('[data-geld-desc-agent-last]')?.tagName).toBe('UL');
+    expect(body.querySelectorAll('[data-geld-desc-last]')).toHaveLength(1);
+    expect(body.querySelector('[data-geld-desc-last]')?.tagName).toBe('UL');
     shortenDescription(false);
     expect(row.hasAttribute('data-geld-desc-lifted')).toBe(false);
     expect(row.style.getPropertyValue('--geld-desc-lift')).toBe('');
     expect(body.style.getPropertyValue('--geld-desc-drop')).toBe('');
-    expect(body.querySelector('[data-geld-desc-agent-last]')).toBeNull();
+    expect(body.querySelector('[data-geld-desc-last]')).toBeNull();
   });
 
   it('cuts only the author’s text at 500px, the agents’ summaries below it untouched, and opening an agent keeps the cut', async () => {
