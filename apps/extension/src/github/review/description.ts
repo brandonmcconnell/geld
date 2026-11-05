@@ -8,6 +8,8 @@ import { ATTR_FINDABLE, setFindable } from './fold';
 export const DESCRIPTION_CAP_PX = 500;
 /** How far past the cap the description must run before it is cut, so a cut never hides only a line or two. */
 const CAP_SLACK_PX = 80;
+/** The least of a block the cut runs through that stays on show: the fade's height (style.css), so it fades out, not a sliver. */
+const CUT_EDGE_MIN_PX = 96;
 
 /** On a block of the description hidden under a folded heading. */
 const ATTR_FOLD = 'data-geld-desc-fold';
@@ -474,7 +476,7 @@ function measure(body: HTMLElement): void {
       if (start >= DESCRIPTION_CAP_PX) fold(block, ATTR_CUT);
       else if (end > DESCRIPTION_CAP_PX && block instanceof HTMLElement) {
         setFlag(block, ATTR_CUT_EDGE, '');
-        setProperty(block, CUT_HEIGHT_PROPERTY, `${Math.round(DESCRIPTION_CAP_PX - start)}px`);
+        setProperty(block, CUT_HEIGHT_PROPERTY, `${Math.round(Math.max(DESCRIPTION_CAP_PX - start, Math.min(CUT_EDGE_MIN_PX, end - start)))}px`);
       }
     }
   }
