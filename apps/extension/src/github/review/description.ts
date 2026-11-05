@@ -21,6 +21,8 @@ const ATTR_LONG = 'data-geld-desc-long';
 const ATTR_ON = 'data-geld-desc';
 /** On a block indented under an open heading, or drawing a rail: its rails are in its inline custom properties. */
 const ATTR_DEPTH = 'data-geld-desc-depth';
+/** On a heading with nothing to read in it, hidden while the description is shortened. */
+const ATTR_BLANK = 'data-geld-desc-blank';
 const RAIL_PROPERTIES = ['--geld-desc-depth', '--geld-desc-rails', '--geld-desc-rail-pos', '--geld-desc-rail-size'] as const;
 
 /** One level of indentation, and the chevron's centre within it. Mirrored in style.css (description outline). */
@@ -54,6 +56,32 @@ function headingElementOf(block: Element): HTMLElement | null {
   if (isHeading(block)) return block;
   if (block.classList.contains('markdown-heading') && isHeading(block.firstElementChild)) return block.firstElementChild;
   return null;
+}
+
+const BLANK_TEXT = /^[\s\u200b-\u200d\u2060\ufeff]*$/;
+
+/**
+ * A heading block with nothing to read in it: some bots post `## &nbsp;` or an empty `<h2>` for the thin rule
+ * GitHub draws under it, finer than a `---`. GitHub's anchor link and Geld's toggle are not its content.
+ */
+export function isBlankHeading(block: Element): boolean {
+  const heading = headingElementOf(block);
+  if (heading === null) return false;
+  const copy = heading.cloneNode(true);
+  if (!(copy instanceof Element)) return false;
+  for (const extra of copy.querySelectorAll(`a.anchor, .${TOGGLE_CLASS}`)) extra.remove();
+  if (copy.querySelector('img, picture, video, svg:not(.octicon-link)') !== null) return false;
+  return BLANK_TEXT.test(copy.textContent ?? '');
+}
+
+/** The description's own top-level blocks, without Geld's controls. */
+function blocksOf(body: HTMLElement): Element[] {
+  return [...body.children].filter((block) => !block.hasAttribute(OWN_UI_ATTRIBUTE));
+}
+
+/** The blocks the outline is built from: dividers neither fold nor head anything. */
+function sectionBlocks(body: HTMLElement): Element[] {
+  return blocksOf(body).filter((block) => !isBlankHeading(block));
 }
 
 /**
@@ -152,13 +180,14 @@ function setFlag(element: Element, name: string, value: string | null): void {
   }
 }
 
-function keyOf(heading: OutlineHeading, element: HTMLElement): string {
+/** `position` is the block's place among all the description's blocks, dividers included, so blanking one keeps the rest. */
+function keyOf(position: number, element: HTMLElement): string {
   const text = [...element.childNodes]
     .filter((node) => !(node instanceof Element && node.classList.contains(TOGGLE_CLASS)))
     .map((node) => node.textContent ?? '')
     .join('')
     .trim();
-  return `${heading.index}:${text}`;
+  return `${position}:${text}`;
 }
 
 /**
@@ -232,7 +261,7 @@ function watchBody(body: HTMLElement): void {
   body.addEventListener('beforematch', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
-    const blocks = [...body.children].filter((block) => !block.hasAttribute(OWN_UI_ATTRIBUTE));
+    const blocks = sectionBlocks(body);
     const index = blocks.findIndex((block) => block === target || block.contains(target));
     if (index < 0) return;
     for (const heading of outlineOf(blocks)) {
@@ -293,7 +322,22 @@ function dressRails(block: HTMLElement, rails: BlockRails | null): void {
 }
 
 function applyTo(body: HTMLElement): void {
-  const blocks = [...body.children].filter((block) => !block.hasAttribute(OWN_UI_ATTRIBUTE));
+  const all = blocksOf(body);
+  // A divider is no section: it neither folds nor heads anything, nor counts as text before the first heading.
+  const blocks = sectionBlocks(body);
+  for (const block of all) setFlag(block, ATTR_BLANK, blocks.includes(block) ? null : '');
+  for (const block of all) {
+    if (!block.hasAttribute(ATTR_BLANK) || !(block instanceof HTMLElement)) continue;
+    setFlag(block, ATTR_HEADING, null);
+    setFlag(block, ATTR_KEY, null);
+    headingElementOf(block)?.querySelector(`:scope > .${TOGGLE_CLASS}`)?.remove();
+    if (block.hasAttribute(ATTR_FOLD)) {
+      block.removeAttribute(ATTR_FOLD);
+      if (block.getAttribute('hidden') === 'until-found') block.removeAttribute('hidden');
+      setFindable(block, false);
+    }
+    dressRails(block, null);
+  }
   const outline = outlineOf(blocks);
   const folding = new Set(outline.map((heading) => heading.index));
   const openNow = new Map<number, boolean>();
@@ -305,7 +349,7 @@ function applyTo(body: HTMLElement): void {
     const block = blocks[heading.index];
     const element = block === undefined ? null : headingElementOf(block);
     if (!(block instanceof HTMLElement) || element === null) continue;
-    const key = keyOf(heading, element);
+    const key = keyOf(all.indexOf(block), element);
     const open = state.open.get(key) ?? (heading === leading || heading.hasSubheadings);
     openNow.set(heading.index, open);
     setFlag(block, ATTR_KEY, key);
@@ -366,7 +410,7 @@ function clear(): void {
     if (element.getAttribute('hidden') === 'until-found') element.removeAttribute('hidden');
     element.removeAttribute(ATTR_FINDABLE);
   }
-  for (const name of [ATTR_FOLD, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH]) {
+  for (const name of [ATTR_FOLD, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH, ATTR_BLANK]) {
     for (const element of document.querySelectorAll(`[${name}]`)) element.removeAttribute(name);
   }
 }

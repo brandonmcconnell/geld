@@ -7519,6 +7519,11 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   margin-bottom: 8px !important;
 }
 
+/* A heading used only for its thin rule: the slimmer headings above drop the rule, so it would be an empty gap. */
+[data-geld-desc] > [data-geld-desc-blank] {
+  display: none !important;
+}
+
 [data-geld-desc] > [data-geld-desc-depth] {
   position: relative;
   margin-left: calc(var(--geld-desc-depth, 0) * 24px) !important;
