@@ -11,6 +11,8 @@ import { syncEnterpriseHosts } from '../src/lib/enterprise';
 import { hasGatewayPermission } from '../src/lib/ai-gateway';
 import { settingsItem } from '../src/lib/storage';
 import { diagnosticSubject, recordDiagnostic } from '../src/lib/diagnostics';
+import { installErrorCapture } from '../src/lib/error-capture';
+import { queueErrorReports, startErrorReports } from '../src/lib/error-uplink';
 import type { FetchDiffResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
 import type { EnsureContentResponse } from '../src/lib/messages';
 import {
@@ -21,6 +23,7 @@ import {
   isCatalogCheckMessage,
   isColorSchemeMessage,
   isEnsureContentMessage,
+  isErrorReportMessage,
   isFetchDiffRequest,
   isFetchFileRequest,
   isClearDiffCacheMessage,
@@ -533,10 +536,16 @@ async function toggleHiddenInActiveTab(): Promise<void> {
 }
 
 export default defineBackground(() => {
+  installErrorCapture('background', (reports) => void queueErrorReports(reports).catch(() => undefined));
+  startErrorReports();
   // Each start is a previous stop: a run of these around failing fetches says the worker is being killed mid-request.
   recordDiagnostic({ kind: 'worker-start' });
   browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
     if(isTrackerStatusRequest(message)){void readTrackerStatuses(message,sender.url??sender.tab?.url).then(sendResponse);return true;}
+    if (isErrorReportMessage(message)) {
+      void queueErrorReports(message.errors).catch(() => undefined);
+      return undefined;
+    }
     if (isColorSchemeMessage(message)) {
       applyToolbarIcon(message.dark);
       return undefined;

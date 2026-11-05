@@ -67,6 +67,9 @@ import { wireFeedbackLink } from '../../src/ui/feedback-link';
 import { mountAccountWidget } from '../../src/ui/account-widget';
 import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
+import { installErrorCapture } from '../../src/lib/error-capture';
+
+installErrorCapture('options');
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -197,7 +200,9 @@ async function main(): Promise<void> {
     const section = sections.find((candidate) => candidate.id === sectionId);
     const host = requireElement(hostId, HTMLDivElement);
     const saved = statusReporter(el('span'));
-    toggleFields(section?.fields ?? []).forEach((field, index) => {
+    // Firefox wants its own data-collection permission before an add-on sends error reports; until Geld asks for it, its builds keep errors local.
+    const shown = toggleFields(section?.fields ?? []).filter((field) => !(import.meta.env.FIREFOX && field.key === 'errorReports'));
+    shown.forEach((field, index) => {
       if (index > 0) host.append(el('hr', 'options__divider'));
       const label = el('span', 'geld-label', [field.label]);
       label.id = `${field.key}-label`;

@@ -102,6 +102,19 @@ describe('authorWordsAfter', () => {
   });
 });
 
+describe('authorWordsAfter with entities', () => {
+  it('reads the author’s words as they render, entities decoded', () => {
+    const markdown = '<!-- CURSOR_SUMMARY -->\n> [!NOTE]\n<!-- /CURSOR_SUMMARY -->\n## R&amp;D rollout &#8212; phase&nbsp;2\nTom &amp; Jerry, &bogus; kept.';
+    expect(authorWordsAfter(markdown)).toEqual(new Map([['bugbot', ['r d rollout phase 2 tom']]]));
+  });
+
+  it('stops a heading-led summary where the author’s words resume, written with an entity', () => {
+    const html = `${CODERABBIT}<p dir="auto">R&amp;D signed off on it.</p>`;
+    const markdown = '<!-- This is an auto-generated comment: release notes by coderabbit.ai -->x<!-- end of auto-generated comment: release notes by coderabbit.ai -->\nR&amp;D signed off on it.';
+    expect(toolBlocksOf(blocksOf(html), markdown).map(({ id, start, end }) => ({ id, start, end }))).toEqual([{ id: 'coderabbit', start: 0, end: 1 }]);
+  });
+});
+
 describe('authorWordsAfter with links', () => {
   it('finds the author’s words again when they hold a bare URL, autolinked on the page', () => {
     const html = `${CODERABBIT}<p dir="auto">Tested at <a href="https://x.test">https://x.test</a> and passed.</p>`;

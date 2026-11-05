@@ -1419,6 +1419,20 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   writing a tab's own snapshot used to drop the entries other tabs had added.
   `src/lib/diagnostics.ts` keeps a ring of ~300 events in `session:diagnostics` (worker starts, per-fetch outcome/timing/budget by `owner/repo#N`, rate-limit strikes, cache clears — no URLs, bodies or tokens);
   the options page's "Copy diagnostics" (`copy-diagnostics`, extension-only) puts them on the clipboard.
+- **Geld's errors never reach chrome://extensions' Errors card in a store build, and are never lost** (`src/lib/error-capture.ts`, `src/lib/error-uplink.ts`, `@geld/core/error-report.ts`).
+  Chrome lists every `console.warn`/`console.error`, uncaught error and unhandled rejection of an extension context there (Developer mode only), so Geld logs nothing to the console for expected conditions (a skipped catalog surface, a foreign summary author, missing anchors are trail marks and counts in Copy diagnostics, the first instance of each named) and every context installs a capture (`installErrorCapture`: background, popup, options, offscreen, content script;
+  the content script's takes only errors whose stack or file is the extension's, since it shares the window with GitHub's code, and a retired copy removes its listeners).
+  The observer callback and each pass run inside `guard('content:observer' | 'content:pass', …)`.
+  A caught error becomes a scrubbed `ErrorReport` (message without URLs, paths, emails, @mentions or quoted page text;
+  only stack frames inside the extension, as `name file:line:col`;
+  deduped with a count), a trail mark and a perf count in its own context, and goes to the background, which logs it in the session diagnostics (`kind: 'error'`).
+  Development builds rethrow and do not `preventDefault`, so the console still shows them while working.
+  **With `errorReports` on** (General, off by default, extension only, hidden on Firefox, which needs `data_collection_permissions` before an add-on may send this) the background also queues the reports in `local:errorQueue` and an alarm posts them to `https://www.geld.sh/api/diagnostics` at most every five minutes (`no-cors`, `text/plain`, no credentials, so no host permission or preflight;
+  never from a dev build);
+  turning the setting off drops the queue.
+  The site route (`apps/site/app/api/diagnostics/route.ts`) parses and scrubs again (`parseErrorPayload`, frames must match the strict `file:line:col` shape) and writes one `{ event: 'extension_error', … }` JSON line per error to the runtime logs, nothing stored;
+  a Vercel log drain carries them further.
+  The privacy policy's extension section (`@geld/domain/privacy.ts`) says exactly what is sent: keep it in step with `ErrorReport`.
 - **A diff that could not be had is never cached, and the row says so.**
   Signed out of a private repository, GitHub answers a `.diff` request with 404 (`text/plain` "Not Found");
   with a lapsed SSO session it answers 200 with its sign-in page, which parsed as a diff of no files and used to be cached and shown as `0 hidden +0 −0`.

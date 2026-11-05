@@ -20,6 +20,9 @@ import { describePage } from '../../src/github/page';
 import type { PageKind } from '../../src/github/page';
 import { ICON_BEAKER, ICON_EYE_CLOSED, ICON_INFO } from '../../src/github/ui/icons';
 import { wireFeedbackLink } from '../../src/ui/feedback-link';
+import { installErrorCapture } from '../../src/lib/error-capture';
+
+installErrorCapture('popup');
 
 interface ActiveTab {
   readonly id: number;

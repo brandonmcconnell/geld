@@ -50,7 +50,8 @@ const QUESTIONS: readonly Question[] = [
       <p>
         The only network requests Geld makes are to GitHub (
         {allHosts(DEFAULT_SETTINGS).join(', ')} plus any Enterprise hosts you add): to fetch diffs GitHub would serve you anyway and, if you opt into
-        sign-in, to read and write a secret gist on your own account. Settings live in your browser&apos;s sync storage. See the{' '}
+        sign-in, to read and write a secret gist on your own account. Settings live in your browser&apos;s sync storage. If you turn on error reports in the options, Geld&apos;s own errors also go to geld.sh,
+        with addresses, names and page text removed first. See the{' '}
         <Link href="/privacy">privacy policy</Link>.
       </p>
     ),

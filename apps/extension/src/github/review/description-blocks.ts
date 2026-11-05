@@ -123,15 +123,30 @@ export function plainWords(text: string): string {
 /** Bare URLs go on both sides: the Markdown's and the page's text must compare as the same words. */
 const withoutUrls = (text: string): string => text.replace(/https?:\/\/\S+/g, ' ');
 
-/** Markdown to the words it shows: comments, images, tags and link targets go. */
+const NAMED_ENTITIES: Readonly<Record<string, string>> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+
+/** What an HTML entity in Markdown renders as; one this list does not know stays as written. */
+function decodeEntities(text: string): string {
+  return text.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (whole, name: string) => {
+    if (name.startsWith('#')) {
+      const code = name[1] === 'x' || name[1] === 'X' ? Number.parseInt(name.slice(2), 16) : Number.parseInt(name.slice(1), 10);
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+    }
+    return NAMED_ENTITIES[name.toLowerCase()] ?? whole;
+  });
+}
+
+/** Markdown to the words it shows: comments, images, tags and link targets go, and entities read as they render. */
 function markdownWords(markdown: string): string {
   return plainWords(
     withoutUrls(
-      markdown
-        .replace(/<!--[\s\S]*?-->/g, ' ')
-        .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
-        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-        .replace(/<[^>]+>/g, ' '),
+      decodeEntities(
+        markdown
+          .replace(/<!--[\s\S]*?-->/g, ' ')
+          .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+          .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+          .replace(/<[^>]+>/g, ' '),
+      ),
     ),
   );
 }
