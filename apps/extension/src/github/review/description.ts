@@ -43,6 +43,10 @@ const ATTR_AGENTS = 'data-geld-desc-agents';
 const ATTR_AGENT_HIDDEN = 'data-geld-desc-agent-hidden';
 /** On each block of a tool's content, and on its injected heading: the tool's id. */
 const ATTR_AGENT = 'data-geld-desc-agent';
+/** On the description body while tools' content is away in the digest's Agent notes row: it is hidden here. */
+const ATTR_TOOLS = 'data-geld-desc-tools';
+/** On each block of a tool's content while it is away: the tool's id. */
+const ATTR_TOOL = 'data-geld-desc-tool';
 /** The flex `order` that puts the tools' content after the author's. Mirrored in style.css. */
 const ORDER_PROPERTY = '--geld-desc-order';
 const RAIL_PROPERTIES = ['--geld-desc-depth', '--geld-desc-rails', '--geld-desc-rail-pos', '--geld-desc-rail-size', '--geld-desc-edge'] as const;
@@ -130,6 +134,8 @@ interface Layout {
   readonly blocks: readonly Element[];
   readonly outline: readonly OutlineHeading[];
   readonly groups: readonly ToolGroup[];
+  /** Every tool's blocks by tool id, while the digest's Agent notes row shows them (`state.toolsAway`): hidden here. */
+  readonly away: ReadonlyMap<Element, string>;
 }
 
 /** A tool's heading, kept across passes: Geld's own `h3`, with the tool's logo before its name. */
@@ -150,7 +156,7 @@ function toolHeadingOf(body: HTMLElement, id: string, name: string, bot: string 
 }
 
 /** The description's Markdown, from GitHub's own "Copy Markdown" item in its ⋯ menu: the one place its HTML comments survive. */
-function descriptionMarkdown(body: HTMLElement): string | null {
+export function descriptionMarkdown(body: HTMLElement): string | null {
   const copy = body.closest('.timeline-comment, .js-comment-container')?.querySelector('clipboard-copy[data-dd-action-name="pr.description.copy_markdown"]');
   return copy?.getAttribute('value') ?? null;
 }
@@ -164,19 +170,19 @@ function descriptionMarkdown(body: HTMLElement): string | null {
 function layoutOf(body: HTMLElement): Layout {
   const sections = sectionBlocks(body);
   const found = new Map<string, { name: string; bot: string | null; content: Element[]; hidden: Element[]; first: Element }>();
-  const isTool = new Set<Element>();
+  const isTool = new Map<Element, string>();
   for (const tool of toolBlocksOf(sections, descriptionMarkdown(body))) {
     const start = sections[tool.start];
     if (start === undefined) continue;
     const group = found.get(tool.id) ?? { name: tool.name, bot: tool.bot, content: [], hidden: [], first: start };
     found.set(tool.id, group);
     sections.slice(tool.start, tool.end + 1).forEach((block, offset) => {
-      isTool.add(block);
+      isTool.set(block, tool.id);
       if (block.tagName === 'HR' || tool.start + offset === tool.title) group.hidden.push(block);
       else group.content.push(block);
     });
   }
-  const groups = [...found].map(([id, group]): ToolGroup => ({ id, name: group.name, bot: group.bot, heading: toolHeadingOf(body, id, group.name, group.bot, verdictOf(id, group.content)), content: group.content, hidden: group.hidden, first: group.first }));
+  const groups = state.toolsAway ? [] : [...found].map(([id, group]): ToolGroup => ({ id, name: group.name, bot: group.bot, heading: toolHeadingOf(body, id, group.name, group.bot, verdictOf(id, group.content)), content: group.content, hidden: group.hidden, first: group.first }));
   const author = sections.filter((block) => !isTool.has(block));
   // Every section ends where a tool's content was, so what the author wrote after it is top level again; and the
   // tools' headings, after the author's last block, are top level too.
@@ -185,10 +191,11 @@ function layoutOf(body: HTMLElement): Layout {
     const next = sections[index + 1];
     if (isTool.has(block) && next !== undefined && !isTool.has(next)) resets.add(author.indexOf(next));
   });
+  if (state.toolsAway) return { blocks: author, outline: outlineOf(author, resets), groups: [], away: isTool };
   const blocks = [...author, ...groups.flatMap((group) => [group.heading, ...group.content])];
   const inTool = new Set(groups.flatMap((group) => group.content));
   const levels = blocks.map((block) => (inTool.has(block) ? null : headingLevelOf(block)));
-  return { blocks, outline: outlineOf(blocks, resets, levels), groups };
+  return { blocks, outline: outlineOf(blocks, resets, levels), groups, away: new Map() };
 }
 
 /**
@@ -267,13 +274,13 @@ export function railsOf(blockCount: number, outline: readonly OutlineHeading[], 
 }
 
 /** What the reader changed on this page: headings opened or closed by hand, and whether the cut was lifted. */
-const state = { page: '', open: new Map<string, boolean>(), capped: true };
+const state = { page: '', open: new Map<string, boolean>(), capped: true, toolsAway: false };
 
 let resizeObserver: ResizeObserver | null = null;
 let observed: HTMLElement | null = null;
 let observedRow: HTMLElement | null = null;
 
-function descriptionBody(): HTMLElement | null {
+export function descriptionBody(): HTMLElement | null {
   const body =
     document.querySelector('.js-comment-container .js-comment-body') ??
     document.querySelector('[data-testid="issue-body"] .markdown-body') ??
@@ -450,7 +457,7 @@ function clearCut(body: HTMLElement): void {
  */
 function measure(body: HTMLElement): void {
   clearCut(body);
-  const author = blocksOf(body).filter((block) => !block.hasAttribute(ATTR_AGENT) && !block.hasAttribute(ATTR_BLANK));
+  const author = blocksOf(body).filter((block) => !block.hasAttribute(ATTR_AGENT) && !block.hasAttribute(ATTR_TOOL) && !block.hasAttribute(ATTR_BLANK));
   const top = body.getBoundingClientRect().top;
   const spans = author.map((block) => {
     const box = block.getBoundingClientRect();
@@ -613,6 +620,24 @@ function dressAgents(body: HTMLElement, layout: Layout, all: readonly Element[])
   });
 }
 
+/**
+ * While the digest's Agent notes row shows what tools appended, their blocks are hidden here (`[data-geld-desc-tools]
+ * > [data-geld-desc-tool]` in the stylesheet): the description is the author's, and nothing shows twice.
+ */
+function flagAway(body: HTMLElement, layout: Layout, all: readonly Element[]): void {
+  setFlag(body, ATTR_TOOLS, layout.away.size > 0 ? '' : null);
+  for (const block of all) {
+    const tool = layout.away.get(block) ?? null;
+    setFlag(block, ATTR_TOOL, tool);
+    if (tool === null || !(block instanceof HTMLElement)) continue;
+    setFlag(block, ATTR_HEADING, null);
+    setFlag(block, ATTR_KEY, null);
+    headingElementOf(block)?.querySelector(`:scope > .${TOGGLE_CLASS}`)?.remove();
+    unfold(block, ATTR_FOLD);
+    dressRails(block, null);
+  }
+}
+
 function applyTo(body: HTMLElement): void {
   const all = blocksOf(body);
   // A divider is no section: it neither folds nor heads anything, nor counts as text before the first heading.
@@ -629,6 +654,7 @@ function applyTo(body: HTMLElement): void {
   const layout = layoutOf(body);
   const { blocks, outline } = layout;
   dressAgents(body, layout, all);
+  flagAway(body, layout, all);
   const folding = new Set(outline.map((heading) => heading.index));
   const openNow = new Map<number, boolean>();
   // A description that opens on a heading keeps its substance in that first section, whatever its title says.
@@ -716,7 +742,7 @@ function clear(): void {
   for (const element of document.querySelectorAll(`[${ATTR_CUT_EDGE}]`)) {
     if (element instanceof HTMLElement) element.style.removeProperty(CUT_HEIGHT_PROPERTY);
   }
-  for (const name of [ATTR_FOLD, ATTR_CUT, ATTR_CUT_EDGE, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH, ATTR_BLANK, ATTR_AGENTS, ATTR_AGENT, ATTR_AGENT_HIDDEN, ATTR_AGENT_LAST]) {
+  for (const name of [ATTR_TOOLS, ATTR_TOOL, ATTR_FOLD, ATTR_CUT, ATTR_CUT_EDGE, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH, ATTR_BLANK, ATTR_AGENTS, ATTR_AGENT, ATTR_AGENT_HIDDEN, ATTR_AGENT_LAST]) {
     for (const element of document.querySelectorAll(`[${name}]`)) element.removeAttribute(name);
   }
 }
@@ -727,13 +753,15 @@ function clear(): void {
  * the first section starts open too when the description opens on a heading).
  * A description still taller than {@link DESCRIPTION_CAP_PX} once folded is cut there behind a fade and "Show full
  * description", until the reader clicks that, opens a section, or opens anything collapsible in it.
+ * With `toolsAway`, what tools appended is hidden here, since the digest's Agent notes row shows it.
  * Only attributes and Geld's own controls are added, GitHub's nodes stay where they are.
  */
-export function shortenDescription(on: boolean): void {
+export function shortenDescription(on: boolean, options: { readonly toolsAway?: boolean } = {}): void {
   if (!on) {
     clear();
     return;
   }
+  state.toolsAway = options.toolsAway === true;
   const page = location.pathname;
   if (state.page !== page) {
     state.page = page;

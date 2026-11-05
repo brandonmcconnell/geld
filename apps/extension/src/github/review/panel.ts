@@ -10,11 +10,12 @@
  */
 
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, Report, ReportPart, ReviewItem } from '@geld/review';
-import { previewHostById, reportsHealth } from '@geld/review';
+import { botAppAvatar, botById, previewHostById, reportsHealth } from '@geld/review';
+import type { AgentNote } from './agent-notes';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
-import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -356,6 +357,10 @@ export interface PanelModel {
   readonly ranSincePush: ReadonlySet<string> | null;
   /** The Review bots row's list: each bot's latest run summary, in the chips' order. */
   readonly botLines: readonly BotLine[];
+  /** What agents and review bots wrote into the description, now and in its history (`agent-notes.ts`). */
+  readonly agentNotes: readonly AgentNote[];
+  /** The description's history is still being read for the Agent notes row. */
+  readonly agentNotesReading: boolean;
   /** Bot run summaries (verdict comments) an open item can link to, by bot id. */
   readonly summaryAnchorFor: (botId: string) => string | null;
   /** What this bot's chip opens: its own source, or — while it runs (its source is then the shared trigger line) — its latest real summary, else nothing. */
@@ -467,6 +472,8 @@ export interface PanelHandlers {
   readonly onShowInTimeline: (anchor: string) => void;
   /** Open or close a comment inside the Reviews row's list. */
   readonly onToggleSub: (anchor: string) => void;
+  /** Show every way an agent's note in the description has read (`id` is the tool's). */
+  readonly onNoteHistory: (id: string) => void;
   /** Unfold or fold the archived previews. */
   readonly onToggleArchivedPreviews: () => void;
   /** Unfold or fold a round's commit rows (batch grouping). */
@@ -510,6 +517,8 @@ export const PREVIEWS_KEY = 'previews';
 export const REPORTS_KEY = 'reports';
 /** Row key for the Review bots row; its slot lists each bot's latest run summary, each opening in place. */
 export const BOTS_KEY = 'bots';
+/** The Agent notes row: what agents and review bots wrote into the description. */
+export const AGENT_NOTES_KEY = 'agent-notes';
 /** The Reports row's label, long and short. */
 export const REPORTS_LABEL: readonly [string, string] = ['Reports', 'Reports'];
 const NUDGE_CLASS = 'geld-review-nudge';
@@ -1993,6 +2002,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     rows.append(row);
     if (open) rows.append(slotRow(BOTS_KEY, null, 'list'));
   }
+  if (model.agentNotes.length > 0) rows.append(...agentNotesRow(model, handlers));
   if (model.reports.latest.length > 0) rows.append(...reportsRow(model, handlers));
   // Workflows waiting on a maintainer's approval may be the only checks a contributor's pull request has.
   if (model.checks !== null || model.workflowApproval !== null) {
@@ -2262,6 +2272,109 @@ function reportLine(entry: Report, model: PanelModel, handlers: PanelHandlers): 
   if (model.viewingAnchor === entry.anchor) row.setAttribute('data-viewing', '');
   rowClickToggles(row, act);
   return { row, open };
+}
+
+/** A note's mark: the page's picture for its bot when it has one, else GitHub's for the bot's App. */
+function noteMark(note: AgentNote, model: PanelModel): string | null {
+  if (note.bot === null) return null;
+  const bot = botById(note.bot);
+  return model.botIconFor(note.bot) ?? (bot === null ? null : botAppAvatar(bot, 40));
+}
+
+/** A note's picture, dashed when the description no longer has the note (it is only in its history). */
+function notePicture(note: AgentNote, model: PanelModel): HTMLElement {
+  const src = noteMark(note, model);
+  const picture = avatarStack(src === null ? [] : [{ src, bot: true, login: '' }], note.name, true);
+  if (!note.present) for (const mark of picture.querySelectorAll(`.${PANEL_CLASS}__avatar`)) mark.setAttribute('data-past', '');
+  return picture;
+}
+
+/**
+ * The Agent notes row, under Review bots: what agents and review bots wrote into the description (CodeRabbit's
+ * summary, Cursor's badges, a Bugbot risk note), each tool's mark overlapping the next. It starts closed; open, one line
+ * per tool, each opening to the note as the description has it, with its history a click away.
+ */
+function agentNotesRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLElement[] {
+  const open = model.openKey === AGENT_NOTES_KEY;
+  const toggle = (): void => handlers.onToggle(AGENT_NOTES_KEY);
+  const marks = createElement('span', { class: `${PANEL_CLASS}__avatars ${PANEL_CLASS}__avatars--notes`, 'aria-hidden': 'true' });
+  for (const note of model.agentNotes) marks.append(...[...notePicture(note, model).childNodes]);
+  const content: Node[] = [marks];
+  if (model.agentNotesReading) content.push(ingestingMark('Still reading the description’s edit history'));
+  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${AGENT_NOTES_KEY}`, 'aria-label': plural(model.agentNotes.length, 'agent note') }, [
+    createElement('span', { class: `${PANEL_CLASS}__status-content` }, content),
+  ]);
+  mainClickToggles(main, toggle);
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status` }, [
+    createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_NOTE)]),
+    rowLabel('Agent notes', 'Notes'),
+    main,
+    createElement('span', { class: `${PANEL_CLASS}__right` }, [chevron(open, toggle)]),
+  ]);
+  if (open) row.setAttribute('data-open', '');
+  rowClickToggles(row, toggle);
+  if (!open) return [row];
+  return [row, slotRow(AGENT_NOTES_KEY, null, 'list')];
+}
+
+/** The key a note's line opens under (`openSubKey`). */
+export function noteSubKey(id: string): string {
+  return `note:${id}`;
+}
+
+/**
+ * One tool's note as a line: its mark, its name and the note's first line, a clock for its history when it has read
+ * more than one way (or is only in the past), and a chevron. A note the description no longer has wears a dashed mark.
+ */
+function noteLine(note: AgentNote, model: PanelModel, handlers: PanelHandlers): { readonly row: HTMLElement; readonly open: boolean } {
+  const key = noteSubKey(note.id);
+  const open = model.openSubKey === key;
+  const act = (): void => handlers.onToggleSub(key);
+  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:sub:${key}` }, [
+    createElement('span', { class: `${PANEL_CLASS}__name` }, [note.name]),
+    createElement('span', { class: `${PANEL_CLASS}__preview` }, note.present ? inlineText(note.preview) : ['Not in the current description']),
+  ]);
+  mainClickToggles(main, act);
+  const right = createElement('span', { class: `${PANEL_CLASS}__right` });
+  if (note.versions.length > 1 || !note.present) {
+    const words = `${note.name}’s note history`;
+    const history = createElement('button', { type: 'button', class: `${PANEL_CLASS}__chevron ${PANEL_CLASS}__note-history`, 'aria-label': words, title: words }, [icon(ICON_HISTORY)]);
+    history.addEventListener('click', (event) => {
+      event.stopPropagation();
+      handlers.onNoteHistory(note.id);
+    });
+    right.append(history);
+  } else {
+    right.append(createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' }));
+  }
+  right.append(chevron(open, act));
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--note`, 'data-geld-sub': key, ...(note.present ? {} : { 'data-past': '' }) }, [notePicture(note, model), main, right]);
+  if (open) row.setAttribute('data-open', '');
+  rowClickToggles(row, act);
+  return { row, open };
+}
+
+/**
+ * The Agent notes row's list: one line per tool. The open line's note stands under it, as the description has it,
+ * or for a note only in the past, a line leading to its history.
+ */
+export function renderAgentNotesList(slot: HTMLElement, model: PanelModel, handlers: PanelHandlers, copyOf: (note: AgentNote) => readonly Node[]): void {
+  const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list' });
+  for (const note of model.agentNotes) {
+    const { row, open } = noteLine(note, model, handlers);
+    list.append(row);
+    if (!open) continue;
+    const sub = nestedSlot();
+    list.append(sub.item);
+    if (note.present) {
+      sub.body.append(createElement('div', { class: `markdown-body ${PANEL_CLASS}__note-body` }, copyOf(note)));
+      continue;
+    }
+    const past = createElement('button', { type: 'button', class: `${PANEL_CLASS}__note-past` }, ['See past versions']);
+    past.addEventListener('click', () => handlers.onNoteHistory(note.id));
+    sub.body.append(createElement('p', { class: `${PANEL_CLASS}__note-gone` }, [`No ${note.name} note in the current description. `, past]));
+  }
+  slot.replaceChildren(list);
 }
 
 /** What a check's report says in full, under its line: the service's sentence (the line's Open is the way to its page). */
@@ -2593,6 +2706,8 @@ function signatureOf(model: PanelModel): string {
     reports: model.reports.latest.map((entry) => `${entry.anchor}${entry.state}${entry.headline}${entry.project ?? ''}${(entry.short ?? []).map((part) => part.text).join('|')}`),
     requestable: model.requestable.map((bot) => `${bot.id}:${bot.presence}:${bot.trigger}:${model.botIconFor(bot.id) ?? ''}`),
     botLines: model.botLines.map((line) => `${line.bot.id}:${line.anchor ?? ''}:${line.preview}:${line.time}:${line.avatarSrc ?? ''}:${line.threads.map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('|')}`),
+    agentNotes: model.agentNotes.map((note) => `${note.id}:${note.present ? 'now' : 'past'}:${note.preview}:${note.versions.length}:${noteMark(note, model) ?? ''}`),
+    agentNotesReading: model.agentNotesReading,
     checks: model.checks,
     requiredFailing: model.requiredFailing,
     workflowApproval: model.workflowApproval,

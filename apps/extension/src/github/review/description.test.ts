@@ -237,6 +237,29 @@ describe('shortenDescription', () => {
     expect(after?.hasAttribute('data-geld-desc-depth')).toBe(false);
   });
 
+  it('hides what tools appended while the digest’s Agent notes row shows it, and keeps the author’s text top level', () => {
+    const { body, blocks } = mountWithTools();
+    const [, , , , , c, coderabbit, list, badges, after] = blocks;
+    shortenDescription(true, { toolsAway: true });
+    expect(body.hasAttribute('data-geld-desc-tools')).toBe(true);
+    expect([coderabbit, list, badges].map((block) => block?.getAttribute('data-geld-desc-tool'))).toEqual(['coderabbit', 'coderabbit', 'cursor-agent']);
+    // No Agent summaries are drawn, and the tool's own heading heads nothing.
+    expect(body.querySelector('.geld-desc-agents, .geld-desc-agent')).toBeNull();
+    expect(coderabbit?.querySelector('.geld-desc-toggle')).toBeNull();
+    expect(coderabbit?.hasAttribute('data-geld-desc-heading')).toBe(false);
+    expect(c?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    expect(after?.hasAttribute('data-geld-desc-tool')).toBe(false);
+    expect(after?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(after?.hasAttribute('data-geld-desc-depth')).toBe(false);
+    // Without the digest's row, the same description gets its Agent summaries again.
+    shortenDescription(true);
+    expect(body.hasAttribute('data-geld-desc-tools')).toBe(false);
+    expect(body.querySelector('[data-geld-desc-tool]')).toBeNull();
+    expect(body.querySelectorAll('.geld-desc-agent')).toHaveLength(2);
+    shortenDescription(false);
+    expect(body.querySelector('[data-geld-desc-tool], .geld-desc-agents')).toBeNull();
+  });
+
   it('opens a tool’s content under its heading, as a section opens', async () => {
     const { body, blocks } = mountWithTools();
     const list = blocks[7];

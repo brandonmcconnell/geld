@@ -7587,6 +7587,11 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   vertical-align: -4px;
 }
 
+/* What tools appended, while the digest's Agent notes row shows it (description.ts `flagAway`). */
+[data-geld-desc-tools] > [data-geld-desc-tool] {
+  display: none !important;
+}
+
 [data-geld-desc] > [data-geld-desc-depth] {
   position: relative;
   margin-left: calc(var(--geld-desc-depth, 0) * 24px) !important;
@@ -7864,6 +7869,135 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   font-size: 13px;
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+/*
+ * Agent notes (panel.ts `agentNotesRow`): what agents and review bots wrote into the description. A note the
+ * description no longer has (it is only in its edit history) wears a dashed mark, as a pill with nothing to open is
+ * dashed, and its line says so in place of a preview.
+ */
+.geld-review__avatar[data-past] {
+  outline: 1px dashed var(--geld-review-muted);
+  outline-offset: 1px;
+  opacity: 0.75;
+}
+
+.geld-review__row--note[data-past] .geld-review__preview {
+  font-style: italic;
+}
+
+/* The note as the description has it: GitHub's own rendering, at the size of a comment in a chat. */
+.geld-review__note-body {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.geld-review__note-body > :first-child {
+  margin-top: 0 !important;
+}
+
+.geld-review__note-body > :last-child {
+  margin-bottom: 0 !important;
+}
+
+/* The note stands inside the panel's own lists, which the browser counts as outer levels: its bullets start over. */
+.geld-review__note-body ul {
+  list-style-type: disc;
+}
+
+.geld-review__note-body ul ul {
+  list-style-type: circle;
+}
+
+.geld-review__note-body ul ul ul {
+  list-style-type: square;
+}
+
+.geld-review__note-gone {
+  margin: 0;
+  color: var(--geld-review-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.geld-review__note-past {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fgColor-accent, var(--color-accent-fg, #0969da));
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* The history window (note-history.ts): the readings down the side, the chosen one beside them. */
+.geld-review__note-dialog-body {
+  display: flex;
+  gap: 16px;
+  min-height: 240px;
+  max-height: 70vh;
+}
+
+.geld-review__note-nav {
+  flex: none;
+  width: 200px;
+  overflow-y: auto;
+}
+
+.geld-review__note-versions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.geld-review__note-version-btn {
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.geld-review__note-version-btn:hover {
+  background: var(--bgColor-muted, var(--color-canvas-subtle, #f6f8fa));
+}
+
+.geld-review__note-version-btn[aria-current='true'] {
+  background: var(--bgColor-muted, var(--color-canvas-subtle, #f6f8fa));
+  font-weight: 600;
+}
+
+.geld-review__note-status {
+  margin: 8px 0 0;
+  padding: 0 8px;
+  color: var(--fgColor-muted, var(--color-fg-muted, #59636e));
+  font-size: 12px;
+}
+
+.geld-review__note-version {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  font-size: 14px;
+}
+
+@media (max-width: 543px) {
+  .geld-review__note-dialog-body {
+    flex-direction: column;
+  }
+
+  .geld-review__note-nav {
+    width: auto;
+    max-height: 30vh;
+  }
 }
 
 /* A skipped deployment with nothing to visit: the pill fades and says so on hover; the line below keeps its Inspect.

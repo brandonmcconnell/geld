@@ -46,6 +46,8 @@ const logs = new Map<string, EditLog>();
 
 interface RevisionBody {
   body: HTMLElement | null;
+  /** The revision's Markdown, HTML comments included (its "copy Markdown" item), or null when the view has none. */
+  markdown: string | null;
   pending: Promise<void> | null;
   failed: boolean;
 }
@@ -292,7 +294,9 @@ async function fetchRevision(url: string, entry: RevisionBody): Promise<void> {
       entry.failed = true;
       return;
     }
-    entry.body = contentOf(new DOMParser().parseFromString(await response.text(), 'text/html'));
+    const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+    entry.body = contentOf(doc);
+    entry.markdown = (doc.querySelector('clipboard-copy[data-analytics-event*="copy_markdown_at_time"]') ?? doc.querySelector('clipboard-copy[value]'))?.getAttribute('value') ?? null;
     if (entry.body === null) entry.failed = true;
   } catch {
     entry.failed = true;
@@ -331,7 +335,7 @@ export function revisionAsOf(node: Element, anchor: string, at: number, settleMs
   if (chosen === undefined || last === undefined) return { state: 'current' };
   let entry = bodies.get(chosen.url);
   if (entry === undefined) {
-    entry = { body: null, pending: null, failed: false };
+    entry = { body: null, markdown: null, pending: null, failed: false };
     bodies.set(chosen.url, entry);
   }
   if (entry.body === null && !entry.failed && entry.pending === null) {
@@ -347,6 +351,58 @@ export function revisionAsOf(node: Element, anchor: string, at: number, settleMs
   const body = entry.body.cloneNode(true);
   if (!(body instanceof HTMLElement)) return { state: 'current' };
   return { state: 'revision', at: chosen.at, body, editsSince: revisions.length - 1 - index, editedAt: last.at };
+}
+
+/**
+ * The edit-history log of the comment card holding `body` (the pull request's description, whose card is not one of
+ * `COMMENT_ANCHOR`'s), or null when it was never edited.
+ */
+export function logUrlOfCard(body: Element): string | null {
+  const card = body.closest('.timeline-comment, .js-comment-container');
+  return card?.querySelector('details-menu[src*="show_edit_history_log"]')?.getAttribute('src') ?? null;
+}
+
+/** Every revision in the log `url` (oldest first), or null while the log is on its way (`onChange` runs once it lands). */
+export function revisionsIn(url: string, onChange: () => void): readonly Revision[] | null {
+  const log = logFor(url, onChange, DISPLAY_REFRESH_MS);
+  return log.fetchedAt === 0 ? null : log.revisions;
+}
+
+/** Where reading the revision `url` stands, without asking for it. */
+export function revisionState(url: string): 'unread' | 'reading' | 'read' | 'failed' {
+  const entry = bodies.get(url);
+  if (entry === undefined) return 'unread';
+  if (entry.failed) return 'failed';
+  return entry.body === null ? 'reading' : 'read';
+}
+
+/**
+ * How the comment read at the revision `url`, as GitHub rendered it (a fresh copy, the caller's): asked for the first
+ * time it is wanted, undefined while on its way (`onChange` runs once it lands), null when it cannot be read.
+ */
+export function revisionBody(url: string, onChange: () => void): HTMLElement | null | undefined {
+  let entry = bodies.get(url);
+  if (entry === undefined) {
+    entry = { body: null, markdown: null, pending: null, failed: false };
+    bodies.set(url, entry);
+  }
+  if (entry.body === null && !entry.failed && entry.pending === null) {
+    const current = entry;
+    current.pending = fetchRevision(url, current).finally(() => {
+      current.pending = null;
+      version += 1;
+      onChange();
+    });
+  }
+  if (entry.failed) return null;
+  if (entry.body === null) return undefined;
+  const body = entry.body.cloneNode(true);
+  return body instanceof HTMLElement ? body : null;
+}
+
+/** The Markdown of a revision `revisionBody` has read, or null when it has not been read or carried none. */
+export function revisionMarkdown(url: string): string | null {
+  return bodies.get(url)?.markdown ?? null;
 }
 
 /** Forget every log and revision (a new page). */
