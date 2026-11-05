@@ -36,7 +36,7 @@ function parseShape(svg: string): BrandShape {
   return { viewBox, width, height, paths };
 }
 
-async function loadShape(file: 'geld-logo.svg' | 'geld-logomark.svg' | 'geld-logomark-grid.svg'): Promise<BrandShape> {
+async function loadShape(file: 'geld-logo.svg' | 'geld-logomark.svg' | 'geld-logomark-white.svg'): Promise<BrandShape> {
   'use cache';
   cacheLife('max');
   const svg = await readFile(/* turbopackIgnore: true */ path.join(REPO_ROOT, 'assets', 'brand', file), 'utf8');
@@ -51,9 +51,9 @@ export function loadLogomark(): Promise<BrandShape> {
   return loadShape('geld-logomark.svg');
 }
 
-/** The logomark on a whole-unit grid, for icons too small for its own paths: at 1 or 2 px per unit every straight edge lands on a pixel. */
-export function loadGridLogomark(): Promise<BrandShape> {
-  return loadShape('geld-logomark-grid.svg');
+/** The logomark's dark-mode cut: the same shape, every edge moved inward, since light on dark reads bolder. */
+export function loadDarkLogomark(): Promise<BrandShape> {
+  return loadShape('geld-logomark-white.svg');
 }
 
 export interface Screenshot {

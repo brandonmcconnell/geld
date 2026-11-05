@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/brand/geld-logo-white.svg" />
-    <img src="assets/brand/geld-logo.svg" alt="Geld" width="287" height="75" />
+    <img src="assets/brand/geld-logo.svg" alt="Geld" width="286" height="75" />
   </picture>
 </p>
 
@@ -114,7 +114,7 @@ apps/extension/            @geld/extension (WXT)
     ui/                    hidden-files row, sidebar accordion sections, tooltip
 apps/site/                 geld.sh (Next.js on Vercel): home with a live path tester, how it works,
                            patterns rendered from @geld/core, FAQ, privacy policy
-assets/brand/              logo + logomark SVGs (black and white variants), grid logomark for small icons
+assets/brand/              logo + logomark SVGs (black, and a lighter white cut for dark backgrounds), grid logomark for 16px icons
 ```
 
 See `AGENTS.md` for conventions and the reasoning behind the architecture.

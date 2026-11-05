@@ -2605,6 +2605,39 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   height: 16px;
 }
 
+/* The wordmark's dark-mode cut (lighter, since light on dark reads bolder) under GitHub's dark themes: a dark single theme, or the day or night theme of "sync with system" when that one is dark. */
+.geld-review__brand svg[data-geld-brand-cut="dark"] {
+  display: none;
+}
+
+html[data-color-mode="dark"] .geld-review__brand svg[data-geld-brand-cut="light"] {
+  display: none;
+}
+
+html[data-color-mode="dark"] .geld-review__brand svg[data-geld-brand-cut="dark"] {
+  display: block;
+}
+
+@media (prefers-color-scheme: light) {
+  html[data-color-mode="auto"][data-light-theme^="dark"] .geld-review__brand svg[data-geld-brand-cut="light"] {
+    display: none;
+  }
+
+  html[data-color-mode="auto"][data-light-theme^="dark"] .geld-review__brand svg[data-geld-brand-cut="dark"] {
+    display: block;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-color-mode="auto"][data-dark-theme^="dark"] .geld-review__brand svg[data-geld-brand-cut="light"] {
+    display: none;
+  }
+
+  html[data-color-mode="auto"][data-dark-theme^="dark"] .geld-review__brand svg[data-geld-brand-cut="dark"] {
+    display: block;
+  }
+}
+
 /* `::selection` never paints the wordmark, so while selected (`syncBrandSelection`) it wears the colours the browser
    gives selected text on GitHub, which sets no selection style of its own. */
 .geld-review__brand[data-geld-selected] {
