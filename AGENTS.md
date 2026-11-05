@@ -680,7 +680,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
 - **The description's header reads author, time and "N edits"** (`review/description-byline.ts`, `compactDescriptionByline`, wherever the digest is, independent of `collapseDescription`): GitHub's line says "brandonmcconnell commented Nov 2 – with Cursor • edited by cursor Bot ▾" (the "– with <App>" part only to signed-in readers, as loose words and an `/apps/` link;
   signed out it is absent).
   The App's mark is already on the author's picture, and who edited last says little, so the line's direct children other than the author's `strong`, the `a.js-timestamp`, the `.js-comment-edit-history` span and GitHub's narrow-screen picture are hidden (`data-geld-desc-byline` on the line, `data-geld-desc-keep` on what stays;
-  loose words vanish with `font-size: 0`, and the line's flex `gap` goes with them, since each loose word is a flex item of its own).
+  loose words vanish with `font-size: 0`, and the line's flex `gap` goes with them, since each loose word is a flex item of its own;
+  the rule is two classes deep because GitHub's `.gap-1` is `!important` too, and a hidden word kept its gaps either side, 12px between name and time instead of 6).
+  The edit menu stands at the line's far end (`margin-left: auto`, its "•" hidden), left of the badge and ⋯: the author and time never move when a first edit lands or the count arrives.
   The edit menu's summary wears Geld's "5 edits" in place of "edited by …" (`data-geld-desc-edits`, `.geld-desc-edits`) and still opens GitHub's own edit history;
   the count is the log's header ("Edited 5 times", `editCountIn`, falling back to every listed revision but "created") from the same log `edit-times.ts` reads, "edited" until it lands.
   Verified signed in and signed out on geld#251 (Nov 2026).
