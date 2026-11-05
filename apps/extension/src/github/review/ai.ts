@@ -10,6 +10,7 @@
  */
 
 import type { GeldSettings } from '@geld/core';
+import { persist } from '../../lib/context';
 import { whenIdle } from '../../lib/idle';
 import type { AddressedEvidence, CommentLane, ConsolidateInputItem, ConsolidateOutputItem, GeldPrMeta, JevAnswer, JevRequest, LaneInput, Preview, PreviewStatusInput, RawComment, ReviewItem, ReviewSummary, ThreadInput } from '@geld/review';
 import {
@@ -100,12 +101,15 @@ export function loadAiForPage(key: string, onLoaded: () => void): void {
   summary = undefined;
   lastRun = null;
   inFlight.clear();
-  const loading = aiRunsItem.getValue().then((runs) => {
-    if (runKey !== key) return;
-    const record = runs[key];
-    if (record !== undefined) adopt(record);
-    onLoaded();
-  });
+  const loading = aiRunsItem.getValue().then(
+    (runs) => {
+      if (runKey !== key) return;
+      const record = runs[key];
+      if (record !== undefined) adopt(record);
+      onLoaded();
+    },
+    () => undefined,
+  );
   hydrating = loading;
   void loading.finally(() => {
     if (hydrating === loading) hydrating = null;
@@ -429,7 +433,7 @@ export function jevDecisionsFor(settings: GeldSettings, comments: readonly Comme
   if (!settings.aiEnabled || !settings.aiJev) return NO_DECISIONS;
   const cache = decisions;
   if (cache === null) {
-    void loadDecisions().then(onProgress);
+    persist(loadDecisions().then(onProgress));
     return NO_DECISIONS;
   }
   const lanes = new Map<string, CommentLane>();
@@ -461,7 +465,7 @@ export function jevDecisionsFor(settings: GeldSettings, comments: readonly Comme
   // The submission waits for an idle moment: passes come in bursts while a page loads, and the last one of the
   // burst knows every comment; an earlier request still waiting is replaced, so the batch goes out once.
   if (missingComments.length + missingThreads.length + missingPreviews.length > 0) {
-    whenIdle('jev-submit', () => void classify(settings, missingComments, missingThreads, missingPreviews, onProgress));
+    whenIdle('jev-submit', () => persist(classify(settings, missingComments, missingThreads, missingPreviews, onProgress)));
   }
   return { lanes, done, previewStatus };
 }

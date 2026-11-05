@@ -1,5 +1,6 @@
 import type { Catalog, DiffstatSurfaceSpec, PathMatcher, RepoRule } from '@geld/core';
 import { decideRepo } from '@geld/core';
+import { mark } from '../lib/perf';
 import { breakdownFromFiles } from './breakdown';
 import type { DiffSource } from './diff-source';
 import { applyHeaderStats, statGroupFrom } from './header-stats';
@@ -30,7 +31,7 @@ function selectorsValid(spec: DiffstatSurfaceSpec): boolean {
     try {
       document.createDocumentFragment().querySelector(selector);
     } catch {
-      console.warn(`Geld: diffstat surface "${spec.id}" has an invalid selector and is skipped: ${selector}`);
+      mark(`surface-skipped:${spec.id}`);
       return false;
     }
   }

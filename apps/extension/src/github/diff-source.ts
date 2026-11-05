@@ -106,10 +106,13 @@ export class DiffSource {
   private inFlight = 0;
 
   constructor(private readonly onChange: () => void) {
-    void this.persistent.ready().then(() => {
-      this.cacheReady = true;
-      this.onChange();
-    });
+    void this.persistent.ready().then(
+      () => {
+        this.cacheReady = true;
+        this.onChange();
+      },
+      () => undefined,
+    );
   }
 
   get(diffUrl: string, sha: string | null = null): DiffFetchState {
