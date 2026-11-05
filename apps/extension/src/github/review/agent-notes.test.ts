@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { noteCopy, notePreview, notesFrom } from './agent-notes';
+import { noteCopy, notePreview, notesFrom, noteText } from './agent-notes';
+import { noteTone } from './note-tone';
 
 function blocksOf(html: string): Element[] {
   const holder = document.createElement('div');
@@ -95,5 +96,30 @@ describe('noteCopy', () => {
     if (!(copy instanceof Element)) throw new Error('no copy');
     expect(copy.outerHTML).toBe('<h2><a href="#summary">Summary</a></h2>');
     expect(heading.id).toBe('user-content-summary');
+  });
+});
+
+describe('noteTone', () => {
+  const bugbot = (risk: string): string =>
+    `<div class="markdown-alert markdown-alert-note"><p class="markdown-alert-title">Note</p><p><strong>${risk}</strong><br>Touches the watcher.</p>` +
+    '<p><sup>Reviewed by <a href="https://cursor.com/bugbot">Cursor Bugbot</a> for commit 828bb62.</sup></p></div>';
+  const tone = (html: string): unknown => {
+    const [note] = notesFrom(blocksOf(html), []);
+    return note === undefined ? null : noteTone(note);
+  };
+
+  it('reads Bugbot’s medium and high risk as warnings, its low risk and every other note as words to read', () => {
+    expect(tone(bugbot('Medium Risk'))).toEqual({ kind: 'warning', label: 'Medium Risk' });
+    expect(tone(bugbot('High Risk'))).toEqual({ kind: 'warning', label: 'High Risk' });
+    expect(tone(bugbot('Low Risk'))).toEqual({ kind: 'info', label: 'Low Risk' });
+    expect(tone(coderabbit('Fixes A'))).toEqual({ kind: 'info', label: 'Note' });
+  });
+});
+
+describe('noteText', () => {
+  it('reads a note as a comment’s body reads, for the review bots’ verdicts', () => {
+    const [note] = notesFrom(blocksOf(GREPTILE), []);
+    if (note === undefined) throw new Error('no note');
+    expect(noteText(note)).toContain('Removes overflow protection.');
   });
 });

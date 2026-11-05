@@ -156,6 +156,11 @@ export function onNotesChange(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+/** A note's words as a comment's body reads (`blockText`), for the review bots' verdict parser. */
+export function noteText(note: AgentNote): string {
+  return (note.versions.at(-1)?.blocks ?? []).map((block) => blockText(block)).filter((text) => text !== '').join('\n\n');
+}
+
 export interface AgentNotes {
   readonly notes: readonly AgentNote[];
   /** The description's history is still being read: more versions, or notes that are gone, may yet appear. */

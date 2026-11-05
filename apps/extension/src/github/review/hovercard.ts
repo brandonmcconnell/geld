@@ -27,6 +27,8 @@ const CARD_OFFSET = 14;
 export const ATTR_WHO = 'data-geld-who';
 /** On a report pill; the value is the report's anchor (its comment's id, or `check:<name>`). */
 export const ATTR_REPORT = 'data-geld-report-card';
+/** On an Agent notes pill: the note's tool id, whose card previews the note (`setNoteProvider`) and hangs from the pill. */
+export const ATTR_NOTE = 'data-geld-note-card';
 let leaveTimer: number | null = null;
 const CARD_CLASS = 'geld-review-hovercard';
 
@@ -152,6 +154,15 @@ export function setReportProvider(next: ReportProvider | null): void {
   install();
 }
 
+/** A note's card: the same preview a row's card shows, from the note's tool id. */
+export type NoteProvider = (id: string, host: HTMLElement) => HoverPreview | null;
+let noteProvider: NoteProvider | null = null;
+
+export function setNoteProvider(next: NoteProvider | null): void {
+  noteProvider = next;
+  install();
+}
+
 function rowKey(row: Element): string | null {
   return row.getAttribute('data-geld-item') ?? row.getAttribute('data-geld-fold') ?? row.getAttribute('data-geld-sub');
 }
@@ -167,7 +178,7 @@ function rowOf(target: EventTarget | null): HTMLElement | null {
 /** What the pointer is resting on: an identity host first (it sits inside rows), else a collapsed row. */
 function hostOf(target: EventTarget | null): HTMLElement | null {
   if (!(target instanceof Element)) return null;
-  const who = target.closest<HTMLElement>(`[${ATTR_WHO}], [${ATTR_REPORT}]`);
+  const who = target.closest<HTMLElement>(`[${ATTR_WHO}], [${ATTR_REPORT}], [${ATTR_NOTE}]`);
   if (who !== null) return who;
   // A person's avatar shows GitHub's card; no row preview under it.
   if (target.closest('[data-hovercard-url]') !== null && rowOf(target) !== null) return null;
@@ -208,15 +219,17 @@ function stay(): void {
 
 /** Hosts whose card hangs under them (a chip, a pill), as opposed to a row, whose card sits beside the pointer. */
 function hangsCard(host: HTMLElement): boolean {
-  return host.hasAttribute(ATTR_WHO) || host.hasAttribute(ATTR_REPORT);
+  return host.hasAttribute(ATTR_WHO) || host.hasAttribute(ATTR_REPORT) || host.hasAttribute(ATTR_NOTE);
 }
 
 function show(host: HTMLElement): void {
   const login = host.getAttribute(ATTR_WHO);
   const report = host.getAttribute(ATTR_REPORT);
+  const note = host.getAttribute(ATTR_NOTE);
   if (login !== null) showWho(host, login);
   else if (report !== null) showReport(host, report);
-  else showRow(host);
+  else if (note !== null) showPreview(host, noteProvider?.(note, host) ?? null);
+  else showPreview(host, provider?.(host) ?? null);
 }
 
 function mount(host: HTMLElement, node: HTMLElement, width: number): void {
@@ -300,11 +313,11 @@ function showReport(host: HTMLElement, anchor: string): void {
   if (body !== null && body.scrollHeight > body.clientHeight + 1) body.setAttribute('data-clipped', '');
 }
 
-function showRow(row: HTMLElement): void {
-  const preview = provider?.(row) ?? null;
+/** A comment's or a note's preview, beside the pointer for a row and hanging from a pill. */
+function showPreview(host: HTMLElement, preview: HoverPreview | null): void {
   if (preview === null) return;
   hide();
-  current = row;
+  current = host;
   const head = createElement('div', { class: `${CARD_CLASS}__head` });
   if (preview.avatarSrc !== null) {
     head.append(cardAvatar(preview.avatarSrc, preview.bot, false));
@@ -334,8 +347,8 @@ function showRow(row: HTMLElement): void {
     foot.append(reply);
   }
   card = createElement('div', { class: CARD_CLASS, [OWN_UI_ATTRIBUTE]: '', role: 'tooltip' }, [head, body, foot]);
-  const rect = row.getBoundingClientRect();
-  mount(row, card, Math.min(440, Math.max(280, rect.width - 80)));
+  const rect = host.getBoundingClientRect();
+  mount(host, card, hangsCard(host) ? 380 : Math.min(440, Math.max(280, rect.width - 80)));
   // Fade only what is actually cut off.
   if (body.scrollHeight > body.clientHeight + 1) body.setAttribute('data-clipped', '');
 }
@@ -356,7 +369,9 @@ export function rehostHoverCard(): void {
       ? under.getAttribute(ATTR_WHO) === current.getAttribute(ATTR_WHO)
       : current.hasAttribute(ATTR_REPORT)
         ? under.getAttribute(ATTR_REPORT) === current.getAttribute(ATTR_REPORT)
-        : rowKey(under) === rowKey(current));
+        : current.hasAttribute(ATTR_NOTE)
+          ? under.getAttribute(ATTR_NOTE) === current.getAttribute(ATTR_NOTE)
+          : rowKey(under) === rowKey(current));
   if (!same || under === null) {
     hide();
     return;

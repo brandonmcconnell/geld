@@ -37,9 +37,10 @@ import type { ReviewerCandidate } from './reviewers';
 import { nextRunGraceEnd, withRunTimes } from './run-starts';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
-import { descriptionUnshortened, releaseDescription, shortenDescription } from './description';
+import { descriptionBody, descriptionUnshortened, releaseDescription, shortenDescription } from './description';
 import { compactDescriptionByline } from './description-byline';
-import { agentNotes, noteCopy, resetAgentNotes } from './agent-notes';
+import { type AgentNote, agentNotes, noteCopy, noteText, resetAgentNotes } from './agent-notes';
+import { DESCRIPTION_REVIEWERS } from './note-tone';
 import { openNoteHistory } from './note-history';
 import { applyFolds, closureKindOf, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
@@ -48,7 +49,7 @@ import type { BotRequestClick } from './bot-requests';
 import { botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
 import { AGENT_NOTES_KEY, ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
-import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
+import { hideHoverCard, setHoverProvider, setNoteProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
 import { knownMarkShape } from './mark-shape';
 import { loginOfLink, showLogins } from './login';
@@ -533,6 +534,50 @@ function botCommentsOf(crawled: Crawled, settings: GeldSettings): readonly BotCo
       ...(comment.kind === 'thread' && comment.isResolved !== undefined ? { resolved: comment.isResolved } : {}),
     };
   });
+}
+
+/** The key a note stands under where the panel opens it (the Agent notes row's lines, a bot's line for its review). */
+const NOTE_ANCHOR_PREFIX = 'note:';
+
+/** The notes the current pass read, for the hover cards (which ask between passes). */
+let liveNotes: readonly AgentNote[] = [];
+
+/**
+ * A review bot's summary written into the description (`DESCRIPTION_REVIEWERS`: Greptile, set to review there) as a
+ * comment of the bot's, so `verdictsFrom` reads its score and findings for the Review bots row as it would a summary
+ * comment's. Its anchor is the note's key: nothing on the page has it, and its line opens the note (`renderNoteBody`).
+ */
+function descriptionReviewComments(notes: readonly AgentNote[]): readonly BotComment[] {
+  const card = descriptionBody()?.closest('.timeline-comment, .js-comment') ?? null;
+  const createdAt = card === null ? '' : createdAtOf(card);
+  const edited = card === null ? null : editedAt(card, reapplySoon);
+  return notes.flatMap((note) => {
+    const bot = note.present && DESCRIPTION_REVIEWERS.has(note.id) && note.bot !== null ? botById(note.bot) : null;
+    const login = bot?.logins[0];
+    if (bot === null || login === undefined) return [];
+    return [{ author: login, body: noteText(note), anchor: `${NOTE_ANCHOR_PREFIX}${note.id}`, ...(createdAt === '' ? {} : { createdAt }), ...(edited === null ? {} : { editedAt: edited }) }];
+  });
+}
+
+/** A note as the panel shows it open: GitHub's rendering, copied (the note itself stays in the description). */
+function renderNoteBody(slot: HTMLElement, note: AgentNote): void {
+  slot.replaceChildren(createElement('div', { class: `markdown-body ${PANEL_CLASS}__note-body` }, noteCopy(note.versions.at(-1)?.blocks ?? [])));
+}
+
+/** A note's hover card: its mark and name over a clamped copy, opening where the note opens. */
+function noteCard(note: AgentNote, onOpen: () => void): HoverPreview {
+  const bot = note.bot === null ? null : botById(note.bot);
+  return {
+    avatarSrc: bot === null ? null : botAppAvatar(bot, 40),
+    name: note.name,
+    bot: true,
+    time: '',
+    body: createElement('div', { class: 'markdown-body' }, noteCopy(note.versions.at(-1)?.blocks ?? [])),
+    more: 0,
+    onReply: null,
+    onOpen,
+    openLabel: 'See full note',
+  };
 }
 
 function buildFromComments(crawled: Crawled, botComments: readonly BotComment[], checks: readonly RawCheckRun[], settings: GeldSettings, headSha: string, generatedAt: string, partial: boolean, threadsRead: boolean): GeldPrMeta {
@@ -1951,6 +1996,9 @@ function threadHeadAnchorOf(anchor: string, botId: string | null | undefined): s
  */
 function buildBotLines(meta: GeldPrMeta): readonly BotLine[] {
   return meta.bots.map((bot) => {
+    // A review written into the description (`descriptionReviewComments`): its line opens the note.
+    const note = bot.sourceId?.startsWith(NOTE_ANCHOR_PREFIX) === true ? liveNotes.find((entry) => `${NOTE_ANCHOR_PREFIX}${entry.id}` === bot.sourceId) : undefined;
+    if (note !== undefined && bot.sourceId !== undefined) return { bot, anchor: bot.sourceId, author: bot.login, avatarSrc: null, preview: note.preview, time: '', threads: [] };
     const computed = botSummaryFor(bot.id, NaN);
     // A summary on loan to the panel (its line open, or pinned in a thread's chat) is read bodiless at home, so
     // this pass does not count it as a summary and the bot's "latest" falls back to the run before — the line
@@ -2690,6 +2738,11 @@ function hoverPreviewFor(row: HTMLElement, meta: GeldPrMeta, groups: readonly Fo
   let more = 0;
   let onReply: (() => void) | null = null;
   let onOpen: (() => void) | null = null;
+  if (subAnchor?.startsWith(NOTE_ANCHOR_PREFIX) === true) {
+    // A note's line (Agent notes, or a bot's line for its review in the description): a preview of the note.
+    const note = liveNotes.find((entry) => `${NOTE_ANCHOR_PREFIX}${entry.id}` === subAnchor);
+    return note === undefined || !note.present ? null : noteCard(note, () => handlers.onToggleSub(subAnchor));
+  }
   if (subAnchor !== null) {
     // A comment line: a bot's run summary, a person's review or remark. Its card opens the line, or, for a line in
     // the Reviews index, goes where the line points; a bare verdict (nothing to open, the state name is the row's
@@ -2984,7 +3037,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // the fetch limit or a failed fetch leave unread, so a bot's resolved thread may be there unseen. Coverage is what the
   // page holds (each fragment's fetched markup standing in it), not what is still worth asking for.
   const threadsRead = complete && deferredFragments().every(({ src }) => fragmentRead(src));
-  const botComments = botCommentsOf(crawledDom, settings);
+  const notes = agentNotes(reapplySoon);
+  liveNotes = notes.notes;
+  const botComments = [...botCommentsOf(crawledDom, settings), ...descriptionReviewComments(notes.notes)];
   const checks = botChecks(headSha);
   const composed = phase('cluster', () => composeMeta(found, buildFromComments(crawledDom, botComments, checks, settings, headSha, visit.generatedAt, partial, threadsRead), complete));
   // A review asked for and not yet answered: the pill spins from the click, and says so if the bot never shows a sign.
@@ -3179,7 +3234,6 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         );
   const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
 
-  const notes = agentNotes(reapplySoon);
   const model: PanelModel = {
     meta,
     freshness: composed.freshness,
@@ -3195,7 +3249,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     requestable,
     ranSincePush,
     botLines,
-    agentNotes: notes.notes,
+    // A review bot's summary in the description is that bot's line in Review bots once it has a verdict, not a note.
+    agentNotes: notes.notes.filter((note) => !(note.present && DESCRIPTION_REVIEWERS.has(note.id) && meta.bots.some((bot) => bot.sourceId === `${NOTE_ANCHOR_PREFIX}${note.id}`))),
     agentNotesReading: notes.reading,
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
     // A running/loading bot's sourceId is the "Starting"/trigger line — contentless, and the same line for every bot
@@ -3564,8 +3619,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         // byline and the run's threads linked at its foot, each leading to its row in its round.
         const view = renderBotsList(mounted.slot, model, panelHandlers);
         const line = view.openLine;
-        const commentNode = line?.anchor === null || line === null ? null : (entryNodes.get(line.anchor) ?? timelineRootOf(line.anchor));
-        if (view.nested !== null && line !== null && line.anchor !== null && commentNode !== null) {
+        const lineNote = line?.anchor?.startsWith(NOTE_ANCHOR_PREFIX) === true ? liveNotes.find((note) => `${NOTE_ANCHOR_PREFIX}${note.id}` === line.anchor) : undefined;
+        const commentNode = line?.anchor === null || line === null || lineNote !== undefined ? null : (entryNodes.get(line.anchor) ?? timelineRootOf(line.anchor));
+        if (view.nested !== null && lineNote !== undefined) {
+          renderNoteBody(view.nested, lineNote);
+        } else if (view.nested !== null && line !== null && line.anchor !== null && commentNode !== null) {
           const byline = withRerun(dressByline({ login: line.author, bot: true, avatarSrc: line.avatarSrc, time: line.time }, line.anchor), line.author, line.anchor, meta, settings, reapply, panelHandlers.onOpenAnchor);
           renderCommentChat(view.nested, commentNode, byline, threadLinks(line.threads), panelHandlers.onOpenAnchor);
         } else if (visit.openSubKey !== null && (line !== null || !model.botLines.some((entry) => entry.anchor === visit.openSubKey))) {
@@ -3673,6 +3731,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   setHoverProvider((row) => hoverPreviewFor(row, meta, groups, panelHandlers));
   setWhoProvider((login) => whoCardFor(login, meta, model));
   setReportProvider((anchor) => reportCardFor(anchor, model, panelHandlers));
+  setNoteProvider((id) => {
+    const note = liveNotes.find((entry) => entry.id === id);
+    return note === undefined || !note.present ? null : noteCard(note, () => panelHandlers.onOpenNote(id));
+  });
   phase('apply-folds', () => applyFolds(foldTargets, new Set()));
   // The browser's fragment jump went to the original's (now empty) place in
   // the timeline; the one correction Geld makes is to land on the row that
@@ -3815,6 +3877,7 @@ export function teardownReviewOverview(leaving = false): void {
   runningBots = new Set();
   setWhoProvider(null);
   setReportProvider(null);
+  setNoteProvider(null);
   unwatchLoans();
   stopTimeRefresh();
   visit.settling = null;
