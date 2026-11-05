@@ -288,6 +288,42 @@ describe('shortenDescription', () => {
     }
   }
 
+  it('trades places on screen between GitHub’s reactions row and the agents’ summaries, and ends the box 16px under them', async () => {
+    document.body.innerHTML =
+      '<div class="js-comment-container"><div class="js-comment">' +
+      `<div class="js-comment-body markdown-body"><p>mine</p>${h(2, 'Summary by CodeRabbit')}<ul><li>Bug fixes</li></ul></div>` +
+      '<div class="pr-review-reactions"><button>👍 1</button></div></div></div>';
+    const body = document.querySelector<HTMLElement>('.js-comment-body');
+    const box = document.querySelector('.js-comment');
+    const row = document.querySelector<HTMLElement>('.pr-review-reactions');
+    if (body === null || box === null || row === null) throw new Error('no comment');
+    shortenDescription(true);
+    const band = body.querySelector('.geld-desc-agents');
+    if (band === null) throw new Error('no band');
+    // The agents start at 100, the row stands at 300 (26 tall) and the box's edge is at 342.
+    const place = (element: Element, top: number, height: number): void => {
+      Object.defineProperty(element, 'getBoundingClientRect', { configurable: true, value: () => new DOMRect(0, top, 600, height) });
+      Object.defineProperty(element, 'getClientRects', { configurable: true, value: () => [new DOMRect(0, top, 600, height)] });
+    };
+    place(band, 100, 24);
+    place(row, 300, 26);
+    place(box, 0, 342);
+    body.querySelector<HTMLElement>('.geld-desc-agent')?.click();
+    await frames();
+    await frame();
+    expect(row.hasAttribute('data-geld-desc-lifted')).toBe(true);
+    expect(row.style.getPropertyValue('--geld-desc-lift')).toBe('-200px');
+    expect(body.style.getPropertyValue('--geld-desc-drop')).toBe('42px');
+    // The last block shown is the agents' last: the box ends the body's own padding below it.
+    expect(body.querySelectorAll('[data-geld-desc-agent-last]')).toHaveLength(1);
+    expect(body.querySelector('[data-geld-desc-agent-last]')?.tagName).toBe('UL');
+    shortenDescription(false);
+    expect(row.hasAttribute('data-geld-desc-lifted')).toBe(false);
+    expect(row.style.getPropertyValue('--geld-desc-lift')).toBe('');
+    expect(body.style.getPropertyValue('--geld-desc-drop')).toBe('');
+    expect(body.querySelector('[data-geld-desc-agent-last]')).toBeNull();
+  });
+
   it('cuts only the author’s text at 500px, the agents’ summaries below it untouched, and opening an agent keeps the cut', async () => {
     const body = mountDescription(
       `<p>one</p><p>two</p><p>three</p>${h(2, 'Summary by CodeRabbit')}<ul><li>Bug fixes</li></ul>`,

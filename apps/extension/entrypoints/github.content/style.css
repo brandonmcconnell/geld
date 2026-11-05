@@ -7555,6 +7555,28 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 [data-geld-desc][data-geld-desc-agents] > h2.geld-desc-agents {
   padding-left: 0 !important;
   font-size: 15px !important;
+  /* Ample room above (with the reactions row's own 16px under it), so the agents never read as the author's text. */
+  margin-top: 16px !important;
+}
+
+/* The box ends as far below the last agent as the text stands from its left edge: the body's own 16px padding. */
+[data-geld-desc-agents] > [data-geld-desc-agent-last] {
+  --geld-desc-after: 0px;
+  margin-bottom: 0 !important;
+}
+
+/*
+ * GitHub's reactions row (outside the body) and the agents' summaries (the body's end) trade places on screen, so the
+ * reactions stay with the author's text (description.ts `liftReactions`): relative offsets, which lay nothing out again.
+ */
+[data-geld-desc-lifted] {
+  position: relative;
+  top: var(--geld-desc-lift, 0px);
+}
+
+[data-geld-desc-agents] > :is(.geld-desc-agents, [data-geld-desc-agent]) {
+  position: relative;
+  top: var(--geld-desc-drop, 0px);
 }
 
 .geld-desc-agent__logo {
