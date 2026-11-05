@@ -5,7 +5,7 @@ import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleCheckIcon, CircleIc
 import { useState } from 'react';
 
 import type { BotId, Person } from '@/components/tour/bits';
-import { Avatar, BotMark, Chip, GeldRowTools, Meter } from '@/components/tour/bits';
+import { Avatar, BotMark, CARD_HEAD, Chip, GeldRowTools, Meter } from '@/components/tour/bits';
 import { Ping } from '@/components/tour/ping';
 import { PrWindow } from '@/components/tour/pr-window';
 
@@ -60,7 +60,7 @@ export function DigestScene() {
     <PrWindow tab="conversation">
       <div className="m-3">
         <div className="rounded-lg border text-xs">
-          <div className="flex items-center gap-2 border-b px-3 py-2">
+          <div className={CARD_HEAD}>
             <span className="font-semibold">Geld</span>
             <Meter done={done} total={total} />
             <span className="min-w-0 truncate text-muted-foreground tabular-nums">

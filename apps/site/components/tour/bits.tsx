@@ -83,6 +83,9 @@ export function GeldRowTools({ children }: { readonly children?: React.ReactNode
   );
 }
 
+/** The first row of a scene's card (a file's header, a comment's, the digest's Geld row): one fixed height in every scene, so moving between steps shifts nothing. */
+export const CARD_HEAD = 'flex h-9 shrink-0 items-center gap-2 border-b px-3';
+
 /** A thin resolution meter, as the digest draws its rounds. */
 export function Meter({ done, total, className }: { readonly done: number; readonly total: number; readonly className?: string }) {
   return (
