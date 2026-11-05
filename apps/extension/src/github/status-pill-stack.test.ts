@@ -13,6 +13,7 @@ const box = (over: Partial<MergeBox>): MergeBox => ({
   verdicts: [],
   mergeable: false,
   canBypass: false,
+  unbypassable: false,
   methods: ['MERGE'],
   commitTitle: '',
   commitMessage: '',

@@ -4,7 +4,7 @@ import type { MergeSubmission } from './merge-actions';
 import { actionErrorText, autoMergeRequest, bypassBeside, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict } from './merge-actions';
 
 /** A `page_data/merge_box` answer as GitHub gave it on brandonmcconnell/geld#74 (Oct 2026), trimmed. */
-function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean; readonly email?: string; readonly emails?: readonly string[] | null } = {}): unknown {
+function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean; readonly email?: string; readonly emails?: readonly string[] | null; readonly conflict?: boolean } = {}): unknown {
   return {
     pullRequest: {
       state: 'OPEN',
@@ -34,7 +34,10 @@ function payload(overrides: { readonly state?: string; readonly draft?: boolean;
     },
     mergeRequirements: {
       state: overrides.state ?? 'MERGEABLE',
-      conditions: [{ type: 'STACK', result: 'PASSED', isStacked: overrides.stacked ?? false }],
+      conditions: [
+        { type: 'STACK', result: 'PASSED', isStacked: overrides.stacked ?? false },
+        ...(overrides.conflict === true ? [{ type: 'PULL_REQUEST_MERGE_CONFLICT_STATE', result: 'FAILED' }] : []),
+      ],
       defaultCommitAuthorEmail: overrides.email ?? 'brandon@dreamthinkbuild.com',
       ...(overrides.emails === null ? {} : { possibleCommitAuthorEmails: overrides.emails ?? ['brandon@dreamthinkbuild.com', 'brandonmcconnell@users.noreply.github.com'] }),
       commitMessageHeadline: 'Submit review from any pull request tab (#74)',
@@ -59,6 +62,7 @@ describe('parseMergeBox', () => {
       ],
       mergeable: true,
       canBypass: false,
+      unbypassable: false,
       methods: ['SQUASH', 'MERGE'],
       commitTitle: 'Submit review from any pull request tab (#74)',
       commitMessage: '* Submit review from any pull request tab',
@@ -114,7 +118,13 @@ describe('mergeOffer', () => {
   it('offers a merge GitHub would take now, a bypass only past the rules, and nothing otherwise', () => {
     expect(mergeOffer(read({}), null)).toBe('merge');
     expect(mergeOffer(read({ state: 'UNMERGEABLE', canBypass: true }), read({ canBypass: true }))).toBe('bypass');
-    expect(mergeOffer(read({ state: 'UNMERGEABLE', canBypass: true }), read({ state: 'UNMERGEABLE', canBypass: true }))).toBeNull();
+    // A failing required check: read past the rules it still is not mergeable, yet GitHub's merge box offers the bypass.
+    expect(mergeOffer(read({ state: 'MERGEABLE_IF_STATUSES_PASS', canBypass: true }), read({ state: 'MERGEABLE_IF_STATUSES_PASS', canBypass: true }))).toBe('bypass');
+    expect(mergeOffer(read({ state: 'UNMERGEABLE', canBypass: true }), read({ state: 'UNMERGEABLE', canBypass: true }))).toBe('bypass');
+    expect(mergeOffer(read({ state: 'UNMERGEABLE', canBypass: true }), null)).toBe('bypass');
+    // No bypass lifts a merge conflict, nor stands in for the methods the repository allows.
+    expect(mergeOffer(read({ state: 'UNMERGEABLE', canBypass: true, conflict: true }), read({ state: 'UNMERGEABLE', canBypass: true, conflict: true }))).toBeNull();
+    expect(mergeOffer(read({ state: 'UNMERGEABLE', canBypass: true, direct: 'BLOCKED' }), read({ state: 'UNMERGEABLE', canBypass: true, direct: 'BLOCKED' }))).toBeNull();
     expect(mergeOffer(read({ state: 'UNMERGEABLE' }), null)).toBeNull();
     expect(mergeOffer(read({ draft: true }), null)).toBeNull();
     // A repository that only merges through its queue allows no direct merge: its queue is offered instead, once.
@@ -135,7 +145,7 @@ describe('mergeOffer', () => {
   it('puts an admin’s bypass beside the queue or auto-merge, never beside a merge GitHub would take now', () => {
     const queued = read({ queue: 'ALLOWED', canBypass: true });
     expect(bypassBeside(queued, read({ canBypass: true }), mergeOffer(queued, null))).toBe(true);
-    expect(bypassBeside(queued, read({ state: 'UNMERGEABLE', canBypass: true }), 'queue')).toBe(false);
+    expect(bypassBeside(queued, read({ state: 'UNMERGEABLE', canBypass: true, conflict: true }), 'queue')).toBe(false);
     expect(bypassBeside(read({ queue: 'ALLOWED' }), read({}), 'queue')).toBe(false);
     const waiting = read({ state: 'BLOCKED', auto: true, canBypass: true });
     expect(mergeOffer(waiting, read({ canBypass: true }))).toBe('auto');
