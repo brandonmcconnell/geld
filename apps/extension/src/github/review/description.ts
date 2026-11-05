@@ -1,5 +1,6 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { ICON_CHEVRON_DOWN } from '../ui/icons';
+import { sectionResetsOf, toolBlocksOf } from './description-blocks';
 import { ATTR_FINDABLE, setFindable } from './fold';
 
 /** A long description with no headings to fold is cut to this height, behind a fade and "Show full description". */
@@ -84,11 +85,17 @@ function sectionBlocks(body: HTMLElement): Element[] {
   return blocksOf(body).filter((block) => !isBlankHeading(block));
 }
 
+/** The description's outline, with what tools appended kept at the top level (see description-blocks.ts). */
+function descriptionOutline(blocks: readonly Element[]): OutlineHeading[] {
+  return outlineOf(blocks, sectionResetsOf(toolBlocksOf(blocks)));
+}
+
 /**
  * Every heading that has something under it, with the blocks its section runs to: up to the next heading of the
- * same or a higher level. A heading with nothing under it has nothing to fold and is left out.
+ * same or a higher level, or to the first of `resets` after it, where every section ends. A heading with nothing
+ * under it has nothing to fold and is left out.
  */
-export function outlineOf(blocks: readonly Element[]): OutlineHeading[] {
+export function outlineOf(blocks: readonly Element[], resets: ReadonlySet<number> = new Set()): OutlineHeading[] {
   const levels = blocks.map(headingLevelOf);
   const outline: OutlineHeading[] = [];
   levels.forEach((level, index) => {
@@ -96,6 +103,7 @@ export function outlineOf(blocks: readonly Element[]): OutlineHeading[] {
     let end = index + 1;
     let hasSubheadings = false;
     for (; end < levels.length; end++) {
+      if (resets.has(end)) break;
       const next = levels[end];
       if (next === null || next === undefined) continue;
       if (next <= level) break;
@@ -267,7 +275,7 @@ function watchBody(body: HTMLElement): void {
     const blocks = sectionBlocks(body);
     const index = blocks.findIndex((block) => block === target || block.contains(target));
     if (index < 0) return;
-    for (const heading of outlineOf(blocks)) {
+    for (const heading of descriptionOutline(blocks)) {
       if (heading.index >= index || index >= heading.end) continue;
       const key = blocks[heading.index]?.getAttribute(ATTR_KEY);
       if (key !== null && key !== undefined) state.open.set(key, true);
@@ -342,7 +350,7 @@ function applyTo(body: HTMLElement): void {
     }
     dressRails(block, null);
   }
-  const outline = outlineOf(blocks);
+  const outline = descriptionOutline(blocks);
   const folding = new Set(outline.map((heading) => heading.index));
   const openNow = new Map<number, boolean>();
   // A description that opens on a heading keeps its substance in that first section, whatever its title says.

@@ -190,6 +190,26 @@ describe('shortenDescription', () => {
     expect(needle?.hasAttribute('data-geld-desc-fold')).toBe(false);
   });
 
+  it('keeps what tools appended at the top level, not under the author’s deepest heading', () => {
+    // 0 h1, 1 p, 2 h2, 3 p, 4 h3, 5 p, 6 CodeRabbit h2, 7 its list, 8 Cursor badges, 9 trailing text.
+    const body = mountDescription(
+      `${h(1, 'Plan')}<p>a</p>${h(2, 'Steps')}<p>b</p>${h(3, 'Details')}<p>c</p>` +
+        `${h(2, 'Summary by CodeRabbit')}<ul><li>Bug fixes</li></ul>` +
+        '<div><a href="https://cursor.com/agents/bc-1"><img alt="Open in Web" src="w.png"></a></div><p>after</p>',
+    );
+    shortenDescription(true);
+    // Details ends where CodeRabbit's summary starts, so the summary folds under its own heading, not under Details.
+    expect(body.children[5]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    expect(body.children[6]?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(body.children[6]?.getAttribute('data-geld-desc-heading')).toBe('closed');
+    expect(body.children[6]?.hasAttribute('data-geld-desc-depth')).toBe(false);
+    expect(body.children[7]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    // The badges and what follows them belong to no section.
+    expect(body.children[8]?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(body.children[9]?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(body.children[9]?.hasAttribute('data-geld-desc-depth')).toBe(false);
+  });
+
   it('still opens the first section when a divider comes before it', () => {
     const body = mountDescription(`<h2>&nbsp;</h2>${h(2, 'Changes')}<p>a</p>${h(2, 'Testing')}<p>b</p>`);
     shortenDescription(true);
