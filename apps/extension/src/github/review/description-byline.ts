@@ -11,8 +11,6 @@ const EDITS_CLASS = 'geld-desc-edits';
 
 const KEEP = ':scope > strong, :scope > a.js-timestamp, :scope > .js-comment-edit-history, :scope > .d-md-none';
 
-let on = false;
-
 /** The line of the pull request description's header that holds the author, the time and the edit menu. */
 function bylineLine(): HTMLElement | null {
   const card = document.querySelector('.js-command-palette-pull-body') ?? document.querySelector('.js-discussion .js-comment-container');
@@ -35,14 +33,12 @@ export function editsWords(count: number | null): string {
   return `${count} ${count === 1 ? 'edit' : 'edits'}`;
 }
 
-function dressEdits(line: HTMLElement): void {
+function dressEdits(line: HTMLElement, onCount: () => void): void {
   const history = line.querySelector(':scope > .js-comment-edit-history');
   const summary = history?.querySelector('summary');
   const log = history?.querySelector('details-menu[src*="show_edit_history_log"]')?.getAttribute('src') ?? null;
   if (!(summary instanceof HTMLElement)) return;
-  const words = editsWords(log === null ? null : editCountOf(log, () => {
-    if (on) compactDescriptionByline(true);
-  }));
+  const words = editsWords(log === null ? null : editCountOf(log, onCount));
   setFlag(summary, ATTR_EDITS, '');
   const holder = summary.querySelector(':scope > .position-relative') ?? summary;
   let edits = holder.querySelector(`:scope > .${EDITS_CLASS}`);
@@ -65,9 +61,9 @@ function clear(): void {
  * The description's header says who wrote it and when, and how often it was edited: GitHub's "commented", the App
  * it was posted with (whose mark is already on the author's picture) and "edited by <last editor>" go, and the edit
  * menu reads "3 edits" and still opens GitHub's edit history. Only attributes and Geld's own label are added.
+ * `onCount` runs when the edit count lands; the overview passes its guarded re-apply, which waits out a hidden tab.
  */
-export function compactDescriptionByline(enabled: boolean): void {
-  on = enabled;
+export function compactDescriptionByline(enabled: boolean, onCount: () => void = () => {}): void {
   if (!enabled) {
     clear();
     return;
@@ -77,5 +73,5 @@ export function compactDescriptionByline(enabled: boolean): void {
   setFlag(line, ATTR_LINE, '');
   const kept = new Set(line.querySelectorAll(KEEP));
   for (const child of line.children) setFlag(child, ATTR_KEEP, kept.has(child) ? '' : null);
-  dressEdits(line);
+  dressEdits(line, onCount);
 }

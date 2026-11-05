@@ -3696,7 +3696,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   }
   const tailStart = performance.now();
   shortenDescription(settings.collapseDescription && !visit.fullTimeline);
-  compactDescriptionByline(true);
+  compactDescriptionByline(true, reapplySoon);
   setFullTimeline(visit.fullTimeline);
   if (hidingTimeline) document.documentElement.setAttribute('data-geld-timeline', 'compact');
   // Everything on the page has been read: what GitHub inserts from here on waits for the next pass.

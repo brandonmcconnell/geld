@@ -62,7 +62,8 @@ describe('compactDescriptionByline', () => {
   it('reads "N edits" from the edit log once it lands, in place of who edited last', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(logPage('Edited 5 times')))));
     document.body.innerHTML = card();
-    compactDescriptionByline(true);
+    const reapply = (): void => compactDescriptionByline(true, reapply);
+    compactDescriptionByline(true, reapply);
     const summary = document.querySelector('summary');
     expect(summary?.hasAttribute('data-geld-desc-edits')).toBe(true);
     expect(summary?.querySelector('.geld-desc-edits')?.textContent).toBe('edited');
