@@ -154,6 +154,29 @@ describe('shortenDescription', () => {
     expect(divider?.hasAttribute('data-geld-desc-blank')).toBe(false);
   });
 
+  it('takes the chevron off a heading whose text was edited away', () => {
+    const body = mountDescription(`<p>intro</p><h2>Old</h2><p>a</p>${h(2, 'Testing')}<p>b</p>`);
+    shortenDescription(true);
+    const heading = body.children[1];
+    expect(heading?.querySelector('.geld-desc-toggle')).not.toBeNull();
+    for (const node of [...(heading?.childNodes ?? [])]) if (node.nodeType === Node.TEXT_NODE) node.textContent = '\u00a0';
+    shortenDescription(true);
+    expect(heading?.hasAttribute('data-geld-desc-blank')).toBe(true);
+    expect(heading?.hasAttribute('data-geld-desc-heading')).toBe(false);
+    expect(heading?.querySelector('.geld-desc-toggle')).toBeNull();
+  });
+
+  it('opens the section around text find-in-page matched after a divider', () => {
+    const body = mountDescription(`<p>intro</p>${h(2, 'A')}<p>a</p><h2>&nbsp;</h2><p>needle</p>${h(2, 'B')}<p>b</p>`);
+    shortenDescription(true);
+    const needle = body.children[4];
+    expect(needle?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    needle?.removeAttribute('hidden');
+    needle?.dispatchEvent(new Event('beforematch'));
+    expect(body.children[1]?.getAttribute('data-geld-desc-heading')).toBe('open');
+    expect(needle?.hasAttribute('data-geld-desc-fold')).toBe(false);
+  });
+
   it('still opens the first section when a divider comes before it', () => {
     const body = mountDescription(`<h2>&nbsp;</h2>${h(2, 'Changes')}<p>a</p>${h(2, 'Testing')}<p>b</p>`);
     shortenDescription(true);

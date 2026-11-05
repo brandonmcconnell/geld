@@ -66,11 +66,22 @@ const BLANK_TEXT = /^[\s\u200b-\u200d\u2060\ufeff]*$/;
  */
 export function isBlankHeading(block: Element): boolean {
   const heading = headingElementOf(block);
-  if (heading === null || heading.querySelector('img, picture, video, svg:not(.octicon-link)') !== null) return false;
+  if (heading === null) return false;
   const copy = heading.cloneNode(true);
   if (!(copy instanceof Element)) return false;
   for (const extra of copy.querySelectorAll(`a.anchor, .${TOGGLE_CLASS}`)) extra.remove();
+  if (copy.querySelector('img, picture, video, svg:not(.octicon-link)') !== null) return false;
   return BLANK_TEXT.test(copy.textContent ?? '');
+}
+
+/** The description's own top-level blocks, without Geld's controls. */
+function blocksOf(body: HTMLElement): Element[] {
+  return [...body.children].filter((block) => !block.hasAttribute(OWN_UI_ATTRIBUTE));
+}
+
+/** The blocks the outline is built from: dividers neither fold nor head anything. */
+function sectionBlocks(body: HTMLElement): Element[] {
+  return blocksOf(body).filter((block) => !isBlankHeading(block));
 }
 
 /**
@@ -249,7 +260,7 @@ function watchBody(body: HTMLElement): void {
   body.addEventListener('beforematch', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
-    const blocks = [...body.children].filter((block) => !block.hasAttribute(OWN_UI_ATTRIBUTE));
+    const blocks = sectionBlocks(body);
     const index = blocks.findIndex((block) => block === target || block.contains(target));
     if (index < 0) return;
     for (const heading of outlineOf(blocks)) {
@@ -310,10 +321,10 @@ function dressRails(block: HTMLElement, rails: BlockRails | null): void {
 }
 
 function applyTo(body: HTMLElement): void {
-  const all = [...body.children].filter((block) => !block.hasAttribute(OWN_UI_ATTRIBUTE));
-  for (const block of all) setFlag(block, ATTR_BLANK, isBlankHeading(block) ? '' : null);
+  const all = blocksOf(body);
   // A divider is no section: it neither folds nor heads anything, nor counts as text before the first heading.
-  const blocks = all.filter((block) => !block.hasAttribute(ATTR_BLANK));
+  const blocks = sectionBlocks(body);
+  for (const block of all) setFlag(block, ATTR_BLANK, blocks.includes(block) ? null : '');
   for (const block of all) {
     if (!block.hasAttribute(ATTR_BLANK) || !(block instanceof HTMLElement)) continue;
     setFlag(block, ATTR_HEADING, null);
