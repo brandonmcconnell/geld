@@ -523,6 +523,22 @@ describe('shortenDescription', () => {
     expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(false);
   });
 
+  it('keeps at least the fade’s height of a block the cut runs through near its top', async () => {
+    const body = mountDescription(
+      `<p>one</p><div class="highlight"><pre>code</pre></div>${h(2, 'Summary by CodeRabbit')}<ul><li>Bug fixes</li></ul>`,
+    );
+    const [one, code] = [...body.children];
+    if (one === undefined || !(code instanceof HTMLElement)) throw new Error('no blocks');
+    layOut(body, new Map([[one, 490], [code, 300]]));
+    shortenDescription(true);
+    // Opening an agent's section measures the body.
+    body.querySelector<HTMLElement>('.geld-desc-agent')?.click();
+    await frames();
+    await frame();
+    expect(code.hasAttribute('data-geld-desc-cut-edge')).toBe(true);
+    expect(code.style.getPropertyValue('--geld-desc-cut-height')).toBe('96px');
+  });
+
   it('lifts the cut for good on Show full description', () => {
     const body = mountDescription('<p>a long wall of text</p>');
     shortenDescription(true);

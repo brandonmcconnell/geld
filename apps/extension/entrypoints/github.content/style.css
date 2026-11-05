@@ -7713,11 +7713,12 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 
 /*
  * The cut runs through the author's text only (description.ts `measure`): blocks wholly past it are hidden
- * `until-found`, the one it crosses is clipped here, and the agents' summaries below stay whole.
+ * `until-found`, the one it crosses is clipped here, and the agents' summaries below stay whole. GitHub's
+ * `.comment-body .highlight` keeps a code block's overflow visible with `!important`, so the clip needs it too.
  */
 [data-geld-desc-cap][data-geld-desc-long] > [data-geld-desc-cut-edge] {
   max-height: var(--geld-desc-cut-height);
-  overflow: hidden;
+  overflow: hidden !important;
 }
 
 /* Inside the body, after the author's blocks: its ::before fades the text above it out. */
