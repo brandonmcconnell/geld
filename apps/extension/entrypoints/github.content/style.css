@@ -7524,6 +7524,37 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   display: none !important;
 }
 
+/*
+ * What tools appended, gathered at the foot under "Agent summaries" (description.ts `dressAgents`), one folding h3 of
+ * Geld's per tool with its logo before its name. GitHub's nodes stay where they are: the body becomes a column and the
+ * tools' headings and blocks take a later `order` (`--geld-desc-order`, mirrored in description.ts).
+ */
+[data-geld-desc][data-geld-desc-agents] {
+  display: flex !important;
+  flex-direction: column;
+}
+
+[data-geld-desc-agents] > .geld-desc-agents {
+  order: 1;
+}
+
+[data-geld-desc-agents] > [data-geld-desc-agent] {
+  order: var(--geld-desc-order, 2);
+}
+
+/* A tool's own title ("Summary by CodeRabbit") and the rule above its content: its injected heading stands for them. */
+[data-geld-desc-agents] > [data-geld-desc-agent-hidden] {
+  display: none !important;
+}
+
+.geld-desc-agent__logo {
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+  border-radius: 4px;
+  vertical-align: -4px;
+}
+
 [data-geld-desc] > [data-geld-desc-depth] {
   position: relative;
   margin-left: calc(var(--geld-desc-depth, 0) * 24px) !important;

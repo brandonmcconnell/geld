@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { sectionResetsOf, toolBlocksOf } from './description-blocks';
+import { authorWordsAfter, toolBlocksOf, verdictOf } from './description-blocks';
 
 function blocksOf(html: string): Element[] {
   const holder = document.createElement('div');
@@ -34,25 +34,42 @@ const CURSOR_AGENT =
 const CLAUDE = '<p dir="auto">🤖 Generated with <a href="https://claude.com/claude-code">Claude Code</a></p>';
 const DEVIN = '<p dir="auto">Link to Devin session: <a href="https://app.devin.ai/sessions/854b1146">https://app.devin.ai/sessions/854b1146</a></p>';
 
+const at = (id: string, start: number, end: number, title: number | null = null): { id: string; start: number; end: number; title: number | null } => ({ id, start, end, title });
+const spans = (html: string): ReturnType<typeof at>[] => toolBlocksOf(blocksOf(html)).map(({ id, start, end, title }) => ({ id, start, end, title }));
+
 describe('toolBlocksOf', () => {
-  it('finds a heading-led summary with no closing line as its heading alone, not bounded', () => {
-    expect(toolBlocksOf(blocksOf(`<p>mine</p>${CODERABBIT}`))).toEqual([{ id: 'coderabbit', start: 1, end: 1, bounded: false }]);
-    expect(toolBlocksOf(blocksOf(SOURCERY))).toEqual([{ id: 'sourcery', start: 0, end: 0, bounded: false }]);
+  it('runs a heading-led summary with no closing line as its heading’s section does', () => {
+    expect(spans(`<p>mine</p>${CODERABBIT}`)).toEqual([at('coderabbit', 1, 2, 1)]);
+    expect(spans(`${SOURCERY}<h2>Mine</h2><p>m</p>`)).toEqual([at('sourcery', 0, 2, 0)]);
   });
 
   it('runs a summary to its closing block, trailing notes included', () => {
-    expect(toolBlocksOf(blocksOf(`${CUBIC}<p>after</p>`))).toEqual([{ id: 'cubic', start: 0, end: 3, bounded: true }]);
-    expect(toolBlocksOf(blocksOf(`<p>mine</p>${GREPTILE}<p>after</p>`))).toEqual([{ id: 'greptile', start: 1, end: 5, bounded: true }]);
-    expect(toolBlocksOf(blocksOf(ELLIPSIS))).toEqual([{ id: 'ellipsis', start: 0, end: 4, bounded: true }]);
+    expect(spans(`${CUBIC}<p>after</p>`)).toEqual([at('cubic', 0, 3, 0)]);
+    expect(spans(`<p>mine</p>${GREPTILE}<p>after</p>`)).toEqual([at('greptile', 1, 5)]);
+    expect(spans(ELLIPSIS)).toEqual([at('ellipsis', 0, 4)]);
   });
 
-  it('finds one-block notes and footers', () => {
-    expect(toolBlocksOf(blocksOf(`${BUGBOT}<p>mine</p>${CURSOR_AGENT}${CLAUDE}${DEVIN}`))).toEqual([
-      { id: 'bugbot', start: 0, end: 0, bounded: true },
-      { id: 'cursor-agent', start: 2, end: 2, bounded: true },
-      { id: 'claude-code', start: 3, end: 3, bounded: true },
-      { id: 'devin', start: 4, end: 4, bounded: true },
+  it('finds one-block notes and footers, with the rule just above a footer', () => {
+    expect(spans(`${BUGBOT}<p>mine</p>${CURSOR_AGENT}<hr>${CLAUDE}${DEVIN}`)).toEqual([
+      at('bugbot', 0, 0),
+      at('cursor-agent', 2, 2),
+      at('claude-code', 3, 4),
+      at('devin', 5, 5),
     ]);
+  });
+
+  it('names each tool and the mark it wears', () => {
+    const tools = toolBlocksOf(blocksOf(`${CODERABBIT}${BUGBOT}${CURSOR_AGENT}${CLAUDE}`));
+    expect(tools.map(({ name, bot }) => [name, bot])).toEqual([
+      ['CodeRabbit', 'coderabbit'],
+      ['Cursor Bugbot', 'bugbot'],
+      ['Cursor', 'bugbot'],
+      ['Claude Code', 'claude'],
+    ]);
+  });
+
+  it('ends a heading-led summary at the next tool', () => {
+    expect(spans(`${CODERABBIT}<p>more</p>${BUGBOT}`)).toEqual([at('coderabbit', 0, 2, 0), at('bugbot', 3, 3)]);
   });
 
   it('leaves an author’s own words alone, even when they mention a tool', () => {
@@ -64,10 +81,31 @@ describe('toolBlocksOf', () => {
   });
 });
 
-describe('sectionResetsOf', () => {
-  it('ends every section where a tool starts, and after one that is known to stop', () => {
-    const tools = toolBlocksOf(blocksOf(`<p>mine</p>${CODERABBIT}<p>more</p>${CUBIC}<p>after</p>`));
-    // 0 mine, 1–2 CodeRabbit, 3 more, 4–7 cubic, 8 after.
-    expect([...sectionResetsOf(tools)].sort((a, b) => a - b)).toEqual([1, 4, 8]);
+describe('authorWordsAfter', () => {
+  it('reads the author’s words after each marked block, up to the next one', () => {
+    const markdown =
+      'Intro\n\n<!-- This is an auto-generated comment: release notes by coderabbit.ai -->\n## Summary by CodeRabbit\n* x\n' +
+      '<!-- end of auto-generated comment: release notes by coderabbit.ai -->\n\n## Testing notes\nRan the [suite](https://x.test) twice.\n\n' +
+      '<!-- CURSOR_SUMMARY -->\n> [!NOTE]\n> Low Risk\n<!-- /CURSOR_SUMMARY -->';
+    expect(authorWordsAfter(markdown)).toEqual(new Map([['coderabbit', ['testing notes ran the suite twice']]]));
+  });
+
+  it('has nothing for blocks that run into the next tool or the end', () => {
+    expect(authorWordsAfter('<!-- greptile_comment -->a<!-- /greptile_comment -->\n<!-- CURSOR_SUMMARY -->b<!-- /CURSOR_SUMMARY -->').size).toBe(0);
+  });
+
+  it('stops a heading-led summary where the author’s words resume', () => {
+    const html = `${CODERABBIT}<p dir="auto">Ran the suite twice.</p>`;
+    expect(spans(html)).toEqual([at('coderabbit', 0, 2, 0)]);
+    const markdown = '<!-- This is an auto-generated comment: release notes by coderabbit.ai -->x<!-- end of auto-generated comment: release notes by coderabbit.ai -->\nRan the suite twice.';
+    expect(toolBlocksOf(blocksOf(html), markdown).map(({ id, start, end }) => ({ id, start, end }))).toEqual([{ id: 'coderabbit', start: 0, end: 1 }]);
+  });
+});
+
+describe('verdictOf', () => {
+  it('reads Greptile’s score and Bugbot’s risk', () => {
+    expect(verdictOf('greptile', blocksOf(GREPTILE))).toBe('4/5');
+    expect(verdictOf('bugbot', blocksOf(BUGBOT))).toBe('Low Risk');
+    expect(verdictOf('coderabbit', blocksOf(CODERABBIT))).toBe(null);
   });
 });

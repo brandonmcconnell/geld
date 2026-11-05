@@ -1,6 +1,7 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { ICON_CHEVRON_DOWN } from '../ui/icons';
-import { sectionResetsOf, toolBlocksOf } from './description-blocks';
+import { botAppAvatar, botById } from '@geld/review';
+import { toolBlocksOf, verdictOf } from './description-blocks';
 import { ATTR_FINDABLE, setFindable } from './fold';
 
 /** A long description with no headings to fold is cut to this height, behind a fade and "Show full description". */
@@ -24,6 +25,14 @@ const ATTR_ON = 'data-geld-desc';
 const ATTR_DEPTH = 'data-geld-desc-depth';
 /** On a heading with nothing to read in it, hidden while the description is shortened. */
 const ATTR_BLANK = 'data-geld-desc-blank';
+/** On the description body while what tools appended is gathered at its foot under "Agent summaries". */
+const ATTR_AGENTS = 'data-geld-desc-agents';
+/** On a tool's own title or the rule above its content, which its injected heading stands for: hidden. */
+const ATTR_AGENT_HIDDEN = 'data-geld-desc-agent-hidden';
+/** On each block of a tool's content, and on its injected heading: the tool's id. */
+const ATTR_AGENT = 'data-geld-desc-agent';
+/** The flex `order` that puts the tools' content after the author's. Mirrored in style.css. */
+const ORDER_PROPERTY = '--geld-desc-order';
 const RAIL_PROPERTIES = ['--geld-desc-depth', '--geld-desc-rails', '--geld-desc-rail-pos', '--geld-desc-rail-size'] as const;
 
 /** One level of indentation, and the chevron's centre within it. Mirrored in style.css (description outline). */
@@ -32,6 +41,10 @@ const CHEVRON_CENTER_PX = 10;
 
 const TOGGLE_CLASS = 'geld-desc-toggle';
 const MORE_CLASS = 'geld-desc-more';
+/** The "Agent summaries" heading over the tools' headings. */
+const AGENTS_CLASS = 'geld-desc-agents';
+/** A tool's injected heading. */
+const AGENT_CLASS = 'geld-desc-agent';
 
 export interface OutlineHeading {
   /** Index of the heading among the body's blocks. */
@@ -85,18 +98,93 @@ function sectionBlocks(body: HTMLElement): Element[] {
   return blocksOf(body).filter((block) => !isBlankHeading(block));
 }
 
-/** The description's outline, with what tools appended kept at the top level (see description-blocks.ts). */
-function descriptionOutline(blocks: readonly Element[]): OutlineHeading[] {
-  return outlineOf(blocks, sectionResetsOf(toolBlocksOf(blocks)));
+/** One tool's content gathered under its own heading at the foot of the description (every block it wrote, merged). */
+interface ToolGroup {
+  readonly id: string;
+  readonly name: string;
+  readonly bot: string | null;
+  /** The heading Geld gives it: its logo and name, folding what it wrote. */
+  readonly heading: HTMLElement;
+  /** What it wrote, its own title and the rules above it left out. */
+  readonly content: readonly Element[];
+  /** Its own title ("Summary by CodeRabbit") and rules: the injected heading stands for them, so they are hidden. */
+  readonly hidden: readonly Element[];
+  /** Its first block on the page, which the injected heading stands before. */
+  readonly first: Element;
+}
+
+interface Layout {
+  /** What the outline is built from, in the order it shows: the author's blocks, then each tool's heading and content. */
+  readonly blocks: readonly Element[];
+  readonly outline: readonly OutlineHeading[];
+  readonly groups: readonly ToolGroup[];
+}
+
+/** A tool's heading, kept across passes: Geld's own `h3`, with the tool's logo before its name. */
+function toolHeadingOf(body: HTMLElement, id: string, name: string, bot: string | null, verdict: string | null): HTMLElement {
+  const label = verdict === null ? name : `${name} · ${verdict}`;
+  const existing = [...body.querySelectorAll<HTMLElement>(`:scope > .${AGENT_CLASS}`)].find((heading) => heading.getAttribute(ATTR_AGENT) === id);
+  if (existing !== undefined) {
+    const shown = existing.querySelector(`.${AGENT_CLASS}__name`);
+    if (shown !== null && shown.textContent !== label) shown.textContent = label;
+    return existing;
+  }
+  const registry = bot === null ? null : botById(bot);
+  const logo = registry === null ? null : botAppAvatar(registry, 40);
+  return createElement('h3', { class: AGENT_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_AGENT]: id }, [
+    ...(logo === null ? [] : [createElement('img', { class: `${AGENT_CLASS}__logo`, src: logo, alt: '', width: '20', height: '20' }, [])]),
+    createElement('span', { class: `${AGENT_CLASS}__name` }, [label]),
+  ]);
+}
+
+/** The description's Markdown, from GitHub's own "Copy Markdown" item in its ⋯ menu: the one place its HTML comments survive. */
+function descriptionMarkdown(body: HTMLElement): string | null {
+  const copy = body.closest('.timeline-comment, .js-comment-container')?.querySelector('clipboard-copy[data-dd-action-name="pr.description.copy_markdown"]');
+  return copy?.getAttribute('value') ?? null;
+}
+
+/**
+ * The description's outline, with what tools appended (description-blocks.ts) gathered at its foot under "Agent
+ * summaries": one heading per tool, each folding everything that tool wrote, wherever in the description it wrote it.
+ * The author's sections end before them, so nothing of a tool's is ever nested under the author's last heading, and a
+ * tool's own headings inside its content never split it.
+ */
+function layoutOf(body: HTMLElement): Layout {
+  const sections = sectionBlocks(body);
+  const found = new Map<string, { name: string; bot: string | null; content: Element[]; hidden: Element[]; first: Element }>();
+  const isTool = new Set<Element>();
+  for (const tool of toolBlocksOf(sections, descriptionMarkdown(body))) {
+    const start = sections[tool.start];
+    if (start === undefined) continue;
+    const group = found.get(tool.id) ?? { name: tool.name, bot: tool.bot, content: [], hidden: [], first: start };
+    found.set(tool.id, group);
+    sections.slice(tool.start, tool.end + 1).forEach((block, offset) => {
+      isTool.add(block);
+      if (block.tagName === 'HR' || tool.start + offset === tool.title) group.hidden.push(block);
+      else group.content.push(block);
+    });
+  }
+  const groups = [...found].map(([id, group]): ToolGroup => ({ id, name: group.name, bot: group.bot, heading: toolHeadingOf(body, id, group.name, group.bot, verdictOf(id, group.content)), content: group.content, hidden: group.hidden, first: group.first }));
+  const author = sections.filter((block) => !isTool.has(block));
+  // Every section ends where a tool's content was, so what the author wrote after it is top level again; and the
+  // tools' headings, after the author's last block, are top level too.
+  const resets = new Set<number>([author.length]);
+  sections.forEach((block, index) => {
+    const next = sections[index + 1];
+    if (isTool.has(block) && next !== undefined && !isTool.has(next)) resets.add(author.indexOf(next));
+  });
+  const blocks = [...author, ...groups.flatMap((group) => [group.heading, ...group.content])];
+  const inTool = new Set(groups.flatMap((group) => group.content));
+  const levels = blocks.map((block) => (inTool.has(block) ? null : headingLevelOf(block)));
+  return { blocks, outline: outlineOf(blocks, resets, levels), groups };
 }
 
 /**
  * Every heading that has something under it, with the blocks its section runs to: up to the next heading of the
  * same or a higher level, or to the first of `resets` after it, where every section ends. A heading with nothing
- * under it has nothing to fold and is left out.
+ * under it has nothing to fold and is left out. `levels` says each block's heading level, by default its own.
  */
-export function outlineOf(blocks: readonly Element[], resets: ReadonlySet<number> = new Set()): OutlineHeading[] {
-  const levels = blocks.map(headingLevelOf);
+export function outlineOf(blocks: readonly Element[], resets: ReadonlySet<number> = new Set(), levels: readonly (number | null)[] = blocks.map(headingLevelOf)): OutlineHeading[] {
   const outline: OutlineHeading[] = [];
   levels.forEach((level, index) => {
     if (level === null) return;
@@ -286,10 +374,10 @@ function watchBody(body: HTMLElement): void {
   body.addEventListener('beforematch', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
-    const blocks = sectionBlocks(body);
+    const { blocks, outline } = layoutOf(body);
     const index = blocks.findIndex((block) => block === target || block.contains(target));
     if (index < 0) return;
-    for (const heading of descriptionOutline(blocks)) {
+    for (const heading of outline) {
       if (heading.index >= index || index >= heading.end) continue;
       const key = blocks[heading.index]?.getAttribute(ATTR_KEY);
       if (key !== null && key !== undefined) state.open.set(key, true);
@@ -347,11 +435,56 @@ function dressRails(block: HTMLElement, rails: BlockRails | null): void {
   );
 }
 
+/**
+ * What tools appended, at the foot whatever the author wrote after it: GitHub's nodes stay where they are, so the body
+ * becomes a flex column and each tool's heading and content take a later `order`, after the "Agent summaries" heading
+ * (`order: 1`). Each tool's heading stands just before its first block. Everything else is left as GitHub has it.
+ */
+function dressAgents(body: HTMLElement, layout: Layout, all: readonly Element[]): void {
+  const ids = new Set(layout.groups.map((group) => group.id));
+  for (const heading of body.querySelectorAll(`:scope > .${AGENT_CLASS}`)) {
+    if (!ids.has(heading.getAttribute(ATTR_AGENT) ?? '')) heading.remove();
+  }
+  const tools = new Set<Element>(layout.groups.flatMap((group) => [...group.content, ...group.hidden]));
+  for (const block of all) {
+    if (tools.has(block) || !(block instanceof HTMLElement)) continue;
+    setFlag(block, ATTR_AGENT, null);
+    setFlag(block, ATTR_AGENT_HIDDEN, null);
+    setProperty(block, ORDER_PROPERTY, null);
+  }
+  const header = body.querySelector(`:scope > .${AGENTS_CLASS}`);
+  if (layout.groups.length === 0) {
+    header?.remove();
+    setFlag(body, ATTR_AGENTS, null);
+    return;
+  }
+  setFlag(body, ATTR_AGENTS, '');
+  if (header === null) body.append(createElement('h2', { class: AGENTS_CLASS, [OWN_UI_ATTRIBUTE]: '' }, ['Agent summaries']));
+  layout.groups.forEach((group, index) => {
+    const order = String(index + 2);
+    if (group.heading.nextElementSibling !== group.first) group.first.before(group.heading);
+    setProperty(group.heading, ORDER_PROPERTY, order);
+    for (const block of [...group.content, ...group.hidden]) {
+      if (!(block instanceof HTMLElement)) continue;
+      setFlag(block, ATTR_AGENT, group.id);
+      setFlag(block, ATTR_AGENT_HIDDEN, group.hidden.includes(block) ? '' : null);
+      setProperty(block, ORDER_PROPERTY, order);
+      if (group.hidden.includes(block)) {
+        // A hidden title heads nothing: what it folded is the injected heading's now.
+        setFlag(block, ATTR_HEADING, null);
+        setFlag(block, ATTR_KEY, null);
+        headingElementOf(block)?.querySelector(`:scope > .${TOGGLE_CLASS}`)?.remove();
+        dressRails(block, null);
+      }
+    }
+  });
+}
+
 function applyTo(body: HTMLElement): void {
   const all = blocksOf(body);
   // A divider is no section: it neither folds nor heads anything, nor counts as text before the first heading.
-  const blocks = sectionBlocks(body);
-  for (const block of all) setFlag(block, ATTR_BLANK, blocks.includes(block) ? null : '');
+  const sections = sectionBlocks(body);
+  for (const block of all) setFlag(block, ATTR_BLANK, sections.includes(block) ? null : '');
   for (const block of all) {
     if (!block.hasAttribute(ATTR_BLANK) || !(block instanceof HTMLElement)) continue;
     setFlag(block, ATTR_HEADING, null);
@@ -364,7 +497,9 @@ function applyTo(body: HTMLElement): void {
     }
     dressRails(block, null);
   }
-  const outline = descriptionOutline(blocks);
+  const layout = layoutOf(body);
+  const { blocks, outline } = layout;
+  dressAgents(body, layout, all);
   const folding = new Set(outline.map((heading) => heading.index));
   const openNow = new Map<number, boolean>();
   // A description that opens on a heading keeps its substance in that first section, whatever its title says.
@@ -375,13 +510,15 @@ function applyTo(body: HTMLElement): void {
     const block = blocks[heading.index];
     const element = block === undefined ? null : headingElementOf(block);
     if (!(block instanceof HTMLElement) || element === null) continue;
-    const key = keyOf(all.indexOf(block), element);
-    const open = state.open.get(key) ?? (heading === leading || heading.hasSubheadings);
+    const agent = block.classList.contains(AGENT_CLASS) ? block.getAttribute(ATTR_AGENT) : null;
+    const key = agent !== null ? `agent:${agent}` : keyOf(all.indexOf(block), element);
+    // An agent's section starts closed even when nothing of the author's comes before it.
+    const open = state.open.get(key) ?? (agent === null && (heading === leading || heading.hasSubheadings));
     openNow.set(heading.index, open);
     setFlag(block, ATTR_KEY, key);
     setFlag(block, ATTR_HEADING, open ? 'open' : 'closed');
     const toggle = toggleOf(element);
-    const title = key.slice(key.indexOf(':') + 1);
+    const title = (element.textContent ?? '').trim();
     setFlag(toggle, 'aria-expanded', String(open));
     setFlag(toggle, 'aria-label', `${open ? 'Collapse' : 'Expand'} section ${title}`);
     wire(block, body);
@@ -429,7 +566,10 @@ function release(): void {
 function clear(): void {
   // The page and its choices stay: showing the full timeline and back keeps what the reader opened.
   release();
-  for (const element of document.querySelectorAll(`.${TOGGLE_CLASS}, .${MORE_CLASS}`)) element.remove();
+  for (const element of document.querySelectorAll(`.${TOGGLE_CLASS}, .${MORE_CLASS}, .${AGENTS_CLASS}, .${AGENT_CLASS}`)) element.remove();
+  for (const element of document.querySelectorAll(`[${ATTR_AGENT}]`)) {
+    if (element instanceof HTMLElement) element.style.removeProperty(ORDER_PROPERTY);
+  }
   for (const element of document.querySelectorAll(`[${ATTR_DEPTH}]`)) {
     if (element instanceof HTMLElement) for (const name of RAIL_PROPERTIES) element.style.removeProperty(name);
   }
@@ -437,7 +577,7 @@ function clear(): void {
     if (element.getAttribute('hidden') === 'until-found') element.removeAttribute('hidden');
     element.removeAttribute(ATTR_FINDABLE);
   }
-  for (const name of [ATTR_FOLD, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH, ATTR_BLANK]) {
+  for (const name of [ATTR_FOLD, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH, ATTR_BLANK, ATTR_AGENTS, ATTR_AGENT, ATTR_AGENT_HIDDEN]) {
     for (const element of document.querySelectorAll(`[${name}]`)) element.removeAttribute(name);
   }
 }

@@ -190,24 +190,101 @@ describe('shortenDescription', () => {
     expect(needle?.hasAttribute('data-geld-desc-fold')).toBe(false);
   });
 
-  it('keeps what tools appended at the top level, not under the author’s deepest heading', () => {
-    // 0 h1, 1 p, 2 h2, 3 p, 4 h3, 5 p, 6 CodeRabbit h2, 7 its list, 8 Cursor badges, 9 trailing text.
+  /** A description whose author wrote three levels, then CodeRabbit's summary, a Cursor badge row and more text. */
+  function mountWithTools(): { body: HTMLElement; blocks: Element[] } {
     const body = mountDescription(
       `${h(1, 'Plan')}<p>a</p>${h(2, 'Steps')}<p>b</p>${h(3, 'Details')}<p>c</p>` +
         `${h(2, 'Summary by CodeRabbit')}<ul><li>Bug fixes</li></ul>` +
         '<div><a href="https://cursor.com/agents/bc-1"><img alt="Open in Web" src="w.png"></a></div><p>after</p>',
     );
+    return { body, blocks: [...body.children] };
+  }
+
+  const order = (node: Element | undefined | null): string => (node instanceof HTMLElement ? node.style.getPropertyValue('--geld-desc-order') : '');
+
+  it('gathers what tools appended at the foot under Agent summaries, one closed heading per tool with its logo', () => {
+    const { body, blocks } = mountWithTools();
+    const [, , , , , c, coderabbit, list, badges, after] = blocks;
     shortenDescription(true);
-    // Details ends where CodeRabbit's summary starts, so the summary folds under its own heading, not under Details.
-    expect(body.children[5]?.hasAttribute('data-geld-desc-fold')).toBe(true);
-    expect(body.children[6]?.hasAttribute('data-geld-desc-fold')).toBe(false);
-    expect(body.children[6]?.getAttribute('data-geld-desc-heading')).toBe('closed');
-    expect(body.children[6]?.hasAttribute('data-geld-desc-depth')).toBe(false);
-    expect(body.children[7]?.hasAttribute('data-geld-desc-fold')).toBe(true);
-    // The badges and what follows them belong to no section.
-    expect(body.children[8]?.hasAttribute('data-geld-desc-fold')).toBe(false);
-    expect(body.children[9]?.hasAttribute('data-geld-desc-fold')).toBe(false);
-    expect(body.children[9]?.hasAttribute('data-geld-desc-depth')).toBe(false);
+    expect(body.hasAttribute('data-geld-desc-agents')).toBe(true);
+    const agents = body.querySelector('.geld-desc-agents');
+    expect(agents?.tagName).toBe('H2');
+    expect(agents?.textContent).toBe('Agent summaries');
+    // The section heading over them folds nothing.
+    expect(agents?.querySelector('.geld-desc-toggle')).toBeNull();
+    const headings = [...body.querySelectorAll('.geld-desc-agent')];
+    expect(headings.map((heading) => [heading.tagName, heading.textContent, heading.getAttribute('data-geld-desc-heading')])).toEqual([
+      ['H3', 'CodeRabbit', 'closed'],
+      ['H3', 'Cursor', 'closed'],
+    ]);
+    expect(headings.every((heading) => heading.querySelector('.geld-desc-toggle') !== null && heading.querySelector('img.geld-desc-agent__logo') !== null)).toBe(true);
+    // Each heading stands just before its tool's content, both at the tool's order, after the author's text.
+    expect(headings[0]?.nextElementSibling).toBe(coderabbit);
+    expect([headings[0], list].map(order)).toEqual(['2', '2']);
+    expect([headings[1], badges].map(order)).toEqual(['3', '3']);
+    expect(order(after)).toBe('');
+    // The tool's own title is the injected heading's to stand for: hidden, with no chevron of its own.
+    expect(coderabbit?.hasAttribute('data-geld-desc-agent-hidden')).toBe(true);
+    expect(coderabbit?.querySelector('.geld-desc-toggle')).toBeNull();
+    expect(list?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    expect(badges?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    // The author's sections end before the tools: Details folds its own text and nothing after it.
+    expect(c?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    expect(after?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(after?.hasAttribute('data-geld-desc-depth')).toBe(false);
+  });
+
+  it('opens a tool’s content under its heading, as a section opens', async () => {
+    const { body, blocks } = mountWithTools();
+    const list = blocks[7];
+    shortenDescription(true);
+    body.querySelector<HTMLElement>('.geld-desc-agent')?.click();
+    await frames();
+    expect(body.querySelector('.geld-desc-agent')?.getAttribute('data-geld-desc-heading')).toBe('open');
+    expect(list?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(list?.hasAttribute('data-geld-desc-depth')).toBe(true);
+    // A pass after the click keeps it open.
+    shortenDescription(true);
+    expect(list?.hasAttribute('data-geld-desc-fold')).toBe(false);
+  });
+
+  it('gives a tool that wrote in two places one heading, holding both', () => {
+    // As on fleetdm/fleet#57633, whose description renders CodeRabbit's heading twice.
+    const body = mountDescription(`<p>mine</p>${h(2, 'Summary by CodeRabbit')}${h(2, 'Summary by CodeRabbit')}<ul><li>Breaking changes</li></ul>`);
+    shortenDescription(true);
+    expect([...body.querySelectorAll('.geld-desc-agent')].map((heading) => heading.textContent)).toEqual(['CodeRabbit']);
+    expect(body.querySelectorAll('[data-geld-desc-agent-hidden]')).toHaveLength(2);
+    expect(body.querySelector('ul')?.hasAttribute('data-geld-desc-fold')).toBe(true);
+  });
+
+  it('puts the description back as GitHub rendered it when turned off', () => {
+    const { body, blocks } = mountWithTools();
+    shortenDescription(true);
+    shortenDescription(false);
+    expect([...body.children]).toEqual(blocks);
+    expect(body.querySelector('[data-geld-desc-agent], [data-geld-desc-agent-hidden]')).toBeNull();
+    expect(body.hasAttribute('data-geld-desc-agents')).toBe(false);
+    expect(blocks.map(order).every((value) => value === '')).toBe(true);
+  });
+
+  it('adds nothing for a description without tools', () => {
+    const body = mountDescription(`${h(2, 'One')}<p>a</p>`);
+    shortenDescription(true);
+    expect(body.querySelector('.geld-desc-agents, .geld-desc-agent')).toBeNull();
+    expect(body.hasAttribute('data-geld-desc-agents')).toBe(false);
+  });
+
+  it('keeps an agent’s section closed when nothing of the author’s comes before it', () => {
+    // As on MetaMask/snaps-directory#575, whose description is Bugbot's note alone.
+    const body = mountDescription(
+      '<div class="markdown-alert markdown-alert-note"><p class="markdown-alert-title">Note</p><p><strong>Low Risk</strong><br>Metadata only.</p>' +
+        '<p><sup>Written by <a href="https://cursor.com/dashboard?tab=bugbot">Cursor Bugbot</a> for commit <tt>3c2c48b</tt>.</sup></p></div>',
+    );
+    shortenDescription(true);
+    const heading = body.querySelector('.geld-desc-agent');
+    expect(heading?.textContent).toBe('Cursor Bugbot · Low Risk');
+    expect(heading?.getAttribute('data-geld-desc-heading')).toBe('closed');
+    expect(body.querySelector('.markdown-alert')?.hasAttribute('data-geld-desc-fold')).toBe(true);
   });
 
   it('still opens the first section when a divider comes before it', () => {
