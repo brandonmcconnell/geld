@@ -31,7 +31,7 @@ apps/dashboard/      @geld/dashboard — independent Next.js review workspace, B
 packages/domain/     @geld/domain — provider-neutral contracts, access and billing rules.
 packages/providers/  @geld/providers — provider clients behind token sources.
 packages/ui/         @geld/ui — shared Base UI presentation primitives.
-assets/brand/        Logo + logomark SVGs (black and white variants). Both apps reference these.
+assets/brand/        Logo + logomark SVGs (black and white variants), and the logomark on a pixel grid for small icons. Both apps reference these.
 .github/workflows/   CI: `pnpm check` (typecheck + tests everywhere), `pnpm catalog:check` (generated
                      catalog and its signature are current) and `pnpm zip:all` artifacts.
 catalog/             patterns.json + patterns.sig: the signed pattern catalog installed extensions
@@ -1514,8 +1514,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
 - Toolbar icon dark mode: Chrome/Edge use an offscreen `MATCH_MEDIA` document;
   Firefox uses `theme_icons`;
   Safari tints template icons.
-  Icons are pixel-snapped renders of `assets/brand/geld-logomark.svg` (see git history for the generator approach;
-  regenerate at 1/2/3 px per grid unit).
+  `pnpm brand:icons` (`scripts/brand-icons.mjs`) draws every extension and Safari app icon from `assets/brand/`: from 128px up the logomark's own paths on the white tile, below that `geld-logomark-grid.svg`, the same mark on a 14-unit grid where every band, gap and block is 2 units, at 1, 2 or 3 px per unit (1.5 for the 32px app icon) so its straight edges land on pixels.
+  The Mac icons keep the tile Xcode's converter drew and replace the extension's icon in its middle 60%.
+  The site's 32px favicon draws the grid mark too, at 2 px per unit (`loadGridLogomark`).
+  Change the grid mark with the logomark, then rerun the script.
 
 ## Website (apps/site)
 
