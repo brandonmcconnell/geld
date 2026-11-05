@@ -215,6 +215,8 @@ export function noteCopy(blocks: readonly Element[]): Node[] {
     const copy = block.cloneNode(true);
     if (copy instanceof Element) {
       for (const element of [copy, ...copy.querySelectorAll('*')]) {
+        // The note stays home too: a copied heading's anchor id would answer the page's hash twice.
+        element.removeAttribute('id');
         for (const name of [...element.getAttributeNames()]) if (name.startsWith('data-geld-')) element.removeAttribute(name);
         if (element.getAttribute('hidden') === 'until-found') element.removeAttribute('hidden');
       }

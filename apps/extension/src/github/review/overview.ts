@@ -3444,6 +3444,17 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         reapply();
       });
     },
+    onOpenNote: (id) => {
+      const key = noteSubKey(id);
+      keepInPlace(`main:${AGENT_NOTES_KEY}`, () => {
+        // The pill of the note already open closes it; any other opens the row to that note.
+        const wasOpen = visit.openKey === AGENT_NOTES_KEY && visit.openSubKey === key;
+        visit.openKey = AGENT_NOTES_KEY;
+        visit.openSubKey = wasOpen ? null : key;
+        reapply();
+      });
+      revealRow(`main:sub:${key}`);
+    },
     onOpenReport: (anchor) => {
       keepInPlace(`main:${REPORTS_KEY}`, () => {
         // The pill of the report already open closes it; any other opens the row to that report.

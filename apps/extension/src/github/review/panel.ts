@@ -474,6 +474,8 @@ export interface PanelHandlers {
   readonly onToggleSub: (anchor: string) => void;
   /** Show every way an agent's note in the description has read (`id` is the tool's). */
   readonly onNoteHistory: (id: string) => void;
+  /** A note's pill: the Agent notes row opens to that note's line (or closes it when it is the one open). */
+  readonly onOpenNote: (id: string) => void;
   /** Unfold or fold the archived previews. */
   readonly onToggleArchivedPreviews: () => void;
   /** Unfold or fold a round's commit rows (batch grouping). */
@@ -2290,19 +2292,35 @@ function notePicture(note: AgentNote, model: PanelModel): HTMLElement {
 }
 
 /**
+ * One agent's note as a pill, as a bot's verdict or a report is one: its mark and name, opening the row to its line.
+ * A note the description no longer has (only in its history) is dashed, as a pill with nothing of its own to show is.
+ */
+function notePill(note: AgentNote, model: PanelModel, handlers: PanelHandlers): HTMLElement {
+  const src = noteMark(note, model);
+  const children: Node[] = [];
+  if (src !== null) children.push(markImg(src, false));
+  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name` }, [note.name]));
+  const label = note.present ? `${note.name}’s note` : `${note.name}’s note, not in the current description`;
+  const pill = createElement('button', { type: 'button', class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__note-pill`, 'aria-label': label, ...(note.present ? {} : { 'data-past': '' }) }, children);
+  pill.addEventListener('click', (event) => {
+    event.stopPropagation();
+    handlers.onOpenNote(note.id);
+  });
+  return pill;
+}
+
+/**
  * The Agent notes row, under Review bots: what agents and review bots wrote into the description (CodeRabbit's
- * summary, Cursor's badges, a Bugbot risk note), each tool's mark overlapping the next. It starts closed; open, one line
- * per tool, each opening to the note as the description has it, with its history a click away.
+ * summary, Cursor's badges, a Bugbot risk note), a pill per agent. It starts closed; open, one line per agent, each
+ * opening to the note as the description has it, with its history a click away.
  */
 function agentNotesRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLElement[] {
   const open = model.openKey === AGENT_NOTES_KEY;
   const toggle = (): void => handlers.onToggle(AGENT_NOTES_KEY);
-  const marks = createElement('span', { class: `${PANEL_CLASS}__avatars ${PANEL_CLASS}__avatars--notes`, 'aria-hidden': 'true' });
-  for (const note of model.agentNotes) marks.append(...[...notePicture(note, model).childNodes]);
-  const content: Node[] = [marks];
+  const content: Node[] = model.agentNotes.map((note) => notePill(note, model, handlers));
   if (model.agentNotesReading) content.push(ingestingMark('Still reading the description’s edit history'));
   const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${AGENT_NOTES_KEY}`, 'aria-label': plural(model.agentNotes.length, 'agent note') }, [
-    createElement('span', { class: `${PANEL_CLASS}__status-content` }, content),
+    createElement('span', { class: `${PANEL_CLASS}__status-content ${PANEL_CLASS}__deploys`, [ATTR_FIT]: '' }, content),
   ]);
   mainClickToggles(main, toggle);
   const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status` }, [

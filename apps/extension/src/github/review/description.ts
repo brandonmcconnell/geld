@@ -21,8 +21,12 @@ const ATTR_LIFTED = 'data-geld-desc-lifted';
 const LIFT_PROPERTY = '--geld-desc-lift';
 /** On the body: how far the agents' summaries are lowered to make room for the reactions row above them. */
 const DROP_PROPERTY = '--geld-desc-drop';
-/** On the agents' block that shows last, so the box ends as far below it as the text stands from the left. */
-const ATTR_AGENT_LAST = 'data-geld-desc-agent-last';
+/**
+ * On the block that shows last when hidden ones come after it in the DOM (the agents', or the author's while the agents'
+ * are away in the digest): GitHub only drops the margin of the body's last child, and the box ends the body's padding
+ * below the text, as far as the text stands from the left.
+ */
+const ATTR_LAST = 'data-geld-desc-last';
 /** On a heading block that folds: `open` or `closed`. */
 const ATTR_HEADING = 'data-geld-desc-heading';
 /** On a heading block: the key its open state is remembered by this visit. */
@@ -37,7 +41,7 @@ const ATTR_ON = 'data-geld-desc';
 const ATTR_DEPTH = 'data-geld-desc-depth';
 /** On a heading with nothing to read in it, hidden while the description is shortened. */
 const ATTR_BLANK = 'data-geld-desc-blank';
-/** On the description body while what tools appended is gathered at its foot under "Agent summaries". */
+/** On the description body while what tools appended is gathered at its foot under "Agent notes". */
 const ATTR_AGENTS = 'data-geld-desc-agents';
 /** On a tool's own title or the rule above its content, which its injected heading stands for: hidden. */
 const ATTR_AGENT_HIDDEN = 'data-geld-desc-agent-hidden';
@@ -57,7 +61,7 @@ const CHEVRON_CENTER_PX = 10;
 
 const TOGGLE_CLASS = 'geld-desc-toggle';
 const MORE_CLASS = 'geld-desc-more';
-/** The "Agent summaries" heading over the tools' headings. */
+/** The "Agent notes" heading over the tools' headings. */
 const AGENTS_CLASS = 'geld-desc-agents';
 /** A tool's injected heading. */
 const AGENT_CLASS = 'geld-desc-agent';
@@ -576,7 +580,7 @@ function dressRails(block: HTMLElement, rails: BlockRails | null): void {
 
 /**
  * What tools appended, at the foot whatever the author wrote after it: GitHub's nodes stay where they are, so the body
- * becomes a flex column and each tool's heading and content take a later `order`, after the "Agent summaries" heading
+ * becomes a flex column and each tool's heading and content take a later `order`, after the "Agent notes" heading
  * (`order: 1`). Each tool's heading stands just before its first block. Everything else is left as GitHub has it.
  */
 function dressAgents(body: HTMLElement, layout: Layout, all: readonly Element[]): void {
@@ -598,9 +602,9 @@ function dressAgents(body: HTMLElement, layout: Layout, all: readonly Element[])
     return;
   }
   setFlag(body, ATTR_AGENTS, '');
-  if (header === null) body.append(createElement('h2', { class: AGENTS_CLASS, [OWN_UI_ATTRIBUTE]: '' }, ['Agent summaries']));
+  if (header === null) body.append(createElement('h2', { class: AGENTS_CLASS, [OWN_UI_ATTRIBUTE]: '' }, ['Agent notes']));
   layout.groups.forEach((group, index) => {
-    // 1 is "Show full description", 2 the Agent summaries band (style.css).
+    // 1 is "Show full description", 2 the Agent notes band (style.css).
     const order = String(index + 3);
     if (group.heading.nextElementSibling !== group.first) group.first.before(group.heading);
     setProperty(group.heading, ORDER_PROPERTY, order);
@@ -689,9 +693,11 @@ function applyTo(body: HTMLElement): void {
     const element = headingElementOf(block);
     element?.querySelector(`:scope > .${TOGGLE_CLASS}`)?.remove();
   });
-  // The agents' blocks end the layout, so the last one shown is the last block not folded away.
-  const lastShown = layout.groups.length === 0 ? -1 : blocks.findLastIndex((_, index) => !hidden.has(index));
-  blocks.forEach((block, index) => setFlag(block, ATTR_AGENT_LAST, index === lastShown ? '' : null));
+  // The agents' blocks end the layout when they are here, and the author's when they are away: either way the last one
+  // shown is the last block not folded away.
+  const trailed = layout.groups.length > 0 || layout.away.size > 0;
+  const lastShown = trailed ? blocks.findLastIndex((_, index) => !hidden.has(index)) : -1;
+  for (const block of all) setFlag(block, ATTR_LAST, block === blocks[lastShown] ? '' : null);
   const rails = railsOf(blocks.length, outline, hidden, (heading) => openNow.get(heading.index) ?? true);
   blocks.forEach((block, index) => {
     if (block instanceof HTMLElement) dressRails(block, rails.get(index) ?? null);
@@ -742,7 +748,7 @@ function clear(): void {
   for (const element of document.querySelectorAll(`[${ATTR_CUT_EDGE}]`)) {
     if (element instanceof HTMLElement) element.style.removeProperty(CUT_HEIGHT_PROPERTY);
   }
-  for (const name of [ATTR_TOOLS, ATTR_TOOL, ATTR_FOLD, ATTR_CUT, ATTR_CUT_EDGE, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH, ATTR_BLANK, ATTR_AGENTS, ATTR_AGENT, ATTR_AGENT_HIDDEN, ATTR_AGENT_LAST]) {
+  for (const name of [ATTR_TOOLS, ATTR_TOOL, ATTR_FOLD, ATTR_CUT, ATTR_CUT_EDGE, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH, ATTR_BLANK, ATTR_AGENTS, ATTR_AGENT, ATTR_AGENT_HIDDEN, ATTR_LAST]) {
     for (const element of document.querySelectorAll(`[${name}]`)) element.removeAttribute(name);
   }
 }

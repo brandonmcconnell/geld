@@ -7525,7 +7525,7 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 }
 
 /*
- * What tools appended, gathered at the foot under "Agent summaries" (description.ts `dressAgents`), one folding h3 of
+ * What tools appended, gathered at the foot under "Agent notes" (description.ts `dressAgents`), one folding h3 of
  * Geld's per tool with its logo before its name. GitHub's nodes stay where they are: the body becomes a column and the
  * tools' headings and blocks take a later `order` (`--geld-desc-order`, mirrored in description.ts).
  */
@@ -7559,8 +7559,11 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   margin-top: 16px !important;
 }
 
-/* The box ends as far below the last agent as the text stands from its left edge: the body's own 16px padding. */
-[data-geld-desc-agents] > [data-geld-desc-agent-last] {
+/*
+ * The box ends as far below the last block shown as the text stands from its left edge: the body's own 16px padding.
+ * A block the cut runs through keeps its margin, since Show full description follows it.
+ */
+[data-geld-desc] > [data-geld-desc-last]:not([data-geld-desc-cut-edge]) {
   --geld-desc-after: 0px;
   margin-bottom: 0 !important;
 }
@@ -7876,6 +7879,11 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
  * description no longer has (it is only in its edit history) wears a dashed mark, as a pill with nothing to open is
  * dashed, and its line says so in place of a preview.
  */
+/* A note's pill is a button (it opens the row to its line), so the dashed border of a pill with nothing to open is asked for by hand. */
+.geld-review__bot.geld-review__note-pill[data-past] {
+  border-style: dashed;
+}
+
 .geld-review__avatar[data-past] {
   outline: 1px dashed var(--geld-review-muted);
   outline-offset: 1px;

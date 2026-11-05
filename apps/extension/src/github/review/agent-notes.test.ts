@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { notePreview, notesFrom } from './agent-notes';
+import { noteCopy, notePreview, notesFrom } from './agent-notes';
 
 function blocksOf(html: string): Element[] {
   const holder = document.createElement('div');
@@ -84,5 +84,16 @@ describe('notePreview', () => {
     expect(notePreview(blocksOf(coderabbit('Bug fixes. More.')))).toBe('Bug fixes.');
     expect(notePreview(blocksOf(GREPTILE))).toBe('Removes overflow protection.');
     expect(notePreview(blocksOf('<div><a href="https://cursor.com/agents/1"><img alt="Open in Web"></a> <a href="https://cursor.com/background-agent?bcId=1"><img alt="Open in Cursor"></a></div>'))).toBe('Open in Web · Open in Cursor');
+  });
+});
+
+describe('noteCopy', () => {
+  it('copies a note without ids or Geld’s marks, so nothing on the page is named twice', () => {
+    const [heading] = blocksOf('<h2 id="user-content-summary" data-geld-desc-tool="coderabbit" hidden="until-found"><a id="anchor" href="#summary">Summary</a></h2>');
+    if (heading === undefined) throw new Error('no heading');
+    const [copy] = noteCopy([heading]);
+    if (!(copy instanceof Element)) throw new Error('no copy');
+    expect(copy.outerHTML).toBe('<h2><a href="#summary">Summary</a></h2>');
+    expect(heading.id).toBe('user-content-summary');
   });
 });
