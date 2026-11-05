@@ -9,14 +9,13 @@ if [ ! -x "$tsx" ]; then
   exit 0
 fi
 
-# A file with unstaged edits is only checked: rewriting and re-staging it would commit the parts left out.
 for file in $files; do
-  if ! git diff --quiet -- "$file"; then
-    "$tsx" scripts/doc-lines.ts --check && exit 0
-    echo "pre-commit: run \`pnpm docs:lines\` and stage the result (it splits sentences sharing a line)." >&2
+  if git diff --quiet -- "$file"; then
+    "$tsx" scripts/doc-lines.ts "$file" || exit 1
+    git add -- "$file"
+  # Unstaged edits too: check the staged copy, since rewriting and re-staging the file would commit the parts left out.
+  elif ! git show ":$file" | "$tsx" scripts/doc-lines.ts --stdin "$file"; then
+    echo "pre-commit: $file has unstaged edits, so it was checked but not rewritten. Run \`pnpm docs:lines\` and stage the result." >&2
     exit 1
   fi
 done
-
-"$tsx" scripts/doc-lines.ts || exit 1
-git add -- $files
