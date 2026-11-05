@@ -2,15 +2,23 @@ import { Button as ButtonPrimitive } from '@base-ui/react/button';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from 'cn';
 
+/**
+ * Light catching the top edge and a shade along the bottom, so filled and outlined buttons read as raised.
+ * Only the two inset shadows, not Tailwind's whole shadow stack: the corner-shape polyfill (Safari, Firefox) skips
+ * inset shadows but repaints any other, and the stack's transparent placeholders would count. The focus ring still
+ * composes it through --tw-inset-shadow.
+ */
+const LIT = '[--tw-inset-shadow:inset_0_1px_0_0_rgb(255_255_255/0.2),inset_0_-1px_0_0_rgb(0_0_0/0.12)] [box-shadow:var(--tw-inset-shadow)]';
+
 const buttonStyles = cva(
   'group/button geld-corners inline-flex shrink-0 items-center justify-center gap-2 border text-sm font-medium whitespace-nowrap outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*="size-"])]:size-4',
   {
     variants: {
       variant: {
-        default: 'border-transparent bg-primary text-primary-foreground hover:bg-primary/85',
+        default: `${LIT} border-transparent bg-primary text-primary-foreground hover:bg-primary/85`,
         // Faint fill plus a slightly stronger border in both schemes (the dark treatment, applied everywhere).
-        outline: 'border-input bg-input/20 hover:bg-input/40 hover:text-foreground',
-        secondary: 'border-transparent bg-secondary text-secondary-foreground hover:bg-accent',
+        outline: `${LIT} border-input bg-input/20 hover:bg-input/40 hover:text-foreground`,
+        secondary: `${LIT} border-transparent bg-secondary text-secondary-foreground hover:bg-accent`,
         ghost: 'border-transparent hover:bg-muted hover:text-foreground dark:hover:bg-muted/60',
         link: 'border-transparent text-foreground underline-offset-4 hover:underline',
       },
