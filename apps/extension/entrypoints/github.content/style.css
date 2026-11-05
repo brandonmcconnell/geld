@@ -7577,6 +7577,12 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   display: none !important;
 }
 
+/* GitHub pads the badge-and-⋯ group 16px off the line: 8px less puts the edit menu's caret as far from the badge
+ * as the badge is from the ⋯ (12px, measured on github.com Nov 2026). */
+.timeline-comment-header:has(> h3 [data-geld-desc-byline]) > :last-child {
+  padding-left: 8px !important;
+}
+
 [data-geld-desc-edits] > .position-relative > span:not(.geld-desc-edits),
 [data-geld-desc-edits] > span:not(.geld-desc-edits) {
   display: none !important;
