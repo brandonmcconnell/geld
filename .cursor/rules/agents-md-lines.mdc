@@ -1,0 +1,11 @@
+---
+description: Writing in AGENTS.md or .cursor/BUGBOT.md
+globs: AGENTS.md,.cursor/BUGBOT.md
+alwaysApply: false
+---
+
+`AGENTS.md` and `.cursor/BUGBOT.md` are written one sentence per line: every sentence, and every clause after a `;`, starts a line of its own, indented to its bullet's content.
+
+Run `pnpm docs:lines` after editing either file and before committing. `pnpm docs:lines:check` is part of `pnpm check` and fails CI when two sentences share a line.
+
+The pre-commit hook in `.githooks/` runs `pnpm docs:lines` on these files too, but only where `pnpm install` has run, so do not rely on it alone.

@@ -7,6 +7,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "prepare": "node scripts/install-git-hooks.mjs",
     "dev": "pnpm --filter @geld/extension dev",
     "build": "pnpm --filter @geld/extension build",
     "build:chrome": "pnpm --filter @geld/extension build:chrome",
