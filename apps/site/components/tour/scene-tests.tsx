@@ -4,6 +4,7 @@ import { cn } from 'cn';
 import { ChevronRightIcon, FileCodeIcon } from 'lucide-react';
 import { useState } from 'react';
 
+import { CARD_HEAD } from '@/components/tour/bits';
 import { TOUR_FILES } from '@/components/tour/data';
 import { Ping } from '@/components/tour/ping';
 import { PrWindow } from '@/components/tour/pr-window';
@@ -78,8 +79,9 @@ export function TestsScene() {
 
   return (
     <PrWindow tab="files" filesCount={6}>
-      <div className="m-3 overflow-hidden rounded-lg border">
-        <div className="flex items-center gap-2 border-b bg-muted/60 px-3 py-2 font-mono text-xs">
+      {/* Not clipped, so the open test's ping spreads past the card's sides; the header rounds its own corners instead. */}
+      <div className="m-3 rounded-lg border">
+        <div className={cn(CARD_HEAD, 'rounded-t-[7px] bg-muted/60 font-mono text-xs')}>
           <FileCodeIcon aria-hidden="true" className="size-3.5 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate">
             <span className="text-muted-foreground">src/</span>Button.test.tsx

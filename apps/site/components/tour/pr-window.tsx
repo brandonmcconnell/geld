@@ -127,7 +127,13 @@ export function PrWindow({
             const count = entry.id === 'files' && filesCount !== undefined ? filesCount : entry.count;
             const content = (
               <>
-                {entry.label}
+                {/* A bold copy, unseen, holds each label at its selected width, so picking a tab moves none of the others. */}
+                <span className="inline-grid">
+                  <span className="col-start-1 row-start-1">{entry.label}</span>
+                  <span aria-hidden="true" className="invisible col-start-1 row-start-1 font-medium">
+                    {entry.label}
+                  </span>
+                </span>
                 {count !== undefined ? (
                   <span className="rounded-full bg-muted px-1.5 font-mono text-[0.625rem] tabular-nums ring-1 ring-border ring-inset">{count}</span>
                 ) : null}

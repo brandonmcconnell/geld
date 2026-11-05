@@ -4,6 +4,7 @@ import { cn } from 'cn';
 import { FileCodeIcon } from 'lucide-react';
 import { useState } from 'react';
 
+import { CARD_HEAD } from '@/components/tour/bits';
 import { Ping } from '@/components/tour/ping';
 import { PrWindow } from '@/components/tour/pr-window';
 import { Switch } from '@/components/ui/switch';
@@ -86,7 +87,7 @@ export function WorkflowScene() {
   return (
     <PrWindow tab="files" filesCount={1}>
       <div className="m-3 overflow-hidden rounded-lg border">
-        <div className="flex items-center gap-2 border-b bg-muted/60 px-3 py-2 font-mono text-xs">
+        <div className={cn(CARD_HEAD, 'bg-muted/60 font-mono text-xs')}>
           <FileCodeIcon aria-hidden="true" className="size-3.5 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate">
             <span className="text-muted-foreground">.github/workflows/</span>ci.yml
