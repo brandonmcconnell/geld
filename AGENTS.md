@@ -561,8 +561,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   per-comment options are GitHub's own menus in the moved thread.
   Compaction (`compactTimeline`: `off | compact | minimal`) hides bot comments and low-signal events with `data-geld-folded` only;
   nothing is inserted into the timeline.
-  **Geld scrolls the page for exactly two reasons**: landing on a permalink's row once (`visit.landedAnchor`: a `beforematch` for the same anchor opens its row but moves nothing;
+  **Geld scrolls the page for exactly three reasons**: landing on a permalink's row once (`visit.landedAnchor`: a `beforematch` for the same anchor opens its row but moves nothing;
   a new hash lands again), and `keepInPlace` — toggling a row compensates whatever opened or closed above it with an instant `scrollBy` so the row under the pointer does not move, then nudges a row that would sit under GitHub's sticky header below it.
+  The third is the description's cut (description.ts): when the browser scrolls inside the cut body to show a find-in-page match or a focused link below it, the cut lifts and the page scrolls by the same amount, so that text stays where the browser put it.
   Otherwise deeplinks (`#discussion_r…`) rely on the browser's fragment navigation — the target's fold is revealed in place, its row is marked `data-viewing`, "Show in timeline" is a plain `href="#anchor"`, reply boxes are focused with `preventScroll`, and "Load more" is clicked (up to 8 rounds) when the target is not on the page yet.
   The Action (`apps/action`, `pull_request_target`, never checks out PR code) edits that one comment on review events;
   "Request a review" posts a bot's comment trigger after an inline confirm.
@@ -670,6 +671,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   A plain link click does not count, and there is no Show less.
   Only attributes (`data-geld-desc-fold` with `hidden`, `-heading`, `-key`, `-cap`, `-long`) and Geld's own controls are added, GitHub's nodes never move, and nothing is written when a value is already right.
   The height is read in a `ResizeObserver` callback, never on the apply path (while cut, `scrollHeight` is still the whole height, so one reading serves both states).
+  A cut body keeps the cap's height whatever folds inside it, so no resize reports that closing a section made it fit: after a heading's click the height is read once more, a frame after the fold has laid out.
+  Text the cut hides is under no folded heading, so find-in-page sends no `beforematch` for it, but the browser scrolls the `overflow: hidden` body to show the match, and that `scroll` lifts the cut.
   The previous behaviour, Minimal mode only, kept the first paragraph.
 - **Comment text keeps its inline formatting, everywhere it is shortened to a line.**
   The crawler's `blockText` writes GitHub's rendered `<code>`, `<strong>`/`<b>`, `<em>`/`<i>` and `<del>` back as Markdown marks (never inside `<pre>`), `firstSentence` (`@geld/review/cluster.ts`) keeps them and ends a sentence only outside a code span, and `@geld/review/inline-markdown.ts` (`parseInlineMarkdown`, `stripInlineMarkdown`) is the one reader of that inline subset — code, bold, italic, strikethrough;
