@@ -166,6 +166,19 @@ describe('shortenDescription', () => {
     expect(heading?.querySelector('.geld-desc-toggle')).toBeNull();
   });
 
+  it('keeps a later section open when an earlier heading is edited away', async () => {
+    const body = mountDescription(`<p>intro</p><h2>Old</h2><p>a</p>${h(2, 'Testing')}<p>b</p>`);
+    shortenDescription(true);
+    body.querySelectorAll<HTMLElement>('h2')[1]?.click();
+    await frames();
+    expect(body.children[3]?.getAttribute('data-geld-desc-heading')).toBe('open');
+    const old = body.children[1];
+    for (const node of [...(old?.childNodes ?? [])]) if (node.nodeType === Node.TEXT_NODE) node.textContent = '\u00a0';
+    shortenDescription(true);
+    expect(body.children[3]?.getAttribute('data-geld-desc-heading')).toBe('open');
+    expect(body.children[4]?.hasAttribute('data-geld-desc-fold')).toBe(false);
+  });
+
   it('opens the section around text find-in-page matched after a divider', () => {
     const body = mountDescription(`<p>intro</p>${h(2, 'A')}<p>a</p><h2>&nbsp;</h2><p>needle</p>${h(2, 'B')}<p>b</p>`);
     shortenDescription(true);

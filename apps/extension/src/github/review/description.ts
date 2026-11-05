@@ -180,13 +180,14 @@ function setFlag(element: Element, name: string, value: string | null): void {
   }
 }
 
-function keyOf(heading: OutlineHeading, element: HTMLElement): string {
+/** `position` is the block's place among all the description's blocks, dividers included, so blanking one keeps the rest. */
+function keyOf(position: number, element: HTMLElement): string {
   const text = [...element.childNodes]
     .filter((node) => !(node instanceof Element && node.classList.contains(TOGGLE_CLASS)))
     .map((node) => node.textContent ?? '')
     .join('')
     .trim();
-  return `${heading.index}:${text}`;
+  return `${position}:${text}`;
 }
 
 /**
@@ -348,7 +349,7 @@ function applyTo(body: HTMLElement): void {
     const block = blocks[heading.index];
     const element = block === undefined ? null : headingElementOf(block);
     if (!(block instanceof HTMLElement) || element === null) continue;
-    const key = keyOf(heading, element);
+    const key = keyOf(all.indexOf(block), element);
     const open = state.open.get(key) ?? (heading === leading || heading.hasSubheadings);
     openNow.set(heading.index, open);
     setFlag(block, ATTR_KEY, key);
