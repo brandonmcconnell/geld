@@ -102,6 +102,14 @@ describe('authorWordsAfter', () => {
   });
 });
 
+describe('authorWordsAfter with links', () => {
+  it('finds the author’s words again when they hold a bare URL, autolinked on the page', () => {
+    const html = `${CODERABBIT}<p dir="auto">Tested at <a href="https://x.test">https://x.test</a> and passed.</p>`;
+    const markdown = '<!-- This is an auto-generated comment: release notes by coderabbit.ai -->x<!-- end of auto-generated comment: release notes by coderabbit.ai -->\nTested at https://x.test and passed.';
+    expect(toolBlocksOf(blocksOf(html), markdown).map(({ id, start, end }) => ({ id, start, end }))).toEqual([{ id: 'coderabbit', start: 0, end: 1 }]);
+  });
+});
+
 describe('verdictOf', () => {
   it('reads Greptile’s score and Bugbot’s risk', () => {
     expect(verdictOf('greptile', blocksOf(GREPTILE))).toBe('4/5');

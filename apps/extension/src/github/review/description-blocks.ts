@@ -120,17 +120,24 @@ export function plainWords(text: string): string {
     .trim();
 }
 
+/** Bare URLs go on both sides: the Markdown's and the page's text must compare as the same words. */
+const withoutUrls = (text: string): string => text.replace(/https?:\/\/\S+/g, ' ');
+
 /** Markdown to the words it shows: comments, images, tags and link targets go. */
 function markdownWords(markdown: string): string {
   return plainWords(
-    markdown
-      .replace(/<!--[\s\S]*?-->/g, ' ')
-      .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
-      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/https?:\/\/\S+/g, ' '),
+    withoutUrls(
+      markdown
+        .replace(/<!--[\s\S]*?-->/g, ' ')
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/<[^>]+>/g, ' '),
+    ),
   );
 }
+
+/** A rendered block's text as the same words `markdownWords` gives. */
+const pageWords = (block: Element): string => plainWords(withoutUrls(block.textContent ?? ''));
 
 /** How many of the author's words after a tool's end marker are enough to find where they start again on the page. */
 const PROBE_WORDS = 6;
@@ -190,7 +197,7 @@ export function toolBlocksOf(blocks: readonly Element[], markdown: string | null
         const next = blocks[end + 1];
         const nextLevel = next === undefined ? null : levelOf(next);
         if ((nextLevel !== null && nextLevel <= level) || specOf(next) !== undefined) break;
-        const words = next === undefined ? '' : plainWords(next.textContent ?? '');
+        const words = next === undefined ? '' : pageWords(next);
         if (words !== '' && (resumes.get(spec.id) ?? []).some((probe) => words.startsWith(probe) || probe.startsWith(words))) break;
         end += 1;
       }
