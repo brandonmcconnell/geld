@@ -197,11 +197,12 @@ describe('shortenDescription', () => {
     expect(body.children[2]?.hasAttribute('data-geld-desc-fold')).toBe(false);
   });
 
-  it('opens a section on a click on its heading, independently of the others, and never cuts a description with headings', async () => {
+  it('opens a section on a click on its heading, independently of the others, and lifts the cut for good', async () => {
     const body = mountDescription(`${h(2, 'One')}<p>a</p>${h(2, 'Two')}<p>b</p>`);
     shortenDescription(true);
-    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
-    expect(document.querySelector('.geld-desc-more')).toBeNull();
+    // A description with headings is cut too, while it is still too tall once folded (the stylesheet's `-long`).
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(true);
+    expect(document.querySelector('.geld-desc-more')).not.toBeNull();
     body.querySelectorAll<HTMLElement>('.markdown-heading h2')[1]?.click();
     // The chevron turns at once, and the section shows only in the second frame, so the first paints the turn alone.
     expect(body.children[2]?.getAttribute('data-geld-desc-heading')).toBe('open');
@@ -212,9 +213,14 @@ describe('shortenDescription', () => {
     expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(false);
     expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(false);
     expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
-    // A pass after the click keeps what the reader chose.
+    expect(document.querySelector('.geld-desc-more')).toBeNull();
+    // A pass after the click keeps what the reader chose, and closing the section again does not bring the cut back.
     shortenDescription(true);
     expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    body.querySelectorAll<HTMLElement>('.markdown-heading h2')[1]?.click();
+    await frames();
+    expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
   });
 
   it('folds with hidden="until-found", and opens every section around text find-in-page matched', () => {
@@ -310,6 +316,25 @@ describe('shortenDescription', () => {
     expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
     expect(document.querySelector('.geld-desc-more')).toBeNull();
     shortenDescription(true);
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
+  });
+
+  it('cuts a long run of text above a heading near the end, and Show full description lifts it without opening the section', () => {
+    const body = mountDescription(`<p>one</p><p>two</p><p>three</p>${h(2, 'Notes')}<p>n</p>`);
+    shortenDescription(true);
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(true);
+    document.querySelector<HTMLButtonElement>('.geld-desc-more')?.click();
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
+    expect(body.children[4]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+  });
+
+  it('lifts the cut when find-in-page opens a folded section', () => {
+    const body = mountDescription(`<p>intro</p>${h(2, 'A')}<p>needle</p>`);
+    shortenDescription(true);
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(true);
+    const needle = body.children[2];
+    needle?.removeAttribute('hidden');
+    needle?.dispatchEvent(new Event('beforematch'));
     expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
   });
 
