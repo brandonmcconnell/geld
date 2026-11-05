@@ -41,6 +41,7 @@ describe('SETTINGS_SCHEMA', () => {
     const siteKeys = new Set([...toggleFields(fieldsFor('site')), ...listFields(fieldsFor('site'))].map((field) => field.key));
     expect(siteKeys.has('showBadge')).toBe(false);
     expect(siteKeys.has('shortcutEnabled')).toBe(false);
+    expect(siteKeys.has('errorReports')).toBe(false);
     expect(siteKeys.has('enterpriseHosts')).toBe(false);
     expect(siteKeys.has('enabled')).toBe(true);
     expect(sectionsFor('site').map((section) => section.id)).not.toContain('enterprise');

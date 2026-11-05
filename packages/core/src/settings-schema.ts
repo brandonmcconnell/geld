@@ -316,6 +316,15 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         popup: false,
         surfaces: ['extension'],
       },
+      {
+        kind: 'toggle',
+        key: 'errorReports',
+        label: 'Send error reports',
+        description:
+          'When part of Geld breaks, send the error and where in Geld’s code it happened to `geld.sh`, with the version and browser. Addresses, repository and file names, people and page text are removed first. Off: errors stay on this device, in Copy diagnostics.',
+        popup: false,
+        surfaces: ['extension'],
+      },
     ],
   },
   {
