@@ -255,11 +255,12 @@
  * (logo-reel.tsx), seen only through a still, slanted band at the window's
  * centre. The logos slide through it, so the sheen crosses each one as it
  * passes, and the page behind never lights up because the copy is only the
- * logos' shapes.
+ * logos' shapes. The steeper the band, the wider it runs across the window
+ * (at 150deg, twice its thickness), and the longer a logo takes to cross it.
  */
 @utility logo-shine {
   color: light-dark(oklch(0.86 0.01 260), oklch(1 0 0));
-  mask-image: linear-gradient(110deg, transparent calc(50% - 3rem), rgb(0 0 0 / 0.35) calc(50% - 1rem), #000 50%, rgb(0 0 0 / 0.35) calc(50% + 1rem), transparent calc(50% + 3rem));
+  mask-image: linear-gradient(150deg, transparent calc(50% - 3rem), rgb(0 0 0 / 0.35) calc(50% - 1rem), #000 50%, rgb(0 0 0 / 0.35) calc(50% + 1rem), transparent calc(50% + 3rem));
 }
 
 /*
