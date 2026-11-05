@@ -7590,6 +7590,46 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   cursor: pointer;
 }
 
+/* The description's header: author, time and "N edits". Loose words ("commented") vanish with the font, and the
+ * line's gap goes with them, since each loose word is a flex item of its own. Two classes deep to outrank
+ * GitHub's `.gap-1`, which is `!important` too. */
+.timeline-comment-header [data-geld-desc-byline] {
+  gap: 0 !important;
+  font-size: 0 !important;
+}
+
+[data-geld-desc-byline] > :not([data-geld-desc-keep]) {
+  display: none !important;
+}
+
+[data-geld-desc-byline] > [data-geld-desc-keep] {
+  font-size: var(--text-body-size-medium, 14px);
+}
+
+[data-geld-desc-byline] > strong {
+  margin-right: 6px;
+}
+
+/* "N edits" stands at the line's far end, left of the badge and ⋯, so a first edit moves nothing else. */
+[data-geld-desc-byline] > .js-comment-edit-history {
+  margin-left: auto;
+}
+
+[data-geld-desc-byline] > .js-comment-edit-history > .color-fg-muted {
+  display: none !important;
+}
+
+/* GitHub pads the badge-and-⋯ group 16px off the line: 8px less puts the edit menu's caret as far from the badge
+ * as the badge is from the ⋯ (12px, measured on github.com Nov 2026). */
+.timeline-comment-header:has(> h3 [data-geld-desc-byline]) > :last-child {
+  padding-left: 8px !important;
+}
+
+[data-geld-desc-edits] > .position-relative > span:not(.geld-desc-edits),
+[data-geld-desc-edits] > span:not(.geld-desc-edits) {
+  display: none !important;
+}
+
 /* The heading's own text, links and code stay in GitHub's inline flow. The chevron stands in the indent beside it. */
 /* Every top-level heading, foldable or not, so titles line up: but only in a description that has a chevron at all. */
 [data-geld-desc]:has(> [data-geld-desc-heading]) > :is(h1, h2, h3, h4, h5, h6),
