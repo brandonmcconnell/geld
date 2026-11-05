@@ -1,4 +1,5 @@
-import type { AnyCategoryId, ChangeTotals, FileStats, RepoConfigMode, SettingsIssue } from '@geld/core';
+import type { AnyCategoryId, ChangeTotals, ErrorReport, FileStats, RepoConfigMode, SettingsIssue } from '@geld/core';
+import { parseErrorReports } from '@geld/core';
 import type { JevRequest, JevResult, ModelInfo } from '@geld/review';
 
 /** Messages exchanged between the content script, popup and background. */
@@ -53,6 +54,12 @@ export interface ClearDiffCacheMessage {
 /** Content script → background: the digest's gear asks for Geld's settings (the toolbar popup, else the options page). */
 export interface OpenSettingsMessage {
   readonly type: 'geld:open-settings';
+}
+
+/** Any context → background: Geld's own errors, already scrubbed (`error-capture.ts`). */
+export interface ErrorReportMessage {
+  readonly type: 'geld:error-report';
+  readonly errors: readonly ErrorReport[];
 }
 
 /** Background → content script: the keyboard shortcut was pressed. */
@@ -223,6 +230,10 @@ export function isClearDiffCacheMessage(value: unknown): value is ClearDiffCache
 
 export function isOpenSettingsMessage(value: unknown): value is OpenSettingsMessage {
   return isRecord(value) && value.type === 'geld:open-settings';
+}
+
+export function isErrorReportMessage(value: unknown): value is ErrorReportMessage {
+  return isRecord(value) && value.type === 'geld:error-report' && parseErrorReports(value.errors) !== null;
 }
 
 export function isToggleHiddenMessage(value: unknown): value is ToggleHiddenMessage {

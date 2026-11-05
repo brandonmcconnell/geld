@@ -67,7 +67,7 @@ function compileSurface(spec: ListSurfaceSpec): ListSurface | null {
   ];
   const broken = selectors.find((selector) => !selectorIsValid(selector));
   if (broken !== undefined) {
-    mark(`surface-skipped:${spec.id}`);
+    mark(`surface-skipped:${spec.id}:${broken.slice(0, 120)}`);
     return null;
   }
   const { inside, notInside } = spec;

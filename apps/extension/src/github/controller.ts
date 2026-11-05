@@ -13,6 +13,7 @@ import { applyRepoConfigs, compileAuthorRules, compileRepoRules, decideRepo, dec
 import { geldRunCommand } from '@geld/review';
 import type { AuthorRules } from '@geld/core';
 import { extensionAlive, persist } from '../lib/context';
+import { guard } from '../lib/error-capture';
 import { cancelIdle, whenIdle } from '../lib/idle';
 import { count as perfCount, mark, phase } from '../lib/perf';
 import type { RepoConfigChoices } from '../lib/local-state';
@@ -407,58 +408,7 @@ export class GeldController {
 
   start(): void {
     this.stopped = false;
-    this.observer = new MutationObserver((records) => {
-      if (isIgnorableMutation(records)) return;
-      perfCount('batches');
-      // Nobody is looking: no DOM reads either; the catch-up pass on return reads everything once.
-      if (document.hidden) {
-        this.hiddenDirty = true;
-        perfCount('hidden-deferred');
-        // No look at the records either: the catch-up pass reads every comment afresh.
-        resetCrawlCache();
-        return;
-      }
-      if (isClockTick(records)) {
-        perfCount('clock-ticks');
-        phase('clocks', refreshReviewTimes);
-        return;
-      }
-      const regions = regionsOf(records);
-      // The document head, the global navigation, the footer, a tooltip: nothing Geld reads.
-      if (scopeWithin(regions, ['chrome'])) {
-        perfCount('chrome-skipped');
-        return;
-      }
-      for (const region of regions) this.pendingScope.add(region);
-      markCrawlDirty(records);
-      // Header first, synchronously: this callback runs before the browser
-      // paints, so a (re-)rendered header never shows GitHub's number when the
-      // filtered one is already known or cached.
-      const headerAdded = headerNodesAdded(records);
-      if (headerAdded) this.headerDirty = true;
-      // GitHub's own counts arriving (a push brought line changes), or its header remounted without them: the stand-in
-      // steps aside, or comes back, in the same frame.
-      if ((headerAdded || this.countsStandInWanted !== null) && syncCountsStandIn(this.countsStandInWanted)) {
-        this.onCountsStandInChanged();
-        // The stand-in changed before paint (GitHub's skeleton gone, or its counts arrived): the header is rewritten now.
-        this.applyHeaderNow();
-      }
-      if (this.settledHeader === null) {
-        if (this.headerDirty) this.applyHeaderNow();
-      } else {
-        this.reassertHeader();
-      }
-      // Likewise before paint: chips whose row GitHub just re-rendered come
-      // straight back from the in-memory diff states, so no frame lacks them.
-      if (chipRemoved(records)) this.applyListChips();
-      // The status pill too: a header GitHub (re)rendered shows Geld's pill in its first frame.
-      if (this.settings.quickReview && this.mayDressPage()) reassertStatusPills();
-      // The description GitHub just rendered (a switch back to the conversation tab) is folded in its first frame.
-      if (this.mayDressPage()) foldDescriptionNow(this.settings);
-      // GitHub's skeleton back in the counts wrapper the group stands in by its fallback: out before this frame paints.
-      if (this.settings.quickReview && this.currentPage !== null && quickReviewStandBusy()) this.placeQuickReview(this.currentPage, new URL(window.location.href));
-      this.schedule(false);
-    });
+    this.observer = new MutationObserver((records) => guard('content:observer', () => this.onMutations(records)));
     this.observer.observe(document.documentElement, {
       childList: true,
       subtree: true,
@@ -494,6 +444,59 @@ export class GeldController {
     document.addEventListener('visibilitychange', this.onVisibilityChange);
     this.apply();
     if (!document.hidden) this.catchUp(age);
+  }
+
+  private onMutations(records: MutationRecord[]): void {
+    if (isIgnorableMutation(records)) return;
+    perfCount('batches');
+    // Nobody is looking: no DOM reads either; the catch-up pass on return reads everything once.
+    if (document.hidden) {
+      this.hiddenDirty = true;
+      perfCount('hidden-deferred');
+      // No look at the records either: the catch-up pass reads every comment afresh.
+      resetCrawlCache();
+      return;
+    }
+    if (isClockTick(records)) {
+      perfCount('clock-ticks');
+      phase('clocks', refreshReviewTimes);
+      return;
+    }
+    const regions = regionsOf(records);
+    // The document head, the global navigation, the footer, a tooltip: nothing Geld reads.
+    if (scopeWithin(regions, ['chrome'])) {
+      perfCount('chrome-skipped');
+      return;
+    }
+    for (const region of regions) this.pendingScope.add(region);
+    markCrawlDirty(records);
+    // Header first, synchronously: this callback runs before the browser
+    // paints, so a (re-)rendered header never shows GitHub's number when the
+    // filtered one is already known or cached.
+    const headerAdded = headerNodesAdded(records);
+    if (headerAdded) this.headerDirty = true;
+    // GitHub's own counts arriving (a push brought line changes), or its header remounted without them: the stand-in
+    // steps aside, or comes back, in the same frame.
+    if ((headerAdded || this.countsStandInWanted !== null) && syncCountsStandIn(this.countsStandInWanted)) {
+      this.onCountsStandInChanged();
+      // The stand-in changed before paint (GitHub's skeleton gone, or its counts arrived): the header is rewritten now.
+      this.applyHeaderNow();
+    }
+    if (this.settledHeader === null) {
+      if (this.headerDirty) this.applyHeaderNow();
+    } else {
+      this.reassertHeader();
+    }
+    // Likewise before paint: chips whose row GitHub just re-rendered come
+    // straight back from the in-memory diff states, so no frame lacks them.
+    if (chipRemoved(records)) this.applyListChips();
+    // The status pill too: a header GitHub (re)rendered shows Geld's pill in its first frame.
+    if (this.settings.quickReview && this.mayDressPage()) reassertStatusPills();
+    // The description GitHub just rendered (a switch back to the conversation tab) is folded in its first frame.
+    if (this.mayDressPage()) foldDescriptionNow(this.settings);
+    // GitHub's skeleton back in the counts wrapper the group stands in by its fallback: out before this frame paints.
+    if (this.settings.quickReview && this.currentPage !== null && quickReviewStandBusy()) this.placeQuickReview(this.currentPage, new URL(window.location.href));
+    this.schedule(false);
   }
 
   stop(): void {
@@ -1009,6 +1012,10 @@ export class GeldController {
   }
 
   private runPass(scope: ReadonlySet<Region> | null): void {
+    guard('content:pass', () => this.pass(scope));
+  }
+
+  private pass(scope: ReadonlySet<Region> | null): void {
     // The extension was reloaded, updated or removed while this tab was open:
     // this copy is orphaned (a newer one takes over, or nothing should run).
     if (!extensionAlive()) {

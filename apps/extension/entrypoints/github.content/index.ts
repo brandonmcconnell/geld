@@ -6,6 +6,7 @@ import { isGetTabStateMessage, isPerfReportMessage, isRevealFileMessage, isToggl
 import type { PerfSnapshot } from '../../src/lib/perf';
 import { mark, snapshot as perfSnapshot } from '../../src/lib/perf';
 import { loadCatalog, watchCatalog } from '../../src/lib/catalog';
+import { installErrorCapture } from '../../src/lib/error-capture';
 import { repoConfigChoicesItem, whitespaceOptOutsItem } from '../../src/lib/local-state';
 import { settingsItem } from '../../src/lib/storage';
 import { redirectEarly } from '../../src/github/whitespace-viewed';
@@ -29,6 +30,7 @@ export default defineContentScript({
     // any older copy still running in the page must step aside first.
     const TAKEOVER = 'geld:takeover';
     mark('script-start');
+    const stopErrorCapture = installErrorCapture('content');
     document.dispatchEvent(new CustomEvent(TAKEOVER));
     // Listen before the first await: a copy injected while this one still loads its settings
     // would otherwise be missed, and two copies would then fight over the page.
@@ -39,6 +41,7 @@ export default defineContentScript({
     const retireEarly = (why: string): void => {
       retired = true;
       mark(`retired:${why}`);
+      stopErrorCapture();
     };
     let retire = (why: string): void => retireEarly(why);
     document.addEventListener(TAKEOVER, () => retire('takeover'), { once: true });
@@ -165,6 +168,7 @@ export default defineContentScript({
       if (retired) return;
       retired = true;
       mark(`retired:${why}`);
+      stopErrorCapture();
       unwatch();
       // The message listener stays: see `onMessage` above.
       started.stop();

@@ -31,7 +31,7 @@ function selectorsValid(spec: DiffstatSurfaceSpec): boolean {
     try {
       document.createDocumentFragment().querySelector(selector);
     } catch {
-      mark(`surface-skipped:${spec.id}`);
+      mark(`surface-skipped:${spec.id}:${selector.slice(0, 120)}`);
       return false;
     }
   }
