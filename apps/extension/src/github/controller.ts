@@ -394,11 +394,15 @@ export class GeldController {
     this.repoRules = compileRepoRules(settings.repoRules);
     this.authorRules = compileAuthorRules(settings.hiddenAuthors);
     this.repoConfigs = new RepoConfigSource(() => this.onRepoConfigChange(), catalog);
-    void whitespaceOptOutsItem.getValue().then((optOuts) => this.whitespace.setOptOuts(optOuts));
-    void repoConfigChoicesItem.getValue().then((choices) => this.updateRepoChoices(choices));
-    void debugScopesItem.getValue().then((on) => {
-      this.debugScopes = on;
-    });
+    // A read rejects only in a copy whose extension was reloaded meanwhile (`chrome.storage` gone); it has nothing to apply.
+    void whitespaceOptOutsItem.getValue().then((optOuts) => this.whitespace.setOptOuts(optOuts), () => undefined);
+    void repoConfigChoicesItem.getValue().then((choices) => this.updateRepoChoices(choices), () => undefined);
+    void debugScopesItem.getValue().then(
+      (on) => {
+        this.debugScopes = on;
+      },
+      () => undefined,
+    );
   }
 
   start(): void {
