@@ -7548,9 +7548,13 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   display: none !important;
 }
 
-/* The band over the agents is a label, not a section: it stands at the chevrons' edge, as top-level text does. */
+/*
+ * The band over the agents is a label, not a section: it stands at the chevrons' edge, as top-level text does, and one
+ * step above the agents' 14px names, below the author's 16px headings.
+ */
 [data-geld-desc][data-geld-desc-agents] > h2.geld-desc-agents {
   padding-left: 0 !important;
+  font-size: 15px !important;
 }
 
 .geld-desc-agent__logo {
