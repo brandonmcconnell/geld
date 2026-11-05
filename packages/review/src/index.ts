@@ -9,6 +9,7 @@ export * from './prompts';
 export * from './ai-client';
 export * from './build';
 export * from './previews';
+export * from './description-bots';
 export * from './reporters';
 export * from './jev';
 export * from './decisions';
