@@ -7534,12 +7534,13 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   flex-direction: column;
 }
 
+/* 1 is "Show full description", between the author's cut text and the agents' (mirrored in description.ts). */
 [data-geld-desc-agents] > .geld-desc-agents {
-  order: 1;
+  order: 2;
 }
 
 [data-geld-desc-agents] > [data-geld-desc-agent] {
-  order: var(--geld-desc-order, 2);
+  order: var(--geld-desc-order, 3);
 }
 
 /* A tool's own title ("Summary by CodeRabbit") and the rule above its content: its injected heading stands for them. */
@@ -7625,18 +7626,24 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   transform: rotate(-90deg);
 }
 
-[data-geld-desc-cap][data-geld-desc-long] {
-  max-height: 500px;
+/*
+ * The cut runs through the author's text only (description.ts `measure`): blocks wholly past it are hidden
+ * `until-found`, the one it crosses is clipped here, and the agents' summaries below stay whole.
+ */
+[data-geld-desc-cap][data-geld-desc-long] > [data-geld-desc-cut-edge] {
+  max-height: var(--geld-desc-cut-height);
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 96px), transparent);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 96px), transparent);
 }
 
+/* Inside the body, after the author's blocks: its ::before fades the text above it out. */
 .geld-desc-more {
   display: none;
+  position: relative;
+  order: 1;
+  width: 100%;
   align-items: center;
   gap: 4px;
-  margin: 0 16px 12px;
+  margin: 0 0 16px;
   padding: 0;
   border: 0;
   background: none;
@@ -7647,8 +7654,24 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   cursor: pointer;
 }
 
-[data-geld-desc-long] + .geld-desc-more {
-  display: inline-flex;
+[data-geld-desc-cap][data-geld-desc-long] > .geld-desc-more {
+  display: flex;
+}
+
+[data-geld-desc-cap][data-geld-desc-long] > .geld-desc-more::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  height: 96px;
+  background: linear-gradient(to bottom, transparent, var(--bgColor-default, var(--color-canvas-default, #fff)));
+  pointer-events: none;
+}
+
+/* With nothing of an agent's after it, the button ends the body, whose own padding is below it. */
+[data-geld-desc] > .geld-desc-more:last-child {
+  margin-bottom: 0;
 }
 
 .geld-desc-more:hover span {

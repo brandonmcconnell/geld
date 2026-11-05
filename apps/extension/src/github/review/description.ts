@@ -11,6 +11,11 @@ const CAP_SLACK_PX = 80;
 
 /** On a block of the description hidden under a folded heading. */
 const ATTR_FOLD = 'data-geld-desc-fold';
+/** On an author's block wholly past the cut: hidden `until-found`, as a fold is, so find-in-page still reaches it. */
+const ATTR_CUT = 'data-geld-desc-cut';
+/** On the author's block the cut runs through, clipped at `--geld-desc-cut-height`. */
+const ATTR_CUT_EDGE = 'data-geld-desc-cut-edge';
+const CUT_HEIGHT_PROPERTY = '--geld-desc-cut-height';
 /** On a heading block that folds: `open` or `closed`. */
 const ATTR_HEADING = 'data-geld-desc-heading';
 /** On a heading block: the key its open state is remembered by this visit. */
@@ -313,8 +318,9 @@ function wire(block: HTMLElement, body: HTMLElement): void {
     if (key === null) return;
     const opening = block.getAttribute(ATTR_HEADING) !== 'open';
     state.open.set(key, opening);
-    // Opening a section is reading the description, so the cut goes with it, as on Show full description.
-    if (opening) state.capped = false;
+    // Opening a section is reading the description, so the cut goes with it, as on Show full description. An agent's
+    // section stands below the cut, so opening it is not.
+    if (opening && !block.classList.contains(AGENT_CLASS)) state.capped = false;
     // The chevron turns in this frame and the section shows in the next: laying out what was folded is the costly
     // part, and once the (composited) rotation has started that work can no longer hold it up.
     setFlag(block, ATTR_HEADING, opening ? 'open' : 'closed');
@@ -337,16 +343,31 @@ function uncap(body: HTMLElement): void {
   applyTo(body);
 }
 
+/**
+ * "Show full description" stands inside the body, after the author's blocks and before the agents' (its `order` in the
+ * stylesheet), so the agents' summaries show below the cut whatever it hides.
+ */
 function syncMoreButton(body: HTMLElement, show: boolean): void {
-  const next = body.nextElementSibling;
-  const existing = next instanceof HTMLButtonElement && next.classList.contains(MORE_CLASS) ? next : null;
+  const existing = body.querySelector<HTMLButtonElement>(`:scope > .${MORE_CLASS}`);
   // A button GitHub re-rendered from a copy of its markup, or one a retired copy made, keeps nothing of its listener.
   if (!show || (existing !== null && !wiring.buttons.has(existing))) existing?.remove();
   if (!show || (existing !== null && wiring.buttons.has(existing))) return;
   const more = createElement('button', { type: 'button', class: MORE_CLASS, [OWN_UI_ATTRIBUTE]: '' }, [svgFromString(ICON_CHEVRON_DOWN), createElement('span', {}, ['Show full description'])]);
   more.addEventListener('click', () => uncap(body), { signal: wiring.signal.signal });
   wiring.buttons.add(more);
-  body.insertAdjacentElement('afterend', more);
+  body.append(more);
+}
+
+/** The body's own block holding `node`, or null for the body itself. */
+function blockHolding(body: HTMLElement, node: Element): Element | null {
+  let block: Element | null = node;
+  while (block !== null && block.parentElement !== body) block = block.parentElement;
+  return block;
+}
+
+/** Whether `node` is in what an agent wrote, which stands below the cut: reading it is not reading the description. */
+function inAgentBlock(body: HTMLElement, node: Element): boolean {
+  return blockHolding(body, node)?.hasAttribute(ATTR_AGENT) === true;
 }
 
 /**
@@ -360,17 +381,20 @@ function watchBody(body: HTMLElement): void {
   const options = { capture: true, signal: wiring.signal.signal };
   // Neither `toggle` nor `beforematch` bubbles, so both are caught on the way down.
   body.addEventListener('toggle', (event) => {
-    if (event.target instanceof HTMLDetailsElement && event.target.open) uncap(body);
+    if (event.target instanceof HTMLDetailsElement && event.target.open && !inAgentBlock(body, event.target)) uncap(body);
   }, options);
-  // The cut is `overflow: hidden`, which the browser still scrolls to show a find-in-page match or a focused link below
-  // it. That text is under no folded heading, so no `beforematch` comes: the scroll is the sign, and the cut goes.
-  body.addEventListener('scroll', () => {
-    const offset = body.scrollTop;
+  // The block the cut runs through is `overflow: hidden`, which the browser still scrolls to show a find-in-page match
+  // or a focused link below the cut. That text is under no folded heading, so no `beforematch` comes: the scroll is the
+  // sign, and the cut goes. Scroll does not bubble, so it is caught on the way down too.
+  body.addEventListener('scroll', (event) => {
+    const edge = event.target;
+    if (!(edge instanceof HTMLElement) || !edge.hasAttribute(ATTR_CUT_EDGE)) return;
+    const offset = edge.scrollTop;
     if (offset <= 0 || !state.capped) return;
     uncap(body);
-    // Uncut, the body no longer scrolls inside, so the match would drop by that much: the page takes it up instead.
+    // Uncut, the block no longer scrolls inside, so the match would drop by that much: the page takes it up instead.
     window.scrollBy({ top: offset, behavior: 'instant' });
-  }, { signal: wiring.signal.signal });
+  }, options);
   body.addEventListener('beforematch', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -382,14 +406,58 @@ function watchBody(body: HTMLElement): void {
       const key = blocks[heading.index]?.getAttribute(ATTR_KEY);
       if (key !== null && key !== undefined) state.open.set(key, true);
     }
-    state.capped = false;
+    if (!inAgentBlock(body, target)) state.capped = false;
     applyTo(body);
   }, options);
 }
 
+/** Hide a block that is folded away, `until-found` so find-in-page still searches it (see `watchBody`). */
+function fold(block: Element, flag: string): void {
+  setFlag(block, flag, '');
+  setFlag(block, 'hidden', 'until-found');
+  setFindable(block, true);
+}
+
+/** Show a block Geld folded or cut, once neither holds it. Only Geld's own `hidden` is lifted. */
+function unfold(block: Element, flag: string): void {
+  if (!block.hasAttribute(flag)) return;
+  block.removeAttribute(flag);
+  if (block.hasAttribute(ATTR_FOLD) || block.hasAttribute(ATTR_CUT)) return;
+  if (block.getAttribute('hidden') === 'until-found') block.removeAttribute('hidden');
+  setFindable(block, false);
+}
+
+function clearCut(body: HTMLElement): void {
+  for (const block of body.querySelectorAll(`:scope > [${ATTR_CUT}]`)) unfold(block, ATTR_CUT);
+  for (const block of body.querySelectorAll(`:scope > [${ATTR_CUT_EDGE}]`)) {
+    block.removeAttribute(ATTR_CUT_EDGE);
+    if (block instanceof HTMLElement) setProperty(block, CUT_HEIGHT_PROPERTY, null);
+  }
+}
+
+/**
+ * Cut the author's blocks at {@link DESCRIPTION_CAP_PX}: those wholly past it are hidden, the one it runs through is
+ * clipped, and the agents' blocks, laid out after the author's, are never touched. Read with the cut lifted, so a
+ * change of width or of what is open is measured as it would lay out whole; reads first, then writes.
+ */
 function measure(body: HTMLElement): void {
-  // While cut, the body's scroll height is still its whole height, so this reads the same either way.
-  setFlag(body, ATTR_LONG, body.scrollHeight > DESCRIPTION_CAP_PX + CAP_SLACK_PX ? '' : null);
+  clearCut(body);
+  const author = blocksOf(body).filter((block) => !block.hasAttribute(ATTR_AGENT) && !block.hasAttribute(ATTR_BLANK));
+  const top = body.getBoundingClientRect().top;
+  const spans = author.map((block) => {
+    const box = block.getBoundingClientRect();
+    return { block, start: box.top - top, end: box.bottom - top };
+  });
+  const long = spans.some((span) => span.end > DESCRIPTION_CAP_PX + CAP_SLACK_PX);
+  setFlag(body, ATTR_LONG, long ? '' : null);
+  if (!long || !state.capped) return;
+  for (const { block, start, end } of spans) {
+    if (start >= DESCRIPTION_CAP_PX) fold(block, ATTR_CUT);
+    else if (end > DESCRIPTION_CAP_PX && block instanceof HTMLElement) {
+      setFlag(block, ATTR_CUT_EDGE, '');
+      setProperty(block, CUT_HEIGHT_PROPERTY, `${Math.round(DESCRIPTION_CAP_PX - start)}px`);
+    }
+  }
 }
 
 function observe(body: HTMLElement): void {
@@ -465,7 +533,8 @@ function dressAgents(body: HTMLElement, layout: Layout, all: readonly Element[])
   setFlag(body, ATTR_AGENTS, '');
   if (header === null) body.append(createElement('h2', { class: AGENTS_CLASS, [OWN_UI_ATTRIBUTE]: '' }, ['Agent summaries']));
   layout.groups.forEach((group, index) => {
-    const order = String(index + 2);
+    // 1 is "Show full description", 2 the Agent summaries band (style.css).
+    const order = String(index + 3);
     if (group.heading.nextElementSibling !== group.first) group.first.before(group.heading);
     setProperty(group.heading, ORDER_PROPERTY, order);
     for (const block of [...group.content, ...group.hidden]) {
@@ -494,11 +563,7 @@ function applyTo(body: HTMLElement): void {
     setFlag(block, ATTR_HEADING, null);
     setFlag(block, ATTR_KEY, null);
     headingElementOf(block)?.querySelector(`:scope > .${TOGGLE_CLASS}`)?.remove();
-    if (block.hasAttribute(ATTR_FOLD)) {
-      block.removeAttribute(ATTR_FOLD);
-      if (block.getAttribute('hidden') === 'until-found') block.removeAttribute('hidden');
-      setFindable(block, false);
-    }
+    unfold(block, ATTR_FOLD);
     dressRails(block, null);
   }
   const layout = layoutOf(body);
@@ -529,16 +594,8 @@ function applyTo(body: HTMLElement): void {
   }
   const hidden = hiddenBlocks(outline, (heading) => openNow.get(heading.index) ?? true);
   blocks.forEach((block, index) => {
-    // `until-found`, so find-in-page still searches what is folded (see `watchBody`). Only Geld's own `hidden` is lifted.
-    if (hidden.has(index)) {
-      setFlag(block, ATTR_FOLD, '');
-      setFlag(block, 'hidden', 'until-found');
-      setFindable(block, true);
-    } else if (block.hasAttribute(ATTR_FOLD)) {
-      block.removeAttribute(ATTR_FOLD);
-      if (block.getAttribute('hidden') === 'until-found') block.removeAttribute('hidden');
-      setFindable(block, false);
-    }
+    if (hidden.has(index)) fold(block, ATTR_FOLD);
+    else unfold(block, ATTR_FOLD);
     if (folding.has(index)) return;
     // A block that no longer heads a section (the description was edited) gives up its control.
     setFlag(block, ATTR_HEADING, null);
@@ -555,6 +612,7 @@ function applyTo(body: HTMLElement): void {
   // folds nothing. Opening a section lifts the cut, so it never hides what the reader opened.
   const cut = state.capped;
   setFlag(body, ATTR_CAP, cut ? '' : null);
+  if (!cut) clearCut(body);
   syncMoreButton(body, cut);
   watchBody(body);
   observe(body);
@@ -577,11 +635,14 @@ function clear(): void {
   for (const element of document.querySelectorAll(`[${ATTR_DEPTH}]`)) {
     if (element instanceof HTMLElement) for (const name of RAIL_PROPERTIES) element.style.removeProperty(name);
   }
-  for (const element of document.querySelectorAll(`[${ATTR_FOLD}]`)) {
+  for (const element of document.querySelectorAll(`[${ATTR_FOLD}], [${ATTR_CUT}]`)) {
     if (element.getAttribute('hidden') === 'until-found') element.removeAttribute('hidden');
     element.removeAttribute(ATTR_FINDABLE);
   }
-  for (const name of [ATTR_FOLD, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH, ATTR_BLANK, ATTR_AGENTS, ATTR_AGENT, ATTR_AGENT_HIDDEN]) {
+  for (const element of document.querySelectorAll(`[${ATTR_CUT_EDGE}]`)) {
+    if (element instanceof HTMLElement) element.style.removeProperty(CUT_HEIGHT_PROPERTY);
+  }
+  for (const name of [ATTR_FOLD, ATTR_CUT, ATTR_CUT_EDGE, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH, ATTR_BLANK, ATTR_AGENTS, ATTR_AGENT, ATTR_AGENT_HIDDEN]) {
     for (const element of document.querySelectorAll(`[${name}]`)) element.removeAttribute(name);
   }
 }

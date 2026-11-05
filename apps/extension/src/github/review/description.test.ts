@@ -100,10 +100,13 @@ describe('shortenDescription', () => {
     return body;
   }
 
+  /** The description's own blocks, without "Show full description", which stands inside the body. */
+  const authorBlocks = (body: HTMLElement): Element[] => [...body.children].filter((block) => !block.classList.contains('geld-desc-more'));
+
   it('closes the innermost sections and leaves the outline open', () => {
     const body = mountDescription(`<p>intro</p>${h(2, 'Summary')}<p>a</p>${h(3, 'Details')}<p>b</p>${h(2, 'Testing')}<p>c</p>`);
     shortenDescription(true);
-    const folded = [...body.children].map((block) => block.hasAttribute('data-geld-desc-fold'));
+    const folded = authorBlocks(body).map((block) => block.hasAttribute('data-geld-desc-fold'));
     expect(folded).toEqual([false, false, false, false, true, false, true]);
     expect(body.children[1]?.getAttribute('data-geld-desc-heading')).toBe('open');
     expect(body.children[3]?.getAttribute('data-geld-desc-heading')).toBe('closed');
@@ -114,7 +117,7 @@ describe('shortenDescription', () => {
     const body = mountDescription(`${h(2, 'Changes')}<p>a</p>${h(3, 'Notes')}<p>b</p>${h(2, 'Testing')}<p>c</p>${h(2, 'Screenshots')}<p>d</p>`);
     shortenDescription(true);
     expect(body.children[0]?.getAttribute('data-geld-desc-heading')).toBe('open');
-    const folded = [...body.children].map((block) => block.hasAttribute('data-geld-desc-fold'));
+    const folded = authorBlocks(body).map((block) => block.hasAttribute('data-geld-desc-fold'));
     expect(folded).toEqual([false, false, false, true, false, true, false, true]);
     body.querySelector<HTMLElement>('.markdown-heading h2')?.click();
     await frames();
@@ -220,8 +223,8 @@ describe('shortenDescription', () => {
     expect(headings.every((heading) => heading.querySelector('.geld-desc-toggle') !== null && heading.querySelector('img.geld-desc-agent__logo') !== null)).toBe(true);
     // Each heading stands just before its tool's content, both at the tool's order, after the author's text.
     expect(headings[0]?.nextElementSibling).toBe(coderabbit);
-    expect([headings[0], list].map(order)).toEqual(['2', '2']);
-    expect([headings[1], badges].map(order)).toEqual(['3', '3']);
+    expect([headings[0], list].map(order)).toEqual(['3', '3']);
+    expect([headings[1], badges].map(order)).toEqual(['4', '4']);
     expect(order(after)).toBe('');
     // The tool's own title is the injected heading's to stand for: hidden, with no chevron of its own.
     expect(coderabbit?.hasAttribute('data-geld-desc-agent-hidden')).toBe(true);
@@ -272,6 +275,60 @@ describe('shortenDescription', () => {
     shortenDescription(true);
     expect(body.querySelector('.geld-desc-agents, .geld-desc-agent')).toBeNull();
     expect(body.hasAttribute('data-geld-desc-agents')).toBe(false);
+  });
+
+  /** Lays `blocks` out at the given heights from the body's top, as a real page would; happy-dom lays out nothing. */
+  function layOut(body: HTMLElement, heights: ReadonlyMap<Element, number>): void {
+    Object.defineProperty(body, 'getBoundingClientRect', { configurable: true, value: () => new DOMRect(0, 0, 600, 0) });
+    let top = 0;
+    for (const [block, height] of heights) {
+      const start = top;
+      Object.defineProperty(block, 'getBoundingClientRect', { configurable: true, value: () => new DOMRect(0, start, 600, height) });
+      top += height;
+    }
+  }
+
+  it('cuts only the author’s text at 500px, the agents’ summaries below it untouched, and opening an agent keeps the cut', async () => {
+    const body = mountDescription(
+      `<p>one</p><p>two</p><p>three</p>${h(2, 'Summary by CodeRabbit')}<ul><li>Bug fixes</li></ul>`,
+    );
+    const [one, two, three, title, list] = [...body.children];
+    if (one === undefined || two === undefined || three === undefined || list === undefined) throw new Error('no blocks');
+    layOut(body, new Map([[one, 300], [two, 400], [three, 200]]));
+    shortenDescription(true);
+    // Opening an agent's section measures the body again, and does not lift the cut.
+    body.querySelector<HTMLElement>('.geld-desc-agent')?.click();
+    await frames();
+    await frame();
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(true);
+    expect(body.hasAttribute('data-geld-desc-long')).toBe(true);
+    expect(one.hasAttribute('data-geld-desc-cut-edge') || one.hasAttribute('data-geld-desc-cut')).toBe(false);
+    expect(two.hasAttribute('data-geld-desc-cut-edge')).toBe(true);
+    expect(two instanceof HTMLElement ? two.style.getPropertyValue('--geld-desc-cut-height') : '').toBe('200px');
+    expect(three.hasAttribute('data-geld-desc-cut')).toBe(true);
+    expect(three.getAttribute('hidden')).toBe('until-found');
+    expect([title, list].some((block) => block?.hasAttribute('data-geld-desc-cut') === true)).toBe(false);
+    expect(list.hasAttribute('data-geld-desc-fold')).toBe(false);
+    // Show full description, inside the body, lifts it.
+    const more = body.querySelector<HTMLButtonElement>(':scope > .geld-desc-more');
+    expect(more).not.toBeNull();
+    more?.click();
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
+    expect(body.querySelector('[data-geld-desc-cut], [data-geld-desc-cut-edge]')).toBeNull();
+    expect(three.hasAttribute('hidden')).toBe(false);
+  });
+
+  it('keeps the cut when a `<details>` in an agent’s summary opens', () => {
+    const body = mountDescription(
+      `<p>mine</p><details open=""><summary>Greptile Summary</summary><p>s</p></details>` +
+        '<p><sub>Reviews (1): <a href="https://app.greptile.com/api/retrigger?id=1">Re-trigger Greptile</a></sub></p>',
+    );
+    shortenDescription(true);
+    const details = body.querySelector('details');
+    if (details === null) throw new Error('no details');
+    expect(details.hasAttribute('data-geld-desc-agent')).toBe(true);
+    details.dispatchEvent(new Event('toggle'));
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(true);
   });
 
   it('keeps an agent’s section closed when nothing of the author’s comes before it', () => {
@@ -430,9 +487,14 @@ describe('shortenDescription', () => {
     shortenDescription(true);
     expect(body.hasAttribute('data-geld-desc-cap')).toBe(true);
     const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => undefined);
-    body.scrollTop = 120;
-    body.dispatchEvent(new Event('scroll'));
+    // The block the cut runs through is the one that scrolls (as `measure` marks it on a real page).
+    const edge = body.children[2];
+    if (!(edge instanceof HTMLElement)) throw new Error('no block');
+    edge.setAttribute('data-geld-desc-cut-edge', '');
+    edge.scrollTop = 120;
+    edge.dispatchEvent(new Event('scroll'));
     expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
+    expect(edge.hasAttribute('data-geld-desc-cut-edge')).toBe(false);
     expect(scrollBy).toHaveBeenCalledWith({ top: 120, behavior: 'instant' });
     scrollBy.mockRestore();
   });
@@ -484,12 +546,12 @@ describe('shortenDescription', () => {
     expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
   });
 
-  it('puts one control after the body and removes everything when turned off', () => {
+  it('puts one control at the end of the body and removes everything when turned off', () => {
     const body = mountDescription('<p>only text</p>');
     shortenDescription(true);
     shortenDescription(true);
     expect(document.querySelectorAll('.geld-desc-more')).toHaveLength(1);
-    expect(body.nextElementSibling?.textContent).toBe('Show full description');
+    expect(body.lastElementChild?.textContent).toBe('Show full description');
     shortenDescription(false);
     expect(document.querySelector('.geld-desc-more, .geld-desc-toggle, [data-geld-desc-cap], [data-geld-desc-fold]')).toBeNull();
   });
