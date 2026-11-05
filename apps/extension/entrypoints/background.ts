@@ -3,7 +3,7 @@ import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
 import { parseUnifiedDiff } from '@geld/core';
-import { completeChat, evaluateJev, listModels, TYPESAFE_API } from '@geld/review';
+import { completeChat, decisionModelsPath, evaluateDecision, listModels, servesDecisions, TYPESAFE_API } from '@geld/review';
 import { handleAccountMessage, startAccountSync } from '../src/lib/account-service';
 import { actionIconPaths } from '../src/lib/action-icon';
 import { checkCatalog, startCatalogUpdates } from '../src/lib/catalog';
@@ -580,7 +580,15 @@ export default defineBackground(() => {
         const denied = await hasGatewayPermission(message.baseUrl);
         if (denied !== null) return { ok: false as const, reason: denied };
         if (message.apiKey.trim() === '') return { ok: false as const, reason: 'No API key.' };
-        return listModels(fetch, message.baseUrl, message.apiKey);
+        const listed = await listModels(fetch, message.baseUrl, message.apiKey);
+        const decisionsPath = decisionModelsPath(message.baseUrl);
+        if (!listed.ok || decisionsPath === null) return listed;
+        // OpenRouter keeps its decision models out of the chat list; they join it typed, as Vercel lists them.
+        const decisions = await listModels(fetch, message.baseUrl, message.apiKey, decisionsPath);
+        if (!decisions.ok) return listed;
+        const known = new Set(listed.models.map((model) => model.id));
+        const served = decisions.models.filter((model) => !known.has(model.id) && servesDecisions(model));
+        return { ok: true as const, models: [...listed.models, ...served.map((model) => ({ ...model, type: 'decision' }))] };
       })().then(sendResponse);
       return true;
     }
@@ -589,7 +597,7 @@ export default defineBackground(() => {
         const denied = await hasGatewayPermission(message.baseUrl);
         if (denied !== null) return { ok: false as const, reason: denied };
         if (message.apiKey.trim() === '') return { ok: false as const, reason: message.baseUrl === TYPESAFE_API ? 'No TypeSafe key.' : 'No API key.' };
-        return evaluateJev({ fetch, baseUrl: message.baseUrl, apiKey: message.apiKey, request: message.request, timeoutMs: 20_000 });
+        return evaluateDecision({ fetch, baseUrl: message.baseUrl, apiKey: message.apiKey, request: message.request, timeoutMs: 20_000 });
       })().then(sendResponse);
       return true;
     }

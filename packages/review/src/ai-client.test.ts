@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { completeChat, joinUrl, listModels } from './ai-client';
-import { evaluateJev } from './jev';
+import { evaluateDecision } from './jev';
 
 describe('ai-client', () => {
   it('does not call the network without a key', async () => {
@@ -135,6 +135,11 @@ it('combines caller cancellation with the completion deadline', async () => {
   expect(await result).toEqual({ ok: false, reason: 'The AI provider could not complete the request.' });
 });
 
+it('keeps the endpoints a gateway names for a model', async () => {
+  const listed = await listModels(async () => Response.json({ data: [{ id: 'cloudflare/clairic', endpoints: ['/api/alpha/extractions'] }, { id: 'liquid/d1' }] }), 'https://openrouter.ai/api', 'synthetic');
+  expect(listed).toEqual({ ok: true, models: [{ id: 'cloudflare/clairic', provider: 'cloudflare', endpoints: ['/api/alpha/extractions'] }, { id: 'liquid/d1', provider: 'liquid' }] });
+});
+
 /** Fails as Chrome's native fetch does when called as a method of another object. */
 function nativeLikeFetch(answer: unknown): (this: unknown, input: string, init?: RequestInit) => Promise<Response> {
   return function (this: unknown) {
@@ -154,7 +159,7 @@ it('calls the given fetch on its own, as a browser requires of its native fetch'
     }),
   ).toEqual({ ok: true, text: '{"tldr":"ok"}', model: 'fixture' });
   expect(
-    await evaluateJev({
+    await evaluateDecision({
       fetch: nativeLikeFetch({ model: 'jev', answers: { a: { type: 'noul', noul: 0.9 } } }),
       baseUrl: 'https://api.typesafe.ai',
       apiKey: 'synthetic',

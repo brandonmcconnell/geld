@@ -969,7 +969,20 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   TypeSafe's own docs call it a "TypeSafe API key" (`TYPESAFE_API_KEY`, from console.typesafe.ai).
   The model picker is `src/ui/model-combobox.ts` (WAI-ARIA combobox: filter by id/name/maker, arrows, Enter, an unlisted id can still be typed);
   options show what the gateway's `/v1/models` says for free (`ModelInfo`: maker, context window, tags;
-  Vercel types Jev as `evaluation`, which `isEvaluationModel(id, type)` honours).
+  Vercel types Jev as `evaluation`, which `isEvaluationModel(id, type)` honours, as it does `decision`, Vercel's newer name for the kind).
+  The gateway's Jev is picked from its list **by name, never by type** (`jevModelIn`, the unpinned `…/jev` first): Vercel lists Baseten's, Perplexity's and OpenAI's decision models under the same `evaluation` type, and taking the first of them sent Geld's Jev questions to `baseten/elephant-1`.
+  **Any decision model, not only Jev** (`aiDecisionModel`, the "Decision model" picker under "Use a decision model", which is the `aiJev` switch — settings ids are permanent): the picker lists the gateway's decision models (`decisionModelsIn`: typed `evaluation`/`decision` on Vercel, OpenRouter's from `/api/v1/models?output_modalities=decisions`, merged into the model list typed `decision` by the background;
+  `knownDecisionModels` adds OpenAI's `gpt-6-luna`), and empty means automatic (`defaultDecisionModel`: the gateway's Jev, else its own decision model, else Jev with the reader's TypeSafe key);
+  a pick is used only while the gateway serves decision models at all.
+  Decision models are served in two request formats and `decisionRoute` picks by gateway and model: **TypeSafe's** (`state`, a map of `noul`/`choice`/`score` questions) at TypeSafe, at OpenRouter's Decisions API for every model it serves, and at Vercel's `/typesafe/v1/systemone` for Jev, so `noul` and its criteria reach Jev as written; **OpenAI's** (`input`, a list of `predicate`/`choice`/`score` questions, answers in position with `probability`) at OpenAI's and Vercel's `/v1/decisions` for any other model (`openAiDecisionsBody` folds a `noul`'s criteria into the predicate's instructions and names questions `q0`… since Geld's ids hold colons;
+  `parseOpenAiDecisions` maps the answers back, a refusal left out).
+  Everything inside Geld stays in TypeSafe's shape;
+  Vercel's `/v1/evaluate` and the AI SDK's `experimental_decide` (formerly `experimental_evaluate`, which renames `noul` to `boolean`) are a third format Geld never needs.
+  Cached decisions (`local:jevDecisions`) are keyed by the model that answers (`saltFor` on the resolved route, not the saved pick: the reader's own TypeSafe key answers with Jev whatever is picked), Jev's under the bare keys they always had and any other model's under its id;
+  the synchronous pass uses the route last read (`currentSalt`, read again when the settings it takes or the gateway list, keys or key choice change) and `classify` drops answers when the route moved meanwhile.
+  A duplicate check with any question unanswered (a refusal, a missing answer) is no answer (`answersComplete`): the prose model decides, rather than every finding reading as without a partner and none being rewritten.
+  Changing the gateway URL clears the decision model, which was picked from the old gateway's list, and OpenRouter's catalog is kept to models whose `endpoints` include its Decisions API (`servesDecisions`;
+  `cloudflare/clairic` is extraction-only).
   Opened empty, the picker leads with the models `@geld/review/model-guide.ts` recommends for the digest's writing (`RECOMMENDED_MODELS`, matched on the id's *tail* since Vercel spells `zai/` where OpenRouter spells `z-ai/`), each with its reason;
   every option shows Geld's rough intelligence and speed tiers (`tiersFor`, a hand-kept family table, marked "not a benchmark" in the list — no gateway lists these and the benchmark sources sit behind API keys) and, for a variant suffix (`-flash`, `-fast`, `-flashx`, `-pro`, `:batch`, `:free`, `-preview`, `-codex`…), what it means (`variantOf`);
   plain models sort before their variants (`pickerRank`).

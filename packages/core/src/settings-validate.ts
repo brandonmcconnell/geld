@@ -274,6 +274,9 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   if (value.aiModel !== undefined && typeof value.aiModel !== 'string') {
     issues.push({ path: `${path}.aiModel`, message: `Expected a string, got ${describeValue(value.aiModel)}.` });
   }
+  if (value.aiDecisionModel !== undefined && typeof value.aiDecisionModel !== 'string') {
+    issues.push({ path: `${path}.aiDecisionModel`, message: `Expected a string, got ${describeValue(value.aiDecisionModel)}.` });
+  }
   // Custom ids are accepted here regardless of whether the category still exists: a stale flag is harmless.
   checkBooleanMap(issues, `${path}.categories`, value.categories, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key) || isWellFormedId(key), 'category');
   checkBooleanMap(issues, `${path}.autoViewed`, value.autoViewed, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key) || isWellFormedId(key), 'category');

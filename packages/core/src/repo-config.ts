@@ -79,6 +79,7 @@ const PERSONAL_KEYS = [
   'collapseDescription',
   'aiBaseUrl',
   'aiModel',
+  'aiDecisionModel',
   'suggestedFixes',
   'autoViewed',
   'testOutline',
