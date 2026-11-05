@@ -224,7 +224,12 @@ function wire(block: HTMLElement, body: HTMLElement): void {
     setFlag(block, ATTR_HEADING, opening ? 'open' : 'closed');
     const { signal } = wiring.signal;
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (!signal.aborted) applyTo(body);
+      if (signal.aborted) return;
+      applyTo(body);
+      // A cut body keeps the cap's height whatever folds inside it, so no resize says it now fits: read it once more.
+      requestAnimationFrame(() => {
+        if (!signal.aborted) measure(body);
+      });
     }));
   }, { signal: wiring.signal.signal });
 }
@@ -261,6 +266,15 @@ function watchBody(body: HTMLElement): void {
   body.addEventListener('toggle', (event) => {
     if (event.target instanceof HTMLDetailsElement && event.target.open) uncap(body);
   }, options);
+  // The cut is `overflow: hidden`, which the browser still scrolls to show a find-in-page match or a focused link below
+  // it. That text is under no folded heading, so no `beforematch` comes: the scroll is the sign, and the cut goes.
+  body.addEventListener('scroll', () => {
+    const offset = body.scrollTop;
+    if (offset <= 0 || !state.capped) return;
+    uncap(body);
+    // Uncut, the body no longer scrolls inside, so the match would drop by that much: the page takes it up instead.
+    window.scrollBy({ top: offset, behavior: 'instant' });
+  }, { signal: wiring.signal.signal });
   body.addEventListener('beforematch', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
