@@ -29,6 +29,9 @@ let ownOnly = true;
 let sink: Sink = sendToBackground;
 let pending: ErrorReport[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let flushQueued = false;
+/** Only a content script batches: an extension page or the worker can close or stop at any moment, and a page's pass repeats one fault many times. */
+let batching = false;
 let installed = false;
 
 function extensionOrigin(): string {
@@ -49,7 +52,9 @@ function sendToBackground(reports: readonly ErrorReport[]): void {
 }
 
 function flush(): void {
+  if (flushTimer !== null) clearTimeout(flushTimer);
   flushTimer = null;
+  flushQueued = false;
   const batch = pending;
   pending = [];
   if (batch.length > 0) sink(batch);
@@ -61,7 +66,11 @@ export function reportError(at: string, error: unknown, kind: ErrorKind = 'error
   markOnce(`error:${at}:${report.message.slice(0, 80)}`);
   perfCount('errors');
   pending = mergeErrorReports(pending, [report]);
-  flushTimer ??= setTimeout(flush, FLUSH_MS);
+  if (flushQueued) return;
+  flushQueued = true;
+  // A microtask still merges a synchronous burst into one message.
+  if (batching) flushTimer = setTimeout(flush, FLUSH_MS);
+  else queueMicrotask(flush);
 }
 
 /** Run an entry point (an observer callback, a timer, a message handler), recording what it throws instead of letting it surface. */
@@ -83,6 +92,11 @@ function onError(event: Event): void {
   if (!import.meta.env.DEV) event.preventDefault();
 }
 
+/** A tab closing or navigating away hands over what it is still holding. */
+function onPageHide(): void {
+  if (flushQueued) flush();
+}
+
 function onRejection(event: PromiseRejectionEvent): void {
   if (ownOnly && !isOwnError(event.reason, origin)) return;
   reportError(where, event.reason, 'rejection');
@@ -101,13 +115,16 @@ export function installErrorCapture(context: 'content' | 'background' | 'popup' 
     origin = extensionOrigin();
     // An extension page or the worker runs nothing but Geld; a content script shares its window with the page.
     ownOnly = context === 'content';
+    batching = context === 'content';
     if (deliver !== undefined) sink = deliver;
     globalThis.addEventListener('error', onError);
     globalThis.addEventListener('unhandledrejection', onRejection);
+    globalThis.addEventListener('pagehide', onPageHide);
   }
   return () => {
     globalThis.removeEventListener('error', onError);
     globalThis.removeEventListener('unhandledrejection', onRejection);
-    if (flushTimer !== null) flush();
+    globalThis.removeEventListener('pagehide', onPageHide);
+    if (flushQueued) flush();
   };
 }
