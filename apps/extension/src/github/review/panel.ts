@@ -24,7 +24,7 @@ import { requestDetail, requestSentence } from './bot-requests';
 import { formatSyncAge } from '../../ui/sync-age';
 import type { Closure, ClosureKind, EventHeadline } from './fold';
 import { headlineText } from './fold';
-import { reclaimOrphans, restoreAll } from './teleport';
+import { ATTR_TELEPORTED, reclaimOrphans, restoreAll } from './teleport';
 import { ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import type { ReviewerCandidate } from './reviewers';
 import { shapeMark } from './mark-shape';
@@ -2742,6 +2742,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   // PR) reset its scroll position and restarted every spinner at the same frame, so they looked frozen and the
   // list jumped to its top. It is carried into the new panel instead, with a move that keeps its state.
   const carried = existing !== null && model.openKey === CHECKS_KEY ? existing.querySelector<HTMLElement>(`[${ATTR_SLOT}="${CHECKS_KEY}"] > .${PANEL_CLASS}__slot-body`) : null;
+  pinPanelHost(existing);
   // Quick-viewed nodes live inside the old panel; send them home before it goes.
   restoreAll(carried === null ? undefined : (node) => carried.contains(node));
   if (existing !== null) reclaimOrphans(existing, carried ?? undefined);
@@ -2947,7 +2948,36 @@ function railIndent(nudge: HTMLElement): number {
   return Math.max(0, Math.round(rail - nudge.getBoundingClientRect().left) + 14);
 }
 
+/** The panel's container held at its height while the open slot's loans are away, and the inline value it had. */
+let pinned: { readonly host: HTMLElement; readonly previous: string } | null = null;
+
+/**
+ * Hold the panel's container at its current height before the open slot's
+ * loans go home for a rebuild or a re-render. Every layout from then until
+ * the slot is filled again (the card's margins read in `buildPanel`, each
+ * measure while the chat is rebuilt) saw a page shorter by the whole chat,
+ * and a reader scrolled near the bottom was clamped up by that much, which
+ * the refilled page never gave back: on a busy pull request every live
+ * update to the open chat pulled the reader up again. Read before anything
+ * moves; `releasePanelPin` lets go once the pass has filled the slot.
+ */
+export function pinPanelHost(inside: Element | null): void {
+  if (pinned !== null) return;
+  const panel = inside?.closest<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}]`) ?? null;
+  const host = panel?.parentElement ?? null;
+  if (panel === null || host === null || panel.querySelector(`[${ATTR_TELEPORTED}]`) === null) return;
+  pinned = { host, previous: host.style.minHeight };
+  host.style.minHeight = `${host.getBoundingClientRect().height}px`;
+}
+
+export function releasePanelPin(): void {
+  if (pinned === null) return;
+  pinned.host.style.minHeight = pinned.previous;
+  pinned = null;
+}
+
 export function unmountPanel(): void {
+  releasePanelPin();
   shownProgress = 0;
   restoreAll();
   const panel = document.querySelector(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
