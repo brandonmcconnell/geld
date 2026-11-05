@@ -22,6 +22,7 @@ import { ATTR_INSTANT_MERGE, rememberStatusHint, removeStatusPills, showMergedPi
 import { fetchReviewers, REVIEW_BY_HASH, REVIEWS_HASH, reviewLink, standingReviewers, tallyOf, tallyWords } from './review-tally';
 import { ICON_ALERT_FILL_12, ICON_CHECK, ICON_CHECK_SEND, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CODE_REVIEW, ICON_CODE_REVIEW_SEND, ICON_COMMENT, ICON_COMMENT_SEND, ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_SPINNER, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_X, ICON_X_SEND } from './ui/icons';
 import { pageFetch } from './page-fetch';
+import { reportError } from '../lib/error-capture';
 
 /**
  * The review controls in the pull request's tab bar, left of the line
@@ -1823,12 +1824,12 @@ async function sendReview(state: Mounted, event: ReviewEvent, body: string): Pro
   }
 }
 
-/** Run what follows an accepted write; its failure is logged, since GitHub already took the write. */
-function afterSent(what: string, update: () => void): void {
+/** Run what follows an accepted write; its failure is reported, since GitHub already took the write. */
+function afterSent(what: 'review' | 'comment', update: () => void): void {
   try {
     update();
   } catch (error) {
-    console.warn(`[geld] GitHub took the ${what}, but updating the page afterwards failed`, error);
+    reportError(`quick-review:after-${what}`, error);
   }
 }
 

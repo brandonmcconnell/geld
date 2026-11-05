@@ -3462,7 +3462,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     onApproveWorkflows: () => {
       const button = approveWorkflowsButton();
       if (button === null) {
-        console.warn('[geld] GitHub no longer offers to approve these workflows');
+        mark('approve-workflows:not-offered');
         return;
       }
       button.click();
