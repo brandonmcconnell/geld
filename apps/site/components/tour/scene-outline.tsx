@@ -4,7 +4,7 @@ import { cn } from 'cn';
 import { ChevronRightIcon } from 'lucide-react';
 import { useState } from 'react';
 
-import { Avatar } from '@/components/tour/bits';
+import { Avatar, CARD_HEAD } from '@/components/tour/bits';
 import { PrWindow } from '@/components/tour/pr-window';
 
 interface Outline {
@@ -72,7 +72,7 @@ export function OutlineScene() {
   return (
     <PrWindow tab="conversation">
       <div className="m-3 overflow-hidden rounded-lg border">
-        <div className="flex items-center gap-2 border-b bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+        <div className={cn(CARD_HEAD, 'bg-muted/60 text-xs text-muted-foreground')}>
           <Avatar who="octocat" size={18} />
           <span>
             <span className="font-semibold text-foreground">octocat</span> commented 2 days ago

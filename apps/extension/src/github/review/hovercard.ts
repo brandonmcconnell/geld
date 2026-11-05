@@ -177,6 +177,11 @@ function hostOf(target: EventTarget | null): HTMLElement | null {
 function hide(): void {
   if (timer !== null) window.clearTimeout(timer);
   timer = null;
+  dismiss();
+}
+
+/** Remove the open card, leaving a show already pending for the host the pointer has moved on to. */
+function dismiss(): void {
   if (leaveTimer !== null) window.clearTimeout(leaveTimer);
   leaveTimer = null;
   clearTriangle();
@@ -186,10 +191,13 @@ function hide(): void {
   card = null;
 }
 
-/** Hide after a grace period unless the pointer reaches the card (or comes back to the host) first. */
+/**
+ * Hide after a grace period unless the pointer reaches the card (or comes back to the host) first. It ends in
+ * `dismiss`, not `hide`: the show pending for the pill the pointer crossed to must survive it.
+ */
 function hideSoon(): void {
   if (leaveTimer !== null) window.clearTimeout(leaveTimer);
-  leaveTimer = window.setTimeout(hide, LEAVE_GRACE_MS);
+  leaveTimer = window.setTimeout(dismiss, LEAVE_GRACE_MS);
 }
 
 function stay(): void {

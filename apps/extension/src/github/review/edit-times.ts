@@ -36,6 +36,8 @@ interface EditLog {
   editedAt: string | null;
   /** Oldest first; empty until the log has been read. */
   revisions: Revision[];
+  /** How many times the comment was edited, as the log's header says it ("Edited 5 times"); null until read. */
+  edits: number | null;
   fetchedAt: number;
   pending: Promise<void> | null;
 }
@@ -139,6 +141,16 @@ export function editLogUrlOf(anchor: string): string | null {
   return nodeId === null ? null : `/user_content_edits/show_edit_history_log/${nodeId}`;
 }
 
+/**
+ * The edit count a parsed log states in its header ("Edited 5 times", "Edited 1 time"); without one, every listed
+ * revision but the post itself (the log lists "created" last).
+ */
+export function editCountIn(parsed: ParentNode, revisionCount: number): number | null {
+  const stated = /\bedited\s+(\d+)\s+times?\b/i.exec(parsed.querySelector('.dropdown-header')?.textContent ?? '');
+  if (stated?.[1] !== undefined) return Number(stated[1]);
+  return revisionCount === 0 ? null : revisionCount - 1;
+}
+
 /** Reads the log into `log`; true when it says something it did not before. */
 async function fetchLog(url: string, log: EditLog): Promise<boolean> {
   try {
@@ -154,11 +166,12 @@ async function fetchLog(url: string, log: EditLog): Promise<boolean> {
       revisions.push({ at, url: href });
     }
     revisions.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-    const before = `${log.editedAt ?? ''}|${log.revisions.map((revision) => revision.url).join(',')}`;
+    const before = `${log.edits ?? ''}|${log.editedAt ?? ''}|${log.revisions.map((revision) => revision.url).join(',')}`;
     log.revisions = revisions;
+    log.edits = editCountIn(parsed, revisions.length);
     const times = [...parsed.querySelectorAll('relative-time[datetime]')].map((time) => time.getAttribute('datetime') ?? '').filter((time) => !Number.isNaN(Date.parse(time)));
     log.editedAt = times.length === 0 ? null : times.reduce((latest, time) => (Date.parse(time) > Date.parse(latest) ? time : latest));
-    return before !== `${log.editedAt ?? ''}|${revisions.map((revision) => revision.url).join(',')}`;
+    return before !== `${log.edits ?? ''}|${log.editedAt ?? ''}|${revisions.map((revision) => revision.url).join(',')}`;
   } catch {
     // Unreachable: the comment reads as never edited for now, and is asked about again later.
     return false;
@@ -169,7 +182,7 @@ async function fetchLog(url: string, log: EditLog): Promise<boolean> {
 function logFor(url: string, onChange: () => void, refreshAfter: number): EditLog {
   let log = logs.get(url);
   if (log === undefined) {
-    log = { editedAt: null, revisions: [], fetchedAt: 0, pending: null };
+    log = { editedAt: null, revisions: [], edits: null, fetchedAt: 0, pending: null };
     logs.set(url, log);
   }
   if (log.pending === null && (log.fetchedAt === 0 || Date.now() - log.fetchedAt >= refreshAfter)) {
@@ -209,6 +222,11 @@ export function editTimesOf(anchor: string, onChange: () => void): { readonly ed
   const created = log.revisions[0]?.at ?? null;
   if (log.editedAt === null || log.editedAt === created) return null;
   return { editedAt: log.editedAt, postedAt: created, log: url };
+}
+
+/** How many times the comment whose edit-history log is `url` was edited; null while the log is on its way. */
+export function editCountOf(url: string, onChange: () => void): number | null {
+  return logFor(url, onChange, DISPLAY_REFRESH_MS).edits;
 }
 
 /**

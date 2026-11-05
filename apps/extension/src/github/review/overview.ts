@@ -38,6 +38,7 @@ import { nextRunGraceEnd, withRunTimes } from './run-starts';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
 import { descriptionUnshortened, releaseDescription, shortenDescription } from './description';
+import { compactDescriptionByline } from './description-byline';
 import { applyFolds, closureKindOf, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
@@ -3695,6 +3696,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   }
   const tailStart = performance.now();
   shortenDescription(settings.collapseDescription && !visit.fullTimeline);
+  compactDescriptionByline(true, reapplySoon);
   setFullTimeline(visit.fullTimeline);
   if (hidingTimeline) document.documentElement.setAttribute('data-geld-timeline', 'compact');
   // Everything on the page has been read: what GitHub inserts from here on waits for the next pass.
@@ -3803,10 +3805,12 @@ export function teardownReviewOverview(leaving = false): void {
       if (visit.pageKey !== '') return;
       applyFolds([], new Set());
       shortenDescription(false);
+      compactDescriptionByline(false);
     }, LEAVE_GRACE_MS);
   } else {
     applyFolds([], new Set());
     shortenDescription(false);
+    compactDescriptionByline(false);
   }
   visit.openKey = null;
   visit.pageKey = '';

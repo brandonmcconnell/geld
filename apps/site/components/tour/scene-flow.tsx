@@ -7,7 +7,7 @@ import { cn } from 'cn';
 import { WorkflowIcon, XIcon } from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { GeldRowTools, Meter } from '@/components/tour/bits';
+import { CARD_HEAD, GeldRowTools, Meter } from '@/components/tour/bits';
 import type { TourFile } from '@/components/tour/data';
 import { TOUR_FILES } from '@/components/tour/data';
 import { Octicon } from '@/components/tour/octicons';
@@ -90,7 +90,7 @@ export function FlowScene() {
         <FilesView files={listed} opened={opened} />
       ) : (
         <div className="m-3 rounded-lg border text-xs">
-          <div className="flex items-center gap-2 border-b px-3 py-2">
+          <div className={CARD_HEAD}>
             <span className="font-semibold">Geld</span>
             <Meter done={3} total={5} />
             <span className="min-w-0 truncate text-muted-foreground tabular-nums">3/5 resolved</span>

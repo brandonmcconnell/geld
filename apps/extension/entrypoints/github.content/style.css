@@ -7524,6 +7524,47 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   display: none !important;
 }
 
+/*
+ * What tools appended, gathered at the foot under "Agent summaries" (description.ts `dressAgents`), one folding h3 of
+ * Geld's per tool with its logo before its name. GitHub's nodes stay where they are: the body becomes a column and the
+ * tools' headings and blocks take a later `order` (`--geld-desc-order`, mirrored in description.ts).
+ */
+[data-geld-desc][data-geld-desc-agents] {
+  display: flex !important;
+  flex-direction: column;
+}
+
+/* 1 is "Show full description", between the author's cut text and the agents' (mirrored in description.ts). */
+[data-geld-desc-agents] > .geld-desc-agents {
+  order: 2;
+}
+
+[data-geld-desc-agents] > [data-geld-desc-agent] {
+  order: var(--geld-desc-order, 3);
+}
+
+/* A tool's own title ("Summary by CodeRabbit") and the rule above its content: its injected heading stands for them. */
+[data-geld-desc-agents] > [data-geld-desc-agent-hidden] {
+  display: none !important;
+}
+
+/*
+ * The band over the agents is a label, not a section: it stands at the chevrons' edge, as top-level text does, and one
+ * step above the agents' 14px names, below the author's 16px headings.
+ */
+[data-geld-desc][data-geld-desc-agents] > h2.geld-desc-agents {
+  padding-left: 0 !important;
+  font-size: 15px !important;
+}
+
+.geld-desc-agent__logo {
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+  border-radius: 4px;
+  vertical-align: -4px;
+}
+
 [data-geld-desc] > [data-geld-desc-depth] {
   position: relative;
   margin-left: calc(var(--geld-desc-depth, 0) * 24px) !important;
@@ -7535,7 +7576,8 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   top: 0;
   /* 1px past the gap: blocks start on fractional pixels, and two rail pieces meeting edge to edge leave a light seam. */
   bottom: calc(-1 * var(--geld-desc-after) - 1px);
-  left: calc(var(--geld-desc-depth, 0) * -24px);
+  /* `--geld-desc-edge` is the block's own left border (description.ts `dressRails`): the ::before starts inside it. */
+  left: calc(var(--geld-desc-depth, 0) * -24px - var(--geld-desc-edge, 0px));
   width: calc((var(--geld-desc-depth, 0) + 1) * 24px);
   background-image: var(--geld-desc-rails, none);
   background-position: var(--geld-desc-rail-pos, 0 0);
@@ -7546,6 +7588,46 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 
 [data-geld-desc-heading] {
   cursor: pointer;
+}
+
+/* The description's header: author, time and "N edits". Loose words ("commented") vanish with the font, and the
+ * line's gap goes with them, since each loose word is a flex item of its own. Two classes deep to outrank
+ * GitHub's `.gap-1`, which is `!important` too. */
+.timeline-comment-header [data-geld-desc-byline] {
+  gap: 0 !important;
+  font-size: 0 !important;
+}
+
+[data-geld-desc-byline] > :not([data-geld-desc-keep]) {
+  display: none !important;
+}
+
+[data-geld-desc-byline] > [data-geld-desc-keep] {
+  font-size: var(--text-body-size-medium, 14px);
+}
+
+[data-geld-desc-byline] > strong {
+  margin-right: 6px;
+}
+
+/* "N edits" stands at the line's far end, left of the badge and ⋯, so a first edit moves nothing else. */
+[data-geld-desc-byline] > .js-comment-edit-history {
+  margin-left: auto;
+}
+
+[data-geld-desc-byline] > .js-comment-edit-history > .color-fg-muted {
+  display: none !important;
+}
+
+/* GitHub pads the badge-and-⋯ group 16px off the line: 8px less puts the edit menu's caret as far from the badge
+ * as the badge is from the ⋯ (12px, measured on github.com Nov 2026). */
+.timeline-comment-header:has(> h3 [data-geld-desc-byline]) > :last-child {
+  padding-left: 8px !important;
+}
+
+[data-geld-desc-edits] > .position-relative > span:not(.geld-desc-edits),
+[data-geld-desc-edits] > span:not(.geld-desc-edits) {
+  display: none !important;
 }
 
 /* The heading's own text, links and code stay in GitHub's inline flow. The chevron stands in the indent beside it. */
@@ -7588,18 +7670,24 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   transform: rotate(-90deg);
 }
 
-[data-geld-desc-cap][data-geld-desc-long] {
-  max-height: 500px;
+/*
+ * The cut runs through the author's text only (description.ts `measure`): blocks wholly past it are hidden
+ * `until-found`, the one it crosses is clipped here, and the agents' summaries below stay whole.
+ */
+[data-geld-desc-cap][data-geld-desc-long] > [data-geld-desc-cut-edge] {
+  max-height: var(--geld-desc-cut-height);
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 96px), transparent);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 96px), transparent);
 }
 
+/* Inside the body, after the author's blocks: its ::before fades the text above it out. */
 .geld-desc-more {
   display: none;
+  position: relative;
+  order: 1;
+  width: 100%;
   align-items: center;
   gap: 4px;
-  margin: 0 16px 12px;
+  margin: 0 0 16px;
   padding: 0;
   border: 0;
   background: none;
@@ -7610,8 +7698,24 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   cursor: pointer;
 }
 
-[data-geld-desc-long] + .geld-desc-more {
-  display: inline-flex;
+[data-geld-desc-cap][data-geld-desc-long] > .geld-desc-more {
+  display: flex;
+}
+
+[data-geld-desc-cap][data-geld-desc-long] > .geld-desc-more::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  height: 96px;
+  background: linear-gradient(to bottom, transparent, var(--bgColor-default, var(--color-canvas-default, #fff)));
+  pointer-events: none;
+}
+
+/* With nothing of an agent's after it, the button ends the body, whose own padding is below it. */
+[data-geld-desc] > .geld-desc-more:last-child {
+  margin-bottom: 0;
 }
 
 .geld-desc-more:hover span {

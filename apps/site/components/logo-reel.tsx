@@ -31,7 +31,7 @@ export function LogoReel({ className }: { readonly className?: string }) {
   const [paused, setPaused] = useState(false);
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
-  useReelSpeed(track, paused || focused, hovered);
+  useReelSpeed(view, paused || focused, hovered);
   usePauseOffscreen(view);
 
   const onFocus = (event: FocusEvent<HTMLDivElement>): void => {
@@ -63,17 +63,38 @@ export function LogoReel({ className }: { readonly className?: string }) {
         </button>
       </div>
       <div ref={view} className="logo-reel relative mt-6" onFocus={onFocus} onBlur={onBlur} onPointerEnter={onPointer} onPointerLeave={onPointer}>
-        <div className="flex w-max pl-(--reel-gap) motion-reduce:w-full motion-reduce:pl-0">
-          <LeadLogo className="invisible" />
-          <div ref={track} className="relative flex w-max animate-logo-reel motion-reduce:w-full motion-reduce:animate-none">
-            <LeadLogo className="absolute top-0 right-full" />
-            <LogoList />
-            <LogoList copy />
-          </div>
+        <Track track={track} />
+        <div aria-hidden="true" className="logo-shine pointer-events-none absolute inset-0 motion-reduce:hidden">
+          <Track shine />
         </div>
       </div>
     </section>
   );
+}
+
+/**
+ * The logos on their sliding track. The shine is a second track laid exactly
+ * over the first, in a brighter tint and shown only through a still band at
+ * the window's middle (`logo-shine`), so each logo catches the light as it
+ * passes the centre and nothing else does. Its animation must run in step with
+ * the first: `reelAnimations` gives both to whatever sets the time or the rate.
+ */
+function Track({ track, shine = false }: { readonly track?: RefObject<HTMLDivElement | null>; readonly shine?: boolean }) {
+  return (
+    <div className="flex w-max pl-(--reel-gap) motion-reduce:w-full motion-reduce:pl-0">
+      <LeadLogo className="invisible" shine={shine} />
+      <div ref={track} className="relative flex w-max animate-logo-reel motion-reduce:w-full motion-reduce:animate-none">
+        <LeadLogo className="absolute top-0 right-full" shine={shine} />
+        <LogoList shine={shine} />
+        <LogoList copy shine={shine} />
+      </div>
+    </div>
+  );
+}
+
+/** The reel's own animations, the track's and the shine's; a hovered link's colour transition is not one of them. */
+function reelAnimations(view: HTMLElement): CSSAnimation[] {
+  return view.getAnimations({ subtree: true }).filter((animation): animation is CSSAnimation => animation instanceof CSSAnimation && animation.animationName === 'logo-reel');
 }
 
 /** Out of view the window is marked `data-offscreen` and the reel stops there (`logo-reel` in globals.css), taking up again where it left off. */
@@ -97,35 +118,39 @@ function usePauseOffscreen(view: RefObject<HTMLDivElement | null>): void {
  * as the track's travel allows.
  */
 function bringIntoView(track: HTMLElement, view: HTMLElement, target: Element): void {
-  const animation = track.getAnimations()[0];
-  const duration = animation?.effect?.getComputedTiming().duration;
-  if (animation === undefined || typeof duration !== 'number') return;
+  const animations = reelAnimations(view);
+  const duration = animations[0]?.effect?.getComputedTiming().duration;
+  if (typeof duration !== 'number') return;
   const frame = view.getBoundingClientRect();
   const box = target.getBoundingClientRect();
   if (box.left >= frame.left && box.right <= frame.right) return;
   const half = track.offsetWidth / 2;
   const offset = track.getBoundingClientRect().left - frame.left - track.offsetLeft + (frame.left + frame.width / 2 - (box.left + box.width / 2));
-  animation.currentTime = (Math.min(half, Math.max(0, -offset)) / half) * duration;
+  const time = (Math.min(half, Math.max(0, -offset)) / half) * duration;
+  for (const animation of animations) animation.currentTime = time;
 }
 
 /**
- * Drives the track's CSS animation through its playback rate, so the reel
+ * Drives the reel's CSS animations through their playback rate, so the reel
  * stops where it is rather than jumping. `stopped` takes effect at once;
  * `slowed` eases to a stop and back over `EASE_MS`, a partial change taking
  * its share of that.
  */
-function useReelSpeed(track: RefObject<HTMLDivElement | null>, stopped: boolean, slowed: boolean): void {
+function useReelSpeed(view: RefObject<HTMLDivElement | null>, stopped: boolean, slowed: boolean): void {
   const rate = useRef(1);
   // Reduced motion removes the animation, and turning it off makes a new one at full speed, which must be told the state again.
   const reducedMotion = useSyncExternalStore(subscribeToMotion, prefersReducedMotion, () => false);
   useEffect(() => {
-    if (reducedMotion) return;
-    const animation = track.current?.getAnimations()[0];
-    if (animation === undefined) return;
+    if (reducedMotion || view.current === null) return;
+    const animations = reelAnimations(view.current);
+    if (animations.length === 0) return;
+    const setRate = (value: number): void => {
+      for (const animation of animations) animation.playbackRate = value;
+    };
     const target = stopped || slowed ? 0 : 1;
     if (stopped) {
       rate.current = 0;
-      animation.playbackRate = 0;
+      setRate(0);
       return;
     }
     const from = rate.current;
@@ -135,12 +160,12 @@ function useReelSpeed(track: RefObject<HTMLDivElement | null>, stopped: boolean,
     const step = (now: number): void => {
       const progress = duration === 0 ? 1 : Math.min(1, (now - start) / duration);
       rate.current = from + (target - from) * progress * progress * (3 - 2 * progress);
-      animation.playbackRate = rate.current;
+      setRate(rate.current);
       if (progress < 1) frame = requestAnimationFrame(step);
     };
     frame = requestAnimationFrame(step);
     return () => cancelAnimationFrame(frame);
-  }, [track, stopped, slowed, reducedMotion]);
+  }, [view, stopped, slowed, reducedMotion]);
 }
 
 const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
@@ -162,17 +187,17 @@ function subscribeToMotion(change: () => void): () => void {
  * the track. Neither is there with reduced motion, so the still row leads with
  * the first logo.
  */
-function LeadLogo({ className }: { readonly className: string }) {
+function LeadLogo({ className, shine }: { readonly className: string; readonly shine: boolean }) {
   const last = CUSTOMERS.at(-1);
   if (last === undefined) return null;
   return (
     <div aria-hidden="true" className={cn('flex h-10 shrink-0 items-center pr-(--reel-gap) motion-reduce:hidden', className)}>
-      <CustomerLink customer={last} focusable={false} />
+      {shine ? <CustomerMark customer={last} /> : <CustomerLink customer={last} focusable={false} />}
     </div>
   );
 }
 
-function LogoList({ copy = false }: { readonly copy?: boolean }) {
+function LogoList({ copy = false, shine }: { readonly copy?: boolean; readonly shine: boolean }) {
   return (
     <ul
       className={cn('flex shrink-0 items-center', 'motion-reduce:w-full motion-reduce:shrink motion-reduce:flex-wrap motion-reduce:justify-center motion-reduce:gap-y-6', copy && 'motion-reduce:hidden')}
@@ -181,7 +206,7 @@ function LogoList({ copy = false }: { readonly copy?: boolean }) {
     >
       {CUSTOMERS.map((customer) => (
         <li key={customer.name} className="flex h-10 shrink-0 items-center pr-(--reel-gap)">
-          <CustomerLink customer={customer} focusable={!copy} />
+          {shine ? <CustomerMark customer={customer} /> : <CustomerLink customer={customer} focusable={!copy} />}
         </li>
       ))}
     </ul>
@@ -189,15 +214,32 @@ function LogoList({ copy = false }: { readonly copy?: boolean }) {
 }
 
 function CustomerLink({ customer, focusable }: { readonly customer: Customer; readonly focusable: boolean }) {
-  const { logo } = customer;
   return (
     <ExternalLink href={customer.url} tabIndex={focusable ? undefined : -1} className="flex items-center gap-2 text-foreground/65 transition-colors hover:text-foreground">
+      <LogoFace customer={customer} />
+    </ExternalLink>
+  );
+}
+
+/** The shine's copy of a logo: the same shape and box as the link, in the shine's colour, with nothing to click. */
+function CustomerMark({ customer }: { readonly customer: Customer }) {
+  return (
+    <span className="flex items-center gap-2">
+      <LogoFace customer={customer} />
+    </span>
+  );
+}
+
+function LogoFace({ customer }: { readonly customer: Customer }) {
+  const { logo } = customer;
+  return (
+    <>
       <span
         aria-hidden="true"
         className="logo-mask"
         style={{ height: logo.height, width: logo.height * logo.aspect, maskImage: `url(${logo.src})`, WebkitMaskImage: `url(${logo.src})` }}
       />
       <span className={customer.markOnly ? 'text-[1.375rem] leading-none font-semibold tracking-tight' : 'sr-only'}>{customer.name}</span>
-    </ExternalLink>
+    </>
   );
 }
