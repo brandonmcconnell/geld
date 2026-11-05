@@ -33,6 +33,11 @@ describe('descriptionBotSegments', () => {
     ]);
   });
 
+  it('reads the author’s words after a block as they render, entities decoded', () => {
+    const markdown = '<!-- CURSOR_SUMMARY -->\n> [!NOTE]\n<!-- /CURSOR_SUMMARY -->\n## R&amp;D rollout &#8212; phase&nbsp;2\nTom &amp; Jerry&#39;s plan, &bogus; kept.';
+    expect(descriptionBotSegments(markdown)).toEqual([{ bot: 'bugbot', after: 'r d rollout phase 2 tom jerry s plan bogus kept' }]);
+  });
+
   it('runs a block with no end marker to the next one', () => {
     const markdown = '<!-- CURSOR_SUMMARY -->\n> [!NOTE]\n\nMore words\n<!-- greptile_comment -->\nsummary';
     expect(descriptionBotSegments(markdown)).toEqual([

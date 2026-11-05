@@ -48,16 +48,28 @@ export function plainWords(text: string): string {
     .trim();
 }
 
-/** Markdown to the words it shows: comments, images, tags, link targets and code fences' syntax go. */
+const NAMED_ENTITIES: Readonly<Record<string, string>> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+
+/** What an HTML entity in Markdown renders as; one the list does not know stays as written. */
+function decodeEntities(text: string): string {
+  return text.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (whole, name: string) => {
+    if (name.startsWith('#')) {
+      const code = name[1] === 'x' || name[1] === 'X' ? Number.parseInt(name.slice(2), 16) : Number.parseInt(name.slice(1), 10);
+      return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+    }
+    return NAMED_ENTITIES[name.toLowerCase()] ?? whole;
+  });
+}
+
+/** Markdown to the words it shows: comments, images, tags, link targets and entities (as rendered) go. */
 function markdownWords(markdown: string): string {
-  return plainWords(
-    markdown
-      .replace(/<!--[\s\S]*?-->/g, ' ')
-      .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
-      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/https?:\/\/\S+/g, ' '),
-  );
+  const shown = markdown
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ');
+  return plainWords(decodeEntities(shown));
 }
 
 interface Found {
