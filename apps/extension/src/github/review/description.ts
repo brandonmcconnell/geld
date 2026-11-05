@@ -271,6 +271,8 @@ function wire(block: HTMLElement, body: HTMLElement): void {
     if (key === null) return;
     const opening = block.getAttribute(ATTR_HEADING) !== 'open';
     state.open.set(key, opening);
+    // Opening a section is reading the description, as opening a `<details>` is: a cut one (only bots' sections) is cut no more.
+    if (opening) state.capped = false;
     // The chevron turns in this frame and the section shows in the next: laying out what was folded is the costly
     // part, and once the (composited) rotation has started that work can no longer hold it up.
     setFlag(block, ATTR_HEADING, opening ? 'open' : 'closed');

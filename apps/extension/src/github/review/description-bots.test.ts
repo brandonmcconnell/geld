@@ -47,6 +47,12 @@ describe('botSectionsOf', () => {
     expect(botSectionsOf(blocks, md)).toEqual([{ bot: 'greptile', start: 1, end: 2, title: 'Greptile' }]);
   });
 
+  it('ends a block at the author’s heading when the Markdown spells it with an entity', () => {
+    const blocks = blocksOf('<details open><summary>Greptile Summary</summary>Fine.</details><h2>R&amp;D rollout</h2><p>Phase two.</p>');
+    const md = '<!-- greptile_comment -->\n<details open><summary>Greptile Summary</summary>Fine.</details>\n<!-- /greptile_comment -->\n## R&amp;D rollout\nPhase two.';
+    expect(botSectionsOf(blocks, md)).toEqual([{ bot: 'greptile', start: 0, end: 1, title: 'Greptile' }]);
+  });
+
   it('takes the rule older Bugbot notes stood under, and nothing after the note', () => {
     const blocks = blocksOf('<p>Body.</p><hr><div class="markdown-alert markdown-alert-note"><p><strong>Medium Risk</strong></p><p><sup>Written by <a href="https://cursor.com/dashboard?tab=bugbot">Cursor Bugbot</a></sup></p></div><p>Author’s P.S.</p>');
     expect(botSectionsOf(blocks, null)).toEqual([{ bot: 'bugbot', start: 1, end: 3, title: 'Cursor Bugbot · Medium Risk' }]);
@@ -101,6 +107,16 @@ describe('shortenDescription with bots’ blocks', () => {
     expect(body.querySelector('[data-geld-desc-bot]')).toBeNull();
     const states = [...body.children].map((block) => block.getAttribute('data-geld-desc-heading'));
     expect(states).toEqual([null, 'open', null, null, 'closed', null, 'closed', null, null]);
+  });
+
+  it('lifts the cut when a bot’s section is opened', async () => {
+    const body = mount('greptile');
+    shortenDescription(true);
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(true);
+    body.querySelector<HTMLElement>('[data-geld-desc-bot] .geld-desc-toggle')?.click();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    expect(body.querySelector('[data-geld-desc-bot]')?.getAttribute('data-geld-desc-heading')).toBe('open');
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
   });
 
   it('takes Geld’s headings away when shortening is turned off', () => {
