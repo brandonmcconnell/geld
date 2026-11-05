@@ -18,6 +18,13 @@ const ATTR_CUT = 'data-geld-desc-cut';
 /** On the author's block the cut runs through, clipped at `--geld-desc-cut-height`. */
 const ATTR_CUT_EDGE = 'data-geld-desc-cut-edge';
 const CUT_HEIGHT_PROPERTY = '--geld-desc-cut-height';
+/**
+ * On Show full description while it draws the rails of the block the cut runs through: that block clips its overflow
+ * (so a find-in-page scroll inside it is seen), which clips its own rails too, since they hang to its left.
+ */
+const ATTR_CARRY = 'data-geld-desc-carry';
+/** What the button's rails take from the clipped block (`dressRails`), and how tall they run above the button. */
+const CARRIED_PROPERTIES = ['--geld-desc-rails', '--geld-desc-rail-pos', '--geld-desc-rail-size', '--geld-desc-after', '--geld-desc-chevron-y', '--geld-desc-carry-height'] as const;
 /** On GitHub's reactions row while it stands above the agents' summaries, raised by `--geld-desc-lift`. */
 const ATTR_LIFTED = 'data-geld-desc-lifted';
 const LIFT_PROPERTY = '--geld-desc-lift';
@@ -115,9 +122,17 @@ function blocksOf(body: HTMLElement): Element[] {
   return [...body.children].filter((block) => !block.hasAttribute(OWN_UI_ATTRIBUTE));
 }
 
+/**
+ * A divider: a `<hr>` (Markdown's `---`) or a heading with nothing to read in it. While the description is shortened
+ * it is hidden and left out of the outline, since the slimmed headings and the folds already part the sections.
+ */
+export function isDivider(block: Element): boolean {
+  return block.tagName === 'HR' || isBlankHeading(block);
+}
+
 /** The blocks the outline is built from: dividers neither fold nor head anything. */
 function sectionBlocks(body: HTMLElement): Element[] {
-  return blocksOf(body).filter((block) => !isBlankHeading(block));
+  return blocksOf(body).filter((block) => !isDivider(block));
 }
 
 /** One tool's content gathered under its own heading at the foot of the description (every block it wrote, merged). */
@@ -454,6 +469,51 @@ function clearCut(body: HTMLElement): void {
     block.removeAttribute(ATTR_CUT_EDGE);
     if (block instanceof HTMLElement) setProperty(block, CUT_HEIGHT_PROPERTY, null);
   }
+  for (const more of body.querySelectorAll<HTMLElement>(`:scope > .${MORE_CLASS}[${ATTR_CARRY}]`)) {
+    more.removeAttribute(ATTR_CARRY);
+    for (const name of CARRIED_PROPERTIES) setProperty(more, name, null);
+  }
+}
+
+/** What the rails of the block the cut runs through need, read before anything is written. */
+interface CarriedRails {
+  readonly rails: string;
+  readonly position: string;
+  readonly size: string;
+  readonly after: string;
+  readonly chevronY: string;
+  readonly marginBottom: number;
+}
+
+function railsOfEdge(block: Element): CarriedRails | null {
+  if (!(block instanceof HTMLElement)) return null;
+  const rails = block.style.getPropertyValue('--geld-desc-rails');
+  if (rails === '') return null;
+  const style = getComputedStyle(block);
+  return {
+    rails,
+    position: block.style.getPropertyValue('--geld-desc-rail-pos'),
+    size: block.style.getPropertyValue('--geld-desc-rail-size'),
+    after: style.getPropertyValue('--geld-desc-after').trim() || '0px',
+    chevronY: style.getPropertyValue('--geld-desc-chevron-y').trim() || '0px',
+    marginBottom: pixels(style.marginBottom),
+  };
+}
+
+/**
+ * Show full description draws the clipped block's rails above itself (its `::after`, under the fade), from the
+ * block's top down through its bottom margin to the button, as the block's own `::before` would have.
+ */
+function carryRails(body: HTMLElement, carried: CarriedRails, height: number): void {
+  const more = body.querySelector<HTMLElement>(`:scope > .${MORE_CLASS}`);
+  if (more === null) return;
+  setFlag(more, ATTR_CARRY, '');
+  setProperty(more, '--geld-desc-rails', carried.rails);
+  setProperty(more, '--geld-desc-rail-pos', carried.position);
+  setProperty(more, '--geld-desc-rail-size', carried.size);
+  setProperty(more, '--geld-desc-after', carried.after);
+  setProperty(more, '--geld-desc-chevron-y', carried.chevronY);
+  setProperty(more, '--geld-desc-carry-height', `${height + carried.marginBottom}px`);
 }
 
 /**
@@ -471,12 +531,17 @@ function measure(body: HTMLElement): void {
   });
   const long = spans.some((span) => span.end > DESCRIPTION_CAP_PX + CAP_SLACK_PX);
   setFlag(body, ATTR_LONG, long ? '' : null);
-  if (long && state.capped) {
+  const cutting = long && state.capped;
+  const edge = cutting ? spans.find(({ start, end }) => start < DESCRIPTION_CAP_PX && end > DESCRIPTION_CAP_PX) : undefined;
+  const carried = edge === undefined ? null : railsOfEdge(edge.block);
+  if (cutting) {
     for (const { block, start, end } of spans) {
       if (start >= DESCRIPTION_CAP_PX) fold(block, ATTR_CUT);
       else if (end > DESCRIPTION_CAP_PX && block instanceof HTMLElement) {
+        const height = Math.round(Math.max(DESCRIPTION_CAP_PX - start, Math.min(CUT_EDGE_MIN_PX, end - start)));
         setFlag(block, ATTR_CUT_EDGE, '');
-        setProperty(block, CUT_HEIGHT_PROPERTY, `${Math.round(Math.max(DESCRIPTION_CAP_PX - start, Math.min(CUT_EDGE_MIN_PX, end - start)))}px`);
+        setProperty(block, CUT_HEIGHT_PROPERTY, `${height}px`);
+        if (carried !== null) carryRails(body, carried, height);
       }
     }
   }

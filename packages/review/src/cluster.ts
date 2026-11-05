@@ -67,17 +67,21 @@ export function firstSentence(body: string): string {
     .find((entry) => entry !== '') ?? '';
   const cleaned = line.replace(/\s+/g, ' ').trim();
   if (cleaned === '') return 'Comment';
-  // The sentence ends at the first terminator outside a code span, so `a.b` in code does not cut it short.
+  // The sentence ends at the first terminator outside a code span that ends a word too, so neither `a.b` in code nor a
+  // URL, a version or "e.g.x" in the text cuts it short.
   const sentence = sentenceOf(cleaned, 160);
   return sentence.trim();
 }
+
+/** After a terminator: the end of the text, a space, or closing punctuation or emphasis (`.)`, `."`, `.**`). */
+const endsWord = (next: string | undefined): boolean => next === undefined || /[\s)\]"'’”*_~]/.test(next);
 
 function sentenceOf(text: string, limit: number): string {
   let inCode = false;
   for (let index = 0; index < text.length && index < limit; index += 1) {
     const char = text[index];
     if (char === '`') inCode = !inCode;
-    else if (!inCode && (char === '.' || char === '!' || char === '?')) return text.slice(0, index + 1);
+    else if (!inCode && (char === '.' || char === '!' || char === '?') && endsWord(text[index + 1])) return text.slice(0, index + 1);
   }
   return text.slice(0, limit);
 }

@@ -28,6 +28,10 @@ const ELLIPSIS =
 const BUGBOT =
   '<div class="markdown-alert markdown-alert-note" dir="auto"><p class="markdown-alert-title" dir="auto">Note</p><p dir="auto"><strong>Low Risk</strong><br>Metadata only.</p>' +
   '<p dir="auto"><sup>Written by <a href="https://cursor.com/dashboard?tab=bugbot">Cursor Bugbot</a> for commit <tt>3c2c48b</tt>. This will update automatically on new commits.</sup></p></div>';
+// The wording since Nov 2026 (mintlify/mint#14335), as GitHub renders it.
+const BUGBOT_REVIEWED =
+  '<div class="markdown-alert markdown-alert-note" dir="auto"><p class="markdown-alert-title" dir="auto">Note</p><p dir="auto"><strong>Medium Risk</strong><br>Touches public asset classification.</p>' +
+  '<p dir="auto"><sup>Reviewed by <a href="https://cursor.com/bugbot" rel="nofollow">Cursor Bugbot</a> for commit f98e39d. Bugbot is set up for automated code reviews on this repo. Configure <a href="https://www.cursor.com/dashboard/bugbot" rel="nofollow">here</a>.</sup></p></div>';
 const CURSOR_AGENT =
   '<div><a href="https://cursor.com/agents/bc-f4c8?cursor_ref=pr_footer"><picture><img alt="Open in Web" src="w.png"></picture></a>&nbsp;' +
   '<a href="https://cursor.com/background-agent?bcId=bc-f4c8"><picture><img alt="Open in Cursor" src="c.png"></picture></a>&nbsp;</div>';
@@ -47,6 +51,10 @@ describe('toolBlocksOf', () => {
     expect(spans(`${CUBIC}<p>after</p>`)).toEqual([at('cubic', 0, 3, 0)]);
     expect(spans(`<p>mine</p>${GREPTILE}<p>after</p>`)).toEqual([at('greptile', 1, 5)]);
     expect(spans(ELLIPSIS)).toEqual([at('ellipsis', 0, 4)]);
+  });
+
+  it('finds Bugbot’s note signed "Reviewed by", with the rule above it', () => {
+    expect(spans(`<p>mine</p><hr>${BUGBOT_REVIEWED}`)).toEqual([at('bugbot', 1, 2)]);
   });
 
   it('finds one-block notes and footers, with the rule just above a footer', () => {

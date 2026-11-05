@@ -9,7 +9,7 @@ import { firstSentence } from '@geld/review';
 import { OWN_UI_ATTRIBUTE } from '../dom';
 import { blockText } from './crawler';
 import { toolBlocksOf } from './description-blocks';
-import { descriptionBody, descriptionMarkdown, isBlankHeading } from './description';
+import { descriptionBody, descriptionMarkdown, isDivider } from './description';
 import { logUrlOfCard, revisionBody, revisionMarkdown, revisionsIn, revisionState } from './edit-times';
 
 /** One way a tool's note read: at a revision of the description (`at`), or as the page has it now (`at` null). */
@@ -51,7 +51,7 @@ const textOf = (element: Element): string => (element.textContent ?? '').replace
 
 /** The blocks a tool can be found among: Geld's own controls and empty dividing headings left out. */
 function sectionsOf(container: Element): Element[] {
-  return [...container.children].filter((block) => !block.hasAttribute(OWN_UI_ATTRIBUTE) && !isBlankHeading(block));
+  return [...container.children].filter((block) => !block.hasAttribute(OWN_UI_ATTRIBUTE) && !isDivider(block));
 }
 
 interface Found {

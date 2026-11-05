@@ -349,6 +349,28 @@ describe('shortenDescription', () => {
     expect(body.querySelector('[data-geld-desc-last]')).toBeNull();
   });
 
+  it('draws the rails of the block the cut runs through above Show full description, which that block’s clip would hide', async () => {
+    const body = mountDescription(`${h(2, 'Summary')}<p>a</p><ul><li>one</li><li>two</li></ul><p>after</p>${h(2, 'Summary by CodeRabbit')}<ul><li>x</li></ul>`);
+    const [heading, a, list, after] = [...body.children];
+    if (heading === undefined || a === undefined || !(list instanceof HTMLElement) || after === undefined) throw new Error('no blocks');
+    layOut(body, new Map([[heading, 40], [a, 100], [list, 600], [after, 50]]));
+    shortenDescription(true);
+    // Opening an agent's section measures again and keeps the cut (happy-dom runs no ResizeObserver).
+    body.querySelector<HTMLElement>('.geld-desc-agent')?.click();
+    await frames();
+    await frame();
+    expect(list.hasAttribute('data-geld-desc-cut-edge')).toBe(true);
+    expect(list.style.getPropertyValue('--geld-desc-rails')).not.toBe('');
+    const more = body.querySelector<HTMLElement>(':scope > .geld-desc-more');
+    expect(more?.hasAttribute('data-geld-desc-carry')).toBe(true);
+    expect(more?.style.getPropertyValue('--geld-desc-rails')).toBe(list.style.getPropertyValue('--geld-desc-rails'));
+    expect(more?.style.getPropertyValue('--geld-desc-rail-pos')).toBe(list.style.getPropertyValue('--geld-desc-rail-pos'));
+    // From the list's top to the cut: 500 - 140.
+    expect(more?.style.getPropertyValue('--geld-desc-carry-height')).toBe('360px');
+    more?.click();
+    expect(body.querySelector('[data-geld-desc-carry]')).toBeNull();
+  });
+
   it('cuts only the author’s text at 500px, the agents’ summaries below it untouched, and opening an agent keeps the cut', async () => {
     const body = mountDescription(
       `<p>one</p><p>two</p><p>three</p>${h(2, 'Summary by CodeRabbit')}<ul><li>Bug fixes</li></ul>`,
@@ -403,6 +425,18 @@ describe('shortenDescription', () => {
     expect(heading?.textContent).toBe('Cursor Bugbot · Low Risk');
     expect(heading?.getAttribute('data-geld-desc-heading')).toBe('closed');
     expect(body.querySelector('.markdown-alert')?.hasAttribute('data-geld-desc-fold')).toBe(true);
+  });
+
+  it('hides a rule (`---`, `<hr>`) as it hides a blank heading, and leaves it out of the outline', () => {
+    const body = mountDescription(`${h(2, 'One')}<p>a</p><hr>${h(2, 'Two')}<p>b</p>`);
+    shortenDescription(true);
+    const rule = body.querySelector('hr');
+    expect(rule?.hasAttribute('data-geld-desc-blank')).toBe(true);
+    // The rule is no section's content: One folds its own text only.
+    expect(rule?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(rule?.hasAttribute('data-geld-desc-depth')).toBe(false);
+    shortenDescription(false);
+    expect(rule?.hasAttribute('data-geld-desc-blank')).toBe(false);
   });
 
   it('still opens the first section when a divider comes before it', () => {

@@ -79,8 +79,9 @@ const TOOL_SPECS: readonly ToolSpec[] = [
     starts: (block) => linksTo(/^https:\/\/(?:www\.)?ellipsis\.dev\b/)(block) && /description was created by Ellipsis/i.test(textOf(block)),
     ends: (block) => linksTo(/^https:\/\/(?:www\.)?ellipsis\.dev\b/)(block) && /^Generated with .* by ellipsis\.dev$/i.test(textOf(block)),
   },
-  // The Note alert headed by the risk level and signed "Written by Cursor Bugbot for commit …".
-  { id: 'bugbot', name: 'Cursor Bugbot', bot: 'bugbot', starts: (block) => block.classList.contains('markdown-alert') && /Written by Cursor Bugbot\b/.test(textOf(block)) },
+  // The Note alert headed by the risk level and signed "Written by Cursor Bugbot for commit …", since Nov 2026 "Reviewed
+  // by Cursor Bugbot for commit …" (mintlify/mint#14335).
+  { id: 'bugbot', name: 'Cursor Bugbot', bot: 'bugbot', starts: (block) => block.classList.contains('markdown-alert') && /\b(?:Written|Reviewed|Generated) by Cursor Bugbot\b/.test(textOf(block)) },
   // A Cursor agent's "Open in Web" / "Open in Cursor" badges.
   {
     id: 'cursor-agent',

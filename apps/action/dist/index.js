@@ -32766,12 +32766,13 @@ function firstSentence(body) {
   const sentence = sentenceOf(cleaned, 160);
   return sentence.trim();
 }
+var endsWord = (next) => next === void 0 || /[\s)\]"'’”*_~]/.test(next);
 function sentenceOf(text, limit) {
   let inCode = false;
   for (let index = 0; index < text.length && index < limit; index += 1) {
     const char = text[index];
     if (char === "`") inCode = !inCode;
-    else if (!inCode && (char === "." || char === "!" || char === "?")) return text.slice(0, index + 1);
+    else if (!inCode && (char === "." || char === "!" || char === "?") && endsWord(text[index + 1])) return text.slice(0, index + 1);
   }
   return text.slice(0, limit);
 }
