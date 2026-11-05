@@ -16,6 +16,13 @@ const ATTR_CUT = 'data-geld-desc-cut';
 /** On the author's block the cut runs through, clipped at `--geld-desc-cut-height`. */
 const ATTR_CUT_EDGE = 'data-geld-desc-cut-edge';
 const CUT_HEIGHT_PROPERTY = '--geld-desc-cut-height';
+/** On GitHub's reactions row while it stands above the agents' summaries, raised by `--geld-desc-lift`. */
+const ATTR_LIFTED = 'data-geld-desc-lifted';
+const LIFT_PROPERTY = '--geld-desc-lift';
+/** On the body: how far the agents' summaries are lowered to make room for the reactions row above them. */
+const DROP_PROPERTY = '--geld-desc-drop';
+/** On the agents' block that shows last, so the box ends as far below it as the text stands from the left. */
+const ATTR_AGENT_LAST = 'data-geld-desc-agent-last';
 /** On a heading block that folds: `open` or `closed`. */
 const ATTR_HEADING = 'data-geld-desc-heading';
 /** On a heading block: the key its open state is remembered by this visit. */
@@ -264,6 +271,7 @@ const state = { page: '', open: new Map<string, boolean>(), capped: true };
 
 let resizeObserver: ResizeObserver | null = null;
 let observed: HTMLElement | null = null;
+let observedRow: HTMLElement | null = null;
 
 function descriptionBody(): HTMLElement | null {
   const body =
@@ -450,24 +458,76 @@ function measure(body: HTMLElement): void {
   });
   const long = spans.some((span) => span.end > DESCRIPTION_CAP_PX + CAP_SLACK_PX);
   setFlag(body, ATTR_LONG, long ? '' : null);
-  if (!long || !state.capped) return;
-  for (const { block, start, end } of spans) {
-    if (start >= DESCRIPTION_CAP_PX) fold(block, ATTR_CUT);
-    else if (end > DESCRIPTION_CAP_PX && block instanceof HTMLElement) {
-      setFlag(block, ATTR_CUT_EDGE, '');
-      setProperty(block, CUT_HEIGHT_PROPERTY, `${Math.round(DESCRIPTION_CAP_PX - start)}px`);
+  if (long && state.capped) {
+    for (const { block, start, end } of spans) {
+      if (start >= DESCRIPTION_CAP_PX) fold(block, ATTR_CUT);
+      else if (end > DESCRIPTION_CAP_PX && block instanceof HTMLElement) {
+        setFlag(block, ATTR_CUT_EDGE, '');
+        setProperty(block, CUT_HEIGHT_PROPERTY, `${Math.round(DESCRIPTION_CAP_PX - start)}px`);
+      }
     }
   }
+  liftReactions(body);
+}
+
+/** GitHub's reactions row under the description (the reaction picker and its pills), outside the body, and its box. */
+function reactionsRowOf(body: HTMLElement): { readonly row: HTMLElement; readonly box: HTMLElement } | null {
+  const box = body.closest('.js-comment');
+  const row = box?.querySelector('.pr-review-reactions, .comment-reactions') ?? null;
+  return box instanceof HTMLElement && row instanceof HTMLElement && !body.contains(row) ? { row, box } : null;
 }
 
 function observe(body: HTMLElement): void {
-  if (observed === body) return;
   resizeObserver ??= new ResizeObserver((entries) => {
-    for (const entry of entries) if (entry.target instanceof HTMLElement && entry.target === observed) measure(entry.target);
+    if (observed === null) return;
+    // The body and the reactions row both move what `measure` reads; one reading serves the batch.
+    if (entries.some((entry) => entry.target === observed || entry.target === observedRow)) measure(observed);
   });
-  if (observed !== null) resizeObserver.unobserve(observed);
-  observed = body;
-  resizeObserver.observe(body);
+  if (observed !== body) {
+    if (observed !== null) resizeObserver.unobserve(observed);
+    observed = body;
+    resizeObserver.observe(body);
+  }
+  // GitHub replaces the row when a reaction lands; the new one is observed, and observing it is a first reading.
+  const row = reactionsRowOf(body)?.row ?? null;
+  if (row === observedRow) return;
+  if (observedRow !== null) resizeObserver.unobserve(observedRow);
+  observedRow = row;
+  if (row !== null) resizeObserver.observe(row);
+}
+
+const pixels = (length: string): number => Number.parseFloat(length) || 0;
+
+function unlift(body: HTMLElement): void {
+  setProperty(body, DROP_PROPERTY, null);
+  for (const row of document.querySelectorAll(`[${ATTR_LIFTED}]`)) {
+    row.removeAttribute(ATTR_LIFTED);
+    if (row instanceof HTMLElement) setProperty(row, LIFT_PROPERTY, null);
+  }
+}
+
+/**
+ * GitHub's reactions row belongs to the author's description, but it stands after the body, under the agents'
+ * summaries the body ends with. Neither can move (GitHub's nodes never do), so the two trade places on screen with
+ * relative offsets, which lay nothing out again: the row, with the room under it down to the box's edge, is raised to
+ * where the agents start (the band's top margin included), and the agents are lowered by that much, so they end the
+ * box the body's own padding above its edge. Read with both offsets lifted, then written.
+ */
+function liftReactions(body: HTMLElement): void {
+  const found = reactionsRowOf(body);
+  const band = body.querySelector(`:scope > .${AGENTS_CLASS}`);
+  unlift(body);
+  if (found === null || !(band instanceof HTMLElement)) return;
+  const rowTop = found.row.getBoundingClientRect().top;
+  const rowHeight = found.row.getBoundingClientRect().height;
+  const bandTop = band.getBoundingClientRect().top;
+  if (rowHeight === 0 || band.getClientRects().length === 0) return;
+  const boxStyle = getComputedStyle(found.box);
+  const edge = found.box.getBoundingClientRect().bottom - pixels(boxStyle.borderBottomWidth) - pixels(boxStyle.paddingBottom);
+  const start = bandTop - pixels(getComputedStyle(band).marginTop);
+  setFlag(found.row, ATTR_LIFTED, '');
+  setProperty(found.row, LIFT_PROPERTY, `${start - rowTop}px`);
+  setProperty(body, DROP_PROPERTY, `${edge - rowTop}px`);
 }
 
 function setProperty(element: HTMLElement, name: string, value: string | null): void {
@@ -603,6 +663,9 @@ function applyTo(body: HTMLElement): void {
     const element = headingElementOf(block);
     element?.querySelector(`:scope > .${TOGGLE_CLASS}`)?.remove();
   });
+  // The agents' blocks end the layout, so the last one shown is the last block not folded away.
+  const lastShown = layout.groups.length === 0 ? -1 : blocks.findLastIndex((_, index) => !hidden.has(index));
+  blocks.forEach((block, index) => setFlag(block, ATTR_AGENT_LAST, index === lastShown ? '' : null));
   const rails = railsOf(blocks.length, outline, hidden, (heading) => openNow.get(heading.index) ?? true);
   blocks.forEach((block, index) => {
     if (block instanceof HTMLElement) dressRails(block, rails.get(index) ?? null);
@@ -622,12 +685,23 @@ function release(): void {
   wiring.signal.abort();
   wiring = { signal: new AbortController(), blocks: new WeakSet(), bodies: new WeakSet(), buttons: new WeakSet() };
   if (observed !== null) resizeObserver?.unobserve(observed);
+  if (observedRow !== null) resizeObserver?.unobserve(observedRow);
   observed = null;
+  observedRow = null;
 }
 
 function clear(): void {
   // The page and its choices stay: showing the full timeline and back keeps what the reader opened.
+  const body = observed;
   release();
+  if (body !== null) unlift(body);
+  for (const element of document.querySelectorAll(`[${ATTR_LIFTED}]`)) {
+    element.removeAttribute(ATTR_LIFTED);
+    if (element instanceof HTMLElement) element.style.removeProperty(LIFT_PROPERTY);
+  }
+  for (const element of document.querySelectorAll(`[data-geld-desc]`)) {
+    if (element instanceof HTMLElement) element.style.removeProperty(DROP_PROPERTY);
+  }
   for (const element of document.querySelectorAll(`.${TOGGLE_CLASS}, .${MORE_CLASS}, .${AGENTS_CLASS}, .${AGENT_CLASS}`)) element.remove();
   for (const element of document.querySelectorAll(`[${ATTR_AGENT}]`)) {
     if (element instanceof HTMLElement) element.style.removeProperty(ORDER_PROPERTY);
@@ -642,7 +716,7 @@ function clear(): void {
   for (const element of document.querySelectorAll(`[${ATTR_CUT_EDGE}]`)) {
     if (element instanceof HTMLElement) element.style.removeProperty(CUT_HEIGHT_PROPERTY);
   }
-  for (const name of [ATTR_FOLD, ATTR_CUT, ATTR_CUT_EDGE, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH, ATTR_BLANK, ATTR_AGENTS, ATTR_AGENT, ATTR_AGENT_HIDDEN]) {
+  for (const name of [ATTR_FOLD, ATTR_CUT, ATTR_CUT_EDGE, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH, ATTR_BLANK, ATTR_AGENTS, ATTR_AGENT, ATTR_AGENT_HIDDEN, ATTR_AGENT_LAST]) {
     for (const element of document.querySelectorAll(`[${name}]`)) element.removeAttribute(name);
   }
 }
