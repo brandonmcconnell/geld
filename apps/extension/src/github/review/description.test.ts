@@ -348,6 +348,32 @@ describe('shortenDescription', () => {
     expect(body.children[4]?.hasAttribute('data-geld-desc-fold')).toBe(true);
   });
 
+  it('lifts the cut when the browser scrolls inside it to show text below, and keeps that text where it was', () => {
+    const body = mountDescription(`<p>one</p><p>two</p><p>needle</p>${h(2, 'Notes')}<p>n</p>`);
+    shortenDescription(true);
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(true);
+    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => undefined);
+    body.scrollTop = 120;
+    body.dispatchEvent(new Event('scroll'));
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
+    expect(scrollBy).toHaveBeenCalledWith({ top: 120, behavior: 'instant' });
+    scrollBy.mockRestore();
+  });
+
+  it('reads the height again after a section closes, so a description that now fits is not left under the fade', async () => {
+    const body = mountDescription(`${h(2, 'A')}<p>a</p>${h(2, 'B')}<p>b</p>`);
+    shortenDescription(true);
+    expect(body.children[0]?.getAttribute('data-geld-desc-heading')).toBe('open');
+    // As the cut body measured while the first section was open; the folded body is short now.
+    body.setAttribute('data-geld-desc-long', '');
+    Object.defineProperty(body, 'scrollHeight', { configurable: true, get: () => 300 });
+    body.querySelector<HTMLElement>('.markdown-heading h2')?.click();
+    await frames();
+    await frame();
+    expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    expect(body.hasAttribute('data-geld-desc-long')).toBe(false);
+  });
+
   it('lifts the cut when find-in-page opens a folded section', () => {
     const body = mountDescription(`<p>intro</p>${h(2, 'A')}<p>needle</p>`);
     shortenDescription(true);
