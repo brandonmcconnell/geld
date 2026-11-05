@@ -217,12 +217,19 @@ function wire(block: HTMLElement, body: HTMLElement): void {
     if (key === null) return;
     const opening = block.getAttribute(ATTR_HEADING) !== 'open';
     state.open.set(key, opening);
+    // Opening a section is reading the description, so the cut goes with it, as on Show full description.
+    if (opening) state.capped = false;
     // The chevron turns in this frame and the section shows in the next: laying out what was folded is the costly
     // part, and once the (composited) rotation has started that work can no longer hold it up.
     setFlag(block, ATTR_HEADING, opening ? 'open' : 'closed');
     const { signal } = wiring.signal;
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (!signal.aborted) applyTo(body);
+      if (signal.aborted) return;
+      applyTo(body);
+      // A cut body keeps the cap's height whatever folds inside it, so no resize says it now fits: read it once more.
+      requestAnimationFrame(() => {
+        if (!signal.aborted) measure(body);
+      });
     }));
   }, { signal: wiring.signal.signal });
 }
@@ -248,7 +255,8 @@ function syncMoreButton(body: HTMLElement, show: boolean): void {
 
 /**
  * Opening any collapsible part of a cut description (a `<details>`) is reading it: the cut goes. And when the
- * browser's find-in-page matches text folded under a heading (`hidden="until-found"`), every section around it opens.
+ * browser's find-in-page matches text folded under a heading (`hidden="until-found"`), every section around it opens
+ * and the cut goes too, so the match is not left under the fade.
  */
 function watchBody(body: HTMLElement): void {
   if (wiring.bodies.has(body)) return;
@@ -258,6 +266,15 @@ function watchBody(body: HTMLElement): void {
   body.addEventListener('toggle', (event) => {
     if (event.target instanceof HTMLDetailsElement && event.target.open) uncap(body);
   }, options);
+  // The cut is `overflow: hidden`, which the browser still scrolls to show a find-in-page match or a focused link below
+  // it. That text is under no folded heading, so no `beforematch` comes: the scroll is the sign, and the cut goes.
+  body.addEventListener('scroll', () => {
+    const offset = body.scrollTop;
+    if (offset <= 0 || !state.capped) return;
+    uncap(body);
+    // Uncut, the body no longer scrolls inside, so the match would drop by that much: the page takes it up instead.
+    window.scrollBy({ top: offset, behavior: 'instant' });
+  }, { signal: wiring.signal.signal });
   body.addEventListener('beforematch', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -269,6 +286,7 @@ function watchBody(body: HTMLElement): void {
       const key = blocks[heading.index]?.getAttribute(ATTR_KEY);
       if (key !== null && key !== undefined) state.open.set(key, true);
     }
+    state.capped = false;
     applyTo(body);
   }, options);
 }
@@ -384,8 +402,9 @@ function applyTo(body: HTMLElement): void {
     if (block instanceof HTMLElement) dressRails(block, rails.get(index) ?? null);
   });
   setFlag(body, ATTR_ON, '');
-  // Only a description with no headings to fold is cut: one with headings is already short once folded.
-  const cut = state.capped && outline.length === 0;
+  // Folded or not, the description is cut while taller than the cap: a long run of text before a heading near the end
+  // folds nothing. Opening a section lifts the cut, so it never hides what the reader opened.
+  const cut = state.capped;
   setFlag(body, ATTR_CAP, cut ? '' : null);
   syncMoreButton(body, cut);
   watchBody(body);
@@ -419,8 +438,8 @@ function clear(): void {
  * Shorten the pull request's description so the digest under it is in reach: every section folds under its
  * heading (sections with headings of their own start open, the innermost start closed, so the outline shows, and
  * the first section starts open too when the description opens on a heading).
- * A description with no headings to fold that is taller than {@link DESCRIPTION_CAP_PX} is cut there behind a
- * fade and "Show full description", until the reader clicks that or opens anything collapsible in it.
+ * A description still taller than {@link DESCRIPTION_CAP_PX} once folded is cut there behind a fade and "Show full
+ * description", until the reader clicks that, opens a section, or opens anything collapsible in it.
  * Only attributes and Geld's own controls are added, GitHub's nodes stay where they are.
  */
 export function shortenDescription(on: boolean): void {
