@@ -33,7 +33,7 @@ const ATTR_AGENT_HIDDEN = 'data-geld-desc-agent-hidden';
 const ATTR_AGENT = 'data-geld-desc-agent';
 /** The flex `order` that puts the tools' content after the author's. Mirrored in style.css. */
 const ORDER_PROPERTY = '--geld-desc-order';
-const RAIL_PROPERTIES = ['--geld-desc-depth', '--geld-desc-rails', '--geld-desc-rail-pos', '--geld-desc-rail-size'] as const;
+const RAIL_PROPERTIES = ['--geld-desc-depth', '--geld-desc-rails', '--geld-desc-rail-pos', '--geld-desc-rail-size', '--geld-desc-edge'] as const;
 
 /** One level of indentation, and the chevron's centre within it. Mirrored in style.css (description outline). */
 const INDENT_PX = 24;
@@ -433,6 +433,10 @@ function dressRails(block: HTMLElement, rails: BlockRails | null): void {
       ? null
       : lines.map((rail) => (rail.kind === 'through' ? '1px 100%' : rail.kind === 'end' ? '1px calc(100% - var(--geld-desc-after) - 1px)' : '1px calc(100% - var(--geld-desc-chevron-y))')).join(', '),
   );
+  // The rails' ::before is placed from the padding edge, so a left border (an alert's, a quote's) would push them
+  // right of the heading's. Chrome snaps that border to device pixels, so only its used width lines them up.
+  const edge = lines.length === 0 ? '0px' : getComputedStyle(block).borderLeftWidth;
+  setProperty(block, '--geld-desc-edge', edge === '0px' ? null : edge);
 }
 
 /**

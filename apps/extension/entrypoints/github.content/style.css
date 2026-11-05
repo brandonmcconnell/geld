@@ -7547,6 +7547,11 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   display: none !important;
 }
 
+/* The band over the agents is a label, not a section: it stands at the chevrons' edge, as top-level text does. */
+[data-geld-desc][data-geld-desc-agents] > h2.geld-desc-agents {
+  padding-left: 0 !important;
+}
+
 .geld-desc-agent__logo {
   width: 20px;
   height: 20px;
@@ -7566,7 +7571,8 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   top: 0;
   /* 1px past the gap: blocks start on fractional pixels, and two rail pieces meeting edge to edge leave a light seam. */
   bottom: calc(-1 * var(--geld-desc-after) - 1px);
-  left: calc(var(--geld-desc-depth, 0) * -24px);
+  /* `--geld-desc-edge` is the block's own left border (description.ts `dressRails`): the ::before starts inside it. */
+  left: calc(var(--geld-desc-depth, 0) * -24px - var(--geld-desc-edge, 0px));
   width: calc((var(--geld-desc-depth, 0) + 1) * 24px);
   background-image: var(--geld-desc-rails, none);
   background-position: var(--geld-desc-rail-pos, 0 0);
