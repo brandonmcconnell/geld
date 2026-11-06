@@ -137,7 +137,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Fresh `headSha` → render the panel from the payload (zero crawl).
   Stale/partial/missing → crawler fallback with the same layout, "Updating…" when a summary exists but is behind.
   **The panel (`review/panel.ts`, `.geld-review`) grows out of the bottom of the description card**: inserted right after the card (`[data-geld-attached]` squares its bottom corners, the panel's top ones are square too, `margin-top: -1px` shares the border), so the two read as one box.
-  Inside it borrows the merge box's checks list: a summary strip (the Geld wordmark, `brandMark`, inlined from `assets/brand/geld-logo.svg` in `currentColor`, then progress meter, needs-reply chip, copy), then **the status rows** (`statusRows`, in triage order: *Reviews*, *Review bots*, *Reports*, *CI checks*, *Previews*;
+  Inside it borrows the merge box's checks list: a summary strip on the status rows' columns (the emblem in the glyph column, `brandMark`: `assets/brand/geld-logomark-grid.svg` at 1px per unit in `currentColor`, so one weight serves both themes;
+  "Geld" as text in the label column;
+  then the progress meter, only when there are review threads, resolved or not;
+  needs-reply chip, copy), then **the status rows** (`statusRows`, in triage order: *Reviews*, *Review bots*, *Reports*, *CI checks*, *Previews*;
   each only when it has something to say — *Review bots*: one outlined pill per bot with the page's icon, name, detail and a traffic-light glyph via `botHealth` (5/5 or clean → green check, 3–4/5 or findings → yellow dot, and a 5/5 with a finding still open stays yellow until its threads are resolved, 1–2/5, high severity or failed → red X); **the row opens** (`BOTS_KEY`, `renderBotsList`) to one line per bot (`botLine`, `PanelModel.botLines` from `buildBotLines`): the verdict's light, the bot's mark, name and `botDetail`, its **latest run summary's** first line (`botSummaryFor(bot, NaN)`: the comment or review body its chip opens), a "N threads" pill, time, the comment's ⋯ and a chevron;
   open (`openSubKey` = the summary's anchor) the summary stands under it as a one-bubble chat with Rerun / View on the byline and **the run's threads as chips at its foot** (the threads whose head, the one rule a thread's pinned strip and a round line's thread count use too, is that summary: `threadHeadOf`, below), each leading to its row in its round (`onOpenAnchor`).
   A bot with threads but no summary points at its first thread;
@@ -1516,7 +1519,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Safari tints template icons.
   The logomark is drawn on a 24 × 25 grid (bands 4 units, gaps 3, every cut at 45°), so at 32px it lands on whole pixels at 1px per unit.
   Light on dark reads bolder, so every white brand file (`geld-logo-white.svg`, `geld-logomark-white.svg`) is a lighter cut of the black one: the same shape with every edge of the emblem 0.2 units in (bands 3.6, gaps 3.4) in the same box, so swapping light for dark moves nothing.
-  Whatever shows the logo on a dark background takes the white file: the site's dark mode, the SVG favicons (both shapes, picked by colour scheme), the extension's popup and options page (`<picture>`), the digest bar under GitHub's dark themes (`data-geld-brand-cut`, by `data-color-mode` and, when it follows the system, `data-light-theme` / `data-dark-theme`), the dashboard's `dark:` variant, the white toolbar icons and the store tiles.
+  Whatever shows the logo on a dark background takes the white file: the site's dark mode, the SVG favicons (both shapes, picked by colour scheme), the extension's popup and options page (`<picture>`), the dashboard's `dark:` variant, the white toolbar icons and the store tiles.
   `pnpm brand:icons` (`scripts/brand-icons.mjs`) draws every extension and Safari app icon from `assets/brand/`: from 128px up the logomark on the white tile, at 32px the logomark at 1px per unit, and at 16px, where a unit is under a pixel, `geld-logomark-grid.svg`, the same mark on a 14-unit grid where every band, gap and block is 2 units.
   The Mac icons keep the tile Xcode's converter drew and replace the extension's icon in its middle 60%.
   The site's 32px favicon draws the logomark at 1px per unit too.
@@ -1553,7 +1556,7 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
   the SVG favicon can only follow the OS.
   **A selected logo reads like selected text** (`components/brand-selection.tsx`, `[data-brand-logo]`): `::selection` never paints an image (Chrome only tints over it, and a `filter` on the image inverts the tint too), so a `selectionchange` listener marks every logo a selection range intersects `data-selected`, and globals.css turns the image's own tint off, gives the wrapper the selection's background and inverts the image.
   Ranges, not `Selection.containsNode`, which in Chrome answers false for a node with no text.
-  The digest's wordmark does the same on GitHub (`review/brand.ts`), with the browser's `Highlight`/`HighlightText`, since GitHub sets no selection style.
+  The digest's emblem does the same on GitHub (`review/brand.ts`), with the browser's `Highlight`/`HighlightText`, since GitHub sets no selection style.
 - **Feedback goes through the site.**
   The extension's Feedback links (popup footer, options footer, `src/ui/feedback-link.ts`) point at `https://www.geld.sh/feedback?version=…&browser=…&page=…` (never a URL or a login), and `app/feedback/route.ts` forwards to a new issue on the repository with the issue form `.github/ISSUE_TEMPLATE/feedback.yml` pre-filled.
   The hop exists so the destination can change (a form on the site opening issues through the Geld App on a private tracker, once the source is closed) without a store release.
