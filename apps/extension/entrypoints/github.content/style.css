@@ -3001,11 +3001,6 @@ svg.geld-lucide {
   fill: currentColor;
 }
 
-/* Both views' words, only where they fit (`view-fit.ts`); the View menu always has the room. */
-[data-geld-view-words='hide'] .geld-view-choice .geld-view-label__words {
-  display: none;
-}
-
 /* Once, under the Geld row, until the reader picks a view: what this panel is, and the three ways the page can look. */
 .geld-review__intro {
   display: flex;

@@ -13,7 +13,7 @@ import { settingsItem } from '../../lib/storage';
 import { brandMark } from './brand';
 import { viewChoice } from './digest-view';
 import { ATTR_ATTACHED, ATTR_PANEL, PANEL_CLASS, descriptionCard, focusViewOnNextMount } from './panel';
-import { ATTR_VIEW_SUBTITLE, ATTR_VIEW_WORDS, fitOffLineOnResize, OFF_SUBTITLE, OFF_TITLE } from './view-fit';
+import { ATTR_VIEW_SUBTITLE, fitOffLineOnResize, OFF_SUBTITLE, OFF_TITLE } from './view-fit';
 
 const BAR_CLASS = 'geld-digest-off';
 
@@ -49,7 +49,7 @@ export function syncDigestOffBar(show: boolean): void {
     if (view !== 'github') focusViewOnNextMount();
     chooseDigestView(view);
   };
-  const bar = createElement('section', { class: BAR_CLASS, [OWN_UI_ATTRIBUTE]: '', 'aria-label': 'Geld digest', [ATTR_VIEW_SUBTITLE]: 'hide', [ATTR_VIEW_WORDS]: 'hide' }, [
+  const bar = createElement('section', { class: BAR_CLASS, [OWN_UI_ATTRIBUTE]: '', 'aria-label': 'Geld digest', [ATTR_VIEW_SUBTITLE]: 'hide' }, [
     brandMark(`${BAR_CLASS}__brand`),
     createElement('span', { class: `${BAR_CLASS}__text` }, [createElement('strong', {}, [OFF_TITLE]), createElement('span', { class: `${BAR_CLASS}__subtitle` }, [OFF_SUBTITLE])]),
     viewChoice('github', choose),

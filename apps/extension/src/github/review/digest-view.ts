@@ -4,7 +4,8 @@
  * Offered by the digest's intro and its View menu, and by the line under the
  * description while the digest is off, so the way back in is always where
  * the reader left it. Each view is named by marks first (Geld's, GitHub's)
- * and a word; both's words show only where they fit (`view-fit.ts`).
+ * and a word, except both, which shows its two marks around a "+" and says
+ * "Digest + Timeline" to screen readers alone.
  */
 
 import type { DigestView } from '@geld/core';
@@ -14,8 +15,8 @@ import { brandMark } from './brand';
 
 export type ViewPart =
   | { readonly kind: 'mark'; readonly brand: 'geld' | 'github' }
-  /** `optional`: words that give way when the choice is short of room. */
-  | { readonly kind: 'text'; readonly text: string; readonly optional?: boolean };
+  /** `spoken`: words for screen readers only, never shown. */
+  | { readonly kind: 'text'; readonly text: string; readonly spoken?: boolean };
 
 export interface DigestViewOption {
   readonly view: DigestView;
@@ -35,7 +36,7 @@ export const DIGEST_VIEW_OPTIONS: readonly DigestViewOption[] = [
     view: 'digest-timeline',
     label: 'Digest + Timeline',
     hint: 'Geld’s digest above GitHub’s full timeline',
-    parts: [GELD, { kind: 'text', text: 'Digest', optional: true }, { kind: 'text', text: '+' }, GITHUB, { kind: 'text', text: 'Timeline', optional: true }],
+    parts: [GELD, { kind: 'text', text: 'Digest', spoken: true }, { kind: 'text', text: '+' }, GITHUB, { kind: 'text', text: 'Timeline', spoken: true }],
   },
 ];
 
@@ -60,7 +61,7 @@ export function viewLabel(option: DigestViewOption): HTMLElement {
   return createElement(
     'span',
     { class: 'geld-view-label' },
-    option.parts.map((part) => (part.kind === 'mark' ? viewMark(part.brand) : createElement('span', { class: part.optional === true ? 'geld-view-label__words' : 'geld-view-label__text' }, [part.text]))),
+    option.parts.map((part) => (part.kind === 'mark' ? viewMark(part.brand) : createElement('span', { class: part.spoken === true ? 'geld-sr-only' : 'geld-view-label__text' }, [part.text]))),
   );
 }
 
