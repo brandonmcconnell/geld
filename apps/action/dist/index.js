@@ -32769,15 +32769,21 @@ function firstSentence(body) {
 function endsWord(text, index) {
   let next = index + 1;
   while (next < text.length && /[)\]"'’”*_~]/.test(text[next] ?? "")) next += 1;
-  return next >= text.length || /\s/.test(text[next] ?? "");
+  return next >= text.length || /[\s<]/.test(text[next] ?? "");
 }
-var ABBREVIATION = /(?:^|[\s(])(?:e\.g|i\.e|etc|vs|cf|viz|approx|incl|esp)$/i;
+var ABBREVIATION = /(?:^|[\s(])(?:e\.g|i\.e|vs|cf|viz|approx|incl|esp)$/i;
+var ETC = /(?:^|[\s(])etc$/i;
+function abbreviationGoesOn(text, index) {
+  const before = text.slice(0, index);
+  if (ABBREVIATION.test(before)) return true;
+  return ETC.test(before) && !/^\s+[A-Z]/.test(text.slice(index + 1));
+}
 function sentenceOf(text, limit) {
   let inCode = false;
   for (let index = 0; index < text.length && index < limit; index += 1) {
     const char = text[index];
     if (char === "`") inCode = !inCode;
-    else if (!inCode && (char === "." || char === "!" || char === "?") && endsWord(text, index) && !(char === "." && ABBREVIATION.test(text.slice(0, index)))) return text.slice(0, index + 1);
+    else if (!inCode && (char === "." || char === "!" || char === "?") && endsWord(text, index) && !(char === "." && abbreviationGoesOn(text, index))) return text.slice(0, index + 1);
   }
   return text.slice(0, limit);
 }

@@ -138,6 +138,8 @@ describe('firstSentence / severity', () => {
     expect(firstSentence('See https://example.com/?_ga=123 for details. Next.')).toBe('See https://example.com/?_ga=123 for details.');
     expect(firstSentence('Use e.g. Node 20 for this job. Then rerun.')).toBe('Use e.g. Node 20 for this job.');
     expect(firstSentence('Covers lists, tables, etc. in the preview. More.')).toBe('Covers lists, tables, etc. in the preview.');
+    expect(firstSentence('Covers lists, etc. Then rerun.')).toBe('Covers lists, etc.');
+    expect(firstSentence('Fix this.<br>Then retry.')).toBe('Fix this.');
   });
 
   it('classifies blocking vs nit vs question', () => {

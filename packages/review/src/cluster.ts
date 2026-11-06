@@ -75,23 +75,32 @@ export function firstSentence(body: string): string {
 
 /**
  * Whether the terminator at `index` ends a word: after it, past any closing punctuation or emphasis (`.)`, `."`,
- * `.**`), comes the end of the text or a space. A URL's `?_ga=1` or `a.b_c` goes on, its `_` opening nothing.
+ * `.**`), comes the end of the text, a space or a tag (a raw body's `<br>`). A URL's `?_ga=1` or `a.b_c` goes on, its
+ * `_` opening nothing.
  */
 function endsWord(text: string, index: number): boolean {
   let next = index + 1;
   while (next < text.length && /[)\]"'’”*_~]/.test(text[next] ?? '')) next += 1;
-  return next >= text.length || /\s/.test(text[next] ?? '');
+  return next >= text.length || /[\s<]/.test(text[next] ?? '');
 }
 
-/** Words whose period is an abbreviation's, not a sentence's end: "Use e.g. Node 20" goes on past it. */
-const ABBREVIATION = /(?:^|[\s(])(?:e\.g|i\.e|etc|vs|cf|viz|approx|incl|esp)$/i;
+/** Words whose period is an abbreviation's, never a sentence's end: "Use e.g. Node 20" goes on past it. */
+const ABBREVIATION = /(?:^|[\s(])(?:e\.g|i\.e|vs|cf|viz|approx|incl|esp)$/i;
+/** "etc." ends a list and, before a capital, a sentence too: "Covers lists, etc. Then rerun." stops there. */
+const ETC = /(?:^|[\s(])etc$/i;
+
+function abbreviationGoesOn(text: string, index: number): boolean {
+  const before = text.slice(0, index);
+  if (ABBREVIATION.test(before)) return true;
+  return ETC.test(before) && !/^\s+[A-Z]/.test(text.slice(index + 1));
+}
 
 function sentenceOf(text: string, limit: number): string {
   let inCode = false;
   for (let index = 0; index < text.length && index < limit; index += 1) {
     const char = text[index];
     if (char === '`') inCode = !inCode;
-    else if (!inCode && (char === '.' || char === '!' || char === '?') && endsWord(text, index) && !(char === '.' && ABBREVIATION.test(text.slice(0, index)))) return text.slice(0, index + 1);
+    else if (!inCode && (char === '.' || char === '!' || char === '?') && endsWord(text, index) && !(char === '.' && abbreviationGoesOn(text, index))) return text.slice(0, index + 1);
   }
   return text.slice(0, limit);
 }
