@@ -40,7 +40,7 @@ import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-p
 import { descriptionUnshortened, releaseDescription, shortenDescription } from './description';
 import { compactDescriptionByline } from './description-byline';
 import { type AgentNote, agentNotes, noteCopy, noteText, resetAgentNotes } from './agent-notes';
-import { botWrittenVersion, DESCRIPTION_REVIEWERS } from './note-tone';
+import { botWrittenVersion } from './note-tone';
 import { openNoteHistory } from './note-history';
 import { applyFolds, closureKindOf, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
@@ -564,6 +564,16 @@ function inTimeOrder(comments: readonly BotComment[], extra: readonly BotComment
     merged.splice(index < 0 ? merged.length : index, 0, comment);
   }
   return merged;
+}
+
+/** Bot `botId`'s review in the description, when its own App wrote the reading there now (`botWrittenVersion`). */
+function descriptionSummaryOf(botId: string): { readonly anchor: string; readonly at: string; readonly note: AgentNote } | null {
+  for (const note of liveNotes) {
+    if (note.bot !== botId) continue;
+    const written = botWrittenVersion(note);
+    if (written !== null) return { anchor: `${NOTE_ANCHOR_PREFIX}${note.id}`, at: written.at, note };
+  }
+  return null;
 }
 
 /** When the note under a `note:` anchor was last written, for what reads a report's time. */
@@ -2009,10 +2019,13 @@ function threadHeadAnchorOf(anchor: string, botId: string | null | undefined): s
  */
 function buildBotLines(meta: GeldPrMeta): readonly BotLine[] {
   return meta.bots.map((bot) => {
-    // A review written into the description (`descriptionReviewComments`): its line opens the note.
-    const note = bot.sourceId?.startsWith(NOTE_ANCHOR_PREFIX) === true ? liveNotes.find((entry) => `${NOTE_ANCHOR_PREFIX}${entry.id}` === bot.sourceId) : undefined;
-    if (note !== undefined && bot.sourceId !== undefined) return { bot, anchor: bot.sourceId, author: bot.login, avatarSrc: null, preview: note.preview, time: '', threads: [] };
     const computed = botSummaryFor(bot.id, NaN);
+    // A review the bot wrote into the description (`descriptionReviewComments`) is its summary when no summary comment
+    // is newer, whatever the verdict hangs on (a thread posted after it, say): the line opens the note.
+    const inDescription = descriptionSummaryOf(bot.id);
+    if (inDescription !== null && (computed === null || Date.parse(computed.facts.createdAt) <= Date.parse(inDescription.at))) {
+      return { bot, anchor: inDescription.anchor, author: bot.login, avatarSrc: null, preview: inDescription.note.preview, time: '', threads: [] };
+    }
     // A summary on loan to the panel (its line open, or pinned in a thread's chat) is read bodiless at home, so
     // this pass does not count it as a summary and the bot's "latest" falls back to the run before — the line
     // changed anchor under the reader and its open key was dropped. A bot's latest word only ever gets newer
@@ -3267,8 +3280,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     requestable,
     ranSincePush,
     botLines,
-    // A review bot's summary in the description is that bot's line in Review bots once it has a verdict, not a note.
-    agentNotes: notes.notes.filter((note) => !(note.present && DESCRIPTION_REVIEWERS.has(note.id) && meta.bots.some((bot) => bot.sourceId === `${NOTE_ANCHOR_PREFIX}${note.id}`))),
+    // A review bot's summary in the description, written by the bot, is that bot's line in Review bots, not a note.
+    agentNotes: notes.notes.filter((note) => !botLines.some((line) => line.anchor === `${NOTE_ANCHOR_PREFIX}${note.id}`)),
     agentNotesReading: notes.reading,
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
     // A running/loading bot's sourceId is the "Starting"/trigger line — contentless, and the same line for every bot
