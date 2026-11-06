@@ -3579,7 +3579,8 @@ svg.geld-lucide {
   white-space: nowrap;
 }
 
-.geld-review__bot:is(a):hover {
+/* Every pill that goes somewhere, a link (a bot's summary, a preview) or a button (a comment report, an agent's note). */
+.geld-review__bot:is(a, button):is(:hover, :focus-visible) {
   border-color: var(--geld-review-muted);
   background: var(--geld-review-subtle);
   text-decoration: none;
@@ -3851,6 +3852,11 @@ svg.geld-lucide {
 .geld-review-hovercard__body > * {
   padding: 0 !important;
   margin: 0 !important;
+  font-size: 13px;
+}
+
+/* A note's copy is a bare `.markdown-body`, whose 16px GitHub's stylesheet would win with at the same specificity. */
+.geld-review-hovercard__body > .markdown-body {
   font-size: 13px;
 }
 

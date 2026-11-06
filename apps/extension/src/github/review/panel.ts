@@ -12,6 +12,7 @@
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, Report, ReportPart, ReviewItem } from '@geld/review';
 import { botAppAvatar, botById, previewHostById, reportsHealth } from '@geld/review';
 import type { AgentNote } from './agent-notes';
+import { noteTone } from './note-tone';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
@@ -26,7 +27,7 @@ import { formatSyncAge } from '../../ui/sync-age';
 import type { Closure, ClosureKind, EventHeadline } from './fold';
 import { headlineText } from './fold';
 import { ATTR_TELEPORTED, reclaimOrphans, restoreAll } from './teleport';
-import { ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
+import { ATTR_NOTE, ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import type { ReviewerCandidate } from './reviewers';
 import { shapeMark } from './mark-shape';
 import { brandMark, syncBrandSelection, watchBrandSelection } from './brand';
@@ -2301,7 +2302,8 @@ function notePill(note: AgentNote, model: PanelModel, handlers: PanelHandlers): 
   if (src !== null) children.push(markImg(src, false));
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name` }, [note.name]));
   const label = note.present ? `${note.name}’s note` : `${note.name}’s note, not in the current description`;
-  const pill = createElement('button', { type: 'button', class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__note-pill`, 'aria-label': label, ...(note.present ? {} : { 'data-past': '' }) }, children);
+  // Its hover card (hovercard.ts, `ATTR_NOTE`) previews the note, as the line's does; a native title would open beside it.
+  const pill = createElement('button', { type: 'button', class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__note-pill`, 'aria-label': label, [ATTR_NOTE]: note.id, ...(note.present ? {} : { 'data-past': '' }) }, children);
   pill.addEventListener('click', (event) => {
     event.stopPropagation();
     handlers.onOpenNote(note.id);
@@ -2341,11 +2343,18 @@ export function noteSubKey(id: string): string {
 }
 
 /**
- * One tool's note as a line: its mark, its name and the note's first line, a clock for its history when it has read
- * more than one way (or is only in the past), and a chevron. A note the description no longer has wears a dashed mark.
+ * One tool's note as a line, on a bot line's grid: what it says at a glance (a note's speech bubble, a warning's
+ * triangle), its mark, its name and the note's first line, a clock for its history when it has read more than one
+ * way (or is only in the past), and a chevron. A note the description no longer has wears a dashed mark.
  */
 function noteLine(note: AgentNote, model: PanelModel, handlers: PanelHandlers): { readonly row: HTMLElement; readonly open: boolean } {
   const key = noteSubKey(note.id);
+  const tone = noteTone(note);
+  const lead = createElement(
+    'span',
+    { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, ...(tone.kind === 'warning' ? { 'data-health': 'warn' } : {}), role: 'img', 'aria-label': tone.label, title: tone.label },
+    [icon(tone.kind === 'warning' ? ICON_ALERT : ICON_COMMENT)],
+  );
   const open = model.openSubKey === key;
   const act = (): void => handlers.onToggleSub(key);
   const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:sub:${key}` }, [
@@ -2366,7 +2375,7 @@ function noteLine(note: AgentNote, model: PanelModel, handlers: PanelHandlers): 
     right.append(createElement('span', { class: `${PANEL_CLASS}__spacer`, 'aria-hidden': 'true' }));
   }
   right.append(chevron(open, act));
-  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--note`, 'data-geld-sub': key, ...(note.present ? {} : { 'data-past': '' }) }, [notePicture(note, model), main, right]);
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--note`, 'data-geld-sub': key, ...(note.present ? {} : { 'data-past': '' }) }, [lead, notePicture(note, model), main, right]);
   if (open) row.setAttribute('data-open', '');
   rowClickToggles(row, act);
   return { row, open };

@@ -165,7 +165,10 @@ async function fetchLog(url: string, log: EditLog): Promise<boolean> {
       const href = button.getAttribute('data-edit-history-url');
       const at = button.querySelector('relative-time[datetime]')?.getAttribute('datetime') ?? '';
       if (href === null || Number.isNaN(Date.parse(at))) continue;
-      revisions.push({ at, url: href });
+      const name = button.querySelector('.css-truncate-target')?.textContent?.trim() ?? '';
+      const app = /\/in\/(\d+)/.exec(button.querySelector('img.avatar')?.getAttribute('src') ?? '');
+      const bot = [...button.querySelectorAll('.Label')].some((label) => /^bot$/i.test(label.textContent?.trim() ?? ''));
+      revisions.push({ at, url: href, ...(name === '' ? {} : { by: { name, bot, appId: app?.[1] === undefined ? null : Number(app[1]) } }) });
     }
     revisions.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
     const before = `${log.edits ?? ''}|${log.editedAt ?? ''}|${log.revisions.map((revision) => revision.url).join(',')}`;

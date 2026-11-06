@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { noteCopy, notePreview, notesFrom } from './agent-notes';
+import { noteCopy, notePreview, notesFrom, noteText } from './agent-notes';
+import { botWrittenVersion, noteTone } from './note-tone';
+import { botById } from '@geld/review';
+import type { RevisionEditor } from './revisions';
 
 function blocksOf(html: string): Element[] {
   const holder = document.createElement('div');
@@ -95,5 +98,67 @@ describe('noteCopy', () => {
     if (!(copy instanceof Element)) throw new Error('no copy');
     expect(copy.outerHTML).toBe('<h2><a href="#summary">Summary</a></h2>');
     expect(heading.id).toBe('user-content-summary');
+  });
+});
+
+describe('noteTone', () => {
+  const bugbot = (risk: string): string =>
+    `<div class="markdown-alert markdown-alert-note"><p class="markdown-alert-title">Note</p><p><strong>${risk}</strong><br>Touches the watcher.</p>` +
+    '<p><sup>Reviewed by <a href="https://cursor.com/bugbot">Cursor Bugbot</a> for commit 828bb62.</sup></p></div>';
+  const tone = (html: string): unknown => {
+    const [note] = notesFrom(blocksOf(html), []);
+    return note === undefined ? null : noteTone(note);
+  };
+
+  it('reads Bugbot’s medium and high risk as warnings, its low risk and every other note as words to read', () => {
+    expect(tone(bugbot('Medium Risk'))).toEqual({ kind: 'warning', label: 'Medium Risk' });
+    expect(tone(bugbot('High Risk'))).toEqual({ kind: 'warning', label: 'High Risk' });
+    expect(tone(bugbot('Low Risk'))).toEqual({ kind: 'info', label: 'Low Risk' });
+    expect(tone(coderabbit('Fixes A'))).toEqual({ kind: 'info', label: 'Note' });
+  });
+});
+
+describe('noteText', () => {
+  it('reads a note as a comment’s body reads, for the review bots’ verdicts', () => {
+    const [note] = notesFrom(blocksOf(GREPTILE), []);
+    if (note === undefined) throw new Error('no note');
+    expect(noteText(note)).toContain('Removes overflow protection.');
+  });
+});
+
+describe('who wrote a note', () => {
+  const greptileApp = botById('greptile')?.appId ?? null;
+  const greptile: RevisionEditor = { name: 'greptile-apps', bot: true, appId: greptileApp };
+  const author: RevisionEditor = { name: 'someone', bot: false, appId: null };
+
+  it('credits a version to the editor of the revision it first appears in, once the revision before it was read', () => {
+    const readings = [
+      { at: '2026-11-01T00:00:00Z', blocks: blocksOf('<p>mine</p>'), by: author },
+      { at: '2026-11-02T00:00:00Z', blocks: blocksOf(`<p>mine</p>${GREPTILE}`), by: greptile },
+      { at: '2026-11-03T00:00:00Z', blocks: blocksOf(`<p>mine, edited</p>${GREPTILE}`), by: author },
+    ];
+    const [note] = notesFrom(blocksOf(`<p>mine, edited</p>${GREPTILE}`), readings);
+    expect(note?.versions.at(-1)?.by).toEqual(greptile);
+    if (note === undefined) throw new Error('no note');
+    expect(botWrittenVersion(note)).toEqual({ login: botById('greptile')?.logins[0], at: '2026-11-02T00:00:00Z' });
+  });
+
+  it('credits nobody when the first reading may not be where the note began', () => {
+    const readings = [{ at: '2026-11-02T00:00:00Z', blocks: blocksOf(GREPTILE), by: greptile }];
+    expect(notesFrom(blocksOf(GREPTILE), readings)[0]?.versions.at(-1)?.by).toBeUndefined();
+    // Unless the readings start at the description's creation.
+    expect(notesFrom(blocksOf(GREPTILE), readings, null, true)[0]?.versions.at(-1)?.by).toEqual(greptile);
+  });
+
+  it('does not take a Greptile-shaped block anyone else wrote for Greptile’s review', () => {
+    const start = { at: '2026-11-01T00:00:00Z', blocks: blocksOf('<p>mine</p>'), by: author };
+    const pasted = (by: RevisionEditor): ReturnType<typeof botWrittenVersion> => {
+      const [note] = notesFrom(blocksOf(`<p>mine</p>${GREPTILE}`), [start, { at: '2026-11-02T00:00:00Z', blocks: blocksOf(`<p>mine</p>${GREPTILE}`), by }]);
+      if (note === undefined) throw new Error('no note');
+      return botWrittenVersion(note);
+    };
+    expect(pasted(author)).toBeNull();
+    // Nor one another App wrote.
+    expect(pasted({ name: 'cursor', bot: true, appId: 1 })).toBeNull();
   });
 });

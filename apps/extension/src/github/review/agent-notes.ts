@@ -11,10 +11,13 @@ import { blockText } from './crawler';
 import { toolBlocksOf } from './description-blocks';
 import { descriptionBody, descriptionMarkdown, isDivider } from './description';
 import { logUrlOfCard, revisionBody, revisionMarkdown, revisionsIn, revisionState } from './edit-times';
+import type { RevisionEditor } from './revisions';
 
 /** One way a tool's note read: at a revision of the description (`at`), or as the page has it now (`at` null). */
 export interface NoteVersion {
   readonly at: string | null;
+  /** Who wrote the revision this reading first appeared in, when the edit log says (`DESCRIPTION_REVIEWERS` trust it). */
+  readonly by?: RevisionEditor;
   readonly blocks: readonly Element[];
   /** The note as the description has it now. */
   readonly current: boolean;
@@ -40,6 +43,8 @@ export interface DescriptionReading {
   readonly blocks: readonly Element[];
   /** That revision's Markdown, which says where a tool's block ends when the page cannot (description-blocks.ts). */
   readonly markdown?: string | null;
+  /** Who wrote that revision, when the edit log says. */
+  readonly by?: RevisionEditor;
 }
 
 /** How far back the description's history is read: its newest revisions. */
@@ -111,7 +116,7 @@ export function notePreview(blocks: readonly Element[]): string {
  * in its order, then those found only in the past, most recently seen first. `liveMarkdown` (GitHub's Copy Markdown)
  * bounds the live notes as each reading's own Markdown bounds its notes, so the same note reads the same in both.
  */
-export function notesFrom(live: readonly Element[], readings: readonly DescriptionReading[], liveMarkdown: string | null = null): AgentNote[] {
+export function notesFrom(live: readonly Element[], readings: readonly DescriptionReading[], liveMarkdown: string | null = null, whole = false): AgentNote[] {
   const now = toolsAmong(live, liveMarkdown);
   const versions = new Map<string, NoteVersion[]>();
   const names = new Map<string, { readonly name: string; readonly bot: string | null }>();
@@ -122,7 +127,10 @@ export function notesFrom(live: readonly Element[], readings: readonly Descripti
       lastSeen.set(tool.id, index);
       const list = versions.get(tool.id) ?? [];
       const previous = list.at(-1);
-      if (previous === undefined || noteSignature(previous.blocks) !== noteSignature(tool.blocks)) list.push({ at: reading.at, blocks: tool.blocks, current: false });
+      // Who wrote a version is the editor of the revision it first appears in, known only when the revision before that
+      // one was read too (or the readings start at the description's creation): otherwise it may be older than them.
+      const by = reading.by !== undefined && (index > 0 || whole) ? { by: reading.by } : {};
+      if (previous === undefined || noteSignature(previous.blocks) !== noteSignature(tool.blocks)) list.push({ at: reading.at, ...by, blocks: tool.blocks, current: false });
       versions.set(tool.id, list);
     }
   });
@@ -132,7 +140,7 @@ export function notesFrom(live: readonly Element[], readings: readonly Descripti
     const latest = past.at(-1);
     // The page's own reading is the current one: the history's newest says the same once read, and is replaced by it.
     const same = latest !== undefined && noteSignature(latest.blocks) === noteSignature(tool.blocks);
-    const all = [...(same ? past.slice(0, -1) : past), { at: same ? latest.at : null, blocks: tool.blocks, current: true }];
+    const all = [...(same ? past.slice(0, -1) : past), { at: same ? latest.at : null, ...(same && latest.by !== undefined ? { by: latest.by } : {}), blocks: tool.blocks, current: true }];
     notes.push({ id: tool.id, name: tool.name, bot: tool.bot, present: true, preview: notePreview(tool.blocks), versions: all });
   }
   const gone = [...versions.keys()].filter((id) => !now.has(id)).sort((a, b) => (lastSeen.get(b) ?? 0) - (lastSeen.get(a) ?? 0));
@@ -156,6 +164,11 @@ export function onNotesChange(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+/** A note's words as a comment's body reads (`blockText`), for the review bots' verdict parser. */
+export function noteText(note: AgentNote): string {
+  return (note.versions.at(-1)?.blocks ?? []).map((block) => blockText(block)).filter((text) => text !== '').join('\n\n');
+}
+
 export interface AgentNotes {
   readonly notes: readonly AgentNote[];
   /** The description's history is still being read: more versions, or notes that are gone, may yet appear. */
@@ -177,36 +190,51 @@ export function agentNotes(onChange: () => void): AgentNotes {
   const log = logUrlOfCard(body);
   const readings: DescriptionReading[] = [];
   let reading = false;
+  let whole = false;
   if (log !== null) {
     const revisions = revisionsIn(log, notify);
     if (revisions === null) reading = true;
     else {
       const wanted = revisions.slice(-MAX_READINGS);
+      whole = wanted.length === revisions.length;
+      // Who wrote a reading is trusted only when the revision just before it was read too: a reading after one that was
+      // skipped (failed, or still to read) may not be where its note began. Later readings with their predecessor read
+      // are trusted again.
+      let previousRead = true;
       let inFlight = wanted.filter((revision) => revisionState(revision.url) === 'reading').length;
       for (const revision of wanted) {
         let blocks = readingBlocks.get(revision.url);
         if (blocks === undefined) {
           const state = revisionState(revision.url);
-          if (state === 'failed') continue;
+          if (state === 'failed') {
+            previousRead = false;
+            continue;
+          }
           if (state === 'unread' && inFlight >= PARALLEL_READINGS) {
             reading = true;
+            previousRead = false;
             continue;
           }
           if (state === 'unread') inFlight += 1;
           const content = revisionBody(revision.url, notify);
           if (content === undefined) {
             reading = true;
+            previousRead = false;
             continue;
           }
-          if (content === null) continue;
+          if (content === null) {
+            previousRead = false;
+            continue;
+          }
           blocks = sectionsOf(content);
           readingBlocks.set(revision.url, blocks);
         }
-        readings.push({ at: revision.at, blocks, markdown: revisionMarkdown(revision.url) });
+        readings.push({ at: revision.at, blocks, markdown: revisionMarkdown(revision.url), ...(revision.by === undefined || !previousRead ? {} : { by: revision.by }) });
+        previousRead = true;
       }
     }
   }
-  return { notes: notesFrom(live, readings, descriptionMarkdown(body)), reading };
+  return { notes: notesFrom(live, readings, descriptionMarkdown(body), whole), reading };
 }
 
 /** A copy of a note's blocks to show elsewhere, without what Geld set on the originals. */

@@ -4,11 +4,22 @@
  * fetches the chosen one.
  */
 
+/** Who wrote a revision, as the edit log names them: their login (an App's without `[bot]`), and an App's id. */
+export interface RevisionEditor {
+  readonly name: string;
+  /** The log marks an App's edits "Bot". */
+  readonly bot: boolean;
+  /** An App's id, from its avatar (`avatars.githubusercontent.com/in/<id>`); null for a person. */
+  readonly appId: number | null;
+}
+
 export interface Revision {
   /** When this revision was written (the comment's creation for the first). */
   readonly at: string;
   /** The revision's view, `/user_content_edits/UCE_…`. */
   readonly url: string;
+  /** Who wrote it, when the log says. */
+  readonly by?: RevisionEditor;
 }
 
 /**
