@@ -32766,13 +32766,18 @@ function firstSentence(body) {
   const sentence = sentenceOf(cleaned, 160);
   return sentence.trim();
 }
-var endsWord = (next) => next === void 0 || /[\s)\]"'’”*_~]/.test(next);
+function endsWord(text, index) {
+  let next = index + 1;
+  while (next < text.length && /[)\]"'’”*_~]/.test(text[next] ?? "")) next += 1;
+  return next >= text.length || /\s/.test(text[next] ?? "");
+}
+var ABBREVIATION = /(?:^|[\s(])(?:e\.g|i\.e|etc|vs|cf|viz|approx|incl|esp)$/i;
 function sentenceOf(text, limit) {
   let inCode = false;
   for (let index = 0; index < text.length && index < limit; index += 1) {
     const char = text[index];
     if (char === "`") inCode = !inCode;
-    else if (!inCode && (char === "." || char === "!" || char === "?") && endsWord(text[index + 1])) return text.slice(0, index + 1);
+    else if (!inCode && (char === "." || char === "!" || char === "?") && endsWord(text, index) && !(char === "." && ABBREVIATION.test(text.slice(0, index)))) return text.slice(0, index + 1);
   }
   return text.slice(0, limit);
 }
