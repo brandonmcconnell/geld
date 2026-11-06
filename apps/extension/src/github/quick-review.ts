@@ -2350,7 +2350,7 @@ function openMergeBox(state: Mounted, failure: string | null = null, pastRules =
   let method: MergeMethod = methods[0] ?? 'SQUASH';
   let box: MergeBox = known.box;
   // The method `box`'s commit was written for: until the chosen method's has come, the confirmation waits.
-  let boxFor: MergeMethod = known.box.methods[0] ?? 'SQUASH';
+  let boxFor: MergeMethod = known.box.methods[0] ?? known.box.bypassMethods[0] ?? 'SQUASH';
   // False after a failed read: `box` then holds another method's commit, which must not fill the fields.
   let commitFresh = true;
   let edited = false;
