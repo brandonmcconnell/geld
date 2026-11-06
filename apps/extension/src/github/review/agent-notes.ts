@@ -197,37 +197,40 @@ export function agentNotes(onChange: () => void): AgentNotes {
     else {
       const wanted = revisions.slice(-MAX_READINGS);
       whole = wanted.length === revisions.length;
-      // A revision skipped (failed, or still to read) breaks the chain that says who wrote what: past it, no editor.
-      let gap = false;
+      // Who wrote a reading is trusted only when the revision just before it was read too: a reading after one that was
+      // skipped (failed, or still to read) may not be where its note began. Later readings with their predecessor read
+      // are trusted again.
+      let previousRead = true;
       let inFlight = wanted.filter((revision) => revisionState(revision.url) === 'reading').length;
       for (const revision of wanted) {
         let blocks = readingBlocks.get(revision.url);
         if (blocks === undefined) {
           const state = revisionState(revision.url);
           if (state === 'failed') {
-            gap = true;
+            previousRead = false;
             continue;
           }
           if (state === 'unread' && inFlight >= PARALLEL_READINGS) {
             reading = true;
-            gap = true;
+            previousRead = false;
             continue;
           }
           if (state === 'unread') inFlight += 1;
           const content = revisionBody(revision.url, notify);
           if (content === undefined) {
             reading = true;
-            gap = true;
+            previousRead = false;
             continue;
           }
           if (content === null) {
-            gap = true;
+            previousRead = false;
             continue;
           }
           blocks = sectionsOf(content);
           readingBlocks.set(revision.url, blocks);
         }
-        readings.push({ at: revision.at, blocks, markdown: revisionMarkdown(revision.url), ...(revision.by === undefined || gap ? {} : { by: revision.by }) });
+        readings.push({ at: revision.at, blocks, markdown: revisionMarkdown(revision.url), ...(revision.by === undefined || !previousRead ? {} : { by: revision.by }) });
+        previousRead = true;
       }
     }
   }
