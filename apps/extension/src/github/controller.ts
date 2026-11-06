@@ -60,6 +60,7 @@ import { categoryIconFor } from './ui/icons';
 import { expandLargeDiffs } from './large-diffs';
 import { applyWorkflowSyntax, removeWorkflowSyntax } from './workflow-syntax';
 import type { TreeSectionFile } from './ui/tree-section';
+import { fileFilterQuery, panelForSearch } from './ui/tree-search';
 import {
   applySidebarLayout,
   CHANGES_SECTION_ID,
@@ -289,8 +290,12 @@ export class GeldController {
   private observer: MutationObserver | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly diffExpanded = new Map<string, boolean>();
-  /** Which sidebar accordion panel is open per page ("changes" or a category id). */
+  /** The sidebar accordion panel the reader chose per page ("changes" or a category id). */
   private readonly activePanel = new Map<string, string>();
+  /** The panel actually shown per page: the chosen one, or the one a search in GitHub's file filter opened instead. */
+  private readonly shownPanel = new Map<string, string>();
+  /** A panel the file filter opened over the reader's choice, kept as theirs once they click a file or a diff in it. */
+  private searchPanel: { readonly stateKey: string; readonly panel: string } | null = null;
   /** Inline mode: hidden files the user has opened/closed by hand per page; we stop touching those. */
   private readonly inlineTouched = new Map<string, Set<string>>();
   private readonly diffSource = new DiffSource(() => {
@@ -639,9 +644,11 @@ export class GeldController {
   };
 
   private onUserActivate(event: Event): void {
-    if (!event.isTrusted || this.settings.groupHidden || this.currentPage === null) return;
+    if (!event.isTrusted || this.currentPage === null) return;
     const target = event.target instanceof Element ? event.target : null;
     if (target === null) return;
+    if (this.searchPanel !== null) this.keepSearchPanel(target, this.currentPage.stateKey);
+    if (this.settings.groupHidden) return;
     // Read the page afresh: React re-renders tree rows, so a view captured on
     // the last pass may hold stale elements that no longer match the click.
     const view = legacyAdapter.read() ?? reactAdapter.read();
@@ -663,6 +670,22 @@ export class GeldController {
     // like a click in one of Geld's own panels: expand, scroll to it, flash.
     this.markTouched(key, file.path);
     this.reveal(file.path, key);
+  }
+
+  /** A click on a file (in a Geld panel or GitHub's tree) or inside a diff makes the panel a search opened the reader's. */
+  private keepSearchPanel(target: Element, stateKey: string): void {
+    const opened = this.searchPanel;
+    if (opened === null || opened.stateKey !== stateKey) return;
+    let onFile = target.closest('.geld-tree__row[data-path]') !== null;
+    if (!onFile) {
+      // Read the page afresh: a tree row React re-rendered or a diff mounted since the last pass is not in the last view.
+      const view = legacyAdapter.read() ?? reactAdapter.read();
+      if (view === null) return;
+      onFile = view.treeFiles.some((file) => file.element.contains(target));
+      if (!onFile && (isOwnElement(target) || !view.entries.some((entry) => entry.root.contains(target)))) return;
+    }
+    this.activePanel.set(stateKey, opened.panel);
+    this.searchPanel = null;
   }
 
   private markTouched(stateKey: string, path: string): void {
@@ -1405,21 +1428,43 @@ export class GeldController {
     markHiddenDirectories(view.treeDirectories);
 
     const host = view.treeRoot.parentElement ?? document;
+    const searching = fileFilterQuery(view.treeRoot) !== '';
+    // While the reader types in the filter, a panel left without a match stays, at 0, so the accordion does not come
+    // and go with every keystroke.
+    if (searching) {
+      for (const { file, filtered } of tree) {
+        if (filtered !== true) continue;
+        const category = this.classify(matcher, file.path, null);
+        if (category !== null && !byCategory.has(category)) byCategory.set(category, []);
+      }
+    }
     const present = new Set<string>(Array.from(byCategory.keys(), (category) => category.id));
     if (present.size === 0) {
       // Nothing hidden: GitHub's sidebar stays exactly as it was.
+      this.searchPanel = null;
       removeTreeSection(host);
       removeSidebarLayout(host);
       return;
     }
 
-    // One panel open at a time; fall back to GitHub's tree if the remembered
-    // panel's category has nothing on this page.
-    let active = this.activePanel.get(stateKey) ?? CHANGES_SECTION_ID;
+    // One panel open at a time. While the reader types in GitHub's file filter, a panel left without a match gives way
+    // to the first that has one, and comes back as soon as it matches again. Fall back to GitHub's tree if the panel's
+    // category has nothing on this page.
+    const home = this.activePanel.get(stateKey) ?? CHANGES_SECTION_ID;
+    let active = home;
+    if (searching) {
+      const matches = new Map<string, number>([[CHANGES_SECTION_ID, visibleFiles]]);
+      for (const [category, files] of byCategory) matches.set(category.id, files.length);
+      active = panelForSearch(home, [CHANGES_SECTION_ID, ...this.catalog.categories.map((category) => category.id)], matches);
+    }
     if (active !== CHANGES_SECTION_ID && !present.has(active)) active = CHANGES_SECTION_ID;
+    this.searchPanel = searching && active !== home ? { stateKey, panel: active } : null;
+    this.shownPanel.set(stateKey, active);
+    // Headers are bound once, so they read the panel shown now rather than the one shown when they were built.
     const activate = (panel: string): void => {
-      const current = this.activePanel.get(stateKey) ?? CHANGES_SECTION_ID;
+      const current = this.shownPanel.get(stateKey) ?? this.activePanel.get(stateKey) ?? CHANGES_SECTION_ID;
       this.activePanel.set(stateKey, current === panel ? CHANGES_SECTION_ID : panel);
+      this.searchPanel = null;
       this.apply();
     };
 
