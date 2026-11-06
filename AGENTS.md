@@ -509,7 +509,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **The off line keeps to one row, its subtitle fitted with pretext, never by breakpoints** (`view-fit.ts`, as `path-fit.ts` fits paths): the subtitle ("Reviews, bots, CI and threads at a glance", `data-geld-view-subtitle`) shows only while the whole line fits, and the line wraps only once even the title and the control do not.
   Text widths come from pretext and the line's width from one `ResizeObserver`, so nothing is measured on the apply path, and the control's sizes (padding, border, gaps, marks) are mirrored between `view-fit.ts` and the stylesheet.
   It has no dismissal on purpose: the digest is what Geld is growing into, and the owner decided (Nov 2026) that a reader who turned it off must always be one click from coming back.
-  Focus follows the choice: turning the digest off from the panel lands on the line's pressed view, and coming back from the line lands on the panel's View control (`focusViewOnNextMount`).
+  Focus follows the choice: turning the digest off lands on the off line's pressed view, and any other choice (the intro, the menu, the off line) lands on the panel's View control.
+  A settings change tears the page's Geld UI down before building it again, so the control the reader used is gone before its replacement mounts: the choice leaves one pending request (`view-focus.ts`), withdrawn if the settings write fails, dropped once the reader is on another path, and spent by the control that takes it.
+  The View menu's current view still counts as a choice while the intro waits on one, so picking it answers the intro.
   A round's row shows a progress glyph (circle → filled check when every thread is resolved), the avatars of everyone who posted (one per login — no names, the avatars say it;
   bots get Geld's identity hover card via `data-geld-who`, people GitHub's), "Round N", the Geld row's meter with `d/N resolved`, a count chip with every comment in the round (run summaries plus thread comments) and the time;
   "N rounds to review" (rounds with an open thread, expanded by default) comes before "N settled rounds" (collapsed).
