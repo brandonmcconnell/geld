@@ -7739,6 +7739,12 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   overflow: hidden !important;
 }
 
+/* An image GitHub left unwrapped is an inline `<a>` straight in the body, and an inline box clips only as a block. */
+[data-geld-desc-cap][data-geld-desc-long] > a[data-geld-desc-cut-edge] {
+  display: block;
+  width: fit-content;
+}
+
 /* Inside the body, after the author's blocks: its ::before fades the text above it out. */
 .geld-desc-more {
   display: none;

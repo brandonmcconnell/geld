@@ -557,6 +557,38 @@ describe('shortenDescription', () => {
     expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(false);
   });
 
+  it('measures an image GitHub left unwrapped by the picture, not its link’s line, so the cut runs through it at 500px', async () => {
+    // GitHub's own rendering of a bare `<img>` between paragraphs: the link stands straight in the body.
+    const body = mountDescription(
+      '<p><strong>Reviewer note</strong></p>' +
+        '<a target="_blank" href="https://github.com/user-attachments/assets/1"><img width="718" height="670" alt="" src="https://github.com/user-attachments/assets/1" style="max-width: 100%; height: auto"></a>' +
+        `<p>Adds the field.</p><p>Flow looks like:</p>${h(2, 'Summary by CodeRabbit')}<ul><li>Bug fixes</li></ul>`,
+    );
+    const [note, link, adds, flow] = [...body.children];
+    const image = link?.querySelector('img');
+    if (note === undefined || link === undefined || adds === undefined || flow === undefined || image == null) throw new Error('no blocks');
+    const place = (element: Element, top: number, height: number): void => {
+      Object.defineProperty(element, 'getBoundingClientRect', { configurable: true, value: () => new DOMRect(0, top, 600, height) });
+    };
+    place(body, 0, 0);
+    place(note, 0, 24);
+    // An inline link's box is its line's text, at the image's foot; the image spans 40 to 710.
+    place(link, 690, 20);
+    place(image, 40, 670);
+    place(adds, 726, 24);
+    place(flow, 766, 24);
+    shortenDescription(true);
+    body.querySelector<HTMLElement>('.geld-desc-agent')?.click();
+    await frames();
+    await frame();
+    expect(note.hasAttribute('data-geld-desc-cut') || note.hasAttribute('data-geld-desc-cut-edge')).toBe(false);
+    expect(link.hasAttribute('data-geld-desc-cut')).toBe(false);
+    expect(link.hasAttribute('data-geld-desc-cut-edge')).toBe(true);
+    expect(link instanceof HTMLElement ? link.style.getPropertyValue('--geld-desc-cut-height') : '').toBe('460px');
+    expect(adds.hasAttribute('data-geld-desc-cut')).toBe(true);
+    expect(flow.hasAttribute('data-geld-desc-cut')).toBe(true);
+  });
+
   it('keeps at least the fade’s height of a block the cut runs through near its top', async () => {
     const body = mountDescription(
       `<p>one</p><div class="highlight"><pre>code</pre></div>${h(2, 'Summary by CodeRabbit')}<ul><li>Bug fixes</li></ul>`,
