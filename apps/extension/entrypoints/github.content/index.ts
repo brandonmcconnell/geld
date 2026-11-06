@@ -1,7 +1,7 @@
 import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { GeldController, IDLE_STATE } from '../../src/github/controller';
-import type { TabState, TabStateMessage } from '../../src/lib/messages';
+import type { ColorSchemeMessage, TabState, TabStateMessage } from '../../src/lib/messages';
 import { isGetTabStateMessage, isPerfReportMessage, isRevealFileMessage, isToggleHiddenMessage } from '../../src/lib/messages';
 import type { PerfSnapshot } from '../../src/lib/perf';
 import { mark, snapshot as perfSnapshot } from '../../src/lib/perf';
@@ -100,6 +100,16 @@ export default defineContentScript({
       return undefined;
     };
     browser.runtime.onMessage.addListener(onMessage);
+
+    // In Dia the offscreen theme probe never reports a light/dark switch, but a tab does, so the top frame reports
+    // the scheme too and the background picks the toolbar icon by it.
+    if ((import.meta.env.CHROME || import.meta.env.EDGE) && window.top === window) {
+      const query = window.matchMedia('(prefers-color-scheme: dark)');
+      const report = (): void =>
+        quietly(() => void browser.runtime.sendMessage({ type: 'geld:color-scheme', dark: query.matches } satisfies ColorSchemeMessage).catch(() => undefined));
+      report();
+      query.addEventListener('change', report);
+    }
 
     const [settings, whitespaceOptOuts] = await Promise.all([settingsItem.getValue(), whitespaceOptOutsItem.getValue()]);
     mark('settings');

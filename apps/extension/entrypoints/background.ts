@@ -440,6 +440,7 @@ async function readWithLimit(response: Response, limit: number): Promise<string>
 const USES_OFFSCREEN_THEME_PROBE = import.meta.env.MANIFEST_VERSION === 3 && (import.meta.env.CHROME || import.meta.env.EDGE);
 
 let offscreenCreation: Promise<void> | null = null;
+let schemeFromTab = false;
 
 async function ensureThemeProbe(): Promise<void> {
   if (!USES_OFFSCREEN_THEME_PROBE) return;
@@ -547,6 +548,10 @@ export default defineBackground(() => {
       return undefined;
     }
     if (isColorSchemeMessage(message)) {
+      // Once a tab has reported, the probe's word (stale in Dia) no longer counts.
+      // Assumes Chrome's tab and probe agree on the scheme, so preferring the tab costs Chrome nothing.
+      if (sender.tab !== undefined) schemeFromTab = true;
+      else if (schemeFromTab) return undefined;
       applyToolbarIcon(message.dark);
       return undefined;
     }
