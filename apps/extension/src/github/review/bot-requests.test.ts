@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { BotComment, BotVerdictRecord, RawCheckRun } from '@geld/review';
 import type { BotRequestClick, BotRequestInput } from './bot-requests';
-import { botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, REQUEST_ACK_SLOW_MS, withBotRequests } from './bot-requests';
+import { acknowledgeWindowMs } from '@geld/review';
+import { awaitingReaction, botRequestStates, nextRequestDeadline, REQUEST_ACK_SLOW_MS, withBotRequests } from './bot-requests';
 
 const T0 = Date.parse('2026-11-04T10:00:00Z');
+const GREPTILE_ACK = acknowledgeWindowMs('greptile');
 const iso = (ms: number): string => new Date(ms).toISOString();
 
 function input(overrides: Partial<BotRequestInput>): BotRequestInput {
@@ -17,12 +19,18 @@ const record = (id: string, login: string, verdict: BotVerdictRecord['verdict'])
 describe('botRequestStates', () => {
   it('spins from the click, before the trigger comment is on the page', () => {
     const states = botRequestStates(input({ clicks: click(T0, null), now: T0 + 1_000 }));
-    expect(states.get('greptile')).toEqual({ kind: 'starting', until: T0 + REQUEST_ACK_MS });
+    expect(states.get('greptile')).toEqual({ kind: 'starting', until: T0 + GREPTILE_ACK });
   });
 
   it('reads a bot that reacts as unanswered once its window passes with no sign', () => {
-    const states = botRequestStates(input({ clicks: click(T0), comments: [trigger(T0 + 500, '@greptileai')], now: T0 + REQUEST_ACK_MS + 1 }));
+    const states = botRequestStates(input({ clicks: click(T0), comments: [trigger(T0 + 500, '@greptileai')], now: T0 + GREPTILE_ACK + 1 }));
     expect(states.get('greptile')).toEqual({ kind: 'unanswered', reason: 'silent' });
+  });
+
+  it('keeps waiting while Greptile takes minutes to react, as it does', () => {
+    const comments = [trigger(T0 + 500, '@greptileai')];
+    expect(botRequestStates(input({ clicks: click(T0), comments, now: T0 + 160_000 })).get('greptile')).toEqual({ kind: 'starting', until: T0 + GREPTILE_ACK });
+    expect(botRequestStates(input({ clicks: click(T0), comments, now: T0 + 352_000 })).get('greptile')?.kind).toBe('starting');
   });
 
   it('clears the request once the bot reacts to the trigger', () => {
@@ -67,13 +75,13 @@ describe('botRequestStates', () => {
 
   it('never lends a retry the reaction of the request before it, nor hides that the retry did not post', () => {
     const earlier = trigger(T0 - 60_000, '@greptileai', ['greptile-apps[bot]'], 'issuecomment-9');
-    expect(botRequestStates(input({ clicks: click(T0, null, ['issuecomment-9']), comments: [earlier], now: T0 + 1_000 })).get('greptile')).toEqual({ kind: 'starting', until: T0 + REQUEST_ACK_MS });
+    expect(botRequestStates(input({ clicks: click(T0, null, ['issuecomment-9']), comments: [earlier], now: T0 + 1_000 })).get('greptile')).toEqual({ kind: 'starting', until: T0 + GREPTILE_ACK });
     expect(botRequestStates(input({ clicks: click(T0, false, ['issuecomment-9']), comments: [earlier], now: T0 + 1_000 })).get('greptile')).toEqual({ kind: 'unanswered', reason: 'not-posted' });
   });
 
   it('gives a trigger typed into GitHub after a stale click a window of its own', () => {
     const typed = trigger(T0 + 10 * 60_000, '@greptileai', undefined, 'issuecomment-7');
-    expect(botRequestStates(input({ clicks: click(T0, false), comments: [typed], now: T0 + 10 * 60_000 + 1_000 })).get('greptile')).toEqual({ kind: 'starting', until: T0 + 10 * 60_000 + REQUEST_ACK_MS });
+    expect(botRequestStates(input({ clicks: click(T0, false), comments: [typed], now: T0 + 10 * 60_000 + 1_000 })).get('greptile')).toEqual({ kind: 'starting', until: T0 + 10 * 60_000 + GREPTILE_ACK });
   });
 
   it('lets the bot\u2019s own answer win over a workflow \u{1F44E} that covered another bot', () => {
@@ -96,6 +104,19 @@ describe('botRequestStates', () => {
   it('does not read a bot quoting its own command as a request', () => {
     const own: BotComment = { author: 'greptile-apps[bot]', body: 'Comment @greptileai to re-run', anchor: 'issuecomment-3', createdAt: iso(T0) };
     expect(botRequestStates(input({ comments: [own], now: T0 + 1_000 })).size).toBe(0);
+  });
+});
+
+describe('awaitingReaction', () => {
+  it('lists the triggers a reacting bot has not reacted to yet, inside its window', () => {
+    const waiting = trigger(T0, '@greptileai', undefined, 'issuecomment-1');
+    const reacted = trigger(T0, '@greptileai', ['greptile-apps[bot]'], 'issuecomment-2');
+    expect(awaitingReaction([waiting, reacted], [], T0 + 60_000)).toEqual(['issuecomment-1']);
+    expect(awaitingReaction([waiting], [], T0 + GREPTILE_ACK + 1)).toEqual([]);
+  });
+
+  it('leaves out bots that start silently and requests the Geld workflow answers', () => {
+    expect(awaitingReaction([trigger(T0, 'bugbot run'), trigger(T0, '/geld run greptile', undefined, 'issuecomment-3')], [], T0 + 1_000)).toEqual([]);
   });
 });
 

@@ -46,7 +46,8 @@ import { applyFolds, closureKindOf, groupBotRuns, groupClosures, groupDoneHumans
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
 import type { BotRequestClick } from './bot-requests';
-import { botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
+import { awaitingReaction, botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
+import { pollTriggerReactions, resetTriggerReactions, withFetchedReactions } from './trigger-reactions';
 import { AGENT_NOTES_KEY, ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setNoteProvider, setReportProvider, setWhoProvider } from './hovercard';
@@ -523,13 +524,15 @@ function botCommentsOf(crawled: Crawled, settings: GeldSettings): readonly BotCo
     // edit log only for a comment the page marks as edited, and the rounds ask it for the same comments anyway.
     const node = comment.kind !== 'thread' && bot !== null ? document.getElementById(comment.anchor) : null;
     const edited = node === null ? null : editedAt(node, reapplySoon);
+    const reactions = comment.kind === 'thread' ? comment.reactions : withFetchedReactions(comment.anchor, comment.reactions);
+    const reactedBy = reactions === comment.reactions ? comment.reactedBy : unique((reactions ?? []).map((reaction) => reaction.login));
     return {
       author: comment.author,
       body: comment.body,
       anchor: comment.anchor,
       ...(comment.createdAt === '' ? {} : { createdAt: comment.createdAt }),
-      ...(comment.reactedBy === undefined ? {} : { reactedBy: comment.reactedBy }),
-      ...(comment.reactions === undefined ? {} : { reactions: comment.reactions }),
+      ...(reactedBy === undefined ? {} : { reactedBy }),
+      ...(reactions === undefined ? {} : { reactions }),
       ...(edited === null ? {} : { editedAt: edited }),
       ...(comment.kind === 'thread' && comment.isResolved !== undefined ? { resolved: comment.isResolved } : {}),
     };
@@ -2992,6 +2995,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   lastSettings = settings;
   if (visit.pageKey !== page.stateKey) {
     restoreAll();
+    resetTriggerReactions();
     visit.pageKey = page.stateKey;
     visit.generatedAt = new Date().toISOString();
     visit.openKey = null;
@@ -3081,6 +3085,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   triggersOnPage = triggerAnchors(botComments, settings.reviewBots);
   const requestDeadline = nextRequestDeadline(botRequests);
   if (requestDeadline !== null) reapplyAt(requestDeadline);
+  const reactionPoll = pollTriggerReactions(awaitingReaction(botComments, settings.reviewBots, Date.now()), Date.now(), reapplySoon);
+  if (reactionPoll !== null) reapplyAt(reactionPoll);
   // Then the threads, now that items exist: whether the replies say a thread is done.
   const bodies = new Map(crawledDom.comments.map((entry) => [entry.comment.anchor, { author: entry.author.login, body: entry.comment.body }] as const));
   const threads: ThreadToClassify[] = composed.meta.items
