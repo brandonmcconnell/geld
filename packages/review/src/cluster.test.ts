@@ -132,6 +132,16 @@ describe('firstSentence / severity', () => {
     expect(firstSentence('Rename `config.resolve` to **resolveConfig** first')).toBe('Rename `config.resolve` to **resolveConfig** first');
   });
 
+  it('ends a sentence only where a terminator ends a word, not inside a URL or a version', () => {
+    expect(firstSentence('Link to Devin session: https://app.devin.ai/sessions/1 opened')).toBe('Link to Devin session: https://app.devin.ai/sessions/1 opened');
+    expect(firstSentence('Bumps Node to 20.11 for the runner. Also fixes CI.')).toBe('Bumps Node to 20.11 for the runner.');
+    expect(firstSentence('See https://example.com/?_ga=123 for details. Next.')).toBe('See https://example.com/?_ga=123 for details.');
+    expect(firstSentence('Use e.g. Node 20 for this job. Then rerun.')).toBe('Use e.g. Node 20 for this job.');
+    expect(firstSentence('Covers lists, tables, etc. in the preview. More.')).toBe('Covers lists, tables, etc. in the preview.');
+    expect(firstSentence('Covers lists, etc. Then rerun.')).toBe('Covers lists, etc.');
+    expect(firstSentence('Fix this.<br>Then retry.')).toBe('Fix this.');
+  });
+
   it('classifies blocking vs nit vs question', () => {
     expect(guessSeverity('CRITICAL security hole', true, false)).toBe('blocking');
     expect(guessSeverity('nit: extra space', false, false)).toBe('nit');

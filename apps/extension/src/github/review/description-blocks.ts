@@ -58,6 +58,9 @@ const hrefsOf = (block: Element): string[] => [...block.querySelectorAll('a[href
 
 const linksTo = (target: RegExp) => (block: Element): boolean => hrefsOf(block).some((href) => target.test(href));
 
+/** Bugbot's signature under its note, read from the paragraph that holds it. */
+const BUGBOT_SIGNATURE = /^(?:Written|Reviewed|Generated) by Cursor Bugbot\b/;
+
 const TOOL_SPECS: readonly ToolSpec[] = [
   { id: 'coderabbit', name: 'CodeRabbit', bot: 'coderabbit', starts: headingIs(/^Summary by CodeRabbit$/i) },
   { id: 'sourcery', name: 'Sourcery', bot: 'sourcery', starts: headingIs(/^Summary by Sourcery$/i) },
@@ -79,8 +82,10 @@ const TOOL_SPECS: readonly ToolSpec[] = [
     starts: (block) => linksTo(/^https:\/\/(?:www\.)?ellipsis\.dev\b/)(block) && /description was created by Ellipsis/i.test(textOf(block)),
     ends: (block) => linksTo(/^https:\/\/(?:www\.)?ellipsis\.dev\b/)(block) && /^Generated with .* by ellipsis\.dev$/i.test(textOf(block)),
   },
-  // The Note alert headed by the risk level and signed "Written by Cursor Bugbot for commit …".
-  { id: 'bugbot', name: 'Cursor Bugbot', bot: 'bugbot', starts: (block) => block.classList.contains('markdown-alert') && /Written by Cursor Bugbot\b/.test(textOf(block)) },
+  // The Note alert headed by the risk level and signed "Written by Cursor Bugbot for commit …", since Nov 2026 "Reviewed
+  // by Cursor Bugbot for commit …" (mintlify/mint#14335).
+  // The signature is read in its own paragraph: the alert's text runs the paragraphs together ("onlyReviewed by").
+  { id: 'bugbot', name: 'Cursor Bugbot', bot: 'bugbot', starts: (block) => block.classList.contains('markdown-alert') && [...block.querySelectorAll('p, sup, sub')].some((part) => BUGBOT_SIGNATURE.test(textOf(part))) },
   // A Cursor agent's "Open in Web" / "Open in Cursor" badges.
   {
     id: 'cursor-agent',
