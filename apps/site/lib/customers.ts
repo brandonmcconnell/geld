@@ -33,7 +33,7 @@ export const CUSTOMERS: readonly Customer[] = [
   { name: 'Mercury', url: 'https://mercury.com', logo: { src: '/logos/mercury.svg', aspect: 139 / 32, height: 36 }, markOnly: false },
   { name: 'Neon', url: 'https://neon.com', logo: { src: '/logos/neon.svg', aspect: 99.16 / 28, height: 26 }, markOnly: false },
   { name: 'Notra', url: 'https://www.usenotra.com', logo: { src: '/logos/notra.svg', aspect: 1, height: 24 }, markOnly: true },
-  { name: 'Mintlify', url: 'https://www.mintlify.com', logo: { src: '/logos/mintlify.svg', aspect: 103.6 / 23, height: 20 }, markOnly: false },
+  { name: 'Mintlify', url: 'https://www.mintlify.com', logo: { src: '/logos/mintlify.svg', aspect: 103.6 / 23, height: 23 }, markOnly: false },
   { name: 'Tripwire', url: 'https://tripwire.sh', logo: { src: '/logos/tripwire.svg', aspect: 485 / 99, height: 24 }, markOnly: false },
   { name: 'Loctax', url: 'https://www.loctax.com', logo: { src: '/logos/loctax.svg', aspect: 1, height: 22 }, markOnly: true },
 ];
