@@ -1534,10 +1534,11 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
 - Toolbar icon dark mode: Chrome/Edge use an offscreen `MATCH_MEDIA` document;
   Firefox uses `theme_icons`;
   Safari tints template icons.
+  The toolbar keeps the store's thin nested-outline mark: the six checked-in black/white PNGs in `apps/extension/public/icon/action/`, preserved by `pnpm brand:icons`.
   The logomark is drawn on a 24 × 25 grid (bands 4 units, gaps 3, every cut at 45°), so at 32px it lands on whole pixels at 1px per unit.
   Light on dark reads bolder, so every white brand file (`geld-logo-white.svg`, `geld-logomark-white.svg`) is a lighter cut of the black one: the same shape with every edge of the emblem 0.2 units in (bands 3.6, gaps 3.4) in the same box, so swapping light for dark moves nothing.
-  Whatever shows the logo on a dark background takes the white file: the site's dark mode, the SVG favicons (both shapes, picked by colour scheme), the extension's popup and options page (`<picture>`), the dashboard's `dark:` variant, the white toolbar icons and the store tiles.
-  `pnpm brand:icons` (`scripts/brand-icons.mjs`) draws every extension and Safari app icon from `assets/brand/`: from 128px up the logomark on the white tile, at 32px the logomark at 1px per unit, and at 16px, where a unit is under a pixel, `geld-logomark-grid.svg`, the same mark on a 14-unit grid where every band, gap and block is 2 units.
+  Whatever shows the new logo on a dark background takes the white file: the site's dark mode, the SVG favicons (both shapes, picked by colour scheme), the extension's popup and options page (`<picture>`), the dashboard's `dark:` variant and the store tiles.
+  `pnpm brand:icons` (`scripts/brand-icons.mjs`) draws the extension's tiled icons and Safari app icons from `assets/brand/`: from 128px up the logomark on the white tile, at 32px the logomark at 1px per unit, and at 16px, where a unit is under a pixel, `geld-logomark-grid.svg`, the same mark on a 14-unit grid where every band, gap and block is 2 units.
   The Mac icons keep the tile Xcode's converter drew and replace the extension's icon in its middle 60%.
   The site's 32px favicon draws the logomark at 1px per unit too.
   Change the grid mark and the white cut with the logomark, then rerun the script.

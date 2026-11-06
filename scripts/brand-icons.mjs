@@ -4,10 +4,8 @@
  * `assets/brand/`: `pnpm brand:icons` after a mark changes.
  *
  * `geld-logomark.svg` is drawn on a 24 × 25 grid, so at 32px it is drawn at
- * 1px per unit and every straight edge lands on a pixel. Light on dark reads
- * bolder, so the white toolbar icons draw `geld-logomark-white.svg`, its
- * dark-mode cut (every edge 0.2 units in). At 16px a unit is under a pixel, so
- * both colours draw `geld-logomark-grid.svg`, the same mark on a 14-unit grid
+ * 1px per unit and every straight edge lands on a pixel. At 16px a unit is
+ * under a pixel, so the tile draws `geld-logomark-grid.svg`, the same mark on a 14-unit grid
  * where every band, gap and block is 2 units, at 1px per unit. Keep the marks
  * in step.
  *
@@ -29,8 +27,6 @@ const APP_ICONSET = path.join(SAFARI_APP, 'Assets.xcassets/AppIcon.appiconset');
 const TILE_RADIUS = 0.2;
 /** The mark's height on that tile from 128px up, as a share of the tile's side. */
 const MARK_ON_TILE = 0.62;
-/** The mark's height in the 48px toolbar icon, which has no whole-pixel scale that fits. */
-const MARK_AT_48 = 44;
 /** The mark's height on the iOS icon's plain white square, which iOS rounds itself. */
 const MARK_ON_SQUARE = 0.5;
 /** The extension's icon inside Xcode's Mac tile: centred, at this share of its side. */
@@ -68,15 +64,7 @@ async function write(file, buffer) {
 }
 
 const light = await readMark('geld-logomark.svg');
-const dark = await readMark('geld-logomark-white.svg');
 const grid = await readMark('geld-logomark-grid.svg');
-
-// Toolbar: the bare mark, black for light toolbars, white (the dark-mode cut) for dark ones.
-for (const [color, fill, mark] of [['black', '#000000', light], ['white', '#ffffff', dark]]) {
-  await write(path.join(EXTENSION_ICONS, 'action', `${color}-16.png`), await icon(16, grid, { scale: 1, fill, snap: true }));
-  await write(path.join(EXTENSION_ICONS, 'action', `${color}-32.png`), await icon(32, mark, { scale: 1, fill, snap: true }));
-  await write(path.join(EXTENSION_ICONS, 'action', `${color}-48.png`), await icon(48, mark, { scale: MARK_AT_48 / mark.height, fill }));
-}
 
 // The extension's icons: the mark on its white tile.
 const tiles = new Map();
