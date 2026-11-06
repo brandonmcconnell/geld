@@ -55,6 +55,16 @@ describe('pollTriggerReactions', () => {
     expect(landed).not.toHaveBeenCalled();
   });
 
+  it('waits a beat, never a time already passed, while a slow read is still out', () => {
+    document.body.innerHTML = comment([]);
+    const fetch = vi.fn(() => new Promise<Response>(() => {}));
+    vi.stubGlobal('fetch', fetch);
+    pollTriggerReactions(waiting, T0, vi.fn());
+    const later = T0 + 10_000;
+    expect(pollTriggerReactions(waiting, later, vi.fn())).toBe(later + REACTION_FAST_POLL_MS);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('reads once more at the end of the grace, then stops', async () => {
     document.body.innerHTML = comment([]);
     let reactors: readonly string[] = [];

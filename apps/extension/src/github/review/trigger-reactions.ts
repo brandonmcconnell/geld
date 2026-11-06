@@ -81,7 +81,8 @@ export function pollTriggerReactions(triggers: readonly AwaitedTrigger[], now: n
     }
     const interval = now - at < FAST_FOR_MS ? REACTION_FAST_POLL_MS : REACTION_POLL_MS;
     if ((last === undefined || last + interval <= now) && !inFlight.has(anchor) && !read(anchor, now, landed)) continue;
-    const when = Math.min((lastAsked.get(anchor) ?? now) + interval, until);
+    // A read still out past its interval waits a beat: a time already passed would rerun the pass at once, over and over.
+    const when = Math.min(Math.max((lastAsked.get(anchor) ?? now) + interval, now + REACTION_FAST_POLL_MS), until);
     if (next === null || when < next) next = when;
   }
   return next;
