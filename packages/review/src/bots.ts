@@ -51,25 +51,18 @@ export interface ReviewBot {
   readonly conversational?: boolean;
   /**
    * How the bot says it has picked a trigger comment up. `reaction`: it
-   * reacts to the comment (Greptile's 👍) when it takes the job, so a
-   * trigger it has not reacted to within `acknowledgeWindowMs` was never
-   * seen — the bot is not running, whatever the comment asked (seen on
-   * mintlify/mint #12546: a bare "@greptileai" with no reaction and no review
-   * for half an hour, the next one reacted to and reviewed). Unset for bots
-   * that start silently: their trigger counts until it ages.
+   * reacts to the comment (Greptile's 👍) the moment it takes the job, so a
+   * trigger it has not reacted to after `ACK_GRACE_MS` was never seen — the
+   * bot is not running, whatever the comment asked (seen on mintlify/mint
+   * #12546: a bare "@greptileai" with no reaction and no review for half an
+   * hour, the next one reacted to within seconds and reviewed). Unset for
+   * bots that start silently: their trigger counts until it ages.
    */
   readonly acknowledges?: 'reaction';
-  /** How long the bot's reaction can take, when it is known to be slower than `ACK_GRACE_MS`. */
-  readonly acknowledgesWithinMs?: number;
 }
 
-/** A bot that acknowledges triggers with a reaction has this long to do so, unless its entry says otherwise; past it an unreacted trigger is not a run. */
+/** A bot that acknowledges triggers with a reaction has this long to do so; past it an unreacted trigger is not a run. */
 export const ACK_GRACE_MS = 3 * 60 * 1000;
-
-/** How long bot `id` has to react to a trigger before the trigger is read as never seen. */
-export function acknowledgeWindowMs(id: string): number {
-  return botById(id)?.acknowledgesWithinMs ?? ACK_GRACE_MS;
-}
 
 export const REVIEW_BOTS: readonly ReviewBot[] = [
   {
@@ -97,9 +90,6 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     triggers: ['@greptileai', '@greptile', '@greptileai review'],
     configFiles: ['greptile.json', '.greptile.yml', '.greptile.yaml'],
     acknowledges: 'reaction',
-    // Its 👍 lands when the review starts, not when the request arrives: 79 s to 352 s (median 160 s) over 60
-    // triggers on brandonmcconnell/geld, Nov 2026.
-    acknowledgesWithinMs: 8 * 60 * 1000,
   },
   {
     // Devin is a coding agent as well as a reviewer, under the same login: on a pull request it opened it narrates
@@ -1266,7 +1256,7 @@ export function verdictsFrom(
         if (asked.id === id) continue;
         if (viaWorkflow && (workflow === 'failed' || (workflow === null && !Number.isNaN(at) && now - at > ACK_GRACE_MS))) continue;
         // A bot that reacts when it takes a trigger, and has not after the grace: it never saw this one.
-        if (!viaWorkflow && !Number.isNaN(at) && now - at > acknowledgeWindowMs(asked.id) && botById(asked.id)?.acknowledges === 'reaction' && !reactedBy(comment, asked.id)) continue;
+        if (!viaWorkflow && !Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === 'reaction' && !reactedBy(comment, asked.id)) continue;
         // The threads set aside here are what a refusal brings back. Only a report from the bot clears the
         // stash (below): a second request, or the bot's own "Starting", before any report leaves it the last
         // real run.
