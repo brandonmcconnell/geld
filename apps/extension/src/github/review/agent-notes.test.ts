@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import { noteCopy, notePreview, notesFrom, noteText } from './agent-notes';
-import { noteTone } from './note-tone';
+import { botWrittenVersion, noteTone } from './note-tone';
+import { botById } from '@geld/review';
+import type { RevisionEditor } from './revisions';
 
 function blocksOf(html: string): Element[] {
   const holder = document.createElement('div');
@@ -121,5 +123,42 @@ describe('noteText', () => {
     const [note] = notesFrom(blocksOf(GREPTILE), []);
     if (note === undefined) throw new Error('no note');
     expect(noteText(note)).toContain('Removes overflow protection.');
+  });
+});
+
+describe('who wrote a note', () => {
+  const greptileApp = botById('greptile')?.appId ?? null;
+  const greptile: RevisionEditor = { name: 'greptile-apps', bot: true, appId: greptileApp };
+  const author: RevisionEditor = { name: 'someone', bot: false, appId: null };
+
+  it('credits a version to the editor of the revision it first appears in, once the revision before it was read', () => {
+    const readings = [
+      { at: '2026-11-01T00:00:00Z', blocks: blocksOf('<p>mine</p>'), by: author },
+      { at: '2026-11-02T00:00:00Z', blocks: blocksOf(`<p>mine</p>${GREPTILE}`), by: greptile },
+      { at: '2026-11-03T00:00:00Z', blocks: blocksOf(`<p>mine, edited</p>${GREPTILE}`), by: author },
+    ];
+    const [note] = notesFrom(blocksOf(`<p>mine, edited</p>${GREPTILE}`), readings);
+    expect(note?.versions.at(-1)?.by).toEqual(greptile);
+    if (note === undefined) throw new Error('no note');
+    expect(botWrittenVersion(note)).toEqual({ login: botById('greptile')?.logins[0], at: '2026-11-02T00:00:00Z' });
+  });
+
+  it('credits nobody when the first reading may not be where the note began', () => {
+    const readings = [{ at: '2026-11-02T00:00:00Z', blocks: blocksOf(GREPTILE), by: greptile }];
+    expect(notesFrom(blocksOf(GREPTILE), readings)[0]?.versions.at(-1)?.by).toBeUndefined();
+    // Unless the readings start at the description's creation.
+    expect(notesFrom(blocksOf(GREPTILE), readings, null, true)[0]?.versions.at(-1)?.by).toEqual(greptile);
+  });
+
+  it('does not take a Greptile-shaped block anyone else wrote for Greptile’s review', () => {
+    const start = { at: '2026-11-01T00:00:00Z', blocks: blocksOf('<p>mine</p>'), by: author };
+    const pasted = (by: RevisionEditor): ReturnType<typeof botWrittenVersion> => {
+      const [note] = notesFrom(blocksOf(`<p>mine</p>${GREPTILE}`), [start, { at: '2026-11-02T00:00:00Z', blocks: blocksOf(`<p>mine</p>${GREPTILE}`), by }]);
+      if (note === undefined) throw new Error('no note');
+      return botWrittenVersion(note);
+    };
+    expect(pasted(author)).toBeNull();
+    // Nor one another App wrote.
+    expect(pasted({ name: 'cursor', bot: true, appId: 1 })).toBeNull();
   });
 });

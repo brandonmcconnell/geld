@@ -37,10 +37,10 @@ import type { ReviewerCandidate } from './reviewers';
 import { nextRunGraceEnd, withRunTimes } from './run-starts';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
-import { descriptionBody, descriptionUnshortened, releaseDescription, shortenDescription } from './description';
+import { descriptionUnshortened, releaseDescription, shortenDescription } from './description';
 import { compactDescriptionByline } from './description-byline';
 import { type AgentNote, agentNotes, noteCopy, noteText, resetAgentNotes } from './agent-notes';
-import { DESCRIPTION_REVIEWERS } from './note-tone';
+import { botWrittenVersion, DESCRIPTION_REVIEWERS } from './note-tone';
 import { openNoteHistory } from './note-history';
 import { applyFolds, closureKindOf, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
@@ -545,18 +545,31 @@ let liveNotes: readonly AgentNote[] = [];
 /**
  * A review bot's summary written into the description (`DESCRIPTION_REVIEWERS`: Greptile, set to review there) as a
  * comment of the bot's, so `verdictsFrom` reads its score and findings for the Review bots row as it would a summary
- * comment's. Its anchor is the note's key: nothing on the page has it, and its line opens the note (`renderNoteBody`).
+ * comment's, at the time the bot wrote it. Its anchor is the note's key: nothing on the page has it, and its line opens
+ * the note (`renderNoteBody`).
  */
 function descriptionReviewComments(notes: readonly AgentNote[]): readonly BotComment[] {
-  const card = descriptionBody()?.closest('.timeline-comment, .js-comment') ?? null;
-  const createdAt = card === null ? '' : createdAtOf(card);
-  const edited = card === null ? null : editedAt(card, reapplySoon);
   return notes.flatMap((note) => {
-    const bot = note.present && DESCRIPTION_REVIEWERS.has(note.id) && note.bot !== null ? botById(note.bot) : null;
-    const login = bot?.logins[0];
-    if (bot === null || login === undefined) return [];
-    return [{ author: login, body: noteText(note), anchor: `${NOTE_ANCHOR_PREFIX}${note.id}`, ...(createdAt === '' ? {} : { createdAt }), ...(edited === null ? {} : { editedAt: edited }) }];
+    const written = botWrittenVersion(note);
+    return written === null ? [] : [{ author: written.login, body: noteText(note), anchor: `${NOTE_ANCHOR_PREFIX}${note.id}`, createdAt: written.at }];
   });
+}
+
+/** `extra` laid into `comments` (timeline order) by time, so a reader of the list in order meets each when it was said. */
+function inTimeOrder(comments: readonly BotComment[], extra: readonly BotComment[]): readonly BotComment[] {
+  const merged = [...comments];
+  for (const comment of extra) {
+    const at = Date.parse(comment.createdAt ?? '');
+    const index = merged.findIndex((entry) => Date.parse(entry.createdAt ?? '') > at);
+    merged.splice(index < 0 ? merged.length : index, 0, comment);
+  }
+  return merged;
+}
+
+/** When the note under a `note:` anchor was last written, for what reads a report's time. */
+function noteWrittenAt(anchor: string): string | null {
+  const note = liveNotes.find((entry) => `${NOTE_ANCHOR_PREFIX}${entry.id}` === anchor);
+  return note === undefined ? null : (botWrittenVersion(note)?.at ?? null);
 }
 
 /** A note as the panel shows it open: GitHub's rendering, copied (the note itself stays in the description). */
@@ -3039,7 +3052,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const threadsRead = complete && deferredFragments().every(({ src }) => fragmentRead(src));
   const notes = agentNotes(reapplySoon);
   liveNotes = notes.notes;
-  const botComments = [...botCommentsOf(crawledDom, settings), ...descriptionReviewComments(notes.notes)];
+  const botComments = inTimeOrder(botCommentsOf(crawledDom, settings), descriptionReviewComments(notes.notes));
   const checks = botChecks(headSha);
   const composed = phase('cluster', () => composeMeta(found, buildFromComments(crawledDom, botComments, checks, settings, headSha, visit.generatedAt, partial, threadsRead), complete));
   // A review asked for and not yet answered: the pill spins from the click, and says so if the bot never shows a sign.
@@ -3218,6 +3231,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const reportedSince = (anchor: string): boolean => {
     if (pushed === null) return false;
     if (pushed.anchors.has(anchor)) return true;
+    // A review in the description has no row of its own: when the bot wrote it says.
+    if (anchor.startsWith(NOTE_ANCHOR_PREFIX)) {
+      const written = Date.parse(noteWrittenAt(anchor) ?? '');
+      return pushed.at !== null && !Number.isNaN(written) && written >= pushed.at;
+    }
     const node = document.getElementById(anchor);
     if (node === null) return false;
     if (pushed.row !== null && pushed.row.isConnected && compareHome(pushed.row, node) < 0) return true;
@@ -3576,7 +3594,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       const entry = comments.find((candidate) => candidate.anchor === anchor);
       const target = entry !== undefined && !entry.hasBody && isVerdict(entry) ? (entry.threads?.[0]?.anchor ?? anchor) : anchor;
       // Held by a row here? Open it and bring it into view. Otherwise let the browser take the reader to it in the timeline.
-      const seat = hidingTimeline ? seatFor(target, meta, groups, batches) : null;
+      // A review in the description is only ever its Review bots line, whatever the timeline shows.
+      const seat = hidingTimeline || target.startsWith(NOTE_ANCHOR_PREFIX) ? seatFor(target, meta, groups, batches) : null;
       if (seat === null) {
         // Only scroll to something the page actually holds; a folded, silently-dropped comment has no place to land.
         if (document.getElementById(target) !== null) location.hash = target;
