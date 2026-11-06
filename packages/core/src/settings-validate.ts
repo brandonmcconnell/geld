@@ -262,6 +262,9 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   if (value.compactTimeline !== undefined && !isCompactTimelineMode(value.compactTimeline)) {
     issues.push({ path: `${path}.compactTimeline`, message: `Expected one of ${list(COMPACT_TIMELINE_MODES)}, got ${describeValue(value.compactTimeline)}.` });
   }
+  if (value.digestViewChosenAt !== undefined && typeof value.digestViewChosenAt !== 'string') {
+    issues.push({ path: `${path}.digestViewChosenAt`, message: `Expected a string, got ${describeValue(value.digestViewChosenAt)}.` });
+  }
   if (value.reviewGrouping !== undefined && !isReviewGrouping(value.reviewGrouping)) {
     issues.push({ path: `${path}.reviewGrouping`, message: `Expected one of ${list(REVIEW_GROUPINGS)}, got ${describeValue(value.reviewGrouping)}.` });
   }

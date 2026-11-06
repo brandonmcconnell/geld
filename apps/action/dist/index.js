@@ -2576,6 +2576,15 @@ function isRepoConfigMode(value) {
 function isCompactTimelineMode(value) {
   return typeof value === "string" && COMPACT_TIMELINE_MODES.some((mode) => mode === value);
 }
+function digestViewOf(settings) {
+  if (!settings.prOverview) return "github";
+  return settings.compactTimeline === "off" ? "digest-timeline" : "digest";
+}
+function digestViewPatch(settings, view, at) {
+  const folded = settings.compactTimeline === "off" ? "compact" : settings.compactTimeline;
+  if (view === "github") return { prOverview: false, compactTimeline: settings.compactTimeline, digestViewChosenAt: at };
+  return { prOverview: true, compactTimeline: view === "digest" ? folded : "off", digestViewChosenAt: at };
+}
 function normalizeAiBaseUrl(value) {
   const trimmed = value.trim();
   const withScheme2 = trimmed === "" || /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
@@ -2746,6 +2755,7 @@ function normalizeSettings(value) {
     repoConfigs: isRepoConfigMode(record4.repoConfigs) ? record4.repoConfigs : DEFAULT_SETTINGS.repoConfigs,
     prOverview: bool(record4, "prOverview", DEFAULT_SETTINGS.prOverview),
     compactTimeline: isCompactTimelineMode(record4.compactTimeline) ? record4.compactTimeline : DEFAULT_SETTINGS.compactTimeline,
+    digestViewChosenAt: typeof record4.digestViewChosenAt === "string" ? record4.digestViewChosenAt : DEFAULT_SETTINGS.digestViewChosenAt,
     reviewGrouping: isReviewGrouping(record4.reviewGrouping) ? record4.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
     collapseDescription: bool(record4, "collapseDescription", DEFAULT_SETTINGS.collapseDescription),
     quickReview: bool(record4, "quickReview", DEFAULT_SETTINGS.quickReview),
@@ -2814,7 +2824,7 @@ function withCustomCategory(settings, custom2) {
 function withCategoryEnabled(settings, id, enabled) {
   return id === "large" ? { ...settings, hideLargeDiffs: enabled } : { ...settings, categories: { ...settings.categories, [id]: enabled } };
 }
-var SUGGESTED_FIX_MODES, REPO_CONFIG_MODES, REVIEW_GROUPINGS, COMPACT_TIMELINE_MODES, DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY, CATEGORY_ORDER;
+var SUGGESTED_FIX_MODES, REPO_CONFIG_MODES, REVIEW_GROUPINGS, COMPACT_TIMELINE_MODES, DIGEST_VIEWS, DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY, CATEGORY_ORDER;
 var init_settings = __esm({
   "../../packages/core/src/settings.ts"() {
     "use strict";
@@ -2826,6 +2836,7 @@ var init_settings = __esm({
     REPO_CONFIG_MODES = ["always", "ask", "never"];
     REVIEW_GROUPINGS = ["type", "batch"];
     COMPACT_TIMELINE_MODES = ["off", "compact", "minimal"];
+    DIGEST_VIEWS = ["digest", "digest-timeline", "github"];
     DEFAULT_SETTINGS = {
       enabled: true,
       categories: {},
@@ -2852,6 +2863,7 @@ var init_settings = __esm({
       repoConfigs: "ask",
       prOverview: true,
       compactTimeline: "compact",
+      digestViewChosenAt: "",
       reviewGrouping: "type",
       collapseDescription: true,
       quickReview: true,
@@ -3053,6 +3065,9 @@ function collectSettingsIssues(value, path = "settings", catalog = BUNDLED_CATAL
   }
   if (value.compactTimeline !== void 0 && !isCompactTimelineMode(value.compactTimeline)) {
     issues.push({ path: `${path}.compactTimeline`, message: `Expected one of ${list(COMPACT_TIMELINE_MODES)}, got ${describeValue(value.compactTimeline)}.` });
+  }
+  if (value.digestViewChosenAt !== void 0 && typeof value.digestViewChosenAt !== "string") {
+    issues.push({ path: `${path}.digestViewChosenAt`, message: `Expected a string, got ${describeValue(value.digestViewChosenAt)}.` });
   }
   if (value.reviewGrouping !== void 0 && !isReviewGrouping(value.reviewGrouping)) {
     issues.push({ path: `${path}.reviewGrouping`, message: `Expected one of ${list(REVIEW_GROUPINGS)}, got ${describeValue(value.reviewGrouping)}.` });
@@ -11068,6 +11083,7 @@ var init_repo_config = __esm({
       "customPatterns",
       "prOverview",
       "compactTimeline",
+      "digestViewChosenAt",
       "reviewGrouping",
       "collapseDescription",
       "aiBaseUrl",
@@ -11843,6 +11859,7 @@ __export(src_exports, {
   COUNT_PATTERN: () => COUNT_PATTERN,
   CUSTOM_GROUP_ID: () => CUSTOM_GROUP_ID,
   DEFAULT_SETTINGS: () => DEFAULT_SETTINGS,
+  DIGEST_VIEWS: () => DIGEST_VIEWS,
   EMPTY_REPO_CONFIG: () => EMPTY_REPO_CONFIG,
   EMPTY_TOTALS: () => EMPTY_TOTALS,
   ERROR_PAYLOAD_VERSION: () => ERROR_PAYLOAD_VERSION,
@@ -11905,6 +11922,8 @@ __export(src_exports, {
   describeValue: () => describeValue,
   diffSummariesUrl: () => diffSummariesUrl,
   diffstatSurfaceJson: () => diffstatSurfaceJson,
+  digestViewOf: () => digestViewOf,
+  digestViewPatch: () => digestViewPatch,
   errorReportFrom: () => errorReportFrom,
   expandBraces: () => expandBraces,
   fetchGitHubProfile: () => fetchGitHubProfile,

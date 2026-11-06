@@ -1,6 +1,9 @@
 import {
   DEFAULT_SETTINGS,
+  DIGEST_VIEWS,
   allCategories,
+  digestViewOf,
+  digestViewPatch,
   describeAdvancedSettings,
   hasAdvancedSettings,
   isAutoViewed,
@@ -139,6 +142,38 @@ describe('normalizeSettings', () => {
       prOverview: false,
       reviewBots: ['acme[bot]'],
     });
+  });
+
+  it('keeps when the digest view was chosen, empty until then', () => {
+    expect(DEFAULT_SETTINGS.digestViewChosenAt).toBe('');
+    expect(normalizeSettings({ digestViewChosenAt: '2026-11-06T20:00:00.000Z' }).digestViewChosenAt).toBe('2026-11-06T20:00:00.000Z');
+    expect(normalizeSettings({ digestViewChosenAt: 7 }).digestViewChosenAt).toBe('');
+  });
+});
+
+describe('digest views', () => {
+  const at = '2026-11-06T20:00:00.000Z';
+
+  it('reads the view from the digest switch and the timeline folding', () => {
+    expect(digestViewOf(DEFAULT_SETTINGS)).toBe('digest');
+    expect(digestViewOf({ prOverview: true, compactTimeline: 'minimal' })).toBe('digest');
+    expect(digestViewOf({ prOverview: true, compactTimeline: 'off' })).toBe('digest-timeline');
+    expect(digestViewOf({ prOverview: false, compactTimeline: 'off' })).toBe('github');
+  });
+
+  it('makes each view and records when it was chosen', () => {
+    for (const view of DIGEST_VIEWS) {
+      const patch = digestViewPatch(DEFAULT_SETTINGS, view, at);
+      expect(digestViewOf({ ...DEFAULT_SETTINGS, ...patch })).toBe(view);
+      expect(patch.digestViewChosenAt).toBe(at);
+    }
+  });
+
+  it('keeps the timeline folding the reader had when turning the digest off or folding again', () => {
+    expect(digestViewPatch({ compactTimeline: 'minimal' }, 'github', at).compactTimeline).toBe('minimal');
+    expect(digestViewPatch({ compactTimeline: 'minimal' }, 'digest', at).compactTimeline).toBe('minimal');
+    expect(digestViewPatch({ compactTimeline: 'off' }, 'digest', at).compactTimeline).toBe('compact');
+    expect(digestViewPatch({ compactTimeline: 'off' }, 'github', at).compactTimeline).toBe('off');
   });
 });
 
