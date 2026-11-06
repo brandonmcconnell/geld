@@ -57,6 +57,11 @@ describe('toolBlocksOf', () => {
     expect(spans(`<p>mine</p><hr>${BUGBOT_REVIEWED}`)).toEqual([at('bugbot', 1, 2)]);
   });
 
+  it('reads Bugbot’s signature in its own paragraph, when no space parts it from the summary before it', () => {
+    const joined = '<div class="markdown-alert markdown-alert-note"><p><strong>Low Risk</strong><br>Docs only</p><p><sup>Reviewed by <a href="https://cursor.com/bugbot">Cursor Bugbot</a> for commit f98e39d.</sup></p></div>';
+    expect(spans(joined)).toEqual([at('bugbot', 0, 0)]);
+  });
+
   it('finds one-block notes and footers, with the rule just above a footer', () => {
     expect(spans(`${BUGBOT}<p>mine</p>${CURSOR_AGENT}<hr>${CLAUDE}${DEVIN}`)).toEqual([
       at('bugbot', 0, 0),
