@@ -31,7 +31,7 @@ apps/dashboard/      @geld/dashboard — independent Next.js review workspace, B
 packages/domain/     @geld/domain — provider-neutral contracts, access and billing rules.
 packages/providers/  @geld/providers — provider clients behind token sources.
 packages/ui/         @geld/ui — shared Base UI presentation primitives.
-assets/brand/        Logo + logomark SVGs (black and white variants). Both apps reference these.
+assets/brand/        Logo + logomark SVGs (black and white variants), and the logomark on a pixel grid for small icons. Both apps reference these.
 .github/workflows/   CI: `pnpm check` (typecheck + tests everywhere), `pnpm catalog:check` (generated
                      catalog and its signature are current) and `pnpm zip:all` artifacts.
 catalog/             patterns.json + patterns.sig: the signed pattern catalog installed extensions
@@ -1531,8 +1531,13 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
 - Toolbar icon dark mode: Chrome/Edge use an offscreen `MATCH_MEDIA` document;
   Firefox uses `theme_icons`;
   Safari tints template icons.
-  Icons are pixel-snapped renders of `assets/brand/geld-logomark.svg` (see git history for the generator approach;
-  regenerate at 1/2/3 px per grid unit).
+  The logomark is drawn on a 24 × 25 grid (bands 4 units, gaps 3, every cut at 45°), so at 32px it lands on whole pixels at 1px per unit.
+  Light on dark reads bolder, so every white brand file (`geld-logo-white.svg`, `geld-logomark-white.svg`) is a lighter cut of the black one: the same shape with every edge of the emblem 0.2 units in (bands 3.6, gaps 3.4) in the same box, so swapping light for dark moves nothing.
+  Whatever shows the logo on a dark background takes the white file: the site's dark mode, the SVG favicons (both shapes, picked by colour scheme), the extension's popup and options page (`<picture>`), the digest bar under GitHub's dark themes (`data-geld-brand-cut`, by `data-color-mode` and, when it follows the system, `data-light-theme` / `data-dark-theme`), the dashboard's `dark:` variant, the white toolbar icons and the store tiles.
+  `pnpm brand:icons` (`scripts/brand-icons.mjs`) draws every extension and Safari app icon from `assets/brand/`: from 128px up the logomark on the white tile, at 32px the logomark at 1px per unit, and at 16px, where a unit is under a pixel, `geld-logomark-grid.svg`, the same mark on a 14-unit grid where every band, gap and block is 2 units.
+  The Mac icons keep the tile Xcode's converter drew and replace the extension's icon in its middle 60%.
+  The site's 32px favicon draws the logomark at 1px per unit too.
+  Change the grid mark and the white cut with the logomark, then rerun the script.
 
 ## Website (apps/site)
 

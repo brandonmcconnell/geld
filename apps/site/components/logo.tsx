@@ -11,15 +11,15 @@ const WORDMARK = {
   light: new URL('../../../assets/brand/geld-logo.svg', import.meta.url),
   dark: new URL('../../../assets/brand/geld-logo-white.svg', import.meta.url),
   // viewBox of the SVG, for the intrinsic aspect ratio.
-  width: 141.91,
-  height: 36.31,
+  width: 91.71,
+  height: 24.02,
 };
 
 const LOGOMARK = {
   light: new URL('../../../assets/brand/geld-logomark.svg', import.meta.url),
   dark: new URL('../../../assets/brand/geld-logomark-white.svg', import.meta.url),
-  width: 134.41,
-  height: 157.21,
+  width: 24,
+  height: 25,
 };
 
 interface BrandImageProps {

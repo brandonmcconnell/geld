@@ -25,6 +25,7 @@
     "safari:open": "pnpm --filter @geld/extension safari:open",
     "dev:site": "pnpm --filter @geld/site dev",
     "build:site": "pnpm --filter @geld/site build",
+    "brand:icons": "node scripts/brand-icons.mjs",
     "catalog:build": "tsx scripts/catalog-build.ts",
     "catalog:check": "tsx scripts/catalog-build.ts --check",
     "catalog:sign": "node scripts/catalog-sign.mjs",
@@ -41,6 +42,7 @@
   },
   "devDependencies": {
     "@geld/core": "workspace:*",
+    "sharp": "0.35.4",
     "tsx": "^4.23.13"
   }
 }
