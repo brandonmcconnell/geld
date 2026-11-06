@@ -404,6 +404,14 @@ describe('bots + prompts', () => {
     expect(parseBotBody('Found 2 issues, see #9377 issues for the earlier ones.', 'bugbot').count).toBe(2);
     expect(parseBotBody('Fixes GH-123 issues: found 1 bug.', 'bugbot').count).toBe(1);
   });
+  it('does not join a number to a noun on the next line', () => {
+    // A Claude review whose short SHA was all digits, as the page reads it: "Reported 6151140 issues" (X, Nov 2026).
+    const page = '**Commit Hash**: 6151140\n\nCritical Issues:\n\n- [ ] Runtime gates still use an account-ID-only context';
+    expect(parseBotBody(page, 'claude').count).toBeNull();
+    expect(parseBotBody('Review complete\n3\nP1, 2\nP2', 'claude').count).toBeNull();
+    expect(parseBotBody('Commit 1234567\nnew issues found below', 'cubic').count).toBeNull();
+    expect(parseBotBody('Found 2 potential issues.', 'claude').count).toBe(2);
+  });
   it("reads Copilot's overview: open findings counted, none open is clean", () => {
     // Copilot code review's overview (`ccr-overview-v2`, Oct 2026): a verdict heading, then "**1 open finding**" /
     // "**0 open findings**" / "**No open issues** 🎉", edited as the findings are resolved.
