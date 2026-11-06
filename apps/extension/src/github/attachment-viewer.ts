@@ -34,6 +34,7 @@ export function createAttachmentViewer(source: HTMLImageElement): {
   let pan: Point = { x: 0, y: 0 };
   let start: Point | null = null;
   let suppressClick = false;
+  let failed = false;
   const pointers = new Map<number, Point>();
 
   const maxScale = (): number => Math.max(4, Math.min(16, image.naturalWidth / width));
@@ -60,6 +61,7 @@ export function createAttachmentViewer(source: HTMLImageElement): {
     render();
   };
   const fit = (): void => {
+    if (failed) return;
     const naturalWidth = source.naturalWidth || image.naturalWidth;
     const naturalHeight = source.naturalHeight || image.naturalHeight;
     if (!naturalWidth || !naturalHeight) return;
@@ -82,9 +84,18 @@ export function createAttachmentViewer(source: HTMLImageElement): {
     else render();
   });
   image.addEventListener('error', () => {
+    failed = true;
     image.hidden = true;
     status.hidden = false;
     status.textContent = 'This image could not be loaded. Open the original to view it.';
+    // The stage was fitted to the source image, and a small one would clip the message.
+    stage.style.width = '';
+    stage.style.height = '';
+    width = 0;
+    height = 0;
+    scale = 1;
+    pan = { x: 0, y: 0 };
+    render();
   });
   image.addEventListener('dragstart', (event) => event.preventDefault());
   stage.addEventListener('click', (event) => {
