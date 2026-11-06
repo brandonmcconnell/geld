@@ -408,6 +408,7 @@ describe('bots + prompts', () => {
     // A Claude review whose short SHA was all digits, as the page reads it: "Reported 6151140 issues" (X, Nov 2026).
     const page = '**Commit Hash**: 6151140\n\nCritical Issues:\n\n- [ ] Runtime gates still use an account-ID-only context';
     expect(parseBotBody(page, 'claude').count).toBeNull();
+    expect(parseBotBody(page.replace(/\n/g, '\r'), 'claude').count).toBeNull();
     expect(parseBotBody('Review complete\n3\nP1, 2\nP2', 'claude').count).toBeNull();
     expect(parseBotBody('Commit 1234567\nnew issues found below', 'cubic').count).toBeNull();
     expect(parseBotBody('Found 2 potential issues.', 'claude').count).toBe(2);

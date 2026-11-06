@@ -482,7 +482,7 @@ function countShapedBy(botId: string, text: string): number | null {
 
 export function parseBotBody(body: string, botId: string): ParsedBotBody {
   // HTML comments are the bots' own markers (Cursor's automation ids, Greptile's score), never words to weigh.
-  const text = body.replace(/\r\n/g, '\n').replace(/<!--[\s\S]*?-->/g, '').trim();
+  const text = body.replace(/\r\n?/g, '\n').replace(/<!--[\s\S]*?-->/g, '').trim();
   // Entelligence's scorecard has two N/5 rows; "Merge Confidence" is the verdict (Code Quality feeds it). Qodo's
   // summaries carry no score out of five, whatever fraction appears in them.
   const scoreMatch = botId === 'qodo' ? null : (botId === 'entelligence' ? /merge confidence\W+(?:[\u25cf\u25cb\s]*)\**(\d+(?:\.\d+)?)\s*\/\s*5\b/i.exec(text) : null) ?? /(\d+(?:\.\d+)?)\s*\/\s*5\b/.exec(text);

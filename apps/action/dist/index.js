@@ -32000,7 +32000,7 @@ function countShapedBy(botId, text) {
   }
 }
 function parseBotBody(body, botId) {
-  const text = body.replace(/\r\n/g, "\n").replace(/<!--[\s\S]*?-->/g, "").trim();
+  const text = body.replace(/\r\n?/g, "\n").replace(/<!--[\s\S]*?-->/g, "").trim();
   const scoreMatch = botId === "qodo" ? null : (botId === "entelligence" ? /merge confidence\W+(?:[\u25cf\u25cb\s]*)\**(\d+(?:\.\d+)?)\s*\/\s*5\b/i.exec(text) : null) ?? /(\d+(?:\.\d+)?)\s*\/\s*5\b/.exec(text);
   const score = scoreMatch?.[1] !== void 0 ? Number.parseFloat(scoreMatch[1]) : null;
   const countMatch = botId === "greptile" ? /(?:found|reported)[^\S\n]+(\d+)[^\S\n]+(?:issue|finding|comment)/i.exec(text) : /\bactionable comments posted:[^\S\n]*(\d+)/i.exec(text) ?? // Not a number that is a reference ("#9377", "GH-123"): "both #9377 findings are fixed" names a pull request, not 9,377 findings
