@@ -496,6 +496,16 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Chrome and Edge allow it from the background with no gesture;
   Firefox (MV2, and its `openPopup` only from the extension's own user actions) and a refusal anywhere (Safari) fall back to `runtime.openOptionsPage()`.
   Verified on Chrome in Nov 2026: the popup opened at 335×526 with the tab's own state, and with `openPopup` made to reject the options page opened.
+  **How pull requests look is one choice of three, offered on the page itself** (`DigestView` in `@geld/core/settings.ts`, `digest-view.ts`, `digest-off.ts`): "Digest only" (`prOverview` on, the timeline folded), "Digest and timeline" (`prOverview` on, `compactTimeline: 'off'`) and "GitHub only" (`prOverview` off).
+  The digest went on by default for everyone in Nov 2026 and some readers were lost: they did not know the panel was Geld's or how to get GitHub's page back, so the way out and the way back in are on the page, not only in the settings.
+  The views are stored as the two settings they are made of (`digestViewOf`, `digestViewPatch`), so the settings pages keep offering both on their own, and a folded timeline keeps its depth (`minimal` stays `minimal`) across a trip to GitHub only and back.
+  The Geld row carries a "View" menu (`viewMenu`, the eye, beside the grouping menu, its words dropped with the others in `icons` fit) listing the three with what each means.
+  **Until the reader picks a view the digest opens with an intro under the Geld row** (`introNotice`, `PanelModel.intro`): what the panel is, the three views as a segmented control (`viewChoice`, Primer's small segmented control, the current view pressed) and "Got it", which keeps the current view.
+  Any choice, from the intro, the menu or the off line, records its time in `digestViewChosenAt`, a settings key (empty by default), so the intro shows once per reader and syncs as every setting does: `storage.sync`, and the gist when signed in, with the gist's usual reconciliation.
+  It is a personal key a repository config may not set, has no schema field, and is not offered on any settings page.
+  **While the digest is off, a line grown out of the description card says so and offers the same three views** (`syncDigestOffBar`, `.geld-digest-off`, GitHub only pressed), run from the review pass's early return so it costs a lookup per pass.
+  It has no dismissal on purpose: the digest is what Geld is growing into, and the owner decided (Nov 2026) that a reader who turned it off must always be one click from coming back.
+  Focus follows the choice: turning the digest off from the panel lands on the line's pressed view, and coming back from the line lands on the panel's View control (`focusViewOnNextMount`).
   A round's row shows a progress glyph (circle → filled check when every thread is resolved), the avatars of everyone who posted (one per login — no names, the avatars say it;
   bots get Geld's identity hover card via `data-geld-who`, people GitHub's), "Round N", the Geld row's meter with `d/N resolved`, a count chip with every comment in the round (run summaries plus thread comments) and the time;
   "N rounds to review" (rounds with an open thread, expanded by default) comes before "N settled rounds" (collapsed).
