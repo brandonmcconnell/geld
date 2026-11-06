@@ -101,9 +101,7 @@ export default defineContentScript({
     };
     browser.runtime.onMessage.addListener(onMessage);
 
-    // In Dia the offscreen theme probe never reports a light/dark switch, but a tab does, so the top frame reports
-    // the scheme too and the background picks the toolbar icon by it.
-    if ((import.meta.env.CHROME || import.meta.env.EDGE) && window.top === window) {
+    if (import.meta.env.CHROME || import.meta.env.EDGE) {
       const query = window.matchMedia('(prefers-color-scheme: dark)');
       const report = (): void =>
         quietly(() => void browser.runtime.sendMessage({ type: 'geld:color-scheme', dark: query.matches } satisfies ColorSchemeMessage).catch(() => undefined));

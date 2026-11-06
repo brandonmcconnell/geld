@@ -548,8 +548,6 @@ export default defineBackground(() => {
       return undefined;
     }
     if (isColorSchemeMessage(message)) {
-      // Once a tab has reported, the probe's word (stale in Dia) no longer counts.
-      // Assumes Chrome's tab and probe agree on the scheme, so preferring the tab costs Chrome nothing.
       if (sender.tab !== undefined) schemeFromTab = true;
       else if (schemeFromTab) return undefined;
       applyToolbarIcon(message.dark);
