@@ -7564,23 +7564,22 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   font-size: var(--text-body-size-medium, 14px);
 }
 
-[data-geld-desc-byline] > strong {
-  margin-right: 6px;
+/* The name stands alone on the left; the time and "N edits" stand at the line's far end, left of the badge and ⋯. */
+[data-geld-desc-byline] > a.js-timestamp {
+  margin-left: auto;
 }
 
-/* "N edits" stands at the line's far end, left of the badge and ⋯, so a first edit moves nothing else. */
 [data-geld-desc-byline] > .js-comment-edit-history {
-  margin-left: auto;
+  margin-left: 8px;
 }
 
 [data-geld-desc-byline] > .js-comment-edit-history > .color-fg-muted {
   display: none !important;
 }
 
-/* GitHub pads the badge-and-⋯ group 16px off the line: 8px less puts the edit menu's caret as far from the badge
- * as the badge is from the ⋯ (12px, measured on github.com Nov 2026). */
+/* GitHub pads the badge-and-⋯ group 16px off the line, and the edit menu's caret carries 4px of its own after it. */
 .timeline-comment-header:has(> h3 [data-geld-desc-byline]) > :last-child {
-  padding-left: 8px !important;
+  padding-left: 4px !important;
 }
 
 [data-geld-desc-edits] > .position-relative > span:not(.geld-desc-edits),
