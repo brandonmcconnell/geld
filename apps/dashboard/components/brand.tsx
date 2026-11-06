@@ -1,15 +1,17 @@
+const wordmark = {
+  light: new URL('../../../assets/brand/geld-logo.svg', import.meta.url),
+  dark: new URL('../../../assets/brand/geld-logo-white.svg', import.meta.url),
+};
 export function Brand({ compact = false }: { readonly compact?: boolean }) {
+  const height = compact ? 16 : 24;
+  const width = (height * 141.91) / 36.31;
   return (
-    <span className="brand">
-      <svg aria-hidden="true" viewBox="0 0 134.41 157.21" width="23" height="27" fill="currentColor">
-        <path d="m58.5 49.6-11.7 12.2v48.5h33.1l10-10.2v-7.3l-8.6-0.3-6.7 6.6h-16.3l-0.1-31.8 5.4-5.7h59.6v62.2l-23.5 22.3h-88.1v-111.9l23.1-22.8h88.2v11.5h11.5v-22.9h-104.8l-29.6 29.2v128h105.5l28.9-28.4v-79.3h-75.9z" />
-        <path d="m42.5 22.9-19.3 18.6v92.5h69.2l18.4-18.3v-42.1h-41.5v11.2l29.7 0.1v25.2l-11.8 12.9-52.5 0.2v-76.8l13.1-11.9h51.2v3.4h11.7v-15h-68.2z" />
-      </svg>
-      {!compact && (
-        <span className="brand-name">
-          geld<span className="brand-dot">.</span>
-        </span>
-      )}
+    <span className="brand" aria-label="Geld">
+      {/* Static SVG assets are shared with the marketing site. */}
+      {/* eslint-disable @next/next/no-img-element */}
+      <img src={wordmark.light.pathname} width={width} height={height} alt="" className="dark:hidden" />
+      <img src={wordmark.dark.pathname} width={width} height={height} alt="" className="hidden dark:block" />
+      {/* eslint-enable @next/next/no-img-element */}
     </span>
   );
 }

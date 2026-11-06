@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { z } from 'zod';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 export function BitbucketConnection({ teamId }: { readonly teamId: string }) {
   const [path, setPath] = useState('direct_users');
   const [organisationId, setOrganisationId] = useState('');
@@ -42,7 +42,7 @@ export function BitbucketConnection({ teamId }: { readonly teamId: string }) {
         >
           <label>
             Adapter
-            <select className="field" value={path} onChange={(e) => setPath(e.target.value)}>
+            <select name="path" className="field" value={path} onChange={(e) => setPath(e.target.value)}>
               <option value="direct_users">2.0 direct users</option>
               <option value="legacy_groups">1.0 groups, workspace not migrated</option>
               <option value="atlassian_groups">Atlassian Admin groups and 2.0 permissions</option>
@@ -53,6 +53,7 @@ export function BitbucketConnection({ teamId }: { readonly teamId: string }) {
               <label>
                 Organisation ID
                 <input
+                  name="organisationId"
                   className="field"
                   required
                   value={organisationId}
@@ -62,6 +63,7 @@ export function BitbucketConnection({ teamId }: { readonly teamId: string }) {
               <label>
                 Directory ID
                 <input
+                  name="directoryId"
                   className="field"
                   required
                   value={directoryId}
@@ -71,6 +73,7 @@ export function BitbucketConnection({ teamId }: { readonly teamId: string }) {
               <label>
                 Customer organisation admin API key
                 <input
+                  name="key"
                   className="field"
                   type="password"
                   autoComplete="off"

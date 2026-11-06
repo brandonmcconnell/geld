@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import type { PullRef } from '@geld/domain';
 import { pullPath } from '@geld/domain';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 import { useDashboard } from './app-shell';
 const schema = z.object({
   repoId: z.string(),
@@ -91,6 +91,7 @@ function AssignmentScope({ reference, teamId }: { readonly reference: PullRef; r
         ))}
       <div className="flex gap-2">
         <select
+          name="reviewer"
           className="field max-w-xs"
           aria-label="Reviewer"
           value={reviewer}

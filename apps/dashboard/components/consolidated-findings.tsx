@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 import type { PullRef } from '@geld/domain';
 import { sanitiseMeasurement } from '@geld/domain';
 import type { ReviewItem } from '@geld/review/model';
@@ -147,9 +147,6 @@ export function ConsolidatedFindings({
       <div className="review-section-heading">
         <div>
           <h2>Findings across reviewers</h2>
-          <p className="muted mt-2">
-            Related source comments stay together. AI can turn agent reports into one item per concern.
-          </p>
         </div>
         <Button
           data-measure="guide"

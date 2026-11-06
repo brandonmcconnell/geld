@@ -45,6 +45,7 @@ export async function reviewContext(
   const files = parseUnifiedDiffHunks(diff.value).map((file) => ({
     ...file,
     hidden: matcher.categorizeFile(file) !== null,
+    category: matcher.categorizeFile(file)?.title ?? null,
   }));
   return {
     ok: true,

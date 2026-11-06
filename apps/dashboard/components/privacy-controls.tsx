@@ -1,12 +1,11 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { ConsentManagerProvider, useConsentManager } from '@c15t/react';
-import { Dialog } from '@base-ui/react/dialog';
-import { Button } from '@geld/ui';
+import { ConsentManagerProvider, CookieBanner, ConsentManagerDialog, useConsentManager } from '@c15t/react';
+import { Button } from '@/components/button';
+import { X } from './icons';
 import { Measurement } from './measurement';
-
 function globalPrivacyRefused(): boolean {
   return (
     typeof navigator !== 'undefined' && 'globalPrivacyControl' in navigator && navigator.globalPrivacyControl === true
@@ -36,7 +35,6 @@ function ConsentMeasurement() {
 }
 function ConsentInterface() {
   const {
-    showPopup,
     setShowPopup,
     saveConsents,
     consentInfo,
@@ -53,6 +51,10 @@ function ConsentInterface() {
     setSelectedConsent('measurement', allowed);
     setIsPrivacyDialogOpen(true);
   }
+  useEffect(() => {
+    window.addEventListener('geld:privacy', manage);
+    return () => window.removeEventListener('geld:privacy', manage);
+  });
   function choose(type: 'all' | 'necessary' | 'custom') {
     if (globalPrivacyRefused()) {
       setSelectedConsent('measurement', false);
@@ -63,54 +65,71 @@ function ConsentInterface() {
   }
   return (
     <>
-      <footer className="privacy-footer">
-        <Link href="/privacy">Privacy</Link>
-        <button data-measure="privacy-settings" onClick={manage}>
-          Privacy settings
-        </button>
-        <span>
-          Need self-hosted or enterprise options? <a href="mailto:hello@geld.sh">Contact us</a>
-        </span>
-      </footer>
-      {showPopup && (
-        <section className="consent-banner" aria-label="Privacy choices">
-          <div>
-            <strong>Your work. Your choices.</strong>
-            <p>
-              Optional measurement helps us understand which features work. Without it, your reviews and feature access
-              work the same. Nothing optional loads before your choice.
-            </p>
-          </div>
-          <div className="consent-actions">
-            <Button variant="outline" size="sm" onClick={() => choose('all')}>
-              Opt in to all
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => choose('necessary')}>
-              Cancel
-            </Button>
-            <Button variant="outline" size="sm" onClick={manage}>
-              Manage
-            </Button>
-          </div>
-        </section>
-      )}
-      <Dialog.Root
+      <CookieBanner.Root noStyle disableAnimation trapFocus={false}>
+        <CookieBanner.Card data-geld-consent-banner role="region" aria-label="Privacy choices">
+          <CookieBanner.Header>
+            <CookieBanner.Title>
+              <strong>Privacy choices</strong>
+            </CookieBanner.Title>
+            <CookieBanner.Description>
+              <p>
+                Allow optional usage measurement? Your reviews work the same either way.{' '}
+                <Link href="/privacy" className="underline">
+                  Privacy policy
+                </Link>
+              </p>
+            </CookieBanner.Description>
+          </CookieBanner.Header>
+          <CookieBanner.Footer>
+            <div className="consent-actions">
+              <Button variant="ghost" size="sm" onClick={manage}>
+                Manage
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => choose('necessary')}>
+                Decline optional
+              </Button>
+              <Button size="sm" onClick={() => choose('all')}>
+                Allow measurement
+              </Button>
+            </div>
+          </CookieBanner.Footer>
+        </CookieBanner.Card>
+      </CookieBanner.Root>
+      <ConsentManagerDialog.Root
+        noStyle
+        disableAnimation
         open={isPrivacyDialogOpen}
-        onOpenChange={(open) => (open ? manage() : setIsPrivacyDialogOpen(false))}
+        data-geld-consent-dialog
+        aria-modal="true"
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') setIsPrivacyDialogOpen(false);
+        }}
+        overlay={<div className="dialog-backdrop" onClick={() => setIsPrivacyDialogOpen(false)} />}
       >
-        <Dialog.Portal>
-          <Dialog.Backdrop className="dialog-backdrop" />
-          <Dialog.Popup className="privacy-dialog">
-            <Dialog.Title className="text-lg font-medium">Privacy settings</Dialog.Title>
-            <Dialog.Description className="muted mt-3">
-              Necessary storage keeps your account and choices working. Optional measurement starts off.
-            </Dialog.Description>
-            <label className="settings-row">
-              <div>
-                <h3>Measurement</h3>
-                <p>Help us improve navigation and review flows. Turning this off stops optional usage measurement.</p>
-              </div>
+        <ConsentManagerDialog.Card data-geld-consent-card>
+          <ConsentManagerDialog.Header>
+            <div className="dialog-heading">
+              <ConsentManagerDialog.HeaderTitle id="privacy-settings-title">
+                <h2>Privacy settings</h2>
+              </ConsentManagerDialog.HeaderTitle>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Close privacy settings"
+                onClick={() => setIsPrivacyDialogOpen(false)}
+              >
+                <X size={17} />
+                <span className="touch-target" aria-hidden="true" />
+              </button>
+            </div>
+            <ConsentManagerDialog.HeaderDescription>
+              <p className="privacy-description">Necessary storage keeps your account and privacy choices working.</p>
+            </ConsentManagerDialog.HeaderDescription>
+          </ConsentManagerDialog.Header>
+          <ConsentManagerDialog.Content>
+            <label className="privacy-choice">
               <input
+                name="measurement"
                 type="checkbox"
                 checked={draftMeasurement}
                 disabled={globalPrivacyRefused()}
@@ -119,24 +138,23 @@ function ConsentInterface() {
                   setSelectedConsent('measurement', event.target.checked);
                 }}
               />
+              <span>
+                <strong>Usage measurement</strong>
+                <p>Help improve navigation and review flows. Optional and off by default.</p>
+              </span>
             </label>
             {globalPrivacyRefused() && (
-              <p className="muted">Global Privacy Control is enabled. Optional measurement is refused.</p>
+              <p className="inline-note">Global Privacy Control is enabled. Optional measurement is refused.</p>
             )}
-            <div className="consent-actions">
-              <Button variant="outline" onClick={() => choose('all')}>
-                Opt in to all
-              </Button>
-              <Button variant="outline" onClick={() => choose('necessary')}>
-                Cancel
-              </Button>
-              <Button variant="outline" onClick={() => choose('custom')}>
-                Save choices
-              </Button>
-            </div>
-          </Dialog.Popup>
-        </Dialog.Portal>
-      </Dialog.Root>
+          </ConsentManagerDialog.Content>
+          <div className="dialog-actions">
+            <Button variant="outline" size="sm" onClick={() => setIsPrivacyDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => choose('custom')}>Save choices</Button>
+          </div>
+        </ConsentManagerDialog.Card>
+      </ConsentManagerDialog.Root>
     </>
   );
 }
