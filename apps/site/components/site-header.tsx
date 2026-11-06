@@ -1,11 +1,13 @@
 import Link from 'next/link';
 
 import { AccountMenu } from '@/components/account-menu';
+import { ExternalLink } from '@/components/external-link';
 import { HeaderBrand } from '@/components/header-brand';
 import { HeaderDivider } from '@/components/header-divider';
 import { HEADER_SLOT_ID } from '@/components/header-slot';
+import { GitHubIcon } from '@/components/icons';
 import { NavMenu } from '@/components/nav-menu';
-import { NAV_LINKS } from '@/lib/site';
+import { NAV_LINKS, REPO_URL } from '@/lib/site';
 
 export function SiteHeader() {
   const links = NAV_LINKS.filter((link) => link.inHeader);
@@ -23,6 +25,11 @@ export function SiteHeader() {
               {link.label}
             </Link>
           ))}
+          {/* Narrow windows list it in the menu by name instead. */}
+          <ExternalLink href={REPO_URL} title="Geld on GitHub" className="hidden size-8 place-items-center text-muted-foreground transition-colors hover:text-foreground sm:inline-grid">
+            <GitHubIcon className="size-[18px]" />
+            <span className="sr-only">Geld on GitHub</span>
+          </ExternalLink>
           <AccountMenu className="sm:ml-2" />
         </nav>
       </div>

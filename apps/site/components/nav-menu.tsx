@@ -4,8 +4,9 @@ import { cn } from 'cn';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import type { NavLink } from '@/lib/site';
+import { GitHubIcon } from '@/components/icons';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { type NavLink, REPO_URL } from '@/lib/site';
 
 /** The header's links behind one control, for windows too narrow to list them. */
 export function NavMenu({ links, className }: { readonly links: readonly NavLink[]; readonly className?: string }) {
@@ -28,6 +29,12 @@ export function NavMenu({ links, className }: { readonly links: readonly NavLink
             {link.label}
           </DropdownMenuItem>
         ))}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem render={<a href={REPO_URL} target="_blank" rel="noopener noreferrer" />}>
+          <GitHubIcon />
+          GitHub
+          <span className="sr-only"> (opens in a new tab)</span>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
