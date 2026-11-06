@@ -8,6 +8,7 @@
 import { browser } from 'wxt/browser';
 import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
 import type { GeldSettings } from '@geld/core';
+import { digestViewOf } from '@geld/core';
 import type { BotComment, BotVerdictRecord, CommentLane, GeldPrMeta, RawCheckRun, ReviewItem, ReviewerState } from '@geld/review';
 import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, commandReply, firstSentence, isOpenStatus, isReviewShaped, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, mergeCheckRuns, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
@@ -38,6 +39,7 @@ import { nextRunGraceEnd, withRunTimes } from './run-starts';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
 import { descriptionUnshortened, releaseDescription, shortenDescription } from './description';
+import { chooseDigestView, focusDigestOffOnNextMount, removeDigestOffBar, syncDigestOffBar } from './digest-off';
 import { compactDescriptionByline } from './description-byline';
 import { type AgentNote, agentNotes, noteCopy, noteText, resetAgentNotes } from './agent-notes';
 import { botWrittenVersion } from './note-tone';
@@ -2987,8 +2989,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   if (page.kind !== 'pull-conversation' || !settings.enabled || !settings.prOverview) {
     // Nothing mounted (a files page, a list): the page-wide cleanup queries have nothing to find.
     if (visit.pageKey !== '') teardownReviewOverview(page.kind !== 'pull-conversation' && settings.enabled && settings.prOverview);
+    syncDigestOffBar(page.kind === 'pull-conversation' && settings.enabled && !settings.prOverview);
     return;
   }
+  removeDigestOffBar();
   lastSettings = settings;
   if (visit.pageKey !== page.stateKey) {
     restoreAll();
@@ -3310,6 +3314,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     previews: latestPreviews(allPreviews),
     reports,
     grouping: settings.reviewGrouping,
+    view: digestViewOf(settings),
+    intro: settings.digestViewChosenAt === '',
     openCommits: visit.openCommits,
     openPreviews: visit.openPreviews,
     ai: aiStateFor(meta, rawComments, settings),
@@ -3525,6 +3531,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     onGrouping: (grouping) => {
       // Persisted like any setting; the controller's settings watch re-applies with the new value, in place.
       persist(settingsItem.patch({ reviewGrouping: grouping }));
+    },
+    onView: (view) => {
+      // The panel goes with the digest: focus follows to the line that stands in its place.
+      if (view === 'github') focusDigestOffOnNextMount();
+      chooseDigestView(view);
     },
     onFlow: () => openFlowDialog(),
     onSettings: () => {
@@ -3924,6 +3935,7 @@ export function teardownReviewOverview(leaving = false): void {
   stopFittingChips();
   stopWatchingBrandSelection();
   unmountPanel();
+  removeDigestOffBar();
   hideSummary(null);
   if (leftoverTimer !== null) window.clearTimeout(leftoverTimer);
   leftoverTimer = null;
