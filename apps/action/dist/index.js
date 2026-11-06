@@ -31667,6 +31667,9 @@ function isAllowedSummaryAuthor(login, extra = []) {
 
 // ../../packages/review/src/bots.ts
 var ACK_GRACE_MS = 3 * 60 * 1e3;
+function acknowledgeWindowMs(id) {
+  return botById(id)?.acknowledgesWithinMs ?? ACK_GRACE_MS;
+}
 var REVIEW_BOTS = [
   {
     id: "bugbot",
@@ -31692,7 +31695,10 @@ var REVIEW_BOTS = [
     checkNames: ["Greptile"],
     triggers: ["@greptileai", "@greptile", "@greptileai review"],
     configFiles: ["greptile.json", ".greptile.yml", ".greptile.yaml"],
-    acknowledges: "reaction"
+    acknowledges: "reaction",
+    // Its 👍 lands when the review starts, not when the request arrives: 79 s to 352 s (median 160 s) over 60
+    // triggers on brandonmcconnell/geld, Nov 2026.
+    acknowledgesWithinMs: 8 * 60 * 1e3
   },
   {
     // Devin is a coding agent as well as a reviewer, under the same login: on a pull request it opened it narrates
@@ -32419,7 +32425,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       for (const asked of botsTriggeredBy(comment.body, extraLogins)) {
         if (asked.id === id) continue;
         if (viaWorkflow && (workflow === "failed" || workflow === null && !Number.isNaN(at) && now - at > ACK_GRACE_MS)) continue;
-        if (!viaWorkflow && !Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === "reaction" && !reactedBy(comment, asked.id)) continue;
+        if (!viaWorkflow && !Number.isNaN(at) && now - at > acknowledgeWindowMs(asked.id) && botById(asked.id)?.acknowledges === "reaction" && !reactedBy(comment, asked.id)) continue;
         const prior = threadRuns.get(asked.id);
         if (prior !== void 0) runsBeforeAsk.set(asked.id, prior);
         threadRuns.delete(asked.id);
