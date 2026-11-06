@@ -43,9 +43,11 @@ describe('SETTINGS_SCHEMA', () => {
     expect(siteKeys.has('shortcutEnabled')).toBe(false);
     expect(siteKeys.has('errorReports')).toBe(false);
     expect(siteKeys.has('enterpriseHosts')).toBe(false);
+    expect(siteKeys.has('attachmentLightbox')).toBe(false);
     expect(siteKeys.has('enabled')).toBe(true);
     expect(sectionsFor('site').map((section) => section.id)).not.toContain('enterprise');
     expect(sectionsFor('extension').map((section) => section.id)).toContain('enterprise');
+    expect(sectionsFor('extension').find((section) => section.id === 'general')?.fields.some((field) => field.kind === 'toggle' && field.key === 'attachmentLightbox')).toBe(true);
   });
 
   it('covers choice and text keys too', () => {

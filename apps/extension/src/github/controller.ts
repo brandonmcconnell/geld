@@ -1,4 +1,5 @@
 import { applyTrackerLinks,removeTrackerLinks } from './tracker-links';
+import { applyAttachmentLightbox, removeAttachmentLightbox } from './attachment-lightbox';
 import type { Catalog, HiddenCategory } from '@geld/core';
 import { BUNDLED_CATALOG, CATEGORY_IDS, isAutoViewed, testSyntaxesFrom } from '@geld/core';
 import type { TestSyntax } from '@geld/core';
@@ -1048,6 +1049,8 @@ export class GeldController {
       return;
     }
 
+    applyAttachmentLightbox(this.settings.attachmentLightbox);
+
     // Another page state (a navigation) is always the whole page, whatever the batches said.
     const full = scope === null || this.lastPassKey !== page.stateKey;
     this.lastPassKey = page.stateKey;
@@ -1901,6 +1904,7 @@ export class GeldController {
   }
 
   private teardown(): void {
+    removeAttachmentLightbox();
     this.settledHeader = null;
     this.headerGroups = [];
     this.headerScan = null;

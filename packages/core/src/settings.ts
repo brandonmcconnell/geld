@@ -133,6 +133,7 @@ export interface GeldSettings {
    * headings to 500px behind a "Show full description" control.
    */
   readonly collapseDescription: boolean;
+  readonly attachmentLightbox: boolean;
   /**
    * Put a "Submit review" button in the pull request's tab bar, beside the
    * line counts, on every tab (the Files changed tab's own button gives way to it).
@@ -234,6 +235,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   compactTimeline: 'compact',
   reviewGrouping: 'type',
   collapseDescription: true,
+  attachmentLightbox: true,
   quickReview: true,
   holdToMerge: false,
   reviewBots: [],
@@ -494,6 +496,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     compactTimeline: isCompactTimelineMode(record.compactTimeline) ? record.compactTimeline : DEFAULT_SETTINGS.compactTimeline,
     reviewGrouping: isReviewGrouping(record.reviewGrouping) ? record.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
     collapseDescription: bool(record, 'collapseDescription', DEFAULT_SETTINGS.collapseDescription),
+    attachmentLightbox: bool(record, 'attachmentLightbox', DEFAULT_SETTINGS.attachmentLightbox),
     quickReview: bool(record, 'quickReview', DEFAULT_SETTINGS.quickReview),
     holdToMerge: bool(record, 'holdToMerge', DEFAULT_SETTINGS.holdToMerge),
     reviewBots: isStringArray(record.reviewBots) ? record.reviewBots : DEFAULT_SETTINGS.reviewBots,
