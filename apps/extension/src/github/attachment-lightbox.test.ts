@@ -99,6 +99,32 @@ describe('attachment lightbox', () => {
     expect(document.querySelector('dialog')).toBeNull();
   });
 
+  it.each([
+    'https://raw.githubusercontent.com/owner/repo/commit/pr-screenshots/preview.png',
+    'https://raw.githubusercontent.com/owner/repo/refs/heads/main/preview.svg?sanitize=true',
+    'https://media.githubusercontent.com/media/owner/repo/main/preview.jpg',
+    'https://github.com/owner/repo/raw/refs/heads/main/preview.webp',
+  ])('opens repository-hosted PR screenshots: %s', (href) => {
+    vi.stubGlobal('location', new URL('https://github.com/owner/repo/pull/42'));
+    const image = mount(href, href);
+    applyAttachmentLightbox();
+    expect(image.hasAttribute('data-geld-lightbox-image')).toBe(true);
+    expect(click(image, { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(document.querySelector('dialog')).toBeNull();
+    expect(click(image).defaultPrevented).toBe(true);
+    expect(document.querySelector('dialog')?.open).toBe(true);
+    expect(document.querySelector('dialog img')?.getAttribute('src')).toBe(href);
+    expect(document.querySelector('dialog a')?.getAttribute('href')).toBe(href);
+  });
+
+  it('does not intercept links to non-image repository files', () => {
+    const image = mount('https://raw.githubusercontent.com/owner/repo/main/README.md');
+    applyAttachmentLightbox();
+    expect(image.hasAttribute('data-geld-lightbox-image')).toBe(false);
+    expect(click(image).defaultPrevented).toBe(false);
+    expect(document.querySelector('dialog')).toBeNull();
+  });
+
   it('handles comments arriving later and repeated enhancement without duplicate dialogs', () => {
     applyAttachmentLightbox();
     const image = mount();

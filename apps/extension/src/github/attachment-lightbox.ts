@@ -4,6 +4,7 @@ import { brandMark } from './review/brand';
 import { ICON_LINK_EXTERNAL, ICON_X } from './ui/icons';
 
 const IMAGE_ATTRIBUTE = 'data-geld-lightbox-image';
+const IMAGE_PATH = /\.(?:avif|gif|jpe?g|png|svg|webp)$/i;
 let activePath: string | null = null;
 let openDialog: HTMLDialogElement | null = null;
 
@@ -23,9 +24,10 @@ function attachmentLink(image: HTMLImageElement): HTMLAnchorElement | null {
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
   if (url.hostname === 'user-images.githubusercontent.com' || url.hostname === 'private-user-images.githubusercontent.com') return link;
+  if (url.hostname === 'raw.githubusercontent.com' || url.hostname === 'media.githubusercontent.com') return IMAGE_PATH.test(url.pathname) ? link : null;
   if (url.origin !== window.location.origin) return null;
   return /^\/(?:user-attachments\/(?:assets|files)\/|[^/]+\/[^/]+\/(?:assets|files)\/)/.test(url.pathname)
-    || /^\/[^/]+\/[^/]+\/blob\/.+\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(url.pathname) ? link : null;
+    || (/^\/[^/]+\/[^/]+\/(?:blob|raw)\//.test(url.pathname) && IMAGE_PATH.test(url.pathname)) ? link : null;
 }
 
 function dismiss(): void {
