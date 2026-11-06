@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FAST_FOR_MS, pollTriggerReactions, REACTION_FAST_POLL_MS, REACTION_POLL_MS, resetTriggerReactions, withFetchedReactions } from './trigger-reactions';
 
 const T0 = 1_000_000;
-const waiting = [{ anchor: 'issuecomment-1', at: T0 }];
+const GRACE = 180_000;
+const waiting = [{ anchor: 'issuecomment-1', at: T0, until: T0 + GRACE }];
 
 const PARTIAL = '/acme/widgets/comments/IC_kwDO/partials/timeline_issue_comment';
 
@@ -52,6 +53,37 @@ describe('pollTriggerReactions', () => {
     pollTriggerReactions(waiting, old + REACTION_POLL_MS - 1, landed);
     expect(fetch).toHaveBeenCalledTimes(3);
     expect(landed).not.toHaveBeenCalled();
+  });
+
+  it('reads once more at the end of the grace, then stops', async () => {
+    document.body.innerHTML = comment([]);
+    let reactors: readonly string[] = [];
+    const fetch = vi.fn(async () => new Response(comment(reactors), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    const landed = vi.fn();
+    const settle = async (calls: number): Promise<void> => {
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(calls));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    const late = T0 + GRACE - 5_000;
+    expect(pollTriggerReactions(waiting, late, landed)).toBe(T0 + GRACE);
+    await settle(1);
+    reactors = ['greptile-apps[bot]'];
+    expect(pollTriggerReactions(waiting, T0 + GRACE, landed)).toBeNull();
+    await settle(2);
+    expect(landed).toHaveBeenCalledTimes(1);
+    expect(pollTriggerReactions(waiting, T0 + GRACE + 60_000, landed)).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads a trigger whose grace ended while nothing ran, as when the tab was hidden', async () => {
+    document.body.innerHTML = comment([]);
+    const fetch = vi.fn(async () => new Response(comment(['greptile-apps[bot]']), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    const landed = vi.fn();
+    expect(pollTriggerReactions(waiting, T0 + 10 * 60_000, landed)).toBeNull();
+    await vi.waitFor(() => expect(landed).toHaveBeenCalledTimes(1));
+    expect(withFetchedReactions('issuecomment-1', undefined)).toEqual([{ login: 'greptile-apps[bot]', emoji: 'thumbs up' }]);
   });
 
   it('keeps the page’s reactions when the partial cannot be read, and waits for nothing without a trigger', async () => {

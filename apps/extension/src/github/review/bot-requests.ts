@@ -66,22 +66,24 @@ export interface AwaitedTrigger {
   readonly anchor: string;
   /** When the trigger was posted, by GitHub's clock. */
   readonly at: number;
+  /** When its grace (`ACK_GRACE_MS`) ends. */
+  readonly until: number;
 }
 
 /**
- * The trigger comments still waiting on a bot's reaction: asked of a bot that acknowledges with one, not reacted to
- * by it yet, and inside `ACK_GRACE_MS`. GitHub sends an open page nothing about a top-level comment (it has no socket
- * channel), so these are the comments whose reactions are read again (`trigger-reactions.ts`).
+ * The trigger comments still waiting on a bot's reaction: asked of a bot that acknowledges with one and not reacted
+ * to by it yet. GitHub sends an open page nothing about a top-level comment (it has no socket channel), so these are
+ * the comments whose reactions are read again (`trigger-reactions.ts`): often until `until`, then once more.
  */
-export function awaitingReaction(comments: readonly BotComment[], extraLogins: readonly string[], now: number): readonly AwaitedTrigger[] {
+export function awaitingReaction(comments: readonly BotComment[], extraLogins: readonly string[]): readonly AwaitedTrigger[] {
   const out = new Map<string, AwaitedTrigger>();
   for (const [id, list] of triggerAsks(comments, extraLogins)) {
     if (botById(id)?.acknowledges !== 'reaction') continue;
     for (const ask of list) {
-      if (geldRunBots(ask.comment.body).length > 0 || now - ask.at > ACK_GRACE_MS) continue;
+      if (geldRunBots(ask.comment.body).length > 0) continue;
       const logins = loginsOf(id, ask.login);
       if ((ask.comment.reactedBy ?? []).some((login) => logins.has(loginKey(login)))) continue;
-      out.set(ask.comment.anchor, { anchor: ask.comment.anchor, at: ask.at });
+      out.set(ask.comment.anchor, { anchor: ask.comment.anchor, at: ask.at, until: ask.at + ACK_GRACE_MS });
     }
   }
   return [...out.values()];

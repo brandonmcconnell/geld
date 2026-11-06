@@ -101,15 +101,14 @@ describe('botRequestStates', () => {
 });
 
 describe('awaitingReaction', () => {
-  it('lists the triggers a reacting bot has not reacted to yet, inside its window', () => {
+  it('lists the triggers a reacting bot has not reacted to yet, with when its grace ends', () => {
     const waiting = trigger(T0, '@greptileai', undefined, 'issuecomment-1');
     const reacted = trigger(T0, '@greptileai', ['greptile-apps[bot]'], 'issuecomment-2');
-    expect(awaitingReaction([waiting, reacted], [], T0 + 60_000)).toEqual([{ anchor: 'issuecomment-1', at: T0 }]);
-    expect(awaitingReaction([waiting], [], T0 + ACK_GRACE_MS + 1)).toEqual([]);
+    expect(awaitingReaction([waiting, reacted], [])).toEqual([{ anchor: 'issuecomment-1', at: T0, until: T0 + ACK_GRACE_MS }]);
   });
 
   it('leaves out bots that start silently and requests the Geld workflow answers', () => {
-    expect(awaitingReaction([trigger(T0, 'bugbot run'), trigger(T0, '/geld run greptile', undefined, 'issuecomment-3')], [], T0 + 1_000)).toEqual([]);
+    expect(awaitingReaction([trigger(T0, 'bugbot run'), trigger(T0, '/geld run greptile', undefined, 'issuecomment-3')], [])).toEqual([]);
   });
 });
 

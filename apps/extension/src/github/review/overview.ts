@@ -3085,7 +3085,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   triggersOnPage = triggerAnchors(botComments, settings.reviewBots);
   const requestDeadline = nextRequestDeadline(botRequests);
   if (requestDeadline !== null) reapplyAt(requestDeadline);
-  const reactionPoll = pollTriggerReactions(awaitingReaction(botComments, settings.reviewBots, Date.now()), Date.now(), reapplySoon);
+  const reactionPoll = pollTriggerReactions(awaitingReaction(botComments, settings.reviewBots), Date.now(), reapplySoon);
   if (reactionPoll !== null) reapplyAt(reactionPoll);
   // Then the threads, now that items exist: whether the replies say a thread is done.
   const bodies = new Map(crawledDom.comments.map((entry) => [entry.comment.anchor, { author: entry.author.login, body: entry.comment.body }] as const));

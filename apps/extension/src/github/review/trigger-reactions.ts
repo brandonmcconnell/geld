@@ -48,31 +48,41 @@ function key(reactions: readonly CommentReaction[]): string {
   return reactions.map((reaction) => `${reaction.login}\n${reaction.emoji}`).sort().join('\n');
 }
 
+function read(anchor: string, now: number, landed: () => void): boolean {
+  const url = partialUrlOf(anchor);
+  if (url === null) return false;
+  lastAsked.set(anchor, now);
+  inFlight.add(anchor);
+  void readReactions(url, anchor).then((reactions) => {
+    inFlight.delete(anchor);
+    if (reactions === null) return;
+    const before = fetched.get(anchor);
+    fetched.set(anchor, reactions);
+    if (before === undefined ? reactions.length > 0 : key(before) !== key(reactions)) landed();
+  });
+  return true;
+}
+
 /**
  * Reads each waiting trigger's reactions again, at most once per its interval, and calls `landed` when an answer
- * changes what is known. The time the next read is due, or null when nothing is waiting.
+ * changes what is known. Past its grace (`until`) a trigger is read once more unless a read began after it, so a
+ * reaction that landed since the last read, or while the tab was hidden and nothing ran, is not missed. The time the
+ * next read is due, or null when nothing is.
  */
 export function pollTriggerReactions(triggers: readonly AwaitedTrigger[], now: number, landed: () => void): number | null {
   let next: number | null = null;
-  for (const { anchor, at } of triggers) {
-    const interval = now - at < FAST_FOR_MS ? REACTION_FAST_POLL_MS : REACTION_POLL_MS;
+  for (const { anchor, at, until } of triggers) {
     const last = lastAsked.get(anchor);
-    const due = last === undefined ? now : last + interval;
-    if (due <= now && !inFlight.has(anchor)) {
-      const url = partialUrlOf(anchor);
-      if (url === null) continue;
-      lastAsked.set(anchor, now);
-      inFlight.add(anchor);
-      void readReactions(url, anchor).then((reactions) => {
-        inFlight.delete(anchor);
-        if (reactions === null) return;
-        const before = fetched.get(anchor);
-        fetched.set(anchor, reactions);
-        if (before === undefined ? reactions.length > 0 : key(before) !== key(reactions)) landed();
-      });
+    if (now >= until) {
+      if (last !== undefined && last >= until) continue;
+      if (!inFlight.has(anchor)) read(anchor, now, landed);
+      else if (next === null || now + REACTION_FAST_POLL_MS < next) next = now + REACTION_FAST_POLL_MS;
+      continue;
     }
-    const after = (lastAsked.get(anchor) ?? now) + interval;
-    if (next === null || after < next) next = after;
+    const interval = now - at < FAST_FOR_MS ? REACTION_FAST_POLL_MS : REACTION_POLL_MS;
+    if ((last === undefined || last + interval <= now) && !inFlight.has(anchor) && !read(anchor, now, landed)) continue;
+    const when = Math.min((lastAsked.get(anchor) ?? now) + interval, until);
+    if (next === null || when < next) next = when;
   }
   return next;
 }
