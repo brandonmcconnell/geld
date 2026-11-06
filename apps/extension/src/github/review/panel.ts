@@ -2068,10 +2068,9 @@ function previewGlyph(status: Preview['status']): HTMLElement {
 
 /**
  * One preview as a pill: the host's mark, the project, its state glyph (as the bots' pills wear their light); a
- * link to the preview. A skipped deployment has nowhere to go: its pill is faded, says so on hover, and is not
- * a link — the line below keeps the Inspect link.
+ * link to the preview, falling back to its build logs when no preview is available.
  */
-function previewPill(entry: Preview, model: PanelModel): HTMLElement {
+export function previewPill(entry: Preview, model: Pick<PanelModel, 'avatarForAnchor'>): HTMLElement {
   const host = previewHostById(entry.host);
   const label = `${host?.title ?? 'Preview'} · ${entry.project}${PREVIEW_STATUS_LABEL[entry.status] === '' ? '' : ` · ${PREVIEW_STATUS_LABEL[entry.status]}`}${entry.reason === undefined ? '' : ` · ${entry.reason}`}`;
   const children: Node[] = [];
@@ -2080,8 +2079,9 @@ function previewPill(entry: Preview, model: PanelModel): HTMLElement {
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name ${PANEL_CLASS}__deploy-name` }, [entry.project]));
   children.push(previewGlyph(entry.status));
   const attrs = { class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__deploy`, 'data-status': entry.status, 'aria-label': label, title: label };
-  if (entry.url === null) return createElement('span', attrs, children);
-  return createElement('a', { ...attrs, href: entry.url, target: '_blank', rel: 'noreferrer' }, children);
+  const href = entry.url ?? entry.inspectUrl;
+  if (href === null) return createElement('span', attrs, children);
+  return createElement('a', { ...attrs, href, target: '_blank', rel: 'noreferrer' }, children);
 }
 
 /**
@@ -2738,7 +2738,7 @@ function signatureOf(model: PanelModel): string {
     checks: model.checks,
     requiredFailing: model.requiredFailing,
     workflowApproval: model.workflowApproval,
-    previews: [...model.previews.latest, ...model.previews.archived].map((entry) => `${entry.anchor}:${entry.host}:${entry.project}:${entry.status}:${entry.url ?? ''}:${model.avatarForAnchor(entry.anchor) ?? ''}`),
+    previews: [...model.previews.latest, ...model.previews.archived].map((entry) => `${entry.anchor}:${entry.host}:${entry.project}:${entry.status}:${entry.url ?? ''}:${entry.inspectUrl ?? ''}:${model.avatarForAnchor(entry.anchor) ?? ''}`),
     archivedPreviewsOpen: model.archivedPreviewsOpen,
     ring: model.checksRing?.outerHTML.length ?? 0,
     reviews: model.reviews,
