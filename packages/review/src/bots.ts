@@ -421,12 +421,12 @@ function outsideDiffCount(text: string): number {
 function countShapedBy(botId: string, text: string): number | null {
   switch (botId) {
     case 'claude': {
-      const match = /(\d+)\s*P1,\s*(\d+)\s*P2/i.exec(text);
+      const match = /(\d+)[^\S\n]*P1,[^\S\n]*(\d+)[^\S\n]*P2/i.exec(text);
       return match?.[1] !== undefined && match[2] !== undefined ? Number.parseInt(match[1], 10) + Number.parseInt(match[2], 10) : null;
     }
     case 'cubic': {
-      const existing = /(\d+)\s+existing\s+issues?\s+remains?/i.exec(text);
-      const found = /(\d+)\s+(?:new\s+)?issues?\s+found/i.exec(text);
+      const existing = /(\d+)[^\S\n]+existing[^\S\n]+issues?[^\S\n]+remains?/i.exec(text);
+      const found = /(\d+)[^\S\n]+(?:new[^\S\n]+)?issues?[^\S\n]+found/i.exec(text);
       if (existing === null && found === null) return /\bno (?:new )?issues found\b|\ball reported issues were addressed\b/i.test(text) ? 0 : null;
       return (existing?.[1] === undefined ? 0 : Number.parseInt(existing[1], 10)) + (found?.[1] === undefined ? 0 : Number.parseInt(found[1], 10));
     }
@@ -470,7 +470,7 @@ function countShapedBy(botId: string, text: string): number | null {
       return count;
     }
     case 'coderabbit': {
-      const actionable = /\bactionable comments posted:\s*(\d+)/i.exec(text);
+      const actionable = /\bactionable comments posted:[^\S\n]*(\d+)/i.exec(text);
       const outside = outsideDiffCount(text);
       if (actionable === null && outside === 0) return null;
       return (actionable?.[1] === undefined ? 0 : Number.parseInt(actionable[1], 10)) + outside;
@@ -482,20 +482,21 @@ function countShapedBy(botId: string, text: string): number | null {
 
 export function parseBotBody(body: string, botId: string): ParsedBotBody {
   // HTML comments are the bots' own markers (Cursor's automation ids, Greptile's score), never words to weigh.
-  const text = body.replace(/\r\n/g, '\n').replace(/<!--[\s\S]*?-->/g, '').trim();
+  const text = body.replace(/\r\n?/g, '\n').replace(/<!--[\s\S]*?-->/g, '').trim();
   // Entelligence's scorecard has two N/5 rows; "Merge Confidence" is the verdict (Code Quality feeds it). Qodo's
   // summaries carry no score out of five, whatever fraction appears in them.
   const scoreMatch = botId === 'qodo' ? null : (botId === 'entelligence' ? /merge confidence\W+(?:[\u25cf\u25cb\s]*)\**(\d+(?:\.\d+)?)\s*\/\s*5\b/i.exec(text) : null) ?? /(\d+(?:\.\d+)?)\s*\/\s*5\b/.exec(text);
   const score = scoreMatch?.[1] !== undefined ? Number.parseFloat(scoreMatch[1]) : null;
   // "found 1 potential issue", "2 new bugs": one qualifier between the number and the noun is allowed through.
   // CodeRabbit counts the other way round: "Actionable comments posted: 1" on each review.
+  // A count and its noun share a line: "Commit Hash: 6151140" over a "Critical Issues" heading counted 6,151,140 issues.
   const countMatch =
     botId === 'greptile'
-      ? /(?:found|reported)\s+(\d+)\s+(?:issue|finding|comment)/i.exec(text)
-      : (/\bactionable comments posted:\s*(\d+)/i.exec(text) ??
+      ? /(?:found|reported)[^\S\n]+(\d+)[^\S\n]+(?:issue|finding|comment)/i.exec(text)
+      : (/\bactionable comments posted:[^\S\n]*(\d+)/i.exec(text) ??
         // Not a number that is a reference ("#9377", "GH-123"): "both #9377 findings are fixed" names a pull request, not 9,377 findings
         // (server#9385, where the Bugbot chip read "9377 issues" until its threads settled).
-        /(?<![#\w-])(\d+)\s+(?:(?:potential|possible|new|actionable|likely|minor|major|critical|significant|remaining|open|existing)\s+){0,2}(?:issue|finding|bug|problem)s?\b/i.exec(text));
+        /(?<![#\w-])(\d+)[^\S\n]+(?:(?:potential|possible|new|actionable|likely|minor|major|critical|significant|remaining|open|existing)[^\S\n]+){0,2}(?:issue|finding|bug|problem)s?\b/i.exec(text));
   let count = countMatch?.[1] !== undefined ? Number.parseInt(countMatch[1], 10) : null;
   const shaped = countShapedBy(botId, text);
   // CodeRabbit counts only in its review's shape: "0 issues remain" in a chat reply is no count of its.
