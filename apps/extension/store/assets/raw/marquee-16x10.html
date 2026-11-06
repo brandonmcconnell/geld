@@ -1,49 +1,27 @@
 <!doctype html>
-<!-- 16:10 version of the marquee promo tile, used as the first store screenshot. Render at 2880x1800 in headless Chrome (deviceScaleFactor 1), save as JPEG, Lanczos-downscale to 1280x800 for Chrome/Edge/Firefox. Fonts resolve from apps/site/node_modules after pnpm install. -->
+<!-- 16:10 version of the marquee promo tile, used as the first store screenshot. Render at 2880x1800 in headless Chrome (deviceScaleFactor 1), save as JPEG, Lanczos-downscale to 1280x800 for Chrome/Edge/Firefox. Fonts resolve from apps/site/node_modules after pnpm install. digest-dark.png is the home page hero's digest card in dark mode, captured at 4x; re-capture it when the card changes. -->
 <html>
 <head>
 <meta charset="utf-8" />
 <style>
   @font-face { font-family: Geist; src: url('../../../../site/node_modules/geist/dist/fonts/geist-sans/Geist-Variable.woff2') format('woff2'); font-weight: 100 900; }
-  @font-face { font-family: 'Geist Mono'; src: url('../../../../site/node_modules/geist/dist/fonts/geist-mono/GeistMono-Variable.woff2') format('woff2'); font-weight: 100 900; }
   html, body { margin: 0; }
   body { width: 2880px; height: 1800px; background: #0b0d12; color: #f0f2f5; font-family: Geist, sans-serif; position: relative; overflow: hidden; -webkit-font-smoothing: antialiased; }
-  .left { position: absolute; left: 160px; top: 0; height: 1800px; width: 1240px; display: flex; flex-direction: column; justify-content: center; }
-  .logo { display: flex; align-items: center; gap: 28px; margin-bottom: 96px; }
-  .logo svg { height: 118px; width: auto; fill: #fff; }
-  h1 { margin: 0; font-size: 150px; line-height: 1.02; font-weight: 600; letter-spacing: -0.035em; }
-  .sub { margin-top: 64px; font-size: 56px; line-height: 1.35; color: #a1a7b0; font-weight: 400; }
+  .left { position: absolute; left: 160px; top: 0; height: 1800px; width: 1320px; display: flex; flex-direction: column; justify-content: center; }
+  .logo { display: block; height: 118px; width: fit-content; margin-bottom: 96px; }
+  h1 { margin: 0; font-size: 118px; line-height: 1.06; font-weight: 600; letter-spacing: -0.035em; white-space: nowrap; }
+  .sub { margin: 64px 0 0; font-size: 56px; line-height: 1.35; color: #a1a7b0; font-weight: 400; }
   .btn { margin-top: 88px; display: inline-flex; align-items: center; width: fit-content; height: 132px; padding: 0 60px; background: #f0f2f5; color: #16181d; font-size: 46px; font-weight: 500; border-radius: 26px; corner-shape: bevel square; }
-  .card { position: absolute; left: 1520px; top: 260px; width: 1300px; height: 1700px; background: #0f1218; border: 3px solid #262b34; border-radius: 22px; font-family: 'Geist Mono', monospace; }
-  .head { display: flex; align-items: center; justify-content: space-between; height: 170px; padding: 0 60px; border-bottom: 3px solid #262b34; font-family: Geist, sans-serif; font-size: 40px; color: #a1a7b0; }
-  .head .counts { font-family: 'Geist Mono', monospace; font-size: 42px; display: flex; gap: 34px; }
-  .g { color: #4bcb71; } .r { color: #ff6367; } .muted { color: #a1a7b0; }
-  .row { display: flex; align-items: center; gap: 56px; height: 236px; padding: 0 60px; border-bottom: 3px solid #262b34; }
-  .box { width: 48px; height: 48px; border: 3px solid #5b6270; border-radius: 6px; flex: none; }
-  .name { height: 22px; background: #5b6270; border-radius: 4px; }
-  .blocks { margin-left: auto; display: flex; gap: 12px; }
-  .blocks i { display: block; width: 36px; height: 36px; border-radius: 4px; }
-  .hidden { position: absolute; left: 44px; right: 44px; top: 1150px; height: 176px; display: flex; align-items: center; justify-content: space-between; padding: 0 56px; background: #14181f; border: 3px solid #2a3039; border-radius: 16px; font-family: Geist, sans-serif; font-size: 40px; }
-  .hidden b { font-weight: 600; color: #f0f2f5; }
-  .hidden a { color: #58a6ff; }
+  .digest { position: absolute; right: 160px; top: 50%; width: 1160px; transform: translateY(-50%); border-radius: 34px; box-shadow: 0 60px 160px rgb(0 0 0 / 0.55); }
 </style>
 </head>
 <body>
   <div class="left">
-    <div class="logo">
-      <svg viewBox="0 0 91.71 24.02"><path d="M22.867 0.192L5.845 0.192L0.192 5.845L0.192 23.828L17.215 23.828L22.867 18.175L22.867 6.918L8.727 6.918L6.918 8.727L6.918 17.102L14.332 17.102L16.141 15.293L16.141 13.643L10.377 13.643L10.377 10.377L19.408 10.377L19.408 16.413L15.453 20.369L3.651 20.369L3.651 7.607L7.607 3.651L22.867 3.651Z"/><path d="m41.91 10.2v-2.9l-2-1.96h-6.99l-2.25 2.1v9.94l2.24 2.07h7.04l1.97-1.89v-5.5h-6.11v1.9h4.02v2.72l-1.02 1.03h-5.06l-1.01-1.01v-8.58l1.02-0.95h5.1l0.97 0.92v2.11h2.08z"/><path d="m58.35 5.31h-10.32l-0.04 14.13h10.46v-1.8l-8.33-0.02v-4.43h7.4v-1.78h-7.41v-4.24h8.24v-1.86z"/><path d="m64.29 5.31v14.13h9.98v-1.85h-7.77v-12.28h-2.21z"/><path d="m89.51 5.27h-9.67v14.17h9.68l2.19-2.1v-9.89l-2.2-2.18zm-0.09 11.4-0.96 1.03h-6.56v-10.59h6.55l0.97 0.93v8.63z"/></svg>
-    </div>
-    <h1>Review the code,<br/>not the tests.</h1>
-    <p class="sub">Hide test files from GitHub diffs.<br/>Chrome · Edge · Firefox · Safari</p>
+    <img class="logo" src="../../../../../assets/brand/geld-logo-white.svg" alt="Geld" />
+    <h1>Code review is broken.<br/>Geld fixes it.</h1>
+    <p class="sub">Less noise. More shipping.<br/>Chrome · Edge · Firefox · Safari</p>
     <div class="btn">Add to browser</div>
   </div>
-  <div class="card">
-    <div class="head"><span>Files changed</span><span class="counts"><span class="muted">39 tests</span><span class="g">+2,766</span><span class="r">−2,631</span></span></div>
-    <div class="row"><span class="box"></span><span class="name" style="width:300px"></span><span class="blocks"><i style="background:#4bcb71"></i><i style="background:#4bcb71"></i><i style="background:#4bcb71"></i></span></div>
-    <div class="row"><span class="box"></span><span class="name" style="width:380px"></span><span class="blocks"><i style="background:#ff6367"></i><i style="background:#ff6367"></i><i style="background:#ff6367"></i></span></div>
-    <div class="row"><span class="box"></span><span class="name" style="width:260px"></span><span class="blocks"><i style="background:#4bcb71"></i><i style="background:#4bcb71"></i><i style="background:#ff6367;margin-left:24px"></i></span></div>
-    <div class="row"><span class="box"></span><span class="name" style="width:340px"></span><span class="blocks"><i style="background:#4bcb71"></i><i style="background:#ff6367"></i></span></div>
-    <div class="hidden"><span><b>39 test files</b> hidden</span><a>Show test files ›</a></div>
-  </div>
+  <img class="digest" src="digest-dark.png" alt="" />
 </body>
 </html>
