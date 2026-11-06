@@ -39,7 +39,8 @@ import { nextRunGraceEnd, withRunTimes } from './run-starts';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
 import { descriptionUnshortened, releaseDescription, shortenDescription } from './description';
-import { chooseDigestView, focusDigestOffOnNextMount, removeDigestOffBar, syncDigestOffBar } from './digest-off';
+import { chooseDigestView, removeDigestOffBar, syncDigestOffBar } from './digest-off';
+import { forgetViewFocusElsewhere } from './view-focus';
 import { compactDescriptionByline } from './description-byline';
 import { type AgentNote, agentNotes, noteCopy, noteText, resetAgentNotes } from './agent-notes';
 import { botWrittenVersion } from './note-tone';
@@ -2986,6 +2987,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   if (paths !== undefined) diffPaths = paths;
   if (bots !== undefined) repoBots = bots;
   const page = describePage(new URL(window.location.href));
+  forgetViewFocusElsewhere();
   if (page.kind !== 'pull-conversation' || !settings.enabled || !settings.prOverview) {
     // Nothing mounted (a files page, a list): the page-wide cleanup queries have nothing to find.
     if (visit.pageKey !== '') teardownReviewOverview(page.kind !== 'pull-conversation' && settings.enabled && settings.prOverview);
@@ -3532,11 +3534,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       // Persisted like any setting; the controller's settings watch re-applies with the new value, in place.
       persist(settingsItem.patch({ reviewGrouping: grouping }));
     },
-    onView: (view) => {
-      // The panel goes with the digest: focus follows to the line that stands in its place.
-      if (view === 'github') focusDigestOffOnNextMount();
-      chooseDigestView(view);
-    },
+    onView: (view) => chooseDigestView(view),
     onFlow: () => openFlowDialog(),
     onSettings: () => {
       const message: OpenSettingsMessage = { type: 'geld:open-settings' };

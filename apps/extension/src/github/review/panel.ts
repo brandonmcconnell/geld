@@ -35,6 +35,7 @@ import { brandMark, syncBrandSelection, watchBrandSelection } from './brand';
 import { inlineText } from './inline-text';
 import { relativeTimeElement } from './time';
 import { DIGEST_VIEW_OPTIONS, digestViewLabel, viewChoice, viewLabel } from './digest-view';
+import { takeViewFocus } from './view-focus';
 
 export const PANEL_CLASS = 'geld-review';
 export const ATTR_PANEL = 'data-geld-review-panel';
@@ -589,16 +590,10 @@ function focusKeyOf(root: Element | null): string | null {
 
 function restoreFocus(root: Element, key: string | null): void {
   if (key === null) return;
-  const target = root.querySelector<HTMLElement>(`[${ATTR_FOCUS}="${key}"]`) ?? (key.startsWith('intro:') ? root.querySelector<HTMLElement>(`[${ATTR_FOCUS}="view"]`) : null);
+  const target = root.querySelector<HTMLElement>(`[${ATTR_FOCUS}="${key}"]`);
   target?.focus({ preventScroll: true });
 }
 
-/** A control outside the panel chose a view that brings the panel in: focus lands on its View control once it mounts. */
-let focusOnMount: string | null = null;
-
-export function focusViewOnNextMount(): void {
-  focusOnMount = 'view';
-}
 
 /**
  * A person's avatar carries GitHub's own hovercard attributes (its script
@@ -1291,7 +1286,8 @@ function viewMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement {
     item.addEventListener('click', (event) => {
       event.stopPropagation();
       details.removeAttribute('open');
-      if (option.view !== model.view) handlers.onView(option.view);
+      // The current view still answers the intro when it is waiting on one.
+      if (option.view !== model.view || model.intro) handlers.onView(option.view);
     });
     list.append(item);
   }
@@ -3147,8 +3143,8 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   } else {
     oldNudge?.remove();
   }
-  restoreFocus(panel, focusKey ?? focusOnMount);
-  focusOnMount = null;
+  // A view choice rebuilt everything around the control the reader used: focus lands on View in the new panel.
+  restoreFocus(panel, focusKey ?? (takeViewFocus('panel') ? 'view' : null));
   return { root: panel, slot: panel.querySelector<HTMLElement>(`[${ATTR_SLOT}] > .${PANEL_CLASS}__slot-body`) };
 }
 
