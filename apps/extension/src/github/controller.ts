@@ -676,10 +676,14 @@ export class GeldController {
   private keepSearchPanel(target: Element, stateKey: string): void {
     const opened = this.searchPanel;
     if (opened === null || opened.stateKey !== stateKey) return;
-    const view = this.currentView;
-    const onFile = target.closest('.geld-tree__row[data-path]') !== null || (view?.treeFiles.some((file) => file.element.contains(target)) ?? false);
-    const inDiff = !isOwnElement(target) && (view?.entries.some((entry) => entry.root.contains(target)) ?? false);
-    if (!onFile && !inDiff) return;
+    let onFile = target.closest('.geld-tree__row[data-path]') !== null;
+    if (!onFile) {
+      // Read the page afresh: a tree row React re-rendered or a diff mounted since the last pass is not in the last view.
+      const view = legacyAdapter.read() ?? reactAdapter.read();
+      if (view === null) return;
+      onFile = view.treeFiles.some((file) => file.element.contains(target));
+      if (!onFile && (isOwnElement(target) || !view.entries.some((entry) => entry.root.contains(target)))) return;
+    }
     this.activePanel.set(stateKey, opened.panel);
     this.searchPanel = null;
   }
