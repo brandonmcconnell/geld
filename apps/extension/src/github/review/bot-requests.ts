@@ -1,7 +1,7 @@
 import type { BotComment, BotVerdictRecord, RawCheckRun } from '@geld/review';
-import { acknowledgeWindowMs, botByCheckName, botById, botsTriggeredBy, geldRunAnswer, geldRunBots, isTriggerComment } from '@geld/review';
+import { ACK_GRACE_MS, botByCheckName, botById, botsTriggeredBy, geldRunAnswer, geldRunBots, isTriggerComment } from '@geld/review';
 
-/** How long a click counts as the bot running before any pass has drawn its request (`botRunningNow`). */
+/** A bot that answers a trigger with a reaction does so within seconds (Greptile's 👀 in about 5 s): past this it most likely never saw the request. */
 export const REQUEST_ACK_MS = 20_000;
 /** A bot whose first sign is a comment or its check run is given longer, since those land later than a reaction. */
 export const REQUEST_ACK_SLOW_MS = 60_000;
@@ -62,23 +62,29 @@ export function triggerAnchors(comments: readonly BotComment[], extraLogins: rea
   return new Map([...triggerAsks(comments, extraLogins)].map(([id, list]) => [id, new Set(list.map((ask) => ask.comment.anchor))]));
 }
 
+export interface AwaitedTrigger {
+  readonly anchor: string;
+  /** When the trigger was posted, by GitHub's clock. */
+  readonly at: number;
+}
+
 /**
  * The trigger comments still waiting on a bot's reaction: asked of a bot that acknowledges with one, not reacted to
- * by it yet, and inside its window. GitHub sends an open page nothing about a top-level comment (it has no socket
+ * by it yet, and inside `ACK_GRACE_MS`. GitHub sends an open page nothing about a top-level comment (it has no socket
  * channel), so these are the comments whose reactions are read again (`trigger-reactions.ts`).
  */
-export function awaitingReaction(comments: readonly BotComment[], extraLogins: readonly string[], now: number): readonly string[] {
-  const out = new Set<string>();
+export function awaitingReaction(comments: readonly BotComment[], extraLogins: readonly string[], now: number): readonly AwaitedTrigger[] {
+  const out = new Map<string, AwaitedTrigger>();
   for (const [id, list] of triggerAsks(comments, extraLogins)) {
     if (botById(id)?.acknowledges !== 'reaction') continue;
     for (const ask of list) {
-      if (geldRunBots(ask.comment.body).length > 0 || now - ask.at > acknowledgeWindowMs(id)) continue;
+      if (geldRunBots(ask.comment.body).length > 0 || now - ask.at > ACK_GRACE_MS) continue;
       const logins = loginsOf(id, ask.login);
       if ((ask.comment.reactedBy ?? []).some((login) => logins.has(loginKey(login)))) continue;
-      out.add(ask.comment.anchor);
+      out.set(ask.comment.anchor, { anchor: ask.comment.anchor, at: ask.at });
     }
   }
-  return [...out];
+  return [...out.values()];
 }
 
 export interface BotRequestInput {
@@ -156,9 +162,8 @@ export function botRequestStates(input: BotRequestInput): ReadonlyMap<string, Bo
     const workflow = viaWorkflow && posted !== null ? geldRunAnswer(posted.comment) : null;
     if (workflow === 'queued' || acknowledged(id, logins, posted?.comment ?? null, since, input)) continue;
     const start = click?.at ?? since;
-    // A bot that reacts has its own window (Greptile's 👍 takes minutes). The workflow's job has to start before it can
-    // answer, and a bot that reacts to nothing shows itself by a comment or a check.
-    const window = !viaWorkflow && botById(id)?.acknowledges === 'reaction' ? acknowledgeWindowMs(id) : REQUEST_ACK_SLOW_MS;
+    // The workflow's job has to start before it can answer, which takes longer than a bot's reaction.
+    const window = !viaWorkflow && botById(id)?.acknowledges === 'reaction' ? REQUEST_ACK_MS : REQUEST_ACK_SLOW_MS;
     const within = input.now - start < window;
     // Past its window a request is told unanswered only while nothing else has settled it: this visit's own ask, or a
     // verdict still running on the request alone. An old refusal (`verdictsFrom` skips it) never hides a settled review.

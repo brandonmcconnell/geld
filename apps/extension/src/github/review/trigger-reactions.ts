@@ -1,20 +1,25 @@
 import type { CommentReaction } from '@geld/review';
+import type { AwaitedTrigger } from './bot-requests';
 import { pageFetch } from '../page-fetch';
 import { reactionsOf } from './crawler';
 import { fragmentHeaders } from './deeplink';
 import { closestAtHome } from './teleport';
 
 /**
- * A review bot's reaction to the comment that asked for it (Greptile's 👍)
- * says it took the run, and it lands minutes after the request. A top-level
- * comment has no socket channel, so GitHub never tells an open page about it
- * and the reaction showed only after a reload. While a trigger is waiting on
- * one (`awaitingReaction`), its own partial, the `data-url` GitHub renders
- * the comment from, is read again on a clock and the reactions found there
+ * A review bot's reaction to the comment that asked for it (Greptile's 👀,
+ * about 5 s after the request) says it took the run. A top-level comment has
+ * no socket channel, so GitHub never tells an open page about it and the
+ * reaction showed only after a reload. While a trigger is waiting on one
+ * (`awaitingReaction`), its own partial, the `data-url` GitHub renders the
+ * comment from, is read again on a clock, often while the request is young so
+ * the reaction lands inside `REQUEST_ACK_MS`, and the reactions found there
  * are laid over the page's (`withFetchedReactions`). GitHub's node is left as
  * it is.
  */
 export const REACTION_POLL_MS = 15_000;
+/** The interval while the trigger is younger than `FAST_FOR_MS`. */
+export const REACTION_FAST_POLL_MS = 3_000;
+export const FAST_FOR_MS = 30_000;
 
 const CONTAINER = '.js-comment-container[data-url]';
 
@@ -44,27 +49,32 @@ function key(reactions: readonly CommentReaction[]): string {
 }
 
 /**
- * Reads each waiting trigger's reactions again, at most once per `REACTION_POLL_MS`, and calls `landed` when an
- * answer changes what is known. The time the next read is due, or null when nothing is waiting.
+ * Reads each waiting trigger's reactions again, at most once per its interval, and calls `landed` when an answer
+ * changes what is known. The time the next read is due, or null when nothing is waiting.
  */
-export function pollTriggerReactions(anchors: readonly string[], now: number, landed: () => void): number | null {
-  if (anchors.length === 0) return null;
-  for (const anchor of anchors) {
+export function pollTriggerReactions(triggers: readonly AwaitedTrigger[], now: number, landed: () => void): number | null {
+  let next: number | null = null;
+  for (const { anchor, at } of triggers) {
+    const interval = now - at < FAST_FOR_MS ? REACTION_FAST_POLL_MS : REACTION_POLL_MS;
     const last = lastAsked.get(anchor);
-    if (inFlight.has(anchor) || (last !== undefined && now - last < REACTION_POLL_MS)) continue;
-    const url = partialUrlOf(anchor);
-    if (url === null) continue;
-    lastAsked.set(anchor, now);
-    inFlight.add(anchor);
-    void readReactions(url, anchor).then((reactions) => {
-      inFlight.delete(anchor);
-      if (reactions === null) return;
-      const before = fetched.get(anchor);
-      fetched.set(anchor, reactions);
-      if (before === undefined ? reactions.length > 0 : key(before) !== key(reactions)) landed();
-    });
+    const due = last === undefined ? now : last + interval;
+    if (due <= now && !inFlight.has(anchor)) {
+      const url = partialUrlOf(anchor);
+      if (url === null) continue;
+      lastAsked.set(anchor, now);
+      inFlight.add(anchor);
+      void readReactions(url, anchor).then((reactions) => {
+        inFlight.delete(anchor);
+        if (reactions === null) return;
+        const before = fetched.get(anchor);
+        fetched.set(anchor, reactions);
+        if (before === undefined ? reactions.length > 0 : key(before) !== key(reactions)) landed();
+      });
+    }
+    const after = (lastAsked.get(anchor) ?? now) + interval;
+    if (next === null || after < next) next = after;
   }
-  return now + REACTION_POLL_MS;
+  return next;
 }
 
 /** The comment's reactions as the page shows them, with any its partial has shown since. */
