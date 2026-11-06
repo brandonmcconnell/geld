@@ -2941,8 +2941,11 @@ svg.geld-lucide {
   line-height: 18px;
 }
 
+/* Sizes here are mirrored in view-fit.ts, which measures the control before it is laid out. */
 .geld-view-choice__option {
+  display: inline-flex;
   flex: 0 1 auto;
+  align-items: center;
   min-width: 0;
   height: 28px;
   margin: 0;
@@ -2972,6 +2975,35 @@ svg.geld-lucide {
 .geld-view-choice__option:focus-visible {
   outline: 2px solid var(--focus-outlineColor, var(--color-accent-fg, #0969da));
   outline-offset: -2px;
+}
+
+/* A view named by marks and a word: Geld's emblem for the digest, GitHub's mark for its timeline. */
+.geld-view-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.geld-view-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+}
+
+.geld-view-mark svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+/* Both views' words, only where they fit (`view-fit.ts`); the View menu always has the room. */
+[data-geld-view-words='hide'] .geld-view-choice .geld-view-label__words {
+  display: none;
 }
 
 /* Once, under the Geld row, until the reader picks a view: what this panel is, and the three ways the page can look. */
@@ -3053,8 +3085,13 @@ svg.geld-lucide {
 }
 
 .geld-digest-off__text {
-  flex: 1 1 240px;
+  flex: 1 1 auto;
   min-width: 0;
+}
+
+/* The subtitle only while the whole line fits on one row (`view-fit.ts`). */
+.geld-digest-off[data-geld-view-subtitle='hide'] .geld-digest-off__subtitle {
+  display: none;
 }
 
 .geld-digest-off__text strong {

@@ -34,7 +34,8 @@ import { shapeMark } from './mark-shape';
 import { brandMark, syncBrandSelection, watchBrandSelection } from './brand';
 import { inlineText } from './inline-text';
 import { relativeTimeElement } from './time';
-import { DIGEST_VIEW_OPTIONS, digestViewLabel, viewChoice } from './digest-view';
+import { DIGEST_VIEW_OPTIONS, digestViewLabel, viewChoice, viewLabel } from './digest-view';
+import { ATTR_VIEW_WORDS, fitIntroOnResize, INTRO_KEEP } from './view-fit';
 
 export const PANEL_CLASS = 'geld-review';
 export const ATTR_PANEL = 'data-geld-review-panel';
@@ -1286,7 +1287,7 @@ function viewMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement {
     const chosen = option.view === model.view;
     const item = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item ${PANEL_CLASS}__menu-item--choice`, role: 'menuitemradio', 'aria-checked': String(chosen), 'data-view': option.view }, [
       createElement('span', { class: `${PANEL_CLASS}__menu-check`, 'aria-hidden': 'true' }, [icon(chosen ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE)]),
-      createElement('span', { class: `${PANEL_CLASS}__menu-text` }, [createElement('span', {}, [option.label]), createElement('span', { class: `${PANEL_CLASS}__menu-hint` }, [option.hint])]),
+      createElement('span', { class: `${PANEL_CLASS}__menu-text` }, [viewLabel(option), createElement('span', { class: `${PANEL_CLASS}__menu-hint` }, [option.hint])]),
     ]);
     item.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -1305,15 +1306,17 @@ function viewMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement {
  */
 function introNotice(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
   if (!model.intro) return null;
-  const keep = createElement('button', { type: 'button', class: `${PANEL_CLASS}__intro-dismiss`, [ATTR_FOCUS]: 'intro:keep' }, ['Got it']);
+  const keep = createElement('button', { type: 'button', class: `${PANEL_CLASS}__intro-dismiss`, [ATTR_FOCUS]: 'intro:keep' }, [INTRO_KEEP]);
   keep.addEventListener('click', () => handlers.onView(model.view));
-  return createElement('div', { class: `${PANEL_CLASS}__intro`, role: 'region', 'aria-label': 'About the Geld digest' }, [
+  const intro = createElement('div', { class: `${PANEL_CLASS}__intro`, role: 'region', 'aria-label': 'About the Geld digest', [ATTR_VIEW_WORDS]: 'hide' }, [
     createElement('div', { class: `${PANEL_CLASS}__intro-text` }, [
       createElement('strong', {}, ['This is Geld’s pull request digest.']),
       ' It sums up reviews, bots, CI and open threads, and folds GitHub’s timeline into it. Pick how you want pull requests to look. You can change it any time from View.',
     ]),
     createElement('div', { class: `${PANEL_CLASS}__intro-actions` }, [viewChoice(model.view, handlers.onView, (view) => ({ [ATTR_FOCUS]: `intro:${view}` })), keep]),
   ]);
+  fitIntroOnResize(intro);
+  return intro;
 }
 
 /** Geld's own notes for an open item — merged context and the fix — above the moved comments. */

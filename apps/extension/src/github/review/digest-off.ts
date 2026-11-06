@@ -1,6 +1,6 @@
 /**
  * While the digest is off, a slim line under the description says so and
- * offers the three views, GitHub's own pressed. It stays for as long as the
+ * offers the three views, GitHub's timeline pressed. It stays for as long as the
  * digest is off: the digest is what Geld is growing into, and the way back in
  * should never be more than one click away.
  */
@@ -13,6 +13,7 @@ import { settingsItem } from '../../lib/storage';
 import { brandMark } from './brand';
 import { viewChoice } from './digest-view';
 import { ATTR_ATTACHED, ATTR_PANEL, PANEL_CLASS, descriptionCard, focusViewOnNextMount } from './panel';
+import { ATTR_VIEW_SUBTITLE, ATTR_VIEW_WORDS, fitOffLineOnResize, OFF_SUBTITLE, OFF_TITLE } from './view-fit';
 
 const BAR_CLASS = 'geld-digest-off';
 
@@ -48,14 +49,15 @@ export function syncDigestOffBar(show: boolean): void {
     if (view !== 'github') focusViewOnNextMount();
     chooseDigestView(view);
   };
-  const bar = createElement('section', { class: BAR_CLASS, [OWN_UI_ATTRIBUTE]: '', 'aria-label': 'Geld digest' }, [
+  const bar = createElement('section', { class: BAR_CLASS, [OWN_UI_ATTRIBUTE]: '', 'aria-label': 'Geld digest', [ATTR_VIEW_SUBTITLE]: 'hide', [ATTR_VIEW_WORDS]: 'hide' }, [
     brandMark(`${BAR_CLASS}__brand`),
-    createElement('span', { class: `${BAR_CLASS}__text` }, [createElement('strong', {}, ['The Geld digest is off.']), ' Reviews, bots, CI and threads at a glance.']),
+    createElement('span', { class: `${BAR_CLASS}__text` }, [createElement('strong', {}, [OFF_TITLE]), createElement('span', { class: `${BAR_CLASS}__subtitle` }, [OFF_SUBTITLE])]),
     viewChoice('github', choose),
   ]);
   bar.style.marginLeft = cardStyle.marginLeft;
   bar.style.marginRight = cardStyle.marginRight;
   card.insertAdjacentElement('afterend', bar);
+  fitOffLineOnResize(bar);
   if (focusOnMount) {
     focusOnMount = false;
     bar.querySelector<HTMLElement>('[aria-pressed="true"]')?.focus({ preventScroll: true });
