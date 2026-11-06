@@ -566,6 +566,14 @@ function inTimeOrder(comments: readonly BotComment[], extra: readonly BotComment
   return merged;
 }
 
+/** When a comment was last written: its latest edit (a bot rewrites its summary in place), else when it was posted. */
+function lastWrittenAt(anchor: string, createdAt: string): number {
+  const node = document.getElementById(anchor);
+  const edited = node === null ? Number.NaN : Date.parse(editedAt(node, reapplySoon) ?? '');
+  const created = Date.parse(createdAt);
+  return Number.isNaN(edited) ? created : Math.max(edited, Number.isNaN(created) ? edited : created);
+}
+
 /** Bot `botId`'s review in the description, when its own App wrote the reading there now (`botWrittenVersion`). */
 function descriptionSummaryOf(botId: string): { readonly anchor: string; readonly at: string; readonly note: AgentNote } | null {
   for (const note of liveNotes) {
@@ -2023,7 +2031,7 @@ function buildBotLines(meta: GeldPrMeta): readonly BotLine[] {
     // A review the bot wrote into the description (`descriptionReviewComments`) is its summary when no summary comment
     // is newer, whatever the verdict hangs on (a thread posted after it, say): the line opens the note.
     const inDescription = descriptionSummaryOf(bot.id);
-    if (inDescription !== null && (computed === null || Date.parse(computed.facts.createdAt) <= Date.parse(inDescription.at))) {
+    if (inDescription !== null && (computed === null || lastWrittenAt(computed.anchor, computed.facts.createdAt) <= Date.parse(inDescription.at))) {
       return { bot, anchor: inDescription.anchor, author: bot.login, avatarSrc: null, preview: inDescription.note.preview, time: '', threads: [] };
     }
     // A summary on loan to the panel (its line open, or pinned in a thread's chat) is read bodiless at home, so
