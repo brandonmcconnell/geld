@@ -57,7 +57,9 @@ function icon(size, mark, { scale, fill = '#000000', tile = false, background, s
   ].join('');
   const body = mark.paths.map((d) => `<path d="${d}"/>`).join('');
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${behind}<g transform="translate(${x} ${y}) scale(${scale})" fill="${fill}">${body}</g></svg>`;
-  return sharp(Buffer.from(svg), { density: 72 }).png({ compressionLevel: 9 }).toBuffer();
+  const image = sharp(Buffer.from(svg), { density: 72 });
+  // App Store Connect refuses an iOS icon with an alpha channel, even a fully opaque one.
+  return (background === undefined ? image : image.removeAlpha()).png({ compressionLevel: 9 }).toBuffer();
 }
 
 async function write(file, buffer) {
