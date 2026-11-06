@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
 import type { DigestView } from '@geld/core';
+import { computeAccessibleName } from 'dom-accessibility-api';
 import { describe, expect, it } from 'vitest';
 import { DIGEST_VIEW_OPTIONS, viewChoice } from './digest-view';
 import { choiceWidth, offLineSubtitleFits, OFF_SUBTITLE, OFF_TITLE } from './view-fit';
 import type { Measures } from './view-fit';
 
-/** Every option's accessible name as a screen reader builds it: marks by their label, words by their text. */
+/** Every option's computed accessible name, so an `aria-label` on a button or a part counts as it would for a screen reader. */
 function names(choice: HTMLElement): string[] {
-  return [...choice.querySelectorAll('button')].map((button) =>
-    [...button.querySelectorAll('.geld-view-label > *')].map((part) => part.getAttribute('aria-label') ?? part.textContent).join(' '),
-  );
+  document.body.replaceChildren(choice);
+  return [...choice.querySelectorAll('button')].map((button) => computeAccessibleName(button));
 }
 
 /** What a sighted reader sees in each option: marks by their label, words unless they are for screen readers only. */
