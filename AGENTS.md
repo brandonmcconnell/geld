@@ -746,6 +746,12 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   a frame of lag there is invisible because that area is covered.
   Padding would not do: it is part of the flex item's box and would push the list's end down, feeding back into the measurement.
   Narrow, non-sticky layouts (`stickyTopOf` returns null) keep GitHub's sizing and nothing is pinned.
+  **Typing in GitHub's file filter moves the accordion with the search** (`ui/tree-search.ts`, `applyTree`): `activePanel` is the panel the reader chose, and while the filter field holds text (`fileFilterQuery`: `#file-tree-filter-field` in the classic view, else a field labelled "filter" near the tree;
+  only the typed text counts, never GitHub's extension, viewed or owner filters) the panel shown is theirs while it has a match, else the first in sidebar order that has one (`panelForSearch`, recomputed every pass, so backspacing brings theirs back the moment it matches again).
+  Panels with no match stay at 0 during a search, so the accordion does not come and go per keystroke.
+  A click on a file (a Geld panel row or GitHub's tree) or inside a diff makes a panel the search opened the reader's (`searchPanel`, `keepSearchPanel`), and header toggles act on the panel shown (`shownPanel`), since their handlers are bound once.
+  The classic view's tree sits in a `.Layout-sidebar`, which `regions.ts` would read as the conversation's sidebar, so the file tree is classified before the conversation;
+  otherwise a filter keystroke skipped the files pass.
   **Nothing in the sidebar is measured on the apply path.**
   `apply()` runs after every mutation batch, and while a large diff streams in that is many times a second with a layout GitHub has just dirtied;
   one `getBoundingClientRect`/`getClientRects`/`getComputedStyle` there forces a full layout (20–30 ms on a 124-file diff) on every pass — that was the extension's single biggest cost.
