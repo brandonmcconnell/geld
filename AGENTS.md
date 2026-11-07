@@ -476,7 +476,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   also a quiet "▤ type ▾" menu in the Geld row beside the copy button (Octicon `rows`;
   radios drawn with the panel's circle / check-circle glyphs in grey) — `groupingMenu`, `onGrouping` writes the setting through `settingsItem.patch` and the controller's settings watch re-applies in place): `type` (default) lists rounds under "N rounds to review" / "N resolved threads" plus the bot-comment and activity folds — **the latest round with no threads at all is the current round, never a settled one** (`current` in `mountPanel`: nothing in it was ever to settle, and what it holds is the state of the conversation), so it stands in the open group, headed "Current round" when it is alone there;
   `batch` (`model.grouping`) replaces those with "Needs attention · N open threads" (every open item as a top-level row, opened directly — `openRow` routes item keys there instead of into their round) and "N pushes" newest first (`GroupId` `pushes`, open by default), each `batchRow` led by one `repo-push` glyph and reading left to right "Push 07 · 3 commits" (numbers zero-padded to the widest, tabular figures), the committers' avatars (`committers`, shaped as GitHub shapes them: `avatar-user` is a circle — @claude committing as a user is one — anything else a square), the push's CI as a circle glyph (the last commit's `.commit-build-statuses`), the threads' meter or a check once all are resolved, the comments chip and one "N previews" pill;
-  a push whose CI failed is `bad` (red) whatever its threads say, a settled one `good`;
+  a push with an unresolved thread is `warn` (amber, since red is kept for a failing required check) and a settled one `good`, while a failing CI is the push's glyph alone (the last commit's summary does not say whether the failing check is required);
   an open push (`renderBatchView`) shows previews, threads, reviews (`entryRow`), other bot comments, then "N commits" under a commit-glyph heading (`visit.openCommits`, `commitsSlot` filled by `renderQuickView` with the commit rows starting at the row edge so their glyphs stand in the header glyphs' column;
   they keep the commit-hover breakdown).
   **A commit row's message keeps to one line** (the cell is a nowrap flex row, the `code` ellipsizes, GitHub's "…" expander stays whole) **until the reader opens it**: with `Details--on` on the row's container the cell is back in flow, the subject wraps whole and the expander follows its last word.
@@ -487,7 +487,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **Tones** (`data-tone`, `good`/`warn`/`bad`, from GitHub's muted success/attention/danger surfaces): a gradient from 45% of the tone at the left to a 10% wash at the right colours the surface, the row's glyph and the meter — never the words (labels, titles, counts keep their default colour);
   hovered or open, the row is the plain muted surface.
   Settled rounds and items are `good`;
-  status rows tint only for `bad` (`alarmTone`) — three adjacent rows in three hues read as a traffic light.
+  **of the status rows only CI tints, and only red for a failing check GitHub marks Required** (`checksTone`, `requiredFailing` from the merge box's "Required" labels; an optional failure, or one whose list marks nothing required, is amber and does not tint): a failed bot, report or preview, changes requested, or an optional check's X says so in its glyph, since none of those holds the pull request back, and three adjacent rows in three hues read as a traffic light.
   Below 640px of panel width (`@container geld-review`) rows drop what only repeats their glyphs: round names, timestamps, "resolved", check labels;
   labels read "Bots"/"CI".
   **The bots' and reports' pills are not on that breakpoint: each row gives way to its own room in two steps** (`review/fit-chips.ts`, rows marked `data-geld-fit` — `ATTR_FIT` — on their `.geld-review__status-content`): the row's pills are measured (widths plus gaps against the row's width) with the row at each step in turn, and the first that fits on one line stays — everything · `names` (every pill's `__bot-name` hidden: the mark says who, "clean", "5/5", "patch 62.50%" still say how) · `details` (`__bot-detail` hidden too: mark and light alone).
@@ -1127,7 +1127,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   they start at the row edge so their state glyph stands in the header glyphs' column).
   The row's own glyph is Octicon `rocket`, GitHub's mark for deployments, then "N archived previews from earlier pushes" behind a heading.
   A push's row (batch grouping) has room for one summary pill — the hosts' marks overlapping and "N previews" — and shows the named pills in a strip once open.
-  The row tints only when a preview failed.
+  A failed preview shows in its glyph and does not tint the row.
   Pills wear the same state glyphs as the CI breakdown and the per-preview lines (`PREVIEW_GLYPH`: check, x, Primer's spinner, skip);
   a skipped deployment's pill is faded with a `not-allowed` cursor and is not a link (its line keeps Inspect).
   `ICON_IN_PROGRESS` is Primer's Spinner markup and needs `fill: none !important` — GitHub's `.octicon { fill: currentColor }` otherwise fills its track into a dot.
@@ -1140,7 +1140,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   earlier reports stay in their rounds as bot comments, **the latest is seated under the Reports row only** — `reportLineAnchors`, the same treatment as a bot's latest summary: `seatFor` answers `{ REPORTS_KEY, sub }`, the comment is `seatedElsewhere` in its round, bounding it but shown nowhere in it).
   Socket's readings: "Review the following alerts" (failed, Block/Warn/Monitor rows counted), "All alerts resolved" (passed), "New and removed dependencies detected" (info), and its dependency diff "Review the following changes in direct dependencies" (info, one table row per changed package — the reference `npm/@scope/name@version` counts them, written with zero-width spaces in the page's text and linked in the raw Markdown;
   scoped names start with `@`).
-  The row is a pill per report (mark, title, headline, state light), red while one reports failures;
+  The row is a pill per report (mark, title, headline, state light), with a failing report's light red and the row itself untinted;
   a pill or the chevron opens the row to one line per report, and a line opens its comment in place as a one-bubble chat (`renderReportsList` → `renderCommentChat`), so the failing tests and their logs are right there.
   A pill click goes through `onOpenReport`, not `onOpenAnchor`, so it lands in this row and not in the round that also holds the comment.
   **Check reporters** (`CHECK_REPORTERS`, `readCheckReport`, `reportsFromChecks`) are services that report through a commit status or check run instead of a comment.

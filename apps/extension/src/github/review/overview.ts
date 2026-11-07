@@ -1892,7 +1892,7 @@ function whoCardFor(login: string, meta: GeldPrMeta, model: PanelModel): WhoCard
 /**
  * Whether a failing check in GitHub's list is one it marks "Required"; null
  * when the list is not rendered or marks nothing (this repository may simply
- * have no required checks, in which case every failure is red anyway).
+ * have no required checks), and the CI row then tints no failure red.
  */
 function requiredFailingIn(section: HTMLElement | null): boolean | null {
   if (section === null) return null;

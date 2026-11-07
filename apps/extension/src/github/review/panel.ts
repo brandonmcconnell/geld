@@ -18,7 +18,7 @@ import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/revie
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
 import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL } from '../ui/icons';
-import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
+import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import type { AiState } from './ai';
@@ -912,9 +912,12 @@ const CI_WORDS: Readonly<Record<'success' | 'failure' | 'pending', string>> = { 
 
 function pushTone(batch: Batch, allDone: boolean): Tone | null {
   const open = batch.items.some((item) => isOpenStatus(item.status));
-  if (batch.ciGlyph === 'failure' || open) return 'bad';
+  // A push's CI is its last commit's summary, which does not say whether the failing check is required, so a
+  // failure there is the glyph's to show, never the row's. Red belongs to a failing required check alone, so an
+  // unresolved thread is amber.
+  if (open) return 'warn';
   if (batch.ciGlyph === 'success') return 'good';
-  return allDone ? 'good' : null;
+  return allDone && batch.ciGlyph !== 'failure' ? 'good' : null;
 }
 
 function batchProgress(batch: Batch): { readonly done: number; readonly total: number } {
@@ -1039,7 +1042,7 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
     ]);
     mainClickToggles(main, toggle);
     const health = previewHealth(batch.previews);
-    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--status ${PANEL_CLASS}__row--previews`, 'data-health': health, ...toneAttr(alarmTone(health)) }, [
+    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--status ${PANEL_CLASS}__row--previews`, 'data-health': health }, [
       createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_ROCKET)]),
       rowLabel('Previews', 'Previews'),
       main,
@@ -1973,15 +1976,6 @@ function toneAttr(tone: Tone | null): Readonly<Record<string, string>> {
 }
 
 /**
- * Status rows tint only for what needs the reader: three adjacent rows in
- * three hues read as a traffic light, and green or amber there repeats what
- * the glyph already says. Settled rows in the list below keep their green.
- */
-function alarmTone(health: Health): Tone | null {
-  return toneOf(health) === 'bad' ? 'bad' : null;
-}
-
-/**
  * The status rows, in the order a reader triages a pull request: who has
  * reviewed (people), what the review bots said, what the reporters found,
  * whether CI passed, and where the previews are.
@@ -2025,7 +2019,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     const people = reviewersMenu(model, handlers);
     if (people !== null) right.push(people);
     right.push(chevron(open, () => handlers.onToggle(REVIEWS_KEY)));
-    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(alarmTone(health)) }, [
+    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health }, [
       createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_COMMENT_DISCUSSION)]),
       rowLabel('Reviews', 'Reviews'),
       main,
@@ -2053,7 +2047,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     if (opens) mainClickToggles(main, toggle);
     const right: Node[] = menu === null ? [] : [menu];
     if (opens) right.push(chevron(open, toggle));
-    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(alarmTone(health)) }, [
+    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health }, [
       createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(HEALTH_ICON[health])]),
       rowLabel('Review bots', 'Bots'),
       main,
@@ -2078,6 +2072,8 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
       waitingOnly === null ? checksBreakdown(counts) : createElement('span', { class: `${PANEL_CLASS}__detail` }, [waitingOnly]),
     ]);
     mainClickToggles(main, () => handlers.onToggle(CHECKS_KEY));
+    // The one status row that tints, and only red for a failing required check: an optional failure, a bot, a report
+    // or a preview that failed says so in its glyph alone, since none of them holds the pull request back.
     const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(checksTone(counts, model.requiredFailing) === 'bad' ? 'bad' : null) }, [
       createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [model.checksRing ?? checksRing(counts)]),
       rowLabel('CI checks', 'CI'),
@@ -2156,7 +2152,7 @@ function previewsRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLE
     createElement('span', { class: `${PANEL_CLASS}__status-content ${PANEL_CLASS}__deploys` }, model.previews.latest.map((entry) => previewPill(entry, model))),
   ]);
   mainClickToggles(main, () => handlers.onToggle(PREVIEWS_KEY));
-  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(alarmTone(health)) }, [
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health }, [
     createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_ROCKET)]),
     rowLabel('Previews', 'Previews'),
     main,
@@ -2290,7 +2286,7 @@ function reportsRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLEl
     createElement('span', { class: `${PANEL_CLASS}__status-content ${PANEL_CLASS}__deploys`, [ATTR_FIT]: '' }, model.reports.latest.map((entry) => reportPill(entry, model, handlers))),
   ]);
   mainClickToggles(main, () => handlers.onToggle(REPORTS_KEY));
-  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(alarmTone(health)) }, [
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health }, [
     createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_REPORT)]),
     rowLabel(REPORTS_LABEL[0], REPORTS_LABEL[1]),
     main,
