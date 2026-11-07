@@ -71,3 +71,25 @@ export const KEY_SERVICES: readonly ServiceSpec[] = [
 export function serviceSpec(id: ServiceId): ServiceSpec | null {
   return KEY_SERVICES.find((spec) => spec.id === id) ?? null;
 }
+
+/** A service connected by signing in through Geld's own app for it, rather than a pasted key. */
+export interface AppServiceSpec {
+  readonly id: ServiceId;
+  readonly name: string;
+  readonly blurb: string;
+  readonly connectLabel: string;
+  readonly anotherLabel: string;
+  /** Said while this build has no app for the service yet. */
+  readonly pending: string;
+}
+
+export const APP_SERVICES: readonly AppServiceSpec[] = [
+  {
+    id: 'slack',
+    name: 'Slack',
+    blurb: 'Thread titles and their messages, read as you: only channels you are in, never direct messages. One sign-in per workspace.',
+    connectLabel: 'Connect Slack workspace',
+    anotherLabel: 'Connect another workspace',
+    pending: 'The Geld Slack app is not available in this build yet.',
+  },
+];

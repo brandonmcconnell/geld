@@ -1,7 +1,21 @@
+import { browser } from 'wxt/browser';
 import { connectionFrom, resolverFor, type Connection, type ConnectionDraft, type ConnectionUse } from '@geld/review/link-resolvers/index';
 import { splitInlineCode } from '@geld/core';
 import { hasOrigins, readConnections, requestOrigins, watchConnections, writeConnections } from '../../src/lib/connections';
-import { KEY_SERVICES, type ServiceSpec } from '../../src/lib/connection-services';
+import { APP_SERVICES, KEY_SERVICES, type AppServiceSpec, type ServiceSpec } from '../../src/lib/connection-services';
+import { connectSlack, revokeSlack, SLACK_CLIENT_ID, SLACK_ORIGINS, type SlackConnectResult } from '../../src/lib/slack-connect';
+
+/** How each app service signs in: whether this build has its app, the origins to ask for, the flow and its sign-out. */
+interface AppFlow {
+  readonly ready: boolean;
+  readonly origins: readonly string[];
+  readonly connect: (existing: readonly Connection[]) => Promise<SlackConnectResult>;
+  readonly revoke: (connection: Connection) => Promise<void>;
+}
+
+const APP_FLOWS: Partial<Record<Connection['service'], AppFlow>> = {
+  slack: { ready: SLACK_CLIENT_ID !== '', origins: SLACK_ORIGINS, connect: connectSlack, revoke: (connection) => revokeSlack(connection.secret) },
+};
 
 /**
  * The "Connected services" card: every account the reader added, one group per service, each with what it is used
@@ -29,8 +43,6 @@ const USE_COPY: Readonly<Record<keyof ConnectionUse, { readonly label: string; r
 export interface ConnectionsCardOptions {
   /** Whether the Connected services experiment is on, which is when links are read at all. */
   readonly enabled: () => boolean;
-  /** Extra groups for services connected through Geld's own apps (Slack), rendered after the key services. */
-  readonly appGroups?: (connections: readonly Connection[], refresh: () => void) => readonly HTMLElement[];
 }
 
 export function mountConnectionsCard(root: HTMLElement, options: ConnectionsCardOptions): { readonly refresh: () => void } {
@@ -54,7 +66,7 @@ export function mountConnectionsCard(root: HTMLElement, options: ConnectionsCard
     box.addEventListener('change', async () => {
       const checked = box.checked;
       if (use === 'ai' && checked) {
-        const spec = KEY_SERVICES.find((candidate) => candidate.id === connection.service);
+        const spec = [...KEY_SERVICES, ...APP_SERVICES].find((candidate) => candidate.id === connection.service);
         const ok = window.confirm(
           `Use ${spec?.name ?? connection.service} (${connection.label}) for AI context?\n\nWhen you run Triage with AI, the titles, descriptions and messages of the items this account opens are sent to your own AI gateway with the pull request. Nothing is sent until you run it.`,
         );
@@ -77,6 +89,7 @@ export function mountConnectionsCard(root: HTMLElement, options: ConnectionsCard
     remove.type = 'button';
     remove.addEventListener('click', async () => {
       if (!window.confirm(`Remove ${connection.label}? Its key is deleted from this device.`)) return;
+      await APP_FLOWS[connection.service]?.revoke(connection);
       await save(connections.filter((candidate) => candidate.id !== connection.id));
     });
     const row = el('li', 'options__connection', [el('span', 'options__connection-text', [name, meta]), useBox(connection, 'details'), useBox(connection, 'ai'), el('span', 'options__connection-actions', [status, remove])]);
@@ -182,6 +195,40 @@ export function mountConnectionsCard(root: HTMLElement, options: ConnectionsCard
     ]);
   }
 
+  /** A service connected by signing in through Geld's own app for it: one sign-in per workspace. */
+  function appGroup(spec: AppServiceSpec): HTMLElement {
+    const mine = connections.filter((connection) => connection.service === spec.id);
+    const status = el('span', 'geld-status');
+    status.setAttribute('aria-live', 'polite');
+    const flow = APP_FLOWS[spec.id];
+    const ready = flow?.ready === true;
+    const connect = el('button', 'geld-button geld-button--small', [mine.length === 0 ? spec.connectLabel : spec.anotherLabel]);
+    connect.type = 'button';
+    connect.disabled = !ready;
+    if (!ready) connect.title = spec.pending;
+    connect.addEventListener('click', async () => {
+      if (flow === undefined) return;
+      let granted = false;
+      try {
+        granted = await browser.permissions.request({ origins: [...flow.origins] });
+      } catch {
+        granted = false;
+      }
+      if (!granted) return showStatus(status, `Your browser did not allow Geld to reach ${spec.name}`, 'error');
+      connect.disabled = true;
+      showStatus(status, `Finish signing in on ${spec.name}…`, 'neutral');
+      const result = await flow.connect(connections);
+      connect.disabled = false;
+      if (!result.ok) return showStatus(status, result.message, 'error');
+      const known = connections.some((candidate) => candidate.id === result.connection.id);
+      await save(known ? connections.map((candidate) => (candidate.id === result.connection.id ? result.connection : candidate)) : [...connections, result.connection]);
+    });
+    return el('div', 'options__block options__connection-group', [
+      el('div', 'geld-row options__connection-head', [el('div', '', [el('h3', 'options__group-title', [spec.name]), el('p', 'geld-help', rich(ready ? spec.blurb : `${spec.blurb} ${spec.pending}`)), status]), connect]),
+      ...(mine.length === 0 ? [] : [el('ul', 'options__connection-list', mine.map(connectionRow))]),
+    ]);
+  }
+
   function render(): void {
     notice.textContent = options.enabled() ? '' : 'Links are read with these accounts only while the Connected services experiment is on.';
     notice.hidden = options.enabled();
@@ -197,8 +244,8 @@ export function mountConnectionsCard(root: HTMLElement, options: ConnectionsCard
           column('details'),
           column('ai'),
         ]),
+        ...APP_SERVICES.map(appGroup),
         ...KEY_SERVICES.map(group),
-        ...(options.appGroups?.(connections, () => void reload()) ?? []),
       ]),
     );
   }

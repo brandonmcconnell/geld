@@ -11,10 +11,12 @@ import {
   resolveLink,
   resolverFor,
   resolverForLink,
+  SLACK_LIMITED_METHODS,
   type CachedAnswer,
   type Connection,
   type ConnectionHints,
   type ConnectionUse,
+  type FailureReason,
   type FetchLike,
   type LinkDetails,
   type ServiceId,
@@ -88,7 +90,7 @@ export interface ResolveLinksRequest {
 export type LinkAnswerView =
   | { readonly key: string; readonly status: 'ok'; readonly details: LinkDetails; readonly service: ServiceId; readonly connection: string }
   | { readonly key: string; readonly status: 'none' | 'no-access' | 'not-allowed' }
-  | { readonly key: string; readonly status: 'failed'; readonly message: string | null; readonly retryAfterMs: number | null };
+  | { readonly key: string; readonly status: 'failed'; readonly reason: FailureReason; readonly message: string | null; readonly retryAfterMs: number | null };
 
 export interface ResolveLinksResponse {
   readonly answers: readonly LinkAnswerView[];
@@ -135,13 +137,37 @@ const asLink = (wire: WireLink): RelatedLink => ({ ...wire, action: '', appId: n
 
 const CONCURRENCY = 4;
 
+/**
+ * How often one Slack token may call the methods that read messages. Slack allows an app outside its Marketplace about
+ * one such call a minute per workspace; once the Geld app is approved this can come down to about 1.2 s (50 a minute).
+ */
+export const SLACK_READ_INTERVAL_MS = 61_000;
+const lastSlackRead = new Map<string, number>();
+
+/**
+ * `fetch` with Slack's message reads spaced by `SLACK_READ_INTERVAL_MS` per token: one asked too soon answers as Slack
+ * would, a 429 with how long to wait, so the link is asked again then rather than spending the slot Slack counts.
+ */
+export function slackPacedFetch(base: FetchLike, now: () => number = Date.now): FetchLike {
+  return async (input, init) => {
+    const method = /^https:\/\/slack\.com\/api\/([\w.]+)/.exec(input)?.[1];
+    if (method !== undefined && SLACK_LIMITED_METHODS.some((limited) => limited === method)) {
+      const token = new Headers(init?.headers).get('Authorization') ?? '';
+      const wait = (lastSlackRead.get(token) ?? -Infinity) + SLACK_READ_INTERVAL_MS - now();
+      if (wait > 0) return new Response(JSON.stringify({ ok: false, error: 'ratelimited' }), { status: 429, headers: { 'Retry-After': String(Math.ceil(wait / 1000)) } });
+      lastSlackRead.set(token, now());
+    }
+    return base(input, init);
+  };
+}
+
 function viewOf(key: string, answer: CachedAnswer['answer'], connections: readonly Connection[]): LinkAnswerView {
   const { resolution } = answer;
   if (resolution.status === 'ok') {
     const connection = connections.find((candidate) => candidate.id === answer.connectionId);
     return { key, status: 'ok', details: resolution.details, service: connection?.service ?? 'github', connection: connection?.label ?? '' };
   }
-  if (resolution.status === 'failed') return { key, status: 'failed', message: resolution.message, retryAfterMs: resolution.retryAfterMs };
+  if (resolution.status === 'failed') return { key, status: 'failed', reason: resolution.reason, message: resolution.message, retryAfterMs: resolution.retryAfterMs };
   return { key, status: resolution.status === 'unsupported' ? 'none' : 'no-access' };
 }
 
@@ -149,7 +175,7 @@ function viewOf(key: string, answer: CachedAnswer['answer'], connections: readon
  * Answers a page's links from the reader's connections: cached answers while they hold, then each remaining link from
  * its candidates in turn, four at a time. A connection whose origins were never granted is not asked.
  */
-export async function resolveLinksInBackground(request: ResolveLinksRequest, fetchImpl: FetchLike = (input, init) => fetch(input, init)): Promise<ResolveLinksResponse> {
+export async function resolveLinksInBackground(request: ResolveLinksRequest, fetchImpl: FetchLike = slackPacedFetch((input, init) => fetch(input, init))): Promise<ResolveLinksResponse> {
   const connections = await readConnections();
   const allowed = new Map<string, boolean>();
   for (const connection of connections) allowed.set(connection.id, await hasOrigins(connection));

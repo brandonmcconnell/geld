@@ -8717,8 +8717,15 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   font-weight: 400;
 }
 
+dialog.geld-related-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  max-height: min(640px, 85vh);
+}
+
 .geld-related-dialog__content {
-  max-height: 60vh;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   font-size: 14px;
   line-height: 1.5;
