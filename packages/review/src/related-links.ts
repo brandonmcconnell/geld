@@ -1079,27 +1079,28 @@ export function relatedLinkOf(candidate: LinkCandidate, options: RelatedOptions 
  * be anything, the bot's are the ticket's.
  */
 export function relatedLinksFrom(candidates: readonly LinkCandidate[], options: RelatedOptions = {}): RelatedLink[] {
-  const found = new Map<string, { link: RelatedLink; rank: number; titleOfficial: boolean }>();
+  const found = new Map<string, { link: RelatedLink; rank: number; titleOfficial: boolean; byAuthor: boolean }>();
   for (const candidate of candidates) {
     const read = readLink(candidate, options);
     if (read === null) continue;
     const { link, rank, official } = read;
     const known = found.get(link.key);
     if (known === undefined) {
-      found.set(link.key, { link, rank, titleOfficial: official && link.title !== null });
+      found.set(link.key, { link, rank, titleOfficial: official && link.title !== null, byAuthor: !official });
       continue;
     }
     const kept = rank < known.rank ? link : known.link;
     const takesTitle = link.title !== null && (known.link.title === null || (official && !known.titleOfficial));
     const title = takesTitle ? link.title : known.link.title;
-    found.set(link.key, { link: { ...kept, title }, rank: Math.min(rank, known.rank), titleOfficial: takesTitle ? official : known.titleOfficial });
+    found.set(link.key, { link: { ...kept, title }, rank: Math.min(rank, known.rank), titleOfficial: takesTitle ? official : known.titleOfficial, byAuthor: known.byAuthor || !official });
   }
-  // A review named by a pull request (Linear Code links its review of each pull request it knows) is that pull
-  // request's: the one being read says only what it does, another's belongs on that pull request's page.
+  // A review named by a pull request says nothing more when it is the one being read. Linear Code links its review of
+  // every pull request it knows, and one of another, linked by nobody else, belongs on that pull request's page.
   const self = options.self?.toLowerCase() ?? null;
-  const links = [...found.values()].flatMap(({ link }) => {
+  const links = [...found.values()].flatMap(({ link, byAuthor }) => {
     if (link.kind !== 'review' || link.title === null || !/^[\w.-]+\/[\w.-]+#\d+$/.test(link.title)) return [link];
-    return link.title.toLowerCase() === self ? [{ ...link, title: null }] : [];
+    if (link.title.toLowerCase() === self) return [{ ...link, title: null }];
+    return byAuthor ? [link] : [];
   });
   return RELATED_KIND_ORDER.flatMap((kind) => {
     const ofKind = links.filter((link) => link.kind === kind);

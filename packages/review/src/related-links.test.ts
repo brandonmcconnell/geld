@@ -294,6 +294,16 @@ describe('official sources in comments', () => {
     ]);
   });
 
+  it('keeps a review of another pull request the author linked, whatever its words', () => {
+    const options = { repository: 'acme/web', self: 'acme/web#40' };
+    const graphite = { href: 'https://app.graphite.dev/github/pr/acme/api/7', text: 'acme/api#7' };
+    expect(relatedLinksFrom([graphite], options).map((link) => [link.service, link.title])).toEqual([['Graphite', 'acme/api#7']]);
+    const linear = { href: 'https://linear.app/acme/review/feat-api-read-the-nav-from-the-sdk-6f5e4d3c2b1a', text: 'acme/api#7' };
+    expect(relatedLinksFrom([{ ...linear, author: 'linear-code[bot]' }], options)).toEqual([]);
+    expect(relatedLinksFrom([linear, { ...linear, author: 'linear-code[bot]' }], options).map((link) => link.title)).toEqual(['acme/api#7']);
+    expect(relatedLinksFrom([{ ...linear, author: 'linear-code[bot]' }, linear], options).map((link) => link.title)).toEqual(['acme/api#7']);
+  });
+
   it('reads Linear’s review of the pull request, under its linkback', () => {
     const review = fromComment('https://linear.app/alt-design/review/link-the-settings-page-from-alt-tools-in-the-control-panel-nav-169931068019?openGuide=true', 'linear[bot]');
     expect(review).toMatchObject({ kind: 'review', service: 'Linear', noun: 'review', title: null, action: 'Open review in Linear' });
