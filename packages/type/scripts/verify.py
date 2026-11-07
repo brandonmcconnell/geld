@@ -195,13 +195,15 @@ def check_ligatures(path: Path, data: bytes, weight: int) -> None:
         ("=>", ["equal.arrow_start", "greater.arrow_dblhead"], "⇒"),
         ("<->", ["less.arrow_head", "hyphen.arrow_middle", "greater.arrow_head"], None),
         ("==>", ["equal.arrow_start", "equal.arrow_middle", "greater.arrow_dblhead"], None),
+        ("->>", ["hyphen.arrow_start", "greater.arrow_inner", "greater.arrow_head"], None),
+        ("<<-", ["less.arrow_head", "less.arrow_inner", "hyphen.arrow_end"], None),
     ):
         got, width = shape_total(data, weight, text, {"kern": False})
         check(got == names, f"{path.name} at {weight}: {text} shaped {got}")
         if like:
             _, want = shape_total(data, weight, like, {"kern": False})
             check(abs(width - want) <= len(text), f"{path.name} at {weight}: {text} is {width} wide, {like} {want}")
-    for text in ("<=", "<=>", "--->", "->>", ">=", "=>="):
+    for text in ("<=", "<=>", "--->", "-->>", ">>", ">=", "=>="):
         got, _ = shape_total(data, weight, text, {"kern": False})
         check(got == [CHAR_NAMES[c] for c in text], f"{path.name} at {weight}: {text} shaped {got}")
     for features in ({"ss20": True}, {"calt": False}):

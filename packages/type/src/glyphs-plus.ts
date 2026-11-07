@@ -149,18 +149,21 @@ export function sigma(g: DrawContext, w: number): Stroke[] {
  */
 const SPLIT = 5;
 const MIDDLE = 4;
-type Piece = 'start' | 'middle' | 'end' | 'head' | 'tail';
+type Piece = 'start' | 'middle' | 'end' | 'head' | 'tail' | 'inner' | 'innertail';
 export const ARROW_PIECES: { name: string; piece: Piece; double: boolean }[] = [
   { name: 'hyphen.arrow_start', piece: 'start', double: false },
   { name: 'hyphen.arrow_middle', piece: 'middle', double: false },
   { name: 'hyphen.arrow_end', piece: 'end', double: false },
   { name: 'greater.arrow_head', piece: 'head', double: false },
   { name: 'less.arrow_head', piece: 'tail', double: false },
+  { name: 'greater.arrow_inner', piece: 'inner', double: false },
+  { name: 'less.arrow_inner', piece: 'innertail', double: false },
   { name: 'equal.arrow_start', piece: 'start', double: true },
   { name: 'equal.arrow_middle', piece: 'middle', double: true },
   { name: 'equal.arrow_end', piece: 'end', double: true },
   { name: 'greater.arrow_dblhead', piece: 'head', double: true },
   { name: 'less.arrow_dblhead', piece: 'tail', double: true },
+  { name: 'greater.arrow_dblinner', piece: 'inner', double: true },
 ];
 
 function arrowPiece(name: string, piece: Piece, double: boolean): GlyphDef {
@@ -175,6 +178,18 @@ function arrowPiece(name: string, piece: Piece, double: boolean): GlyphDef {
     return { strokes: [...shaft(g, SPLIT - into(g), end), ...strokes.slice(double ? 2 : 1)], length };
   };
   const joint = (g: DrawContext) => -into(g);
+  // The head behind the last one (->>): the shaft runs through its piece, and the tip stands back from the joint by
+  // part of a stem, so the two heads keep their white between them at every weight.
+  // As wide as the head and its set-back, so its arms start a unit before the piece, never past the shaft they sit on.
+  const reachOf = (g: DrawContext) => (double ? spread(g) + HEAD - 1 : HEAD);
+  const innerWidth = (g: DrawContext) => Math.max(MIDDLE, reachOf(g) + 0.75 * g.v - 1);
+  const inner = (g: DrawContext): Stroke[] => {
+    const reach = reachOf(g);
+    const tip = innerWidth(g) - 0.75 * g.v;
+    // The shaft starts behind the arms' ends, inside the piece before, so an arm never ends on the shaft's end.
+    return [...shaft(g, Math.min(-into(g), tip - reach - g.v), innerWidth(g) + into(g)), open(p(tip - reach, MATH_AXIS + reach), p(tip, MATH_AXIS), p(tip - reach, MATH_AXIS - reach))];
+  };
+  const framed = (g: DrawContext) => ({ origin: 0, advance: innerWidth(g) });
   switch (piece) {
     case 'start':
       return { name, lsb: 1, rsb: 0, sidebearings: (g) => ({ rsb: joint(g) }), draw: (g) => shaft(g, 0, SPLIT + into(g)) };
@@ -184,6 +199,10 @@ function arrowPiece(name: string, piece: Piece, double: boolean): GlyphDef {
       return { name, lsb: 0, rsb: 1, sidebearings: (g) => ({ lsb: joint(g) }), draw: (g) => shaft(g, 0, SPLIT + into(g)) };
     case 'head':
       return { name, lsb: 0, rsb: 1, sidebearings: (g) => ({ lsb: joint(g) }), draw: (g) => head(g).strokes };
+    case 'inner':
+      return { name, lsb: 0, rsb: 0, frame: framed, draw: inner };
+    case 'innertail':
+      return { name, lsb: 0, rsb: 0, frame: framed, draw: (g) => rotate(inner(g), 180, innerWidth(g) / 2, MATH_AXIS) };
     case 'tail':
       return {
         name,

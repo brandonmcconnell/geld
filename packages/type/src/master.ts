@@ -135,9 +135,10 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     if (params.snap && !italic) contours = snapJoined(contours, 0.5);
     const box = bounds(contours);
     const zone = spacingZone(def, g);
-    const { lsb, rsb } = zone ? measuredSidebearings(contours, box.minX, box.maxX, zone) : { ...def, ...def.sidebearings?.(g) };
+    const frame = def.frame?.(g);
+    const { lsb, rsb } = frame ? { lsb: box.minX - frame.origin, rsb: 0 } : zone ? measuredSidebearings(contours, box.minX, box.maxX, zone) : { ...def, ...def.sidebearings?.(g) };
     contours = contours.map((c) => translate(c, lsb - box.minX));
-    const advance = lsb + (box.maxX - box.minX) + rsb;
+    const advance = frame ? frame.advance : lsb + (box.maxX - box.minX) + rsb;
     const anchors = baseAnchors(contours, isUpperChar(def.unicode ?? def.stands), params.v, def.name);
     return {
       name: def.name,

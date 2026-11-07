@@ -53,6 +53,8 @@ export interface GlyphDef {
   rsb: number;
   /** Sidebearings that follow the weight, over lsb and rsb: an arrow piece's negative one, its overlap into the next. */
   sidebearings?(g: DrawContext): { lsb?: number; rsb?: number };
+  /** Where the glyph's origin and advance stand in its drawing, instead of measuring them from its ink (an arrow piece whose head overhangs its sides). */
+  frame?(g: DrawContext): { origin: number; advance: number };
   draw(g: DrawContext): Stroke[];
   /** The italic's own form, where the italic is not the roman slanted. */
   italic?(g: DrawContext): Stroke[];
