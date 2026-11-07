@@ -2554,6 +2554,11 @@ html[data-geld-top-card='folded'] [class*='CondensedForYouContainer'] > [class*=
   display: none !important;
 }
 
+/* GitHub's loading row is one line (70px), the row it becomes a title and a line of subtext (72px): the same height, so nothing under it moves. */
+html[data-geld-top-card] [class*='CondensedForYouContainer'] [data-testid='for-you-item-row'][data-item-id='loading'] {
+  min-height: 72px;
+}
+
 /* While GitHub streams the card a `<template>` leads it, so its status row is not `:first-child` and takes a second top border. */
 html[data-geld-top-card] [class*='CondensedForYouContainer'] > template:first-child + section {
   border-top-width: 0 !important;
@@ -2563,8 +2568,11 @@ html[data-geld-top-card] [class*='CondensedForYouContainer'] > template:first-ch
  * GitHub's checks overlay under the top card stays open while the digest folds the card's mini statuses, its list lent
  * to the CI row: the empty overlay, and the list for the moment before it is lent (after Escape reopens it), never show.
  */
-html[data-geld-top-card='folded'] [class*='OverlayPortalRoot']:has([role='group'][aria-label='Checks']) {
+html[data-geld-top-card='folded'] [class*='OverlayPortalRoot']:has([role='group'][aria-label='Checks']),
+html[data-geld-top-card='folded'] div[role='group'][aria-label='Checks'] {
   visibility: hidden !important;
+  /* Primer's overlay sets `visibility: visible` on itself, which beats what it inherits; nothing inside undoes an opacity. */
+  opacity: 0 !important;
   pointer-events: none !important;
 }
 
