@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/brand/geld-logo-white.svg" />
-    <img src="assets/brand/geld-logo.svg" alt="Geld" width="286" height="75" />
+    <img src="assets/brand/geld-logo.svg" alt="Geld" width="285" height="75" />
   </picture>
 </p>
 
