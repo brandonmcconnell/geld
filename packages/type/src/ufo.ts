@@ -129,13 +129,48 @@ function glif(glyph: Master['glyphs'][number]): string {
       ].join('\n'),
     )
     .join('\n');
+  const components = glyph.components
+    .map((c) => `    <component base="${escape(c.glyph)}" xOffset="${toFontUnits(c.dx)}" yOffset="${toFontUnits(c.dy)}"/>`)
+    .join('\n');
+  const outline = [contours, components].filter(Boolean).join('\n');
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     `<glyph name="${escape(glyph.name)}" format="2">`,
     `  <advance width="${toFontUnits(glyph.advance)}"/>`,
     ...(glyph.unicode === undefined ? [] : [`  <unicode hex="${glyph.unicode.toString(16).toUpperCase().padStart(4, '0')}"/>`]),
-    contours ? `  <outline>\n${contours}\n  </outline>` : '  <outline/>',
+    ...glyph.anchors.map((a) => `  <anchor x="${toFontUnits(a.x)}" y="${toFontUnits(a.y)}" name="${a.name}"/>`),
+    outline ? `  <outline>\n${outline}\n  </outline>` : '  <outline/>',
     '</glyph>',
+    '',
+  ].join('\n');
+}
+
+/**
+ * The hand-written part of the features; ufo2ft adds `mark`, `mkmk` and `kern` from anchors and kerning.
+ * `ccmp` puts dotless i and j under marks above, and the flatter `.case` marks over capitals.
+ */
+export function features(master: Master): string {
+  const names = new Set(master.glyphs.map((g) => g.name));
+  const marks = master.glyphs.filter((g) => g.mark && !g.name.endsWith('.case') && names.has(`${g.name}.case`)).map((g) => g.name);
+  const upper = master.glyphs
+    .filter((g) => !g.mark && g.unicode !== undefined && /\p{Lu}/u.test(String.fromCodePoint(g.unicode)))
+    .map((g) => g.name);
+  const above = master.glyphs.filter((g) => g.mark && g.anchors.some((a) => a.name === '_top' || a.name === '_topright')).map((g) => g.name);
+  return [
+    'languagesystem DFLT dflt;',
+    'languagesystem latn dflt;',
+    '',
+    `@MarksAbove = [${above.join(' ')}];`,
+    `@CaseMarks = [${marks.join(' ')}];`,
+    `@CaseMarksCase = [${marks.map((m) => `${m}.case`).join(' ')}];`,
+    `@Uppercase = [${upper.join(' ')}];`,
+    '',
+    'feature ccmp {',
+    "  sub i' @MarksAbove by dotlessi;",
+    "  sub j' @MarksAbove by dotlessj;",
+    "  sub @Uppercase @CaseMarks' by @CaseMarksCase;",
+    "  sub @CaseMarksCase @CaseMarks' by @CaseMarksCase;",
+    '} ccmp;',
     '',
   ].join('\n');
 }
@@ -146,7 +181,14 @@ export function ufoFiles(master: Master): Map<string, string> {
   files.set('metainfo.plist', plist({ creator: 'sh.geld.type', formatVersion: 3 }));
   files.set('fontinfo.plist', plist(fontInfo(master)));
   files.set('layercontents.plist', plist([['public.default', 'glyphs']]));
-  files.set('lib.plist', plist({ 'public.glyphOrder': master.glyphs.map((g) => g.name) }));
+  files.set(
+    'lib.plist',
+    plist({
+      'public.glyphOrder': master.glyphs.map((g) => g.name),
+      'public.openTypeCategories': Object.fromEntries(master.glyphs.map((g) => [g.name, g.mark ? 'mark' : 'base'])),
+    }),
+  );
+  files.set('features.fea', features(master));
   const contents: Record<string, string> = {};
   for (const glyph of master.glyphs) {
     const file = glifFileName(glyph.name);

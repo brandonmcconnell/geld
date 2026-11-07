@@ -54,6 +54,34 @@ def shape_total(data: bytes, weight: int, text: str) -> tuple[list[str], int]:
     return names, sum(pos.x_advance for pos in buf.glyph_positions)
 
 
+def shape(data: bytes, weight: int, text: str):
+    font = hb.Font(hb.Face(data))
+    font.set_variations({"wght": weight})
+    buf = hb.Buffer()
+    buf.add_str(text)
+    buf.guess_segment_properties()
+    hb.shape(font, buf)
+    return [(font.glyph_to_string(i.codepoint), p) for i, p in zip(buf.glyph_infos, buf.glyph_positions)]
+
+
+def check_marks(path: Path, data: bytes, weight: int) -> None:
+    """Accents compose where a precomposed glyph exists, and otherwise attach by anchor: above, below, flatter on capitals, i dotless."""
+    expected = {
+        "a\u0301": ["aacute"],
+        "x\u0301": ["x", "acutecomb"],
+        "X\u0301": ["X", "acutecomb.case"],
+        "i\u0309": ["dotlessi", "hookabovecomb"],
+        "x\u0327": ["x", "cedillacomb"],
+    }
+    for text, names in expected.items():
+        got = shape(data, weight, text)
+        check([n for n, _ in got] == names, f"{path.name} at {weight}: {text!r} shaped {[n for n, _ in got]}")
+    mark = shape(data, weight, "x\u0301")[-1][1]
+    check(mark.y_offset > 500, f"{path.name} at {weight}: acutecomb not raised above x ({mark.y_offset})")
+    below = shape(data, weight, "x\u0327")[-1][1]
+    check(below.y_offset <= 0, f"{path.name} at {weight}: cedilla raised ({below.y_offset})")
+
+
 def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None:
     font = TTFont(path)
     glyf = font["glyf"]
@@ -69,6 +97,7 @@ def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None
         got = advances(instance)
         off = [n for n, a in expected["advances"].items() if abs(got.get(n, -9999) - a) > 1]
         check(not off, f"{path.name} at {weight}: advances differ for {off}")
+        check_marks(path, data, int(weight))
         names, total = shape_total(data, int(weight), SAMPLE)
         check(names == list(SAMPLE), f"{path.name} at {weight}: shaped {names}")
         want = sum(expected["advances"][c] for c in SAMPLE)

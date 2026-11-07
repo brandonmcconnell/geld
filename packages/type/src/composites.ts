@@ -1,0 +1,133 @@
+import { FRACTIONS } from './glyphs-figures';
+
+/** A precomposed letter: a base and the marks stacked on it, each attaching to the anchor its mark names. */
+export interface AccentedDef {
+  name: string;
+  unicode: number;
+  base: string;
+  marks: string[];
+}
+
+/** A glyph made of other glyphs set side by side or offset, in grid units (Ĳ, ŀ, ŉ, the spacing accents). */
+export interface PlacedDef {
+  name: string;
+  unicode: number;
+  parts: { glyph: string; dx?: number; dy?: number; after?: boolean }[];
+  /** Advance in grid units; when absent, the sum of the parts set `after` one another. */
+  advance?: number;
+}
+
+const MARK_SUFFIX: Record<number, { mark: string; suffix: string }> = {
+  0x300: { mark: 'gravecomb', suffix: 'grave' },
+  0x301: { mark: 'acutecomb', suffix: 'acute' },
+  0x302: { mark: 'circumflexcomb', suffix: 'circumflex' },
+  0x303: { mark: 'tildecomb', suffix: 'tilde' },
+  0x304: { mark: 'macroncomb', suffix: 'macron' },
+  0x306: { mark: 'brevecomb', suffix: 'breve' },
+  0x307: { mark: 'dotaccentcomb', suffix: 'dotaccent' },
+  0x308: { mark: 'dieresiscomb', suffix: 'dieresis' },
+  0x309: { mark: 'hookabovecomb', suffix: 'hookabove' },
+  0x30a: { mark: 'ringcomb', suffix: 'ring' },
+  0x30b: { mark: 'hungarumlautcomb', suffix: 'hungarumlaut' },
+  0x30c: { mark: 'caroncomb', suffix: 'caron' },
+  0x323: { mark: 'dotbelowcomb', suffix: 'dotbelow' },
+  0x326: { mark: 'commaaccentcomb', suffix: 'commaaccent' },
+  0x327: { mark: 'cedillacomb', suffix: 'cedilla' },
+  0x328: { mark: 'ogonekcomb', suffix: 'ogonek' },
+};
+
+/** Latvian writes a comma below where Unicode decomposes to a cedilla, and ģ turns it above. */
+const LATVIAN_COMMA = new Set([0x122, 0x136, 0x137, 0x13b, 0x13c, 0x145, 0x146, 0x156, 0x157]);
+const COMMA_ABOVE = 0x123;
+/** ď ľ Ľ ť take the caron as a vertical stroke beside a tall stem. */
+const VERTICAL_CARON = new Set([0x10f, 0x13d, 0x13e, 0x165]);
+
+const isUpper = (c: string) => c !== c.toLowerCase() && c === c.toUpperCase();
+
+/**
+ * Precomposed letters in the given ranges, from Unicode's own decompositions, so every one of
+ * them is a base glyph plus mark glyphs. Code points with no decomposition, or whose base is not
+ * drawn yet, are left to be drawn and reported by the coverage test.
+ */
+export function accentedFromUnicode(ranges: [number, number][], names: Map<number, string>, caseMarks: Set<string>): AccentedDef[] {
+  const out: AccentedDef[] = [];
+  for (const [from, to] of ranges)
+    for (let cp = from; cp <= to; cp++) {
+      if (names.has(cp)) continue;
+      const [baseChar, ...markChars] = [...String.fromCodePoint(cp).normalize('NFD')];
+      if (!baseChar || markChars.length === 0) continue;
+      const baseCp = baseChar.codePointAt(0)!;
+      const baseName = names.get(baseCp);
+      if (!baseName) continue;
+      const upper = isUpper(baseChar);
+      let suffix = '';
+      const marks: string[] = [];
+      let top = false;
+      for (const m of markChars) {
+        const mcp = m.codePointAt(0)!;
+        const known = MARK_SUFFIX[mcp];
+        if (!known) {
+          marks.length = 0;
+          break;
+        }
+        let mark = known.mark;
+        let name = known.suffix;
+        if (mcp === 0x327 && LATVIAN_COMMA.has(cp)) {
+          mark = 'commaaccentcomb';
+          name = 'commaaccent';
+        }
+        if (mcp === 0x327 && cp === COMMA_ABOVE) {
+          mark = 'commaturnedabovecomb';
+          name = 'commaaccent';
+        }
+        if (mcp === 0x30c && VERTICAL_CARON.has(cp)) mark = 'caronvertcomb';
+        if (upper && caseMarks.has(mark)) mark = `${mark}.case`;
+        if (!mark.startsWith('dotbelow') && !mark.startsWith('commaaccent') && !mark.startsWith('cedilla') && !mark.startsWith('ogonek'))
+          top = true;
+        marks.push(mark);
+        suffix += name;
+      }
+      if (marks.length === 0) continue;
+      const base = top && baseName === 'i' ? 'dotlessi' : top && baseName === 'j' ? 'dotlessj' : baseName;
+      out.push({ name: `${baseName}${suffix}`, unicode: cp, base, marks });
+    }
+  return out;
+}
+
+/** Glyphs made of glyphs placed by hand: the Dutch IJ, the Catalan middle dot, ŉ, Đ, the spacing accents. */
+export const PLACED: PlacedDef[] = [
+  { name: 'IJ', unicode: 0x132, parts: [{ glyph: 'I', after: true }, { glyph: 'J', after: true }] },
+  { name: 'ij', unicode: 0x133, parts: [{ glyph: 'i', after: true }, { glyph: 'j', after: true, dx: -0.75 }] },
+  { name: 'napostrophe', unicode: 0x149, parts: [{ glyph: 'quoteright', after: true, dx: -0.5 }, { glyph: 'n', after: true, dx: -0.5 }] },
+  { name: 'Ldot', unicode: 0x13f, parts: [{ glyph: 'L' }, { glyph: 'periodcentered', dx: 5, dy: 2 }] },
+  { name: 'ldot', unicode: 0x140, parts: [{ glyph: 'l', after: true }, { glyph: 'periodcentered', after: true, dx: -0.5, dy: 2 }] },
+  { name: 'Dcroat', unicode: 0x110, parts: [{ glyph: 'Eth', after: true }] },
+  { name: 'uni00AD', unicode: 0xad, parts: [{ glyph: 'hyphen', after: true }] },
+  ...FRACTIONS.map(([name, unicode, numerator, denominator]) => ({
+    name,
+    unicode,
+    parts: [{ glyph: `${numerator}superior`, after: true }, { glyph: 'fraction', after: true }, { glyph: `${denominator}.dnom`, after: true }],
+  })),
+];
+
+/** Spacing accents: the combining mark, centred on a five-unit advance over the x-height. */
+export const SPACING_ACCENTS: { name: string; unicode: number; mark: string; below?: boolean }[] = [
+  { name: 'grave', unicode: 0x60, mark: 'gravecomb' },
+  { name: 'acute', unicode: 0xb4, mark: 'acutecomb' },
+  { name: 'dieresis', unicode: 0xa8, mark: 'dieresiscomb' },
+  { name: 'macron', unicode: 0xaf, mark: 'macroncomb' },
+  { name: 'cedilla', unicode: 0xb8, mark: 'cedillacomb', below: true },
+  { name: 'circumflex', unicode: 0x2c6, mark: 'circumflexcomb' },
+  { name: 'caron', unicode: 0x2c7, mark: 'caroncomb' },
+  { name: 'breve', unicode: 0x2d8, mark: 'brevecomb' },
+  { name: 'dotaccent', unicode: 0x2d9, mark: 'dotaccentcomb' },
+  { name: 'ring', unicode: 0x2da, mark: 'ringcomb' },
+  { name: 'ogonek', unicode: 0x2db, mark: 'ogonekcomb', below: true },
+  { name: 'tilde', unicode: 0x2dc, mark: 'tildecomb' },
+  { name: 'hungarumlaut', unicode: 0x2dd, mark: 'hungarumlautcomb' },
+];
+
+export const LATIN_RANGES: [number, number][] = [
+  [0xc0, 0xff],
+  [0x100, 0x17f],
+];
