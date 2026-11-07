@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { BotComment, BotVerdictRecord, RawCheckRun } from '@geld/review';
 import type { BotRequestClick, BotRequestInput } from './bot-requests';
-import { botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, REQUEST_ACK_SLOW_MS, withBotRequests } from './bot-requests';
+import { ACK_GRACE_MS } from '@geld/review';
+import { awaitingReaction, botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, REQUEST_ACK_SLOW_MS, withBotRequests } from './bot-requests';
 
 const T0 = Date.parse('2026-11-04T10:00:00Z');
 const iso = (ms: number): string => new Date(ms).toISOString();
@@ -96,6 +97,18 @@ describe('botRequestStates', () => {
   it('does not read a bot quoting its own command as a request', () => {
     const own: BotComment = { author: 'greptile-apps[bot]', body: 'Comment @greptileai to re-run', anchor: 'issuecomment-3', createdAt: iso(T0) };
     expect(botRequestStates(input({ comments: [own], now: T0 + 1_000 })).size).toBe(0);
+  });
+});
+
+describe('awaitingReaction', () => {
+  it('lists the triggers a reacting bot has not reacted to yet, with when its grace ends', () => {
+    const waiting = trigger(T0, '@greptileai', undefined, 'issuecomment-1');
+    const reacted = trigger(T0, '@greptileai', ['greptile-apps[bot]'], 'issuecomment-2');
+    expect(awaitingReaction([waiting, reacted], [])).toEqual([{ anchor: 'issuecomment-1', at: T0, until: T0 + ACK_GRACE_MS }]);
+  });
+
+  it('leaves out bots that start silently and requests the Geld workflow answers', () => {
+    expect(awaitingReaction([trigger(T0, 'bugbot run'), trigger(T0, '/geld run greptile', undefined, 'issuecomment-3')], [])).toEqual([]);
   });
 });
 
