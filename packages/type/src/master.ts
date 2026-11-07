@@ -6,6 +6,7 @@ import { GLYPHS, SPACES } from './glyphs';
 import { FIGURE_NAMES } from './glyphs-figures';
 import { CYRILLIC_LOCL_ACCENTED } from './glyphs-cyrillic';
 import { accentedSmallCaps, SMALL_CAP_EXTRA_ACCENTED, SMALL_CAP_PLACED } from './glyphs-smallcaps';
+import { ALTERNATES, alternateName } from './alternates';
 import { CODE_LIGATURES, codePieceName } from './code-ligatures';
 import { LOCKUP, lockupGlyph } from './lockup';
 import { DARK_INSET_RATIO, ITALIC_SLOPE, METRICS, toFontUnits, UNIT, type Weight, weightParams } from './grid';
@@ -176,6 +177,10 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   glyphs.forEach((gl, i) => {
     if (GLYPHS[i]?.tabular) centre(gl, tabularAdvance);
   });
+  // An alternate that would draw as this style's default is only in the other style (the italic's l is tailed already).
+  const elsewhere = new Set(ALTERNATES.filter((alt) => alt.only && alt.only !== style).map(alternateName));
+  for (let i = glyphs.length - 1; i >= 0; i--) if (elsewhere.has(glyphs[i]!.name)) glyphs.splice(i, 1);
+
   // Where each ligature's letters have their crossbars, read before the slant and the dark inset so the bridge between them takes both.
   const bars = new Map(
     TEXT_LIGATURES.flatMap((parts) => parts).map((name) => {
@@ -314,7 +319,12 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
 
   const accented = accentedFromUnicode(LATIN_RANGES, names, caseMarks);
   const smallCapAccents = [...accentedSmallCaps(accented, (name) => byName.has(name)), ...SMALL_CAP_EXTRA_ACCENTED];
-  for (const def of [...accented, ...CYRILLIC_LOCL_ACCENTED, ...smallCapAccents]) {
+  // Accented letters follow their base's alternates: á.ss01 is á on the single-storey a.
+  const alternatesOf = (name: string) => ALTERNATES.filter((alt) => alt.glyph === name && byName.has(alternateName(alt)));
+  const accentedAlternates = accented.flatMap((def) =>
+    alternatesOf(def.base).map((alt) => ({ ...def, name: `${def.name}.${alternateName(alt).split('.')[1]}`, base: alternateName(alt), unicode: undefined })),
+  );
+  for (const def of [...accented, ...CYRILLIC_LOCL_ACCENTED, ...smallCapAccents, ...accentedAlternates]) {
     const base = byName.get(def.base);
     if (!base) continue;
     const components: Component[] = [{ glyph: def.base, dx: 0, dy: 0 }];

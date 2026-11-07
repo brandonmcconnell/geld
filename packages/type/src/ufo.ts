@@ -3,6 +3,7 @@ import { LOCL, type LoclLanguage } from './glyphs-cyrillic';
 import { FIGURE_NAMES, TABULAR_SIGNS } from './glyphs-figures';
 import { VIETNAMESE_PAIRS } from './marks';
 import type { Kerning } from './kerning';
+import { type Alternate, ALTERNATES, alternateName, STYLISTIC_SETS } from './alternates';
 import { CODE_GROUPS, CODE_LIGATURES, CODE_OPERATORS, type CodeGroup, codePieceName } from './code-ligatures';
 import { LOCKUP } from './lockup';
 import { ARCH_LIGATURES, FAMILY_NAMES, type Family, type Master, type Style, TEXT_LIGATURES } from './master';
@@ -230,6 +231,7 @@ export function features(master: Master): string {
     .filter((g) => !g.mark && g.unicode !== undefined && /\p{Lu}/u.test(String.fromCodePoint(g.unicode)))
     .map((g) => g.name);
   const above = master.glyphs.filter((g) => g.mark && g.anchors.some((a) => a.name === '_top' || a.name === '_topright')).map((g) => g.name);
+  const alternates = alternateFeatures(master, names);
   return [
     'languagesystem DFLT dflt;',
     'languagesystem latn dflt;',
@@ -244,6 +246,7 @@ export function features(master: Master): string {
     `@CaseMarksCase = [${marks.map((m) => `${m}.case`).join(' ')}];`,
     `@Uppercase = [${upper.join(' ')}];`,
     '',
+    ...alternates.aalt,
     'feature ccmp {',
     "  sub i' @MarksAbove by dotlessi;",
     "  sub j' @MarksAbove by dotlessj;",
@@ -278,6 +281,7 @@ export function features(master: Master): string {
     ...arrowFeatures(names),
     ...codeLigatureFeatures(master, names),
     ...caseFeatures(master, names),
+    ...alternates.rest,
     // Only as a word of its own: Geldern, Geldbörse and Gelder keep their letters.
     ...(names.has(LOCKUP.name)
       ? [
@@ -405,6 +409,35 @@ function caseFeatures(master: Master, names: Set<string>): string[] {
     ...forms.map((n) => `  sub ${n} by ${n}.case;`),
     '} case;',
   ];
+}
+
+/**
+ * The alternates' features (alternates.ts): each stylistic set and character variant with its name, `salt` with every
+ * glyph's first alternate, and `aalt` (first, as the spec asks) with all of them. Accented letters go with their base.
+ */
+function alternateFeatures(master: Master, names: Set<string>): { aalt: string[]; rest: string[] } {
+  const owned = new Map<Alternate, [string, string][]>();
+  for (const alt of ALTERNATES) {
+    const name = alternateName(alt);
+    if (!names.has(name)) continue;
+    const suffix = name.slice(alt.glyph.length);
+    const accented = master.glyphs
+      .filter((g) => g.name.endsWith(suffix) && g.components[0]?.glyph === name && names.has(g.name.slice(0, -suffix.length)))
+      .map((g) => [g.name.slice(0, -suffix.length), g.name] as [string, string]);
+    owned.set(alt, [[alt.glyph, name], ...accented]);
+  }
+  if (!owned.size) return { aalt: [], rest: [] };
+  const subs = (pairs: [string, string][]) => pairs.map(([a, b]) => `  sub ${a} by ${b};`);
+  const rest: string[] = [];
+  for (const [tag, label] of Object.entries(STYLISTIC_SETS)) {
+    const pairs = [...owned].filter(([alt]) => alt.set === tag).flatMap(([, ps]) => ps);
+    if (pairs.length) rest.push(`feature ${tag} {`, `  featureNames { name "${label}"; };`, ...subs(pairs), `} ${tag};`);
+  }
+  for (const [alt, pairs] of owned) rest.push(`feature ${alt.cv} {`, `  cvParameters { FeatUILabelNameID { name "${alt.label}"; }; };`, ...subs(pairs), `} ${alt.cv};`);
+  const all = new Map<string, string[]>();
+  for (const pairs of owned.values()) for (const [a, b] of pairs) all.set(a, [...(all.get(a) ?? []), b]);
+  rest.push('feature salt {', ...[...all].map(([a, bs]) => `  sub ${a} by ${bs[0]};`), '} salt;');
+  return { aalt: ['feature aalt {', ...[...all].map(([a, bs]) => `  sub ${a} from [${bs.join(' ')}];`), '} aalt;', ''], rest };
 }
 
 /** Every file of one master's UFO, keyed by its path inside the .ufo folder. */
