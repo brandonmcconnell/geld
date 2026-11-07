@@ -9595,6 +9595,16 @@ div:has(> [data-geld-overview-merge]) {
   margin: 0;
 }
 
+/* GitHub's `.BtnGroup-item` hover rules move the divider from the caret's left to the button's right, which in this flex
+   row widened the button by a pixel under the pointer: the divider is the button's right border, at rest and on hover. */
+.geld-overview-merge.BtnGroup .geld-overview-merge__main.BtnGroup-item {
+  border-right-width: 1px;
+}
+
+.geld-overview-merge.BtnGroup .geld-overview-merge__caret.BtnGroup-item {
+  border-left-width: 0;
+}
+
 .geld-overview-merge__button--danger.btn {
   border-color: var(--button-danger-borderColor-hover, var(--borderColor-danger-emphasis, #cf222e));
   background: var(--button-danger-bgColor-hover, var(--bgColor-danger-emphasis, #cf222e));

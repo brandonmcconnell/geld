@@ -929,6 +929,10 @@ async function loadMergeActions(state: Mounted): Promise<MergeActions | null> {
   const repo = repoOf(pullPath);
   const actions = await readMergeActions(pullPath, repo === null ? 'SQUASH' : methodHint(repo), (partial) => {
     if (!current()) return;
+    // A refresh (each minute, on return, after the state label changed) already holds a complete reading of this pull
+    // request: the page's box alone, before the stack's other members are read, would take away the Overview's merge
+    // button and the menu's stack choices for the moment until they are, and put them back.
+    if (state.mergeActions !== null && state.mergeActions.partial !== true) return;
     state.mergeActions = partial;
     showStatus(state);
     refreshOpenMenu(state);
