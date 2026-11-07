@@ -609,6 +609,52 @@ describe('the tab bar button', () => {
     expect(document.querySelector<HTMLElement>('.geld-quick-review__bypass')?.hidden).toBe(false);
   });
 
+  it('opens a stack’s menu on the page’s own merge box, the choices that take other members joining as their boxes land', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    let release: () => void = () => undefined;
+    const others = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = pathOf(input);
+        if (url.endsWith('/page_data/stacks')) return new Response(JSON.stringify({ stack: { pulls: [9, 7].map((number) => ({ number, title: `PR ${number}`, state: 'OPEN', url: `/acme/widgets/pull/${number}` })) } }), { status: 200 });
+        if (url.includes('/page_data/merge_box')) {
+          if (url.includes('/pull/9/')) await others;
+          const payload: unknown = JSON.parse(mergeBox('BLOCKED', true, { convert: true }));
+          const requirements: unknown = typeof payload === 'object' && payload !== null ? Reflect.get(payload, 'mergeRequirements') : null;
+          if (typeof requirements !== 'object' || requirements === null) throw new Error('fixture');
+          Reflect.set(requirements, 'conditions', [{ type: 'STACK', result: 'PASSED', isStacked: true }]);
+          return new Response(JSON.stringify(payload), { status: 200 });
+        }
+        return new Response('{}', { status: 404 });
+      }),
+    );
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 6; i += 1) await settle();
+    pill()?.click();
+    expect(menuRows()).toEqual([
+      ['draft', 'Convert to draft'],
+      ['closed', 'Close'],
+      ['', 'Loading stack choices…'],
+    ]);
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="close"]')?.click();
+    expect([...document.querySelectorAll('.geld-quick-review__status-submenu .geld-quick-review__menu-label')].map((label) => label.textContent)).toEqual(['This pull request']);
+    release();
+    for (let i = 0; i < 6; i += 1) await settle();
+    // The open menu takes the full reading in place.
+    expect(document.querySelector('.geld-quick-review__status-menu')).not.toBeNull();
+    expect(menuRows()).toEqual([
+      ['draft', 'Convert to draft'],
+      ['closed', 'Close'],
+    ]);
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="close"]')?.click();
+    expect([...document.querySelectorAll('.geld-quick-review__status-submenu .geld-quick-review__menu-label')].map((label) => label.textContent)).toEqual(['This pull request', 'Entire stack']);
+  });
+
   it('groups a stack’s menu by type, each opening its choices beside it, and confirms one that changes several', async () => {
     window.localStorage.clear();
     resetStatusHints();
