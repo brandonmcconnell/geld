@@ -1,5 +1,6 @@
 /** Writes the contours (components drawn in) of every glyph with outlines of its own, for the given masters, as JSON for scripts/joins.py. */
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import type { Weight } from '../src/grid';
 import { buildMaster, type Family, flatten, type Style } from '../src/master';
 
@@ -17,4 +18,5 @@ for (const spec of specs) {
   }
   result[spec] = glyphs;
 }
+mkdirSync(dirname(out!), { recursive: true });
 writeFileSync(out!, JSON.stringify(result));
