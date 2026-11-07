@@ -8795,3 +8795,177 @@ dialog.geld-flow .geld-flow__actions .Overlay-closeButton {
 .geld-flow__legend-btn[aria-expanded='true'] .geld-flow__chevron {
   transform: none;
 }
+
+.markdown-body img[data-geld-lightbox-image] {
+  cursor: zoom-in;
+}
+
+dialog.geld-lightbox {
+  position: fixed;
+  inset: 0;
+  width: fit-content;
+  height: fit-content;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 128px);
+  margin: auto;
+  padding: 0;
+  overflow: visible;
+  color: #fff;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  font: 14px/1.5 var(--fontStack-system, sans-serif);
+}
+
+.geld-lightbox::backdrop {
+  background: rgb(0 0 0 / 65%);
+  backdrop-filter: blur(2px);
+}
+
+.geld-lightbox__header,
+.geld-lightbox__footer {
+  position: absolute;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: min(300px, calc(100vw - 32px));
+  transform: translateX(-50%);
+}
+
+.geld-lightbox__header {
+  bottom: calc(100% + 8px);
+  justify-content: space-between;
+}
+
+.geld-lightbox__brand {
+  display: inline-flex;
+  width: 54px;
+}
+
+.geld-lightbox__brand svg {
+  width: 100%;
+  height: auto;
+}
+
+.geld-lightbox__close,
+.geld-lightbox__tool {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.geld-lightbox__close svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.geld-lightbox__close:hover,
+.geld-lightbox__tool:not(:disabled):hover,
+.geld-lightbox__original:hover {
+  color: #fff;
+  background: #ffffff1a;
+}
+
+.geld-lightbox__stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 4px;
+  touch-action: none;
+}
+
+.geld-lightbox__image {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: contain;
+  transform-origin: center;
+  user-select: none;
+  cursor: zoom-in;
+}
+
+.geld-lightbox__stage[data-zoomed] .geld-lightbox__image {
+  cursor: grab;
+}
+
+.geld-lightbox__stage[data-dragging] .geld-lightbox__image {
+  cursor: grabbing;
+}
+
+.geld-lightbox__status {
+  grid-area: 1 / 1;
+  width: min(320px, calc(100vw - 64px));
+  margin: 0;
+  padding: 16px;
+  background: #161b22;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.geld-lightbox [hidden] {
+  display: none;
+}
+
+.geld-lightbox__footer {
+  top: calc(100% + 8px);
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.geld-lightbox__zoom {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 2px;
+}
+
+.geld-lightbox__tool:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.geld-lightbox__reset {
+  width: 52px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.geld-lightbox__original {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  color: #ffffffb3;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.geld-lightbox__original:hover {
+  text-decoration: none;
+}
+
+.geld-lightbox :focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}

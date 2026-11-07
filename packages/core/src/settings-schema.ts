@@ -252,6 +252,14 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       },
       {
         kind: 'toggle',
+        key: 'attachmentLightbox',
+        label: 'Attachment lightbox',
+        description: 'Preview image attachments in issues and pull requests with zoom and pan.',
+        popup: false,
+        surfaces: ['extension'],
+      },
+      {
+        kind: 'toggle',
         key: 'expandedByDefault',
         label: 'Show hidden files expanded',
         description:

@@ -71,6 +71,7 @@ const BOOLEAN_KEYS = [
   'quickReview',
   'holdToMerge',
   'collapseDescription',
+  'attachmentLightbox',
   'aiEnabled',
   'aiJev',
 ] as const;
