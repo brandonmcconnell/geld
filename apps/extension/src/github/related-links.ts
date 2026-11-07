@@ -4,6 +4,7 @@ import type { LinkCandidate, RelatedKind, RelatedLink } from '@geld/review/relat
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { pageFetch } from './page-fetch';
 import { descriptionBody } from './review/description';
+import { appLoginOf } from './review/login';
 import { refDetails } from './review/refs';
 import type { RefState } from './review/refs';
 import {
@@ -70,21 +71,34 @@ function descriptionLinks(body: ParentNode & Node): LinkCandidate[] {
   return isDependencyUpdate(body.textContent ?? '') ? [] : linksIn(body);
 }
 
+const COMMENT_BODY = '.markdown-body, .comment-body';
+
 /**
- * Linear's linkback comment ("<!-- linear-linkback -->", the issue's key linked) names the issue when the description
- * does not. Its author link leads to `/apps/linear` in either conversation; the comment is the nearest box above it
- * that holds rendered Markdown.
+ * The comments Apps wrote, each with its author (`<slug>[bot]` from its `/apps/<slug>` author link, in either
+ * conversation), for the registry to take only what an App says of its own service: Linear's linkback naming the
+ * issue, Atlassian's Jira bot, an agent's comment linking its session. The comment is the nearest box above the
+ * author link that holds one body; a box holding several is not one comment, and is passed over.
  */
-function linearLinkbacks(): LinkCandidate[] {
-  return [...document.querySelectorAll('a[href$="/apps/linear"]')].flatMap((author) => {
-    if (author.closest(`.markdown-body, [${OWN_UI_ATTRIBUTE}]`) !== null) return [];
-    let box: Element | null = author.parentElement;
+function appComments(description: Element | null): LinkCandidate[] {
+  const seen = new Set<Element>();
+  const found: LinkCandidate[] = [];
+  for (const link of document.querySelectorAll('a[href*="/apps/"]')) {
+    const author = appLoginOf(link.getAttribute('href') ?? '');
+    if (author === null || link.closest(`${COMMENT_BODY}, [${OWN_UI_ATTRIBUTE}]`) !== null) continue;
+    let box: Element | null = link.parentElement;
     for (let depth = 0; box !== null && depth < 8; depth++, box = box.parentElement) {
-      const body = box.querySelector('.markdown-body, .comment-body');
-      if (body !== null) return linksIn(body);
+      const bodies = box.querySelectorAll(COMMENT_BODY);
+      if (bodies.length === 0) continue;
+      const body = bodies[0];
+      const single = [...bodies].every((other) => other === body || body?.contains(other) === true);
+      if (single && body !== undefined && body !== description && !seen.has(body)) {
+        seen.add(body);
+        found.push(...linksIn(body).map((candidate) => ({ ...candidate, author })));
+      }
+      break;
     }
-    return [];
-  });
+  }
+  return found;
 }
 
 /** How long a fetched description stands before it is read again: an edit shows within this. */
@@ -136,10 +150,11 @@ function fetchedDescription(onChange: () => void): Document | null {
 
 /** Every related link the page holds, in the registry's order. Exported for its test. */
 export function relatedLinksOnPage(onChange: () => void = () => undefined): RelatedLink[] {
-  const body = descriptionBody() ?? fetchedDescription(onChange)?.body ?? null;
+  const inPage = descriptionBody();
+  const body = inPage ?? fetchedDescription(onChange)?.body ?? null;
   const pull = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(location.pathname);
   const repository = pull === null ? null : `${pull[1] ?? ''}/${pull[2] ?? ''}`;
-  return relatedLinksFrom([...(body === null ? [] : descriptionLinks(body)), ...linearLinkbacks()], {
+  return relatedLinksFrom([...(body === null ? [] : descriptionLinks(body)), ...appComments(inPage)], {
     githubHosts: [location.hostname],
     repository,
     self: pull === null ? null : `${repository ?? ''}#${pull[3] ?? ''}`,
