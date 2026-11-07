@@ -13,11 +13,13 @@ import type { DigestView } from '@geld/core';
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, RawCheckRun, Report, ReportPart, ReviewItem } from '@geld/review';
 import { botAppAvatar, botById, previewHostById, reportsHealth } from '@geld/review';
 import type { AgentNote } from './agent-notes';
+import type { Deployment, DeploymentEntry, DeploymentState, PreviewLinks } from './deployments';
+import { deploymentHref, deploymentMark, environmentLabel } from './deployments';
 import { noteTone } from './note-tone';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
-import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checkStateOfRun, checksHealth, checksRowTone, checksSummary, checksTotal, pushRowTone, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
 import type { CheckCounts, CheckState, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -390,6 +392,12 @@ export interface PanelModel {
   readonly reports: { readonly latest: readonly Report[]; readonly archived: readonly Report[] };
   /** Whether the archived previews are unfolded inside the Previews row. */
   readonly archivedPreviewsOpen: boolean;
+  /** GitHub's deployment events, one entry per environment, with what the host's comment adds. */
+  readonly deployments: readonly DeploymentEntry[];
+  /** Where a preview's pill goes and the last good build while its latest deployment is not one (`previewLinks`). */
+  readonly previewLinks: (entry: Preview) => PreviewLinks;
+  /** The pull request's author: a deployment they made goes unnamed, anyone else's says who. */
+  readonly prAuthor: string | null;
   /** How the main list is arranged (`reviewGrouping`). */
   readonly grouping: 'type' | 'batch';
   /** How pull requests look (`digestViewOf`): the View menu's current choice. */
@@ -532,6 +540,8 @@ export const CHECKS_KEY = 'checks';
 export const REVIEWS_KEY = 'reviews';
 /** Row key for the Previews row; its slot lists every preview deployment. */
 export const PREVIEWS_KEY = 'previews';
+/** Row key for the Deployments row; its slot lists each environment's latest deployment. */
+export const DEPLOYMENTS_KEY = 'deployments';
 /** Row key for the Reports row; its slot lists the reporter bots' latest reports, each opening in place. */
 export const REPORTS_KEY = 'reports';
 /** Row key for the Review bots row; its slot lists each bot's latest run summary, each opening in place. */
@@ -1040,7 +1050,7 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
     mainClickToggles(main, toggle);
     const health = previewHealth(batch.previews);
     const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--status ${PANEL_CLASS}__row--previews`, 'data-health': health }, [
-      createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_ROCKET)]),
+      createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_BROWSER)]),
       rowLabel('Previews', 'Previews'),
       main,
       createElement('span', { class: `${PANEL_CLASS}__right` }, [chevron(open, toggle)]),
@@ -1048,7 +1058,7 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
     if (open) row.setAttribute('data-open', '');
     rowClickToggles(row, toggle);
     list.append(row);
-    if (open) for (const entry of batch.previews) list.append(previewLine(entry, model));
+    if (open) for (const entry of batch.previews) list.append(previewLine(entry, model, null).row);
   }
   const section = (label: string, items: readonly ReviewItem[]): void => {
     if (items.length === 0) return;
@@ -1975,7 +1985,7 @@ function toneAttr(tone: Tone | null): Readonly<Record<string, string>> {
 /**
  * The status rows, in the order a reader triages a pull request: who has
  * reviewed (people), what the review bots said, what the reporters found,
- * whether CI passed, and where the previews are.
+ * whether CI passed, where the previews are and what was deployed.
  */
 function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
   const rows = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--status`, role: 'list' });
@@ -2087,6 +2097,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     if (open) rows.append(slotRow(CHECKS_KEY, null, 'checks'));
   }
   if (model.previews.latest.length > 0) rows.append(...previewsRow(model, handlers));
+  if (model.deployments.length > 0) rows.append(...deploymentsRow(model, handlers));
   return rows.childElementCount === 0 ? null : rows;
 }
 
@@ -2119,10 +2130,11 @@ function previewGlyph(status: Preview['status']): HTMLElement {
 }
 
 /**
- * One preview as a pill: the host's mark, the project, its state glyph (as the bots' pills wear their light); a
- * link to the preview, falling back to its build logs when no preview is available.
+ * One preview as a pill: the host's mark, the project, its state glyph (as the bots' pills wear their light). It
+ * opens the site as near as there is one: the preview, else the last good build while the latest failed, else the
+ * host's page for the deployment, else the run (`previewLinks`).
  */
-export function previewPill(entry: Preview, model: Pick<PanelModel, 'avatarForAnchor'>): HTMLElement {
+export function previewPill(entry: Preview, model: Pick<PanelModel, 'avatarForAnchor' | 'previewLinks'>): HTMLElement {
   const host = previewHostById(entry.host);
   const label = `${host?.title ?? 'Preview'} · ${entry.project}${PREVIEW_STATUS_LABEL[entry.status] === '' ? '' : ` · ${PREVIEW_STATUS_LABEL[entry.status]}`}${entry.reason === undefined ? '' : ` · ${entry.reason}`}`;
   const children: Node[] = [];
@@ -2131,15 +2143,21 @@ export function previewPill(entry: Preview, model: Pick<PanelModel, 'avatarForAn
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name ${PANEL_CLASS}__deploy-name` }, [entry.project]));
   children.push(previewGlyph(entry.status));
   const attrs = { class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__deploy`, 'data-status': entry.status, 'aria-label': label, title: label };
-  const href = entry.url ?? entry.inspectUrl;
+  const { href } = model.previewLinks(entry);
   if (href === null) return createElement('span', attrs, children);
-  return createElement('a', { ...attrs, href, target: '_blank', rel: 'noreferrer' }, children);
+  return createElement('a', { ...attrs, href, ...linkTargetFor(href) }, children);
+}
+
+/** The key a preview's line opens under: one comment can hold several projects (Vercel's table), so the anchor alone is not enough. */
+export function previewSubKey(entry: Preview): string {
+  return `preview:${entry.host}:${entry.project}:${entry.anchor}`;
 }
 
 /**
  * The Previews row: a pill per current preview (they wrap), the row's
  * health from theirs; open, one line per preview — host, project, status,
  * Open and Logs links, when — then the superseded ones behind "Archived".
+ * The overview fills the open slot (`renderPreviewsList`), since a line opens to its host's comment.
  */
 function previewsRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLElement[] {
   const open = model.openKey === PREVIEWS_KEY;
@@ -2150,7 +2168,7 @@ function previewsRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLE
   ]);
   mainClickToggles(main, () => handlers.onToggle(PREVIEWS_KEY));
   const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health }, [
-    createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_ROCKET)]),
+    createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_BROWSER)]),
     rowLabel('Previews', 'Previews'),
     main,
     createElement('span', { class: `${PANEL_CLASS}__right` }, [chevron(open, () => handlers.onToggle(PREVIEWS_KEY))]),
@@ -2158,13 +2176,15 @@ function previewsRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLE
   if (open) row.setAttribute('data-open', '');
   rowClickToggles(row, () => handlers.onToggle(PREVIEWS_KEY));
   if (!open) return [row];
-  const slot = slotRow(PREVIEWS_KEY, null, 'list');
-  const body = slot.querySelector<HTMLElement>(`.${PANEL_CLASS}__slot-body`);
-  if (body !== null) renderPreviewsList(body, model, handlers);
-  return [row, slot];
+  return [row, slotRow(PREVIEWS_KEY, null, 'list')];
 }
 
-function previewLine(entry: Preview, model: PanelModel): HTMLElement {
+/**
+ * One preview as a line: state, the host's mark, project, host and state, the host's reason when there is nothing
+ * to open, then Open and the host's page on the right with the time. With `handlers` the line opens to the host's
+ * comment (`previewSubKey`); a round's lines (`null`) stay static.
+ */
+function previewLine(entry: Preview, model: PanelModel, handlers: PanelHandlers | null): { readonly row: HTMLElement; readonly open: boolean } {
   const host = previewHostById(entry.host);
   const avatar = model.avatarForAnchor(entry.anchor);
   const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-preview-status': entry.status, role: 'img', 'aria-label': PREVIEW_STATUS_LABEL[entry.status] || 'Preview' }, [icon(PREVIEW_GLYPH[entry.status])]);
@@ -2172,19 +2192,178 @@ function previewLine(entry: Preview, model: PanelModel): HTMLElement {
   mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__deploy-host` }, [`${host?.title ?? 'Preview'}${PREVIEW_STATUS_LABEL[entry.status] === '' ? '' : ` · ${PREVIEW_STATUS_LABEL[entry.status].toLowerCase()}`}`]));
   // The host's own words for why there is nothing to open ("X is not a member of the team"), truncating before the links.
   if (entry.reason !== undefined) mainChildren.push(createElement('span', { class: `${PANEL_CLASS}__deploy-reason`, title: entry.reason }, [entry.reason]));
-  const main = createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static` }, mainChildren);
+  const key = previewSubKey(entry);
+  const open = handlers !== null && model.openSubKey === key;
+  const toggle = handlers === null ? null : (): void => handlers.onToggleSub(key);
+  const main =
+    toggle === null
+      ? createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static` }, mainChildren)
+      : createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:sub:${key}` }, mainChildren);
+  if (toggle !== null) mainClickToggles(main, toggle);
   const right = createElement('span', { class: `${PANEL_CLASS}__right ${PANEL_CLASS}__right--links` });
   if (entry.url !== null) right.append(createElement('a', { class: `${PANEL_CLASS}__deploy-link`, href: entry.url, target: '_blank', rel: 'noreferrer' }, ['Open ', icon(ICON_LINK_EXTERNAL)]));
   // With a reason the link is the host's remedy (add the member, request access), not a build log.
   if (entry.inspectUrl !== null) right.append(createElement('a', { class: `${PANEL_CLASS}__deploy-link ${PANEL_CLASS}__deploy-link--muted`, href: entry.inspectUrl, target: '_blank', rel: 'noreferrer' }, [entry.status === 'failed' ? (entry.reason !== undefined ? 'Fix' : 'Logs') : 'Inspect']));
   const previewTime = timeCell(model, entry.anchor);
   if (previewTime !== null) right.append(previewTime);
-  return createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--preview`, 'data-state': entry.status }, [
+  if (toggle !== null) right.append(chevron(open, toggle));
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--preview`, 'data-state': entry.status, ...(toggle === null ? {} : { 'data-opens': '' }) }, [
     lead,
     avatarStack(avatar === null ? [] : [{ src: avatar, bot: true, login: '' }], host?.title ?? '', true),
     main,
     right,
   ]);
+  if (open) row.setAttribute('data-open', '');
+  if (toggle !== null) rowClickToggles(row, toggle);
+  return { row, open };
+}
+
+/* ---- Deployments: GitHub's deployment events, by environment -------------- */
+
+const DEPLOYMENT_STATE_LABEL: Readonly<Record<DeploymentState, string>> = {
+  active: 'Active',
+  inactive: 'Inactive',
+  failed: 'Failed',
+  pending: 'Deploying',
+};
+
+/** The preview state whose colours a deployment's glyph shares; an inactive one did deploy, so it keeps the check, muted. */
+const DEPLOYMENT_AS_PREVIEW: Readonly<Record<DeploymentState, Preview['status']>> = {
+  active: 'ready',
+  inactive: 'skipped',
+  failed: 'failed',
+  pending: 'building',
+};
+
+const DEPLOYMENT_GLYPH: Readonly<Record<DeploymentState, string>> = {
+  active: ICON_CHECK_CIRCLE_FILL,
+  inactive: ICON_CHECK_CIRCLE_FILL,
+  failed: ICON_X_CIRCLE_FILL,
+  pending: ICON_IN_PROGRESS,
+};
+
+function deploymentHealth(groups: readonly DeploymentEntry[]): Health {
+  if (groups.some((group) => group.latest.state === 'failed')) return 'bad';
+  if (groups.some((group) => group.latest.state === 'pending')) return 'pending';
+  return 'good';
+}
+
+/** A link on github.com opens where the reader is, as GitHub's own links do (⌘ or Ctrl still opens a tab); anywhere else opens a tab, as a preview does. */
+function linkTargetFor(href: string): Readonly<Record<string, string>> {
+  try {
+    if (new URL(href, location.href).origin === location.origin) return {};
+  } catch {
+    return {};
+  }
+  return { target: '_blank', rel: 'noreferrer' };
+}
+
+function deploymentLabel(deployment: Deployment): string {
+  return `${deployment.environment} · ${DEPLOYMENT_STATE_LABEL[deployment.state]}`;
+}
+
+/** The key a deployment's line opens under, when the host commented on it. */
+export function deploymentSubKey(entry: DeploymentEntry): string {
+  return `deployment:${entry.latest.anchor}`;
+}
+
+/**
+ * One environment as a pill: the mark of what deployed it, the environment's name and its state. It opens the
+ * deployment's page as near as there is one: the host's (Vercel's), else the run that made it, else the deployment.
+ */
+export function deploymentPill(entry: DeploymentEntry): HTMLElement {
+  const deployment = entry.latest;
+  const children: Node[] = [];
+  const mark = deploymentMark(deployment);
+  if (mark !== null) children.push(markImg(mark, false));
+  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name ${PANEL_CLASS}__deploy-name` }, [environmentLabel(deployment.environment)]));
+  children.push(createElement('span', { class: `${PANEL_CLASS}__health`, 'data-preview-status': DEPLOYMENT_AS_PREVIEW[deployment.state], role: 'img', 'aria-label': DEPLOYMENT_STATE_LABEL[deployment.state] }, [icon(DEPLOYMENT_GLYPH[deployment.state])]));
+  const label = deploymentLabel(deployment);
+  const attrs = { class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__deploy`, 'data-status': deployment.state, 'aria-label': label, title: label };
+  const href = deploymentHref(entry);
+  if (href === null) return createElement('span', attrs, children);
+  return createElement('a', { ...attrs, href, ...linkTargetFor(href) }, children);
+}
+
+/** The Deployments row: a pill per environment GitHub deployed this pull request to; open, one line each, which the overview fills (`renderDeploymentsList`). */
+function deploymentsRow(model: PanelModel, handlers: PanelHandlers): readonly HTMLElement[] {
+  const open = model.openKey === DEPLOYMENTS_KEY;
+  const toggle = (): void => handlers.onToggle(DEPLOYMENTS_KEY);
+  const main = createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${DEPLOYMENTS_KEY}`, 'aria-label': plural(model.deployments.length, 'deployment') }, [
+    createElement('span', { class: `${PANEL_CLASS}__status-content ${PANEL_CLASS}__deploys` }, model.deployments.map((entry) => deploymentPill(entry))),
+  ]);
+  mainClickToggles(main, toggle);
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': deploymentHealth(model.deployments) }, [
+    createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_ROCKET)]),
+    rowLabel('Deployments', 'Deploys'),
+    main,
+    createElement('span', { class: `${PANEL_CLASS}__right` }, [chevron(open, toggle)]),
+  ]);
+  if (open) row.setAttribute('data-open', '');
+  rowClickToggles(row, toggle);
+  if (!open) return [row];
+  return [row, slotRow(DEPLOYMENTS_KEY, null, 'list')];
+}
+
+/** The Deployments row's list: one line per environment; the open line's host comment renders in the returned slot. */
+export function renderDeploymentsList(slot: HTMLElement, model: PanelModel, handlers: PanelHandlers): { readonly nested: HTMLElement | null; readonly open: DeploymentEntry | null } {
+  const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list' });
+  let nested: HTMLElement | null = null;
+  let opened: DeploymentEntry | null = null;
+  for (const entry of model.deployments) {
+    const { row, open } = deploymentLine(entry, model, handlers);
+    list.append(row);
+    if (!open) continue;
+    const sub = nestedSlot();
+    list.append(sub.item);
+    nested = sub.body;
+    opened = entry;
+  }
+  slot.replaceChildren(list);
+  return { nested, open: opened };
+}
+
+/**
+ * One environment as a line, laid out like a preview's: its state, the mark of what deployed it, the name, then
+ * the state in words, who deployed it when that is not the pull request's author, and how many times it was
+ * deployed. On the right the run that made it, the run of the last successful deployment while the latest is not
+ * one, and the time. A line the host commented on (Vercel's) opens to that comment, whose byline leads to the host's
+ * page for the deployment; one without a run or a page offers the deployment itself.
+ */
+function deploymentLine(entry: DeploymentEntry, model: PanelModel, handlers: PanelHandlers): { readonly row: HTMLElement; readonly open: boolean } {
+  const { latest } = entry;
+  const mark = deploymentMark(latest);
+  const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-preview-status': DEPLOYMENT_AS_PREVIEW[latest.state], role: 'img', 'aria-label': DEPLOYMENT_STATE_LABEL[latest.state] }, [icon(DEPLOYMENT_GLYPH[latest.state])]);
+  const details = [DEPLOYMENT_STATE_LABEL[latest.state]];
+  const person = latest.actor !== '' && !/\[bot\]$/i.test(latest.actor) && latest.actor.toLowerCase() !== (model.prAuthor ?? '').toLowerCase();
+  if (person) details.push(`by ${latest.actor}`);
+  if (entry.count > 1) details.push(plural(entry.count, 'deployment'));
+  const name = environmentLabel(latest.environment);
+  const mainChildren = [createElement('span', { class: `${PANEL_CLASS}__name`, ...(name === latest.environment ? {} : { title: latest.environment }) }, [name]), createElement('span', { class: `${PANEL_CLASS}__deploy-host` }, [details.join(' · ')])];
+  const key = deploymentSubKey(entry);
+  const open = entry.comment !== null && model.openSubKey === key;
+  const toggle = entry.comment === null ? null : (): void => handlers.onToggleSub(key);
+  const main =
+    toggle === null
+      ? createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static` }, mainChildren)
+      : createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:sub:${key}` }, mainChildren);
+  if (toggle !== null) mainClickToggles(main, toggle);
+  const right = createElement('span', { class: `${PANEL_CLASS}__right ${PANEL_CLASS}__right--links` });
+  const link = (label: string, href: string, muted: boolean): HTMLElement => {
+    const target = linkTargetFor(href);
+    return createElement('a', { class: `${PANEL_CLASS}__deploy-link${muted ? ` ${PANEL_CLASS}__deploy-link--muted` : ''}`, href, ...target }, target.target === undefined ? [label] : [`${label} `, icon(ICON_LINK_EXTERNAL)]);
+  };
+  if (latest.logUrl !== null) right.append(link('Run', latest.logUrl, false));
+  else if (entry.page === null && latest.url !== null) right.append(link('Open', latest.url, false));
+  if (entry.lastSuccessRun !== null) right.append(link('Last successful deployment', entry.lastSuccessRun, true));
+  const time = timeCell(model, latest.anchor);
+  if (time !== null) right.append(time);
+  if (toggle !== null) right.append(chevron(open, toggle));
+  const picture: Avatar[] = mark !== null ? [{ src: mark, bot: true, login: '' }] : latest.actorAvatar !== null ? [{ src: latest.actorAvatar, bot: false, login: latest.actor }] : [];
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--preview ${PANEL_CLASS}__row--deployment`, 'data-state': latest.state, ...(toggle === null ? {} : { 'data-opens': '' }) }, [lead, avatarStack(picture, name, picture[0]?.bot ?? true), main, right]);
+  if (open) row.setAttribute('data-open', '');
+  if (toggle !== null) rowClickToggles(row, toggle);
+  return { row, open };
 }
 
 const RUN_PREVIEW_STATUS: Readonly<Record<CheckState, Preview['status']>> = { success: 'ready', failure: 'failed', queued: 'building', pending: 'building', skipped: 'skipped', neutral: 'unknown' };
@@ -2602,9 +2781,24 @@ export function renderReportsList(slot: HTMLElement, model: PanelModel, handlers
   return { nested, openComment };
 }
 
-function renderPreviewsList(slot: HTMLElement, model: PanelModel, handlers: PanelHandlers): void {
+/**
+ * The Previews row's list: one line per current preview, then the earlier pushes' behind a heading. The open line's
+ * host comment renders in the returned slot (`open` names its preview).
+ */
+export function renderPreviewsList(slot: HTMLElement, model: PanelModel, handlers: PanelHandlers): { readonly nested: HTMLElement | null; readonly open: Preview | null } {
   const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list' });
-  for (const entry of model.previews.latest) list.append(previewLine(entry, model));
+  let nested: HTMLElement | null = null;
+  let opened: Preview | null = null;
+  const add = (entry: Preview): void => {
+    const { row, open } = previewLine(entry, model, handlers);
+    list.append(row);
+    if (!open) return;
+    const sub = nestedSlot();
+    list.append(sub.item);
+    nested = sub.body;
+    opened = entry;
+  };
+  for (const entry of model.previews.latest) add(entry);
   if (model.previews.archived.length > 0) {
     const open = model.archivedPreviewsOpen;
     const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__notes-btn ${PANEL_CLASS}__notes-btn--commits`, 'aria-expanded': String(open), [ATTR_FOCUS]: 'notes:previews' }, [
@@ -2614,9 +2808,10 @@ function renderPreviewsList(slot: HTMLElement, model: PanelModel, handlers: Pane
     ]);
     button.addEventListener('click', () => handlers.onToggleArchivedPreviews());
     list.append(createElement('li', { class: `${PANEL_CLASS}__subhead ${PANEL_CLASS}__notes`, 'data-open': String(open) }, [button]));
-    if (open) for (const entry of model.previews.archived) list.append(previewLine(entry, model));
+    if (open) for (const entry of model.previews.archived) add(entry);
   }
   slot.replaceChildren(list);
+  return { nested, open: opened };
 }
 
 const ENTRY_GLYPH: Readonly<Record<Exclude<ReviewEntryState, 'thread'>, string>> = {
@@ -2805,7 +3000,7 @@ function signatureOf(model: PanelModel): string {
     botRequests: [...model.botRequests].map(([id, state]) => `${id}:${state.kind === 'starting' ? 'starting' : state.reason}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
     folds: model.folds.map((fold) => `${fold.key}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}:${fold.closure?.preview ?? ''}:${fold.headline === undefined ? '' : `${fold.headline.kind}${fold.headline.actor}${fold.headline.target ?? ''}${fold.headline.avatarSrc ?? ''}`}`),
-    batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.commits.length}/${batch.commitCount}/${batch.forcePushes}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
+    batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.commits.length}/${batch.commitCount}/${batch.forcePushes}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}${entry.url ?? ''}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
     grouping: model.grouping,
     view: model.view,
     intro: model.intro,
@@ -2821,6 +3016,12 @@ function signatureOf(model: PanelModel): string {
     workflowApproval: model.workflowApproval,
     previews: [...model.previews.latest, ...model.previews.archived].map((entry) => `${entry.anchor}:${entry.host}:${entry.project}:${entry.status}:${entry.url ?? ''}:${entry.inspectUrl ?? ''}:${model.avatarForAnchor(entry.anchor) ?? ''}`),
     archivedPreviewsOpen: model.archivedPreviewsOpen,
+    deployments: model.deployments.map((entry) => `${entry.latest.anchor}:${entry.latest.environment}:${entry.latest.state}:${entry.latest.url ?? ''}:${entry.latest.logUrl ?? ''}:${entry.latest.actor}:${deploymentMark(entry.latest) ?? ''}:${entry.count}:${entry.page ?? ''}:${entry.comment ?? ''}:${entry.lastSuccessRun ?? ''}`),
+    previewLinks: [...model.previews.latest, ...model.previews.archived].map((entry) => {
+      const links = model.previewLinks(entry);
+      return `${links.href ?? ''}:${links.lastSuccess ?? ''}`;
+    }),
+    prAuthor: model.prAuthor,
     ring: model.checksRing?.outerHTML.length ?? 0,
     reviews: model.reviews,
     comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}:${entry.parent ?? ''}:${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('|')}`),

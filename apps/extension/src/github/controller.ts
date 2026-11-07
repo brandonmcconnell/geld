@@ -1,5 +1,6 @@
 import { applyTrackerLinks,removeTrackerLinks } from './tracker-links';
 import { applyAttachmentLightbox, removeAttachmentLightbox } from './attachment-lightbox';
+import { applyRelatedLinks, removeRelatedLinks } from './related-links';
 import type { Catalog, HiddenCategory } from '@geld/core';
 import { BUNDLED_CATALOG, CATEGORY_IDS, isAutoViewed, testSyntaxesFrom } from '@geld/core';
 import type { TestSyntax } from '@geld/core';
@@ -632,7 +633,7 @@ export class GeldController {
       this.hiddenTeardown = true;
       return;
     }
-    this.teardown();
+    this.teardown(true);
     this.apply();
   }
 
@@ -730,7 +731,7 @@ export class GeldController {
     this.timer = null;
     if (this.hiddenTeardown) {
       this.hiddenTeardown = false;
-      this.teardown();
+      this.teardown(true);
     }
     this.apply();
   };
@@ -1140,6 +1141,8 @@ export class GeldController {
     const trackerConfig=repo!==null&&this.repoDecision(repo)==='use'?this.resolvedConfig(repo):null;
     applyTrackerLinks(this.settings,trackerConfig?validConfigs(trackerConfig):[]);
     if (!skipReview) {
+      // Its own step, so a sidebar GitHub changed under it can cost the section but never the digest.
+      guard('content:related-links', () => applyRelatedLinks(this.settings.relatedLinks && page.kind === 'pull-conversation', () => this.schedule()));
       this.updateFlowSource(page, url, matcher);
       applyReviewOverview(this.settings, this.pageDiffPaths(), this.repoBotsHint(page, repo));
     }
@@ -1951,15 +1954,17 @@ export class GeldController {
     return repo === null || decideRepo(this.repoRules, repo).allowed;
   }
 
-  private teardown(): void {
+  /** `rebuild`: the page is dressed again right after, so the digest keeps what the reader opened and unfolded. */
+  private teardown(rebuild = false): void {
     removeAttachmentLightbox();
     this.settledHeader = null;
     this.headerGroups = [];
     this.headerScan = null;
     this.headerDirty = true;
     this.teardownView();
-    teardownReviewOverview();
+    teardownReviewOverview(rebuild ? 'rebuild' : 'stop');
     removeTrackerLinks();
+    removeRelatedLinks();
     removeQuickReview();
     removePrListStats();
     removeCommitHover();
