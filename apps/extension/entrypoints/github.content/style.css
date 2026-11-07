@@ -8626,6 +8626,12 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
  * line above every section but the first in page order becomes a line above every section but the first shown.
  * Its rule (`.sidebar > [data-overview-sidebar-item] ~ [data-overview-sidebar-item]`) weighs three; the first's must outweigh it.
  */
+/* GitHub's line between classic items needs them adjacent (`.discussion-sidebar-item + .discussion-sidebar-item`), and a hidden fragment can stand between. */
+.discussion-sidebar-item ~ .geld-related.discussion-sidebar-item {
+  margin-top: var(--base-size-16, 16px);
+  border-top: var(--borderWidth-thin, 1px) solid var(--borderColor-muted, var(--color-border-muted));
+}
+
 [data-geld-sidebar-order] > * {
   order: 10;
 }

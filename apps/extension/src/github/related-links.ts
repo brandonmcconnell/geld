@@ -23,7 +23,7 @@ import {
 } from './ui/icons';
 
 /**
- * "Related links" in the pull request's sidebar, under Assignees: the tickets, chat threads, agent sessions, review
+ * "Related links" in the pull request's sidebar, under Reviewers: the tickets, chat threads, agent sessions, review
  * tools and docs the description links to (and Linear's linkback comment), read by `@geld/review`'s registry.
  */
 
@@ -358,7 +358,29 @@ function sectionLike(neighbour: HTMLElement, links: readonly RelatedRow[]): HTML
   return section;
 }
 
-/** Our section after each Assignees section, keyed by it, with the links it was drawn from. */
+/**
+ * Where the section goes in the sidebar holding `assignees`: after its Reviewers section, else after Assignees, and
+ * after the untitled helpers that follow it (the classic sidebar's hidden error fragment), so the next section is
+ * still a sidebar item's neighbour. Assignees stays the shape to copy: Reviewers has controls of its own ("Merge status").
+ */
+function isSection(element: Element): boolean {
+  const title = titleOf(element);
+  return title !== null && isHeading(title);
+}
+
+function placeFor(assignees: HTMLElement): HTMLElement {
+  const list = assignees.parentElement;
+  let place = (list === null ? undefined : [...list.children].find((child): child is HTMLElement => child instanceof HTMLElement && !child.hasAttribute(OWN_UI_ATTRIBUTE) && (() => {
+    const title = titleOf(child);
+    return title !== null && words(title).toLowerCase() === 'reviewers';
+  })())) ?? assignees;
+  for (let next = place.nextElementSibling; next instanceof HTMLElement && !next.hasAttribute(OWN_UI_ATTRIBUTE) && !next.hasAttribute('data-overview-sidebar-item') && !isSection(next); next = next.nextElementSibling) {
+    place = next;
+  }
+  return place;
+}
+
+/** Our section in the sidebar of each Assignees section, keyed by it, with the links it was drawn from. */
 let mounted = new Map<HTMLElement, { readonly section: HTMLElement; readonly signature: string }>();
 
 function removeSections(): void {
@@ -447,14 +469,15 @@ export function applyRelatedLinks(active: boolean, onChange: () => void = () => 
   const signature = JSON.stringify(links);
   const next = new Map<HTMLElement, { readonly section: HTMLElement; readonly signature: string }>();
   for (const after of afters) {
+    const place = placeFor(after);
     const known = mounted.get(after);
-    if (known !== undefined && known.signature === signature && known.section.isConnected && after.nextElementSibling === known.section) {
+    if (known !== undefined && known.signature === signature && known.section.isConnected && place.nextElementSibling === known.section) {
       next.set(after, known);
       continue;
     }
     known?.section.remove();
     const section = sectionLike(after, links);
-    after.after(section);
+    place.after(section);
     next.set(after, { section, signature });
   }
   for (const [after, { section }] of mounted) if (!next.has(after)) section.remove();
