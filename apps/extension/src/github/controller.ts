@@ -1138,7 +1138,8 @@ export class GeldController {
     const trackerConfig=repo!==null&&this.repoDecision(repo)==='use'?this.resolvedConfig(repo):null;
     applyTrackerLinks(this.settings,trackerConfig?validConfigs(trackerConfig):[]);
     if (!skipReview) {
-      applyRelatedLinks(this.settings.relatedLinks && page.kind === 'pull-conversation', () => this.schedule());
+      // Its own step, so a sidebar GitHub changed under it can cost the section but never the digest.
+      guard('content:related-links', () => applyRelatedLinks(this.settings.relatedLinks && page.kind === 'pull-conversation', () => this.schedule()));
       this.updateFlowSource(page, url, matcher);
       applyReviewOverview(this.settings, this.pageDiffPaths(), this.repoBotsHint(page, repo));
     }

@@ -776,6 +776,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   There Geld's section is built in that shape with classes taken from the page: the title's from the leaf reading the neighbour's title, the header's from a section with a plain header, the content's from the neighbour's last child.
   Any other shape gets the neighbour's tag and classes and its heading's.
   It is put back whenever GitHub replaces the sidebar, written only when its links or its place changed, and drawn only when there is a link to show.
+  It runs as a guarded step of its own (`guard('content:related-links', …)`), so a sidebar GitHub changed under it costs the section, recorded in the diagnostics, and never the digest the pass mounts after it.
   Eight rows show, the rest behind "Show N more" (`SHOWN_LINKS`), which stays open across redraws on the page.
   The header's "Links" row (`tracker-links.ts`) still reads bare ticket keys against a configured tracker, which this section does not.
 - **The description's header reads author, time and GitHub's edit menu** (`review/description-byline.ts`, `compactDescriptionByline`, wherever the digest is, independent of `collapseDescription`): GitHub's line says "brandonmcconnell commented Nov 2 – with Cursor • edited by cursor Bot ▾" (the "– with <App>" part only to signed-in readers, as loose words and an `/apps/` link;
