@@ -256,7 +256,7 @@ export function showMergedPills(pills: readonly HTMLButtonElement[]): void {
     pill.removeAttribute('aria-label');
     pill.removeAttribute('aria-haspopup');
     pill.removeAttribute('aria-expanded');
-    const label = pill.previousElementSibling;
+    const label = labelBehind(pill);
     if (label === null) continue;
     dress(pill, mergedCopy(label));
     dressedFrom.set(pill, labelKey(label));
@@ -283,6 +283,22 @@ function mergedCopy(label: Element): Element {
 }
 
 /**
+ * What stands for GitHub's label in the header: the label itself, or on the Overview GitHub's own status menu, a
+ * button around the label ("Convert to draft", "Close pull request"), hidden whole with Geld's pill after it, since a
+ * pill inside that button passed every click to GitHub's menu.
+ */
+function hostOf(label: HTMLElement): HTMLElement {
+  return label.closest<HTMLElement>('button[aria-haspopup]') ?? label;
+}
+
+/** GitHub's label behind a pill: the element before it, or the label inside GitHub's status button there. */
+export function labelBehind(pill: Element): Element | null {
+  const before = pill.previousElementSibling;
+  if (before === null || before.matches('[data-component="StateLabel"], .State')) return before;
+  return before.querySelector('[data-component="StateLabel"]') ?? before;
+}
+
+/**
  * Put Geld's pill in place of each of GitHub's header pills (or put GitHub's
  * back, with `on` false), and return Geld's. `onOpen` runs on a click with
  * the pill clicked.
@@ -291,24 +307,18 @@ export function syncStatusPills(on: boolean, onOpen: (pill: HTMLButtonElement, c
   const pills: HTMLButtonElement[] = [];
   for (const label of document.querySelectorAll<HTMLElement>(GITHUB_PILLS)) {
     if (label.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null) continue;
-    const next = label.nextElementSibling;
+    const host = hostOf(label);
+    const next = host.nextElementSibling;
     const existing = next instanceof HTMLButtonElement && next.hasAttribute(ATTR_PILL) ? next : null;
     if (!on) {
       existing?.remove();
-      label.removeAttribute(ATTR_HIDDEN);
-      continue;
-    }
-    // The Overview's label is already GitHub's own status menu (a button around it, "Convert to draft", "Close pull
-    // request"): it stays GitHub's, since Geld's pill inside that button only passed its clicks to GitHub's menu.
-    if (label.closest('button[aria-haspopup]') !== null) {
-      existing?.remove();
-      label.removeAttribute(ATTR_HIDDEN);
+      host.removeAttribute(ATTR_HIDDEN);
       continue;
     }
     const pill = existing ?? createPill(onOpen);
     dress(pill, label);
-    if (existing === null) label.after(pill);
-    if (!label.hasAttribute(ATTR_HIDDEN)) label.setAttribute(ATTR_HIDDEN, '');
+    if (existing === null) host.after(pill);
+    if (!host.hasAttribute(ATTR_HIDDEN)) host.setAttribute(ATTR_HIDDEN, '');
     pills.push(pill);
   }
   return pills;

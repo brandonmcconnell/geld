@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { MergeBox } from './merge-actions';
-import { showMergedPills, statusOptions, syncStatusPills } from './status-pill';
+import { labelBehind, showMergedPills, statusOptions, syncStatusPills } from './status-pill';
 import { ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST } from './ui/icons';
 
 const box = (over: Partial<MergeBox>): MergeBox => ({
@@ -111,10 +111,20 @@ describe('showMergedPills', () => {
 });
 
 describe("the Overview's status label", () => {
-  it("is left to GitHub when it is GitHub's own status menu", () => {
+  it("is GitHub's own status menu, hidden whole with Geld's pill after it, and given back when Geld steps aside", () => {
     document.body.innerHTML = `<div data-component="PageHeader"><button type="button" aria-haspopup="true" aria-label="Pull request state: Open"><span data-component="StateLabel" data-status="pullOpened">Open</span></button></div>`;
-    expect(syncStatusPills(true, () => undefined)).toEqual([]);
-    expect(document.querySelector('[data-geld-status-hidden]')).toBeNull();
+    const github = document.querySelector('button[aria-haspopup="true"]');
+    const [pill] = syncStatusPills(true, () => undefined);
+    expect(pill?.previousElementSibling).toBe(github);
+    expect(pill?.getAttribute('data-status')).toBe('pullOpened');
+    expect(github?.hasAttribute('data-geld-status-hidden')).toBe(true);
+    expect(github?.querySelector('[data-geld-status-pill]')).toBeNull();
+    expect(pill === undefined ? null : labelBehind(pill)).toBe(document.querySelector('[data-component="StateLabel"]'));
+    // A second pass keeps the one pill.
+    expect(syncStatusPills(true, () => undefined)).toEqual([pill]);
+    syncStatusPills(false, () => undefined);
+    expect(github?.hasAttribute('data-geld-status-hidden')).toBe(false);
+    expect(document.querySelector('[data-geld-status-pill]')).toBeNull();
     document.body.replaceChildren();
   });
 });
