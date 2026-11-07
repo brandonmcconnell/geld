@@ -1,4 +1,4 @@
-import { bar, box, crossbarReach, mirror, solid, diagonal, type DrawContext, dot, edgeAt, type GlyphDef, INSIDE, level, meeting, open, p, rotate, spanOf, stem, withPen } from './draw';
+import { bar, box, crossbarReach, mirror, solid, yArms, yStemTop, diagonal, type DrawContext, dot, edgeAt, type GlyphDef, INSIDE, level, meeting, open, p, rotate, spanOf, stem, withPen } from './draw';
 import type { Stroke } from './geometry';
 
 /**
@@ -394,6 +394,168 @@ function flatBrace(g: DrawContext): Stroke[] {
   const top = g.top(15.5);
   const bottom = g.bottom(-3.5);
   return [open(p(w, top), p(x, top, true), p(x, bottom, true), p(w, bottom)), bar(0, x, 6)];
+}
+
+/**
+ * Swashes (6.3): the letter's own drawing with a flourish, spaced and as wide as the letter, the flourish reaching into
+ * the space beside it. `swsh` takes the capitals and the descenders, `init` the entry flags on ascenders and `fina` the
+ * exits along the baseline; `cswh` puts entries at a word's start and exits at its end, and the capitals whose flourish
+ * reaches back (A J M N Y) at a word's start, never where a flourish would run into the next letter.
+ */
+export type SwashKind = 'swsh' | 'init' | 'fina';
+export interface Swash {
+  glyph: string;
+  kind: SwashKind;
+  /** Taken at a word's start by cswh: its flourish reaches back, into the space before the word. */
+  starts?: boolean;
+  draw: (g: DrawContext, base: GlyphDef) => Stroke[];
+}
+/** How far a flourish runs past its letter. */
+const FLOURISH = 3;
+const foot = (g: DrawContext, x: number, toward: number, y = g.bottom(0)) => bar(Math.min(x, toward), Math.max(x, toward), y);
+
+export const SWASHES: Swash[] = [
+  {
+    glyph: 'A',
+    kind: 'swsh',
+    starts: true,
+    // The foot ends halfway along the leg at the bar's height, so it is inside the leg at its top and its bottom.
+    draw: (g, base) => [...base.draw(g), foot(g, ((g.wide(10) / 2) * (g.h / g.cap)) / 2, -FLOURISH)],
+  },
+  {
+    glyph: 'J',
+    kind: 'swsh',
+    starts: true,
+    draw: (g) => {
+      const w = g.wide(8);
+      return [open(p(w, g.cap), p(w, g.bottom(-3), true), p(-FLOURISH, g.bottom(-3)))];
+    },
+  },
+  {
+    glyph: 'K',
+    kind: 'swsh',
+    draw: (g, base) => {
+      const w = g.wide(9.5);
+      const reach = w + g.v / 2 - g.foot(w, g.cap - g.y(4.5));
+      return [...base.draw(g), foot(g, reach - g.v / 2, reach + FLOURISH)];
+    },
+  },
+  { glyph: 'M', kind: 'swsh', starts: true, draw: (g, base) => [...base.draw(g), foot(g, g.v / 2, -FLOURISH)] },
+  { glyph: 'N', kind: 'swsh', starts: true, draw: (g, base) => [...base.draw(g), foot(g, g.v / 2, -FLOURISH)] },
+  {
+    glyph: 'Q',
+    kind: 'swsh',
+    draw: (g, base) => {
+      // Q's own tail turning along the bottom, one stroke, so the run-on has no joint of its own.
+      const w = g.wide(10);
+      const x = w * 0.55;
+      return [base.draw(g)[0]!, withPen({ ...open(p(x, 3.5), p(x + 5.5, -2), p(x + 5.5 + FLOURISH, -2)), startCap: 'flat' }, g.diag)];
+    },
+  },
+  {
+    glyph: 'R',
+    kind: 'swsh',
+    draw: (g, base) => {
+      const w = g.wide(9.5);
+      const reach = w + g.v / 2 - g.foot(w * 0.6, g.y(6));
+      return [...base.draw(g), foot(g, reach - g.v / 2, reach + FLOURISH)];
+    },
+  },
+  {
+    glyph: 'Y',
+    kind: 'swsh',
+    starts: true,
+    draw: (g) => {
+      const w = g.wide(11);
+      const join = g.y(6);
+      const [left, right] = yArms(g, w, g.cap, join);
+      const c = w / 2;
+      return [left!, right!, open(p(c, yStemTop(g, w, g.cap, join)), p(c, g.bottom(-3), true), p(c - FLOURISH - 1, g.bottom(-3)))];
+    },
+  },
+  // Descenders swept further (swsh).
+  {
+    glyph: 'g',
+    kind: 'swsh',
+    draw: (g) => {
+      const w = g.wide(8);
+      const d = g.bottom(g.descender);
+      return [box(0, w, g.bottom(0), g.top(g.xHeight), [true, false, false, true]), open(p(w, g.xHeight), p(w, d, true), p(-FLOURISH, d))];
+    },
+  },
+  {
+    glyph: 'j',
+    kind: 'swsh',
+    draw: (g) => {
+      const d = g.bottom(g.descender);
+      return [open(p(0, g.xHeight), p(0, d, true), p(-2.5 - FLOURISH, d)), dot(g, 0, g.xHeight + g.y(1.5))];
+    },
+  },
+  { glyph: 'p', kind: 'swsh', draw: (g, base) => [...base.draw(g), foot(g, g.v / 2, -FLOURISH, g.bottom(g.descender))] },
+  {
+    glyph: 'q',
+    kind: 'swsh',
+    draw: (g, base) => {
+      const w = g.wide(8);
+      return [...base.draw(g), foot(g, w - g.v / 2, w + FLOURISH, g.bottom(g.descender))];
+    },
+  },
+  {
+    glyph: 'y',
+    kind: 'swsh',
+    draw: (g, base) => {
+      const w = g.wide(8.5);
+      const end = w / 2 - (w / 2) * (-g.descender / g.xHeight);
+      return [...base.draw(g), foot(g, end + g.foot(w / 2, g.xHeight - g.descender) / 2, end - FLOURISH, g.bottom(g.descender))];
+    },
+  },
+  // Entries on ascenders (init).
+  ...['b', 'h', 'k', 'l'].map((glyph): Swash => ({ glyph, kind: 'init', draw: (g, base) => [...base.draw(g), foot(g, g.v / 2, -FLOURISH, g.top(g.ascender))] })),
+  {
+    glyph: 'd',
+    kind: 'init',
+    draw: (g, base) => {
+      const w = g.wide(8);
+      return [...base.draw(g), foot(g, w + g.v / 2, w - FLOURISH - g.v, g.top(g.ascender))];
+    },
+  },
+  // Exits along the baseline (fina).
+  { glyph: 'a', kind: 'fina', draw: (g, base) => [...base.draw(g), foot(g, g.wide(7.5) - g.v / 2, g.wide(7.5) + FLOURISH)] },
+  { glyph: 'n', kind: 'fina', draw: (g, base) => [...base.draw(g), foot(g, g.wide(7) - g.v / 2, g.wide(7) + FLOURISH)] },
+  { glyph: 'm', kind: 'fina', draw: (g, base) => [...base.draw(g), foot(g, 2 * g.wide(6.5) - g.v / 2, 2 * g.wide(6.5) + FLOURISH)] },
+  {
+    glyph: 'e',
+    kind: 'fina',
+    draw: (g) => {
+      const w = g.wide(8);
+      const t = g.top(g.xHeight);
+      const b = g.bottom(0);
+      return [open(p(0, g.y(5.25)), p(w, g.y(5.25)), p(w, t, true), p(0, t, true), p(0, b, true), p(w + FLOURISH, b))];
+    },
+  },
+  {
+    glyph: 't',
+    kind: 'fina',
+    draw: (g) => {
+      const b = g.bottom(0);
+      return [open(p(0, g.y(13)), p(0, b, true), p(g.wide(3.5) + FLOURISH, b)), bar(-crossbarReach(g), g.wide(3.5), g.top(g.xHeight))];
+    },
+  },
+];
+
+export const swashName = (s: Swash) => `${s.glyph}.${s.kind}`;
+
+/** The swashes as glyphs, each spaced and as wide as its letter (`like`), the flourish hanging past its sides. */
+export function swashDefs(defs: GlyphDef[]): GlyphDef[] {
+  const byName = new Map(defs.map((d) => [d.name, d]));
+  return SWASHES.flatMap((sw) => {
+    const base = byName.get(sw.glyph);
+    if (!base) return [];
+    const def: GlyphDef = { ...base, name: swashName(sw), like: base.name, draw: (g) => sw.draw(g, base) };
+    delete def.unicode;
+    delete def.italic;
+    return [{ ...def, ...(base.unicode === undefined ? {} : { stands: base.unicode }) }];
+  });
 }
 
 /** The exit stroke's length past the stem. */

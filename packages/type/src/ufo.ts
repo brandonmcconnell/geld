@@ -3,7 +3,7 @@ import { LOCL, type LoclLanguage } from './glyphs-cyrillic';
 import { FIGURE_NAMES, TABULAR_SIGNS } from './glyphs-figures';
 import { VIETNAMESE_PAIRS } from './marks';
 import type { Kerning } from './kerning';
-import { type Alternate, ALTERNATES, alternateName, CIRCLED_NUMERALS, OCTAGONAL_DOTS, STYLISTIC_SETS } from './alternates';
+import { type Alternate, ALTERNATES, alternateName, CIRCLED_NUMERALS, OCTAGONAL_DOTS, STYLISTIC_SETS, type Swash, SWASHES, swashName } from './alternates';
 import { CODE_GROUPS, CODE_LIGATURES, CODE_OPERATORS, type CodeGroup, codePieceName } from './code-ligatures';
 import { LOCKUP } from './lockup';
 import { ARCH_LIGATURES, FAMILY_NAMES, type Family, type Master, type Style, TEXT_LIGATURES } from './master';
@@ -282,6 +282,7 @@ export function features(master: Master): string {
     ...codeLigatureFeatures(master, names),
     ...caseFeatures(master, names),
     ...alternates.rest,
+    ...swashFeatures(master, names),
     // Only as a word of its own: Geldern, Geldbörse and Gelder keep their letters.
     ...(names.has(LOCKUP.name)
       ? [
@@ -448,6 +449,42 @@ function alternateFeatures(master: Master, names: Set<string>): { aalt: string[]
   for (const pairs of owned.values()) for (const [a, b] of pairs) all.set(a, [...(all.get(a) ?? []), b]);
   rest.push('feature salt {', ...[...all].map(([a, bs]) => `  sub ${a} by ${bs[0]};`), '} salt;');
   return { aalt: ['feature aalt {', ...[...all].map(([a, bs]) => `  sub ${a} from [${bs.join(' ')}];`), '} aalt;', ''], rest };
+}
+
+/**
+ * Swashes (alternates.ts): swsh, init and fina each take theirs outright; cswh puts entries and the capitals that
+ * reach back at a word's start and exits at its end, never before or after another letter; the italic's ss18 is cswh
+ * by name, since swashes belong most naturally to the italic.
+ */
+function swashFeatures(master: Master, names: Set<string>): string[] {
+  const present = SWASHES.filter((sw) => names.has(swashName(sw)) && names.has(sw.glyph));
+  if (!present.length) return [];
+  const subs = (list: Swash[]) => list.map((sw) => `  sub ${sw.glyph} by ${swashName(sw)};`);
+  const letterNames = new Set(master.glyphs.filter((g) => g.unicode !== undefined && /\p{L}/u.test(String.fromCodePoint(g.unicode))).map((g) => g.name));
+  const letters = master.glyphs.filter((g) => letterNames.has(g.name) || letterNames.has(g.name.split('.')[0]!)).map((g) => g.name);
+  const start = present.filter((sw) => sw.kind === 'init' || (sw.kind === 'swsh' && sw.starts));
+  const end = present.filter((sw) => sw.kind === 'fina');
+  const out = [`@SwashLetters = [${letters.join(' ')}];`];
+  for (const kind of ['swsh', 'init', 'fina'] as const) {
+    const list = present.filter((sw) => sw.kind === kind);
+    if (list.length) out.push(`feature ${kind} {`, ...subs(list), `} ${kind};`);
+  }
+  out.push(
+    'lookup cswh_start {',
+    `  ignore sub @SwashLetters [${start.map((sw) => sw.glyph).join(' ')}]';`,
+    ...start.map((sw) => `  sub ${sw.glyph}' by ${swashName(sw)};`),
+    '} cswh_start;',
+    'lookup cswh_end {',
+    `  ignore sub [${end.map((sw) => sw.glyph).join(' ')}]' @SwashLetters;`,
+    ...end.map((sw) => `  sub ${sw.glyph}' by ${swashName(sw)};`),
+    '} cswh_end;',
+    'feature cswh {',
+    '  lookup cswh_start;',
+    '  lookup cswh_end;',
+    '} cswh;',
+  );
+  if (master.style === 'italic') out.push('feature ss18 {', '  featureNames { name "Italic swashes"; };', '  lookup cswh_start;', '  lookup cswh_end;', '} ss18;');
+  return out;
 }
 
 /** Every file of one master's UFO, keyed by its path inside the .ufo folder. */

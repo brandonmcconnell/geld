@@ -699,3 +699,6 @@ sans:roman:200 questiondown.ss07
 sans:roman:200 question.ss07
 sans:roman:600 dieresistonos.ss07
 sans:roman:900 dieresistonos.ss07
+sans:italic:900 Q.swsh
+sans:roman:700 Q.swsh
+sans:roman:800 Q.swsh

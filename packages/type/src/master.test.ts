@@ -108,8 +108,8 @@ describe('character set', () => {
         const xs = contours.flat().map((p) => p.x);
         expect(Math.min(...ys), `${glyph.name} ${weight}`).toBeGreaterThanOrEqual(METRICS.clipDescender);
         expect(Math.max(...ys), `${glyph.name} ${weight}`).toBeLessThanOrEqual(METRICS.clipAscender);
-        // Arrow pieces reach into their neighbours by design (D12).
-        if (glyph.components.length || glyph.name === 'fraction' || glyph.name.includes('.arrow_')) continue;
+        // Arrow pieces reach into their neighbours by design (D12), and a swash's flourish past its letter's sides (6.3).
+        if (glyph.components.length || glyph.name === 'fraction' || glyph.name.includes('.arrow_') || /\.(swsh|init|fina)(\.|$)/.test(glyph.name)) continue;
         expect(Math.min(...xs), `${glyph.name} ${weight}`).toBeGreaterThanOrEqual(0);
         expect(Math.max(...xs), `${glyph.name} ${weight}`).toBeLessThanOrEqual(glyph.advance + 1e-9);
       }

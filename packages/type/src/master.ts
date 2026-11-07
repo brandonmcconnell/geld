@@ -6,7 +6,7 @@ import { GLYPHS, SPACES } from './glyphs';
 import { FIGURE_NAMES } from './glyphs-figures';
 import { CYRILLIC_LOCL_ACCENTED } from './glyphs-cyrillic';
 import { accentedSmallCaps, SMALL_CAP_EXTRA_ACCENTED, SMALL_CAP_PLACED } from './glyphs-smallcaps';
-import { ALTERNATES, alternateName, OCTAGONAL_DOTS } from './alternates';
+import { ALTERNATES, alternateName, OCTAGONAL_DOTS, SWASHES, swashName } from './alternates';
 import { CODE_LIGATURES, codePieceName } from './code-ligatures';
 import { LOCKUP, lockupGlyph } from './lockup';
 import { DARK_INSET_RATIO, ITALIC_SLOPE, METRICS, toFontUnits, UNIT, type Weight, weightParams } from './grid';
@@ -143,16 +143,26 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     const g = dots ? { ...base, dotShape: dots } : base;
     return { g, strokes: cursive ? def.italic!(g) : def.draw(g) };
   };
-  const build = (def: GlyphDef, dots?: 'octagon'): MasterGlyph => {
+  const outline = (def: GlyphDef, dots?: 'octagon') => {
     const { g, strokes } = strokesOf(def, dots);
-    let contours = strokes.flatMap((stroke) => expandStroke(stroke, g.pen, slope));
-    if (params.snap && !italic) contours = snapJoined(contours, 0.5);
+    const contours = strokes.flatMap((stroke) => expandStroke(stroke, g.pen, slope));
+    return { g, contours: params.snap && !italic ? snapJoined(contours, 0.5) : contours };
+  };
+  /** Where a drawing's origin goes and how wide it is: measured, framed, or as set in its definition. */
+  const spacing = (def: GlyphDef, contours: Contour[], g: DrawContext) => {
     const box = bounds(contours);
     const zone = spacingZone(def, g);
     const frame = def.frame?.(g);
     const { lsb, rsb } = frame ? { lsb: box.minX - frame.origin, rsb: 0 } : zone ? measuredSidebearings(contours, box.minX, box.maxX, zone) : { ...def, ...def.sidebearings?.(g) };
-    contours = contours.map((c) => translate(c, lsb - box.minX));
-    const advance = frame ? frame.advance : lsb + (box.maxX - box.minX) + rsb;
+    return { dx: lsb - box.minX, advance: frame ? frame.advance : lsb + (box.maxX - box.minX) + rsb };
+  };
+  const defByName = new Map(GLYPHS.map((d) => [d.name, d]));
+  const build = (def: GlyphDef, dots?: 'octagon'): MasterGlyph => {
+    const { g, contours: drawn } = outline(def, dots);
+    // A swash is placed as its letter is, so the flourish hangs past the letter's own sides.
+    const like = def.like ? defByName.get(def.like) : undefined;
+    const { dx, advance } = like ? (({ g: lg, contours: lc }) => spacing(like, lc, lg))(outline(like, dots)) : spacing(def, drawn, g);
+    const contours = drawn.map((c) => translate(c, dx));
     const anchors = baseAnchors(contours, isUpperChar(def.unicode ?? def.stands), params.v, def.name);
     return {
       name: def.name,
@@ -198,8 +208,8 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   const elsewhere = new Set(ALTERNATES.filter((alt) => alt.only && alt.only !== style).map(alternateName));
   for (let i = glyphs.length - 1; i >= 0; i--) if (elsewhere.has(glyphs[i]!.name)) glyphs.splice(i, 1);
   // An alternate keeps its letter's anchors, so an exit or a tail never moves a horn or an accent off the letter.
-  for (const alt of ALTERNATES) {
-    const gl = glyphs.find((x) => x.name === alternateName(alt));
+  for (const alt of [...ALTERNATES.map((a) => ({ name: alternateName(a), glyph: a.glyph })), ...SWASHES.map((sw) => ({ name: swashName(sw), glyph: sw.glyph }))]) {
+    const gl = glyphs.find((x) => x.name === alt.name);
     const base = glyphs.find((x) => x.name === alt.glyph);
     if (!gl || !base) continue;
     const dx = bounds(gl.contours).minX - bounds(base.contours).minX;

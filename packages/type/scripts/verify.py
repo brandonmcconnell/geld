@@ -258,6 +258,20 @@ def check_alternates(path: Path, data: bytes, weight: int, cases: list[dict]) ->
     if any(c["glyph"] == "a.ss01" for c in cases):
         got = [n for n, _ in shape(data, weight, "á", features={"ss01": True})]
         check(got == ["aacute.ss01"], f"{path.name} at {weight}: á with ss01 shaped {got}")
+    italic = "Italic" in path.name
+    for text, features, names in (
+        ("A", {"swsh": True}, ["A.swsh"]),
+        ("g", {"swsh": True}, ["g.swsh"]),
+        ("l", {"init": True}, ["l.init"]),
+        ("n", {"fina": True}, ["n.fina"]),
+        ("Mann", {"cswh": True}, ["M.swsh", "a", "n", "n.fina"]),
+        ("lane", {"cswh": True}, ["l.init", "a", "n", "e.fina"]),
+        ("Kant", {"cswh": True}, ["K", "a", "n", "t.fina"]),
+        ("lane", {}, ["l", "a", "n", "e"]),
+        *((("lane", {"ss18": True}, ["l.init", "a", "n", "e.fina"]),) if italic else ()),
+    ):
+        got = [n for n, _ in shape(data, weight, text, features=features)]
+        check(got == names, f"{path.name} at {weight}: {text} with {features} shaped {got}")
     font = TTFont(path)
     tags = {r.FeatureTag: r.Feature for r in font["GSUB"].table.FeatureList.FeatureRecord}
     for case in cases:
