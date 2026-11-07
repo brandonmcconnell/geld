@@ -277,6 +277,8 @@ describe('isDependencyUpdate', () => {
     expect(isDependencyUpdate('Bumps lodash from 4.17.20 to 4.17.21.')).toBe(true);
     expect(isDependencyUpdate('Bumps the npm_and_yarn group with 3 updates in the / directory')).toBe(true);
     expect(isDependencyUpdate('Fixes the nav. Bumps up the font size a little.')).toBe(false);
+    expect(isDependencyUpdate('Fixes ENG-12. Bumps zod from 3 to 4 to unblock this.')).toBe(false);
+    expect(isDependencyUpdate('\n  Bumps lodash from 4.17.20 to 4.17.21.')).toBe(true);
   });
 });
 
