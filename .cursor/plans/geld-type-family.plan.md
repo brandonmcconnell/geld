@@ -275,7 +275,7 @@ Default in Sans per D13. Mono turns most of them on by default (section 19).
 - [x] `ss20` No arrow ligatures (5.2).
 
 ### 6.2 Character variants (`cv01` to `cv40` or so, each with a name)
-- [ ] One `cv` per alternate glyph, so a single character can change without a whole set (done: cv01–cv31 for a, g, l, I, 0, 1, j, y, 4, 6, 9, 3, R, K, M, italic n m h i u, G, J, Q, W, t, f, 7, $, #, quotes and *, each named in the font; still to come: ß and ẞ, &, @, %, ?, !, ¶, { }): a, g, G (spur or bar), J, K, M, Q (tail styles), R, W (crossed or plain), t (cut or square foot), f, l, I, y, ß (and the sharp-s capital), 0, 1, 3, 4, 6, 7 (with or without crossbar), 9, $, &, @, %, *, ?, !, ¶, # (slanted or upright), { } (style), and quotes (straight or slanted).
+- [ ] One `cv` per alternate glyph, so a single character can change without a whole set (done: cv01–cv36 for a, g, l, I, 0, 1, j, y, 4, 6, 9, 3, R, K, M, italic n m h i u, G, J, Q, W, t, f, 7, $, #, quotes, *, ß, %, ?, ¶ and { }, each named in the font; a two-bowled capital ẞ was dropped since it reads as B; still to come: &, @ and !): a, g, G (spur or bar), J, K, M, Q (tail styles), R, W (crossed or plain), t (cut or square foot), f, l, I, y, ß (and the sharp-s capital), 0, 1, 3, 4, 6, 7 (with or without crossbar), 9, $, &, @, %, *, ?, !, ¶, # (slanted or upright), { } (style), and quotes (straight or slanted).
 - [x] `salt` mapping to each glyph's first alternate, for apps that only offer one switch.
 - [x] `aalt` listing every alternate, for the glyph palettes in InDesign and Illustrator. Accented letters follow their base in every set and cv (á under ss01), an alternate keeps its letter's anchors, and `verify.py` checks every alternate under its set, cv and salt in every compiled font.
 
