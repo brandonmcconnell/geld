@@ -887,7 +887,49 @@ function matchSpec(spec: LinkSpec, url: URL, text: string): RelatedLink | null {
   };
 }
 
-function readLink(candidate: LinkCandidate): { readonly link: RelatedLink; readonly rank: number } | null {
+/** What the page tells the registry about where it is, for GitHub's own references. */
+export interface RelatedOptions {
+  /** Hosts that are GitHub on this page: github.com, and an Enterprise page's own host. */
+  readonly githubHosts?: readonly string[];
+  /** The repository the page is in (`owner/repo`), whose references read `#N` as GitHub writes them. */
+  readonly repository?: string | null;
+  /** The pull request being read (`owner/repo#N`), which is never one of its own related links. */
+  readonly self?: string | null;
+}
+
+/** An issue, pull request or discussion, or one of a pull request's tabs; a link to a comment in it carries a hash. */
+const GITHUB_PATH = /^\/([\w.-]+)\/([\w.-]+)\/(issues|pull|discussions)\/(\d+)(?:\/(?:files|commits|changes|checks))?\/?$/;
+const GITHUB_NOT_OWNERS = new Set(['orgs', 'users', 'enterprises', 'settings', 'marketplace', 'apps', 'sponsors']);
+
+function readGitHub(url: URL, text: string, options: RelatedOptions): RelatedLink | null {
+  const path = GITHUB_PATH.exec(url.pathname);
+  const owner = path?.[1];
+  if (path === null || owner === undefined || GITHUB_NOT_OWNERS.has(owner.toLowerCase())) return null;
+  const repository = `${owner}/${group(path, 2)}`;
+  const number = group(path, 4);
+  const id = `${repository}#${number}`.toLowerCase();
+  if (options.self !== undefined && options.self !== null && id === options.self.toLowerCase()) return null;
+  const noun = group(path, 3) === 'pull' ? 'pull request' : group(path, 3) === 'issues' ? 'issue' : 'discussion';
+  const own = options.repository !== undefined && options.repository !== null && repository.toLowerCase() === options.repository.toLowerCase();
+  const ref = own ? `#${number}` : `${repository}#${number}`;
+  return {
+    // Issues and pull requests share one numbering, so a link to either is the same thing.
+    key: `github:${noun === 'discussion' ? 'd:' : ''}${id}`,
+    kind: 'ticket',
+    service: 'GitHub',
+    noun,
+    ref,
+    // GitHub writes a reference as `#12`, `owner/repo#12` or `#12 (comment)`, none of them a title.
+    title: titleFromText(text.replace(/\s*\(comment\)$/, ''), 'GitHub', noun, ref),
+    context: repository,
+    href: url.href,
+    action: `Open ${noun} on GitHub`,
+    appId: null,
+    icon: null,
+  };
+}
+
+function readLink(candidate: LinkCandidate, options: RelatedOptions = {}): { readonly link: RelatedLink; readonly rank: number } | null {
   let url: URL;
   try {
     url = new URL(candidate.href);
@@ -899,22 +941,24 @@ function readLink(candidate: LinkCandidate): { readonly link: RelatedLink; reado
     const link = matchSpec(spec, url, candidate.text);
     if (link !== null) return { link, rank: spec.rank ?? 0 };
   }
-  return null;
+  if (url.hostname !== 'github.com' && !(options.githubHosts ?? []).includes(url.hostname)) return null;
+  const link = readGitHub(url, candidate.text, options);
+  return link === null ? null : { link, rank: 0 };
 }
 
 /** What a link leads to, or null when it is not a link this registry knows. Only plain `https:` links count. */
-export function relatedLinkOf(candidate: LinkCandidate): RelatedLink | null {
-  return readLink(candidate)?.link ?? null;
+export function relatedLinkOf(candidate: LinkCandidate, options: RelatedOptions = {}): RelatedLink | null {
+  return readLink(candidate, options)?.link ?? null;
 }
 
 /**
  * Every related link among `candidates`, one per thing linked to, in kind order and then in the order they appear.
  * Of two links to one thing the web page is kept over a desktop deep link, and a title found on either is kept.
  */
-export function relatedLinksFrom(candidates: readonly LinkCandidate[]): RelatedLink[] {
+export function relatedLinksFrom(candidates: readonly LinkCandidate[], options: RelatedOptions = {}): RelatedLink[] {
   const found = new Map<string, { link: RelatedLink; rank: number }>();
   for (const candidate of candidates) {
-    const read = readLink(candidate);
+    const read = readLink(candidate, options);
     if (read === null) continue;
     const { link, rank } = read;
     const known = found.get(link.key);

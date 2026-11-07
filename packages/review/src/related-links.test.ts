@@ -179,6 +179,32 @@ describe('relatedLinkOf', () => {
   });
 });
 
+describe('GitHub references', () => {
+  const options = { githubHosts: ['github.com', 'git.acme.dev'], repository: 'acme/web', self: 'acme/web#7' };
+  const readHere = (href: string, text = href) => relatedLinkOf({ href, text }, options);
+
+  it('reads issues, pull requests and discussions, `#N` in this repository and `owner/repo#N` elsewhere', () => {
+    expect(readHere('https://github.com/acme/web/issues/12', '#12')).toMatchObject({ service: 'GitHub', noun: 'issue', ref: '#12', title: null, context: 'acme/web', action: 'Open issue on GitHub' });
+    expect(readHere('https://github.com/vercel/next.js/pull/52514', 'vercel/next.js#52514')).toMatchObject({ noun: 'pull request', ref: 'vercel/next.js#52514', title: null });
+    expect(readHere('https://github.com/acme/web/pull/3/files', 'the refactor')).toMatchObject({ ref: '#3', title: 'the refactor' });
+    expect(readHere('https://github.com/acme/web/issues/12#issuecomment-1', '#12 (comment)')?.title).toBeNull();
+    expect(readHere('https://github.com/acme/web/discussions/4')).toMatchObject({ noun: 'discussion', ref: '#4' });
+    expect(readHere('https://git.acme.dev/acme/api/issues/9')).toMatchObject({ ref: 'acme/api#9' });
+  });
+
+  it('keeps an issue and a pull request of one number together, and never lists the pull request itself', () => {
+    expect(relatedLinksFrom([{ href: 'https://github.com/acme/web/issues/12', text: '#12' }, { href: 'https://github.com/acme/web/pull/12', text: '#12' }], options)).toHaveLength(1);
+    expect(readHere('https://github.com/acme/web/pull/7/files')).toBeNull();
+    expect(readHere('https://github.com/ACME/Web/pull/7')).toBeNull();
+  });
+
+  it('leaves the rest of GitHub alone', () => {
+    for (const href of ['https://github.com/acme/web', 'https://github.com/acme/web/commit/3b2f94ba', 'https://github.com/acme/web/blob/main/a.ts', 'https://github.com/orgs/acme/discussions/1', 'https://github.com/acme/web/issues', 'https://github.com/user-attachments/assets/b72f2dc7-4558-488d-877c-eb53a7f4beef']) {
+      expect(readHere(href), href).toBeNull();
+    }
+  });
+});
+
 describe('isDependencyUpdate', () => {
   it('knows Renovate’s and Dependabot’s descriptions, and nothing else', () => {
     expect(isDependencyUpdate('This PR contains the following updates:\n| Package | Change |')).toBe(true);
@@ -211,6 +237,7 @@ describe('relatedLinksFrom', () => {
     ]);
     expect(links.map((link) => [link.key, link.href])).toEqual([
       ['linear:acme:ENG-12', 'https://linear.app/acme/issue/ENG-12'],
+      ['github:acme/web#3', 'https://github.com/acme/web/pull/3'],
       ['slack:mintlify:C0BCMJ9JFA9:1793123214.352139', 'https://mintlify.slack.com/archives/C0BCMJ9JFA9/p1793123214352139?thread_ts=1793123214.352139&cid=C0BCMJ9JFA9'],
       ['cursor:bc-4507257a-6c22-519d-8c1e-408ad9f0bf88', 'https://cursor.com/agents/bc-4507257a-6c22-519d-8c1e-408ad9f0bf88?cursor_ref=pr_footer'],
       ['devin:d71d660849c3422eadd668dd12739bac', 'https://app.devin.ai/sessions/d71d660849c3422eadd668dd12739bac'],

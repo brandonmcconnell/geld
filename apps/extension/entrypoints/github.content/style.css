@@ -8588,6 +8588,23 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   height: 16px;
 }
 
+.geld-related__mark[data-tone='open'] {
+  color: var(--fgColor-open, #1a7f37);
+}
+
+.geld-related__mark[data-tone='done'] {
+  color: var(--fgColor-done, #8250df);
+}
+
+.geld-related__mark[data-tone='closed'] {
+  color: var(--fgColor-closed, #d1242f);
+}
+
+.geld-related__mark[data-tone='draft'],
+.geld-related__mark[data-tone='unknown'] {
+  color: var(--fgColor-muted, #59636e);
+}
+
 .geld-related__mark--app {
   border-radius: 4px;
   box-shadow: 0 0 0 1px var(--avatar-borderColor, rgb(31 35 40 / 15%));

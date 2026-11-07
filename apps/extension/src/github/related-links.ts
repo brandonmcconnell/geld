@@ -4,7 +4,21 @@ import type { LinkCandidate, RelatedKind, RelatedLink } from '@geld/review/relat
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { pageFetch } from './page-fetch';
 import { descriptionBody } from './review/description';
-import { ICON_ALERT, ICON_COMMENT_DISCUSSION, ICON_COPILOT, ICON_FILE, ICON_ISSUE_OPENED, ICON_LINK_EXTERNAL } from './ui/icons';
+import { refDetails } from './review/refs';
+import type { RefState } from './review/refs';
+import {
+  ICON_ALERT,
+  ICON_COMMENT_DISCUSSION,
+  ICON_COPILOT,
+  ICON_FILE,
+  ICON_GIT_MERGE,
+  ICON_GIT_PULL_REQUEST,
+  ICON_GIT_PULL_REQUEST_CLOSED,
+  ICON_GIT_PULL_REQUEST_DRAFT,
+  ICON_ISSUE_CLOSED,
+  ICON_ISSUE_OPENED,
+  ICON_LINK_EXTERNAL,
+} from './ui/icons';
 
 /**
  * "Related links" in the pull request's sidebar, under Assignees: the tickets, chat threads, agent sessions, review
@@ -121,7 +135,13 @@ function fetchedDescription(onChange: () => void): Document | null {
 /** Every related link the page holds, in the registry's order. Exported for its test. */
 export function relatedLinksOnPage(onChange: () => void = () => undefined): RelatedLink[] {
   const body = descriptionBody() ?? fetchedDescription(onChange)?.body ?? null;
-  return relatedLinksFrom([...(body === null ? [] : descriptionLinks(body)), ...linearLinkbacks()]);
+  const pull = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(location.pathname);
+  const repository = pull === null ? null : `${pull[1] ?? ''}/${pull[2] ?? ''}`;
+  return relatedLinksFrom([...(body === null ? [] : descriptionLinks(body)), ...linearLinkbacks()], {
+    githubHosts: [location.hostname],
+    repository,
+    self: pull === null ? null : `${repository ?? ''}#${pull[3] ?? ''}`,
+  });
 }
 
 const isHeading = (element: Element): boolean => SECTION_HEADING.test(words(element));
@@ -159,7 +179,46 @@ export function assigneesSections(): HTMLElement[] {
   return [...found];
 }
 
-function markOf(link: RelatedLink): Element {
+/** A row: the link, and for GitHub's own issues and pull requests what GitHub's hovercard says of it. */
+type RelatedRow = RelatedLink & { readonly state: RefState | null };
+
+/** GitHub's glyph for an issue or pull request in each state, in GitHub's colour for it. */
+const STATE_GLYPHS: Readonly<Record<RefState, { readonly icon: string; readonly tone: string; readonly word: string }>> = {
+  open: { icon: ICON_GIT_PULL_REQUEST, tone: 'open', word: 'Open' },
+  draft: { icon: ICON_GIT_PULL_REQUEST_DRAFT, tone: 'draft', word: 'Draft' },
+  merged: { icon: ICON_GIT_MERGE, tone: 'done', word: 'Merged' },
+  closed: { icon: ICON_GIT_PULL_REQUEST_CLOSED, tone: 'closed', word: 'Closed' },
+  'issue-open': { icon: ICON_ISSUE_OPENED, tone: 'open', word: 'Open' },
+  'issue-closed': { icon: ICON_ISSUE_CLOSED, tone: 'done', word: 'Closed' },
+  unknown: { icon: ICON_ISSUE_OPENED, tone: 'unknown', word: '' },
+};
+
+const NOUN_GLYPHS: Readonly<Record<string, string>> = { issue: ICON_ISSUE_OPENED, 'pull request': ICON_GIT_PULL_REQUEST, discussion: ICON_COMMENT_DISCUSSION };
+
+/**
+ * GitHub's own references get their title and state from GitHub's hovercard (`refs.ts`, once per reference per
+ * visit), when they live on this page's host; `onChange` asks for a pass when one lands.
+ */
+function rowsOf(links: readonly RelatedLink[], onChange: () => void): RelatedRow[] {
+  return links.map((link) => {
+    if (!link.key.startsWith('github:') || new URL(link.href).hostname !== location.hostname) return { ...link, state: null };
+    const details = refDetails(link.href, onChange);
+    return details === null ? { ...link, state: null } : { ...link, title: details.title, state: details.state };
+  });
+}
+
+function glyphOf(icon: string, tone: string): Element {
+  const glyph = svgFromString(icon);
+  glyph.classList.add(`${SECTION_CLASS}__mark`);
+  glyph.setAttribute('data-tone', tone);
+  return glyph;
+}
+
+function markOf(link: RelatedRow): Element {
+  if (link.key.startsWith('github:')) {
+    if (link.state !== null) return glyphOf(STATE_GLYPHS[link.state].icon, STATE_GLYPHS[link.state].tone);
+    return glyphOf(NOUN_GLYPHS[link.noun] ?? ICON_ISSUE_OPENED, 'unknown');
+  }
   if (link.appId !== null) {
     return createElement('img', { class: `${SECTION_CLASS}__mark ${SECTION_CLASS}__mark--app`, src: `https://avatars.githubusercontent.com/in/${link.appId}?s=32&v=4`, alt: '', width: '16', height: '16' });
   }
@@ -180,16 +239,17 @@ export function relatedText(link: RelatedLink): string {
   return named.length > 0 ? named.join(' ') : link.action;
 }
 
-function rowOf(link: RelatedLink): HTMLElement {
+function rowOf(link: RelatedRow): HTMLElement {
   const named = link.ref !== null || link.title !== null;
-  const tip = [link.action, link.title, link.context].filter((part) => part !== null && part !== '').join(' · ');
+  const state = link.state === null ? null : STATE_GLYPHS[link.state].word || null;
+  const tip = [state, link.action, link.title, link.context].filter((part) => part !== null && part !== '').join(' · ');
   const parts = named
     ? [
         ...(link.ref === null ? [] : [createElement('span', { class: `${SECTION_CLASS}__ref` }, [link.ref])]),
         ...(link.title === null ? [] : [createElement('span', { class: `${SECTION_CLASS}__title` }, [link.title])]),
       ]
     : [createElement('span', { class: `${SECTION_CLASS}__action` }, [link.action])];
-  const label = named ? `${relatedText(link)}. ${link.action}` : link.action;
+  const label = `${state === null ? '' : `${state}. `}${named ? `${relatedText(link)}. ${link.action}` : link.action}`;
   const anchor = createElement('a', { class: `${SECTION_CLASS}__link`, href: link.href, target: '_blank', rel: 'noopener noreferrer', title: tip, 'aria-label': link.context === null ? label : `${label}, ${link.context}` }, [
     markOf(link),
     createElement('span', { class: `${SECTION_CLASS}__text` }, parts),
@@ -205,7 +265,7 @@ export const SHOWN_LINKS = 8;
 /** Whether the reader asked for every row on this page; kept across redraws, forgotten on teardown. */
 let showAll = false;
 
-function listOf(links: readonly RelatedLink[]): HTMLElement {
+function listOf(links: readonly RelatedRow[]): HTMLElement {
   const rows = links.map(rowOf);
   const list = createElement('ul', { class: `${SECTION_CLASS}__list` }, rows);
   const extra = rows.slice(SHOWN_LINKS);
@@ -222,7 +282,7 @@ function listOf(links: readonly RelatedLink[]): HTMLElement {
 }
 
 /** The Rails sidebar's item: `div.discussion-sidebar-item` with an `h3.discussion-sidebar-heading`. */
-function railsSection(links: readonly RelatedLink[]): HTMLElement {
+function railsSection(links: readonly RelatedRow[]): HTMLElement {
   return createElement('div', { class: `discussion-sidebar-item ${SECTION_CLASS}`, [OWN_UI_ATTRIBUTE]: '', 'data-geld-shape': 'rails' }, [
     createElement('h3', { class: `discussion-sidebar-heading text-bold ${SECTION_CLASS}__heading` }, [TITLE]),
     listOf(links),
@@ -235,7 +295,7 @@ function railsSection(links: readonly RelatedLink[]): HTMLElement {
  * The title's class is the leaf that reads the neighbour's title (the `h4`, or the `span` inside a gear's button), the
  * header's from a section whose header is the plain `div > h4`, the content's from the neighbour's last child.
  */
-function overviewSection(neighbour: HTMLElement, links: readonly RelatedLink[]): HTMLElement {
+function overviewSection(neighbour: HTMLElement, links: readonly RelatedRow[]): HTMLElement {
   const name = words(titleOf(neighbour) ?? neighbour);
   const leaf = [...neighbour.querySelectorAll('h2, h3, h4, span')].find((element) => element.childElementCount === 0 && words(element) === name);
   const plainHeader = neighbour.parentElement?.querySelector(':scope > [data-overview-sidebar-item] > div:first-child:has(> h4:only-child)') ?? null;
@@ -247,7 +307,7 @@ function overviewSection(neighbour: HTMLElement, links: readonly RelatedLink[]):
 }
 
 /** Any other sidebar: the neighbour's tag and classes, and its title's. */
-function sectionLike(neighbour: HTMLElement, links: readonly RelatedLink[]): HTMLElement {
+function sectionLike(neighbour: HTMLElement, links: readonly RelatedRow[]): HTMLElement {
   if (neighbour.classList.contains('discussion-sidebar-item')) return railsSection(links);
   if (neighbour.hasAttribute('data-overview-sidebar-item')) return overviewSection(neighbour, links);
   const section = document.createElement(neighbour.localName);
@@ -279,7 +339,7 @@ export function removeRelatedLinks(): void {
  */
 export function applyRelatedLinks(active: boolean, onChange: () => void = () => undefined): void {
   const afters = active ? assigneesSections() : [];
-  const links = afters.length === 0 ? [] : relatedLinksOnPage(onChange);
+  const links = afters.length === 0 ? [] : rowsOf(relatedLinksOnPage(onChange), onChange);
   if (links.length === 0) {
     if (mounted.size > 0) removeRelatedLinks();
     return;

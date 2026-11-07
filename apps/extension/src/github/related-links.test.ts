@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+// @vitest-environment-options {"url":"https://github.com/acme/web/pull/7"}
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('wxt/browser', () => ({ browser: { runtime: { getURL: (path: string) => `chrome-extension://test${path}` } } }));
@@ -6,6 +7,13 @@ const fetches = vi.hoisted((): { paths: string[]; body: string | null } => ({ pa
 vi.mock('./page-fetch', () => ({
   pageFetch: async (path: string) => {
     fetches.paths.push(path);
+    const hovercard = /\/([^/]+)\/([^/]+)\/pull\/(\d+)\/hovercard$/.exec(path);
+    if (hovercard !== null) {
+      const merged = hovercard[3] === '52514';
+      const title = merged ? 'Cache fetches across routes' : 'Nav overview is a group of one';
+      const badge = merged ? '<span class="State State--merged">Merged</span><svg class="octicon octicon-git-merge"></svg>' : '<span class="State State--open">Open</span><svg class="octicon octicon-issue-opened"></svg>';
+      return new Response(`<div>${badge}<a href="/${hovercard[1]}/${hovercard[2]}/issues/${hovercard[3]}">${title} #${hovercard[3]}</a></div>`, { status: 200, headers: { 'Content-Type': 'text/html' } });
+    }
     return new Response(fetches.body === null ? '{}' : JSON.stringify({ body: '', bodyHtml: fetches.body }), { status: fetches.body === null ? 404 : 200, headers: { 'Content-Type': 'application/json' } });
   },
 }));
@@ -187,5 +195,26 @@ describe('related links in the sidebar', () => {
     document.querySelector('.js-comment-body p')?.append(' ', Object.assign(document.createElement('a'), { href: 'https://linear.app/acme/issue/ENG-12', textContent: 'ENG-12' }));
     applyRelatedLinks(true);
     expect(visible()).toBe(12);
+  });
+
+  it('lists GitHub’s own issues and pull requests with the title and state GitHub’s hovercard gives, never this one', async () => {
+    history.replaceState(null, '', '/acme/web/pull/7');
+    document.body.innerHTML =
+      '<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>Fixes <a class="issue-link js-issue-link" href="https://github.com/acme/web/issues/12">#12</a>, after ' +
+      '<a class="issue-link js-issue-link" href="https://github.com/vercel/next.js/pull/52514">vercel/next.js#52514</a>. Stacked on <a href="https://github.com/acme/web/pull/7">this one</a>.</p></div></div>' +
+      railsSidebar();
+    const rerun = (): void => applyRelatedLinks(true, rerun);
+    rerun();
+    expect([...document.querySelectorAll('.geld-related__text')].map((text) => text.textContent)).toEqual(['#12', 'vercel/next.js#52514']);
+    expect([...document.querySelectorAll('.geld-related__mark')].map((mark) => mark.getAttribute('data-tone'))).toEqual(['unknown', 'unknown']);
+    await settle();
+    await settle();
+    expect([...document.querySelectorAll('.geld-related__text')].map((text) => text.textContent)).toEqual(['#12Nav overview is a group of one', 'vercel/next.js#52514Cache fetches across routes']);
+    const marks = [...document.querySelectorAll('.geld-related__mark')];
+    expect(marks.map((mark) => [mark.getAttribute('data-tone'), mark.getAttribute('class')])).toEqual([
+      ['open', 'octicon octicon-issue-opened geld-related__mark'],
+      ['done', 'octicon octicon-git-merge geld-related__mark'],
+    ]);
+    expect(document.querySelectorAll('.geld-related__link')[1]?.getAttribute('title')).toBe('Merged · Open pull request on GitHub · Cache fetches across routes · vercel/next.js');
   });
 });
