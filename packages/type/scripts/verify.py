@@ -45,6 +45,10 @@ def check_static(path: Path, expected: dict, italic: bool) -> None:
     check(bool(os2.fsSelection & 1) == italic, f"{path.name}: italic bit")
     check((post.italicAngle != 0) == italic, f"{path.name}: italic angle")
     check(bool(os2.fsSelection & 0x80), f"{path.name}: USE_TYPO_METRICS")
+    widths = advances(font)
+    for name in ("f_f", "f_t", "t_t"):
+        letters = sum(widths[part] for part in name.split("_"))
+        check(widths[name] == letters, f"{path.name}: {name} is {widths[name]} wide, its letters {letters}")
 
 
 def check_kerning(path: Path, data: bytes, weight: int, expected: dict) -> None:
@@ -170,7 +174,8 @@ def check_ligatures(path: Path, data: bytes, weight: int) -> None:
         check(joined == [name], f"{path.name} at {weight}: {text} shaped {joined}")
         apart, apart_width = shape_total(data, weight, text, {"kern": False, "liga": False})
         check(apart == list(text), f"{path.name} at {weight}: {text} without liga shaped {apart}")
-        check(width == apart_width, f"{path.name} at {weight}: {name} is {width} wide, its letters {apart_width}")
+        # varLib rounds deltas solved through neighbouring masters, so each advance may drift a unit (statics are exact).
+        check(abs(width - apart_width) <= len(text), f"{path.name} at {weight}: {name} is {width} wide, its letters {apart_width}")
         check(name in with_carets, f"{path.name}: {name} has no ligature caret")
         small = [n for n, _ in shape(data, weight, text, features={"smcp": True})]
         check(small == [f"{c}.sc" for c in text], f"{path.name} at {weight}: smcp {text} shaped {small}")
@@ -195,7 +200,7 @@ def check_ligatures(path: Path, data: bytes, weight: int) -> None:
         check(got == names, f"{path.name} at {weight}: {text} shaped {got}")
         if like:
             _, want = shape_total(data, weight, like, {"kern": False})
-            check(abs(width - want) <= 1, f"{path.name} at {weight}: {text} is {width} wide, {like} {want}")
+            check(abs(width - want) <= len(text), f"{path.name} at {weight}: {text} is {width} wide, {like} {want}")
     for text in ("<=", "<=>", "--->", "->>", ">=", "=>="):
         got, _ = shape_total(data, weight, text, {"kern": False})
         check(got == [CHAR_NAMES[c] for c in text], f"{path.name} at {weight}: {text} shaped {got}")
