@@ -204,6 +204,7 @@ jobs:
         env:
           WXT_GELD_APP_CLIENT_ID: ${{ vars.WXT_GELD_APP_CLIENT_ID }}
           WXT_GELD_SLACK_CLIENT_ID: ${{ vars.WXT_GELD_SLACK_CLIENT_ID }}
+          WXT_GELD_TEAMS_CLIENT_ID: ${{ vars.WXT_GELD_TEAMS_CLIENT_ID }}
           GELD_BUILD_NUMBER: ${{ github.event_name == 'pull_request' && '' || github.run_number }}
       - id: version
         run: echo "version=$(node -p "require('./apps/extension/package.json').version")" >> "$GITHUB_OUTPUT"
