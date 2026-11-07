@@ -174,7 +174,7 @@ export const SYMBOLS: GlyphDef[] = [
       const x0 = 3 + g.v / 2;
       const x1 = w - 3 - g.v / 2;
       return [
-        open(p(w, 2), p(w, top, true), p(0, top, true), p(0, bottom, true), p(w * 0.8, bottom)),
+        open(p(w, 3), p(w, top, true), p(0, top, true), p(0, bottom, true), p(w * 0.8, bottom)),
         box(x0, x1, 3 + g.h / 2, 9.5 - g.h / 2, LEFT),
         open(p(x1, 9.5), p(x1, 3 + g.h / 2), p(w, 3 + g.h / 2)),
       ];

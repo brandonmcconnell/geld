@@ -794,15 +794,23 @@ export const ON_LETTERS: GlyphDef[] = [
   onLetter('kip', 0x20ad, 'K', (g) => {
     const w = g.wide(9.5);
     const y0 = g.y(4.5);
-    const y = g.y(7);
-    return [bar(-crossbarReach(g), edgeAt(g.diag, 0, y0, w + g.v / 2 - g.foot(w, g.cap - y0), g.cap, y + g.h / 2, 1) + 1.25, y)];
+    const reach = w + g.v / 2 - g.foot(w, g.cap - y0);
+    // Across the point where K's leg leaves its arm, clearing both by 1.25.
+    const y = y0 + (g.cap - y0) * 0.4;
+    const arm = edgeAt(g.diag, 0, y0, reach, g.cap, y + g.h / 2, 1);
+    const leg = edgeAt(g.diag, reach * 0.4, y, reach, 0, y - g.h / 2, 1);
+    return [bar(-crossbarReach(g), Math.max(arm, leg) + 1.25, y)];
   }, { lsb: 0.5, rsb: 0.3 }),
   onLetter('tugrik', 0x20ae, 'T', (g) => {
     const x = g.wide(11) / 2;
     return [strikeThrough(g, x, g.y(5), 3 / 5.5), strikeThrough(g, x, g.y(8.5), 3 / 5.5)];
   }),
   onLetter('peso', 0x20b1, 'P', (g) => [bar(-crossbarReach(g), 0, g.top(g.cap)), bar(-crossbarReach(g), 0, g.y(6))], { lsb: 0.5, rsb: 1 }),
-  onLetter('guarani', 0x20b2, 'G', (g) => [through(g.wide(10) / 2)]),
+  onLetter('guarani', 0x20b2, 'G', (g) => {
+    const w = g.wide(10);
+    // As near the middle as G's bar still ends inside it.
+    return [through(Math.min(Math.max(w / 2, w * 0.4 - g.v / 2 + INSIDE), w * 0.4 + g.v / 2 - INSIDE))];
+  }),
   {
     name: 'hryvnia',
     unicode: 0x20b4,
@@ -826,7 +834,8 @@ export const ON_LETTERS: GlyphDef[] = [
   onLetter('bitcoin', 0x20bf, 'B', (g) => {
     const x1 = 2;
     const x2 = x1 + g.v + 1.6;
-    return [stem(x1, -2, 1), stem(x1, g.cap - 1, 16), stem(x2, -2, 1), stem(x2, g.cap - 1, 16)];
+    const [low, high] = [g.h - INSIDE, g.cap - g.h + INSIDE];
+    return [stem(x1, -2, low), stem(x1, high, 16), stem(x2, -2, low), stem(x2, high, 16)];
   }),
   onLetter('baht', 0x0e3f, 'B', (g) => [through(g.v + 1.6)]),
   onLetter('colonmonetary', 0x20a1, 'C', (g) => {

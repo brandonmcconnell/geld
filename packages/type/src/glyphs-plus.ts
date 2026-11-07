@@ -175,7 +175,8 @@ export const PLUS: GlyphDef[] = [
     rsb: 0.5,
     draw: (g) => {
       const w = g.wide(11);
-      return [diagonal(g, 0, 0, w / 2, g.cap), diagonal(g, w, 0, w / 2, g.cap), bar(g.foot(w / 2, g.cap) - 0.5, w - g.foot(w / 2, g.cap) + 0.5, g.bottom(0))];
+      const start = edgeAt(g.diag, 0, 0, w / 2, g.cap, g.h, -1) + INSIDE;
+      return [diagonal(g, 0, 0, w / 2, g.cap), diagonal(g, w, 0, w / 2, g.cap), bar(start, w - start, g.bottom(0))];
     },
   },
   {

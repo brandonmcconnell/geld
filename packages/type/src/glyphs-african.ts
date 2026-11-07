@@ -25,6 +25,7 @@ import {
   strikeThrough,
   spanOf,
   strikeReach,
+  withPen,
 } from './draw';
 import type { Stroke } from './geometry';
 import { DRAWN_SIGNS, letter } from './glyphs-core';
@@ -315,7 +316,7 @@ const LOWER_DEFS: GlyphDef[] = [
   { name: 'ubar', unicode: 0x289, lsb: 0.5, rsb: 0.5, draw: (g) => [...draw('u')(g), bar(-crossbarReach(g), g.wide(7) + crossbarReach(g), Math.max(g.y(4.5), g.h * 1.5 + 2))] },
   { name: 'vturned', unicode: 0x28c, lsb: 0.3, rsb: 0.3, draw: (g) => vee(g, 0, g.wide(8.5), 0, g.xHeight) },
   { name: 'jcrossedtail', unicode: 0x29d, lsb: 0.5, rsb: 0.5, draw: (g) => [...draw('j')(g), strike(g, 0, 1.5)] },
-  { name: 'pstroke', unicode: 0x1d7d, lsb: 0.5, rsb: 1.25, draw: (g) => [...draw('p')(g), strike(g, 0, -2.75)] },
+  { name: 'pstroke', unicode: 0x1d7d, lsb: 0.5, rsb: 1.25, draw: (g) => [...draw('p')(g), withPen(strike(g, 0, g.descender / 2), { ...g.pen, h: Math.min(g.h, 1.6) })] },
   { name: 'whook', unicode: 0x2c73, lsb: 0.3, rsb: 0.3, draw: (g) => [...draw('w')(g), bar(g.wide(12), edgeAt(g.diag, g.wide(12), g.xHeight, (3 * g.wide(12)) / 4, 0, g.xHeight, 1) + 1.5, g.top(g.xHeight))] },
   {
     name: 'dshortstroke',

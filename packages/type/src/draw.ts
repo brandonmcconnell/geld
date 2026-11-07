@@ -264,7 +264,9 @@ export function comma(g: DrawContext, x: number, y: number, scale = 1): Stroke[]
   const s = g.dot * scale;
   const a = s / 2;
   const tail = (1.4 + s * 0.45) * Math.max(scale, 0.6);
-  return [solid([p(x - a, y + s), p(x + a, y + s), p(x + a, y), p(x - a, y - tail)], 0.001)];
+  // A blunt tip where the tail would come to a spike sharper than 32° (light weights); a hair of it elsewhere, so every weight has the same points.
+  const tip = Math.max(0.15, tail * Math.tan((32 * Math.PI) / 180) - s);
+  return [solid([p(x - a, y + s), p(x + a, y + s), p(x + a, y), p(x - a + tip, y - tail), p(x - a, y - tail)], 0.001)];
 }
 
 /** How far t's and f's crossbar reaches left of the stem's edge: the same visible step at every weight. */
