@@ -119,6 +119,7 @@ export const PLACED: PlacedDef[] = [
   { name: 'ldot', unicode: 0x140, parts: [{ glyph: 'l', after: true }, { glyph: 'periodcentered', after: true, dx: -0.5, dy: 2 }] },
   { name: 'Dcroat', unicode: 0x110, parts: [{ glyph: 'Eth', after: true }] },
   { name: 'apostrophemod', unicode: 0x2bc, parts: [{ glyph: 'quoteright', after: true }] },
+  { name: 'Omega', unicode: 0x3a9, parts: [{ glyph: 'Ohm', after: true }] },
   { name: 'rupee', unicode: 0x20a8, parts: [{ glyph: 'R', after: true }, { glyph: 's', after: true, dx: -0.5 }] },
   { name: 'uni00AD', unicode: 0xad, parts: [{ glyph: 'hyphen', after: true }] },
   ...(

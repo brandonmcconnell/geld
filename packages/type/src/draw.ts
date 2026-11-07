@@ -22,6 +22,13 @@ export interface DrawContext {
   bottom(y: number): number;
   /** How far a diagonal of this run and rise reaches either side of its centre along a level end. */
   foot(dx: number, dy: number): number;
+  /** A height on the 14-unit cap, as the same share of this context's cap height. */
+  y(n: number): number;
+  /**
+   * The same pen and grid at another size: superiors, fractions, ™, ordinals and the letters inside © ®
+   * are drawn natively at their size, so every join is computed for the stroke they really have.
+   */
+  sub(size: number, penScale: number, lower?: boolean): DrawContext;
   cap: number;
   xHeight: number;
   ascender: number;
@@ -86,6 +93,18 @@ export function vee(g: DrawContext, x0: number, x1: number, top: number, bottom:
   return [diagonal(g, x0, top, mid, bottom), diagonal(g, x1, top, mid, bottom)];
 }
 
+/**
+ * Y's arms meeting a stem: the stem runs up into the arms' overlap (not just to their level feet,
+ * which would touch along a line and part in Geld Dark Sans), stopping short of the crotch.
+ */
+export function yArms(g: DrawContext, w: number, top: number, join: number): Stroke[] {
+  const c = w / 2;
+  const e = g.foot(c, top - join);
+  const slope = c / (top - join);
+  const into = (e / slope) * 0.95;
+  return [...vee(g, 0, w, top, join), stem(c, 0, join + into)];
+}
+
 /** Z and z: two bars and a diagonal whose level ends sit flush inside the bars' corners. */
 export function zed(g: DrawContext, w: number, height: number): Stroke[] {
   const e = g.foot(w, height);
@@ -108,20 +127,6 @@ export const shift = (strokes: Stroke[], dx: number, dy: number): Stroke[] =>
 export const rotate180 = (strokes: Stroke[], cx: number, cy: number): Stroke[] =>
   mapPoints(strokes, (q) => ({ ...q, x: 2 * cx - q.x, y: 2 * cy - q.y }));
 
-/**
- * Strokes made smaller for superiors, inferiors and fractions: centrelines scaled by `k` and raised
- * by `dy`, every pen lightened by `penScale` (strokes with no pen of their own take `pen`).
- */
-export const smaller = (strokes: Stroke[], k: number, dy: number, pen: Pen, penScale: number): Stroke[] =>
-  strokes.map((s) => {
-    const own = s.pen ?? pen;
-    return {
-      ...s,
-      points: s.points.map((q) => ({ ...q, x: q.x * k, y: q.y * k + dy })),
-      pen: { ...own, v: own.v * penScale, h: own.h * penScale, ...(own.cut === undefined ? {} : { cut: own.cut * k }) },
-    };
-  });
-
 /** Mirrors strokes across the vertical line x = axis. */
 export const mirror = (strokes: Stroke[], axis: number): Stroke[] =>
   mapPoints(strokes, (q) => ({ ...q, x: 2 * axis - q.x }));
@@ -132,13 +137,19 @@ export function ring(g: DrawContext, x0: number, y0: number, inner = 0.8): Strok
   return box(x0, x0 + size, y0 + g.h / 2, y0 + g.h / 2 + size, ALL);
 }
 
-/** A comma: a square dot with a tail hanging to the left, so it reads the same turned (‘) or not (’). */
+/**
+ * A comma as one solid shape: the square dot, its right side slanting down and left into the tail,
+ * so dot and tail can never come apart. Turned, it is ‘; as it stands, ’ and ,.
+ */
 export function comma(g: DrawContext, x: number, y: number, scale = 1): Stroke[] {
-  const size = g.dot * scale;
-  const tail = { v: size * 0.55, h: size * 0.55 };
-  const square = withPen(open(p(x, y), p(x, y + size)), { v: size, h: size });
-  return [square, withPen(level(open(p(x + size * 0.2, y + 0.3 * scale), p(x - size * 0.35, y - 2.5 * scale)), false, true), tail)];
+  const s = g.dot * scale;
+  const a = s / 2;
+  const tail = (1.4 + s * 0.45) * Math.max(scale, 0.6);
+  return [solid([p(x - a, y + s), p(x + a, y + s), p(x + a, y), p(x - a, y - tail)], 0.001)];
 }
+
+/** How far t's and f's crossbar reaches left of the stem's edge: the same visible step at every weight. */
+export const crossbarReach = (g: DrawContext) => g.v / 2 + 1.25;
 
 /** A solid shape from its outline, corners cut where `p(…, true)` asks, with cuts of `leg` units. */
 export const solid = (points: PathPoint[], leg = 1.25): Stroke => ({ points, closed: true, fill: true, pen: { v: 0, h: 0, cut: leg } });
@@ -161,10 +172,15 @@ export const rotate = (strokes: Stroke[], deg: number, cx: number, cy: number): 
   return mapPoints(strokes, (q) => ({ ...q, x: cx + (q.x - cx) * c - (q.y - cy) * s, y: cy + (q.x - cx) * s + (q.y - cy) * c }));
 };
 
-/** A chevron pointing left with a small upright tip, so two diagonals meet without a mitred spike: < ‹ « ⟨. */
-export function chevronLeft(g: DrawContext, w: number, y: number, spread: number): Stroke[] {
-  const tip = (x1: number, y1: number): Stroke => withPen({ points: [p(0, y), p(x1, y1)], closed: false, startCap: 'upright', endCap: 'flat' }, g.diag);
-  return [tip(w, y + spread), tip(w, y - spread)];
+/** A chevron pointing left: arms at 45° on the grid meeting in a right-angled point, ends level (< ‹ « ≤). */
+export function chevronLeft(g: DrawContext, size: number, y: number): Stroke[] {
+  return [withPen(level(open(p(size, y + size), p(0, y), p(size, y - size))), g.pen)];
+}
+
+/** A tall narrow chevron (⟨ ⟩): too steep for a clean point, so its two diagonals meet in a small upright tip. */
+export function angleLeft(g: DrawContext, w: number, y: number, spread: number): Stroke[] {
+  const arm = (x1: number, y1: number): Stroke => withPen({ points: [p(0, y), p(x1, y1)], closed: false, startCap: 'upright', endCap: 'flat' }, g.diag);
+  return [arm(w, y + spread), arm(w, y - spread)];
 }
 
 /** Math sits on this centre line, the hyphen and strikeout on the x-height's middle. */
@@ -179,23 +195,29 @@ const DIAGONAL_WEIGHT = 0.92;
 /** The least opening between a terminal and the stroke it turns toward, as in 6, 9 and ?. */
 const APERTURE = 1.6;
 
-export function drawContext(v: number, hc: number, lower = false): DrawContext {
-  const cut = lower ? CUT_OUTER_LOWER : CUT_OUTER;
+export function drawContext(v: number, hc: number, lower = false, size: number = METRICS.cap): DrawContext {
+  const k = size / METRICS.cap;
+  const cut = (lower ? CUT_OUTER_LOWER : CUT_OUTER) * Math.min(1, k);
   const diag = { v: v * DIAGONAL_WEIGHT, h: hc * DIAGONAL_WEIGHT };
   return {
     v,
     h: hc,
     pen: { v, h: hc, cut },
     diag,
-    dot: v * 1.1 + 0.2,
-    aperture: APERTURE,
-    wide: (n) => n + GROWTH * (v - 2),
+    dot: v * 1.1 + 0.2 * k,
+    aperture: APERTURE * k,
+    wide: (n) => n * k + GROWTH * (v - 2 * k),
     top: (y) => y - hc / 2,
     bottom: (y) => y + hc / 2,
     foot: (dx, dy) => Math.hypot(diag.v * dy, diag.h * dx) / (2 * Math.abs(dy)),
-    cap: METRICS.cap,
-    xHeight: METRICS.xHeight,
-    ascender: METRICS.ascender,
-    descender: METRICS.descender,
+    y: (n) => n * k,
+    sub: (s, penScale, subLower = lower) => drawContext(v * penScale, hc * penScale, subLower, s),
+    cap: size,
+    xHeight: METRICS.xHeight * k,
+    ascender: METRICS.ascender * k,
+    descender: METRICS.descender * k,
   };
 }
+
+/** Strokes drawn in another context keep that context's pen when they join a glyph drawn in this one. */
+export const inPen = (g: DrawContext, strokes: Stroke[]): Stroke[] => strokes.map((s) => (s.pen ? s : { ...s, pen: g.pen }));

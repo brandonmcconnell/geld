@@ -2,9 +2,10 @@ import {
   ALL,
   bar,
   box,
+  angleLeft,
   chevronLeft,
+  level,
   diagonal,
-  dot,
   type DrawContext,
   type GlyphDef,
   hollow,
@@ -15,7 +16,6 @@ import {
   open,
   p,
   rotate,
-  shift,
   solid,
   stem,
   withPen,
@@ -26,10 +26,12 @@ import type { PathPoint, Stroke } from './geometry';
 const ARROW_LENGTH = 12;
 const HEAD = 4;
 
+/** The shaft stops inside the head, so nothing shows through the point. */
 function arrowRight(heads: { start?: boolean; end?: boolean } = { end: true }): Stroke[] {
   const y = MATH_AXIS;
-  const out: Stroke[] = [bar(heads.start ? 0.5 : 0, heads.end ? ARROW_LENGTH - 0.5 : ARROW_LENGTH, y)];
-  const head = (x: number, dir: 1 | -1) => open(p(x - dir * HEAD, y + HEAD), p(x, y, true), p(x - dir * HEAD, y - HEAD));
+  const inset = HEAD / 2;
+  const out: Stroke[] = [bar(heads.start ? inset : 0, heads.end ? ARROW_LENGTH - inset : ARROW_LENGTH, y)];
+  const head = (x: number, dir: 1 | -1) => open(p(x - dir * HEAD, y + HEAD), p(x, y), p(x - dir * HEAD, y - HEAD));
   if (heads.end) out.push(head(ARROW_LENGTH, 1));
   if (heads.start) out.push(head(0, -1));
   return out;
@@ -84,6 +86,18 @@ const TRIANGLES: [string, number, number, boolean, boolean][] = [
   ['whiteleftpointingsmalltriangle', 0x25c3, 90, false, false],
 ];
 
+/**
+ * Σ and ∑: the bars, and two diagonals from the bars' left corners, ends level and flush with the
+ * bars' outer edges so the corners are solid, meeting in a point on the right.
+ */
+export function sigma(g: DrawContext, w: number): Stroke[] {
+  const t = g.top(g.cap);
+  const b = g.bottom(0);
+  const tip = w * 0.55;
+  const e = g.foot(tip, g.cap / 2);
+  return [bar(0, w, t), bar(0, w, b), withPen(level(open(p(e, g.cap), p(tip, g.cap / 2), p(e, 0))), g.diag)];
+}
+
 export const PLUS: GlyphDef[] = [
   arrow('arrowleft', 0x2190, 180),
   arrow('arrowup', 0x2191, 90),
@@ -113,10 +127,13 @@ export const PLUS: GlyphDef[] = [
   shape('blackcircle', 0x25cf, () => [solid(octagon(BIG / 2, MATH_AXIS, BIG), octagonLeg(BIG))]),
   shape('whitebullet', 0x25e6, (g) => [hollow(octagon(SMALL / 2, MATH_AXIS, SMALL), wall(g) * 0.8, octagonLeg(SMALL))]),
   shape('dottedcircle', 0x25cc, (g) => {
-    const r = BIG / 2 - g.dot / 2;
+    const size = Math.min(g.dot, 2);
+    const r = BIG / 2 - size / 2;
     return Array.from({ length: 8 }, (_, i) => {
       const a = (i * Math.PI) / 4;
-      return dot(g, BIG / 2 + r * Math.cos(a), MATH_AXIS + r * Math.sin(a) - g.dot / 2);
+      const x = BIG / 2 + r * Math.cos(a);
+      const y = MATH_AXIS + r * Math.sin(a) - size / 2;
+      return withPen(open(p(x, y), p(x, y + size)), { v: size, h: size });
     });
   }),
 
@@ -159,7 +176,7 @@ export const PLUS: GlyphDef[] = [
     rsb: 1,
     draw: (g) => {
       const w = g.wide(10);
-      return [bar(-1.5, w + 1.5, g.top(g.cap)), stem(0, -3, g.cap), stem(w, -3, g.cap)];
+      return [bar(-1.5, w + 1.5, g.top(g.cap)), stem(0, 0, g.cap), stem(w, 0, g.cap)];
     },
   },
   {
@@ -169,10 +186,7 @@ export const PLUS: GlyphDef[] = [
     rsb: 1,
     draw: (g) => {
       const w = g.wide(10);
-      const t = g.top(g.cap);
-      const b = g.bottom(-3);
-      const mid = (t + b) / 2;
-      return [bar(0, w, t), bar(0, w, b), withPen(open(p(0.75, t), p(w * 0.55, mid), p(0.75, b)), g.diag)];
+      return sigma(g, w);
     },
   },
   {
@@ -208,8 +222,8 @@ export const PLUS: GlyphDef[] = [
     lsb: 1.5,
     rsb: 1.5,
     draw: (g) => {
-      const t = g.top(16);
-      const b = g.bottom(-4);
+      const t = g.top(g.cap);
+      const b = g.bottom(-2);
       return [open(p(-2.5, b), p(0, b, true), p(0, t, true), p(2.5, t))];
     },
   },
@@ -241,8 +255,8 @@ export const PLUS: GlyphDef[] = [
     lsb: 1,
     rsb: 1,
     draw: (g) => {
-      const w = g.wide(8);
-      return [...shift(chevronLeft(g, w, MATH_AXIS, 3.5), 0, 1.5), bar(0, w, g.bottom(0))];
+      const s = 4;
+      return [...chevronLeft(g, s, MATH_AXIS + 1.5), bar(-g.v * 0.7, s + g.v * 0.35, g.bottom(0))];
     },
   },
   {
@@ -251,8 +265,8 @@ export const PLUS: GlyphDef[] = [
     lsb: 1,
     rsb: 1,
     draw: (g) => {
-      const w = g.wide(8);
-      return [...mirror(shift(chevronLeft(g, w, MATH_AXIS, 3.5), 0, 1.5), w / 2), bar(0, w, g.bottom(0))];
+      const s = 4;
+      return [...mirror(chevronLeft(g, s, MATH_AXIS + 1.5), s / 2), bar(-g.v * 0.35, s + g.v * 0.7, g.bottom(0))];
     },
   },
   {
@@ -260,14 +274,14 @@ export const PLUS: GlyphDef[] = [
     unicode: 0x27e8,
     lsb: 1.25,
     rsb: 0.75,
-    draw: (g) => chevronLeft(g, 4, 6, 9.5),
+    draw: (g) => angleLeft(g, 4, 6, 9.5),
   },
   {
     name: 'angleright',
     unicode: 0x27e9,
     lsb: 0.75,
     rsb: 1.25,
-    draw: (g) => mirror(chevronLeft(g, 4, 6, 9.5), 2),
+    draw: (g) => mirror(angleLeft(g, 4, 6, 9.5), 2),
   },
   {
     name: 'dagger',
@@ -305,10 +319,10 @@ export const PLUS: GlyphDef[] = [
     rsb: 0.75,
     draw: (g) => {
       const w = g.wide(12);
-      const size = Math.max(g.v, g.h) + 1.6;
+      const size = Math.max(g.v, g.h) + Math.max(1.6, 4.4 - Math.max(g.v, g.h));
       const e = g.foot(w, g.cap);
       const ring = (x: number, y: number) => box(x, x + size, y + g.h / 2, y + g.h / 2 + size, ALL);
-      return [ring(0, g.cap - size - g.h), ring(w - size, 0), ring(w + 1, 0), diagonal(g, w - e, g.cap, e, 0)];
+      return [ring(0, g.cap - size - g.h), ring(w - size, 0), ring(w + g.v + 1.4, 0), diagonal(g, w - e, g.cap, e, 0)];
     },
   },
 ];

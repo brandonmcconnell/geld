@@ -113,7 +113,7 @@ Starting stems in grid units, vertical cap stems, to be tuned in Phase 3:
 - [ ] Documented use: `@media (prefers-color-scheme: dark)` switching `font-family` to Geld Dark Sans.
 
 ### 2.7 Spacing model
-- [ ] Sidebearings by side profile, in grid units: straight stems (H, n), cut rounds (O, o, closer to straight than a true curve because the cut is only 2 units), diagonals (V, v), open sides (C right, r right, L right, T), and each punctuation class.
+- [x] Sidebearings measured, not set by hand (`spacing.ts`, after HT Letterspacer's area method): each side's white across the x-height (lowercase) or cap height (capitals, figures) is measured row by row, capped so open shapes do not over-tighten, and the sidebearing brings white plus sidebearing to the side space of a straight stem. Every letter and figure, every weight. Punctuation keeps hand-set sidebearings; math operators share one width.
 - [ ] Proof the spacing with H, O, n and o control strings before any kerning.
 - [ ] Spaces: space, no-break space, en and em space and quad, three-, four- and six-per-em spaces, figure space, punctuation space, thin space, hair space, narrow no-break space, plus zero-width space, ZWJ, ZWNJ, word joiner, soft hyphen and BOM.
 - [ ] Tabular widths for figures, currency, math operators, `:` `.` `,` and the figure space.
@@ -200,6 +200,7 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [ ] Kerning per weight, in roman and in italic, shared by Geld Dark Sans, interpolating cleanly through the variable fonts.
 - [ ] Tabular figures and Mono get no kerning, by construction.
 - [ ] Collision checks: no kerned pair overlaps, including accents (for example T with ť, Ŵ with ŵ).
+- [x] Seams and slivers: no two contours touch along a line (a hairline once anti-aliased) and no parallel edges face across a gap under 0.35 units, in any glyph, family, style or weight (`seams.ts`, tested).
 - [ ] Space kerning (space with A, T, V, Y, quotes) where it helps.
 - [ ] Review with standard kerning test texts across languages, and with Geld's own UI strings.
 
