@@ -8826,6 +8826,8 @@ dialog.geld-lightbox {
 }
 
 .geld-lightbox__header {
+  /* The image sets the dialog's width, and a long title ellipsizes inside it rather than widening it. */
+  contain: inline-size;
   display: flex;
   align-items: center;
   gap: 8px;
