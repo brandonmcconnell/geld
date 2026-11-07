@@ -249,6 +249,7 @@ function rowOf(link: RelatedRow): HTMLElement {
   const parts = named
     ? [
         ...(link.ref === null ? [] : [createElement('span', { class: `${SECTION_CLASS}__ref` }, [link.ref])]),
+        ...(link.ref !== null && link.title !== null ? [' '] : []),
         ...(link.title === null ? [] : [createElement('span', { class: `${SECTION_CLASS}__title` }, [link.title])]),
       ]
     : [createElement('span', { class: `${SECTION_CLASS}__action` }, [link.action])];
