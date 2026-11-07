@@ -2,6 +2,7 @@ import {
   ALL,
   bar,
   box,
+  closed,
   angleLeft,
   chevronLeft,
   level,
@@ -76,6 +77,53 @@ const doubleArrow = (name: string, unicode: number, deg: number, heads?: { start
   },
 });
 
+/**
+ * Squiggle arrows (⇜ ⇝, which ~~> and <~~ draw as, and the one-wave forms for ~> and <~): the tilde's own wave, 1.75 high on 45° sides, repeated
+ * along the shaft, ending in the arrow's head; the last flat runs into the head, as a shaft does.
+ */
+/** The wave rises and its flats lengthen with the stem, so the waves stay open where a heavier stroke would merge them. */
+function squiggleRight(g: DrawContext, waves: number): { strokes: Stroke[]; length: number } {
+  // On the half unit at SemiBold, which snaps to it: a wave between half units would lose its 45° sides.
+  const rise = Math.max(2, 2 + 0.5 * (g.v - 2));
+  const flat = Math.max(1.5, 1.5 + 0.5 * (g.v - 2));
+  const period = 2 * rise + 2 * flat;
+  const y = MATH_AXIS - rise / 2;
+  const points: PathPoint[] = [p(0, y)];
+  for (let i = 0; i < waves; i++) {
+    const a = i * period;
+    // Rise, flat, fall, flat, the flats equal, as the tilde's are.
+    points.push(p(a + rise, y + rise), p(a + rise + flat, y + rise), p(a + 2 * rise + flat, y));
+  }
+  // Back up to the axis, then into the head as a plain arrow's shaft goes, stopping where its does.
+  const back = waves * period + rise / 2;
+  const length = back + flat + HEAD;
+  points.push(p(waves * period, y), p(back, MATH_AXIS), p(length - HEAD / 2, MATH_AXIS));
+  const head = open(p(length - HEAD, MATH_AXIS + HEAD), p(length, MATH_AXIS), p(length - HEAD, MATH_AXIS - HEAD));
+  return { strokes: [open(...points), head], length };
+}
+const squiggle = (name: string, unicode: number | undefined, waves: number, left: boolean): GlyphDef => ({
+  name,
+  ...(unicode === undefined ? {} : { unicode }),
+  lsb: 1,
+  rsb: 1,
+  draw: (g) => {
+    const { strokes, length } = squiggleRight(g, waves);
+    return left ? mirror(strokes, length / 2) : strokes;
+  },
+});
+
+/** The pipe ligatures' triangle (|> <|): the greater-than sign's 45° sides closed by an upright, grown with the stem so the counter stays open at Black. */
+const pipeTriangle = (name: string, left: boolean): GlyphDef => ({
+  name,
+  lsb: 1,
+  rsb: 1,
+  draw: (g) => {
+    const size = Math.max(4.5, 4.5 + 0.8 * (g.v - 2));
+    const strokes = [closed(p(0, MATH_AXIS + size), p(size, MATH_AXIS), p(0, MATH_AXIS - size))];
+    return left ? mirror(strokes, size / 2) : strokes;
+  },
+});
+
 const turned = (deg: number, heads?: { start?: boolean; end?: boolean }) => rotate(arrowRight(heads), deg, ARROW_LENGTH / 2, MATH_AXIS);
 
 const arrow = (name: string, unicode: number, deg: number, heads?: { start?: boolean; end?: boolean }): GlyphDef => ({
@@ -89,6 +137,14 @@ const arrow = (name: string, unicode: number, deg: number, heads?: { start?: boo
 /** Geometric shapes sit on the math axis; large ones are 10 units, small ones 5. */
 const BIG = 10;
 const SMALL = 5.5;
+const BALLOT = 12;
+const ballotWall = (g: DrawContext) => Math.min(Math.max(g.v, g.h) * 0.85, 2);
+/** The pen for a ballot box's mark and where its centre line may run: a margin of white inside the walls. */
+const ballotRoom = (g: DrawContext) => {
+  const pen = { v: Math.min(g.v, 2), h: Math.min(g.h, 2) };
+  const clear = ballotWall(g) + 0.9 + pen.v / 2;
+  return { pen, x0: clear, x1: BALLOT - clear, y0: MATH_AXIS - BALLOT / 2 + clear, y1: MATH_AXIS + BALLOT / 2 - clear };
+};
 
 const squarePts = (size: number): PathPoint[] => {
   const r = size / 2;
@@ -229,6 +285,12 @@ export const PLUS: GlyphDef[] = [
   arrow('arrowupright', 0x2197, 45),
   arrow('arrowdownright', 0x2198, -45),
   arrow('arrowdownleft', 0x2199, -135),
+  pipeTriangle('pipe.right', false),
+  pipeTriangle('pipe.left', true),
+  squiggle('leftsquigglearrow', 0x21dc, 2, true),
+  squiggle('rightsquigglearrow', 0x21dd, 2, false),
+  squiggle('leftsquigglearrow.short', undefined, 1, true),
+  squiggle('rightsquigglearrow.short', undefined, 1, false),
   doubleArrow('arrowdblleft', 0x21d0, 180),
   doubleArrow('arrowdblup', 0x21d1, 90),
   doubleArrow('arrowdblright', 0x21d2, 0),
@@ -238,6 +300,32 @@ export const PLUS: GlyphDef[] = [
 
   shape('filledbox', 0x25a0, () => [solid(squarePts(BIG))]),
   shape('whitesquare', 0x25a1, (g) => [hollow(squarePts(BIG), wall(g))]),
+  // Ballot boxes ([ ] and [x] under dlig): a box larger than the white square, its walls and marks capped so the
+  // check or X keeps a clear margin inside at Black.
+  shape('ballotbox', 0x2610, (g) => [hollow(squarePts(BALLOT), ballotWall(g))]),
+  shape('ballotboxcheck', 0x2611, (g) => {
+    const { pen, x0, x1, y0, y1 } = ballotRoom(g);
+    const w = x1 - x0;
+    const down = Math.min(w * 0.4, y1 - y0);
+    const up = Math.min(w - down, y1 - y0);
+    const top = y0 + up;
+    const start = (top + y0) / 2 + down / 2;
+    return [
+      hollow(squarePts(BALLOT), ballotWall(g)),
+      withPen(open(p(x0, start), p(x0 + down, start - down), p(x0 + down + up, start - down + up)), pen),
+    ];
+  }),
+  shape('ballotboxx', 0x2612, (g) => {
+    const { pen, x0, x1, y0, y1 } = ballotRoom(g);
+    const size = Math.min(x1 - x0, y1 - y0);
+    const [cx, cy] = [(x0 + x1) / 2, (y0 + y1) / 2];
+    const r = size / 2;
+    return [
+      hollow(squarePts(BALLOT), ballotWall(g)),
+      withPen(open(p(cx - r, cy - r), p(cx + r, cy + r)), pen),
+      withPen(open(p(cx - r, cy + r), p(cx + r, cy - r)), pen),
+    ];
+  }),
   shape('blacksmallsquare', 0x25aa, () => [solid(squarePts(SMALL), 0.75)]),
   shape('whitesmallsquare', 0x25ab, (g) => [hollow(squarePts(SMALL), wall(g) * 0.8, 0.75)]),
   ...TRIANGLES.map(([name, unicode, deg, filled, big]) =>

@@ -11,7 +11,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { toFontUnits, WEIGHTS } from '../src/grid';
 import { alignKerning, computeKerning, type Kerning, kerningClasses, resolvedValue } from '../src/kerning';
-import { buildMaster, type Family, type Style } from '../src/master';
+import { CODE_GROUPS, CODE_LIGATURES, codePieceName } from '../src/code-ligatures';
+import { buildMaster, type Family, type Master, type Style } from '../src/master';
 import { proofPage } from '../src/proof';
 import { decorationMetrics, designspace, postscriptName, sourceFileName, ufoFiles } from '../src/ufo';
 
@@ -62,6 +63,20 @@ const KERNING_SAMPLES: [string, string][] = [
   ['Ge-cy', 'o-cy'], ['Tau', 'alpha'], ['H', 'H'], ['n', 'n'], ['o', 'o'], ['one.tf', 'one.tf'], ['f', 'period'], ['V', 'a'], ['T', 'space'], ['space', 'Y'], ['f', 'idieresis'],
 ];
 
+/** Each code ligature as verify.py shapes it: its text, the feature that turns it on, and the glyphs it must become. */
+function codeLigatureCases(master: Master): { text: string; feature: string; pieces: string[]; narrower: boolean }[] {
+  const byChar = new Map(master.glyphs.flatMap((g) => (g.unicode === undefined ? [] : [[String.fromCodePoint(g.unicode), g.name] as const])));
+  return CODE_LIGATURES.map((lig) => {
+    const group = CODE_GROUPS[lig.group];
+    return {
+      text: lig.text,
+      feature: group.dlig ? 'dlig' : group.feature!,
+      pieces: [...lig.text].map((ch, i) => codePieceName(byChar.get(ch)!, lig, i)),
+      narrower: lig.group !== 'prose',
+    };
+  });
+}
+
 /** What the source says each compiled font must contain, for scripts/verify.py. */
 function manifest(): Record<string, Record<string, Record<string, unknown>>> {
   const out: Record<string, Record<string, Record<string, unknown>>> = {};
@@ -81,6 +96,7 @@ function manifest(): Record<string, Record<string, Record<string, unknown>>> {
           underlinePosition: Math.round(deco.underlinePosition),
           decorationThickness: Math.round(deco.thickness),
           strikeoutPosition: Math.round(deco.strikeoutPosition),
+          codeLigatures: codeLigatureCases(master),
           kerning: Object.fromEntries(KERNING_SAMPLES.map(([x, y]) => [`${x} ${y}`, Math.round(toFontUnits(resolvedValue(kernings.get(`${style} ${weight}`)!, x, y)))])),
         };
       }

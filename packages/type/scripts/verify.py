@@ -184,6 +184,11 @@ def check_ligatures(path: Path, data: bytes, weight: int) -> None:
         ("Geld!", {"dlig": True}, ["G_e_l_d", "exclam"]),
         ("Geldern", {"dlig": True}, list("Geldern")),
         ("Geld", {}, list("Geld")),
+        ("act", {"hlig": True}, ["a", "c_t"]),
+        ("first", {"hlig": True}, ["f", "i", "r", "s_t"]),
+        ("aspen", {"hlig": True}, ["a", "s_p", "e", "n"]),
+        ("act", {}, ["a", "c", "t"]),
+        ("std::x", {"dlig": True}, ["s", "t", "d", "colon.c_coco1", "colon.c_coco2", "x"]),
     ):
         got = [n for n, _ in shape(data, weight, text, features=features)]
         check(got == names, f"{path.name} at {weight}: {text} with {features} shaped {got}")
@@ -209,6 +214,32 @@ def check_ligatures(path: Path, data: bytes, weight: int) -> None:
     for features in ({"ss20": True}, {"calt": False}):
         got, _ = shape_total(data, weight, "->", {"kern": False, **features})
         check(got == ["hyphen", "greater"], f"{path.name} at {weight}: -> with {features} shaped {got}")
+
+
+def check_code_ligatures(path: Path, data: bytes, weight: int, cases: list[dict]) -> None:
+    """Every code ligature becomes its pieces under its feature (dlig, or ss10 for dashes), narrower than the
+    characters set apart, and stays as typed without it; the stylistic sets take only their own group."""
+    for case in cases:
+        text = case["text"]
+        got, width = shape_total(data, weight, text, {"kern": False, case["feature"]: True})
+        check(got == case["pieces"], f"{path.name} at {weight}: {text!r} with {case['feature']} shaped {got}")
+        plain, plain_width = shape_total(data, weight, text, {"kern": False})
+        check(not any(".c_" in n for n in plain), f"{path.name} at {weight}: {text!r} without features shaped {plain}")
+        if case["narrower"]:
+            check(width < plain_width, f"{path.name} at {weight}: {text!r} is {width} wide, its characters {plain_width}")
+    for text, features, names in (
+        ("a<=b", {"ss12": True}, ["a", "less.c_lteq1", "equal.c_lteq2", "b"]),
+        ("a&&b", {"ss12": True}, ["a", "ampersand", "ampersand", "b"]),
+        ("http://", {"dlig": True}, ["h", "t_t", "p", "colon", "slash", "slash"]),
+        ("f(c)", {"dlig": True}, ["f", "parenleft", "c", "parenright"]),
+        ("1920x1080", {"dlig": True}, ["one", "nine", "two", "zero", "multiply", "one", "zero", "eight", "zero"]),
+        ("A-Z", {}, ["A", "hyphen.case", "Z"]),
+        ("a-z", {}, ["a", "hyphen", "z"]),
+        ("12:30", {}, ["one", "two", "colon.case", "three", "zero"]),
+        ("a:b", {"case": True}, ["a", "colon.case", "b"]),
+    ):
+        got = [n for n, _ in shape(data, weight, text, features=features)]
+        check(got == names, f"{path.name} at {weight}: {text!r} with {features} shaped {got}")
 
 
 def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None:
@@ -240,6 +271,7 @@ def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None
         check(abs(total - want) <= len(SAMPLE), f"{path.name} at {weight}: shaped width {total}, source {want}")
         check_kerning(path, data, int(weight), expected["kerning"])
         check_ligatures(path, data, int(weight))
+        check_code_ligatures(path, data, int(weight), expected["codeLigatures"])
 
 
 def main() -> None:

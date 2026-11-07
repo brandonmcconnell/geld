@@ -216,13 +216,13 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [x] Decide per pair whether the octagonal shapes collide at all, measured at every weight: f with i, l, j, b, h and k stay clear (the hook ends over the space and the next letter's stem starts past it; ffi and ffl are f_f followed by i or l, clear the same way); f with f, f with t and t with t bring their crossbars within 0.8 units, 0.48 for tt at Black, so they ligate.
 - [x] Draw ligature glyphs only for the pairs that collide (`liga`), with caret positions in `GDEF` so the cursor can go between the letters: ff, ft and tt, whose crossbars came within 0.8 units (0.48 for tt at Black), drawn as the two letters with one bar. fi fl fj fb fh fk stay apart (no collision; fï is opened by kerning). smcp runs first, so small caps never ligate. `verify.py` checks the substitution, the width and the caret in every compiled font.
 - [x] "Geld" to the wordmark lockup (`dlig`): the logo read from `assets/brand`, the same at every weight and upright in italic (a brand mark that thins or slants is no longer the mark), the dark logo in Geld Dark Sans; only as a word of its own, so Geldern keeps its letters; carets between the letters typed.
-- [ ] Discretionary ligatures (`dlig`): ct, st and sp.
+- [x] Historical ligatures (`hlig`, CSS `historical-ligatures`; first planned for `dlig`, moved since `dlig` is what code turns on and std::vec must not arch its s into its t): ct, st and sp, squared to the font's grid: the first letter's top terminal rises as a stem and crosses with 45° cuts to t's top, or over the x-height into p's stem. The second letter moves right just enough for an open counter under the arch at every weight. Carets in `GDEF`.
 
 ### 5.2 Ligature mechanics (D12)
 - [x] Symbol and code ligatures are contextual pieces (`calt`), one glyph per character, so text, selection, the caret and deletion stay per character. In Geld Sans the pieces are narrower than the characters they replace, so the arrow is compact (D12). In Mono each piece keeps its cell. Arrows are built this way: start, middle, end and head pieces drawn from → and ⇒ themselves, together exactly as wide as the arrow (tested at every weight), each reaching into its neighbour by more than Geld Dark Sans's inset so no seam shows.
 - [x] Kerning between pieces so the joined shape is continuous: pieces are excluded from kerning, and their negative sidebearings (the overlap) are what joins them.
 - [x] Turning off: `calt` off (CSS `font-variant-ligatures: no-contextual`) removes them all, `ss20` (named "No arrow ligatures") removes only the default arrows (it runs after `calt` and maps the pieces back). Checked in every compiled font.
-- [ ] Ligatures checked with `letter-spacing` set, since browsers drop optional ligatures when letters are spaced, and the result documented.
+- [x] Ligatures checked with `letter-spacing` set, since browsers drop optional ligatures when letters are spaced, and the result documented. Chrome (Nov 2026) drops `liga`, `calt` and `dlig` at any non-zero letter-spacing, so spaced text shows the characters as typed: `->` stays two characters, A-Z keeps its plain hyphen, Geld stays four letters. Forced back with `font-feature-settings`, a true ligature (ff, the Geld lockup) survives, but a pieced one does not, since the spacing is added between its pieces: the arrow's shaft and head part, ≤ moves off its spacer. The usage guide is to say: leave the ligatures to the browser in letter-spaced text, never force them there.
 
 ### 5.3 Symbol and code ligatures (in Sans and in Mono)
 
@@ -247,12 +247,13 @@ Default in Sans per D13. Mono turns most of them on by default (section 19).
 | Repeats | `___` `###` `***` `===` (long runs) | continuous bars | off | on |
 | Hex | `0x` | small x between 0 and the digits | off | on (contextual) |
 
-- [ ] Each group as its own stylistic set as well (`ss11` arrows, `ss12` comparison, `ss13` logic, `ss14` comments and markup, `ss15` scope, `ss16` shifts), so apps without `dlig` can pick groups.
-- [ ] Turning them on is one line in CSS (`font-feature-settings: "dlig"`, or `"ss12"` for one group), and the web CSS package ships classes such as `.geld-code-ligatures` for it (D13).
+- [x] Each group as its own stylistic set as well (`ss11` arrows, `ss12` comparison, `ss13` logic, `ss14` comments and markup, `ss15` scope, `ss16` shifts), so apps without `dlig` can pick groups. Each set is named in the font ("Squiggle arrows", "Comparison and equality ligatures"…) and runs the same lookup `dlig` does. Spaceship and regex sit with comparison, pipes and increment with logic, hash forms with comments.
+- [x] How the Sans code ligatures are built (`src/code-ligatures.ts`): every character but the last becomes a blank spacer and the last draws the whole shape back over them, as components, either an existing glyph (≤ for `<=`, ≠ for `!=` and `/=`, ⇝ for `~~>`) or the characters' own glyphs set with a fixed white between their ink (`::` with its colons centred on the math axis, `<<` nested, `==` joined into one long equals sign). The whole is narrower than the characters set apart (tested at every weight and style, and in every compiled font). Joints are measured on the upright outline before the dark inset, so the italic joins as the roman does and both families keep the same widths. A sequence never touches another operator character, so `http://`, `a::::b` and `<!--` inside a longer run stay as typed (`#!` is followed by its path).
+- [ ] Turning them on is one line in CSS (`font-variant-ligatures: discretionary-ligatures`, `font-feature-settings: "dlig"`, or `"ss12"` for one group: done), and the web CSS package ships classes such as `.geld-code-ligatures` for it (D13; with the CSS in section 13).
 - [x] Conflicts handled: `<-` inside `x<-1` becomes an arrow (code reads it as "less than minus one", so `ss20` is the documented way out), `-->` as an HTML comment end becomes an arrow too, `<=` stays as typed and is never ⇐ (a fat left arrow needs `<==`), `<=>` stays as typed (the spaceship, never ⇔), and a sequence inside a longer run (`--->`, `-->>`, `=>=`) stays as typed. Arrows and fat arrows, including `->>` `<<-` `=>>`, are done; the double arrows ⇐ ⇑ ⇒ ⇓ ⇔ ⇕ were drawn for them.
-- [ ] Prose forms in Sans (`ss10`, off by default): `--` to an en dash and `---` to an em dash.
-- [ ] Symbol forms in Sans (`dlig`): `(c)` ©, `(r)` ®, `(tm)` ™, `[ ]` ☐, `[x]` ☑, `1/2` and other fractions through `frac`, and `x` between digits (1920x1080) as ×.
-- [ ] Contextual punctuation (`calt`, on): the colon centred between figures (12:30), and the hyphen raised between caps (A-Z).
+- [x] Prose forms in Sans (`ss10`, off by default, not in `dlig`): `--` to an en dash and `---` to an em dash, never inside a longer run of hyphens.
+- [x] Symbol forms in Sans (`dlig`): `(c)` ©, `(r)` ®, `(tm)` ™, `[ ]` ☐, `[x]` ☑ (the ballot boxes ☐ ☑ ☒ drawn for them), `1/2` and other fractions through `frac`, and `x` between digits (1920x1080) as ×. The lowercase forms and the boxes never touch a letter or figure, since `f(c)` and `a[x]` are code; `(C)` `(R)` `(TM)` are taken anywhere (`Acme(TM)`).
+- [x] Contextual punctuation (`calt`, on): the colon centred between figures (12:30), and the hyphen raised between caps (A-Z), as `colon.case` and `hyphen.case` (the x-height's middle raised to the capitals', 2 units). `case` takes the hyphen, dashes and colon so far.
 
 ## 6. Alternates
 
@@ -266,8 +267,8 @@ Default in Sans per D13. Mono turns most of them on by default (section 19).
 - [ ] `ss07` Dot shape: square, octagon or diamond.
 - [ ] `ss08` Italic exit strokes on n m h i u l.
 - [ ] `ss09` The wordmark's letterforms, for setting Geld brand text, if they differ from the defaults.
-- [ ] `ss10` Dash ligatures (5.3).
-- [ ] `ss11` to `ss16` Code ligature groups (5.3).
+- [x] `ss10` Dash ligatures (5.3).
+- [x] `ss11` to `ss16` Code ligature groups (5.3).
 - [ ] `ss17` Circled numerals.
 - [ ] `ss18` reserved.
 - [ ] `ss19` reserved.

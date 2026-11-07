@@ -172,8 +172,8 @@ export function profilesOf(master: Master): Map<string, Profile> {
   };
   const profiles = new Map<string, Profile>();
   for (const g of master.glyphs) {
-    // Arrow pieces join their neighbours edge to edge: kerning them would break the arrow.
-    if (g.name.includes('.arrow_')) continue;
+    // Arrow and code ligature pieces join their neighbours edge to edge: kerning them would break the shape.
+    if (g.name.includes('.arrow_') || g.name.includes('.c_')) continue;
     const k = kindOf(g, unicodeOf(g), g.name.endsWith('.sc'));
     if (!k) continue;
     const p = profileOf(master, g, k.kind, k.sign, k.figure, k.script);

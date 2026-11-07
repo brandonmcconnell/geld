@@ -123,6 +123,12 @@ export function accentedFromUnicode(ranges: [number, number][], names: Map<numbe
 }
 
 /** Glyphs made of glyphs placed by hand: the Dutch IJ, the Catalan middle dot, ŉ, Đ, the spacing accents. */
+/**
+ * Case forms: the hyphen, dashes and colon raised from the x-height's middle (5) to the capitals' and figures' (7),
+ * for A-Z and 12:30 (calt) and for `case`.
+ */
+export const CASE_FORMS: PlacedDef[] = ['hyphen', 'endash', 'emdash', 'colon'].map((glyph) => ({ name: `${glyph}.case`, parts: [{ glyph, dy: 2 }] }));
+
 export const PLACED: PlacedDef[] = [
   { name: 'IJ', unicode: 0x132, parts: [{ glyph: 'I', after: true }, { glyph: 'J', after: true }] },
   { name: 'ij', unicode: 0x133, parts: [{ glyph: 'i', after: true }, { glyph: 'j', after: true, dx: -0.75 }] },

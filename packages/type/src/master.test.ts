@@ -1,3 +1,4 @@
+import { CODE_LIGATURES, codePieceName } from './code-ligatures';
 import { bounds, type Contour, cutLeg, expandStroke, insetContour, winding } from './geometry';
 import { ITALIC_SLOPE, METRICS, WEIGHTS } from './grid';
 import { MATH_AXIS } from './draw';
@@ -75,6 +76,24 @@ describe('character set', () => {
         ] as const) {
           expect(width(...pieces), `${style} ${weight} ${arrow}`).toBeCloseTo(width(arrow), 6);
           expect(width(...pieces), `${style} ${weight} ${arrow}`).toBeLessThan(width(...chars));
+        }
+      }
+  });
+
+  it('draws every code ligature narrower than its characters set apart, one glyph per character', () => {
+    for (const style of ['roman', 'italic'] as const)
+      for (const weight of [100, 400, 900] as const) {
+        const master = buildMaster('sans', style, weight);
+        const byName = new Map(master.glyphs.map((g) => [g.name, g]));
+        const byChar = new Map(master.glyphs.flatMap((g) => (g.unicode === undefined ? [] : [[String.fromCodePoint(g.unicode), g] as const])));
+        // Dashes are as wide as the dashes themselves: an em dash is wider than three hyphens.
+        for (const lig of CODE_LIGATURES.filter((l) => l.group !== 'prose')) {
+          const chars = [...lig.text].map((ch) => byChar.get(ch)!);
+          const pieces = chars.map((g, i) => byName.get(codePieceName(g.name, lig, i)));
+          expect(pieces.every(Boolean), `${style} ${weight} ${lig.text}`).toBe(true);
+          const width = pieces.reduce((t, g) => t + g!.advance, 0);
+          expect(width, `${style} ${weight} ${lig.text}`).toBeLessThan(chars.reduce((t, g) => t + g.advance, 0) + 1e-9);
+          expect(pieces.slice(0, -1).every((g) => !g!.contours.length && !g!.components.length), `${lig.text} spacers are blank`).toBe(true);
         }
       }
   });
