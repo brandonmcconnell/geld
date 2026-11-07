@@ -775,8 +775,17 @@ export function crawlLeftovers(claimed: ReadonlySet<HTMLElement>, commentsComing
     if (summary === null || !/^\d+\s+similar comments?$/i.test((summary.textContent ?? '').replace(/\s+/g, ' ').trim())) continue;
     list.push({ kind: 'noise', root: wrap });
   }
-  const rows = timeline.querySelectorAll<HTMLElement>(ROW);
-  for (const row of rows) {
+  const rows = new Set(timeline.querySelectorAll<HTMLElement>(ROW));
+  // The Overview's panel stands outside its Comments section, so rows on loan to it are not under `timeline`: a commit run
+  // opened in the digest went missing, its row closed, the loan went home and the row opened again, over and over.
+  const panel = root.querySelector('.geld-review');
+  if (panel !== null && !timeline.contains(panel)) {
+    for (const lent of panel.querySelectorAll<HTMLElement>('[data-geld-teleported]')) {
+      if (lent.matches(ROW)) rows.add(lent);
+      for (const inner of lent.querySelectorAll<HTMLElement>(ROW)) rows.add(inner);
+    }
+  }
+  for (const row of [...rows].sort(compareHome)) {
     // Rows on loan sit inside the panel right now; they still belong to the timeline. Panel-made rows do not.
     if (row.closest('.geld-review') !== null && row.closest('[data-geld-teleported]') === null) continue;
     if (row.closest('form') !== null) continue;

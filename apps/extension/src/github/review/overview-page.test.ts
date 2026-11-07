@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { threadRootOf } from './actions';
 import { crawlConversation, crawlLeftovers, crawlReviews, crawlSidebarReviewers, reactionsOf, resetCrawlCache } from './crawler';
 import { editLogUrlOf, nodeIdOf } from './edit-times';
+import { applyTopCardHint, rememberTopCard } from './top-card';
 import { closeOverviewChecks, isOverviewPage, openOverviewChecks, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, overviewNewestFirst, showAllOverviewComments } from './overview-page';
 
 /** An Overview comment's header as GitHub rendered it on brandonmcconnell/geld#461 (Nov 2026), trimmed. */
@@ -140,6 +141,33 @@ describe('an Overview run of commits', () => {
       </div></div>
     </div></section>`;
     expect(crawlLeftovers(new Set(), () => false).map((entry) => [entry.kind, entry.count])).toEqual([['commit', 58]]);
+  });
+
+  it('is still read while on loan to the digest, which stands outside the Comments section', () => {
+    const commit = (sha: string): string => `<div data-testid="timeline-commit-group"><div data-testid="timeline-commit-row"><a href="/o/r/pull/1/changes/${sha.repeat(40)}">one</a></div></div>`;
+    document.body.innerHTML = `<section aria-label="Description"></section>
+      <section class="geld-review"><div class="geld-review__slot-body"><div data-testid="timeline-item" data-geld-teleported="t1">${commit('a')}</div></div></section>
+      <section><h2 id="overview-comments">Comments</h2><div data-component="Stack"><!--geld:quick-view:t1--><div data-testid="timeline-item">${commit('b')}</div></div></section>`;
+    expect(crawlLeftovers(new Set(), () => false).map((entry) => entry.kind)).toEqual(['commit', 'commit']);
+  });
+});
+
+describe("the Overview's top card before the settings arrive", () => {
+  afterEach(() => {
+    window.localStorage.clear();
+    document.documentElement.removeAttribute('data-geld-top-card');
+  });
+
+  it('takes the last decision on a pull request page, and nothing elsewhere', () => {
+    rememberTopCard('folded');
+    applyTopCardHint('/o/r/pull/7');
+    expect(document.documentElement.getAttribute('data-geld-top-card')).toBe('folded');
+    document.documentElement.removeAttribute('data-geld-top-card');
+    applyTopCardHint('/o/r/pull/7/files');
+    expect(document.documentElement.hasAttribute('data-geld-top-card')).toBe(false);
+    rememberTopCard('off');
+    applyTopCardHint('/o/r/pull/7');
+    expect(document.documentElement.hasAttribute('data-geld-top-card')).toBe(false);
   });
 });
 
