@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
-import { relatedLinksFrom } from '@geld/review';
-import type { LinkCandidate, RelatedKind, RelatedLink } from '@geld/review';
+import { relatedLinksFrom } from '@geld/review/related-links';
+import type { LinkCandidate, RelatedKind, RelatedLink } from '@geld/review/related-links';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { descriptionBody } from './review/description';
 import { ICON_ALERT, ICON_COMMENT_DISCUSSION, ICON_COPILOT, ICON_FILE, ICON_ISSUE_OPENED, ICON_LINK_EXTERNAL } from './ui/icons';
