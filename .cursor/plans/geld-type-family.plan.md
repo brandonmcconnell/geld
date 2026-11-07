@@ -432,7 +432,7 @@ Each phase ends with a review. The next phase starts only once its deliverable i
 
 1. **Alignment.** Settle section 1. Deliverable: this document with the decisions recorded.
 2. **Foundations.** (Done: `packages/type`, see its PR.) The package, the grid, the geometry engine (cuts, weight, contrast, the dark grade, slant), the build into real fonts with `H O n o`, `G E L D` and space, the wordmark test (D7), a first proof page, and CI. Deliverable: working static, variable and web fonts for Geld Sans and Geld Dark Sans, roman and a provisional italic, every weight.
-3. **Design core.** A to Z, a to z, 0 to 9 and basic punctuation at Regular and SemiBold. Deliverable: a proof of the core in two weights.
+3. **Design core.** (First draft done in every weight: A to Z, a to z, 0 to 9 and `. , : ; ! ? - – — ' " ( ) [ ] / _ + =`. Shapes and spacing are refined in phases 4 and 7.) A to Z, a to z, 0 to 9 and basic punctuation at Regular and SemiBold. Deliverable: a proof of the core in two weights.
 4. **Weights.** Thin to Black, contrast and the three-horizontals budget, `avar`. Deliverable: the core in all nine weights.
 5. **Italic.** Slanted grid, italic forms and their spacing. Deliverable: the core in italic, all weights.
 6. **Character set.** Accents and marks, extended Latin, figure sets, punctuation, currency, math, arrows, shapes, small caps. Deliverable: full GF Latin Pro coverage.

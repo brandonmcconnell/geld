@@ -50,3 +50,28 @@ describe('masters', () => {
     expect(cutLeg(3.3, 3.3) - (3.3 / 2) * (2 - Math.SQRT2)).toBeCloseTo(0.5);
   });
 });
+
+describe('character set', () => {
+  const chars = [
+    ...'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
+    ...'.,:;!?-\u2013\u2014\'"()[]/_+= ',
+  ].map((c) => c.codePointAt(0));
+
+  it('covers basic Latin letters, figures and punctuation', () => {
+    const mapped = new Set(buildMaster('sans', 'roman', 400).glyphs.map((g) => g.unicode));
+    expect(chars.filter((c) => !mapped.has(c))).toEqual([]);
+  });
+
+  it('keeps every glyph inside the line box at every weight, with ink and room on both sides', () => {
+    for (const weight of WEIGHTS)
+      for (const glyph of buildMaster('sans', 'roman', weight).glyphs) {
+        if (glyph.name === 'space') continue;
+        const ys = glyph.contours.flat().map((p) => p.y);
+        const xs = glyph.contours.flat().map((p) => p.x);
+        expect(Math.min(...ys), `${glyph.name} ${weight}`).toBeGreaterThanOrEqual(-5);
+        expect(Math.max(...ys), `${glyph.name} ${weight}`).toBeLessThanOrEqual(19);
+        expect(Math.min(...xs), `${glyph.name} ${weight}`).toBeGreaterThanOrEqual(0);
+        expect(Math.max(...xs), `${glyph.name} ${weight}`).toBeLessThanOrEqual(glyph.advance + 1e-9);
+      }
+  });
+});

@@ -1,16 +1,24 @@
 import { WEIGHT_NAMES, WEIGHTS } from './grid';
 
-const SAMPLES = ['HOnoGELD', 'HHOHHOOHOO nnonnoono', 'GOLD LODGE HOLD OLD DOGE', 'noon onno nonono'];
+const SAMPLES = [
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+  'abcdefghijklmnopqrstuvwxyz',
+  '0123456789 .,:;!?-–—\'"()[]/_+=',
+  'The quick brown fox jumps over the lazy dog.',
+  'Sphinx of black quartz, judge my vow!',
+  'HHOHHOOHOO nnonnoono',
+  'Hamburgefonstiv 2026 GELD',
+];
 
 /** A standalone page for reviewing the build: open dist/proof.html from disk. */
 export function proofPage(): string {
   const face = (family: string, file: string, style: string) =>
     `@font-face { font-family: '${family}'; src: url('web/${file}.woff2') format('woff2'); font-weight: 100 900; font-style: ${style}; }`;
   const waterfall = WEIGHTS.map(
-    (w) => `<div class="row" style="font-weight:${w}"><span class="tag">${w} ${WEIGHT_NAMES[w]}</span><span>${SAMPLES[0]} ${SAMPLES[3]}</span></div>`,
+    (w) => `<div class="row" style="font-weight:${w}"><span class="tag">${w} ${WEIGHT_NAMES[w]}</span><span>${SAMPLES[6]} ${SAMPLES[3]}</span></div>`,
   ).join('\n');
   const sizes = [12, 14, 16, 20, 40, 80]
-    .map((s) => `<div class="row" style="font-size:${s}px"><span class="tag">${s}px</span><span>${SAMPLES[2]} ${SAMPLES[3]}</span></div>`)
+    .map((s) => `<div class="row" style="font-size:${s}px"><span class="tag">${s}px</span><span>${SAMPLES[3]} ${SAMPLES[4]}</span></div>`)
     .join('\n');
   const strings = SAMPLES.map((s) => `<p>${s}</p>`).join('\n');
   return `<!doctype html>
@@ -46,15 +54,15 @@ p { margin: 0 0 8px; font-size: 40px; }
   <label><input id="i" type="checkbox"> Italic</label>
 </header>
 <section class="sample"><h2>Strings</h2>${strings}</section>
-<section class="sample big"><h2>Large</h2>${SAMPLES[0]}</section>
+<section class="sample big"><h2>Large</h2>${SAMPLES[0]}<br>${SAMPLES[1]}<br>${SAMPLES[2]}</section>
 <section class="sample waterfall"><h2>Weights</h2>${waterfall}</section>
 <section class="sample waterfall" style="--s: italic"><h2>Italic</h2>${waterfall}</section>
 <section class="sample"><h2>Sizes</h2>${sizes}</section>
 <section><h2>Light and dark</h2>
 <div class="panels">
-  <div class="panel sample"><small>Geld Sans on light</small>${SAMPLES[0]}</div>
-  <div class="panel sample on-dark"><small>Geld Sans on dark</small>${SAMPLES[0]}</div>
-  <div class="panel sample dark-family on-dark"><small>Geld Dark Sans on dark</small>${SAMPLES[0]}</div>
+  <div class="panel sample"><small>Geld Sans on light</small>${SAMPLES[6]}</div>
+  <div class="panel sample on-dark"><small>Geld Sans on dark</small>${SAMPLES[6]}</div>
+  <div class="panel sample dark-family on-dark"><small>Geld Dark Sans on dark</small>${SAMPLES[6]}</div>
 </div>
 </section>
 <script>

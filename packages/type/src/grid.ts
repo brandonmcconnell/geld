@@ -54,6 +54,9 @@ const CONTRAST: Record<Weight, number> = {
   900: 0.84,
 };
 
+/** Lowercase horizontals are lighter than the caps', so three of them fit an x-height. */
+export const LOWERCASE_CONTRAST = 0.88;
+
 /** The outer leg a cut aims for, and the least its inner leg may shrink to at heavy weights. */
 export const CUT_OUTER = 2;
 export const CUT_INNER_MIN = 0.5;
