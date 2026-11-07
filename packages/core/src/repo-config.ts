@@ -87,6 +87,7 @@ const PERSONAL_KEYS = [
   'testOutline',
   'testSyntaxes',
   'attachmentLightbox',
+  'relatedLinks',
 ] as const;
 
 /**

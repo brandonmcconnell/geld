@@ -10,7 +10,7 @@
 import { fragmentHeaders } from './deeplink';
 import { pageFetch } from '../page-fetch';
 
-export type RefState = 'open' | 'closed' | 'merged' | 'draft' | 'issue-open' | 'issue-closed' | 'unknown';
+export type RefState = 'open' | 'closed' | 'merged' | 'draft' | 'issue-open' | 'issue-closed' | 'issue-not-planned' | 'unknown';
 
 export interface RefDetails {
   readonly title: string;
@@ -80,14 +80,35 @@ export function parseHovercard(doc: Document, key: string): RefDetails | null {
     .trim();
   if (title === '') return null;
   const badge = doc.querySelector('.State');
-  const issue = doc.querySelector('.octicon-issue-opened, .octicon-issue-closed') !== null && doc.querySelector('.octicon-git-pull-request, .octicon-git-merge, .octicon-git-pull-request-closed, .octicon-git-pull-request-draft') === null;
+  const glyph = [...(badge ?? doc).querySelectorAll('svg.octicon')].map(glyphState).find((state) => state !== null) ?? null;
+  if (glyph !== null) return { title, state: glyph };
+  const issue = doc.querySelector('.octicon-issue-opened, .octicon-issue-closed, .octicon-skip') !== null && doc.querySelector('.octicon-git-pull-request, .octicon-git-merge, .octicon-git-pull-request-closed, .octicon-git-pull-request-draft') === null;
   return { title, state: stateOf(badge?.className ?? '', badge?.textContent ?? '', issue) };
+}
+
+/**
+ * The state the badge's glyph names. The badge's class does not say it alone: GitHub gives an issue closed as completed
+ * `State--merged` (purple), and an issue closed as not planned and a draft pull request the plain `State` (grey).
+ */
+const GLYPH_STATES: readonly (readonly [string, RefState])[] = [
+  ['octicon-git-merge', 'merged'],
+  ['octicon-git-pull-request-draft', 'draft'],
+  ['octicon-git-pull-request-closed', 'closed'],
+  ['octicon-git-pull-request', 'open'],
+  ['octicon-issue-closed', 'issue-closed'],
+  ['octicon-skip', 'issue-not-planned'],
+  ['octicon-issue-opened', 'issue-open'],
+];
+
+function glyphState(svg: Element): RefState | null {
+  return GLYPH_STATES.find(([name]) => svg.classList.contains(name))?.[1] ?? null;
 }
 
 function stateOf(className: string, text: string, issue: boolean): RefState {
   const value = `${className} ${text}`.toLowerCase();
   if (/merged/.test(value)) return 'merged';
   if (/draft/.test(value)) return 'draft';
+  if (/not planned/.test(value) && issue) return 'issue-not-planned';
   if (/closed|not planned|completed/.test(value)) return issue ? 'issue-closed' : 'closed';
   if (/open/.test(value)) return issue ? 'issue-open' : 'open';
   return 'unknown';
