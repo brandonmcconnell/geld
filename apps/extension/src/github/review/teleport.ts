@@ -359,16 +359,27 @@ export function compareHome(a: Node, b: Node): number {
   // way round, and the last bot comment - the verdict's source - changed with every pass.
   if (x === y) return a === b ? 0 : (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1;
   const order = (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1;
-  return newestFirstEntries(x, y) ? -order : order;
+  return newestFirstEntries(a, b, x, y) ? -order : order;
 }
 
-/** Two nodes in different entries of an Overview Comments section listed newest first: the page's order is the timeline's backwards. */
-function newestFirstEntries(x: Node, y: Node): boolean {
-  const a = (x instanceof Element ? x : x.parentElement)?.closest(OVERVIEW_ITEM) ?? null;
-  const b = (y instanceof Element ? y : y.parentElement)?.closest(OVERVIEW_ITEM) ?? null;
-  if (a === null || b === null || a === b) return false;
-  const section = a.closest('section');
-  return section !== null && section.contains(b) && overviewNewestFirst(section);
+/** The Overview entry `node` belongs to: around it where it stands (a whole entry on loan is its own), else around its home. */
+function entryOf(node: Node, home: Node): Element | null {
+  const around = (at: Node): Element | null => (at instanceof Element ? at : at.parentElement)?.closest(OVERVIEW_ITEM) ?? null;
+  return around(node) ?? around(home);
+}
+
+/**
+ * Two nodes in different entries of an Overview Comments section listed newest first: the page's order is the
+ * timeline's backwards. The section is found from where each entry lives at home, since a whole entry on loan to the
+ * digest leaves only its placeholder in the section, and that placeholder is in no entry.
+ */
+function newestFirstEntries(a: Node, b: Node, x: Node, y: Node): boolean {
+  const one = entryOf(a, x);
+  const two = entryOf(b, y);
+  if (one === null || two === null || one === two) return false;
+  const home = homeOf(one);
+  const section = (home instanceof Element ? home : home.parentElement)?.closest('section') ?? null;
+  return section !== null && section.contains(homeOf(two)) && overviewNewestFirst(section);
 }
 
 export function teleportedNodes(): readonly HTMLElement[] {

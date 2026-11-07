@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { threadRootOf } from './actions';
 import { crawlConversation, crawlLeftovers, crawlReviews, crawlSidebarReviewers, reactionsOf, resetCrawlCache } from './crawler';
 import { editLogUrlOf, nodeIdOf } from './edit-times';
+import { restoreAll, teleportInto } from './teleport';
 import { applyTopCardHint, rememberTopCard } from './top-card';
 import { closeOverviewChecks, isOverviewPage, openOverviewChecks, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, overviewNewestFirst, showAllOverviewComments } from './overview-page';
 
@@ -102,6 +103,30 @@ describe('the Overview tab', () => {
     ]);
     expect(threads.every((entry) => entry.root.matches('[data-testid="timeline-item"]'))).toBe(true);
     expect(threadRootOf('discussion_r300')?.tagName).toBe('ARTICLE');
+  });
+
+  it("keeps a range's last line, the line GitHub's API gives a multi-line comment and the Action's data carries", () => {
+    mount();
+    const heading = document.querySelector('#discussion_r400')?.closest('article')?.querySelector('h2 span');
+    if (heading === null || heading === undefined) throw new Error('fixture');
+    heading.textContent = 'Lines 52 to 57';
+    resetCrawlCache();
+    const thread = crawlConversation().comments.find((entry) => entry.comment.anchor === 'discussion_r400');
+    expect(thread?.comment.line).toBe(57);
+  });
+
+  it('keeps the timeline order while a whole entry is on loan to the digest', () => {
+    mount();
+    const order = (): string[] => crawlConversation().comments.map((entry) => entry.comment.anchor);
+    const before = order();
+    const entry = document.getElementById('pullrequestreview-20')?.closest<HTMLElement>('[data-testid="timeline-item"]');
+    if (entry === null || entry === undefined) throw new Error('fixture');
+    const slot = document.createElement('div');
+    document.querySelector('section[aria-label="Description"]')?.after(slot);
+    teleportInto(slot, [entry]);
+    resetCrawlCache();
+    expect(order()).toEqual(before);
+    restoreAll();
   });
 
   it('reads a verdict from the words beside the author, a dismissed one as "previously approved"', () => {

@@ -3175,7 +3175,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   } else {
     oldNudge?.remove();
   }
-  seated = { panel, nudge: model.nudge ? document.querySelector<HTMLElement>(`.${NUDGE_CLASS}`) : null };
+  seated = { panel, nudge: model.nudge ? document.querySelector<HTMLElement>(`.${NUDGE_CLASS}`) : null, path: window.location.pathname };
   // A view choice rebuilt everything around the control the reader used: focus lands on View in the new panel.
   restoreFocus(panel, focusKey ?? (takeViewFocus('panel') ? 'view' : null));
   return { root: panel, slot: panel.querySelector<HTMLElement>(`[${ATTR_SLOT}] > .${PANEL_CLASS}__slot-body`) };
@@ -3243,15 +3243,16 @@ export function unmountPanel(): void {
   seated = null;
 }
 
-/** The digest as last mounted, and its nudge: React's re-render of the Overview's column removes them with the old column. */
-let seated: { readonly panel: HTMLElement; nudge: HTMLElement | null } | null = null;
+/** The digest as last mounted, its nudge and its page: React's re-render of the Overview's column removes them with the old column. */
+let seated: { readonly panel: HTMLElement; readonly nudge: HTMLElement | null; readonly path: string } | null = null;
 
 /**
  * Put the Overview's digest back after the description React has just rendered anew, before the frame paints: GitHub
  * replaces the column's server-rendered boxes once its scripts load, and the digest went with them until the next pass.
  */
 export function reseatPanelNow(): void {
-  if (seated === null || seated.panel.isConnected || !seated.panel.hasAttribute(ATTR_OVERVIEW)) return;
+  // A soft navigation to another pull request renders its description before the pass that builds its own digest.
+  if (seated === null || seated.panel.isConnected || !seated.panel.hasAttribute(ATTR_OVERVIEW) || seated.path !== window.location.pathname) return;
   const card = overviewDescription();
   if (card === null) return;
   card.setAttribute(ATTR_ATTACHED, '');
