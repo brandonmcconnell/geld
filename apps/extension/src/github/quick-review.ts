@@ -218,6 +218,8 @@ function anchorOf(groups: readonly HeaderStatGroup[]): HTMLElement | null {
     // GitHub hides the header's counts on narrow screens: placed there, the button would be hidden with them while
     // GitHub's own was hidden for it, leaving no way to review. A style read, not a layout one.
     if (!host.checkVisibility()) continue;
+    // The Overview writes the counts beside the branches, under the title: the group still belongs at the tab bar's end.
+    if (host.closest('[data-component="PageHeader.Description"]') !== null) continue;
     if (host.id === 'diffstat' || host.closest('[data-component="PageHeader"], .gh-header, #partial-discussion-header') !== null) return host;
   }
   return null;
@@ -234,7 +236,8 @@ const MARK_CLASS = 'geld-quick-review__mark';
  * nothing in its place.
  */
 function standAnchor(): HTMLElement | null {
-  const row = [...document.querySelectorAll<HTMLElement>('[data-component="PageHeader"] [class*="PageHeader-Navigation"]')].find((el) => el.querySelector('nav[class*="TabNav"]') !== null) ?? null;
+  // The conversation's tab bar is a `TabNav`, the Overview's an `UnderlineNav`; both rows end in GitHub's counts wrapper.
+  const row = [...document.querySelectorAll<HTMLElement>('[data-component="PageHeader"] [class*="PageHeader-Navigation"]')].find((el) => el.querySelector('nav[class*="TabNav"], nav[class*="UnderlineNav"]') !== null) ?? null;
   if (row === null) {
     removeStand();
     return null;

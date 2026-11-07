@@ -30,7 +30,7 @@ export function setFindable(node: Element, folded: boolean): void {
 }
 const ATTR_VISIT = 'data-geld-timeline';
 const ATTR_SEEN = 'data-geld-seen';
-const TIMELINE_ITEM = '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]';
+const TIMELINE_ITEM = '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"], [data-testid="timeline-item"]';
 
 /**
  * Mark every timeline item a pass has read. In compact mode an item without

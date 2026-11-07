@@ -2488,6 +2488,29 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   border: 0 !important;
 }
 
+/* The Overview's Comments entries: the same wait for the pass that reads them, once the digest stands above the description. */
+html[data-geld-timeline='compact']:has(.geld-review[data-geld-standalone]) [data-component='Stack'] > [data-testid='timeline-item']:not([data-geld-seen]):not(.geld-review *) {
+  content-visibility: hidden !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+/* They stand in a column with a gap between them, which each folded entry would keep: the gap goes while folding. */
+html[data-geld-timeline='compact'] [data-component='Stack']:has(> [data-testid='timeline-item'][data-geld-folded]) {
+  gap: 0 !important;
+}
+
+html[data-geld-timeline='compact'] [data-component='Stack']:has(> [data-testid='timeline-item'][data-geld-folded]) > [data-testid='timeline-item']:not([data-geld-folded]) + [data-testid='timeline-item']:not([data-geld-folded]) {
+  margin-top: 16px;
+}
+
+/* The Comments section keeps room for its entries while they load: with its heading folded it holds nothing to wait for. */
+html[data-geld-timeline='compact'] section:has(> [data-geld-folded] #overview-comments) {
+  min-height: 0 !important;
+}
+
 /* The description card the panel grows out of: one box, shared border. */
 [data-geld-attached] {
   border-bottom-left-radius: 0 !important;
@@ -2528,6 +2551,12 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
    * line shifts only when the number of digits does. Inherited by everything in the panel, GitHub's loaned
    * checks list included. */
   font-variant-numeric: tabular-nums;
+}
+
+/* The Overview's digest is a box of its own between GitHub's status strip and the description, in the column's 16px rhythm. */
+.geld-review[data-geld-standalone] {
+  margin: 0;
+  border-radius: 6px;
 }
 
 /*
@@ -5417,6 +5446,29 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 }
 
 /* ---- the body: GitHub's thread, laid out as messages ---- */
+
+/* The Overview fades a comment's box in as it mounts, and a move restarts the fade: in the panel it simply shows. */
+.geld-review article[data-geld-teleported],
+.geld-review [data-geld-teleported] article {
+  animation: none !important;
+}
+
+/* An Overview review's box holds its threads' boxes too: opened as the review's words, its threads are rows of their own. */
+.geld-review__chat[data-geld-chat='comment'] article[data-geld-teleported] article {
+  display: none !important;
+}
+
+/* An Overview thread's box in a chat: the chat is the box, and its head names the file GitHub's header repeats. */
+.geld-review__chat-body > article[data-geld-teleported] {
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.geld-review__chat-body > article[data-geld-teleported] > :first-child:has(h2 a[href*='/changes']) {
+  display: none !important;
+}
 
 /* GitHub's own thread header (chevron, path, "Show resolved") and its collapsed-thread controls: the chat's head says it. */
 .geld-review__chat-body review-thread-collapsible > .d-flex:first-child,

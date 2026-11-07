@@ -19,7 +19,7 @@ import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
 import type { OpenSettingsMessage } from '../../lib/messages';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
-import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR } from './crawler';
+import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR, TIMELINE_ROW } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
@@ -74,6 +74,7 @@ import { fitChips, stopFittingChips } from './fit-chips';
 import { stopWatchingBrandSelection } from './brand';
 import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrphanedLoans, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
+import { openCollapsedThreads, overviewCommentsControls, overviewCommentsSection } from './overview-page';
 import { pageFetch } from '../page-fetch';
 import { closeFlow, openFlowDialog } from './flow';
 
@@ -713,7 +714,7 @@ function itemNodes(item: ReviewItem): readonly HTMLElement[] {
   const roots: HTMLElement[] = [];
   for (const source of item.sources) {
     const thread = threadRootOf(source.anchor);
-    const row = (thread === null ? null : closestAtHome(thread, '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]')) ?? thread;
+    const row = (thread === null ? null : closestAtHome(thread, TIMELINE_ROW)) ?? thread;
     if (row instanceof HTMLElement && !roots.includes(row)) roots.push(row);
   }
   return roots;
@@ -1812,11 +1813,13 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
 function committersOf(commits: readonly HTMLElement[]): readonly Avatar[] {
   const out: Avatar[] = [];
   for (const row of commits) {
-    for (const image of [row, ...wornPiecesOf(row)].flatMap((node) => [...node.querySelectorAll<HTMLImageElement>('img.avatar, img.avatar-user, img[class*="avatar"]')])) {
+    for (const image of [row, ...wornPiecesOf(row)].flatMap((node) => [...node.querySelectorAll<HTMLImageElement>('img.avatar, img.avatar-user, img[class*="avatar"], img[data-testid="commit-stack-avatar"]')])) {
       const login = image.alt.replace(/^@/, '');
       const src = normalizeAvatarSrc(image.currentSrc || image.getAttribute('src') || '');
       if (src === '' || out.some((entry) => (login !== '' ? entry.login.toLowerCase() === login.toLowerCase() : entry.src === src))) continue;
-      out.push({ src, login, bot: !image.classList.contains('avatar-user') && !(image.closest('a')?.classList.contains('avatar-user') ?? false) });
+      // The Overview's commit avatars carry no `avatar-user`: a person's says so in its hovercard type.
+      const person = image.classList.contains('avatar-user') || (image.closest('a')?.classList.contains('avatar-user') ?? false) || image.getAttribute('data-hovercard-type') === 'user';
+      out.push({ src, login, bot: !person });
     }
   }
   return out;
@@ -2346,7 +2349,7 @@ function threadHandlers(item: ReviewItem | undefined, meta: GeldPrMeta, reapply:
  * `data-path`/`title` (its visible text is already ellipsized by GitHub).
  */
 function threadPathOf(node: HTMLElement, item: ReviewItem | undefined, meta: GeldPrMeta): string {
-  const hash = diffHashOf(node) ?? diffHashOf(closestAtHome(node, '.TimelineItem, .js-timeline-item'));
+  const hash = diffHashOf(node) ?? diffHashOf(closestAtHome(node, TIMELINE_ROW));
   if (item?.path !== undefined) return completePath(item.path, hash, meta);
   const header = node.querySelector('.file-header, [data-testid="file-header"]') ?? closestAtHome(node, '.TimelineItem, .js-timeline-item')?.querySelector('.file-header, [data-testid="file-header"]') ?? null;
   const fromAttributes = header?.getAttribute('data-path') ?? header?.querySelector('a[title]')?.getAttribute('title') ?? header?.querySelector('[title]')?.getAttribute('title') ?? null;
@@ -3140,7 +3143,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // A load that fails leaves its form standing: a pass when the press stops counting gives the bar back to the reader.
   const pressUntil = loadMorePendingUntil();
   if (hidingTimeline && pressUntil !== null) reapplyAt(pressUntil);
-  if (hidingTimeline) loadMinimizedReviews();
+  if (hidingTimeline) {
+    loadMinimizedReviews();
+    if (openCollapsedThreads() > 0) reapplySoon();
+  }
   // In compact mode the review threads live in their rows and GitHub's checks section in the CI row:
   // both fold out of the page, so nothing below is left to reveal or scroll to.
   const reviews = phase('reviews', crawlReviews);
@@ -3185,6 +3191,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     if (commentRoots.length > 0) foldTargets.push({ key: `${REVIEWS_KEY}:comments`, label: 'Comments', author: null, nodes: unique(commentRoots), silent: true });
     const summaryRoot = found?.root ?? null;
     if (summaryRoot !== null) foldTargets.push({ key: 'summary', label: '', author: null, nodes: [timelineRootOf(summaryRoot.id) ?? summaryRoot], silent: true });
+    // The Overview's Comments heading, view switch and sort stand over nothing once its entries are in the digest.
+    const commentsSection = overviewCommentsSection();
+    const controls = commentsSection === null ? null : overviewCommentsControls(commentsSection);
+    if (controls !== null) foldTargets.push({ key: 'overview-controls', label: '', author: null, nodes: [controls], silent: true });
   }
   // Whatever is left in the timeline — commits, mentions, bots' bare "reviewed" lines — folds too, so nothing
   // stands under the panel but the merge box; commits and mentions get rows in the activity section.

@@ -14,6 +14,8 @@
  * with a shared token.
  */
 
+import { OVERVIEW_ITEM, overviewNewestFirst } from './overview-page';
+
 export const ATTR_TELEPORTED = 'data-geld-teleported';
 const PLACEHOLDER_PREFIX = 'geld:quick-view:';
 let nextToken = 0;
@@ -356,7 +358,17 @@ export function compareHome(a: Node, b: Node): number {
   // at home, so compare them where they are. A comparator that answered 0 here let the sort put them either
   // way round, and the last bot comment - the verdict's source - changed with every pass.
   if (x === y) return a === b ? 0 : (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1;
-  return (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1;
+  const order = (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1;
+  return newestFirstEntries(x, y) ? -order : order;
+}
+
+/** Two nodes in different entries of an Overview Comments section listed newest first: the page's order is the timeline's backwards. */
+function newestFirstEntries(x: Node, y: Node): boolean {
+  const a = (x instanceof Element ? x : x.parentElement)?.closest(OVERVIEW_ITEM) ?? null;
+  const b = (y instanceof Element ? y : y.parentElement)?.closest(OVERVIEW_ITEM) ?? null;
+  if (a === null || b === null || a === b) return false;
+  const section = a.closest('section');
+  return section !== null && section.contains(b) && overviewNewestFirst(section);
 }
 
 export function teleportedNodes(): readonly HTMLElement[] {

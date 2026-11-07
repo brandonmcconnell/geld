@@ -40,9 +40,9 @@ const ATTR_RUN = 'data-geld-run';
 const ATTR_LONE = 'data-geld-lone';
 
 const BODY_SELECTOR = '.comment-body, .js-comment-body, [data-testid="comment-body"], .markdown-body';
-const MESSAGE_SELECTOR = '.timeline-comment, .js-comment, .review-comment, .react-issue-comment, [data-testid="comment-container"], [data-testid="review-thread-comment"], [id^="discussion_r"]';
+const MESSAGE_SELECTOR = '.timeline-comment, .js-comment, .review-comment, .react-issue-comment, [data-testid="comment-container"], [data-testid="review-thread-comment"], [id^="discussion_r"], article[id^="issuecomment-"], article[id^="pullrequestreview-"]';
 const META_SELECTOR = '.timeline-comment-header, .timeline-comment-actions, [data-testid="comment-header"], h3, a.author, a[data-testid="author-link"]';
-const REACTIONS_SELECTOR = '.comment-reactions, .js-reactions-container, [data-testid="reactions"], [data-testid="comment-reactions"]';
+const REACTIONS_SELECTOR = '.comment-reactions, .js-reactions-container, [data-testid="reactions"], [data-testid="comment-reactions"], [role="toolbar"][aria-label^="Reactions for"]';
 /** The compact comment card GitHub renders inside a minimized comment: header (h4) and body as siblings in here. */
 const COMPACT_CARD = '.review-comment-contents';
 /** The signed-in login, from GitHub's own meta tag (empty when signed out: then nothing is "mine"). */

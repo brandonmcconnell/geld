@@ -9,6 +9,7 @@
 import type { CommentReaction, PreviewDoc, RawCheckRun, RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
 import { appAvatarForLogin, looksLikeSummaryBody } from '@geld/review';
 import { appLoginOf, loginOfLink } from './login';
+import { OVERVIEW_ITEM, OVERVIEW_THREAD_FRAME, overviewCommentsSection } from './overview-page';
 import { closestAtHome, compareHome, homeOf, wornPiecesOf } from './teleport';
 import { count as perfCount } from '../../lib/perf';
 
@@ -17,6 +18,8 @@ const COMMENT_SELECTOR = '[id^="issuecomment-"], [id^="discussion_r"], [id^="pul
 const EVENT_SELECTOR = '[id^="event-"]';
 export const THREAD_SELECTOR = '.js-resolvable-timeline-thread-container, [data-testid="review-thread"], .review-thread-component';
 const BODY_SELECTOR = '.js-comment-body, .comment-body:not(.js-preview-body), [data-testid="markdown-body"], [data-testid="comment-body"], .markdown-body:not(.js-preview-body)';
+/** A timeline row: the classic `.TimelineItem`, the React conversation's row, an Overview Comments entry. */
+export const TIMELINE_ROW = `.js-timeline-item, .TimelineItem, [data-testid="timeline-row"], ${OVERVIEW_ITEM}`;
 const AVATAR_SELECTOR = 'img.avatar, img[data-testid="github-avatar"], img[class*="avatar" i], a[data-hovercard-type] img';
 
 export interface Author {
@@ -52,6 +55,7 @@ export function authorOf(root: Element): Author | null {
   const link =
     find(root, 'a.author') ??
     find(root, 'a[data-testid="author-link"]') ??
+    find(root, 'a[data-testid="avatar-link"]') ??
     find(root, 'a[data-hovercard-type="user"]') ??
     find(root, 'a[data-hovercard-type="organization"]') ??
     find(root, 'a[href^="/apps/"]');
@@ -59,7 +63,7 @@ export function authorOf(root: Element): Author | null {
   const text = (link.textContent ?? '').replace(/\s+/g, ' ').trim().replace(/^@/, '');
   if (text === '') return null;
   const href = link.getAttribute('href') ?? '';
-  const labelled = [...(link.parentElement?.querySelectorAll('.Label, [data-testid="bot-label"]') ?? [])].some((label) => /^bot$/i.test((label.textContent ?? '').trim()));
+  const labelled = [...(link.parentElement?.querySelectorAll('.Label, [data-testid="bot-label"], [data-component="Label"]') ?? [])].some((label) => /^bot$/i.test((label.textContent ?? '').trim()));
   const bot = /\[bot\]$/i.test(text) || appLoginOf(href) !== null || labelled;
   if (bot) return { login: appLoginOf(href) ?? (/\[bot\]$/i.test(text) ? text : `${text}[bot]`), bot };
   // A person by their login, whatever the link reads: "Connor Peet (connor4312)" where full names are shown.
@@ -169,7 +173,7 @@ function textOf(body: HTMLElement | null): string {
 
 /** The whole timeline row (avatar column included); the comment card only when there is no row. */
 export function timelineRootOf(node: Element): HTMLElement {
-  const row = closestAtHome(node, '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]') ?? closestAtHome(node, '.js-comment-container');
+  const row = closestAtHome(node, TIMELINE_ROW) ?? closestAtHome(node, '.js-comment-container');
   if (row instanceof HTMLElement) return row;
   if (node instanceof HTMLElement) return node;
   return node.parentElement ?? node.ownerDocument.documentElement;
@@ -216,7 +220,7 @@ function srcOfImage(img: Element | null): string | null {
 export function avatarSrcOf(node: Element | null): string | null {
   if (node === null) return null;
   const scopes: Element[] = [node];
-  const row = closestAtHome(node, '.TimelineItem, .js-timeline-item, [data-testid="timeline-row"]');
+  const row = closestAtHome(node, TIMELINE_ROW);
   if (row !== null && row !== node) scopes.push(row);
   const author = authorOf(node);
   if (author !== null) {
@@ -270,14 +274,17 @@ export function avatarSrcForLogin(login: string): string | null {
 }
 
 function pathLineOf(root: Element): { readonly path?: string; readonly line?: number } {
-  const fileLink = root.querySelector('a[href*="/files"][href*="#"], a[href*="/blob/"], [data-path]');
+  // The Overview names a thread's file in its heading, linked into the Changes tab and wrapped in direction marks.
+  const fileLink = root.querySelector('a[href*="/files"][href*="#"], a[href*="/blob/"], [data-path], h2 a[href*="/changes"]');
   const href = fileLink?.getAttribute('href') ?? '';
   const dataPath = fileLink?.getAttribute('data-path') ?? root.getAttribute('data-path') ?? '';
   const fromHref = /[?&]path=([^&]+)/.exec(href) ?? /blob\/[^/]+\/([^#?]+)/.exec(href);
-  const pathText = (fileLink?.textContent ?? '').trim();
+  const pathText = (fileLink?.textContent ?? '').replace(/[\u200e\u200f]/g, '').trim();
   const path =
     dataPath !== '' ? dataPath : pathText !== '' && !pathText.includes(' ') ? pathText : fromHref?.[1] !== undefined ? decodeURIComponent(fromHref[1]) : undefined;
-  const lineHint = /[LR](\d+)/.exec(href) ?? /\bline (\d+)\b/i.exec(root.textContent ?? '');
+  // The Overview's heading reads "Line 341" (or "Lines 12 to 15") in a span of its own, glued to the path in the text.
+  const headingLine = [...(fileLink?.closest('h2')?.querySelectorAll('span') ?? [])].map((span) => /^Lines?\s.*?(\d+)\s*$/i.exec((span.textContent ?? '').trim())).find((match) => match !== null) ?? null;
+  const lineHint = /[LR](\d+)/.exec(href) ?? headingLine ?? /\bline (\d+)\b/i.exec(root.textContent ?? '');
   const parsed = lineHint?.[1] !== undefined ? Number.parseInt(lineHint[1], 10) : Number.NaN;
   const line = Number.isFinite(parsed) ? parsed : undefined;
   if (path !== undefined && line !== undefined) return { path, line };
@@ -292,9 +299,14 @@ function kindOf(id: string): RawComment['kind'] {
   return 'comment';
 }
 
+/** The box a thread's state and file are written on: the Overview's thread `article` around its comments, else the container itself. */
+function threadFrameOf(container: Element): Element {
+  return closestAtHome(container, OVERVIEW_ITEM) === null ? container : (closestAtHome(container, OVERVIEW_THREAD_FRAME) ?? container);
+}
+
 function isResolvedThread(container: Element): boolean {
   if (container.getAttribute('data-resolved') === 'true') return true;
-  for (const control of container.querySelectorAll('button, summary, span.Label')) {
+  for (const control of threadFrameOf(container).querySelectorAll('button, summary, span.Label, [data-component="Label"]')) {
     const text = (control.textContent ?? '').replace(/\s+/g, ' ').trim();
     if (/^unresolve conversation$/i.test(text) || /^resolved$/i.test(text)) return true;
   }
@@ -302,8 +314,9 @@ function isResolvedThread(container: Element): boolean {
 }
 
 function isOutdatedThread(container: Element): boolean {
-  if (container.querySelector('.outdated-comment-label, [data-testid="outdated-label"]') !== null) return true;
-  return [...container.querySelectorAll('.Label')].some((label) => /^outdated$/i.test((label.textContent ?? '').trim()));
+  const frame = threadFrameOf(container);
+  if (frame.querySelector('.outdated-comment-label, [data-testid="outdated-label"]') !== null) return true;
+  return [...frame.querySelectorAll('.Label, [data-component="Label"]')].some((label) => /^outdated$/i.test((label.textContent ?? '').trim()));
 }
 
 /** A rendered comment worth listing: real anchor id, an author, a non-empty body, not part of a form. */
@@ -416,6 +429,9 @@ export function markCrawlDirty(records: readonly MutationRecord[]): void {
     markUp(target, COMMENT_SELECTOR);
     markUp(target, THREAD_SELECTOR);
     markUp(target, EVENT_SELECTOR);
+    // An Overview thread's file, line and state are written in its box's header, beside its comments' container.
+    const frame = closestAtHome(target, OVERVIEW_THREAD_FRAME);
+    if (frame !== null && closestAtHome(frame, OVERVIEW_ITEM) !== null) for (const container of frame.querySelectorAll(THREAD_SELECTOR)) dirty.add(container);
   }
 }
 
@@ -480,7 +496,7 @@ function readThread(container: Element): ThreadReading {
     if (known === undefined || known.crawled === null) return { ids, crawled: null };
     // Read again next pass: the comments land in this container, and nothing else marks a node the panel holds.
     dirty.add(container);
-    const timelineNode = closestAtHome(container, '.js-timeline-item, .TimelineItem') ?? container;
+    const timelineNode = closestAtHome(container, TIMELINE_ROW) ?? container;
     return {
       ids: known.ids,
       crawled: {
@@ -509,11 +525,11 @@ function readThread(container: Element): ThreadReading {
     isOutdated: isOutdatedThread(container),
     threadAnchors: peers,
   };
-  const timelineNode = closestAtHome(container, '.js-timeline-item, .TimelineItem') ?? container;
+  const timelineNode = closestAtHome(container, TIMELINE_ROW) ?? container;
   const read: ThreadReading = {
     ids,
     crawled: {
-      comment: withLocation(base, pathLineOf(container)),
+      comment: withLocation(base, pathLineOf(threadFrameOf(container))),
       root: timelineNode instanceof HTMLElement ? timelineNode : first,
       author,
       avatarSrc: avatarSrcOf(first),
@@ -566,9 +582,30 @@ export function reactionsOf(node: Element): readonly CommentReaction[] {
         }
       }
     }
+    // The Overview's reactions: a toolbar of buttons named by their emoji ("👍 1 reaction"), each described by a
+    // tooltip that lists who reacted, names only.
+    for (const bar of scope.querySelectorAll('[role="toolbar"][aria-label^="Reactions for"]')) {
+      const owner = bar.closest('[id^="issuecomment-"], [id^="discussion_r"], [id^="pullrequestreview-"]');
+      if (owner !== null && owner.id !== node.id) continue;
+      for (const button of bar.querySelectorAll('button[aria-describedby]')) {
+        const emoji = EMOJI_NAMES[[...(button.getAttribute('aria-label') ?? '')][0] ?? ''];
+        if (emoji === undefined) continue;
+        for (const id of (button.getAttribute('aria-describedby') ?? '').split(/\s+/)) {
+          const tip = id === '' ? null : bar.ownerDocument.getElementById(id);
+          if (tip === null || tip.getAttribute('role') !== 'tooltip') continue;
+          for (const name of (tip.textContent ?? '').split(/,\s*(?:and\s+)?|\s+and\s+/)) {
+            const login = name.trim();
+            if (login !== '' && !/^\d+\s+(?:more|others?)$/i.test(login)) out.set(`${login}\n${emoji}`, { login, emoji });
+          }
+        }
+      }
+    }
   }
   return [...out.values()];
 }
+
+/** GitHub's eight reactions by their emoji, named as its classic tooltips name them ("reacted with thumbs up emoji"). */
+const EMOJI_NAMES: Readonly<Record<string, string>> = { '👍': 'thumbs up', '👎': 'thumbs down', '😄': 'laugh', '🎉': 'hooray', '😕': 'confused', '❤': 'heart', '🚀': 'rocket', '👀': 'eyes' };
 
 function readEvent(node: Element): EventReading {
   if (!/^event-\d+$/.test(node.id) || node.closest(THREAD_SELECTOR) !== null) return { event: null };
@@ -710,9 +747,9 @@ const MENTION_ROW = '.TimelineItem:has(.octicon-cross-reference), [data-testid="
  */
 export function crawlLeftovers(claimed: ReadonlySet<HTMLElement>, commentsComing: (thread: Element) => boolean, root: ParentNode = document): readonly CrawledLeftover[] {
   const list: CrawledLeftover[] = [];
-  const timeline = root.querySelector('.js-discussion, [data-testid="issue-timeline-container"], [data-testid="pull-request-timeline"], .pull-discussion-timeline');
+  const timeline = root.querySelector('.js-discussion, [data-testid="issue-timeline-container"], [data-testid="pull-request-timeline"], .pull-discussion-timeline') ?? overviewCommentsSection(root);
   if (timeline === null) return list;
-  const ROW = '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]';
+  const ROW = TIMELINE_ROW;
   // GitHub collapses a run of identical comments behind "N similar comments": a `details` set directly in the
   // timeline, not a row, holding the comment rows. The rows inside are crawled (and fold) like any other; the
   // wrapper with its summary is folded silently too, else that one line stood under the panel.
@@ -751,7 +788,7 @@ export function crawlLeftovers(claimed: ReadonlySet<HTMLElement>, commentsComing
     // What someone minimized (resolved, outdated, off-topic) is noise here; its comment, once loaded, is crawled on its own.
     else if (minimized || row.querySelector('.minimized-comment') !== null) kind = 'noise';
     else if (isRevisionMarkerRow(row)) kind = 'marker';
-    else if (row.matches(COMMIT_ROW) || row.querySelector('.js-commits-list-item, code.js-commit-sha, a[href*="/commits/"]') !== null) kind = 'commit';
+    else if (row.matches(COMMIT_ROW) || row.querySelector('.js-commits-list-item, code.js-commit-sha, a[href*="/commits/"], [data-testid="timeline-commit-group"]') !== null) kind = 'commit';
     else if (isForcePushRow(row)) kind = 'push';
     else if (row.matches(MENTION_ROW) || row.querySelector('.octicon-cross-reference, [id^="ref-pullrequest-"], [id^="ref-issue-"]') !== null) kind = 'mention';
     else if (row.querySelector('[id^="pullrequestreview-"]') !== null) kind = 'review-event';
@@ -785,6 +822,10 @@ function reviewStateOf(text: string): CrawledReviewState {
 
 /** A review's own comment ("left a comment"), wherever quick view has put it; never one of its threads' comments. */
 export function reviewCommentOf(review: Element): HTMLElement | null {
+  // An Overview review is one box: its header, its own words and its threads' boxes. The box is the comment when it has words.
+  if (review instanceof HTMLElement && review.tagName === 'ARTICLE' && closestAtHome(review, OVERVIEW_ITEM) !== null) {
+    return (bodyElementOf(review)?.textContent ?? '').trim() === '' ? null : review;
+  }
   // The comment may be on loan to a panel row right now; its placeholder still sits here.
   const candidates = [...review.querySelectorAll<HTMLElement>(REVIEW_COMMENT), ...wornPiecesOf(review).flatMap((piece) => (piece.matches(REVIEW_COMMENT) ? [piece] : [...piece.querySelectorAll<HTMLElement>(REVIEW_COMMENT)]))];
   return candidates.find((candidate) => candidate.closest(THREAD_SELECTOR) === null && bodyElementOf(candidate) !== null) ?? null;
@@ -816,7 +857,7 @@ export function crawlReviews(root: ParentNode = document): readonly CrawledRevie
     // The verdict sentence sits in the row's own header; the comment's words must not vote. Read from the row at
     // home *and* whatever of it is on loan, and remembered: a review's verdict does not change while the page is
     // open, and a read that finds no sentence (the header is worn by a panel row) must not demote it to "commented".
-    const read = reviewStateOf([node, ...wornPiecesOf(node)].map((scope) => textOutside(scope, comment)).join(' '));
+    const read = overviewReviewState(node) ?? reviewStateOf([node, ...wornPiecesOf(node)].map((scope) => textOutside(scope, comment)).join(' '));
     const remembered = stateByReview.get(node.id);
     const state = read === 'commented' && remembered !== undefined ? remembered : read;
     stateByReview.set(node.id, state);
@@ -835,6 +876,19 @@ export function crawlReviews(root: ParentNode = document): readonly CrawledRevie
     const y = document.getElementById(b.anchor);
     return x === null || y === null ? 0 : compareHome(x, y);
   });
+}
+
+/**
+ * An Overview review's verdict, from the words beside its author ("approved", "requested changes", "commented"); a
+ * dismissed one reads "previously approved". Its screen-reader heading says "X commented" whatever the verdict.
+ */
+function overviewReviewState(review: Element): CrawledReviewState | null {
+  if (closestAtHome(review, OVERVIEW_ITEM) === null) return null;
+  const header = find(review, '[data-testid="comment-header"]');
+  if (header === null) return null;
+  const words = [...header.querySelectorAll('[class*="HeaderMutedText"]')].map((part) => part.textContent ?? '').join(' ');
+  if (/\bpreviously\b|\bdismissed\b/i.test(words)) return 'dismissed';
+  return reviewStateOf(words);
 }
 
 function textOutside(root: Element, excluded: Element | null): string {

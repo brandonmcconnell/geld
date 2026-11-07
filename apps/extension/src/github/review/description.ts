@@ -3,6 +3,7 @@ import { ICON_CHEVRON_DOWN } from '../ui/icons';
 import { botAppAvatar, botById } from '@geld/review';
 import { toolBlocksOf, verdictOf } from './description-blocks';
 import { ATTR_FINDABLE, setFindable } from './fold';
+import { OVERVIEW_DESCRIPTION } from './overview-page';
 
 /** A long description with no headings to fold is cut to this height, behind a fade and "Show full description". */
 export const DESCRIPTION_CAP_PX = 500;
@@ -303,6 +304,7 @@ let observedRow: HTMLElement | null = null;
 
 export function descriptionBody(): HTMLElement | null {
   const body =
+    document.querySelector(`${OVERVIEW_DESCRIPTION} .markdown-body`) ??
     document.querySelector('.js-comment-container .js-comment-body') ??
     document.querySelector('[data-testid="issue-body"] .markdown-body') ??
     document.querySelector('.timeline-comment .comment-body');
@@ -567,8 +569,8 @@ function measure(body: HTMLElement): void {
 
 /** GitHub's reactions row under the description (the reaction picker and its pills), outside the body, and its box. */
 function reactionsRowOf(body: HTMLElement): { readonly row: HTMLElement; readonly box: HTMLElement } | null {
-  const box = body.closest('.js-comment');
-  const row = box?.querySelector('.pr-review-reactions, .comment-reactions') ?? null;
+  const box = body.closest('.js-comment') ?? body.closest(OVERVIEW_DESCRIPTION);
+  const row = box?.querySelector('.pr-review-reactions, .comment-reactions') ?? box?.querySelector('[role="toolbar"][aria-label="Reactions for the description"]')?.parentElement ?? null;
   return box instanceof HTMLElement && row instanceof HTMLElement && !body.contains(row) ? { row, box } : null;
 }
 
