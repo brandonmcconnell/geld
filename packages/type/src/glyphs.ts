@@ -2,13 +2,14 @@ import { alternateDefs, swashDefs } from './alternates';
 import type { GlyphDef, SpaceDef } from './draw';
 import { AFRICAN } from './glyphs-african';
 import { BOX_DRAWING, DINGBATS, ORNAMENTS } from './glyphs-dingbats';
-import { DRAWN_SIGNS, FIGURES, LOWER, NOTDEF, ON_LETTERS, PUNCTUATION, TRADEMARK, UPPER } from './glyphs-core';
+import { DRAWN_SIGNS, FIGURES, LOWER, NOTDEF, ON_LETTERS, PUNCTUATION, SERVICEMARK, TRADEMARK, UPPER } from './glyphs-core';
 import { CYRILLIC, CYRILLIC_LOCL } from './glyphs-cyrillic';
 import { figureSets, figureVariants, signScripts, tabularSigns } from './glyphs-figures';
 import { GREEK } from './glyphs-greek';
 import { smallCaps } from './glyphs-smallcaps';
 import { LATIN_EXTRA } from './glyphs-latin';
 import { LATIN1 } from './glyphs-latin1';
+import { MORE } from './glyphs-more';
 import { PLUS } from './glyphs-plus';
 import { SYMBOLS } from './glyphs-symbols';
 
@@ -20,10 +21,12 @@ const DRAWN: GlyphDef[] = [
   ...figureVariants(FIGURES),
   ...PUNCTUATION,
   TRADEMARK,
+  SERVICEMARK,
   ...ON_LETTERS,
   ...DRAWN_SIGNS,
   ...PLUS,
   ...SYMBOLS,
+  ...MORE,
   ...LATIN_EXTRA,
   ...LATIN1,
   ...AFRICAN,

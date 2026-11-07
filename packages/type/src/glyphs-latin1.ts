@@ -16,6 +16,11 @@ const smallC = (g: DrawContext): Stroke[] => {
   return [open(p(w, g.y(9)), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, g.y(5)))];
 };
 
+const smallP = (g: DrawContext): Stroke[] => {
+  const w = g.wide(9.5);
+  return [stem(0, 0, g.cap), box(0, w, g.y(6), g.top(g.cap), [false, true, true, false])];
+};
+
 const smallR = (g: DrawContext): Stroke[] => {
   const w = g.wide(9.5);
   const bowl = g.y(6);
@@ -103,6 +108,7 @@ export const LATIN1: GlyphDef[] = [
   },
   { name: 'copyright', unicode: 0xa9, lsb: 1, rsb: 1, draw: (g) => enclosed(g, smallC, 10) },
   { name: 'registered', unicode: 0xae, lsb: 1, rsb: 1, draw: (g) => enclosed(g, smallR, 9.5) },
+  { name: 'published', unicode: 0x2117, lsb: 1, rsb: 1, draw: (g) => enclosed(g, smallP, 9.5) },
   {
     name: 'ordfeminine',
     unicode: 0xaa,
