@@ -51,7 +51,7 @@ import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiv
 import type { BotRequestClick } from './bot-requests';
 import { awaitingReaction, botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
 import { pollTriggerReactions, resetTriggerReactions, withFetchedReactions } from './trigger-reactions';
-import { AGENT_NOTES_KEY, ATTR_CHECK_RUNS, ATTR_CTL_SLOT, ATTR_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, descriptionCard, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderCheckRunsList, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
+import { AGENT_NOTES_KEY, ATTR_CHECK_RUNS, ATTR_CTL_SLOT, ATTR_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, descriptionCard, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, reseatPanelNow, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderCheckRunsList, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setNoteProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -74,7 +74,8 @@ import { fitChips, stopFittingChips } from './fit-chips';
 import { stopWatchingBrandSelection } from './brand';
 import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrphanedLoans, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
-import { closeOverviewChecks, isOverviewPage, OVERVIEW_FOR_YOU, OVERVIEW_MINI_STATUS, openCollapsedThreads, openOverviewChecks, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, showAllOverviewComments } from './overview-page';
+import { rememberTopCard, setTopCard } from './top-card';
+import { closeOverviewChecks, isOverviewPage, OVERVIEW_FOR_YOU, openCollapsedThreads, openOverviewChecks, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, showAllOverviewComments } from './overview-page';
 import { pageFetch } from '../page-fetch';
 import { closeFlow, openFlowDialog } from './flow';
 
@@ -3240,9 +3241,6 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     const commentsSection = overviewCommentsSection();
     const controls = commentsSection === null ? null : overviewCommentsControls(commentsSection);
     if (controls !== null) foldTargets.push({ key: 'overview-controls', label: '', author: null, nodes: [controls], silent: true });
-    // Comments and Approvals repeat the digest's threads meter and Reviews row, and Checks is the CI row's.
-    const mini = document.querySelector<HTMLElement>(OVERVIEW_MINI_STATUS);
-    if (mini !== null && mini.closest(`.${PANEL_CLASS}`) === null) foldTargets.push({ key: 'overview-mini-status', label: '', author: null, nodes: [mini], silent: true });
   }
   // Whatever is left in the timeline — commits, mentions, bots' bare "reviewed" lines — folds too, so nothing
   // stands under the panel but the merge box; commits and mentions get rows in the activity section.
@@ -3904,6 +3902,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   compactDescriptionByline(true);
   setFullTimeline(visit.fullTimeline);
   if (hidingTimeline) document.documentElement.setAttribute('data-geld-timeline', 'compact');
+  setTopCard(isOverviewPage() ? (hidingTimeline ? 'folded' : 'digest') : null);
   // Everything on the page has been read: what GitHub inserts from here on waits for the next pass.
   markSeen();
   // The row the reader opened stays put under whatever this pass moved above it.
@@ -3956,6 +3955,26 @@ const LEAVE_GRACE_MS = 3000;
 let leftoverTimer: number | null = null;
 
 /** Fold the description in the frame GitHub renders it, as on a switch back to the conversation tab, rather than a pass later. */
+/**
+ * Before paint: the Overview's top card as the digest's view has it (set by the pass too, since GitHub draws the card,
+ * and re-renders it, between passes), and the digest back if React's re-render took it. `allowed` is the controller's
+ * say on dressing this page at all: a repository left out, or Geld off, takes back what the stored hint applied.
+ */
+export function dressOverviewNow(settings: GeldSettings, allowed: boolean): void {
+  const on = allowed && settings.enabled && settings.prOverview;
+  rememberTopCard(on ? (settings.compactTimeline !== 'off' ? 'folded' : 'digest') : 'off');
+  if (!on) {
+    if (lastSettings === null) setTopCard(null);
+    return;
+  }
+  if (!isOverviewPage()) return;
+  const page = describePage(new URL(window.location.href));
+  if (page.kind !== 'pull-conversation') return;
+  const full = visit.pageKey === page.stateKey && visit.fullTimeline;
+  setTopCard(settings.compactTimeline !== 'off' && !full ? 'folded' : 'digest');
+  reseatPanelNow();
+}
+
 export function foldDescriptionNow(settings: GeldSettings): void {
   if (!settings.enabled || !settings.collapseDescription) return;
   const page = describePage(new URL(window.location.href));
@@ -4015,11 +4034,13 @@ export function teardownReviewOverview(leaving = false): void {
       applyFolds([], new Set());
       shortenDescription(false);
       compactDescriptionByline(false);
+      setTopCard(null);
     }, LEAVE_GRACE_MS);
   } else {
     applyFolds([], new Set());
     shortenDescription(false);
     compactDescriptionByline(false);
+    setTopCard(null);
   }
   visit.openKey = null;
   visit.pageKey = '';

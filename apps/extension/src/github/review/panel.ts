@@ -28,7 +28,7 @@ import { formatSyncAge } from '../../ui/sync-age';
 import type { Closure, ClosureKind, EventHeadline } from './fold';
 import { headlineText } from './fold';
 import { ATTR_TELEPORTED, reclaimOrphans, restoreAll } from './teleport';
-import { OVERVIEW_FOR_YOU, overviewColumnGap, overviewDescription } from './overview-page';
+import { overviewColumnGap, overviewDescription } from './overview-page';
 import { ATTR_NOTE, ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import type { ReviewerCandidate } from './reviewers';
 import { shapeMark } from './mark-shape';
@@ -2978,8 +2978,9 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     if (stale !== card) stale.removeAttribute(ATTR_ATTACHED);
   }
   card.setAttribute(ATTR_ATTACHED, '');
-  joinOverviewStatus(card);
   const columnGap = overviewColumnGap(card);
+  // The stylesheet joins the top card's status row to the description by taking back this same gap.
+  if (columnGap !== null && document.documentElement.style.getPropertyValue('--geld-overview-gap') !== columnGap) document.documentElement.style.setProperty('--geld-overview-gap', columnGap);
   // Read before anything moves: this forces a layout, and a layout with the old panel gone and the new one not
   // yet in makes the browser's scroll anchoring shift the page up by the panel's height — and it does not shift
   // it back when the new panel lands. The old panel is replaced in one mutation below, never removed first.
@@ -3174,6 +3175,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   } else {
     oldNudge?.remove();
   }
+  seated = { panel, nudge: model.nudge ? document.querySelector<HTMLElement>(`.${NUDGE_CLASS}`) : null };
   // A view choice rebuilt everything around the control the reader used: focus lands on View in the new panel.
   restoreFocus(panel, focusKey ?? (takeViewFocus('panel') ? 'view' : null));
   return { root: panel, slot: panel.querySelector<HTMLElement>(`[${ATTR_SLOT}] > .${PANEL_CLASS}__slot-body`) };
@@ -3186,7 +3188,6 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
 function seatOverviewPanel(panel: HTMLElement): void {
   if (!panel.hasAttribute(ATTR_OVERVIEW)) return;
   const card = overviewDescription();
-  if (card !== null) joinOverviewStatus(card);
   if (card === null || card.nextElementSibling === panel) return;
   const nudge = panel.nextElementSibling?.classList.contains(NUDGE_CLASS) === true ? panel.nextElementSibling : null;
   card.after(panel);
@@ -3239,36 +3240,22 @@ export function unmountPanel(): void {
   panel?.remove();
   document.querySelector(`.${NUDGE_CLASS}`)?.remove();
   for (const card of document.querySelectorAll(`[${ATTR_ATTACHED}]`)) card.removeAttribute(ATTR_ATTACHED);
-  unjoinOverviewStatus(null);
+  seated = null;
 }
 
-const ATTR_STATUS_JOINED = 'data-geld-status-joined';
-const ATTR_JOINED_BELOW = 'data-geld-joined-below';
+/** The digest as last mounted, and its nudge: React's re-render of the Overview's column removes them with the old column. */
+let seated: { readonly panel: HTMLElement; nudge: HTMLElement | null } | null = null;
 
 /**
- * On the Overview, the top card's status row (what to do next, with its merge or conflict button) heads the description:
- * the card stands right above the description with their touching corners square and the column's gap taken back, the
- * card's bottom border the line between them, as the digest grows out of the description's bottom edge.
+ * Put the Overview's digest back after the description React has just rendered anew, before the frame paints: GitHub
+ * replaces the column's server-rendered boxes once its scripts load, and the digest went with them until the next pass.
  */
-function joinOverviewStatus(card: HTMLElement): void {
-  const above = card.previousElementSibling;
-  const status = above instanceof HTMLElement && above.matches(OVERVIEW_FOR_YOU) ? above : null;
-  unjoinOverviewStatus(status === null ? null : card);
-  if (status === null) return;
-  if (!status.hasAttribute(ATTR_STATUS_JOINED)) status.setAttribute(ATTR_STATUS_JOINED, '');
-  if (card.hasAttribute(ATTR_JOINED_BELOW)) return;
-  card.setAttribute(ATTR_JOINED_BELOW, '');
-  const gap = overviewColumnGap(card);
-  if (gap !== null) card.style.setProperty('--geld-join-gap', gap);
-}
-
-function unjoinOverviewStatus(keep: HTMLElement | null): void {
-  for (const joined of document.querySelectorAll<HTMLElement>(`[${ATTR_JOINED_BELOW}]`)) {
-    if (joined === keep) continue;
-    joined.removeAttribute(ATTR_JOINED_BELOW);
-    joined.style.removeProperty('--geld-join-gap');
-  }
-  const status = keep?.previousElementSibling ?? null;
-  for (const joined of document.querySelectorAll(`[${ATTR_STATUS_JOINED}]`)) if (joined !== status) joined.removeAttribute(ATTR_STATUS_JOINED);
+export function reseatPanelNow(): void {
+  if (seated === null || seated.panel.isConnected || !seated.panel.hasAttribute(ATTR_OVERVIEW)) return;
+  const card = overviewDescription();
+  if (card === null) return;
+  card.setAttribute(ATTR_ATTACHED, '');
+  card.after(seated.panel);
+  if (seated.nudge !== null) seated.panel.after(seated.nudge);
 }
 

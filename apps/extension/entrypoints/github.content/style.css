@@ -2527,23 +2527,43 @@ html[data-geld-timeline='compact'] section:has(> [data-geld-folded] #overview-co
   border-bottom-right-radius: 0 !important;
 }
 
-/* The Overview's status row heads the description: one box, the card's bottom border the line between them. */
-[data-geld-status-joined] {
+/*
+ * The Overview's status row heads the description: one box, the card's bottom border the line between them, the
+ * column's gap taken back (`--geld-overview-gap`, measured; GitHub's 24px until then). Keyed on `<html>`
+ * (`data-geld-top-card`, set before paint) and the page's own markup, so it holds from GitHub's first frame and
+ * through the re-render that swaps the server-rendered boxes for React's, where attributes on the boxes were lost.
+ */
+html[data-geld-top-card] [class*='CondensedForYouContainer']:has(+ section[aria-label='Description']) {
   border-bottom-left-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
 }
 
-[data-geld-joined-below] {
-  margin-top: calc(-1px - var(--geld-join-gap, 0px)) !important;
+html[data-geld-top-card] [class*='CondensedForYouContainer'] + section[aria-label='Description'] {
+  margin-top: calc(-1px - var(--geld-overview-gap, 24px)) !important;
   border-top-left-radius: 0 !important;
   border-top-right-radius: 0 !important;
+}
+
+html[data-geld-top-card] section[aria-label='Description']:has(+ .geld-review) {
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+/* Comments and Approvals repeat the digest's threads meter and Reviews row, and Checks is the CI row's. */
+html[data-geld-top-card='folded'] [class*='CondensedForYouContainer'] > [class*='MiniStatusGrid'] {
+  display: none !important;
+}
+
+/* While GitHub streams the card a `<template>` leads it, so its status row is not `:first-child` and takes a second top border. */
+html[data-geld-top-card] [class*='CondensedForYouContainer'] > template:first-child + section {
+  border-top-width: 0 !important;
 }
 
 /*
  * GitHub's checks overlay under the top card stays open while the digest folds the card's mini statuses, its list lent
  * to the CI row: the empty overlay, and the list for the moment before it is lent (after Escape reopens it), never show.
  */
-html[data-geld-timeline='compact']:has(.geld-review[data-geld-overview]) [class*='OverlayPortalRoot']:has([role='group'][aria-label='Checks']) {
+html[data-geld-top-card='folded'] [class*='OverlayPortalRoot']:has([role='group'][aria-label='Checks']) {
   visibility: hidden !important;
   pointer-events: none !important;
 }
@@ -3463,6 +3483,11 @@ svg.geld-lucide {
 
 .geld-review__rows--status {
   border-bottom: 1px solid var(--geld-review-border-muted);
+}
+
+/* Nothing under it yet (the digest still reading): the panel's own border ends the box, not a second line on it. */
+.geld-review__rows--status:is(:last-child, :has(+ .geld-review__rows:empty:last-child)) {
+  border-bottom-width: 0;
 }
 
 /* One hairline between neighbours: the head already draws the line above the first status row, and the
