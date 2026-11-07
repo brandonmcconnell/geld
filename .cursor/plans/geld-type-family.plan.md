@@ -213,7 +213,7 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 ## 5. Ligatures
 
 ### 5.1 Text ligatures
-- [ ] Decide per pair whether the octagonal shapes collide at all: f with i, f with l, f with f, f with t, ffi, ffl, f with j, f with b, f with h, f with k, and t with t.
+- [x] Decide per pair whether the octagonal shapes collide at all, measured at every weight: f with i, l, j, b, h and k stay clear (the hook ends over the space and the next letter's stem starts past it; ffi and ffl are f_f followed by i or l, clear the same way); f with f, f with t and t with t bring their crossbars within 0.8 units, 0.48 for tt at Black, so they ligate.
 - [x] Draw ligature glyphs only for the pairs that collide (`liga`), with caret positions in `GDEF` so the cursor can go between the letters: ff, ft and tt, whose crossbars came within 0.8 units (0.48 for tt at Black), drawn as the two letters with one bar. fi fl fj fb fh fk stay apart (no collision; fï is opened by kerning). smcp runs first, so small caps never ligate. `verify.py` checks the substitution, the width and the caret in every compiled font.
 - [ ] Discretionary ligatures (`dlig`): ct, st, sp and "Geld" to the wordmark lockup.
 
