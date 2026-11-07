@@ -180,6 +180,14 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   // An alternate that would draw as this style's default is only in the other style (the italic's l is tailed already).
   const elsewhere = new Set(ALTERNATES.filter((alt) => alt.only && alt.only !== style).map(alternateName));
   for (let i = glyphs.length - 1; i >= 0; i--) if (elsewhere.has(glyphs[i]!.name)) glyphs.splice(i, 1);
+  // An alternate keeps its letter's anchors, so an exit or a tail never moves a horn or an accent off the letter.
+  for (const alt of ALTERNATES) {
+    const gl = glyphs.find((x) => x.name === alternateName(alt));
+    const base = glyphs.find((x) => x.name === alt.glyph);
+    if (!gl || !base) continue;
+    const dx = bounds(gl.contours).minX - bounds(base.contours).minX;
+    gl.anchors = base.anchors.map((a) => ({ ...a, x: a.x + dx }));
+  }
 
   // Where each ligature's letters have their crossbars, read before the slant and the dark inset so the bridge between them takes both.
   const bars = new Map(
