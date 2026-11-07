@@ -1232,7 +1232,7 @@ function showStatus(state: Mounted): void {
     const heir = state.pills.find((pill) => pillPlace(pill) === state.statusOpenerPlace) ?? null;
     if (opener === null || opener.isConnected || state.pills.length === 0) closeStatusMenu(state);
     else if (heir !== null) {
-      state.statusOpener = heir;
+      setStatusOpener(state, heir);
       heir.setAttribute('aria-expanded', 'true');
       positionStatusMenu(state);
       // A reading that landed while the menu had no pill skipped it: the menu takes it now.
@@ -1290,7 +1290,7 @@ function showInstantMerge(state: Mounted): void {
 async function instantMerge(state: Mounted, pill: HTMLButtonElement): Promise<void> {
   closeStatusMenu(state);
   closePanel();
-  state.statusOpener = pill;
+  setStatusOpener(state, pill);
   const pullPath = state.pullPath;
   // What was read may be a minute old: an approval dismissed, a failing check or changes requested since must not merge in one click.
   for (const each of state.pills) each.setAttribute('aria-busy', 'true');
@@ -1343,13 +1343,18 @@ function repoOf(pullPath: string): string | null {
   return /^\/([^/]+\/[^/]+)\/pull\//.exec(pullPath)?.[1] ?? null;
 }
 
+/** The pill a menu or a 1-click merge belongs to, and where it stands, for the pill that takes its place. */
+function setStatusOpener(state: Mounted, pill: HTMLButtonElement): void {
+  state.statusOpener = pill;
+  state.statusOpenerPlace = pillPlace(pill);
+}
+
 function toggleStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
   const same = state.statusMenu !== null && state.statusOpener === pill;
   closeStatusMenu(state);
   if (same || state.sending) return;
   closePanel();
-  state.statusOpener = pill;
-  state.statusOpenerPlace = pillPlace(pill);
+  setStatusOpener(state, pill);
   if (state.mergeActions !== null) {
     openStatusMenu(state, pill);
     return;
