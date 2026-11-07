@@ -261,9 +261,9 @@ function isTestPatternGroupId(value) {
 }
 function allBuiltInTestPatterns(groupIds = null) {
   const patterns = [];
-  for (const group of TEST_PATTERN_GROUPS) {
-    if (groupIds !== null && !groupIds.has(group.id)) continue;
-    patterns.push(...group.patterns);
+  for (const group2 of TEST_PATTERN_GROUPS) {
+    if (groupIds !== null && !groupIds.has(group2.id)) continue;
+    patterns.push(...group2.patterns);
   }
   return patterns;
 }
@@ -439,7 +439,7 @@ var init_test_patterns = __esm({
         ]
       }
     ];
-    TEST_PATTERN_GROUP_IDS = TEST_PATTERN_GROUPS.map((group) => group.id);
+    TEST_PATTERN_GROUP_IDS = TEST_PATTERN_GROUPS.map((group2) => group2.id);
   }
 });
 
@@ -472,8 +472,8 @@ function parseGroupKey(value, catalog = BUNDLED_CATALOG) {
   const groupId = value.slice(slash + 1);
   if (!isCategoryId(categoryId)) return null;
   const category = categoryById(categoryId, catalog);
-  const group = category.groups.find((candidate) => candidate.id === groupId);
-  return group === void 0 ? null : { category, group };
+  const group2 = category.groups.find((candidate) => candidate.id === groupId);
+  return group2 === void 0 ? null : { category, group: group2 };
 }
 function isGroupKey(value, catalog = BUNDLED_CATALOG) {
   return parseGroupKey(value, catalog) !== null;
@@ -485,7 +485,7 @@ function isWellFormedGroupKey(value) {
   return isCategoryId(value.slice(0, slash)) && isWellFormedId(value.slice(slash + 1));
 }
 function catalogGroupKeys(catalog = BUNDLED_CATALOG) {
-  return catalog.categories.flatMap((category) => category.groups.map((group) => groupKey(category.id, group.id)));
+  return catalog.categories.flatMap((category) => category.groups.map((group2) => groupKey(category.id, group2.id)));
 }
 function hiddenCategoryFromCustom(custom2) {
   const nounPlural = custom2.nounPlural ?? custom2.title.toLowerCase();
@@ -511,9 +511,9 @@ function customCategoryId(title, taken = /* @__PURE__ */ new Set()) {
 }
 function categoryPatterns(category, groupIds = null) {
   const patterns = [];
-  for (const group of category.groups) {
-    if (groupIds !== null && !groupIds.has(group.id)) continue;
-    patterns.push(...group.patterns);
+  for (const group2 of category.groups) {
+    if (groupIds !== null && !groupIds.has(group2.id)) continue;
+    patterns.push(...group2.patterns);
   }
   return patterns;
 }
@@ -1102,11 +1102,11 @@ function parseEntry(value, path) {
   if (!isCategoryIconName(icon)) throw new CatalogError(`${path}.icon: unknown icon ${describe2(icon)}`);
   if (typeof value.defaultEnabled !== "boolean") throw new CatalogError(`${path}.defaultEnabled: expected true or false, got ${describe2(value.defaultEnabled)}`);
   if (!Array.isArray(value.groups)) throw new CatalogError(`${path}.groups: expected a list, got ${describe2(value.groups)}`);
-  const groups = value.groups.map((group, index) => parseGroup(group, `${path}.groups[${index}]`));
+  const groups = value.groups.map((group2, index) => parseGroup(group2, `${path}.groups[${index}]`));
   const seen = /* @__PURE__ */ new Set();
-  for (const group of groups) {
-    if (seen.has(group.id)) throw new CatalogError(`${path}.groups: duplicate group id "${group.id}"`);
-    seen.add(group.id);
+  for (const group2 of groups) {
+    if (seen.has(group2.id)) throw new CatalogError(`${path}.groups: duplicate group id "${group2.id}"`);
+    seen.add(group2.id);
   }
   return {
     id,
@@ -1188,7 +1188,7 @@ function resolveCatalog(bundled, fetched) {
   const categories = bundled.categories.map((base) => {
     const entry2 = fetched.categories.find((candidate) => candidate.id === base.id);
     if (entry2 === void 0) return base;
-    const groups = [...entry2.groups, ...base.groups.filter((group) => !entry2.groups.some((candidate) => candidate.id === group.id))];
+    const groups = [...entry2.groups, ...base.groups.filter((group2) => !entry2.groups.some((candidate) => candidate.id === group2.id))];
     return {
       id: base.id,
       title: entry2.title,
@@ -1236,7 +1236,7 @@ function serializeCatalog(catalog) {
       shortNoun: category.shortNoun,
       shortNounPlural: category.shortNounPlural,
       defaultEnabled: category.defaultEnabled,
-      groups: category.groups.map((group) => ({ id: group.id, label: group.label, description: group.description, patterns: [...group.patterns] }))
+      groups: category.groups.map((group2) => ({ id: group2.id, label: group2.label, description: group2.description, patterns: [...group2.patterns] }))
     })),
     listSurfaces: catalog.listSurfaces.map(listSurfaceJson),
     diffstatSurfaces: catalog.diffstatSurfaces.map(diffstatSurfaceJson)
@@ -2718,7 +2718,7 @@ function hasAdvancedSettings(settings, categoryId, catalog = BUNDLED_CATALOG) {
   return describeAdvancedSettings(settings, categoryId, catalog) !== null;
 }
 function describeAdvancedSettings(settings, categoryId, catalog = BUNDLED_CATALOG) {
-  const groupsOff = categoryById(categoryId, catalog).groups.filter((group) => !isGroupEnabled(settings, categoryId, group.id)).length;
+  const groupsOff = categoryById(categoryId, catalog).groups.filter((group2) => !isGroupEnabled(settings, categoryId, group2.id)).length;
   const extra = categoryPatternLines(settings, categoryId).filter((line) => !/^\[.*\]$/.test(line)).length;
   const parts = [];
   if (groupsOff > 0) parts.push(`${groupsOff} group${groupsOff === 1 ? "" : "s"} off`);
@@ -2758,6 +2758,8 @@ function normalizeSettings(value) {
     digestViewChosenAt: typeof record4.digestViewChosenAt === "string" ? record4.digestViewChosenAt : DEFAULT_SETTINGS.digestViewChosenAt,
     reviewGrouping: isReviewGrouping(record4.reviewGrouping) ? record4.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
     collapseDescription: bool(record4, "collapseDescription", DEFAULT_SETTINGS.collapseDescription),
+    attachmentLightbox: bool(record4, "attachmentLightbox", DEFAULT_SETTINGS.attachmentLightbox),
+    relatedLinks: bool(record4, "relatedLinks", DEFAULT_SETTINGS.relatedLinks),
     quickReview: bool(record4, "quickReview", DEFAULT_SETTINGS.quickReview),
     holdToMerge: bool(record4, "holdToMerge", DEFAULT_SETTINGS.holdToMerge),
     reviewBots: isStringArray(record4.reviewBots) ? record4.reviewBots : DEFAULT_SETTINGS.reviewBots,
@@ -2866,6 +2868,8 @@ var init_settings = __esm({
       digestViewChosenAt: "",
       reviewGrouping: "type",
       collapseDescription: true,
+      attachmentLightbox: true,
+      relatedLinks: true,
       quickReview: true,
       holdToMerge: false,
       reviewBots: [],
@@ -3297,6 +3301,8 @@ var init_settings_validate = __esm({
       "quickReview",
       "holdToMerge",
       "collapseDescription",
+      "attachmentLightbox",
+      "relatedLinks",
       "aiEnabled",
       "aiJev"
     ];
@@ -3484,10 +3490,10 @@ function createMatcher(settings, repo = null, catalog = BUNDLED_CATALOG) {
     if (!isCategoryEnabled(settings, category.id)) continue;
     const builtIn = [];
     const kinds = /* @__PURE__ */ new Set();
-    for (const group of category.groups) {
-      if (!isGroupEnabled(settings, category.id, group.id)) continue;
-      builtIn.push(...group.patterns);
-      if (CHANGE_KINDS_CATEGORY_IDS.includes(category.id) && isChangeKindId(group.id)) kinds.add(group.id);
+    for (const group2 of category.groups) {
+      if (!isGroupEnabled(settings, category.id, group2.id)) continue;
+      builtIn.push(...group2.patterns);
+      if (CHANGE_KINDS_CATEGORY_IDS.includes(category.id) && isChangeKindId(group2.id)) kinds.add(group2.id);
     }
     const entry2 = compileCategory(category, builtIn, resolveCustomPatterns(categoryPatternLines(settings, category.id), repo), kinds);
     if (entry2 !== null) compiled.push(entry2);
@@ -11092,7 +11098,9 @@ var init_repo_config = __esm({
       "suggestedFixes",
       "autoViewed",
       "testOutline",
-      "testSyntaxes"
+      "testSyntaxes",
+      "attachmentLightbox",
+      "relatedLinks"
     ];
     SCOPE_RESET = "[*]";
   }
@@ -11207,7 +11215,7 @@ function presetGroups(presets) {
     if (list2 === void 0) groups.set(key, [preset]);
     else list2.push(preset);
   }
-  return [...groups].map(([group, list2]) => ({ group, presets: list2 }));
+  return [...groups].map(([group2, list2]) => ({ group: group2, presets: list2 }));
 }
 function visibleOn(field, surface) {
   return field.surfaces === void 0 || field.surfaces.includes(surface);
@@ -11304,6 +11312,21 @@ var init_settings_schema = __esm({
             description: "Fold each section of the pull request description under its heading. A description still taller than 500px is cut there with a control to show the rest.",
             popup: true,
             popupDescription: "Fold its sections under their headings."
+          },
+          {
+            kind: "toggle",
+            key: "relatedLinks",
+            label: "Related links",
+            description: "A section under Assignees in the pull request sidebar with the tickets, Slack threads, agent sessions, reviews and docs its description links to, such as a Linear issue or the Replicas workspace that opened it.",
+            popup: false
+          },
+          {
+            kind: "toggle",
+            key: "attachmentLightbox",
+            label: "Attachment lightbox",
+            description: "Preview image attachments in issues and pull requests with zoom and pan.",
+            popup: false,
+            surfaces: ["extension"]
           },
           {
             kind: "toggle",
@@ -34396,6 +34419,558 @@ var plannerOutputSchema = external_exports.object({ steps: external_exports.arra
   watch: external_exports.array(external_exports.string().max(500)).max(3)
 })).min(1).max(200) });
 
+// ../../packages/review/src/related-links.ts
+var UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+var REPO_PART = "[\\w.-]+";
+var group = (match, index) => match[index] ?? "";
+function slugTitle(slug) {
+  let decoded = slug;
+  try {
+    decoded = decodeURIComponent(slug.replace(/\+/g, " "));
+  } catch {
+  }
+  const words = decoded.replace(/[-_+]+/g, " ").replace(/\s+/g, " ").trim();
+  if (words === "" || /^[\da-f\s]+$/i.test(words)) return null;
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+var linkSpecs = [
+  // Tickets.
+  {
+    id: "linear",
+    service: "Linear",
+    kind: "ticket",
+    host: /^linear\.app$/,
+    path: /^\/([\w-]+)\/issue\/([A-Za-z][A-Za-z0-9_]*-\d+)(?:\/([\w-]+))?\/?$/,
+    read: ({ path }) => {
+      const key = group(path, 2).toUpperCase();
+      return { id: `${group(path, 1)}:${key}`, label: key, title: path[3] === void 0 ? null : slugTitle(path[3]), context: group(path, 1) };
+    },
+    appId: 20150,
+    icon: "linear"
+  },
+  {
+    id: "linear",
+    service: "Linear",
+    kind: "ticket",
+    host: /^linear\.app$/,
+    path: /^\/([\w-]+)\/(project|document)\/([\w-]+?)-([0-9a-f]{12})(?:\/(?:overview|issues|updates|documents|activity))?\/?$/,
+    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}:${group(path, 4)}`, label: group(path, 2), title: slugTitle(group(path, 3)), context: group(path, 1) }),
+    appId: 20150,
+    icon: "linear"
+  },
+  {
+    id: "jira",
+    service: "Jira",
+    kind: "ticket",
+    host: /^([a-z0-9][a-z0-9-]*)\.atlassian\.net$/,
+    path: /^\/browse\/([A-Z][A-Z0-9_]*-\d+)\/?$/,
+    read: ({ host, path }) => ({ id: `${group(host, 1)}:${group(path, 1)}`, label: group(path, 1), context: group(host, 1) }),
+    icon: "jira"
+  },
+  {
+    // A board or the issue list with the issue open beside it.
+    id: "jira",
+    service: "Jira",
+    kind: "ticket",
+    host: /^([a-z0-9][a-z0-9-]*)\.atlassian\.net$/,
+    path: /^\/jira\/(?:software\/(?:c\/)?)?projects\/[A-Z][A-Z0-9_]*\/(?:boards\/\d+(?:\/backlog)?|issues|list)\/?$/,
+    query: { selectedIssue: /^[A-Z][A-Z0-9_]*-\d+$/ },
+    read: ({ host, query }) => {
+      const key = query.get("selectedIssue") ?? "";
+      return { id: `${group(host, 1)}:${key}`, label: key, context: group(host, 1) };
+    },
+    icon: "jira",
+    rank: 1
+  },
+  {
+    id: "youtrack",
+    service: "YouTrack",
+    kind: "ticket",
+    host: /^([a-z0-9][a-z0-9-]*)\.youtrack\.cloud$/,
+    path: /^\/issue\/([A-Za-z][A-Za-z0-9_]*-\d+)(?:\/([\w-]+))?\/?$/,
+    read: ({ host, path }) => ({ id: `${group(host, 1)}:${group(path, 1)}`, label: group(path, 1), title: path[2] === void 0 ? null : slugTitle(path[2]), context: group(host, 1) }),
+    icon: "youtrack"
+  },
+  {
+    id: "shortcut",
+    service: "Shortcut",
+    kind: "ticket",
+    host: /^app\.shortcut\.com$/,
+    path: /^\/([\w-]+)\/story\/(\d+)(?:\/([\w-]+))?\/?$/,
+    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}`, label: `sc-${group(path, 2)}`, title: path[3] === void 0 ? null : slugTitle(path[3]), context: group(path, 1) })
+  },
+  {
+    id: "asana",
+    service: "Asana",
+    kind: "ticket",
+    host: /^app\.asana\.com$/,
+    path: /^\/(?:0\/\d+\/(\d+)(?:\/f)?|1\/\d+\/(?:project\/\d+\/)?task\/(\d+))\/?$/,
+    read: ({ path }) => ({ id: path[1] ?? group(path, 2), label: "task" }),
+    icon: "asana"
+  },
+  {
+    id: "clickup",
+    service: "ClickUp",
+    kind: "ticket",
+    host: /^app\.clickup\.com$/,
+    path: /^\/t\/(?:\d+\/)?([A-Za-z0-9-]+)\/?$/,
+    read: ({ path }) => ({ id: group(path, 1), label: group(path, 1) }),
+    appId: 68952
+  },
+  {
+    id: "trello",
+    service: "Trello",
+    kind: "ticket",
+    host: /^trello\.com$/,
+    path: /^\/c\/([A-Za-z0-9]{8})(?:\/(?:\d+-)?([\w-]+))?\/?$/,
+    read: ({ path }) => ({ id: group(path, 1), label: "card", title: path[2] === void 0 ? null : slugTitle(path[2]) })
+  },
+  // Conversations.
+  {
+    id: "slack",
+    service: "Slack",
+    kind: "conversation",
+    host: /^(?:([a-z0-9][a-z0-9-]*)(?:\.enterprise)?\.)?slack\.com$/,
+    path: /^\/archives\/([CDGZ][A-Z0-9]{6,})(?:\/p(\d{10})(\d{6}))?\/?$/,
+    read: ({ host, path, query, text }) => {
+      const workspace = host[1] === void 0 || host[1] === "app" ? null : host[1];
+      if (workspace === "hooks" || workspace === "api" || workspace === "files") return null;
+      const channel = group(path, 1);
+      const direct = channel.startsWith("D");
+      const context = [workspace, direct ? "direct message" : null].filter((part) => part !== null).join(" \xB7 ") || null;
+      if (path[2] === void 0) return { id: `${workspace ?? ""}:${channel}`, label: direct ? "direct message" : "channel", context: workspace };
+      const ts = `${group(path, 2)}.${group(path, 3)}`;
+      const thread = query.get("thread_ts");
+      const root = thread !== void 0 && /^\d{10}\.\d{6}$/.test(thread) ? thread : null;
+      return { id: `${workspace ?? ""}:${channel}:${root ?? ts}`, label: root !== null || /\bthread\b/i.test(text) ? "thread" : "message", context };
+    },
+    appId: 7100
+  },
+  {
+    // The web client's own address for a thread: `/client/<team>/<channel>/thread/<channel>-<ts>`.
+    id: "slack",
+    service: "Slack",
+    kind: "conversation",
+    host: /^app\.slack\.com$/,
+    path: /^\/client\/(T[A-Z0-9]+)\/([CDGZ][A-Z0-9]{6,})(?:\/thread\/[CDGZ][A-Z0-9]{6,}-(\d{10}\.\d{6}))?\/?$/,
+    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}${path[3] === void 0 ? "" : `:${path[3]}`}`, label: path[3] === void 0 ? "channel" : "thread" }),
+    appId: 7100
+  },
+  {
+    id: "discord",
+    service: "Discord",
+    kind: "conversation",
+    host: /^(?:www\.|ptb\.|canary\.)?discord(?:app)?\.com$/,
+    path: /^\/channels\/(\d+|@me)\/(\d+)(?:\/(\d+))?\/?$/,
+    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}:${path[3] ?? ""}`, label: path[3] === void 0 ? "channel" : "message" })
+  },
+  {
+    id: "teams",
+    service: "Microsoft Teams",
+    kind: "conversation",
+    host: /^teams\.microsoft\.com$/,
+    path: /^\/l\/(message|channel|chat)\/([^/]+)(?:\/[^/]+)*\/?$/,
+    read: ({ path }) => ({ id: `${group(path, 1)}:${decodeSafe(group(path, 2))}`, label: group(path, 1) }),
+    appId: 66341
+  },
+  // Agent sessions.
+  {
+    id: "replicas",
+    service: "Replicas",
+    kind: "agent",
+    host: /^(?:app\.)?replicas\.dev$/,
+    path: new RegExp(`^/workspaces/(${UUID})/?$`),
+    read: ({ path }) => ({ id: group(path, 1), label: "workspace" }),
+    verb: "View",
+    bot: "replicas"
+  },
+  {
+    id: "devin",
+    service: "Devin",
+    kind: "agent",
+    host: /^app\.devin\.ai$/,
+    path: /^\/sessions\/([0-9a-f]{32})\/?$/,
+    read: ({ path }) => ({ id: group(path, 1), label: "session" }),
+    verb: "View",
+    bot: "devin"
+  },
+  {
+    id: "devin",
+    service: "Devin",
+    kind: "agent",
+    host: /^app\.devin\.ai$/,
+    path: /^\/desktop\/session\/([0-9a-f]{32})\/?$/,
+    read: ({ path }) => ({ id: group(path, 1), label: "session" }),
+    actionTarget: "Devin Desktop",
+    bot: "devin",
+    rank: 1
+  },
+  {
+    id: "cursor",
+    service: "Cursor",
+    kind: "agent",
+    host: /^(?:www\.)?cursor\.com$/,
+    path: new RegExp(`^/agents/(bc-${UUID})/?$`),
+    read: ({ path }) => ({ id: group(path, 1), label: "agent" }),
+    verb: "View",
+    bot: "bugbot"
+  },
+  {
+    // "Open in Cursor": the same agent in the desktop app.
+    id: "cursor",
+    service: "Cursor",
+    kind: "agent",
+    host: /^(?:www\.)?cursor\.com$/,
+    path: /^\/background-agent\/?$/,
+    query: { bcId: new RegExp(`^bc-${UUID}$`) },
+    read: ({ query }) => ({ id: query.get("bcId") ?? "", label: "agent" }),
+    bot: "bugbot",
+    rank: 1
+  },
+  {
+    id: "cursor-automation",
+    service: "Cursor",
+    kind: "agent",
+    host: /^(?:www\.)?cursor\.com$/,
+    path: new RegExp(`^/automations/(${UUID})/?$`),
+    read: ({ path }) => ({ id: group(path, 1), label: "automation" }),
+    verb: "View",
+    bot: "bugbot"
+  },
+  {
+    id: "codex",
+    service: "Codex",
+    kind: "agent",
+    host: /^chatgpt\.com$/,
+    path: new RegExp(`^/codex/tasks/(task_[a-z]_[0-9a-f]{32}|${UUID})/?$`),
+    read: ({ path }) => ({ id: group(path, 1), label: "task" }),
+    verb: "View",
+    bot: "codex"
+  },
+  {
+    id: "claude-code",
+    service: "Claude Code",
+    kind: "agent",
+    host: /^claude\.ai$/,
+    path: /^\/code\/(session_[A-Za-z0-9]{20,})\/?$/,
+    read: ({ path }) => ({ id: group(path, 1), label: "session" }),
+    verb: "View",
+    bot: "claude"
+  },
+  {
+    id: "jules",
+    service: "Jules",
+    kind: "agent",
+    host: /^jules\.google\.com$/,
+    path: /^\/(session|task)\/(\d{6,})\/?$/,
+    read: ({ path }) => ({ id: group(path, 2), label: group(path, 1) }),
+    verb: "View",
+    appId: 842251
+  },
+  {
+    id: "copilot",
+    service: "Copilot",
+    kind: "agent",
+    host: /^github\.com$/,
+    path: /^\/copilot\/tasks\/pull\/(PR_[\w-]+)\/?$/,
+    query: { session_id: new RegExp(`^${UUID}$`) },
+    read: ({ query }) => ({ id: query.get("session_id") ?? "", label: "session" }),
+    verb: "View",
+    appId: 1143301
+  },
+  {
+    id: "copilot",
+    service: "Copilot",
+    kind: "agent",
+    host: /^github\.com$/,
+    path: new RegExp(`^/${REPO_PART}/${REPO_PART}/pull/\\d+/agent-sessions/(${UUID})/?$`),
+    read: ({ path }) => ({ id: group(path, 1), label: "session" }),
+    verb: "View",
+    appId: 1143301
+  },
+  {
+    id: "factory",
+    service: "Factory",
+    kind: "agent",
+    host: /^app\.factory\.ai$/,
+    path: /^\/sessions\/(?!new\/?$)([\w-]{8,})\/?$/,
+    read: ({ path }) => ({ id: group(path, 1), label: "session" }),
+    verb: "View",
+    appId: 358017
+  },
+  {
+    id: "factory-automation",
+    service: "Factory",
+    kind: "agent",
+    host: /^app\.factory\.ai$/,
+    path: /^\/automations\/?$/,
+    query: { editAutomationId: new RegExp(`^${UUID}$`) },
+    read: ({ query }) => ({ id: query.get("editAutomationId") ?? "", label: "automation" }),
+    verb: "View",
+    appId: 358017
+  },
+  {
+    id: "amp",
+    service: "Amp",
+    kind: "agent",
+    host: /^ampcode\.com$/,
+    path: new RegExp(`^/threads/(T-${UUID})/?$`),
+    read: ({ path }) => ({ id: group(path, 1), label: "thread" }),
+    verb: "View"
+  },
+  {
+    id: "openhands",
+    service: "OpenHands",
+    kind: "agent",
+    host: /^app\.all-hands\.dev$/,
+    path: new RegExp(`^/(?:canvas/)?conversations/([0-9a-f]{32}|${UUID})/?$`),
+    read: ({ path }) => ({ id: group(path, 1), label: "conversation" }),
+    verb: "View",
+    appId: 1062359
+  },
+  {
+    id: "codegen",
+    service: "Codegen",
+    kind: "agent",
+    host: /^codegen\.com$/,
+    path: /^\/agent\/trace\/(\d+)\/?$/,
+    read: ({ path }) => ({ id: group(path, 1), label: "run" }),
+    verb: "View",
+    appId: 321279
+  },
+  {
+    id: "tembo",
+    service: "Tembo",
+    kind: "agent",
+    host: /^app\.tembo\.io$/,
+    path: new RegExp(`^/sessions/(${UUID})/?$`),
+    read: ({ path }) => ({ id: group(path, 1), label: "session" }),
+    verb: "View",
+    appId: 1223475
+  },
+  {
+    id: "tembo",
+    service: "Tembo",
+    kind: "agent",
+    host: /^app\.tembo\.io$/,
+    path: /^\/reviews\/redirect\/?$/,
+    query: { sessionId: new RegExp(`^${UUID}$`) },
+    read: ({ query }) => ({ id: query.get("sessionId") ?? "", label: "session" }),
+    verb: "View",
+    appId: 1223475,
+    rank: 1
+  },
+  {
+    id: "terragon",
+    service: "Terragon",
+    kind: "agent",
+    host: /^(?:www\.)?terragonlabs\.com$/,
+    path: new RegExp(`^/task/(${UUID})/?$`),
+    read: ({ path }) => ({ id: group(path, 1), label: "task" }),
+    verb: "View"
+  },
+  {
+    id: "warp",
+    service: "Warp",
+    kind: "agent",
+    host: /^app\.warp\.dev$/,
+    path: new RegExp(`^/conversation/(${UUID})/?$`),
+    read: ({ path }) => ({ id: group(path, 1), label: "conversation" }),
+    verb: "View"
+  },
+  {
+    id: "oz",
+    service: "Oz",
+    kind: "agent",
+    host: /^(?:oz|platform)\.warp\.dev$/,
+    path: new RegExp(`^/(?:[\\w-]+/)?runs/(${UUID})/?$`),
+    read: ({ path }) => ({ id: group(path, 1), label: "run" }),
+    verb: "View"
+  },
+  {
+    id: "cosine",
+    service: "Cosine",
+    kind: "agent",
+    host: /^cosine\.sh$/,
+    path: new RegExp(`^/(${REPO_PART})/(${REPO_PART})/task/([a-z0-9]{10,})/?$`),
+    read: ({ path }) => ({ id: group(path, 3), label: "task" }),
+    verb: "View"
+  },
+  {
+    id: "opencode",
+    service: "opencode",
+    kind: "agent",
+    host: /^opencode\.ai$/,
+    path: /^\/s\/([A-Za-z0-9]{6,})\/?$/,
+    read: ({ path }) => ({ id: group(path, 1), label: "session" }),
+    verb: "View",
+    appId: 1549082
+  },
+  {
+    id: "lovable",
+    service: "Lovable",
+    kind: "agent",
+    host: /^lovable\.dev$/,
+    path: new RegExp(`^/projects/(${UUID})/?$`),
+    read: ({ path }) => ({ id: group(path, 1), label: "project" }),
+    appId: 818760
+  },
+  {
+    id: "v0",
+    service: "v0",
+    kind: "agent",
+    host: /^v0\.(?:app|dev)$/,
+    path: /^\/(?:[\w-]+\/)?chat\/([\w-]+)\/?$/,
+    read: ({ path }) => ({ id: group(path, 1), label: "chat" }),
+    appId: 8329
+  },
+  {
+    id: "graphite-agent",
+    service: "Graphite",
+    kind: "agent",
+    host: /^app\.graphite\.dev$/,
+    path: new RegExp(`^/background-agents/${REPO_PART}/${REPO_PART}/task/(bgt_\\w+)/?$`),
+    read: ({ path }) => ({ id: group(path, 1), label: "agent task" }),
+    verb: "View",
+    appId: 158384
+  },
+  // Review tools' own view of the pull request.
+  {
+    id: "devin-review",
+    service: "Devin Review",
+    kind: "review",
+    host: /^app\.devin\.ai$/,
+    path: new RegExp(`^/review/(${REPO_PART})/(${REPO_PART})/pull/(\\d+)/?$`),
+    read: ({ path }) => ({ id: `${group(path, 1)}/${group(path, 2)}#${group(path, 3)}`.toLowerCase(), label: "findings" }),
+    verb: "View",
+    bot: "devin"
+  },
+  {
+    id: "greptile",
+    service: "Greptile",
+    kind: "review",
+    host: /^app\.greptile\.com$/,
+    path: /^\/(?!api\/|-\/)((?:[\w.-]+\/)+pull\/\d+)\/?$/,
+    read: ({ path }) => ({ id: group(path, 1).toLowerCase(), label: "review" }),
+    verb: "View",
+    bot: "greptile"
+  },
+  {
+    // Since Nov 2026 through its tenant switch, the review's path in `next`.
+    id: "greptile",
+    service: "Greptile",
+    kind: "review",
+    host: /^app\.greptile\.com$/,
+    path: /^\/-\/switch-tenant\/?$/,
+    query: { next: /^\/((?:[\w.-]+\/)+pull\/\d+)\/?$/ },
+    read: ({ query }) => ({ id: (query.get("next") ?? "").replace(/^\/|\/$/g, "").toLowerCase(), label: "review" }),
+    verb: "View",
+    bot: "greptile"
+  },
+  {
+    id: "coderabbit",
+    service: "CodeRabbit",
+    kind: "review",
+    host: /^app\.coderabbit\.ai$/,
+    path: /^\/change-stack\/([\w./-]+?)\/?$/,
+    read: ({ path }) => ({ id: group(path, 1).toLowerCase(), label: "change stack" }),
+    verb: "View",
+    bot: "coderabbit"
+  },
+  {
+    id: "cubic",
+    service: "cubic",
+    kind: "review",
+    host: /^(?:www\.)?cubic\.dev$/,
+    path: /^\/pr\/([\w./-]+?)\/?$/,
+    read: ({ path }) => ({ id: group(path, 1).toLowerCase(), label: "guided diff" }),
+    verb: "View",
+    bot: "cubic"
+  },
+  {
+    id: "graphite",
+    service: "Graphite",
+    kind: "review",
+    host: /^app\.graphite\.dev$/,
+    path: new RegExp(`^/github/pr/(${REPO_PART})/(${REPO_PART})/(\\d+)(?:/[^/]*)?/?$`),
+    read: ({ path }) => ({ id: `${group(path, 1)}/${group(path, 2)}#${group(path, 3)}`.toLowerCase(), label: "pull request" }),
+    verb: "View",
+    appId: 158384
+  },
+  // Documents and designs.
+  {
+    id: "notion",
+    service: "Notion",
+    kind: "doc",
+    host: /^(?:(?:www\.)?notion\.so|[\w-]+\.notion\.site)$/,
+    path: /^\/(?:[\w-]+\/)?(?:([\w%-]*?)-)?([0-9a-f]{32})\/?$/,
+    read: ({ path }) => ({ id: group(path, 2), label: "page", title: path[1] === void 0 ? null : slugTitle(path[1]) })
+  },
+  {
+    id: "confluence",
+    service: "Confluence",
+    kind: "doc",
+    host: /^([a-z0-9][a-z0-9-]*)\.atlassian\.net$/,
+    path: /^\/wiki\/spaces\/([\w~-]+)\/pages\/(\d+)(?:\/([^/]+))?\/?$/,
+    read: ({ host, path }) => ({ id: `${group(host, 1)}:${group(path, 2)}`, label: "page", title: path[3] === void 0 ? null : slugTitle(path[3]), context: group(host, 1) }),
+    icon: "jira"
+  },
+  {
+    id: "figma",
+    service: "Figma",
+    kind: "doc",
+    host: /^(?:www\.)?figma\.com$/,
+    path: /^\/(file|design|board|proto|slides|deck|make)\/([A-Za-z0-9]{22,128})(?:\/([^/]+))?\/?$/,
+    read: ({ path }) => ({ id: group(path, 2), label: group(path, 1) === "board" ? "board" : group(path, 1) === "slides" || group(path, 1) === "deck" ? "slides" : "file", title: path[3] === void 0 ? null : slugTitle(path[3]) }),
+    appId: 1136528
+  },
+  {
+    id: "google",
+    service: "Google",
+    kind: "doc",
+    host: /^docs\.google\.com$/,
+    path: /^\/(document|spreadsheets|presentation|forms)\/d\/(?:e\/)?([\w-]{20,})(?:\/[\w./-]*)?$/,
+    read: ({ path }) => ({ id: group(path, 2), label: GOOGLE_LABELS[group(path, 1)] ?? "doc" })
+  },
+  {
+    id: "loom",
+    service: "Loom",
+    kind: "doc",
+    host: /^(?:www\.)?loom\.com$/,
+    path: /^\/(?:share|embed)\/(?:[\w-]+-)?([0-9a-f]{32})\/?$/,
+    read: ({ path }) => ({ id: group(path, 1), label: "video" })
+  },
+  {
+    id: "warp-notebook",
+    service: "Warp",
+    kind: "doc",
+    host: /^app\.warp\.dev$/,
+    path: /^\/drive\/notebook\/([\w-]{10,})\/?$/,
+    read: ({ path }) => ({ id: group(path, 1), label: "notebook" })
+  },
+  // Errors.
+  {
+    id: "sentry",
+    service: "Sentry",
+    kind: "error",
+    host: /^(?:([a-z0-9][a-z0-9-]*)\.)?sentry\.io$/,
+    path: /^\/(?:organizations\/([\w-]+)\/)?issues\/(\d+|[A-Z0-9]+(?:-[A-Z0-9]+)+)\/?(?:events\/[\w-]+\/?)?$/,
+    read: ({ host, path }) => {
+      const org = host[1] ?? path[1] ?? null;
+      return { id: `${org ?? ""}:${group(path, 2)}`, label: /^\d+$/.test(group(path, 2)) ? "issue" : group(path, 2), context: org };
+    },
+    appId: 12637
+  }
+];
+var GOOGLE_LABELS = { document: "doc", spreadsheets: "sheet", presentation: "slides", forms: "form" };
+function decodeSafe(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 // src/github.ts
 init_src2();
 var API3 = "https://api.github.com";
@@ -34511,9 +35086,9 @@ async function remainingThreadComments(client, threadId, first) {
   return nodes;
 }
 function reactionsOf(groups) {
-  return (groups ?? []).flatMap((group) => {
-    const emoji3 = group.content.toLowerCase().replace(/_/g, " ");
-    return group.reactors.nodes.flatMap((reactor) => typeof reactor.login === "string" ? [{ login: loginOf({ login: reactor.login, ...reactor.__typename === void 0 ? {} : { __typename: reactor.__typename } }), emoji: emoji3 }] : []);
+  return (groups ?? []).flatMap((group2) => {
+    const emoji3 = group2.content.toLowerCase().replace(/_/g, " ");
+    return group2.reactors.nodes.flatMap((reactor) => typeof reactor.login === "string" ? [{ login: loginOf({ login: reactor.login, ...reactor.__typename === void 0 ? {} : { __typename: reactor.__typename } }), emoji: emoji3 }] : []);
   });
 }
 var CHECK_CONTEXTS_QUERY = `

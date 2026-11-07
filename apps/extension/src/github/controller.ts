@@ -1,5 +1,6 @@
 import { applyTrackerLinks,removeTrackerLinks } from './tracker-links';
 import { applyAttachmentLightbox, removeAttachmentLightbox } from './attachment-lightbox';
+import { applyRelatedLinks, removeRelatedLinks } from './related-links';
 import type { Catalog, HiddenCategory } from '@geld/core';
 import { BUNDLED_CATALOG, CATEGORY_IDS, isAutoViewed, testSyntaxesFrom } from '@geld/core';
 import type { TestSyntax } from '@geld/core';
@@ -1137,6 +1138,7 @@ export class GeldController {
     const trackerConfig=repo!==null&&this.repoDecision(repo)==='use'?this.resolvedConfig(repo):null;
     applyTrackerLinks(this.settings,trackerConfig?validConfigs(trackerConfig):[]);
     if (!skipReview) {
+      applyRelatedLinks(this.settings.relatedLinks && page.kind === 'pull-conversation');
       this.updateFlowSource(page, url, matcher);
       applyReviewOverview(this.settings, this.pageDiffPaths(), this.repoBotsHint(page, repo));
     }
@@ -1957,6 +1959,7 @@ export class GeldController {
     this.teardownView();
     teardownReviewOverview();
     removeTrackerLinks();
+    removeRelatedLinks();
     removeQuickReview();
     removePrListStats();
     removeCommitHover();

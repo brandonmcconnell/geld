@@ -252,6 +252,14 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       },
       {
         kind: 'toggle',
+        key: 'relatedLinks',
+        label: 'Related links',
+        description:
+          'A section under Assignees in the pull request sidebar with the tickets, Slack threads, agent sessions, reviews and docs its description links to, such as a Linear issue or the Replicas workspace that opened it.',
+        popup: false,
+      },
+      {
+        kind: 'toggle',
         key: 'attachmentLightbox',
         label: 'Attachment lightbox',
         description: 'Preview image attachments in issues and pull requests with zoom and pan.',

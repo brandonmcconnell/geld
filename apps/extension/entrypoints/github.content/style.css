@@ -8546,6 +8546,64 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 .geld-tracker-icon { display: inline-flex; width: 16px; height: 16px; overflow: hidden; }
 .geld-tracker-icon svg { width: 16px; height: 16px; flex: none; }
 
+/* Related links: a sidebar section under Assignees, one line per ticket, thread, session or doc. */
+.geld-related__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.geld-related__item {
+  margin: 0;
+  min-width: 0;
+}
+
+.geld-related__link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 0;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--fgColor-default, #1f2328) !important;
+  text-decoration: none !important;
+}
+
+.geld-related__link:hover .geld-related__name,
+.geld-related__link:focus-visible .geld-related__name {
+  color: var(--fgColor-accent, #0969da);
+  text-decoration: underline;
+}
+
+.geld-related__mark {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.geld-related__mark--app {
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px var(--avatar-borderColor, rgb(31 35 40 / 15%));
+}
+
+.geld-related__name {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-related__detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fgColor-muted, #59636e);
+}
+
 
 /* Flow: the changed files as cards, linked from each file to what it imports. */
 .geld-flow.Overlay {
