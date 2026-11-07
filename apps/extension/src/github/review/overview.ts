@@ -74,7 +74,7 @@ import { fitChips, stopFittingChips } from './fit-chips';
 import { stopWatchingBrandSelection } from './brand';
 import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrphanedLoans, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
-import { isOverviewPage, openCollapsedThreads, overviewCommentsControls, overviewCommentsSection } from './overview-page';
+import { isOverviewPage, openCollapsedThreads, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection } from './overview-page';
 import { pageFetch } from '../page-fetch';
 import { closeFlow, openFlowDialog } from './flow';
 
@@ -3127,7 +3127,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     if (clickLoadMore()) visit.loadMoreTries += 1;
   }
   const compacting = settings.compactTimeline !== 'off';
-  const hidingTimeline = compacting && !visit.fullTimeline;
+  // The Overview's Unresolved or Mine view is a list the reader asked for (the For you strip's comments card opens it): it stays.
+  const hidingTimeline = compacting && !visit.fullTimeline && !overviewCommentsFiltered();
   // "X closed this" with the comment X left as they did: one row, the comment its content.
   const closures = phase('closures', () => (hidingTimeline ? closureGroups(crawledDom) : { groups: [], paired: new Set<string>() }));
   const groups = phase('folds', () => [...foldGroups(meta, settings, crawledDom, closures.paired), ...closures.groups]);

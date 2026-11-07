@@ -37,6 +37,16 @@ export function overviewCommentsControls(section: HTMLElement): HTMLElement | nu
   return row instanceof HTMLElement ? row : null;
 }
 
+/**
+ * Whether the Comments section shows one of its narrower views ("Unresolved", which lists open threads alone, or
+ * "Mine") rather than everything ("All", its first segment). The For you strip's comments card leads there
+ * (`?comments:mode=thread-previews`), so a reader who follows it asked to see that list.
+ */
+export function overviewCommentsFiltered(root: ParentNode = document): boolean {
+  const first = overviewCommentsSection(root)?.querySelector('ul[aria-label="Comments view mode"] li button[aria-pressed]') ?? null;
+  return first !== null && first.getAttribute('aria-pressed') !== 'true';
+}
+
 const newestFirst = new WeakMap<Element, { readonly icon: Element; readonly descending: boolean }>();
 
 /**
