@@ -1,5 +1,5 @@
-import { accentedFromUnicode, LATIN_RANGES, PLACED, SPACING_ACCENTS } from './composites';
-import { type DrawContext, drawContext, type GlyphDef } from './draw';
+import { accentedFromUnicode, ALIASES, GREEK_TONOS, LATIN_RANGES, PLACED, type PlacedDef, SPACING_ACCENTS } from './composites';
+import { type DrawContext, drawContext, type GlyphDef, smallCapContext } from './draw';
 import { measuredSidebearings, type SpacingZone } from './spacing';
 import { bounds, type Contour, expandStroke, insetContour, shear, snap, translate, type Vec, winding } from './geometry';
 import { GLYPHS, SPACES } from './glyphs';
@@ -63,7 +63,7 @@ function spacingZone(def: GlyphDef, g: DrawContext): SpacingZone | undefined {
   const c = String.fromCodePoint(def.unicode);
   if (/\p{Nd}/u.test(c)) return { bottom: 0, top: g.cap, target: 1.3, depth: 2.5, min: 0.3 };
   if (!/\p{L}/u.test(c)) return undefined;
-  if (def.lower || /\p{Ll}/u.test(c)) return { bottom: 0, top: g.xHeight, target: 1.45, depth: 2, min: 0.15 };
+  if (def.lower || /\p{Ll}/u.test(c)) return { bottom: 0, top: METRICS.xHeight, target: 1.45, depth: 2, min: 0.15 };
   return { bottom: 0, top: g.cap, target: 1.6, depth: 2.8, min: 0.2 };
 }
 
@@ -103,6 +103,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   const params = weightParams(weight);
   const upper = drawContext(params.v, params.h);
   const lower = drawContext(params.v, params.hl, true);
+  const small = smallCapContext(params.v, params.hl);
   const italic = style === 'italic';
   const slope = italic ? ITALIC_SLOPE : 0;
   const finish = (contours: Contour[]) => {
@@ -115,7 +116,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   const placeAnchors = (anchors: Anchor[]) => anchors.map((a) => ({ ...a, ...place(a) }));
 
   const glyphs: MasterGlyph[] = GLYPHS.map((def) => {
-    const g = def.lower ? lower : upper;
+    const g = def.smallcap ? small : def.lower ? lower : upper;
     const strokes = italic && def.italic ? def.italic(g) : def.draw(g);
     let contours = strokes.flatMap((stroke) => expandStroke(stroke, g.pen, slope));
     if (params.snap && !italic) contours = contours.map((c) => snap(c, 0.5));
@@ -189,6 +190,28 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   const caseMarks = new Set(MARKS.filter((m) => m.caseForm).map((m) => m.name));
   const anchorOf = (glyph: MasterGlyph, name: string) => glyph.anchors.find((a) => a.name === name);
 
+  const placeAll = (defs: PlacedDef[]) => {
+    for (const def of defs) {
+      let x = 0;
+      const components: Component[] = [];
+      for (const part of def.parts) {
+        const glyph = byName.get(part.glyph);
+        if (!glyph) throw new Error(`${def.name} needs ${part.glyph}`);
+        const offset = place({ x: x + (part.dx ?? 0), y: part.dy ?? 0 });
+        const origin = place({ x: 0, y: 0 });
+        components.push({ glyph: part.glyph, dx: offset.x - origin.x, dy: offset.y });
+        if (part.after) x += glyph.advance + (part.dx ?? 0);
+      }
+      const advance = def.advance ?? (x || byName.get(def.parts[0]!.glyph)!.advance);
+      const only = def.parts.length === 1 ? byName.get(def.parts[0]!.glyph) : undefined;
+      const anchors = only ? only.anchors.map((a) => ({ ...a, x: a.x + components[0]!.dx, y: a.y + components[0]!.dy })) : [];
+      glyphs.push({ name: def.name, unicode: def.unicode, advance, contours: [], components, anchors, mark: false });
+      byName.set(def.name, glyphs[glyphs.length - 1]!);
+      names.set(def.unicode, def.name);
+    }
+  };
+  placeAll(ALIASES);
+
   for (const def of accentedFromUnicode(LATIN_RANGES, names, caseMarks)) {
     const base = byName.get(def.base);
     if (!base) continue;
@@ -211,21 +234,8 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     byName.set(def.name, glyphs[glyphs.length - 1]!);
   }
 
-  for (const def of PLACED) {
-    let x = 0;
-    const components: Component[] = [];
-    for (const part of def.parts) {
-      const glyph = byName.get(part.glyph);
-      if (!glyph) throw new Error(`${def.name} needs ${part.glyph}`);
-      const offset = place({ x: x + (part.dx ?? 0), y: part.dy ?? 0 });
-      const origin = place({ x: 0, y: 0 });
-      components.push({ glyph: part.glyph, dx: offset.x - origin.x, dy: offset.y });
-      if (part.after) x += glyph.advance + (part.dx ?? 0);
-    }
-    const advance = def.advance ?? (x || byName.get(def.parts[0]!.glyph)!.advance);
-    glyphs.push({ name: def.name, unicode: def.unicode, advance, contours: [], components, anchors: [], mark: false });
-    byName.set(def.name, glyphs[glyphs.length - 1]!);
-  }
+  placeAll([...PLACED, ...GREEK_TONOS]);
+
 
   for (const accent of SPACING_ACCENTS) {
     const mark = byName.get(accent.mark)!;

@@ -40,6 +40,8 @@ export interface GlyphDef {
   unicode?: number;
   /** Lowercase letters draw with the lighter lowercase horizontals. */
   lower?: boolean;
+  /** A capital's skeleton drawn to the x-height with the lowercase pen (most Cyrillic lowercase, `smcp` later). */
+  smallcap?: boolean;
   /** Sidebearings in grid units, measured from the Geld Sans outline. */
   lsb: number;
   rsb: number;
@@ -97,12 +99,12 @@ export function vee(g: DrawContext, x0: number, x1: number, top: number, bottom:
  * Y's arms meeting a stem: the stem runs up into the arms' overlap (not just to their level feet,
  * which would touch along a line and part in Geld Dark Sans), stopping short of the crotch.
  */
-export function yArms(g: DrawContext, w: number, top: number, join: number): Stroke[] {
+export function yArms(g: DrawContext, w: number, top: number, join: number, foot = 0): Stroke[] {
   const c = w / 2;
   const e = g.foot(c, top - join);
   const slope = c / (top - join);
   const into = (e / slope) * 0.95;
-  return [...vee(g, 0, w, top, join), stem(c, 0, join + into)];
+  return [...vee(g, 0, w, top, join), stem(c, foot, join + into)];
 }
 
 /** Z and z: two bars and a diagonal whose level ends sit flush inside the bars' corners. */
@@ -194,6 +196,15 @@ const DIAGONAL_WEIGHT = 0.92;
 
 /** The least opening between a terminal and the stroke it turns toward, as in 6, 9 and ?. */
 const APERTURE = 1.6;
+
+/** Small capitals stand on the x-height and keep more of the capital's width than its height. */
+const SMALL_CAP_BREADTH = 0.82;
+
+export function smallCapContext(v: number, hc: number): DrawContext {
+  const g = drawContext(v, hc, true, METRICS.xHeight);
+  const k = METRICS.xHeight / METRICS.cap;
+  return { ...g, pen: { ...g.pen, cut: CUT_OUTER_LOWER }, aperture: APERTURE, wide: (n) => n * SMALL_CAP_BREADTH + GROWTH * (v - 2 * k) };
+}
 
 export function drawContext(v: number, hc: number, lower = false, size: number = METRICS.cap): DrawContext {
   const k = size / METRICS.cap;
