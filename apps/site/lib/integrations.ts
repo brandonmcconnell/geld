@@ -1,4 +1,4 @@
-import { SLACK_USER_SCOPES, TEAMS_SCOPES } from '@geld/review/link-resolvers/index';
+import { DISCORD_BOT_PERMISSIONS, DISCORD_USER_SCOPES, SLACK_USER_SCOPES, TEAMS_SCOPES } from '@geld/review/link-resolvers/index';
 
 export const SUPPORT_EMAIL = 'support@geld.sh';
 
@@ -28,4 +28,17 @@ export const TEAMS_PERMISSIONS = TEAMS_SCOPES.map((scope) => ({ scope, reason: T
 export function teamsAdminConsentUrl(clientId: string): string {
   const params = new URLSearchParams({ client_id: clientId, scope: TEAMS_SCOPES.filter((scope) => scope !== 'offline_access').map((scope) => `https://graph.microsoft.com/${scope}`).join(' '), redirect_uri: 'https://www.geld.sh/connect/teams/callback' });
   return `https://login.microsoftonline.com/organizations/v2.0/adminconsent?${params}`;
+}
+
+/** Why Geld's Discord app asks for each scope, and what its bot may do. */
+export const DISCORD_SCOPE_REASONS: Readonly<Record<(typeof DISCORD_USER_SCOPES)[number], string>> = {
+  identify: 'Know which Discord account you are, so the bot reads a channel only when your own roles there allow it.',
+  guilds: 'Know which servers you are in.',
+};
+
+export const DISCORD_SCOPES = DISCORD_USER_SCOPES.map((scope) => ({ scope, reason: DISCORD_SCOPE_REASONS[scope] }));
+
+/** The link a server admin follows to add Geld's bot: View Channels and Read Message History, nothing else. */
+export function discordBotInviteUrl(clientId: string): string {
+  return `https://discord.com/oauth2/authorize?${new URLSearchParams({ client_id: clientId, scope: 'bot', permissions: DISCORD_BOT_PERMISSIONS })}`;
 }

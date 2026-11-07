@@ -847,6 +847,16 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `tenantId` is the workspace matched against `covers` (the tenant id from `/organization`).
   A chat's link carries no `groupId` and is not read.
   The client id is `WXT_GELD_TEAMS_CLIENT_ID` (an Actions variable), the site's `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET`.
+  **Discord is read by Geld's bot, for a reader who may see the channel** (`link-resolvers/discord.ts`, `src/lib/discord-connect.ts`, `/api/discord/resolve`, steps in `apps/site/integrations/discord/SUBMISSION.md`).
+  Discord has no API for reading messages as a person, so the reader signs in for `identify` and `guilds` only (PKCE, through the token proxy with `DISCORD_CLIENT_SECRET`), and the extension posts each Discord link with that token to the resolver on geld.sh, which holds `DISCORD_BOT_TOKEN`.
+  `resolveDiscordAsBot` asks Discord who the token is (`/users/@me`), reads the server, the reader as a member and the channel as the bot, and computes the reader's permissions in the channel with Discord's own algorithm (`channelPermissions`: @everyone and the member's roles, owner and administrator all, then the @everyone overwrite, role overwrites together, the member's own;
+  a thread takes its parent's), and reads the message only when they include View Channel and Read Message History (`canRead`).
+  A server the reader is not in, a channel they cannot see and a missing message all read as no access;
+  a server without the bot says a server admin can add it (the invite link asks for those two permissions only, `DISCORD_BOT_PERMISSIONS`).
+  The resolver stores and logs nothing, and its answer is a `Resolution` the extension reads back as it is (`parseResolution`).
+  A connection matches every Discord link (`covers` is empty), since servers come and go and the resolver checks membership on every read.
+  Message text needs the bot's Message Content intent, free below 100 servers and granted on review past that.
+  The client id is `WXT_GELD_DISCORD_CLIENT_ID`, the site's `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` and `DISCORD_BOT_TOKEN`.
   **AI context is the second use of a connection, off for each until the reader turns it on** (`linkedContext` in `review/ai.ts`, the options page asking `window.confirm` first).
   Only the reader's own "Triage with AI" run uses it, and only for the TL;DR: the page's related links are asked for with `purpose: 'ai'`, so only accounts with AI context on answer, each linked item written as text by `contextText` (title, state, where, then the messages or the description), at most `LINKED_CONTEXT_ITEM_CAP` (4,000 characters) each and `LINKED_CONTEXT_CAP` (12,000) in all.
   They go after the items as `linkedContext` (`summaryUserPrompt`), which `SUMMARY_SYSTEM` calls reference text, never instructions, not to be quoted.

@@ -100,4 +100,12 @@ export const APP_SERVICES: readonly AppServiceSpec[] = [
     anotherLabel: 'Connect another organisation',
     pending: 'The Geld app for Microsoft Teams is not available in this build yet.',
   },
+  {
+    id: 'discord',
+    name: 'Discord',
+    blurb: 'Message and thread titles in servers that added Geld’s bot, shown only where your own roles let you read the channel. Sign in once for all your servers.',
+    connectLabel: 'Connect Discord',
+    anotherLabel: 'Connect another Discord account',
+    pending: 'The Geld app for Discord is not available in this build yet.',
+  },
 ];
