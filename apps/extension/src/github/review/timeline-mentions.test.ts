@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { nextTimelinePage, parseTimelineMentions } from './timeline-mentions';
+// @vitest-environment happy-dom
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { nextTimelinePage, parseTimelineMentions, resetTimelineMentions, timelineMentionsFor } from './timeline-mentions';
 
 // Trimmed from `page_data/timeline` on brandonmcconnell/geld#486 (Nov 2026).
 const page = {
@@ -49,5 +50,39 @@ describe('nextTimelinePage', () => {
     expect(nextTimelinePage('</brandonmcconnell/geld/pull/486/page_data/timeline?after=Y3Vy%3D&per_page=25>; rel="next"')).toBe('/brandonmcconnell/geld/pull/486/page_data/timeline?after=Y3Vy%3D&per_page=25');
     expect(nextTimelinePage('</x?page=1>; rel="prev"')).toBeNull();
     expect(nextTimelinePage(null)).toBeNull();
+  });
+});
+
+describe('timelineMentionsFor', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    resetTimelineMentions();
+  });
+
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 10; i += 1) await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+
+  it('keeps the last complete reading when a refresh fails on a later page', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const second = { ...page, items: page.items.slice(2, 3) };
+    let failSecond = false;
+    vi.stubGlobal('fetch', async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes('after=')) return failSecond ? new Response('busy', { status: 503 }) : new Response(JSON.stringify(second), { status: 200 });
+      return new Response(JSON.stringify({ items: page.items.slice(0, 2) }), { status: 200, headers: { Link: '</o/r/pull/1/page_data/timeline?after=x>; rel="next"' } });
+    });
+    const landed = vi.fn();
+    expect(timelineMentionsFor('/o/r/pull/1', landed)).toBeNull();
+    await settle();
+    expect(timelineMentionsFor('/o/r/pull/1', landed)?.map((mention) => mention.ref)).toEqual(['brandonmcconnell/geld#493', 'brandonmcconnell/geld#480']);
+    failSecond = true;
+    vi.setSystemTime(Date.now() + 6 * 60_000);
+    timelineMentionsFor('/o/r/pull/1', landed);
+    await settle();
+    expect(timelineMentionsFor('/o/r/pull/1', landed)?.length).toBe(2);
+    expect(landed).toHaveBeenCalledTimes(1);
   });
 });

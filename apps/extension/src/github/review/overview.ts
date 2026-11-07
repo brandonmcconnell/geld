@@ -67,7 +67,7 @@ import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel }
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots, triggerFor } from './panel-model';
 import type { MentionLine } from './quick-view';
-import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
+import { mentionLinesOf, outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
 import { timelineMentionsFor } from './timeline-mentions';
 import { botCommentControls, chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
 import type { ChatByline, ChatLink, ChatRerun, ChatThreadLink } from './chat';
@@ -878,11 +878,15 @@ function incomingReadMentions(): readonly MentionLine[] {
  */
 function withMentionsBeyondTimeline(groups: readonly FoldGroup[]): readonly FoldGroup[] {
   const existing = groups.find((group) => group.key === 'mentions');
-  const count = (existing?.nodes.length ?? 0) + incomingReadMentions().length + descriptionMentions().length;
+  // Lines, not rows: a "This was referenced" row holds several, and the view lists each.
+  const lines = [...(existing?.nodes ?? []).flatMap((node) => mentionLinesOf(node)), ...incomingReadMentions(), ...descriptionMentions()];
+  const count = lines.length;
   if (count === 0) return groups;
   const label = `${count} mention${count === 1 ? '' : 's'}`;
-  if (existing !== undefined) return groups.map((group) => (group === existing ? { ...group, label } : group));
-  return [...groups, { key: 'mentions', label, author: null, nodes: [], section: 'activity' }];
+  // The lines read from the timeline's data and the description are no nodes of the row's: what they say redraws it.
+  const version = lines.map((line) => `${line.href}:${line.state}:${line.title}`).join('|');
+  if (existing !== undefined) return groups.map((group) => (group === existing ? { ...group, label, count, version } : group));
+  return [...groups, { key: 'mentions', label, author: null, nodes: [], section: 'activity', count, version }];
 }
 
 function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
@@ -894,7 +898,8 @@ function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
       key: group.key,
       label: group.label,
       section: group.section ?? 'comments',
-      count: group.nodes.length,
+      count: group.count ?? group.nodes.length,
+      ...(group.version === undefined ? {} : { version: group.version }),
       avatarSrc: group.author === null ? null : avatarSrcOf(group.nodes[0] ?? null),
       author: group.author,
       firstAnchor,

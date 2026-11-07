@@ -60,6 +60,10 @@ export interface FoldGroup {
   readonly closure?: Closure;
   /** The timeline events group: the state change among them, for the row to read at a glance (see `eventHeadline`). */
   readonly headline?: EventHeadline;
+  /** What the row counts when that is not its nodes (the Mentions row lists lines read from elsewhere too). */
+  readonly count?: number;
+  /** What the row lists, when its nodes do not say (lines read from elsewhere): a change redraws the row and its view. */
+  readonly version?: string;
 }
 
 export type ClosureKind = 'merged' | 'closed' | 'reopened';

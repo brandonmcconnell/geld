@@ -85,7 +85,8 @@ async function readMentions(pullPath: string): Promise<readonly TimelineMention[
   let next: string | null = `${pullPath}/page_data/timeline`;
   for (let page = 0; next !== null && page < MAX_PAGES; page += 1) {
     const response = await pageFetch(next, { credentials: 'same-origin', headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'GitHub-Verified-Fetch': 'true' } });
-    if (!response.ok) return page === 0 ? null : mentions;
+    // A page that fails leaves the reading incomplete: no answer, so the last complete one stands rather than a shorter list.
+    if (!response.ok) return null;
     mentions.push(...parseTimelineMentions(await response.json()));
     next = nextTimelinePage(response.headers.get('link'));
   }
