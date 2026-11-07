@@ -219,6 +219,23 @@ export function snap(contour: Contour, step: number): Contour {
   return contour.map((p) => ({ x: r(p.x), y: r(p.y) }));
 }
 
+/**
+ * A glyph's contours snapped to the grid, except a point that lies inside another of its strokes
+ * and would land outside it: joins place a stroke's corner just inside the stroke it meets, and
+ * moved out it leaves a step or a sliver where the two should merge.
+ */
+export function snapJoined(contours: Contour[], step: number): Contour[] {
+  const snapped = contours.map((c) => snap(c, step));
+  return snapped.map((c, i) => {
+    const others = contours.filter((_, j) => j !== i);
+    const snappedOthers = snapped.filter((_, j) => j !== i);
+    return c.map((q, k) => {
+      const o = contours[i]![k]!;
+      return winding(others, o) !== 0 && winding(snappedOthers, q) === 0 ? o : q;
+    });
+  });
+}
+
 export function bounds(contours: Contour[]): { minX: number; maxX: number; minY: number; maxY: number } {
   let minX = Infinity;
   let maxX = -Infinity;

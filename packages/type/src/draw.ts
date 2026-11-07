@@ -269,8 +269,11 @@ export function comma(g: DrawContext, x: number, y: number, scale = 1): Stroke[]
   return [solid([p(x - a, y + s), p(x + a, y + s), p(x + a, y), p(x - a + tip, y - tail), p(x - a, y - tail)], 0.001)];
 }
 
-/** How far t's and f's crossbar reaches left of the stem's edge: the same visible step at every weight. */
-export const crossbarReach = (g: DrawContext) => g.v / 2 + 1.25;
+/** How far a bar overhangs the stroke it crosses: the same visible step at every weight, and a half unit, so the grid weight's snap keeps it. */
+export const OVERHANG = 1.5;
+
+/** How far t's and f's crossbar reaches left of the stem's centre: OVERHANG past its edge. */
+export const crossbarReach = (g: DrawContext) => g.v / 2 + OVERHANG;
 
 /** A solid shape from its outline, corners cut where `p(…, true)` asks, with cuts of `leg` units. */
 export const solid = (points: PathPoint[], leg = 1.25): Stroke => ({ points, closed: true, fill: true, pen: { v: 0, h: 0, cut: leg } });

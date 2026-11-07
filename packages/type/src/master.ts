@@ -1,7 +1,7 @@
 import { accentedFromUnicode, ALIASES, GREEK_TONOS, LATIN_RANGES, PLACED, type PlacedDef, SPACING_ACCENTS } from './composites';
 import { type DrawContext, drawContext, type GlyphDef, smallCapContext } from './draw';
 import { measuredSidebearings, type SpacingZone } from './spacing';
-import { bounds, type Contour, expandStroke, insetContour, shear, snap, translate, type Vec, winding } from './geometry';
+import { bounds, type Contour, expandStroke, insetContour, shear, snapJoined, translate, type Vec, winding } from './geometry';
 import { GLYPHS, SPACES } from './glyphs';
 import { FIGURE_NAMES } from './glyphs-figures';
 import { CYRILLIC_LOCL_ACCENTED } from './glyphs-cyrillic';
@@ -130,7 +130,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     const g = def.smallcap && !cursive ? small : def.lower || def.smallcap ? lower : upper;
     const strokes = cursive ? def.italic!(g) : def.draw(g);
     let contours = strokes.flatMap((stroke) => expandStroke(stroke, g.pen, slope));
-    if (params.snap && !italic) contours = contours.map((c) => snap(c, 0.5));
+    if (params.snap && !italic) contours = snapJoined(contours, 0.5);
     const box = bounds(contours);
     const zone = spacingZone(def, g);
     const { lsb, rsb } = zone ? measuredSidebearings(contours, box.minX, box.maxX, zone) : def;

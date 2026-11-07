@@ -1,5 +1,5 @@
-import { ALL, bar, box, comma, diagonal, dot, type DrawContext, level, open, p, rotate180, shift, withPen } from './draw';
-import type { Stroke } from './geometry';
+import { ALL, bar, box, comma, diagonal, dot, type DrawContext, level, open, p, rotate180, shift, spanOf, withPen } from './draw';
+import { expandStroke, type Stroke } from './geometry';
 
 /** Where a mark attaches: the base's anchor of the same name, matched by the mark's `_name` anchor at its origin. */
 export type Attachment = 'top' | 'bottom' | 'ogonek' | 'topright' | 'horn' | 'center';
@@ -31,6 +31,9 @@ const accentPen = (g: DrawContext) => ({ v: g.v * 0.9, h: g.h * 0.9 });
  * growing past about Regular, or at Black the stroke alone is taller than the mark and it closes up,
  * and their cuts are half the letters', which would eat the mark's short uprights.
  */
+/** Circumflex and caron: the arms stop growing at Black, and spread with the pen, so the opening under the apex stays open. */
+const chevronPen = (g: DrawContext) => ({ v: Math.min(g.v * 0.9, 2.4), h: Math.min(g.h * 0.9, 2.4) });
+const chevronHalf = (g: DrawContext) => Math.max(2.2, chevronPen(g).v * 0.6 + 1.1);
 const smallMarkPen = (g: DrawContext) => ({ v: Math.min(g.v * 0.9, 2), h: Math.min(g.h * 0.9, 1.3), cut: 1 });
 
 const acute = (g: DrawContext, height: number, dx = 0): Stroke =>
@@ -44,7 +47,7 @@ const MARKS_ABOVE: MarkDef[] = [
     unicode: 0x302,
     attach: 'top',
     caseForm: true,
-    draw: (g, h) => [diagonal(g, -2.2, 0, 0, h), diagonal(g, 2.2, 0, 0, h)].map((s) => withPen(s, accentPen(g))),
+    draw: (g, h) => [diagonal(g, -chevronHalf(g), 0, 0, h), diagonal(g, chevronHalf(g), 0, 0, h)].map((s) => withPen(s, chevronPen(g))),
   },
   {
     name: 'tildecomb',
@@ -122,7 +125,7 @@ const MARKS_ABOVE: MarkDef[] = [
     unicode: 0x30c,
     attach: 'top',
     caseForm: true,
-    draw: (g, h) => [diagonal(g, -2.2, h, 0, 0), diagonal(g, 2.2, h, 0, 0)].map((s) => withPen(s, accentPen(g))),
+    draw: (g, h) => [diagonal(g, -chevronHalf(g), h, 0, 0), diagonal(g, chevronHalf(g), h, 0, 0)].map((s) => withPen(s, chevronPen(g))),
   },
   {
     name: 'dblgravecomb',
@@ -229,10 +232,21 @@ function vietnameseMarks(): MarkDef[] {
     name: `${first}_${second}`,
     attach: 'top' as const,
     caseForm: true,
-    draw: (g: DrawContext, height: number) => [
-      ...find(first).draw(g, height),
-      ...shift(find(second).draw(g, height * 0.8), second === 'gravecomb' ? -2.6 : 2.6, height * 0.55),
-    ],
+    draw: (g: DrawContext, height: number) => {
+      // The tone mark stands 0.7 clear of the circumflex's arm on its side, measured from both outlines.
+      const side = second === 'gravecomb' ? -1 : 1;
+      const x = chevronHalf(g);
+      const pen = chevronPen(g);
+      const lift = height * 0.55;
+      const arm = (y: number) => side * (x * (1 - y / height) + spanOf(pen, x, height));
+      const tone = find(second).draw(g, height * 0.8);
+      const points = tone.flatMap((s) => expandStroke(s, g.pen, 0)).flat();
+      const reach = points
+        .filter((q) => q.y + lift <= height)
+        .map((q) => side * (arm(q.y + lift) + side * 0.7 - q.x))
+        .reduce((a, b) => Math.max(a, b), 0);
+      return [...find(first).draw(g, height), ...shift(tone, side * Math.max(2.6, reach), lift)];
+    },
   }));
 }
 

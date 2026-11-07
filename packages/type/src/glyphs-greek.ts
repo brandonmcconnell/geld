@@ -1,5 +1,5 @@
 import type { PlacedDef } from './composites';
-import { ALL, bar, box, diagonal, dot, type DrawContext, type GlyphDef, open, p, RIGHT, stem, vee, withPen, yArms, barIntoDiagonal, edgeAt, footFor, INSIDE, kaWithTail } from './draw';
+import { ALL, bar, box, diagonal, dot, type DrawContext, type GlyphDef, open, p, RIGHT, stem, vee, withPen, yArms, barIntoDiagonal, edgeAt, footFor, INSIDE, kaWithTail , OVERHANG } from './draw';
 import { letter } from './glyphs-core';
 import { sigma } from './glyphs-plus';
 
@@ -275,7 +275,7 @@ function zetaStrokes(g: DrawContext, xi: boolean) {
   const d = g.bottom(g.descender);
   const start = edgeAt(g.diag, w - e, top, e, 0, g.h, -1) + INSIDE;
   const middle = g.y(7.5);
-  const left = edgeAt(g.diag, w - e, top, e, 0, middle - g.h / 2, -1) - 1.25;
+  const left = edgeAt(g.diag, w - e, top, e, 0, middle - g.h / 2, -1) - OVERHANG;
   const right = Math.max(w * 0.8, edgeAt(g.diag, w - e, top, e, 0, middle + g.h / 2, 1) + 1.5);
   return [
     barIntoDiagonal(g, 0, w, top, [e, 0])[0]!,

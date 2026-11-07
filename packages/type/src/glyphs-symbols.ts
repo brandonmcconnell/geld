@@ -19,6 +19,7 @@ import {
   shift,
   stem,
   withPen,
+  crossbarReach,
 } from './draw';
 import type { Stroke } from './geometry';
 import { CUT_OUTER } from './grid';
@@ -71,8 +72,8 @@ export const SYMBOLS: GlyphDef[] = [
       const pen = { v: g.v, h: thin };
       return [
         open(p(w + x, g.y(10)), p(w + x, t, true), p(x, t, true), p(x, b, true), p(w + x, b, true), p(w + x, g.y(4))),
-        withPen(bar(x - g.v / 2 - 1.25, x + 5, g.cap / 2 + d), pen),
-        withPen(bar(x - g.v / 2 - 1.25, x + 5, g.cap / 2 - d), pen),
+        withPen(bar(x - crossbarReach(g), x + 5, g.cap / 2 + d), pen),
+        withPen(bar(x - crossbarReach(g), x + 5, g.cap / 2 - d), pen),
       ];
     },
   },

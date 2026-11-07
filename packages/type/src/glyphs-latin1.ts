@@ -161,7 +161,7 @@ export const LATIN1: GlyphDef[] = [
     rsb: 0.5,
     draw: (g) => {
       const b = g.bottom(0);
-      return [open(p(0, 13), p(0, b, true), p(g.wide(3.5), b)), bar(-crossbarReach(g), g.wide(3.5), g.top(g.xHeight)), bar(-crossbarReach(g), g.v / 2 + 1.25, (g.xHeight + 0.55) / 2)];
+      return [open(p(0, 13), p(0, b, true), p(g.wide(3.5), b)), bar(-crossbarReach(g), g.wide(3.5), g.top(g.xHeight)), bar(-crossbarReach(g), crossbarReach(g), (g.xHeight + 0.55) / 2)];
     },
   },
 ];

@@ -321,7 +321,7 @@ const LOWER_DEFS: GlyphDef[] = [
     rsb: 0.5,
     draw: (g) => {
       const w = g.wide(8);
-      return [stem(w, 0, g.ascender), box(0, w, g.bottom(0), g.top(g.xHeight), LEFT), bar(w - 3, w + g.v / 2 + 1.25, 12.5)];
+      return [stem(w, 0, g.ascender), box(0, w, g.bottom(0), g.top(g.xHeight), LEFT), bar(w - 3, w + crossbarReach(g), 12.5)];
     },
   },
   {
@@ -574,7 +574,7 @@ const LOWER_DEFS: GlyphDef[] = [
 /** The hook of Ɓ and Ɗ: the top bar running left of the stem and turning down. */
 export function hookLeft(g: DrawContext, top: number): Stroke {
   const t = g.top(top);
-  const x = -(g.v + 1.6);
+  const x = -(g.v + 1.5);
   return open(p(x, top - Math.max(3, g.h + 2.25)), p(x, t, true), p(0, t));
 }
 

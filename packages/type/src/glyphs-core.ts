@@ -29,6 +29,7 @@ import {
   edgeAt,
   footFor,
   strikeThrough,
+  OVERHANG,
 } from './draw';
 import type { Stroke } from './geometry';
 import { smallPen } from './glyphs-figures';
@@ -787,7 +788,7 @@ export const ON_LETTERS: GlyphDef[] = [
     const w = g.wide(15);
     const high = g.y(10.5) - g.h / 2;
     const low = Math.min(g.y(5.5), high - g.h - 1.6);
-    const edge = (y: number) => edgeAt(g.diag, 0, g.cap, w / 4, 0, y + g.h / 2, -1) - 1.25;
+    const edge = (y: number) => edgeAt(g.diag, 0, g.cap, w / 4, 0, y + g.h / 2, -1) - OVERHANG;
     const across = (y: number) => bar(edge(y), w - edge(y), y);
     return [across(high), across(low)];
   }),
@@ -799,7 +800,7 @@ export const ON_LETTERS: GlyphDef[] = [
     const y = y0 + (g.cap - y0) * 0.4;
     const arm = edgeAt(g.diag, 0, y0, reach, g.cap, y + g.h / 2, 1);
     const leg = edgeAt(g.diag, reach * 0.4, y, reach, 0, y - g.h / 2, 1);
-    return [bar(-crossbarReach(g), Math.max(arm, leg) + 1.25, y)];
+    return [bar(-crossbarReach(g), Math.max(arm, leg) + OVERHANG, y)];
   }, { lsb: 0.5, rsb: 0.3 }),
   onLetter('tugrik', 0x20ae, 'T', (g) => {
     const x = g.wide(11) / 2;
@@ -846,7 +847,7 @@ export const ON_LETTERS: GlyphDef[] = [
   }),
   onLetter('dong', 0x20ab, 'd', (g) => {
     const w = g.wide(8);
-    return [bar(w - 3, w + g.v / 2 + 1.25, 12.5), bar(0, w + 1.5, g.top(-1.5))];
+    return [bar(w - 3, w + crossbarReach(g), 12.5), bar(0, w + 1.5, g.top(-1.5))];
   }),
 ];
 

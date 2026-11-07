@@ -26,6 +26,7 @@ import {
   spanOf,
   strikeReach,
   withPen,
+  OVERHANG,
 } from './draw';
 import type { Stroke } from './geometry';
 import { DRAWN_SIGNS, letter } from './glyphs-core';
@@ -45,7 +46,7 @@ const latin = (name: string): GlyphDef => LATIN_EXTRA.find((d) => d.name === nam
 const draw = (name: string): Draw => (g) => latin(name).draw(g);
 
 /** A stroke through a stem at x, reaching past it on both sides. */
-const strike = (g: DrawContext, x: number, y: number, reach = 1.25): Stroke => bar(x - g.v / 2 - reach, x + g.v / 2 + reach, y);
+const strike = (g: DrawContext, x: number, y: number, reach = OVERHANG): Stroke => bar(x - g.v / 2 - reach, x + g.v / 2 + reach, y);
 /** A stem that runs below the baseline and turns right: the retroflex hook of ʈ ɖ ɽ. */
 const tail = (g: DrawContext, x: number, top: number): Stroke => {
   const b = g.bottom(-3);
@@ -239,7 +240,7 @@ const LOWER_DEFS: GlyphDef[] = [
     draw: (g) => {
       const b = g.bottom(0);
       const t = g.top(14.5);
-      return [open(p(2.5, t), p(0, t, true), p(0, b, true), p(g.wide(3.5), b)), bar(-g.v / 2 - 1.25, g.wide(3.5), g.top(g.xHeight))];
+      return [open(p(2.5, t), p(0, t, true), p(0, b, true), p(g.wide(3.5), b)), bar(-crossbarReach(g), g.wide(3.5), g.top(g.xHeight))];
     },
   },
   { name: 'ezhreversed', unicode: 0x1b9, lsb: 1, rsb: 1, draw: (g) => mirror(draw('ezh')(g), g.wide(7.5) / 2) },
@@ -311,7 +312,7 @@ const LOWER_DEFS: GlyphDef[] = [
     unicode: 0x288,
     lsb: 0.5,
     rsb: 0.5,
-    draw: (g) => [tail(g, 0, 13), bar(-g.v / 2 - 1.25, g.wide(3.5), g.top(g.xHeight))],
+    draw: (g) => [tail(g, 0, 13), bar(-crossbarReach(g), g.wide(3.5), g.top(g.xHeight))],
   },
   { name: 'ubar', unicode: 0x289, lsb: 0.5, rsb: 0.5, draw: (g) => [...draw('u')(g), bar(-crossbarReach(g), g.wide(7) + crossbarReach(g), Math.max(g.y(4.5), g.h * 1.5 + 2))] },
   { name: 'vturned', unicode: 0x28c, lsb: 0.3, rsb: 0.3, draw: (g) => vee(g, 0, g.wide(8.5), 0, g.xHeight) },
