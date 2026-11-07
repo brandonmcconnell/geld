@@ -3,6 +3,7 @@ import { LOCL, type LoclLanguage } from './glyphs-cyrillic';
 import { FIGURE_NAMES, TABULAR_SIGNS } from './glyphs-figures';
 import { VIETNAMESE_PAIRS } from './marks';
 import type { Kerning } from './kerning';
+import { CODE_GROUPS, CODE_LIGATURES, CODE_OPERATORS, type CodeGroup, codePieceName } from './code-ligatures';
 import { LOCKUP } from './lockup';
 import { FAMILY_NAMES, type Family, type Master, type Style, TEXT_LIGATURES } from './master';
 
@@ -271,6 +272,8 @@ export function features(master: Master): string {
     ...TEXT_LIGATURES.filter((parts) => names.has(parts.join('_'))).map((parts) => `  sub ${parts.join(' ')} by ${parts.join('_')};`),
     '} liga;',
     ...arrowFeatures(names),
+    ...codeLigatureFeatures(master, names),
+    ...caseFeatures(master, names),
     // Only as a word of its own: Geldern, Geldbörse and Gelder keep their letters.
     ...(names.has(LOCKUP.name)
       ? [
@@ -329,6 +332,74 @@ function arrowFeatures(names: Set<string>): string[] {
     '  featureNames { name "No arrow ligatures"; };',
     `  sub [${pieces.join(' ')}] by [${pieces.map((n) => n.split('.')[0]).join(' ')}];`,
     '} ss20;',
+  ];
+}
+
+/**
+ * One lookup per code ligature group, used by dlig (all of them) and by the group's own stylistic set, longest first.
+ * A sequence never touches another operator character, so a::::b and http:// stay as typed; #! is followed by a path.
+ */
+function codeLigatureFeatures(master: Master, names: Set<string>): string[] {
+  const byChar = new Map(master.glyphs.flatMap((g) => (g.unicode === undefined ? [] : [[String.fromCodePoint(g.unicode), g.name] as const])));
+  const operators = [...CODE_OPERATORS].map((ch) => byChar.get(ch)).filter((n): n is string => n !== undefined);
+  const lookups: string[] = [];
+  const used: CodeGroup[] = [];
+  for (const group of Object.keys(CODE_GROUPS) as CodeGroup[]) {
+    const ligs = CODE_LIGATURES.filter((l) => l.group === group && [...l.text].every((ch, i) => names.has(codePieceName(byChar.get(ch) ?? '', l, i))));
+    if (!ligs.length) continue;
+    used.push(group);
+    lookups.push(`lookup code_${group} {`);
+    for (const lig of ligs) {
+      const chars = [...lig.text].map((ch) => byChar.get(ch)!);
+      const pieces = chars.map((n, i) => codePieceName(n, lig, i));
+      const marked = chars.map((n, i) => (i === 0 ? `${n}'` : n)).join(' ');
+      const apart = { operators: '@CodeOperators', hyphens: 'hyphen', words: '@CodeWordChars' }[CODE_GROUPS[group].apart];
+      if (apart && !lig.free) lookups.push(`  ignore sub ${apart} ${marked};`);
+      if (apart && !lig.free && lig.text !== '#!') lookups.push(`  ignore sub ${marked} ${apart};`);
+      chars.forEach((n, i) => lookups.push(`  sub ${[...pieces.slice(0, i), `${n}'`, ...chars.slice(i + 1)].join(' ')} by ${pieces[i]};`));
+    }
+    if (group === 'symbols' && names.has('multiply')) lookups.push('  sub @CodeFigures x\' @CodeFigures by multiply;');
+    lookups.push(`} code_${group};`);
+  }
+  if (!used.length) return [];
+  const figures = master.glyphs.filter((g) => g.unicode !== undefined && g.unicode >= 0x30 && g.unicode <= 0x39).map((g) => g.name);
+  return [
+    `@CodeOperators = [${operators.join(' ')}];`,
+    `@CodeFigures = [${figures.join(' ')}];`,
+    `@CodeWordChars = [${master.glyphs.filter((g) => g.unicode !== undefined && /[\p{L}\p{Nd}]/u.test(String.fromCodePoint(g.unicode))).map((g) => g.name).join(' ')}];`,
+    ...lookups,
+    'feature dlig {',
+    ...used.filter((g) => CODE_GROUPS[g].dlig).map((g) => `  lookup code_${g};`),
+    '} dlig;',
+    ...used.flatMap((g) => {
+      const { feature, label } = CODE_GROUPS[g];
+      return feature ? [`feature ${feature} {`, `  featureNames { name "${label}"; };`, `  lookup code_${g};`, `} ${feature};`] : [];
+    }),
+  ];
+}
+
+/**
+ * Contextual punctuation (calt, on): the hyphen raised between capitals (A-Z) and the colon between figures (12:30),
+ * and the same forms for case-sensitive text (`case`).
+ */
+function caseFeatures(master: Master, names: Set<string>): string[] {
+  const forms = ['hyphen', 'endash', 'emdash', 'colon'].filter((n) => names.has(`${n}.case`));
+  if (!forms.length) return [];
+  const upper = master.glyphs.filter((g) => !g.mark && g.unicode !== undefined && /\p{Lu}/u.test(String.fromCodePoint(g.unicode))).map((g) => g.name);
+  const figures = master.glyphs.filter((g) => g.unicode !== undefined && g.unicode >= 0x30 && g.unicode <= 0x39).map((g) => g.name);
+  const tabular = figures.map((n) => `${n}.tf`).filter((n) => names.has(n));
+  return [
+    `@CaseCapitals = [${upper.join(' ')}];`,
+    `@CaseFigures = [${[...figures, ...tabular].join(' ')}];`,
+    'feature calt {',
+    '  lookup case_context {',
+    '    sub @CaseCapitals hyphen\' @CaseCapitals by hyphen.case;',
+    '    sub @CaseFigures colon\' @CaseFigures by colon.case;',
+    '  } case_context;',
+    '} calt;',
+    'feature case {',
+    ...forms.map((n) => `  sub ${n} by ${n}.case;`),
+    '} case;',
   ];
 }
 

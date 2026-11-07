@@ -1,11 +1,12 @@
-import { accentedFromUnicode, ALIASES, GREEK_TONOS, LATIN_RANGES, PLACED, type PlacedDef, SPACING_ACCENTS } from './composites';
-import { type DrawContext, drawContext, type GlyphDef, smallCapContext } from './draw';
+import { accentedFromUnicode, ALIASES, CASE_FORMS, GREEK_TONOS, LATIN_RANGES, PLACED, type PlacedDef, SPACING_ACCENTS } from './composites';
+import { type DrawContext, drawContext, type GlyphDef, MATH_AXIS, smallCapContext } from './draw';
 import { measuredSidebearings, type SpacingZone } from './spacing';
 import { bounds, type Contour, expandStroke, insetContour, shear, snapJoined, translate, type Vec, winding } from './geometry';
 import { GLYPHS, SPACES } from './glyphs';
 import { FIGURE_NAMES } from './glyphs-figures';
 import { CYRILLIC_LOCL_ACCENTED } from './glyphs-cyrillic';
 import { accentedSmallCaps, SMALL_CAP_EXTRA_ACCENTED, SMALL_CAP_PLACED } from './glyphs-smallcaps';
+import { CODE_LIGATURES, codePieceName } from './code-ligatures';
 import { LOCKUP, lockupGlyph } from './lockup';
 import { DARK_INSET_RATIO, ITALIC_SLOPE, METRICS, toFontUnits, UNIT, type Weight, weightParams } from './grid';
 import { type Attachment, BELOW_GAP, MARK_GAP, MARK_HEIGHT, MARKS } from './marks';
@@ -123,7 +124,12 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   const italic = style === 'italic';
   const slope = italic ? ITALIC_SLOPE : 0;
   const slant = (contours: Contour[]) => (italic ? contours.map((c) => translate(shear(c, ITALIC_SLOPE), -ITALIC_SLOPE * ITALIC_PIVOT)) : contours);
-  const finish = (contours: Contour[]) => slant(family === 'dark' ? contours.map((c) => insetContour(c, params.v * DARK_INSET_RATIO)) : contours);
+  /** Each glyph's outline before Geld Dark Sans's inset, slanted, for measurements both families must share. */
+  const undarkened = new Map<string, Contour[]>();
+  const finish = (contours: Contour[], name?: string) => {
+    if (name) undarkened.set(name, slant(contours));
+    return slant(family === 'dark' ? contours.map((c) => insetContour(c, params.v * DARK_INSET_RATIO)) : contours);
+  };
   const place = (p: Vec): Vec => (italic ? { x: p.x + p.y * ITALIC_SLOPE - ITALIC_SLOPE * ITALIC_PIVOT, y: p.y } : p);
   const placeAnchors = (anchors: Anchor[]) => anchors.map((a) => ({ ...a, ...place(a) }));
 
@@ -194,7 +200,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     }),
   );
   for (const gl of glyphs) {
-    gl.contours = finish(gl.contours);
+    gl.contours = finish(gl.contours, gl.name);
     gl.anchors = placeAnchors(gl.anchors);
   }
   // ff ft tt: the two letters with one crossbar, bridged where the two would otherwise all but touch.
@@ -223,7 +229,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
       }
       x += step;
     });
-    glyphs.push({ name: parts.join('_'), advance: x, contours: finish(bridges), components, anchors: placeAnchors(carets), mark: false });
+    glyphs.push({ name: parts.join('_'), advance: x, contours: finish(bridges, parts.join('_')), components, anchors: placeAnchors(carets), mark: false });
   }
   glyphs.push({ name: LOCKUP.name, ...lockupGlyph(family === 'dark'), components: [], mark: false });
 
@@ -253,7 +259,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
         name,
         ...(form === 'lower' && def.unicode !== undefined ? { unicode: def.unicode } : {}),
         advance: 0,
-        contours: finish(contours),
+        contours: finish(contours, name),
         components: [],
         anchors: placeAnchors([{ name: `_${def.attach}`, x: 0, y: 0 }, stack]),
         mark: true,
@@ -312,7 +318,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     byName.set(def.name, glyphs[glyphs.length - 1]!);
   }
 
-  placeAll([...PLACED, ...GREEK_TONOS, ...SMALL_CAP_PLACED]);
+  placeAll([...PLACED, ...GREEK_TONOS, ...SMALL_CAP_PLACED, ...CASE_FORMS]);
 
 
   for (const accent of SPACING_ACCENTS) {
@@ -334,7 +340,62 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     const advance = space.advance === 'tabular' ? tabularAdvance : typeof space.advance === 'number' ? space.advance : byName.get(space.advance.like)!.advance;
     glyphs.push({ name: space.name, unicode: space.unicode, advance, contours: [], components: [], anchors: [], mark: false });
   }
-  return { family, style, weight, glyphs };
+  const master: Master = { family, style, weight, glyphs };
+  glyphs.push(...codeLigatureGlyphs(master, place, italic ? ITALIC_SLOPE : 0, undarkened));
+  return master;
+}
+
+/**
+ * The pieces of each code ligature (code-ligatures.ts): a blank spacer for every character but the last, and the last
+ * drawing the whole shape, as components, back over them. The shape is its parts set with `joint` of white between
+ * their ink, so the whole is narrower than the characters set apart; shares are whole font units, as the compiler rounds.
+ */
+function codeLigatureGlyphs(master: Master, place: (p: Vec) => Vec, slope: number, undarkened: Map<string, Contour[]>): MasterGlyph[] {
+  // Joints are measured on the upright drawing before Geld Dark Sans's inset, so the italic's bars meet as the roman's
+  // do and both families get the same widths.
+  const upright = (contours: Contour[]) => bounds(contours.map((c) => c.map((q) => ({ x: q.x - slope * (q.y - ITALIC_PIVOT), y: q.y }))));
+  const all = new Map(master.glyphs.map((g) => [g.name, g]));
+  const ink = (g: MasterGlyph, dx = 0, dy = 0): Contour[] => [
+    ...(undarkened.get(g.name) ?? g.contours).map((c) => translate(c, dx, dy)),
+    ...g.components.flatMap((cmp) => ink(all.get(cmp.glyph)!, dx + cmp.dx, dy + cmp.dy)),
+  ];
+  const byName = new Map(master.glyphs.map((g) => [g.name, g]));
+  const byChar = new Map(master.glyphs.flatMap((g) => (g.unicode === undefined ? [] : [[String.fromCodePoint(g.unicode), g.name] as const])));
+  const out: MasterGlyph[] = [];
+  for (const lig of CODE_LIGATURES) {
+    const chars = [...lig.text].map((ch) => byChar.get(ch));
+    const parts = lig.whole ? [{ glyph: lig.whole }] : (lig.parts ?? []);
+    if (chars.some((n) => !n) || parts.some((part) => !byName.has(part.glyph))) continue;
+    const placed: Component[] = [];
+    let right = 0;
+    let total = 0;
+    parts.forEach((part, i) => {
+      const glyph = byName.get(part.glyph)!;
+      const box = upright(ink(glyph));
+      const dy = 'centre' in part && part.centre ? MATH_AXIS - (box.minY + box.maxY) / 2 : 0;
+      const dx = i === 0 ? 0 : right + (lig.joint ?? 0) - box.minX;
+      const at = place({ x: dx, y: dy });
+      const origin = place({ x: 0, y: 0 });
+      placed.push({ glyph: part.glyph, dx: at.x - origin.x, dy });
+      right = dx + box.maxX;
+      total = dx + glyph.advance;
+    });
+    const n = chars.length;
+    const share = Math.floor((total / n) * UNIT) / UNIT;
+    chars.forEach((charName, i) => {
+      const last = i === n - 1;
+      const back = share * (n - 1);
+      out.push({
+        name: codePieceName(charName!, lig, i),
+        advance: last ? total - back : share,
+        contours: [],
+        components: last ? placed.map((cmp) => ({ ...cmp, dx: cmp.dx - back })) : [],
+        anchors: [],
+        mark: false,
+      });
+    });
+  }
+  return out;
 }
 
 /** A glyph's outline with its components drawn in, for tests and checks. */
