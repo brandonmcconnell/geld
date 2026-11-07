@@ -51,13 +51,13 @@ import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiv
 import type { BotRequestClick } from './bot-requests';
 import { awaitingReaction, botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
 import { pollTriggerReactions, resetTriggerReactions, withFetchedReactions } from './trigger-reactions';
-import { AGENT_NOTES_KEY, ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
+import { AGENT_NOTES_KEY, ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, descriptionCard, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderCheckRunsList, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setNoteProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
 import { knownMarkShape } from './mark-shape';
 import { loginOfLink, showLogins } from './login';
-import { allResolved, checkCountsFrom, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, standingReviewers } from './panel-model';
+import { allResolved, checkCountsFrom, checkCountsOfRuns, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, standingReviewers } from './panel-model';
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
@@ -74,7 +74,7 @@ import { fitChips, stopFittingChips } from './fit-chips';
 import { stopWatchingBrandSelection } from './brand';
 import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrphanedLoans, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
-import { openCollapsedThreads, overviewCommentsControls, overviewCommentsSection } from './overview-page';
+import { isOverviewPage, openCollapsedThreads, overviewCommentsControls, overviewCommentsSection } from './overview-page';
 import { pageFetch } from '../page-fetch';
 import { closeFlow, openFlowDialog } from './flow';
 
@@ -2895,7 +2895,8 @@ function quickViewFor(key: string, meta: GeldPrMeta, groups: readonly FoldGroup[
   if (key === REVIEWS_KEY || key === PREVIEWS_KEY || key === REPORTS_KEY || key === BOTS_KEY || key === AGENT_NOTES_KEY || key.startsWith('batch:')) return [document.documentElement];
   if (key === CHECKS_KEY) {
     const section = checksSection();
-    if (section === null) return [];
+    // The Overview has no checks section: the row lists the head's checks itself, as the list rows do.
+    if (section === null) return isOverviewPage() ? [document.documentElement] : [];
     // The React merge box: GitHub renders the check list only once expanded, and its section header repeats what
     // the row says, so the expandable content is shown alone. Matched on the bare name: GitHub's CSS-module classes
     // went from `MergeBoxExpandable-module__expandableWrapper--x` to `expandableWrapper__x` in Oct 2026, and with
@@ -3326,7 +3327,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     // the App avatar nearest its `/apps/<slug>` link or check row (`requestableBots`), else GitHub's mark for the
     // App, by its id.
     botIconFor: (botId) => botAvatarByLogin(botId) ?? botSourceAvatar(botId, meta) ?? iconByBot.get(botId) ?? botAppAvatarFor(botId),
-    checks: checkCountsFrom(checksSectionText() ?? boxText),
+    // The Overview has no checks section; its open pull request's checks are the head's, as the merge box would list them.
+    checks: checkCountsFrom(checksSectionText() ?? boxText) ?? (isOverviewPage() && !pullRequestClosed() ? checkCountsOfRuns(pageChecks(headSha)) : null),
     requiredFailing: requiredFailingIn(checksSection()),
     workflowApproval: approvalButton === null ? null : workflowApprovalLabel(approvalButton),
     previews: latestPreviews(allPreviews),
@@ -3740,7 +3742,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           }
         }
       } else if (visit.openKey === CHECKS_KEY) {
-        renderQuickView(mounted.slot, nodes);
+        if (checksSection() === null) renderCheckRunsList(mounted.slot, pageChecks(meta.headSha));
+        else renderQuickView(mounted.slot, nodes);
       } else if (visit.openKey.startsWith(foldKey('closure:'))) {
         // The comment left with the change, as a one-comment chat without a byline: the row above is its header
         // (who, when, GitHub's ⋯), as with any other single comment; the event itself is that row.
@@ -3752,13 +3755,13 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           renderQuickView(mounted.slot, nodes);
         }
       } else if (visit.openKey === foldKey('mentions')) {
-        const card = document.querySelector('[data-geld-attached]');
+        const card = descriptionCard();
         const cardAuthor = card === null ? null : authorOf(card);
         const cardAvatar = card === null ? null : avatarSrcOf(card);
         renderMentionsView(
           mounted.slot,
           nodes,
-          outgoingMentions(document.querySelector('[data-geld-attached] .comment-body, [data-geld-attached] .markdown-body, [data-geld-attached] [data-testid="markdown-body"]'), cardAuthor === null || cardAvatar === null ? null : { login: cardAuthor.login, avatarSrc: cardAvatar }),
+          outgoingMentions(card?.querySelector('.comment-body, .markdown-body, [data-testid="markdown-body"]') ?? null, cardAuthor === null || cardAvatar === null ? null : { login: cardAuthor.login, avatarSrc: cardAvatar }),
           (href) => refDetails(href, reapplySoon),
         );
       } else if (visit.openKey.startsWith('item:')) {

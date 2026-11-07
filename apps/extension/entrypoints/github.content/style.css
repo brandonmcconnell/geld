@@ -782,6 +782,11 @@ html[data-geld-quick-review] details.js-reviews-container {
   padding-left: 16px;
 }
 
+/* In the Overview's stuck mini header, before its divider and panel toggles. */
+.geld-quick-review[data-geld-place='mini'] {
+  align-self: center;
+}
+
 .geld-quick-review[data-geld-place] .geld-quick-review__segment.btn {
   height: 28px;
 }

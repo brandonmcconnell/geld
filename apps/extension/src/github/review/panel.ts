@@ -10,7 +10,7 @@
  */
 
 import type { DigestView } from '@geld/core';
-import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, Report, ReportPart, ReviewItem } from '@geld/review';
+import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, RawCheckRun, Report, ReportPart, ReviewItem } from '@geld/review';
 import { botAppAvatar, botById, previewHostById, reportsHealth } from '@geld/review';
 import type { AgentNote } from './agent-notes';
 import { noteTone } from './note-tone';
@@ -18,8 +18,8 @@ import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/revie
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
 import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL } from '../ui/icons';
-import { authorLabels, botDetail, botHealth, checksHealth, checksRowTone, checksSummary, checksTotal, pushRowTone, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
-import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
+import { authorLabels, botDetail, botHealth, checkStateOfRun, checksHealth, checksRowTone, checksSummary, checksTotal, pushRowTone, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
+import type { CheckCounts, CheckState, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import type { AiState } from './ai';
 import type { BotRequestState } from './bot-requests';
@@ -2181,6 +2181,33 @@ function previewLine(entry: Preview, model: PanelModel): HTMLElement {
     main,
     right,
   ]);
+}
+
+const RUN_PREVIEW_STATUS: Readonly<Record<CheckState, Preview['status']>> = { success: 'ready', failure: 'failed', queued: 'building', pending: 'building', skipped: 'skipped', neutral: 'unknown' };
+
+/**
+ * The head's checks as lines, where the page has no checks section to show (the Overview tab's merge status is a
+ * card that opens a panel of its own): the state's glyph, the check's name leading to its Details, GitHub's words.
+ */
+export function renderCheckRunsList(slot: HTMLElement, runs: readonly RawCheckRun[]): void {
+  const order: readonly CheckState[] = ['failure', 'pending', 'queued', 'neutral', 'success', 'skipped'];
+  const sorted = [...runs].sort((a, b) => order.indexOf(checkStateOfRun(a)) - order.indexOf(checkStateOfRun(b)) || a.name.localeCompare(b.name));
+  const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list' });
+  for (const run of sorted) {
+    const status = RUN_PREVIEW_STATUS[checkStateOfRun(run)];
+    const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-preview-status': status, role: 'img', 'aria-label': checkStateOfRun(run) }, [icon(PREVIEW_GLYPH[status])]);
+    // The partial writes a status's words after a dash ("— Canceled by Ignored Build Step"); the line has its own separator.
+    const words = (run.description ?? '').replace(/^[\s—–-]+/, '');
+    const main = createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static` }, [
+      createElement('span', { class: `${PANEL_CLASS}__name` }, [run.name]),
+      ...(words === '' ? [] : [createElement('span', { class: `${PANEL_CLASS}__deploy-reason`, title: words }, [words])]),
+    ]);
+    const right = createElement('span', { class: `${PANEL_CLASS}__right ${PANEL_CLASS}__right--links` });
+    if (run.detailsUrl !== undefined) right.append(createElement('a', { class: `${PANEL_CLASS}__deploy-link`, href: run.detailsUrl, target: '_blank', rel: 'noreferrer' }, ['Details ', icon(ICON_LINK_EXTERNAL)]));
+    list.append(createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--preview`, 'data-state': status }, [lead, main, right]));
+  }
+  if (sorted.length === 0) list.append(createElement('li', { class: `${PANEL_CLASS}__empty` }, ['No checks reported yet.']));
+  slot.replaceChildren(list);
 }
 
 /* ---- Reports: reporter bots' latest reports ------------------------------- */
