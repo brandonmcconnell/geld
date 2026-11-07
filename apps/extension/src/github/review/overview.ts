@@ -3832,7 +3832,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const tailStart = performance.now();
   // What tools appended is the Agent notes row's: the description keeps the author's words.
   shortenDescription(settings.collapseDescription && !visit.fullTimeline, { toolsAway: true });
-  compactDescriptionByline(true, reapplySoon);
+  compactDescriptionByline(true);
   setFullTimeline(visit.fullTimeline);
   if (hidingTimeline) document.documentElement.setAttribute('data-geld-timeline', 'compact');
   // Everything on the page has been read: what GitHub inserts from here on waits for the next pass.
