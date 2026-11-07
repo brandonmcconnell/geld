@@ -521,14 +521,31 @@ function carryRails(body: HTMLElement, carried: CarriedRails, height: number): v
  * clipped, and the agents' blocks, laid out after the author's, are never touched. Read with the cut lifted, so a
  * change of width or of what is open is measured as it would lay out whole; reads first, then writes.
  */
+/**
+ * A block's top and bottom from the body's top. GitHub leaves an `<img>` written on a line of its own unwrapped
+ * (`<a><img></a>` straight in the body), and an inline box is only its line's text, at the image's foot, so such a link
+ * spans its pictures. Only a link that shows: Chrome lays out `content-visibility: hidden` content (a fold, a closed
+ * `<details>`) when asked, so a hidden picture still answers with its size.
+ */
+function spanOf(block: Element, top: number): { readonly block: Element; readonly start: number; readonly end: number } {
+  const box = block.getBoundingClientRect();
+  let start = box.top;
+  let end = box.bottom;
+  const pictures = block.tagName === 'A' && !block.hasAttribute('hidden') ? block.querySelectorAll('img, picture, video, svg') : [];
+  for (const media of pictures) {
+    const rect = media.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) continue;
+    start = Math.min(start, rect.top);
+    end = Math.max(end, rect.bottom);
+  }
+  return { block, start: start - top, end: end - top };
+}
+
 function measure(body: HTMLElement): void {
   clearCut(body);
   const author = blocksOf(body).filter((block) => !block.hasAttribute(ATTR_AGENT) && !block.hasAttribute(ATTR_TOOL) && !block.hasAttribute(ATTR_BLANK));
   const top = body.getBoundingClientRect().top;
-  const spans = author.map((block) => {
-    const box = block.getBoundingClientRect();
-    return { block, start: box.top - top, end: box.bottom - top };
-  });
+  const spans = author.map((block) => spanOf(block, top));
   const long = spans.some((span) => span.end > DESCRIPTION_CAP_PX + CAP_SLACK_PX);
   setFlag(body, ATTR_LONG, long ? '' : null);
   const cutting = long && state.capped;
