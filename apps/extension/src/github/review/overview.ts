@@ -67,6 +67,7 @@ import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel }
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots, triggerFor } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
+import type { MentionLine } from './quick-view';
 import { botCommentControls, chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
 import type { ChatByline, ChatLink, ChatRerun, ChatThreadLink } from './chat';
 import { viaBotOf } from './via';
@@ -830,6 +831,16 @@ function isStatusLine(entry: CrawledComment): boolean {
 function withManualDone(meta: GeldPrMeta): GeldPrMeta {
   if (visit.manualDone.size === 0) return meta;
   return { ...meta, items: meta.items.map((item) => (visit.manualDone.has(item.id) && isOpenStatus(item.status) ? { ...item, status: 'done-manual' } : item)) };
+}
+
+/** What the description mentions, with its author's picture on each line when `withAuthor` (only the open view shows it). */
+function descriptionMentions(withAuthor = false): readonly MentionLine[] {
+  const card = document.querySelector('[data-geld-attached]');
+  const body = card?.querySelector('.comment-body, .markdown-body, [data-testid="markdown-body"]') ?? null;
+  if (!withAuthor || card === null) return outgoingMentions(body);
+  const author = authorOf(card);
+  const avatar = avatarSrcOf(card);
+  return outgoingMentions(body, author === null || avatar === null ? null : { login: author.login, avatarSrc: avatar });
 }
 
 function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
@@ -3251,7 +3262,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const claimed = new Set<HTMLElement>(foldTargets.flatMap((group) => [...group.nodes]));
   const leftoverList = phase('leftovers', () => crawlLeftovers(claimed, threadCommentsComing));
   if (hidingTimeline) {
-    const leftovers = groupLeftovers(leftoverList);
+    const leftovers = groupLeftovers(leftoverList, descriptionMentions().length);
     groups.push(...leftovers);
     foldTargets.push(...leftovers);
   }
@@ -3723,7 +3734,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const slotsStart = performance.now();
   if (mounted?.slot !== null && mounted?.slot !== undefined && visit.openKey !== null) {
     const nodes = quickViewFor(visit.openKey, meta, groups);
-    if (nodes.length === 0) {
+    // The description's own mentions have no timeline row, so the Mentions row can stand with no nodes to show.
+    const onlyOutgoing = visit.openKey === foldKey('mentions') && descriptionMentions().length > 0;
+    if (nodes.length === 0 && !onlyOutgoing) {
       // An open thread row (by push) whose thread is momentarily out of the crawl keeps its row through the grace.
       if (!visit.openKey.startsWith('item:') || openLineStillMissing()) {
         visit.openKey = null;
@@ -3821,15 +3834,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           renderQuickView(mounted.slot, nodes);
         }
       } else if (visit.openKey === foldKey('mentions')) {
-        const card = document.querySelector('[data-geld-attached]');
-        const cardAuthor = card === null ? null : authorOf(card);
-        const cardAvatar = card === null ? null : avatarSrcOf(card);
-        renderMentionsView(
-          mounted.slot,
-          nodes,
-          outgoingMentions(document.querySelector('[data-geld-attached] .comment-body, [data-geld-attached] .markdown-body, [data-geld-attached] [data-testid="markdown-body"]'), cardAuthor === null || cardAvatar === null ? null : { login: cardAuthor.login, avatarSrc: cardAvatar }),
-          (href) => refDetails(href, reapplySoon),
-        );
+        renderMentionsView(mounted.slot, nodes, descriptionMentions(true), (href) => refDetails(href, reapplySoon));
       } else if (visit.openKey.startsWith('item:')) {
         // Each review thread as its chat: the path, the hunk, the comment it came from pinned, every message.
         const item = meta.items.find((entry) => itemKey(entry.id) === visit.openKey);

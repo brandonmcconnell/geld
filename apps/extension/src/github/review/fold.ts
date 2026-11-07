@@ -263,8 +263,11 @@ export function groupBotRuns(
   return groups;
 }
 
-/** The rest of the timeline, by kind: commits and mentions get rows in the activity section; bots' bare review lines fold silently. */
-export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: LeftoverKind; readonly root: HTMLElement }>): readonly FoldGroup[] {
+/**
+ * The rest of the timeline, by kind: commits and mentions get rows in the activity section; bots' bare review lines
+ * fold silently. `outgoing` counts what the description mentions, which has no timeline row and still makes one.
+ */
+export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: LeftoverKind; readonly root: HTMLElement }>, outgoing = 0): readonly FoldGroup[] {
   const by = (kind: LeftoverKind): HTMLElement[] => leftovers.filter((entry) => entry.kind === kind).map((entry) => entry.root);
   const groups: FoldGroup[] = [];
   // Force-push events sit with the commits: both are pushes, and the row reads "from a to b" like a commit line.
@@ -275,7 +278,8 @@ export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: Leftove
     groups.push({ key: 'commits', label: parts.join(' · '), author: null, nodes: [...commits, ...pushes], section: 'activity' });
   }
   const mentions = by('mention');
-  if (mentions.length > 0) groups.push({ key: 'mentions', label: `${mentions.length} mention${mentions.length === 1 ? '' : 's'}`, author: null, nodes: mentions, section: 'activity' });
+  const mentionCount = mentions.length + outgoing;
+  if (mentionCount > 0) groups.push({ key: 'mentions', label: `${mentionCount} mention${mentionCount === 1 ? '' : 's'}`, author: null, nodes: mentions, section: 'activity' });
   const silent = by('review-event');
   if (silent.length > 0) groups.push({ key: 'bot-reviews', label: '', author: null, nodes: silent, silent: true });
   // "X added 2 commits" headers say nothing the commits row does not; a minimized comment or a resolved thread still
