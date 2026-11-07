@@ -1,4 +1,4 @@
-import { ALL, bar, box, comma, diagonal, dot, type DrawContext, level, open, p, rotate180, shift, spanOf, withPen } from './draw';
+import { ALL, bar, box, comma, diagonal, dot, type DrawContext, level, open, p, rotate180, shift, spanOf, withPen , tildeStroke } from './draw';
 import { expandStroke, type Stroke } from './geometry';
 
 /** Where a mark attaches: the base's anchor of the same name, matched by the mark's `_name` anchor at its origin. */
@@ -60,7 +60,7 @@ const MARKS_ABOVE: MarkDef[] = [
       const s = Math.min(1.4, Math.max(0.9, h - pen.h - 0.3));
       const a = 2.75;
       const y = pen.h / 2;
-      return [withPen(open(p(-a, y), p(-a + s, y + s), p(-s / 2, y + s), p(s / 2, y), p(a - s, y), p(a, y + s)), pen)];
+      return [withPen(tildeStroke(-a, a, y, s), pen)];
     },
   },
   { name: 'macroncomb', unicode: 0x304, attach: 'top', caseForm: true, draw: (g) => [withPen(bar(-2.4, 2.4, g.h / 2), accentPen(g))] },

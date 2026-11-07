@@ -188,6 +188,15 @@ export const strikeReach = (g: DrawContext, slope = 1) => {
   return g.v / 2 + 1.25 + corner;
 };
 
+/**
+ * A tilde from x0 to x1 resting at y: up at 45°, a flat top, down, a flat bottom, up. Every corner is
+ * obtuse, so none needs a cut that could close it, and it stands only `s` plus a bar tall at any weight.
+ */
+export function tildeStroke(x0: number, x1: number, y: number, s: number): Stroke {
+  const m = (x0 + x1) / 2;
+  return open(p(x0, y), p(x0 + s, y + s), p(m - s / 2, y + s), p(m + s / 2, y), p(x1 - s, y), p(x1, y + s));
+}
+
 /** Where the line through a and b crosses the line through c and d. */
 export function crossing(a: [number, number], b: [number, number], c: [number, number], d: [number, number]): [number, number] {
   const [rx, ry] = [b[0] - a[0], b[1] - a[1]];

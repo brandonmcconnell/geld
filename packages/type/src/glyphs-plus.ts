@@ -24,6 +24,7 @@ import {
   edgeAt,
   crossbarReach,
   meeting,
+  tildeStroke,
 } from './draw';
 import type { PathPoint, Stroke } from './geometry';
 
@@ -242,11 +243,11 @@ export const PLUS: GlyphDef[] = [
     lsb: 1,
     rsb: 1,
     draw: (g) => {
-      const s = 2.25 + Math.max(0, g.v - 2) * 0.6;
-      const pen = { ...g.pen, cut: Math.min(g.pen.cut ?? 2, s * 0.45) };
-      const tilde = (y: number) => withPen(open(p(0, y), p(s, y + s, true), p(2 * s, y, true), p(3 * s, y + s)), pen);
-      const low = MATH_AXIS - (2 * s + 1.5 * g.v + 1.6) / 2;
-      return [tilde(low + s + 1.5 * g.v + 1.6), tilde(low)];
+      const w = g.wide(8);
+      const s = 1.75;
+      const rise = s + g.h + 1.6;
+      const low = MATH_AXIS - (rise + s) / 2;
+      return [tildeStroke(0, w, low + rise, s), tildeStroke(0, w, low, s)];
     },
   },
   {

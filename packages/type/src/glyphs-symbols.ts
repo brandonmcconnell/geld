@@ -1,5 +1,4 @@
 import {
-  ALL,
   bar,
   box,
   chevronLeft,
@@ -20,6 +19,11 @@ import {
   stem,
   withPen,
   crossbarReach,
+  tildeStroke,
+  edgeAt,
+  INSIDE,
+  spanOf,
+  OVERHANG,
 } from './draw';
 import type { Stroke } from './geometry';
 import { CUT_OUTER } from './grid';
@@ -124,11 +128,17 @@ export const SYMBOLS: GlyphDef[] = [
       const w = g.wide(10);
       const b = g.bottom(0);
       const mid = g.y(8);
+      const x1 = w + g.v / 2 - g.foot(w, mid);
+      const right = w * 0.6 + g.v / 2;
+      // The diagonal leaves the loop flush with its right side: its right edge at the bar's lower edge is the loop's.
+      let x0 = right - spanOf(g.diag, x1 - right, mid);
+      for (let i = 0; i < 6; i++) x0 = right - spanOf(g.diag, x1 - x0, mid) - ((x1 - x0) * g.h) / 2 / mid + INSIDE;
+      const arm = Math.max(g.h / 2 + 1.4, Math.min(g.y(5.5), mid - g.h - 1.6));
       return [
-        box(0.75, w * 0.6, mid, g.top(g.cap), ALL),
-        open(p(w * 0.6, mid), p(0, mid, true), p(0, b, true), p(w * 0.75, b)),
-        diagonal(g, 0.75 + w * 0.2, mid, w + g.v / 2 - g.foot(w, mid), 0, [false, true]),
-        bar(w * 0.55, w + 0.5, Math.min(g.y(5.5), mid - g.h - 1.6)),
+        box(0.75, w * 0.6, mid, g.top(g.cap), [true, false, true, true]),
+        open(p(w * 0.6, mid), p(0, mid, true), p(0, b, true), p(edgeAt(g.diag, x0, mid, x1, 0, 0, -1) + INSIDE, b)),
+        diagonal(g, x0, mid, x1, 0),
+        bar(edgeAt(g.diag, x0, mid, x1, 0, arm + g.h / 2, 1) - INSIDE, Math.max(w + 0.5, edgeAt(g.diag, x0, mid, x1, 0, arm - g.h / 2, 1) + OVERHANG), arm),
       ];
     },
   },
@@ -207,9 +217,8 @@ export const SYMBOLS: GlyphDef[] = [
     lsb: 1,
     rsb: 1,
     draw: (g) => {
-      const s = 2.25 + Math.max(0, g.v - 2) * 0.6;
-      const y = MATH_AXIS - s / 2;
-      return [withPen(open(p(0, y), p(s, y + s, true), p(2 * s, y, true), p(3 * s, y + s)), { ...g.pen, cut: Math.min(g.pen.cut ?? 2, s * 0.45) })];
+      const s = 1.75;
+      return [tildeStroke(0, g.wide(8), MATH_AXIS - s / 2, s)];
     },
   },
   { name: 'quoteleft', unicode: 0x2018, lsb: 1.25, rsb: 1.25, draw: (g) => quote(g, true, 0) },
