@@ -682,6 +682,21 @@ export function crawlConversation(root: ParentNode = document): {
 export interface CrawledLeftover {
   readonly kind: LeftoverKind;
   readonly root: HTMLElement;
+  /** Commits the row stands for, when it is not one: an Overview run of commits, some folded behind "N additional commits". */
+  readonly count?: number;
+}
+
+/** The commits a commit row stands for: one, or an Overview group's count. */
+export function commitsInRow(row: Element): number {
+  return overviewCommitCount(row) ?? 1;
+}
+
+/** The commits an Overview commit group holds: its rows, and those it folds behind a summary ("57 additional commits by …"). */
+function overviewCommitCount(row: Element): number | null {
+  const group = row.querySelector('[data-testid="timeline-commit-group"]');
+  if (group === null) return null;
+  const folded = [...group.querySelectorAll('summary[aria-label]')].reduce((sum, summary) => sum + Number(/^(\d+) additional commits?\b/.exec(summary.getAttribute('aria-label') ?? '')?.[1] ?? 0), 0);
+  return group.querySelectorAll('[data-testid="timeline-commit-row"]').length + folded;
 }
 
 /**
@@ -792,7 +807,8 @@ export function crawlLeftovers(claimed: ReadonlySet<HTMLElement>, commentsComing
     else if (isForcePushRow(row)) kind = 'push';
     else if (row.matches(MENTION_ROW) || row.querySelector('.octicon-cross-reference, [id^="ref-pullrequest-"], [id^="ref-issue-"]') !== null) kind = 'mention';
     else if (row.querySelector('[id^="pullrequestreview-"]') !== null) kind = 'review-event';
-    list.push({ kind, root: row });
+    const commits = kind === 'commit' ? overviewCommitCount(row) : null;
+    list.push(commits === null ? { kind, root: row } : { kind, root: row, count: commits });
   }
   return list;
 }

@@ -138,8 +138,10 @@ export interface Batch {
   readonly reviews: readonly ReviewEntry[];
   /** The commit rows and force-push events of the push(es) that opened the round, in timeline order; empty for content before any push. */
   readonly commits: readonly HTMLElement[];
-  /** How many of `commits` are commit rows (the rest are force-push events). */
+  /** How many commits the round's commit rows stand for (an Overview row can hold several). */
   readonly commitCount: number;
+  /** How many of `commits` are force-push events. */
+  readonly forcePushes: number;
   /** CI as GitHub draws it beside the round's last commit; null when the page shows none. */
   readonly ciGlyph: 'success' | 'failure' | 'pending' | null;
   /** Who committed in the push, as GitHub draws them beside the commits (its `avatar-user` class decides the shape). */
@@ -906,7 +908,7 @@ function pushLabel(batch: Batch, total: number): string {
 
 /** "2 commits", "force-push", or "2 commits · force-push" for a round that had both. */
 function pushContents(batch: Batch): string {
-  const forced = batch.commits.length - batch.commitCount;
+  const forced = batch.forcePushes;
   const parts = [batch.commitCount > 0 ? plural(batch.commitCount, 'commit') : '', forced > 0 ? (forced === 1 ? 'force-push' : `${forced} force-pushes`) : ''];
   return parts.filter((part) => part !== '').join(' · ');
 }
@@ -2801,7 +2803,7 @@ function signatureOf(model: PanelModel): string {
     botRequests: [...model.botRequests].map(([id, state]) => `${id}:${state.kind === 'starting' ? 'starting' : state.reason}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
     folds: model.folds.map((fold) => `${fold.key}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}:${fold.closure?.preview ?? ''}:${fold.headline === undefined ? '' : `${fold.headline.kind}${fold.headline.actor}${fold.headline.target ?? ''}${fold.headline.avatarSrc ?? ''}`}`),
-    batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.commits.length}/${batch.commitCount}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
+    batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.commits.length}/${batch.commitCount}/${batch.forcePushes}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
     grouping: model.grouping,
     view: model.view,
     intro: model.intro,

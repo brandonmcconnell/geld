@@ -19,7 +19,7 @@ import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
 import type { OpenSettingsMessage } from '../../lib/messages';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
-import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR, TIMELINE_ROW } from './crawler';
+import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, commitsInRow, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR, TIMELINE_ROW } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
@@ -1795,7 +1795,8 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
         }),
       reviews: round.reviews,
       commits: round.commits,
-      commitCount: round.commits.filter((row) => !pushRoots.has(row)).length,
+      commitCount: round.commits.filter((row) => !pushRoots.has(row)).reduce((sum, row) => sum + commitsInRow(row), 0),
+      forcePushes: round.commits.filter((row) => pushRoots.has(row)).length,
       ciGlyph: lastCommit === null ? null : commitCiGlyph(lastCommit),
       committers: committersOf(round.commits),
       previews: previewsAll.filter((entry) => previewAnchorsHere.has(entry.anchor)),

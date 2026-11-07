@@ -130,3 +130,15 @@ describe('the Overview tab', () => {
     expect(crawlLeftovers(claimed, () => false).map((entry) => entry.kind)).toEqual(['commit']);
   });
 });
+
+describe('an Overview run of commits', () => {
+  it('counts the commits it folds behind its summary', () => {
+    document.body.innerHTML = `<section><h2 id="overview-comments">Comments</h2><div data-component="Stack">
+      <div data-testid="timeline-item"><div data-testid="timeline-commit-group">
+        <div data-testid="timeline-commit-row"><a href="/o/r/pull/1/changes/${'a'.repeat(40)}">one</a></div>
+        <details><summary aria-label="57 additional commits by sheremet-va, starting at commit 02a833f">57 additional commits</summary></details>
+      </div></div>
+    </div></section>`;
+    expect(crawlLeftovers(new Set(), () => false).map((entry) => [entry.kind, entry.count])).toEqual([['commit', 58]]);
+  });
+});

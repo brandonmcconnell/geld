@@ -264,14 +264,15 @@ export function groupBotRuns(
 }
 
 /** The rest of the timeline, by kind: commits and mentions get rows in the activity section; bots' bare review lines fold silently. */
-export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: LeftoverKind; readonly root: HTMLElement }>): readonly FoldGroup[] {
+export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: LeftoverKind; readonly root: HTMLElement; readonly count?: number }>): readonly FoldGroup[] {
   const by = (kind: LeftoverKind): HTMLElement[] => leftovers.filter((entry) => entry.kind === kind).map((entry) => entry.root);
   const groups: FoldGroup[] = [];
   // Force-push events sit with the commits: both are pushes, and the row reads "from a to b" like a commit line.
   const commits = by('commit');
+  const commitCount = leftovers.reduce((sum, entry) => sum + (entry.kind === 'commit' ? (entry.count ?? 1) : 0), 0);
   const pushes = by('push');
   if (commits.length + pushes.length > 0) {
-    const parts = [commits.length > 0 ? `${commits.length} commit${commits.length === 1 ? '' : 's'}` : '', pushes.length > 0 ? `${pushes.length} force-push${pushes.length === 1 ? '' : 'es'}` : ''].filter((part) => part !== '');
+    const parts = [commitCount > 0 ? `${commitCount} commit${commitCount === 1 ? '' : 's'}` : '', pushes.length > 0 ? `${pushes.length} force-push${pushes.length === 1 ? '' : 'es'}` : ''].filter((part) => part !== '');
     groups.push({ key: 'commits', label: parts.join(' · '), author: null, nodes: [...commits, ...pushes], section: 'activity' });
   }
   const mentions = by('mention');
