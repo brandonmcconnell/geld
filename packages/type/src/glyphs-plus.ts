@@ -27,6 +27,7 @@ import {
   tildeStroke,
 } from './draw';
 import type { PathPoint, Stroke } from './geometry';
+import { DARK_INSET_RATIO } from './grid';
 
 /** Arrows: one right-pointing arrow on the math axis, turned for the other seven directions. */
 const ARROW_LENGTH = 12;
@@ -140,7 +141,65 @@ export function sigma(g: DrawContext, w: number): Stroke[] {
   return [bar(topStart, w, t), bar(bottomStart, w, b), withPen(level(open(p(e, g.cap), p(tip, half), p(e, 0))), g.diag)];
 }
 
+/**
+ * Arrow ligature pieces (D12): `->` stays two glyphs, a shaft for the hyphen and a head for the greater-than sign, drawn
+ * from the arrow itself and together exactly as wide as →, so the arrow is compact and each character keeps its own
+ * glyph for the caret and selection. A piece's shaft runs past its side into its neighbour's, by more than Geld Dark
+ * Sans's inset and on the half unit SemiBold snaps to, so no seam shows: the overlap is a negative sidebearing.
+ */
+const SPLIT = 5;
+const MIDDLE = 4;
+type Piece = 'start' | 'middle' | 'end' | 'head' | 'tail';
+export const ARROW_PIECES: { name: string; piece: Piece; double: boolean }[] = [
+  { name: 'hyphen.arrow_start', piece: 'start', double: false },
+  { name: 'hyphen.arrow_middle', piece: 'middle', double: false },
+  { name: 'hyphen.arrow_end', piece: 'end', double: false },
+  { name: 'greater.arrow_head', piece: 'head', double: false },
+  { name: 'less.arrow_head', piece: 'tail', double: false },
+  { name: 'equal.arrow_start', piece: 'start', double: true },
+  { name: 'equal.arrow_middle', piece: 'middle', double: true },
+  { name: 'equal.arrow_end', piece: 'end', double: true },
+  { name: 'greater.arrow_dblhead', piece: 'head', double: true },
+  { name: 'less.arrow_dblhead', piece: 'tail', double: true },
+];
+
+function arrowPiece(name: string, piece: Piece, double: boolean): GlyphDef {
+  const into = (g: DrawContext) => Math.ceil((0.25 + g.v * DARK_INSET_RATIO) * 2) / 2;
+  const spread = (g: DrawContext) => g.y(1.75) + g.h / 2;
+  const shaft = (g: DrawContext, from: number, to: number): Stroke[] =>
+    double ? [bar(from, to, MATH_AXIS + spread(g)), bar(from, to, MATH_AXIS - spread(g))] : [bar(from, to, MATH_AXIS)];
+  // The head piece: the arrow's own head, and its shaft from the split to where the arrow's stops inside the head.
+  const head = (g: DrawContext): { strokes: Stroke[]; length: number } => {
+    const { strokes, length } = double ? doubleArrowRight(g) : { strokes: arrowRight(), length: ARROW_LENGTH };
+    const end = length - (double ? spread(g) : HEAD / 2);
+    return { strokes: [...shaft(g, SPLIT - into(g), end), ...strokes.slice(double ? 2 : 1)], length };
+  };
+  const joint = (g: DrawContext) => -into(g);
+  switch (piece) {
+    case 'start':
+      return { name, lsb: 1, rsb: 0, sidebearings: (g) => ({ rsb: joint(g) }), draw: (g) => shaft(g, 0, SPLIT + into(g)) };
+    case 'middle':
+      return { name, lsb: 0, rsb: 0, sidebearings: (g) => ({ lsb: joint(g), rsb: joint(g) }), draw: (g) => shaft(g, 0, MIDDLE + 2 * into(g)) };
+    case 'end':
+      return { name, lsb: 0, rsb: 1, sidebearings: (g) => ({ lsb: joint(g) }), draw: (g) => shaft(g, 0, SPLIT + into(g)) };
+    case 'head':
+      return { name, lsb: 0, rsb: 1, sidebearings: (g) => ({ lsb: joint(g) }), draw: (g) => head(g).strokes };
+    case 'tail':
+      return {
+        name,
+        lsb: 1,
+        rsb: 0,
+        sidebearings: (g) => ({ rsb: joint(g) }),
+        draw: (g) => {
+          const { strokes, length } = head(g);
+          return rotate(strokes, 180, length / 2, MATH_AXIS);
+        },
+      };
+  }
+}
+
 export const PLUS: GlyphDef[] = [
+  ...ARROW_PIECES.map(({ name, piece, double }) => arrowPiece(name, piece, double)),
   arrow('arrowleft', 0x2190, 180),
   arrow('arrowup', 0x2191, 90),
   arrow('arrowright', 0x2192, 0),

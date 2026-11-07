@@ -270,6 +270,7 @@ export function features(master: Master): string {
     'feature liga {',
     ...TEXT_LIGATURES.filter((parts) => names.has(parts.join('_'))).map((parts) => `  sub ${parts.join(' ')} by ${parts.join('_')};`),
     '} liga;',
+    ...arrowFeatures(names),
     // Only as a word of its own: Geldern, Geldbörse and Gelder keep their letters.
     ...(names.has(LOCKUP.name)
       ? [
@@ -282,6 +283,50 @@ export function features(master: Master): string {
         ]
       : []),
   ].join('\n');
+}
+
+/**
+ * The arrow sequences (5.3, D13: on by default in calt), longest first, each as the pieces its characters become.
+ * A sequence only stands whole: not inside a longer run of hyphens, equals or brackets (--->, <=>, ->>), and <= is
+ * never a fat arrow (a fat left arrow is <==).
+ */
+const ARROWS: [string, string[]][] = [
+  ['<-->', ['less.arrow_head', 'hyphen.arrow_middle', 'hyphen.arrow_middle', 'greater.arrow_head']],
+  ['<==>', ['less.arrow_dblhead', 'equal.arrow_middle', 'equal.arrow_middle', 'greater.arrow_dblhead']],
+  ['<->', ['less.arrow_head', 'hyphen.arrow_middle', 'greater.arrow_head']],
+  ['-->', ['hyphen.arrow_start', 'hyphen.arrow_middle', 'greater.arrow_head']],
+  ['<--', ['less.arrow_head', 'hyphen.arrow_middle', 'hyphen.arrow_end']],
+  ['==>', ['equal.arrow_start', 'equal.arrow_middle', 'greater.arrow_dblhead']],
+  ['<==', ['less.arrow_dblhead', 'equal.arrow_middle', 'equal.arrow_end']],
+  ['->', ['hyphen.arrow_start', 'greater.arrow_head']],
+  ['<-', ['less.arrow_head', 'hyphen.arrow_end']],
+  ['=>', ['equal.arrow_start', 'greater.arrow_dblhead']],
+];
+const ARROW_CHARS: Record<string, string> = { '-': 'hyphen', '=': 'equal', '<': 'less', '>': 'greater' };
+
+function arrowFeatures(names: Set<string>): string[] {
+  const used = ARROWS.filter(([, pieces]) => pieces.every((n) => names.has(n)));
+  if (!used.length) return [];
+  const rules: string[] = [];
+  for (const [text, pieces] of used) {
+    const chars = [...text].map((c) => ARROW_CHARS[c]!);
+    rules.push(`  ignore sub [hyphen equal less] ${chars.map((c, i) => (i === 0 ? `${c}'` : c)).join(' ')};`);
+    rules.push(`  ignore sub ${chars.map((c, i) => (i === 0 ? `${c}'` : c)).join(' ')} [hyphen equal greater];`);
+    chars.forEach((c, i) => rules.push(`  sub ${[...pieces.slice(0, i), `${c}'`, ...chars.slice(i + 1)].join(' ')} by ${pieces[i]};`));
+  }
+  const pieces = [...new Set(used.flatMap(([, ps]) => ps))].sort();
+  return [
+    'feature calt {',
+    '  lookup arrows {',
+    ...rules.map((r) => `  ${r}`),
+    '  } arrows;',
+    '} calt;',
+    // After calt, so it maps the pieces calt made back to their characters.
+    'feature ss20 {',
+    '  featureNames { name "No arrow ligatures"; };',
+    `  sub [${pieces.join(' ')}] by [${pieces.map((n) => n.split('.')[0]).join(' ')}];`,
+    '} ss20;',
+  ];
 }
 
 /** Every file of one master's UFO, keyed by its path inside the .ufo folder. */

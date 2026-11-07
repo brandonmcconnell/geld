@@ -16,6 +16,7 @@ from fontTools.varLib.instancer import instantiateVariableFont
 DIST = Path(__file__).resolve().parent.parent / "dist"
 OVERLAP_SIMPLE = 0x40
 SAMPLE = "HOnoGELD"
+CHAR_NAMES = {"-": "hyphen", "=": "equal", "<": "less", ">": "greater"}
 # Google Fonts' glyph sets the fonts must cover in full; each is added here once it is complete.
 GLYPHSETS = ["GF_Latin_Kernel", "GF_Latin_Core", "GF_Latin_Plus", "GF_Latin_Vietnamese", "GF_Latin_PriAfrican", "GF_Latin_African", "GF_Latin_Beyond", "GF_TransLatin_Pinyin", "GF_TransLatin_Arabic", "GF_Greek_Core", "GF_Cyrillic_Core", "GF_Cyrillic_Plus"]
 
@@ -182,6 +183,25 @@ def check_ligatures(path: Path, data: bytes, weight: int) -> None:
         got = [n for n, _ in shape(data, weight, text, features=features)]
         check(got == names, f"{path.name} at {weight}: {text} with {features} shaped {got}")
     check("G_e_l_d" in with_carets, f"{path.name}: the Geld lockup has no carets")
+    # Arrows (D12): pieces as wide as the arrow they draw, whole sequences only, ss20 and calt off give the characters back.
+    for text, names, like in (
+        ("->", ["hyphen.arrow_start", "greater.arrow_head"], "→"),
+        ("<-", ["less.arrow_head", "hyphen.arrow_end"], "←"),
+        ("=>", ["equal.arrow_start", "greater.arrow_dblhead"], "⇒"),
+        ("<->", ["less.arrow_head", "hyphen.arrow_middle", "greater.arrow_head"], None),
+        ("==>", ["equal.arrow_start", "equal.arrow_middle", "greater.arrow_dblhead"], None),
+    ):
+        got, width = shape_total(data, weight, text, {"kern": False})
+        check(got == names, f"{path.name} at {weight}: {text} shaped {got}")
+        if like:
+            _, want = shape_total(data, weight, like, {"kern": False})
+            check(abs(width - want) <= 1, f"{path.name} at {weight}: {text} is {width} wide, {like} {want}")
+    for text in ("<=", "<=>", "--->", "->>", ">=", "=>="):
+        got, _ = shape_total(data, weight, text, {"kern": False})
+        check(got == [CHAR_NAMES[c] for c in text], f"{path.name} at {weight}: {text} shaped {got}")
+    for features in ({"ss20": True}, {"calt": False}):
+        got, _ = shape_total(data, weight, "->", {"kern": False, **features})
+        check(got == ["hyphen", "greater"], f"{path.name} at {weight}: -> with {features} shaped {got}")
 
 
 def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None:
