@@ -186,4 +186,16 @@ describe('attachment image viewer', () => {
     expect(viewer.stage.style.width).toBe('32px');
     expect(viewer.stage.style.height).toBe('32px');
   });
+
+  it('lets the error message size the stage when the image fails, and keeps it on resize', () => {
+    expect(viewer.stage.style.width).toBe('960px');
+    image.dispatchEvent(new Event('error'));
+    expect(viewer.stage.style.width).toBe('');
+    expect(viewer.stage.style.height).toBe('');
+    expect(viewer.stage.querySelector('[role="status"]')?.hasAttribute('hidden')).toBe(false);
+    window.dispatchEvent(new Event('resize'));
+    expect(viewer.stage.style.width).toBe('');
+    expect(button('Zoom in').disabled).toBe(true);
+    expect(button('Reset zoom').disabled).toBe(true);
+  });
 });

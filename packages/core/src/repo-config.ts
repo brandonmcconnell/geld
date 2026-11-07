@@ -85,6 +85,7 @@ const PERSONAL_KEYS = [
   'autoViewed',
   'testOutline',
   'testSyntaxes',
+  'attachmentLightbox',
 ] as const;
 
 /**

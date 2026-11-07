@@ -57,12 +57,25 @@ describe('attachment lightbox', () => {
     expect(click(image).defaultPrevented).toBe(true);
     const dialog = document.querySelector('dialog');
     expect(dialog?.open).toBe(true);
-    expect(dialog?.querySelector('[data-geld-brand]')).not.toBeNull();
+    expect(dialog?.querySelector('[data-geld-brand]')).toBeNull();
+    const title = document.getElementById(dialog?.getAttribute('aria-labelledby') ?? '');
+    expect(title?.textContent).toBe('Screenshot of the review');
+    expect(dialog?.querySelector('header')?.contains(dialog.querySelector('button[aria-label="Close"]'))).toBe(true);
     expect(dialog?.querySelector('img')?.src).toBe(ATTACHMENT);
     expect(dialog?.querySelector('img')?.alt).toBe(image.alt);
     expect(dialog?.querySelector('a')?.href).toBe(ATTACHMENT);
     expect(dialog?.querySelector('a')?.target).toBe('_blank');
     expect(document.activeElement).toBe(dialog?.querySelector('button'));
+  });
+
+  it.each(['image', 'Image', ''])('titles an upload whose alt text is %j as "Image"', (alt) => {
+    vi.stubGlobal('location', new URL('https://github.com/owner/repo/issues/42'));
+    const image = mount();
+    image.alt = alt;
+    applyAttachmentLightbox();
+    click(image);
+    const dialog = document.querySelector('dialog');
+    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') ?? '')?.textContent).toBe('Image');
   });
 
   it.each([{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }])('preserves native navigation for %o', (options) => {

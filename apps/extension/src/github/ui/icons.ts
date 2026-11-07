@@ -245,6 +245,16 @@ export const ICON_X = octicon(
   'octicon-x',
 );
 
+export const ICON_PLUS = octicon(
+  '<path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"></path>',
+  'octicon-plus',
+);
+
+export const ICON_DASH = octicon(
+  '<path d="M2 7.75A.75.75 0 0 1 2.75 7h10a.75.75 0 0 1 0 1.5h-10A.75.75 0 0 1 2 7.75Z"></path>',
+  'octicon-dash',
+);
+
 /**
  * Descriptive icon for a category (built-in or user-defined), drawn from the
  * shared Octicon path data in @geld/core so every surface shows the same glyph.
