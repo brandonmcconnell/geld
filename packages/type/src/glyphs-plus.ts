@@ -19,6 +19,10 @@ import {
   solid,
   stem,
   withPen,
+  spanOf,
+  INSIDE,
+  edgeAt,
+  crossbarReach,
 } from './draw';
 import type { PathPoint, Stroke } from './geometry';
 
@@ -94,8 +98,12 @@ export function sigma(g: DrawContext, w: number): Stroke[] {
   const t = g.top(g.cap);
   const b = g.bottom(0);
   const tip = w * 0.55;
-  const e = g.foot(tip, g.cap / 2);
-  return [bar(0, w, t), bar(0, w, b), withPen(level(open(p(e, g.cap), p(tip, g.cap / 2), p(e, 0))), g.diag)];
+  const half = g.cap / 2;
+  let e = spanOf(g.diag, tip, half);
+  for (let i = 0; i < 6; i++) e = spanOf(g.diag, tip - e, half);
+  const topStart = edgeAt(g.diag, e, g.cap, tip, half, g.cap - g.h, -1) + INSIDE;
+  const bottomStart = edgeAt(g.diag, e, 0, tip, half, g.h, -1) + INSIDE;
+  return [bar(topStart, w, t), bar(bottomStart, w, b), withPen(level(open(p(e, g.cap), p(tip, half), p(e, 0))), g.diag)];
 }
 
 export const PLUS: GlyphDef[] = [
@@ -176,7 +184,7 @@ export const PLUS: GlyphDef[] = [
     rsb: 1,
     draw: (g) => {
       const w = g.wide(10);
-      return [bar(-1.5, w + 1.5, g.top(g.cap)), stem(0, 0, g.cap), stem(w, 0, g.cap)];
+      return [bar(-crossbarReach(g), w + crossbarReach(g), g.top(g.cap)), stem(0, 0, g.cap), stem(w, 0, g.cap)];
     },
   },
   {
@@ -232,10 +240,12 @@ export const PLUS: GlyphDef[] = [
     unicode: 0x2248,
     lsb: 1,
     rsb: 1,
-    draw: () => {
-      const s = 2.25;
-      const tilde = (y: number) => open(p(0, y), p(s, y + s, true), p(2 * s, y, true), p(3 * s, y + s));
-      return [tilde(MATH_AXIS + 0.75), tilde(MATH_AXIS - 3)];
+    draw: (g) => {
+      const s = 2.25 + Math.max(0, g.v - 2) * 0.6;
+      const pen = { ...g.pen, cut: Math.min(g.pen.cut ?? 2, s * 0.45) };
+      const tilde = (y: number) => withPen(open(p(0, y), p(s, y + s, true), p(2 * s, y, true), p(3 * s, y + s)), pen);
+      const low = MATH_AXIS - (2 * s + 1.5 * g.v + 1.6) / 2;
+      return [tilde(low + s + 1.5 * g.v + 1.6), tilde(low)];
     },
   },
   {

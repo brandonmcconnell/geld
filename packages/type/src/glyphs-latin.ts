@@ -1,4 +1,4 @@
-import { ALL, bar, box, diagonal, type DrawContext, type GlyphDef, LEFT, level, mirror, open, p, RIGHT, rotate180, stem, withPen, yArms } from './draw';
+import { ALL, bar, box, diagonal, type DrawContext, type GlyphDef, LEFT, level, mirror, open, p, RIGHT, rotate180, stem, withPen, yArms, barIntoDiagonal, diagonalOntoBar, edgeAt, INSIDE , crossbarReach , strikeThrough , strikeReach } from './draw';
 import type { Stroke } from './geometry';
 
 /** Latin letters with no Unicode decomposition into a base and marks, drawn on their own. */
@@ -42,7 +42,7 @@ const UPPER: GlyphDef[] = [
     rsb: 1.25,
     draw: (g) => {
       const w = g.wide(10);
-      return [box(0, w, g.bottom(0), g.top(g.cap), ALL), diagonal(g, -0.75, -1, w + 0.75, g.cap + 1)];
+      return [box(0, w, g.bottom(0), g.top(g.cap), ALL), diagonal(g, -1.25, -1.75, w + 1.25, g.cap + 1.75)];
     },
   },
   {
@@ -68,7 +68,7 @@ const UPPER: GlyphDef[] = [
       const w = g.wide(9);
       const thin = g.h * 0.85;
       const y = Math.min(Math.max((g.cap + g.cap / 2 + g.h / 2) / 2, g.cap / 2 + g.h / 2 + 1.6 + thin / 2), g.cap - thin / 2);
-      return [stem(0, 0, g.cap), stem(w, 0, g.cap), bar(0, w, g.cap / 2), withPen(bar(-g.v / 2 - 1, w + g.v / 2 + 1, y), { v: g.v, h: thin })];
+      return [stem(0, 0, g.cap), stem(w, 0, g.cap), bar(0, w, g.cap / 2), withPen(bar(-crossbarReach(g), w + crossbarReach(g), y), { v: g.v, h: thin })];
     },
   },
   {
@@ -76,7 +76,7 @@ const UPPER: GlyphDef[] = [
     unicode: 0x141,
     lsb: 0.5,
     rsb: 0.5,
-    draw: (g) => [open(p(0, g.cap), p(0, g.bottom(0)), p(g.wide(9), g.bottom(0))), withPen(open(p(-2, g.y(4.75)), p(2.75, g.y(9.25))), g.diag)],
+    draw: (g) => [open(p(0, g.cap), p(0, g.bottom(0)), p(g.wide(9), g.bottom(0))), strikeThrough(g, 0, Math.max(g.y(7), g.h + 1.6 + strikeReach(g)))],
   },
   {
     name: 'Eng',
@@ -185,7 +185,7 @@ const UPPER: GlyphDef[] = [
       return [
         stem(0, 0, g.cap),
         withPen(open(p(0, y0), p(reach, g.cap - 1)), g.diag),
-        open(p(reach - 0.5, g.top(g.cap)), p(reach + 2, g.top(g.cap))),
+        bar(edgeAt(g.diag, 0, y0, reach, g.cap - 1, g.cap - g.h, -1) + INSIDE, edgeAt(g.diag, 0, y0, reach, g.cap - 1, g.cap - 1, 1) + 1.5, g.top(g.cap)),
         diagonal(g, reach * t, y0 + (g.cap - 1 - y0) * t, reach + 1, 0, [false, true]),
       ];
     },
@@ -201,7 +201,9 @@ const UPPER: GlyphDef[] = [
       const t = g.top(g.cap);
       const b = g.bottom(0);
       const m = g.y(7.5);
-      return [open(p(0, 0), p(0, t, true), p(w, t, true), p(w, g.y(11)), p(w * 0.4, m)), open(p(w * 0.4, m), p(w2, m, true), p(w2, b, true), p(w * 0.45, b))];
+      const low = m - g.h / 2;
+      const start = edgeAt(g.pen, w, g.y(11), w * 0.4, low, m + g.h / 2, -1) + INSIDE;
+      return [level(open(p(0, 0), p(0, t, true), p(w, t, true), p(w, g.y(11)), p(w * 0.4, low)), false, true), open(p(start, m), p(w2, m, true), p(w2, b, true), p(w * 0.45, b))];
     },
   },
   {
@@ -224,9 +226,10 @@ const UPPER: GlyphDef[] = [
     rsb: 1,
     draw: (g) => {
       const w = g.wide(9);
-      const t = g.top(g.cap);
       const b = g.bottom(-3);
-      return [bar(0, w, t), diagonal(g, w - g.foot(w * 0.6, 4), g.cap, w * 0.4, 8, [true, false]), open(p(w * 0.4, g.y(8)), p(w, g.y(8), true), p(w, b, true), p(0, b, true), p(0, g.y(1)))];
+      const [top, slope] = barIntoDiagonal(g, 0, w, g.cap, [w * 0.4, g.y(8)], false);
+      const waist = diagonalOntoBar(g, [slope!.points[0]!.x, g.cap], w * 0.4, g.y(8));
+      return [top!, level(waist.diagonal, true, true), open(p(waist.start, g.y(8)), p(w, g.y(8), true), p(w, b, true), p(0, b, true), p(0, g.y(1)))];
     },
   },
 ];
@@ -278,7 +281,7 @@ const LOWER_DEFS: GlyphDef[] = [
     rsb: 1.25,
     draw: (g) => {
       const w = g.wide(8);
-      return [box(0, w, g.bottom(0), g.top(g.xHeight), ALL), diagonal(g, -0.75, -0.75, w + 0.75, g.xHeight + 0.75)];
+      return [box(0, w, g.bottom(0), g.top(g.xHeight), ALL), diagonal(g, -1.25, -1.5, w + 1.25, g.xHeight + 1.5)];
     },
   },
   {
@@ -334,7 +337,7 @@ const LOWER_DEFS: GlyphDef[] = [
     draw: (g) => {
       const w = g.wide(7);
       const t = g.top(g.xHeight);
-      return [stem(0, 0, g.ascender), open(p(0, t), p(w, t, true), p(w, 0)), bar(-g.v / 2 - 1, 3, 12.5)];
+      return [stem(0, 0, g.ascender), open(p(0, t), p(w, t, true), p(w, 0)), bar(-crossbarReach(g), Math.max(3, crossbarReach(g)), 12.5)];
     },
   },
   {
@@ -342,7 +345,7 @@ const LOWER_DEFS: GlyphDef[] = [
     unicode: 0x142,
     lsb: 0.5,
     rsb: 0.5,
-    draw: (g) => [stem(0, 0, g.ascender), withPen(open(p(-2, g.y(6.25)), p(2, g.y(10.25))), g.diag)],
+    draw: (g) => [stem(0, 0, g.ascender), strikeThrough(g, 0, g.y(8.25))],
   },
   {
     name: 'eng',
@@ -507,8 +510,8 @@ const LOWER_DEFS: GlyphDef[] = [
     lsb: 1,
     rsb: 1,
     draw: (g) => {
-      const w = g.wide(4);
-      return [stem(w / 2, 0, g.xHeight), bar(0, w, g.top(g.xHeight)), bar(0, w, g.bottom(0))];
+      const r = crossbarReach(g);
+      return [stem(r, 0, g.xHeight), bar(0, 2 * r, g.top(g.xHeight)), bar(0, 2 * r, g.bottom(0))];
     },
   },
   {
@@ -529,9 +532,10 @@ const LOWER_DEFS: GlyphDef[] = [
     rsb: 0.75,
     draw: (g) => {
       const w = g.wide(7.5);
-      const t = g.top(g.xHeight);
       const b = g.bottom(g.descender);
-      return [bar(0, w, t), diagonal(g, w - g.foot(w * 0.6, 4), g.xHeight, w * 0.4, 4.5, [true, false]), open(p(w * 0.4, g.y(4.5)), p(w, g.y(4.5), true), p(w, b, true), p(0, b, true), p(0, g.y(-2)))];
+      const [top, slope] = barIntoDiagonal(g, 0, w, g.xHeight, [w * 0.4, g.y(4.5)], false);
+      const waist = diagonalOntoBar(g, [slope!.points[0]!.x, g.xHeight], w * 0.4, g.y(4.5));
+      return [top!, level(waist.diagonal, true, true), open(p(waist.start, g.y(4.5)), p(w, g.y(4.5), true), p(w, b, true), p(0, b, true), p(0, g.y(-2)))];
     },
   },
   {
@@ -555,7 +559,8 @@ const LOWER_DEFS: GlyphDef[] = [
     draw: (g) => {
       const w = g.wide(8);
       const b = g.bottom(0);
-      return [open(p(-1, g.top(g.xHeight)), p(0, g.top(g.xHeight)), p(0, b, true), p(w, b, true), p(w, g.top(g.xHeight)), p(w + 1, g.top(g.xHeight)))];
+      const flick = crossbarReach(g);
+      return [open(p(-flick, g.top(g.xHeight)), p(0, g.top(g.xHeight)), p(0, b, true), p(w, b, true), p(w, g.top(g.xHeight)), p(w + flick, g.top(g.xHeight)))];
     },
   },
   {
@@ -574,13 +579,14 @@ const LOWER_DEFS: GlyphDef[] = [
 /** The hook of Ɓ and Ɗ: the top bar running left of the stem and turning down. */
 export function hookLeft(g: DrawContext, top: number): Stroke {
   const t = g.top(top);
-  return open(p(-2.75, top - 3), p(-2.75, t, true), p(0, t));
+  const x = -(g.v + 1.6);
+  return open(p(x, top - Math.max(3, g.h + 2.25)), p(x, t, true), p(0, t));
 }
 
 /** The hook of ɓ, ɗ and ƙ: the ascender turning right at the top. */
 export function hookRight(g: DrawContext, x: number): Stroke {
   const t = g.top(g.ascender);
-  return open(p(x, 0), p(x, t, true), p(x + 3, t));
+  return open(p(x, 0), p(x, t, true), p(x + g.v / 2 + 2.5, t));
 }
 
 /** k's stem and arms, with the stem as tall as `height` (the x-height gives ĸ). */

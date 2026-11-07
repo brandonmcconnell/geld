@@ -117,8 +117,8 @@ const orthogonal = (contours: Contour[]) =>
   );
 
 describe('heavy weights', () => {
-  /** B and 8 (and в, B's small capital, and its Bulgarian form) have a notch at the waist, Q's tail and ł's and ø's strokes cross (and their small capitals'), and ʾ ʿ are open angles, by design. */
-  const notched = new Set(['B', 'eight', 'Q', 'lslash', 'Lslash', 'oslash', 'Oslash', 'litre', 've-cy', 've-cy.loclBGR', 'ringhalfleftmod', 'ringhalfrightmod', 'b.sc', 'q.sc']);
+  /** B and 8 (and в, B's small capital, and its Bulgarian form) have a notch at the waist, Q's tail and ł's and ø's strokes cross (and their small capitals'), and ʾ ʿ are open angles, as are 2's between its diagonal and its foot and a strike's either side of the stem it crosses, by design. */
+  const notched = new Set(['B', 'eight', 'Q', 'lslash', 'Lslash', 'oslash', 'Oslash', 'litre', 've-cy', 've-cy.loclBGR', 'ringhalfleftmod', 'ringhalfrightmod', 'b.sc', 'q.sc', 'two', 'two.tf', 'two.osf', 'two.tosf', 'two.sc', 'tdiagonalstroke', 'lslash.sc']);
 
   it('keep every letter, figure and currency counter at least 1.4 units open (superiors, ordinals and modifier letters in proportion), Black included', () => {
     const tight: string[] = [];

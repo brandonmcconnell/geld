@@ -21,6 +21,7 @@ import {
   withPen,
 } from './draw';
 import type { Stroke } from './geometry';
+import { CUT_OUTER } from './grid';
 
 
 function questionStrokes(g: DrawContext): Stroke[] {
@@ -40,8 +41,8 @@ const quote = (g: DrawContext, turned: boolean, x: number): Stroke[] => {
 
 /** { as one stroke: hooks at the ends, and a 45° point at the middle reaching left. */
 function brace(g: DrawContext): Stroke[] {
-  const w = g.wide(4.5);
   const x = 1.75 + g.v / 2;
+  const w = x + Math.max(g.wide(4.5) - x, CUT_OUTER + g.v / 2 + 1);
   const top = g.top(15.5);
   const bottom = g.bottom(-3.5);
   return [open(p(w, top), p(x, top, true), p(x, 6 + x), p(0, 6), p(x, 6 - x), p(x, bottom, true), p(w, bottom))];
@@ -70,8 +71,8 @@ export const SYMBOLS: GlyphDef[] = [
       const pen = { v: g.v, h: thin };
       return [
         open(p(w + x, g.y(10)), p(w + x, t, true), p(x, t, true), p(x, b, true), p(w + x, b, true), p(w + x, g.y(4))),
-        withPen(bar(-0.5, x + 5, g.cap / 2 + d), pen),
-        withPen(bar(-0.5, x + 5, g.cap / 2 - d), pen),
+        withPen(bar(x - g.v / 2 - 1.25, x + 5, g.cap / 2 + d), pen),
+        withPen(bar(x - g.v / 2 - 1.25, x + 5, g.cap / 2 - d), pen),
       ];
     },
   },
@@ -203,9 +204,9 @@ export const SYMBOLS: GlyphDef[] = [
     lsb: 1,
     rsb: 1,
     draw: (g) => {
-      const s = 2.25;
+      const s = 2.25 + Math.max(0, g.v - 2) * 0.6;
       const y = MATH_AXIS - s / 2;
-      return [withPen(open(p(0, y), p(s, y + s, true), p(2 * s, y, true), p(3 * s, y + s)), g.pen)];
+      return [withPen(open(p(0, y), p(s, y + s, true), p(2 * s, y, true), p(3 * s, y + s)), { ...g.pen, cut: Math.min(g.pen.cut ?? 2, s * 0.45) })];
     },
   },
   { name: 'quoteleft', unicode: 0x2018, lsb: 1.25, rsb: 1.25, draw: (g) => quote(g, true, 0) },

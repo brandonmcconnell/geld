@@ -132,7 +132,7 @@ export const LATIN1: GlyphDef[] = [
     rsb: 0.5,
     draw: (g) => {
       const w = g.wide(11);
-      return [bar(0, w, g.top(g.cap)), stem(w / 2, 0, g.cap), bar(w / 2 - 2.75, w / 2 + 2.75, g.cap / 2)];
+      return [bar(0, w, g.top(g.cap)), stem(w / 2, 0, g.cap), bar(w / 2 - crossbarReach(g) - 0.75, w / 2 + crossbarReach(g) + 0.75, g.cap / 2)];
     },
   },
   {

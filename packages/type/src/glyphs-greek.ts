@@ -1,5 +1,5 @@
 import type { PlacedDef } from './composites';
-import { ALL, bar, box, diagonal, dot, type DrawContext, type GlyphDef, open, p, RIGHT, stem, vee, withPen, yArms } from './draw';
+import { ALL, bar, box, diagonal, dot, type DrawContext, type GlyphDef, open, p, RIGHT, stem, vee, withPen, yArms, barIntoDiagonal, edgeAt, footFor, INSIDE } from './draw';
 import { letter } from './glyphs-core';
 import { sigma } from './glyphs-plus';
 
@@ -269,15 +269,18 @@ const LOWER_DEFS: GlyphDef[] = [
 /** ζ and ξ: a tall top bar, a diagonal, and a bottom that turns down into a descender; ξ adds a middle bar. */
 function zetaStrokes(g: DrawContext, xi: boolean) {
   const w = g.wide(7.5);
-  const top = 14;
-  const e = g.foot(w, top);
+  const top = g.y(14);
+  const e = footFor(g.diag, w, top);
   const b = g.bottom(0);
   const d = g.bottom(g.descender);
+  const start = edgeAt(g.diag, w - e, top, e, 0, g.h, -1) + INSIDE;
+  const middle = g.y(7.5);
+  const reach = edgeAt(g.diag, w - e, top, e, 0, middle + g.h / 2, -1) - 1.25;
   return [
-    bar(0, w, g.top(top)),
-    ...(xi ? [bar(1, w * 0.8, g.y(7.5))] : []),
+    barIntoDiagonal(g, 0, w, top, [e, 0])[0]!,
+    ...(xi ? [bar(reach, w * 0.8, middle)] : []),
     diagonal(g, w - e, top, e, 0),
-    open(p(0, b), p(w, b, true), p(w, d, true), p(w - 2.5, d)),
+    open(p(start, b), p(w, b, true), p(w, d, true), p(w - 2.5, d)),
   ];
 }
 

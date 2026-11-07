@@ -97,26 +97,107 @@ export const bar = (x0: number, x1: number, y: number) => open(p(x0, y), p(x1, y
 
 /** Two diagonals meeting at a level point, as in V, the bottom of W and the arms of Y. */
 export function vee(g: DrawContext, x0: number, x1: number, top: number, bottom: number): Stroke[] {
-  const mid = (x0 + x1) / 2;
-  return [diagonal(g, x0, top, mid, bottom), diagonal(g, x1, top, mid, bottom)];
+  return meeting(g, [x0, top], [x1, top], (x0 + x1) / 2, bottom);
 }
 
 /**
- * Y's arms meeting a stem: the stem runs up into the arms' overlap (not just to their level feet,
- * which would touch along a line and part in Geld Dark Sans), stopping short of the crotch.
+ * Two diagonals from `a` and `b` meeting at height y around x, each with a level end there. Where
+ * their slopes differ their feet differ too, so each is set so the outer corners are the outer
+ * arms' and the inner corners lie within the flat they share: no step where they meet.
+ */
+export function meeting(g: DrawContext, a: [number, number], b: [number, number], x: number, y: number): Stroke[] {
+  const ea = spanOf(g.diag, x - a[0], a[1] - y);
+  const eb = spanOf(g.diag, b[0] - x, b[1] - y);
+  const e = Math.max(ea, eb);
+  return [diagonal(g, a[0], a[1], x - e + ea, y), diagonal(g, b[0], b[1], x + e - eb, y)];
+}
+
+/**
+ * Y's arms meeting a stem: the arms end square at the stem's centre, their corners inside it (level
+ * feet would stick out past its sides), and the stem runs up until its corners meet their inner edges.
  */
 export function yArms(g: DrawContext, w: number, top: number, join: number, foot = 0): Stroke[] {
   const c = w / 2;
-  const e = g.foot(c, top - join);
-  const slope = c / (top - join);
-  const into = (e / slope) * 0.95;
-  return [...vee(g, 0, w, top, join), stem(c, foot, join + into)];
+  // The stem's top corners land on the arms' inner edges (just inside them), so the arms run into the stem with no step.
+  const reach = (c - g.v / 2 + INSIDE - edgeAt(g.diag, 0, top, c, join, top, 1)) / (c / (top - join));
+  return [diagonal(g, 0, top, c, join, [true, false]), diagonal(g, w, top, c, join, [true, false]), stem(c, foot, top - reach)];
 }
 
 /** Z and z: two bars and a diagonal whose level ends sit flush inside the bars' corners. */
+/** Half the horizontal span of a stroke running (dx, dy) in this pen: how far a level end reaches either side of its centre. */
+export const spanOf = (pen: { v: number; h: number }, dx: number, dy: number) => Math.hypot(pen.v * dy, pen.h * dx) / (2 * Math.abs(dy));
+
+/** The level-ended foot of a diagonal spanning `width` across `height`, so its outer corners land on 0 and `width`. */
+export function footFor(pen: { v: number; h: number }, width: number, height: number): number {
+  let e = spanOf(pen, width, height);
+  for (let i = 0; i < 6; i++) e = spanOf(pen, width - 2 * e, height);
+  return e;
+}
+
+/** How far a stroke's corner reaches into the stroke it meets, so the corner is inside it rather than exactly on its edge, where rounding leaves a sliver. */
+export const INSIDE = 0.05;
+
+/** Where a straight stroke from (x0, y0) to (x1, y1) has its left (-1) or right (1) edge at height y. */
+export function edgeAt(pen: { v: number; h: number }, x0: number, y0: number, x1: number, y1: number, y: number, side: -1 | 1): number {
+  return x0 + ((x1 - x0) * (y - y0)) / (y1 - y0) + side * spanOf(pen, x1 - x0, y1 - y0);
+}
+
+/**
+ * A top bar turning down into a diagonal at its right end (Z, 7, Ʒ, ζ): the diagonal's level top
+ * makes the corner at x = w, and the bar stops just inside the diagonal's right edge at the bar's
+ * lower edge. The diagonal runs to `end`, with a level end there unless `endCap` is false.
+ */
+export function barIntoDiagonal(g: DrawContext, x0: number, w: number, top: number, end: [number, number], endCap = true): Stroke[] {
+  let xt = w - spanOf(g.diag, w - end[0], top - end[1]);
+  for (let i = 0; i < 6; i++) xt = w - spanOf(g.diag, xt - end[0], top - end[1]);
+  const stop = edgeAt(g.diag, xt, top, end[0], end[1], top - g.h, 1) - INSIDE;
+  return [bar(x0, stop, g.top(top)), diagonal(g, xt, top, end[0], end[1], [true, endCap])];
+}
+
+/**
+ * A diagonal from `from` down onto a bar centred at y (2, Ʒ's waist, ẞ): the diagonal ends level on
+ * the bar's lower edge with its foot centred at x, and the bar runs from just inside the diagonal's
+ * left edge at its upper edge, so the foot's outer corner is the glyph's.
+ */
+export function diagonalOntoBar(g: DrawContext, from: [number, number], x: number, y: number, pen = g.diag): { diagonal: Stroke; start: number } {
+  const low = y - g.h / 2;
+  return {
+    diagonal: withPen(level(open(p(from[0], from[1]), p(x, low)), false, true), pen),
+    start: edgeAt(pen, from[0], from[1], x, low, y + g.h / 2, -1) + INSIDE,
+  };
+}
+
+/**
+ * A 45° stroke struck through a stem at x around height y (Ł ł ƛ): level ends clearing the stem by
+ * 1.25 at their nearest corner, so the stroke reads as crossing rather than as a stub.
+ */
+export function strikeThrough(g: DrawContext, x: number, y: number): Stroke {
+  const reach = strikeReach(g);
+  return diagonal(g, x - reach, y - reach, x + reach, y + reach);
+}
+
+/** How far a strikeThrough's ends reach from its centre, across and up. */
+export const strikeReach = (g: DrawContext) => g.v / 2 + 1.25 + spanOf(g.diag, 1, 1);
+
+/** Where the line through a and b crosses the line through c and d. */
+export function crossing(a: [number, number], b: [number, number], c: [number, number], d: [number, number]): [number, number] {
+  const [rx, ry] = [b[0] - a[0], b[1] - a[1]];
+  const [sx, sy] = [d[0] - c[0], d[1] - c[1]];
+  const t = ((c[0] - a[0]) * sy - (c[1] - a[1]) * sx) / (rx * sy - ry * sx);
+  return [a[0] + t * rx, a[1] + t * ry];
+}
+
+/**
+ * Z's shape: bars that run into a diagonal end where the diagonal's edge crosses the bar's far
+ * edge, so the bar's corner lies on that edge and the diagonal's level end makes the glyph's
+ * corner. A bar run under the whole diagonal leaves a shelf where the two miss each other.
+ */
 export function zed(g: DrawContext, w: number, height: number): Stroke[] {
-  const e = g.foot(w, height);
-  return [bar(0, w, g.top(height)), bar(0, w, g.bottom(0)), diagonal(g, w - e, height, e, 0)];
+  const e = footFor(g.diag, w, height);
+  const [x0, x1] = [w - e, e];
+  const topEnd = edgeAt(g.diag, x0, height, x1, 0, height - g.h, 1) - INSIDE;
+  const bottomStart = edgeAt(g.diag, x0, height, x1, 0, g.h, -1) + INSIDE;
+  return [bar(0, topEnd, g.top(height)), bar(bottomStart, w, g.bottom(0)), diagonal(g, x0, height, x1, 0)];
 }
 
 /** M's and N's diagonals start flush with the stem's outer edge. */

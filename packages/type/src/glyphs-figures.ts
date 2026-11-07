@@ -149,7 +149,7 @@ export const TABULAR_SIGNS: Record<string, number> = {
   rupeeindian: 1,
   ruble: 0.97,
   lira: 1,
-  hryvnia: 0.97,
+  hryvnia: 0.85,
   naira: 0.9,
   peso: 0.97,
   dong: 1,
@@ -163,7 +163,7 @@ export const TABULAR_SIGNS: Record<string, number> = {
   guarani: 1,
   kip: 1,
   tugrik: 1,
-  won: 0.7,
+  won: 0.6,
   baht: 1,
   percent: 0.9,
 };
