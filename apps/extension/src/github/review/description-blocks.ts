@@ -103,6 +103,15 @@ const TOOL_SPECS: readonly ToolSpec[] = [
     starts: (block) => linksTo(/^https:\/\/(?:claude\.com\/claude-code|claude\.ai\/code)\b/)(block) && /^(?:🤖 )?Generated with Claude Code$/.test(textOf(block)),
   },
   { id: 'devin', name: 'Devin', bot: 'devin', starts: (block) => linksTo(/^https:\/\/app\.devin\.ai\/sessions\//)(block) && /^Link to Devin (?:session|run)\b/i.test(textOf(block)) },
+  // Replicas' centred footer, "Created by <name> (<email>) with Replicas" over its Workspace badge (and a Slack
+  // Thread or Linear badge when it was asked there), then its co-author line (mintlify/mint#14542).
+  {
+    id: 'replicas',
+    name: 'Replicas',
+    bot: 'replicas',
+    starts: (block) => linksTo(/^https:\/\/(?:www\.)?replicas\.dev\/?$/)(block) && /^Created by .+ with Replicas$/.test(textOf(block)),
+    trails: (block) => /^Co-Authored-By:\s*(?:Replicas\b|replicas-(?:connector|dev)\[bot\])/i.test(textOf(block)),
+  },
 ];
 
 /**
