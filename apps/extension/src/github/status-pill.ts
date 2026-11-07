@@ -9,7 +9,7 @@ import { ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_P
  * GitHub's label is React's (or the classic page's) and is never touched
  * beyond being hidden: a button of Geld's, dressed in the label's own
  * classes and `data-status`/`data-size` (Primer's StateLabel keys its look on
- * them), stands right after it, its caret in its glyph's place while hovered.
+ * them), stands right after it, its caret after its words.
  * Both the header's pill and the sticky header's are swapped.
  */
 
@@ -226,12 +226,9 @@ function dress(pill: HTMLButtonElement, label: Element): void {
   }
   const glyph = label.querySelector('svg');
   pill.replaceChildren(
-    // The caret takes the status glyph's place while the pill is hovered, focused or open, so the pill never widens.
-    createElement('span', { class: 'geld-status-pill__lead' }, [
-      ...(glyph === null ? [] : [glyph.cloneNode(true)]),
-      createElement('span', { class: 'geld-status-pill__caret', 'aria-hidden': 'true' }, [svgFromString(ICON_TRIANGLE_DOWN)]),
-    ]),
+    createElement('span', { class: 'geld-status-pill__lead' }, glyph === null ? [] : [glyph.cloneNode(true)]),
     createElement('span', { class: 'geld-status-pill__label' }, [(label.textContent ?? '').trim()]),
+    createElement('span', { class: 'geld-status-pill__caret', 'aria-hidden': 'true' }, [svgFromString(ICON_TRIANGLE_DOWN)]),
     // The 1-click merge's face, laid over the pill while the instant key is held, so the pill keeps its width.
     createElement('span', { class: 'geld-status-pill__merge', 'aria-hidden': 'true' }, [svgFromString(ICON_GIT_MERGE), 'Merge']),
   );

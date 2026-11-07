@@ -1690,10 +1690,6 @@ button.geld-status-pill[data-geld-instant-merge]:hover {
   filter: none;
 }
 
-button.geld-status-pill[aria-haspopup]:is(:hover, [aria-expanded='true']) {
-  filter: brightness(0.92);
-}
-
 /* Merged (`showMergedPills`): no menu, so GitHub's plain label, no pointer, no hover, no caret, until the reload. */
 button.geld-status-pill:not([aria-haspopup]) {
   cursor: default;
@@ -1704,9 +1700,12 @@ button.geld-status-pill[aria-busy='true'] {
   opacity: 0.7;
 }
 
-/* The status glyph, with the caret laid over it: shown in its place while the pill is hovered, focused or open. */
+/*
+ * The status glyph, the words, then the caret, as GitHub draws its own status menu's label on the Overview (Nov 2026):
+ * the caret 4px after the words and 4px into the pill's padding (`ml-1 mr-n1`), in the label's colour, whatever the pill's
+ * state. GitHub's label does not change under the pointer, so neither does the pill.
+ */
 .geld-status-pill__lead {
-  position: relative;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -1718,11 +1717,10 @@ button.geld-status-pill[aria-busy='true'] {
 }
 
 .geld-status-pill__caret {
-  position: absolute;
-  inset: 0;
-  display: none;
+  display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  justify-content: center;
+  margin: 0 -4px 0 4px;
 }
 
 .geld-status-pill__caret > svg {
@@ -1732,19 +1730,38 @@ button.geld-status-pill[aria-busy='true'] {
   fill: currentColor;
 }
 
-button.geld-status-pill[aria-haspopup]:is(:hover, :focus-visible, [aria-expanded='true']) .geld-status-pill__lead > svg {
-  visibility: hidden;
+/* A merged pill is GitHub's plain label until the reload: nothing to open, no caret. */
+button.geld-status-pill:not([aria-haspopup]) .geld-status-pill__caret {
+  display: none;
 }
 
-button.geld-status-pill[aria-haspopup]:is(:hover, :focus-visible, [aria-expanded='true']) .geld-status-pill__caret {
-  display: inline-flex;
-}
-
-/* GitHub's action menu: one line per action, its glyph in the status's colour, which accessible themes redefine. */
+/*
+ * GitHub's action menu, as its own status menu on the Overview draws it (Primer's ActionList in an AnchoredOverlay):
+ * the overlay's floating shadow with no border of its own, 8px around the items, each 32px tall with 6px corners, its
+ * glyph 16px and its words 14px. An action's words take its glyph's colour, as Primer's danger items do: Close in the
+ * danger colours, the others in their status's own (open, done, attention), Convert to draft in the default text with
+ * its glyph in draft's, as GitHub's own item. Each hovers to its colour's muted surface, the neutral one for draft.
+ */
 .geld-quick-review__status-menu {
   gap: 0;
   min-width: 192px;
   padding: 8px;
+  border: 0;
+  box-shadow: var(--shadow-floating-small, 0 0 0 1px #d1d9e080, 0 6px 12px -3px #25292e0a, 0 6px 18px 0 #25292e1f);
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-item:hover {
+  background: var(--control-transparent-bgColor-hover, #818b981a);
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-item:active {
+  background: var(--control-transparent-bgColor-active, #818b9826);
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-item:focus-visible {
+  background: transparent;
+  outline: 2px solid var(--focus-outlineColor, #0969da);
+  outline-offset: 0;
 }
 
 .geld-quick-review__status-menu .geld-quick-review__menu-item {
@@ -1769,10 +1786,9 @@ button.geld-status-pill[aria-haspopup]:is(:hover, :focus-visible, [aria-expanded
   padding-top: 0;
 }
 
-/* A step up from the comment-kind menu's 16px glyph and 14px words: the statuses are the menu, read at a glance. */
 .geld-quick-review__status-menu .geld-quick-review__menu-visual > svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 /*
@@ -1811,30 +1827,51 @@ button.geld-status-pill[aria-haspopup]:is(:hover, :focus-visible, [aria-expanded
 }
 
 .geld-quick-review__status-menu .geld-quick-review__menu-label {
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 22px;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
   white-space: nowrap;
-}
-
-.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='open'] .geld-quick-review__menu-visual {
-  color: var(--fgColor-open, #1a7f37);
 }
 
 .geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='draft'] .geld-quick-review__menu-visual {
   color: var(--fgColor-draft, var(--fgColor-muted, #59636e));
 }
 
-.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='queued'] .geld-quick-review__menu-visual {
-  color: var(--fgColor-attention, #9a6700);
+.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='open'] {
+  --geld-status-fg: var(--fgColor-open, #1a7f37);
+  --geld-status-hover: var(--bgColor-open-muted, #dafbe1);
 }
 
-.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='merged'] .geld-quick-review__menu-visual {
-  color: var(--fgColor-done, #8250df);
+.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='queued'] {
+  --geld-status-fg: var(--fgColor-attention, #9a6700);
+  --geld-status-hover: var(--bgColor-attention-muted, #fff8c5);
 }
 
-.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='closed'] .geld-quick-review__menu-visual {
-  color: var(--fgColor-closed, #d1242f);
+.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='merged'] {
+  --geld-status-fg: var(--fgColor-done, #8250df);
+  --geld-status-hover: var(--bgColor-done-muted, #fbefff);
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='closed'] {
+  --geld-status-fg: var(--control-danger-fgColor-rest, #d1242f);
+  --geld-status-hover: var(--control-danger-bgColor-hover, #ffebe9);
+  --geld-status-active: var(--control-danger-bgColor-active, #ffebe966);
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status]:not([data-status='draft']) :is(.geld-quick-review__menu-visual, .geld-quick-review__menu-label) {
+  color: var(--geld-status-fg);
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status]:not([data-status='draft']):hover {
+  background: var(--geld-status-hover);
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='closed']:hover :is(.geld-quick-review__menu-visual, .geld-quick-review__menu-label) {
+  color: var(--control-danger-fgColor-hover, #d1242f);
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status]:not([data-status='draft']):active {
+  background: var(--geld-status-active, var(--geld-status-hover));
 }
 
 /*
