@@ -80,6 +80,8 @@ export type StackScope = 'this' | 'below' | 'stack';
 export interface StackChoice {
   readonly scope: StackScope;
   readonly label: string;
+  /** How many it changes, drawn as a counter after the label: "4", or "2 of 4" where the rest are already there. */
+  readonly count: string | null;
   /** Top first: every pull request the choice changes. */
   readonly targets: readonly StackMember[];
   /** How many pull requests the scope holds: more than `targets` where some are already where the choice leads. */
@@ -154,11 +156,12 @@ export function stackGroups(stack: Stack, method: MergeBox['methods'][number]): 
     ...(at > 0 && below.length > 1 ? [{ scope: 'below' as const, targets: below }] : []),
     { scope: 'stack', targets: members },
   ];
-  const label = (scope: StackScope, moving: number): string => {
-    if (scope === 'this') return 'This pull request';
+  const label = (scope: StackScope): string => (scope === 'this' ? 'This pull request' : scope === 'below' ? `This and ${below.length - 1} below` : 'Entire stack');
+  const count = (scope: StackScope, moving: number): string | null => {
+    if (scope === 'this') return null;
     const size = scope === 'below' ? below.length : members.length;
-    if (scope === 'below') return moving < size ? `This and ${below.length - 1} below (${moving} of ${size})` : `This and ${below.length - 1} below`;
-    return `Entire stack (${moving < size ? `${moving} of ${size}` : size})`;
+    if (moving < size) return `${moving} of ${size}`;
+    return scope === 'stack' ? String(size) : null;
   };
   const merging: StackAction = boxes.get(current.number)?.canQueue === true ? 'queue' : 'merge';
   const actions: readonly StackAction[] = ['ready', 'reopen', merging, 'draft', 'close'];
@@ -166,7 +169,8 @@ export function stackGroups(stack: Stack, method: MergeBox['methods'][number]): 
   const groups = actions.flatMap((action): StackGroup[] => {
     const seen = new Set<string>();
     const choices = scopes
-      // GitHub merges a stacked pull request with every one below it: alone only at the foot.
+      // GitHub merges a stacked pull request with every one below it, and refuses a direct merge above the foot
+      // ("This pull request is out of date", geld#478 in Nov 2026): alone only at the foot.
       .filter(({ scope }) => !((action === 'merge' || action === 'queue') && scope === 'this' && below.length > 1))
       .flatMap(({ scope, targets: all }): StackChoice[] => {
         const targets = movers(action, all);
@@ -174,7 +178,7 @@ export function stackGroups(stack: Stack, method: MergeBox['methods'][number]): 
         const key = targets?.map((member) => member.number).join(',') ?? '';
         if (targets === null || seen.has(key)) return [];
         seen.add(key);
-        return [{ scope, label: label(scope, targets.length), targets, of: all.length, via: targets[0] ?? current }];
+        return [{ scope, label: label(scope), count: count(scope, targets.length), targets, of: all.length, via: targets[0] ?? current }];
       });
     return choices.length === 0 ? [] : [{ status: STACK_STATUS[action], action, note: notes[action], choices }];
   });

@@ -8,7 +8,7 @@ import type { HeaderStatGroup } from './header-stats';
 import { countsSkeletonStandIn, countsWrapperBusy, isCountsStandIn } from './header-stats';
 import { detectHeadSha } from './head-sha';
 import type { MergeActions, MergeBox, MergeMethod, StatusAction } from './merge-actions';
-import { actionErrorText, autoMergeRequest, closeRequest, draftRequest, fetchMergeBox, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, readMergeActions, queueRequest, readyRequest, reopenRequest, stackQueueRequest, viewerVerdict } from './merge-actions';
+import { actionErrorText, autoMergeRequest, closeRequest, draftRequest, fetchMergeBox, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, methodHint, readMergeActions, queueRequest, readyRequest, rememberMethod, reopenRequest, stackQueueRequest, viewerVerdict } from './merge-actions';
 import type { PageInfo } from './page';
 import { pullRequestStateWords } from './page';
 import type { PendingComment } from './pending-review';
@@ -339,6 +339,8 @@ interface Mounted {
   mergeLoading: boolean;
   /** Each read of the merge box takes the next number: an answer from a read a newer one replaced is dropped, whatever order they land in. */
   mergeRead: number;
+  /** Failed reads in a row for this pull request: the next waits `MERGE_RETRY_MS` doubled per failure, up to `MERGE_RETRIES`. */
+  mergeRetries: number;
   /** The header's state label when the merge box was last read for it: a draft converted or marked ready, a merge or close in place, changes it. */
   stateWords: string | null;
   mergeTimer: number;
@@ -409,8 +411,10 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
     hideSnapshot(mounted);
     mounted.pullPath = pullPath;
     mounted.tally.href = `${pullPath}${REVIEWS_HASH}`;
-    // The last pull request's merge, close and standing verdict are not this one's: none until its merge box is read.
-    mounted.mergeActions = null;
+    // The last pull request's merge, close and standing verdict are not this one's: none until its merge box is read,
+    // or its own reading from a visit moments ago, which the read under way then replaces.
+    mounted.mergeActions = recentActions(pullPath);
+    mounted.mergeRetries = 0;
     mounted.stateWords = null;
     showStatus(mounted);
     showVerdict(mounted, null);
@@ -657,6 +661,7 @@ function createControls(pullPath: string, context: QuickReviewContext): Mounted 
     mergeFor: null,
     mergeLoading: false,
     mergeRead: 0,
+    mergeRetries: 0,
     stateWords: null,
     mergeTimer: 0,
     isAuthor: null,
@@ -794,6 +799,10 @@ function showAuthor(state: Mounted): void {
 }
 
 const MERGE_REFRESH_MS = 60_000;
+const MERGE_RETRY_MS = 1500;
+const MERGE_RETRIES = 3;
+/** How old a reading may be and still stand in for a pull request the reader comes back to, while it is read again. */
+const RECENT_ACTIONS_MS = 2 * 60_000;
 /** On ✓ or ✗ while it is the reader's standing verdict: drawn pressed in, still a button that leaves a new review. */
 const ATTR_CURRENT = 'data-current';
 
@@ -892,17 +901,38 @@ async function loadMergeActions(state: Mounted): Promise<MergeActions | null> {
     showReviewers();
   });
   state.mergeLoading = true;
-  const actions = await readMergeActions(pullPath);
+  const repo = repoOf(pullPath);
+  const actions = await readMergeActions(pullPath, repo === null ? 'SQUASH' : methodHint(repo));
   if (!current()) return null;
-  state.mergeLoading = false;
-  if (actions !== null) state.mergeActions = actions;
+  // GitHub answers 503 in waves: a failed read is tried again in seconds, the menu still loading meanwhile, rather than
+  // after the minute's refresh with "could not be read" in between.
+  const retrying = actions === null && state.mergeRetries < MERGE_RETRIES;
+  state.mergeRetries = actions === null ? state.mergeRetries + 1 : 0;
+  state.mergeLoading = retrying;
+  if (actions !== null) {
+    state.mergeActions = actions;
+    readActions.set(pullPath, { actions, at: Date.now() });
+    const method = actions.box.methods[0] ?? actions.box.bypassMethods[0];
+    if (repo !== null && method !== undefined) rememberMethod(repo, method);
+  }
   showStatus(state);
   refreshPlaceholderMenu(state);
   showReviewers();
-  state.mergeTimer = window.setTimeout(() => {
-    if (mounted === state && !document.hidden) void loadMergeActions(state);
-  }, MERGE_REFRESH_MS);
+  state.mergeTimer = window.setTimeout(
+    () => {
+      if (mounted === state && !document.hidden) void loadMergeActions(state);
+    },
+    retrying ? MERGE_RETRY_MS * 2 ** (state.mergeRetries - 1) : MERGE_REFRESH_MS,
+  );
   return actions;
+}
+
+/** The last reading of each pull request's merge box this page made, so coming back to one shows its menu at once. */
+const readActions = new Map<string, { readonly actions: MergeActions; readonly at: number }>();
+
+function recentActions(pullPath: string): MergeActions | null {
+  const read = readActions.get(pullPath);
+  return read !== undefined && Date.now() - read.at < RECENT_ACTIONS_MS ? read.actions : null;
 }
 
 const TALLY_PARTS: ReadonlyArray<{ readonly key: keyof ReviewTally; readonly icon: string; readonly tone: string }> = [
@@ -1327,9 +1357,14 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
   const openSubmenu = (item: HTMLButtonElement, group: StackGroup, focusFirst: boolean): void => {
     if (submenuFor !== item) {
       closeSubmenu(false);
-      const sub = createElement('div', { class: 'geld-quick-review__menu geld-quick-review__status-menu geld-quick-review__status-submenu', role: 'menu', 'aria-label': group.note });
+      const sub = createElement('div', { class: 'geld-quick-review__menu geld-quick-review__status-menu geld-quick-review__status-submenu', role: 'menu', 'aria-label': group.note, 'data-status': group.status });
       for (const choice of group.choices) {
-        const button = createElement('button', { type: 'button', class: 'geld-quick-review__menu-item', role: 'menuitem', 'data-scope': choice.scope }, [createElement('span', { class: 'geld-quick-review__menu-label' }, [choice.label])]);
+        const counter = choice.count === null ? [] : [createElement('span', { class: 'geld-quick-review__menu-counter', 'aria-hidden': 'true', ...(choice.count.length > 1 ? { 'data-wide': '' } : {}) }, [choice.count])];
+        const button = createElement(
+          'button',
+          { type: 'button', class: 'geld-quick-review__menu-item', role: 'menuitem', 'data-scope': choice.scope, ...(choice.count === null ? {} : { 'aria-label': `${choice.label}, ${choice.count} pull requests` }) },
+          [createElement('span', { class: 'geld-quick-review__menu-label' }, [choice.label]), ...counter],
+        );
         button.addEventListener('click', () => {
           closeStatusMenu(state);
           chooseStackChoice(state, group, choice);
