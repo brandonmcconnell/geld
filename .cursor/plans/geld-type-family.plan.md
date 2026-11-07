@@ -203,6 +203,7 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [x] Kerning per weight, in roman and in italic, shared by Geld Dark Sans, with one set of classes per style and every exception stated at every weight (`alignKerning`), so the variable fonts interpolate it cleanly. `verify.py` shapes sample pairs in every compiled font at every weight against the source.
 - [x] Tabular figures get no kerning, by construction (tested, and checked in the compiled fonts). Mono will not have any.
 - [x] Collision checks: no kerned pair comes closer than 0.9 units, or 0.4 where a mark is one of the two, checked member by member at Thin, Regular and Black in roman and italic (`kerning.test.ts`).
+- [x] Pairs whose ink would meet unkerned are opened (fï, Hï at Black, Vietnamese stacks): any letter pair where either glyph reaches past its side is measured, and opened until its ink clears, or clears by 0.4 where a mark is involved. Accented letters that hang past a side (ï, ť) get classes of their own on that side, so these are class pairs, not thousands of exceptions. Small caps and lowercase never meet (smcp turns them all), so they are not paired. Kerning never opens a pair just because the spacing set it close (A.).
 - [x] Seams and slivers: no two contours touch along a line (a hairline once anti-aliased) and no parallel edges face across a gap under 0.35 units, in any glyph, family, style or weight (`seams.ts`, tested).
 - [x] Joins: each glyph's strokes merged as a renderer fills them (`scripts/joins.py`, skia-pathops) and the outline searched for what a clean join never leaves: a short step or shelf where two strokes miss (a short edge between a convex and a concave corner, a 45° cut excepted), a sliver edge, or an ink spike under 32°, in roman and italic at every weight (`pnpm --filter @geld/type joins`, in the Type workflow). The faults still open are listed in `scripts/joins-baseline.txt`; a new one fails. `scripts/sheet.ts` draws glyphs large from the source, `joins-sheet.py` and `joins-zoom.py` circle and magnify what the check finds.
 - [ ] Clear `joins-baseline.txt`: mostly hairline edges under 0.3 units at Black and in mark joins, plus ≈ and & at heavy weights.
@@ -213,7 +214,7 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 
 ### 5.1 Text ligatures
 - [ ] Decide per pair whether the octagonal shapes collide at all: f with i, f with l, f with f, f with t, ffi, ffl, f with j, f with b, f with h, f with k, and t with t.
-- [ ] Draw ligature glyphs only for the pairs that collide (`liga`), with caret positions in `GDEF` so the cursor can go between the letters.
+- [x] Draw ligature glyphs only for the pairs that collide (`liga`), with caret positions in `GDEF` so the cursor can go between the letters: ff, ft and tt, whose crossbars came within 0.8 units (0.48 for tt at Black), drawn as the two letters with one bar. fi fl fj fb fh fk stay apart (no collision; fï is opened by kerning). smcp runs first, so small caps never ligate. `verify.py` checks the substitution, the width and the caret in every compiled font.
 - [ ] Discretionary ligatures (`dlig`): ct, st, sp and "Geld" to the wordmark lockup.
 
 ### 5.2 Ligature mechanics (D12)
