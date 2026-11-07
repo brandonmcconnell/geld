@@ -197,6 +197,29 @@ function figureFeatures(names: Set<string>): string[] {
   ];
 }
 
+/**
+ * Small caps: `smcp` takes lowercase letters to their small capitals, `c2sc` takes capitals (by
+ * Unicode's case mapping), figures and & ! ¡. Turkish and Azeri i is the dotted small capital.
+ */
+function smallCapFeatures(master: Master, names: Set<string>): string[] {
+  const byUnicode = new Map(master.glyphs.flatMap((g) => (g.unicode === undefined ? [] : [[g.unicode, g.name] as const])));
+  const lower: string[] = [];
+  const upper: string[] = [];
+  for (const g of master.glyphs) {
+    if (g.unicode === undefined || g.mark) continue;
+    const c = String.fromCodePoint(g.unicode);
+    if (/\p{Ll}/u.test(c) && names.has(`${g.name}.sc`)) lower.push(`  sub ${g.name} by ${g.name}.sc;`);
+    if (!/\p{Lu}/u.test(c)) continue;
+    const lc = [...c.toLowerCase()];
+    const target = lc.length === 1 ? byUnicode.get(lc[0]!.codePointAt(0)!) : g.name === 'Idotaccent' ? 'idotaccent' : undefined;
+    if (target && names.has(`${target}.sc`)) upper.push(`  sub ${g.name} by ${target}.sc;`);
+  }
+  const others = [...FIGURE_NAMES, 'ampersand', 'exclam', 'exclamdown'].filter((n) => names.has(`${n}.sc`)).map((n) => `  sub ${n} by ${n}.sc;`);
+  const turkish = names.has('idotaccent.sc') ? ['  script latn;', ...['TRK', 'AZE'].flatMap((lang) => [`  language ${lang};`, '    sub i.sc by idotaccent.sc;'])] : [];
+  if (!lower.length) return [];
+  return ['feature smcp {', ...lower, ...turkish, '} smcp;', '', 'feature c2sc {', ...upper, ...others, '} c2sc;', ''];
+}
+
 export function features(master: Master): string {
   const names = new Set(master.glyphs.map((g) => g.name));
   const marks = master.glyphs.filter((g) => g.mark && !g.name.endsWith('.case') && names.has(`${g.name}.case`)).map((g) => g.name);
@@ -207,6 +230,8 @@ export function features(master: Master): string {
   return [
     'languagesystem DFLT dflt;',
     'languagesystem latn dflt;',
+    'languagesystem latn TRK;',
+    'languagesystem latn AZE;',
     'languagesystem cyrl dflt;',
     ...LOCL_LANGUAGES.map((lang) => `languagesystem cyrl ${lang};`),
     'languagesystem grek dflt;',
@@ -237,6 +262,7 @@ export function features(master: Master): string {
     '} locl;',
     '',
     ...figureFeatures(names),
+    ...smallCapFeatures(master, names),
   ].join('\n');
 }
 

@@ -27,8 +27,8 @@ function questionStrokes(g: DrawContext): Stroke[] {
   const w = g.wide(7.5);
   const t = g.top(g.cap);
   const x = w / 2;
-  const arm = Math.min(8.5, g.cap - g.h * 1.5 - g.aperture);
-  return [open(p(0, 10.5), p(0, t, true), p(w, t, true), p(w, arm, true), p(x, arm, true), p(x, g.dot + 1.5)), dot(g, x, 0)];
+  const arm = Math.min(g.y(8.5), g.cap - g.h * 1.5 - g.aperture);
+  return [open(p(0, g.y(10.5)), p(0, t, true), p(w, t, true), p(w, arm, true), p(x, arm, true), p(x, g.dot + 1.5)), dot(g, x, 0)];
 }
 
 /** ’ is a comma hung from the cap height; ‘ is the same comma turned about its own centre. */
@@ -121,12 +121,12 @@ export const SYMBOLS: GlyphDef[] = [
     draw: (g) => {
       const w = g.wide(10);
       const b = g.bottom(0);
-      const mid = 8;
+      const mid = g.y(8);
       return [
         box(0.75, w * 0.6, mid, g.top(g.cap), ALL),
         open(p(w * 0.6, mid), p(0, mid, true), p(0, b, true), p(w * 0.75, b)),
         diagonal(g, 0.75 + w * 0.2, mid, w + g.v / 2 - g.foot(w, mid), 0, [false, true]),
-        bar(w * 0.55, w + 0.5, Math.min(5.5, mid - g.h - 1.6)),
+        bar(w * 0.55, w + 0.5, Math.min(g.y(5.5), mid - g.h - 1.6)),
       ];
     },
   },

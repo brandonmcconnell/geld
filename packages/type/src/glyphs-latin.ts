@@ -66,8 +66,9 @@ const UPPER: GlyphDef[] = [
     rsb: 0.5,
     draw: (g) => {
       const w = g.wide(9);
-      const y = (g.cap + g.cap / 2 + g.h / 2) / 2;
-      return [stem(0, 0, g.cap), stem(w, 0, g.cap), bar(0, w, g.cap / 2), withPen(bar(-g.v / 2 - 1, w + g.v / 2 + 1, y), { v: g.v, h: g.h * 0.85 })];
+      const thin = g.h * 0.85;
+      const y = Math.min(Math.max((g.cap + g.cap / 2 + g.h / 2) / 2, g.cap / 2 + g.h / 2 + 1.6 + thin / 2), g.cap - thin / 2);
+      return [stem(0, 0, g.cap), stem(w, 0, g.cap), bar(0, w, g.cap / 2), withPen(bar(-g.v / 2 - 1, w + g.v / 2 + 1, y), { v: g.v, h: thin })];
     },
   },
   {
@@ -199,7 +200,7 @@ const UPPER: GlyphDef[] = [
       const w2 = g.wide(10);
       const t = g.top(g.cap);
       const b = g.bottom(0);
-      const m = 7.5;
+      const m = g.y(7.5);
       return [open(p(0, 0), p(0, t, true), p(w, t, true), p(w, g.y(11)), p(w * 0.4, m)), open(p(w * 0.4, m), p(w2, m, true), p(w2, b, true), p(w * 0.45, b))];
     },
   },
