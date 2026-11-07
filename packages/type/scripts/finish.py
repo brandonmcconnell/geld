@@ -7,9 +7,22 @@ its variations PostScript name prefix.
 
 import sys
 
-from fontTools.ttLib import TTFont
+from fontTools.ttLib import TTFont, newTable
+from fontTools.ttLib.tables import ttProgram
 
 OVERLAP_SIMPLE = 0x40
+
+
+def smart_dropout(font: TTFont) -> None:
+    """An unhinted font still asks rasterizers for smart dropout control and smooths at every size, as gftools does,
+    so thin strokes keep their pixels at small sizes on Windows."""
+    prep = newTable("prep")
+    prep.program = ttProgram.Program()
+    prep.program.fromAssembly(["PUSHW[]", "511", "SCANCTRL[]", "PUSHB[]", "4", "SCANTYPE[]"])
+    font["prep"] = prep
+    gasp = newTable("gasp")
+    gasp.gaspRange = {0xFFFF: 0x000F}
+    font["gasp"] = gasp
 
 
 def finish(path: str) -> None:
@@ -24,6 +37,7 @@ def finish(path: str) -> None:
     italic = bool(font["OS/2"].fsSelection & 1)
     prefix = family.replace(" ", "") + ("Italic" if italic else "")
     font["name"].setName(prefix, 25, 3, 1, 0x409)
+    smart_dropout(font)
     font.save(path)
 
 

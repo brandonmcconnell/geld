@@ -62,6 +62,8 @@ def check_tables(path: Path, font: TTFont) -> None:
     check(hinted == (path.parent.name == "ttf"), f"{path.name}: hinted is {hinted}")
     if hinted:
         check(bool(font["head"].flags & 1 << 3), f"{path.name}: hinted without whole-pixel ppem (head flags bit 3)")
+    elif "glyf" in font:
+        check("prep" in font and "gasp" in font, f"{path.name}: unhinted without smart dropout control")
 
 
 def check_static(path: Path, expected: dict, italic: bool) -> None:
