@@ -1,5 +1,5 @@
 import { accentedFromUnicode, ALIASES, CASE_FORMS, GREEK_TONOS, LATIN_RANGES, PLACED, type PlacedDef, SPACING_ACCENTS } from './composites';
-import { type DrawContext, drawContext, type GlyphDef, MATH_AXIS, smallCapContext } from './draw';
+import { type DrawContext, drawContext, type GlyphDef, MATH_AXIS, open, p, smallCapContext } from './draw';
 import { measuredSidebearings, type SpacingZone } from './spacing';
 import { bounds, type Contour, expandStroke, insetContour, shear, snapJoined, translate, type Vec, winding } from './geometry';
 import { GLYPHS, SPACES } from './glyphs';
@@ -199,6 +199,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
       return [name, { left, right, advance: gl.advance, top, bottom }] as const;
     }),
   );
+  const arches = ARCH_LIGATURES.map((parts) => archLigature(parts, glyphs, lower, slope, params.snap && !italic));
   for (const gl of glyphs) {
     gl.contours = finish(gl.contours, gl.name);
     gl.anchors = placeAnchors(gl.anchors);
@@ -232,6 +233,24 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     glyphs.push({ name: parts.join('_'), advance: x, contours: finish(bridges, parts.join('_')), components, anchors: placeAnchors(carets), mark: false });
   }
   glyphs.push({ name: LOCKUP.name, ...lockupGlyph(family === 'dark'), components: [], mark: false });
+
+  for (const arch of arches) {
+    if (!arch) continue;
+    const [first, second] = arch.parts;
+    const at = place({ x: arch.second, y: 0 });
+    const origin = place({ x: 0, y: 0 });
+    glyphs.push({
+      name: arch.parts.join('_'),
+      advance: arch.advance,
+      contours: finish(arch.contours, arch.parts.join('_')),
+      components: [
+        { glyph: first, dx: 0, dy: 0 },
+        { glyph: second, dx: at.x - origin.x, dy: 0 },
+      ],
+      anchors: placeAnchors([{ name: 'caret_1', x: arch.caret, y: 0 }]),
+      mark: false,
+    });
+  }
 
   const markAttach = new Map<string, Attachment>();
   /** How far right each mark's ink reaches before Geld Dark Sans's inset, which must not change an advance. */
@@ -396,6 +415,44 @@ function codeLigatureGlyphs(master: Master, place: (p: Vec) => Vec, slope: numbe
     });
   }
   return out;
+}
+
+/**
+ * The discretionary ligatures ct, st and sp (dlig): the first letter's top terminal rises as a stem and crosses, squared
+ * with the font's 45° cuts, to the second letter's stem, flush with t's top or over the x-height into p's. The second
+ * letter moves right just enough to leave an open counter under the arch, as wide as the weight needs.
+ */
+export const ARCH_LIGATURES = [['c', 't'], ['s', 't'], ['s', 'p']] as const;
+
+function archLigature(parts: readonly [string, string], glyphs: MasterGlyph[], g: DrawContext, slope: number, snap: boolean) {
+  const [a, b] = parts.map((n) => glyphs.find((x) => x.name === n));
+  if (!a || !b) return undefined;
+  const xsAt = (gl: MasterGlyph, y: number) =>
+    gl.contours.flatMap((c) => c.flatMap((p0, i) => {
+      const p1 = c[(i + 1) % c.length]!;
+      return (p0.y <= y && p1.y > y) || (p1.y <= y && p0.y > y) ? [p0.x + ((y - p0.y) / (p1.y - p0.y)) * (p1.x - p0.x)] : [];
+    }));
+  const barY = METRICS.xHeight - g.h / 2;
+  const rise = { x: Math.max(...xsAt(a, barY)) - g.v / 2, y: barY };
+  const bBox = bounds(b.contours);
+  const stemY = b.name === 't' ? bBox.maxY - 0.5 : METRICS.xHeight - g.h - 0.5;
+  const stem = Math.min(...xsAt(b, stemY));
+  const counter = Math.max(2, 1.2 * g.v);
+  const step = (n: number) => Math.floor(toFontUnits(n) + 0.5) / UNIT;
+  const shift = step(Math.max(0, rise.x + g.v / 2 + counter - (a.advance + stem)));
+  const second = step(a.advance) + shift;
+  const end = second + stem + g.v / 2;
+  const top = b.name === 't' ? bBox.maxY - g.h / 2 : METRICS.xHeight + Math.max(2.5, g.v + 1);
+  const path = b.name === 't'
+    ? open(p(rise.x, rise.y), p(rise.x, top, true), p(end, top))
+    : open(p(rise.x, rise.y), p(rise.x, top, true), p(end, top, true), p(end, METRICS.xHeight - g.h - g.v));
+  return {
+    parts,
+    second,
+    caret: step(a.advance) + shift / 2,
+    advance: second + step(b.advance),
+    contours: snap ? snapJoined(expandStroke(path, g.pen, slope), 0.5) : expandStroke(path, g.pen, slope),
+  };
 }
 
 /** A glyph's outline with its components drawn in, for tests and checks. */

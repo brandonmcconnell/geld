@@ -5,7 +5,7 @@ import { VIETNAMESE_PAIRS } from './marks';
 import type { Kerning } from './kerning';
 import { CODE_GROUPS, CODE_LIGATURES, CODE_OPERATORS, type CodeGroup, codePieceName } from './code-ligatures';
 import { LOCKUP } from './lockup';
-import { FAMILY_NAMES, type Family, type Master, type Style, TEXT_LIGATURES } from './master';
+import { ARCH_LIGATURES, FAMILY_NAMES, type Family, type Master, type Style, TEXT_LIGATURES } from './master';
 
 const VERSION = { major: 0, minor: 1 };
 
@@ -271,6 +271,9 @@ export function features(master: Master): string {
     'feature liga {',
     ...TEXT_LIGATURES.filter((parts) => names.has(parts.join('_'))).map((parts) => `  sub ${parts.join(' ')} by ${parts.join('_')};`),
     '} liga;',
+    ...(ARCH_LIGATURES.some((parts) => names.has(parts.join('_')))
+      ? ['feature dlig {', ...ARCH_LIGATURES.filter((parts) => names.has(parts.join('_'))).map((parts) => `  sub ${parts.join(' ')} by ${parts.join('_')};`), '} dlig;']
+      : []),
     ...arrowFeatures(names),
     ...codeLigatureFeatures(master, names),
     ...caseFeatures(master, names),

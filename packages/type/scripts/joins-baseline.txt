@@ -681,3 +681,12 @@ sans:roman:900 two.tosf
 sans:roman:900 ubarmod
 sans:roman:900 won
 sans:roman:900 won.tf
+sans:italic:600 s_p
+sans:italic:600 s_t
+sans:italic:700 s_p
+sans:italic:700 s_t
+sans:roman:600 s_p
+sans:roman:700 s_p
+sans:roman:700 s_t
+sans:roman:800 s_p
+sans:roman:800 s_t
