@@ -230,6 +230,8 @@ export interface ChatByline {
   readonly rerun?: ChatRerun;
   /** A bot's summary from an earlier run, a newer one on the page: "See latest" on the byline's right instead. */
   readonly latest?: ChatLatest;
+  /** Places the comment is about ("Last successful preview", "Preview", "Deployment"): links in Rerun's box on the byline's right, in order. */
+  readonly links?: readonly ChatLink[];
   /**
    * The comment was edited after it was posted (ISO of the last edit). The
    * chat shows the comment as it reads now, so this is the time on the
@@ -240,6 +242,12 @@ export interface ChatByline {
   readonly postedAt?: string;
   /** The comment's edit-history log: the clock then opens GitHub's edit history (`editedMark`). */
   readonly editLog?: string;
+}
+
+export interface ChatLink {
+  readonly label: string;
+  readonly href: string;
+  readonly title: string;
 }
 
 /** An older word of a review bot's: the control that leads to its current one. */
@@ -354,6 +362,22 @@ function viewControl(view: AgentViewLink): HTMLElement {
   const link = createElement('a', { class: 'geld-review__rerun', 'data-kind': 'view', href: view.href, target: '_blank', rel: 'noopener noreferrer', 'aria-label': title, title }, [icon(ICON_LINK_EXTERNAL), createElement('span', {}, ['View'])]);
   link.addEventListener('click', (event) => event.stopPropagation());
   return createElement('span', { class: 'geld-review__rerun-wrap' }, [link]);
+}
+
+/** A link in Rerun's box, with the external-link glyph and a new tab when it leaves GitHub, as View is. */
+function linkControl(link: ChatLink): HTMLElement {
+  const external = isExternalHref(link.href);
+  const anchor = createElement('a', { class: 'geld-review__rerun', 'data-kind': 'view', href: link.href, 'aria-label': link.title, title: link.title, ...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {}) }, [...(external ? [icon(ICON_LINK_EXTERNAL)] : []), createElement('span', {}, [link.label])]);
+  anchor.addEventListener('click', (event) => event.stopPropagation());
+  return createElement('span', { class: 'geld-review__rerun-wrap' }, [anchor]);
+}
+
+function isExternalHref(href: string): boolean {
+  try {
+    return new URL(href, location.href).origin !== location.origin;
+  } catch {
+    return false;
+  }
 }
 
 let rerunIds = 0;
@@ -507,6 +531,7 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
     }
     if (byline.rerun !== undefined) line.append(rerunControl(byline.rerun));
     else if (byline.latest !== undefined) line.append(latestControl(byline.latest));
+    else for (const link of byline.links ?? []) line.append(linkControl(link));
     chat.append(line);
   }
   const body = createElement('div', { class: 'geld-review__chat-body' });
