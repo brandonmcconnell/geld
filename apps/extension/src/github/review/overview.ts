@@ -24,7 +24,7 @@ import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
 import { crawlConversation } from './crawler';
-import type { Deployment } from './deployments';
+import type { Deployment, DeploymentEntry } from './deployments';
 import { deploymentEntries, deploymentOf, deploymentsOfPreview, environmentLabel, pinnedToBuild, previewLinks } from './deployments';
 import { threadFragmentOf } from './thread-fragment';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, sourceAnchorFromHash } from './deeplink';
@@ -658,8 +658,21 @@ function closureGroups(crawled: Crawled): { readonly groups: readonly FoldGroup[
 }
 
 /** "Last successful preview" on a preview's byline, while its latest deployment is not a success. */
-function lastSuccessLink(href: string | null): ChatLink | undefined {
-  return href === null ? undefined : { label: 'Last successful preview', href, title: 'Open the last successful preview' };
+function lastSuccessLinks(href: string | null): readonly ChatLink[] {
+  return href === null ? [] : [{ label: 'Last successful preview', href, title: 'Open the last successful preview' }];
+}
+
+/**
+ * A deployment's byline: the build's own preview (GitHub's address for it, which stays with that build, unlike the
+ * comment's branch link), then the host's page for it. A failed build's address is the host's error page, so it has none.
+ */
+function deploymentLinks(entry: DeploymentEntry): readonly ChatLink[] {
+  const name = environmentLabel(entry.latest.environment);
+  const links: ChatLink[] = [];
+  const success = entry.latest.state === 'active' || entry.latest.state === 'inactive';
+  if (success && entry.latest.url !== null) links.push({ label: 'Preview', href: entry.latest.url, title: `Open this ${name} build` });
+  if (entry.page !== null) links.push({ label: 'Deployment', href: entry.page, title: `Open the ${name} deployment` });
+  return links;
 }
 
 /** Every deployment event on the page, in timeline order. */
@@ -3732,12 +3745,12 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         // (a preview whose latest deployment is not one) or to the host's page for the deployment.
         const view = visit.openKey === PREVIEWS_KEY ? renderPreviewsList(mounted.slot, model, panelHandlers) : renderDeploymentsList(mounted.slot, model, panelHandlers);
         const anchor = view.open === null ? null : 'latest' in view.open ? view.open.comment : view.open.anchor;
-        const link = view.open === null ? undefined : 'latest' in view.open ? (view.open.page === null ? undefined : { label: 'Deployment', href: view.open.page, title: `Open the ${environmentLabel(view.open.latest.environment)} deployment` }) : lastSuccessLink(model.previewLinks(view.open).lastSuccess);
+        const links = view.open === null ? [] : 'latest' in view.open ? deploymentLinks(view.open) : lastSuccessLinks(model.previewLinks(view.open).lastSuccess);
         const comment = anchor === null ? undefined : crawledDom.comments.find((entry) => entry.comment.anchor === anchor);
         const commentNode = anchor === null ? null : (entryNodes.get(anchor) ?? timelineRootOf(anchor));
         if (view.nested !== null && anchor !== null && commentNode !== null) {
           const byline = dressByline({ login: comment?.author.login ?? '', bot: true, avatarSrc: model.avatarForAnchor(anchor), time: model.timeFor(anchor) }, anchor);
-          renderCommentChat(view.nested, commentNode, link === undefined ? byline : { ...byline, link });
+          renderCommentChat(view.nested, commentNode, links.length === 0 ? byline : { ...byline, links });
         } else if (visit.openSubKey !== null && (view.open === null || commentNode === null)) {
           // A line whose comment left the page (or that is gone itself): nothing to keep open.
           visit.openSubKey = null;

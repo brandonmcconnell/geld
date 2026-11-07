@@ -1158,7 +1158,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   A link on github.com (a run) opens in the reader's tab and anything else in a new one (`linkTargetFor`), so ⌘ or Ctrl still opens a tab the browser's way.
   Open, one line per environment laid out like a preview's: state, mark (a person's picture when no App deployed it), name, then the state in words, "by login" only when someone other than the pull request's author deployed it, and "N deployments" when there were several.
   On the right: Run (the latest's), "Last successful deployment" (muted, the run of the last success, only while the latest is not one and only when that run is known), "Open" only for a deployment with neither a run nor a host page, and the time.
-  A line the host commented on opens to that comment, with "Deployment" on its byline for the host's page;
+  A line the host commented on opens to that comment, with "Preview" then "Deployment" on its byline (`deploymentLinks`, `ChatByline.links`): Preview is that build's own address from GitHub's deployment (Vercel's comment links only the branch, which moves to every newer build), offered only for a successful build, whose address would otherwise be the host's error page, and Deployment the host's page;
   the others are static.
   Vercel's comment links only its current deployment page, so an older success has no page of its own, and its line offers none.
   "With GitHub Actions" is the mark, not words.

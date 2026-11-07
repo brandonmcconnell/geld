@@ -230,8 +230,8 @@ export interface ChatByline {
   readonly rerun?: ChatRerun;
   /** A bot's summary from an earlier run, a newer one on the page: "See latest" on the byline's right instead. */
   readonly latest?: ChatLatest;
-  /** A place the comment is about ("Last successful preview"): a link in Rerun's box on the byline's right. */
-  readonly link?: ChatLink;
+  /** Places the comment is about ("Last successful preview", "Preview", "Deployment"): links in Rerun's box on the byline's right, in order. */
+  readonly links?: readonly ChatLink[];
   /**
    * The comment was edited after it was posted (ISO of the last edit). The
    * chat shows the comment as it reads now, so this is the time on the
@@ -531,7 +531,7 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
     }
     if (byline.rerun !== undefined) line.append(rerunControl(byline.rerun));
     else if (byline.latest !== undefined) line.append(latestControl(byline.latest));
-    else if (byline.link !== undefined) line.append(linkControl(byline.link));
+    else for (const link of byline.links ?? []) line.append(linkControl(link));
     chat.append(line);
   }
   const body = createElement('div', { class: 'geld-review__chat-body' });
