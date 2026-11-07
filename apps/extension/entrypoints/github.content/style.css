@@ -8610,6 +8610,13 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   margin-left: 4px;
 }
 
+/* Under the rows' text, past the 16px mark and its 8px gap. */
+.geld-related__more {
+  padding: 2px 0 2px 24px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
 /* Flow: the changed files as cards, linked from each file to what it imports. */
 .geld-flow.Overlay {
   display: flex;

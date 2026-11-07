@@ -69,6 +69,10 @@ Read from public pull request bodies through `gh api search/issues` (up to 50 bo
 | Slack | `<ws>.slack.com/archives/<C/D/G…>/p<16 digits>[?thread_ts=…&cid=…]`, `app.slack.com/client/<T>/<C>/thread/<C>-<ts>` | Authors and agents started from Slack (Replicas, Cursor, Devin, Codex) |
 | Others | Shortcut, Asana, ClickUp, Trello, YouTrack, Notion, Figma, Google Docs, Loom, Discord, Teams, Sentry | Authors |
 
+Then run over every URL in 8,820 public pull request bodies (two pages of search results per service): 8,972 links read, the misses read by shape, and the real ones added (titles in non-Latin scripts, Cursor's `agents?id=`, Claude Code project threads, Codex `cloud/tasks`, Tembo tasks, Warp sessions and staging hosts, Cosine's pull request view, Asana task sub-paths, Discord threads, YouTrack previews and articles, Sentry sub-pages, Confluence short links, Shortcut epics, ClickUp docs, Height, Plane, `app.notion.com`, `jira.atlassian.com` and self-hosted Jira and YouTrack, Devin Enterprise, `app.graphite.com`, GitLab and Bitbucket issues and merge or pull requests).
+Dependency updates (520 of the bodies) are skipped: their links are upstream release notes.
+One real pull request per service and shape (59) was then loaded in Chrome with the built extension, and each showed its link.
+
 Not found in bodies: Factory sessions (only `sessions/new`), Sweep and Charlie session links, a Copilot session in the body.
 
 ## Second step: names and a context card

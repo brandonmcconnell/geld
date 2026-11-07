@@ -2,6 +2,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('wxt/browser', () => ({ browser: { runtime: { getURL: (path: string) => `chrome-extension://test${path}` } } }));
+const fetches = vi.hoisted((): { paths: string[]; body: string | null } => ({ paths: [], body: null }));
+vi.mock('./page-fetch', () => ({
+  pageFetch: async (path: string) => {
+    fetches.paths.push(path);
+    return new Response(fetches.body === null ? '{}' : JSON.stringify({ body: '', bodyHtml: fetches.body }), { status: fetches.body === null ? 404 : 200, headers: { 'Content-Type': 'application/json' } });
+  },
+}));
 
 import { applyRelatedLinks, assigneesSections, relatedLinksOnPage, relatedText, removeRelatedLinks } from './related-links';
 
@@ -38,7 +45,12 @@ const reactSidebar =
 afterEach(() => {
   removeRelatedLinks();
   document.body.innerHTML = '';
+  fetches.paths = [];
+  fetches.body = null;
+  history.replaceState(null, '', '/');
 });
+
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('related links in the sidebar', () => {
   it('names a link by its identifier and title, or by what following it does', () => {
@@ -130,5 +142,50 @@ describe('related links in the sidebar', () => {
     document.body.innerHTML = DESCRIPTION;
     applyRelatedLinks(true);
     expect(document.querySelector('.geld-related')).toBeNull();
+  });
+
+  it('reads the description from GitHub’s page_data/description where the page does not hold it as the conversation does', async () => {
+    history.replaceState(null, '', '/acme/web/pull/7');
+    document.body.innerHTML = overviewSidebar;
+    fetches.body = '<p>Asked in <a href="https://acme.slack.com/archives/C0BCMJ9JFA9/p1793123214352139?thread_ts=1793123214.352139">Slack</a>.</p>';
+    let changes = 0;
+    applyRelatedLinks(true, () => {
+      changes += 1;
+      applyRelatedLinks(true);
+    });
+    expect(document.querySelector('.geld-related')).toBeNull();
+    await settle();
+    await settle();
+    expect(fetches.paths).toEqual(['/acme/web/pull/7/page_data/description']);
+    expect(changes).toBe(1);
+    expect(document.querySelector('.geld-related__text')?.textContent).toBe('Open thread in Slack');
+    applyRelatedLinks(true);
+    expect(fetches.paths).toHaveLength(1);
+  });
+
+  it('reads Linear’s linkback wherever its author link stands', () => {
+    document.body.innerHTML = '<div class="comment__x"><div class="header__y"><a href="/apps/linear">linear</a></div><div class="markdown-body"><p><a href="https://linear.app/acme/issue/ENG-9">ENG-9</a></p></div></div>';
+    expect(relatedLinksOnPage().map((link) => link.key)).toEqual(['linear:acme:ENG-9']);
+  });
+
+  it('takes nothing from a dependency update, whose links are upstream release notes', () => {
+    document.body.innerHTML = '<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>This PR contains the following updates:</p><p><a href="https://gitlab.com/cznic/sqlite/-/issues/263">#263</a></p></div></div>';
+    expect(relatedLinksOnPage()).toEqual([]);
+  });
+
+  it('shows eight rows and the rest behind Show N more, which stays open across redraws', () => {
+    const tickets = Array.from({ length: 11 }, (_, index) => `<a href="https://linear.app/acme/issue/ENG-${index + 1}">ENG-${index + 1}</a>`).join(' ');
+    document.body.innerHTML = `<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>${tickets}</p></div></div>${railsSidebar()}`;
+    applyRelatedLinks(true);
+    const visible = (): number => [...document.querySelectorAll<HTMLElement>('.geld-related__link')].filter((row) => row.closest('li')?.hidden !== true).length;
+    expect(visible()).toBe(8);
+    const more = document.querySelector<HTMLButtonElement>('.geld-related__more');
+    expect(more?.textContent).toBe('Show 3 more');
+    more?.click();
+    expect(visible()).toBe(11);
+    expect(document.querySelector('.geld-related__more')).toBeNull();
+    document.querySelector('.js-comment-body p')?.append(' ', Object.assign(document.createElement('a'), { href: 'https://linear.app/acme/issue/ENG-12', textContent: 'ENG-12' }));
+    applyRelatedLinks(true);
+    expect(visible()).toBe(12);
   });
 });

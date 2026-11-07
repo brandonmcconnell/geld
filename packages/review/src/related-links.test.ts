@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { relatedLinkOf, relatedLinksFrom, slugTitle } from './related-links';
+import { isDependencyUpdate, relatedLinkOf, relatedLinksFrom, slugTitle } from './related-links';
 
 const read = (href: string, text = href) => relatedLinkOf({ href, text });
 
@@ -119,9 +119,84 @@ describe('relatedLinkOf', () => {
     expect(read('https://linear.app/developers/graphql')).toBeNull();
     expect(read('https://linear.app/acme/project/geld-related-links-0123456789ab/overview')).toMatchObject({ noun: 'project', ref: null, title: 'Geld related links', action: 'Open project in Linear' });
   });
+  it('reads the shapes a run over 8,820 public pull request bodies found in use (Nov 2026)', () => {
+    const cases: readonly [string, Partial<Record<'service' | 'noun' | 'ref' | 'title' | 'context' | 'kind', string | null>>][] = [
+      ['https://linear.app/boat-ai/issue/BOA-1029/%E7%9B%B4%E5%89%8D%E6%83%85%E5%A0%B1', { service: 'Linear', ref: 'BOA-1029', title: '直前情報' }],
+      ['https://linear.app/niritberg/document/%D7%90%D7%A4%D7%99%D7%95%D7%9F-mvp-013ae4192d48', { noun: 'document', title: 'אפיון mvp' }],
+      ['https://linear.app/relevance/issue/b9046624-7308-4774-9da7-b9db37e19a1c/', { noun: 'issue', ref: null }],
+      ['https://trello.com/c/l8lvc96F/2748-tags-de-r%C3%A9sultats', { noun: 'card', title: 'Tags de résultats' }],
+      ['https://trello.com/c/6aeb91025f3cbe18ed7c6141', { noun: 'card' }],
+      ['https://cursor.com/agents?id=bc-e5627833-b458-4658-99cb-f1b6ffe67347', { service: 'Cursor', noun: 'agent' }],
+      ['https://claude.ai/code/project/chan_017WNUkNK8kdDziPK58Pv6G9?thread=cmsg_017WNUkNK8kdDziPK58Pv6G95c3ry3k', { service: 'Claude Code', noun: 'thread' }],
+      ['https://chatgpt.com/codex/cloud/tasks/task_e_6a58fe708cfc832fbcfbbf085d2d1790', { service: 'Codex', noun: 'task' }],
+      ['https://app.tembo.io/tasks/c93ae4bd-04c0-4777-863f-7e41bbb787c2', { service: 'Tembo', noun: 'task' }],
+      ['https://app.warp.dev/session/a9c1bede-c7e2-4c65-8c04-ca485f120714', { service: 'Warp', noun: 'session' }],
+      ['https://staging.warp.dev/conversation/a13bffda-ca83-4695-929f-c2b4fa9b4210', { service: 'Warp', noun: 'conversation' }],
+      ['https://oz.staging.warp.dev/runs/019de10c-2768-7b10-8e16-6d409156a9c8', { service: 'Oz', noun: 'run' }],
+      ['https://cosine.sh/gh/zakker111/Roguelike_whit_world/pull/139', { service: 'Cosine', kind: 'review', noun: 'pull request' }],
+      ['https://nvidia.devinenterprise.com/review/ai-dynamo/dynamo/pull/10004', { service: 'Devin Review', noun: 'findings' }],
+      ['https://app.graphite.com/github/pr/KingInYellows/yellow-plugins/1706', { service: 'Graphite', noun: 'pull request' }],
+      ['https://app.asana.com/1/137249556945/task/1218095597330026/comment/1219956877357222?focus=true', { service: 'Asana', noun: 'task' }],
+      ['https://app.asana.com/1/29923630752984/home/task/1215936908693667', { service: 'Asana', noun: 'task' }],
+      ['https://discord.com/channels/1300358874280230994/1503706103752429618/threads/1566848506369548388', { service: 'Discord', noun: 'thread' }],
+      ['https://etu-apu-9371.youtrack.cloud/issues?q=%7B35%7D&preview=SF-35', { service: 'YouTrack', ref: 'SF-35', context: 'etu-apu-9371' }],
+      ['https://diploma-aitu-2027.youtrack.cloud/agiles/204-1/current?issue=MAS-9', { service: 'YouTrack', ref: 'MAS-9' }],
+      ['https://youtrack.jetbrains.com/issue/IDEA-123456/Freeze-on-startup', { service: 'YouTrack', ref: 'IDEA-123456', title: 'Freeze on startup', context: 'youtrack.jetbrains.com' }],
+      ['https://sector12.youtrack.cloud/articles/EWS-A-25', { service: 'YouTrack', kind: 'doc', noun: 'article', ref: 'EWS-A-25' }],
+      ['https://sentry.io/travis-ci/org-listener-production/issues/587467865/', { service: 'Sentry', context: 'travis-ci' }],
+      ['https://sentry.io/organizations/a8c/issues/2455740809/tags/?project=1438088', { service: 'Sentry', context: 'a8c' }],
+      ['https://base-254.sentry.io/issues/7750428823/events/?project=4512094504026112', { service: 'Sentry', context: 'base-254' }],
+      ['https://tier4.atlassian.net/wiki/x/GwAFQwE', { service: 'Confluence', noun: 'page', context: 'tier4' }],
+      ['https://app.shortcut.com/trefry/epic/27962', { service: 'Shortcut', noun: 'epic', ref: null }],
+      ['https://app.clickup.com/9017787639/docs/8cr117q-3237', { service: 'ClickUp', kind: 'doc' }],
+      ['https://height.app/gkSnvZYAS2/T-140', { service: 'Height', ref: 'T-140' }],
+      ['https://app.plane.so/peppy/browse/FRAMEWORK-235/', { service: 'Plane', ref: 'FRAMEWORK-235', context: 'peppy' }],
+      ['https://app.notion.com/p/sentry/Investigation-Events-Workflow-Engine-40c8b10e4b5d80d18c4ed6c802d55d64?d=40e8b10e4b5d8042babd001c261d278c', { service: 'Notion', title: 'Investigation Events Workflow Engine' }],
+      ['https://jira.atlassian.com/browse/JRASERVER-73305', { service: 'Jira', ref: 'JRASERVER-73305', context: 'jira.atlassian.com' }],
+      ['https://issues.apache.org/jira/browse/KAFKA-17000', { service: 'Jira', ref: 'KAFKA-17000', context: 'issues.apache.org' }],
+      ['https://gitlab.com/cznic/sqlite/-/issues/263', { service: 'GitLab', noun: 'issue', ref: '#263', context: 'cznic/sqlite' }],
+      ['https://gitlab.com/cznic/sqlite/-/merge_requests/142', { service: 'GitLab', noun: 'merge request', ref: '!142' }],
+      ['https://gitlab.com/cznic/sqlite/-/work_items/263', { service: 'GitLab', noun: 'work item', ref: '#263' }],
+      ['https://gitlab.com/groups/gitlab-org/-/epics/123', { service: 'GitLab', noun: 'epic', ref: '&123', context: 'gitlab-org' }],
+      ['https://gitlab.studiometa.dev/team/app/-/issues/12', { service: 'GitLab', context: 'gitlab.studiometa.dev/team/app' }],
+      ['https://bitbucket.org/connect2id/nimbus-jose-jwt/issues/619', { service: 'Bitbucket', noun: 'issue', ref: '#619', context: 'connect2id/nimbus-jose-jwt' }],
+      ['https://bitbucket.org/acme/web/pull-requests/42/fix-login', { service: 'Bitbucket', noun: 'pull request', ref: '#42' }],
+    ];
+    for (const [href, expected] of cases) expect(read(href), href).toMatchObject(expected);
+    for (const href of [
+      'https://cursor.com/agents/bc-4507257a-6c22-519d-8c1e-408ad9f0bf88/artifacts?path=%2Fopt%2Fcursor%2Fartifacts%2Fa.png',
+      'https://app.greptile.com/api/retrigger?id=96257428',
+      'https://dhis2.atlassian.net/browse/ANDROAPP-<ISSUE-NUMBER>',
+      'https://app.tembo.io/agents/094a3a18-e371-4285-b2a1-53d7bd8fb9c4',
+      'https://www.cubic.dev/action/auto-fix/pr/n8n-io/n8n/42872',
+      'https://gitlab.com/cznic/sqlite/commit/4df1ebea0f1cf0cd6ec3245b26f5fec4234ce738',
+      'https://gitlab.com/cznic/sqlite/blob/master/CHANGELOG.md',
+      'https://github.com/acme/web/-/issues/1',
+      'https://bitbucket.org/b_c/jose4j/commits/756257eb92352600d5dde08c2b8ed25db13a8952',
+      'https://www.loom.com/share/VIDEO_ID',
+      'https://app.devin.ai/api/presigned_proxy?token=x',
+    ]) expect(read(href), href).toBeNull();
+  });
+});
+
+describe('isDependencyUpdate', () => {
+  it('knows Renovate’s and Dependabot’s descriptions, and nothing else', () => {
+    expect(isDependencyUpdate('This PR contains the following updates:\n| Package | Change |')).toBe(true);
+    expect(isDependencyUpdate('Bumps lodash from 4.17.20 to 4.17.21.')).toBe(true);
+    expect(isDependencyUpdate('Bumps the npm_and_yarn group with 3 updates in the / directory')).toBe(true);
+    expect(isDependencyUpdate('Fixes the nav. Bumps up the font size a little.')).toBe(false);
+  });
 });
 
 describe('relatedLinksFrom', () => {
+  it('keeps a Sentry issue over the event page of it linked first', () => {
+    const links = relatedLinksFrom([
+      { href: 'https://sentry.io/organizations/warpdotdev/issues/7259255054/events/05f4453e8d4348d3ad08bf4560a58451/', text: '' },
+      { href: 'https://sentry.io/organizations/warpdotdev/issues/7259255054/', text: '' },
+    ]);
+    expect(links.map((link) => link.href)).toEqual(['https://sentry.io/organizations/warpdotdev/issues/7259255054/']);
+  });
+
   it('keeps one link per thing, the web page over the desktop deep link, in kind order', () => {
     const links = relatedLinksFrom([
       { href: 'https://cursor.com/background-agent?bcId=bc-4507257a-6c22-519d-8c1e-408ad9f0bf88&cursor_ref=pr_footer', text: 'Open in Cursor' },

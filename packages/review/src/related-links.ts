@@ -14,7 +14,7 @@ export type RelatedKind = 'ticket' | 'conversation' | 'agent' | 'review' | 'doc'
 export const RELATED_KIND_ORDER: readonly RelatedKind[] = ['ticket', 'conversation', 'agent', 'review', 'doc', 'error'];
 
 /** A bundled mark for services with no GitHub App to borrow a picture from (`public/tracker-icons/<name>.svg`). */
-export type RelatedIcon = 'linear' | 'jira' | 'asana' | 'youtrack';
+export type RelatedIcon = 'linear' | 'jira' | 'asana' | 'youtrack' | 'gitlab' | 'bitbucket';
 
 export interface RelatedLink {
   /** Two links with one key lead to the same thing (Cursor's "Open in Web" and "Open in Cursor"). */
@@ -86,6 +86,8 @@ interface LinkSpec {
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const REPO_PART = '[\\w.-]+';
+/** A URL slug as the browser hands it over: percent-escapes for any script, dots and tildes. */
+const SLUG = '[\\w%.~-]+';
 
 const group = (match: RegExpExecArray, index: number): string => match[index] ?? '';
 
@@ -102,6 +104,14 @@ export function slugTitle(slug: string): string | null {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+const DEVIN_HOST = /^(?:app\.devin\.ai|[a-z0-9-]+\.devinenterprise\.com)$/;
+const WARP_HOST = /^(?:app|staging)\.warp\.dev$/;
+
+/** YouTrack Cloud (`<site>.youtrack.cloud`) and a self-hosted one (`youtrack.<company>`). */
+const YOUTRACK_HOST = /^(?:([a-z0-9][a-z0-9-]*)\.youtrack\.cloud|(youtrack\.[a-z0-9-]+(?:\.[a-z0-9-]+)+))$/;
+const youtrackSite = (host: RegExpExecArray): string => host[1] ?? group(host, 2);
+const YOUTRACK_KEY = /^[A-Za-z][A-Za-z0-9_]*-\d+$/;
+
 const linkSpecs: readonly LinkSpec[] = [
   // Tickets.
   {
@@ -109,7 +119,7 @@ const linkSpecs: readonly LinkSpec[] = [
     service: 'Linear',
     kind: 'ticket',
     host: /^linear\.app$/,
-    path: /^\/([\w-]+)\/issue\/([A-Za-z][A-Za-z0-9_]*-\d+)(?:\/([\w-]+))?\/?$/,
+    path: new RegExp(`^/([\\w-]+)/issue/([A-Za-z][A-Za-z0-9_]*-\\d+)(?:/(${SLUG}))?/?$`),
     read: ({ path }) => {
       const key = group(path, 2).toUpperCase();
       return { id: `${group(path, 1)}:${key}`, noun: 'issue', ref: key, title: path[3] === undefined ? null : slugTitle(path[3]), context: group(path, 1) };
@@ -122,18 +132,34 @@ const linkSpecs: readonly LinkSpec[] = [
     service: 'Linear',
     kind: 'ticket',
     host: /^linear\.app$/,
-    path: /^\/([\w-]+)\/(project|document)\/([\w-]+?)-([0-9a-f]{12})(?:\/(?:overview|issues|updates|documents|activity))?\/?$/,
+    path: new RegExp(`^/([\\w-]+)/(project|document)/(${SLUG}?)-([0-9a-f]{12})(?:/(?:overview|issues|updates|documents|activity))?/?$`),
     read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}:${group(path, 4)}`, noun: group(path, 2), title: slugTitle(group(path, 3)), context: group(path, 1) }),
     appId: 20150,
     icon: 'linear',
   },
   {
+    // An issue linked by its id rather than its key.
+    id: 'linear',
+    service: 'Linear',
+    kind: 'ticket',
+    host: /^linear\.app$/,
+    path: new RegExp(`^/([\\w-]+)/issue/(${UUID})/?$`),
+    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}`, noun: 'issue', context: group(path, 1) }),
+    appId: 20150,
+    icon: 'linear',
+  },
+  {
+    // Atlassian Cloud (`<site>.atlassian.net`), Atlassian's own tracker, and a self-hosted Jira (`jira.<company>`,
+    // `issues.apache.org/jira`), all on the same `/browse/<KEY>` path.
     id: 'jira',
     service: 'Jira',
     kind: 'ticket',
-    host: /^([a-z0-9][a-z0-9-]*)\.atlassian\.net$/,
-    path: /^\/browse\/([A-Z][A-Z0-9_]*-\d+)\/?$/,
-    read: ({ host, path }) => ({ id: `${group(host, 1)}:${group(path, 1)}`, noun: 'issue', ref: group(path, 1), context: group(host, 1) }),
+    host: /^(?:([a-z0-9][a-z0-9-]*)\.atlassian\.net|(jira\.atlassian\.com|(?:jira|issues)\.[a-z0-9-]+(?:\.[a-z0-9-]+)+))$/,
+    path: /^\/(?:jira\/)?browse\/([A-Z][A-Z0-9_]*-\d+)\/?$/,
+    read: ({ host, path }) => {
+      const site = host[1] ?? group(host, 2);
+      return { id: `${site}:${group(path, 1)}`, noun: 'issue', ref: group(path, 1), context: site };
+    },
     icon: 'jira',
   },
   {
@@ -155,25 +181,81 @@ const linkSpecs: readonly LinkSpec[] = [
     id: 'youtrack',
     service: 'YouTrack',
     kind: 'ticket',
-    host: /^([a-z0-9][a-z0-9-]*)\.youtrack\.cloud$/,
-    path: /^\/issue\/([A-Za-z][A-Za-z0-9_]*-\d+)(?:\/([\w-]+))?\/?$/,
-    read: ({ host, path }) => ({ id: `${group(host, 1)}:${group(path, 1)}`, noun: 'issue', ref: group(path, 1), title: path[2] === undefined ? null : slugTitle(path[2]), context: group(host, 1) }),
+    host: YOUTRACK_HOST,
+    path: new RegExp(`^/issue/([A-Za-z][A-Za-z0-9_]*-\\d+)(?:/(${SLUG}))?/?$`),
+    read: ({ host, path }) => ({ id: `${youtrackSite(host)}:${group(path, 1)}`, noun: 'issue', ref: group(path, 1), title: path[2] === undefined ? null : slugTitle(path[2]), context: youtrackSite(host) }),
     icon: 'youtrack',
+  },
+  {
+    // The issue open beside a list (`/issues?preview=KEY`, a saved search) or on a board (`/agiles/<board>/current?issue=KEY`).
+    id: 'youtrack',
+    service: 'YouTrack',
+    kind: 'ticket',
+    host: YOUTRACK_HOST,
+    path: /^\/(?:issues|search\/[^/]+)\/?$/,
+    query: { preview: YOUTRACK_KEY },
+    read: ({ host, query }) => ({ id: `${youtrackSite(host)}:${query.get('preview') ?? ''}`, noun: 'issue', ref: query.get('preview') ?? null, context: youtrackSite(host) }),
+    icon: 'youtrack',
+    rank: 1,
+  },
+  {
+    id: 'youtrack',
+    service: 'YouTrack',
+    kind: 'ticket',
+    host: YOUTRACK_HOST,
+    path: /^\/agiles\/[\w-]+\/[\w-]+\/?$/,
+    query: { issue: YOUTRACK_KEY },
+    read: ({ host, query }) => ({ id: `${youtrackSite(host)}:${query.get('issue') ?? ''}`, noun: 'issue', ref: query.get('issue') ?? null, context: youtrackSite(host) }),
+    icon: 'youtrack',
+    rank: 1,
+  },
+  {
+    id: 'youtrack-article',
+    service: 'YouTrack',
+    kind: 'doc',
+    host: YOUTRACK_HOST,
+    path: new RegExp(`^/articles/([A-Za-z][A-Za-z0-9_]*-A-\\d+)(?:/(${SLUG}))?/?$`),
+    read: ({ host, path }) => ({ id: `${youtrackSite(host)}:${group(path, 1)}`, noun: 'article', ref: group(path, 1), title: path[2] === undefined ? null : slugTitle(path[2]), context: youtrackSite(host) }),
+    icon: 'youtrack',
+  },
+  {
+    id: 'height',
+    service: 'Height',
+    kind: 'ticket',
+    host: /^height\.app$/,
+    path: new RegExp(`^/([\\w-]+)/(T-\\d+)(?:/(${SLUG}))?/?$`),
+    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}`, noun: 'task', ref: group(path, 2), title: path[3] === undefined ? null : slugTitle(path[3]) }),
+  },
+  {
+    id: 'plane',
+    service: 'Plane',
+    kind: 'ticket',
+    host: /^app\.plane\.so$/,
+    path: /^\/([\w-]+)\/browse\/([A-Z][A-Z0-9_]*-\d+)\/?$/,
+    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}`, noun: 'issue', ref: group(path, 2), context: group(path, 1) }),
   },
   {
     id: 'shortcut',
     service: 'Shortcut',
     kind: 'ticket',
     host: /^app\.shortcut\.com$/,
-    path: /^\/([\w-]+)\/story\/(\d+)(?:\/([\w-]+))?\/?$/,
+    path: new RegExp(`^/([\\w-]+)/story/(\\d+)(?:/(${SLUG}))?/?$`),
     read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}`, noun: 'story', ref: `sc-${group(path, 2)}`, title: path[3] === undefined ? null : slugTitle(path[3]), context: group(path, 1) }),
+  },
+  {
+    id: 'shortcut-epic',
+    service: 'Shortcut',
+    kind: 'ticket',
+    host: /^app\.shortcut\.com$/,
+    path: new RegExp(`^/([\\w-]+)/epic/(\\d+)(?:/(${SLUG}))?/?$`),
+    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}`, noun: 'epic', title: path[3] === undefined ? null : slugTitle(path[3]), context: group(path, 1) }),
   },
   {
     id: 'asana',
     service: 'Asana',
     kind: 'ticket',
     host: /^app\.asana\.com$/,
-    path: /^\/(?:0\/\d+\/(\d+)(?:\/f)?|1\/\d+\/(?:project\/\d+\/)?task\/(\d+))\/?$/,
+    path: /^\/(?:0\/\d+\/(\d+)(?:\/f)?|1\/\d+\/(?:(?:home|inbox|search|project\/\d+(?:\/list\/\d+)?)\/)?task\/(\d+)(?:\/comment\/\d+)?)\/?$/,
     read: ({ path }) => ({ id: path[1] ?? group(path, 2), noun: 'task' }),
     icon: 'asana',
   },
@@ -187,11 +269,20 @@ const linkSpecs: readonly LinkSpec[] = [
     appId: 68952,
   },
   {
+    id: 'clickup-doc',
+    service: 'ClickUp',
+    kind: 'doc',
+    host: /^app\.clickup\.com$/,
+    path: /^\/\d+\/docs\/([\w-]+)(?:\/[\w-]+)?\/?$/,
+    read: ({ path }) => ({ id: group(path, 1), noun: 'doc' }),
+    appId: 68952,
+  },
+  {
     id: 'trello',
     service: 'Trello',
     kind: 'ticket',
     host: /^trello\.com$/,
-    path: /^\/c\/([A-Za-z0-9]{8})(?:\/(?:\d+-)?([\w-]+))?\/?$/,
+    path: new RegExp(`^/c/([A-Za-z0-9]{8}|[0-9a-f]{24})(?:/(?:\\d+-)?(${SLUG}))?/?$`),
     read: ({ path }) => ({ id: group(path, 1), noun: 'card', title: path[2] === undefined ? null : slugTitle(path[2]) }),
   },
 
@@ -231,8 +322,8 @@ const linkSpecs: readonly LinkSpec[] = [
     service: 'Discord',
     kind: 'conversation',
     host: /^(?:www\.|ptb\.|canary\.)?discord(?:app)?\.com$/,
-    path: /^\/channels\/(\d+|@me)\/(\d+)(?:\/(\d+))?\/?$/,
-    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}:${path[3] ?? ''}`, noun: path[3] === undefined ? 'channel' : 'message' }),
+    path: /^\/channels\/(\d+|@me)\/(\d+)(?:\/(threads\/)?(\d+))?\/?$/,
+    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}:${path[4] ?? ''}`, noun: path[4] === undefined ? 'channel' : path[3] === undefined ? 'message' : 'thread' }),
   },
   {
     id: 'teams',
@@ -259,7 +350,7 @@ const linkSpecs: readonly LinkSpec[] = [
     id: 'devin',
     service: 'Devin',
     kind: 'agent',
-    host: /^app\.devin\.ai$/,
+    host: DEVIN_HOST,
     path: /^\/sessions\/([0-9a-f]{32})\/?$/,
     read: ({ path }) => ({ id: group(path, 1), noun: 'session' }),
     verb: 'View',
@@ -269,7 +360,7 @@ const linkSpecs: readonly LinkSpec[] = [
     id: 'devin',
     service: 'Devin',
     kind: 'agent',
-    host: /^app\.devin\.ai$/,
+    host: DEVIN_HOST,
     path: /^\/desktop\/session\/([0-9a-f]{32})\/?$/,
     read: ({ path }) => ({ id: group(path, 1), noun: 'session' }),
     actionTarget: 'Devin Desktop',
@@ -299,6 +390,17 @@ const linkSpecs: readonly LinkSpec[] = [
     rank: 1,
   },
   {
+    id: 'cursor',
+    service: 'Cursor',
+    kind: 'agent',
+    host: /^(?:www\.)?cursor\.com$/,
+    path: /^\/agents\/?$/,
+    query: { id: new RegExp(`^bc-${UUID}$`) },
+    read: ({ query }) => ({ id: query.get('id') ?? '', noun: 'agent' }),
+    verb: 'View',
+    bot: 'bugbot',
+  },
+  {
     id: 'cursor-automation',
     service: 'Cursor',
     kind: 'agent',
@@ -313,7 +415,7 @@ const linkSpecs: readonly LinkSpec[] = [
     service: 'Codex',
     kind: 'agent',
     host: /^chatgpt\.com$/,
-    path: new RegExp(`^/codex/tasks/(task_[a-z]_[0-9a-f]{32}|${UUID})/?$`),
+    path: new RegExp(`^/codex/(?:cloud/)?tasks/(task_[a-z]_[0-9a-f]{32}|${UUID})/?$`),
     read: ({ path }) => ({ id: group(path, 1), noun: 'task' }),
     verb: 'View',
     bot: 'codex',
@@ -325,6 +427,20 @@ const linkSpecs: readonly LinkSpec[] = [
     host: /^claude\.ai$/,
     path: /^\/code\/(session_[A-Za-z0-9]{20,})\/?$/,
     read: ({ path }) => ({ id: group(path, 1), noun: 'session' }),
+    verb: 'View',
+    bot: 'claude',
+  },
+  {
+    // A Claude Code project's channel, opened at the thread a request was made in ("Requested by … · project thread").
+    id: 'claude-code',
+    service: 'Claude Code',
+    kind: 'agent',
+    host: /^claude\.ai$/,
+    path: /^\/code\/project\/(chan_[A-Za-z0-9]{20,})\/?$/,
+    read: ({ path, query }) => {
+      const thread = query.get('thread');
+      return thread !== undefined && /^cmsg_[A-Za-z0-9]{20,}$/.test(thread) ? { id: thread, noun: 'thread' } : { id: group(path, 1), noun: 'project' };
+    },
     verb: 'View',
     bot: 'claude',
   },
@@ -420,6 +536,16 @@ const linkSpecs: readonly LinkSpec[] = [
     appId: 1223475,
   },
   {
+    id: 'tembo-task',
+    service: 'Tembo',
+    kind: 'agent',
+    host: /^app\.tembo\.io$/,
+    path: new RegExp(`^/tasks/(${UUID})/?$`),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'task' }),
+    verb: 'View',
+    appId: 1223475,
+  },
+  {
     id: 'tembo',
     service: 'Tembo',
     kind: 'agent',
@@ -444,16 +570,16 @@ const linkSpecs: readonly LinkSpec[] = [
     id: 'warp',
     service: 'Warp',
     kind: 'agent',
-    host: /^app\.warp\.dev$/,
-    path: new RegExp(`^/conversation/(${UUID})/?$`),
-    read: ({ path }) => ({ id: group(path, 1), noun: 'conversation' }),
+    host: WARP_HOST,
+    path: new RegExp(`^/(conversation|session)/(${UUID})/?$`),
+    read: ({ path }) => ({ id: group(path, 2), noun: group(path, 1) }),
     verb: 'View',
   },
   {
     id: 'oz',
     service: 'Oz',
     kind: 'agent',
-    host: /^(?:oz|platform)\.warp\.dev$/,
+    host: /^(?:oz|platform)(?:\.staging)?\.warp\.dev$/,
     path: new RegExp(`^/(?:[\\w-]+/)?runs/(${UUID})/?$`),
     read: ({ path }) => ({ id: group(path, 1), noun: 'run' }),
     verb: 'View',
@@ -499,7 +625,7 @@ const linkSpecs: readonly LinkSpec[] = [
     id: 'graphite-agent',
     service: 'Graphite',
     kind: 'agent',
-    host: /^app\.graphite\.dev$/,
+    host: /^app\.graphite\.(?:dev|com)$/,
     path: new RegExp(`^/background-agents/${REPO_PART}/${REPO_PART}/task/(bgt_\\w+)/?$`),
     read: ({ path }) => ({ id: group(path, 1), noun: 'agent task' }),
     verb: 'View',
@@ -511,7 +637,7 @@ const linkSpecs: readonly LinkSpec[] = [
     id: 'devin-review',
     service: 'Devin Review',
     kind: 'review',
-    host: /^app\.devin\.ai$/,
+    host: DEVIN_HOST,
     path: new RegExp(`^/review/(${REPO_PART})/(${REPO_PART})/pull/(\\d+)/?$`),
     read: ({ path }) => ({ id: `${group(path, 1)}/${group(path, 2)}#${group(path, 3)}`.toLowerCase(), noun: 'findings' }),
     verb: 'View',
@@ -563,11 +689,48 @@ const linkSpecs: readonly LinkSpec[] = [
     id: 'graphite',
     service: 'Graphite',
     kind: 'review',
-    host: /^app\.graphite\.dev$/,
+    host: /^app\.graphite\.(?:dev|com)$/,
     path: new RegExp(`^/github/pr/(${REPO_PART})/(${REPO_PART})/(\\d+)(?:/[^/]*)?/?$`),
     read: ({ path }) => ({ id: `${group(path, 1)}/${group(path, 2)}#${group(path, 3)}`.toLowerCase(), noun: 'pull request' }),
     verb: 'View',
     appId: 158384,
+  },
+
+  {
+    id: 'cosine-review',
+    service: 'Cosine',
+    kind: 'review',
+    host: /^cosine\.sh$/,
+    path: new RegExp(`^/gh/(${REPO_PART})/(${REPO_PART})/pull/(\\d+)/?$`),
+    read: ({ path }) => ({ id: `${group(path, 1)}/${group(path, 2)}#${group(path, 3)}`.toLowerCase(), noun: 'pull request' }),
+    verb: 'View',
+  },
+
+  // Other forges: issues and merge or pull requests, never commits, files or the project itself.
+  {
+    // gitlab.com and any self-hosted GitLab, known by the `/-/` its project routes carry.
+    id: 'gitlab',
+    service: 'GitLab',
+    kind: 'ticket',
+    host: /^(?!github\.com$)[a-z0-9-]+(?:\.[a-z0-9-]+)+$/,
+    path: /^\/((?:[\w.-]+\/)*[\w.-]+)\/-\/(issues|merge_requests|work_items|epics)\/(\d+)\/?$/,
+    read: ({ url, path }) => {
+      const kind = group(path, 2);
+      const project = group(path, 1).replace(/^groups\//, '');
+      const sigil = kind === 'merge_requests' ? '!' : kind === 'epics' ? '&' : '#';
+      const noun = kind === 'merge_requests' ? 'merge request' : kind === 'work_items' ? 'work item' : kind === 'epics' ? 'epic' : 'issue';
+      return { id: `${url.hostname}/${project}${sigil}${group(path, 3)}`.toLowerCase(), noun, ref: `${sigil}${group(path, 3)}`, context: url.hostname === 'gitlab.com' ? project : `${url.hostname}/${project}` };
+    },
+    icon: 'gitlab',
+  },
+  {
+    id: 'bitbucket',
+    service: 'Bitbucket',
+    kind: 'ticket',
+    host: /^bitbucket\.org$/,
+    path: new RegExp(`^/(${REPO_PART}/${REPO_PART})/(issues|pull-requests)/(\\d+)(?:/${SLUG})?/?$`),
+    read: ({ path }) => ({ id: `${group(path, 1)}#${group(path, 3)}`.toLowerCase(), noun: group(path, 2) === 'issues' ? 'issue' : 'pull request', ref: `#${group(path, 3)}`, context: group(path, 1) }),
+    icon: 'bitbucket',
   },
 
   // Documents and designs.
@@ -575,8 +738,8 @@ const linkSpecs: readonly LinkSpec[] = [
     id: 'notion',
     service: 'Notion',
     kind: 'doc',
-    host: /^(?:(?:www\.)?notion\.so|[\w-]+\.notion\.site)$/,
-    path: /^\/(?:[\w-]+\/)?(?:([\w%-]*?)-)?([0-9a-f]{32})\/?$/,
+    host: /^(?:(?:www\.)?notion\.so|app\.notion\.com|[\w-]+\.notion\.site)$/,
+    path: /^\/(?:p\/)?(?:[\w-]+\/)?(?:([\w%-]*?)-)?([0-9a-f]{32})\/?$/,
     read: ({ path }) => ({ id: group(path, 2), noun: 'page', title: path[1] === undefined ? null : slugTitle(path[1]) }),
   },
   {
@@ -586,6 +749,16 @@ const linkSpecs: readonly LinkSpec[] = [
     host: /^([a-z0-9][a-z0-9-]*)\.atlassian\.net$/,
     path: /^\/wiki\/spaces\/([\w~-]+)\/pages\/(\d+)(?:\/([^/]+))?\/?$/,
     read: ({ host, path }) => ({ id: `${group(host, 1)}:${group(path, 2)}`, noun: 'page', title: path[3] === undefined ? null : slugTitle(path[3]), context: group(host, 1) }),
+    icon: 'jira',
+  },
+  {
+    // Confluence's short link (`/wiki/x/<tiny id>`), what its Share button copies.
+    id: 'confluence-short',
+    service: 'Confluence',
+    kind: 'doc',
+    host: /^([a-z0-9][a-z0-9-]*)\.atlassian\.net$/,
+    path: /^\/wiki\/x\/([\w-]{4,})\/?$/,
+    read: ({ host, path }) => ({ id: `${group(host, 1)}:${group(path, 1)}`, noun: 'page', context: group(host, 1) }),
     icon: 'jira',
   },
   {
@@ -617,7 +790,7 @@ const linkSpecs: readonly LinkSpec[] = [
     id: 'warp-notebook',
     service: 'Warp',
     kind: 'doc',
-    host: /^app\.warp\.dev$/,
+    host: WARP_HOST,
     path: /^\/drive\/notebook\/([\w-]{10,})\/?$/,
     read: ({ path }) => ({ id: group(path, 1), noun: 'notebook' }),
   },
@@ -628,12 +801,26 @@ const linkSpecs: readonly LinkSpec[] = [
     service: 'Sentry',
     kind: 'error',
     host: /^(?:([a-z0-9][a-z0-9-]*)\.)?sentry\.io$/,
-    path: /^\/(?:organizations\/([\w-]+)\/)?issues\/(\d+|[A-Z0-9]+(?:-[A-Z0-9]+)+)\/?(?:events\/[\w-]+\/?)?$/,
+    path: /^\/(?:organizations\/([\w-]+)\/|([\w-]+)\/[\w-]+\/)?issues\/(\d+|[A-Z0-9]+(?:-[A-Z0-9]+)+)\/?$/,
     read: ({ host, path }) => {
-      const org = host[1] ?? path[1] ?? null;
-      return { id: `${org ?? ''}:${group(path, 2)}`, noun: 'issue', ref: /^\d+$/.test(group(path, 2)) ? null : group(path, 2), context: org };
+      const org = host[1] ?? path[1] ?? path[2] ?? null;
+      return { id: `${org ?? ''}:${group(path, 3)}`, noun: 'issue', ref: /^\d+$/.test(group(path, 3)) ? null : group(path, 3), context: org };
     },
     appId: 12637,
+  },
+  {
+    // A page under the issue (an event, its tags): the issue still, kept only when the issue itself is not linked.
+    id: 'sentry',
+    service: 'Sentry',
+    kind: 'error',
+    host: /^(?:([a-z0-9][a-z0-9-]*)\.)?sentry\.io$/,
+    path: /^\/(?:organizations\/([\w-]+)\/|([\w-]+)\/[\w-]+\/)?issues\/(\d+|[A-Z0-9]+(?:-[A-Z0-9]+)+)\/(?:events|tags|activity|replays|similar|merged|feedback|attachments)(?:\/[\w-]+)?\/?$/,
+    read: ({ host, path }) => {
+      const org = host[1] ?? path[1] ?? path[2] ?? null;
+      return { id: `${org ?? ''}:${group(path, 3)}`, noun: 'issue', ref: /^\d+$/.test(group(path, 3)) ? null : group(path, 3), context: org };
+    },
+    appId: 12637,
+    rank: 1,
   },
 ];
 
@@ -740,4 +927,14 @@ export function relatedLinksFrom(candidates: readonly LinkCandidate[]): RelatedL
   }
   const links = [...found.values()].map((entry) => entry.link);
   return RELATED_KIND_ORDER.flatMap((kind) => links.filter((link) => link.kind === kind));
+}
+
+/**
+ * A dependency update's description (Renovate's "This PR contains the following updates", Dependabot's "Bumps x from
+ * a to b"): its links are the upstream projects' release notes, thousands of their issues and merge requests, and
+ * none of them is where the change came from.
+ */
+export function isDependencyUpdate(text: string): boolean {
+  const words = text.replace(/\s+/g, ' ');
+  return /\bThis PR contains the following updates\b/.test(words) || /\bBumps (?:the \S+ group|\S+ from \S+ to \S+)/.test(words) || /\bDependabot will resolve any conflicts\b/.test(words);
 }

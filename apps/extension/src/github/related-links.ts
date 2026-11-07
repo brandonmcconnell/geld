@@ -1,7 +1,8 @@
 import { browser } from 'wxt/browser';
-import { relatedLinksFrom } from '@geld/review/related-links';
+import { isDependencyUpdate, relatedLinksFrom } from '@geld/review/related-links';
 import type { LinkCandidate, RelatedKind, RelatedLink } from '@geld/review/related-links';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
+import { pageFetch } from './page-fetch';
 import { descriptionBody } from './review/description';
 import { ICON_ALERT, ICON_COMMENT_DISCUSSION, ICON_COPILOT, ICON_FILE, ICON_ISSUE_OPENED, ICON_LINK_EXTERNAL } from './ui/icons';
 
@@ -29,27 +30,98 @@ const KIND_ICONS: Readonly<Record<RelatedKind, string>> = {
 const words = (element: Element): string => (element.textContent ?? '').replace(/\s+/g, ' ').trim();
 
 /** A link's target and the words it shows, its pictures' alt text included (a badge is an image in a link). */
-function candidateOf(link: HTMLAnchorElement): LinkCandidate {
+function candidateOf(link: HTMLAnchorElement): LinkCandidate | null {
+  const raw = link.getAttribute('href') ?? '';
+  let href: string;
+  try {
+    href = new URL(raw, location.href).href;
+  } catch {
+    return null;
+  }
   const alts = [...link.querySelectorAll('img[alt]')].map((image) => image.getAttribute('alt') ?? '');
-  return { href: link.href, text: [words(link), ...alts].join(' ').trim() };
+  return { href, text: [words(link), ...alts].join(' ').trim() };
 }
 
 function linksIn(root: ParentNode): LinkCandidate[] {
-  return [...root.querySelectorAll<HTMLAnchorElement>('a[href]')].filter((link) => link.closest(`pre, [${OWN_UI_ATTRIBUTE}]`) === null).map(candidateOf);
+  return [...root.querySelectorAll<HTMLAnchorElement>('a[href]')]
+    .filter((link) => link.closest(`pre, [${OWN_UI_ATTRIBUTE}]`) === null)
+    .map(candidateOf)
+    .filter((candidate) => candidate !== null);
 }
 
-/** Linear's linkback comment ("<!-- linear-linkback -->", the issue's key linked) names the issue when the description does not. */
+/** The description's links, or none for a dependency update, whose links are the upstream projects' release notes. */
+function descriptionLinks(body: ParentNode & Node): LinkCandidate[] {
+  return isDependencyUpdate(body.textContent ?? '') ? [] : linksIn(body);
+}
+
+/**
+ * Linear's linkback comment ("<!-- linear-linkback -->", the issue's key linked) names the issue when the description
+ * does not. Its author link leads to `/apps/linear` in either conversation; the comment is the nearest box above it
+ * that holds rendered Markdown.
+ */
 function linearLinkbacks(): LinkCandidate[] {
-  return [...document.querySelectorAll('a.author[href$="/apps/linear"]')].flatMap((author) => {
-    const body = author.closest('.timeline-comment, .js-comment')?.querySelector('.comment-body');
-    return body === null || body === undefined ? [] : linksIn(body);
+  return [...document.querySelectorAll('a[href$="/apps/linear"]')].flatMap((author) => {
+    if (author.closest(`.markdown-body, [${OWN_UI_ATTRIBUTE}]`) !== null) return [];
+    let box: Element | null = author.parentElement;
+    for (let depth = 0; box !== null && depth < 8; depth++, box = box.parentElement) {
+      const body = box.querySelector('.markdown-body, .comment-body');
+      if (body !== null) return linksIn(body);
+    }
+    return [];
   });
 }
 
+/** How long a fetched description stands before it is read again: an edit shows within this. */
+const FETCHED_DESCRIPTION_MS = 2 * 60 * 1000;
+
+/**
+ * The description where the page does not hold it as the conversation does (GitHub's Overview page renders it through
+ * its Markdown viewer, sometimes in a side panel): GitHub's own `page_data/description`, the JSON that page loads,
+ * `bodyHtml` read into a detached document so nothing in it loads or runs.
+ */
+interface Fetched {
+  pull: string;
+  at: number;
+  pending: boolean;
+  body: Document | null;
+}
+
+const fetched: Fetched = { pull: '', at: 0, pending: false, body: null };
+
+async function readJson(answer: Response): Promise<unknown> {
+  if (!answer.ok) return null;
+  const value: unknown = await answer.json();
+  return value;
+}
+
+function pullPath(): string | null {
+  return /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(location.pathname)?.[0] ?? null;
+}
+
+function fetchedDescription(onChange: () => void): Document | null {
+  const pull = pullPath();
+  if (pull === null) return null;
+  if (fetched.pull !== pull) Object.assign(fetched, { pull, at: 0, pending: false, body: null });
+  if (!fetched.pending && Date.now() - fetched.at > FETCHED_DESCRIPTION_MS) {
+    fetched.pending = true;
+    void pageFetch(`${pull}/page_data/description`, { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'GitHub-Verified-Fetch': 'true' }, credentials: 'same-origin' })
+      .then(readJson)
+      .catch(() => null)
+      .then((value: unknown) => {
+        if (fetched.pull !== pull) return;
+        const html = typeof value === 'object' && value !== null && 'bodyHtml' in value && typeof value.bodyHtml === 'string' ? value.bodyHtml : null;
+        const before = fetched.body?.body.innerHTML ?? null;
+        Object.assign(fetched, { at: Date.now(), pending: false, body: html === null ? fetched.body : new DOMParser().parseFromString(html, 'text/html') });
+        if ((fetched.body?.body.innerHTML ?? null) !== before) onChange();
+      });
+  }
+  return fetched.body;
+}
+
 /** Every related link the page holds, in the registry's order. Exported for its test. */
-export function relatedLinksOnPage(): RelatedLink[] {
-  const body = descriptionBody();
-  return relatedLinksFrom([...(body === null ? [] : linksIn(body)), ...linearLinkbacks()]);
+export function relatedLinksOnPage(onChange: () => void = () => undefined): RelatedLink[] {
+  const body = descriptionBody() ?? fetchedDescription(onChange)?.body ?? null;
+  return relatedLinksFrom([...(body === null ? [] : descriptionLinks(body)), ...linearLinkbacks()]);
 }
 
 const isHeading = (element: Element): boolean => SECTION_HEADING.test(words(element));
@@ -127,8 +199,26 @@ function rowOf(link: RelatedLink): HTMLElement {
 
 const TITLE = 'Related links';
 
+/** How many rows show before "Show N more": a description that links a dozen tickets should not push Labels off screen. */
+export const SHOWN_LINKS = 8;
+
+/** Whether the reader asked for every row on this page; kept across redraws, forgotten on teardown. */
+let showAll = false;
+
 function listOf(links: readonly RelatedLink[]): HTMLElement {
-  return createElement('ul', { class: `${SECTION_CLASS}__list` }, links.map(rowOf));
+  const rows = links.map(rowOf);
+  const list = createElement('ul', { class: `${SECTION_CLASS}__list` }, rows);
+  const extra = rows.slice(SHOWN_LINKS);
+  if (extra.length === 0 || showAll) return list;
+  for (const row of extra) row.hidden = true;
+  const more = createElement('button', { type: 'button', class: `btn-link ${SECTION_CLASS}__more` }, [`Show ${extra.length} more`]);
+  more.addEventListener('click', () => {
+    showAll = true;
+    for (const row of extra) row.hidden = false;
+    more.parentElement?.remove();
+  });
+  list.append(createElement('li', { class: `${SECTION_CLASS}__item` }, [more]));
+  return list;
 }
 
 /** The Rails sidebar's item: `div.discussion-sidebar-item` with an `h3.discussion-sidebar-heading`. */
@@ -180,12 +270,16 @@ export function removeRelatedLinks(): void {
   for (const { section } of mounted.values()) section.remove();
   mounted = new Map();
   for (const stray of document.querySelectorAll(`.${SECTION_CLASS}[${OWN_UI_ATTRIBUTE}]`)) stray.remove();
+  showAll = false;
 }
 
-/** Draw, move back into place or take away the sections. Writes only where the links or the place changed. */
-export function applyRelatedLinks(active: boolean): void {
+/**
+ * Draw, move back into place or take away the sections. Writes only where the links or the place changed. `onChange`
+ * asks for another pass when a description read from GitHub lands.
+ */
+export function applyRelatedLinks(active: boolean, onChange: () => void = () => undefined): void {
   const afters = active ? assigneesSections() : [];
-  const links = afters.length === 0 ? [] : relatedLinksOnPage();
+  const links = afters.length === 0 ? [] : relatedLinksOnPage(onChange);
   if (links.length === 0) {
     if (mounted.size > 0) removeRelatedLinks();
     return;
