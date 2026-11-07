@@ -64,7 +64,7 @@ function spacingZone(def: GlyphDef, g: DrawContext): SpacingZone | undefined {
   if (cp === undefined) return undefined;
   const c = String.fromCodePoint(cp);
   if (/\p{Nd}/u.test(c)) return { bottom: 0, top: g.cap, target: 1.3, depth: 2.5, min: 0.3 };
-  if (!/\p{L}/u.test(c)) return undefined;
+  if (!/\p{L}/u.test(c) || /\p{Lm}/u.test(c)) return undefined;
   if (def.lower || /\p{Ll}/u.test(c)) return { bottom: 0, top: METRICS.xHeight, target: 1.45, depth: 2, min: 0.15 };
   return { bottom: 0, top: g.cap, target: 1.6, depth: 2.8, min: 0.2 };
 }
@@ -93,6 +93,7 @@ function baseAnchors(contours: Contour[], upper: boolean, v: number, name: strin
     { name: 'ogonek', x: inkEndAtBaseline(contours, box) - v / 2, y: 0 },
     { name: 'topright', ...topright },
     { name: 'horn', x: box.maxX - 0.3, y: box.maxY - 2.5 },
+    { name: 'center', x: cx, y: (upper ? METRICS.cap : METRICS.xHeight) / 2 },
   ];
 }
 

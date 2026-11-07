@@ -144,7 +144,7 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [x] Latin Extended Additional: 246 of 256, all of Vietnamese with the side-by-side circumflex pairs, plus Ẁ ẁ Ẃ ẃ Ẅ ẅ Ỳ ỳ ẞ Ḃ ḃ Ḋ ḋ Ḟ ḟ Ṁ ṁ Ṗ ṗ Ṡ ṡ Ṫ ṫ.
 - [ ] IPA and phonetic letters the African and Pro sets need (ɑ ɒ ɡ ɪ ʃ ʊ ʋ ʒ ʔ and others).
 - [ ] Spacing modifier letters: ˆ ˇ ˘ ˙ ˚ ˛ ˜ ˝ ˈ ˌ ʹ ʺ ʻ ʼ ʽ.
-- [ ] Combining diacritics (U+0300 to 036F), the ones GF Latin Pro lists (about 40), plus U+25CC ◌ for showing a combining mark alone.
+- [x] Combining diacritics (U+0300 to 036F), the ones GF Latin Pro lists (about 40), plus U+25CC ◌ for showing a combining mark alone. Including the double grave, inverted breve, vertical line above, comma above (right), dot above right, short stroke overlay (on a new `center` anchor), low line, double macron below and the four macron-acute and grave-macron tone marks.
 - [ ] Language-specific forms (`locl`): Catalan ŀl, Dutch IJ and ij with `IJ`/`ij` acute, Turkish and Azeri i and İ under `smcp` and case mapping, Polish kreska (a steeper acute), Romanian comma-below Ș and Ț, Lithuanian dotted i with accents, Navajo ogonek, and the German ẞ for uppercase.
 - [ ] Coverage checked against GF Latin Core, Plus, Pro, African and Vietnamese, and with Shaperglot for every language Hyperglot lists for those sets. (`verify.py` requires GF Latin Kernel, Core, Vietnamese and Pri-African in full; Plus and African are next.)
 
@@ -439,7 +439,7 @@ Each phase ends with a review. The next phase starts only once its deliverable i
 3. **Design core.** (First draft done in every weight: A to Z, a to z, 0 to 9 and `. , : ; ! ? - – — ' " ( ) [ ] / _ + =`. Shapes and spacing are refined in phases 4 and 7.) A to Z, a to z, 0 to 9 and basic punctuation at Regular and SemiBold. Deliverable: a proof of the core in two weights.
 4. **Weights.** (Done for the core: contrast, the three-horizontals budget, apertures and a counter test.) Thin to Black, contrast and the three-horizontals budget, `avar`. Deliverable: the core in all nine weights.
 5. **Italic.** (Done for the core: slanted construction, even cuts, italic forms. Italic spacing and kerning come with phase 7.) Slanted grid, italic forms and their spacing. Deliverable: the core in italic, all weights.
-6. **Character set.** (Under way: GF Latin Kernel, Core, Plus, Vietnamese and Pri-African complete and enforced by `verify.py`, with combining marks, `.case` marks, `ccmp`, superiors, inferiors and fractions.) Accents and marks, extended Latin, figure sets, punctuation, currency, math, arrows, shapes, small caps. Deliverable: full GF Latin Pro coverage.
+6. **Character set.** (Under way: every Latin set in Google Fonts' glyphsets — Kernel, Core, Plus, Vietnamese, Pri-African, African, Beyond, and the Pinyin and Arabic transliteration sets — plus GF Greek Core and GF Cyrillic Core and Plus, complete and enforced by `verify.py`, with combining marks, `.case` marks, `ccmp`, superiors, inferiors and fractions.) Accents and marks, extended Latin, figure sets, punctuation, currency, math, arrows, shapes, small caps. Deliverable: full GF Latin Pro coverage.
 7. **Spacing and kerning.** Deliverable: kerned proofs in every style.
 8. **Features.** Ligatures, code ligatures, alternates, swashes, every feature in section 7. Deliverable: all shaping tests passing.
 9. **Production.** Tables, hinting, QA, packaging, the specimen page, release. Deliverable: Geld Sans v1 released.
