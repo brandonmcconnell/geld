@@ -83,12 +83,14 @@ function isMethod(value: unknown): value is MergeMethod {
 /**
  * Whether GitHub would merge it now, as its merge box decides: `MERGEABLE`, or `MERGEABLE_IF_STATUSES_PASS` once the
  * statuses do pass. The box reads those from its separate status query; the pull request's `mergeStateStatus` says
- * the same in one word (`CLEAN`: mergeable with passing commit status, `HAS_HOOKS`: the same with pre-receive hooks),
- * where `BEHIND`, `BLOCKED`, `UNSTABLE` and the rest are not ready.
+ * the same in one word: `CLEAN` (mergeable with passing commit status), `HAS_HOOKS` (the same with pre-receive hooks)
+ * and `UNSTABLE` (mergeable with a check that is not required still pending or failing: GitHub's merge box offers its
+ * merge there, geld#486 in Nov 2026), where `BEHIND`, `BLOCKED` (a required check, review or rule still waiting) and
+ * the rest are not ready.
  */
 export function mergeableNow(requirementsState: unknown, mergeStateStatus: unknown): boolean {
   if (requirementsState === 'MERGEABLE') return true;
-  return requirementsState === 'MERGEABLE_IF_STATUSES_PASS' && (mergeStateStatus === 'CLEAN' || mergeStateStatus === 'HAS_HOOKS');
+  return requirementsState === 'MERGEABLE_IF_STATUSES_PASS' && (mergeStateStatus === 'CLEAN' || mergeStateStatus === 'HAS_HOOKS' || mergeStateStatus === 'UNSTABLE');
 }
 
 /** The failed merge conditions GitHub's merge box treats as beyond an admin's bypass (conflicts, the repository's or the reader's state). */
