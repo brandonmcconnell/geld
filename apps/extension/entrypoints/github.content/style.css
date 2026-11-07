@@ -9576,8 +9576,10 @@ div:has(> [data-geld-overview-merge]) {
   gap: 8px;
 }
 
-.geld-overview-merge {
+/* GitHub's `.BtnGroup` rule comes later and makes the group a block of floats, where the caret took its mark's height. */
+.geld-overview-merge.BtnGroup {
   display: inline-flex;
+  align-items: stretch;
 }
 
 /* GitHub's `.BtnGroup-item` floats, which makes the caret a block, so the mark is centred by flex with GitHub's rules outranked. */
