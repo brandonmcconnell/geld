@@ -270,7 +270,7 @@ Default in Sans per D13. Mono turns most of them on by default (section 19).
 - [x] `ss10` Dash ligatures (5.3).
 - [x] `ss11` to `ss16` Code ligature groups (5.3).
 - [x] `ss17` Circled numerals: ⓪ ①–⑨ encoded, an octagonal ring around the denominator figure, and ss17 maps the figures to them.
-- [ ] `ss18` reserved.
+- [x] `ss18` Italic swashes (6.3), in the italic fonts.
 - [ ] `ss19` reserved.
 - [x] `ss20` No arrow ligatures (5.2).
 
@@ -280,11 +280,11 @@ Default in Sans per D13. Mono turns most of them on by default (section 19).
 - [x] `aalt` listing every alternate, for the glyph palettes in InDesign and Illustrator. Accented letters follow their base in every set and cv (á under ss01), an alternate keeps its letter's anchors, and `verify.py` checks every alternate under its set, cv and salt in every compiled font.
 
 ### 6.3 Swashes
-- [ ] Swash caps (`swsh`): A, J, K, M, N, Q, R, Y, and as many more as the language works for in Phase 7.
-- [ ] Lowercase swashes: entry forms (`init`) for ascenders d h k l, exit forms (`fina`) for a e n m t, and descender swashes for g j p q y.
-- [ ] Contextual swashes (`cswh`): only at the start or end of a word, never beside a colliding letter (2.8).
-- [ ] Italic swashes as their own set, since swashes belong most naturally in italic.
-- [ ] Titling alternates (`titl`) for caps at display sizes, if Phase 7 shows a need.
+- [x] Swash caps (`swsh`): A, J, K, M, N, Q, R, Y, each its letter with a flourish (a foot, a sweep under the baseline, a run-on tail), placed and spaced as the letter with the flourish hanging into the space beside it. More can follow where Phase 7 finds the language works.
+- [x] Lowercase swashes: entry forms (`init`) for ascenders b d h k l, exit forms (`fina`) for a e n m t, and descender swashes for g j p q y (in `swsh`).
+- [x] Contextual swashes (`cswh`): only at the start or end of a word, never beside a colliding letter (2.8): entries and the capitals that reach back (A J M N Y) at a word's start, exits at its end; K and R, whose feet run forward into the next letter, stay in `swsh` only.
+- [x] Italic swashes as their own set, since swashes belong most naturally in italic: `ss18` ("Italic swashes"), in the italic fonts, runs the contextual swashes by name.
+- [ ] Titling alternates (`titl`) for caps at display sizes, if Phase 7 shows a need (not yet shown).
 
 ## 7. OpenType features
 
