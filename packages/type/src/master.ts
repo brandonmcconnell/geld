@@ -6,7 +6,7 @@ import { GLYPHS, SPACES } from './glyphs';
 import { FIGURE_NAMES } from './glyphs-figures';
 import { CYRILLIC_LOCL_ACCENTED } from './glyphs-cyrillic';
 import { accentedSmallCaps, SMALL_CAP_EXTRA_ACCENTED, SMALL_CAP_PLACED } from './glyphs-smallcaps';
-import { DARK_INSET_RATIO, ITALIC_SLOPE, METRICS, type Weight, weightParams } from './grid';
+import { DARK_INSET_RATIO, ITALIC_SLOPE, METRICS, UNIT, type Weight, weightParams } from './grid';
 import { type Attachment, BELOW_GAP, MARK_GAP, MARK_HEIGHT, MARKS } from './marks';
 
 /** Italics lean around the middle of the x-height, so a slanted glyph stays centred in its advance. */
@@ -203,6 +203,8 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     const carets: Anchor[] = [];
     parts.forEach((name, i) => {
       const bar = bars.get(name)!;
+      // Whole font units, as the compiler rounds each letter's advance: the ligature is exactly as wide as its letters set apart.
+      const step = Math.round(bar.advance * UNIT) / UNIT;
       const offset = place({ x, y: 0 });
       const origin = place({ x: 0, y: 0 });
       components.push({ glyph: name, dx: offset.x - origin.x, dy: 0 });
@@ -211,12 +213,12 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
         // Into each bar by more than Geld Dark Sans's inset, which trims the bridge's ends too.
         const into = 0.5 + (family === 'dark' ? params.v * DARK_INSET_RATIO : 0);
         const from = x + bar.right - into;
-        const to = x + bar.advance + bars.get(next)!.left + into;
+        const to = x + step + bars.get(next)!.left + into;
         const [top, bottom] = [Math.min(bar.top, bars.get(next)!.top), Math.max(bar.bottom, bars.get(next)!.bottom)];
         bridges.push([{ x: from, y: bottom }, { x: to, y: bottom }, { x: to, y: top }, { x: from, y: top }]);
-        carets.push({ name: `caret_${i + 1}`, x: x + bar.advance, y: 0 });
+        carets.push({ name: `caret_${i + 1}`, x: x + step, y: 0 });
       }
-      x += bar.advance;
+      x += step;
     });
     glyphs.push({ name: parts.join('_'), advance: x, contours: finish(bridges), components, anchors: placeAnchors(carets), mark: false });
   }

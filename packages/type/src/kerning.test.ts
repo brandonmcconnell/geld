@@ -12,7 +12,8 @@ describe('kerning', () => {
       const kerning = computeKerning(master, classes);
       it(`${style} ${weight}: kerns the pairs that need it and leaves straight and round sides alone`, () => {
         const value = (a: string, b: string) => resolvedValue(kerning, a, b);
-        for (const [a, b] of [['H', 'H'], ['n', 'n'], ['o', 'o'], ['H', 'O'], ['n', 'o']]) expect(value(a!, b!), `${a}${b}`).toBe(0);
+        for (const [a, b] of [['H', 'H'], ['n', 'n'], ['o', 'o'], ['H', 'O'], ['n', 'o'], ['H', 'space'], ['E', 'space'], ['period', 'space'], ['quoteright', 'space'], ['space', 'H']]) expect(value(a!, b!), `${a}${b}`).toBe(0);
+        for (const [a, b] of [['T', 'space'], ['Y', 'space'], ['L', 'space'], ['space', 'T'], ['space', 'V']]) expect(value(a!, b!), `${a} ${b}`).toBeLessThanOrEqual(-0.75);
         for (const [a, b] of [['T', 'o'], ['A', 'V'], ['L', 'T'], ['P', 'period'], ['Y', 'o'], ['quoteleft', 'A'], ['Ge-cy', 'o-cy']]) expect(value(a!, b!), `${a}${b}`).toBeLessThanOrEqual(-1);
       });
       it(`${style} ${weight}: keeps values on quarter units within ±2.5, and kerns no tabular figure or mark`, () => {

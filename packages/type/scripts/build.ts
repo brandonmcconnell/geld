@@ -59,7 +59,7 @@ function writeSources(): string[] {
 /** Pairs whose kerning verify.py checks in every compiled font, kerned and unkerned alike. */
 const KERNING_SAMPLES: [string, string][] = [
   ['T', 'o'], ['T', 'a'], ['A', 'V'], ['L', 'T'], ['P', 'period'], ['Y', 'o'], ['quoteleft', 'A'], ['T', 'eacute'], ['Tcaron', 'a'],
-  ['Ge-cy', 'o-cy'], ['Tau', 'alpha'], ['H', 'H'], ['n', 'n'], ['o', 'o'], ['one.tf', 'one.tf'], ['f', 'period'], ['V', 'a'],
+  ['Ge-cy', 'o-cy'], ['Tau', 'alpha'], ['H', 'H'], ['n', 'n'], ['o', 'o'], ['one.tf', 'one.tf'], ['f', 'period'], ['V', 'a'], ['T', 'space'], ['space', 'V'], ['f', 'idieresis'],
 ];
 
 /** What the source says each compiled font must contain, for scripts/verify.py. */

@@ -1,5 +1,6 @@
 import type { Contour } from './geometry';
 import { flatten, type Master, type MasterGlyph } from './master';
+import { ITALIC_SLOPE } from './grid';
 
 /**
  * Kerning, measured the way the spacing is (spacing.ts): two glyphs side by side are read in thin
@@ -42,6 +43,9 @@ const OVERHANG_READ = 0.05;
 const SAME = 0.3;
 /** The most any pair is kerned: LT and L’ are kerned no further than T o. */
 const MOST = 2.5;
+/** How much of an open side's white a word space beside it gives back, and at most. */
+const SPACE_STRENGTH = 0.35;
+const SPACE_MOST = 1.5;
 
 
 type Case = keyof typeof DEPTH;
@@ -390,7 +394,47 @@ export function computeKerning(master: Master, classes: KerningClasses): Kerning
   for (const [k, row] of [...pairs]) if (row.size === 0) pairs.delete(k);
   // A lifted pair can sit behind a glyph's own exception, which the font reads first: there the glyph pair is stated.
   for (const [a, b, v] of wanted) if (current(a, b) < v) set(a, b, v);
+  // A word space beside an open side (T, V, Y, L, A) looks wider by the white that side leaves: part of it is taken back.
+  // Signs are left alone, so a sentence's space after a period or a quote keeps its width.
+  if (master.glyphs.some((g) => g.name === 'space'))
+    for (const side of ['right', 'left'] as const)
+      for (const [k] of side === 'right' ? classes.right : classes.left) {
+        const p = profiles.get(k)!;
+        if (p.sign || p.kind === 'other') continue;
+        const value = -Math.min(SPACE_MOST, quantize(SPACE_STRENGTH * openness(p, side, master.style === 'italic' ? ITALIC_SLOPE : 0)));
+        if (value > -LEAST) continue;
+        if (side === 'right') set(`public.kern1.${k}`, 'space', value);
+        else set('space', `public.kern2.${k}`, value);
+      }
   return { groups, pairs };
+}
+
+/**
+ * The white a side leaves beyond its outermost ink where it opens from the top or the bottom of its case's height
+ * (under T's bar, over L's foot, along V's diagonal), each row capped at the case's depth, as a share of that height.
+ * White an arm closes off on both ends (between E's arms) does not count.
+ */
+function openness(p: Profile, side: 'left' | 'right', slope: number): number {
+  const which = p.kind === 'upper' ? 'upper' : 'lower';
+  const [bottom, top] = ZONE[which];
+  const depth = DEPTH[which];
+  // Read upright: italic's slant would make E's lower arm look shorter than its upper one.
+  const xs = p[side].map((x, i) => (x == null ? null : x - slope * (BOTTOM + (i + 0.5) * ROW)));
+  const rows = [...xs.keys()].filter((i) => BOTTOM + (i + 0.5) * ROW >= bottom && BOTTOM + (i + 0.5) * ROW <= top);
+  // The edge within the case's height: a descender's tail (Җ) is below the word space's reach.
+  const inked = rows.map((i) => xs[i]).filter((x): x is number => x != null);
+  if (!inked.length) return 0;
+  const edge = side === 'left' ? Math.min(...inked) : Math.max(...inked);
+  const white = rows.map((i) => (xs[i] == null ? depth : Math.min(depth, Math.abs(xs[i]! - edge))));
+  const run = (ws: number[]) => {
+    let t = 0;
+    for (const w of ws) {
+      if (w < 1) break;
+      t += w;
+    }
+    return t;
+  };
+  return Math.max(run(white), run([...white].reverse())) / Math.max(1, rows.length);
 }
 
 /** Whether two glyphs can stand side by side: the same script, and a small cap never beside a lowercase letter (smcp turns them all). */
