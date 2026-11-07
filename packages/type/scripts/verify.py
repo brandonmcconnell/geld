@@ -8,6 +8,7 @@ import json
 import sys
 from pathlib import Path
 
+import glyphsets
 import uharfbuzz as hb
 from fontTools.ttLib import TTFont
 from fontTools.varLib.instancer import instantiateVariableFont
@@ -15,6 +16,8 @@ from fontTools.varLib.instancer import instantiateVariableFont
 DIST = Path(__file__).resolve().parent.parent / "dist"
 OVERLAP_SIMPLE = 0x40
 SAMPLE = "HOnoGELD"
+# Google Fonts' glyph sets the fonts must cover in full; each is added here once it is complete.
+GLYPHSETS = ["GF_Latin_Kernel", "GF_Latin_Core", "GF_Latin_Vietnamese", "GF_Latin_PriAfrican"]
 
 failures: list[str] = []
 
@@ -70,7 +73,10 @@ def check_marks(path: Path, data: bytes, weight: int) -> None:
         "a\u0301": ["aacute"],
         "x\u0301": ["x", "acutecomb"],
         "X\u0301": ["X", "acutecomb.case"],
-        "i\u0309": ["dotlessi", "hookabovecomb"],
+        "i\u030b": ["dotlessi", "hungarumlautcomb"],
+        "x\u0302\u0301": ["x", "circumflexcomb_acutecomb"],
+        "X\u0302\u0301": ["X", "circumflexcomb_acutecomb.case"],
+        "\u1ea5": ["acircumflexacute"],
         "x\u0327": ["x", "cedillacomb"],
     }
     for text, names in expected.items():
@@ -84,6 +90,10 @@ def check_marks(path: Path, data: bytes, weight: int) -> None:
 
 def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None:
     font = TTFont(path)
+    cmap = set(font.getBestCmap())
+    for name in GLYPHSETS:
+        missing = sorted(set(glyphsets.unicodes_per_glyphset(name)) - cmap)
+        check(not missing, f"{path.name}: {name} lacks {' '.join(f'U+{c:04X}' for c in missing)}")
     glyf = font["glyf"]
     for name in font.getGlyphOrder():
         glyph = glyf[name]

@@ -140,13 +140,13 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [x] Basic Latin (U+0020 to 007E), 95 characters.
 - [x] Latin-1 Supplement (U+00A0 to 00FF), 96.
 - [x] Latin Extended-A (U+0100 to 017F), all 128, including Ŀ ŀ ĳ Ĳ ŉ ſ. Accented letters are components (base and marks), generated from Unicode's own decompositions, with the Latvian comma below, the vertical caron of ď ľ Ľ ť, and dotless i and j under marks.
-- [ ] Latin Extended-B, the GF Latin Pro selection: Ș ș Ț ț, Ə ə, Ɓ ɓ, Ɗ ɗ, Ƴ ƴ, Ɛ ɛ, Ɔ ɔ, Ŋ ŋ, Ɲ ɲ, Ǎ ǎ and the pinyin carons, Ǵ ǵ, Ǹ ǹ, Ǻ ǻ, Ǽ ǽ, Ǿ ǿ and others.
-- [ ] Latin Extended Additional: all of Vietnamese (about 200), plus Ẁ ẁ Ẃ ẃ Ẅ ẅ Ỳ ỳ ẞ Ḃ ḃ Ḋ ḋ Ḟ ḟ Ṁ ṁ Ṗ ṗ Ṡ ṡ Ṫ ṫ.
+- [x] Latin Extended-B, the GF Latin Pro selection (94 of the block so far, everything GF Latin Core, Vietnamese and Pri-African need): Ș ș Ț ț, Ə ə, Ɓ ɓ, Ɗ ɗ, Ƴ ƴ, Ɛ ɛ, Ɔ ɔ, Ŋ ŋ, Ɲ ɲ, Ǎ ǎ and the pinyin carons, Ǵ ǵ, Ǹ ǹ, Ǻ ǻ, Ǽ ǽ, Ǿ ǿ and others.
+- [x] Latin Extended Additional: 246 of 256, all of Vietnamese with the side-by-side circumflex pairs, plus Ẁ ẁ Ẃ ẃ Ẅ ẅ Ỳ ỳ ẞ Ḃ ḃ Ḋ ḋ Ḟ ḟ Ṁ ṁ Ṗ ṗ Ṡ ṡ Ṫ ṫ.
 - [ ] IPA and phonetic letters the African and Pro sets need (ɑ ɒ ɡ ɪ ʃ ʊ ʋ ʒ ʔ and others).
 - [ ] Spacing modifier letters: ˆ ˇ ˘ ˙ ˚ ˛ ˜ ˝ ˈ ˌ ʹ ʺ ʻ ʼ ʽ.
 - [ ] Combining diacritics (U+0300 to 036F), the ones GF Latin Pro lists (about 40), plus U+25CC ◌ for showing a combining mark alone.
 - [ ] Language-specific forms (`locl`): Catalan ŀl, Dutch IJ and ij with `IJ`/`ij` acute, Turkish and Azeri i and İ under `smcp` and case mapping, Polish kreska (a steeper acute), Romanian comma-below Ș and Ț, Lithuanian dotted i with accents, Navajo ogonek, and the German ẞ for uppercase.
-- [ ] Coverage checked against GF Latin Core, Plus, Pro, African and Vietnamese, and with Shaperglot for every language Hyperglot lists for those sets.
+- [ ] Coverage checked against GF Latin Core, Plus, Pro, African and Vietnamese, and with Shaperglot for every language Hyperglot lists for those sets. (`verify.py` requires GF Latin Kernel, Core, Vietnamese and Pri-African in full; Plus and African are next.)
 
 ### 3.2 Figures
 - [ ] Proportional lining figures (default).

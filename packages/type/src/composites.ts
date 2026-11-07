@@ -1,3 +1,4 @@
+import { VIETNAMESE_PAIRS } from './marks';
 import { FRACTIONS } from './glyphs-figures';
 
 /** A precomposed letter: a base and the marks stacked on it, each attaching to the anchor its mark names. */
@@ -34,7 +35,18 @@ const MARK_SUFFIX: Record<number, { mark: string; suffix: string }> = {
   0x326: { mark: 'commaaccentcomb', suffix: 'commaaccent' },
   0x327: { mark: 'cedillacomb', suffix: 'cedilla' },
   0x328: { mark: 'ogonekcomb', suffix: 'ogonek' },
+  0x31b: { mark: 'horncomb', suffix: 'horn' },
+  0x324: { mark: 'dieresisbelowcomb', suffix: 'dieresisbelow' },
+  0x325: { mark: 'ringbelowcomb', suffix: 'ringbelow' },
+  0x32d: { mark: 'circumflexbelowcomb', suffix: 'circumflexbelow' },
+  0x32e: { mark: 'brevebelowcomb', suffix: 'brevebelow' },
+  0x330: { mark: 'tildebelowcomb', suffix: 'tildebelow' },
+  0x331: { mark: 'macronbelowcomb', suffix: 'macronbelow' },
+  0x329: { mark: 'verticallinebelowcomb', suffix: 'verticallinebelow' },
 };
+
+/** Marks that attach below the base, so they leave i and j their dots. */
+const BELOW = /^(dotbelow|commaaccent|cedilla|ogonek|\w+belowcomb)/;
 
 /** Latvian writes a comma below where Unicode decomposes to a cedilla, and ģ turns it above. */
 const LATVIAN_COMMA = new Set([0x122, 0x136, 0x137, 0x13b, 0x13c, 0x145, 0x146, 0x156, 0x157]);
@@ -82,12 +94,16 @@ export function accentedFromUnicode(ranges: [number, number][], names: Map<numbe
         }
         if (mcp === 0x30c && VERTICAL_CARON.has(cp)) mark = 'caronvertcomb';
         if (upper && caseMarks.has(mark)) mark = `${mark}.case`;
-        if (!mark.startsWith('dotbelow') && !mark.startsWith('commaaccent') && !mark.startsWith('cedilla') && !mark.startsWith('ogonek'))
-          top = true;
+        if (!BELOW.test(mark)) top = true;
         marks.push(mark);
         suffix += name;
       }
       if (marks.length === 0) continue;
+      for (const [first, second] of VIETNAMESE_PAIRS) {
+        const plain = (m: string) => m.replace(/\.case$/, '');
+        const i = marks.findIndex((m, k) => plain(m) === first && plain(marks[k + 1] ?? '') === second);
+        if (i >= 0) marks.splice(i, 2, `${first}_${second}${marks[i]!.endsWith('.case') ? '.case' : ''}`);
+      }
       const base = top && baseName === 'i' ? 'dotlessi' : top && baseName === 'j' ? 'dotlessj' : baseName;
       out.push({ name: `${baseName}${suffix}`, unicode: cp, base, marks });
     }
@@ -102,7 +118,24 @@ export const PLACED: PlacedDef[] = [
   { name: 'Ldot', unicode: 0x13f, parts: [{ glyph: 'L' }, { glyph: 'periodcentered', dx: 5, dy: 2 }] },
   { name: 'ldot', unicode: 0x140, parts: [{ glyph: 'l', after: true }, { glyph: 'periodcentered', after: true, dx: -0.5, dy: 2 }] },
   { name: 'Dcroat', unicode: 0x110, parts: [{ glyph: 'Eth', after: true }] },
+  { name: 'apostrophemod', unicode: 0x2bc, parts: [{ glyph: 'quoteright', after: true }] },
   { name: 'uni00AD', unicode: 0xad, parts: [{ glyph: 'hyphen', after: true }] },
+  ...(
+    [
+      ['DZcaron', 0x1c4, 'D', 'Zcaron'],
+      ['Dzcaron', 0x1c5, 'D', 'zcaron'],
+      ['dzcaron', 0x1c6, 'd', 'zcaron'],
+      ['LJ', 0x1c7, 'L', 'J'],
+      ['Lj', 0x1c8, 'L', 'j'],
+      ['lj', 0x1c9, 'l', 'j'],
+      ['NJ', 0x1ca, 'N', 'J'],
+      ['Nj', 0x1cb, 'N', 'j'],
+      ['nj', 0x1cc, 'n', 'j'],
+      ['DZ', 0x1f1, 'D', 'Z'],
+      ['Dz', 0x1f2, 'D', 'z'],
+      ['dz', 0x1f3, 'd', 'z'],
+    ] as const
+  ).map(([name, unicode, a, b]) => ({ name, unicode, parts: [{ glyph: a, after: true }, { glyph: b, after: true }] })),
   ...FRACTIONS.map(([name, unicode, numerator, denominator]) => ({
     name,
     unicode,
@@ -130,4 +163,6 @@ export const SPACING_ACCENTS: { name: string; unicode: number; mark: string; bel
 export const LATIN_RANGES: [number, number][] = [
   [0xc0, 0xff],
   [0x100, 0x17f],
+  [0x180, 0x24f],
+  [0x1e00, 0x1eff],
 ];

@@ -14,6 +14,8 @@ import {
   open,
   p,
   RIGHT,
+  shift,
+  smaller,
   type SpaceDef,
   stem,
   vee,
@@ -744,6 +746,22 @@ const PUNCTUATION: GlyphDef[] = [
   },
 ];
 
+/** ™ is a superior T and M, drawn from the capitals at the superiors' size. */
+const TRADEMARK: GlyphDef = {
+  name: 'trademark',
+  unicode: 0x2122,
+  lsb: 1,
+  rsb: 1,
+  draw: (g) => {
+    const k = 0.5;
+    const rise = g.cap * (1 - k);
+    const t = UPPER.find((d) => d.name === 'T')!;
+    const m = UPPER.find((d) => d.name === 'M')!;
+    const tWidth = g.wide(11) * k;
+    return [...smaller(t.draw(g), k, rise, g.pen, 0.75), ...shift(smaller(m.draw(g), k, rise, g.pen, 0.75), tWidth + 1 + g.v / 2, 0)];
+  },
+};
+
 const NOTDEF: GlyphDef = {
   name: '.notdef',
   lsb: 1,
@@ -751,7 +769,7 @@ const NOTDEF: GlyphDef = {
   draw: (g) => [box(0, g.wide(7), g.bottom(0), g.top(g.cap), [false, false, false, false])],
 };
 
-export const GLYPHS: GlyphDef[] = [NOTDEF, ...UPPER, ...LOWER, ...FIGURES, ...figureVariants(FIGURES), ...PUNCTUATION, ...SYMBOLS, ...LATIN_EXTRA, ...LATIN1];
+export const GLYPHS: GlyphDef[] = [NOTDEF, ...UPPER, ...LOWER, ...FIGURES, ...figureVariants(FIGURES), ...PUNCTUATION, TRADEMARK, ...SYMBOLS, ...LATIN_EXTRA, ...LATIN1];
 
 export const SPACES: SpaceDef[] = [
   { name: 'space', unicode: 0x20, advance: 5 },

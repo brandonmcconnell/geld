@@ -1,8 +1,8 @@
-import { ALL, bar, box, comma, diagonal, dot, type DrawContext, level, open, p, rotate180, withPen } from './draw';
+import { ALL, bar, box, comma, diagonal, dot, type DrawContext, level, open, p, rotate180, shift, withPen } from './draw';
 import type { Stroke } from './geometry';
 
 /** Where a mark attaches: the base's anchor of the same name, matched by the mark's `_name` anchor at its origin. */
-export type Attachment = 'top' | 'bottom' | 'ogonek' | 'topright';
+export type Attachment = 'top' | 'bottom' | 'ogonek' | 'topright' | 'horn';
 
 /**
  * A combining mark, drawn around its attachment point (0, 0): marks above stand on it, marks
@@ -28,7 +28,7 @@ const accentPen = (g: DrawContext) => ({ v: g.v * 0.9, h: g.h * 0.9 });
 const acute = (g: DrawContext, height: number, dx = 0): Stroke =>
   withPen(level(open(p(dx - 0.9, 0), p(dx + 0.9, height))), accentPen(g));
 
-export const MARKS: MarkDef[] = [
+const MARKS_ABOVE: MarkDef[] = [
   { name: 'gravecomb', unicode: 0x300, attach: 'top', caseForm: true, draw: (g, h) => [withPen(level(open(p(0.9, 0), p(-0.9, h))), accentPen(g))] },
   { name: 'acutecomb', unicode: 0x301, attach: 'top', caseForm: true, draw: (g, h) => [acute(g, h)] },
   {
@@ -96,6 +96,7 @@ export const MARKS: MarkDef[] = [
   },
   { name: 'commaturnedabovecomb', unicode: 0x312, attach: 'top', draw: (g) => rotate180(comma(g, 0, 0, 0.75), 0, (g.dot * 0.75 - 2.5 * 0.75) / 2) },
   { name: 'dotbelowcomb', unicode: 0x323, attach: 'bottom', draw: (g) => [dot(g, 0, -1.25 - g.dot)] },
+  { name: 'verticallinebelowcomb', unicode: 0x329, attach: 'bottom', draw: (g) => [withPen(open(p(0, -1.1), p(0, -3.6)), accentPen(g))] },
   { name: 'commaaccentcomb', unicode: 0x326, attach: 'bottom', draw: (g) => comma(g, 0, -0.6 - g.dot * 0.65, 0.65) },
   {
     name: 'cedillacomb',
@@ -123,4 +124,59 @@ export const MARKS: MarkDef[] = [
     attach: 'topright',
     draw: (g) => [withPen(level(open(p(0.5, 3), p(-0.4, 0))), { v: g.dot * 0.8, h: g.dot * 0.8 })],
   },
+  {
+    name: 'horncomb',
+    unicode: 0x31b,
+    attach: 'horn',
+    draw: (g) => {
+      const pen = accentPen(g);
+      return [withPen(open(p(-1, 0), p(2.6, 0, true), p(2.6, 3)), pen)];
+    },
+  },
 ];
+
+/** Marks hanging below the baseline: they hang from the base's bottom anchor with this gap. */
+const BELOW_GAP = 1.1;
+
+function belowMarks(): MarkDef[] {
+  const below = (name: string, unicode: number, above: MarkDef['draw'], height = 2) => ({
+    name,
+    unicode,
+    attach: 'bottom' as const,
+    draw: (g: DrawContext) => shift(above(g, height), 0, -BELOW_GAP - height - g.h / 2),
+  });
+  const find = (name: string) => MARKS_ABOVE.find((m) => m.name === name)!.draw;
+  return [
+    below('macronbelowcomb', 0x331, find('macroncomb'), 0),
+    below('circumflexbelowcomb', 0x32d, find('circumflexcomb')),
+    below('dieresisbelowcomb', 0x324, find('dieresiscomb'), 0),
+    below('tildebelowcomb', 0x330, find('tildecomb')),
+    below('ringbelowcomb', 0x325, find('ringcomb')),
+    below('brevebelowcomb', 0x32e, find('brevecomb')),
+  ];
+}
+
+/**
+ * Vietnamese sets the acute, grave or hook beside the circumflex rather than on top of it, so a
+ * letter with both stays within the line. ccmp makes the same pair from typed marks.
+ */
+export const VIETNAMESE_PAIRS: [string, string][] = [
+  ['circumflexcomb', 'acutecomb'],
+  ['circumflexcomb', 'gravecomb'],
+  ['circumflexcomb', 'hookabovecomb'],
+];
+
+function vietnameseMarks(): MarkDef[] {
+  const find = (name: string) => MARKS_ABOVE.find((m) => m.name === name)!;
+  return VIETNAMESE_PAIRS.map(([first, second]) => ({
+    name: `${first}_${second}`,
+    attach: 'top' as const,
+    caseForm: true,
+    draw: (g: DrawContext, height: number) => [
+      ...find(first).draw(g, height),
+      ...shift(find(second).draw(g, height * 0.8), second === 'gravecomb' ? -2.9 : 2.9, height * 0.55),
+    ],
+  }));
+}
+
+export const MARKS: MarkDef[] = [...MARKS_ABOVE, ...belowMarks(), ...vietnameseMarks()];
