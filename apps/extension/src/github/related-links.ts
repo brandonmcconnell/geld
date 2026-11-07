@@ -17,8 +17,6 @@ const SECTION_HEADING = /^(?:activity|reviewers|assignees|labels|projects|milest
 
 const HEADINGS = 'h2, h3, h4, summary, [role="heading"], .discussion-sidebar-heading';
 
-const SIDEBAR_ROOTS = '#partial-discussion-sidebar, [data-testid="issue-viewer-metadata-pane"], .Layout-sidebar';
-
 const KIND_ICONS: Readonly<Record<RelatedKind, string>> = {
   ticket: ICON_ISSUE_OPENED,
   conversation: ICON_COMMENT_DISCUSSION,
@@ -27,8 +25,6 @@ const KIND_ICONS: Readonly<Record<RelatedKind, string>> = {
   doc: ICON_FILE,
   error: ICON_ALERT,
 };
-
-let mounted: { readonly section: HTMLElement; readonly after: Element; readonly signature: string } | null = null;
 
 const words = (element: Element): string => (element.textContent ?? '').replace(/\s+/g, ' ').trim();
 
@@ -58,26 +54,37 @@ export function relatedLinksOnPage(): RelatedLink[] {
 
 const isHeading = (element: Element): boolean => SECTION_HEADING.test(words(element));
 
+/** Pickers and menus GitHub opens over the page repeat a section's title ("Assignees" over the list of people). */
+const OVERLAYS = '[role="dialog"], [role="menu"], [role="listbox"], [popover], .Overlay, #__primerPortalRoot__, details-menu, .select-menu-modal';
+
+/** A sidebar section's own title: its first heading, which names it. */
+const titleOf = (section: Element): Element | null => section.querySelector(HEADINGS);
+
 /**
- * GitHub's Assignees section, found by its heading and climbed to the child of the list that holds every section,
- * so the Rails sidebar (`.discussion-sidebar-item`) and a React one are found the same way. Exported for its test.
+ * Every Assignees section on the page, each found by its heading and climbed to the child of the list that holds
+ * the other sections (two or more of them titled as GitHub's are). So the Rails sidebar (`.discussion-sidebar-item`,
+ * an `h3` signed out, a `summary` signed in) and the Overview page's (`section[data-overview-sidebar-item]` with an
+ * `h4`, or an `h4 > button > span` with a gear) are found alike. Exported for its test.
  */
-export function assigneesSection(): HTMLElement | null {
-  const roots = [...document.querySelectorAll(SIDEBAR_ROOTS)];
-  const scopes: ParentNode[] = roots.length > 0 ? roots : [document];
-  for (const scope of scopes) {
-    for (const heading of scope.querySelectorAll(HEADINGS)) {
-      if (words(heading).toLowerCase() !== 'assignees' || heading.closest(`.markdown-body, [${OWN_UI_ATTRIBUTE}]`) !== null) continue;
-      let section: Element = heading;
-      for (let depth = 0; depth < 10 && section.parentElement !== null; depth++) {
-        const list = section.parentElement;
-        const sibling = [...list.children].some((child) => child !== section && !child.hasAttribute(OWN_UI_ATTRIBUTE) && [...child.querySelectorAll(HEADINGS)].some(isHeading));
-        if (sibling) return section instanceof HTMLElement ? section : null;
-        section = list;
+export function assigneesSections(): HTMLElement[] {
+  const found = new Set<HTMLElement>();
+  for (const heading of document.querySelectorAll(HEADINGS)) {
+    if (words(heading).toLowerCase() !== 'assignees' || heading.closest(`.markdown-body, [${OWN_UI_ATTRIBUTE}], ${OVERLAYS}`) !== null) continue;
+    let section: Element = heading;
+    for (let depth = 0; depth < 6 && section.parentElement !== null && section.parentElement !== document.body; depth++) {
+      const list = section.parentElement;
+      const others = [...list.children].filter((child) => child !== section && !child.hasAttribute(OWN_UI_ATTRIBUTE) && (() => {
+        const title = titleOf(child);
+        return title !== null && isHeading(title);
+      })());
+      if (others.length >= 2) {
+        if (section instanceof HTMLElement && titleOf(section) === heading) found.add(section);
+        break;
       }
+      section = list;
     }
   }
-  return null;
+  return [...found];
 }
 
 function markOf(link: RelatedLink): Element {
@@ -108,44 +115,84 @@ function rowOf(link: RelatedLink): HTMLElement {
   return createElement('li', { class: `${SECTION_CLASS}__item`, 'data-kind': link.kind }, [anchor]);
 }
 
-/** Our section in the shape of the one it follows: GitHub's classes on the box and the heading. */
+const TITLE = 'Related links';
+
+function listOf(links: readonly RelatedLink[]): HTMLElement {
+  return createElement('ul', { class: `${SECTION_CLASS}__list` }, links.map(rowOf));
+}
+
+/** The Rails sidebar's item: `div.discussion-sidebar-item` with an `h3.discussion-sidebar-heading`. */
+function railsSection(links: readonly RelatedLink[]): HTMLElement {
+  return createElement('div', { class: `discussion-sidebar-item ${SECTION_CLASS}`, [OWN_UI_ATTRIBUTE]: '', 'data-geld-shape': 'rails' }, [
+    createElement('h3', { class: `discussion-sidebar-heading text-bold ${SECTION_CLASS}__heading` }, [TITLE]),
+    listOf(links),
+  ]);
+}
+
+/**
+ * The Overview page's section (GitHub's `SidebarSection`): `<section aria-label data-overview-sidebar-item>` holding
+ * a header `div` with the title's `h4` and a content `div`, every class a CSS module's, so each is taken from the page.
+ * The title's class is the leaf that reads the neighbour's title (the `h4`, or the `span` inside a gear's button), the
+ * header's from a section whose header is the plain `div > h4`, the content's from the neighbour's last child.
+ */
+function overviewSection(neighbour: HTMLElement, links: readonly RelatedLink[]): HTMLElement {
+  const name = words(titleOf(neighbour) ?? neighbour);
+  const leaf = [...neighbour.querySelectorAll('h2, h3, h4, span')].find((element) => element.childElementCount === 0 && words(element) === name);
+  const plainHeader = neighbour.parentElement?.querySelector(':scope > [data-overview-sidebar-item] > div:first-child:has(> h4:only-child)') ?? null;
+  const content = neighbour.lastElementChild;
+  return createElement('section', { class: SECTION_CLASS, 'aria-label': TITLE, 'data-overview-sidebar-item': '', [OWN_UI_ATTRIBUTE]: '', 'data-geld-shape': 'overview' }, [
+    createElement('div', { class: plainHeader?.className ?? '' }, [createElement('h4', { class: `${leaf?.className ?? ''} ${SECTION_CLASS}__heading`.trim() }, [TITLE])]),
+    createElement('div', { class: content !== null && content !== titleOf(neighbour)?.parentElement ? content.className : '' }, [listOf(links)]),
+  ]);
+}
+
+/** Any other sidebar: the neighbour's tag and classes, and its title's. */
 function sectionLike(neighbour: HTMLElement, links: readonly RelatedLink[]): HTMLElement {
-  const classic = neighbour.classList.contains('discussion-sidebar-item');
-  const section = document.createElement(classic ? 'div' : neighbour.localName);
-  section.className = `${classic ? 'discussion-sidebar-item' : neighbour.className} ${SECTION_CLASS}`.trim();
+  if (neighbour.classList.contains('discussion-sidebar-item')) return railsSection(links);
+  if (neighbour.hasAttribute('data-overview-sidebar-item')) return overviewSection(neighbour, links);
+  const section = document.createElement(neighbour.localName);
+  section.className = `${neighbour.className} ${SECTION_CLASS}`.trim();
   section.setAttribute(OWN_UI_ATTRIBUTE, '');
-  const theirs = [...neighbour.querySelectorAll(HEADINGS)].find(isHeading);
-  const level = theirs !== undefined && /^H[2-4]$/.test(theirs.tagName) ? theirs.localName : 'h3';
+  const theirs = titleOf(neighbour);
+  const level = theirs !== null && /^H[2-4]$/.test(theirs.tagName) ? theirs.localName : 'h3';
   const heading = document.createElement(level);
-  heading.className = classic || theirs === undefined || level !== theirs.localName ? 'discussion-sidebar-heading text-bold' : theirs.className;
+  heading.className = theirs === null || level !== theirs.localName ? 'discussion-sidebar-heading text-bold' : theirs.className;
   heading.classList.add(`${SECTION_CLASS}__heading`);
-  heading.textContent = 'Related links';
-  section.append(heading, createElement('ul', { class: `${SECTION_CLASS}__list` }, links.map(rowOf)));
+  heading.textContent = TITLE;
+  section.append(heading, listOf(links));
   return section;
 }
 
+/** Our section after each Assignees section, keyed by it, with the links it was drawn from. */
+let mounted = new Map<HTMLElement, { readonly section: HTMLElement; readonly signature: string }>();
+
 export function removeRelatedLinks(): void {
-  mounted?.section.remove();
-  mounted = null;
+  for (const { section } of mounted.values()) section.remove();
+  mounted = new Map();
   for (const stray of document.querySelectorAll(`.${SECTION_CLASS}[${OWN_UI_ATTRIBUTE}]`)) stray.remove();
 }
 
-/** Draw, move back into place or take away the section. Writes only when the links or the place changed. */
+/** Draw, move back into place or take away the sections. Writes only where the links or the place changed. */
 export function applyRelatedLinks(active: boolean): void {
-  if (!active) {
-    if (mounted !== null) removeRelatedLinks();
-    return;
-  }
-  const after = assigneesSection();
-  const links = after === null ? [] : relatedLinksOnPage();
-  if (after === null || links.length === 0) {
-    if (mounted !== null) removeRelatedLinks();
+  const afters = active ? assigneesSections() : [];
+  const links = afters.length === 0 ? [] : relatedLinksOnPage();
+  if (links.length === 0) {
+    if (mounted.size > 0) removeRelatedLinks();
     return;
   }
   const signature = JSON.stringify(links);
-  if (mounted !== null && mounted.signature === signature && mounted.after === after && mounted.section.isConnected && after.nextElementSibling === mounted.section) return;
-  removeRelatedLinks();
-  const section = sectionLike(after, links);
-  after.after(section);
-  mounted = { section, after, signature };
+  const next = new Map<HTMLElement, { readonly section: HTMLElement; readonly signature: string }>();
+  for (const after of afters) {
+    const known = mounted.get(after);
+    if (known !== undefined && known.signature === signature && known.section.isConnected && after.nextElementSibling === known.section) {
+      next.set(after, known);
+      continue;
+    }
+    known?.section.remove();
+    const section = sectionLike(after, links);
+    after.after(section);
+    next.set(after, { section, signature });
+  }
+  for (const [after, { section }] of mounted) if (!next.has(after)) section.remove();
+  mounted = next;
 }
