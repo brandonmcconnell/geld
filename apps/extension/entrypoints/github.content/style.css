@@ -9552,9 +9552,11 @@ dialog.geld-lightbox {
 }
 
 /* The Overview's recommended action: GitHub's "View merge status" as an info button, and Geld's merge beside it. */
-button[data-geld-merge-info] {
-  display: inline-grid;
-  place-items: center;
+/* GitHub's button is a grid laid out for its label: with the label hidden the mark is centred in a flex box instead. */
+button[data-geld-merge-info][data-geld-merge-info] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 28px;
   padding: 0;
 }
@@ -9578,14 +9580,16 @@ div:has(> [data-geld-overview-merge]) {
   display: inline-flex;
 }
 
-.geld-overview-merge__caret {
-  display: inline-grid;
-  place-items: center;
+/* GitHub's `.BtnGroup-item` floats, which makes the caret a block, so the mark is centred by flex with GitHub's rules outranked. */
+.geld-overview-merge .geld-overview-merge__caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 28px;
   padding: 0;
 }
 
-.geld-overview-merge__caret .octicon {
+.geld-overview-merge .geld-overview-merge__caret .octicon {
   margin: 0;
 }
 

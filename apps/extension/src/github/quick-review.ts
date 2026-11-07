@@ -444,6 +444,12 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
   showCount(mounted);
   showAuthor(mounted);
   showStatus(mounted);
+  if (earlyPillClick !== null) {
+    const clicked = earlyPillClick;
+    earlyPillClick = null;
+    const pill = mounted.pills.includes(clicked) ? clicked : (mounted.pills.find((each) => pillPlace(each) === pillPlace(clicked)) ?? null);
+    if (pill !== null && mounted.statusMenu === null) toggleStatusMenu(mounted, pill);
+  }
   if (anchor === null) {
     unplace(mounted);
     return;
@@ -549,6 +555,9 @@ function place(state: Mounted): void {
   } else if (state.anchor !== null && state.anchor.previousElementSibling !== state.root) {
     state.anchor.insertAdjacentElement('beforebegin', state.root);
   }
+  // A group left by another copy of Geld (one whose extension was reloaded or updated under the page, or a second
+  // build installed beside this one) stood beside this one as a second 💬; only one copy is ever live (`geld:takeover`).
+  for (const stray of document.querySelectorAll(`.${GROUP_CLASS}`)) if (stray !== state.root) stray.remove();
   const place = sticky?.place ?? null;
   if (state.root.getAttribute(ATTR_PLACE) !== place) {
     if (place === null) state.root.removeAttribute(ATTR_PLACE);
@@ -575,6 +584,7 @@ export function removeQuickReview(): void {
   // Pills the hint put in place before the controls were made go too.
   removeStatusPills();
   removeOverviewMerge();
+  earlyPillClick = null;
   if (mounted === null) return;
   closePanel();
   // Not settled: a placeholder menu's close would put back the pills this teardown has just removed.
@@ -1240,6 +1250,8 @@ function showStatus(state: Mounted): void {
       showStatus(state);
     },
   });
+  // The menu says what the merge button beside it says: a reading that changed it since it opened is shown at once.
+  if (state.statusMenu !== null && state.statusMenu.dataset.placeholder === undefined && state.statusOpener?.isConnected === true && state.statusMenu.dataset.options !== menuSignature(actions)) refreshOpenMenu(state);
   if (state.statusMenu !== null && (state.statusOpener === null || !state.pills.includes(state.statusOpener))) {
     // GitHub re-rendered its header (on the Overview about two seconds into a load, and the mini header as it scrolls)
     // and the pill with it: the open menu goes to the pill that took its place, standing where the opener stood, rather
@@ -1257,10 +1269,17 @@ function showStatus(state: Mounted): void {
   }
 }
 
+/** A pill clicked before the controls were mounted, whose menu opens once they are. */
+let earlyPillClick: HTMLButtonElement | null = null;
+
 /** Every pill's click: a pill may be put in place before the controls are mounted (`reassertStatusPills`). */
 function openFromPill(pill: HTMLButtonElement, click: MouseEvent): void {
   if (!pill.hasAttribute('aria-haspopup')) return;
-  if (mounted === null) return;
+  // The controls mount on the pass after the pill was put in place: the menu opens then, rather than the click doing nothing.
+  if (mounted === null) {
+    earlyPillClick = pill;
+    return;
+  }
   if (instantMergeReady(mounted) && (MAC ? click.metaKey : click.ctrlKey)) void instantMerge(mounted, pill);
   else toggleStatusMenu(mounted, pill);
 }

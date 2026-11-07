@@ -82,6 +82,16 @@ describe('syncOverviewMerge', () => {
     expect(info?.querySelector('.geld-overview-merge__info')).toBeNull();
   });
 
+  it('draws GitHub’s own grey merge in its green, as GitHub draws it when all is clear, and puts the grey back on teardown', () => {
+    // GitHub's split merge as it renders it (#490, Nov 2026), with the default variant it gives it while checks are not all green.
+    render('<div data-component="ButtonGroup"><div><button data-component="Button" data-variant="default" type="button"><span data-component="buttonContent"><span>Squash and merge</span></span></button></div><div><button data-component="IconButton" data-variant="default" aria-labelledby="tip" type="button"></button><span id="tip">Select merge method</span></div></div>');
+    syncOverviewMerge(null, 'SQUASH', handlers);
+    const variants = (): (string | null)[] => [...document.querySelectorAll('button')].map((button) => button.getAttribute('data-variant'));
+    expect(variants()).toEqual(['primary', 'primary']);
+    removeOverviewMerge();
+    expect(variants()).toEqual(['default', 'default']);
+  });
+
   it('adds no second merge where GitHub shows its own, and nothing when there is nothing to merge', () => {
     render('<button type="button">Squash and merge</button><button type="button" aria-label="Select merge method"></button>');
     syncOverviewMerge({ kind: 'merge', methods: ['SQUASH'] }, 'SQUASH', handlers);

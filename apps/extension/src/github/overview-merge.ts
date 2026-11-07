@@ -50,6 +50,8 @@ const VIEW_STATUS = 'View merge status';
 const ATTR_INFO = 'data-geld-merge-info';
 const ATTR_MERGE = 'data-geld-overview-merge';
 const INFO_CLASS = 'geld-overview-merge__info';
+/** On a merge button of GitHub's own that Geld turned green: the variant GitHub gave it, put back on teardown. */
+const ATTR_VARIANT = 'data-geld-merge-variant';
 
 export interface OverviewMergeHandlers {
   readonly onMerge: (method: MergeMethod, anchor: HTMLElement) => void;
@@ -93,9 +95,28 @@ function restore(button: HTMLButtonElement): void {
 let infoIds = 0;
 let menu: { readonly element: HTMLElement; readonly keys: AbortController } | null = null;
 
-/** A control of GitHub's own that merges, which a pull request in no stack gets there: Geld's would be a second one. */
-function githubMergeIn(row: Element): boolean {
-  return [...row.querySelectorAll('button')].some((button) => !button.closest(`[${OWN_UI_ATTRIBUTE}]`) && /\bmerge\b/i.test(button.textContent ?? '') && button.textContent?.trim() !== VIEW_STATUS);
+/** GitHub's own merge controls in the section (the merge and its method caret), which a pull request in no stack gets there. */
+function githubMergeButtons(scope: Element): HTMLButtonElement[] {
+  return [...scope.querySelectorAll<HTMLButtonElement>('button')].filter((button) => {
+    if (button.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null || button.hasAttribute(ATTR_INFO)) return false;
+    const label = button.getAttribute('aria-labelledby');
+    const words = `${button.textContent ?? ''} ${label === null ? '' : (document.getElementById(label)?.textContent ?? '')}`;
+    return /\bmerge\b/i.test(words) && button.textContent?.trim() !== VIEW_STATUS;
+  });
+}
+
+/**
+ * GitHub draws its merge grey (Primer's default variant) where it wants a second thought (non-required checks failing,
+ * checks running) and green where all is clear: readers look for the green one, so it is always green. React set the
+ * variant and changes it only when its own prop does, so the attribute holds; what GitHub gave it is put back on teardown.
+ */
+function greenMerges(scope: Element): void {
+  for (const button of githubMergeButtons(scope)) {
+    const variant = button.getAttribute('data-variant');
+    if (variant === null || variant === 'primary') continue;
+    if (!button.hasAttribute(ATTR_VARIANT)) button.setAttribute(ATTR_VARIANT, variant);
+    button.setAttribute('data-variant', 'primary');
+  }
 }
 
 /**
@@ -107,11 +128,12 @@ export function syncOverviewMerge(merge: OverviewMerge | null, method: MergeMeth
   const section = document.querySelector(SECTION);
   const buttons = section === null ? [] : viewStatusButtons(section);
   for (const button of buttons) iconify(button);
+  if (section !== null) greenMerges(section);
   const anchor = buttons[0] ?? null;
   const row = anchor?.closest('[data-testid="for-you-item-row"]') ?? null;
   const existing = document.querySelector<HTMLElement>(`[${ATTR_MERGE}]`);
   const chosen = merge?.methods.includes(method) === true ? method : (merge?.methods[0] ?? method);
-  if (merge === null || anchor === null || row === null || githubMergeIn(row)) {
+  if (merge === null || anchor === null || row === null || githubMergeButtons(row).length > 0) {
     existing?.remove();
     if (existing !== null) closeMethodMenu();
     return;
@@ -223,4 +245,8 @@ export function removeOverviewMerge(): void {
   closeMethodMenu();
   for (const control of document.querySelectorAll(`[${ATTR_MERGE}]`)) control.remove();
   for (const button of document.querySelectorAll<HTMLButtonElement>(`button[${ATTR_INFO}]`)) restore(button);
+  for (const button of document.querySelectorAll<HTMLButtonElement>(`button[${ATTR_VARIANT}]`)) {
+    button.setAttribute('data-variant', button.getAttribute(ATTR_VARIANT) ?? 'default');
+    button.removeAttribute(ATTR_VARIANT);
+  }
 }
