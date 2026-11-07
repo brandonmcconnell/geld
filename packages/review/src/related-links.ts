@@ -1006,7 +1006,8 @@ function githubRank(link: RelatedLink, options: RelatedOptions): number {
  * Atlassian's Jira bot, ClickUp's, Codegen's trace links.
  */
 const OFFICIAL_SOURCES: Readonly<Record<string, readonly string[]>> = {
-  linear: ['linear[bot]'],
+  // Linear's linkback App, and Linear Code, which posts the linkback with the issue's title and its reviews of the pull request.
+  linear: ['linear[bot]', 'linear-code[bot]'],
   jira: ['atlassian[bot]'],
   confluence: ['atlassian[bot]'],
   'confluence-short': ['atlassian[bot]'],
@@ -1093,7 +1094,13 @@ export function relatedLinksFrom(candidates: readonly LinkCandidate[], options: 
     const title = takesTitle ? link.title : known.link.title;
     found.set(link.key, { link: { ...kept, title }, rank: Math.min(rank, known.rank), titleOfficial: takesTitle ? official : known.titleOfficial });
   }
-  const links = [...found.values()].map((entry) => entry.link);
+  // A review named by a pull request (Linear Code links its review of each pull request it knows) is that pull
+  // request's: the one being read says only what it does, another's belongs on that pull request's page.
+  const self = options.self?.toLowerCase() ?? null;
+  const links = [...found.values()].flatMap(({ link }) => {
+    if (link.kind !== 'review' || link.title === null || !/^[\w.-]+\/[\w.-]+#\d+$/.test(link.title)) return [link];
+    return link.title.toLowerCase() === self ? [{ ...link, title: null }] : [];
+  });
   return RELATED_KIND_ORDER.flatMap((kind) => {
     const ofKind = links.filter((link) => link.kind === kind);
     return kind === 'github' ? ofKind.sort((a, b) => githubRank(a, options) - githubRank(b, options)) : ofKind;
