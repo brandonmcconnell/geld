@@ -8,10 +8,13 @@
 
 import { botById } from './bots';
 
-export type RelatedKind = 'ticket' | 'conversation' | 'agent' | 'review' | 'doc' | 'error';
+export type RelatedKind = 'github' | 'ticket' | 'conversation' | 'agent' | 'review' | 'doc' | 'error';
 
-/** The order the kinds are listed in: what the pull request is for, where it was asked, who wrote it, what read it. */
-export const RELATED_KIND_ORDER: readonly RelatedKind[] = ['ticket', 'conversation', 'agent', 'review', 'doc', 'error'];
+/**
+ * The order the kinds are listed in: GitHub's own pull requests and issues, then what the pull request is for, where
+ * it was asked, who wrote it, what read it.
+ */
+export const RELATED_KIND_ORDER: readonly RelatedKind[] = ['github', 'ticket', 'conversation', 'agent', 'review', 'doc', 'error'];
 
 /** A bundled mark for services with no GitHub App to borrow a picture from (`public/tracker-icons/<name>.svg`). */
 export type RelatedIcon = 'linear' | 'jira' | 'asana' | 'youtrack' | 'gitlab' | 'bitbucket';
@@ -910,23 +913,39 @@ function readGitHub(url: URL, text: string, options: RelatedOptions): RelatedLin
   const id = `${repository}#${number}`.toLowerCase();
   if (options.self !== undefined && options.self !== null && id === options.self.toLowerCase()) return null;
   const noun = group(path, 3) === 'pull' ? 'pull request' : group(path, 3) === 'issues' ? 'issue' : 'discussion';
-  const own = options.repository !== undefined && options.repository !== null && repository.toLowerCase() === options.repository.toLowerCase();
-  const ref = own ? `#${number}` : `${repository}#${number}`;
+  const near = nearness(repository, options);
+  const ref = near === 'repository' ? `#${number}` : near === 'owner' ? `${group(path, 2)}#${number}` : `${repository}#${number}`;
   return {
     // Issues and pull requests share one numbering, so a link to either is the same thing.
     key: `github:${noun === 'discussion' ? 'd:' : ''}${id}`,
-    kind: 'ticket',
+    kind: 'github',
     service: 'GitHub',
     noun,
     ref,
     // GitHub writes a reference as `#12`, `owner/repo#12` or `#12 (comment)`, none of them a title.
-    title: titleFromText(text.replace(/\s*\(comment\)$/, ''), 'GitHub', noun, ref),
+    title: /^(?:[\w.-]+\/)?(?:[\w.-]+)?#\d+(?:\s*\(comment\))?$/.test(text.trim()) ? null : titleFromText(text, 'GitHub', noun, ref),
     context: repository,
     href: url.href,
     action: `Open ${noun} on GitHub`,
     appId: null,
     icon: null,
   };
+}
+
+/** How near a reference's repository is to the page's: the same repository, the same owner, or elsewhere. */
+function nearness(repository: string, options: RelatedOptions): 'repository' | 'owner' | 'elsewhere' {
+  const here = (options.repository ?? '').toLowerCase();
+  const there = repository.toLowerCase();
+  if (here !== '' && there === here) return 'repository';
+  return here !== '' && there.split('/')[0] === here.split('/')[0] ? 'owner' : 'elsewhere';
+}
+
+const NEARNESS_ORDER = ['repository', 'owner', 'elsewhere'];
+const GITHUB_NOUN_ORDER = ['pull request', 'issue', 'discussion'];
+
+/** GitHub's own references in reading order: pull requests, then issues, then discussions, each nearest first. */
+function githubRank(link: RelatedLink, options: RelatedOptions): number {
+  return GITHUB_NOUN_ORDER.indexOf(link.noun) * NEARNESS_ORDER.length + NEARNESS_ORDER.indexOf(nearness(link.context ?? '', options));
 }
 
 function readLink(candidate: LinkCandidate, options: RelatedOptions = {}): { readonly link: RelatedLink; readonly rank: number } | null {
@@ -952,7 +971,8 @@ export function relatedLinkOf(candidate: LinkCandidate, options: RelatedOptions 
 }
 
 /**
- * Every related link among `candidates`, one per thing linked to, in kind order and then in the order they appear.
+ * Every related link among `candidates`, one per thing linked to, in kind order and then in the order they appear
+ * (GitHub's own: pull requests before issues, each nearest the page's repository first, `githubRank`).
  * Of two links to one thing the web page is kept over a desktop deep link, and a title found on either is kept.
  */
 export function relatedLinksFrom(candidates: readonly LinkCandidate[], options: RelatedOptions = {}): RelatedLink[] {
@@ -970,7 +990,10 @@ export function relatedLinksFrom(candidates: readonly LinkCandidate[], options: 
     found.set(link.key, { link: { ...kept, title: kept.title ?? (kept === link ? known.link.title : link.title) }, rank: Math.min(rank, known.rank) });
   }
   const links = [...found.values()].map((entry) => entry.link);
-  return RELATED_KIND_ORDER.flatMap((kind) => links.filter((link) => link.kind === kind));
+  return RELATED_KIND_ORDER.flatMap((kind) => {
+    const ofKind = links.filter((link) => link.kind === kind);
+    return kind === 'github' ? ofKind.sort((a, b) => githubRank(a, options) - githubRank(b, options)) : ofKind;
+  });
 }
 
 /**

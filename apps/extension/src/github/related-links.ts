@@ -18,6 +18,7 @@ import {
   ICON_ISSUE_CLOSED,
   ICON_ISSUE_OPENED,
   ICON_LINK_EXTERNAL,
+  ICON_SKIP,
 } from './ui/icons';
 
 /**
@@ -33,6 +34,7 @@ const SECTION_HEADING = /^(?:activity|reviewers|assignees|labels|projects|milest
 const HEADINGS = 'h2, h3, h4, summary, [role="heading"], .discussion-sidebar-heading';
 
 const KIND_ICONS: Readonly<Record<RelatedKind, string>> = {
+  github: ICON_GIT_PULL_REQUEST,
   ticket: ICON_ISSUE_OPENED,
   conversation: ICON_COMMENT_DISCUSSION,
   agent: ICON_COPILOT,
@@ -182,7 +184,7 @@ export function assigneesSections(): HTMLElement[] {
 /** A row: the link, and for GitHub's own issues and pull requests what GitHub's hovercard says of it. */
 type RelatedRow = RelatedLink & { readonly state: RefState | null };
 
-/** GitHub's glyph for an issue or pull request in each state, in GitHub's colour for it. */
+/** GitHub's glyph for an issue or pull request in each state, in GitHub's colour for it (as its hovercard's badge has them). */
 const STATE_GLYPHS: Readonly<Record<RefState, { readonly icon: string; readonly tone: string; readonly word: string }>> = {
   open: { icon: ICON_GIT_PULL_REQUEST, tone: 'open', word: 'Open' },
   draft: { icon: ICON_GIT_PULL_REQUEST_DRAFT, tone: 'draft', word: 'Draft' },
@@ -190,6 +192,7 @@ const STATE_GLYPHS: Readonly<Record<RefState, { readonly icon: string; readonly 
   closed: { icon: ICON_GIT_PULL_REQUEST_CLOSED, tone: 'closed', word: 'Closed' },
   'issue-open': { icon: ICON_ISSUE_OPENED, tone: 'open', word: 'Open' },
   'issue-closed': { icon: ICON_ISSUE_CLOSED, tone: 'done', word: 'Closed' },
+  'issue-not-planned': { icon: ICON_SKIP, tone: 'muted', word: 'Closed as not planned' },
   unknown: { icon: ICON_ISSUE_OPENED, tone: 'unknown', word: '' },
 };
 

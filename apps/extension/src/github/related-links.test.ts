@@ -205,16 +205,16 @@ describe('related links in the sidebar', () => {
       railsSidebar();
     const rerun = (): void => applyRelatedLinks(true, rerun);
     rerun();
-    expect([...document.querySelectorAll('.geld-related__text')].map((text) => text.textContent)).toEqual(['#12', 'vercel/next.js#52514']);
+    expect([...document.querySelectorAll('.geld-related__text')].map((text) => text.textContent)).toEqual(['vercel/next.js#52514', '#12']);
     expect([...document.querySelectorAll('.geld-related__mark')].map((mark) => mark.getAttribute('data-tone'))).toEqual(['unknown', 'unknown']);
     await settle();
     await settle();
-    expect([...document.querySelectorAll('.geld-related__text')].map((text) => text.textContent)).toEqual(['#12Nav overview is a group of one', 'vercel/next.js#52514Cache fetches across routes']);
+    expect([...document.querySelectorAll('.geld-related__text')].map((text) => text.textContent)).toEqual(['vercel/next.js#52514Cache fetches across routes', '#12Nav overview is a group of one']);
     const marks = [...document.querySelectorAll('.geld-related__mark')];
     expect(marks.map((mark) => [mark.getAttribute('data-tone'), mark.getAttribute('class')])).toEqual([
-      ['open', 'octicon octicon-issue-opened geld-related__mark'],
       ['done', 'octicon octicon-git-merge geld-related__mark'],
+      ['open', 'octicon octicon-issue-opened geld-related__mark'],
     ]);
-    expect(document.querySelectorAll('.geld-related__link')[1]?.getAttribute('title')).toBe('Merged · Open pull request on GitHub · Cache fetches across routes · vercel/next.js');
+    expect(document.querySelectorAll('.geld-related__link')[0]?.getAttribute('title')).toBe('Merged · Open pull request on GitHub · Cache fetches across routes · vercel/next.js');
   });
 });

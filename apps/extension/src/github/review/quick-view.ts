@@ -8,7 +8,7 @@
 
 import { createElement, svgFromString } from '../dom';
 import type { RefDetails, RefState } from './refs';
-import { ICON_CHECK, ICON_GIT_COMPARE, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_LINK, ICON_X } from '../ui/icons';
+import { ICON_CHECK, ICON_GIT_COMPARE, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_LINK, ICON_SKIP, ICON_X } from '../ui/icons';
 import { openMinimized } from './chat';
 import { commitDate } from './commit-dates';
 import { compareHome, onRestore, teleportInto } from './teleport';
@@ -334,6 +334,7 @@ function refStateOf(href: string, badgeText: string): RefState {
   const pull = href.includes('/pull/');
   if (/merged/.test(text)) return 'merged';
   if (/draft/.test(text)) return 'draft';
+  if (/not planned/.test(text) && !pull) return 'issue-not-planned';
   if (/closed|not planned|done|completed/.test(text)) return pull ? 'closed' : 'issue-closed';
   if (/open/.test(text)) return pull ? 'open' : 'issue-open';
   return 'unknown';
@@ -346,6 +347,7 @@ const REF_ICON: Readonly<Record<RefState, string>> = {
   draft: ICON_GIT_PULL_REQUEST_DRAFT,
   'issue-open': ICON_ISSUE_OPENED,
   'issue-closed': ICON_ISSUE_CLOSED,
+  'issue-not-planned': ICON_SKIP,
   unknown: ICON_LINK,
 };
 
@@ -403,6 +405,7 @@ const STATE_LABEL: Readonly<Record<RefState, string>> = {
   draft: 'Draft pull request',
   'issue-open': 'Open issue',
   'issue-closed': 'Closed issue',
+  'issue-not-planned': 'Closed as not planned',
   unknown: 'Issue or pull request',
 };
 
