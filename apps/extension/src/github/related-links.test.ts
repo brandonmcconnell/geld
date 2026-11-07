@@ -84,7 +84,7 @@ describe('related links in the sidebar', () => {
       expect(section?.previousElementSibling?.textContent).toContain('Assignees');
       expect(section?.classList.contains('discussion-sidebar-item')).toBe(true);
       expect(section?.querySelector('h3')?.textContent).toBe('Related links');
-      expect([...(section?.querySelectorAll('.geld-related__text') ?? [])].map((text) => text.textContent)).toEqual(['DOC-77Sdk nav overview', 'Open thread in Slack', 'View workspace in Replicas']);
+      expect([...(section?.querySelectorAll('.geld-related__text') ?? [])].map((text) => text.textContent)).toEqual(['DOC-77 Sdk nav overview', 'Open thread in Slack', 'View workspace in Replicas']);
       expect([...(section?.querySelectorAll('.geld-related__text > *') ?? [])].map((part) => part.className)).toEqual(['geld-related__ref', 'geld-related__title', 'geld-related__action', 'geld-related__action']);
       const first = section?.querySelector('a');
       expect(first?.getAttribute('title')).toBe('Open issue in Linear · Sdk nav overview · mintlify');
@@ -209,7 +209,7 @@ describe('related links in the sidebar', () => {
     expect([...document.querySelectorAll('.geld-related__mark')].map((mark) => mark.getAttribute('data-tone'))).toEqual(['unknown', 'unknown']);
     await settle();
     await settle();
-    expect([...document.querySelectorAll('.geld-related__text')].map((text) => text.textContent)).toEqual(['vercel/next.js#52514Cache fetches across routes', '#12Nav overview is a group of one']);
+    expect([...document.querySelectorAll('.geld-related__text')].map((text) => text.textContent)).toEqual(['vercel/next.js#52514 Cache fetches across routes', '#12 Nav overview is a group of one']);
     const marks = [...document.querySelectorAll('.geld-related__mark')];
     expect(marks.map((mark) => [mark.getAttribute('data-tone'), mark.getAttribute('class')])).toEqual([
       ['done', 'octicon octicon-git-merge geld-related__mark'],
