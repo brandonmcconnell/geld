@@ -304,6 +304,8 @@ describe('isDependencyUpdate', () => {
     expect(isDependencyUpdate('Fixes the nav. Bumps up the font size a little.')).toBe(false);
     expect(isDependencyUpdate('Fixes ENG-12. Bumps zod from 3 to 4 to unblock this.')).toBe(false);
     expect(isDependencyUpdate('\n  Bumps lodash from 4.17.20 to 4.17.21.')).toBe(true);
+    expect(isDependencyUpdate("Dependency updates are known by Renovate's \"This PR contains the following updates\" and Dependabot's \"Dependabot will resolve any conflicts\".")).toBe(false);
+    expect(isDependencyUpdate("Release notes…\nDependabot will resolve any conflicts with this PR as long as you don't alter it yourself.")).toBe(true);
   });
 });
 
