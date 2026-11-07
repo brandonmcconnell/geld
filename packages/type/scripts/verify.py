@@ -251,6 +251,10 @@ def check_alternates(path: Path, data: bytes, weight: int, cases: list[dict]) ->
         for feature in case["features"]:
             got = [n for n, _ in shape(data, weight, case["char"], features={feature: True})]
             check(got == [case["glyph"]], f"{path.name} at {weight}: {case['char']} with {feature} shaped {got}")
+    got = [n for n, _ in shape(data, weight, "12", features={"ss17": True})]
+    check(got == ["onecircle", "twocircle"], f"{path.name} at {weight}: 12 with ss17 shaped {got}")
+    got = [n for n, _ in shape(data, weight, "iä", features={"ss07": True})]
+    check(got == ["i.ss07", "adieresis.ss07"], f"{path.name} at {weight}: iä with ss07 shaped {got}")
     if any(c["glyph"] == "a.ss01" for c in cases):
         got = [n for n, _ in shape(data, weight, "á", features={"ss01": True})]
         check(got == ["aacute.ss01"], f"{path.name} at {weight}: á with ss01 shaped {got}")

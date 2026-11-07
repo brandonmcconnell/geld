@@ -236,6 +236,8 @@ function sixStraight(g: DrawContext): Stroke[] {
 
 /** The set of octagonal dots, drawn rather than listed: every glyph and mark whose dots are octagons in it (master.ts). */
 export const OCTAGONAL_DOTS = 'ss07';
+/** The set that turns the figures into the circled numerals ⓪ ①–⑨, which are encoded glyphs of their own. */
+export const CIRCLED_NUMERALS = 'ss17';
 
 /** Each alternate's glyph name: its set's tag, or its cv's when it is in none. */
 export const alternateName = (alt: Alternate) => `${alt.glyph}.${alt.set ?? alt.cv}`;

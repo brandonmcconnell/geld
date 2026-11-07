@@ -3,7 +3,7 @@ import { LOCL, type LoclLanguage } from './glyphs-cyrillic';
 import { FIGURE_NAMES, TABULAR_SIGNS } from './glyphs-figures';
 import { VIETNAMESE_PAIRS } from './marks';
 import type { Kerning } from './kerning';
-import { type Alternate, ALTERNATES, alternateName, OCTAGONAL_DOTS, STYLISTIC_SETS } from './alternates';
+import { type Alternate, ALTERNATES, alternateName, CIRCLED_NUMERALS, OCTAGONAL_DOTS, STYLISTIC_SETS } from './alternates';
 import { CODE_GROUPS, CODE_LIGATURES, CODE_OPERATORS, type CodeGroup, codePieceName } from './code-ligatures';
 import { LOCKUP } from './lockup';
 import { ARCH_LIGATURES, FAMILY_NAMES, type Family, type Master, type Style, TEXT_LIGATURES } from './master';
@@ -435,6 +435,7 @@ function alternateFeatures(master: Master, names: Set<string>): { aalt: string[]
     const pairs = [
       ...[...owned].filter(([alt]) => alt.set === tag).flatMap(([, ps]) => ps),
       ...(tag === OCTAGONAL_DOTS ? dotted.map((n) => [n.slice(0, -OCTAGONAL_DOTS.length - 1), n] as [string, string]) : []),
+      ...(tag === CIRCLED_NUMERALS ? FIGURE_NAMES.filter((f) => names.has(`${f}circle`)).map((f) => [f, `${f}circle`] as [string, string]) : []),
     ];
     if (pairs.length) rest.push(`feature ${tag} {`, `  featureNames { name "${label}"; };`, ...subs(pairs), `} ${tag};`);
   }

@@ -379,6 +379,35 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
 
   placeAll([...PLACED, ...GREEK_TONOS, ...SMALL_CAP_PLACED, ...CASE_FORMS]);
 
+  // Circled numerals ⓪ ①–⑨ (and ss17): the ring with a denominator figure centred in it, measured before the dark inset.
+  const ring = byName.get('numeralring');
+  if (ring) {
+    const inkBox = (gl: MasterGlyph) => bounds(undarkened.get(gl.name) ?? gl.contours);
+    const r = inkBox(ring);
+    FIGURE_NAMES.forEach((fig, d) => {
+      const small = byName.get(`${fig}.dnom`);
+      if (!small) return;
+      const f = inkBox(small);
+      const dy = (r.minY + r.maxY) / 2 - (f.minY + f.maxY) / 2;
+      const at = place({ x: (r.minX + r.maxX) / 2 - (f.minX + f.maxX) / 2, y: dy });
+      const origin = place({ x: 0, y: 0 });
+      const glyph: MasterGlyph = {
+        name: `${fig}circle`,
+        unicode: d === 0 ? 0x24ea : 0x2460 + d - 1,
+        advance: ring.advance,
+        contours: [],
+        components: [
+          { glyph: 'numeralring', dx: 0, dy: 0 },
+          { glyph: small.name, dx: at.x - origin.x, dy },
+        ],
+        anchors: [],
+        mark: false,
+      };
+      glyphs.push(glyph);
+      byName.set(glyph.name, glyph);
+    });
+  }
+
 
   for (const accent of SPACING_ACCENTS) {
     const mark = byName.get(accent.mark)!;
