@@ -37,9 +37,10 @@ describe('relatedLinkOf', () => {
     });
   });
 
-  it('takes the words of a link as its title only when they say more than the service and label', () => {
+  it('takes the title in the URL over the link’s words, and the words only when they say more than the service and label', () => {
     expect(read('https://linear.app/acme/issue/ENG-12', 'ENG-12 Fix the SDK nav')?.title).toBe('Fix the SDK nav');
-    expect(read('https://linear.app/acme/issue/ENG-12/fix-the-sdk-nav', 'Fix the SDK nav')?.title).toBe('Fix the SDK nav');
+    expect(read('https://linear.app/acme/issue/ENG-12/fix-the-sdk-nav', 'the nav thing')?.title).toBe('Fix the sdk nav');
+    expect(read('https://linear.app/acme/issue/ENG-12/fix-the-sdk-nav', 'ENG-12')?.title).toBe('Fix the sdk nav');
     expect(read('https://linear.app/wulfgardr/issue/WUL-766', 'WUL-766')?.title).toBeNull();
     expect(read('https://linear.app/acme/issue/ENG-12', 'https://linear.app/acme/issue/ENG-12')?.title).toBeNull();
     expect(read('https://cursor.com/agents/bc-4507257a-6c22-519d-8c1e-408ad9f0bf88', 'Open in Web')?.title).toBeNull();
@@ -269,9 +270,11 @@ describe('official sources in comments', () => {
     expect(titleOf([description, linkback])).toEqual([['DEV-9627', 'Group the Alt addons under an Alt Tools section in the control panel nav']]);
     expect(titleOf([linkback, description])).toEqual([['DEV-9627', 'Group the Alt addons under an Alt Tools section in the control panel nav']]);
     const bare = { href: 'https://linear.app/alt-design/issue/DEV-9627', text: 'DEV-9627', author: 'linear[bot]' };
-    expect(titleOf([description, bare])).toEqual([['DEV-9627', 'the nav thing']]);
-    expect(titleOf([bare, description])).toEqual([['DEV-9627', 'the nav thing']]);
-    expect(titleOf([{ ...linkback, author: 'octocat' }, description])).toEqual([['DEV-9627', 'the nav thing']]);
+    expect(titleOf([description, bare])).toEqual([['DEV-9627', 'Alt tools']]);
+    expect(titleOf([bare, description])).toEqual([['DEV-9627', 'Alt tools']]);
+    expect(titleOf([{ ...linkback, author: 'octocat' }, description])).toEqual([['DEV-9627', 'Alt tools']]);
+    const worded = { href: 'https://linear.app/alt-design/issue/DEV-9627', text: 'DEV-9627 the nav thing' };
+    expect(titleOf([worded, bare])).toEqual([['DEV-9627', 'the nav thing']]);
   });
 
   it('reads Linear’s review of the pull request, under its linkback', () => {

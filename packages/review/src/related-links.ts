@@ -893,7 +893,7 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function matchSpec(spec: LinkSpec, url: URL, text: string): RelatedLink | null {
+function matchSpec(spec: LinkSpec, url: URL, text: string, official: boolean): RelatedLink | null {
   const host = spec.host.exec(url.hostname);
   if (host === null) return null;
   const path = spec.path.exec(url.pathname);
@@ -907,7 +907,10 @@ function matchSpec(spec: LinkSpec, url: URL, text: string): RelatedLink | null {
   const reading = spec.read({ url, host, path, query, text });
   if (reading === null || reading.id === '') return null;
   const ref = reading.ref ?? null;
-  const title = titleFromText(text, spec.service, reading.noun, ref) ?? reading.title ?? null;
+  // A title in the URL is the service's, an author's link words may be anything; a service's own bot words its links as the
+  // title itself, whole and cased, where its URL lowercases the title and cuts it short.
+  const fromText = titleFromText(text, spec.service, reading.noun, ref);
+  const title = official ? (fromText ?? reading.title ?? null) : (reading.title ?? fromText);
   const target = spec.actionTarget ?? spec.service;
   return {
     key: `${spec.id}:${reading.id}`,
@@ -1049,10 +1052,11 @@ function readLink(candidate: LinkCandidate, options: RelatedOptions = {}): ReadL
   if (url.protocol !== 'https:' || url.username !== '' || url.password !== '' || url.port !== '') return null;
   const author = candidate.author ?? null;
   for (const spec of linkSpecs) {
-    const link = matchSpec(spec, url, candidate.text);
+    const official = author !== null && officialSourceOf(spec.id, author);
+    const link = matchSpec(spec, url, candidate.text, official);
     if (link === null) continue;
-    if (author === null) return { link, rank: spec.rank ?? 0, official: false };
-    return officialSourceOf(spec.id, author) ? { link, rank: spec.rank ?? 0, official: true } : null;
+    if (author !== null && !official) return null;
+    return { link, rank: spec.rank ?? 0, official };
   }
   // GitHub's own references come from the description only: every comment is full of them.
   if (author !== null) return null;
