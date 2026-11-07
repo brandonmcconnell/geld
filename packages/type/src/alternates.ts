@@ -1,4 +1,4 @@
-import { bar, box, crossbarReach, diagonal, type DrawContext, dot, edgeAt, type GlyphDef, INSIDE, level, meeting, open, p, rotate, spanOf, stem, withPen } from './draw';
+import { bar, box, crossbarReach, mirror, solid, diagonal, type DrawContext, dot, edgeAt, type GlyphDef, INSIDE, level, meeting, open, p, rotate, spanOf, stem, withPen } from './draw';
 import type { Stroke } from './geometry';
 
 /**
@@ -331,7 +331,70 @@ export const ALTERNATES: Alternate[] = [
       });
     },
   },
+  {
+    glyph: 'germandbls',
+    cv: 'cv32',
+    label: 'Flat-topped ß, as the capital',
+    draw: (g) => {
+      const w = g.wide(7);
+      const w2 = g.wide(8);
+      const t = g.top(g.ascender);
+      const b = g.bottom(0);
+      const m = g.y(6.5);
+      const low = m - g.h / 2;
+      const turn = g.y(10.5);
+      const start = edgeAt(g.pen, w, turn, w * 0.4, low, m + g.h / 2, -1) + INSIDE;
+      return [level(open(p(0, 0), p(0, t, true), p(w, t, true), p(w, turn), p(w * 0.4, low)), false, true), open(p(start, m), p(w2, m, true), p(w2, b, true), p(w * 0.45, b))];
+    },
+  },
+  {
+    glyph: 'percent',
+    cv: 'cv33',
+    label: 'Percent with solid dots',
+    draw: (g) => {
+      const w = g.wide(12);
+      const size = Math.max(g.v, g.h) + Math.max(1.6, 4.4 - Math.max(g.v, g.h));
+      const e = g.foot(w, g.cap);
+      const square = (x: number, y: number) => solid([p(x, y, true), p(x + size, y, true), p(x + size, y + size, true), p(x, y + size, true)]);
+      return [square(0, g.cap - size - g.h / 2), square(w - size, g.h / 2), diagonal(g, w - e, g.cap, e, 0)];
+    },
+  },
+  {
+    glyph: 'question',
+    cv: 'cv34',
+    label: 'Question mark with a 45° hook',
+    draw: (g) => {
+      const w = g.wide(7.5);
+      const t = g.top(g.cap);
+      const x = w / 2;
+      const arm = Math.min(8.5, g.cap - g.h * 1.5 - g.aperture);
+      // 45° where there is room; at heavy weights the drop stops a stem above the dot's gap, so the stem stays.
+      const drop = Math.min(w - x, arm - (g.dot + 1.5) - g.v);
+      return [open(p(0, g.y(10.5)), p(0, t, true), p(w, t, true), p(w, arm), p(x, arm - drop), p(x, g.dot + 1.5)), dot(g, x, 0)];
+    },
+  },
+  {
+    glyph: 'paragraph',
+    cv: 'cv35',
+    label: 'Pilcrow with an open bowl',
+    draw: (g) => {
+      const w = g.wide(8);
+      const t = g.top(g.cap);
+      return [stem(w * 0.55, -2, g.cap), stem(w, -2, g.cap), bar(w * 0.55, w, t), open(p(w * 0.55, t), p(0, t, true), p(0, g.y(7), true), p(w * 0.55, g.y(7)))];
+    },
+  },
+  { glyph: 'braceleft', cv: 'cv36', label: 'Braces with a flat middle', draw: (g) => flatBrace(g) },
+  { glyph: 'braceright', cv: 'cv36', label: 'Braces with a flat middle', draw: (g) => mirror(flatBrace(g), g.wide(4.5) / 2) },
 ];
+
+/** { with its middle a level tick out of an upright, as the brackets are built, rather than a 45° point. */
+function flatBrace(g: DrawContext): Stroke[] {
+  const x = 1.75 + g.v / 2;
+  const w = x + Math.max(g.wide(4.5) - x, 1.5 + g.v / 2 + 1);
+  const top = g.top(15.5);
+  const bottom = g.bottom(-3.5);
+  return [open(p(w, top), p(x, top, true), p(x, bottom, true), p(w, bottom)), bar(0, x, 6)];
+}
 
 /** The exit stroke's length past the stem. */
 const exit = (g: DrawContext) => g.wide(2.5);
