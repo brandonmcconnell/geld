@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""Compiles a designspace's variable fonts with fontc: variable.py <designspace> <output folder>
+
+fontc reads no discrete axes, so each of the designspace's variable fonts (one per italic value) is split out as
+fontmake splits it, compiled, and given the STAT table fontmake would build from the whole designspace, which links
+Roman to Italic. fontc compiles in seconds what takes fontmake a quarter of an hour.
+"""
+
+import os
+import shutil
+import subprocess
+import sys
+import sysconfig
+import tempfile
+from pathlib import Path
+
+from fontTools.designspaceLib import DesignSpaceDocument
+from fontTools.designspaceLib.split import splitVariableFonts
+from fontTools.ttLib import TTFont
+from fontTools.varLib.stat import buildVFStatTable
+
+
+def fontc() -> str:
+    for folder in (sysconfig.get_path("scripts"), sysconfig.get_path("scripts", f"{os.name}_user")):
+        if (Path(folder) / "fontc").exists():
+            return str(Path(folder) / "fontc")
+    found = shutil.which("fontc")
+    if not found:
+        sys.exit("fontc is not installed (pip install -r requirements.txt)")
+    return found
+
+
+def main() -> None:
+    space, out = Path(sys.argv[1]), Path(sys.argv[2])
+    out.mkdir(parents=True, exist_ok=True)
+    doc = DesignSpaceDocument.fromfile(space)
+    for name, part in splitVariableFonts(doc):
+        # Beside the original, so the sources' relative paths still hold.
+        part_path = space.with_name(f"{name}.variable.designspace")
+        part.write(part_path)
+        target = out / f"{name}[{','.join(axis.tag for axis in part.axes)}].ttf"
+        with tempfile.TemporaryDirectory() as build:
+            result = subprocess.run([fontc(), "--build-dir", build, "--output-file", str(target), str(part_path)], capture_output=True, text=True)
+        if result.returncode:
+            sys.exit(f"fontc failed on {part_path.name}:\n{result.stderr}")
+        font = TTFont(target)
+        buildVFStatTable(font, doc, name)
+        # fontc signs the version string; the fonts carry the source's own.
+        names = font["name"]
+        for record in names.names:
+            if record.nameID == 5:
+                names.setName(record.toUnicode().split(";")[0], 5, record.platformID, record.platEncID, record.langID)
+        font.save(target)
+
+
+if __name__ == "__main__":
+    main()

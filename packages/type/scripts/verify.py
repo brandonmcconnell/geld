@@ -5,8 +5,10 @@ flags or HarfBuzz shaping differ from the source, or when Geld Dark Sans and Gel
 """
 
 import json
+import os
 import re
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import glyphsets
@@ -358,18 +360,37 @@ def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None
         check_alternates(path, data, int(weight), expected["alternates"])
 
 
+def run_check(task: tuple) -> list[str]:
+    """One font's checks in a worker process, which hands back what failed."""
+    failures.clear()
+    kind, path, *args = task
+    if kind == "web":
+        check_tables(path, TTFont(path))
+    else:
+        {"static": check_static, "variable": check_variable}[kind](path, *args)
+    return list(failures)
+
+
 def main() -> None:
+    quick = "--quick" in sys.argv
+    jobs = next((int(a.split("=")[1]) for a in sys.argv if a.startswith("--jobs=")), os.cpu_count() or 1)
     manifest = json.loads((DIST / "manifest.json").read_text())
+    tasks: list[tuple] = []
     for family, styles in manifest.items():
         for style, by_weight in styles.items():
             italic = style == "italic"
-            for weight, expected in by_weight.items():
-                for folder, ext in (("ttf", "ttf"), ("otf", "otf")):
-                    check_static(DIST / folder / f"{expected['postscriptName']}.{ext}", expected, italic)
             suffix = "-Italic" if italic else ""
-            check_variable(DIST / "variable" / f"{family}{suffix}[wght].ttf", by_weight, italic)
-    for path in sorted((DIST / "web").glob("*.woff2")):
-        check_tables(path, TTFont(path))
+            tasks.append(("variable", DIST / "variable" / f"{family}{suffix}[wght].ttf", by_weight, italic))
+            if not quick:
+                for weight, expected in by_weight.items():
+                    for folder, ext in (("ttf", "ttf"), ("otf", "otf")):
+                        tasks.append(("static", DIST / folder / f"{expected['postscriptName']}.{ext}", expected, italic))
+    if not quick:
+        tasks += [("web", path) for path in sorted((DIST / "web").glob("*.woff2"))]
+    with ProcessPoolExecutor(max_workers=jobs) as pool:
+        found = [f for result in pool.map(run_check, tasks) for f in result]
+    failures.clear()
+    failures.extend(found)
     sans, dark = manifest["GeldSans"], manifest["GeldDarkSans"]
     for style in sans:
         for weight in sans[style]:
@@ -380,7 +401,7 @@ def main() -> None:
     if failures:
         print("\n".join(failures))
         sys.exit(1)
-    print("Fonts match the source.")
+    print(f"Fonts match the source ({len(tasks)} fonts{', variable only' if quick else ''}).")
 
 
 if __name__ == "__main__":
