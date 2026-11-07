@@ -1,4 +1,5 @@
-import { createElement } from './dom';
+import { createElement, svgFromString } from './dom';
+import { ICON_DASH, ICON_PLUS } from './ui/icons';
 
 interface Point {
   readonly x: number;
@@ -18,21 +19,22 @@ export function createAttachmentViewer(source: HTMLImageElement): {
   });
   const stage = createElement('div', { class: 'geld-lightbox__stage' }, [image, status]);
   const zoomOut = createElement('button', {
-    type: 'button', class: 'geld-lightbox__tool', 'aria-label': 'Zoom out', title: 'Zoom out (−)', disabled: '',
-  }, ['−']);
+    type: 'button', class: 'btn btn-sm BtnGroup-item geld-lightbox__tool', 'aria-label': 'Zoom out', title: 'Zoom out (−)', disabled: '',
+  }, [svgFromString(ICON_DASH)]);
   const reset = createElement('button', {
-    type: 'button', class: 'geld-lightbox__tool geld-lightbox__reset', 'aria-label': 'Reset zoom', title: 'Fit image (0)', disabled: '',
+    type: 'button', class: 'btn btn-sm BtnGroup-item geld-lightbox__reset', 'aria-label': 'Reset zoom', title: 'Fit image (0)', disabled: '',
   }, ['Fit']);
   const zoomIn = createElement('button', {
-    type: 'button', class: 'geld-lightbox__tool', 'aria-label': 'Zoom in', title: 'Zoom in (+)', disabled: '',
-  }, ['+']);
-  const controls = createElement('div', { class: 'geld-lightbox__zoom', role: 'group', 'aria-label': 'Image zoom' }, [zoomOut, reset, zoomIn]);
+    type: 'button', class: 'btn btn-sm BtnGroup-item geld-lightbox__tool', 'aria-label': 'Zoom in', title: 'Zoom in (+)', disabled: '',
+  }, [svgFromString(ICON_PLUS)]);
+  const controls = createElement('div', { class: 'BtnGroup geld-lightbox__zoom', role: 'group', 'aria-label': 'Image zoom' }, [zoomOut, reset, zoomIn]);
   let width = 0;
   let height = 0;
   let scale = 1;
   let pan: Point = { x: 0, y: 0 };
   let start: Point | null = null;
   let suppressClick = false;
+  let failed = false;
   const pointers = new Map<number, Point>();
 
   const maxScale = (): number => Math.max(4, Math.min(16, image.naturalWidth / width));
@@ -59,11 +61,13 @@ export function createAttachmentViewer(source: HTMLImageElement): {
     render();
   };
   const fit = (): void => {
+    if (failed) return;
     const naturalWidth = source.naturalWidth || image.naturalWidth;
     const naturalHeight = source.naturalHeight || image.naturalHeight;
     if (!naturalWidth || !naturalHeight) return;
     const availableWidth = window.innerWidth <= 600 ? window.innerWidth - 32 : Math.min(1120, window.innerWidth * 0.8);
-    const availableHeight = Math.min(760, window.innerHeight * 0.72, window.innerHeight - 144);
+    // 200px leaves room for the dialog's header and footer and its margin from the viewport.
+    const availableHeight = Math.min(760, window.innerHeight * 0.72, window.innerHeight - 200);
     const ratio = Math.min(1, Math.max(1, availableWidth) / naturalWidth, Math.max(1, availableHeight) / naturalHeight);
     width = naturalWidth * ratio;
     height = naturalHeight * ratio;
@@ -80,9 +84,18 @@ export function createAttachmentViewer(source: HTMLImageElement): {
     else render();
   });
   image.addEventListener('error', () => {
+    failed = true;
     image.hidden = true;
     status.hidden = false;
     status.textContent = 'This image could not be loaded. Open the original to view it.';
+    // The stage was fitted to the source image, and a small one would clip the message.
+    stage.style.width = '';
+    stage.style.height = '';
+    width = 0;
+    height = 0;
+    scale = 1;
+    pan = { x: 0, y: 0 };
+    render();
   });
   image.addEventListener('dragstart', (event) => event.preventDefault());
   stage.addEventListener('click', (event) => {

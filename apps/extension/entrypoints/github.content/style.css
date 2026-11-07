@@ -8988,79 +8988,82 @@ dialog.geld-flow .geld-flow__actions .Overlay-closeButton {
 dialog.geld-lightbox {
   position: fixed;
   inset: 0;
+  display: flex;
+  flex-direction: column;
   width: fit-content;
+  min-width: min(320px, calc(100vw - 32px));
   height: fit-content;
   max-width: calc(100vw - 32px);
-  max-height: calc(100dvh - 128px);
+  max-height: calc(100dvh - 32px);
   margin: auto;
   padding: 0;
-  overflow: visible;
-  color: #fff;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
+  overflow: hidden;
+  color: var(--fgColor-default, #1f2328);
+  background: var(--overlay-bgColor, var(--bgColor-default, #fff));
+  border: var(--borderWidth-thin, 1px) solid var(--borderColor-default, #d1d9e0);
+  border-radius: var(--borderRadius-large, 12px);
+  box-shadow: var(--shadow-floating-large, 0 0 0 1px #d1d9e0, 0 40px 80px 0 #25292e3d);
   font: 14px/1.5 var(--fontStack-system, sans-serif);
 }
 
 .geld-lightbox::backdrop {
-  background: rgb(0 0 0 / 65%);
-  backdrop-filter: blur(2px);
-}
-
-.geld-lightbox__header,
-.geld-lightbox__footer {
-  position: absolute;
-  left: 50%;
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-width: min(300px, calc(100vw - 32px));
-  transform: translateX(-50%);
+  background: var(--overlay-backdrop-bgColor, rgb(31 35 40 / 50%));
 }
 
 .geld-lightbox__header {
-  bottom: calc(100% + 8px);
-  justify-content: space-between;
+  /* The image sets the dialog's width, and a long title ellipsizes inside it rather than widening it. */
+  contain: inline-size;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: var(--borderWidth-thin, 1px) solid var(--borderColor-default, #d1d9e0);
 }
 
-.geld-lightbox__brand {
-  display: inline-flex;
-  width: 54px;
+.geld-lightbox__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 8px;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.geld-lightbox__brand svg {
-  width: 100%;
-  height: auto;
-}
-
-.geld-lightbox__close,
-.geld-lightbox__tool {
+.geld-lightbox__close {
   display: grid;
+  flex: none;
   place-items: center;
   width: 32px;
   height: 32px;
   padding: 0;
-  color: inherit;
+  color: var(--fgColor-muted, #59636e);
   background: transparent;
   border: 0;
-  border-radius: 6px;
-  font: inherit;
-  line-height: 1;
+  border-radius: var(--borderRadius-medium, 6px);
   cursor: pointer;
+}
+
+.geld-lightbox__close:hover {
+  color: var(--fgColor-default, #1f2328);
+  background: var(--control-transparent-bgColor-hover, var(--bgColor-neutral-muted, #818b981f));
 }
 
 .geld-lightbox__close svg {
   display: block;
   width: 16px;
   height: 16px;
-  margin: 0;
+  fill: currentColor;
 }
 
-.geld-lightbox__close:hover,
-.geld-lightbox__tool:not(:disabled):hover,
-.geld-lightbox__original:hover {
-  color: #fff;
-  background: #ffffff1a;
+.geld-lightbox__body {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  background: var(--bgColor-muted, #f6f8fa);
 }
 
 .geld-lightbox__stage {
@@ -9068,7 +9071,6 @@ dialog.geld-lightbox {
   display: grid;
   place-items: center;
   overflow: hidden;
-  border-radius: 4px;
   touch-action: none;
 }
 
@@ -9099,8 +9101,7 @@ dialog.geld-lightbox {
   width: min(320px, calc(100vw - 64px));
   margin: 0;
   padding: 16px;
-  background: #161b22;
-  border-radius: 6px;
+  color: var(--fgColor-muted, #59636e);
   text-align: center;
 }
 
@@ -9109,48 +9110,42 @@ dialog.geld-lightbox {
 }
 
 .geld-lightbox__footer {
-  top: calc(100% + 8px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
+  padding: 16px;
+  border-top: var(--borderWidth-thin, 1px) solid var(--borderColor-default, #d1d9e0);
 }
 
 .geld-lightbox__zoom {
   display: flex;
-  align-items: center;
   flex: none;
-  gap: 2px;
 }
 
-.geld-lightbox__tool:disabled {
-  opacity: 0.35;
-  cursor: default;
+.geld-lightbox .geld-lightbox__tool svg {
+  margin: 0;
 }
 
 .geld-lightbox__reset {
-  width: 52px;
-  font-size: 12px;
+  min-width: 56px;
   font-variant-numeric: tabular-nums;
 }
 
-.geld-lightbox__original {
+.geld-lightbox .geld-lightbox__original {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  color: #ffffffb3;
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
-  font-weight: 500;
-  text-decoration: none;
+  gap: 4px;
   white-space: nowrap;
 }
 
-.geld-lightbox__original:hover {
-  text-decoration: none;
+.geld-lightbox .geld-lightbox__original svg {
+  margin: 0;
+  color: var(--fgColor-muted, #59636e);
 }
 
 .geld-lightbox :focus-visible {
-  outline: 2px solid #fff;
-  outline-offset: 2px;
+  outline: 2px solid var(--focus-outlineColor, #0969da);
+  outline-offset: -2px;
 }

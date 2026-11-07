@@ -1,6 +1,5 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { createAttachmentViewer } from './attachment-viewer';
-import { brandMark } from './review/brand';
 import { ICON_LINK_EXTERNAL, ICON_X } from './ui/icons';
 
 const IMAGE_ATTRIBUTE = 'data-geld-lightbox-image';
@@ -38,26 +37,34 @@ function dismiss(): void {
   dialog.remove();
 }
 
+/** GitHub names every upload "image" (older uploads "Image"), which says nothing a dialog title should. */
+function titleFor(image: HTMLImageElement): string {
+  const alt = image.alt.trim();
+  return alt === '' || /^image$/i.test(alt) ? 'Image' : alt;
+}
+
 function show(image: HTMLImageElement, link: HTMLAnchorElement): void {
   dismiss();
   const previousFocus = document.activeElement;
+  const titleId = `geld-lightbox-title-${Date.now()}`;
   const dialog = createElement('dialog', {
     class: 'geld-lightbox',
     [OWN_UI_ATTRIBUTE]: '',
-    'aria-label': 'Image attachment',
+    'aria-labelledby': titleId,
   });
   const close = createElement('button', {
-    type: 'button', class: 'geld-lightbox__close', 'aria-label': 'Close image', title: 'Close (Esc)',
+    type: 'button', class: 'geld-lightbox__close', 'aria-label': 'Close', title: 'Close (Esc)',
   }, [svgFromString(ICON_X)]);
   const original = createElement('a', {
-    class: 'geld-lightbox__original', href: link.href, target: '_blank', rel: 'noopener noreferrer',
+    class: 'btn btn-sm geld-lightbox__original', href: link.href, target: '_blank', rel: 'noopener noreferrer',
   }, ['Open original', svgFromString(ICON_LINK_EXTERNAL)]);
   const viewer = createAttachmentViewer(image);
   dialog.append(
     createElement('header', { class: 'geld-lightbox__header' }, [
-      brandMark('geld-lightbox__brand'), close,
+      createElement('h1', { class: 'geld-lightbox__title', id: titleId }, [titleFor(image)]),
+      close,
     ]),
-    viewer.stage,
+    createElement('div', { class: 'geld-lightbox__body' }, [viewer.stage]),
     createElement('footer', { class: 'geld-lightbox__footer' }, [viewer.controls, original]),
   );
   close.addEventListener('click', dismiss);
