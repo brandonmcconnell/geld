@@ -955,18 +955,21 @@ describe('the tab bar button', () => {
     const busy = vi.fn(async (_url: RequestInfo | URL) => new Response('busy', { status: 503 }));
     vi.stubGlobal('fetch', busy);
     vi.useFakeTimers();
-    withLabel('Open', 'pullOpened');
-    mount();
-    await vi.advanceTimersByTimeAsync(0);
-    pill()?.click();
-    expect(document.querySelector('.geld-quick-review__status-menu')).not.toBeNull();
-    expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('Loading options…');
-    // The menu holds focus itself, having no control to give it to, so Escape reaches it.
-    expect(document.activeElement).toBe(document.querySelector('.geld-quick-review__status-menu'));
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('Loading options…');
-    await vi.advanceTimersByTimeAsync(11_000);
-    vi.useRealTimers();
+    try {
+      withLabel('Open', 'pullOpened');
+      mount();
+      await vi.advanceTimersByTimeAsync(0);
+      pill()?.click();
+      expect(document.querySelector('.geld-quick-review__status-menu')).not.toBeNull();
+      expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('Loading options…');
+      // The menu holds focus itself, having no control to give it to, so Escape reaches it.
+      expect(document.activeElement).toBe(document.querySelector('.geld-quick-review__status-menu'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('Loading options…');
+      await vi.advanceTimersByTimeAsync(11_000);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(busy.mock.calls.filter(([url]) => String(url).includes('merge_box')).length).toBe(4);
     expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('The options could not be read. Try again shortly.');
     pill()?.click();

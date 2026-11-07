@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MergeSubmission } from './merge-actions';
-import { actionErrorText, autoMergeRequest, bypassBeside, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict, embeddedStack, methodHint, rememberMethod } from './merge-actions';
+import { actionErrorText, autoMergeRequest, bypassBeside, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict, embeddedStack, methodHint, readMergeActions, rememberMethod } from './merge-actions';
 
 /** A `page_data/merge_box` answer as GitHub gave it on brandonmcconnell/geld#74 (Oct 2026), trimmed. */
 function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean; readonly email?: string; readonly emails?: readonly string[] | null; readonly conflict?: boolean; readonly methodStatus?: string } = {}): unknown {
@@ -295,5 +295,34 @@ describe('the remembered merge method', () => {
     rememberMethod('o/r', 'MERGE');
     expect(methodHint('o/r')).toBe('MERGE');
     expect(methodHint('o/other')).toBe('SQUASH');
+  });
+});
+
+describe('reading a stack', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+  });
+
+  it('takes the page’s embedded stack for the first read only, then asks GitHub, so a member merged since drops out', async () => {
+    document.body.innerHTML = `<script type="application/json" data-target="react-app.embeddedData">${JSON.stringify({
+      payload: { pullRequestsLayoutRoute: { pullRequest: { number: 9 }, stack: { pulls: [{ number: 9, title: 'Top', state: 'OPEN', url: '/o/r/pull/9' }, { number: 8, title: 'Bottom', state: 'OPEN', url: '/o/r/pull/8' }] } } },
+    })}</script>`;
+    const asked: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        asked.push(new URL(url, 'https://github.com').pathname);
+        if (url.includes('/page_data/stacks')) return new Response(JSON.stringify({ stack: { pulls: [{ number: 9, title: 'Top', state: 'OPEN', url: '/o/r/pull/9' }, { number: 8, title: 'Bottom', state: 'MERGED', url: '/o/r/pull/8' }] } }));
+        return new Response(JSON.stringify(payload({ stacked: true })));
+      }),
+    );
+    const first = await readMergeActions('/o/r/pull/9', 'SQUASH');
+    expect(first?.stack?.members.map((member) => member.number)).toEqual([9, 8]);
+    expect(asked.some((path) => path.endsWith('/page_data/stacks'))).toBe(false);
+    const second = await readMergeActions('/o/r/pull/9', 'SQUASH');
+    expect(asked.filter((path) => path.endsWith('/page_data/stacks'))).toHaveLength(1);
+    expect(second?.stack?.members.map((member) => member.number)).toEqual([9]);
   });
 });

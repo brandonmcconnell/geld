@@ -417,24 +417,35 @@ export interface MergeActions {
 }
 
 /**
+ * Whether each pull request was stacked when this page last read it. The embedded stack is the page's as it loaded,
+ * so it answers the first read only: a member merged in another tab stayed in it, and its merged box then ruled out
+ * every stack merge on each refresh. Later reads ask `page_data/stacks`, beside the box when the last read was stacked.
+ */
+const lastStacked = new Map<string, boolean>();
+
+/**
  * What the reader may do now: the merge on offer and whether they may close, read with GitHub's default method.
  * `method` is the repository's default as last read, asked for first so the box needs no second read for its commit.
- * A stack the page embeds has its members' boxes read beside this one's, so the menu waits on one box, not a chain.
+ * A stack's members have their boxes read beside this one's, so the menu waits on one box, not a chain.
  */
 export async function readMergeActions(pullPath: string, method: MergeMethod = 'SQUASH'): Promise<MergeActions | null> {
-  const embedded = embeddedStack(pullPath);
-  const early = embedded !== null && embedded !== 'none' ? { members: embedded, boxes: memberBoxes(embedded) } : null;
+  const known = lastStacked.get(pullPath);
+  const embedded = known === undefined ? embeddedStack(pullPath) : null;
+  const listed = embedded !== null && embedded !== 'none' ? Promise.resolve(embedded) : known === true ? readStackMembers(pullPath) : null;
+  const early = listed === null ? null : listed.then((members) => (members === null ? null : { members, boxes: memberBoxes(members) }));
   const first = await fetchMergeBox(pullPath, method, false);
   if (first === null) return null;
   const preferred = first.methods[0] ?? first.bypassMethods[0] ?? 'SQUASH';
   // Another method's commit title and message would be sent under this one: no reading is safer than that.
   const box = preferred === method ? first : await fetchMergeBox(pullPath, preferred, false);
   if (box === null) return null;
+  lastStacked.set(pullPath, box.stacked);
   const stackRead = async (): Promise<Stack | null> => {
     if (!box.stacked) return null;
-    const members = early?.members ?? (await readStackMembers(pullPath));
+    const head = early === null ? null : await early;
+    const members = head?.members ?? (await readStackMembers(pullPath));
     if (members === null) return null;
-    const boxes = new Map(await (early?.boxes ?? memberBoxes(members)));
+    const boxes = new Map(await (head?.boxes ?? memberBoxes(members)));
     const current = members.find((member) => member.current);
     if (current !== undefined) boxes.set(current.number, box);
     return { members, boxes };

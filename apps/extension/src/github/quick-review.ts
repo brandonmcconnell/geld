@@ -911,12 +911,12 @@ async function loadMergeActions(state: Mounted): Promise<MergeActions | null> {
   state.mergeLoading = retrying;
   if (actions !== null) {
     state.mergeActions = actions;
-    readActions.set(pullPath, { actions, at: Date.now() });
+    rememberActions(pullPath, actions);
     const method = actions.box.methods[0] ?? actions.box.bypassMethods[0];
     if (repo !== null && method !== undefined) rememberMethod(repo, method);
   }
   showStatus(state);
-  refreshPlaceholderMenu(state);
+  refreshOpenMenu(state);
   showReviewers();
   state.mergeTimer = window.setTimeout(
     () => {
@@ -929,6 +929,20 @@ async function loadMergeActions(state: Mounted): Promise<MergeActions | null> {
 
 /** The last reading of each pull request's merge box this page made, so coming back to one shows its menu at once. */
 const readActions = new Map<string, { readonly actions: MergeActions; readonly at: number }>();
+
+const READ_ACTIONS_CAP = 20;
+
+/** Kept for `RECENT_ACTIONS_MS` and at most `READ_ACTIONS_CAP` pull requests: a long-lived tab holds no more. */
+function rememberActions(pullPath: string, actions: MergeActions): void {
+  const now = Date.now();
+  readActions.delete(pullPath);
+  for (const [path, read] of readActions) if (now - read.at >= RECENT_ACTIONS_MS) readActions.delete(path);
+  readActions.set(pullPath, { actions, at: now });
+  for (const path of readActions.keys()) {
+    if (readActions.size <= READ_ACTIONS_CAP) break;
+    readActions.delete(path);
+  }
+}
 
 function recentActions(pullPath: string): MergeActions | null {
   const read = readActions.get(pullPath);
@@ -1322,7 +1336,7 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
   const actions = state.mergeActions;
   const groups = stackMenuOf(actions);
   const options = actions === null || groups !== null ? [] : flatStatusOptions(actions);
-  const menu = createElement('div', { class: 'geld-quick-review__menu geld-quick-review__status-menu', [OWN_UI_ATTRIBUTE]: '', role: 'menu', 'aria-label': 'Change status', tabindex: '-1' });
+  const menu = createElement('div', { class: 'geld-quick-review__menu geld-quick-review__status-menu', [OWN_UI_ATTRIBUTE]: '', role: 'menu', 'aria-label': 'Change status', tabindex: '-1', 'data-options': menuSignature(actions) });
   // Nothing to offer still opens, and says why, rather than a click that seems to do nothing.
   if (options.length === 0 && (groups === null || groups.length === 0)) {
     const words = actions !== null ? 'No options available' : state.mergeLoading || state.mergeFor === null ? 'Loading options…' : 'The options could not be read. Try again shortly.';
@@ -1495,10 +1509,22 @@ function positionStatusMenu(state: Mounted): void {
   menu.style.top = `${Math.round(rect.bottom + 4)}px`;
 }
 
-/** A menu on its placeholder line takes what the read that just finished says: the options, or why there are none. */
-function refreshPlaceholderMenu(state: Mounted): void {
+/** What a status menu offers, to tell whether a fresh read changed it. */
+function menuSignature(actions: MergeActions | null): string {
+  const groups = stackMenuOf(actions);
+  if (groups !== null) return JSON.stringify(groups.map((group) => [group.action, group.note, group.choices.map((choice) => [choice.scope, choice.count, choice.targets.map((target) => target.number)])]));
+  return JSON.stringify(actions === null ? null : flatStatusOptions(actions).map((option) => [option.action, option.note, option.bypass === true]));
+}
+
+/**
+ * An open menu takes what the read that just finished says: a placeholder line its options or why there are none, and
+ * a menu built from an earlier reading (one kept from a visit moments ago) the options as they are now, when they changed.
+ */
+function refreshOpenMenu(state: Mounted): void {
   const pill = state.statusOpener;
-  if (state.statusMenu?.dataset.placeholder === undefined || pill === null || !pill.isConnected) return;
+  const menu = state.statusMenu;
+  if (menu === null || pill === null || !pill.isConnected) return;
+  if (menu.dataset.placeholder === undefined && menu.dataset.options === menuSignature(state.mergeActions)) return;
   closeStatusMenu(state, false);
   openStatusMenu(state, pill);
 }
