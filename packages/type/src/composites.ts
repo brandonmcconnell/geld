@@ -1,3 +1,4 @@
+import { AFRICAN_ALIASES } from './glyphs-african';
 import { CYRILLIC_ALIASES } from './glyphs-cyrillic';
 import { GREEK_ALIASES, GREEK_TONOS, GREEK_TONOS_CAPS } from './glyphs-greek';
 import { VIETNAMESE_PAIRS } from './marks';
@@ -33,6 +34,9 @@ const MARK_SUFFIX: Record<number, { mark: string; suffix: string }> = {
   0x30a: { mark: 'ringcomb', suffix: 'ring' },
   0x30b: { mark: 'hungarumlautcomb', suffix: 'hungarumlaut' },
   0x30c: { mark: 'caroncomb', suffix: 'caron' },
+  0x30d: { mark: 'verticallineabovecomb', suffix: 'verticallineabove' },
+  0x30f: { mark: 'dblgravecomb', suffix: 'dblgrave' },
+  0x311: { mark: 'breveinvertedcomb', suffix: 'breveinverted' },
   0x323: { mark: 'dotbelowcomb', suffix: 'dotbelow' },
   0x326: { mark: 'commaaccentcomb', suffix: 'commaaccent' },
   0x327: { mark: 'cedillacomb', suffix: 'cedilla' },
@@ -170,7 +174,7 @@ export const SPACING_ACCENTS: { name: string; unicode: number; mark: string; bel
 ];
 
 /** Glyphs that are another glyph under a second code point (Cyrillic and Greek letters shared with Latin), placed before the accented letters that use them. */
-export const ALIASES: PlacedDef[] = [...CYRILLIC_ALIASES, ...GREEK_ALIASES];
+export const ALIASES: PlacedDef[] = [...CYRILLIC_ALIASES, ...GREEK_ALIASES, ...AFRICAN_ALIASES];
 
 export { GREEK_TONOS };
 
@@ -181,4 +185,7 @@ export const LATIN_RANGES: [number, number][] = [
   [0x370, 0x3ff],
   [0x400, 0x4ff],
   [0x1e00, 0x1eff],
+  [0x2c60, 0x2c7f],
+  [0xa720, 0xa7ff],
+  [0xab30, 0xab6f],
 ];

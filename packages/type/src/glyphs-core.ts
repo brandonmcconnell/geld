@@ -88,7 +88,7 @@ export const UPPER: GlyphDef[] = [
     rsb: 1.25,
     draw: (g) => {
       const w = g.wide(10);
-      const y = g.top(g.cap / 2);
+      const y = g.top(Math.max(g.cap / 2, 2 * g.h + 1.6));
       return [
         open(p(w, g.y(9)), p(w, g.top(g.cap), true), p(0, g.top(g.cap), true), p(0, g.bottom(0), true), p(w, g.bottom(0), true), p(w, y), p(w * 0.4, y)),
       ];
@@ -274,7 +274,7 @@ const LOWER_DEFS: GlyphDef[] = [
     draw: (g) => {
       const w = g.wide(7.5);
       const t = g.top(g.xHeight);
-      return [open(p(0, t), p(w, t, true), p(w, 0)), box(0, w, g.bottom(0), 5.25, LEFT)];
+      return [open(p(0, t), p(w, t, true), p(w, 0)), box(0, w, g.bottom(0), g.y(5.25), LEFT)];
     },
     italic: (g) => {
       const w = g.wide(7.5);
@@ -297,7 +297,7 @@ const LOWER_DEFS: GlyphDef[] = [
       const w = g.wide(7.5);
       const t = g.top(g.xHeight);
       const b = g.bottom(0);
-      return [open(p(w, 7), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, 3))];
+      return [open(p(w, g.y(7)), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, g.y(3)))];
     },
   },
   {
@@ -319,7 +319,7 @@ const LOWER_DEFS: GlyphDef[] = [
       const w = g.wide(8);
       const t = g.top(g.xHeight);
       const b = g.bottom(0);
-      return [open(p(0, 5.25), p(w, 5.25), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, 2.5))];
+      return [open(p(0, g.y(5.25)), p(w, g.y(5.25)), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, g.y(2.5)))];
     },
   },
   {
@@ -345,7 +345,7 @@ const LOWER_DEFS: GlyphDef[] = [
     draw: (g) => {
       const w = g.wide(8);
       const d = g.bottom(g.descender);
-      return [box(0, w, g.bottom(0), g.top(g.xHeight), LEFT), open(p(w, g.xHeight), p(w, d, true), p(0, d, true), p(0, -1.5))];
+      return [box(0, w, g.bottom(0), g.top(g.xHeight), LEFT), open(p(w, g.xHeight), p(w, d, true), p(0, d, true), p(0, g.y(-1.5)))];
     },
   },
   {
@@ -364,7 +364,7 @@ const LOWER_DEFS: GlyphDef[] = [
     unicode: 0x69,
     lsb: 1.5,
     rsb: 1.5,
-    draw: (g) => [stem(0, 0, g.xHeight), dot(g, 0, g.xHeight + 1.5)],
+    draw: (g) => [stem(0, 0, g.xHeight), dot(g, 0, g.xHeight + g.y(1.5))],
   },
   {
     name: 'j',
@@ -373,7 +373,7 @@ const LOWER_DEFS: GlyphDef[] = [
     rsb: 1.5,
     draw: (g) => {
       const d = g.bottom(g.descender);
-      return [open(p(0, g.xHeight), p(0, d, true), p(-2.5, d)), dot(g, 0, g.xHeight + 1.5)];
+      return [open(p(0, g.xHeight), p(0, d, true), p(-2.5, d)), dot(g, 0, g.xHeight + g.y(1.5))];
     },
   },
   {
@@ -462,7 +462,7 @@ const LOWER_DEFS: GlyphDef[] = [
       const w = g.wide(7);
       const t = g.top(g.xHeight);
       const b = g.bottom(0);
-      return [open(p(w, 7.5), p(w, t, true), p(0, t, true), p(0, 5, true), p(w, 5, true), p(w, b, true), p(0, b, true), p(0, 2.5))];
+      return [open(p(w, g.y(7.5)), p(w, t, true), p(0, t, true), p(0, g.y(5), true), p(w, g.y(5), true), p(w, b, true), p(0, b, true), p(0, g.y(2.5)))];
     },
   },
   {
@@ -472,7 +472,7 @@ const LOWER_DEFS: GlyphDef[] = [
     rsb: 0.5,
     draw: (g) => {
       const b = g.bottom(0);
-      return [open(p(0, 13), p(0, b, true), p(g.wide(3.5), b)), bar(-crossbarReach(g), g.wide(3.5), g.top(g.xHeight))];
+      return [open(p(0, g.y(13)), p(0, b, true), p(g.wide(3.5), b)), bar(-crossbarReach(g), g.wide(3.5), g.top(g.xHeight))];
     },
   },
   {
@@ -494,7 +494,7 @@ const LOWER_DEFS: GlyphDef[] = [
     draw: (g) => {
       const w = g.wide(12);
       return [...vee(g, 0, w / 2, g.xHeight, 0), ...vee(g, w / 2, w, g.xHeight, 0)].map((s, i) =>
-        i === 1 || i === 2 ? { ...s, points: s.points.map((q) => (q.y === g.xHeight ? { ...q, y: 7.5 } : q)) } : s,
+        i === 1 || i === 2 ? { ...s, points: s.points.map((q) => (q.y === g.xHeight ? { ...q, y: g.y(7.5) } : q)) } : s,
       );
     },
   },
@@ -675,7 +675,7 @@ export const PUNCTUATION: GlyphDef[] = [
       const t = g.top(g.cap);
       const x = w / 2;
       const arm = Math.min(8.5, g.cap - g.h * 1.5 - g.aperture);
-      return [open(p(0, 10.5), p(0, t, true), p(w, t, true), p(w, arm, true), p(x, arm, true), p(x, g.dot + 1.5)), dot(g, x, 0)];
+      return [open(p(0, g.y(10.5)), p(0, t, true), p(w, t, true), p(w, arm, true), p(x, arm, true), p(x, g.dot + 1.5)), dot(g, x, 0)];
     },
   },
   { name: 'hyphen', unicode: 0x2d, lsb: 1, rsb: 1, draw: (g) => [bar(0, g.wide(4.5), DASH_AXIS)] },
@@ -775,7 +775,7 @@ export const ON_LETTERS: GlyphDef[] = [
   onLetter('kip', 0x20ad, 'K', () => [bar(-1.5, 6, 7)], { lsb: 0.5, rsb: 0.3 }),
   onLetter('tugrik', 0x20ae, 'T', (g) => {
     const x = g.wide(11) / 2;
-    return [withPen(open(p(x - 2.75, 3.5), p(x + 2.75, 6.5)), g.diag), withPen(open(p(x - 2.75, 7), p(x + 2.75, 10)), g.diag)];
+    return [withPen(open(p(x - 2.75, g.y(3.5)), p(x + 2.75, g.y(6.5))), g.diag), withPen(open(p(x - 2.75, g.y(7)), p(x + 2.75, g.y(10))), g.diag)];
   }),
   onLetter('peso', 0x20b1, 'P', (g) => [bar(-1.75, 0, g.top(g.cap)), bar(-1.75, 0, 6)], { lsb: 0.5, rsb: 1 }),
   onLetter('guarani', 0x20b2, 'G', (g) => [through(g.wide(10) / 2)]),
@@ -807,7 +807,7 @@ export const ON_LETTERS: GlyphDef[] = [
     const w = g.wide(10);
     const x = w * 0.3;
     const gap = g.v + 1.6;
-    return [withPen(open(p(x, -1.5), p(x + 2, 15.5)), g.diag), withPen(open(p(x + gap, -1.5), p(x + gap + 2, 15.5)), g.diag)];
+    return [withPen(open(p(x, g.y(-1.5)), p(x + 2, g.y(15.5))), g.diag), withPen(open(p(x + gap, g.y(-1.5)), p(x + gap + 2, g.y(15.5))), g.diag)];
   }),
   onLetter('dong', 0x20ab, 'd', (g) => {
     const w = g.wide(8);
@@ -853,7 +853,7 @@ export const DRAWN_SIGNS: GlyphDef[] = [
     lower: true,
     lsb: 1,
     rsb: 0.75,
-    draw: (g) => [open(p(0, g.ascender), p(0, g.bottom(0), true), p(g.wide(2.5), g.bottom(0))), withPen(open(p(-1.75, 5.5), p(1.75, 9)), g.diag)],
+    draw: (g) => [open(p(0, g.ascender), p(0, g.bottom(0), true), p(g.wide(2.5), g.bottom(0))), withPen(open(p(-1.75, g.y(5.5)), p(1.75, g.y(9))), g.diag)],
   },
   {
     name: 'numero',
@@ -880,7 +880,7 @@ export const DRAWN_SIGNS: GlyphDef[] = [
       const w = g.wide(10);
       const top = g.top(12);
       const b = g.bottom(0);
-      return [open(p(0, 6), p(w, 6), p(w, top, true), p(0, top, true), p(0, b, true), p(w, b, true), p(w, 3))];
+      return [open(p(0, g.y(6)), p(w, g.y(6)), p(w, top, true), p(0, top, true), p(0, b, true), p(w, b, true), p(w, g.y(3)))];
     },
   },
   {
@@ -906,7 +906,7 @@ export const DRAWN_SIGNS: GlyphDef[] = [
       const x2 = w * 0.67;
       const t = g.top(11);
       const b = g.bottom(0);
-      return [open(p(0, 0), p(0, t), p(x2, t, true), p(x2, 4)), open(p(x1, 7), p(x1, b), p(w, b, true), p(w, 11))];
+      return [open(p(0, 0), p(0, t), p(x2, t, true), p(x2, g.y(4))), open(p(x1, g.y(7)), p(x1, b), p(w, b, true), p(w, g.y(11)))];
     },
   },
   {
@@ -931,7 +931,7 @@ export const DRAWN_SIGNS: GlyphDef[] = [
       const w = g.wide(9);
       const x = 2.5;
       const b = g.bottom(0);
-      return [open(p(x, g.cap), p(x, b), p(w, b, true), p(w, 5)), withPen(open(p(0, 5), p(6, 8)), g.diag), withPen(open(p(0, 8), p(6, 11)), g.diag)];
+      return [open(p(x, g.cap), p(x, b), p(w, b, true), p(w, g.y(5))), withPen(open(p(0, g.y(5)), p(6, g.y(8))), g.diag), withPen(open(p(0, g.y(8)), p(6, g.y(11))), g.diag)];
     },
   },
   {
@@ -954,7 +954,7 @@ export const DRAWN_SIGNS: GlyphDef[] = [
       const w = g.wide(10);
       const b = g.bottom(0);
       const x = w * 0.36;
-      return [open(p(0, 9), p(0, b, true), p(w, b, true), p(w, 3.5)), stem(x, 4.5, g.cap), stem(x + g.v + 1.6, 4.5, g.cap)];
+      return [open(p(0, g.y(9)), p(0, b, true), p(w, b, true), p(w, g.y(3.5))), stem(x, 4.5, g.cap), stem(x + g.v + 1.6, 4.5, g.cap)];
     },
   },
 ];

@@ -1,4 +1,5 @@
 import type { GlyphDef, SpaceDef } from './draw';
+import { AFRICAN } from './glyphs-african';
 import { DRAWN_SIGNS, FIGURES, LOWER, NOTDEF, ON_LETTERS, PUNCTUATION, TRADEMARK, UPPER } from './glyphs-core';
 import { CYRILLIC, CYRILLIC_LOCL } from './glyphs-cyrillic';
 import { figureVariants } from './glyphs-figures';
@@ -22,6 +23,7 @@ export const GLYPHS: GlyphDef[] = [
   ...SYMBOLS,
   ...LATIN_EXTRA,
   ...LATIN1,
+  ...AFRICAN,
   ...CYRILLIC,
   ...CYRILLIC_LOCL,
   ...GREEK,
