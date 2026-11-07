@@ -629,7 +629,7 @@ export class GeldController {
       this.hiddenTeardown = true;
       return;
     }
-    this.teardown();
+    this.teardown(true);
     this.apply();
   }
 
@@ -727,7 +727,7 @@ export class GeldController {
     this.timer = null;
     if (this.hiddenTeardown) {
       this.hiddenTeardown = false;
-      this.teardown();
+      this.teardown(true);
     }
     this.apply();
   };
@@ -1948,14 +1948,15 @@ export class GeldController {
     return repo === null || decideRepo(this.repoRules, repo).allowed;
   }
 
-  private teardown(): void {
+  /** `rebuild`: the page is dressed again right after, so the digest keeps what the reader opened and unfolded. */
+  private teardown(rebuild = false): void {
     removeAttachmentLightbox();
     this.settledHeader = null;
     this.headerGroups = [];
     this.headerScan = null;
     this.headerDirty = true;
     this.teardownView();
-    teardownReviewOverview();
+    teardownReviewOverview(rebuild ? 'rebuild' : 'stop');
     removeTrackerLinks();
     removeQuickReview();
     removePrListStats();

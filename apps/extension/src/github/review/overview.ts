@@ -2993,7 +2993,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   forgetViewFocusElsewhere();
   if (page.kind !== 'pull-conversation' || !settings.enabled || !settings.prOverview) {
     // Nothing mounted (a files page, a list): the page-wide cleanup queries have nothing to find.
-    if (visit.pageKey !== '') teardownReviewOverview(page.kind !== 'pull-conversation' && settings.enabled && settings.prOverview);
+    if (visit.pageKey !== '') teardownReviewOverview(page.kind !== 'pull-conversation' && settings.enabled && settings.prOverview ? 'leave' : 'stop');
     syncDigestOffBar(page.kind === 'pull-conversation' && settings.enabled && !settings.prOverview);
     return;
   }
@@ -3906,13 +3906,17 @@ export function foldDescriptionNow(settings: GeldSettings): void {
 }
 
 /**
- * `leaving`: the URL moved to another tab of the pull request (or another page), and GitHub keeps the conversation
+ * `leave`: the URL moved to another tab of the pull request (or another page), and GitHub keeps the conversation
  * on screen until the next page replaces it. Unfolding the description and the timeline then showed them whole for
  * a moment, so their folds (attributes on GitHub's nodes) stay and go with them. Anything still standing after
  * {@link LEAVE_GRACE_MS} (GitHub never replaced the page) is cleared then. Loans still go home and the panel still
  * goes: a moved node left in the panel would be lost to a page GitHub restores from its cache.
+ *
+ * `rebuild`: the digest is built again on this same page at once (a settings change, from any tab or device). The
+ * visit is kept, so the rows the reader opened and the groups they unfolded are still so in the new panel.
  */
-export function teardownReviewOverview(leaving = false): void {
+export function teardownReviewOverview(why: 'stop' | 'leave' | 'rebuild' = 'stop'): void {
+  const leaving = why === 'leave';
   // First: nothing asked for earlier may run after this. Pending passes are dropped, fetches in flight cancelled,
   // and every later callback finds the overview unmounted (`lastSettings`).
   lastSettings = null;
@@ -3959,9 +3963,10 @@ export function teardownReviewOverview(leaving = false): void {
     shortenDescription(false);
     compactDescriptionByline(false);
   }
+  visit.pendingAnchor = null;
+  if (why === 'rebuild') return;
   visit.openKey = null;
   visit.pageKey = '';
-  visit.pendingAnchor = null;
 }
 
 export function onReviewHashChange(settings: GeldSettings): void {
