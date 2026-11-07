@@ -418,7 +418,7 @@ function codeLigatureGlyphs(master: Master, place: (p: Vec) => Vec, slope: numbe
 }
 
 /**
- * The discretionary ligatures ct, st and sp (dlig): the first letter's top terminal rises as a stem and crosses, squared
+ * The historical ligatures ct, st and sp (hlig): the first letter's top terminal rises as a stem and crosses, squared
  * with the font's 45° cuts, to the second letter's stem, flush with t's top or over the x-height into p's. The second
  * letter moves right just enough to leave an open counter under the arch, as wide as the weight needs.
  */

@@ -271,8 +271,9 @@ export function features(master: Master): string {
     'feature liga {',
     ...TEXT_LIGATURES.filter((parts) => names.has(parts.join('_'))).map((parts) => `  sub ${parts.join(' ')} by ${parts.join('_')};`),
     '} liga;',
+    // Historical, not discretionary: dlig is what code turns on, and std must not arch its s into its t.
     ...(ARCH_LIGATURES.some((parts) => names.has(parts.join('_')))
-      ? ['feature dlig {', ...ARCH_LIGATURES.filter((parts) => names.has(parts.join('_'))).map((parts) => `  sub ${parts.join(' ')} by ${parts.join('_')};`), '} dlig;']
+      ? ['feature hlig {', ...ARCH_LIGATURES.filter((parts) => names.has(parts.join('_'))).map((parts) => `  sub ${parts.join(' ')} by ${parts.join('_')};`), '} hlig;']
       : []),
     ...arrowFeatures(names),
     ...codeLigatureFeatures(master, names),

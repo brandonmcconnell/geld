@@ -184,10 +184,11 @@ def check_ligatures(path: Path, data: bytes, weight: int) -> None:
         ("Geld!", {"dlig": True}, ["G_e_l_d", "exclam"]),
         ("Geldern", {"dlig": True}, list("Geldern")),
         ("Geld", {}, list("Geld")),
-        ("act", {"dlig": True}, ["a", "c_t"]),
-        ("first", {"dlig": True}, ["f", "i", "r", "s_t"]),
-        ("aspen", {"dlig": True}, ["a", "s_p", "e", "n"]),
+        ("act", {"hlig": True}, ["a", "c_t"]),
+        ("first", {"hlig": True}, ["f", "i", "r", "s_t"]),
+        ("aspen", {"hlig": True}, ["a", "s_p", "e", "n"]),
         ("act", {}, ["a", "c", "t"]),
+        ("std::x", {"dlig": True}, ["s", "t", "d", "colon.c_coco1", "colon.c_coco2", "x"]),
     ):
         got = [n for n, _ in shape(data, weight, text, features=features)]
         check(got == names, f"{path.name} at {weight}: {text} with {features} shaped {got}")
