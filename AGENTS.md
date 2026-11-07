@@ -1153,6 +1153,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Every deployment event leaves the "N timeline events" row and folds silently (the `deployments` group), so that row keeps what happened to the pull request itself, and a permalink to one opens the Deployments row (`deploymentAnchors` in `seatFor`).
   A pill per environment: the mark of what deployed it (the App it went through, else the App that made it, never a person's face), the environment's name and its state glyph (active a green check, inactive the same check muted, failed a red X, deploying Primer's spinner).
   It opens the deployment's page as near as there is one (`deploymentHref`): the host's, else the run, else the deployment's address.
+  Vercel's "Preview – examples" reads `examples` there (`environmentLabel`), since the row leads to deployment pages and "Preview" read as a link to the site;
+  the full name stays in the tooltip, and a bare "Preview" stays as it is.
   A link on github.com (a run) opens in the reader's tab and anything else in a new one (`linkTargetFor`), so ⌘ or Ctrl still opens a tab the browser's way.
   Open, one line per environment laid out like a preview's: state, mark (a person's picture when no App deployed it), name, then the state in words, "by login" only when someone other than the pull request's author deployed it, and "N deployments" when there were several.
   On the right: Run (the latest's), "Last successful deployment" (muted, the run of the last success, only while the latest is not one and only when that run is known), "Open" only for a deployment with neither a run nor a host page, and the time.

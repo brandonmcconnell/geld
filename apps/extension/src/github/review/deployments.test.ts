@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Preview } from '@geld/review';
 import type { Deployment } from './deployments';
-import { deploymentEntries, deploymentHref, deploymentMark, deploymentOf, deploymentsOfPreview, latestDeployments, pinnedToBuild, previewLinks } from './deployments';
+import { deploymentEntries, deploymentHref, deploymentMark, environmentLabel, deploymentOf, deploymentsOfPreview, latestDeployments, pinnedToBuild, previewLinks } from './deployments';
 import { deploymentPill } from './panel';
 
 // Trimmed from tldraw/tldraw#11342 and #11388, signed out, Nov 2026.
@@ -116,6 +116,15 @@ describe('deploymentOf', () => {
 
   it('leaves other events alone', () => {
     expect(deploymentOf(row('<div id="event-1" class="TimelineItem"><div class="TimelineItem-body"><a class="author" href="/a">a</a> added the bug label</div></div>'))).toBeNull();
+  });
+});
+
+describe('environmentLabel', () => {
+  it('drops Vercel\u2019s "Preview –" before a project name, and keeps a bare Preview', () => {
+    expect(environmentLabel('Preview – examples')).toBe('examples');
+    expect(environmentLabel('Preview - tldraw-docs')).toBe('tldraw-docs');
+    expect(environmentLabel('Preview')).toBe('Preview');
+    expect(environmentLabel('bemo-preview')).toBe('bemo-preview');
   });
 });
 

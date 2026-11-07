@@ -244,6 +244,14 @@ export function deploymentHref(entry: DeploymentEntry): string | null {
   return entry.page ?? entry.latest.logUrl ?? entry.latest.url;
 }
 
+/**
+ * An environment's name as the Deployments row shows it: Vercel's "Preview – examples" as `examples`, since the row
+ * leads to deployment pages and "Preview" read as a link to the site. A bare "Preview" stays.
+ */
+export function environmentLabel(environment: string): string {
+  return /^preview\s*[–—-]\s*(\S.*)$/i.exec(environment.trim())?.[1]?.trim() ?? environment;
+}
+
 /** The mark a deployment wears: the App it went through, else the App that made it; a person's face says nothing. */
 export function deploymentMark(deployment: Deployment): string | null {
   if (deployment.via?.avatarSrc !== undefined && deployment.via.avatarSrc !== null) return deployment.via.avatarSrc;

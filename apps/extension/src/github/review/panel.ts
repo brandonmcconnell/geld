@@ -14,7 +14,7 @@ import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, Report, Report
 import { botAppAvatar, botById, previewHostById, reportsHealth } from '@geld/review';
 import type { AgentNote } from './agent-notes';
 import type { Deployment, DeploymentEntry, DeploymentState, PreviewLinks } from './deployments';
-import { deploymentHref, deploymentMark } from './deployments';
+import { deploymentHref, deploymentMark, environmentLabel } from './deployments';
 import { noteTone } from './note-tone';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
@@ -2269,7 +2269,7 @@ export function deploymentPill(entry: DeploymentEntry): HTMLElement {
   const children: Node[] = [];
   const mark = deploymentMark(deployment);
   if (mark !== null) children.push(markImg(mark, false));
-  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name ${PANEL_CLASS}__deploy-name` }, [deployment.environment]));
+  children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name ${PANEL_CLASS}__deploy-name` }, [environmentLabel(deployment.environment)]));
   children.push(createElement('span', { class: `${PANEL_CLASS}__health`, 'data-preview-status': DEPLOYMENT_AS_PREVIEW[deployment.state], role: 'img', 'aria-label': DEPLOYMENT_STATE_LABEL[deployment.state] }, [icon(DEPLOYMENT_GLYPH[deployment.state])]));
   const label = deploymentLabel(deployment);
   const attrs = { class: `${PANEL_CLASS}__bot ${PANEL_CLASS}__deploy`, 'data-status': deployment.state, 'aria-label': label, title: label };
@@ -2331,7 +2331,8 @@ function deploymentLine(entry: DeploymentEntry, model: PanelModel, handlers: Pan
   const person = latest.actor !== '' && !/\[bot\]$/i.test(latest.actor) && latest.actor.toLowerCase() !== (model.prAuthor ?? '').toLowerCase();
   if (person) details.push(`by ${latest.actor}`);
   if (entry.count > 1) details.push(plural(entry.count, 'deployment'));
-  const mainChildren = [createElement('span', { class: `${PANEL_CLASS}__name` }, [latest.environment]), createElement('span', { class: `${PANEL_CLASS}__deploy-host` }, [details.join(' · ')])];
+  const name = environmentLabel(latest.environment);
+  const mainChildren = [createElement('span', { class: `${PANEL_CLASS}__name`, ...(name === latest.environment ? {} : { title: latest.environment }) }, [name]), createElement('span', { class: `${PANEL_CLASS}__deploy-host` }, [details.join(' · ')])];
   const key = deploymentSubKey(entry);
   const open = entry.comment !== null && model.openSubKey === key;
   const toggle = entry.comment === null ? null : (): void => handlers.onToggleSub(key);
@@ -2352,7 +2353,7 @@ function deploymentLine(entry: DeploymentEntry, model: PanelModel, handlers: Pan
   if (time !== null) right.append(time);
   if (toggle !== null) right.append(chevron(open, toggle));
   const picture: Avatar[] = mark !== null ? [{ src: mark, bot: true, login: '' }] : latest.actorAvatar !== null ? [{ src: latest.actorAvatar, bot: false, login: latest.actor }] : [];
-  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--preview ${PANEL_CLASS}__row--deployment`, 'data-state': latest.state, ...(toggle === null ? {} : { 'data-opens': '' }) }, [lead, avatarStack(picture, latest.environment, picture[0]?.bot ?? true), main, right]);
+  const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--preview ${PANEL_CLASS}__row--deployment`, 'data-state': latest.state, ...(toggle === null ? {} : { 'data-opens': '' }) }, [lead, avatarStack(picture, name, picture[0]?.bot ?? true), main, right]);
   if (open) row.setAttribute('data-open', '');
   if (toggle !== null) rowClickToggles(row, toggle);
   return { row, open };

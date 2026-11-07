@@ -25,7 +25,7 @@ import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassi
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
 import { crawlConversation } from './crawler';
 import type { Deployment } from './deployments';
-import { deploymentEntries, deploymentOf, deploymentsOfPreview, pinnedToBuild, previewLinks } from './deployments';
+import { deploymentEntries, deploymentOf, deploymentsOfPreview, environmentLabel, pinnedToBuild, previewLinks } from './deployments';
 import { threadFragmentOf } from './thread-fragment';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
@@ -3732,7 +3732,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         // (a preview whose latest deployment is not one) or to the host's page for the deployment.
         const view = visit.openKey === PREVIEWS_KEY ? renderPreviewsList(mounted.slot, model, panelHandlers) : renderDeploymentsList(mounted.slot, model, panelHandlers);
         const anchor = view.open === null ? null : 'latest' in view.open ? view.open.comment : view.open.anchor;
-        const link = view.open === null ? undefined : 'latest' in view.open ? (view.open.page === null ? undefined : { label: 'Deployment', href: view.open.page, title: `Open the ${view.open.latest.environment} deployment` }) : lastSuccessLink(model.previewLinks(view.open).lastSuccess);
+        const link = view.open === null ? undefined : 'latest' in view.open ? (view.open.page === null ? undefined : { label: 'Deployment', href: view.open.page, title: `Open the ${environmentLabel(view.open.latest.environment)} deployment` }) : lastSuccessLink(model.previewLinks(view.open).lastSuccess);
         const comment = anchor === null ? undefined : crawledDom.comments.find((entry) => entry.comment.anchor === anchor);
         const commentNode = anchor === null ? null : (entryNodes.get(anchor) ?? timelineRootOf(anchor));
         if (view.nested !== null && anchor !== null && commentNode !== null) {
