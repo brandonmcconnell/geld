@@ -117,15 +117,15 @@ const orthogonal = (contours: Contour[]) =>
   );
 
 describe('heavy weights', () => {
-  /** B and 8 (and в, B's small capital) have a notch at the waist, and Q's tail and ł's and ø's strokes cross, by design. */
-  const notched = new Set(['B', 'eight', 'Q', 'lslash', 'Lslash', 'oslash', 'Oslash', 'litre', 've-cy']);
+  /** B and 8 (and в, B's small capital, and its Bulgarian form) have a notch at the waist, and Q's tail and ł's and ø's strokes cross, by design. */
+  const notched = new Set(['B', 'eight', 'Q', 'lslash', 'Lslash', 'oslash', 'Oslash', 'litre', 've-cy', 've-cy.loclBGR']);
 
   it('keep every letter and figure counter at least 1.4 units open (superiors and ordinals in proportion), Black included', () => {
     const tight: string[] = [];
     for (const weight of WEIGHTS)
       for (const glyph of buildMaster('sans', 'roman', weight).glyphs) {
         const char = glyph.unicode === undefined ? '' : String.fromCodePoint(glyph.unicode);
-        if (!/[\p{L}\p{N}]/u.test(char) || notched.has(glyph.name) || !orthogonal(glyph.contours)) continue;
+        if (!(/[\p{L}\p{N}]/u.test(char) || glyph.name.includes('.locl')) || notched.has(glyph.name) || !orthogonal(glyph.contours)) continue;
         const small = /superior|inferior|\.dnom|^ord/.test(glyph.name);
         const gap = narrowestCounter(glyph.contours);
         if (gap < (small ? 0.75 : 1.4)) tight.push(`${glyph.name} ${weight}: ${gap.toFixed(2)}`);
@@ -155,10 +155,10 @@ describe('italic', () => {
     }
   });
 
-  it('draws italic forms of a, f, l and y rather than slanting the roman', () => {
+  it('draws italic forms of a, f, l and y, and Cyrillic и п т ц, rather than slanting the roman', () => {
     const roman = buildMaster('sans', 'roman', 400).glyphs;
     const italic = buildMaster('sans', 'italic', 400).glyphs;
-    for (const name of ['a', 'f', 'l', 'y']) {
+    for (const name of ['a', 'f', 'l', 'y', 'ii-cy', 'pe-cy', 'te-cy', 'tse-cy']) {
       const points = (glyphs: typeof roman) => glyphs.find((g) => g.name === name)!.contours.map((c) => c.length);
       expect(points(italic), name).not.toEqual(points(roman));
     }

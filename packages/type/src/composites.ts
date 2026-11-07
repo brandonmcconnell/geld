@@ -6,7 +6,7 @@ import { FRACTIONS } from './glyphs-figures';
 /** A precomposed letter: a base and the marks stacked on it, each attaching to the anchor its mark names. */
 export interface AccentedDef {
   name: string;
-  unicode: number;
+  unicode?: number;
   base: string;
   marks: string[];
 }
@@ -113,7 +113,7 @@ export function accentedFromUnicode(ranges: [number, number][], names: Map<numbe
         if (i >= 0) marks.splice(i, 2, `${first}_${second}${marks[i]!.endsWith('.case') ? '.case' : ''}`);
       }
       const base = (top && DOTLESS[baseName]) || baseName;
-      out.push({ name: `${baseName}${suffix}`, unicode: cp, base, marks });
+      out.push({ name: baseName.replace(/(-cy)?$/, `${suffix}$1`), unicode: cp, base, marks });
     }
   return out;
 }

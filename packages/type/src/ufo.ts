@@ -1,4 +1,5 @@
 import { ITALIC_SLOPE, METRICS, toFontUnits, UPM, WEIGHT_NAMES, type Weight, WEIGHTS, weightParams } from './grid';
+import { LOCL, type LoclLanguage } from './glyphs-cyrillic';
 import { VIETNAMESE_PAIRS } from './marks';
 import { FAMILY_NAMES, type Family, type Master, type Style } from './master';
 
@@ -149,7 +150,10 @@ function glif(glyph: Master['glyphs'][number]): string {
 /**
  * The hand-written part of the features; ufo2ft adds `mark`, `mkmk` and `kern` from anchors and kerning.
  * `ccmp` puts dotless i and j under marks above, and the flatter `.case` marks over capitals.
+ * `locl` gives Bulgarian, Serbian and Macedonian text their own Cyrillic forms.
  */
+const LOCL_LANGUAGES: LoclLanguage[] = ['BGR', 'SRB', 'MKD'];
+
 export function features(master: Master): string {
   const names = new Set(master.glyphs.map((g) => g.name));
   const marks = master.glyphs.filter((g) => g.mark && !g.name.endsWith('.case') && names.has(`${g.name}.case`)).map((g) => g.name);
@@ -160,6 +164,9 @@ export function features(master: Master): string {
   return [
     'languagesystem DFLT dflt;',
     'languagesystem latn dflt;',
+    'languagesystem cyrl dflt;',
+    ...LOCL_LANGUAGES.map((lang) => `languagesystem cyrl ${lang};`),
+    'languagesystem grek dflt;',
     '',
     `@MarksAbove = [${above.join(' ')}];`,
     `@CaseMarks = [${marks.join(' ')}];`,
@@ -169,6 +176,7 @@ export function features(master: Master): string {
     'feature ccmp {',
     "  sub i' @MarksAbove by dotlessi;",
     "  sub j' @MarksAbove by dotlessj;",
+    ...(names.has('i-cy') ? ["  sub i-cy' @MarksAbove by dotlessi;", "  sub je-cy' @MarksAbove by dotlessj;"] : []),
     "  sub @Uppercase @CaseMarks' by @CaseMarksCase;",
     "  sub @CaseMarksCase @CaseMarks' by @CaseMarksCase;",
     ...VIETNAMESE_PAIRS.flatMap(([first, second]) => [
@@ -176,6 +184,14 @@ export function features(master: Master): string {
       `  sub ${first}.case ${second}.case by ${first}_${second}.case;`,
     ]),
     '} ccmp;',
+    '',
+    'feature locl {',
+    '  script cyrl;',
+    ...LOCL_LANGUAGES.flatMap((lang) => [
+      `  language ${lang} exclude_dflt;`,
+      ...LOCL[lang].filter(([from, to]) => names.has(from) && names.has(to)).map(([from, to]) => `    sub ${from} by ${to};`),
+    ]),
+    '} locl;',
     '',
   ].join('\n');
 }

@@ -40,8 +40,10 @@ export interface GlyphDef {
   unicode?: number;
   /** Lowercase letters draw with the lighter lowercase horizontals. */
   lower?: boolean;
-  /** A capital's skeleton drawn to the x-height with the lowercase pen (most Cyrillic lowercase, `smcp` later). */
+  /** A capital's skeleton drawn to the x-height with the lowercase pen (most Cyrillic lowercase, `smcp` later). Its italic form, if any, is a lowercase drawing. */
   smallcap?: boolean;
+  /** The character an unencoded alternate stands for (a `locl` form), spaced and anchored as that character. */
+  stands?: number;
   /** Sidebearings in grid units, measured from the Geld Sans outline. */
   lsb: number;
   rsb: number;

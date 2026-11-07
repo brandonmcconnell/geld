@@ -1,4 +1,4 @@
-import type { PlacedDef } from './composites';
+import type { AccentedDef, PlacedDef } from './composites';
 import {
   ALL,
   bar,
@@ -10,10 +10,13 @@ import {
   open,
   p,
   RIGHT,
+  rotate180,
   stem,
+  vee,
   yArms,
 } from './draw';
 import type { Stroke } from './geometry';
+import { METRICS } from './grid';
 import { letter } from './glyphs-core';
 
 /**
@@ -32,8 +35,7 @@ const pe: Draw = (g) => {
 };
 const ge: Draw = (g) => [open(p(g.wide(9), g.top(g.cap)), p(0, g.top(g.cap)), p(0, 0))];
 const softSign = (g: DrawContext, bowl = g.y(8)): Stroke[] => [stem(0, 0, g.cap), box(0, g.wide(9), g.bottom(0), bowl, RIGHT)];
-const che: Draw = (g) => {
-  const w = g.wide(9);
+const che = (g: DrawContext, w = g.wide(9)): Stroke[] => {
   const m = g.y(7);
   return [open(p(0, g.cap), p(0, m, true), p(w, m)), stem(w, 0, g.cap)];
 };
@@ -157,6 +159,23 @@ const ue: Draw = (g) => {
   const w = g.wide(11);
   return yArms(g, w, g.cap, g.y(6));
 };
+/** Ҕ: Г with a hook from the middle that turns under the baseline, as ђ's does. */
+const gheHook: Draw = (g) => {
+  const m = g.y(7);
+  const w = g.wide(8.5);
+  const b = g.bottom(-3);
+  return [...ge(g), open(p(0, m), p(w, m, true), p(w, b, true), p(w - 2.5, b))];
+};
+/** Ҝ: K with a short upright stroke through its upper arm. */
+const kaStroke: Draw = (g) => {
+  const x = g.v + 1.8;
+  return [...letter('K').draw(g), stem(x, g.y(6), g.y(11))];
+};
+/** Ҹ: a wider Ч with a short upright stroke through the middle of its bar. */
+const cheStroke: Draw = (g) => {
+  const w = g.wide(11);
+  return [...che(g, w), stem(w / 2, g.y(4.5), g.y(9.5))];
+};
 const oBarred: Draw = (g) => {
   const w = g.wide(10);
   return [box(0, w, g.bottom(0), g.top(g.cap), ALL), bar(0, w, g.cap / 2)];
@@ -184,7 +203,7 @@ const DRAWN: { name: string; unicode: number; lower?: number; lsb: number; rsb: 
   { name: 'U-cy', unicode: 0x423, lsb: 0.3, rsb: 0.3, draw: u },
   { name: 'Ef-cy', unicode: 0x424, lower: 0x444, lsb: 1, rsb: 1, draw: ef },
   { name: 'Tse-cy', unicode: 0x426, lower: 0x446, lsb: 1.5, rsb: 0.5, draw: tse },
-  { name: 'Che-cy', unicode: 0x427, lower: 0x447, lsb: 1.5, rsb: 1.5, draw: che },
+  { name: 'Che-cy', unicode: 0x427, lower: 0x447, lsb: 1.5, rsb: 1.5, draw: (g) => che(g) },
   { name: 'Sha-cy', unicode: 0x428, lower: 0x448, lsb: 1.5, rsb: 1.5, draw: sha },
   { name: 'Shcha-cy', unicode: 0x429, lower: 0x449, lsb: 1.5, rsb: 0.5, draw: shcha },
   { name: 'Hard-cy', unicode: 0x42a, lower: 0x44a, lsb: 0.5, rsb: 1.25, draw: hardSign },
@@ -216,6 +235,13 @@ const DRAWN: { name: string; unicode: number; lower?: number; lsb: number; rsb: 
   { name: 'Hadescender-cy', unicode: 0x4b2, lower: 0x4b3, lsb: 0.4, rsb: 0.4, draw: (g) => [...letter('X').draw(g), descender(g, g.wide(10) + 0.5)] },
   { name: 'Chedescender-cy', unicode: 0x4b6, lower: 0x4b7, lsb: 1.5, rsb: 0.5, draw: (g) => [...che(g), bar(g.wide(9), g.wide(9) + 1.5, g.bottom(0)), descender(g, g.wide(9) + 1.5)] },
   { name: 'Shha-cy', unicode: 0x4ba, lsb: 1.5, rsb: 1.5, draw: shha },
+  { name: 'Gemiddlehook-cy', unicode: 0x494, lower: 0x495, lsb: 1.5, rsb: 1, draw: gheHook },
+  { name: 'Zedescender-cy', unicode: 0x498, lower: 0x499, lsb: 1, rsb: 1, draw: (g) => [...ze(g), descender(g, g.wide(9) / 2)] },
+  { name: 'Kaverticalstroke-cy', unicode: 0x49c, lower: 0x49d, lsb: 1.5, rsb: 0.3, draw: kaStroke },
+  { name: 'Kabashkir-cy', unicode: 0x4a0, lower: 0x4a1, lsb: 0.5, rsb: 0.3, draw: (g) => [bar(-g.wide(2.5), 0, g.top(g.cap)), ...letter('K').draw(g)] },
+  { name: 'Enghe-cy', unicode: 0x4a4, lower: 0x4a5, lsb: 1.5, rsb: 0.5, draw: (g) => [...letter('H').draw(g), bar(g.wide(9), g.wide(9) + g.wide(4), g.top(g.cap))] },
+  { name: 'Esdescender-cy', unicode: 0x4aa, lower: 0x4ab, lsb: 1.25, rsb: 1, draw: (g) => [...letter('C').draw(g), descender(g, g.wide(10) / 2)] },
+  { name: 'Cheverticalstroke-cy', unicode: 0x4b8, lower: 0x4b9, lsb: 1.5, rsb: 1.5, draw: cheStroke },
   { name: 'Obarred-cy', unicode: 0x4e8, lower: 0x4e9, lsb: 1.25, rsb: 1.25, draw: oBarred },
 ];
 
@@ -293,6 +319,17 @@ const LOWER_OWN: GlyphDef[] = [
 
 const lowerName = (name: string) => name.replace(/^./, (c) => c.toLowerCase());
 
+/** The italic's cursive lowercase, where Cyrillic italic is not the roman slanted: и п т ц read as u n m and u with a tail. */
+const ITALIC_LOWER: Record<string, Draw> = {
+  'ii-cy': (g) => letter('u').draw(g),
+  'pe-cy': (g) => letter('n').draw(g),
+  'te-cy': (g) => letter('m').draw(g),
+  'tse-cy': (g) => {
+    const w = g.wide(7);
+    return [...letter('u').draw(g), bar(w, w + 1.5, g.bottom(0)), descender(g, w + 1.5)];
+  },
+};
+
 export const CYRILLIC: GlyphDef[] = [
   ...DRAWN.map(({ lower: _lower, ...def }) => def),
   ...DRAWN.filter((d) => d.lower !== undefined).map((d) => ({
@@ -302,10 +339,11 @@ export const CYRILLIC: GlyphDef[] = [
     lsb: d.lsb,
     rsb: d.rsb,
     draw: d.draw,
+    italic: ITALIC_LOWER[lowerName(d.name)],
   })),
   ...SMALL_OF_LATIN.map(([name, unicode, latin]) => {
     const def = letter(latin);
-    return { name, unicode, smallcap: true, lsb: def.lsb, rsb: def.rsb, draw: def.draw };
+    return { name, unicode, smallcap: true, lsb: def.lsb, rsb: def.rsb, draw: def.draw, italic: ITALIC_LOWER[name] };
   }),
   ...LOWER_OWN,
 ];
@@ -340,6 +378,160 @@ export const CYRILLIC_ALIASES: PlacedDef[] = (
     ['je-cy', 0x458, 'j'],
     ['shha-cy', 0x4bb, 'h'],
     ['schwa-cy', 0x4d9, 'schwa'],
+    ['Palochka-cy', 0x4c0, 'I'],
+    ['palochka-cy', 0x4cf, 'I'],
+    ['Aie-cy', 0x4d4, 'AE'],
+    ['aie-cy', 0x4d5, 'ae'],
   ] as const
 ).map(([name, unicode, glyph]) => ({ name, unicode, parts: [{ glyph, after: true }] }));
 
+export type LoclLanguage = 'BGR' | 'SRB' | 'MKD';
+
+/** A bar over the x-height where a macron sits, wider than the letter's counter: Serbian italic г п т. */
+const overline = (g: DrawContext, x0: number, x1: number): Stroke => bar(x0, x1, g.xHeight + 2.25);
+/** ш at the x-height, for the Serbian italic т it carries. */
+const shaLower = (g: DrawContext, w = g.wide(11.5)): Stroke[] => [stem(0, 0, g.xHeight), stem(w / 2, 0, g.xHeight), stem(w, 0, g.xHeight), bar(0, w, g.bottom(0))];
+/** ш in Bulgarian: an m turned over. */
+const shaTurned = (g: DrawContext): Stroke[] => rotate180(letter('m').draw(g), g.wide(6.5), g.xHeight / 2);
+const italicOf = (name: string): Draw => {
+  const def = letter(name);
+  return (g) => (def.italic ?? def.draw)(g);
+};
+
+interface LoclForm {
+  /** The default glyph it replaces. */
+  from: string;
+  stands: number;
+  languages: LoclLanguage[];
+  lsb: number;
+  rsb: number;
+  /** `lower`: drawn as a lowercase letter; `smallcap`: as a small capital, with any italic drawn as a lowercase letter. */
+  as?: 'lower' | 'smallcap';
+  draw: Draw;
+  italic?: Draw;
+}
+
+/**
+ * Language forms under `locl`. Bulgarian lowercase draws from handwriting (г a mirrored s, д like g, л a pointed arch,
+ * ж and в rising above the x-height, и п т ш like u n m and a turned m, ь ъ ю with a tall stem), and
+ * its Л is the arch. Serbian and Macedonian italic г д п т are ı and u with an overline, g, and ш with
+ * an overline (Macedonian keeps the Cyrillic г); their roman is the default form.
+ */
+const LOCL_FORMS: LoclForm[] = [
+  { from: 'El-cy', stands: 0x41b, languages: ['BGR'], lsb: 0.4, rsb: 0.4, draw: (g) => vee(g, 0, g.wide(10), 0, g.cap) },
+  {
+    from: 've-cy',
+    stands: 0x432,
+    languages: ['BGR'],
+    lsb: 1.5,
+    rsb: 1.25,
+    as: 'lower',
+    draw: (g) => {
+      const join = g.top(g.xHeight);
+      return [stem(0, 0, g.ascender), box(0, g.wide(5), join, g.top(g.ascender), RIGHT), box(0, g.wide(8), g.bottom(0), join, RIGHT)];
+    },
+  },
+  { from: 'ge-cy', stands: 0x433, languages: ['BGR'], lsb: 1, rsb: 1, as: 'lower', draw: (g) => mirror(letter('s').draw(g), g.wide(7) / 2) },
+  { from: 'de-cy', stands: 0x434, languages: ['BGR'], lsb: 1.25, rsb: 1.5, as: 'lower', draw: (g) => letter('g').draw(g), italic: italicOf('g') },
+  {
+    from: 'zhe-cy',
+    stands: 0x436,
+    languages: ['BGR'],
+    lsb: 0.3,
+    rsb: 0.3,
+    as: 'smallcap',
+    draw: (g) => [...zhe(g), stem(g.wide(15) / 2, 0, METRICS.ascender)],
+  },
+  { from: 'ii-cy', stands: 0x438, languages: ['BGR'], lsb: 1.4, rsb: 1.5, as: 'lower', draw: (g) => letter('u').draw(g) },
+  { from: 'ka-cy', stands: 0x43a, languages: ['BGR'], lsb: 1.5, rsb: 0.3, as: 'lower', draw: (g) => letter('k').draw(g), italic: italicOf('k') },
+  { from: 'el-cy', stands: 0x43b, languages: ['BGR'], lsb: 0.3, rsb: 0.3, as: 'lower', draw: (g) => vee(g, 0, g.wide(8.5), 0, g.xHeight) },
+  { from: 'pe-cy', stands: 0x43f, languages: ['BGR'], lsb: 1.5, rsb: 1.4, as: 'lower', draw: (g) => letter('n').draw(g) },
+  { from: 'te-cy', stands: 0x442, languages: ['BGR'], lsb: 1.5, rsb: 1.4, as: 'lower', draw: (g) => letter('m').draw(g) },
+  { from: 'tse-cy', stands: 0x446, languages: ['BGR'], lsb: 1.4, rsb: 0.5, as: 'lower', draw: (g) => ITALIC_LOWER['tse-cy']!(g) },
+  { from: 'sha-cy', stands: 0x448, languages: ['BGR'], lsb: 1.4, rsb: 1.5, as: 'lower', draw: shaTurned },
+  {
+    from: 'shcha-cy',
+    stands: 0x449,
+    languages: ['BGR'],
+    lsb: 1.4,
+    rsb: 0.5,
+    as: 'lower',
+    draw: (g) => {
+      const w = 2 * g.wide(6.5);
+      return [...shaTurned(g), bar(w, w + 1.5, g.bottom(0)), descender(g, w + 1.5)];
+    },
+  },
+  { from: 'soft-cy', stands: 0x44c, languages: ['BGR'], lsb: 1.5, rsb: 1.25, as: 'lower', draw: (g) => letter('b').draw(g) },
+  { from: 'hard-cy', stands: 0x44a, languages: ['BGR'], lsb: 0.5, rsb: 1.25, as: 'lower', draw: (g) => [bar(-g.wide(2.5), 0, g.top(g.ascender)), ...letter('b').draw(g)] },
+  {
+    from: 'iu-cy',
+    stands: 0x44e,
+    languages: ['BGR'],
+    lsb: 1.5,
+    rsb: 1.25,
+    as: 'lower',
+    draw: (g) => {
+      const x = g.v + 1.6;
+      return [stem(0, 0, g.ascender), bar(0, x, g.xHeight / 2), box(x, x + g.wide(8), g.bottom(0), g.top(g.xHeight), ALL)];
+    },
+  },
+  {
+    from: 'ge-cy',
+    stands: 0x433,
+    languages: ['SRB'],
+    lsb: 1.5,
+    rsb: 0.5,
+    as: 'smallcap',
+    draw: ge,
+    italic: (g) => [stem(0, 0, g.xHeight), overline(g, -2, 2)],
+  },
+  { from: 'de-cy', stands: 0x434, languages: ['SRB', 'MKD'], lsb: 0.75, rsb: 0.75, as: 'smallcap', draw: de, italic: italicOf('g') },
+  {
+    from: 'pe-cy',
+    stands: 0x43f,
+    languages: ['SRB', 'MKD'],
+    lsb: 1.5,
+    rsb: 1.5,
+    as: 'smallcap',
+    draw: pe,
+    italic: (g) => [...letter('u').draw(g), overline(g, -0.75, g.wide(7) + 0.75)],
+  },
+  {
+    from: 'te-cy',
+    stands: 0x442,
+    languages: ['SRB', 'MKD'],
+    lsb: 1.5,
+    rsb: 1.5,
+    as: 'smallcap',
+    draw: (g) => letter('T').draw(g),
+    italic: (g) => [...shaLower(g), overline(g, -0.75, g.wide(11.5) + 0.75)],
+  },
+];
+
+const loclName = (form: LoclForm) => `${form.from}.locl${form.languages[0]}`;
+
+export const CYRILLIC_LOCL: GlyphDef[] = LOCL_FORMS.map((form) => ({
+  name: loclName(form),
+  stands: form.stands,
+  ...(form.as === 'lower' ? { lower: true } : form.as === 'smallcap' ? { smallcap: true } : {}),
+  lsb: form.lsb,
+  rsb: form.rsb,
+  draw: form.draw,
+  ...(form.italic ? { italic: form.italic } : {}),
+}));
+
+/** Accented letters whose base has a language form: Bulgarian й and ѝ on its u-shaped и. */
+export const CYRILLIC_LOCL_ACCENTED: AccentedDef[] = [
+  { name: 'iibreve-cy.loclBGR', base: 'ii-cy.loclBGR', marks: ['brevecomb'] },
+  { name: 'iigrave-cy.loclBGR', base: 'ii-cy.loclBGR', marks: ['gravecomb'] },
+];
+
+/** For each language, every glyph it replaces and the form it takes, accented letters included. */
+export const LOCL: Record<LoclLanguage, [string, string][]> = {
+  BGR: [
+    ...LOCL_FORMS.filter((f) => f.languages.includes('BGR')).map((f): [string, string] => [f.from, loclName(f)]),
+    ...CYRILLIC_LOCL_ACCENTED.map((a): [string, string] => [a.name.replace(/\.loclBGR$/, ''), a.name]),
+  ],
+  SRB: LOCL_FORMS.filter((f) => f.languages.includes('SRB')).map((f) => [f.from, loclName(f)]),
+  MKD: LOCL_FORMS.filter((f) => f.languages.includes('MKD')).map((f) => [f.from, loclName(f)]),
+};

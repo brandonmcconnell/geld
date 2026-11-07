@@ -3,6 +3,7 @@ import { type DrawContext, drawContext, type GlyphDef, smallCapContext } from '.
 import { measuredSidebearings, type SpacingZone } from './spacing';
 import { bounds, type Contour, expandStroke, insetContour, shear, snap, translate, type Vec, winding } from './geometry';
 import { GLYPHS, SPACES } from './glyphs';
+import { CYRILLIC_LOCL_ACCENTED } from './glyphs-cyrillic';
 import { DARK_INSET_RATIO, ITALIC_SLOPE, METRICS, type Weight, weightParams } from './grid';
 import { type Attachment, BELOW_GAP, MARK_GAP, MARK_HEIGHT, MARKS } from './marks';
 
@@ -59,8 +60,9 @@ const isUpperChar = (cp: number | undefined) => {
  * (spacing.ts); punctuation and symbols keep their hand-set sidebearings.
  */
 function spacingZone(def: GlyphDef, g: DrawContext): SpacingZone | undefined {
-  if (def.unicode === undefined) return undefined;
-  const c = String.fromCodePoint(def.unicode);
+  const cp = def.unicode ?? def.stands;
+  if (cp === undefined) return undefined;
+  const c = String.fromCodePoint(cp);
   if (/\p{Nd}/u.test(c)) return { bottom: 0, top: g.cap, target: 1.3, depth: 2.5, min: 0.3 };
   if (!/\p{L}/u.test(c)) return undefined;
   if (def.lower || /\p{Ll}/u.test(c)) return { bottom: 0, top: METRICS.xHeight, target: 1.45, depth: 2, min: 0.15 };
@@ -116,8 +118,9 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   const placeAnchors = (anchors: Anchor[]) => anchors.map((a) => ({ ...a, ...place(a) }));
 
   const glyphs: MasterGlyph[] = GLYPHS.map((def) => {
-    const g = def.smallcap ? small : def.lower ? lower : upper;
-    const strokes = italic && def.italic ? def.italic(g) : def.draw(g);
+    const cursive = italic && def.italic !== undefined;
+    const g = def.smallcap && !cursive ? small : def.lower || def.smallcap ? lower : upper;
+    const strokes = cursive ? def.italic!(g) : def.draw(g);
     let contours = strokes.flatMap((stroke) => expandStroke(stroke, g.pen, slope));
     if (params.snap && !italic) contours = contours.map((c) => snap(c, 0.5));
     const box = bounds(contours);
@@ -125,7 +128,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     const { lsb, rsb } = zone ? measuredSidebearings(contours, box.minX, box.maxX, zone) : def;
     contours = contours.map((c) => translate(c, lsb - box.minX));
     const advance = lsb + (box.maxX - box.minX) + rsb;
-    const anchors = baseAnchors(contours, isUpperChar(def.unicode), params.v, def.name);
+    const anchors = baseAnchors(contours, isUpperChar(def.unicode ?? def.stands), params.v, def.name);
     return {
       name: def.name,
       ...(def.unicode === undefined ? {} : { unicode: def.unicode }),
@@ -212,7 +215,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   };
   placeAll(ALIASES);
 
-  for (const def of accentedFromUnicode(LATIN_RANGES, names, caseMarks)) {
+  for (const def of [...accentedFromUnicode(LATIN_RANGES, names, caseMarks), ...CYRILLIC_LOCL_ACCENTED]) {
     const base = byName.get(def.base);
     if (!base) continue;
     const components: Component[] = [{ glyph: def.base, dx: 0, dy: 0 }];
@@ -230,7 +233,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
       reached.set(attach, { x: next.x + dx, y: next.y + dy });
     }
     const horn = def.marks.includes('horncomb') ? HORN_ROOM : 0;
-    glyphs.push({ name: def.name, unicode: def.unicode, advance: base.advance + horn, contours: [], components, anchors: [], mark: false });
+    glyphs.push({ name: def.name, ...(def.unicode === undefined ? {} : { unicode: def.unicode }), advance: base.advance + horn, contours: [], components, anchors: [], mark: false });
     byName.set(def.name, glyphs[glyphs.length - 1]!);
   }
 

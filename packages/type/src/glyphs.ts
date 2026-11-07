@@ -1,6 +1,6 @@
 import type { GlyphDef, SpaceDef } from './draw';
 import { DRAWN_SIGNS, FIGURES, LOWER, NOTDEF, ON_LETTERS, PUNCTUATION, TRADEMARK, UPPER } from './glyphs-core';
-import { CYRILLIC } from './glyphs-cyrillic';
+import { CYRILLIC, CYRILLIC_LOCL } from './glyphs-cyrillic';
 import { figureVariants } from './glyphs-figures';
 import { GREEK } from './glyphs-greek';
 import { LATIN_EXTRA } from './glyphs-latin';
@@ -23,6 +23,7 @@ export const GLYPHS: GlyphDef[] = [
   ...LATIN_EXTRA,
   ...LATIN1,
   ...CYRILLIC,
+  ...CYRILLIC_LOCL,
   ...GREEK,
 ];
 
