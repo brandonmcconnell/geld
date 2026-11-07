@@ -1080,5 +1080,6 @@ export function relatedLinksFrom(candidates: readonly LinkCandidate[], options: 
  */
 export function isDependencyUpdate(text: string): boolean {
   const words = text.replace(/\s+/g, ' ');
-  return /\bThis PR contains the following updates\b/.test(words) || /\bBumps (?:the \S+ group|\S+ from \S+ to \S+)/.test(words) || /\bDependabot will resolve any conflicts\b/.test(words);
+  // Dependabot's description opens on "Bumps"; a person's "bumps zod from 3 to 4" in passing is no dependency update.
+  return /\bThis PR contains the following updates\b/.test(words) || /^\s*Bumps (?:the \S+ group|\S+ from \S+ to \S+)/.test(words) || /\bDependabot will resolve any conflicts\b/.test(words);
 }
