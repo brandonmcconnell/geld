@@ -452,7 +452,9 @@ const MIRROR_CLASS = 'geld-header-mirror';
  */
 function syncNarrowMirror(group: HeaderStatGroup, label: string, hasTests: boolean, visible: ChangeTotals, provider: (() => StatsBreakdown) | null): void {
   const header = group.host.closest<HTMLElement>('[data-component="PageHeader"]');
-  const stateRow = header?.querySelector<HTMLElement>('[data-component="StateLabel"]')?.parentElement ?? null;
+  const stateLabel = header?.querySelector<HTMLElement>('[data-component="StateLabel"]') ?? null;
+  // On the Overview the label sits in GitHub's own status button, which Geld's pill replaces and hides whole.
+  const stateRow = (stateLabel?.closest<HTMLElement>('button[aria-haspopup]') ?? stateLabel)?.parentElement ?? null;
   if (stateRow === null || stateRow.contains(group.host)) return;
   let mirror = stateRow.querySelector<HTMLElement>(`.${MIRROR_CLASS}`);
   if (mirror === null) {

@@ -431,7 +431,9 @@ const prefetched = new Map<string, { readonly method: MergeMethod; readonly at: 
  * GitHub's own status menu on the Overview reads its box at load, and Geld's first read started half a second after.
  */
 export function prefetchMergeBox(pullPath: string, method: MergeMethod): void {
-  if (prefetched.has(pullPath)) return;
+  // One no read took (the controls never mounted) is spent once stale, or a visit back to the pull request asked nothing.
+  const known = prefetched.get(pullPath);
+  if (known !== undefined && Date.now() - known.at < PREFETCH_FRESH_MS) return;
   prefetched.set(pullPath, { method, at: Date.now(), box: fetchMergeBox(pullPath, method, false) });
 }
 
