@@ -7326,6 +7326,23 @@ a.geld-review__rerun:hover {
   overflow-wrap: anywhere;
 }
 
+/* The "…" never wraps onto a line of its own. An inline-block may break on either side whatever the whitespace, so
+ * the subject's last link reserves the button's room after its last word (an inline's end padding sits on its last
+ * line only) and the button, pulled back by its own width, takes no room of its own: it lands in that space, as far
+ * from the word as GitHub sets it (its 5px margin and the space before it). */
+.geld-review__qv .TimelineItem .js-details-container.Details--on .pr-1.flex-auto.min-width-0 {
+  --geld-expander-width: 22px;
+}
+
+.geld-review__qv .TimelineItem .js-details-container.Details--on .pr-1.flex-auto.min-width-0 > code > a:last-of-type {
+  padding-right: calc(var(--geld-expander-width) + 5px);
+}
+
+.geld-review__qv .TimelineItem .js-details-container.Details--on .pr-1.flex-auto.min-width-0:has(> code > a) > .hidden-text-expander {
+  width: var(--geld-expander-width);
+  margin-left: calc(-1 * var(--geld-expander-width));
+}
+
 /* A message body that was only the subject's tail (quick-view.ts: joinCommitSubjects) has nothing left to show. */
 .geld-review__qv pre[data-geld-empty] {
   display: none;
