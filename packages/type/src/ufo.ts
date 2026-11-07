@@ -1,5 +1,6 @@
 import { ITALIC_SLOPE, METRICS, toFontUnits, UPM, WEIGHT_NAMES, type Weight, WEIGHTS, weightParams } from './grid';
 import { LOCL, type LoclLanguage } from './glyphs-cyrillic';
+import { FIGURE_NAMES, TABULAR_SIGNS } from './glyphs-figures';
 import { VIETNAMESE_PAIRS } from './marks';
 import { FAMILY_NAMES, type Family, type Master, type Style } from './master';
 
@@ -154,6 +155,48 @@ function glif(glyph: Master['glyphs'][number]): string {
  */
 const LOCL_LANGUAGES: LoclLanguage[] = ['BGR', 'SRB', 'MKD'];
 
+/**
+ * Figure features. Lining proportional figures are the default; `tnum`, `onum` and `zero` combine
+ * (tabular oldstyle, slashed tabular zero…), the zero variants carried through every set.
+ */
+function figureFeatures(names: Set<string>): string[] {
+  const set = (suffix: string) => [...FIGURE_NAMES.map((f) => `${f}${suffix}`), `zero${suffix}.zero`, `zero${suffix}.dot`].map((n) => n.replace(/^zero\.(zero|dot)$/, 'zero.$1'));
+  const lining = set('');
+  const tabular = set('.tf');
+  const oldstyle = set('.osf');
+  const tabularOldstyle = set('.tosf');
+  const signs = Object.keys(TABULAR_SIGNS);
+  const tabularSigns = signs.map((s) => `${s}.tf`);
+  const subs = (from: string[], to: string[]) =>
+    from.flatMap((f, i) => (names.has(f) && names.has(to[i]!) ? [`  sub ${f} by ${to[i]};`] : []));
+  const feature = (tag: string, lines: string[]) => (lines.length ? [`feature ${tag} {`, ...lines, `} ${tag};`, ''] : []);
+  const scripts = ['plus', 'minus', 'equal', 'parenleft', 'parenright', 'period', 'comma'];
+  const superiors = [...FIGURE_NAMES.map((f) => `${f}superior`), ...scripts.map((s) => `${s}superior`)];
+  const inferiors = [...FIGURE_NAMES.map((f) => `${f}inferior`), ...scripts.map((s) => `${s}inferior`)];
+  const scripted = [...FIGURE_NAMES, ...scripts];
+  const numerators = FIGURE_NAMES.map((f) => `${f}superior`);
+  const denominators = FIGURE_NAMES.map((f) => `${f}.dnom`);
+  return [
+    ...feature('pnum', [...subs(tabular, lining), ...subs(tabularOldstyle, oldstyle), ...subs(tabularSigns, signs)]),
+    ...feature('tnum', [...subs(lining, tabular), ...subs(oldstyle, tabularOldstyle), ...subs(signs, tabularSigns)]),
+    ...feature('lnum', [...subs(oldstyle, lining), ...subs(tabularOldstyle, tabular)]),
+    ...feature('onum', [...subs(lining, oldstyle), ...subs(tabular, tabularOldstyle)]),
+    ...feature('zero', subs(['zero', 'zero.tf', 'zero.osf', 'zero.tosf'], ['zero.zero', 'zero.tf.zero', 'zero.osf.zero', 'zero.tosf.zero'])),
+    ...feature('sups', subs(scripted, superiors)),
+    ...feature('subs', subs(scripted, inferiors)),
+    ...feature('sinf', subs(scripted, inferiors)),
+    ...feature('numr', subs([...FIGURE_NAMES], numerators)),
+    ...feature('dnom', subs([...FIGURE_NAMES], denominators)),
+    'feature frac {',
+    '  lookup FRAC_SLASH { sub slash by fraction; } FRAC_SLASH;',
+    `  lookup FRAC_UP { sub [${FIGURE_NAMES.join(' ')}] by [${numerators.join(' ')}]; } FRAC_UP;`,
+    `  lookup FRAC_DOWN { sub [fraction ${denominators.join(' ')}] [${numerators.join(' ')}]' by [${denominators.join(' ')}]; } FRAC_DOWN;`,
+    '} frac;',
+    '',
+    ...(names.has('ordfeminine') ? ['feature ordn {', `  sub [${FIGURE_NAMES.join(' ')}] [a o]' by [ordfeminine ordmasculine];`, '} ordn;', ''] : []),
+  ];
+}
+
 export function features(master: Master): string {
   const names = new Set(master.glyphs.map((g) => g.name));
   const marks = master.glyphs.filter((g) => g.mark && !g.name.endsWith('.case') && names.has(`${g.name}.case`)).map((g) => g.name);
@@ -193,6 +236,7 @@ export function features(master: Master): string {
     ]),
     '} locl;',
     '',
+    ...figureFeatures(names),
   ].join('\n');
 }
 

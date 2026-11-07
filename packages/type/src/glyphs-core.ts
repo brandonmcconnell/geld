@@ -694,9 +694,9 @@ export const PUNCTUATION: GlyphDef[] = [
     unicode: 0x28,
     lsb: 1.5,
     rsb: 0.75,
-    draw: () => {
-      const w = 3.5;
-      return [level(open(p(w, 15.5), p(0, 15.5 - w), p(0, -3.5 + w), p(w, -3.5)))];
+    draw: (g) => {
+      const w = g.y(3.5);
+      return [level(open(p(w, g.y(15.5)), p(0, g.y(15.5) - w), p(0, g.y(-3.5) + w), p(w, g.y(-3.5))))];
     },
   },
   {
@@ -704,9 +704,9 @@ export const PUNCTUATION: GlyphDef[] = [
     unicode: 0x29,
     lsb: 0.75,
     rsb: 1.5,
-    draw: () => {
-      const w = 3.5;
-      return [level(open(p(0, 15.5), p(w, 15.5 - w), p(w, -3.5 + w), p(0, -3.5)))];
+    draw: (g) => {
+      const w = g.y(3.5);
+      return [level(open(p(0, g.y(15.5)), p(w, g.y(15.5) - w), p(w, g.y(-3.5) + w), p(0, g.y(-3.5))))];
     },
   },
   {
@@ -735,7 +735,8 @@ export const PUNCTUATION: GlyphDef[] = [
     rsb: 1,
     draw: (g) => {
       const w = g.wide(8);
-      return [bar(0, w, MATH_AXIS), stem(w / 2, MATH_AXIS - w / 2, MATH_AXIS + w / 2)];
+      const axis = g.y(MATH_AXIS);
+      return [bar(0, w, axis), stem(w / 2, axis - w / 2, axis + w / 2)];
     },
   },
   {
@@ -745,8 +746,8 @@ export const PUNCTUATION: GlyphDef[] = [
     rsb: 1,
     draw: (g) => {
       const w = g.wide(8);
-      const gap = 1.75 + g.h / 2;
-      return [bar(0, w, MATH_AXIS + gap), bar(0, w, MATH_AXIS - gap)];
+      const gap = g.y(1.75) + g.h / 2;
+      return [bar(0, w, g.y(MATH_AXIS) + gap), bar(0, w, g.y(MATH_AXIS) - gap)];
     },
   },
 ];
@@ -788,21 +789,23 @@ export const ON_LETTERS: GlyphDef[] = [
       const w = g.wide(9.5);
       const t = g.top(g.cap);
       const b = g.bottom(0);
-      const d = g.h / 2 + 0.9;
+      const thin = Math.min(g.h, g.y(4.5) - g.h);
+      const d = thin / 2 + 0.9;
       const hi = g.cap / 2 + d;
       const lo = g.cap / 2 - d;
-      return [open(p(w, t), p(0, t, true), p(0, hi)), open(p(w, lo), p(w, b, true), p(0, b)), bar(-1, w + 1, hi), bar(-1, w + 1, lo)];
+      const pen = { v: g.v, h: thin };
+      return [open(p(w, t), p(0, t, true), p(0, hi)), open(p(w, lo), p(w, b, true), p(0, b)), withPen(bar(-1, w + 1, hi), pen), withPen(bar(-1, w + 1, lo), pen)];
     },
   },
   onLetter('cedi', 0x20b5, 'C', (g) => [through(g.wide(10) / 2)]),
-  onLetter('tenge', 0x20b8, 'T', (g) => [bar(0, g.wide(11), g.top(10.5))]),
+  onLetter('tenge', 0x20b8, 'T', (g) => [bar(0, g.wide(11), g.top(Math.min(g.y(10.5), g.cap - g.h - 1.6)))]),
   onLetter('ruble', 0x20bd, 'P', (g) => [bar(-1.75, 5, 6 - g.h - 1.5)], { lsb: 0.5, rsb: 1 }),
   onLetter('bitcoin', 0x20bf, 'B', (g) => {
     const x1 = 2;
     const x2 = x1 + g.v + 1.6;
     return [stem(x1, -2, 1), stem(x1, g.cap - 1, 16), stem(x2, -2, 1), stem(x2, g.cap - 1, 16)];
   }),
-  onLetter('baht', 0x0e3f, 'B', (g) => [through(g.v + 1.8)]),
+  onLetter('baht', 0x0e3f, 'B', (g) => [through(g.v + 1.6)]),
   onLetter('colonmonetary', 0x20a1, 'C', (g) => {
     const w = g.wide(10);
     const x = w * 0.3;
@@ -902,11 +905,14 @@ export const DRAWN_SIGNS: GlyphDef[] = [
     rsb: 1.25,
     draw: (g) => {
       const w = g.wide(12);
-      const x1 = w * 0.33;
-      const x2 = w * 0.67;
-      const t = g.top(11);
+      const x1 = w / 3;
+      const x2 = (2 * w) / 3;
+      const t = g.top(g.y(11));
       const b = g.bottom(0);
-      return [open(p(0, 0), p(0, t), p(x2, t, true), p(x2, g.y(4))), open(p(x1, g.y(7)), p(x1, b), p(w, b, true), p(w, g.y(11)))];
+      const pen = { v: Math.min(g.v, x1 - 1.7), h: g.h };
+      const low = Math.max(g.y(4), g.h + 1.7);
+      const high = Math.min(g.y(7), g.y(11) - g.h - 1.7);
+      return [withPen(open(p(0, 0), p(0, t), p(x2, t, true), p(x2, low)), pen), withPen(open(p(x1, high), p(x1, b), p(w, b, true), p(w, g.y(11))), pen)];
     },
   },
   {
@@ -953,8 +959,8 @@ export const DRAWN_SIGNS: GlyphDef[] = [
     draw: (g) => {
       const w = g.wide(10);
       const b = g.bottom(0);
-      const x = w * 0.36;
-      return [open(p(0, g.y(9)), p(0, b, true), p(w, b, true), p(w, g.y(3.5))), stem(x, 4.5, g.cap), stem(x + g.v + 1.6, 4.5, g.cap)];
+      const x = g.v + 1.6;
+      return [open(p(0, g.y(9)), p(0, b, true), p(w, b, true), p(w, g.y(3.5))), stem(x, g.y(4.5), g.cap), stem(x + g.v + 1.6, g.y(4.5), g.cap)];
     },
   },
 ];

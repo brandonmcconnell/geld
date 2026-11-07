@@ -3,6 +3,7 @@ import { type DrawContext, drawContext, type GlyphDef, smallCapContext } from '.
 import { measuredSidebearings, type SpacingZone } from './spacing';
 import { bounds, type Contour, expandStroke, insetContour, shear, snap, translate, type Vec, winding } from './geometry';
 import { GLYPHS, SPACES } from './glyphs';
+import { FIGURE_NAMES } from './glyphs-figures';
 import { CYRILLIC_LOCL_ACCENTED } from './glyphs-cyrillic';
 import { DARK_INSET_RATIO, ITALIC_SLOPE, METRICS, type Weight, weightParams } from './grid';
 import { type Attachment, BELOW_GAP, MARK_GAP, MARK_HEIGHT, MARKS } from './marks';
@@ -63,7 +64,10 @@ function spacingZone(def: GlyphDef, g: DrawContext): SpacingZone | undefined {
   const cp = def.unicode ?? def.stands;
   if (cp === undefined) return undefined;
   const c = String.fromCodePoint(cp);
-  if (/\p{Nd}/u.test(c)) return { bottom: 0, top: g.cap, target: 1.3, depth: 2.5, min: 0.3 };
+  if (/\p{Nd}/u.test(c)) {
+    const [bottom, top] = def.zone ?? [0, METRICS.cap];
+    return { bottom, top, target: 1.3, depth: 2.5, min: 0.3 };
+  }
   if (!/\p{L}/u.test(c) || /\p{Lm}/u.test(c)) return undefined;
   if (def.lower || /\p{Ll}/u.test(c)) return { bottom: 0, top: METRICS.xHeight, target: 1.45, depth: 2, min: 0.15 };
   return { bottom: 0, top: g.cap, target: 1.6, depth: 2.8, min: 0.2 };
@@ -72,6 +76,8 @@ function spacingZone(def: GlyphDef, g: DrawContext): SpacingZone | undefined {
 /** Math operators share one width, their ink centred in it, so a row of + − = × ÷ aligns. */
 const MATH_OPERATORS = ['plus', 'minus', 'equal', 'multiply', 'divide', 'less', 'greater', 'approxequal', 'notequal', 'asciitilde', 'plusminus', 'logicalnot', 'lessequal', 'greaterequal'];
 const MATH_SIDE = 1.25;
+/** Tabular figures are the widest lining figure plus this much each side; every tabular sign is centred in that width. */
+const TABULAR_SIDE = 1.25;
 
 /** The rightmost ink a little above the baseline: where an ogonek can hang from the stroke, not from a cut corner. */
 function inkEndAtBaseline(contours: Contour[], box: { minX: number; maxX: number }): number {
@@ -141,19 +147,25 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     };
   });
 
-  const operators = glyphs.filter((gl) => MATH_OPERATORS.includes(gl.name));
   const inkWidth = (gl: MasterGlyph) => {
     const b = bounds(gl.contours);
     return b.maxX - b.minX;
   };
-  const mathAdvance = Math.max(...operators.map(inkWidth)) + 2 * MATH_SIDE;
-  for (const gl of operators) {
+  const centre = (gl: MasterGlyph, advance: number) => {
     const b = bounds(gl.contours);
-    const dx = (mathAdvance - (b.maxX - b.minX)) / 2 - b.minX;
+    const dx = (advance - (b.maxX - b.minX)) / 2 - b.minX;
     gl.contours = gl.contours.map((c) => translate(c, dx));
     gl.anchors = gl.anchors.map((a) => ({ ...a, x: a.x + dx }));
-    gl.advance = mathAdvance;
-  }
+    gl.advance = advance;
+  };
+  const operators = glyphs.filter((gl) => MATH_OPERATORS.includes(gl.name));
+  const mathAdvance = Math.max(...operators.map(inkWidth)) + 2 * MATH_SIDE;
+  for (const gl of operators) centre(gl, mathAdvance);
+  const liningFigures = glyphs.filter((gl) => (FIGURE_NAMES as readonly string[]).includes(gl.name));
+  const tabularAdvance = Math.max(...liningFigures.map(inkWidth)) + 2 * TABULAR_SIDE;
+  glyphs.forEach((gl, i) => {
+    if (GLYPHS[i]?.tabular) centre(gl, tabularAdvance);
+  });
   for (const gl of glyphs) {
     gl.contours = finish(gl.contours);
     gl.anchors = placeAnchors(gl.anchors);
@@ -256,8 +268,10 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     });
   }
 
-  for (const space of SPACES)
-    glyphs.push({ name: space.name, unicode: space.unicode, advance: space.advance, contours: [], components: [], anchors: [], mark: false });
+  for (const space of SPACES) {
+    const advance = space.advance === 'tabular' ? tabularAdvance : typeof space.advance === 'number' ? space.advance : byName.get(space.advance.like)!.advance;
+    glyphs.push({ name: space.name, unicode: space.unicode, advance, contours: [], components: [], anchors: [], mark: false });
+  }
   return { family, style, weight, glyphs };
 }
 

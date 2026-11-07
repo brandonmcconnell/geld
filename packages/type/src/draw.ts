@@ -28,7 +28,7 @@ export interface DrawContext {
    * The same pen and grid at another size: superiors, fractions, ™, ordinals and the letters inside © ®
    * are drawn natively at their size, so every join is computed for the stroke they really have.
    */
-  sub(size: number, penScale: number, lower?: boolean): DrawContext;
+  sub(size: number, penScale: number, lower?: boolean, breadth?: number): DrawContext;
   cap: number;
   xHeight: number;
   ascender: number;
@@ -42,6 +42,10 @@ export interface GlyphDef {
   lower?: boolean;
   /** A capital's skeleton drawn to the x-height with the lowercase pen (most Cyrillic lowercase, `smcp` later). Its italic form, if any, is a lowercase drawing. */
   smallcap?: boolean;
+  /** Set in the tabular width, centred, rather than spaced by its own outline. */
+  tabular?: boolean;
+  /** The band its sidebearings are measured over, where that is not its character's (oldstyle figures). */
+  zone?: [number, number];
   /** The character an unencoded alternate stands for (a `locl` form), spaced and anchored as that character. */
   stands?: number;
   /** Sidebearings in grid units, measured from the Geld Sans outline. */
@@ -55,8 +59,8 @@ export interface GlyphDef {
 export interface SpaceDef {
   name: string;
   unicode: number;
-  /** Advance in grid units. */
-  advance: number;
+  /** Advance in grid units, or the width of the tabular figures (figure space) or of another glyph. */
+  advance: number | 'tabular' | { like: string };
 }
 
 export const p = (x: number, y: number, cut = false): PathPoint => (cut ? { x, y, cut } : { x, y });
@@ -200,7 +204,7 @@ const DIAGONAL_WEIGHT = 0.92;
 const APERTURE = 1.6;
 
 /** Small capitals stand on the x-height and keep more of the capital's width than its height. */
-const SMALL_CAP_BREADTH = 0.82;
+export const SMALL_CAP_BREADTH = 0.82;
 
 export function smallCapContext(v: number, hc: number): DrawContext {
   const g = drawContext(v, hc, true, METRICS.xHeight);
@@ -208,7 +212,8 @@ export function smallCapContext(v: number, hc: number): DrawContext {
   return { ...g, pen: { ...g.pen, cut: CUT_OUTER_LOWER }, aperture: APERTURE, wide: (n) => n * SMALL_CAP_BREADTH + GROWTH * (v - 2 * k) };
 }
 
-export function drawContext(v: number, hc: number, lower = false, size: number = METRICS.cap): DrawContext {
+/** `breadth` scales widths apart from heights: small capitals and oldstyle figures keep more of their width than their height. */
+export function drawContext(v: number, hc: number, lower = false, size: number = METRICS.cap, breadth = size / METRICS.cap): DrawContext {
   const k = size / METRICS.cap;
   const cut = (lower ? CUT_OUTER_LOWER : CUT_OUTER) * Math.min(1, k);
   const diag = { v: v * DIAGONAL_WEIGHT, h: hc * DIAGONAL_WEIGHT };
@@ -219,12 +224,12 @@ export function drawContext(v: number, hc: number, lower = false, size: number =
     diag,
     dot: v * 1.1 + 0.2 * k,
     aperture: APERTURE * k,
-    wide: (n) => n * k + GROWTH * (v - 2 * k),
+    wide: (n) => n * breadth + GROWTH * (v - 2 * k),
     top: (y) => y - hc / 2,
     bottom: (y) => y + hc / 2,
     foot: (dx, dy) => Math.hypot(diag.v * dy, diag.h * dx) / (2 * Math.abs(dy)),
     y: (n) => n * k,
-    sub: (s, penScale, subLower = lower) => drawContext(v * penScale, hc * penScale, subLower, s),
+    sub: (s, penScale, subLower = lower, subBreadth) => drawContext(v * penScale, hc * penScale, subLower, s, subBreadth),
     cap: size,
     xHeight: METRICS.xHeight * k,
     ascender: METRICS.ascender * k,
