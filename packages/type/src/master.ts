@@ -7,6 +7,8 @@ import { type Attachment, MARK_GAP, MARK_HEIGHT, MARKS } from './marks';
 
 /** Italics lean around the middle of the x-height, so a slanted glyph stays centred in its advance. */
 const ITALIC_PIVOT = METRICS.xHeight / 2;
+/** Ơ Ư ơ ư are wider than O U o u by the horn that reaches out of them. */
+const HORN_ROOM = 1.5;
 
 export type Family = 'sans' | 'dark';
 export type Style = 'roman' | 'italic';
@@ -63,6 +65,7 @@ function baseAnchors(contours: Contour[], upper: boolean, v: number, name: strin
     { name: 'bottom', x: cx, y: 0 },
     { name: 'ogonek', x: box.maxX - v / 2, y: 0 },
     { name: 'topright', ...topright },
+    { name: 'horn', x: box.maxX - 0.3, y: box.maxY - 2.5 },
   ];
 }
 
@@ -113,8 +116,9 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
       const contours = def.draw(lower, height).flatMap((stroke) => expandStroke(stroke, lower.pen, slope));
       const box = bounds(contours);
       const name = form === 'case' ? `${def.name}.case` : def.name;
-      const above = def.attach === 'top' || def.attach === 'topright';
-      const stack: Anchor = above ? { name: def.attach, x: 0, y: box.maxY + 0.75 } : { name: def.attach, x: 0, y: box.minY - 0.5 };
+      const above = def.attach === 'top' || def.attach === 'topright' || def.attach === 'horn';
+      const stackGap = form === 'case' ? 0.4 : 0.75;
+      const stack: Anchor = above ? { name: def.attach, x: 0, y: box.maxY + stackGap } : { name: def.attach, x: 0, y: box.minY - 0.5 };
       markAttach.set(name, def.attach);
       glyphs.push({
         name,
@@ -149,7 +153,8 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
       const next = anchorOf(mark, attach)!;
       reached.set(attach, { x: next.x + dx, y: next.y + dy });
     }
-    glyphs.push({ name: def.name, unicode: def.unicode, advance: base.advance, contours: [], components, anchors: [], mark: false });
+    const horn = def.marks.includes('horncomb') ? HORN_ROOM : 0;
+    glyphs.push({ name: def.name, unicode: def.unicode, advance: base.advance + horn, contours: [], components, anchors: [], mark: false });
     byName.set(def.name, glyphs[glyphs.length - 1]!);
   }
 

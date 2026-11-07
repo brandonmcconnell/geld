@@ -11,6 +11,9 @@ export const METRICS = {
   /** Line box: 20 + 5 = 25 units, a 1.25 line height, room for accents stacked on capitals. */
   lineAscender: 20,
   lineDescender: -5,
+  /** What renderers must not clip: accents stacked on capitals (Ǻ, Ỗ at Black) rise past the line box, as in any font set for Vietnamese. */
+  clipAscender: 23,
+  clipDescender: -6,
 } as const;
 
 export const WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const;

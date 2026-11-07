@@ -43,6 +43,30 @@ const quote = (g: DrawContext, turned: boolean, x: number): Stroke[] => {
 
 export const SYMBOLS: GlyphDef[] = [
   {
+    name: 'minus',
+    unicode: 0x2212,
+    lsb: 1,
+    rsb: 1,
+    draw: (g) => [bar(0, g.wide(8), MATH_AXIS)],
+  },
+  {
+    name: 'Euro',
+    unicode: 0x20ac,
+    lsb: 0.5,
+    rsb: 1,
+    draw: (g) => {
+      const w = g.wide(10);
+      const x = 2;
+      const t = g.top(g.cap);
+      const b = g.bottom(0);
+      return [
+        open(p(w + x, 10), p(w + x, t, true), p(x, t, true), p(x, b, true), p(w + x, b, true), p(w + x, 4)),
+        bar(-0.5, x + 5, 8.5),
+        bar(-0.5, x + 5, 5.5),
+      ];
+    },
+  },
+  {
     name: 'numbersign',
     unicode: 0x23,
     lsb: 0.75,

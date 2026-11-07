@@ -1,4 +1,5 @@
 import { ITALIC_SLOPE, METRICS, toFontUnits, UPM, WEIGHT_NAMES, type Weight, WEIGHTS, weightParams } from './grid';
+import { VIETNAMESE_PAIRS } from './marks';
 import { FAMILY_NAMES, type Family, type Master, type Style } from './master';
 
 const VERSION = { major: 0, minor: 1 };
@@ -106,8 +107,8 @@ function fontInfo(master: Master): PlistValue {
     openTypeOS2TypoAscender: toFontUnits(METRICS.lineAscender),
     openTypeOS2TypoDescender: toFontUnits(METRICS.lineDescender),
     openTypeOS2TypoLineGap: 0,
-    openTypeOS2WinAscent: toFontUnits(METRICS.lineAscender),
-    openTypeOS2WinDescent: -toFontUnits(METRICS.lineDescender),
+    openTypeOS2WinAscent: toFontUnits(METRICS.clipAscender),
+    openTypeOS2WinDescent: -toFontUnits(METRICS.clipDescender),
     openTypeOS2WeightClass: weight,
     openTypeOS2WidthClass: 5,
     openTypeOS2Selection: [7],
@@ -170,6 +171,10 @@ export function features(master: Master): string {
     "  sub j' @MarksAbove by dotlessj;",
     "  sub @Uppercase @CaseMarks' by @CaseMarksCase;",
     "  sub @CaseMarksCase @CaseMarks' by @CaseMarksCase;",
+    ...VIETNAMESE_PAIRS.flatMap(([first, second]) => [
+      `  sub ${first} ${second} by ${first}_${second};`,
+      `  sub ${first}.case ${second}.case by ${first}_${second}.case;`,
+    ]),
     '} ccmp;',
     '',
   ].join('\n');
