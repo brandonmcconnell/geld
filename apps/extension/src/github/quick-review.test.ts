@@ -655,7 +655,12 @@ describe('the tab bar button', () => {
     close?.click();
     expect(close?.getAttribute('aria-expanded')).toBe('true');
     const choices = (): string[] => [...document.querySelectorAll('.geld-quick-review__status-submenu .geld-quick-review__menu-label')].map((label) => label.textContent ?? '');
-    expect(choices()).toEqual(['This pull request', 'This and 1 below', 'Entire stack (3)']);
+    expect(choices()).toEqual(['This pull request', 'This and 1 below', 'Entire stack']);
+    // The count stands after the words as a counter, a circle for one digit, and the item's name says it in words.
+    const entire = document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="stack"]');
+    expect(entire?.querySelector('.geld-quick-review__menu-counter')?.textContent).toBe('3');
+    expect(entire?.querySelector('.geld-quick-review__menu-counter')?.hasAttribute('data-wide')).toBe(false);
+    expect(entire?.getAttribute('aria-label')).toBe('Entire stack, 3 pull requests');
     expect(document.activeElement?.textContent).toBe('This pull request');
     // Back out with the arrow toward the parent, which keeps focus.
     document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
@@ -804,7 +809,8 @@ describe('the tab bar button', () => {
     pill()?.click();
     document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="draft"]')?.click();
     const below = document.querySelector<HTMLButtonElement>('.geld-quick-review__status-submenu [data-scope="below"]');
-    expect(below?.textContent).toContain('This and 1 below (1 of 2)');
+    expect(below?.querySelector('.geld-quick-review__menu-label')?.textContent).toBe('This and 1 below');
+    expect(below?.querySelector('.geld-quick-review__menu-counter[data-wide]')?.textContent).toBe('1 of 2');
     below?.click();
     expect(confirm).toHaveBeenCalledWith('Convert 1 of these 2 pull requests to drafts (#5)?');
     for (let i = 0; i < 4; i += 1) await settle();
@@ -944,18 +950,27 @@ describe('the tab bar button', () => {
     window.localStorage.clear();
     resetStatusHints();
     // An earlier visit could change this repository's status, so the pill is a menu at once; every read of the merge box
-    // fails (GitHub busy), and the menu still opens, says it is loading, then that it could not.
+    // fails (GitHub busy), and the menu still opens, says it is loading while the read is tried again, then that it could not.
     rememberStatusHint('acme/widgets', true);
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('busy', { status: 503 })));
-    withLabel('Open', 'pullOpened');
-    mount();
-    for (let i = 0; i < 4; i += 1) await settle();
-    pill()?.click();
-    expect(document.querySelector('.geld-quick-review__status-menu')).not.toBeNull();
-    expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('Loading options…');
-    // The menu holds focus itself, having no control to give it to, so Escape reaches it.
-    expect(document.activeElement).toBe(document.querySelector('.geld-quick-review__status-menu'));
-    for (let i = 0; i < 4; i += 1) await settle();
+    const busy = vi.fn(async (_url: RequestInfo | URL) => new Response('busy', { status: 503 }));
+    vi.stubGlobal('fetch', busy);
+    vi.useFakeTimers();
+    try {
+      withLabel('Open', 'pullOpened');
+      mount();
+      await vi.advanceTimersByTimeAsync(0);
+      pill()?.click();
+      expect(document.querySelector('.geld-quick-review__status-menu')).not.toBeNull();
+      expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('Loading options…');
+      // The menu holds focus itself, having no control to give it to, so Escape reaches it.
+      expect(document.activeElement).toBe(document.querySelector('.geld-quick-review__status-menu'));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('Loading options…');
+      await vi.advanceTimersByTimeAsync(11_000);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(busy.mock.calls.filter(([url]) => String(url).includes('merge_box')).length).toBe(4);
     expect(document.querySelector('.geld-quick-review__menu-empty')?.textContent).toBe('The options could not be read. Try again shortly.');
     pill()?.click();
     expect(document.querySelector('.geld-quick-review__status-menu')).toBeNull();

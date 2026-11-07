@@ -349,23 +349,70 @@ export function parseStack(payload: unknown, pullPath: string): readonly StackMe
   return members.some((member) => member.current) ? members : null;
 }
 
-async function readStack(pullPath: string, box: MergeBox): Promise<Stack | null> {
+/**
+ * The stack as the React page embeds it (`pullRequestsLayoutRoute.stack`, the shape `page_data/stacks` answers with), so
+ * no request has to come first: `none` where the page says the pull request is in no stack, null where the payload is
+ * missing or another pull request's (GitHub's router keeps the first page's payload across soft navigations).
+ */
+export function embeddedStack(pullPath: string, root: ParentNode = document): readonly StackMember[] | 'none' | null {
+  const page = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(pullPath);
+  if (page === null) return null;
+  const [, owner = '', repo = '', number = ''] = page;
+  // The number alone is not this pull request: a payload kept from another repository's pull request of the same
+  // number would hand its stack's paths to every stack action.
+  const repoPrefix = `/${owner}/${repo}/pull/`.toLowerCase();
+  for (const script of root.querySelectorAll('script[type="application/json"][data-target="react-app.embeddedData"]')) {
+    const layout = layoutRouteOf(script);
+    if (layout === null || !isRecord(layout.pullRequest) || layout.pullRequest.number !== Number(number)) continue;
+    if (layout.stack === null) return 'none';
+    const stack = layout.stack;
+    if (!isRecord(stack) || stringOf(stack.repositoryOwnerLogin).toLowerCase() !== owner.toLowerCase() || stringOf(stack.repositoryName).toLowerCase() !== repo.toLowerCase()) return null;
+    const members = parseStack({ stack }, pullPath);
+    return members !== null && members.every((member) => member.path.toLowerCase().startsWith(repoPrefix)) ? members : null;
+  }
+  return null;
+}
+
+const layoutRoutes = new WeakMap<Element, { readonly text: string; readonly layout: Record<string, unknown> | null }>();
+
+function layoutRouteOf(script: Element): Record<string, unknown> | null {
+  const text = script.textContent ?? '';
+  const known = layoutRoutes.get(script);
+  if (known?.text === text) return known.layout;
+  let layout: Record<string, unknown> | null = null;
+  if (text.includes('"pullRequestsLayoutRoute"')) {
+    try {
+      const data: unknown = JSON.parse(text);
+      const route = isRecord(data) && isRecord(data.payload) ? data.payload.pullRequestsLayoutRoute : null;
+      layout = isRecord(route) ? route : null;
+    } catch {
+      layout = null;
+    }
+  }
+  layoutRoutes.set(script, { text, layout });
+  return layout;
+}
+
+async function readStackMembers(pullPath: string): Promise<readonly StackMember[] | null> {
   try {
     const response = await pageFetch(`${pullPath}/page_data/stacks`, { credentials: 'same-origin', headers: headers(fetchNonce(), false) });
-    if (!response.ok) return null;
-    const members = parseStack(await response.json(), pullPath);
-    if (members === null) return null;
-    const boxes = new Map<number, MergeBox>();
-    await Promise.all(
-      members.map(async (member) => {
-        const read = member.current ? box : await fetchMergeBox(member.path, 'SQUASH', false);
-        if (read !== null) boxes.set(member.number, read);
-      }),
-    );
-    return { members, boxes };
+    return response.ok ? parseStack(await response.json(), pullPath) : null;
   } catch {
     return null;
   }
+}
+
+/** Every member's merge box but the page's own, which the caller reads and adds. */
+async function memberBoxes(members: readonly StackMember[]): Promise<Map<number, MergeBox>> {
+  const boxes = new Map<number, MergeBox>();
+  await Promise.all(
+    members.map(async (member) => {
+      if (member.current) return;
+      const read = await fetchMergeBox(member.path, 'SQUASH', false);
+      if (read !== null) boxes.set(member.number, read);
+    }),
+  );
+  return boxes;
 }
 
 export interface MergeActions {
@@ -379,18 +426,43 @@ export interface MergeActions {
   readonly bypassMethods: readonly MergeMethod[];
 }
 
-/** What the reader may do now: the merge on offer and whether they may close, read with GitHub's default method. */
-export async function readMergeActions(pullPath: string): Promise<MergeActions | null> {
-  const first = await fetchMergeBox(pullPath, 'SQUASH', false);
+/**
+ * Whether each pull request was stacked when this page last read it. The embedded stack is the page's as it loaded,
+ * so it answers the first read only: a member merged in another tab stayed in it, and its merged box then ruled out
+ * every stack merge on each refresh. Later reads ask `page_data/stacks`, beside the box when the last read was stacked.
+ */
+const lastStacked = new Map<string, boolean>();
+
+/**
+ * What the reader may do now: the merge on offer and whether they may close, read with GitHub's default method.
+ * `method` is the repository's default as last read, asked for first so the box needs no second read for its commit.
+ * A stack's members have their boxes read beside this one's, so the menu waits on one box, not a chain.
+ */
+export async function readMergeActions(pullPath: string, method: MergeMethod = 'SQUASH'): Promise<MergeActions | null> {
+  const known = lastStacked.get(pullPath);
+  const embedded = known === undefined ? embeddedStack(pullPath) : null;
+  const listed = embedded !== null && embedded !== 'none' ? Promise.resolve(embedded) : known === true ? readStackMembers(pullPath) : null;
+  const early = listed === null ? null : listed.then((members) => (members === null ? null : { members, boxes: memberBoxes(members) }));
+  const first = await fetchMergeBox(pullPath, method, false);
   if (first === null) return null;
-  const method = first.methods[0] ?? first.bypassMethods[0] ?? 'SQUASH';
-  // The squash box's commit title and message would be sent under another method: no reading is safer than that.
-  const box = method === 'SQUASH' ? first : await fetchMergeBox(pullPath, method, false);
+  const preferred = first.methods[0] ?? first.bypassMethods[0] ?? 'SQUASH';
+  // Another method's commit title and message would be sent under this one: no reading is safer than that.
+  const box = preferred === method ? first : await fetchMergeBox(pullPath, preferred, false);
   if (box === null) return null;
+  lastStacked.set(pullPath, box.stacked);
+  const stackRead = async (): Promise<Stack | null> => {
+    if (!box.stacked) return null;
+    const head = early === null ? null : await early;
+    const members = head?.members ?? (await readStackMembers(pullPath));
+    if (members === null) return null;
+    const boxes = new Map(await (head?.boxes ?? memberBoxes(members)));
+    const current = members.find((member) => member.current);
+    if (current !== undefined) boxes.set(current.number, box);
+    return { members, boxes };
+  };
   // Past the rules: where it is not mergeable, or where a queue stands in a direct merge's way.
-  const asBypass = box.canBypass && (!box.mergeable || box.canQueue) ? await fetchMergeBox(pullPath, method, true) : null;
+  const [asBypass, stack] = await Promise.all([box.canBypass && (!box.mergeable || box.canQueue) ? fetchMergeBox(pullPath, preferred, true) : Promise.resolve(null), stackRead()]);
   const offer = mergeOffer(box, asBypass);
-  const stack = box.stacked ? await readStack(pullPath, box) : null;
   return { box, offer, bypass: bypassBeside(box, asBypass, offer), bypassMethods: asBypass?.bypassMethods ?? box.bypassMethods, stack };
 }
 
@@ -422,4 +494,41 @@ export function actionErrorText(action: StatusAction, status: number, payload: u
 /** Whether a merge answer says it went through (GitHub answers `{ status: "merged" }`, or `"failed"` with an error). */
 export function mergeWentThrough(payload: unknown): boolean {
   return isRecord(payload) && payload.status !== 'failed' && payload.error === undefined;
+}
+
+/**
+ * Each repository's default merge method as last read, so the next read asks for that method's box first and needs no
+ * second one for its commit (a repository whose default is not squash cost two merge boxes in a row before the menu
+ * could open). In the page's own storage, read and written beside the status menu's hints.
+ */
+const METHOD_KEY = 'geld:merge-method';
+const METHOD_CAP = 200;
+
+function readMethods(): Record<string, MergeMethod> {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(METHOD_KEY) ?? '{}');
+    if (!isRecord(parsed)) return {};
+    const out: Record<string, MergeMethod> = {};
+    for (const [repo, value] of Object.entries(parsed)) if (isMethod(value)) out[repo] = value;
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function methodHint(repo: string): MergeMethod {
+  return readMethods()[repo] ?? 'SQUASH';
+}
+
+export function rememberMethod(repo: string, method: MergeMethod): void {
+  const methods = readMethods();
+  if (methods[repo] === method) return;
+  delete methods[repo];
+  methods[repo] = method;
+  const entries = Object.entries(methods);
+  try {
+    window.localStorage.setItem(METHOD_KEY, JSON.stringify(Object.fromEntries(entries.slice(Math.max(0, entries.length - METHOD_CAP)))));
+  } catch {
+    // Storage full or blocked: the next read asks for squash first, as before.
+  }
 }

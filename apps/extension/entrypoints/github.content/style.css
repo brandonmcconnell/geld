@@ -1837,23 +1837,24 @@ button.geld-status-pill:not([aria-haspopup]) .geld-status-pill__caret {
   color: var(--fgColor-draft, var(--fgColor-muted, #59636e));
 }
 
-.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='open'] {
+.geld-quick-review__status-menu :is(.geld-quick-review__menu-item, .geld-quick-review__status-submenu)[data-status='open'] {
   --geld-status-fg: var(--fgColor-open, #1a7f37);
   --geld-status-hover: var(--bgColor-open-muted, #dafbe1);
 }
 
-.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='queued'] {
+.geld-quick-review__status-menu :is(.geld-quick-review__menu-item, .geld-quick-review__status-submenu)[data-status='queued'] {
   --geld-status-fg: var(--fgColor-attention, #9a6700);
   --geld-status-hover: var(--bgColor-attention-muted, #fff8c5);
 }
 
-.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='merged'] {
+.geld-quick-review__status-menu :is(.geld-quick-review__menu-item, .geld-quick-review__status-submenu)[data-status='merged'] {
   --geld-status-fg: var(--fgColor-done, #8250df);
   --geld-status-hover: var(--bgColor-done-muted, #fbefff);
 }
 
-.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='closed'] {
+.geld-quick-review__status-menu :is(.geld-quick-review__menu-item, .geld-quick-review__status-submenu)[data-status='closed'] {
   --geld-status-fg: var(--control-danger-fgColor-rest, #d1242f);
+  --geld-status-fg-hover: var(--control-danger-fgColor-hover, #d1242f);
   --geld-status-hover: var(--control-danger-bgColor-hover, #ffebe9);
   --geld-status-active: var(--control-danger-bgColor-active, #ffebe966);
 }
@@ -1862,12 +1863,49 @@ button.geld-status-pill:not([aria-haspopup]) .geld-status-pill__caret {
   color: var(--geld-status-fg);
 }
 
-.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status]:not([data-status='draft']):hover {
+.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status]:not([data-status='draft']):is(:hover, [aria-expanded='true']) {
   background: var(--geld-status-hover);
 }
 
-.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='closed']:hover :is(.geld-quick-review__menu-visual, .geld-quick-review__menu-label) {
-  color: var(--control-danger-fgColor-hover, #d1242f);
+.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status]:not([data-status='draft']):is(:hover, [aria-expanded='true']) :is(.geld-quick-review__menu-visual, .geld-quick-review__menu-label, .geld-quick-review__menu-trail) {
+  color: var(--geld-status-fg-hover, var(--geld-status-fg));
+}
+
+/* A type's choices take its tint under the pointer, so the submenu says which change it makes. */
+.geld-quick-review__status-submenu[data-status]:not([data-status='draft']) .geld-quick-review__menu-item:hover {
+  background: var(--geld-status-hover);
+}
+
+.geld-quick-review__status-submenu[data-status]:not([data-status='draft']) .geld-quick-review__menu-item:hover :is(.geld-quick-review__menu-label, .geld-quick-review__menu-counter) {
+  color: var(--geld-status-fg-hover, var(--geld-status-fg));
+}
+
+.geld-quick-review__status-submenu[data-status]:not([data-status='draft']) .geld-quick-review__menu-item:active {
+  background: var(--geld-status-active, var(--geld-status-hover));
+}
+
+/* "Entire stack 4": a translucent counter, a circle for one digit and a pill for more, so it reads on every tint. */
+.geld-quick-review__status-menu .geld-quick-review__menu-counter {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  margin-inline-start: auto;
+  border-radius: 999px;
+  background: var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12));
+  color: var(--fgColor-default, #1f2328);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-counter[data-wide] {
+  width: auto;
+  padding: 0 7px;
 }
 
 .geld-quick-review__status-menu .geld-quick-review__menu-item[data-status]:not([data-status='draft']):active {
@@ -1899,6 +1937,10 @@ button.geld-status-pill:not([aria-haspopup]) .geld-status-pill__caret {
 
 .geld-quick-review__status-menu .geld-quick-review__menu-parent[aria-expanded='true'] {
   background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-parent[data-status='draft']:is(:hover, [aria-expanded='true']) .geld-quick-review__menu-trail {
+  color: var(--fgColor-default, #1f2328);
 }
 
 .geld-quick-review__menu.geld-quick-review__status-submenu {
