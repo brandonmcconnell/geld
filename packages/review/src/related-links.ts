@@ -146,6 +146,17 @@ const linkSpecs: readonly LinkSpec[] = [
     icon: 'linear',
   },
   {
+    // Linear's review of the pull request, linked under its linkback. The slug is the pull request's own title.
+    id: 'linear',
+    service: 'Linear',
+    kind: 'review',
+    host: /^linear\.app$/,
+    path: new RegExp(`^/([\\w-]+)/review/(?:${SLUG}-)?([0-9a-z]{8,})/?$`),
+    read: ({ path }) => ({ id: `${group(path, 1)}:review:${group(path, 2)}`, noun: 'review', context: group(path, 1) }),
+    appId: 20150,
+    icon: 'linear',
+  },
+  {
     // An issue linked by its id rather than its key.
     id: 'linear',
     service: 'Linear',
@@ -1021,7 +1032,14 @@ export function officialSourceOf(specId: string, author: string): boolean {
   return logins.some((login) => login.toLowerCase() === author.toLowerCase());
 }
 
-function readLink(candidate: LinkCandidate, options: RelatedOptions = {}): { readonly link: RelatedLink; readonly rank: number } | null {
+interface ReadLink {
+  readonly link: RelatedLink;
+  readonly rank: number;
+  /** Read from the service's own bot comment, whose words are the service's, not an author's. */
+  readonly official: boolean;
+}
+
+function readLink(candidate: LinkCandidate, options: RelatedOptions = {}): ReadLink | null {
   let url: URL;
   try {
     url = new URL(candidate.href);
@@ -1033,13 +1051,14 @@ function readLink(candidate: LinkCandidate, options: RelatedOptions = {}): { rea
   for (const spec of linkSpecs) {
     const link = matchSpec(spec, url, candidate.text);
     if (link === null) continue;
-    return author === null || officialSourceOf(spec.id, author) ? { link, rank: spec.rank ?? 0 } : null;
+    if (author === null) return { link, rank: spec.rank ?? 0, official: false };
+    return officialSourceOf(spec.id, author) ? { link, rank: spec.rank ?? 0, official: true } : null;
   }
   // GitHub's own references come from the description only: every comment is full of them.
   if (author !== null) return null;
   if (url.hostname !== 'github.com' && !(options.githubHosts ?? []).includes(url.hostname)) return null;
   const link = readGitHub(url, candidate.text, options);
-  return link === null ? null : { link, rank: 0 };
+  return link === null ? null : { link, rank: 0, official: false };
 }
 
 /** What a link leads to, or null when it is not a link this registry knows. Only plain `https:` links count. */
@@ -1050,21 +1069,25 @@ export function relatedLinkOf(candidate: LinkCandidate, options: RelatedOptions 
 /**
  * Every related link among `candidates`, one per thing linked to, in kind order and then in the order they appear
  * (GitHub's own: pull requests before issues, each nearest the page's repository first, `githubRank`).
- * Of two links to one thing the web page is kept over a desktop deep link, and a title found on either is kept.
+ * Of two links to one thing the web page is kept over a desktop deep link. The title is the service's own when its bot
+ * gave one (Linear's linkback can carry the issue's title), else the first found: an author's words for a ticket may
+ * be anything, the bot's are the ticket's.
  */
 export function relatedLinksFrom(candidates: readonly LinkCandidate[], options: RelatedOptions = {}): RelatedLink[] {
-  const found = new Map<string, { link: RelatedLink; rank: number }>();
+  const found = new Map<string, { link: RelatedLink; rank: number; titleOfficial: boolean }>();
   for (const candidate of candidates) {
     const read = readLink(candidate, options);
     if (read === null) continue;
-    const { link, rank } = read;
+    const { link, rank, official } = read;
     const known = found.get(link.key);
     if (known === undefined) {
-      found.set(link.key, { link, rank });
+      found.set(link.key, { link, rank, titleOfficial: official && link.title !== null });
       continue;
     }
     const kept = rank < known.rank ? link : known.link;
-    found.set(link.key, { link: { ...kept, title: kept.title ?? (kept === link ? known.link.title : link.title) }, rank: Math.min(rank, known.rank) });
+    const takesTitle = link.title !== null && (known.link.title === null || (official && !known.titleOfficial));
+    const title = takesTitle ? link.title : known.link.title;
+    found.set(link.key, { link: { ...kept, title }, rank: Math.min(rank, known.rank), titleOfficial: takesTitle ? official : known.titleOfficial });
   }
   const links = [...found.values()].map((entry) => entry.link);
   return RELATED_KIND_ORDER.flatMap((kind) => {

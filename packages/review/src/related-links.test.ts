@@ -257,6 +257,28 @@ describe('official sources in comments', () => {
     expect(fromComment('https://app.greptile.com/review/github/acme/web/pull/9', 'replicas-connector[bot]')).toBeNull();
     expect(fromComment('https://github.com/acme/web/issues/12', 'linear[bot]')).toBeNull();
   });
+
+  it('takes the issue’s title from Linear’s linkback over the author’s words, and the author’s when the linkback has none', () => {
+    const description = { href: 'https://linear.app/alt-design/issue/DEV-9627/alt-tools', text: 'DEV-9627 the nav thing' };
+    const linkback = {
+      href: 'https://linear.app/alt-design/issue/DEV-9627/group-the-alt-addons-under-an-alt-tools-section-in-the-control-panel',
+      text: 'DEV-9627 Group the Alt addons under an Alt Tools section in the control panel nav',
+      author: 'linear[bot]',
+    };
+    const titleOf = (candidates: Parameters<typeof relatedLinksFrom>[0]) => relatedLinksFrom(candidates).map((link) => [link.ref, link.title]);
+    expect(titleOf([description, linkback])).toEqual([['DEV-9627', 'Group the Alt addons under an Alt Tools section in the control panel nav']]);
+    expect(titleOf([linkback, description])).toEqual([['DEV-9627', 'Group the Alt addons under an Alt Tools section in the control panel nav']]);
+    const bare = { href: 'https://linear.app/alt-design/issue/DEV-9627', text: 'DEV-9627', author: 'linear[bot]' };
+    expect(titleOf([description, bare])).toEqual([['DEV-9627', 'the nav thing']]);
+    expect(titleOf([bare, description])).toEqual([['DEV-9627', 'the nav thing']]);
+    expect(titleOf([{ ...linkback, author: 'octocat' }, description])).toEqual([['DEV-9627', 'the nav thing']]);
+  });
+
+  it('reads Linear’s review of the pull request, under its linkback', () => {
+    const review = fromComment('https://linear.app/alt-design/review/link-the-settings-page-from-alt-tools-in-the-control-panel-nav-169931068019?openGuide=true', 'linear[bot]');
+    expect(review).toMatchObject({ kind: 'review', service: 'Linear', noun: 'review', title: null, action: 'Open review in Linear' });
+    expect(review?.key).not.toBe(fromComment('https://linear.app/alt-design/issue/DEV-9627', 'linear[bot]')?.key);
+  });
 });
 
 describe('Microsoft Teams', () => {
