@@ -90,8 +90,20 @@ function signedArea(points: Vec[]): number {
   return area / 2;
 }
 
+/**
+ * How much to lengthen or shorten a cut so its edge keeps its length once the glyph is slanted:
+ * the slant stretches the cuts on two corners of a box and shrinks the other two, so the sharp
+ * and blunt corners would otherwise read as different cuts. Applied to the outer leg, the
+ * silhouette's cuts come out equal; the inner ones, a fraction of a unit at heavy weights, nearly so.
+ */
+export function slantedCutFactor(a: Vec, b: Vec, slope: number): number {
+  const cx = a.x + b.x;
+  const cy = a.y + b.y;
+  return Math.hypot(cx, cy) / Math.hypot(cx + slope * cy, cy);
+}
+
 /** Replaces every cut corner with the two ends of its 45° cut. */
-export function insertCuts(stroke: Stroke, pen: Pen): Vec[] {
+export function insertCuts(stroke: Stroke, pen: Pen, slope = 0): Vec[] {
   const { points, closed } = stroke;
   const out: Vec[] = [];
   points.forEach((p, i) => {
@@ -107,16 +119,20 @@ export function insertCuts(stroke: Stroke, pen: Pen): Vec[] {
     if (Math.abs(a.x * b.x + a.y * b.y) > 1e-6) throw new Error('Only a right-angled corner can be cut');
     const roomBefore = length(sub(p, prev)) * (prev.cut ? 0.49 : 0.98);
     const roomAfter = length(sub(next, p)) * (next.cut ? 0.49 : 0.98);
-    const leg = Math.min(cutLeg(widthAlong(a, pen), widthAlong(b, pen), pen.cut), roomBefore, roomAfter);
+    const wIn = widthAlong(a, pen);
+    const wOut = widthAlong(b, pen);
+    const k = ((wIn + wOut) / 4) * (2 - Math.SQRT2);
+    const outer = (cutLeg(wIn, wOut, pen.cut) + k) * slantedCutFactor(a, b, slope);
+    const leg = Math.min(outer - k, roomBefore, roomAfter);
     out.push(sub(p, scale(a, leg)), add(p, scale(b, leg)));
   });
   return out;
 }
 
-/** Offsets a centreline by half its width on each side, joining segments at the intersection of their edges. */
-export function expandStroke(stroke: Stroke, masterPen: Pen): Contour[] {
+/** Offsets a centreline by half its width on each side; `slope` is the italic's, so cuts come out even once slanted. */
+export function expandStroke(stroke: Stroke, masterPen: Pen, slope = 0): Contour[] {
   const pen = stroke.pen ?? masterPen;
-  let points = insertCuts(stroke, pen);
+  let points = insertCuts(stroke, pen, slope);
   if (stroke.closed && signedArea(points) < 0) points = points.reverse();
   const n = points.length;
   const segments = stroke.closed ? n : n - 1;
