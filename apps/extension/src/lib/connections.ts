@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
+import { proxyTokens } from './app-connect';
 import type { RelatedKind, RelatedLink } from '@geld/review/related-links';
 import {
   cacheKey,
@@ -175,8 +176,30 @@ function viewOf(key: string, answer: CachedAnswer['answer'], connections: readon
  * Answers a page's links from the reader's connections: cached answers while they hold, then each remaining link from
  * its candidates in turn, four at a time. A connection whose origins were never granted is not asked.
  */
+const REFRESH_EARLY_MS = 2 * 60 * 1000;
+
+/**
+ * Connections whose access expires (Teams, Discord) renewed through Geld's token proxy shortly before they do, and
+ * stored again without dropping the answers they read. One the proxy cannot renew is left as it is, and answers
+ * unauthorized until the reader connects it again.
+ */
+export async function withFreshTokens(connections: readonly Connection[], fetchImpl: FetchLike, now: number = Date.now()): Promise<Connection[]> {
+  let changed = false;
+  const fresh = await Promise.all(
+    connections.map(async (connection) => {
+      if (connection.refresh === null || connection.expiresAt === null || connection.expiresAt - REFRESH_EARLY_MS > now) return connection;
+      const tokens = await proxyTokens(fetchImpl, connection.service, { grant: 'refresh', refresh: connection.refresh });
+      if ('message' in tokens) return connection;
+      changed = true;
+      return { ...connection, secret: tokens.accessToken, refresh: tokens.refreshToken ?? connection.refresh, expiresAt: tokens.expiresAt };
+    }),
+  );
+  if (changed) await connectionsStore.setValue(fresh);
+  return fresh;
+}
+
 export async function resolveLinksInBackground(request: ResolveLinksRequest, fetchImpl: FetchLike = slackPacedFetch((input, init) => fetch(input, init))): Promise<ResolveLinksResponse> {
-  const connections = await readConnections();
+  const connections = await withFreshTokens(await readConnections(), fetchImpl);
   const allowed = new Map<string, boolean>();
   for (const connection of connections) allowed.set(connection.id, await hasOrigins(connection));
   let hints = await connectionHintsItem.getValue();

@@ -3,18 +3,22 @@ import { connectionFrom, resolverFor, type Connection, type ConnectionDraft, typ
 import { splitInlineCode } from '@geld/core';
 import { hasOrigins, readConnections, requestOrigins, watchConnections, writeConnections } from '../../src/lib/connections';
 import { APP_SERVICES, KEY_SERVICES, type AppServiceSpec, type ServiceSpec } from '../../src/lib/connection-services';
-import { connectSlack, revokeSlack, SLACK_CLIENT_ID, SLACK_ORIGINS, type SlackConnectResult } from '../../src/lib/slack-connect';
+import type { AppConnectResult } from '../../src/lib/app-connect';
+import { connectSlack, revokeSlack, SLACK_CLIENT_ID, SLACK_ORIGINS } from '../../src/lib/slack-connect';
+import { connectTeams, TEAMS_CLIENT_ID, TEAMS_ORIGINS } from '../../src/lib/teams-connect';
 
 /** How each app service signs in: whether this build has its app, the origins to ask for, the flow and its sign-out. */
 interface AppFlow {
   readonly ready: boolean;
   readonly origins: readonly string[];
-  readonly connect: (existing: readonly Connection[]) => Promise<SlackConnectResult>;
+  readonly connect: (existing: readonly Connection[]) => Promise<AppConnectResult>;
   readonly revoke: (connection: Connection) => Promise<void>;
 }
 
 const APP_FLOWS: Partial<Record<Connection['service'], AppFlow>> = {
   slack: { ready: SLACK_CLIENT_ID !== '', origins: SLACK_ORIGINS, connect: connectSlack, revoke: (connection) => revokeSlack(connection.secret) },
+  // Microsoft has no call to revoke one token; removing the connection deletes it here, and the reader can sign Geld out under My Apps.
+  teams: { ready: TEAMS_CLIENT_ID !== '', origins: TEAMS_ORIGINS, connect: connectTeams, revoke: async () => undefined },
 };
 
 /**

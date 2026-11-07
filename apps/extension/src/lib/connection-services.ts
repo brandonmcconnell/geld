@@ -92,4 +92,12 @@ export const APP_SERVICES: readonly AppServiceSpec[] = [
     anotherLabel: 'Connect another workspace',
     pending: 'The Geld Slack app is not available in this build yet.',
   },
+  {
+    id: 'teams',
+    name: 'Microsoft Teams',
+    blurb: 'Channel message titles and their replies, read as you: only teams you are in, never chats. Your organisation’s admin approves Geld once.',
+    connectLabel: 'Connect Microsoft Teams',
+    anotherLabel: 'Connect another organisation',
+    pending: 'The Geld app for Microsoft Teams is not available in this build yet.',
+  },
 ];

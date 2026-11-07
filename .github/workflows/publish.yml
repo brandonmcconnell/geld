@@ -286,6 +286,7 @@ jobs:
         env:
           WXT_GELD_APP_CLIENT_ID: ${{ vars.WXT_GELD_APP_CLIENT_ID }}
           WXT_GELD_SLACK_CLIENT_ID: ${{ vars.WXT_GELD_SLACK_CLIENT_ID }}
+          WXT_GELD_TEAMS_CLIENT_ID: ${{ vars.WXT_GELD_TEAMS_CLIENT_ID }}
           TAG: ${{ needs.assets.outputs.tag }}
         run: |
           export GELD_BUILD_NUMBER="${TAG##*build.}"

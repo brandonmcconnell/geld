@@ -1,5 +1,7 @@
-import { browser } from 'wxt/browser';
 import { connectionFrom, resolverFor, SLACK_API, SLACK_USER_SCOPES, type Connection, type FetchLike } from '@geld/review/link-resolvers/index';
+import { callbackFor, pkceChallenge, randomString, signInTab, type AppConnectResult } from './app-connect';
+
+export { pkceChallenge } from './app-connect';
 
 /**
  * Connect Slack: the Geld Slack app's sign-in with PKCE, so no client secret exists anywhere and nothing but Slack and
@@ -9,25 +11,8 @@ import { connectionFrom, resolverFor, SLACK_API, SLACK_USER_SCOPES, type Connect
  */
 
 export const SLACK_CLIENT_ID: string = import.meta.env.WXT_GELD_SLACK_CLIENT_ID ?? '';
-export const SLACK_REDIRECT = 'https://www.geld.sh/connect/slack/callback';
+export const SLACK_REDIRECT = callbackFor('slack');
 export const SLACK_ORIGINS = ['https://slack.com/*', 'https://www.geld.sh/*'];
-
-const SIGN_IN_TIMEOUT_MS = 10 * 60 * 1000;
-
-function randomString(bytes: number): string {
-  return base64url(crypto.getRandomValues(new Uint8Array(bytes)));
-}
-
-function base64url(bytes: Uint8Array): string {
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-export async function pkceChallenge(verifier: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
-  return base64url(new Uint8Array(digest));
-}
 
 export function authorizeUrl(clientId: string, state: string, challenge: string, team: string | null = null): string {
   const params = new URLSearchParams({
@@ -42,35 +27,7 @@ export function authorizeUrl(clientId: string, state: string, challenge: string,
   return `https://slack.com/oauth/v2/authorize?${params}`;
 }
 
-export type SlackConnectResult = { readonly ok: true; readonly connection: Connection } | { readonly ok: false; readonly message: string };
-
-/** The code Slack sent back to the tab, or why there is none. */
-function waitForCode(tabId: number, state: string): Promise<{ readonly code: string } | { readonly message: string }> {
-  return new Promise((resolve) => {
-    const done = (answer: { readonly code: string } | { readonly message: string }): void => {
-      browser.tabs.onUpdated.removeListener(onUpdated);
-      browser.tabs.onRemoved.removeListener(onRemoved);
-      clearTimeout(timer);
-      resolve(answer);
-    };
-    const onUpdated = (id: number, change: { readonly url?: string }): void => {
-      if (id !== tabId || change.url === undefined || !change.url.startsWith(SLACK_REDIRECT)) return;
-      const params = new URL(change.url).searchParams;
-      void browser.tabs.remove(tabId).catch(() => undefined);
-      if (params.get('state') !== state) return done({ message: 'Slack sent back a sign-in Geld did not start' });
-      const error = params.get('error');
-      if (error !== null) return done({ message: error === 'access_denied' ? 'Slack sign-in was cancelled' : `Slack answered ${error}` });
-      const code = params.get('code');
-      done(code === null ? { message: 'Slack did not send a code' } : { code });
-    };
-    const onRemoved = (id: number): void => {
-      if (id === tabId) done({ message: 'The Slack tab was closed before signing in finished' });
-    };
-    const timer = setTimeout(() => done({ message: 'Slack sign-in took too long' }), SIGN_IN_TIMEOUT_MS);
-    browser.tabs.onUpdated.addListener(onUpdated);
-    browser.tabs.onRemoved.addListener(onRemoved);
-  });
-}
+export type SlackConnectResult = AppConnectResult;
 
 export async function exchangeSlackCode(fetch: FetchLike, clientId: string, code: string, verifier: string): Promise<{ readonly token: string } | { readonly message: string }> {
   const body = new URLSearchParams({ client_id: clientId, code, code_verifier: verifier, redirect_uri: SLACK_REDIRECT, grant_type: 'authorization_code' });
@@ -97,9 +54,7 @@ export async function connectSlack(existing: readonly Connection[]): Promise<Sla
   if (SLACK_CLIENT_ID === '') return { ok: false, message: 'Slack is not set up in this build of Geld yet' };
   const verifier = randomString(48);
   const state = randomString(24);
-  const tab = await browser.tabs.create({ url: authorizeUrl(SLACK_CLIENT_ID, state, await pkceChallenge(verifier)) });
-  if (tab.id === undefined) return { ok: false, message: 'The browser did not open Slack' };
-  const answer = await waitForCode(tab.id, state);
+  const answer = await signInTab(authorizeUrl(SLACK_CLIENT_ID, state, await pkceChallenge(verifier)), SLACK_REDIRECT, state, 'Slack');
   if ('message' in answer) return { ok: false, message: answer.message };
   const fetchImpl: FetchLike = (input, init) => fetch(input, init);
   const exchanged = await exchangeSlackCode(fetchImpl, SLACK_CLIENT_ID, answer.code, verifier);
