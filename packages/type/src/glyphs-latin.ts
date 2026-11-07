@@ -1,4 +1,5 @@
-import { ALL, bar, box, diagonal, type DrawContext, type GlyphDef, LEFT, level, open, p, RIGHT, stem, withPen } from './draw';
+import { ALL, bar, box, diagonal, type DrawContext, type GlyphDef, LEFT, level, mirror, open, p, RIGHT, rotate180, stem, vee, withPen } from './draw';
+import type { Stroke } from './geometry';
 
 /** Latin letters with no Unicode decomposition into a base and marks, drawn on their own. */
 const UPPER: GlyphDef[] = [
@@ -86,6 +87,145 @@ const UPPER: GlyphDef[] = [
       const t = g.top(g.cap);
       const d = g.bottom(-2.5);
       return [stem(0, 0, g.cap), open(p(0, t), p(w, t, true), p(w, d, true), p(w - 3, d))];
+    },
+  },
+  {
+    name: 'Schwa',
+    unicode: 0x18f,
+    lsb: 1.25,
+    rsb: 1.25,
+    draw: (g) => {
+      const w = g.wide(10);
+      const t = g.top(g.cap);
+      const b = g.bottom(0);
+      return rotate180([open(p(0, 7), p(w, 7), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, 3.5))], w / 2, g.cap / 2);
+    },
+  },
+  {
+    name: 'Ereversed',
+    unicode: 0x18e,
+    lsb: 1,
+    rsb: 1.5,
+    draw: (g) => {
+      const w = g.wide(10);
+      return mirror([open(p(w, g.top(g.cap)), p(0, g.top(g.cap)), p(0, g.bottom(0)), p(w, g.bottom(0))), bar(0, g.wide(9), g.cap / 2)], w / 2);
+    },
+  },
+  {
+    name: 'Eopen',
+    unicode: 0x190,
+    lsb: 1.25,
+    rsb: 1,
+    draw: (g) => {
+      const w = g.wide(9);
+      const t = g.top(g.cap);
+      const b = g.bottom(0);
+      const m = g.cap / 2;
+      return mirror([open(p(0, 10), p(0, t, true), p(w, t, true), p(w, m), p(w * 0.35, m)), open(p(w, m), p(w, b, true), p(0, b, true), p(0, 4))], w / 2);
+    },
+  },
+  {
+    name: 'Oopen',
+    unicode: 0x186,
+    lsb: 1,
+    rsb: 1.25,
+    draw: (g) => {
+      const w = g.wide(10);
+      return mirror([open(p(w, 9), p(w, g.top(g.cap), true), p(0, g.top(g.cap), true), p(0, g.bottom(0), true), p(w, g.bottom(0), true), p(w, 5))], w / 2);
+    },
+  },
+  {
+    name: 'Bhook',
+    unicode: 0x181,
+    lsb: 0.5,
+    rsb: 1.25,
+    draw: (g) => [box(0, g.wide(9), g.cap / 2, g.top(g.cap), RIGHT), box(0, g.wide(10), g.bottom(0), g.cap / 2, RIGHT), hookLeft(g, g.cap)],
+  },
+  {
+    name: 'Dhook',
+    unicode: 0x18a,
+    lsb: 0.5,
+    rsb: 1.25,
+    draw: (g) => [box(0, g.wide(10), g.bottom(0), g.top(g.cap), RIGHT), hookLeft(g, g.cap)],
+  },
+  {
+    name: 'Yhook',
+    unicode: 0x1b3,
+    lsb: 0.3,
+    rsb: 0.3,
+    draw: (g) => {
+      const w = g.wide(11);
+      const e = g.foot(w / 2, g.cap - 6);
+      return [...vee(g, 0, w, g.cap, 6), stem(w / 2, 0, 6), bar(w - e, w + 2, g.top(g.cap))];
+    },
+  },
+  {
+    name: 'Nhookleft',
+    unicode: 0x19d,
+    lsb: 0.5,
+    rsb: 1.5,
+    draw: (g) => {
+      const w = g.wide(9.5);
+      const e = g.foot(w, g.cap);
+      const d = g.bottom(-3);
+      return [open(p(0, g.cap), p(0, d, true), p(-2.5, d)), stem(w, 0, g.cap), diagonal(g, e - g.v / 2, g.cap, w + g.v / 2 - e, 0)];
+    },
+  },
+  {
+    name: 'Khook',
+    unicode: 0x198,
+    lsb: 1.5,
+    rsb: 0.3,
+    draw: (g) => {
+      const w = g.wide(9.5);
+      const y0 = 4.5;
+      const reach = w + g.v / 2 - g.foot(w, g.cap - 1 - y0) - 1;
+      const t = 0.4;
+      return [
+        stem(0, 0, g.cap),
+        withPen(open(p(0, y0), p(reach, g.cap - 1)), g.diag),
+        open(p(reach - 0.5, g.top(g.cap)), p(reach + 2, g.top(g.cap))),
+        diagonal(g, reach * t, y0 + (g.cap - 1 - y0) * t, reach + 1, 0, [false, true]),
+      ];
+    },
+  },
+  {
+    name: 'Germandbls',
+    unicode: 0x1e9e,
+    lsb: 1.5,
+    rsb: 1.25,
+    draw: (g) => {
+      const w = g.wide(9);
+      const w2 = g.wide(10);
+      const t = g.top(g.cap);
+      const b = g.bottom(0);
+      const m = 7.5;
+      return [open(p(0, 0), p(0, t, true), p(w, t, true), p(w, 11), p(w * 0.4, m)), open(p(w * 0.4, m), p(w2, m, true), p(w2, b, true), p(w * 0.45, b))];
+    },
+  },
+  {
+    name: 'Esh',
+    unicode: 0x1a9,
+    lsb: 0.75,
+    rsb: 0.75,
+    draw: (g) => {
+      const w = g.wide(10);
+      const t = g.top(g.cap);
+      const b = g.bottom(0);
+      const e = g.foot(w * 0.55, g.cap / 2);
+      return [bar(0, w, t), bar(0, w, b), diagonal(g, e, g.cap, w * 0.55, g.cap / 2, [true, false]), diagonal(g, w * 0.55, g.cap / 2, e, 0, [false, true])];
+    },
+  },
+  {
+    name: 'Ezh',
+    unicode: 0x1b7,
+    lsb: 1,
+    rsb: 1,
+    draw: (g) => {
+      const w = g.wide(9);
+      const t = g.top(g.cap);
+      const b = g.bottom(-3);
+      return [bar(0, w, t), diagonal(g, w - g.foot(w * 0.6, 4), g.cap, w * 0.4, 8, [true, false]), open(p(w * 0.4, 8), p(w, 8, true), p(w, b, true), p(0, b, true), p(0, 1))];
     },
   },
 ];
@@ -232,7 +372,215 @@ const LOWER_DEFS: GlyphDef[] = [
       return [open(p(0, 0), p(0, t, true), p(g.wide(4), t))];
     },
   },
+  {
+    name: 'schwa',
+    unicode: 0x259,
+    lsb: 1,
+    rsb: 1.25,
+    draw: (g) => {
+      const w = g.wide(8);
+      const t = g.top(g.xHeight);
+      const b = g.bottom(0);
+      return rotate180([open(p(0, 5.25), p(w, 5.25), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, 2.5))], w / 2, g.xHeight / 2);
+    },
+  },
+  {
+    name: 'eturned',
+    unicode: 0x1dd,
+    lsb: 1,
+    rsb: 1.25,
+    draw: (g) => {
+      const w = g.wide(8);
+      const t = g.top(g.xHeight);
+      const b = g.bottom(0);
+      return rotate180([open(p(0, 5.25), p(w, 5.25), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, 2.5))], w / 2, g.xHeight / 2);
+    },
+  },
+  {
+    name: 'eopen',
+    unicode: 0x25b,
+    lsb: 1.25,
+    rsb: 1,
+    draw: (g) => {
+      const w = g.wide(7);
+      const t = g.top(g.xHeight);
+      const b = g.bottom(0);
+      const m = 5;
+      return mirror([open(p(0, 7.5), p(0, t, true), p(w, t, true), p(w, m), p(w * 0.35, m)), open(p(w, m), p(w, b, true), p(0, b, true), p(0, 2.5))], w / 2);
+    },
+  },
+  {
+    name: 'oopen',
+    unicode: 0x254,
+    lsb: 0.9,
+    rsb: 1.25,
+    draw: (g) => {
+      const w = g.wide(7.5);
+      const t = g.top(g.xHeight);
+      const b = g.bottom(0);
+      return mirror([open(p(w, 7), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, 3))], w / 2);
+    },
+  },
+  {
+    name: 'bhook',
+    unicode: 0x253,
+    lsb: 1.5,
+    rsb: 1.25,
+    draw: (g) => [hookRight(g, 0), box(0, g.wide(8), g.bottom(0), g.top(g.xHeight), RIGHT)],
+  },
+  {
+    name: 'dhook',
+    unicode: 0x257,
+    lsb: 1.25,
+    rsb: 0.5,
+    draw: (g) => {
+      const w = g.wide(8);
+      return [hookRight(g, w), box(0, w, g.bottom(0), g.top(g.xHeight), LEFT)];
+    },
+  },
+  {
+    name: 'yhook',
+    unicode: 0x1b4,
+    lsb: 0.3,
+    rsb: 0.3,
+    draw: (g) => {
+      const w = g.wide(8.5);
+      const tail = (w / 2) * (-g.descender / g.xHeight);
+      const e = g.foot(w / 2, g.xHeight);
+      return [diagonal(g, 0, g.xHeight, w / 2, 0), diagonal(g, w, g.xHeight, w / 2 - tail, g.descender), bar(w - e, w + 2, g.top(g.xHeight))];
+    },
+  },
+  {
+    name: 'nhookleft',
+    unicode: 0x272,
+    lsb: 0.5,
+    rsb: 1.4,
+    draw: (g) => {
+      const w = g.wide(7);
+      const t = g.top(g.xHeight);
+      const d = g.bottom(g.descender);
+      return [open(p(-2.5, d), p(0, d, true), p(0, t), p(w, t, true), p(w, 0))];
+    },
+  },
+  {
+    name: 'khook',
+    unicode: 0x199,
+    lsb: 1.5,
+    rsb: 0.3,
+    draw: (g) => [hookRight(g, 0), ...kArms(g, 0).slice(1)],
+  },
+  {
+    name: 'alpha-latin',
+    unicode: 0x251,
+    lsb: 1.25,
+    rsb: 1.5,
+    draw: (g) => {
+      const w = g.wide(7.5);
+      return [stem(w, 0, g.xHeight), box(0, w, g.bottom(0), g.top(g.xHeight), LEFT)];
+    },
+  },
+  {
+    name: 'alphaturned-latin',
+    unicode: 0x252,
+    lsb: 1.5,
+    rsb: 1.25,
+    draw: (g) => {
+      const w = g.wide(7.5);
+      return [stem(0, 0, g.xHeight), box(0, w, g.bottom(0), g.top(g.xHeight), RIGHT)];
+    },
+  },
+  {
+    name: 'gscript',
+    unicode: 0x261,
+    lsb: 1.25,
+    rsb: 1.5,
+    draw: (g) => {
+      const w = g.wide(8);
+      const d = g.bottom(g.descender);
+      return [box(0, w, g.bottom(0), g.top(g.xHeight), LEFT), open(p(w, g.xHeight), p(w, d, true), p(0, d, true), p(0, -1.5))];
+    },
+  },
+  {
+    name: 'Ismall',
+    unicode: 0x26a,
+    lsb: 1,
+    rsb: 1,
+    draw: (g) => {
+      const w = g.wide(4);
+      return [stem(w / 2, 0, g.xHeight), bar(0, w, g.top(g.xHeight)), bar(0, w, g.bottom(0))];
+    },
+  },
+  {
+    name: 'esh',
+    unicode: 0x283,
+    lsb: 0.5,
+    rsb: 0.2,
+    draw: (g) => {
+      const t = g.top(g.ascender);
+      const d = g.bottom(g.descender);
+      return [open(p(-2.5, d), p(0, d, true), p(0, t, true), p(g.wide(4), t))];
+    },
+  },
+  {
+    name: 'ezh',
+    unicode: 0x292,
+    lsb: 0.75,
+    rsb: 0.75,
+    draw: (g) => {
+      const w = g.wide(7.5);
+      const t = g.top(g.xHeight);
+      const b = g.bottom(g.descender);
+      return [bar(0, w, t), diagonal(g, w - g.foot(w * 0.6, 4), g.xHeight, w * 0.4, 4.5, [true, false]), open(p(w * 0.4, 4.5), p(w, 4.5, true), p(w, b, true), p(0, b, true), p(0, -2))];
+    },
+  },
+  {
+    name: 'glottalstop',
+    unicode: 0x294,
+    lsb: 1,
+    rsb: 1,
+    draw: (g) => {
+      const w = g.wide(7.5);
+      const t = g.top(g.cap);
+      const x = w / 2;
+      const arm = Math.min(8.5, g.cap - g.h * 1.5 - g.aperture);
+      return [open(p(0, 10.5), p(0, t, true), p(w, t, true), p(w, arm, true), p(x, arm, true), p(x, 0))];
+    },
+  },
+  {
+    name: 'upsilon-latin',
+    unicode: 0x28a,
+    lsb: 1,
+    rsb: 1,
+    draw: (g) => {
+      const w = g.wide(8);
+      const b = g.bottom(0);
+      return [open(p(-1, g.top(g.xHeight)), p(0, g.top(g.xHeight)), p(0, b, true), p(w, b, true), p(w, g.top(g.xHeight)), p(w + 1, g.top(g.xHeight)))];
+    },
+  },
+  {
+    name: 'vhook',
+    unicode: 0x28b,
+    lsb: 1.25,
+    rsb: 1,
+    draw: (g) => {
+      const w = g.wide(8);
+      const b = g.bottom(0);
+      return [open(p(0, g.xHeight), p(0, b, true), p(w, b, true), p(w, g.top(g.xHeight), true), p(w - 2, g.top(g.xHeight)))];
+    },
+  },
 ];
+
+/** The hook of Ɓ and Ɗ: the top bar running left of the stem and turning down. */
+function hookLeft(g: DrawContext, top: number): Stroke {
+  const t = g.top(top);
+  return open(p(-2.75, top - 3), p(-2.75, t, true), p(0, t));
+}
+
+/** The hook of ɓ, ɗ and ƙ: the ascender turning right at the top. */
+function hookRight(g: DrawContext, x: number): Stroke {
+  const t = g.top(g.ascender);
+  return open(p(x, 0), p(x, t, true), p(x + 3, t));
+}
 
 /** k's stem and arms, with the stem as tall as `height` (the x-height gives ĸ). */
 function kArms(g: DrawContext, height: number) {

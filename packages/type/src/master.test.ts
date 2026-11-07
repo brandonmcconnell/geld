@@ -60,7 +60,7 @@ describe('character set', () => {
     expect(chars.filter((c) => !mapped.has(c))).toEqual([]);
   });
 
-  it('keeps every glyph inside the line box at every weight, and drawn glyphs within their sidebearings', () => {
+  it('keeps every glyph inside the clipping box at every weight, and drawn glyphs within their sidebearings', () => {
     for (const weight of WEIGHTS) {
       const master = buildMaster('sans', 'roman', weight);
       for (const glyph of master.glyphs) {
@@ -68,8 +68,8 @@ describe('character set', () => {
         if (!contours.length || glyph.mark) continue;
         const ys = contours.flat().map((p) => p.y);
         const xs = contours.flat().map((p) => p.x);
-        expect(Math.min(...ys), `${glyph.name} ${weight}`).toBeGreaterThanOrEqual(METRICS.lineDescender);
-        expect(Math.max(...ys), `${glyph.name} ${weight}`).toBeLessThanOrEqual(METRICS.lineAscender);
+        expect(Math.min(...ys), `${glyph.name} ${weight}`).toBeGreaterThanOrEqual(METRICS.clipDescender);
+        expect(Math.max(...ys), `${glyph.name} ${weight}`).toBeLessThanOrEqual(METRICS.clipAscender);
         if (glyph.components.length || glyph.name === 'fraction') continue;
         expect(Math.min(...xs), `${glyph.name} ${weight}`).toBeGreaterThanOrEqual(0);
         expect(Math.max(...xs), `${glyph.name} ${weight}`).toBeLessThanOrEqual(glyph.advance + 1e-9);
