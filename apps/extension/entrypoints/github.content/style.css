@@ -860,9 +860,20 @@ html[data-geld-quick-review] details.js-reviews-container {
   color: var(--fgColor-default, #1f2328);
 }
 
+/*
+ * Pressed sinks in both themes. Primer's dark active/selected surfaces are lighter than rest (elevation), which read
+ * as raised here, so dark mode mixes the rest surface toward the theme's inset colour instead.
+ */
+.geld-quick-review__segment.btn {
+  --geld-pressed-bg: light-dark(
+    var(--button-default-bgColor-active, #e6eaef),
+    color-mix(in srgb, var(--button-default-bgColor-rest, #212830) 55%, var(--bgColor-inset, #010409))
+  );
+}
+
 /* The segment whose comment box is open reads as pressed. */
 .geld-quick-review__segment.btn[aria-expanded='true'] {
-  background: var(--button-default-bgColor-active, #e6eaef);
+  background: var(--geld-pressed-bg);
 }
 
 /*
@@ -903,8 +914,8 @@ html[data-geld-quick-review] details.js-reviews-container {
  * verdict's colour. Still a button: pressing it again leaves a new review.
  */
 .geld-quick-review__segment.btn[data-current] {
-  background: var(--button-default-bgColor-selected, var(--button-default-bgColor-active, #e6eaef));
-  box-shadow: inset 0 1px 2px rgba(31, 35, 40, 0.15);
+  background: light-dark(var(--button-default-bgColor-selected, var(--button-default-bgColor-active, #e6eaef)), var(--geld-pressed-bg));
+  box-shadow: inset 0 1px 2px light-dark(rgba(31, 35, 40, 0.15), rgba(1, 4, 9, 0.6));
 }
 
 .geld-quick-review__segment.btn[data-event='approve'][data-current] .geld-quick-review__glyph > svg {
@@ -2580,21 +2591,30 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   gap: 10px;
 }
 
-/* 16px tall in the 40px strip leaves 12px above and below, so it sits 12px from the left too, inside the 16px padding. */
+/* The strip sits on the status rows' columns: the emblem in the 16px glyph column, "Geld" in the 88px label column,
+   the meter where a row's content starts. The 14px grid emblem is centred in the glyph's 16px, at 1px per unit. */
 .geld-review__brand {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  margin-left: -4px;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
 }
 
 .geld-review__brand svg {
   display: block;
-  width: auto;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 
-/* `::selection` never paints the wordmark, so while selected (`syncBrandSelection`) it wears the colours the browser
+.geld-review__label.geld-review__brand-name {
+  color: inherit;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+/* `::selection` never paints the emblem, so while selected (`syncBrandSelection`) it wears the colours the browser
    gives selected text on GitHub, which sets no selection style of its own. */
 .geld-review__brand[data-geld-selected] {
   background-color: Highlight;
@@ -3568,7 +3588,8 @@ svg.geld-lucide {
   white-space: nowrap;
 }
 
-.geld-review__bot:is(a):hover {
+/* Every pill that goes somewhere, a link (a bot's summary, a preview) or a button (a comment report, an agent's note). */
+.geld-review__bot:is(a, button):is(:hover, :focus-visible) {
   border-color: var(--geld-review-muted);
   background: var(--geld-review-subtle);
   text-decoration: none;
@@ -3840,6 +3861,11 @@ svg.geld-lucide {
 .geld-review-hovercard__body > * {
   padding: 0 !important;
   margin: 0 !important;
+  font-size: 13px;
+}
+
+/* A note's copy is a bare `.markdown-body`, whose 16px GitHub's stylesheet would win with at the same specificity. */
+.geld-review-hovercard__body > .markdown-body {
   font-size: 13px;
 }
 
@@ -7513,14 +7539,88 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 
 [data-geld-desc] > :is(h1, h2, h3, h4, h5, h6, .markdown-heading) {
   --geld-desc-after: 8px;
-  /* The chevron's box spans 10px to 30px: its rail starts just under the glyph's point, not through it. */
-  --geld-desc-chevron-y: 28px;
+  /*
+   * The chevron's box spans 10px to 30px (`.geld-desc-toggle`): its rail starts a pixel below the box's edge, so its
+   * hover background never covers the line, and a pixel off on some screen leaves a gap rather than an overlap.
+   */
+  --geld-desc-chevron-y: 31px;
   margin-top: 0 !important;
   margin-bottom: 8px !important;
 }
 
 /* A heading used only for its thin rule: the slimmer headings above drop the rule, so it would be an empty gap. */
 [data-geld-desc] > [data-geld-desc-blank] {
+  display: none !important;
+}
+
+/*
+ * What tools appended, gathered at the foot under "Agent notes" (description.ts `dressAgents`), one folding h3 of
+ * Geld's per tool with its logo before its name. GitHub's nodes stay where they are: the body becomes a column and the
+ * tools' headings and blocks take a later `order` (`--geld-desc-order`, mirrored in description.ts).
+ */
+[data-geld-desc][data-geld-desc-agents] {
+  display: flex !important;
+  flex-direction: column;
+}
+
+/* 1 is "Show full description", between the author's cut text and the agents' (mirrored in description.ts). */
+[data-geld-desc-agents] > .geld-desc-agents {
+  order: 2;
+}
+
+[data-geld-desc-agents] > [data-geld-desc-agent] {
+  order: var(--geld-desc-order, 3);
+}
+
+/* A tool's own title ("Summary by CodeRabbit") and the rule above its content: its injected heading stands for them. */
+[data-geld-desc-agents] > [data-geld-desc-agent-hidden] {
+  display: none !important;
+}
+
+/*
+ * The band over the agents is a label, not a section: it stands at the chevrons' edge, as top-level text does, and one
+ * step above the agents' 14px names, below the author's 16px headings.
+ */
+[data-geld-desc][data-geld-desc-agents] > h2.geld-desc-agents {
+  padding-left: 0 !important;
+  font-size: 15px !important;
+  /* Ample room above (with the reactions row's own 16px under it), so the agents never read as the author's text. */
+  margin-top: 16px !important;
+}
+
+/*
+ * The box ends as far below the last block shown as the text stands from its left edge: the body's own 16px padding.
+ * A block the cut runs through keeps its margin, since Show full description follows it.
+ */
+[data-geld-desc] > [data-geld-desc-last]:not([data-geld-desc-cut-edge]) {
+  --geld-desc-after: 0px;
+  margin-bottom: 0 !important;
+}
+
+/*
+ * GitHub's reactions row (outside the body) and the agents' summaries (the body's end) trade places on screen, so the
+ * reactions stay with the author's text (description.ts `liftReactions`): relative offsets, which lay nothing out again.
+ */
+[data-geld-desc-lifted] {
+  position: relative;
+  top: var(--geld-desc-lift, 0px);
+}
+
+[data-geld-desc-agents] > :is(.geld-desc-agents, [data-geld-desc-agent]) {
+  position: relative;
+  top: var(--geld-desc-drop, 0px);
+}
+
+.geld-desc-agent__logo {
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+  border-radius: 4px;
+  vertical-align: -4px;
+}
+
+/* What tools appended, while the digest's Agent notes row shows it (description.ts `flagAway`). */
+[data-geld-desc-tools] > [data-geld-desc-tool] {
   display: none !important;
 }
 
@@ -7535,7 +7635,8 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   top: 0;
   /* 1px past the gap: blocks start on fractional pixels, and two rail pieces meeting edge to edge leave a light seam. */
   bottom: calc(-1 * var(--geld-desc-after) - 1px);
-  left: calc(var(--geld-desc-depth, 0) * -24px);
+  /* `--geld-desc-edge` is the block's own left border (description.ts `dressRails`): the ::before starts inside it. */
+  left: calc(var(--geld-desc-depth, 0) * -24px - var(--geld-desc-edge, 0px));
   width: calc((var(--geld-desc-depth, 0) + 1) * 24px);
   background-image: var(--geld-desc-rails, none);
   background-position: var(--geld-desc-rail-pos, 0 0);
@@ -7627,18 +7728,25 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   transform: rotate(-90deg);
 }
 
-[data-geld-desc-cap][data-geld-desc-long] {
-  max-height: 500px;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 96px), transparent);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 96px), transparent);
+/*
+ * The cut runs through the author's text only (description.ts `measure`): blocks wholly past it are hidden
+ * `until-found`, the one it crosses is clipped here, and the agents' summaries below stay whole. GitHub's
+ * `.comment-body .highlight` keeps a code block's overflow visible with `!important`, so the clip needs it too.
+ */
+[data-geld-desc-cap][data-geld-desc-long] > [data-geld-desc-cut-edge] {
+  max-height: var(--geld-desc-cut-height);
+  overflow: hidden !important;
 }
 
+/* Inside the body, after the author's blocks: its ::before fades the text above it out. */
 .geld-desc-more {
   display: none;
+  position: relative;
+  order: 1;
+  width: 100%;
   align-items: center;
   gap: 4px;
-  margin: 0 16px 12px;
+  margin: 0 0 16px;
   padding: 0;
   border: 0;
   background: none;
@@ -7649,8 +7757,45 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   cursor: pointer;
 }
 
-[data-geld-desc-long] + .geld-desc-more {
-  display: inline-flex;
+[data-geld-desc-cap][data-geld-desc-long] > .geld-desc-more {
+  display: flex;
+}
+
+[data-geld-desc-cap][data-geld-desc-long] > .geld-desc-more::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  height: 96px;
+  background: linear-gradient(to bottom, transparent, var(--bgColor-default, var(--color-canvas-default, #fff)));
+  pointer-events: none;
+  z-index: 1;
+}
+
+/*
+ * The rails of the block the cut runs through (description.ts `carryRails`): that block clips its overflow, which
+ * clips the rails it hangs to its left, so the button draws them from the block's top down to itself, under the fade
+ * as the text is. Its left edge is the body's content edge, which is where the block's own rails start too.
+ */
+[data-geld-desc-cap][data-geld-desc-long] > .geld-desc-more[data-geld-desc-carry]::after {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  height: var(--geld-desc-carry-height, 0px);
+  background-image: var(--geld-desc-rails, none);
+  background-position: var(--geld-desc-rail-pos, 0 0);
+  background-size: var(--geld-desc-rail-size, auto);
+  background-repeat: no-repeat;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* With nothing of an agent's after it, the button ends the body, whose own padding is below it. */
+[data-geld-desc] > .geld-desc-more:last-child {
+  margin-bottom: 0;
 }
 
 .geld-desc-more:hover span {
@@ -7777,6 +7922,143 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   font-size: 13px;
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+/*
+ * Agent notes (panel.ts `agentNotesRow`): what agents and review bots wrote into the description. A note the
+ * description no longer has (it is only in its edit history) wears a dashed mark, as a pill with nothing to open is
+ * dashed, and its line says so in place of a preview.
+ */
+/* A note's pill is a button (it opens the row to its line), so the dashed border of a pill with nothing to open is asked for by hand. */
+.geld-review__bot.geld-review__note-pill[data-past] {
+  border-style: dashed;
+}
+
+.geld-review__avatar[data-past] {
+  outline: 1px dashed var(--geld-review-muted);
+  outline-offset: 1px;
+  opacity: 0.75;
+}
+
+.geld-review__row--note[data-past] .geld-review__preview {
+  font-style: italic;
+}
+
+/* The note as the description has it: GitHub's own rendering, at the size of a comment in a chat. */
+/* GitHub's `.markdown-body` sets 16px, a size the panel never uses: the note reads at a comment's 14px. */
+.geld-review .geld-review__note-body.markdown-body {
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.geld-review__note-body > :first-child {
+  margin-top: 0 !important;
+}
+
+.geld-review__note-body > :last-child {
+  margin-bottom: 0 !important;
+}
+
+/* The note stands inside the panel's own lists, which the browser counts as outer levels: its bullets start over. */
+.geld-review__note-body ul {
+  list-style-type: disc;
+}
+
+.geld-review__note-body ul ul {
+  list-style-type: circle;
+}
+
+.geld-review__note-body ul ul ul {
+  list-style-type: square;
+}
+
+.geld-review__note-gone {
+  margin: 0;
+  color: var(--geld-review-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.geld-review__note-past {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fgColor-accent, var(--color-accent-fg, #0969da));
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* The history window (note-history.ts): the readings down the side, the chosen one beside them. */
+.geld-review__note-dialog-body {
+  display: flex;
+  gap: 16px;
+  min-height: 240px;
+  max-height: 70vh;
+}
+
+.geld-review__note-nav {
+  flex: none;
+  width: 200px;
+  overflow-y: auto;
+}
+
+.geld-review__note-versions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.geld-review__note-version-btn {
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.geld-review__note-version-btn:hover {
+  background: var(--bgColor-muted, var(--color-canvas-subtle, #f6f8fa));
+}
+
+.geld-review__note-version-btn[aria-current='true'] {
+  background: var(--bgColor-muted, var(--color-canvas-subtle, #f6f8fa));
+  font-weight: 600;
+}
+
+.geld-review__note-status {
+  margin: 8px 0 0;
+  padding: 0 8px;
+  color: var(--fgColor-muted, var(--color-fg-muted, #59636e));
+  font-size: 12px;
+}
+
+.geld-review__note-version.markdown-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+@media (max-width: 543px) {
+  .geld-review__note-dialog-body {
+    flex-direction: column;
+  }
+
+  .geld-review__note-nav {
+    width: auto;
+    max-height: 30vh;
+  }
 }
 
 /* A skipped deployment with nothing to visit: the pill fades and says so on hover; the line below keeps its Inspect.
@@ -8511,4 +8793,178 @@ dialog.geld-flow .geld-flow__actions .Overlay-closeButton {
 
 .geld-flow__legend-btn[aria-expanded='true'] .geld-flow__chevron {
   transform: none;
+}
+
+.markdown-body img[data-geld-lightbox-image] {
+  cursor: zoom-in;
+}
+
+dialog.geld-lightbox {
+  position: fixed;
+  inset: 0;
+  width: fit-content;
+  height: fit-content;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 128px);
+  margin: auto;
+  padding: 0;
+  overflow: visible;
+  color: #fff;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  font: 14px/1.5 var(--fontStack-system, sans-serif);
+}
+
+.geld-lightbox::backdrop {
+  background: rgb(0 0 0 / 65%);
+  backdrop-filter: blur(2px);
+}
+
+.geld-lightbox__header,
+.geld-lightbox__footer {
+  position: absolute;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: min(300px, calc(100vw - 32px));
+  transform: translateX(-50%);
+}
+
+.geld-lightbox__header {
+  bottom: calc(100% + 8px);
+  justify-content: space-between;
+}
+
+.geld-lightbox__brand {
+  display: inline-flex;
+  width: 54px;
+}
+
+.geld-lightbox__brand svg {
+  width: 100%;
+  height: auto;
+}
+
+.geld-lightbox__close,
+.geld-lightbox__tool {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.geld-lightbox__close svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.geld-lightbox__close:hover,
+.geld-lightbox__tool:not(:disabled):hover,
+.geld-lightbox__original:hover {
+  color: #fff;
+  background: #ffffff1a;
+}
+
+.geld-lightbox__stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 4px;
+  touch-action: none;
+}
+
+.geld-lightbox__image {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: contain;
+  transform-origin: center;
+  user-select: none;
+  cursor: zoom-in;
+}
+
+.geld-lightbox__stage[data-zoomed] .geld-lightbox__image {
+  cursor: grab;
+}
+
+.geld-lightbox__stage[data-dragging] .geld-lightbox__image {
+  cursor: grabbing;
+}
+
+.geld-lightbox__status {
+  grid-area: 1 / 1;
+  width: min(320px, calc(100vw - 64px));
+  margin: 0;
+  padding: 16px;
+  background: #161b22;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.geld-lightbox [hidden] {
+  display: none;
+}
+
+.geld-lightbox__footer {
+  top: calc(100% + 8px);
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.geld-lightbox__zoom {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 2px;
+}
+
+.geld-lightbox__tool:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.geld-lightbox__reset {
+  width: 52px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.geld-lightbox__original {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  color: #ffffffb3;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.geld-lightbox__original:hover {
+  text-decoration: none;
+}
+
+.geld-lightbox :focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
 }

@@ -45,6 +45,13 @@ describe('autoViewed', () => {
 });
 
 describe('normalizeSettings', () => {
+  it('enables the attachment lightbox for existing settings and preserves an explicit opt-out', () => {
+    expect(DEFAULT_SETTINGS.attachmentLightbox).toBe(true);
+    expect(normalizeSettings({}).attachmentLightbox).toBe(true);
+    expect(normalizeSettings({ attachmentLightbox: 'false' }).attachmentLightbox).toBe(true);
+    expect(normalizeSettings({ attachmentLightbox: false }).attachmentLightbox).toBe(false);
+  });
+
   it('returns defaults for garbage', () => {
     expect(normalizeSettings(null)).toEqual(DEFAULT_SETTINGS);
     expect(normalizeSettings('nope')).toEqual(DEFAULT_SETTINGS);

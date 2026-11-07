@@ -100,6 +100,8 @@ export interface GeldSettings {
    * shipped with this build are used.
    */
   readonly autoUpdatePatterns: boolean;
+  /** Send Geld's own errors, scrubbed of anything naming a page, repository or person, to geld.sh. Opt-in. */
+  readonly errorReports: boolean;
   /** GitHub Enterprise Server hostnames Geld also runs on (permission granted by the user). */
   readonly enterpriseHosts: readonly string[];
   /**
@@ -131,6 +133,7 @@ export interface GeldSettings {
    * headings to 500px behind a "Show full description" control.
    */
   readonly collapseDescription: boolean;
+  readonly attachmentLightbox: boolean;
   /**
    * Put a "Submit review" button in the pull request's tab bar, beside the
    * line counts, on every tab (the Files changed tab's own button gives way to it).
@@ -225,12 +228,14 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   shortcutEnabled: true,
   showBadge: true,
   autoUpdatePatterns: true,
+  errorReports: false,
   enterpriseHosts: [],
   repoConfigs: 'ask',
   prOverview: true,
   compactTimeline: 'compact',
   reviewGrouping: 'type',
   collapseDescription: true,
+  attachmentLightbox: true,
   quickReview: true,
   holdToMerge: false,
   reviewBots: [],
@@ -482,6 +487,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     shortcutEnabled: bool(record, 'shortcutEnabled', DEFAULT_SETTINGS.shortcutEnabled),
     showBadge: bool(record, 'showBadge', DEFAULT_SETTINGS.showBadge),
     autoUpdatePatterns: bool(record, 'autoUpdatePatterns', DEFAULT_SETTINGS.autoUpdatePatterns),
+    errorReports: bool(record, 'errorReports', DEFAULT_SETTINGS.errorReports),
     enterpriseHosts: isStringArray(record.enterpriseHosts)
       ? record.enterpriseHosts.map(normalizeHost).filter((host): host is string => host !== null)
       : DEFAULT_SETTINGS.enterpriseHosts,
@@ -490,6 +496,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     compactTimeline: isCompactTimelineMode(record.compactTimeline) ? record.compactTimeline : DEFAULT_SETTINGS.compactTimeline,
     reviewGrouping: isReviewGrouping(record.reviewGrouping) ? record.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
     collapseDescription: bool(record, 'collapseDescription', DEFAULT_SETTINGS.collapseDescription),
+    attachmentLightbox: bool(record, 'attachmentLightbox', DEFAULT_SETTINGS.attachmentLightbox),
     quickReview: bool(record, 'quickReview', DEFAULT_SETTINGS.quickReview),
     holdToMerge: bool(record, 'holdToMerge', DEFAULT_SETTINGS.holdToMerge),
     reviewBots: isStringArray(record.reviewBots) ? record.reviewBots : DEFAULT_SETTINGS.reviewBots,

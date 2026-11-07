@@ -100,10 +100,13 @@ describe('shortenDescription', () => {
     return body;
   }
 
+  /** The description's own blocks, without "Show full description", which stands inside the body. */
+  const authorBlocks = (body: HTMLElement): Element[] => [...body.children].filter((block) => !block.classList.contains('geld-desc-more'));
+
   it('closes the innermost sections and leaves the outline open', () => {
     const body = mountDescription(`<p>intro</p>${h(2, 'Summary')}<p>a</p>${h(3, 'Details')}<p>b</p>${h(2, 'Testing')}<p>c</p>`);
     shortenDescription(true);
-    const folded = [...body.children].map((block) => block.hasAttribute('data-geld-desc-fold'));
+    const folded = authorBlocks(body).map((block) => block.hasAttribute('data-geld-desc-fold'));
     expect(folded).toEqual([false, false, false, false, true, false, true]);
     expect(body.children[1]?.getAttribute('data-geld-desc-heading')).toBe('open');
     expect(body.children[3]?.getAttribute('data-geld-desc-heading')).toBe('closed');
@@ -114,7 +117,7 @@ describe('shortenDescription', () => {
     const body = mountDescription(`${h(2, 'Changes')}<p>a</p>${h(3, 'Notes')}<p>b</p>${h(2, 'Testing')}<p>c</p>${h(2, 'Screenshots')}<p>d</p>`);
     shortenDescription(true);
     expect(body.children[0]?.getAttribute('data-geld-desc-heading')).toBe('open');
-    const folded = [...body.children].map((block) => block.hasAttribute('data-geld-desc-fold'));
+    const folded = authorBlocks(body).map((block) => block.hasAttribute('data-geld-desc-fold'));
     expect(folded).toEqual([false, false, false, true, false, true, false, true]);
     body.querySelector<HTMLElement>('.markdown-heading h2')?.click();
     await frames();
@@ -190,6 +193,252 @@ describe('shortenDescription', () => {
     expect(needle?.hasAttribute('data-geld-desc-fold')).toBe(false);
   });
 
+  /** A description whose author wrote three levels, then CodeRabbit's summary, a Cursor badge row and more text. */
+  function mountWithTools(): { body: HTMLElement; blocks: Element[] } {
+    const body = mountDescription(
+      `${h(1, 'Plan')}<p>a</p>${h(2, 'Steps')}<p>b</p>${h(3, 'Details')}<p>c</p>` +
+        `${h(2, 'Summary by CodeRabbit')}<ul><li>Bug fixes</li></ul>` +
+        '<div><a href="https://cursor.com/agents/bc-1"><img alt="Open in Web" src="w.png"></a></div><p>after</p>',
+    );
+    return { body, blocks: [...body.children] };
+  }
+
+  const order = (node: Element | undefined | null): string => (node instanceof HTMLElement ? node.style.getPropertyValue('--geld-desc-order') : '');
+
+  it('gathers what tools appended at the foot under Agent notes, one closed heading per tool with its logo', () => {
+    const { body, blocks } = mountWithTools();
+    const [, , , , , c, coderabbit, list, badges, after] = blocks;
+    shortenDescription(true);
+    expect(body.hasAttribute('data-geld-desc-agents')).toBe(true);
+    const agents = body.querySelector('.geld-desc-agents');
+    expect(agents?.tagName).toBe('H2');
+    expect(agents?.textContent).toBe('Agent notes');
+    // The section heading over them folds nothing.
+    expect(agents?.querySelector('.geld-desc-toggle')).toBeNull();
+    const headings = [...body.querySelectorAll('.geld-desc-agent')];
+    expect(headings.map((heading) => [heading.tagName, heading.textContent, heading.getAttribute('data-geld-desc-heading')])).toEqual([
+      ['H3', 'CodeRabbit', 'closed'],
+      ['H3', 'Cursor', 'closed'],
+    ]);
+    expect(headings.every((heading) => heading.querySelector('.geld-desc-toggle') !== null && heading.querySelector('img.geld-desc-agent__logo') !== null)).toBe(true);
+    // Each heading stands just before its tool's content, both at the tool's order, after the author's text.
+    expect(headings[0]?.nextElementSibling).toBe(coderabbit);
+    expect([headings[0], list].map(order)).toEqual(['3', '3']);
+    expect([headings[1], badges].map(order)).toEqual(['4', '4']);
+    expect(order(after)).toBe('');
+    // The tool's own title is the injected heading's to stand for: hidden, with no chevron of its own.
+    expect(coderabbit?.hasAttribute('data-geld-desc-agent-hidden')).toBe(true);
+    expect(coderabbit?.querySelector('.geld-desc-toggle')).toBeNull();
+    expect(list?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    expect(badges?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    // The author's sections end before the tools: Details folds its own text and nothing after it.
+    expect(c?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    expect(after?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(after?.hasAttribute('data-geld-desc-depth')).toBe(false);
+  });
+
+  it('hides what tools appended while the digest’s Agent notes row shows it, and keeps the author’s text top level', () => {
+    const { body, blocks } = mountWithTools();
+    const [, , , , , c, coderabbit, list, badges, after] = blocks;
+    shortenDescription(true, { toolsAway: true });
+    expect(body.hasAttribute('data-geld-desc-tools')).toBe(true);
+    expect([coderabbit, list, badges].map((block) => block?.getAttribute('data-geld-desc-tool'))).toEqual(['coderabbit', 'coderabbit', 'cursor-agent']);
+    // No Agent notes heading is drawn, and the tool's own heading heads nothing.
+    expect(body.querySelector('.geld-desc-agents, .geld-desc-agent')).toBeNull();
+    expect(coderabbit?.querySelector('.geld-desc-toggle')).toBeNull();
+    expect(coderabbit?.hasAttribute('data-geld-desc-heading')).toBe(false);
+    expect(c?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    expect(after?.hasAttribute('data-geld-desc-tool')).toBe(false);
+    expect(after?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(after?.hasAttribute('data-geld-desc-depth')).toBe(false);
+    // The hidden blocks come after it in the DOM, so the author's last block is marked to end the box.
+    expect(after?.hasAttribute('data-geld-desc-last')).toBe(true);
+    // Without the digest's row, the same description gets its Agent notes again.
+    shortenDescription(true);
+    expect(body.hasAttribute('data-geld-desc-tools')).toBe(false);
+    expect(body.querySelector('[data-geld-desc-tool]')).toBeNull();
+    expect(body.querySelectorAll('.geld-desc-agent')).toHaveLength(2);
+    shortenDescription(false);
+    expect(body.querySelector('[data-geld-desc-tool], .geld-desc-agents')).toBeNull();
+  });
+
+  it('opens a tool’s content under its heading, as a section opens', async () => {
+    const { body, blocks } = mountWithTools();
+    const list = blocks[7];
+    shortenDescription(true);
+    body.querySelector<HTMLElement>('.geld-desc-agent')?.click();
+    await frames();
+    expect(body.querySelector('.geld-desc-agent')?.getAttribute('data-geld-desc-heading')).toBe('open');
+    expect(list?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(list?.hasAttribute('data-geld-desc-depth')).toBe(true);
+    // A pass after the click keeps it open.
+    shortenDescription(true);
+    expect(list?.hasAttribute('data-geld-desc-fold')).toBe(false);
+  });
+
+  it('gives a tool that wrote in two places one heading, holding both', () => {
+    // As on fleetdm/fleet#57633, whose description renders CodeRabbit's heading twice.
+    const body = mountDescription(`<p>mine</p>${h(2, 'Summary by CodeRabbit')}${h(2, 'Summary by CodeRabbit')}<ul><li>Breaking changes</li></ul>`);
+    shortenDescription(true);
+    expect([...body.querySelectorAll('.geld-desc-agent')].map((heading) => heading.textContent)).toEqual(['CodeRabbit']);
+    expect(body.querySelectorAll('[data-geld-desc-agent-hidden]')).toHaveLength(2);
+    expect(body.querySelector('ul')?.hasAttribute('data-geld-desc-fold')).toBe(true);
+  });
+
+  it('puts the description back as GitHub rendered it when turned off', () => {
+    const { body, blocks } = mountWithTools();
+    shortenDescription(true);
+    shortenDescription(false);
+    expect([...body.children]).toEqual(blocks);
+    expect(body.querySelector('[data-geld-desc-agent], [data-geld-desc-agent-hidden]')).toBeNull();
+    expect(body.hasAttribute('data-geld-desc-agents')).toBe(false);
+    expect(blocks.map(order).every((value) => value === '')).toBe(true);
+  });
+
+  it('adds nothing for a description without tools', () => {
+    const body = mountDescription(`${h(2, 'One')}<p>a</p>`);
+    shortenDescription(true);
+    expect(body.querySelector('.geld-desc-agents, .geld-desc-agent')).toBeNull();
+    expect(body.hasAttribute('data-geld-desc-agents')).toBe(false);
+  });
+
+  /** Lays `blocks` out at the given heights from the body's top, as a real page would; happy-dom lays out nothing. */
+  function layOut(body: HTMLElement, heights: ReadonlyMap<Element, number>): void {
+    Object.defineProperty(body, 'getBoundingClientRect', { configurable: true, value: () => new DOMRect(0, 0, 600, 0) });
+    let top = 0;
+    for (const [block, height] of heights) {
+      const start = top;
+      Object.defineProperty(block, 'getBoundingClientRect', { configurable: true, value: () => new DOMRect(0, start, 600, height) });
+      top += height;
+    }
+  }
+
+  it('trades places on screen between GitHub’s reactions row and the agents’ summaries, and ends the box 16px under them', async () => {
+    document.body.innerHTML =
+      '<div class="js-comment-container"><div class="js-comment">' +
+      `<div class="js-comment-body markdown-body"><p>mine</p>${h(2, 'Summary by CodeRabbit')}<ul><li>Bug fixes</li></ul></div>` +
+      '<div class="pr-review-reactions"><button>👍 1</button></div></div></div>';
+    const body = document.querySelector<HTMLElement>('.js-comment-body');
+    const box = document.querySelector('.js-comment');
+    const row = document.querySelector<HTMLElement>('.pr-review-reactions');
+    if (body === null || box === null || row === null) throw new Error('no comment');
+    shortenDescription(true);
+    const band = body.querySelector('.geld-desc-agents');
+    if (band === null) throw new Error('no band');
+    // The agents start at 100, the row stands at 300 (26 tall) and the box's edge is at 342.
+    const place = (element: Element, top: number, height: number): void => {
+      Object.defineProperty(element, 'getBoundingClientRect', { configurable: true, value: () => new DOMRect(0, top, 600, height) });
+      Object.defineProperty(element, 'getClientRects', { configurable: true, value: () => [new DOMRect(0, top, 600, height)] });
+    };
+    place(band, 100, 24);
+    place(row, 300, 26);
+    place(box, 0, 342);
+    body.querySelector<HTMLElement>('.geld-desc-agent')?.click();
+    await frames();
+    await frame();
+    expect(row.hasAttribute('data-geld-desc-lifted')).toBe(true);
+    expect(row.style.getPropertyValue('--geld-desc-lift')).toBe('-200px');
+    expect(body.style.getPropertyValue('--geld-desc-drop')).toBe('42px');
+    // The last block shown is the agents' last: the box ends the body's own padding below it.
+    expect(body.querySelectorAll('[data-geld-desc-last]')).toHaveLength(1);
+    expect(body.querySelector('[data-geld-desc-last]')?.tagName).toBe('UL');
+    shortenDescription(false);
+    expect(row.hasAttribute('data-geld-desc-lifted')).toBe(false);
+    expect(row.style.getPropertyValue('--geld-desc-lift')).toBe('');
+    expect(body.style.getPropertyValue('--geld-desc-drop')).toBe('');
+    expect(body.querySelector('[data-geld-desc-last]')).toBeNull();
+  });
+
+  it('draws the rails of the block the cut runs through above Show full description, which that block’s clip would hide', async () => {
+    const body = mountDescription(`${h(2, 'Summary')}<p>a</p><ul><li>one</li><li>two</li></ul><p>after</p>${h(2, 'Summary by CodeRabbit')}<ul><li>x</li></ul>`);
+    const [heading, a, list, after] = [...body.children];
+    if (heading === undefined || a === undefined || !(list instanceof HTMLElement) || after === undefined) throw new Error('no blocks');
+    layOut(body, new Map([[heading, 40], [a, 100], [list, 600], [after, 50]]));
+    shortenDescription(true);
+    // Opening an agent's section measures again and keeps the cut (happy-dom runs no ResizeObserver).
+    body.querySelector<HTMLElement>('.geld-desc-agent')?.click();
+    await frames();
+    await frame();
+    expect(list.hasAttribute('data-geld-desc-cut-edge')).toBe(true);
+    expect(list.style.getPropertyValue('--geld-desc-rails')).not.toBe('');
+    const more = body.querySelector<HTMLElement>(':scope > .geld-desc-more');
+    expect(more?.hasAttribute('data-geld-desc-carry')).toBe(true);
+    expect(more?.style.getPropertyValue('--geld-desc-rails')).toBe(list.style.getPropertyValue('--geld-desc-rails'));
+    expect(more?.style.getPropertyValue('--geld-desc-rail-pos')).toBe(list.style.getPropertyValue('--geld-desc-rail-pos'));
+    // From the list's top to the cut: 500 - 140.
+    expect(more?.style.getPropertyValue('--geld-desc-carry-height')).toBe('360px');
+    more?.click();
+    expect(body.querySelector('[data-geld-desc-carry]')).toBeNull();
+  });
+
+  it('cuts only the author’s text at 500px, the agents’ summaries below it untouched, and opening an agent keeps the cut', async () => {
+    const body = mountDescription(
+      `<p>one</p><p>two</p><p>three</p>${h(2, 'Summary by CodeRabbit')}<ul><li>Bug fixes</li></ul>`,
+    );
+    const [one, two, three, title, list] = [...body.children];
+    if (one === undefined || two === undefined || three === undefined || list === undefined) throw new Error('no blocks');
+    layOut(body, new Map([[one, 300], [two, 400], [three, 200]]));
+    shortenDescription(true);
+    // Opening an agent's section measures the body again, and does not lift the cut.
+    body.querySelector<HTMLElement>('.geld-desc-agent')?.click();
+    await frames();
+    await frame();
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(true);
+    expect(body.hasAttribute('data-geld-desc-long')).toBe(true);
+    expect(one.hasAttribute('data-geld-desc-cut-edge') || one.hasAttribute('data-geld-desc-cut')).toBe(false);
+    expect(two.hasAttribute('data-geld-desc-cut-edge')).toBe(true);
+    expect(two instanceof HTMLElement ? two.style.getPropertyValue('--geld-desc-cut-height') : '').toBe('200px');
+    expect(three.hasAttribute('data-geld-desc-cut')).toBe(true);
+    expect(three.getAttribute('hidden')).toBe('until-found');
+    expect([title, list].some((block) => block?.hasAttribute('data-geld-desc-cut') === true)).toBe(false);
+    expect(list.hasAttribute('data-geld-desc-fold')).toBe(false);
+    // Show full description, inside the body, lifts it.
+    const more = body.querySelector<HTMLButtonElement>(':scope > .geld-desc-more');
+    expect(more).not.toBeNull();
+    more?.click();
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
+    expect(body.querySelector('[data-geld-desc-cut], [data-geld-desc-cut-edge]')).toBeNull();
+    expect(three.hasAttribute('hidden')).toBe(false);
+  });
+
+  it('keeps the cut when a `<details>` in an agent’s summary opens', () => {
+    const body = mountDescription(
+      `<p>mine</p><details open=""><summary>Greptile Summary</summary><p>s</p></details>` +
+        '<p><sub>Reviews (1): <a href="https://app.greptile.com/api/retrigger?id=1">Re-trigger Greptile</a></sub></p>',
+    );
+    shortenDescription(true);
+    const details = body.querySelector('details');
+    if (details === null) throw new Error('no details');
+    expect(details.hasAttribute('data-geld-desc-agent')).toBe(true);
+    details.dispatchEvent(new Event('toggle'));
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(true);
+  });
+
+  it('keeps an agent’s section closed when nothing of the author’s comes before it', () => {
+    // As on MetaMask/snaps-directory#575, whose description is Bugbot's note alone.
+    const body = mountDescription(
+      '<div class="markdown-alert markdown-alert-note"><p class="markdown-alert-title">Note</p><p><strong>Low Risk</strong><br>Metadata only.</p>' +
+        '<p><sup>Written by <a href="https://cursor.com/dashboard?tab=bugbot">Cursor Bugbot</a> for commit <tt>3c2c48b</tt>.</sup></p></div>',
+    );
+    shortenDescription(true);
+    const heading = body.querySelector('.geld-desc-agent');
+    expect(heading?.textContent).toBe('Cursor Bugbot · Low Risk');
+    expect(heading?.getAttribute('data-geld-desc-heading')).toBe('closed');
+    expect(body.querySelector('.markdown-alert')?.hasAttribute('data-geld-desc-fold')).toBe(true);
+  });
+
+  it('hides a rule (`---`, `<hr>`) as it hides a blank heading, and leaves it out of the outline', () => {
+    const body = mountDescription(`${h(2, 'One')}<p>a</p><hr>${h(2, 'Two')}<p>b</p>`);
+    shortenDescription(true);
+    const rule = body.querySelector('hr');
+    expect(rule?.hasAttribute('data-geld-desc-blank')).toBe(true);
+    // The rule is no section's content: One folds its own text only.
+    expect(rule?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    expect(rule?.hasAttribute('data-geld-desc-depth')).toBe(false);
+    shortenDescription(false);
+    expect(rule?.hasAttribute('data-geld-desc-blank')).toBe(false);
+  });
+
   it('still opens the first section when a divider comes before it', () => {
     const body = mountDescription(`<h2>&nbsp;</h2>${h(2, 'Changes')}<p>a</p>${h(2, 'Testing')}<p>b</p>`);
     shortenDescription(true);
@@ -197,11 +446,12 @@ describe('shortenDescription', () => {
     expect(body.children[2]?.hasAttribute('data-geld-desc-fold')).toBe(false);
   });
 
-  it('opens a section on a click on its heading, independently of the others, and never cuts a description with headings', async () => {
+  it('opens a section on a click on its heading, independently of the others, and lifts the cut for good', async () => {
     const body = mountDescription(`${h(2, 'One')}<p>a</p>${h(2, 'Two')}<p>b</p>`);
     shortenDescription(true);
-    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
-    expect(document.querySelector('.geld-desc-more')).toBeNull();
+    // A description with headings is cut too, while it is still too tall once folded (the stylesheet's `-long`).
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(true);
+    expect(document.querySelector('.geld-desc-more')).not.toBeNull();
     body.querySelectorAll<HTMLElement>('.markdown-heading h2')[1]?.click();
     // The chevron turns at once, and the section shows only in the second frame, so the first paints the turn alone.
     expect(body.children[2]?.getAttribute('data-geld-desc-heading')).toBe('open');
@@ -212,9 +462,14 @@ describe('shortenDescription', () => {
     expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(false);
     expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(false);
     expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
-    // A pass after the click keeps what the reader chose.
+    expect(document.querySelector('.geld-desc-more')).toBeNull();
+    // A pass after the click keeps what the reader chose, and closing the section again does not bring the cut back.
     shortenDescription(true);
     expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(false);
+    body.querySelectorAll<HTMLElement>('.markdown-heading h2')[1]?.click();
+    await frames();
+    expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
   });
 
   it('folds with hidden="until-found", and opens every section around text find-in-page matched', () => {
@@ -302,6 +557,22 @@ describe('shortenDescription', () => {
     expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(false);
   });
 
+  it('keeps at least the fade’s height of a block the cut runs through near its top', async () => {
+    const body = mountDescription(
+      `<p>one</p><div class="highlight"><pre>code</pre></div>${h(2, 'Summary by CodeRabbit')}<ul><li>Bug fixes</li></ul>`,
+    );
+    const [one, code] = [...body.children];
+    if (one === undefined || !(code instanceof HTMLElement)) throw new Error('no blocks');
+    layOut(body, new Map([[one, 490], [code, 300]]));
+    shortenDescription(true);
+    // Opening an agent's section measures the body.
+    body.querySelector<HTMLElement>('.geld-desc-agent')?.click();
+    await frames();
+    await frame();
+    expect(code.hasAttribute('data-geld-desc-cut-edge')).toBe(true);
+    expect(code.style.getPropertyValue('--geld-desc-cut-height')).toBe('96px');
+  });
+
   it('lifts the cut for good on Show full description', () => {
     const body = mountDescription('<p>a long wall of text</p>');
     shortenDescription(true);
@@ -310,6 +581,56 @@ describe('shortenDescription', () => {
     expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
     expect(document.querySelector('.geld-desc-more')).toBeNull();
     shortenDescription(true);
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
+  });
+
+  it('cuts a long run of text above a heading near the end, and Show full description lifts it without opening the section', () => {
+    const body = mountDescription(`<p>one</p><p>two</p><p>three</p>${h(2, 'Notes')}<p>n</p>`);
+    shortenDescription(true);
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(true);
+    document.querySelector<HTMLButtonElement>('.geld-desc-more')?.click();
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
+    expect(body.children[4]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+  });
+
+  it('lifts the cut when the browser scrolls inside it to show text below, and keeps that text where it was', () => {
+    const body = mountDescription(`<p>one</p><p>two</p><p>needle</p>${h(2, 'Notes')}<p>n</p>`);
+    shortenDescription(true);
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(true);
+    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => undefined);
+    // The block the cut runs through is the one that scrolls (as `measure` marks it on a real page).
+    const edge = body.children[2];
+    if (!(edge instanceof HTMLElement)) throw new Error('no block');
+    edge.setAttribute('data-geld-desc-cut-edge', '');
+    edge.scrollTop = 120;
+    edge.dispatchEvent(new Event('scroll'));
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
+    expect(edge.hasAttribute('data-geld-desc-cut-edge')).toBe(false);
+    expect(scrollBy).toHaveBeenCalledWith({ top: 120, behavior: 'instant' });
+    scrollBy.mockRestore();
+  });
+
+  it('reads the height again after a section closes, so a description that now fits is not left under the fade', async () => {
+    const body = mountDescription(`${h(2, 'A')}<p>a</p>${h(2, 'B')}<p>b</p>`);
+    shortenDescription(true);
+    expect(body.children[0]?.getAttribute('data-geld-desc-heading')).toBe('open');
+    // As the cut body measured while the first section was open; the folded body is short now.
+    body.setAttribute('data-geld-desc-long', '');
+    Object.defineProperty(body, 'scrollHeight', { configurable: true, get: () => 300 });
+    body.querySelector<HTMLElement>('.markdown-heading h2')?.click();
+    await frames();
+    await frame();
+    expect(body.children[1]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    expect(body.hasAttribute('data-geld-desc-long')).toBe(false);
+  });
+
+  it('lifts the cut when find-in-page opens a folded section', () => {
+    const body = mountDescription(`<p>intro</p>${h(2, 'A')}<p>needle</p>`);
+    shortenDescription(true);
+    expect(body.hasAttribute('data-geld-desc-cap')).toBe(true);
+    const needle = body.children[2];
+    needle?.removeAttribute('hidden');
+    needle?.dispatchEvent(new Event('beforematch'));
     expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
   });
 
@@ -336,12 +657,12 @@ describe('shortenDescription', () => {
     expect(body.hasAttribute('data-geld-desc-cap')).toBe(false);
   });
 
-  it('puts one control after the body and removes everything when turned off', () => {
+  it('puts one control at the end of the body and removes everything when turned off', () => {
     const body = mountDescription('<p>only text</p>');
     shortenDescription(true);
     shortenDescription(true);
     expect(document.querySelectorAll('.geld-desc-more')).toHaveLength(1);
-    expect(body.nextElementSibling?.textContent).toBe('Show full description');
+    expect(body.lastElementChild?.textContent).toBe('Show full description');
     shortenDescription(false);
     expect(document.querySelector('.geld-desc-more, .geld-desc-toggle, [data-geld-desc-cap], [data-geld-desc-fold]')).toBeNull();
   });

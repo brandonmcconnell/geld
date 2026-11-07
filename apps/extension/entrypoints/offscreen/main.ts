@@ -1,5 +1,8 @@
 import { browser } from 'wxt/browser';
 import type { ColorSchemeMessage } from '../../src/lib/messages';
+import { installErrorCapture } from '../../src/lib/error-capture';
+
+installErrorCapture('offscreen');
 
 const query = window.matchMedia('(prefers-color-scheme: dark)');
 

@@ -31,8 +31,9 @@ export const CUSTOMERS: readonly Customer[] = [
   { name: 'Autumn', url: 'https://useautumn.com', logo: { src: '/logos/autumn.svg', aspect: 114 / 28, height: 26 }, markOnly: false },
   { name: 'Limetax', url: 'https://www.limetax.de', logo: { src: '/logos/limetax.svg', aspect: 95.254 / 16.001, height: 21 }, markOnly: false },
   { name: 'Mercury', url: 'https://mercury.com', logo: { src: '/logos/mercury.svg', aspect: 139 / 32, height: 36 }, markOnly: false },
-  { name: 'CodeRabbit', url: 'https://www.coderabbit.ai', logo: { src: '/logos/coderabbit.svg', aspect: 145 / 18, height: 19 }, markOnly: false },
+  { name: 'Neon', url: 'https://neon.com', logo: { src: '/logos/neon.svg', aspect: 99.16 / 28, height: 26 }, markOnly: false },
   { name: 'Notra', url: 'https://www.usenotra.com', logo: { src: '/logos/notra.svg', aspect: 1, height: 24 }, markOnly: true },
+  { name: 'Mintlify', url: 'https://www.mintlify.com', logo: { src: '/logos/mintlify.svg', aspect: 103.6 / 23, height: 23 }, markOnly: false },
   { name: 'Tripwire', url: 'https://tripwire.sh', logo: { src: '/logos/tripwire.svg', aspect: 485 / 99, height: 24 }, markOnly: false },
   { name: 'Loctax', url: 'https://www.loctax.com', logo: { src: '/logos/loctax.svg', aspect: 1, height: 22 }, markOnly: true },
 ];

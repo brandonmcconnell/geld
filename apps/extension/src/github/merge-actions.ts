@@ -33,6 +33,8 @@ export interface MergeBox {
   readonly mergeable: boolean;
   /** Whether the reader is an admin GitHub lets bypass the rules that block it. */
   readonly canBypass: boolean;
+  /** Blocked by what no bypass lifts: a merge conflict, or the repository's or the reader's own state. */
+  readonly unbypassable: boolean;
   /** The direct merge methods the repository allows the reader, GitHub's default first. */
   readonly methods: readonly MergeMethod[];
   /** GitHub's prefilled commit for the method asked for (none for a rebase). */
@@ -87,6 +89,9 @@ export function mergeableNow(requirementsState: unknown, mergeStateStatus: unkno
   return requirementsState === 'MERGEABLE_IF_STATUSES_PASS' && (mergeStateStatus === 'CLEAN' || mergeStateStatus === 'HAS_HOOKS');
 }
 
+/** The failed merge conditions GitHub's merge box treats as beyond an admin's bypass (conflicts, the repository's or the reader's state). */
+const UNBYPASSABLE: ReadonlySet<string> = new Set(['PULL_REQUEST_MERGE_CONFLICT_STATE', 'PULL_REQUEST_REPO_STATE', 'PULL_REQUEST_USER_STATE']);
+
 /** A `page_data/merge_box` answer, or null when it is not one. */
 export function parseMergeBox(payload: unknown): MergeBox | null {
   if (!isRecord(payload) || !isRecord(payload.pullRequest)) return null;
@@ -108,6 +113,7 @@ export function parseMergeBox(payload: unknown): MergeBox | null {
   const email = offered ? stringOf(requirements.defaultCommitAuthorEmail) : '';
   const conditions = Array.isArray(requirements.conditions) ? requirements.conditions : [];
   const stacked = conditions.some((condition) => isRecord(condition) && condition.type === 'STACK' && condition.isStacked === true);
+  const unbypassable = conditions.some((condition) => isRecord(condition) && condition.result === 'FAILED' && typeof condition.type === 'string' && UNBYPASSABLE.has(condition.type));
   const reviews = Array.isArray(pull.latestOpinionatedReviews) ? pull.latestOpinionatedReviews : [];
   const verdicts: ReviewVerdict[] = [];
   for (const review of reviews) {
@@ -126,6 +132,7 @@ export function parseMergeBox(payload: unknown): MergeBox | null {
     verdicts,
     mergeable: mergeableNow(requirements.state, pull.mergeStateStatus),
     canBypass: pull.viewerCanAdminBypassMergeRequirements === true,
+    unbypassable,
     methods,
     commitTitle: stringOf(requirements.commitMessageHeadline),
     commitMessage: stringOf(requirements.commitMessageBody),
@@ -159,8 +166,15 @@ export function mergeOffer(box: MergeBox, asBypass: MergeBox | null): MergeOffer
   return null;
 }
 
+/**
+ * As GitHub's merge box offers its bypass: to an admin, while the pull request would not merge on its own (or a queue
+ * stands in the way) and auto-merge is off. The box read past the rules still says unmergeable for a failing required
+ * check, so only conflicts and the like rule the bypass out.
+ */
 function bypassMerges(box: MergeBox, asBypass: MergeBox | null): boolean {
-  return box.canBypass && asBypass?.mergeable === true && (asBypass.methods.length > 0 || box.methods.length > 0);
+  if (!box.canBypass || box.autoMerging || box.unbypassable || asBypass?.unbypassable === true) return false;
+  if (box.mergeable && !box.canQueue) return false;
+  return (asBypass?.methods.length ?? 0) > 0 || box.methods.length > 0;
 }
 
 /**

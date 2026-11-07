@@ -2294,6 +2294,125 @@ var init_diff_summaries = __esm({
   }
 });
 
+// ../../packages/core/src/error-report.ts
+function scrubErrorText(text) {
+  const scrubbed = text.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, "<url>").replace(/\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/g, "<email>").replace(/(^|[\s(])@[\w-]+/g, "$1@<user>").replace(/[\w.-]+(?:\/[\w.-]+)+/g, "<path>").replace(/(["“”])([^"“”]*)["“”]/g, (whole, _open, inner) => inner.length > 40 || /\s/.test(inner) ? '"<text>"' : whole).replace(/\s+/g, " ").trim();
+  return scrubbed.length > MAX_ERROR_MESSAGE ? `${scrubbed.slice(0, MAX_ERROR_MESSAGE - 1)}\u2026` : scrubbed;
+}
+function scrubStack(stack, origin) {
+  const frames = [];
+  for (const line of stack.split("\n")) {
+    const at = line.indexOf(origin);
+    if (at === -1) continue;
+    const location = /^([^\s):]+:\d+(?::\d+)?)/.exec(line.slice(at + origin.length))?.[1];
+    if (location === void 0) continue;
+    const chrome = /^\s*at\s+(?:async\s+)?([^\s(]+)\s+\(/.exec(line)?.[1];
+    const other = /^([^@\s]+)@/.exec(line.trim())?.[1];
+    const name = chrome ?? other;
+    const frame = name === void 0 || name.includes("/") ? location : `${name} ${location}`;
+    frames.push(frame.slice(0, MAX_FRAME));
+    if (frames.length === MAX_STACK_FRAMES) break;
+  }
+  return frames;
+}
+function hasStack(value) {
+  return typeof value === "object" && value !== null && "stack" in value && typeof value.stack === "string";
+}
+function isOwnError(value, origin, filename = "") {
+  if (origin === "") return false;
+  if (filename.startsWith(origin)) return true;
+  return hasStack(value) && value.stack.includes(origin);
+}
+function messageOf(value) {
+  if (value instanceof Error) return value.name === "Error" ? value.message : `${value.name}: ${value.message}`;
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+function errorReportFrom(input3) {
+  return {
+    where: WHERE.test(input3.where) ? input3.where : "unknown",
+    kind: input3.kind,
+    message: scrubErrorText(messageOf(input3.error)) || "(no message)",
+    stack: hasStack(input3.error) ? scrubStack(input3.error.stack, input3.origin) : [],
+    count: 1,
+    firstAt: input3.at,
+    lastAt: input3.at
+  };
+}
+function reportKey(report) {
+  return `${report.where}\0${report.kind}\0${report.message}\0${report.stack[0] ?? ""}`;
+}
+function mergeErrorReports(existing, incoming, cap = MAX_ERRORS_PER_PAYLOAD) {
+  const merged = /* @__PURE__ */ new Map();
+  for (const report of [...existing, ...incoming]) {
+    const key = reportKey(report);
+    const prior = merged.get(key);
+    merged.delete(key);
+    merged.set(
+      key,
+      prior === void 0 ? report : { ...prior, count: prior.count + report.count, firstAt: Math.min(prior.firstAt, report.firstAt), lastAt: Math.max(prior.lastAt, report.lastAt) }
+    );
+  }
+  return [...merged.values()].slice(-cap);
+}
+function isRecord4(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isTime(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+function parseReport(value) {
+  if (!isRecord4(value)) return null;
+  const { where, kind, message, stack, count, firstAt, lastAt } = value;
+  if (typeof where !== "string" || !WHERE.test(where)) return null;
+  if (kind !== "error" && kind !== "rejection") return null;
+  if (typeof message !== "string" || !Array.isArray(stack) || !stack.every((frame) => typeof frame === "string")) return null;
+  if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || !isTime(firstAt) || !isTime(lastAt)) return null;
+  return {
+    where,
+    kind,
+    message: scrubErrorText(message),
+    stack: stack.slice(0, MAX_STACK_FRAMES).filter((frame) => frame.length <= MAX_FRAME && FRAME.test(frame)),
+    count: Math.min(count, 1e6),
+    firstAt,
+    lastAt
+  };
+}
+function parseErrorReports(value) {
+  if (!Array.isArray(value) || value.length > MAX_ERRORS_PER_PAYLOAD) return null;
+  const reports = value.map(parseReport);
+  return reports.every((report) => report !== null) ? reports : null;
+}
+function parseErrorPayload(value) {
+  if (!isRecord4(value) || value.v !== ERROR_PAYLOAD_VERSION) return null;
+  const { version: version2, browser, errors } = value;
+  if (typeof version2 !== "string" || !VERSION.test(version2)) return null;
+  const known = BROWSERS.find((candidate) => candidate === browser);
+  if (known === void 0) return null;
+  const reports = parseErrorReports(errors);
+  if (reports === null || reports.length === 0) return null;
+  return { v: ERROR_PAYLOAD_VERSION, version: version2, browser: known, errors: reports };
+}
+var ERROR_PAYLOAD_VERSION, MAX_ERRORS_PER_PAYLOAD, MAX_ERROR_MESSAGE, MAX_STACK_FRAMES, MAX_FRAME, WHERE, VERSION, BROWSERS, FRAME;
+var init_error_report = __esm({
+  "../../packages/core/src/error-report.ts"() {
+    "use strict";
+    ERROR_PAYLOAD_VERSION = 1;
+    MAX_ERRORS_PER_PAYLOAD = 25;
+    MAX_ERROR_MESSAGE = 300;
+    MAX_STACK_FRAMES = 12;
+    MAX_FRAME = 160;
+    WHERE = /^[a-z][a-z0-9:-]{0,40}$/;
+    VERSION = /^\d+(?:\.\d+){0,3}$/;
+    BROWSERS = ["chrome", "edge", "firefox", "safari", "other"];
+    FRAME = /^(?:[\w$.<>[\]]+ )?[\w.-]+(?:\/[\w.-]+)*:\d+(?::\d+)?$/;
+  }
+});
+
 // ../../packages/core/src/format.ts
 function formatCount(value) {
   return numberFormatter.format(Math.max(0, value));
@@ -2458,7 +2577,9 @@ function isCompactTimelineMode(value) {
   return typeof value === "string" && COMPACT_TIMELINE_MODES.some((mode) => mode === value);
 }
 function normalizeAiBaseUrl(value) {
-  return value.trim().replace(/\/+$/, "").replace(/\/(?:v\d+|typesafe)$/i, "").replace(/\/+$/, "");
+  const trimmed = value.trim();
+  const withScheme2 = trimmed === "" || /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  return withScheme2.replace(/\/+$/, "").replace(/\/(?:v\d+|typesafe)$/i, "").replace(/\/+$/, "");
 }
 function isStringArray(value) {
   return Array.isArray(value) && value.every((entry2) => typeof entry2 === "string");
@@ -2467,12 +2588,12 @@ function bool(record4, key, fallback) {
   const value = record4[key];
   return typeof value === "boolean" ? value : fallback;
 }
-function isRecord4(value) {
+function isRecord5(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function readCategories(value, legacyHideTests, customIds) {
   const result = {};
-  if (isRecord4(value)) {
+  if (isRecord5(value)) {
     for (const [key, enabled] of Object.entries(value)) {
       if (typeof enabled !== "boolean") continue;
       if (key === "large") continue;
@@ -2485,7 +2606,7 @@ function readCategories(value, legacyHideTests, customIds) {
 }
 function readAutoViewed(value, customIds) {
   const result = {};
-  if (!isRecord4(value)) return result;
+  if (!isRecord5(value)) return result;
   for (const [key, on] of Object.entries(value)) {
     if (typeof on === "boolean" && (isCategoryId(key) || isCustomCategoryId(key) && customIds.has(key))) result[key] = on;
   }
@@ -2493,13 +2614,13 @@ function readAutoViewed(value, customIds) {
 }
 function readGroups(value, legacyTestGroups) {
   const result = {};
-  if (isRecord4(value)) {
+  if (isRecord5(value)) {
     for (const [key, enabled] of Object.entries(value)) {
       if (key.startsWith("large/")) continue;
       if (isWellFormedGroupKey(key) && typeof enabled === "boolean") result[key] = enabled;
     }
   }
-  if (isRecord4(legacyTestGroups)) {
+  if (isRecord5(legacyTestGroups)) {
     for (const [key, enabled] of Object.entries(legacyTestGroups)) {
       if (isTestPatternGroupId(key) && typeof enabled === "boolean" && result[groupKey("tests", key)] === void 0) {
         result[groupKey("tests", key)] = enabled;
@@ -2510,7 +2631,7 @@ function readGroups(value, legacyTestGroups) {
 }
 function readCategoryPatterns(value, legacyCustomPatterns) {
   const result = {};
-  if (isRecord4(value)) {
+  if (isRecord5(value)) {
     for (const [key, lines2] of Object.entries(value)) {
       if (key !== "large" && isCategoryId(key) && isStringArray(lines2) && lines2.length > 0) result[key] = lines2;
     }
@@ -2521,7 +2642,7 @@ function readCategoryPatterns(value, legacyCustomPatterns) {
   return result;
 }
 function readCustomCategory(value, taken) {
-  if (!isRecord4(value)) return null;
+  if (!isRecord5(value)) return null;
   const { id, title, icon, patterns, noun, nounPlural } = value;
   if (!isCustomCategoryId(id) || taken.has(id)) return null;
   if (typeof title !== "string" || title.trim() === "") return null;
@@ -2620,6 +2741,7 @@ function normalizeSettings(value) {
     shortcutEnabled: bool(record4, "shortcutEnabled", DEFAULT_SETTINGS.shortcutEnabled),
     showBadge: bool(record4, "showBadge", DEFAULT_SETTINGS.showBadge),
     autoUpdatePatterns: bool(record4, "autoUpdatePatterns", DEFAULT_SETTINGS.autoUpdatePatterns),
+    errorReports: bool(record4, "errorReports", DEFAULT_SETTINGS.errorReports),
     enterpriseHosts: isStringArray(record4.enterpriseHosts) ? record4.enterpriseHosts.map(normalizeHost).filter((host) => host !== null) : DEFAULT_SETTINGS.enterpriseHosts,
     repoConfigs: isRepoConfigMode(record4.repoConfigs) ? record4.repoConfigs : DEFAULT_SETTINGS.repoConfigs,
     prOverview: bool(record4, "prOverview", DEFAULT_SETTINGS.prOverview),
@@ -2627,12 +2749,14 @@ function normalizeSettings(value) {
     reviewGrouping: isReviewGrouping(record4.reviewGrouping) ? record4.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
     collapseDescription: bool(record4, "collapseDescription", DEFAULT_SETTINGS.collapseDescription),
     quickReview: bool(record4, "quickReview", DEFAULT_SETTINGS.quickReview),
+    holdToMerge: bool(record4, "holdToMerge", DEFAULT_SETTINGS.holdToMerge),
     reviewBots: isStringArray(record4.reviewBots) ? record4.reviewBots : DEFAULT_SETTINGS.reviewBots,
     aiEnabled: bool(record4, "aiEnabled", DEFAULT_SETTINGS.aiEnabled),
     aiBaseUrl: typeof record4.aiBaseUrl === "string" ? normalizeAiBaseUrl(record4.aiBaseUrl) : DEFAULT_SETTINGS.aiBaseUrl,
     issueTracker: parseIssueTracker(record4.issueTracker),
     aiModel: typeof record4.aiModel === "string" ? record4.aiModel.trim() : DEFAULT_SETTINGS.aiModel,
     aiJev: bool(record4, "aiJev", DEFAULT_SETTINGS.aiJev),
+    aiDecisionModel: typeof record4.aiDecisionModel === "string" ? record4.aiDecisionModel.trim() : DEFAULT_SETTINGS.aiDecisionModel,
     suggestedFixes: isSuggestedFixMode(record4.suggestedFixes) ? record4.suggestedFixes : DEFAULT_SETTINGS.suggestedFixes
   };
 }
@@ -2723,6 +2847,7 @@ var init_settings = __esm({
       shortcutEnabled: true,
       showBadge: true,
       autoUpdatePatterns: true,
+      errorReports: false,
       enterpriseHosts: [],
       repoConfigs: "ask",
       prOverview: true,
@@ -2730,12 +2855,14 @@ var init_settings = __esm({
       reviewGrouping: "type",
       collapseDescription: true,
       quickReview: true,
+      holdToMerge: false,
       reviewBots: [],
       aiEnabled: false,
       aiBaseUrl: "",
       aiModel: "",
       issueTracker: null,
       aiJev: false,
+      aiDecisionModel: "",
       suggestedFixes: "bots"
     };
     SETTINGS_STORAGE_KEY = "sync:settings";
@@ -2784,7 +2911,7 @@ function testSyntaxProblem(line) {
   const parsed = parseTestSyntax(line);
   return "problem" in parsed ? parsed.problem : null;
 }
-function isRecord5(value) {
+function isRecord6(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function describeValue(value) {
@@ -2800,7 +2927,7 @@ function list(values) {
 }
 function checkBooleanMap(issues, path, value, known, isAcceptable, noun) {
   if (value === void 0) return;
-  if (!isRecord5(value)) {
+  if (!isRecord6(value)) {
     issues.push({ path, message: `Expected an object mapping ${noun} ids to true/false, got ${describeValue(value)}.` });
     return;
   }
@@ -2857,7 +2984,7 @@ function hostProblem(line) {
 }
 function checkCategoryPatterns(issues, path, value) {
   if (value === void 0) return;
-  if (!isRecord5(value)) {
+  if (!isRecord6(value)) {
     issues.push({ path, message: `Expected an object mapping category ids to pattern lists, got ${describeValue(value)}.` });
     return;
   }
@@ -2879,7 +3006,7 @@ function checkCustomCategories(issues, path, value) {
   const seen = /* @__PURE__ */ new Set();
   value.forEach((entry2, index) => {
     const entryPath = `${path}[${index}]`;
-    if (!isRecord5(entry2)) {
+    if (!isRecord6(entry2)) {
       issues.push({ path: entryPath, message: `Expected a category object, got ${describeValue(entry2)}.` });
       return;
     }
@@ -2908,7 +3035,7 @@ function checkCustomCategories(issues, path, value) {
 }
 function collectSettingsIssues(value, path = "settings", catalog = BUNDLED_CATALOG) {
   const issues = [];
-  if (!isRecord5(value)) {
+  if (!isRecord6(value)) {
     issues.push({ path, message: `Expected an object of settings, got ${describeValue(value)}.` });
     return issues;
   }
@@ -2939,6 +3066,9 @@ function collectSettingsIssues(value, path = "settings", catalog = BUNDLED_CATAL
   if (value.issueTracker !== void 0 && value.issueTracker !== null && !parseIssueTracker(value.issueTracker)) issues.push({ path: `${path}.issueTracker`, message: "Invalid issue tracker configuration." });
   if (value.aiModel !== void 0 && typeof value.aiModel !== "string") {
     issues.push({ path: `${path}.aiModel`, message: `Expected a string, got ${describeValue(value.aiModel)}.` });
+  }
+  if (value.aiDecisionModel !== void 0 && typeof value.aiDecisionModel !== "string") {
+    issues.push({ path: `${path}.aiDecisionModel`, message: `Expected a string, got ${describeValue(value.aiDecisionModel)}.` });
   }
   checkBooleanMap(issues, `${path}.categories`, value.categories, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key) || isWellFormedId(key), "category");
   checkBooleanMap(issues, `${path}.autoViewed`, value.autoViewed, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key) || isWellFormedId(key), "category");
@@ -3092,7 +3222,7 @@ function validateSettingsDocument(content, catalog = BUNDLED_CATALOG) {
   } catch (error61) {
     return { ok: false, issues: [jsonIssue(content, error61)] };
   }
-  if (!isRecord5(parsed)) {
+  if (!isRecord6(parsed)) {
     return { ok: false, issues: [{ path: "$", message: `Expected a JSON object at the top level, got ${describeValue(parsed)}.` }] };
   }
   const issues = [];
@@ -3109,7 +3239,7 @@ function validateSettingsDocument(content, catalog = BUNDLED_CATALOG) {
   return { ok: true, settings: normalizeSettings(body) };
 }
 function validateSettingsValue(value, catalog = BUNDLED_CATALOG) {
-  const wrapped = isRecord5(value) && "settings" in value;
+  const wrapped = isRecord6(value) && "settings" in value;
   const body = wrapped ? value.settings : value;
   const issues = collectSettingsIssues(body, wrapped ? "settings" : "$", catalog);
   if (issues.length > 0) return { ok: false, issues };
@@ -3147,8 +3277,10 @@ var init_settings_validate = __esm({
       "shortcutEnabled",
       "showBadge",
       "autoUpdatePatterns",
+      "errorReports",
       "prOverview",
       "quickReview",
+      "holdToMerge",
       "collapseDescription",
       "aiEnabled",
       "aiJev"
@@ -3157,7 +3289,7 @@ var init_settings_validate = __esm({
 });
 
 // ../../packages/core/src/gist-sync.ts
-function isRecord6(value) {
+function isRecord7(value) {
   return typeof value === "object" && value !== null;
 }
 function serializeSettingsPayload(settings, now = /* @__PURE__ */ new Date()) {
@@ -3168,7 +3300,7 @@ function serializeSettingsPayload(settings, now = /* @__PURE__ */ new Date()) {
 function parseSettingsPayload(content) {
   try {
     const parsed = JSON.parse(content);
-    if (!isRecord6(parsed)) return null;
+    if (!isRecord7(parsed)) return null;
     return normalizeSettings("settings" in parsed ? parsed.settings : parsed);
   } catch {
     return null;
@@ -3191,7 +3323,7 @@ async function api(token, path, init = {}) {
 }
 async function fetchGitHubProfile(token) {
   const body = await api(token, "/user");
-  if (!isRecord6(body)) throw new Error("Unexpected profile response.");
+  if (!isRecord7(body)) throw new Error("Unexpected profile response.");
   const login = body.login;
   const id = body.id;
   const avatarUrl = body.avatar_url;
@@ -3201,11 +3333,11 @@ async function fetchGitHubProfile(token) {
   return { login, id, avatarUrl };
 }
 function readGist(value) {
-  if (!isRecord6(value)) return null;
+  if (!isRecord7(value)) return null;
   const id = value.id;
   const updatedAt = value.updated_at;
   const files = value.files;
-  if (typeof id !== "string" || typeof updatedAt !== "string" || !isRecord6(files)) return null;
+  if (typeof id !== "string" || typeof updatedAt !== "string" || !isRecord7(files)) return null;
   const htmlUrl = typeof value.html_url === "string" ? value.html_url : `https://gist.github.com/${id}`;
   return { id, updatedAt, htmlUrl, hasFile: GIST_FILE in files };
 }
@@ -3222,9 +3354,9 @@ async function findSettingsGist(token) {
 async function readRemoteContent(token, gistId) {
   const gist = await api(token, `/gists/${gistId}`);
   const summary = readGist(gist);
-  if (summary === null || !isRecord6(gist) || !isRecord6(gist.files)) return null;
+  if (summary === null || !isRecord7(gist) || !isRecord7(gist.files)) return null;
   const file2 = gist.files[GIST_FILE];
-  if (!isRecord6(file2)) return null;
+  if (!isRecord7(file2)) return null;
   let content = typeof file2.content === "string" ? file2.content : null;
   if ((content === null || file2.truncated === true) && typeof file2.raw_url === "string") {
     const raw = await fetch(file2.raw_url, { headers: { Authorization: `Bearer ${token}` } });
@@ -3267,7 +3399,7 @@ function settingsEqual(a, b) {
 }
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (isRecord6(value)) {
+  if (isRecord7(value)) {
     return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
   }
   return JSON.stringify(value);
@@ -10766,7 +10898,7 @@ function checkReviewBots(issues, path, value, knownBots) {
 function collectRepoConfigIssues(value, catalog = BUNDLED_CATALOG, path = "$", knownBots = null) {
   const issues = [];
   if (value === null || value === void 0) return issues;
-  if (!isRecord5(value)) {
+  if (!isRecord6(value)) {
     issues.push({ path, message: `Expected a mapping of settings, got ${describeValue(value)}.` });
     return issues;
   }
@@ -10784,7 +10916,7 @@ function collectRepoConfigIssues(value, catalog = BUNDLED_CATALOG, path = "$", k
   checkCategoryPatterns(issues, at("categoryPatterns"), value.categoryPatterns);
   checkCustomCategories(issues, at("customCategories"), value.customCategories);
   checkReviewBots(issues, at("reviewBots"), value.reviewBots, knownBots);
-  if (value.review !== void 0 && (!isRecord5(value.review) || typeof value.review.ai !== "boolean")) issues.push({ path: at("review.ai"), message: "Expected a boolean AI policy." });
+  if (value.review !== void 0 && (!isRecord6(value.review) || typeof value.review.ai !== "boolean")) issues.push({ path: at("review.ai"), message: "Expected a boolean AI policy." });
   if (value.issueTracker !== void 0 && !parseIssueTracker(value.issueTracker)) issues.push({ path: at("issueTracker"), message: "Expected a supported tracker, allowed keys and an HTTPS origin." });
   return issues;
 }
@@ -10795,7 +10927,7 @@ function reviewBotsOf(value) {
   return ids;
 }
 function parseRepoConfig(text, catalog = BUNDLED_CATALOG, knownBots = null) {
-  const doc = (0, import_yaml.parseDocument)(text, { prettyErrors: true, uniqueKeys: true });
+  const doc = (0, import_yaml.parseDocument)(text, { prettyErrors: true, uniqueKeys: true, logLevel: "error" });
   if (doc.errors.length > 0) {
     return {
       ok: false,
@@ -10814,7 +10946,7 @@ function parseRepoConfig(text, catalog = BUNDLED_CATALOG, knownBots = null) {
   }
   const issues = collectRepoConfigIssues(value, catalog, "$", knownBots);
   if (issues.length > 0) return { ok: false, issues };
-  if (value === null || value === void 0 || !isRecord5(value)) return { ok: true, config: EMPTY_REPO_CONFIG };
+  if (value === null || value === void 0 || !isRecord6(value)) return { ok: true, config: EMPTY_REPO_CONFIG };
   const normalized = normalizeSettings(value);
   const issueTracker = parseIssueTracker(value.issueTracker);
   return {
@@ -10826,7 +10958,7 @@ function parseRepoConfig(text, catalog = BUNDLED_CATALOG, knownBots = null) {
       customCategories: normalized.customCategories,
       reviewBots: reviewBotsOf(value),
       ...issueTracker ? { issueTracker } : {},
-      ...isRecord5(value.review) && typeof value.review.ai === "boolean" ? { review: { ai: value.review.ai } } : {}
+      ...isRecord6(value.review) && typeof value.review.ai === "boolean" ? { review: { ai: value.review.ai } } : {}
     }
   };
 }
@@ -10928,6 +11060,7 @@ var init_repo_config = __esm({
       "shortcutEnabled",
       "showBadge",
       "autoUpdatePatterns",
+      "errorReports",
       "enterpriseHosts",
       "repoConfigs",
       "hideTests",
@@ -10939,6 +11072,7 @@ var init_repo_config = __esm({
       "collapseDescription",
       "aiBaseUrl",
       "aiModel",
+      "aiDecisionModel",
       "suggestedFixes",
       "autoViewed",
       "testOutline",
@@ -11039,6 +11173,26 @@ var init_repo_rules = __esm({
 });
 
 // ../../packages/core/src/settings-schema.ts
+function presetBlank(value) {
+  const match = PRESET_BLANK.exec(value);
+  return match === null ? null : { start: match.index, end: match.index + match[0].length };
+}
+function presetMatches(preset, value) {
+  if (value === "") return false;
+  if (presetBlank(preset.value) === null) return value === preset.value;
+  const pattern = preset.value.split(/(\{[a-z]+\})/i).map((part) => PRESET_BLANK.test(part) ? "[^/.{}\\s]+" : part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("");
+  return new RegExp(`^${pattern}$`, "i").test(value);
+}
+function presetGroups(presets) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const preset of presets) {
+    const key = preset.group ?? null;
+    const list2 = groups.get(key);
+    if (list2 === void 0) groups.set(key, [preset]);
+    else list2.push(preset);
+  }
+  return [...groups].map(([group, list2]) => ({ group, presets: list2 }));
+}
 function visibleOn(field, surface) {
   return field.surfaces === void 0 || field.surfaces.includes(surface);
 }
@@ -11092,10 +11246,11 @@ function splitInlineCode(copy) {
 function plainText(copy) {
   return splitInlineCode(copy).map((run2) => run2.text).join("");
 }
-var SETTINGS_SCHEMA;
+var PRESET_BLANK, SETTINGS_SCHEMA;
 var init_settings_schema = __esm({
   "../../packages/core/src/settings-schema.ts"() {
     "use strict";
+    PRESET_BLANK = /\{[a-z]+\}/i;
     SETTINGS_SCHEMA = [
       {
         id: "general",
@@ -11130,7 +11285,7 @@ var init_settings_schema = __esm({
             kind: "toggle",
             key: "collapseDescription",
             label: "Shorten the description",
-            description: "Fold each section of the pull request description under its heading. A long description with no headings is cut to 500px with a control to show the rest.",
+            description: "Fold each section of the pull request description under its heading. A description still taller than 500px is cut there with a control to show the rest.",
             popup: true,
             popupDescription: "Fold its sections under their headings."
           },
@@ -11191,6 +11346,14 @@ var init_settings_schema = __esm({
             key: "autoUpdatePatterns",
             label: "Keep built-in patterns up to date",
             description: "Once a day Geld fetches the built-in pattern catalog from its GitHub repository (`api.github.com`, no sign-in) and uses it if it is newer, so new conventions are recognised without waiting for a store release. The file is signed; anything that does not verify is ignored. Which categories are on, and your own patterns, never change this way.",
+            popup: false,
+            surfaces: ["extension"]
+          },
+          {
+            kind: "toggle",
+            key: "errorReports",
+            label: "Send error reports",
+            description: "When part of Geld breaks, send the error and where in Geld\u2019s code it happened to `geld.sh`, with the version and browser. Addresses, repository and file names, people and page text are removed first. Off: errors stay on this device, in Copy diagnostics.",
             popup: false,
             surfaces: ["extension"]
           }
@@ -11417,6 +11580,13 @@ var init_settings_schema = __esm({
             popup: false
           },
           {
+            kind: "toggle",
+            key: "holdToMerge",
+            label: "Hold \u2318 to merge from the status pill",
+            description: "While \u2318 (Ctrl on Windows and Linux) is held, the pull request\u2019s status pill becomes a Merge button whenever GitHub would merge it now. Off, the pill only opens its menu of statuses.",
+            popup: false
+          },
+          {
             kind: "list",
             key: "reviewBots",
             label: "Extra review bots",
@@ -11455,15 +11625,41 @@ var init_settings_schema = __esm({
             kind: "text",
             key: "aiBaseUrl",
             label: "AI gateway URL",
-            description: "An OpenAI-compatible base URL: Vercel AI Gateway, OpenRouter, OpenAI, or your own. Paste it with or without the `/v1`; requests add their own path. The key stays on this device (`storage.local`, never the gist).",
+            description: "Any OpenAI-compatible base URL: a gateway, a provider, a model on this computer, or your own. Paste it with or without the `/v1`, requests add their own path. The key stays on this device (`storage.local`, never the gist).",
             popup: false,
             placeholder: "https://ai-gateway.vercel.sh",
             autocomplete: "off",
             surfaces: ["extension"],
             presets: [
-              { label: "Vercel AI Gateway", value: "https://ai-gateway.vercel.sh" },
-              { label: "OpenRouter", value: "https://openrouter.ai/api" },
-              { label: "OpenAI", value: "https://api.openai.com" }
+              { group: "Gateways", label: "Vercel AI Gateway", value: "https://ai-gateway.vercel.sh" },
+              { group: "Gateways", label: "OpenRouter", value: "https://openrouter.ai/api" },
+              {
+                group: "Gateways",
+                label: "Cloudflare AI Gateway",
+                value: "https://api.cloudflare.com/client/v4/accounts/{account}/ai",
+                note: "Fill in your Cloudflare account ID. The key is a Cloudflare API token, and models are named like `openai/gpt-4.1`."
+              },
+              { group: "Providers", label: "OpenAI", value: "https://api.openai.com" },
+              {
+                group: "Providers",
+                label: "Amazon Bedrock",
+                value: "https://bedrock-mantle.{region}.api.aws",
+                note: "Fill in your AWS region, such as `us-east-1`. The key is an Amazon Bedrock API key."
+              },
+              {
+                group: "Providers",
+                label: "Azure OpenAI",
+                value: "https://{resource}.openai.azure.com/openai",
+                note: "Fill in your Azure OpenAI resource name. Models are your deployment names."
+              },
+              { group: "Providers", label: "Google Gemini", value: "https://generativelanguage.googleapis.com/v1beta/openai" },
+              { group: "Providers", label: "Groq", value: "https://api.groq.com/openai" },
+              {
+                group: "On this computer",
+                label: "Ollama",
+                value: "http://localhost:11434",
+                note: "Ollama ignores the key, so any text will do. Start it with `OLLAMA_ORIGINS=chrome-extension://*,moz-extension://*` so it answers browser extensions."
+              }
             ]
           },
           {
@@ -11479,9 +11675,19 @@ var init_settings_schema = __esm({
           {
             kind: "toggle",
             key: "aiJev",
-            label: "Use Jev for decisions",
-            description: "TypeSafe\u2019s Jev answers typed questions with calibrated probabilities instead of prose, in milliseconds and for a fraction of the cost. With it on, Geld asks Jev which findings report the same problem before the AI model rewrites them; off, the AI model decides that itself.",
+            label: "Use a decision model",
+            description: "A decision model answers typed questions with calibrated probabilities instead of prose, in milliseconds and for a fraction of the cost. With it on, Geld asks it which findings report the same problem before the AI model rewrites them, and what each folded comment is. Off, the AI model decides that itself.",
             popup: false,
+            surfaces: ["extension"]
+          },
+          {
+            kind: "text",
+            key: "aiDecisionModel",
+            label: "Decision model",
+            description: "Listed from the gateway when it serves decision models (Vercel AI Gateway, OpenRouter, OpenAI). Leave it on automatic for TypeSafe\u2019s Jev where the gateway offers it, the gateway\u2019s own decision model otherwise, or Jev with a TypeSafe key of your own.",
+            popup: false,
+            placeholder: "Automatic",
+            autocomplete: "off",
             surfaces: ["extension"]
           }
         ]
@@ -11639,11 +11845,15 @@ __export(src_exports, {
   DEFAULT_SETTINGS: () => DEFAULT_SETTINGS,
   EMPTY_REPO_CONFIG: () => EMPTY_REPO_CONFIG,
   EMPTY_TOTALS: () => EMPTY_TOTALS,
+  ERROR_PAYLOAD_VERSION: () => ERROR_PAYLOAD_VERSION,
   GIST_DESCRIPTION: () => GIST_DESCRIPTION,
   GIST_FILE: () => GIST_FILE,
   ISSUE_TRACKERS: () => ISSUE_TRACKERS,
   LARGE_CHANGE_LINES: () => LARGE_CHANGE_LINES,
   ListSurfaceError: () => ListSurfaceError,
+  MAX_ERRORS_PER_PAYLOAD: () => MAX_ERRORS_PER_PAYLOAD,
+  MAX_ERROR_MESSAGE: () => MAX_ERROR_MESSAGE,
+  MAX_STACK_FRAMES: () => MAX_STACK_FRAMES,
   ORG_CONFIG_PATHS: () => ORG_CONFIG_PATHS,
   ORG_CONFIG_REPO: () => ORG_CONFIG_REPO,
   REPO_CONFIG_MODES: () => REPO_CONFIG_MODES,
@@ -11695,6 +11905,7 @@ __export(src_exports, {
   describeValue: () => describeValue,
   diffSummariesUrl: () => diffSummariesUrl,
   diffstatSurfaceJson: () => diffstatSurfaceJson,
+  errorReportFrom: () => errorReportFrom,
   expandBraces: () => expandBraces,
   fetchGitHubProfile: () => fetchGitHubProfile,
   fieldsFor: () => fieldsFor,
@@ -11724,7 +11935,8 @@ __export(src_exports, {
   isEmptyRepoConfig: () => isEmptyRepoConfig,
   isGroupEnabled: () => isGroupEnabled,
   isGroupKey: () => isGroupKey,
-  isRecord: () => isRecord5,
+  isOwnError: () => isOwnError,
+  isRecord: () => isRecord6,
   isRepoConfigMode: () => isRepoConfigMode,
   isReviewGrouping: () => isReviewGrouping,
   isSuggestedFixMode: () => isSuggestedFixMode,
@@ -11736,6 +11948,7 @@ __export(src_exports, {
   listFields: () => listFields,
   listSurfaceJson: () => listSurfaceJson,
   mergeCustomCategoryEdit: () => mergeCustomCategoryEdit,
+  mergeErrorReports: () => mergeErrorReports,
   newCommentScanState: () => newCommentScanState,
   normalizeAiBaseUrl: () => normalizeAiBaseUrl,
   normalizeAuthorRule: () => normalizeAuthorRule,
@@ -11748,6 +11961,8 @@ __export(src_exports, {
   parseCount: () => parseCount,
   parseDiffSummaries: () => parseDiffSummaries,
   parseDiffstatSurfaces: () => parseDiffstatSurfaces,
+  parseErrorPayload: () => parseErrorPayload,
+  parseErrorReports: () => parseErrorReports,
   parseGroupKey: () => parseGroupKey,
   parseIssueTracker: () => parseIssueTracker,
   parseListSurfaces: () => parseListSurfaces,
@@ -11760,12 +11975,17 @@ __export(src_exports, {
   pathFromGitHeader: () => pathFromGitHeader,
   plainText: () => plainText,
   pluralize: () => pluralize,
+  presetBlank: () => presetBlank,
+  presetGroups: () => presetGroups,
+  presetMatches: () => presetMatches,
   readRemote: () => readRemote,
   readRemoteValidated: () => readRemoteValidated,
   recognizeTickets: () => recognizeTickets,
   repoFromPathname: () => repoFromPathname,
   resolveCatalog: () => resolveCatalog,
   resolveCustomPatterns: () => resolveCustomPatterns,
+  scrubErrorText: () => scrubErrorText,
+  scrubStack: () => scrubStack,
   sectionsFor: () => sectionsFor,
   serializeCatalog: () => serializeCatalog,
   serializeSettingsPayload: () => serializeSettingsPayload,
@@ -11800,6 +12020,7 @@ var init_src = __esm({
     init_category_icons();
     init_diff_parse();
     init_diff_summaries();
+    init_error_report();
     init_format();
     init_gist_sync();
     init_glob();
@@ -11821,7 +12042,7 @@ var init_src = __esm({
 function tokenKind(token) {
   return token.startsWith("ghu_") ? "app" : "oauth";
 }
-function isRecord8(value) {
+function isRecord9(value) {
   return typeof value === "object" && value !== null;
 }
 function str(record4, key) {
@@ -11833,7 +12054,7 @@ function num(record4, key) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 function parseTokenResponse(body, now) {
-  if (!isRecord8(body)) return null;
+  if (!isRecord9(body)) return null;
   const accessToken = str(body, "access_token");
   if (accessToken === null) return null;
   const expiresIn = num(body, "expires_in");
@@ -11853,7 +12074,7 @@ async function postForm(fetchImpl, url2, fields) {
     body: new URLSearchParams(fields).toString()
   });
   const body = await response.json().catch(() => null);
-  return { status: response.status, body: isRecord8(body) ? body : null };
+  return { status: response.status, body: isRecord9(body) ? body : null };
 }
 async function requestDeviceCode(clientId, options = {}) {
   const fetchImpl = options.fetch ?? defaultFetch;
@@ -31726,12 +31947,12 @@ function outsideDiffCount(text) {
 function countShapedBy(botId, text) {
   switch (botId) {
     case "claude": {
-      const match = /(\d+)\s*P1,\s*(\d+)\s*P2/i.exec(text);
+      const match = /(\d+)[^\S\n]*P1,[^\S\n]*(\d+)[^\S\n]*P2/i.exec(text);
       return match?.[1] !== void 0 && match[2] !== void 0 ? Number.parseInt(match[1], 10) + Number.parseInt(match[2], 10) : null;
     }
     case "cubic": {
-      const existing = /(\d+)\s+existing\s+issues?\s+remains?/i.exec(text);
-      const found = /(\d+)\s+(?:new\s+)?issues?\s+found/i.exec(text);
+      const existing = /(\d+)[^\S\n]+existing[^\S\n]+issues?[^\S\n]+remains?/i.exec(text);
+      const found = /(\d+)[^\S\n]+(?:new[^\S\n]+)?issues?[^\S\n]+found/i.exec(text);
       if (existing === null && found === null) return /\bno (?:new )?issues found\b|\ball reported issues were addressed\b/i.test(text) ? 0 : null;
       return (existing?.[1] === void 0 ? 0 : Number.parseInt(existing[1], 10)) + (found?.[1] === void 0 ? 0 : Number.parseInt(found[1], 10));
     }
@@ -31769,7 +31990,7 @@ function countShapedBy(botId, text) {
       return count;
     }
     case "coderabbit": {
-      const actionable = /\bactionable comments posted:\s*(\d+)/i.exec(text);
+      const actionable = /\bactionable comments posted:[^\S\n]*(\d+)/i.exec(text);
       const outside = outsideDiffCount(text);
       if (actionable === null && outside === 0) return null;
       return (actionable?.[1] === void 0 ? 0 : Number.parseInt(actionable[1], 10)) + outside;
@@ -31779,12 +32000,12 @@ function countShapedBy(botId, text) {
   }
 }
 function parseBotBody(body, botId) {
-  const text = body.replace(/\r\n/g, "\n").replace(/<!--[\s\S]*?-->/g, "").trim();
+  const text = body.replace(/\r\n?/g, "\n").replace(/<!--[\s\S]*?-->/g, "").trim();
   const scoreMatch = botId === "qodo" ? null : (botId === "entelligence" ? /merge confidence\W+(?:[\u25cf\u25cb\s]*)\**(\d+(?:\.\d+)?)\s*\/\s*5\b/i.exec(text) : null) ?? /(\d+(?:\.\d+)?)\s*\/\s*5\b/.exec(text);
   const score = scoreMatch?.[1] !== void 0 ? Number.parseFloat(scoreMatch[1]) : null;
-  const countMatch = botId === "greptile" ? /(?:found|reported)\s+(\d+)\s+(?:issue|finding|comment)/i.exec(text) : /\bactionable comments posted:\s*(\d+)/i.exec(text) ?? // Not a number that is a reference ("#9377", "GH-123"): "both #9377 findings are fixed" names a pull request, not 9,377 findings
+  const countMatch = botId === "greptile" ? /(?:found|reported)[^\S\n]+(\d+)[^\S\n]+(?:issue|finding|comment)/i.exec(text) : /\bactionable comments posted:[^\S\n]*(\d+)/i.exec(text) ?? // Not a number that is a reference ("#9377", "GH-123"): "both #9377 findings are fixed" names a pull request, not 9,377 findings
   // (server#9385, where the Bugbot chip read "9377 issues" until its threads settled).
-  /(?<![#\w-])(\d+)\s+(?:(?:potential|possible|new|actionable|likely|minor|major|critical|significant|remaining|open|existing)\s+){0,2}(?:issue|finding|bug|problem)s?\b/i.exec(text);
+  /(?<![#\w-])(\d+)[^\S\n]+(?:(?:potential|possible|new|actionable|likely|minor|major|critical|significant|remaining|open|existing)[^\S\n]+){0,2}(?:issue|finding|bug|problem)s?\b/i.exec(text);
   let count = countMatch?.[1] !== void 0 ? Number.parseInt(countMatch[1], 10) : null;
   const shaped = countShapedBy(botId, text);
   if (botId === "coderabbit") count = shaped;
@@ -32545,12 +32766,24 @@ function firstSentence(body) {
   const sentence = sentenceOf(cleaned, 160);
   return sentence.trim();
 }
+function endsWord(text, index) {
+  let next = index + 1;
+  while (next < text.length && /[)\]"'’”*_~]/.test(text[next] ?? "")) next += 1;
+  return next >= text.length || /[\s<]/.test(text[next] ?? "");
+}
+var ABBREVIATION = /(?:^|[\s(])(?:e\.g|i\.e|vs|cf|viz|approx|incl|esp)$/i;
+var ETC = /(?:^|[\s(])etc$/i;
+function abbreviationGoesOn(text, index) {
+  const before = text.slice(0, index);
+  if (ABBREVIATION.test(before)) return true;
+  return ETC.test(before) && !/^\s+[A-Z]/.test(text.slice(index + 1));
+}
 function sentenceOf(text, limit) {
   let inCode = false;
   for (let index = 0; index < text.length && index < limit; index += 1) {
     const char = text[index];
     if (char === "`") inCode = !inCode;
-    else if (!inCode && (char === "." || char === "!" || char === "?")) return text.slice(0, index + 1);
+    else if (!inCode && (char === "." || char === "!" || char === "?") && endsWord(text, index) && !(char === "." && abbreviationGoesOn(text, index))) return text.slice(0, index + 1);
   }
   return text.slice(0, limit);
 }
@@ -33261,11 +33494,13 @@ function parseAddressedOutput(text, allowedIds) {
 }
 
 // ../../packages/review/src/ai-client.ts
+var VERSIONED_BASE = /\/v\d+[a-z]*\w*(?:\/openai)?$/i;
 function joinUrl(base, path) {
   const origin = base.replace(/\/+$/, "").replace(/\/v1$/i, "");
-  return `${origin}/${path.replace(/^\/+/, "")}`;
+  const rest = path.replace(/^\/+/, "");
+  return `${origin}/${VERSIONED_BASE.test(origin) ? rest.replace(/^v1\//i, "") : rest}`;
 }
-function isRecord7(value) {
+function isRecord8(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function contentOf(value) {
@@ -33274,7 +33509,7 @@ function contentOf(value) {
   const parts = [];
   for (const part of value) {
     if (typeof part === "string") parts.push(part);
-    else if (isRecord7(part) && typeof part.text === "string") parts.push(part.text);
+    else if (isRecord8(part) && typeof part.text === "string") parts.push(part.text);
   }
   const joined = parts.join("");
   return joined === "" ? null : joined;
@@ -33300,7 +33535,8 @@ async function completeChat(options) {
   const timer = controller === null || options.timeoutMs === void 0 ? null : setTimeout(() => controller.abort(), options.timeoutMs);
   const signal = options.signal && controller ? AbortSignal.any([options.signal, controller.signal]) : options.signal ?? controller?.signal ?? null;
   try {
-    const response = await options.fetch(joinUrl(options.baseUrl, "/v1/chat/completions"), {
+    const fetchImpl = options.fetch;
+    const response = await fetchImpl(joinUrl(options.baseUrl, "/v1/chat/completions"), {
       method: "POST",
       headers: {
         authorization: `Bearer ${options.apiKey}`,
@@ -33312,10 +33548,10 @@ async function completeChat(options) {
     });
     if (!response.ok) return { ok: false, reason: `Completion failed (${response.status}).` };
     const payload = await response.json();
-    if (!isRecord7(payload) || !Array.isArray(payload.choices))
+    if (!isRecord8(payload) || !Array.isArray(payload.choices))
       return { ok: false, reason: "Completion response was empty." };
     const first = payload.choices[0];
-    const message = isRecord7(first) && isRecord7(first.message) ? first.message : null;
+    const message = isRecord8(first) && isRecord8(first.message) ? first.message : null;
     const text = message === null ? null : contentOf(message.content);
     if (text === null) return { ok: false, reason: "Completion response had no text." };
     const model = typeof payload.model === "string" ? payload.model : options.model;
@@ -34145,7 +34381,7 @@ var plannerOutputSchema = external_exports.object({ steps: external_exports.arra
 init_src2();
 var API3 = "https://api.github.com";
 var GRAPHQL = `${API3}/graphql`;
-function isRecord9(value) {
+function isRecord10(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 async function githubJson(client, url2, init = {}) {
@@ -34162,12 +34398,12 @@ async function githubJson(client, url2, init = {}) {
 }
 async function graphql(client, query, variables) {
   const body = await githubJson(client, GRAPHQL, { method: "POST", body: JSON.stringify({ query, variables }) });
-  if (!isRecord9(body)) throw new Error("GitHub GraphQL returned a non-object.");
+  if (!isRecord10(body)) throw new Error("GitHub GraphQL returned a non-object.");
   if (body.errors !== void 0) throw new Error("GitHub GraphQL could not confirm the request");
   return body.data;
 }
 function assertPrQuery(value) {
-  if (!isRecord9(value) || !isRecord9(value.repository)) {
+  if (!isRecord10(value) || !isRecord10(value.repository)) {
     throw new Error("GitHub GraphQL returned an unexpected pull request payload.");
   }
 }
@@ -34239,7 +34475,7 @@ query GeldThreadComments($id: ID!, $cursor: String) {
 }
 `;
 function assertThreadCommentsQuery(value) {
-  if (!isRecord9(value) || !("node" in value)) throw new Error("GitHub GraphQL returned an unexpected shape for the thread comments.");
+  if (!isRecord10(value) || !("node" in value)) throw new Error("GitHub GraphQL returned an unexpected shape for the thread comments.");
 }
 async function remainingThreadComments(client, threadId, first) {
   const nodes = [...first.nodes];
@@ -34282,7 +34518,7 @@ query GeldCheckContexts($owner: String!, $name: String!, $oid: GitObjectID!, $cu
 }
 `;
 function assertCheckContextsQuery(value) {
-  if (!isRecord9(value) || !("repository" in value)) throw new Error("GitHub GraphQL returned an unexpected shape for the check contexts.");
+  if (!isRecord10(value) || !("repository" in value)) throw new Error("GitHub GraphQL returned an unexpected shape for the check contexts.");
 }
 async function remainingCheckContexts(client, owner, repo, oid, first) {
   const nodes = [...first.nodes];
@@ -34416,7 +34652,7 @@ function findSummaryComment(comments, ownLogins = []) {
 async function tokenLogin(client) {
   try {
     const body = await githubJson(client, `${API3}/user`);
-    return isRecord9(body) && typeof body.login === "string" && body.login !== "" ? body.login : null;
+    return isRecord10(body) && typeof body.login === "string" && body.login !== "" ? body.login : null;
   } catch {
     return null;
   }
@@ -34427,10 +34663,10 @@ async function filesChangedBetween(client, owner, repo, fromSha, toSha) {
     client,
     `${API3}/repos/${owner}/${repo}/compare/${encodeURIComponent(fromSha)}...${encodeURIComponent(toSha)}`
   );
-  if (!isRecord9(body) || !Array.isArray(body.files)) return [];
+  if (!isRecord10(body) || !Array.isArray(body.files)) return [];
   const paths = [];
   for (const file2 of body.files) {
-    if (isRecord9(file2) && typeof file2.filename === "string" && file2.filename !== "") paths.push(file2.filename);
+    if (isRecord10(file2) && typeof file2.filename === "string" && file2.filename !== "") paths.push(file2.filename);
   }
   return paths;
 }
@@ -34440,11 +34676,11 @@ async function upsertIssueComment(client, owner, repo, number4, existingId, body
     return existingId;
   }
   const created = await githubJson(client, `${API3}/repos/${owner}/${repo}/issues/${number4}/comments`, { method: "POST", body: JSON.stringify({ body }) });
-  if (!isRecord9(created) || typeof created.id !== "number") throw new Error("GitHub did not return the new comment id.");
+  if (!isRecord10(created) || typeof created.id !== "number") throw new Error("GitHub did not return the new comment id.");
   return created.id;
 }
 function record3(value) {
-  return isRecord9(value) ? value : null;
+  return isRecord10(value) ? value : null;
 }
 function nested(value, key) {
   const parent = record3(value);
@@ -34508,7 +34744,7 @@ async function trackerStates(client, references) {
     if (index >= 20 || reference.provider !== "github_issues" || !reference.repository) return reference;
     const path = `repos/${reference.repository.split("/").map(encodeURIComponent).join("/")}/issues/${encodeURIComponent(reference.id)}`;
     const result = await api2.request(path);
-    return result.ok && isRecord9(result.value) && typeof result.value.state === "string" ? { ...reference, status: result.value.state } : reference;
+    return result.ok && isRecord10(result.value) && typeof result.value.state === "string" ? { ...reference, status: result.value.state } : reference;
   }));
 }
 

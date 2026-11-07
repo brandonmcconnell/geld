@@ -66,10 +66,12 @@ const BOOLEAN_KEYS = [
   'shortcutEnabled',
   'showBadge',
   'autoUpdatePatterns',
+  'errorReports',
   'prOverview',
   'quickReview',
   'holdToMerge',
   'collapseDescription',
+  'attachmentLightbox',
   'aiEnabled',
   'aiJev',
 ] as const;

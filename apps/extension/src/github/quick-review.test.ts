@@ -2,6 +2,7 @@
 import type { HeaderStatGroup } from './header-stats';
 import { syncCountsStandIn } from './header-stats';
 import { rememberStatusHint, resetStatusHints } from './status-pill';
+import { snapshot as perfSnapshot } from '../lib/perf';
 import { applyQuickReview, canSubmit, isInstantClick, pullPathOf, quickReviewStandBusy, reassertStatusPills, removeQuickReview, reviewErrorText, segmentHint, submitReviewRequest, timelineCommentRequest } from './quick-review';
 
 const SHA = 'a'.repeat(40);
@@ -483,7 +484,6 @@ describe('the tab bar button', () => {
       throw new Error('reload blocked');
     });
     vi.stubGlobal('location', { ...window.location, reload, pathname: window.location.pathname, hash: '', search: '', href: window.location.href, origin: window.location.origin });
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const context = { page: { kind: 'pull-files' as const, diffUrl: null, stateKey: '/acme/widgets/pull/13' }, groups: [groupAt(counts())], headSha: () => SHA };
     document.querySelector('.ReviewMenuButton__x')?.insertAdjacentHTML('beforeend', '<span data-component="ButtonCounter">1</span>');
     applyQuickReview(true, context);
@@ -495,8 +495,7 @@ describe('the tab bar button', () => {
     expect(submitted).toEqual(['/acme/widgets/pull/13/page_data/submit_review']);
     expect(reload).toHaveBeenCalled();
     expect(document.querySelector('.geld-quick-review__error')).toBeNull();
-    expect(warn).toHaveBeenCalled();
-    warn.mockRestore();
+    expect(perfSnapshot().trail.some((entry) => entry.event.startsWith('error:quick-review:after-review:'))).toBe(true);
   });
 
   it('leaves the author 💬 alone, since GitHub refuses their own approval and change request', () => {

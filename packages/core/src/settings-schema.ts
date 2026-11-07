@@ -246,9 +246,17 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         kind: 'toggle',
         key: 'collapseDescription',
         label: 'Shorten the description',
-        description: 'Fold each section of the pull request description under its heading. A long description with no headings is cut to 500px with a control to show the rest.',
+        description: 'Fold each section of the pull request description under its heading. A description still taller than 500px is cut there with a control to show the rest.',
         popup: true,
         popupDescription: 'Fold its sections under their headings.',
+      },
+      {
+        kind: 'toggle',
+        key: 'attachmentLightbox',
+        label: 'Attachment lightbox',
+        description: 'Preview image attachments in issues and pull requests with zoom and pan.',
+        popup: false,
+        surfaces: ['extension'],
       },
       {
         kind: 'toggle',
@@ -313,6 +321,15 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         label: 'Keep built-in patterns up to date',
         description:
           'Once a day Geld fetches the built-in pattern catalog from its GitHub repository (`api.github.com`, no sign-in) and uses it if it is newer, so new conventions are recognised without waiting for a store release. The file is signed; anything that does not verify is ignored. Which categories are on, and your own patterns, never change this way.',
+        popup: false,
+        surfaces: ['extension'],
+      },
+      {
+        kind: 'toggle',
+        key: 'errorReports',
+        label: 'Send error reports',
+        description:
+          'When part of Geld breaks, send the error and where in Geld’s code it happened to `geld.sh`, with the version and browser. Addresses, repository and file names, people and page text are removed first. Off: errors stay on this device, in Copy diagnostics.',
         popup: false,
         surfaces: ['extension'],
       },

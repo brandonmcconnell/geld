@@ -1,7 +1,7 @@
 import type { BotComment, BotVerdictRecord, RawCheckRun } from '@geld/review';
-import { botByCheckName, botById, botsTriggeredBy, geldRunAnswer, geldRunBots, isTriggerComment } from '@geld/review';
+import { ACK_GRACE_MS, botByCheckName, botById, botsTriggeredBy, geldRunAnswer, geldRunBots, isTriggerComment } from '@geld/review';
 
-/** A bot that answers a trigger with a reaction does so within seconds: past this it most likely never saw the request. */
+/** A bot that answers a trigger with a reaction does so within seconds (Greptile's 👀 in about 5 s): past this it most likely never saw the request. */
 export const REQUEST_ACK_MS = 20_000;
 /** A bot whose first sign is a comment or its check run is given longer, since those land later than a reaction. */
 export const REQUEST_ACK_SLOW_MS = 60_000;
@@ -60,6 +60,33 @@ function triggerAsks(comments: readonly BotComment[], extraLogins: readonly stri
 /** The trigger comments on the page for each bot, by anchor: what a click records as already there (`BotRequestClick.before`). */
 export function triggerAnchors(comments: readonly BotComment[], extraLogins: readonly string[]): ReadonlyMap<string, ReadonlySet<string>> {
   return new Map([...triggerAsks(comments, extraLogins)].map(([id, list]) => [id, new Set(list.map((ask) => ask.comment.anchor))]));
+}
+
+export interface AwaitedTrigger {
+  readonly anchor: string;
+  /** When the trigger was posted, by GitHub's clock. */
+  readonly at: number;
+  /** When its grace (`ACK_GRACE_MS`) ends. */
+  readonly until: number;
+}
+
+/**
+ * The trigger comments still waiting on a bot's reaction: asked of a bot that acknowledges with one and not reacted
+ * to by it yet. GitHub sends an open page nothing about a top-level comment (it has no socket channel), so these are
+ * the comments whose reactions are read again (`trigger-reactions.ts`): often until `until`, then once more.
+ */
+export function awaitingReaction(comments: readonly BotComment[], extraLogins: readonly string[]): readonly AwaitedTrigger[] {
+  const out = new Map<string, AwaitedTrigger>();
+  for (const [id, list] of triggerAsks(comments, extraLogins)) {
+    if (botById(id)?.acknowledges !== 'reaction') continue;
+    for (const ask of list) {
+      if (geldRunBots(ask.comment.body).length > 0) continue;
+      const logins = loginsOf(id, ask.login);
+      if ((ask.comment.reactedBy ?? []).some((login) => logins.has(loginKey(login)))) continue;
+      out.set(ask.comment.anchor, { anchor: ask.comment.anchor, at: ask.at, until: ask.at + ACK_GRACE_MS });
+    }
+  }
+  return [...out.values()];
 }
 
 export interface BotRequestInput {

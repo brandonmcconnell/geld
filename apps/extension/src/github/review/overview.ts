@@ -13,7 +13,7 @@ import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, 
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage, pullRequestStateWords } from '../page';
-import { count, phase, phaseSince } from '../../lib/perf';
+import { count, mark, phase, phaseSince } from '../../lib/perf';
 import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
 import type { OpenSettingsMessage } from '../../lib/messages';
@@ -39,14 +39,18 @@ import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
 import { descriptionUnshortened, releaseDescription, shortenDescription } from './description';
 import { compactDescriptionByline } from './description-byline';
+import { type AgentNote, agentNotes, noteCopy, noteText, resetAgentNotes } from './agent-notes';
+import { botWrittenVersion } from './note-tone';
+import { openNoteHistory } from './note-history';
 import { applyFolds, closureKindOf, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
 import type { BotRequestClick } from './bot-requests';
-import { botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
-import { ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
+import { awaitingReaction, botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
+import { pollTriggerReactions, resetTriggerReactions, withFetchedReactions } from './trigger-reactions';
+import { AGENT_NOTES_KEY, ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
-import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
+import { hideHoverCard, setHoverProvider, setNoteProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
 import { knownMarkShape } from './mark-shape';
 import { loginOfLink, showLogins } from './login';
@@ -520,17 +524,94 @@ function botCommentsOf(crawled: Crawled, settings: GeldSettings): readonly BotCo
     // edit log only for a comment the page marks as edited, and the rounds ask it for the same comments anyway.
     const node = comment.kind !== 'thread' && bot !== null ? document.getElementById(comment.anchor) : null;
     const edited = node === null ? null : editedAt(node, reapplySoon);
+    const reactions = comment.kind === 'thread' ? comment.reactions : withFetchedReactions(comment.anchor, comment.reactions);
+    const reactedBy = reactions === comment.reactions ? comment.reactedBy : unique((reactions ?? []).map((reaction) => reaction.login));
     return {
       author: comment.author,
       body: comment.body,
       anchor: comment.anchor,
       ...(comment.createdAt === '' ? {} : { createdAt: comment.createdAt }),
-      ...(comment.reactedBy === undefined ? {} : { reactedBy: comment.reactedBy }),
-      ...(comment.reactions === undefined ? {} : { reactions: comment.reactions }),
+      ...(reactedBy === undefined ? {} : { reactedBy }),
+      ...(reactions === undefined ? {} : { reactions }),
       ...(edited === null ? {} : { editedAt: edited }),
       ...(comment.kind === 'thread' && comment.isResolved !== undefined ? { resolved: comment.isResolved } : {}),
     };
   });
+}
+
+/** The key a note stands under where the panel opens it (the Agent notes row's lines, a bot's line for its review). */
+const NOTE_ANCHOR_PREFIX = 'note:';
+
+/** The notes the current pass read, for the hover cards (which ask between passes). */
+let liveNotes: readonly AgentNote[] = [];
+
+/**
+ * A review bot's summary written into the description (`DESCRIPTION_REVIEWERS`: Greptile, set to review there) as a
+ * comment of the bot's, so `verdictsFrom` reads its score and findings for the Review bots row as it would a summary
+ * comment's, at the time the bot wrote it. Its anchor is the note's key: nothing on the page has it, and its line opens
+ * the note (`renderNoteBody`).
+ */
+function descriptionReviewComments(notes: readonly AgentNote[]): readonly BotComment[] {
+  return notes.flatMap((note) => {
+    const written = botWrittenVersion(note);
+    return written === null ? [] : [{ author: written.login, body: noteText(note), anchor: `${NOTE_ANCHOR_PREFIX}${note.id}`, createdAt: written.at }];
+  });
+}
+
+/** `extra` laid into `comments` (timeline order) by time, so a reader of the list in order meets each when it was said. */
+function inTimeOrder(comments: readonly BotComment[], extra: readonly BotComment[]): readonly BotComment[] {
+  const merged = [...comments];
+  for (const comment of extra) {
+    const at = Date.parse(comment.createdAt ?? '');
+    const index = merged.findIndex((entry) => Date.parse(entry.createdAt ?? '') > at);
+    merged.splice(index < 0 ? merged.length : index, 0, comment);
+  }
+  return merged;
+}
+
+/** When a comment was last written: its latest edit (a bot rewrites its summary in place), else when it was posted. */
+function lastWrittenAt(anchor: string, createdAt: string): number {
+  const node = document.getElementById(anchor);
+  const edited = node === null ? Number.NaN : Date.parse(editedAt(node, reapplySoon) ?? '');
+  const created = Date.parse(createdAt);
+  return Number.isNaN(edited) ? created : Math.max(edited, Number.isNaN(created) ? edited : created);
+}
+
+/** Bot `botId`'s review in the description, when its own App wrote the reading there now (`botWrittenVersion`). */
+function descriptionSummaryOf(botId: string): { readonly anchor: string; readonly at: string; readonly note: AgentNote } | null {
+  for (const note of liveNotes) {
+    if (note.bot !== botId) continue;
+    const written = botWrittenVersion(note);
+    if (written !== null) return { anchor: `${NOTE_ANCHOR_PREFIX}${note.id}`, at: written.at, note };
+  }
+  return null;
+}
+
+/** When the note under a `note:` anchor was last written, for what reads a report's time. */
+function noteWrittenAt(anchor: string): string | null {
+  const note = liveNotes.find((entry) => `${NOTE_ANCHOR_PREFIX}${entry.id}` === anchor);
+  return note === undefined ? null : (botWrittenVersion(note)?.at ?? null);
+}
+
+/** A note as the panel shows it open: GitHub's rendering, copied (the note itself stays in the description). */
+function renderNoteBody(slot: HTMLElement, note: AgentNote): void {
+  slot.replaceChildren(createElement('div', { class: `markdown-body ${PANEL_CLASS}__note-body` }, noteCopy(note.versions.at(-1)?.blocks ?? [])));
+}
+
+/** A note's hover card: its mark and name over a clamped copy, opening where the note opens. */
+function noteCard(note: AgentNote, onOpen: () => void): HoverPreview {
+  const bot = note.bot === null ? null : botById(note.bot);
+  return {
+    avatarSrc: bot === null ? null : botAppAvatar(bot, 40),
+    name: note.name,
+    bot: true,
+    time: '',
+    body: createElement('div', { class: 'markdown-body' }, noteCopy(note.versions.at(-1)?.blocks ?? [])),
+    more: 0,
+    onReply: null,
+    onOpen,
+    openLabel: 'See full note',
+  };
 }
 
 function buildFromComments(crawled: Crawled, botComments: readonly BotComment[], checks: readonly RawCheckRun[], settings: GeldSettings, headSha: string, generatedAt: string, partial: boolean, threadsRead: boolean): GeldPrMeta {
@@ -1342,7 +1423,7 @@ function openRow(key: string, batches: readonly Batch[], grouping: GeldSettings[
     visit.openSubKey = sub;
   }
   // A line in the Review bots or Reports list opens inside its row the same way.
-  if (key === BOTS_KEY || key === REPORTS_KEY) visit.openSubKey = sub;
+  if (key === BOTS_KEY || key === REPORTS_KEY || key === AGENT_NOTES_KEY) visit.openSubKey = sub;
   visit.openKey = key;
 }
 
@@ -1950,6 +2031,12 @@ function threadHeadAnchorOf(anchor: string, botId: string | null | undefined): s
 function buildBotLines(meta: GeldPrMeta): readonly BotLine[] {
   return meta.bots.map((bot) => {
     const computed = botSummaryFor(bot.id, NaN);
+    // A review the bot wrote into the description (`descriptionReviewComments`) is its summary when no summary comment
+    // is newer, whatever the verdict hangs on (a thread posted after it, say): the line opens the note.
+    const inDescription = descriptionSummaryOf(bot.id);
+    if (inDescription !== null && (computed === null || lastWrittenAt(computed.anchor, computed.facts.createdAt) <= Date.parse(inDescription.at))) {
+      return { bot, anchor: inDescription.anchor, author: bot.login, avatarSrc: null, preview: inDescription.note.preview, time: '', threads: [] };
+    }
     // A summary on loan to the panel (its line open, or pinned in a thread's chat) is read bodiless at home, so
     // this pass does not count it as a summary and the bot's "latest" falls back to the run before — the line
     // changed anchor under the reader and its open key was dropped. A bot's latest word only ever gets newer
@@ -2688,6 +2775,11 @@ function hoverPreviewFor(row: HTMLElement, meta: GeldPrMeta, groups: readonly Fo
   let more = 0;
   let onReply: (() => void) | null = null;
   let onOpen: (() => void) | null = null;
+  if (subAnchor?.startsWith(NOTE_ANCHOR_PREFIX) === true) {
+    // A note's line (Agent notes, or a bot's line for its review in the description): a preview of the note.
+    const note = liveNotes.find((entry) => `${NOTE_ANCHOR_PREFIX}${entry.id}` === subAnchor);
+    return note === undefined || !note.present ? null : noteCard(note, () => handlers.onToggleSub(subAnchor));
+  }
   if (subAnchor !== null) {
     // A comment line: a bot's run summary, a person's review or remark. Its card opens the line, or, for a line in
     // the Reviews index, goes where the line points; a bare verdict (nothing to open, the state name is the row's
@@ -2794,7 +2886,7 @@ function pageChecks(headSha: string): readonly RawCheckRun[] {
 /** What an open row shows in its slot: the item's thread(s), a fold's nodes, or the merge box's checks. */
 function quickViewFor(key: string, meta: GeldPrMeta, groups: readonly FoldGroup[]): readonly HTMLElement[] {
   // The Reviews and Previews rows render their own lists; the panel itself stands in for "something to show".
-  if (key === REVIEWS_KEY || key === PREVIEWS_KEY || key === REPORTS_KEY || key === BOTS_KEY || key.startsWith('batch:')) return [document.documentElement];
+  if (key === REVIEWS_KEY || key === PREVIEWS_KEY || key === REPORTS_KEY || key === BOTS_KEY || key === AGENT_NOTES_KEY || key.startsWith('batch:')) return [document.documentElement];
   if (key === CHECKS_KEY) {
     const section = checksSection();
     if (section === null) return [];
@@ -2903,6 +2995,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   lastSettings = settings;
   if (visit.pageKey !== page.stateKey) {
     restoreAll();
+    resetTriggerReactions();
     visit.pageKey = page.stateKey;
     visit.generatedAt = new Date().toISOString();
     visit.openKey = null;
@@ -2934,6 +3027,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     resetFragments();
     forgetThreads();
     resetEditTimes();
+    resetAgentNotes();
     resetHeadChecks();
     botLineMemo.clear();
     visit.manualDone = new Set();
@@ -2981,7 +3075,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // the fetch limit or a failed fetch leave unread, so a bot's resolved thread may be there unseen. Coverage is what the
   // page holds (each fragment's fetched markup standing in it), not what is still worth asking for.
   const threadsRead = complete && deferredFragments().every(({ src }) => fragmentRead(src));
-  const botComments = botCommentsOf(crawledDom, settings);
+  const notes = agentNotes(reapplySoon);
+  liveNotes = notes.notes;
+  const botComments = inTimeOrder(botCommentsOf(crawledDom, settings), descriptionReviewComments(notes.notes));
   const checks = botChecks(headSha);
   const composed = phase('cluster', () => composeMeta(found, buildFromComments(crawledDom, botComments, checks, settings, headSha, visit.generatedAt, partial, threadsRead), complete));
   // A review asked for and not yet answered: the pill spins from the click, and says so if the bot never shows a sign.
@@ -2989,6 +3085,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   triggersOnPage = triggerAnchors(botComments, settings.reviewBots);
   const requestDeadline = nextRequestDeadline(botRequests);
   if (requestDeadline !== null) reapplyAt(requestDeadline);
+  const reactionPoll = pollTriggerReactions(awaitingReaction(botComments, settings.reviewBots), Date.now(), reapplySoon);
+  if (reactionPoll !== null) reapplyAt(reactionPoll);
   // Then the threads, now that items exist: whether the replies say a thread is done.
   const bodies = new Map(crawledDom.comments.map((entry) => [entry.comment.anchor, { author: entry.author.login, body: entry.comment.body }] as const));
   const threads: ThreadToClassify[] = composed.meta.items
@@ -3160,6 +3258,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const reportedSince = (anchor: string): boolean => {
     if (pushed === null) return false;
     if (pushed.anchors.has(anchor)) return true;
+    // A review in the description has no row of its own: when the bot wrote it says.
+    if (anchor.startsWith(NOTE_ANCHOR_PREFIX)) {
+      const written = Date.parse(noteWrittenAt(anchor) ?? '');
+      return pushed.at !== null && !Number.isNaN(written) && written >= pushed.at;
+    }
     const node = document.getElementById(anchor);
     if (node === null) return false;
     if (pushed.row !== null && pushed.row.isConnected && compareHome(pushed.row, node) < 0) return true;
@@ -3191,6 +3294,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     requestable,
     ranSincePush,
     botLines,
+    // A review bot's summary in the description, written by the bot, is that bot's line in Review bots, not a note.
+    agentNotes: notes.notes.filter((note) => !botLines.some((line) => line.anchor === `${NOTE_ANCHOR_PREFIX}${note.id}`)),
+    agentNotesReading: notes.reading,
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
     // A running/loading bot's sourceId is the "Starting"/trigger line — contentless, and the same line for every bot
     // one comment asked for at once, so looking a bot up by it opens the wrong bot. Open this bot's own latest
@@ -3378,9 +3484,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     onDismissReview: (login) => {
       void pressReviewAction(login, 'Dismiss review')
         .then((pressed) => {
-          if (!pressed) console.warn('[geld] GitHub offers no way to dismiss that review here');
+          if (!pressed) mark('dismiss-review:not-offered');
         })
-        .catch(() => console.warn('[geld] Dismiss review did not open'));
+        .catch(() => mark('dismiss-review:failed'));
     },
     onReRequestReview: (login) => {
       // GitHub's own action when its merge box lists the verdict; else the request form with their id, the same post.
@@ -3392,20 +3498,26 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           }
           const found = await fetchReviewerCandidates().catch(() => null);
           if (found === null) {
-            console.warn('[geld] GitHub did not list the reviewers; nothing was re-requested');
+            mark('re-request:no-candidates');
             return;
           }
           const person = found.find((candidate) => !candidate.team && candidate.login.toLowerCase() === login.toLowerCase());
           if (person === undefined) {
-            console.warn('[geld] GitHub does not list that reviewer among those that can be asked here');
+            mark('re-request:not-listed');
             return;
           }
           const posted = await requestReviewers([person.id], [], found);
           candidatesCache = null;
           if (posted) window.setTimeout(reapplySoon, 800);
-          else console.warn('[geld] GitHub did not take the re-request');
+          else mark('re-request:refused');
         })
-        .catch(() => console.warn('[geld] Re-request review failed'));
+        .catch(() => mark('re-request:failed'));
+    },
+    onNoteHistory: (id) => {
+      openNoteHistory(() => {
+        const now = agentNotes(reapplySoon);
+        return { note: now.notes.find((note) => note.id === id), reading: now.reading };
+      });
     },
     onToggleSub: (anchor) => {
       keepInPlace(`main:sub:${anchor}`, () => {
@@ -3431,6 +3543,17 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         else visit.openCommits.add(batchKey);
         reapply();
       });
+    },
+    onOpenNote: (id) => {
+      const key = noteSubKey(id);
+      keepInPlace(`main:${AGENT_NOTES_KEY}`, () => {
+        // The pill of the note already open closes it; any other opens the row to that note.
+        const wasOpen = visit.openKey === AGENT_NOTES_KEY && visit.openSubKey === key;
+        visit.openKey = AGENT_NOTES_KEY;
+        visit.openSubKey = wasOpen ? null : key;
+        reapply();
+      });
+      revealRow(`main:sub:${key}`);
     },
     onOpenReport: (anchor) => {
       keepInPlace(`main:${REPORTS_KEY}`, () => {
@@ -3463,7 +3586,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     onApproveWorkflows: () => {
       const button = approveWorkflowsButton();
       if (button === null) {
-        console.warn('[geld] GitHub no longer offers to approve these workflows');
+        mark('approve-workflows:not-offered');
         return;
       }
       button.click();
@@ -3498,7 +3621,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       const entry = comments.find((candidate) => candidate.anchor === anchor);
       const target = entry !== undefined && !entry.hasBody && isVerdict(entry) ? (entry.threads?.[0]?.anchor ?? anchor) : anchor;
       // Held by a row here? Open it and bring it into view. Otherwise let the browser take the reader to it in the timeline.
-      const seat = hidingTimeline ? seatFor(target, meta, groups, batches) : null;
+      // A review in the description is only ever its Review bots line, whatever the timeline shows.
+      const seat = hidingTimeline || target.startsWith(NOTE_ANCHOR_PREFIX) ? seatFor(target, meta, groups, batches) : null;
       if (seat === null) {
         // Only scroll to something the page actually holds; a folded, silently-dropped comment has no place to land.
         if (document.getElementById(target) !== null) location.hash = target;
@@ -3541,14 +3665,21 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         // byline and the run's threads linked at its foot, each leading to its row in its round.
         const view = renderBotsList(mounted.slot, model, panelHandlers);
         const line = view.openLine;
-        const commentNode = line?.anchor === null || line === null ? null : (entryNodes.get(line.anchor) ?? timelineRootOf(line.anchor));
-        if (view.nested !== null && line !== null && line.anchor !== null && commentNode !== null) {
+        const lineNote = line?.anchor?.startsWith(NOTE_ANCHOR_PREFIX) === true ? liveNotes.find((note) => `${NOTE_ANCHOR_PREFIX}${note.id}` === line.anchor) : undefined;
+        const commentNode = line?.anchor === null || line === null || lineNote !== undefined ? null : (entryNodes.get(line.anchor) ?? timelineRootOf(line.anchor));
+        if (view.nested !== null && lineNote !== undefined) {
+          renderNoteBody(view.nested, lineNote);
+        } else if (view.nested !== null && line !== null && line.anchor !== null && commentNode !== null) {
           const byline = withRerun(dressByline({ login: line.author, bot: true, avatarSrc: line.avatarSrc, time: line.time }, line.anchor), line.author, line.anchor, meta, settings, reapply, panelHandlers.onOpenAnchor);
           renderCommentChat(view.nested, commentNode, byline, threadLinks(line.threads), panelHandlers.onOpenAnchor);
         } else if (visit.openSubKey !== null && (line !== null || !model.botLines.some((entry) => entry.anchor === visit.openSubKey))) {
           // A comment that left the page, or a summary no longer the bot's latest: nothing to keep open.
           visit.openSubKey = null;
         }
+      } else if (visit.openKey === AGENT_NOTES_KEY) {
+        // What agents and review bots wrote into the description, each tool's note opening in place.
+        renderAgentNotesList(mounted.slot, model, panelHandlers, (note) => noteCopy(note.versions.at(-1)?.blocks ?? []));
+        if (visit.openSubKey !== null && !model.agentNotes.some((note) => noteSubKey(note.id) === visit.openSubKey)) visit.openSubKey = null;
       } else if (visit.openKey === REPORTS_KEY) {
         // The reporters' latest reports; the open line's comment stands under it as a one-bubble chat (a check's
         // report has no comment: the list shows its detail itself).
@@ -3646,6 +3777,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   setHoverProvider((row) => hoverPreviewFor(row, meta, groups, panelHandlers));
   setWhoProvider((login) => whoCardFor(login, meta, model));
   setReportProvider((anchor) => reportCardFor(anchor, model, panelHandlers));
+  setNoteProvider((id) => {
+    const note = liveNotes.find((entry) => entry.id === id);
+    return note === undefined || !note.present ? null : noteCard(note, () => panelHandlers.onOpenNote(id));
+  });
   phase('apply-folds', () => applyFolds(foldTargets, new Set()));
   // The browser's fragment jump went to the original's (now empty) place in
   // the timeline; the one correction Geld makes is to land on the row that
@@ -3695,7 +3830,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     }
   }
   const tailStart = performance.now();
-  shortenDescription(settings.collapseDescription && !visit.fullTimeline);
+  // What tools appended is the Agent notes row's: the description keeps the author's words.
+  shortenDescription(settings.collapseDescription && !visit.fullTimeline, { toolsAway: true });
   compactDescriptionByline(true, reapplySoon);
   setFullTimeline(visit.fullTimeline);
   if (hidingTimeline) document.documentElement.setAttribute('data-geld-timeline', 'compact');
@@ -3757,7 +3893,7 @@ export function foldDescriptionNow(settings: GeldSettings): void {
   if (page.kind !== 'pull-conversation') return;
   // The full timeline shows the description whole, and that choice belongs to the visit that made it.
   if (visit.pageKey === page.stateKey && visit.fullTimeline) return;
-  if (descriptionUnshortened()) shortenDescription(true);
+  if (descriptionUnshortened()) shortenDescription(true, { toolsAway: true });
 }
 
 /**
@@ -3787,6 +3923,7 @@ export function teardownReviewOverview(leaving = false): void {
   runningBots = new Set();
   setWhoProvider(null);
   setReportProvider(null);
+  setNoteProvider(null);
   unwatchLoans();
   stopTimeRefresh();
   visit.settling = null;
