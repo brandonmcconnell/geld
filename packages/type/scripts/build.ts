@@ -143,6 +143,7 @@ function compile(spaces: string[]): void {
     run(['-m', 'ttfautohint', '--no-info', '--stem-width-mode=nss', path, `${path}.hinted`]);
     renameSync(`${path}.hinted`, path);
   }
+  run([join(root, 'scripts', 'finish.py'), '--hinted', ...readdirSync(join(dist, 'ttf')).filter((f) => f.endsWith('.ttf')).map((f) => join(dist, 'ttf', f))]);
   writeFileSync(join(dist, 'proof.html'), proofPage());
   writeFileSync(join(dist, 'manifest.json'), `${JSON.stringify(manifest(), null, 2)}\n`);
   run([join(root, 'scripts', 'verify.py')]);

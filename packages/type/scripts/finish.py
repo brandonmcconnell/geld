@@ -27,6 +27,17 @@ def finish(path: str) -> None:
     font.save(path)
 
 
+def hinted(path: str) -> None:
+    """A font ttfautohint has hinted rounds its ppem to whole pixels, as its instructions assume (head flags bit 3)."""
+    font = TTFont(path)
+    font["head"].flags |= 1 << 3
+    font.save(path)
+
+
 if __name__ == "__main__":
-    for path in sys.argv[1:]:
-        finish(path)
+    if sys.argv[1] == "--hinted":
+        for path in sys.argv[2:]:
+            hinted(path)
+    else:
+        for path in sys.argv[1:]:
+            finish(path)

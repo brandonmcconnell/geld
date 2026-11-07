@@ -58,6 +58,8 @@ def check_tables(path: Path, font: TTFont) -> None:
         check(bool(font["name"].getDebugName(25)), f"{path.name}: no variations PostScript name prefix")
     hinted = "fpgm" in font
     check(hinted == (path.parent.name == "ttf"), f"{path.name}: hinted is {hinted}")
+    if hinted:
+        check(bool(font["head"].flags & 1 << 3), f"{path.name}: hinted without whole-pixel ppem (head flags bit 3)")
 
 
 def check_static(path: Path, expected: dict, italic: bool) -> None:
@@ -285,6 +287,10 @@ def check_alternates(path: Path, data: bytes, weight: int, cases: list[dict]) ->
     check(got == ["onecircle", "twocircle"], f"{path.name} at {weight}: 12 with ss17 shaped {got}")
     got = [n for n, _ in shape(data, weight, "iä", features={"ss07": True})]
     check(got == ["i.ss07", "adieresis.ss07"], f"{path.name} at {weight}: iä with ss07 shaped {got}")
+    # An alternate keeps its octagonal dots whether a set or a cv made it.
+    for text, features, names in (("Ï", {"ss03": True, "ss07": True}, ["Idieresis.ss03.ss07"]), ("Ġ", {"cv21": True, "ss07": True}, ["Gdotaccent.cv21.ss07"])):
+        got = [n for n, _ in shape(data, weight, text, features=features)]
+        check(got == names, f"{path.name} at {weight}: {text} with {features} shaped {got}")
     if any(c["glyph"] == "a.ss01" for c in cases):
         got = [n for n, _ in shape(data, weight, "á", features={"ss01": True})]
         check(got == ["aacute.ss01"], f"{path.name} at {weight}: á with ss01 shaped {got}")

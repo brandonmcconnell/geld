@@ -124,10 +124,11 @@ function fontInfo(master: Master): PlistValue {
     openTypeOS2WidthClass: 5,
     openTypeOS2Selection: [7],
     openTypeOS2Type: [],
-    postscriptUnderlinePosition: deco.underlinePosition,
-    postscriptUnderlineThickness: deco.thickness,
-    openTypeOS2StrikeoutPosition: deco.strikeoutPosition,
-    openTypeOS2StrikeoutSize: deco.thickness,
+    // Whole font units, as the fonts store them (the UFO spec requires it of the OS/2 values, and fontc enforces it).
+    postscriptUnderlinePosition: Math.round(deco.underlinePosition),
+    postscriptUnderlineThickness: Math.round(deco.thickness),
+    openTypeOS2StrikeoutPosition: Math.round(deco.strikeoutPosition),
+    openTypeOS2StrikeoutSize: Math.round(deco.thickness),
   };
 }
 
@@ -441,12 +442,18 @@ function alternateFeatures(master: Master, names: Set<string>): { aalt: string[]
   if (!owned.size && !names.has(`period.${OCTAGONAL_DOTS}`)) return { aalt: [], rest: [] };
   const subs = (pairs: [string, string][]) => pairs.map(([a, b]) => `  sub ${a} by ${b};`);
   const rest: string[] = [];
-  // Octagonal dots are drawn for every glyph with dots rather than listed (master.ts).
-  const dotted = [...names].filter((n) => n.endsWith(`.${OCTAGONAL_DOTS}`) && names.has(n.slice(0, -OCTAGONAL_DOTS.length - 1)) && !/\.(ss|cv)\d\d\./.test(n));
+  // Octagonal dots are drawn for every glyph with dots rather than listed (master.ts), alternates included. Lookups run
+  // in the order they are written: a set's alternate exists by ss07's block, which dots it, while ss07 has already
+  // dotted the base by a cv's block, so each cv also takes the dotted base to its dotted alternate.
+  const undotted = (n: string) => n.slice(0, -OCTAGONAL_DOTS.length - 1);
+  const allDotted = [...names].filter((n) => n.endsWith(`.${OCTAGONAL_DOTS}`) && names.has(undotted(n)));
+  const dotted = allDotted.filter((n) => !/\.cv\d\d\./.test(n));
+  const dottedToo = (pairs: [string, string][]): [string, string][] =>
+    pairs.flatMap(([a, b]) => [[a, b], ...(names.has(`${a}.${OCTAGONAL_DOTS}`) && names.has(`${b}.${OCTAGONAL_DOTS}`) ? [[`${a}.${OCTAGONAL_DOTS}`, `${b}.${OCTAGONAL_DOTS}`] as [string, string]] : [])]);
   for (const [tag, label] of Object.entries(STYLISTIC_SETS)) {
     const pairs = [
       ...[...owned].filter(([alt]) => alt.set === tag).flatMap(([, ps]) => ps),
-      ...(tag === OCTAGONAL_DOTS ? dotted.map((n) => [n.slice(0, -OCTAGONAL_DOTS.length - 1), n] as [string, string]) : []),
+      ...(tag === OCTAGONAL_DOTS ? dotted.map((n) => [undotted(n), n] as [string, string]) : []),
       ...(tag === CIRCLED_NUMERALS ? FIGURE_NAMES.filter((f) => names.has(`${f}circle`)).map((f) => [f, `${f}circle`] as [string, string]) : []),
     ];
     if (pairs.length) rest.push(`feature ${tag} {`, `  featureNames { name "${label}"; };`, ...subs(pairs), `} ${tag};`);
@@ -455,7 +462,7 @@ function alternateFeatures(master: Master, names: Set<string>): { aalt: string[]
   const byCv = new Map<string, { label: string; pairs: [string, string][] }>();
   for (const [alt, pairs] of owned) byCv.set(alt.cv, { label: byCv.get(alt.cv)?.label ?? alt.label, pairs: [...(byCv.get(alt.cv)?.pairs ?? []), ...pairs] });
   for (const [cv, { label, pairs }] of [...byCv].sort(([a], [b]) => a.localeCompare(b)))
-    rest.push(`feature ${cv} {`, `  cvParameters { FeatUILabelNameID { name "${label}"; }; };`, ...subs(pairs), `} ${cv};`);
+    rest.push(`feature ${cv} {`, `  cvParameters { FeatUILabelNameID { name "${label}"; }; };`, ...subs(dottedToo(pairs)), `} ${cv};`);
   const all = new Map<string, string[]>();
   for (const pairs of owned.values()) for (const [a, b] of pairs) all.set(a, [...(all.get(a) ?? []), b]);
   rest.push('feature salt {', ...[...all].map(([a, bs]) => `  sub ${a} by ${bs[0]};`), '} salt;');
