@@ -345,7 +345,8 @@ const LOWER_OWN: GlyphDef[] = [
     rsb: 0.3,
     draw: (g) => {
       const w = g.wide(8.5);
-      return [...yArms(g, w, g.xHeight, 0, g.descender), bar(w / 2 - 2.5, w / 2 + 2.5, -1.5)];
+      const h = Math.min(g.h, 1.8);
+      return [...yArms(g, w, g.xHeight, 0, g.descender), withPen(bar(w / 2 - crossbarReach(g), w / 2 + crossbarReach(g), Math.min(-1.5, g.descender + 1.25 + h / 2)), { ...g.pen, h })];
     },
   },
 ];

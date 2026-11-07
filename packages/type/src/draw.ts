@@ -197,6 +197,16 @@ export function tildeStroke(x0: number, x1: number, y: number, s: number): Strok
   return open(p(x0, y), p(x0 + s, y + s), p(m - s / 2, y + s), p(m + s / 2, y), p(x1 - s, y), p(x1, y + s));
 }
 
+/**
+ * A bar across a stem under a bowl whose lower edge is at `bowl` (₽ Ᵽ Ɍ): at `wanted` where it clears
+ * the bowl by 1.5 and the baseline by 1.25, else centred between them and as heavy as leaves 1.45 either side.
+ */
+export function underBowl(g: DrawContext, from: number, to: number, bowl: number, wanted: number): Stroke {
+  const y = Math.min(wanted, bowl - 1.5 - g.h / 2);
+  if (y - g.h / 2 >= 1.25) return bar(from, to, y);
+  return withPen(bar(from, to, bowl / 2), { ...g.pen, h: Math.min(g.h, bowl - 2.9) });
+}
+
 /** Where the line through a and b crosses the line through c and d. */
 export function crossing(a: [number, number], b: [number, number], c: [number, number], d: [number, number]): [number, number] {
   const [rx, ry] = [b[0] - a[0], b[1] - a[1]];

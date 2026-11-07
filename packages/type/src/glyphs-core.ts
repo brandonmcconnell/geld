@@ -30,6 +30,7 @@ import {
   footFor,
   strikeThrough,
   OVERHANG,
+  underBowl,
 } from './draw';
 import type { Stroke } from './geometry';
 import { smallPen } from './glyphs-figures';
@@ -831,7 +832,7 @@ export const ON_LETTERS: GlyphDef[] = [
   },
   onLetter('cedi', 0x20b5, 'C', (g) => [through(g.wide(10) / 2)]),
   onLetter('tenge', 0x20b8, 'T', (g) => [bar(0, g.wide(11), g.top(Math.min(g.y(10.5), g.cap - g.h - 1.6)))]),
-  onLetter('ruble', 0x20bd, 'P', (g) => [bar(-crossbarReach(g), g.wide(5), g.y(6) - g.h - 1.5)], { lsb: 0.5, rsb: 1 }),
+  onLetter('ruble', 0x20bd, 'P', (g) => [underBowl(g, -crossbarReach(g), g.wide(5), g.y(6) - g.h / 2, g.y(6) - g.h - 1.5)], { lsb: 0.5, rsb: 1 }),
   onLetter('bitcoin', 0x20bf, 'B', (g) => {
     const x1 = 2;
     const x2 = x1 + g.v + 1.6;
@@ -959,7 +960,8 @@ export const DRAWN_SIGNS: GlyphDef[] = [
       const t = g.top(g.cap);
       const second = g.cap - g.h * 1.5 - 1.6;
       const m = second - g.h - Math.max(1.6, 4.5 - g.h);
-      return [bar(0, w, t), bar(0, w, second), open(p(0, second), p(w * 0.75, second, true), p(w * 0.75, m, true), p(0, m)), diagonal(g, 2.5, m, w * 0.8, 0)];
+      const end = Math.max(w, w * 0.75 + g.v / 2 + OVERHANG);
+      return [bar(0, end, t), bar(0, end, second), open(p(0, second), p(w * 0.75, second), p(w * 0.75, m, true), p(0, m)), diagonal(g, 2.5, m, w * 0.8, 0)];
     },
   },
   {

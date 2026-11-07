@@ -27,6 +27,7 @@ import {
   strikeReach,
   withPen,
   OVERHANG,
+  underBowl,
 } from './draw';
 import type { Stroke } from './geometry';
 import { DRAWN_SIGNS, letter } from './glyphs-core';
@@ -144,8 +145,8 @@ const UPPER: GlyphDef[] = [
     },
   },
   { name: 'Jstroke', unicode: 0x248, lsb: 1, rsb: 0.5, draw: (g) => [...draw('J')(g), strike(g, g.wide(8), g.y(8))] },
-  { name: 'Rstroke', unicode: 0x24c, lsb: 0.5, rsb: 0.3, draw: (g) => [...draw('R')(g), strike(g, 0, g.y(3))] },
-  { name: 'Pstroke', unicode: 0x2c63, lsb: 0.5, rsb: 1.25, draw: (g) => [...draw('P')(g), strike(g, 0, Math.min(g.y(3), g.y(6) - g.h - 1.6))] },
+  { name: 'Rstroke', unicode: 0x24c, lsb: 0.5, rsb: 0.3, draw: (g) => [...draw('R')(g), underBowl(g, -crossbarReach(g), crossbarReach(g), g.y(6) - g.h / 2, g.y(3))] },
+  { name: 'Pstroke', unicode: 0x2c63, lsb: 0.5, rsb: 1.25, draw: (g) => [...draw('P')(g), underBowl(g, -crossbarReach(g), crossbarReach(g), g.y(6) - g.h / 2, g.y(3))] },
   { name: 'Rtail', unicode: 0x2c64, lsb: 1.5, rsb: 0.3, draw: (g) => [tail(g, 0, g.cap), ...draw('R')(g).slice(1)] },
   {
     name: 'Alpha-latin',
@@ -413,7 +414,14 @@ const BEYOND_UPPER: GlyphDef[] = [
   { name: 'Astroke', unicode: 0x23a, lsb: 0.3, rsb: 0.3, draw: (g) => [...draw('A')(g), slash(g, g.wide(10), g.cap)] },
   { name: 'Cstroke', unicode: 0x23b, lsb: 1.25, rsb: 1, draw: (g) => [...draw('C')(g), slash(g, g.wide(10), g.cap)] },
   { name: 'Lbar', unicode: 0x23d, lsb: 0.5, rsb: 0.5, draw: (g) => [...draw('L')(g), strike(g, 0, g.cap / 2, 1.5)] },
-  { name: 'Tdiagonalstroke', unicode: 0x23e, lsb: 0.5, rsb: 0.5, draw: (g) => [...draw('T')(g), slashThroughStem(g, g.wide(11), g.cap)] },
+  { name: 'Tdiagonalstroke', unicode: 0x23e, lsb: 0.5, rsb: 0.5, draw: (g) => {
+      const w = g.wide(11);
+      const slash = slashThroughStem(g, w, g.cap);
+      // The bar runs 1.5 past the slash's top, wider than T's where the slash needs the room (heavy weights).
+      const reach = Math.max(w / 2, slash.points[1]!.x - w / 2 + spanOf(g.diag, slash.points[1]!.x - slash.points[0]!.x, g.cap) + OVERHANG);
+      return [bar(w / 2 - reach, w / 2 + reach, g.top(g.cap)), stem(w / 2, 0, g.cap), slash];
+    },
+  },
   { name: 'Lmiddletilde', unicode: 0x2c62, lsb: 0.5, rsb: 0.5, draw: (g) => [...draw('L')(g), tildeAcross(0, g.cap / 2)] },
   { name: 'Yturned', unicode: 0x2144, lsb: 0.3, rsb: 0.3, draw: (g) => rotate180(draw('Y')(g), g.wide(11) / 2, g.cap / 2) },
 ];

@@ -1,5 +1,5 @@
 import type { PlacedDef } from './composites';
-import { ALL, bar, box, diagonal, dot, type DrawContext, type GlyphDef, open, p, RIGHT, stem, vee, withPen, yArms, barIntoDiagonal, edgeAt, footFor, INSIDE, kaWithTail , OVERHANG } from './draw';
+import { ALL, bar, box, diagonal, dot, type DrawContext, type GlyphDef, open, p, RIGHT, stem, vee, withPen, yArms, barIntoDiagonal, edgeAt, footFor, INSIDE, kaWithTail , OVERHANG , tailAfterLeg , spanOf , crossbarReach } from './draw';
 import { letter } from './glyphs-core';
 import { sigma } from './glyphs-plus';
 
@@ -169,7 +169,7 @@ const LOWER_DEFS: GlyphDef[] = [
     draw: (g) => {
       const w = g.wide(8);
       const t = g.top(g.xHeight);
-      return [box(0, w, g.bottom(0), t, ALL), bar(w * 0.5, w + 2, t)];
+      return [box(0, w, g.bottom(0), t, [true, true, false, true]), bar(w * 0.5, w + crossbarReach(g), t)];
     },
   },
   {
@@ -260,7 +260,7 @@ const LOWER_DEFS: GlyphDef[] = [
         stem(0, 0, g.xHeight),
         withPen({ ...open(p(0, y0), p(reach, g.xHeight)), endCap: 'flat' }, g.diag),
         diagonal(g, reach * 0.45, y0 + (g.xHeight - y0) * 0.45, reach, 0, [false, true]),
-        stem(reach + 0.5, g.descender + 1, g.h),
+        ...tailAfterLeg(g, reach, spanOf(g.diag, reach * 0.55, y0 + (g.xHeight - y0) * 0.45)),
       ];
     },
   },
