@@ -127,4 +127,24 @@ describe("the Overview's status label", () => {
     expect(document.querySelector('[data-geld-status-pill]')).toBeNull();
     document.body.replaceChildren();
   });
+
+  it('leaves no pill behind when GitHub swaps its status button for a merged label in place', () => {
+    document.body.innerHTML = `<div data-component="PageHeader"><div class="row"><button type="button" aria-haspopup="true" aria-label="Pull request state: Open"><span data-component="StateLabel" data-status="pullOpened">Open</span></button></div></div>`;
+    const [pill] = syncStatusPills(true, () => undefined);
+    // A merge in place: GitHub drops the button and renders a plain label, after Geld's pill.
+    document.querySelector('button[aria-haspopup="true"]')?.remove();
+    pill?.after(Object.assign(document.createElement('span'), { textContent: 'Merged' }));
+    const merged = document.querySelector('.row > span');
+    merged?.setAttribute('data-component', 'StateLabel');
+    merged?.setAttribute('data-status', 'pullMerged');
+    // Nothing to switch a merged pull request to: GitHub's label alone.
+    expect(syncStatusPills(false, () => undefined)).toEqual([]);
+    expect(document.querySelectorAll('[data-geld-status-pill]')).toHaveLength(0);
+    // Still offered (a merge of Geld's own on its way): one pill, after the new label, dressed from it.
+    const [again] = syncStatusPills(true, () => undefined);
+    expect(document.querySelectorAll('[data-geld-status-pill]')).toHaveLength(1);
+    expect(again?.previousElementSibling).toBe(merged);
+    expect(again?.getAttribute('data-status')).toBe('pullMerged');
+    document.body.replaceChildren();
+  });
 });

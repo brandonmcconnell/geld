@@ -321,6 +321,9 @@ export function syncStatusPills(on: boolean, onOpen: (pill: HTMLButtonElement, c
     if (!host.hasAttribute(ATTR_HIDDEN)) host.setAttribute(ATTR_HIDDEN, '');
     pills.push(pill);
   }
+  // A pill no longer after any of GitHub's labels: GitHub replaced the label in place (a merge on the Overview swaps its
+  // status button for a plain merged label, rendered after the pill), and the old pill stood on beside it, still open.
+  for (const stale of document.querySelectorAll<HTMLButtonElement>(`button[${ATTR_PILL}]`)) if (!pills.includes(stale)) stale.remove();
   return pills;
 }
 

@@ -691,6 +691,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Measured signed in on geld#480 (a stack of three) and #470, from navigation to a menu with options, clicking the pill from the moment it shows: GitHub's own 2.17 to 2.29 s on #480;
   Geld's 1.74 to 1.93 s there (this pull request's own choices first, the stack's joining moments later) and 1.45 to 1.62 s on #470.
   GitHub re-renders the header about two seconds into a load, replacing its button, so the pill is made anew: an open menu is handed to the pill that took its place rather than closed (`showStatus`).
+  A merge in place (GitHub's own merge button on the Overview) swaps the status button for a plain merged label rendered after Geld's pill, which no label then stood before, so the old "Open" pill stayed beside GitHub's "Merged" until a reload: every sync now removes a pill that is not after one of GitHub's labels (`syncStatusPills`).
   The comment box's writer comes from the conversation asked for by name (`?overview=false`), which a reader in the preview is otherwise not served: the parameter holds for that one request and changes no preference (checked signed in, Nov 2026).
   Not covered yet: the timeline events the Overview moved into its side panel (merges, force-pushes, review requests, cross-references;
   `page_data/timeline` has them), so the digest's "N timeline events" and mentions rows and its force-push rounds are the conversation's only.
