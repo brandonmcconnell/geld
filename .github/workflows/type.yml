@@ -1,0 +1,43 @@
+name: Type
+
+# Builds Geld Sans and Geld Dark Sans from packages/type, checks the compiled fonts against the
+# source, and keeps them as an artifact. TypeScript tests for the package run in CI's `pnpm check`.
+on:
+  push:
+    branches: [main]
+    paths: ['packages/type/**', 'assets/brand/**', '.github/workflows/type.yml']
+  pull_request:
+    paths: ['packages/type/**', 'assets/brand/**', '.github/workflows/type.yml']
+  workflow_dispatch:
+
+jobs:
+  fonts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: packages/type/requirements.txt
+      - run: pnpm install --frozen-lockfile --filter @geld/type...
+      - run: pip install -r packages/type/requirements.txt
+      - run: pnpm --filter @geld/type check
+      - run: pnpm --filter @geld/type build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: geld-sans-fonts
+          path: |
+            packages/type/dist/variable
+            packages/type/dist/ttf
+            packages/type/dist/otf
+            packages/type/dist/web
+            packages/type/dist/proof.html
+          if-no-files-found: error

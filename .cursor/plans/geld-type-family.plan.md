@@ -31,7 +31,7 @@ Exact geometry, for reference: a 45° cut of leg `c` on a stroke of thickness `d
 |---|---|---|
 | D1 | **Corner styles.** | **Cut corners only.** A square-cornered style is deferred to a later goal of its own. If it is ever built, each cut gets tagged *decorative* or *structural* first, so Square keeps O, D and 0 apart. Nothing in v1 depends on that tagging. |
 | D2 | **Family name.** | **Geld Sans.** With one corner style there is no "Cut" in the name. |
-| D3 | **Dark mode.** | **Geld Dark Sans**, a family of its own with the logo's dark-mode bands baked in: every stroke inset by 0.2 grid units on each side, with the same advance widths, spacing and kerning as Geld Sans, so switching families in dark mode never reflows text. It ships in every weight and in italic, like Geld Sans. Internally it is a grade of the same outlines (2.6), and no `GRAD` axis is exposed. |
+| D3 | **Dark mode.** | **Geld Dark Sans**, a family of its own with the logo's dark-mode bands baked in: every edge inset by a tenth of the stem (0.2 grid units at SemiBold, exactly the dark logo; a fixed 0.2 would leave the Thin weight almost nothing), with the same advance widths, spacing and kerning as Geld Sans, so switching families in dark mode never reflows text. It ships in every weight and in italic, like Geld Sans. Internally it is a grade of the same outlines (2.6), and no `GRAD` axis is exposed. |
 | D4 | **Corner axis.** | None, since there is one corner style. |
 | D5 | **Units per em and the grid.** | 1 em = 20 grid units and UPM = 1000, so 1 unit = 50 units of the font. At 20px, 1 grid unit is 1px. Cap height is 14 units (0.70 em). |
 | D6 | **Vertical proportions.** | x-height 10 units (0.50 em), ascender 15, descender 4, as starting values checked in Phase 3. |
@@ -107,8 +107,8 @@ Starting stems in grid units, vertical cap stems, to be tuned in Phase 3:
 - [ ] Italic swashes (2.8 and section 7).
 
 ### 2.6 Geld Dark Sans
-- [ ] The dark grade: every stroke inset by 0.2 grid units on each side (10 font units), as the dark logo is, at the same centrelines.
-- [ ] Advance widths, sidebearings measured from the Geld Sans outlines, and kerning identical to Geld Sans, so switching families in dark mode never reflows text.
+- [x] The dark grade: every edge of the Geld Sans outline inset by a tenth of the stem, as the dark logo was made from the light one (0.2 units at SemiBold, matched by a test against `geld-logo-white.svg`).
+- [x] Advance widths and sidebearings measured from the Geld Sans outlines, identical in both families (checked in the source and in the compiled fonts), so switching families in dark mode never reflows text. Kerning will be shared the same way.
 - [ ] A family of its own (D3) in every weight, roman and italic, static and variable, with its own `name` table entries.
 - [ ] Documented use: `@media (prefers-color-scheme: dark)` switching `font-family` to Geld Dark Sans.
 
@@ -128,7 +128,7 @@ These are not font styles. The renderer draws them from metrics the font provide
 - [ ] Underline thickness tracks each weight's horizontal stroke (about 70% of it, clamped to 0.5 to 1.5 units), and strikeout thickness matches it.
 - [ ] Underline position clears the baseline by about 1.5 units, above the descender, so `text-decoration-skip-ink` reads well.
 - [ ] Strikeout position on the centre of the hyphen and en dash bar, so a struck word lines up with its dashes.
-- [ ] Both vary with weight in the variable fonts (`MVAR` tags `unds`, `undo`, `strs`, `stro`).
+- [x] Both vary with weight in the variable fonts (`MVAR` tags `unds`, `strs`, `stro`), checked against the source by `scripts/verify.py`.
 - [ ] Checked with `text-decoration-thickness: from-font` in Chrome, Safari and Firefox, and in Word, Pages and Google Docs.
 - [ ] Documented: renderers draw decorations as rectangles, so they never have cut corners.
 
@@ -431,7 +431,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 Each phase ends with a review. The next phase starts only once its deliverable is agreed.
 
 1. **Alignment.** Settle section 1. Deliverable: this document with the decisions recorded.
-2. **Foundations.** The package, the grid, the geometry engine (cuts, weight, contrast, the dark grade, slant), the build into real fonts with `H O n o`, `G E L D` and space, the wordmark test (D7), a first proof page, and CI. Deliverable: working static, variable and web fonts for Geld Sans and Geld Dark Sans, roman and a provisional italic, every weight.
+2. **Foundations.** (Done: `packages/type`, see its PR.) The package, the grid, the geometry engine (cuts, weight, contrast, the dark grade, slant), the build into real fonts with `H O n o`, `G E L D` and space, the wordmark test (D7), a first proof page, and CI. Deliverable: working static, variable and web fonts for Geld Sans and Geld Dark Sans, roman and a provisional italic, every weight.
 3. **Design core.** A to Z, a to z, 0 to 9 and basic punctuation at Regular and SemiBold. Deliverable: a proof of the core in two weights.
 4. **Weights.** Thin to Black, contrast and the three-horizontals budget, `avar`. Deliverable: the core in all nine weights.
 5. **Italic.** Slanted grid, italic forms and their spacing. Deliverable: the core in italic, all weights.

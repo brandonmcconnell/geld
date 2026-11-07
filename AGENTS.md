@@ -31,6 +31,10 @@ apps/dashboard/      @geld/dashboard — independent Next.js review workspace, B
 packages/domain/     @geld/domain — provider-neutral contracts, access and billing rules.
 packages/providers/  @geld/providers — provider clients behind token sources.
 packages/ui/         @geld/ui — shared Base UI presentation primitives.
+packages/type/       @geld/type — Geld Sans and Geld Dark Sans: glyph skeletons on the brand grid,
+                     the geometry engine that draws every weight, and `pnpm type:build` (fontmake,
+                     Python tools in requirements.txt) into static, variable and web fonts. Plan:
+                     `.cursor/plans/geld-type-family.plan.md`. Built by `.github/workflows/type.yml`.
 assets/brand/        Logo + logomark SVGs (black and white variants), and the logomark on a pixel grid for small icons. Both apps reference these.
 .github/workflows/   CI: `pnpm check` (typecheck + tests everywhere), `pnpm catalog:check` (generated
                      catalog and its signature are current) and `pnpm zip:all` artifacts.
