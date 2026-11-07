@@ -16,6 +16,7 @@ import type { Connection } from '@geld/review/link-resolvers/index';
 import { proxyTokens, tokenEndpointFor } from './app-connect';
 import { withFreshTokens } from './connections';
 import { TEAMS_REDIRECT, teamsAuthorizeUrl } from './teams-connect';
+import { DISCORD_REDIRECT, discordAuthorizeUrl, discordBotInviteUrl } from './discord-connect';
 
 const teams = (expiresAt: number | null): Connection => ({
   id: 't',
@@ -76,5 +77,16 @@ describe('withFreshTokens', () => {
     const fetch = async (): Promise<Response> => new Response(JSON.stringify({ ok: false, error: 'invalid_grant' }), { status: 400 });
     expect(await withFreshTokens([stale], fetch, 1)).toEqual([stale]);
     expect(state.store.has('local:connections')).toBe(false);
+  });
+});
+
+describe('Connect Discord', () => {
+  it('asks for who the reader is and their servers only, with a challenge, back to geld.sh', () => {
+    const url = new URL(discordAuthorizeUrl('app', 'st', 'ch'));
+    expect(url.origin + url.pathname).toBe('https://discord.com/oauth2/authorize');
+    expect(url.searchParams.get('scope')).toBe('identify guilds');
+    expect(url.searchParams.get('redirect_uri')).toBe(DISCORD_REDIRECT);
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(new URL(discordBotInviteUrl('app', '66560')).searchParams.get('permissions')).toBe('66560');
   });
 });

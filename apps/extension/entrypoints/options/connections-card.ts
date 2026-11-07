@@ -6,6 +6,8 @@ import { APP_SERVICES, KEY_SERVICES, type AppServiceSpec, type ServiceSpec } fro
 import type { AppConnectResult } from '../../src/lib/app-connect';
 import { connectSlack, revokeSlack, SLACK_CLIENT_ID, SLACK_ORIGINS } from '../../src/lib/slack-connect';
 import { connectTeams, TEAMS_CLIENT_ID, TEAMS_ORIGINS } from '../../src/lib/teams-connect';
+import { connectDiscord, DISCORD_CLIENT_ID, DISCORD_ORIGINS, discordBotInviteUrl, revokeDiscord } from '../../src/lib/discord-connect';
+import { DISCORD_BOT_PERMISSIONS } from '@geld/review/link-resolvers/index';
 
 /** How each app service signs in: whether this build has its app, the origins to ask for, the flow and its sign-out. */
 interface AppFlow {
@@ -13,12 +15,28 @@ interface AppFlow {
   readonly origins: readonly string[];
   readonly connect: (existing: readonly Connection[]) => Promise<AppConnectResult>;
   readonly revoke: (connection: Connection) => Promise<void>;
+  /** A line under the service's blurb, such as where a server admin adds Geld's bot. */
+  readonly note?: () => readonly Node[];
 }
 
 const APP_FLOWS: Partial<Record<Connection['service'], AppFlow>> = {
   slack: { ready: SLACK_CLIENT_ID !== '', origins: SLACK_ORIGINS, connect: connectSlack, revoke: (connection) => revokeSlack(connection.secret) },
   // Microsoft has no call to revoke one token; removing the connection deletes it here, and the reader can sign Geld out under My Apps.
   teams: { ready: TEAMS_CLIENT_ID !== '', origins: TEAMS_ORIGINS, connect: connectTeams, revoke: async () => undefined },
+  discord: {
+    ready: DISCORD_CLIENT_ID !== '',
+    origins: DISCORD_ORIGINS,
+    connect: connectDiscord,
+    revoke: revokeDiscord,
+    note: () => {
+      const invite = document.createElement('a');
+      invite.href = discordBotInviteUrl(DISCORD_CLIENT_ID, DISCORD_BOT_PERMISSIONS);
+      invite.target = '_blank';
+      invite.rel = 'noreferrer';
+      invite.textContent = 'add Geld’s bot';
+      return [document.createTextNode('A server admin needs to '), invite, document.createTextNode(' to each server first. It can only see channels and read their history.')];
+    },
+  },
 };
 
 /**
@@ -228,7 +246,7 @@ export function mountConnectionsCard(root: HTMLElement, options: ConnectionsCard
       await save(known ? connections.map((candidate) => (candidate.id === result.connection.id ? result.connection : candidate)) : [...connections, result.connection]);
     });
     return el('div', 'options__block options__connection-group', [
-      el('div', 'geld-row options__connection-head', [el('div', '', [el('h3', 'options__group-title', [spec.name]), el('p', 'geld-help', rich(ready ? spec.blurb : `${spec.blurb} ${spec.pending}`)), status]), connect]),
+      el('div', 'geld-row options__connection-head', [el('div', '', [el('h3', 'options__group-title', [spec.name]), el('p', 'geld-help', rich(ready ? spec.blurb : `${spec.blurb} ${spec.pending}`)), ...(ready && flow?.note !== undefined ? [el('p', 'geld-help', [...flow.note()])] : []), status]), connect]),
       ...(mine.length === 0 ? [] : [el('ul', 'options__connection-list', mine.map(connectionRow))]),
     ]);
   }

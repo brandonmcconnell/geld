@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { SLACK_USER_SCOPES, TEAMS_SCOPES } from '@geld/review/link-resolvers/index';
-import { SLACK_SCOPES, TEAMS_PERMISSIONS, teamsAdminConsentUrl } from './integrations';
+import { DISCORD_USER_SCOPES, SLACK_USER_SCOPES, TEAMS_SCOPES } from '@geld/review/link-resolvers/index';
+import { DISCORD_SCOPES, discordBotInviteUrl, SLACK_SCOPES, TEAMS_PERMISSIONS, teamsAdminConsentUrl } from './integrations';
 
 const manifest: unknown = JSON.parse(readFileSync(fileURLToPath(new URL('../integrations/slack/manifest.json', import.meta.url)), 'utf8'));
 
@@ -29,5 +29,14 @@ describe('the Teams app', () => {
     const consent = new URL(teamsAdminConsentUrl('app-id'));
     expect(consent.searchParams.get('client_id')).toBe('app-id');
     expect(consent.searchParams.get('scope')).toBe('https://graph.microsoft.com/User.Read https://graph.microsoft.com/ChannelMessage.Read.All https://graph.microsoft.com/Channel.ReadBasic.All https://graph.microsoft.com/Team.ReadBasic.All');
+  });
+});
+
+describe('the Discord app', () => {
+  it('asks the reader for who they are and their servers only, and the bot for seeing channels and their history', () => {
+    expect(DISCORD_SCOPES.map(({ scope }) => scope)).toEqual([...DISCORD_USER_SCOPES]);
+    const invite = new URL(discordBotInviteUrl('app'));
+    expect(invite.searchParams.get('scope')).toBe('bot');
+    expect(BigInt(invite.searchParams.get('permissions') ?? '0')).toBe((1n << 10n) | (1n << 16n));
   });
 });

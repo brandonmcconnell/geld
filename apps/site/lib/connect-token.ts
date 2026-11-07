@@ -24,6 +24,13 @@ export const PROXY_SERVICES: Readonly<Record<string, ProxyService>> = {
     clientIdEnv: 'MICROSOFT_CLIENT_ID',
     secretEnv: 'MICROSOFT_CLIENT_SECRET',
   },
+  discord: {
+    tokenUrl: 'https://discord.com/api/v10/oauth2/token',
+    redirect: `${SITE_URL}/connect/discord/callback`,
+    scope: null,
+    clientIdEnv: 'DISCORD_CLIENT_ID',
+    secretEnv: 'DISCORD_CLIENT_SECRET',
+  },
 };
 
 export type TokenRequest = { readonly grant: 'code'; readonly code: string; readonly verifier: string } | { readonly grant: 'refresh'; readonly refresh: string };

@@ -862,3 +862,7 @@ body {
   display: grid;
   gap: 4px;
 }
+
+.options__connection-head .geld-status:empty {
+  display: none;
+}

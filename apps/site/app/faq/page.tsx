@@ -61,7 +61,7 @@ const QUESTIONS: readonly Question[] = [
     question: 'How do related links get their real titles?',
     answer: (
       <p>
-        Add your own Linear, Jira, GitHub, GitLab or Bitbucket accounts, or connect Slack or Microsoft Teams (see <Link href="/integrations/slack">Geld for Slack</Link> and <Link href="/integrations/teams">Geld for Microsoft Teams</Link>), under Connected services in the extension options (an experiment for now). For each
+        Add your own Linear, Jira, GitHub, GitLab or Bitbucket accounts, or connect Slack, Microsoft Teams or Discord (see <Link href="/integrations/slack">Slack</Link>, <Link href="/integrations/teams">Teams</Link> and <Link href="/integrations/discord">Discord</Link>), under Connected services in the extension options (an experiment for now). For each
         related link Geld asks the account that can open that workspace, from your browser, with your key. Keys stay on your device and are never synced
         or sent to Geld. AI context is a separate choice per account and is off until you turn it on.
       </p>

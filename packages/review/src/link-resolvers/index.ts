@@ -1,5 +1,6 @@
 import type { RelatedLink } from '../related-links';
 import { bitbucketResolver } from './bitbucket';
+import { discordResolver } from './discord';
 import { githubResolver } from './github';
 import { gitlabResolver } from './gitlab';
 import { jiraResolver } from './jira';
@@ -11,6 +12,7 @@ import { isServiceId, type Connection, type ConnectionDraft, type ConnectionUse,
 
 export * from './types';
 export { adfText } from './jira';
+export { canRead, channelPermissions, DISCORD_API, DISCORD_BOT_PERMISSIONS, DISCORD_RESOLVER, DISCORD_USER_SCOPES, isDiscordTarget, resolveDiscordAsBot, type DiscordTarget } from './discord';
 export { GRAPH, TEAMS_SCOPES, teamsText } from './teams';
 export { SLACK_API, SLACK_LIMITED_METHODS, SLACK_USER_SCOPES, slackFailure, slackText } from './slack';
 
@@ -22,6 +24,7 @@ const RESOLVERS = new Map<ServiceId, LinkResolver>([
   ['bitbucket', bitbucketResolver],
   ['slack', slackResolver],
   ['teams', teamsResolver],
+  ['discord', discordResolver],
 ]);
 
 /** Services added in a later step register here, so this module never imports their platform code. */
