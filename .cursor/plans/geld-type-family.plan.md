@@ -188,8 +188,11 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [ ] Private Use Area: the emblem at U+E000 and the wordmark lockup at U+E001, documented.
 
 ### 3.8 Greek and Cyrillic (v1, D10)
-- [ ] Greek (GF Greek Core): monotonic, plus polytonic as a later step.
-- [ ] Cyrillic (GF Cyrillic Core and Plus), with Bulgarian and Serbian/Macedonian `locl` forms.
+- [x] Greek (GF Greek Core): monotonic. Letters shared with Latin are the Latin glyph as a component, capitals with tonos set it before the letter.
+- [ ] Greek polytonic (GF Greek Plus), a later step.
+- [x] Cyrillic (GF Cyrillic Core and Plus). Lowercase is the capital's skeleton as a small capital, with italic forms of its own (и п т ц as u n m and u with a tail).
+- [x] Bulgarian `locl` forms (Л, в г д ж и й ѝ к л п т ц ш щ ъ ь ю) and Serbian and Macedonian italic forms (г д п т; Macedonian keeps г), checked by shaping in every compiled font.
+- [ ] Serbian б, and Bulgarian з in its own proportions, both optional by the sources.
 
 ## 4. Kerning
 

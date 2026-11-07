@@ -1,10 +1,12 @@
+import { CYRILLIC_ALIASES } from './glyphs-cyrillic';
+import { GREEK_ALIASES, GREEK_TONOS, GREEK_TONOS_CAPS } from './glyphs-greek';
 import { VIETNAMESE_PAIRS } from './marks';
 import { FRACTIONS } from './glyphs-figures';
 
 /** A precomposed letter: a base and the marks stacked on it, each attaching to the anchor its mark names. */
 export interface AccentedDef {
   name: string;
-  unicode: number;
+  unicode?: number;
   base: string;
   marks: string[];
 }
@@ -54,6 +56,12 @@ const COMMA_ABOVE = 0x123;
 /** ď ľ Ľ ť take the caron as a vertical stroke beside a tall stem. */
 const VERTICAL_CARON = new Set([0x10f, 0x13d, 0x13e, 0x165]);
 
+/** Letters that lose their dot under a mark above, Ukrainian і and Serbian ј included. */
+const DOTLESS: Record<string, string> = { i: 'dotlessi', j: 'dotlessj', 'i-cy': 'dotlessi', 'je-cy': 'dotlessj' };
+
+/** Ά Έ Ή Ί Ό Ύ Ώ set their tonos before the capital, so they are placed, not stacked. */
+const TONOS_BESIDE = new Set(GREEK_TONOS_CAPS.map(([, unicode]) => unicode));
+
 const isUpper = (c: string) => c !== c.toLowerCase() && c === c.toUpperCase();
 
 /**
@@ -65,7 +73,7 @@ export function accentedFromUnicode(ranges: [number, number][], names: Map<numbe
   const out: AccentedDef[] = [];
   for (const [from, to] of ranges)
     for (let cp = from; cp <= to; cp++) {
-      if (names.has(cp)) continue;
+      if (names.has(cp) || TONOS_BESIDE.has(cp)) continue;
       const [baseChar, ...markChars] = [...String.fromCodePoint(cp).normalize('NFD')];
       if (!baseChar || markChars.length === 0) continue;
       const baseCp = baseChar.codePointAt(0)!;
@@ -104,8 +112,8 @@ export function accentedFromUnicode(ranges: [number, number][], names: Map<numbe
         const i = marks.findIndex((m, k) => plain(m) === first && plain(marks[k + 1] ?? '') === second);
         if (i >= 0) marks.splice(i, 2, `${first}_${second}${marks[i]!.endsWith('.case') ? '.case' : ''}`);
       }
-      const base = top && baseName === 'i' ? 'dotlessi' : top && baseName === 'j' ? 'dotlessj' : baseName;
-      out.push({ name: `${baseName}${suffix}`, unicode: cp, base, marks });
+      const base = (top && DOTLESS[baseName]) || baseName;
+      out.push({ name: baseName.replace(/(-cy)?$/, `${suffix}$1`), unicode: cp, base, marks });
     }
   return out;
 }
@@ -119,7 +127,6 @@ export const PLACED: PlacedDef[] = [
   { name: 'ldot', unicode: 0x140, parts: [{ glyph: 'l', after: true }, { glyph: 'periodcentered', after: true, dx: -0.5, dy: 2 }] },
   { name: 'Dcroat', unicode: 0x110, parts: [{ glyph: 'Eth', after: true }] },
   { name: 'apostrophemod', unicode: 0x2bc, parts: [{ glyph: 'quoteright', after: true }] },
-  { name: 'Omega', unicode: 0x3a9, parts: [{ glyph: 'Ohm', after: true }] },
   { name: 'rupee', unicode: 0x20a8, parts: [{ glyph: 'R', after: true }, { glyph: 's', after: true, dx: -0.5 }] },
   { name: 'uni00AD', unicode: 0xad, parts: [{ glyph: 'hyphen', after: true }] },
   ...(
@@ -162,9 +169,16 @@ export const SPACING_ACCENTS: { name: string; unicode: number; mark: string; bel
   { name: 'hungarumlaut', unicode: 0x2dd, mark: 'hungarumlautcomb' },
 ];
 
+/** Glyphs that are another glyph under a second code point (Cyrillic and Greek letters shared with Latin), placed before the accented letters that use them. */
+export const ALIASES: PlacedDef[] = [...CYRILLIC_ALIASES, ...GREEK_ALIASES];
+
+export { GREEK_TONOS };
+
 export const LATIN_RANGES: [number, number][] = [
   [0xc0, 0xff],
   [0x100, 0x17f],
   [0x180, 0x24f],
+  [0x370, 0x3ff],
+  [0x400, 0x4ff],
   [0x1e00, 0x1eff],
 ];

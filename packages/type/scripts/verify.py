@@ -17,7 +17,7 @@ DIST = Path(__file__).resolve().parent.parent / "dist"
 OVERLAP_SIMPLE = 0x40
 SAMPLE = "HOnoGELD"
 # Google Fonts' glyph sets the fonts must cover in full; each is added here once it is complete.
-GLYPHSETS = ["GF_Latin_Kernel", "GF_Latin_Core", "GF_Latin_Plus", "GF_Latin_Vietnamese", "GF_Latin_PriAfrican"]
+GLYPHSETS = ["GF_Latin_Kernel", "GF_Latin_Core", "GF_Latin_Plus", "GF_Latin_Vietnamese", "GF_Latin_PriAfrican", "GF_Greek_Core", "GF_Cyrillic_Core", "GF_Cyrillic_Plus"]
 
 failures: list[str] = []
 
@@ -57,12 +57,14 @@ def shape_total(data: bytes, weight: int, text: str) -> tuple[list[str], int]:
     return names, sum(pos.x_advance for pos in buf.glyph_positions)
 
 
-def shape(data: bytes, weight: int, text: str):
+def shape(data: bytes, weight: int, text: str, language: str | None = None):
     font = hb.Font(hb.Face(data))
     font.set_variations({"wght": weight})
     buf = hb.Buffer()
     buf.add_str(text)
     buf.guess_segment_properties()
+    if language:
+        buf.language = language
     hb.shape(font, buf)
     return [(font.glyph_to_string(i.codepoint), p) for i, p in zip(buf.glyph_infos, buf.glyph_positions)]
 
@@ -88,6 +90,19 @@ def check_marks(path: Path, data: bytes, weight: int) -> None:
     check(below.y_offset <= 0, f"{path.name} at {weight}: cedilla raised ({below.y_offset})")
 
 
+def check_locl(path: Path, data: bytes, italic: bool) -> None:
+    """Bulgarian, Serbian and Macedonian text takes its own Cyrillic forms, and Russian keeps the default."""
+    expected = {
+        ("ru", "длий"): ["de-cy", "el-cy", "ii-cy", "iibreve-cy"],
+        ("bg", "гдлийѝ"): ["ge-cy.loclBGR", "de-cy.loclBGR", "el-cy.loclBGR", "ii-cy.loclBGR", "iibreve-cy.loclBGR", "iigrave-cy.loclBGR"],
+        ("sr", "гдпт"): ["ge-cy.loclSRB", "de-cy.loclSRB", "pe-cy.loclSRB", "te-cy.loclSRB"],
+        ("mk", "гдпт"): ["ge-cy", "de-cy.loclSRB", "pe-cy.loclSRB", "te-cy.loclSRB"],
+    }
+    for (language, text), names in expected.items():
+        got = [n for n, _ in shape(data, 400, text, language)]
+        check(got == names, f"{path.name}: {language} {text!r} shaped {got}")
+
+
 def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None:
     font = TTFont(path)
     cmap = set(font.getBestCmap())
@@ -102,6 +117,7 @@ def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None
     check("MVAR" in font, f"{path.name}: no MVAR, so decorations do not follow the weight")
     check(bool(font["OS/2"].fsSelection & 1) == italic, f"{path.name}: italic bit")
     data = path.read_bytes()
+    check_locl(path, data, italic)
     for weight, expected in by_weight.items():
         instance = instantiateVariableFont(TTFont(path), {"wght": int(weight)})
         got = advances(instance)
