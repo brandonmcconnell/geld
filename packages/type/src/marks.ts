@@ -2,7 +2,7 @@ import { ALL, bar, box, comma, diagonal, dot, type DrawContext, level, open, p, 
 import type { Stroke } from './geometry';
 
 /** Where a mark attaches: the base's anchor of the same name, matched by the mark's `_name` anchor at its origin. */
-export type Attachment = 'top' | 'bottom' | 'ogonek' | 'topright' | 'horn';
+export type Attachment = 'top' | 'bottom' | 'ogonek' | 'topright' | 'horn' | 'center';
 
 /**
  * A combining mark, drawn around its attachment point (0, 0): marks above stand on it, marks
@@ -105,6 +105,28 @@ const MARKS_ABOVE: MarkDef[] = [
     caseForm: true,
     draw: (g, h) => [diagonal(g, -2.2, h, 0, 0), diagonal(g, 2.2, h, 0, 0)].map((s) => withPen(s, accentPen(g))),
   },
+  {
+    name: 'dblgravecomb',
+    unicode: 0x30f,
+    attach: 'top',
+    caseForm: true,
+    draw: (g, h) => {
+      const dx = 1.1 + g.v * 0.55;
+      return [-dx, dx].map((x) => withPen(level(open(p(x + 0.9, 0), p(x - 0.9, h))), accentPen(g)));
+    },
+  },
+  {
+    name: 'breveinvertedcomb',
+    unicode: 0x311,
+    attach: 'top',
+    caseForm: true,
+    draw: (g, h) => [withPen(open(p(-2, 0), p(-2, h - g.h / 2, true), p(2, h - g.h / 2, true), p(2, 0)), accentPen(g))],
+  },
+  { name: 'verticallineabovecomb', unicode: 0x30d, attach: 'top', caseForm: true, draw: (g, h) => [withPen(open(p(0, 0), p(0, h)), accentPen(g))] },
+  { name: 'commaabovecomb', unicode: 0x313, attach: 'top', draw: (g) => comma(g, 0, 0, 0.75) },
+  { name: 'commaaboverightcomb', unicode: 0x315, attach: 'topright', draw: (g) => comma(g, 0, 0, 0.65) },
+  { name: 'dotaboverightcomb', unicode: 0x358, attach: 'topright', draw: (g) => [dot(g, 0, 0)] },
+  { name: 'strokeshortoverlaycomb', unicode: 0x335, attach: 'center', draw: (g) => [withPen(bar(-2.25, 2.25, 0), accentPen(g))] },
   { name: 'commaturnedabovecomb', unicode: 0x312, attach: 'top', draw: (g) => rotate180(comma(g, 0, 0, 0.75), 0, (g.dot * 0.75 - 2.5 * 0.75) / 2) },
   { name: 'dotbelowcomb', unicode: 0x323, attach: 'bottom', hang: true, draw: (g) => [dot(g, 0, 0)] },
   { name: 'verticallinebelowcomb', unicode: 0x329, attach: 'bottom', hang: true, draw: (g) => [withPen(open(p(0, 0), p(0, 2.5)), accentPen(g))] },
@@ -166,6 +188,9 @@ function belowMarks(): MarkDef[] {
     below('tildebelowcomb', 0x330, find('tildecomb')),
     below('ringbelowcomb', 0x325, find('ringcomb')),
     below('brevebelowcomb', 0x32e, find('brevecomb')),
+    below('breveinvertedbelowcomb', 0x32f, find('breveinvertedcomb')),
+    below('lowlinecomb', 0x332, (g) => [withPen(bar(-2.75, 2.75, g.h / 2), accentPen(g))], 0),
+    below('dblmacronbelowcomb', 0x35f, (g) => [withPen(bar(-2, 8, g.h / 2), accentPen(g))], 0),
   ];
 }
 
@@ -192,4 +217,25 @@ function vietnameseMarks(): MarkDef[] {
   }));
 }
 
-export const MARKS: MarkDef[] = [...MARKS_ABOVE, ...belowMarks(), ...vietnameseMarks()];
+/** A macron stacked with an acute or grave, either way up, for tone marks. */
+function toneMarks(): MarkDef[] {
+  const find = (name: string) => MARKS_ABOVE.find((m) => m.name === name)!.draw;
+  const stack = (name: string, unicode: number, lower: string, upper: string): MarkDef => ({
+    name,
+    unicode,
+    attach: 'top',
+    draw: (g, height) => {
+      const short = height * 0.75;
+      const low = lower === 'macroncomb' ? g.h : short;
+      return [...find(lower)(g, short), ...shift(find(upper)(g, short), 0, low + 0.6)];
+    },
+  });
+  return [
+    stack('macronacutecomb', 0x1dc4, 'macroncomb', 'acutecomb'),
+    stack('gravemacroncomb', 0x1dc5, 'gravecomb', 'macroncomb'),
+    stack('macrongravecomb', 0x1dc6, 'macroncomb', 'gravecomb'),
+    stack('acutemacroncomb', 0x1dc7, 'acutecomb', 'macroncomb'),
+  ];
+}
+
+export const MARKS: MarkDef[] = [...MARKS_ABOVE, ...belowMarks(), ...vietnameseMarks(), ...toneMarks()];

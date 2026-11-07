@@ -75,7 +75,7 @@ const UPPER: GlyphDef[] = [
     unicode: 0x141,
     lsb: 0.5,
     rsb: 0.5,
-    draw: (g) => [open(p(0, g.cap), p(0, g.bottom(0)), p(g.wide(9), g.bottom(0))), withPen(open(p(-2, 4.75), p(2.75, 9.25)), g.diag)],
+    draw: (g) => [open(p(0, g.cap), p(0, g.bottom(0)), p(g.wide(9), g.bottom(0))), withPen(open(p(-2, g.y(4.75)), p(2.75, g.y(9.25))), g.diag)],
   },
   {
     name: 'Eng',
@@ -98,7 +98,7 @@ const UPPER: GlyphDef[] = [
       const w = g.wide(10);
       const t = g.top(g.cap);
       const b = g.bottom(0);
-      return rotate180([open(p(0, 7), p(w, 7), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, 3.5))], w / 2, g.cap / 2);
+      return rotate180([open(p(0, g.y(7)), p(w, g.y(7)), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, g.y(3.5)))], w / 2, g.cap / 2);
     },
   },
   {
@@ -121,7 +121,7 @@ const UPPER: GlyphDef[] = [
       const t = g.top(g.cap);
       const b = g.bottom(0);
       const m = g.cap / 2;
-      return mirror([open(p(0, 10), p(0, t, true), p(w, t, true), p(w, m), p(w * 0.35, m)), open(p(w, m), p(w, b, true), p(0, b, true), p(0, 4))], w / 2);
+      return mirror([open(p(0, g.y(10)), p(0, t, true), p(w, t, true), p(w, m), p(w * 0.35, m)), open(p(w, m), p(w, b, true), p(0, b, true), p(0, g.y(4)))], w / 2);
     },
   },
   {
@@ -131,7 +131,7 @@ const UPPER: GlyphDef[] = [
     rsb: 1.25,
     draw: (g) => {
       const w = g.wide(10);
-      return mirror([open(p(w, 9), p(w, g.top(g.cap), true), p(0, g.top(g.cap), true), p(0, g.bottom(0), true), p(w, g.bottom(0), true), p(w, 5))], w / 2);
+      return mirror([open(p(w, g.y(9)), p(w, g.top(g.cap), true), p(0, g.top(g.cap), true), p(0, g.bottom(0), true), p(w, g.bottom(0), true), p(w, g.y(5)))], w / 2);
     },
   },
   {
@@ -200,7 +200,7 @@ const UPPER: GlyphDef[] = [
       const t = g.top(g.cap);
       const b = g.bottom(0);
       const m = 7.5;
-      return [open(p(0, 0), p(0, t, true), p(w, t, true), p(w, 11), p(w * 0.4, m)), open(p(w * 0.4, m), p(w2, m, true), p(w2, b, true), p(w * 0.45, b))];
+      return [open(p(0, 0), p(0, t, true), p(w, t, true), p(w, g.y(11)), p(w * 0.4, m)), open(p(w * 0.4, m), p(w2, m, true), p(w2, b, true), p(w * 0.45, b))];
     },
   },
   {
@@ -225,7 +225,7 @@ const UPPER: GlyphDef[] = [
       const w = g.wide(9);
       const t = g.top(g.cap);
       const b = g.bottom(-3);
-      return [bar(0, w, t), diagonal(g, w - g.foot(w * 0.6, 4), g.cap, w * 0.4, 8, [true, false]), open(p(w * 0.4, 8), p(w, 8, true), p(w, b, true), p(0, b, true), p(0, 1))];
+      return [bar(0, w, t), diagonal(g, w - g.foot(w * 0.6, 4), g.cap, w * 0.4, 8, [true, false]), open(p(w * 0.4, g.y(8)), p(w, g.y(8), true), p(w, b, true), p(0, b, true), p(0, g.y(1)))];
     },
   },
 ];
@@ -253,7 +253,7 @@ const LOWER_DEFS: GlyphDef[] = [
       const t = g.top(g.xHeight);
       const b = g.bottom(0);
       const m = 5.25;
-      return [open(p(0, t), p(xe, t, true), p(xe, m), p(xm, m)), stem(xm, 0, g.xHeight), box(0, xm, b, m, LEFT), open(p(xm, b), p(xe, b, true), p(xe, 2.5))];
+      return [open(p(0, t), p(xe, t, true), p(xe, m), p(xm, m)), stem(xm, 0, g.xHeight), box(0, xm, b, m, LEFT), open(p(xm, b), p(xe, b, true), p(xe, g.y(2.5)))];
     },
   },
   {
@@ -267,7 +267,7 @@ const LOWER_DEFS: GlyphDef[] = [
       const t = g.top(g.xHeight);
       const b = g.bottom(0);
       const m = 5.25;
-      return [box(0, xm, b, t, LEFT), open(p(xm, m), p(xe, m), p(xe, t, true), p(xm, t)), open(p(xm, b), p(xe, b, true), p(xe, 2.5))];
+      return [box(0, xm, b, t, LEFT), open(p(xm, m), p(xe, m), p(xe, t, true), p(xm, t)), open(p(xm, b), p(xe, b, true), p(xe, g.y(2.5)))];
     },
   },
   {
@@ -289,8 +289,8 @@ const LOWER_DEFS: GlyphDef[] = [
       const w = g.wide(8);
       return [
         box(0, w, g.bottom(0), g.top(g.xHeight), LEFT),
-        level(open(p(w, 0), p(w, 12), p(w - 3, g.ascender)), false, true),
-        withPen(open(p(w - 3.25, 11.25), p(w + 1.25, 13.75)), g.diag),
+        level(open(p(w, 0), p(w, g.y(12)), p(w - 3, g.ascender)), false, true),
+        withPen(open(p(w - 3.25, g.y(11.25)), p(w + 1.25, g.y(13.75))), g.diag),
       ];
     },
   },
@@ -341,7 +341,7 @@ const LOWER_DEFS: GlyphDef[] = [
     unicode: 0x142,
     lsb: 0.5,
     rsb: 0.5,
-    draw: (g) => [stem(0, 0, g.ascender), withPen(open(p(-2, 6.25), p(2, 10.25)), g.diag)],
+    draw: (g) => [stem(0, 0, g.ascender), withPen(open(p(-2, g.y(6.25)), p(2, g.y(10.25))), g.diag)],
   },
   {
     name: 'eng',
@@ -381,7 +381,7 @@ const LOWER_DEFS: GlyphDef[] = [
       const w = g.wide(8);
       const t = g.top(g.xHeight);
       const b = g.bottom(0);
-      return rotate180([open(p(0, 5.25), p(w, 5.25), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, 2.5))], w / 2, g.xHeight / 2);
+      return rotate180([open(p(0, g.y(5.25)), p(w, g.y(5.25)), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, g.y(2.5)))], w / 2, g.xHeight / 2);
     },
   },
   {
@@ -393,7 +393,7 @@ const LOWER_DEFS: GlyphDef[] = [
       const w = g.wide(8);
       const t = g.top(g.xHeight);
       const b = g.bottom(0);
-      return rotate180([open(p(0, 5.25), p(w, 5.25), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, 2.5))], w / 2, g.xHeight / 2);
+      return rotate180([open(p(0, g.y(5.25)), p(w, g.y(5.25)), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, g.y(2.5)))], w / 2, g.xHeight / 2);
     },
   },
   {
@@ -405,8 +405,8 @@ const LOWER_DEFS: GlyphDef[] = [
       const w = g.wide(7);
       const t = g.top(g.xHeight);
       const b = g.bottom(0);
-      const m = 5;
-      return mirror([open(p(0, 7.5), p(0, t, true), p(w, t, true), p(w, m), p(w * 0.35, m)), open(p(w, m), p(w, b, true), p(0, b, true), p(0, 2.5))], w / 2);
+      const m = g.y(5);
+      return mirror([open(p(0, g.y(7.5)), p(0, t, true), p(w, t, true), p(w, m), p(w * 0.35, m)), open(p(w, m + g.h / 2), p(w, b, true), p(0, b, true), p(0, g.y(2.5)))], w / 2);
     },
   },
   {
@@ -418,7 +418,7 @@ const LOWER_DEFS: GlyphDef[] = [
       const w = g.wide(7.5);
       const t = g.top(g.xHeight);
       const b = g.bottom(0);
-      return mirror([open(p(w, 7), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, 3))], w / 2);
+      return mirror([open(p(w, g.y(7)), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, g.y(3)))], w / 2);
     },
   },
   {
@@ -497,7 +497,7 @@ const LOWER_DEFS: GlyphDef[] = [
     draw: (g) => {
       const w = g.wide(8);
       const d = g.bottom(g.descender);
-      return [box(0, w, g.bottom(0), g.top(g.xHeight), LEFT), open(p(w, g.xHeight), p(w, d, true), p(0, d, true), p(0, -1.5))];
+      return [box(0, w, g.bottom(0), g.top(g.xHeight), LEFT), open(p(w, g.xHeight), p(w, d, true), p(0, d, true), p(0, g.y(-1.5)))];
     },
   },
   {
@@ -530,7 +530,7 @@ const LOWER_DEFS: GlyphDef[] = [
       const w = g.wide(7.5);
       const t = g.top(g.xHeight);
       const b = g.bottom(g.descender);
-      return [bar(0, w, t), diagonal(g, w - g.foot(w * 0.6, 4), g.xHeight, w * 0.4, 4.5, [true, false]), open(p(w * 0.4, 4.5), p(w, 4.5, true), p(w, b, true), p(0, b, true), p(0, -2))];
+      return [bar(0, w, t), diagonal(g, w - g.foot(w * 0.6, 4), g.xHeight, w * 0.4, 4.5, [true, false]), open(p(w * 0.4, g.y(4.5)), p(w, g.y(4.5), true), p(w, b, true), p(0, b, true), p(0, g.y(-2)))];
     },
   },
   {
@@ -543,7 +543,7 @@ const LOWER_DEFS: GlyphDef[] = [
       const t = g.top(g.cap);
       const x = w / 2;
       const arm = Math.min(8.5, g.cap - g.h * 1.5 - g.aperture);
-      return [open(p(0, 10.5), p(0, t, true), p(w, t, true), p(w, arm, true), p(x, arm, true), p(x, 0))];
+      return [open(p(0, g.y(10.5)), p(0, t, true), p(w, t, true), p(w, arm, true), p(x, arm, true), p(x, 0))];
     },
   },
   {
@@ -571,13 +571,13 @@ const LOWER_DEFS: GlyphDef[] = [
 ];
 
 /** The hook of Ɓ and Ɗ: the top bar running left of the stem and turning down. */
-function hookLeft(g: DrawContext, top: number): Stroke {
+export function hookLeft(g: DrawContext, top: number): Stroke {
   const t = g.top(top);
   return open(p(-2.75, top - 3), p(-2.75, t, true), p(0, t));
 }
 
 /** The hook of ɓ, ɗ and ƙ: the ascender turning right at the top. */
-function hookRight(g: DrawContext, x: number): Stroke {
+export function hookRight(g: DrawContext, x: number): Stroke {
   const t = g.top(g.ascender);
   return open(p(x, 0), p(x, t, true), p(x + 3, t));
 }

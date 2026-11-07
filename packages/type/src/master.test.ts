@@ -117,16 +117,16 @@ const orthogonal = (contours: Contour[]) =>
   );
 
 describe('heavy weights', () => {
-  /** B and 8 (and в, B's small capital, and its Bulgarian form) have a notch at the waist, and Q's tail and ł's and ø's strokes cross, by design. */
-  const notched = new Set(['B', 'eight', 'Q', 'lslash', 'Lslash', 'oslash', 'Oslash', 'litre', 've-cy', 've-cy.loclBGR']);
+  /** B and 8 (and в, B's small capital, and its Bulgarian form) have a notch at the waist, Q's tail and ł's and ø's strokes cross, and ʾ ʿ are open angles, by design. */
+  const notched = new Set(['B', 'eight', 'Q', 'lslash', 'Lslash', 'oslash', 'Oslash', 'litre', 've-cy', 've-cy.loclBGR', 'ringhalfleftmod', 'ringhalfrightmod']);
 
-  it('keep every letter and figure counter at least 1.4 units open (superiors and ordinals in proportion), Black included', () => {
+  it('keep every letter and figure counter at least 1.4 units open (superiors, ordinals and modifier letters in proportion), Black included', () => {
     const tight: string[] = [];
     for (const weight of WEIGHTS)
       for (const glyph of buildMaster('sans', 'roman', weight).glyphs) {
         const char = glyph.unicode === undefined ? '' : String.fromCodePoint(glyph.unicode);
         if (!(/[\p{L}\p{N}]/u.test(char) || glyph.name.includes('.locl')) || notched.has(glyph.name) || !orthogonal(glyph.contours)) continue;
-        const small = /superior|inferior|\.dnom|^ord/.test(glyph.name);
+        const small = /superior|inferior|\.dnom|^ord|mod$/.test(glyph.name);
         const gap = narrowestCounter(glyph.contours);
         if (gap < (small ? 0.75 : 1.4)) tight.push(`${glyph.name} ${weight}: ${gap.toFixed(2)}`);
       }

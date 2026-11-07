@@ -77,7 +77,7 @@ const LOWER_DEFS: GlyphDef[] = [
     unicode: 0x3b2,
     lsb: 1.5,
     rsb: 1.25,
-    draw: (g) => [stem(0, g.descender, g.top(14) + g.h / 2), box(0, g.wide(7), 7, g.top(14), RIGHT), box(0, g.wide(8), g.bottom(0), 7, RIGHT)],
+    draw: (g) => [stem(0, g.descender, g.top(g.y(14)) + g.h / 2), box(0, g.wide(7), 7, g.top(g.y(14)), RIGHT), box(0, g.wide(8), g.bottom(0), 7, RIGHT)],
   },
   {
     name: 'gamma',
@@ -95,7 +95,7 @@ const LOWER_DEFS: GlyphDef[] = [
     rsb: 1.25,
     draw: (g) => {
       const w = g.wide(8.5);
-      const t = g.top(14);
+      const t = g.top(g.y(14));
       const shoulder = g.top(g.xHeight);
       return [box(0, w, g.bottom(0), shoulder, ALL), open(p(w * 0.3, shoulder), p(w * 0.3, t, true), p(w, t))];
     },
@@ -125,7 +125,7 @@ const LOWER_DEFS: GlyphDef[] = [
     rsb: 1.25,
     draw: (g) => {
       const w = g.wide(8);
-      return [box(0, w, g.bottom(0), g.top(14), ALL), bar(0, w, 7)];
+      return [box(0, w, g.bottom(0), g.top(g.y(14)), ALL), bar(0, w, g.y(7))];
     },
   },
   {
@@ -183,7 +183,7 @@ const LOWER_DEFS: GlyphDef[] = [
       const b = g.bottom(0);
       const d = g.bottom(g.descender);
       const x = w * 0.8;
-      return [open(p(w, 7), p(w, t, true), p(0, t, true), p(0, b, true), p(x, b, true), p(x, d, true), p(x - 2, d))];
+      return [open(p(w, g.y(7)), p(w, t, true), p(0, t, true), p(0, b, true), p(x, b, true), p(x, d, true), p(x - 2, d))];
     },
   },
   {
@@ -275,7 +275,7 @@ function zetaStrokes(g: DrawContext, xi: boolean) {
   const d = g.bottom(g.descender);
   return [
     bar(0, w, g.top(top)),
-    ...(xi ? [bar(1, w * 0.8, 7.5)] : []),
+    ...(xi ? [bar(1, w * 0.8, g.y(7.5))] : []),
     diagonal(g, w - e, top, e, 0),
     open(p(0, b), p(w, b, true), p(w, d, true), p(w - 2.5, d)),
   ];

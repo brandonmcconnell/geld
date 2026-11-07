@@ -10,6 +10,20 @@ export const smallPen = (v: number) => SMALL_PEN - Math.max(0, v - 2) * 0.14;
 const SUPERIOR_RISE = METRICS.cap * (1 - SMALL);
 const INFERIOR_DROP = -2;
 
+/** A letter as a modifier letter or superscript: drawn at the superior figures' size and hung from the same height; `lighten` thins letters with two counters as the ordinals are. */
+export function superiorOf(def: GlyphDef, name: string, unicode: number, lower = true, lighten = 1): GlyphDef {
+  return {
+    name,
+    unicode,
+    lsb: Math.max(0.5, def.lsb * SMALL),
+    rsb: Math.max(0.5, def.rsb * SMALL),
+    draw: (g) => {
+      const small = g.sub(METRICS.cap * SMALL, smallPen(g.v) * lighten, lower);
+      return shift(inPen(small, def.draw(small)), 0, SUPERIOR_RISE);
+    },
+  };
+}
+
 const NAMES = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
 const SUPERSCRIPTS = [0x2070, 0xb9, 0xb2, 0xb3, 0x2074, 0x2075, 0x2076, 0x2077, 0x2078, 0x2079];
 

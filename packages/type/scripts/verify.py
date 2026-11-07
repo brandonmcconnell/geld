@@ -17,7 +17,7 @@ DIST = Path(__file__).resolve().parent.parent / "dist"
 OVERLAP_SIMPLE = 0x40
 SAMPLE = "HOnoGELD"
 # Google Fonts' glyph sets the fonts must cover in full; each is added here once it is complete.
-GLYPHSETS = ["GF_Latin_Kernel", "GF_Latin_Core", "GF_Latin_Plus", "GF_Latin_Vietnamese", "GF_Latin_PriAfrican", "GF_Greek_Core", "GF_Cyrillic_Core", "GF_Cyrillic_Plus"]
+GLYPHSETS = ["GF_Latin_Kernel", "GF_Latin_Core", "GF_Latin_Plus", "GF_Latin_Vietnamese", "GF_Latin_PriAfrican", "GF_Latin_African", "GF_Latin_Beyond", "GF_TransLatin_Pinyin", "GF_TransLatin_Arabic", "GF_Greek_Core", "GF_Cyrillic_Core", "GF_Cyrillic_Plus"]
 
 failures: list[str] = []
 
@@ -80,12 +80,16 @@ def check_marks(path: Path, data: bytes, weight: int) -> None:
         "X\u0302\u0301": ["X", "circumflexcomb_acutecomb.case"],
         "\u1ea5": ["acircumflexacute"],
         "x\u0327": ["x", "cedillacomb"],
+        "a\u030f": ["adblgrave"],
+        "x\u030f": ["x", "dblgravecomb"],
     }
     for text, names in expected.items():
         got = shape(data, weight, text)
         check([n for n, _ in got] == names, f"{path.name} at {weight}: {text!r} shaped {[n for n, _ in got]}")
     mark = shape(data, weight, "x\u0301")[-1][1]
     check(mark.y_offset > 500, f"{path.name} at {weight}: acutecomb not raised above x ({mark.y_offset})")
+    overlay = shape(data, weight, "x\u0335")[-1][1]
+    check(150 < overlay.y_offset < 350, f"{path.name} at {weight}: short stroke overlay not across the middle of x ({overlay.y_offset})")
     below = shape(data, weight, "x\u0327")[-1][1]
     check(below.y_offset <= 0, f"{path.name} at {weight}: cedilla raised ({below.y_offset})")
 
