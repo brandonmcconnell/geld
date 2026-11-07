@@ -283,6 +283,8 @@ export function features(master: Master): string {
     ...caseFeatures(master, names),
     ...alternates.rest,
     ...swashFeatures(master, names),
+    // Ornaments (3.7), offered from the bullet: frames, bullets, a grid and the emblem.
+    ...(names.has('ornm01') ? ['feature ornm {', `  sub bullet from [${['ornm01', 'ornm02', 'ornm03', 'ornm04', 'ornm05', 'uniE000'].filter((n) => names.has(n)).join(' ')}];`, '} ornm;'] : []),
     // Only as a word of its own: Geldern, Geldbörse and Gelder keep their letters.
     ...(names.has(LOCKUP.name)
       ? [

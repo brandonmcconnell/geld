@@ -268,6 +268,8 @@ def check_alternates(path: Path, data: bytes, weight: int, cases: list[dict]) ->
         ("lane", {"cswh": True}, ["l.init", "a", "n", "e.fina"]),
         ("Kant", {"cswh": True}, ["K", "a", "n", "t.fina"]),
         ("lane", {}, ["l", "a", "n", "e"]),
+        ("•", {"ornm": True}, ["ornm01"]),
+        ("\ue000\ue001", {}, ["uniE000", "uniE001"]),
         *((("lane", {"ss18": True}, ["l.init", "a", "n", "e.fina"]),) if italic else ()),
     ):
         got = [n for n, _ in shape(data, weight, text, features=features)]

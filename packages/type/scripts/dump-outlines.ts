@@ -13,6 +13,8 @@ for (const spec of specs) {
   for (const glyph of master.glyphs) {
     // A glyph made only of components repeats its parts' joins; its parts are checked themselves.
     if (!glyph.contours.length) continue;
+    // Block elements and shades (▀ ░ ▓) are stepped patterns by design, which is what the check looks for.
+    if (glyph.unicode !== undefined && glyph.unicode >= 0x2580 && glyph.unicode <= 0x259f) continue;
     const contours = flatten(master, glyph);
     if (contours.length) glyphs[glyph.name] = contours.map((c) => c.map((p) => [p.x, p.y]));
   }

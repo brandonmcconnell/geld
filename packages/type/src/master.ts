@@ -8,7 +8,8 @@ import { CYRILLIC_LOCL_ACCENTED } from './glyphs-cyrillic';
 import { accentedSmallCaps, SMALL_CAP_EXTRA_ACCENTED, SMALL_CAP_PLACED } from './glyphs-smallcaps';
 import { ALTERNATES, alternateName, OCTAGONAL_DOTS, SWASHES, swashName } from './alternates';
 import { CODE_LIGATURES, codePieceName } from './code-ligatures';
-import { LOCKUP, lockupGlyph } from './lockup';
+import { BOX_DRAWING } from './glyphs-dingbats';
+import { EMBLEM, emblemGlyph, LOCKUP, LOCKUP_CODE, lockupGlyph } from './lockup';
 import { DARK_INSET_RATIO, ITALIC_SLOPE, METRICS, toFontUnits, UNIT, type Weight, weightParams } from './grid';
 import { type Attachment, BELOW_GAP, MARK_GAP, MARK_HEIGHT, MARKS } from './marks';
 
@@ -127,9 +128,14 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   const slant = (contours: Contour[]) => (italic ? contours.map((c) => translate(shear(c, ITALIC_SLOPE), -ITALIC_SLOPE * ITALIC_PIVOT)) : contours);
   /** Each glyph's outline before Geld Dark Sans's inset, slanted, for measurements both families must share. */
   const undarkened = new Map<string, Contour[]>();
+  // Box drawing and blocks fill their cells to the edge in both families and stand upright in the italic, so lines run
+  // on from cell to cell and row to row: an inset or a slant would open a seam or a step between them.
+  const edgeToEdge = new Set(BOX_DRAWING.map((d) => d.name));
   const finish = (contours: Contour[], name?: string) => {
-    if (name) undarkened.set(name, slant(contours));
-    return slant(family === 'dark' ? contours.map((c) => insetContour(c, params.v * DARK_INSET_RATIO)) : contours);
+    const cell = name !== undefined && edgeToEdge.has(name);
+    const lean = (cs: Contour[]) => (cell ? cs : slant(cs));
+    if (name) undarkened.set(name, lean(contours));
+    return lean(family === 'dark' && !cell ? contours.map((c) => insetContour(c, params.v * DARK_INSET_RATIO)) : contours);
   };
   const place = (p: Vec): Vec => (italic ? { x: p.x + p.y * ITALIC_SLOPE - ITALIC_SLOPE * ITALIC_PIVOT, y: p.y } : p);
   const placeAnchors = (anchors: Anchor[]) => anchors.map((a) => ({ ...a, ...place(a) }));
@@ -273,6 +279,8 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     glyphs.push({ name: parts.join('_'), advance: x, contours: finish(bridges, parts.join('_')), components, anchors: placeAnchors(carets), mark: false });
   }
   glyphs.push({ name: LOCKUP.name, ...lockupGlyph(family === 'dark'), components: [], mark: false });
+  glyphs.push({ ...EMBLEM, ...emblemGlyph(family === 'dark'), components: [], anchors: [], mark: false });
+  glyphs.push({ ...LOCKUP_CODE, advance: glyphs.find((gl) => gl.name === LOCKUP.name)!.advance, contours: [], components: [{ glyph: LOCKUP.name, dx: 0, dy: 0 }], anchors: [], mark: false });
 
   for (const arch of arches) {
     if (!arch) continue;

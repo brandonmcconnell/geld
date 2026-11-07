@@ -1,6 +1,7 @@
 import { alternateDefs, swashDefs } from './alternates';
 import type { GlyphDef, SpaceDef } from './draw';
 import { AFRICAN } from './glyphs-african';
+import { BOX_DRAWING, DINGBATS, ORNAMENTS } from './glyphs-dingbats';
 import { DRAWN_SIGNS, FIGURES, LOWER, NOTDEF, ON_LETTERS, PUNCTUATION, TRADEMARK, UPPER } from './glyphs-core';
 import { CYRILLIC, CYRILLIC_LOCL } from './glyphs-cyrillic';
 import { figureSets, figureVariants, signScripts, tabularSigns } from './glyphs-figures';
@@ -29,6 +30,9 @@ const DRAWN: GlyphDef[] = [
   ...CYRILLIC,
   ...CYRILLIC_LOCL,
   ...GREEK,
+  ...DINGBATS,
+  ...BOX_DRAWING,
+  ...ORNAMENTS,
 ];
 
 export const GLYPHS: GlyphDef[] = [...DRAWN, ...alternateDefs(DRAWN), ...swashDefs(DRAWN), ...figureSets(FIGURES), ...tabularSigns(DRAWN), ...signScripts(DRAWN), ...smallCaps(DRAWN)];

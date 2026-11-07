@@ -17,7 +17,7 @@ const RIGHT = 1.3;
 /** Where the caret goes between the letters typed: after G (the mark and G), E and L. */
 const CARETS = [47, 64, 80];
 
-function pathContours(svg: string): Contour[] {
+function pathContours(svg: string, scale = 1, left = LEFT, baseline = BASELINE): Contour[] {
   const contours: Contour[] = [];
   for (const [, d] of svg.matchAll(/<path d="([^"]+)"/g)) {
     let current: Contour = [];
@@ -34,7 +34,7 @@ function pathContours(svg: string): Contour[] {
       else if (op === 'H') x = n[0]!;
       else y = n[0]!;
       const last = current[current.length - 1];
-      const point = { x: LEFT + x, y: BASELINE - y };
+      const point = { x: left + x * scale, y: (baseline - y) * scale };
       if (!last || last.x !== point.x || last.y !== point.y) current.push(point);
     }
   }
@@ -50,4 +50,21 @@ export function lockupGlyph(dark: boolean): { contours: Contour[]; advance: numb
     advance: LEFT + width + RIGHT,
     anchors: CARETS.map((x, i) => ({ name: `caret_${i + 1}`, x: LEFT + x, y: 0 })),
   };
+}
+
+/**
+ * The Geld emblem (the logomark) as a glyph at U+E000 and in ornm: the mark read from assets/brand at the capitals'
+ * height, the same at every weight and upright in italic, the dark mark in Geld Dark Sans.
+ */
+export const EMBLEM = { name: 'uniE000', unicode: 0xe000 } as const;
+/** The lockup, also at U+E001, for setting the wordmark by its code point. */
+export const LOCKUP_CODE = { name: 'uniE001', unicode: 0xe001 } as const;
+
+export function emblemGlyph(dark: boolean): { contours: Contour[]; advance: number } {
+  const file = new URL(`../../../assets/brand/${dark ? 'geld-logomark-white' : 'geld-logomark'}.svg`, import.meta.url);
+  const svg = readFileSync(file, 'utf8');
+  const box = /viewBox="0 0 ([\d.]+) ([\d.]+)/.exec(svg)!;
+  const [width, height] = [Number(box[1]), Number(box[2])];
+  const scale = 14 / height;
+  return { contours: pathContours(svg, scale, LEFT, height), advance: LEFT + width * scale + LEFT };
 }
