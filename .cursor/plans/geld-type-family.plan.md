@@ -1,14 +1,14 @@
 ---
 name: Geld type family
-overview: 'Geld Sans (then Geld Mono), drawn on the brand grid: two corner styles (Cut, Square), weights 100 to 900, roman and italic, a dark-mode grade built like the logo''s bands, a high-budget Latin character set, spacing and kerning, OpenType features (text ligatures, symbol and code ligatures, alternates, swashes), symbols, and a tested build that ships static, variable and web fonts.'
-status: 'Awaiting alignment. Nothing is drawn until the decisions in section 1 are settled.'
+overview: 'Geld Sans (then Geld Mono), drawn on the brand grid with cut corners, weights 100 to 900, roman and true italic, plus Geld Dark Sans with the logo''s dark-mode bands baked in, a high-budget Latin, Greek and Cyrillic character set, spacing and kerning, OpenType features (text ligatures, symbol and code ligatures, alternates, swashes), symbols, and a tested build that ships static, variable and web fonts.'
+status: 'Decisions agreed on Nov 6, 2026 (section 1). Phase 2 under way.'
 isProject: true
 ---
 
 # Geld type family
 
 This is the full checklist for Geld Sans, and a preview of Geld Mono, which follows it.
-Section 1 lists the decisions to settle before work starts, each with a recommendation.
+Section 1 records the decisions agreed on Nov 6, 2026.
 Sections 2 to 17 are the work itself, as checkboxes.
 Section 18 gives the order of the work and what each phase must deliver before the next one starts.
 
@@ -19,36 +19,35 @@ The wordmark merged in #460 (`assets/brand/geld-logo.svg`) is the first specimen
 - The grid is the emblem's 24 × 25 units, and at 25px tall 1 unit is 1px.
 - Caps are 14 units tall (y 6 to 20) with a 2-unit stroke.
 - Cuts are 45°, 2 units on the outer corner and 1 unit on the inner corner.
-- **Cuts appear only where a traditional sans has a curve.** G and D have cuts. E and L, and the straight side of D, have square corners. This is the rule that defines the Cut style, and it creates the main problem for the Square style (D1 below).
-- The dark-mode logo insets every edge by 0.2 units, so the 2-unit stroke becomes 1.6 at the same widths. That is a grade axis, and the family gets one (2.6).
+- **Cuts appear only where a traditional sans has a curve.** G and D have cuts. E and L, and the straight side of D, have square corners.
+- The dark-mode logo insets every edge by 0.2 units, so the 2-unit stroke becomes 1.6 at the same widths. Geld Dark Sans is that treatment applied to the whole font (2.6).
 - Letters in the wordmark have 6 units between them. That is logo tracking, not text spacing.
 
 Exact geometry, for reference: a 45° cut of leg `c` on a stroke of thickness `d` leaves an inner leg of `c − d(2 − √2)`. With c = 2 and d = 2 that is 0.83, which the wordmark snaps to 1.
 
-## 1. Decisions to settle first
+## 1. Decisions (agreed Nov 6, 2026)
 
-Each decision has a recommendation. Agreeing to all the recommendations is a valid answer.
-
-| # | Decision | Recommendation |
+| # | Decision | Agreed |
 |---|---|---|
-| D1 | **How Square keeps letters apart.** With every cut squared off, O, D, 0 and □ become rectangles, and C collides with `[`. | Every cut is tagged *decorative* or *structural*. Square removes decorative cuts and keeps structural ones, for example the right-hand corners of D, so O, D and 0 stay distinct. In Square, `0` also takes a slash or dot by default. |
-| D2 | **The word for the cut style.** | **Cut** (Geld Sans Cut, Geld Sans Square). It is short, it is the word the brand already uses (`--geld-cut`, "cut corners"), and it pairs with Square. The alternatives are Chamfer (the precise term but technical), Bevel (CSS's `corner-shape: bevel`, but it suggests a 3D edge) and Notch. |
-| D3 | **The default family.** Which one does plain "Geld Sans" mean? | Ship two families, **Geld Sans Cut** and **Geld Sans Square**, with Cut as the brand default. Also ship one variable "Geld Sans" file with a corner axis (D4) for anyone who wants both in one file. |
-| D4 | **A corner axis.** | Yes. A custom axis `CUTS`, from 0 (Square) to 100 (Cut). It costs almost nothing because the outlines are generated (D11). Cut and Square become named instances of that axis, and the corners can animate between them. |
-| D5 | **Units per em and the grid.** | 1 em = 20 grid units and UPM = 1000, so 1 unit = 50 units of the font. At 20px, 1 grid unit is 1px, so every straight edge of the grid weights lands on a pixel. 10px, 30px and 40px land on half or whole pixels. Cap height is 14 units (0.70 em, close to Inter's 0.73). |
-| D6 | **Vertical proportions.** | x-height 10 units (0.50 em, 0.71 of cap height: large, for UI), ascender 15, descender 4. These are starting values and are checked in Phase 2 against Inter, Geist and SF at 12 to 16px. |
-| D7 | **The wordmark is a weight of the font.** | Yes. "GELD" set in Geld Sans Cut SemiBold (600) with tracking reproduces `geld-logo.svg` exactly, and SemiBold's cap stem is the wordmark's 2 units. |
-| D8 | **Italic construction.** | A true italic: the roman sheared on a slanted grid, with corrections, plus italic-only letterforms (single-storey a and g, a descending f, a tailed l, a straight-tailed y, exit strokes on n m h i u l as a stylistic set). It is not a plain oblique. |
-| D9 | **Italic angle.** | A slope of 1:7 (8.13°), so a cap's 14 units shift by exactly 2 units and caps stay on the grid. The alternatives are 1:6 (9.46°) and 1:5 (11.31°, where the 10-unit x-height lands on the grid instead). |
-| D10 | **Language scope for v1.** | v1 is Latin, to Google Fonts' **GF Latin Pro** glyph set (which includes Vietnamese and African Latin). Greek and Cyrillic follow as v1.1, since the octagonal construction suits Cyrillic especially well. |
-| D11 | **How glyphs are made.** | Code first. Each glyph is a skeleton (a centreline on the grid plus per-glyph parameters) written in TypeScript. A geometry engine expands the skeleton to outlines for any weight, grade, corner and slant. Hand corrections are parameters or explicit overrides in the source, never edits made in an editor. UFOs are exported only for review in Glyphs or RoboFont. This keeps the grid exact and makes every weight reproducible. |
-| D12 | **Symbol ligatures keep one glyph per character.** | Yes. `->` becomes two contextual pieces (a left half and a right half of the arrow), each as wide as its own character, rather than one ligature glyph. The text stays two characters, the caret, selection and deletion work per character in every app, and it is also how the Mono font has to work. Text ligatures such as `fi` use real ligature glyphs with caret positions. |
-| D13 | **Which ligatures are on by default in Sans.** | In `calt` (on by default): only the arrows `->` `<-` `<->` `=>` and their long forms. In `dlig` (off by default): the rest of the code ligatures. An `ss20` "No arrows" set turns the default arrows back into plain characters. Mono (later) turns the code ligatures on by default. |
-| D14 | **Small caps in v1.** | Yes, for the GF Latin Core characters with figures and punctuation (`smcp`, `c2sc`). Petite caps are out of scope. |
-| D15 | **Optical size axis.** | Not in v1. The construction keeps it possible later, with larger cuts and looser spacing at caption sizes and tighter spacing at display sizes. |
-| D16 | **Licence.** | SIL OFL 1.1 with "Geld" as a Reserved Font Name. This is the norm for fonts, and Google Fonts requires it. The rest of the repository is AGPL-3.0-only, and AGPL is an awkward fit for fonts embedded in documents. Licence changes are the owner's (AGENTS.md), so an agent prepares this and the owner commits it. |
-| D17 | **Where Geld uses its own font.** | geld.sh, the extension's popup and options pages, store art and the emblem in PUA. The digest on github.com keeps GitHub's font. |
-| D18 | **Hinting.** | Variable fonts and web fonts unhinted. Static TTFs hinted with ttfautohint for Windows. |
+| D1 | **Corner styles.** | **Cut corners only.** A square-cornered style is deferred to a later goal of its own. If it is ever built, each cut gets tagged *decorative* or *structural* first, so Square keeps O, D and 0 apart. Nothing in v1 depends on that tagging. |
+| D2 | **Family name.** | **Geld Sans.** With one corner style there is no "Cut" in the name. |
+| D3 | **Dark mode.** | **Geld Dark Sans**, a family of its own with the logo's dark-mode bands baked in: every stroke inset by 0.2 grid units on each side, with the same advance widths, spacing and kerning as Geld Sans, so switching families in dark mode never reflows text. It ships in every weight and in italic, like Geld Sans. Internally it is a grade of the same outlines (2.6), and no `GRAD` axis is exposed. |
+| D4 | **Corner axis.** | None, since there is one corner style. |
+| D5 | **Units per em and the grid.** | 1 em = 20 grid units and UPM = 1000, so 1 unit = 50 units of the font. At 20px, 1 grid unit is 1px. Cap height is 14 units (0.70 em). |
+| D6 | **Vertical proportions.** | x-height 10 units (0.50 em), ascender 15, descender 4, as starting values checked in Phase 3. |
+| D7 | **The wordmark is a weight of the font.** | "GELD" in Geld Sans SemiBold (600) reproduces `geld-logo.svg`, checked by a test. |
+| D8 | **Italic.** | **A true italic**, not a slanted roman: built on a slanted grid with corrections, and with italic-only letterforms (single-storey a and g, a descending f, a tailed l, a straight-tailed y, exit strokes on n m h i u l). |
+| D9 | **Italic angle.** | 1:7 (8.13°), so a cap's 14 units shift by exactly 2 units. |
+| D10 | **Language scope for v1.** | **Latin to GF Latin Pro (including Vietnamese and African Latin), plus Greek and Cyrillic**, all in v1. |
+| D11 | **How glyphs are made.** | Code first: a centreline skeleton per glyph in TypeScript, expanded by a geometry engine for every weight, the dark grade and the italic slant. UFOs are exported only for review. |
+| D12 | **Symbol ligatures.** | One glyph per character, so the text stays two characters, and the caret, selection and deletion work per character. **In Geld Sans the pieces are narrower than the characters they replace**, so `->` reads as one compact arrow rather than taking the room of a hyphen and a greater-than sign. In Mono each piece keeps its cell. Text ligatures such as `fi` are real ligature glyphs with caret positions. |
+| D13 | **Ligature defaults in Sans.** | Arrows on by default (`calt`), with `ss20` turning them off. Every other code ligature off by default but available, both in `dlig` and as named stylistic set groups, so turning them on in code is one line (`font-feature-settings: "dlig"`, or one `ss` per group). The usage guide and the web CSS package give ready-made classes for this. |
+| D14 | **Small caps in v1.** | Yes, for GF Latin Core with figures and punctuation. |
+| D15 | **Optical size axis.** | Not in v1. |
+| D16 | **Licence.** | **SIL OFL 1.1**, agreed by the owner. AGENTS.md has an agent prepare licence changes and the owner commit them, so the licence file and the package's licence field are the owner's to commit. |
+| D17 | **Where Geld uses its own font.** | geld.sh, the extension's popup and options pages, store art and the emblem in PUA. |
+| D18 | **Hinting.** | Variable and web fonts unhinted, static TTFs hinted with ttfautohint. |
+| D19 | **Heavy weights.** | Workarounds for crowded letters (thinner horizontals, wider letters, ink traps) are approved wherever the heavy weights need them. |
 
 ## 2. Design foundations
 
@@ -56,7 +55,7 @@ Each decision has a recommendation. Agreeing to all the recommendations is a val
 - [ ] Grid spec document: units, UPM, the snapping rule (grid weights land on whole units, other weights land on 0.05-unit steps), and where half units are allowed.
 - [ ] Vertical metrics: cap height, x-height, ascender, descender, overshoot policy (flat octagonal tops need none, diagonal apexes such as A V W need a small one), and the accent zone above caps and above lowercase.
 - [ ] Line metrics: `hhea` and `OS/2` typo ascender and descender set equal, line gap 0, `USE_TYPO_METRICS` on, `usWinAscent` and `usWinDescent` covering the tallest stacked Vietnamese accent and the deepest descender so Windows never clips. Default line height about 1.2.
-- [ ] Baseline and height alignment across all four styles, so switching style never moves a line.
+- [ ] Baseline and height alignment across Geld Sans and Geld Dark Sans, roman and italic, so switching never moves a line.
 - [ ] `post.underlinePosition` and `post.underlineThickness`, plus `OS/2` strikeout position and size (2.9).
 - [ ] Super and subscript metrics (`ySuperscript*`, `ySubscript*`) matching the `sups` and `subs` glyphs.
 - [ ] Recommended pixel sizes documented: 10, 20, 30 and 40px are on the grid.
@@ -95,11 +94,10 @@ Starting stems in grid units, vertical cap stems, to be tuned in Phase 3:
 - [ ] Interpolation compatibility guaranteed by construction: every weight has the same points in the same order.
 - [ ] `usWeightClass`, `fsSelection` and style linking for every static instance.
 
-### 2.4 Corner styles: Cut and Square
-- [ ] Every glyph has Cut, Square and the axis between them (`CUTS` 0 to 100), with structural cuts kept in Square.
-- [ ] A Square-only check of every confusable pair: O 0 D Q, C [, U ⊔, I l 1 |, rn m, cl d, S 5, Z 2, B 8, G 6.
-- [ ] Square's default `0` is slashed or dotted (D1). Cut keeps an open zero, with the slashed and dotted zeros on `zero` and `cv`.
-- [ ] The emblem drawn in both styles.
+### 2.4 Corners
+- [ ] Cut corners only (D1). Every glyph's cuts follow the cut rule (2.2).
+- [ ] Confusable pairs checked anyway: O 0 D Q, I l 1 |, rn m, cl d, S 5, Z 2, B 8, G 6.
+- [ ] The emblem drawn as a glyph (3.7).
 
 ### 2.5 Italic
 - [ ] The slanted grid at 1:7 (D9). `post.italicAngle`, `hhea` caret slope and `OS/2` fsSelection italic.
@@ -107,12 +105,12 @@ Starting stems in grid units, vertical cap stems, to be tuned in Phase 3:
 - [ ] Italic-only forms (D8): a, g, f, l, y and e, plus exit strokes as `ss08`.
 - [ ] Italic spacing and kerning, done separately from roman.
 - [ ] Italic swashes (2.8 and section 7).
-- [ ] Square italic: parallelograms on the same slanted grid.
 
-### 2.6 Grade (dark mode)
-- [ ] `GRAD` axis: stem change in font units at constant width, from −40 to +40. GRAD −20 is the logo's dark treatment (a 0.2-unit inset on each side). Widths, sidebearings and kerning do not change across the axis, so text never reflows when the scheme changes.
-- [ ] Named use documented: `@media (prefers-color-scheme: dark) { font-variation-settings: "GRAD" -20 }`.
-- [ ] Static "Dark" instances are not shipped. The axis covers it.
+### 2.6 Geld Dark Sans
+- [ ] The dark grade: every stroke inset by 0.2 grid units on each side (10 font units), as the dark logo is, at the same centrelines.
+- [ ] Advance widths, sidebearings measured from the Geld Sans outlines, and kerning identical to Geld Sans, so switching families in dark mode never reflows text.
+- [ ] A family of its own (D3) in every weight, roman and italic, static and variable, with its own `name` table entries.
+- [ ] Documented use: `@media (prefers-color-scheme: dark)` switching `font-family` to Geld Dark Sans.
 
 ### 2.7 Spacing model
 - [ ] Sidebearings by side profile, in grid units: straight stems (H, n), cut rounds (O, o, closer to straight than a true curve because the cut is only 2 units), diagonals (V, v), open sides (C right, r right, L right, T), and each punctuation class.
@@ -136,7 +134,7 @@ These are not font styles. The renderer draws them from metrics the font provide
 
 ## 3. Character set
 
-Targets are Google Fonts' published glyph sets, so coverage is checkable by tool. Every encoded character is drawn in all four styles and every weight. Counts are approximate.
+Targets are Google Fonts' published glyph sets, so coverage is checkable by tool. Every encoded character is drawn in roman and italic, at every weight, in Geld Sans and Geld Dark Sans. Counts are approximate.
 
 ### 3.1 Latin (v1)
 - [ ] Basic Latin (U+0020 to 007E), 95 characters.
@@ -186,10 +184,10 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [ ] Geometric shapes: ■ □ ▪ ▫ ▬ ▲ △ ▶ ▷ ▼ ▽ ◀ ◁ ◆ ◇ ○ ● ◉ ◌ ◐ ◑ ◒ ◓ ◢ ◣ ◤ ◥, each in a cut version too.
 - [ ] Checks and marks: ✓ ✔ ✗ ✘ ✕ ✖ ★ ☆ ☐ ☑ ☒ ♥ ⚑ ⚠.
 - [ ] Box drawing and block elements, a basic set in Sans (the full set is Mono's, section 19).
-- [ ] Ornaments (`ornm`): the Geld emblem in Cut and Square, cut-corner frames, bullets and grid patterns.
+- [ ] Ornaments (`ornm`): the Geld emblem, cut-corner frames, bullets and grid patterns.
 - [ ] Private Use Area: the emblem at U+E000 and the wordmark lockup at U+E001, documented.
 
-### 3.8 Later scripts (v1.1, D10)
+### 3.8 Greek and Cyrillic (v1, D10)
 - [ ] Greek (GF Greek Core): monotonic, plus polytonic as a later step.
 - [ ] Cyrillic (GF Cyrillic Core and Plus), with Bulgarian and Serbian/Macedonian `locl` forms.
 
@@ -199,7 +197,7 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [ ] Class kerning first, then exceptions only where a class cannot be right (for example Tě, ľ, ď, Ť with following lowercase, and Tï).
 - [ ] The pairs that matter: caps with caps (AV, LT, TA, VA, AY), caps with lowercase (Ta, Te, To, Tr, Ty, Va, Yo, Fo, P.), lowercase pairs (r, f, v, w, y with punctuation), quotes and apostrophes ("A", L', 'T), punctuation after caps (T, V. F:), figures in proportional mode (11, 17, 71, 1.), slashes and parentheses (/A, (J), and `case` forms.
 - [ ] Kerning in quarter grid units (12.5 font units), so values stay on a known subgrid.
-- [ ] Kerning per weight, in every corner style and in italic, interpolating cleanly through the variable fonts.
+- [ ] Kerning per weight, in roman and in italic, shared by Geld Dark Sans, interpolating cleanly through the variable fonts.
 - [ ] Tabular figures and Mono get no kerning, by construction.
 - [ ] Collision checks: no kerned pair overlaps, including accents (for example T with ť, Ŵ with ŵ).
 - [ ] Space kerning (space with A, T, V, Y, quotes) where it helps.
@@ -213,7 +211,7 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [ ] Discretionary ligatures (`dlig`): ct, st, sp and "Geld" to the wordmark lockup.
 
 ### 5.2 Ligature mechanics (D12)
-- [ ] Symbol and code ligatures are contextual pieces (`calt`), one glyph per character with that character's advance width, so text, selection, the caret and deletion stay per character.
+- [ ] Symbol and code ligatures are contextual pieces (`calt`), one glyph per character, so text, selection, the caret and deletion stay per character. In Geld Sans the pieces are narrower than the characters they replace, so the arrow is compact (D12). In Mono each piece keeps its cell.
 - [ ] Kerning between pieces so the joined shape is continuous.
 - [ ] Turning off: `calt` off (CSS `font-variant-ligatures: no-contextual`) removes them all, `ss20` removes only the default arrows (it runs after `calt` and maps the pieces back).
 - [ ] Ligatures checked with `letter-spacing` set, since browsers drop optional ligatures when letters are spaced, and the result documented.
@@ -242,6 +240,7 @@ Default in Sans per D13. Mono turns most of them on by default (section 19).
 | Hex | `0x` | small x between 0 and the digits | off | on (contextual) |
 
 - [ ] Each group as its own stylistic set as well (`ss11` arrows, `ss12` comparison, `ss13` logic, `ss14` comments and markup, `ss15` scope, `ss16` shifts), so apps without `dlig` can pick groups.
+- [ ] Turning them on is one line in CSS (`font-feature-settings: "dlig"`, or `"ss12"` for one group), and the web CSS package ships classes such as `.geld-code-ligatures` for it (D13).
 - [ ] Conflicts handled: `<-` inside `x<-1` (code reads as "less than minus one", so `ss20` documents the way out), `-->` as an HTML comment end, `<=` read as ≤ and never as ⇐ (a fat left arrow needs `<==`).
 - [ ] Prose forms in Sans (`ss10`, off by default): `--` to an en dash and `---` to an em dash.
 - [ ] Symbol forms in Sans (`dlig`): `(c)` ©, `(r)` ®, `(tm)` ™, `[ ]` ☐, `[x]` ☑, `1/2` and other fractions through `frac`, and `x` between digits (1920x1080) as ×.
@@ -262,7 +261,7 @@ Default in Sans per D13. Mono turns most of them on by default (section 19).
 - [ ] `ss10` Dash ligatures (5.3).
 - [ ] `ss11` to `ss16` Code ligature groups (5.3).
 - [ ] `ss17` Circled numerals.
-- [ ] `ss18` Square forms inside Cut: lets a Cut user pick square corners for single glyphs.
+- [ ] `ss18` reserved.
 - [ ] `ss19` reserved.
 - [ ] `ss20` No arrow ligatures (5.2).
 
@@ -300,7 +299,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 | `frac`, `numr`, `dnom` | Fractions | off |
 | `sups`, `subs`, `sinf` | Superior, inferior, scientific inferior | off |
 | `ordn` | Ordinals | off |
-| `zero` | Slashed zero | off (on in Square, D1) |
+| `zero` | Slashed zero | off |
 | `ss01` to `ss20` | Stylistic sets (6.1) | off |
 | `cv01` to `cv40` | Character variants (6.2) | off |
 | `salt`, `aalt` | Alternates for simple apps and glyph palettes | off |
@@ -314,9 +313,9 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 
 ## 8. Variable fonts and font tables
 
-- [ ] Axes: `wght` 100 to 900, `GRAD` −40 to +40, `CUTS` 0 to 100 in the combined file. Italic ships as its own pair of files (roman and italic), the usual web practice, with `ital` in `STAT`.
-- [ ] Files: Geld Sans Cut (roman, italic), Geld Sans Square (roman, italic), and Geld Sans (roman, italic) with the `CUTS` axis.
-- [ ] Named instances: Thin to Black for each, 18 per corner style counting italics.
+- [ ] Axis: `wght` 100 to 900. Italic ships as its own file, the usual web practice, with `ital` in `STAT`.
+- [ ] Files: Geld Sans (roman, italic) and Geld Dark Sans (roman, italic).
+- [ ] Named instances: Thin to Black for each, 18 per family counting italics, 36 static fonts in all.
 - [ ] `STAT` with axis values, Regular elided, Bold linked to Regular and Italic linked to roman, so font menus group correctly.
 - [ ] `avar` for even weight steps, `HVAR` for fast advance widths, `MVAR` for metrics that vary (2.9).
 - [ ] Overlaps kept in variable fonts with the `OVERLAP_SIMPLE` flag, and removed in statics.
@@ -404,7 +403,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 
 ## 15. Out of scope for v1
 
-- [ ] Greek and Cyrillic (v1.1).
+- [ ] A square-cornered style (D1).
 - [ ] Optical size axis (D15).
 - [ ] Width axis, condensed or extended widths.
 - [ ] Petite caps, historical forms beyond ſ.
@@ -413,9 +412,9 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 
 ## 16. Definition of done for Geld Sans v1
 
-- Every character in GF Latin Pro, the figures, punctuation, currency, symbols and arrows above, drawn in Cut and Square, roman and italic, at every weight.
+- Every character in GF Latin Pro, the figures, punctuation, currency, symbols and arrows above, plus Greek and Cyrillic, drawn in roman and italic at every weight, in Geld Sans and Geld Dark Sans.
 - Every feature in section 7 working and covered by shaping tests.
-- Spacing and kerning reviewed in all four styles.
+- Spacing and kerning reviewed in roman and italic.
 - fontbakery passing, rendering checked on the platforms in section 10.
 - Static, variable and web fonts built by CI and released, with the specimen page live.
 - The wordmark reproduced by the font (D7).
@@ -424,7 +423,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 
 - Encoded characters in v1: about 900 to 1,000.
 - Glyphs per style including alternates, small caps, figure sets, swashes and ligature pieces: about 1,600 to 2,000.
-- Styles: four (Cut and Square, roman and italic). Square and the weights come from the engine, so the drawing work is about two sets of skeletons (roman and italic), with corrections per weight.
+- Styles: roman and italic in two families. The weights and Geld Dark Sans come from the engine, so the drawing work is two sets of skeletons (roman and italic), with corrections per weight.
 - The largest single risks are the heavy weights (the three-horizontals budget, 2.3) and the italic cuts (2.5). Both are tested in Phase 2 on a handful of glyphs before the full set is drawn.
 
 ## 18. Phases
@@ -432,8 +431,8 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 Each phase ends with a review. The next phase starts only once its deliverable is agreed.
 
 1. **Alignment.** Settle section 1. Deliverable: this document with the decisions recorded.
-2. **Foundations.** The package, the grid, the geometry engine (Cut and Square, weight, grade, slant), the build into a real font with `H O n o` and space, a first proof page, and CI. Deliverable: a working font file with four glyphs in every style and weight.
-3. **Design core.** A to Z, a to z, 0 to 9 and basic punctuation at Regular and SemiBold, in Cut and Square. The wordmark check (D7). Deliverable: a proof of the core in two weights.
+2. **Foundations.** The package, the grid, the geometry engine (cuts, weight, contrast, the dark grade, slant), the build into real fonts with `H O n o`, `G E L D` and space, the wordmark test (D7), a first proof page, and CI. Deliverable: working static, variable and web fonts for Geld Sans and Geld Dark Sans, roman and a provisional italic, every weight.
+3. **Design core.** A to Z, a to z, 0 to 9 and basic punctuation at Regular and SemiBold. Deliverable: a proof of the core in two weights.
 4. **Weights.** Thin to Black, contrast and the three-horizontals budget, `avar`. Deliverable: the core in all nine weights.
 5. **Italic.** Slanted grid, italic forms and their spacing. Deliverable: the core in italic, all weights.
 6. **Character set.** Accents and marks, extended Latin, figure sets, punctuation, currency, math, arrows, shapes, small caps. Deliverable: full GF Latin Pro coverage.
@@ -447,7 +446,7 @@ Each phase ends with a review. The next phase starts only once its deliverable i
 Listed now so Sans decisions do not block Mono.
 
 - [ ] Cell width (about 12 units of a 20-unit em, 0.6 em) and how wide letters (m w M W) and narrow ones (i l j) adapt to it.
-- [ ] The same corner styles (Cut, Square), weights, grade and italic, all at the same cell width, so bold and italic never change the layout.
+- [ ] The same cut corners, weights, a Geld Dark Mono and italic, all at the same cell width, so bold and italic never change the layout.
 - [ ] Code ligatures on by default (5.3), each as contextual pieces in whole cells, with groups to turn off.
 - [ ] Box drawing (U+2500 to 257F), block elements (U+2580 to 259F) and Braille patterns (U+2800 to 28FF, generated) filling the cell edge to edge, for terminal UIs and charts.
 - [ ] Symbols for Legacy Computing (U+1FB00) as a later step.
