@@ -2,6 +2,7 @@ import { ITALIC_SLOPE, METRICS, toFontUnits, UPM, WEIGHT_NAMES, type Weight, WEI
 import { LOCL, type LoclLanguage } from './glyphs-cyrillic';
 import { FIGURE_NAMES, TABULAR_SIGNS } from './glyphs-figures';
 import { VIETNAMESE_PAIRS } from './marks';
+import type { Kerning } from './kerning';
 import { FAMILY_NAMES, type Family, type Master, type Style } from './master';
 
 const VERSION = { major: 0, minor: 1 };
@@ -267,7 +268,7 @@ export function features(master: Master): string {
 }
 
 /** Every file of one master's UFO, keyed by its path inside the .ufo folder. */
-export function ufoFiles(master: Master): Map<string, string> {
+export function ufoFiles(master: Master, kerning?: Kerning): Map<string, string> {
   const files = new Map<string, string>();
   files.set('metainfo.plist', plist({ creator: 'sh.geld.type', formatVersion: 3 }));
   files.set('fontinfo.plist', plist(fontInfo(master)));
@@ -280,6 +281,14 @@ export function ufoFiles(master: Master): Map<string, string> {
     }),
   );
   files.set('features.fea', features(master));
+  if (kerning) {
+    const names = new Set(master.glyphs.map((g) => g.name));
+    files.set('groups.plist', plist(Object.fromEntries([...kerning.groups].map(([group, members]) => [group, members.filter((n) => names.has(n))]))));
+    files.set(
+      'kerning.plist',
+      plist(Object.fromEntries([...kerning.pairs].map(([first, row]) => [first, Object.fromEntries([...row].map(([second, value]) => [second, Math.round(toFontUnits(value))]))]))),
+    );
+  }
   const contents: Record<string, string> = {};
   for (const glyph of master.glyphs) {
     const file = glifFileName(glyph.name);

@@ -196,13 +196,13 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 
 ## 4. Kerning
 
-- [ ] Kerning groups for both sides of every glyph, derived from side profiles. Alternates, small caps and swashes get their own groups.
-- [ ] Class kerning first, then exceptions only where a class cannot be right (for example Tě, ľ, ď, Ť with following lowercase, and Tï).
+- [x] Kerning groups for both sides of every kerned glyph, derived from side profiles (`src/kerning.ts`): each glyph kerns as the letter it is built on, and letters whose side matches within 0.3 units in every row share a class (B D E F H K L P R start with a stem). Small caps get their own groups; alternates and swashes will when they exist.
+- [x] Class kerning first, measured as the spacing is: the white two glyphs leave across the rows they share, each side capped at a depth, against the spacing's target for their cases (or a sign's own white), 70% of the excess taken back, and half the excess of their closest approach (parallel diagonals, A V). Exceptions only where a member's mark or tail would come too close (Tě, Ťa, Tä at Black), stated against the other class where its side is the class's own letter.
 - [ ] The pairs that matter: caps with caps (AV, LT, TA, VA, AY), caps with lowercase (Ta, Te, To, Tr, Ty, Va, Yo, Fo, P.), lowercase pairs (r, f, v, w, y with punctuation), quotes and apostrophes ("A", L', 'T), punctuation after caps (T, V. F:), figures in proportional mode (11, 17, 71, 1.), slashes and parentheses (/A, (J), and `case` forms.
-- [ ] Kerning in quarter grid units (12.5 font units), so values stay on a known subgrid.
-- [ ] Kerning per weight, in roman and in italic, shared by Geld Dark Sans, interpolating cleanly through the variable fonts.
-- [ ] Tabular figures and Mono get no kerning, by construction.
-- [ ] Collision checks: no kerned pair overlaps, including accents (for example T with ť, Ŵ with ŵ).
+- [x] Kerning in quarter grid units (12.5 font units), at most 2.5 units, and none under 0.75.
+- [x] Kerning per weight, in roman and in italic, shared by Geld Dark Sans, with one set of classes per style and every exception stated at every weight (`alignKerning`), so the variable fonts interpolate it cleanly. `verify.py` shapes sample pairs in every compiled font at every weight against the source.
+- [x] Tabular figures get no kerning, by construction (tested, and checked in the compiled fonts). Mono will not have any.
+- [x] Collision checks: no kerned pair comes closer than 0.9 units, or 0.4 where a mark is one of the two, checked member by member at Thin, Regular and Black in roman and italic (`kerning.test.ts`).
 - [x] Seams and slivers: no two contours touch along a line (a hairline once anti-aliased) and no parallel edges face across a gap under 0.35 units, in any glyph, family, style or weight (`seams.ts`, tested).
 - [x] Joins: each glyph's strokes merged as a renderer fills them (`scripts/joins.py`, skia-pathops) and the outline searched for what a clean join never leaves: a short step or shelf where two strokes miss (a short edge between a convex and a concave corner, a 45° cut excepted), a sliver edge, or an ink spike under 32°, in roman and italic at every weight (`pnpm --filter @geld/type joins`, in the Type workflow). The faults still open are listed in `scripts/joins-baseline.txt`; a new one fails. `scripts/sheet.ts` draws glyphs large from the source, `joins-sheet.py` and `joins-zoom.py` circle and magnify what the check finds.
 - [ ] Clear `joins-baseline.txt`: mostly hairline edges under 0.3 units at Black and in mark joins, plus ≈ and & at heavy weights.

@@ -10,6 +10,16 @@ const SAMPLES = [
   'Hamburgefonstiv 2026 GELD',
 ];
 
+/** Kerning texts: the pairs that need it, across the languages, shown kerned and unkerned. */
+const KERNING = [
+  'AVATAR LT Tea Toy Very Way Your “Quote” ‘A’ P. F, V. Y; 7. 1.',
+  'Tomáš Ťava ľúbi Ďáblice Tě Ťa Vítejte Łódź Żółw',
+  'Télé Tôt Année VAGUE Yeux Árbol Ñandú',
+  'Голова Тула Уход Гора ГОД ТАК',
+  'Τα Τόπος Υόρκη ΑΥΤΟ Γάτα',
+  'f. r, y. v. w. (J) [f] 11 17 71 74',
+];
+
 /** A standalone page for reviewing the build: open dist/proof.html from disk. */
 export function proofPage(): string {
   const face = (family: string, file: string, style: string) =>
@@ -36,6 +46,7 @@ header { position: sticky; top: 0; display: flex; gap: 24px; align-items: center
 section { padding: 24px; border-bottom: 1px solid #eee; }
 h2 { margin: 0 0 12px; font: 600 12px system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.06em; color: #666; }
 .sample { font-family: 'Geld Sans'; font-weight: var(--w, 400); font-style: var(--s, normal); }
+.unkerned { font-kerning: none; color: #999; margin-top: -0.6em; }
 .dark-family { font-family: 'Geld Dark Sans'; }
 .row { display: flex; align-items: baseline; gap: 16px; line-height: 1.2; }
 .tag { flex: 0 0 120px; font: 11px ui-monospace, monospace; color: #888; }
@@ -54,6 +65,7 @@ p { margin: 0 0 8px; font-size: 40px; }
   <label><input id="i" type="checkbox"> Italic</label>
 </header>
 <section class="sample"><h2>Strings</h2>${strings}</section>
+<section class="sample"><h2>Kerning</h2>${KERNING.map((k) => `<p>${k}</p><p class="unkerned">${k}</p>`).join('\n')}</section>
 <section class="sample big"><h2>Large</h2>${SAMPLES[0]}<br>${SAMPLES[1]}<br>${SAMPLES[2]}</section>
 <section class="sample waterfall"><h2>Weights</h2>${waterfall}</section>
 <section class="sample waterfall" style="--s: italic"><h2>Italic</h2>${waterfall}</section>

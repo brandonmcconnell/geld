@@ -46,13 +46,30 @@ def check_static(path: Path, expected: dict, italic: bool) -> None:
     check(bool(os2.fsSelection & 0x80), f"{path.name}: USE_TYPO_METRICS")
 
 
-def shape_total(data: bytes, weight: int, text: str) -> tuple[list[str], int]:
+def check_kerning(path: Path, data: bytes, weight: int, expected: dict) -> None:
+    """Each sample pair moves by the source's kerning, resolved through its classes and exceptions (Dark Sans shares Sans's)."""
+    chars = {name: chr(code) for code, name in TTFont(path).getBestCmap().items()}
+    for pair, want in expected.items():
+        first, second = pair.split(" ")
+        tabular = first.endswith(".tf")
+        text = chars[first.removesuffix(".tf")] + chars[second.removesuffix(".tf")]
+        widths = []
+        for kern in (True, False):
+            names, total = shape_total(data, weight, text, {"kern": kern, "tnum": tabular})
+            check(names == [first, second], f"{path.name} at {weight}: {pair} shaped {names}")
+            widths.append(total)
+        got = widths[0] - widths[1]
+        check(abs(got - want) <= 1, f"{path.name} at {weight}: {pair} kerned {got}, source {want}")
+
+
+def shape_total(data: bytes, weight: int, text: str, features: dict | None = None) -> tuple[list[str], int]:
+    """Shaped glyph names and total advance, unkerned unless asked: the advances alone."""
     font = hb.Font(hb.Face(data))
     font.set_variations({"wght": weight})
     buf = hb.Buffer()
     buf.add_str(text)
     buf.guess_segment_properties()
-    hb.shape(font, buf)
+    hb.shape(font, buf, {"kern": False} if features is None else features)
     names = [font.glyph_to_string(info.codepoint) for info in buf.glyph_infos]
     return names, sum(pos.x_advance for pos in buf.glyph_positions)
 
@@ -168,6 +185,7 @@ def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None
         check(names == list(SAMPLE), f"{path.name} at {weight}: shaped {names}")
         want = sum(expected["advances"][c] for c in SAMPLE)
         check(abs(total - want) <= len(SAMPLE), f"{path.name} at {weight}: shaped width {total}, source {want}")
+        check_kerning(path, data, int(weight), expected["kerning"])
 
 
 def main() -> None:
