@@ -7649,7 +7649,7 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   cursor: pointer;
 }
 
-/* The description's header: author, time and "N edits". Loose words ("commented") vanish with the font, and the
+/* The description's header: author, time and the edit menu. Loose words ("commented") vanish with the font, and the
  * line's gap goes with them, since each loose word is a flex item of its own. Two classes deep to outrank
  * GitHub's `.gap-1`, which is `!important` too. */
 .timeline-comment-header [data-geld-desc-byline] {
@@ -7665,7 +7665,7 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   font-size: var(--text-body-size-medium, 14px);
 }
 
-/* The name stands alone on the left; the time and "N edits" stand at the line's far end, left of the badge and ⋯. */
+/* The name stands alone on the left; the time and the edit menu stand at the line's far end, left of the badge and ⋯. */
 [data-geld-desc-byline] > a.js-timestamp {
   margin-left: auto;
 }
@@ -7682,12 +7682,6 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 .timeline-comment-header:has(> h3 [data-geld-desc-byline]) > :last-child {
   padding-left: 4px !important;
 }
-
-[data-geld-desc-edits] > .position-relative > span:not(.geld-desc-edits),
-[data-geld-desc-edits] > span:not(.geld-desc-edits) {
-  display: none !important;
-}
-
 /* The heading's own text, links and code stay in GitHub's inline flow. The chevron stands in the indent beside it. */
 /* Every top-level heading, foldable or not, so titles line up: but only in a description that has a chevron at all. */
 [data-geld-desc]:has(> [data-geld-desc-heading]) > :is(h1, h2, h3, h4, h5, h6),

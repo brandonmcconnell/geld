@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { compactDescriptionByline, editsWords } from './description-byline';
-import { editCountIn, resetEditTimes } from './edit-times';
+import { afterEach, describe, expect, it } from 'vitest';
+import { compactDescriptionByline } from './description-byline';
 
 const LOG = '/user_content_edits/show_edit_history_log/PR_kwDOUOpwns8AAAABMN7QBg';
 
@@ -30,11 +29,6 @@ function card(extra = ''): string {
   </div>`;
 }
 
-const logPage = (header: string): string => `<div class="dropdown-header">${header}</div><ul>
-  <li><button data-edit-history-url="/user_content_edits/UCE_b"><span>edited <relative-time datetime="2026-11-03T02:22:02Z"></relative-time> (most recent)</span></button></li>
-  <li><button data-edit-history-url="/user_content_edits/UCE_a"><span>created <relative-time datetime="2026-11-02T04:18:07Z"></relative-time></span></button></li>
-</ul>`;
-
 const line = (): HTMLElement => {
   const element = document.querySelector<HTMLElement>('[data-geld-desc-byline]');
   if (element === null) throw new Error('no byline');
@@ -44,13 +38,10 @@ const line = (): HTMLElement => {
 describe('compactDescriptionByline', () => {
   afterEach(() => {
     compactDescriptionByline(false);
-    resetEditTimes();
-    vi.unstubAllGlobals();
     document.body.innerHTML = '';
   });
 
   it('keeps the author, the time and the edit menu, and marks nothing else to show', () => {
-    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
     // Signed in, a description posted through an App says so after the time: loose words, then the App's link.
     document.body.innerHTML = card('– with <a class="Link--secondary" href="/apps/cursor">Cursor</a>');
     compactDescriptionByline(true);
@@ -59,46 +50,19 @@ describe('compactDescriptionByline', () => {
     expect(line().querySelector('a[href="/apps/cursor"]')?.closest('[data-geld-desc-keep]')).toBeNull();
   });
 
-  it('reads "N edits" from the edit log once it lands, in place of who edited last', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(logPage('Edited 5 times')))));
+  it("leaves the edit menu's words as GitHub wrote them", () => {
     document.body.innerHTML = card();
-    const reapply = (): void => compactDescriptionByline(true, reapply);
-    compactDescriptionByline(true, reapply);
-    const summary = document.querySelector('summary');
-    expect(summary?.hasAttribute('data-geld-desc-edits')).toBe(true);
-    expect(summary?.querySelector('.geld-desc-edits')?.textContent).toBe('edited');
-    await vi.waitFor(() => expect(summary?.querySelector('.geld-desc-edits')?.textContent).toBe('5 edits'));
-    expect(summary?.querySelectorAll('.geld-desc-edits')).toHaveLength(1);
+    const before = document.querySelector('summary')?.outerHTML;
+    compactDescriptionByline(true);
+    compactDescriptionByline(true);
+    expect(document.querySelector('summary')?.outerHTML).toBe(before);
   });
 
   it('puts the header back as GitHub rendered it when turned off', () => {
-    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
     document.body.innerHTML = card();
     const before = document.body.innerHTML;
     compactDescriptionByline(true);
     compactDescriptionByline(false);
     expect(document.body.innerHTML).toBe(before);
-  });
-});
-
-describe('editsWords', () => {
-  it('counts edits with a numeral', () => {
-    expect(editsWords(1)).toBe('1 edit');
-    expect(editsWords(4)).toBe('4 edits');
-    expect(editsWords(null)).toBe('edited');
-  });
-});
-
-describe('editCountIn', () => {
-  const parse = (html: string): Document => new DOMParser().parseFromString(html, 'text/html');
-
-  it("takes the log header's count", () => {
-    expect(editCountIn(parse(logPage('Edited 5 times')), 2)).toBe(5);
-    expect(editCountIn(parse(logPage('Edited 1 time')), 2)).toBe(1);
-  });
-
-  it('counts the revisions but the post when the header says nothing', () => {
-    expect(editCountIn(parse('<ul></ul>'), 3)).toBe(2);
-    expect(editCountIn(parse('<ul></ul>'), 0)).toBeNull();
   });
 });
