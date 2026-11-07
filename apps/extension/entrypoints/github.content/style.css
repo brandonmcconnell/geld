@@ -2898,14 +2898,200 @@ svg.geld-lucide {
   height: 16px;
 }
 
+/* The View control: how pull requests look, the grouping control's shape with the eye for its mark. */
+.geld-review__view {
+  position: relative;
+}
+
+.geld-review__icon.geld-review__view-btn {
+  width: auto;
+  gap: 5px;
+  padding: 0 8px 0 7px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.geld-review__view-btn .octicon {
+  width: 16px;
+  height: 16px;
+}
+
 /* A Geld row too narrow for its words (`fit-chips.ts`): every button is its mark alone, the copy button's square. */
-.geld-review__head[data-geld-fit-tools='icons'] :is(.geld-review__grouping-label, .geld-review__flow-label, .geld-review__ai-label, .geld-review__since-visit-label) {
+.geld-review__head[data-geld-fit-tools='icons'] :is(.geld-review__grouping-label, .geld-review__view-label, .geld-review__flow-label, .geld-review__ai-label, .geld-review__since-visit-label) {
   display: none;
 }
 
-.geld-review__head[data-geld-fit-tools='icons'] .geld-review__icon:is(.geld-review__grouping-btn, .geld-review__flow-btn, .geld-review__ai-btn) {
+.geld-review__head[data-geld-fit-tools='icons'] .geld-review__icon:is(.geld-review__grouping-btn, .geld-review__view-btn, .geld-review__flow-btn, .geld-review__ai-btn) {
   width: 28px;
   padding: 0;
+}
+
+/* ---- how pull requests look: the three views ----------------------------- */
+
+/* Primer's small segmented control: a track with the chosen view raised on it. Inside the digest and on the line
+   that stands for it while it is off, so GitHub's tokens directly, not the panel's variables. */
+.geld-view-choice {
+  display: inline-flex;
+  flex: 0 0 auto;
+  max-width: 100%;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--controlTrack-bgColor-rest, var(--color-segmented-control-bg, #eff2f5));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* Sizes here are mirrored in view-fit.ts, which measures the control before it is laid out. */
+.geld-view-choice__option {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.geld-view-choice__option:not([aria-pressed='true']):hover {
+  background: var(--controlTrack-bgColor-hover, var(--color-segmented-control-button-hover-bg, #e6eaef));
+}
+
+.geld-view-choice__option[aria-pressed='true'] {
+  border-color: var(--controlKnob-borderColor-rest, var(--color-segmented-control-button-selected-border, #818b98));
+  background: var(--controlKnob-bgColor-rest, var(--color-segmented-control-button-bg, #fff));
+  font-weight: 600;
+}
+
+.geld-view-choice__option:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, var(--color-accent-fg, #0969da));
+  outline-offset: -2px;
+}
+
+/* A view named by marks and a word: Geld's emblem for the digest, GitHub's mark for its timeline. */
+.geld-view-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.geld-view-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+}
+
+.geld-view-mark svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+/* Once, under the Geld row, until the reader picks a view: what this panel is, and the three ways the page can look. */
+.geld-review__intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 12px 10px 16px;
+  border-bottom: 1px solid var(--geld-review-border-muted);
+  background: light-dark(var(--bgColor-accent-muted, var(--color-accent-subtle, #ddf4ff)), color-mix(in srgb, var(--geld-review-accent) 14%, var(--geld-review-bg)));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.geld-review__intro-text {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.geld-review__intro-actions {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.geld-review__intro-dismiss {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--geld-review-border);
+  border-radius: 6px;
+  background: var(--geld-review-bg);
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.geld-review__intro-dismiss:hover {
+  background: var(--geld-review-hover);
+}
+
+/* While the digest is off: one line grown out of the description card, as the digest would, saying so and offering the views. */
+.geld-digest-off {
+  display: flex;
+  position: relative;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: -1px 0 0;
+  padding: 8px 8px 8px 16px;
+  border: 1px solid var(--borderColor-default, var(--color-border-default, #d1d9e0));
+  border-radius: 0 0 6px 6px;
+  background: var(--bgColor-muted, var(--color-canvas-subtle, #f6f8fa));
+  color: var(--fgColor-muted, var(--color-fg-muted, #59636e));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.geld-digest-off__brand {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-digest-off__brand svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.geld-digest-off__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The subtitle only while the whole line fits on one row (`view-fit.ts`). */
+.geld-digest-off[data-geld-view-subtitle='hide'] .geld-digest-off__subtitle {
+  display: none;
+}
+
+.geld-digest-off__text strong {
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-weight: 600;
 }
 
 .geld-review__menu-list > .geld-review__menu-item--choice {

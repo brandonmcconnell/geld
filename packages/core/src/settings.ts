@@ -122,6 +122,12 @@ export interface GeldSettings {
    */
   readonly compactTimeline: CompactTimelineMode;
   /**
+   * When the reader last chose how pull requests look (`DigestView`, from the
+   * digest's intro, its View menu or the line shown while it is off), as an
+   * ISO time. Empty until then, which is what shows the digest's intro once.
+   */
+  readonly digestViewChosenAt: string;
+  /**
    * How the digest's main list is arranged: by `type` (bots, CI, reviews,
    * rounds, activity — the default) or by `batch` (every push as one row
    * holding what landed since the previous one).
@@ -207,6 +213,27 @@ export function isCompactTimelineMode(value: unknown): value is CompactTimelineM
   return typeof value === 'string' && COMPACT_TIMELINE_MODES.some((mode) => mode === value);
 }
 
+/**
+ * How a pull request's conversation looks, as the reader picks it: Geld's
+ * digest with GitHub's timeline folded into it, the digest above GitHub's
+ * whole timeline, or GitHub's page alone. Stored as `prOverview` and
+ * `compactTimeline`, which the settings pages still offer on their own.
+ */
+export const DIGEST_VIEWS = ['digest', 'digest-timeline', 'github'] as const;
+export type DigestView = (typeof DIGEST_VIEWS)[number];
+
+export function digestViewOf(settings: Pick<GeldSettings, 'prOverview' | 'compactTimeline'>): DigestView {
+  if (!settings.prOverview) return 'github';
+  return settings.compactTimeline === 'off' ? 'digest-timeline' : 'digest';
+}
+
+/** The settings that make `view`, chosen at `at` (ISO). A folded timeline keeps its depth (`minimal` stays). */
+export function digestViewPatch(settings: Pick<GeldSettings, 'compactTimeline'>, view: DigestView, at: string): Pick<GeldSettings, 'prOverview' | 'compactTimeline' | 'digestViewChosenAt'> {
+  const folded: CompactTimelineMode = settings.compactTimeline === 'off' ? 'compact' : settings.compactTimeline;
+  if (view === 'github') return { prOverview: false, compactTimeline: settings.compactTimeline, digestViewChosenAt: at };
+  return { prOverview: true, compactTimeline: view === 'digest' ? folded : 'off', digestViewChosenAt: at };
+}
+
 export const DEFAULT_SETTINGS: GeldSettings = {
   enabled: true,
   categories: {},
@@ -233,6 +260,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   repoConfigs: 'ask',
   prOverview: true,
   compactTimeline: 'compact',
+  digestViewChosenAt: '',
   reviewGrouping: 'type',
   collapseDescription: true,
   attachmentLightbox: true,
@@ -494,6 +522,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     repoConfigs: isRepoConfigMode(record.repoConfigs) ? record.repoConfigs : DEFAULT_SETTINGS.repoConfigs,
     prOverview: bool(record, 'prOverview', DEFAULT_SETTINGS.prOverview),
     compactTimeline: isCompactTimelineMode(record.compactTimeline) ? record.compactTimeline : DEFAULT_SETTINGS.compactTimeline,
+    digestViewChosenAt: typeof record.digestViewChosenAt === 'string' ? record.digestViewChosenAt : DEFAULT_SETTINGS.digestViewChosenAt,
     reviewGrouping: isReviewGrouping(record.reviewGrouping) ? record.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
     collapseDescription: bool(record, 'collapseDescription', DEFAULT_SETTINGS.collapseDescription),
     attachmentLightbox: bool(record, 'attachmentLightbox', DEFAULT_SETTINGS.attachmentLightbox),

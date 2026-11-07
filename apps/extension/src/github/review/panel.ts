@@ -9,6 +9,7 @@
  * itself is hidden — its content is this.
  */
 
+import type { DigestView } from '@geld/core';
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, Report, ReportPart, ReviewItem } from '@geld/review';
 import { botAppAvatar, botById, previewHostById, reportsHealth } from '@geld/review';
 import type { AgentNote } from './agent-notes';
@@ -16,7 +17,7 @@ import { noteTone } from './note-tone';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
-import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, toneOf, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -33,6 +34,8 @@ import { shapeMark } from './mark-shape';
 import { brandMark, syncBrandSelection, watchBrandSelection } from './brand';
 import { inlineText } from './inline-text';
 import { relativeTimeElement } from './time';
+import { DIGEST_VIEW_OPTIONS, digestViewLabel, viewChoice, viewLabel } from './digest-view';
+import { takeViewFocus } from './view-focus';
 
 export const PANEL_CLASS = 'geld-review';
 export const ATTR_PANEL = 'data-geld-review-panel';
@@ -382,6 +385,10 @@ export interface PanelModel {
   readonly archivedPreviewsOpen: boolean;
   /** How the main list is arranged (`reviewGrouping`). */
   readonly grouping: 'type' | 'batch';
+  /** How pull requests look (`digestViewOf`): the View menu's current choice. */
+  readonly view: DigestView;
+  /** The reader has not chosen a view yet: the intro under the Geld row offers the three. */
+  readonly intro: boolean;
   /** Rounds whose commit rows are unfolded (batch grouping). */
   readonly openCommits: ReadonlySet<string>;
   /** Rounds whose Previews line is unfolded into the per-preview list. */
@@ -486,6 +493,8 @@ export interface PanelHandlers {
   readonly onOpenReport: (anchor: string) => void;
   /** Change how the list is grouped (persisted as the `reviewGrouping` setting). */
   readonly onGrouping: (grouping: 'type' | 'batch') => void;
+  /** Choose how pull requests look (the intro or the View menu); the current view answers the intro as it is. */
+  readonly onView: (view: DigestView) => void;
   /** Open the Flow diagram of the changed files. */
   readonly onFlow: () => void;
   /** Open Geld's settings: the toolbar popup where the browser allows it, else the options page. */
@@ -584,6 +593,7 @@ function restoreFocus(root: Element, key: string | null): void {
   const target = root.querySelector<HTMLElement>(`[${ATTR_FOCUS}="${key}"]`);
   target?.focus({ preventScroll: true });
 }
+
 
 /**
  * A person's avatar carries GitHub's own hovercard attributes (its script
@@ -1251,6 +1261,55 @@ function groupingMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement {
   }
   details.append(summary, list);
   return details;
+}
+
+/**
+ * The View control in the Geld row: how pull requests look, one of three. The
+ * way back to GitHub's own page, and to the digest with GitHub's timeline
+ * under it, sits on the digest itself rather than in the settings.
+ */
+function viewMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement {
+  installMenuDismissal();
+  const details = createElement('details', { class: `${PANEL_CLASS}__menu ${PANEL_CLASS}__view` });
+  const summary = createElement('summary', { class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__view-btn`, role: 'button', 'aria-label': `View: ${digestViewLabel(model.view)}. Change how pull requests look`, title: 'How pull requests look', [ATTR_FOCUS]: 'view' }, [
+    icon(ICON_EYE),
+    createElement('span', { class: `${PANEL_CLASS}__view-label` }, ['View']),
+  ]);
+  summary.addEventListener('click', (event) => event.stopPropagation());
+  const list = createElement('div', { class: `${PANEL_CLASS}__menu-list ${PANEL_CLASS}__view-list`, role: 'menu' }, [createElement('div', { class: `${PANEL_CLASS}__menu-title` }, ['How pull requests look'])]);
+  for (const option of DIGEST_VIEW_OPTIONS) {
+    const chosen = option.view === model.view;
+    const item = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item ${PANEL_CLASS}__menu-item--choice`, role: 'menuitemradio', 'aria-checked': String(chosen), 'data-view': option.view }, [
+      createElement('span', { class: `${PANEL_CLASS}__menu-check`, 'aria-hidden': 'true' }, [icon(chosen ? ICON_CHECK_CIRCLE_FILL : ICON_CIRCLE)]),
+      createElement('span', { class: `${PANEL_CLASS}__menu-text` }, [viewLabel(option), createElement('span', { class: `${PANEL_CLASS}__menu-hint` }, [option.hint])]),
+    ]);
+    item.addEventListener('click', (event) => {
+      event.stopPropagation();
+      details.removeAttribute('open');
+      // The current view still answers the intro when it is waiting on one.
+      if (option.view !== model.view || model.intro) handlers.onView(option.view);
+    });
+    list.append(item);
+  }
+  details.append(summary, list);
+  return details;
+}
+
+/**
+ * Once, until the reader picks: what this panel is and the three ways the page
+ * can look, the current one pressed. "Got it" keeps it as it is.
+ */
+function introNotice(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
+  if (!model.intro) return null;
+  const keep = createElement('button', { type: 'button', class: `${PANEL_CLASS}__intro-dismiss`, [ATTR_FOCUS]: 'intro:keep' }, ['Got it']);
+  keep.addEventListener('click', () => handlers.onView(model.view));
+  return createElement('div', { class: `${PANEL_CLASS}__intro`, role: 'region', 'aria-label': 'About the Geld digest' }, [
+    createElement('div', { class: `${PANEL_CLASS}__intro-text` }, [
+      createElement('strong', {}, ['This is Geld’s pull request digest.']),
+      ' It sums up reviews, bots, CI and open threads, and folds GitHub’s timeline into it. Pick how you want pull requests to look. You can change it any time from View.',
+    ]),
+    createElement('div', { class: `${PANEL_CLASS}__intro-actions` }, [viewChoice(model.view, handlers.onView, (view) => ({ [ATTR_FOCUS]: `intro:${view}` })), keep]),
+  ]);
 }
 
 /** Geld's own notes for an open item — merged context and the fix — above the moved comments. */
@@ -2728,6 +2787,8 @@ function signatureOf(model: PanelModel): string {
     folds: model.folds.map((fold) => `${fold.key}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}:${fold.closure?.preview ?? ''}:${fold.headline === undefined ? '' : `${fold.headline.kind}${fold.headline.actor}${fold.headline.target ?? ''}${fold.headline.avatarSrc ?? ''}`}`),
     batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.commits.length}/${batch.commitCount}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
     grouping: model.grouping,
+    view: model.view,
+    intro: model.intro,
     openCommits: [...model.openCommits].sort(),
     openPreviews: [...model.openPreviews].sort(),
     reports: model.reports.latest.map((entry) => `${entry.anchor}${entry.state}${entry.headline}${entry.project ?? ''}${(entry.short ?? []).map((part) => part.text).join('|')}`),
@@ -2761,7 +2822,7 @@ function signatureOf(model: PanelModel): string {
  * The description's bordered card. The panel is inserted right after it,
  * inside the same column, so the two read as one box.
  */
-function descriptionCard(): HTMLElement | null {
+export function descriptionCard(): HTMLElement | null {
   const classic =
     document.querySelector<HTMLElement>('.js-discussion > .js-timeline-item .timeline-comment') ??
     document.querySelector<HTMLElement>('#discussion_bucket .js-comment-container .timeline-comment');
@@ -2925,6 +2986,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   flow.addEventListener('click', () => handlers.onFlow());
   tools.append(flow);
   tools.append(groupingMenu(model, handlers));
+  tools.append(viewMenu(model, handlers));
   const copy = iconButton(ICON_COPY, 'Copy digest as Markdown', { [ATTR_FOCUS]: 'copy' });
   copy.addEventListener('click', () => handlers.onCopy());
   tools.append(copy);
@@ -2933,6 +2995,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   tools.append(settings);
   const head = createElement('div', { class: `${PANEL_CLASS}__head`, [ATTR_FIT_TOOLS]: '' }, [summary, tools]);
   const aiNote = aiNotice(model.ai, handlers);
+  const intro = introNotice(model, handlers);
   const status = statusRows(model, handlers);
   const tldrPending = model.aiPending.has('tldr');
   const tldr =
@@ -3013,6 +3076,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
 
   const panel = createElement('section', { class: PANEL_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_PANEL]: '', [ATTR_SIG]: signature, [ATTR_OPEN]: openNow, 'aria-label': 'Geld review digest' }, [
     head,
+    ...(intro === null ? [] : [intro]),
     ...(aiNote === null ? [] : [aiNote]),
     ...(status === null ? [] : [status]),
     ...(tldr === null ? [] : [tldr]),
@@ -3079,7 +3143,8 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   } else {
     oldNudge?.remove();
   }
-  restoreFocus(panel, focusKey);
+  // A view choice rebuilt everything around the control the reader used: focus lands on View in the new panel.
+  restoreFocus(panel, focusKey ?? (takeViewFocus('panel') ? 'view' : null));
   return { root: panel, slot: panel.querySelector<HTMLElement>(`[${ATTR_SLOT}] > .${PANEL_CLASS}__slot-body`) };
 }
 
