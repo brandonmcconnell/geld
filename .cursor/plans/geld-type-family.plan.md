@@ -247,12 +247,13 @@ Default in Sans per D13. Mono turns most of them on by default (section 19).
 | Repeats | `___` `###` `***` `===` (long runs) | continuous bars | off | on |
 | Hex | `0x` | small x between 0 and the digits | off | on (contextual) |
 
-- [ ] Each group as its own stylistic set as well (`ss11` arrows, `ss12` comparison, `ss13` logic, `ss14` comments and markup, `ss15` scope, `ss16` shifts), so apps without `dlig` can pick groups.
-- [ ] Turning them on is one line in CSS (`font-feature-settings: "dlig"`, or `"ss12"` for one group), and the web CSS package ships classes such as `.geld-code-ligatures` for it (D13).
+- [x] Each group as its own stylistic set as well (`ss11` arrows, `ss12` comparison, `ss13` logic, `ss14` comments and markup, `ss15` scope, `ss16` shifts), so apps without `dlig` can pick groups. Each set is named in the font ("Squiggle arrows", "Comparison and equality ligatures"…) and runs the same lookup `dlig` does. Spaceship and regex sit with comparison, pipes and increment with logic, hash forms with comments.
+- [x] How the Sans code ligatures are built (`src/code-ligatures.ts`): every character but the last becomes a blank spacer and the last draws the whole shape back over them, as components, either an existing glyph (≤ for `<=`, ≠ for `!=` and `/=`, ⇝ for `~~>`) or the characters' own glyphs set with a fixed white between their ink (`::` with its colons centred on the math axis, `<<` nested, `==` joined into one long equals sign). The whole is narrower than the characters set apart (tested at every weight and style, and in every compiled font). Joints are measured on the upright outline before the dark inset, so the italic joins as the roman does and both families keep the same widths. A sequence never touches another operator character, so `http://`, `a::::b` and `<!--` inside a longer run stay as typed (`#!` is followed by its path).
+- [ ] Turning them on is one line in CSS (`font-variant-ligatures: discretionary-ligatures`, `font-feature-settings: "dlig"`, or `"ss12"` for one group: done), and the web CSS package ships classes such as `.geld-code-ligatures` for it (D13; with the CSS in section 13).
 - [x] Conflicts handled: `<-` inside `x<-1` becomes an arrow (code reads it as "less than minus one", so `ss20` is the documented way out), `-->` as an HTML comment end becomes an arrow too, `<=` stays as typed and is never ⇐ (a fat left arrow needs `<==`), `<=>` stays as typed (the spaceship, never ⇔), and a sequence inside a longer run (`--->`, `-->>`, `=>=`) stays as typed. Arrows and fat arrows, including `->>` `<<-` `=>>`, are done; the double arrows ⇐ ⇑ ⇒ ⇓ ⇔ ⇕ were drawn for them.
-- [ ] Prose forms in Sans (`ss10`, off by default): `--` to an en dash and `---` to an em dash.
-- [ ] Symbol forms in Sans (`dlig`): `(c)` ©, `(r)` ®, `(tm)` ™, `[ ]` ☐, `[x]` ☑, `1/2` and other fractions through `frac`, and `x` between digits (1920x1080) as ×.
-- [ ] Contextual punctuation (`calt`, on): the colon centred between figures (12:30), and the hyphen raised between caps (A-Z).
+- [x] Prose forms in Sans (`ss10`, off by default, not in `dlig`): `--` to an en dash and `---` to an em dash, never inside a longer run of hyphens.
+- [x] Symbol forms in Sans (`dlig`): `(c)` ©, `(r)` ®, `(tm)` ™, `[ ]` ☐, `[x]` ☑ (the ballot boxes ☐ ☑ ☒ drawn for them), `1/2` and other fractions through `frac`, and `x` between digits (1920x1080) as ×. The lowercase forms and the boxes never touch a letter or figure, since `f(c)` and `a[x]` are code; `(C)` `(R)` `(TM)` are taken anywhere (`Acme(TM)`).
+- [x] Contextual punctuation (`calt`, on): the colon centred between figures (12:30), and the hyphen raised between caps (A-Z), as `colon.case` and `hyphen.case` (the x-height's middle raised to the capitals', 2 units). `case` takes the hyphen, dashes and colon so far.
 
 ## 6. Alternates
 
@@ -266,8 +267,8 @@ Default in Sans per D13. Mono turns most of them on by default (section 19).
 - [ ] `ss07` Dot shape: square, octagon or diamond.
 - [ ] `ss08` Italic exit strokes on n m h i u l.
 - [ ] `ss09` The wordmark's letterforms, for setting Geld brand text, if they differ from the defaults.
-- [ ] `ss10` Dash ligatures (5.3).
-- [ ] `ss11` to `ss16` Code ligature groups (5.3).
+- [x] `ss10` Dash ligatures (5.3).
+- [x] `ss11` to `ss16` Code ligature groups (5.3).
 - [ ] `ss17` Circled numerals.
 - [ ] `ss18` reserved.
 - [ ] `ss19` reserved.
