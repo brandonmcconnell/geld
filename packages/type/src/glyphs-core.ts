@@ -23,6 +23,14 @@ import {
   withPen,
   zed,
   crossbarReach,
+  spanOf,
+  INSIDE,
+  meeting,
+  edgeAt,
+  footFor,
+  strikeThrough,
+  OVERHANG,
+  underBowl,
 } from './draw';
 import type { Stroke } from './geometry';
 import { smallPen } from './glyphs-figures';
@@ -194,7 +202,7 @@ export const UPPER: GlyphDef[] = [
       const w = g.wide(9.5);
       const bowl = g.y(6);
       const reach = w + g.v / 2 - g.foot(w * 0.6, bowl);
-      return [stem(0, 0, g.cap), box(0, w, bowl, g.top(g.cap), RIGHT), diagonal(g, w * 0.4, bowl, reach, 0, [false, true])];
+      return [stem(0, 0, g.cap), box(0, w, bowl, g.top(g.cap), RIGHT), diagonal(g, w * 0.4, bowl, reach, 0)];
     },
   },
   {
@@ -237,9 +245,8 @@ export const UPPER: GlyphDef[] = [
     rsb: 0.3,
     draw: (g) => {
       const w = g.wide(15);
-      return [...vee(g, 0, w / 2, g.cap, 0), ...vee(g, w / 2, w, g.cap, 0)].map((s, i) =>
-        i === 1 || i === 2 ? { ...s, points: s.points.map((q) => (q.y === g.cap ? { ...q, y: g.y(10.5) } : q)) } : s,
-      );
+      const inner = g.y(10.5);
+      return [...meeting(g, [0, g.cap], [w / 2, inner], w / 4, 0), ...meeting(g, [w / 2, inner], [w, g.cap], (3 * w) / 4, 0)];
     },
   },
   {
@@ -493,9 +500,8 @@ const LOWER_DEFS: GlyphDef[] = [
     rsb: 0.3,
     draw: (g) => {
       const w = g.wide(12);
-      return [...vee(g, 0, w / 2, g.xHeight, 0), ...vee(g, w / 2, w, g.xHeight, 0)].map((s, i) =>
-        i === 1 || i === 2 ? { ...s, points: s.points.map((q) => (q.y === g.xHeight ? { ...q, y: g.y(7.5) } : q)) } : s,
-      );
+      const inner = g.y(7.5);
+      return [...meeting(g, [0, g.xHeight], [w / 2, inner], w / 4, 0), ...meeting(g, [w / 2, inner], [w, g.xHeight], (3 * w) / 4, 0)];
     },
   },
   {
@@ -557,8 +563,10 @@ export const FIGURES: GlyphDef[] = [
       const t = g.top(g.cap);
       const b = g.bottom(0);
       const turn = g.y(7.5);
-      const end = g.foot(w, turn - b) - g.v / 2;
-      return [level(open(p(0, g.y(10)), p(0, t, true), p(w, t, true), p(w, turn), p(end, b)), false, true), bar(0, w, b)];
+      let end = spanOf(g.pen, w, turn);
+      for (let i = 0; i < 6; i++) end = spanOf(g.pen, w - end, turn);
+      const start = edgeAt(g.pen, end, 0, w, turn, g.h, -1) + INSIDE;
+      return [level(open(p(0, g.y(10)), p(0, t, true), p(w, t, true), p(w, turn), p(end, 0)), false, true), bar(start, w, b)];
     },
   },
   {
@@ -583,7 +591,10 @@ export const FIGURES: GlyphDef[] = [
       const w = g.wide(10);
       const x = w * 0.72;
       const y = g.y(4.5);
-      return [stem(x, 0, g.cap), bar(0, w, y), diagonal(g, x + g.v / 2 - g.foot(x, g.cap - y), g.cap, g.foot(x, g.cap - y), y)];
+      const low = y - g.h / 2;
+      const e = footFor(g.diag, x + g.v / 2, g.cap - low);
+      const [x0, x1] = [x + g.v / 2 - e, e];
+      return [stem(x, 0, g.cap), bar(edgeAt(g.diag, x0, g.cap, x1, low, y + g.h / 2, -1) + INSIDE, w, y), diagonal(g, x0, g.cap, x1, low)];
     },
   },
   {
@@ -618,7 +629,9 @@ export const FIGURES: GlyphDef[] = [
     rsb: 0.75,
     draw: (g) => {
       const w = g.wide(9);
-      return [bar(0, w, g.top(g.cap)), diagonal(g, w - g.foot(w * 0.65, g.cap), g.cap, w * 0.35, 0)];
+      const x0 = w - spanOf(g.diag, w * 0.65, g.cap);
+      const x1 = w * 0.35;
+      return [bar(0, edgeAt(g.diag, x0, g.cap, x1, 0, g.cap - g.h, 1) - INSIDE, g.top(g.cap)), diagonal(g, x0, g.cap, x1, 0)];
     },
   },
   {
@@ -771,15 +784,35 @@ const through = (x: number) => stem(x, -2, 16);
 
 /** Currency signs and letterlike symbols that are a letter with strokes added. */
 export const ON_LETTERS: GlyphDef[] = [
-  onLetter('naira', 0x20a6, 'N', (g) => [bar(-1.5, g.wide(9.5) + 1.5, 5), bar(-1.5, g.wide(9.5) + 1.5, 9)], { lsb: 0.5, rsb: 0.5 }),
-  onLetter('won', 0x20a9, 'W', (g) => [bar(-0.5, g.wide(15) + 0.5, 5.5), bar(-0.5, g.wide(15) + 0.5, 8.75)]),
-  onLetter('kip', 0x20ad, 'K', () => [bar(-1.5, 6, 7)], { lsb: 0.5, rsb: 0.3 }),
+  onLetter('naira', 0x20a6, 'N', (g) => [bar(-crossbarReach(g), g.wide(9.5) + crossbarReach(g), g.y(5)), bar(-crossbarReach(g), g.wide(9.5) + crossbarReach(g), g.y(9))], { lsb: 0.5, rsb: 0.5 }),
+  onLetter('won', 0x20a9, 'W', (g) => {
+    const w = g.wide(15);
+    const high = g.y(10.5) - g.h / 2;
+    const low = Math.min(g.y(5.5), high - g.h - 1.6);
+    const edge = (y: number) => edgeAt(g.diag, 0, g.cap, w / 4, 0, y + g.h / 2, -1) - OVERHANG;
+    const across = (y: number) => bar(edge(y), w - edge(y), y);
+    return [across(high), across(low)];
+  }),
+  onLetter('kip', 0x20ad, 'K', (g) => {
+    const w = g.wide(9.5);
+    const y0 = g.y(4.5);
+    const reach = w + g.v / 2 - g.foot(w, g.cap - y0);
+    // Across the point where K's leg leaves its arm, clearing both by 1.25.
+    const y = y0 + (g.cap - y0) * 0.4;
+    const arm = edgeAt(g.diag, 0, y0, reach, g.cap, y + g.h / 2, 1);
+    const leg = edgeAt(g.diag, reach * 0.4, y, reach, 0, y - g.h / 2, 1);
+    return [bar(-crossbarReach(g), Math.max(arm, leg) + OVERHANG, y)];
+  }, { lsb: 0.5, rsb: 0.3 }),
   onLetter('tugrik', 0x20ae, 'T', (g) => {
     const x = g.wide(11) / 2;
-    return [withPen(open(p(x - 2.75, g.y(3.5)), p(x + 2.75, g.y(6.5))), g.diag), withPen(open(p(x - 2.75, g.y(7)), p(x + 2.75, g.y(10))), g.diag)];
+    return [strikeThrough(g, x, g.y(5), 3 / 5.5), strikeThrough(g, x, g.y(8.5), 3 / 5.5)];
   }),
-  onLetter('peso', 0x20b1, 'P', (g) => [bar(-1.75, 0, g.top(g.cap)), bar(-1.75, 0, 6)], { lsb: 0.5, rsb: 1 }),
-  onLetter('guarani', 0x20b2, 'G', (g) => [through(g.wide(10) / 2)]),
+  onLetter('peso', 0x20b1, 'P', (g) => [bar(-crossbarReach(g), 0, g.top(g.cap)), bar(-crossbarReach(g), 0, g.y(6))], { lsb: 0.5, rsb: 1 }),
+  onLetter('guarani', 0x20b2, 'G', (g) => {
+    const w = g.wide(10);
+    // As near the middle as G's bar still ends inside it.
+    return [through(Math.min(Math.max(w / 2, w * 0.4 - g.v / 2 + INSIDE), w * 0.4 + g.v / 2 - INSIDE))];
+  }),
   {
     name: 'hryvnia',
     unicode: 0x20b4,
@@ -794,16 +827,17 @@ export const ON_LETTERS: GlyphDef[] = [
       const hi = g.cap / 2 + d;
       const lo = g.cap / 2 - d;
       const pen = { v: g.v, h: thin };
-      return [open(p(w, t), p(0, t, true), p(0, hi)), open(p(w, lo), p(w, b, true), p(0, b)), withPen(bar(-1, w + 1, hi), pen), withPen(bar(-1, w + 1, lo), pen)];
+      return [open(p(w, t), p(0, t, true), p(0, hi)), open(p(w, lo), p(w, b, true), p(0, b)), withPen(bar(-crossbarReach(g), w + crossbarReach(g), hi), pen), withPen(bar(-crossbarReach(g), w + crossbarReach(g), lo), pen)];
     },
   },
   onLetter('cedi', 0x20b5, 'C', (g) => [through(g.wide(10) / 2)]),
   onLetter('tenge', 0x20b8, 'T', (g) => [bar(0, g.wide(11), g.top(Math.min(g.y(10.5), g.cap - g.h - 1.6)))]),
-  onLetter('ruble', 0x20bd, 'P', (g) => [bar(-1.75, 5, 6 - g.h - 1.5)], { lsb: 0.5, rsb: 1 }),
+  onLetter('ruble', 0x20bd, 'P', (g) => [underBowl(g, -crossbarReach(g), g.wide(5), g.y(6) - g.h / 2, g.y(6) - g.h - 1.5)], { lsb: 0.5, rsb: 1 }),
   onLetter('bitcoin', 0x20bf, 'B', (g) => {
     const x1 = 2;
     const x2 = x1 + g.v + 1.6;
-    return [stem(x1, -2, 1), stem(x1, g.cap - 1, 16), stem(x2, -2, 1), stem(x2, g.cap - 1, 16)];
+    const [low, high] = [g.h - INSIDE, g.cap - g.h + INSIDE];
+    return [stem(x1, -2, low), stem(x1, high, 16), stem(x2, -2, low), stem(x2, high, 16)];
   }),
   onLetter('baht', 0x0e3f, 'B', (g) => [through(g.v + 1.6)]),
   onLetter('colonmonetary', 0x20a1, 'C', (g) => {
@@ -814,7 +848,7 @@ export const ON_LETTERS: GlyphDef[] = [
   }),
   onLetter('dong', 0x20ab, 'd', (g) => {
     const w = g.wide(8);
-    return [bar(w - 3, w + g.v / 2 + 1.25, 12.5), bar(0, w + 1.5, g.top(-1.5))];
+    return [bar(w - 3, w + crossbarReach(g), 12.5), bar(0, w + 1.5, g.top(-1.5))];
   }),
 ];
 
@@ -834,8 +868,8 @@ export const DRAWN_SIGNS: GlyphDef[] = [
         open(p(leg, y), p(0, y, true), p(0, t, true), p(w, t, true), p(w, y, true), p(w - leg, y)),
         stem(leg, 0, y + g.h / 2),
         stem(w - leg, 0, y + g.h / 2),
-        bar(-0.5, leg, b),
-        bar(w - leg, w + 0.5, b),
+        bar(-g.v / 2, leg, b),
+        bar(w - leg, w + g.v / 2, b),
       ];
     },
   },
@@ -846,8 +880,9 @@ export const DRAWN_SIGNS: GlyphDef[] = [
     lsb: 0.75,
     rsb: 0.75,
     draw: (g) => {
-      const w = g.wide(8);
-      return [bar(-1, w + 1, g.top(g.xHeight)), stem(1, 0, g.xHeight), stem(w - 1, 0, g.xHeight)];
+      const inset = crossbarReach(g);
+      const w = g.wide(6) + 2 * inset;
+      return [bar(0, w, g.top(g.xHeight)), stem(inset, 0, g.xHeight), stem(w - inset, 0, g.xHeight)];
     },
   },
   {
@@ -925,7 +960,8 @@ export const DRAWN_SIGNS: GlyphDef[] = [
       const t = g.top(g.cap);
       const second = g.cap - g.h * 1.5 - 1.6;
       const m = second - g.h - Math.max(1.6, 4.5 - g.h);
-      return [bar(0, w, t), bar(0, w, second), open(p(0, second), p(w * 0.75, second, true), p(w * 0.75, m, true), p(0, m)), diagonal(g, 2.5, m, w * 0.8, 0, [false, true])];
+      const end = Math.max(w, w * 0.75 + g.v / 2 + OVERHANG);
+      return [bar(0, end, t), bar(0, end, second), open(p(0, second), p(w * 0.75, second), p(w * 0.75, m, true), p(0, m)), diagonal(g, 2.5, m, w * 0.8, 0)];
     },
   },
   {
@@ -937,7 +973,7 @@ export const DRAWN_SIGNS: GlyphDef[] = [
       const w = g.wide(9);
       const x = 2.5;
       const b = g.bottom(0);
-      return [open(p(x, g.cap), p(x, b), p(w, b, true), p(w, g.y(5))), withPen(open(p(0, g.y(5)), p(6, g.y(8))), g.diag), withPen(open(p(0, g.y(8)), p(6, g.y(11))), g.diag)];
+      return [open(p(x, g.cap), p(x, b), p(w, b, true), p(w, g.y(5))), strikeThrough(g, x, g.y(6.5), 0.5), strikeThrough(g, x, g.y(9.5), 0.5)];
     },
   },
   {

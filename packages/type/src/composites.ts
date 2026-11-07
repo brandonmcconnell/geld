@@ -15,7 +15,7 @@ export interface AccentedDef {
 /** A glyph made of other glyphs set side by side or offset, in grid units (Ĳ, ŀ, ŉ, the spacing accents). */
 export interface PlacedDef {
   name: string;
-  unicode: number;
+  unicode?: number;
   parts: { glyph: string; dx?: number; dy?: number; after?: boolean }[];
   /** Advance in grid units; when absent, the sum of the parts set `after` one another. */
   advance?: number;

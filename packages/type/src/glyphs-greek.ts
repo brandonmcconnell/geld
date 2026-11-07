@@ -1,5 +1,5 @@
 import type { PlacedDef } from './composites';
-import { ALL, bar, box, diagonal, dot, type DrawContext, type GlyphDef, open, p, RIGHT, stem, vee, withPen, yArms } from './draw';
+import { ALL, bar, box, diagonal, dot, type DrawContext, type GlyphDef, open, p, RIGHT, stem, vee, withPen, yArms, barIntoDiagonal, edgeAt, footFor, INSIDE, kaWithTail , OVERHANG , tailAfterLeg , spanOf , crossbarReach } from './draw';
 import { letter } from './glyphs-core';
 import { sigma } from './glyphs-plus';
 
@@ -67,7 +67,7 @@ const UPPER: GlyphDef[] = [
     unicode: 0x3cf,
     lsb: 1.5,
     rsb: 0.3,
-    draw: (g) => [...letter('K').draw(g), stem(g.wide(9.5) + 0.5, -2.75, g.h)],
+    draw: (g) => kaWithTail(g, letter('K').draw(g)),
   },
 ];
 
@@ -133,7 +133,7 @@ const LOWER_DEFS: GlyphDef[] = [
     unicode: 0x3b9,
     lsb: 1.5,
     rsb: 0.75,
-    draw: (g) => [open(p(0, g.xHeight), p(0, g.bottom(0), true), p(g.wide(2.25), g.bottom(0)))],
+    draw: (g) => [open(p(0, g.xHeight), p(0, g.bottom(0), true), p(Math.max(g.wide(2.25), g.v / 2 + 2.5), g.bottom(0)))],
   },
   {
     name: 'lambda',
@@ -169,7 +169,7 @@ const LOWER_DEFS: GlyphDef[] = [
     draw: (g) => {
       const w = g.wide(8);
       const t = g.top(g.xHeight);
-      return [box(0, w, g.bottom(0), t, ALL), bar(w * 0.5, w + 2, t)];
+      return [box(0, w, g.bottom(0), t, [true, true, false, true]), bar(w * 0.5, w + crossbarReach(g), t)];
     },
   },
   {
@@ -260,7 +260,7 @@ const LOWER_DEFS: GlyphDef[] = [
         stem(0, 0, g.xHeight),
         withPen({ ...open(p(0, y0), p(reach, g.xHeight)), endCap: 'flat' }, g.diag),
         diagonal(g, reach * 0.45, y0 + (g.xHeight - y0) * 0.45, reach, 0, [false, true]),
-        stem(reach + 0.5, g.descender + 1, g.h),
+        ...tailAfterLeg(g, reach, spanOf(g.diag, reach * 0.55, y0 + (g.xHeight - y0) * 0.45)),
       ];
     },
   },
@@ -269,15 +269,19 @@ const LOWER_DEFS: GlyphDef[] = [
 /** ζ and ξ: a tall top bar, a diagonal, and a bottom that turns down into a descender; ξ adds a middle bar. */
 function zetaStrokes(g: DrawContext, xi: boolean) {
   const w = g.wide(7.5);
-  const top = 14;
-  const e = g.foot(w, top);
+  const top = g.y(14);
+  const e = footFor(g.diag, w, top);
   const b = g.bottom(0);
   const d = g.bottom(g.descender);
+  const start = edgeAt(g.diag, w - e, top, e, 0, g.h, -1) + INSIDE;
+  const middle = g.y(7.5);
+  const left = edgeAt(g.diag, w - e, top, e, 0, middle - g.h / 2, -1) - OVERHANG;
+  const right = Math.max(w * 0.8, edgeAt(g.diag, w - e, top, e, 0, middle + g.h / 2, 1) + 1.5);
   return [
-    bar(0, w, g.top(top)),
-    ...(xi ? [bar(1, w * 0.8, g.y(7.5))] : []),
+    barIntoDiagonal(g, 0, w, top, [e, 0])[0]!,
+    ...(xi ? [bar(left, right, middle)] : []),
     diagonal(g, w - e, top, e, 0),
-    open(p(0, b), p(w, b, true), p(w, d, true), p(w - 2.5, d)),
+    open(p(start, b), p(w, b, true), p(w, d, true), p(w - 2.5, d)),
   ];
 }
 

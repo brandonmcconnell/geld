@@ -34,3 +34,4 @@ apps/extension/safari/**/DerivedData/
 packages/relay/dist/
 apps/companion/dist/
 apps/dashboard/db/migrate.cjs
+__pycache__/

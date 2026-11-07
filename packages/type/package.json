@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "tsc --noEmit && vitest run",
-    "build": "tsx scripts/build.ts"
+    "build": "tsx scripts/build.ts",
+    "joins": "tsx scripts/dump-outlines.ts dist/joins.json sans:roman:100 sans:roman:200 sans:roman:300 sans:roman:400 sans:roman:500 sans:roman:600 sans:roman:700 sans:roman:800 sans:roman:900 sans:italic:100 sans:italic:200 sans:italic:300 sans:italic:400 sans:italic:500 sans:italic:600 sans:italic:700 sans:italic:800 sans:italic:900 && python3 scripts/joins.py --baseline scripts/joins-baseline.txt dist/joins.json"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",

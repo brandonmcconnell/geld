@@ -4,6 +4,7 @@ import { DRAWN_SIGNS, FIGURES, LOWER, NOTDEF, ON_LETTERS, PUNCTUATION, TRADEMARK
 import { CYRILLIC, CYRILLIC_LOCL } from './glyphs-cyrillic';
 import { figureSets, figureVariants, signScripts, tabularSigns } from './glyphs-figures';
 import { GREEK } from './glyphs-greek';
+import { smallCaps } from './glyphs-smallcaps';
 import { LATIN_EXTRA } from './glyphs-latin';
 import { LATIN1 } from './glyphs-latin1';
 import { PLUS } from './glyphs-plus';
@@ -29,7 +30,7 @@ const DRAWN: GlyphDef[] = [
   ...GREEK,
 ];
 
-export const GLYPHS: GlyphDef[] = [...DRAWN, ...figureSets(FIGURES), ...tabularSigns(DRAWN), ...signScripts(DRAWN)];
+export const GLYPHS: GlyphDef[] = [...DRAWN, ...figureSets(FIGURES), ...tabularSigns(DRAWN), ...signScripts(DRAWN), ...smallCaps(DRAWN)];
 
 /** Spaces, in grid units of a 20-unit em: the quads and fixed spaces as Unicode defines them, the figure space as wide as a tabular figure, the punctuation space as a period. */
 export const SPACES: SpaceDef[] = [

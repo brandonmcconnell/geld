@@ -129,6 +129,18 @@ def check_figures(path: Path, data: bytes) -> None:
     check(len(widths) == 1, f"{path.name}: tabular widths differ {sorted(widths)}")
 
 
+def check_small_caps(path: Path, data: bytes) -> None:
+    """Every GF Latin Core letter has a small capital under smcp (lowercase) and c2sc (capitals); Turkish i keeps its dot."""
+    letters = [chr(c) for c in sorted(glyphsets.unicodes_per_glyphset("GF_Latin_Core")) if chr(c).isalpha() and chr(c).isascii() or 0xC0 <= c <= 0x17F]
+    for feature, test in (("smcp", str.islower), ("c2sc", str.isupper)):
+        missing = [ch for ch in letters if test(ch) and ch not in "ʼŉſ" and not all(n.endswith(".sc") for n, _ in shape(data, 400, ch, features={feature: True}))]
+        check(not missing, f"{path.name}: {feature} lacks small capitals for {''.join(missing)}")
+    got = [n for n, _ in shape(data, 400, "i", "tr", {"smcp": True})]
+    check(got == ["idotaccent.sc"], f"{path.name}: Turkish smcp i shaped {got}")
+    got = [n for n, _ in shape(data, 400, "1&", features={"c2sc": True})]
+    check(got == ["one.sc", "ampersand.sc"], f"{path.name}: c2sc 1& shaped {got}")
+
+
 def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None:
     font = TTFont(path)
     cmap = set(font.getBestCmap())
@@ -145,6 +157,7 @@ def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None
     data = path.read_bytes()
     check_locl(path, data, italic)
     check_figures(path, data)
+    check_small_caps(path, data)
     for weight, expected in by_weight.items():
         instance = instantiateVariableFont(TTFont(path), {"wght": int(weight)})
         got = advances(instance)

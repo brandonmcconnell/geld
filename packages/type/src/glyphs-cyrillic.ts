@@ -5,15 +5,25 @@ import {
   box,
   diagonal,
   type DrawContext,
+  level,
   type GlyphDef,
   mirror,
   open,
   p,
   RIGHT,
   rotate180,
+  spanOf,
   stem,
   vee,
   yArms,
+  crossbarReach,
+  crossing,
+  kaWithTail,
+  tailAfter,
+  tailAfterLeg,
+  tailReach,
+  withPen,
+  INSIDE,
 } from './draw';
 import type { Stroke } from './geometry';
 import { METRICS } from './grid';
@@ -49,14 +59,15 @@ const el: Draw = (g) => {
   const x = g.wide(2.5);
   const t = g.top(g.cap);
   const b = g.bottom(0);
-  return [open(p(x, t), p(w, t), p(w, 0)), open(p(x, t), p(x, b, true), p(-0.75, b))];
+  return [open(p(-0.75, b), p(x, b, true), p(x, t), p(w, t), p(w, 0))];
 };
 const de: Draw = (g) => {
   const w = g.wide(9.5);
   const x = g.wide(2);
   const t = g.top(g.cap);
   const b = g.bottom(0);
-  return [open(p(x, t), p(w, t), p(w, b)), open(p(x, t), p(x, g.y(3)), p(0, g.y(1.5)), p(0, b)), bar(-1, w + 1, b), descender(g, -1), descender(g, w + 1)];
+  const tail = tailReach(g);
+  return [level(open(p(0, b), p(x, Math.max(g.y(4), g.h + g.y(2.5))), p(x, t), p(w, t), p(w, b)), true, false), open(p(-tail, -2.75), p(-tail, b), p(w + tail, b), p(w + tail, -2.75))];
 };
 const zhe: Draw = (g) => {
   const w = g.wide(15);
@@ -64,9 +75,9 @@ const zhe: Draw = (g) => {
   const y0 = g.cap / 2;
   const arm = (dir: 1 | -1) => {
     const reach = c + dir * (c + g.v / 2 - g.foot(c, g.cap - y0));
-    return [diagonal(g, c, y0, reach, g.cap, [false, true]), diagonal(g, c + dir * 1, y0, reach, 0, [false, true])];
+    return [diagonal(g, c, y0, reach, g.cap, [false, true]), diagonal(g, c, y0, reach, 0, [false, true])];
   };
-  return [stem(c, 0, g.cap), bar(c - 2.5, c + 2.5, y0), ...arm(1), ...arm(-1)];
+  return [stem(c, 0, g.cap), ...arm(1), ...arm(-1)];
 };
 const sha: Draw = (g) => {
   const w = g.wide(14);
@@ -74,7 +85,7 @@ const sha: Draw = (g) => {
 };
 const tse: Draw = (g) => {
   const w = g.wide(9.5);
-  return [stem(0, 0, g.cap), stem(w, 0, g.cap), bar(0, w + 1.5, g.bottom(0)), descender(g, w + 1.5)];
+  return [stem(0, 0, g.cap), stem(w, 0, g.cap), ...tailAfter(g, w, 0)];
 };
 const ef: Draw = (g) => {
   const w = g.wide(12);
@@ -151,10 +162,12 @@ const nje: Draw = (g) => {
 const u: Draw = (g) => {
   const w = g.wide(10.5);
   const y = g.y(4.5);
-  return [diagonal(g, 0, g.cap, w * 0.5, y), diagonal(g, w, g.cap, w * 0.15, 0)];
+  // The short arm ends square on the long one's centreline, its corners inside it.
+  const meet = crossing([0, g.cap], [w * 0.5, y], [w, g.cap], [w * 0.15, 0]);
+  return [diagonal(g, 0, g.cap, meet[0], meet[1], [true, false]), diagonal(g, w, g.cap, w * 0.15, 0)];
 };
 const gheUp: Draw = (g) => [open(p(g.wide(9), g.cap + 2.5), p(g.wide(9), g.top(g.cap)), p(0, g.top(g.cap)), p(0, 0))];
-const gheBar: Draw = (g) => [...ge(g), bar(-1.5, g.wide(4.5), g.cap / 2)];
+const gheBar: Draw = (g) => [...ge(g), bar(-crossbarReach(g), g.wide(4.5), g.cap / 2)];
 const ue: Draw = (g) => {
   const w = g.wide(11);
   return yArms(g, w, g.cap, g.y(6));
@@ -168,13 +181,28 @@ const gheHook: Draw = (g) => {
 };
 /** Ҝ: K with a short upright stroke through its upper arm. */
 const kaStroke: Draw = (g) => {
-  const x = g.v + 1.8;
-  return [...letter('K').draw(g), stem(x, g.y(6), g.y(11))];
+  const x = g.v + 1.6;
+  const w = g.wide(9.5);
+  const y0 = g.y(4.5);
+  const reach = w + g.v / 2 - g.foot(w, g.cap - y0);
+  // Through K's arm, clearing its edges by 1.25 where they come nearest the stroke's ends.
+  const along = (at: number) => y0 + ((g.cap - y0) * at) / reach;
+  const half = (Math.hypot(g.diag.v * reach, g.diag.h * (g.cap - y0)) / Math.hypot(reach, g.cap - y0) / 2) * (Math.hypot(reach, g.cap - y0) / reach);
+  // The leg leaves the arm further out than K's, so the stroke crosses the arm alone.
+  const t = 0.6;
+  return [
+    stem(0, 0, g.cap),
+    withPen(level(open(p(0, y0), p(reach, g.cap)), false, true), g.diag),
+    diagonal(g, reach * t, along(reach * t), reach, 0, [false, true]),
+    // With no room to clear the arm below the cap (heavy weights) the stroke ends inside it, showing only below.
+    stem(x, along(x - g.v / 2) - half - 1.25, along(x + g.v / 2) + half + 1.25 <= g.cap ? along(x + g.v / 2) + half + 1.25 : along(x - g.v / 2) + half - INSIDE),
+  ];
 };
 /** Ҹ: a wider Ч with a short upright stroke through the middle of its bar. */
 const cheStroke: Draw = (g) => {
   const w = g.wide(11);
-  return [...che(g, w), stem(w / 2, g.y(4.5), g.y(9.5))];
+  const m = g.y(7);
+  return [...che(g, w), stem(w / 2, m - g.h / 2 - 1.5, m + g.h / 2 + 1.5)];
 };
 const oBarred: Draw = (g) => {
   const w = g.wide(10);
@@ -187,7 +215,7 @@ const yeru: Draw = (g) => {
 };
 const shcha: Draw = (g) => {
   const w = g.wide(14);
-  return [...sha(g).slice(0, 3), bar(0, w + 1.5, g.bottom(0)), descender(g, w + 1.5)];
+  return [...sha(g).slice(0, 3), ...tailAfter(g, w, 0)];
 };
 
 /** Capitals with their own drawing; `lower` is the lowercase code point that is the same skeleton as a small capital. */
@@ -220,20 +248,25 @@ const DRAWN: { name: string; unicode: number; lower?: number; lsb: number; rsb: 
   { name: 'Dzhe-cy', unicode: 0x40f, lower: 0x45f, lsb: 1.5, rsb: 1.5, draw: dzhe },
   { name: 'Gheup-cy', unicode: 0x490, lower: 0x491, lsb: 1.5, rsb: 0.5, draw: gheUp },
   { name: 'Ghestroke-cy', unicode: 0x492, lower: 0x493, lsb: 0.5, rsb: 0.5, draw: gheBar },
-  { name: 'Zhedescender-cy', unicode: 0x496, lower: 0x497, lsb: 0.3, rsb: 0.3, draw: (g) => [...zhe(g), descender(g, g.wide(15) + 0.5)] },
+  { name: 'Zhedescender-cy', unicode: 0x496, lower: 0x497, lsb: 0.3, rsb: 0.3, draw: (g) => {
+      const w = g.wide(15);
+      const reach = w + g.v / 2 - g.foot(w / 2, g.cap / 2);
+      return [...zhe(g), ...tailAfterLeg(g, reach, spanOf(g.diag, reach - w / 2, g.cap / 2))];
+    },
+  },
   {
     name: 'Kadescender-cy',
     unicode: 0x49a,
     lower: 0x49b,
     lsb: 1.5,
     rsb: 0.3,
-    draw: (g) => [...letter('K').draw(g), descender(g, g.wide(9.5) + 0.5)],
+    draw: (g) => kaWithTail(g, letter('K').draw(g)),
   },
-  { name: 'Endescender-cy', unicode: 0x4a2, lower: 0x4a3, lsb: 1.5, rsb: 0.5, draw: (g) => [...letter('H').draw(g), bar(g.wide(9), g.wide(9) + 1.5, g.bottom(0)), descender(g, g.wide(9) + 1.5)] },
+  { name: 'Endescender-cy', unicode: 0x4a2, lower: 0x4a3, lsb: 1.5, rsb: 0.5, draw: (g) => [...letter('H').draw(g), ...tailAfter(g, g.wide(9), g.wide(9))] },
   { name: 'Ustraight-cy', unicode: 0x4ae, lsb: 0.3, rsb: 0.3, draw: ue },
-  { name: 'Ustraightstroke-cy', unicode: 0x4b0, lsb: 0.3, rsb: 0.3, draw: (g) => [...ue(g), bar(g.wide(11) / 2 - 3, g.wide(11) / 2 + 3, g.y(4))] },
-  { name: 'Hadescender-cy', unicode: 0x4b2, lower: 0x4b3, lsb: 0.4, rsb: 0.4, draw: (g) => [...letter('X').draw(g), descender(g, g.wide(10) + 0.5)] },
-  { name: 'Chedescender-cy', unicode: 0x4b6, lower: 0x4b7, lsb: 1.5, rsb: 0.5, draw: (g) => [...che(g), bar(g.wide(9), g.wide(9) + 1.5, g.bottom(0)), descender(g, g.wide(9) + 1.5)] },
+  { name: 'Ustraightstroke-cy', unicode: 0x4b0, lsb: 0.3, rsb: 0.3, draw: (g) => [...ue(g), bar(g.wide(11) / 2 - 3, g.wide(11) / 2 + 3, Math.max(g.h / 2 + 1.4, Math.min(g.y(4), g.y(6) - g.h - 1.2)))] },
+  { name: 'Hadescender-cy', unicode: 0x4b2, lower: 0x4b3, lsb: 0.4, rsb: 0.4, draw: (g) => [...letter('X').draw(g), ...tailAfterLeg(g, g.wide(10), spanOf(g.diag, g.wide(10), g.cap))] },
+  { name: 'Chedescender-cy', unicode: 0x4b6, lower: 0x4b7, lsb: 1.5, rsb: 0.5, draw: (g) => [...che(g), ...tailAfter(g, g.wide(9), g.wide(9))] },
   { name: 'Shha-cy', unicode: 0x4ba, lsb: 1.5, rsb: 1.5, draw: shha },
   { name: 'Gemiddlehook-cy', unicode: 0x494, lower: 0x495, lsb: 1.5, rsb: 1, draw: gheHook },
   { name: 'Zedescender-cy', unicode: 0x498, lower: 0x499, lsb: 1, rsb: 1, draw: (g) => [...ze(g), descender(g, g.wide(9) / 2)] },
@@ -278,7 +311,7 @@ const LOWER_OWN: GlyphDef[] = [
       const w = g.wide(7);
       const t = g.top(g.xHeight);
       const d = g.bottom(g.descender);
-      return [stem(0, 0, g.ascender), bar(-g.v / 2 - 1, 3, 12.5), open(p(0, t), p(w, t, true), p(w, d, true), p(w - 2.5, d))];
+      return [stem(0, 0, g.ascender), bar(-crossbarReach(g), Math.max(3, crossbarReach(g)), 12.5), open(p(0, t), p(w, t, true), p(w, d, true), p(w - 2.5, d))];
     },
   },
   {
@@ -290,7 +323,7 @@ const LOWER_OWN: GlyphDef[] = [
     draw: (g) => {
       const w = g.wide(7);
       const t = g.top(g.xHeight);
-      return [stem(0, 0, g.ascender), bar(-g.v / 2 - 1, 3, 12.5), open(p(0, t), p(w, t, true), p(w, 0))];
+      return [stem(0, 0, g.ascender), bar(-crossbarReach(g), Math.max(3, crossbarReach(g)), 12.5), open(p(0, t), p(w, t, true), p(w, 0))];
     },
   },
   {
@@ -312,7 +345,8 @@ const LOWER_OWN: GlyphDef[] = [
     rsb: 0.3,
     draw: (g) => {
       const w = g.wide(8.5);
-      return [...yArms(g, w, g.xHeight, 0, g.descender), bar(w / 2 - 2.5, w / 2 + 2.5, -1.5)];
+      const h = Math.min(g.h, 1.8);
+      return [...yArms(g, w, g.xHeight, 0, g.descender), withPen(bar(w / 2 - crossbarReach(g), w / 2 + crossbarReach(g), Math.min(-1.5, g.descender + 1.25 + h / 2)), { ...g.pen, h })];
     },
   },
 ];
@@ -326,7 +360,7 @@ const ITALIC_LOWER: Record<string, Draw> = {
   'te-cy': (g) => letter('m').draw(g),
   'tse-cy': (g) => {
     const w = g.wide(7);
-    return [...letter('u').draw(g), bar(w, w + 1.5, g.bottom(0)), descender(g, w + 1.5)];
+    return [...letter('u').draw(g), ...tailAfter(g, w, w)];
   },
 };
 
@@ -458,7 +492,7 @@ const LOCL_FORMS: LoclForm[] = [
     as: 'lower',
     draw: (g) => {
       const w = 2 * g.wide(6.5);
-      return [...shaTurned(g), bar(w, w + 1.5, g.bottom(0)), descender(g, w + 1.5)];
+      return [...shaTurned(g), ...tailAfter(g, w, w)];
     },
   },
   { from: 'soft-cy', stands: 0x44c, languages: ['BGR'], lsb: 1.5, rsb: 1.25, as: 'lower', draw: (g) => letter('b').draw(g) },
