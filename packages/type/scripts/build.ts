@@ -180,6 +180,8 @@ async function compile(spaces: string[]): Promise<void> {
   const fonts = (folder: string) => readdirSync(join(dist, folder)).filter((f) => f.endsWith('.ttf')).map((f) => join(dist, folder, f));
   await phase('finish', () => run([join(root, 'scripts', 'finish.py'), ...fonts('variable')]));
   if (!quick) {
+    const statics = [...fonts('ttf'), ...readdirSync(join(dist, 'otf')).map((f) => join(dist, 'otf', f))];
+    await phase('finish statics', () => runAll(chunks(statics, jobs).map((files) => [join(root, 'scripts', 'finish.py'), '--static', ...files])));
     const hinted = fonts('ttf');
     mkdirSync(join(dist, 'web'), { recursive: true });
     // D18: the static TTFs are hinted with ttfautohint, but the web fonts are made from them unhinted, so hinting writes

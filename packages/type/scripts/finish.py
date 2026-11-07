@@ -7,6 +7,7 @@ its variations PostScript name prefix.
 
 import sys
 
+from fontTools.otlLib.builder import buildStatTable
 from fontTools.ttLib import TTFont, newTable
 from fontTools.ttLib.tables import ttProgram
 
@@ -41,6 +42,27 @@ def finish(path: str) -> None:
     font.save(path)
 
 
+WEIGHT_NAMES = {100: "Thin", 200: "ExtraLight", 300: "Light", 400: "Regular", 500: "Medium", 600: "SemiBold", 700: "Bold", 800: "ExtraBold", 900: "Black"}
+
+
+def static(path: str) -> None:
+    """A static font's STAT names its place in the family, as the variable fonts' does: its weight and whether it is
+    italic, Regular elided and linked to Bold, Roman elided and linked to Italic, so apps group the family."""
+    font = TTFont(path)
+    weight = font["OS/2"].usWeightClass
+    italic = bool(font["OS/2"].fsSelection & 1)
+    weight_value = {"value": weight, "name": WEIGHT_NAMES[weight]}
+    if weight == 400:
+        weight_value.update(flags=0x2, linkedValue=700)
+    ital_value = {"value": 1, "name": "Italic"} if italic else {"value": 0, "name": "Roman", "flags": 0x2, "linkedValue": 1}
+    axes = [
+        {"tag": "wght", "name": "Weight", "values": [weight_value]},
+        {"tag": "ital", "name": "Italic", "values": [ital_value]},
+    ]
+    buildStatTable(font, axes, elidedFallbackName="Regular")
+    font.save(path)
+
+
 def hinted(path: str) -> None:
     """A font ttfautohint has hinted rounds its ppem to whole pixels, as its instructions assume (head flags bit 3)."""
     font = TTFont(path)
@@ -49,9 +71,9 @@ def hinted(path: str) -> None:
 
 
 if __name__ == "__main__":
-    if sys.argv[1] == "--hinted":
+    if sys.argv[1] in ("--hinted", "--static"):
         for path in sys.argv[2:]:
-            hinted(path)
+            (hinted if sys.argv[1] == "--hinted" else static)(path)
     else:
         for path in sys.argv[1:]:
             finish(path)

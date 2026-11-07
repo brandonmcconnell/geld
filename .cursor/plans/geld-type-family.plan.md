@@ -322,16 +322,16 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 
 ## 8. Variable fonts and font tables
 
-- [ ] Axis: `wght` 100 to 900. Italic ships as its own file, the usual web practice, with `ital` in `STAT`.
-- [ ] Files: Geld Sans (roman, italic) and Geld Dark Sans (roman, italic).
-- [ ] Named instances: Thin to Black for each, 18 per family counting italics, 36 static fonts in all.
-- [ ] `STAT` with axis values, Regular elided, Bold linked to Regular and Italic linked to roman, so font menus group correctly.
-- [ ] `avar` for even weight steps, `HVAR` for fast advance widths, `MVAR` for metrics that vary (2.9).
-- [ ] Overlaps kept in variable fonts with the `OVERLAP_SIMPLE` flag, and removed in statics.
-- [ ] `name` table: family and style (IDs 1, 2, 16, 17), full and PostScript names (4, 6), the variations PostScript prefix (25), version, copyright, trademark, manufacturer, designer, URLs, licence and licence URL (13, 14).
-- [ ] `OS/2`: weight and width classes, `fsSelection`, `fsType` 0 (installable), PANOSE, Unicode and code page ranges, vendor ID (a registered "GELD" if available).
+- [x] Axis: `wght` 100 to 900. Italic ships as its own file, the usual web practice, with `ital` in `STAT`.
+- [x] Files: Geld Sans (roman, italic) and Geld Dark Sans (roman, italic).
+- [x] Named instances: Thin to Black for each, 18 per family counting italics, 36 static fonts in all.
+- [x] `STAT` with axis values, Regular elided, Bold linked to Regular and Italic linked to roman, so font menus group correctly. The static fonts carry one too, for their own weight and style (`finish.py --static`).
+- [x] `avar` for even weight steps, `HVAR` for fast advance widths, `MVAR` for metrics that vary (2.9). No `avar` is needed: every named weight is a master (fontbakery's warning about it stands).
+- [x] Overlaps kept in variable fonts with the `OVERLAP_SIMPLE` flag, and removed in statics.
+- [ ] `name` table: family and style (IDs 1, 2, 16, 17), full and PostScript names (4, 6), the variations PostScript prefix (25), version, copyright, trademark, manufacturer, designer, URLs, licence and licence URL (13, 14). All but the licence (13, 14) and trademark (7), which are the owner's to commit (D16).
+- [x] `OS/2`: weight and width classes, `fsSelection`, `fsType` 0 (installable), PANOSE, Unicode and code page ranges, vendor ID ("GELD"; registering it with Microsoft is the owner's).
 - [ ] `head`, `hhea`, `post` and `maxp` consistent across the family, with `fontRevision` matching the version string.
-- [ ] Glyph names: readable names in sources, production names (`uniXXXX`) in the shipped fonts.
+- [x] Glyph names: readable names in sources, production names (`uniXXXX`) in the shipped fonts where a readable name is not a valid PostScript name (`be-cy`), readable names elsewhere.
 
 ## 9. Engineering
 
@@ -341,7 +341,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
   - `src/glyphs/`: one skeleton per glyph, or per family of glyphs (n h m u share parts), with anchors for accents.
   - `src/features/`: `.fea` files, hand-written for ligatures and alternates, generated for kerning, marks and `aalt`.
   - `scripts/build.ts`: writes UFO masters and a designspace, then compiles.
-- [ ] Compiler: `fontc` (Google's Rust compiler, fast) or `fontmake` (Python), chosen by building a test font with both in Phase 1.
+- [x] Compiler: `fontc` (Google's Rust compiler, fast) or `fontmake` (Python), chosen by building a test font with both in Phase 1. Both: fontc builds the variable fonts (nine seconds for the four, where fontmake took a quarter of an hour each, with the same tables and every verify check passing), fontmake the statics, which fontc does not make. A full build is about eight minutes on four cores and `--quick` (variable fonts only) about five.
 - [ ] Python tools pinned in one requirements file and run through `uv`: fontTools, fontmake or fontc, gftools, fontbakery, ttfautohint, Shaperglot.
 - [ ] One command builds everything (`pnpm type:build`), with outputs in `packages/type/dist/`, never committed. Release artifacts come from CI.
 - [ ] Builds are reproducible: the same sources give byte-identical fonts.
@@ -351,7 +351,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 
 ## 10. Hinting and rendering
 
-- [ ] Hinting per D18: ttfautohint on static TTFs, variable and web fonts unhinted.
+- [x] Hinting per D18: ttfautohint on static TTFs, variable and web fonts unhinted (with smart dropout control in `prep`).
 - [ ] Rendering checked at 11 to 16px and at 20px in Chrome, Safari and Firefox on macOS, Chrome and Edge on Windows (DirectWrite, ClearType), and Linux (FreeType).
 - [ ] The grid sizes (10, 20, 30 and 40px) checked for sharp edges at 1x and 2x, as was done for the wordmark.
 - [ ] Thin weights checked for dropout at small sizes.
@@ -359,7 +359,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 ## 11. Quality assurance
 
 ### 11.1 Automated checks
-- [ ] fontbakery with the OpenType, Universal and Google Fonts profiles, no failures, warnings reviewed.
+- [ ] fontbakery with the OpenType, Universal and Google Fonts profiles, no failures, warnings reviewed. OpenType and Universal pass with no failures on static TTF, OTF and variable samples; warnings reviewed and kept: contour counts (detached ogoneks and horns, a two-stroke ß), the soft hyphen drawn, one 33-character glyph name, component-only glyphs unreachable in the OTFs (CFF has no components), no `avar`, overlaps in the variable fonts, file size (the web subsets answer it). Google Fonts profile not yet run (it needs the licence names).
 - [ ] Interpolation compatibility (`fontTools varLib.interpolatable`), even though compatibility is built in.
 - [ ] Outline checks: contour direction, no stray points, no zero-length segments, no overlaps in statics, extreme points.
 - [ ] Coverage against the target glyph sets (3.1), and Shaperglot per language.

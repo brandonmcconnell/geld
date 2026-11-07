@@ -52,6 +52,7 @@ def check_tables(path: Path, font: TTFont) -> None:
     bad = [n for n in font.getGlyphOrder() if not re.fullmatch(r"[A-Za-z_.][A-Za-z0-9_.]*", n)]
     check(not bad, f"{path.name}: invalid glyph names {bad[:5]}")
     check(font["OS/2"].achVendID == "GELD", f"{path.name}: vendor ID {font['OS/2'].achVendID!r}")
+    check("STAT" in font and {r.AxisTag for r in font["STAT"].table.DesignAxisRecord.Axis} == {"wght", "ital"}, f"{path.name}: no STAT with weight and italic")
     if "glyf" in font:
         glyf = font["glyf"]
         nested = [n for n in font.getGlyphOrder() if glyf[n].isComposite() and any(glyf[c.glyphName].isComposite() for c in glyf[n].components)]
