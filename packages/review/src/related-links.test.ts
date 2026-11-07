@@ -219,6 +219,19 @@ describe('GitHub references', () => {
     expect(links.map((link) => link.ref)).toEqual(['#3', 'api#5', 'vercel/next.js#52514', '#12', 'api#8', 'vercel/next.js#1', '#4', 'ENG-1']);
   });
 
+  it('keeps a discussion numbered like the pull request being read', () => {
+    expect(readHere('https://github.com/acme/web/discussions/7')).toMatchObject({ noun: 'discussion', ref: '#7' });
+  });
+
+  it('tells an Enterprise page’s references from github.com’s of the same name and number', () => {
+    const enterprise = { githubHosts: ['git.acme.dev'], repository: 'acme/web', self: 'acme/web#7', host: 'git.acme.dev' };
+    expect(relatedLinkOf({ href: 'https://git.acme.dev/acme/web/pull/7', text: '' }, enterprise)).toBeNull();
+    expect(relatedLinkOf({ href: 'https://github.com/acme/web/pull/7', text: '' }, enterprise)).toMatchObject({ ref: 'acme/web#7', context: 'acme/web' });
+    expect(relatedLinkOf({ href: 'https://git.acme.dev/acme/web/issues/12', text: '' }, enterprise)).toMatchObject({ ref: '#12', context: 'git.acme.dev/acme/web' });
+    const both = relatedLinksFrom([{ href: 'https://git.acme.dev/acme/web/issues/12', text: '' }, { href: 'https://github.com/acme/web/issues/12', text: '' }], enterprise);
+    expect(both.map((link) => link.ref)).toEqual(['#12', 'acme/web#12']);
+  });
+
   it('leaves the rest of GitHub alone', () => {
     for (const href of ['https://github.com/acme/web', 'https://github.com/acme/web/commit/3b2f94ba', 'https://github.com/acme/web/blob/main/a.ts', 'https://github.com/orgs/acme/discussions/1', 'https://github.com/acme/web/issues', 'https://github.com/user-attachments/assets/b72f2dc7-4558-488d-877c-eb53a7f4beef']) {
       expect(readHere(href), href).toBeNull();
@@ -243,6 +256,18 @@ describe('official sources in comments', () => {
     expect(fromComment('https://mintlify.slack.com/archives/C0BCMJ9JFA9/p1793123214352139', 'linear[bot]')).toBeNull();
     expect(fromComment('https://app.greptile.com/review/github/acme/web/pull/9', 'replicas-connector[bot]')).toBeNull();
     expect(fromComment('https://github.com/acme/web/issues/12', 'linear[bot]')).toBeNull();
+  });
+});
+
+describe('Microsoft Teams', () => {
+  it('keeps two messages of one thread apart, and one message linked twice as one', () => {
+    const thread = 'https://teams.microsoft.com/l/message/19:abc@thread.tacv2';
+    const links = relatedLinksFrom([
+      { href: `${thread}/1700000000001?tenantId=t`, text: '' },
+      { href: `${thread}/1700000000002?tenantId=t`, text: '' },
+      { href: `${thread}/1700000000001?groupId=g`, text: '' },
+    ]);
+    expect(links.map((link) => link.href)).toEqual([`${thread}/1700000000001?tenantId=t`, `${thread}/1700000000002?tenantId=t`]);
   });
 });
 

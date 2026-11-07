@@ -1,7 +1,7 @@
 import { browser } from 'wxt/browser';
 import { isDependencyUpdate, relatedLinksFrom } from '@geld/review/related-links';
 import type { LinkCandidate, RelatedKind, RelatedLink } from '@geld/review/related-links';
-import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
+import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { pageFetch } from './page-fetch';
 import { descriptionBody } from './review/description';
 import { appLoginOf } from './review/login';
@@ -61,7 +61,8 @@ function candidateOf(link: HTMLAnchorElement): LinkCandidate | null {
 
 function linksIn(root: ParentNode): LinkCandidate[] {
   return [...root.querySelectorAll<HTMLAnchorElement>('a[href]')]
-    .filter((link) => link.closest(`pre, [${OWN_UI_ATTRIBUTE}]`) === null)
+    // `isOwnElement`, not `closest`: a comment the digest has on loan (opened in its panel) is still GitHub's.
+    .filter((link) => link.closest('pre') === null && !isOwnElement(link))
     .map(candidateOf)
     .filter((candidate) => candidate !== null);
 }
@@ -80,26 +81,32 @@ const COMMENT_BODY = '.markdown-body, .comment-body';
  * author link that holds one body; a box holding several is not one comment, and is passed over.
  */
 function appComments(description: Element | null): LinkCandidate[] {
-  const seen = new Set<Element>();
-  const found: LinkCandidate[] = [];
   for (const link of document.querySelectorAll('a[href*="/apps/"]')) {
     const author = appLoginOf(link.getAttribute('href') ?? '');
-    if (author === null || link.closest(`${COMMENT_BODY}, [${OWN_UI_ATTRIBUTE}]`) !== null) continue;
+    if (author === null || link.closest(COMMENT_BODY) !== null || isOwnElement(link)) continue;
     let box: Element | null = link.parentElement;
     for (let depth = 0; box !== null && depth < 8; depth++, box = box.parentElement) {
       const bodies = box.querySelectorAll(COMMENT_BODY);
       if (bodies.length === 0) continue;
       const body = bodies[0];
       const single = [...bodies].every((other) => other === body || body?.contains(other) === true);
-      if (single && body !== undefined && body !== description && !seen.has(body)) {
-        seen.add(body);
-        found.push(...linksIn(body).map((candidate) => ({ ...candidate, author })));
-      }
+      if (single && body !== undefined && body !== description) authors.set(body, author);
       break;
     }
   }
+  const found: LinkCandidate[] = [];
+  for (const [body, author] of authors) {
+    if (!body.isConnected) authors.delete(body);
+    else found.push(...linksIn(body).map((candidate) => ({ ...candidate, author })));
+  }
   return found;
 }
+
+/**
+ * Each App comment's author, kept while its body is in the page: a comment the digest opens wears its header in the
+ * row, away from its body, and is still that App's comment.
+ */
+const authors = new Map<Element, string>();
 
 /** How long a fetched description stands before it is read again: an edit shows within this. */
 const FETCHED_DESCRIPTION_MS = 2 * 60 * 1000;
@@ -156,6 +163,7 @@ export function relatedLinksOnPage(onChange: () => void = () => undefined): Rela
   const repository = pull === null ? null : `${pull[1] ?? ''}/${pull[2] ?? ''}`;
   return relatedLinksFrom([...(body === null ? [] : descriptionLinks(body)), ...appComments(inPage)], {
     githubHosts: [location.hostname],
+    host: location.hostname,
     repository,
     self: pull === null ? null : `${repository ?? ''}#${pull[3] ?? ''}`,
   });
@@ -217,9 +225,16 @@ const NOUN_GLYPHS: Readonly<Record<string, string>> = { issue: ICON_ISSUE_OPENED
  * GitHub's own references get their title and state from GitHub's hovercard (`refs.ts`, once per reference per
  * visit), when they live on this page's host; `onChange` asks for a pass when one lands.
  */
+/**
+ * How many rows may ask GitHub's hovercard for their title and state: the rows that show, all of them once "Show N
+ * more" is open, and never more than `MAX_LOOKUPS`, so a description naming a hundred issues is not a hundred requests.
+ */
+const MAX_LOOKUPS = 32;
+
 function rowsOf(links: readonly RelatedLink[], onChange: () => void): RelatedRow[] {
-  return links.map((link) => {
-    if (!link.key.startsWith('github:') || new URL(link.href).hostname !== location.hostname) return { ...link, state: null };
+  const lookups = Math.min(showAll ? links.length : SHOWN_LINKS, MAX_LOOKUPS);
+  return links.map((link, index) => {
+    if (index >= lookups || !link.key.startsWith('github:') || new URL(link.href).hostname !== location.hostname) return { ...link, state: null };
     const details = refDetails(link.href, onChange);
     return details === null ? { ...link, state: null } : { ...link, title: details.title, state: details.state };
   });
@@ -295,6 +310,7 @@ function listOf(links: readonly RelatedRow[]): HTMLElement {
     showAll = true;
     for (const row of extra) row.hidden = false;
     more.parentElement?.remove();
+    requestPass();
   });
   list.append(createElement('li', { class: `${SECTION_CLASS}__item` }, [more]));
   return list;
@@ -350,13 +366,18 @@ export function removeRelatedLinks(): void {
   mounted = new Map();
   for (const stray of document.querySelectorAll(`.${SECTION_CLASS}[${OWN_UI_ATTRIBUTE}]`)) stray.remove();
   showAll = false;
+  authors.clear();
 }
+
+/** The controller's pass, for rows "Show N more" reveals to look their details up. */
+let requestPass: () => void = () => undefined;
 
 /**
  * Draw, move back into place or take away the sections. Writes only where the links or the place changed. `onChange`
  * asks for another pass when a description read from GitHub lands.
  */
 export function applyRelatedLinks(active: boolean, onChange: () => void = () => undefined): void {
+  requestPass = onChange;
   const afters = active ? assigneesSections() : [];
   const links = afters.length === 0 ? [] : rowsOf(relatedLinksOnPage(onChange), onChange);
   if (links.length === 0) {

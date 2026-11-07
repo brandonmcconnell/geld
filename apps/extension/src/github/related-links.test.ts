@@ -186,6 +186,25 @@ describe('related links in the sidebar', () => {
     expect(relatedLinksOnPage().map((link) => link.key)).toEqual(['linear:acme:ENG-2', 'replicas:9e2a6c22-c7ad-49f7-8219-fe70dd1c8010']);
   });
 
+  it('keeps an App comment’s links while the digest has it open, its body on loan and its header worn in a row', () => {
+    document.body.innerHTML =
+      '<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>The description.</p></div></div>' +
+      '<div class="timeline-comment" id="home"><div class="timeline-comment-header"><a class="author" href="/apps/greptile-apps">greptile-apps</a></div>' +
+      '<div class="comment-body markdown-body"><a href="https://app.greptile.com/review/github/acme/web/pull/9"><img alt="View in Greptile"></a></div></div>' +
+      '<div data-geld-ui=""><div class="row" data-geld-ui=""></div><div class="slot"></div></div>';
+    expect(relatedLinksOnPage().map((link) => link.key)).toEqual(['greptile:review/github/acme/web/pull/9']);
+    const header = document.querySelector('.timeline-comment-header');
+    const body = document.querySelector('#home .comment-body');
+    const row = document.querySelector('.row');
+    const slot = document.querySelector('.slot');
+    if (header === null || body === null || row === null || slot === null) throw new Error('fixture');
+    header.setAttribute('data-geld-teleported', 'a');
+    body.setAttribute('data-geld-teleported', 'b');
+    row.append(header);
+    slot.append(body);
+    expect(relatedLinksOnPage().map((link) => link.key)).toEqual(['greptile:review/github/acme/web/pull/9']);
+  });
+
   it('passes over a box that holds several comments rather than guess whose the links are', () => {
     document.body.innerHTML = '<div class="group"><a href="/apps/linear">linear</a><div class="markdown-body"><a href="https://linear.app/acme/issue/ENG-3">ENG-3</a></div><div class="markdown-body"><a href="https://linear.app/acme/issue/ENG-4">ENG-4</a></div></div>';
     expect(relatedLinksOnPage()).toEqual([]);
@@ -231,5 +250,19 @@ describe('related links in the sidebar', () => {
       ['open', 'octicon octicon-issue-opened geld-related__mark'],
     ]);
     expect(document.querySelectorAll('.geld-related__link')[0]?.getAttribute('title')).toBe('Merged · Open pull request on GitHub · Cache fetches across routes · vercel/next.js');
+  });
+
+  it('looks up only the rows that show, the rest once Show N more opens them', async () => {
+    history.replaceState(null, '', '/acme/web/pull/7');
+    const refs = Array.from({ length: 11 }, (_, index) => `<a href="https://github.com/acme/web/issues/${index + 100}">#${index + 100}</a>`).join(' ');
+    document.body.innerHTML = `<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>${refs}</p></div></div>${railsSidebar()}`;
+    const rerun = (): void => applyRelatedLinks(true, rerun);
+    rerun();
+    const lookups = (): number => fetches.paths.filter((path) => path.endsWith('/hovercard')).length;
+    expect(lookups()).toBe(8);
+    await settle();
+    document.querySelector<HTMLButtonElement>('.geld-related__more')?.click();
+    await settle();
+    expect(lookups()).toBe(11);
   });
 });
