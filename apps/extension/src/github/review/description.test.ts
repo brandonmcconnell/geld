@@ -589,6 +589,33 @@ describe('shortenDescription', () => {
     expect(flow.hasAttribute('data-geld-desc-cut')).toBe(true);
   });
 
+  it('leaves a folded picture out of the height, which Chrome still reports under content-visibility: hidden', async () => {
+    const body = mountDescription(
+      `<p>intro</p>${h(2, 'Screens')}<a href="https://github.com/user-attachments/assets/1"><img width="718" height="670" alt="" src="https://github.com/user-attachments/assets/1"></a>` +
+        `<p>Folded too.</p>${h(2, 'Summary by CodeRabbit')}<ul><li>Bug fixes</li></ul>`,
+    );
+    const [intro, heading, link, folded] = [...body.children];
+    const image = link?.querySelector('img');
+    if (intro === undefined || heading === undefined || link === undefined || folded === undefined || image == null) throw new Error('no blocks');
+    const place = (element: Element, top: number, height: number): void => {
+      Object.defineProperty(element, 'getBoundingClientRect', { configurable: true, value: () => new DOMRect(0, top, 600, height) });
+    };
+    place(body, 0, 0);
+    place(intro, 0, 24);
+    place(heading, 24, 32);
+    // The folded link has no height of its own, but its picture answers as if laid out.
+    place(link, 56, 0);
+    place(image, 56, 670);
+    place(folded, 56, 0);
+    shortenDescription(true);
+    expect(link.getAttribute('hidden')).toBe('until-found');
+    body.querySelector<HTMLElement>('.geld-desc-agent')?.click();
+    await frames();
+    await frame();
+    expect(body.hasAttribute('data-geld-desc-long')).toBe(false);
+    expect(body.querySelector('[data-geld-desc-cut], [data-geld-desc-cut-edge]')).toBeNull();
+  });
+
   it('keeps at least the fade’s height of a block the cut runs through near its top', async () => {
     const body = mountDescription(
       `<p>one</p><div class="highlight"><pre>code</pre></div>${h(2, 'Summary by CodeRabbit')}<ul><li>Bug fixes</li></ul>`,

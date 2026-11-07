@@ -522,14 +522,17 @@ function carryRails(body: HTMLElement, carried: CarriedRails, height: number): v
  * change of width or of what is open is measured as it would lay out whole; reads first, then writes.
  */
 /**
- * A block's top and bottom from the body's top, its pictures included: GitHub leaves an `<img>` written on a line of
- * its own unwrapped (`<a><img></a>` straight in the body), and an inline box is only its line's text, at the image's foot.
+ * A block's top and bottom from the body's top. GitHub leaves an `<img>` written on a line of its own unwrapped
+ * (`<a><img></a>` straight in the body), and an inline box is only its line's text, at the image's foot, so such a link
+ * spans its pictures. Only a link that shows: Chrome lays out `content-visibility: hidden` content (a fold, a closed
+ * `<details>`) when asked, so a hidden picture still answers with its size.
  */
 function spanOf(block: Element, top: number): { readonly block: Element; readonly start: number; readonly end: number } {
   const box = block.getBoundingClientRect();
   let start = box.top;
   let end = box.bottom;
-  for (const media of block.querySelectorAll('img, picture, video, svg, canvas, iframe')) {
+  const pictures = block.tagName === 'A' && !block.hasAttribute('hidden') ? block.querySelectorAll('img, picture, video, svg') : [];
+  for (const media of pictures) {
     const rect = media.getBoundingClientRect();
     if (rect.width === 0 && rect.height === 0) continue;
     start = Math.min(start, rect.top);
