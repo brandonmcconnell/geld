@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Preview } from '@geld/review';
 import type { Deployment } from './deployments';
-import { deploymentMark, deploymentOf, latestDeployments, shownAsPreview } from './deployments';
+import { deploymentEntries, deploymentHref, deploymentMark, deploymentOf, deploymentsOfPreview, latestDeployments, pinnedToBuild, previewLinks } from './deployments';
 import { deploymentPill } from './panel';
 
 // Trimmed from tldraw/tldraw#11342 and #11388, signed out, Nov 2026.
@@ -105,6 +105,15 @@ describe('deploymentOf', () => {
     expect(deploymentMark(deployment)).toBe('https://avatars.githubusercontent.com/in/15368?s=40');
   });
 
+  it('takes an App linking "deployed" to its site for the address, not a run', () => {
+    const ignored = VERCEL_FAILED.replace('had a problem deploying', 'temporarily deployed').replace(/<a href="https:\/\/examples-r2fi9yu5m\.tldraw\.club" class="Link--primary Link text-bold">Preview – examples<\/a>/, 'Preview – workflow-template').replace('Failure</span>', 'Inactive</span>').replace('Deployment Status Label: Failure', 'Deployment Status Label: Inactive');
+    const deployment = read(ignored);
+    expect(deployment.environment).toBe('Preview – workflow-template');
+    expect(deployment.state).toBe('inactive');
+    expect(deployment.url).toBe('https://examples-r2fi9yu5m.tldraw.club/');
+    expect(deployment.logUrl).toBeNull();
+  });
+
   it('leaves other events alone', () => {
     expect(deploymentOf(row('<div id="event-1" class="TimelineItem"><div class="TimelineItem-body"><a class="author" href="/a">a</a> added the bug label</div></div>'))).toBeNull();
   });
@@ -122,29 +131,65 @@ describe('latestDeployments', () => {
   });
 });
 
-describe('shownAsPreview', () => {
-  const preview: Preview = { host: 'vercel', project: 'examples', status: 'ready', url: null, inspectUrl: null, anchor: 'issuecomment-1' };
+describe('previews and deployments', () => {
+  const vercel = (anchor: string, environment: string, state: Deployment['state'], url: string | null, at: string): Deployment => ({ ...read(VERCEL_FAILED), anchor, environment, state, url, at });
+  const examples: Preview = { host: 'vercel', project: 'examples', status: 'failed', url: null, inspectUrl: 'https://vercel.com/tldraw/examples/91Y2', anchor: 'issuecomment-1' };
+  const docs: Preview = { ...examples, project: 'tldraw-docs', status: 'ready', url: 'https://tldraw-docs-git-branch.tldraw.club', inspectUrl: 'https://vercel.com/tldraw/tldraw-docs/5Vum' };
+  const all = [
+    vercel('event-1', 'Preview – examples', 'active', 'https://examples-good.tldraw.club', '2026-11-06T12:00:00Z'),
+    vercel('event-2', 'Preview – tldraw-docs', 'active', 'https://tldraw-docs-abc.tldraw.club', '2026-11-06T12:01:00Z'),
+    vercel('event-3', 'Preview – examples', 'failed', 'https://examples-bad.tldraw.club', '2026-11-06T13:40:00Z'),
+    read(VIA_ACTIONS),
+  ];
 
-  it('leaves an App the Previews row reads to that row', () => {
-    expect(shownAsPreview(read(VERCEL_FAILED), [preview])).toBe(true);
-    expect(shownAsPreview(read(VERCEL_FAILED), [])).toBe(false);
+  it('matches a preview to the environment named after its project', () => {
+    expect(deploymentsOfPreview(examples, [examples, docs], all).map((deployment) => deployment.anchor)).toEqual(['event-1', 'event-3']);
   });
 
-  it('never takes GitHub Actions deployments for previews', () => {
-    expect(shownAsPreview(read(ACTIONS_BOT), [{ ...preview, host: 'generic' }])).toBe(false);
+  it('matches a host with one project and one environment by that alone', () => {
+    const single: Preview = { ...docs, project: 'nodejs-org' };
+    const preview = [vercel('event-9', 'Preview', 'active', 'https://nodejs-k9a.vercel.app', '2026-11-06T17:22:00Z')];
+    expect(deploymentsOfPreview(single, [single], preview).map((deployment) => deployment.anchor)).toEqual(['event-9']);
+    expect(deploymentsOfPreview(single, [single, examples], preview)).toEqual([]);
+  });
+
+  it('opens a failed preview on its last good build, and says so', () => {
+    expect(previewLinks(examples, { latest: [examples, docs], archived: [] }, all)).toEqual({ href: 'https://examples-good.tldraw.club', lastSuccess: 'https://examples-good.tldraw.club' });
+    expect(previewLinks(docs, { latest: [examples, docs], archived: [] }, all)).toEqual({ href: 'https://tldraw-docs-git-branch.tldraw.club', lastSuccess: null });
+  });
+
+  it('falls back to the host page for a failed preview that never had a good build', () => {
+    expect(previewLinks(examples, { latest: [examples], archived: [] }, [])).toEqual({ href: 'https://vercel.com/tldraw/examples/91Y2', lastSuccess: null });
+  });
+
+  it('gives a deployment its host page from the comment, and a GitHub Actions one its run', () => {
+    const entries = deploymentEntries(all, [examples, docs]);
+    const failed = entries.find((entry) => entry.latest.anchor === 'event-3');
+    const canary = entries.find((entry) => entry.latest.environment === 'bemo-canary');
+    expect(failed === undefined ? null : deploymentHref(failed)).toBe('https://vercel.com/tldraw/examples/91Y2');
+    expect(failed?.comment).toBe('issuecomment-1');
+    expect(canary === undefined ? null : deploymentHref(canary)).toBe('https://github.com/tldraw/tldraw/actions/runs/42368203634/job/128390665211');
+    expect(canary?.comment).toBeNull();
+  });
+
+  it('pins an earlier push preview to the build GitHub recorded by then', () => {
+    const earlier: Preview = { ...examples, status: 'ready', url: 'https://examples-git-branch.tldraw.club', updatedAt: '2026-11-06T12:00:30Z' };
+    expect(pinnedToBuild(earlier, deploymentsOfPreview(earlier, [examples], all)).url).toBe('https://examples-good.tldraw.club');
   });
 });
 
 describe('deployment pill', () => {
+  const entry = (deployment: Deployment): Parameters<typeof deploymentPill>[0] => ({ latest: deployment, count: 1, page: null, comment: null, lastSuccessRun: null });
+
   it('opens a deployment off GitHub in a new tab', () => {
-    const pill = deploymentPill(read(ACTIONS_BOT));
+    const pill = deploymentPill(entry(read(ACTIONS_BOT)));
     expect(pill.getAttribute('href')).toBe('https://pr-11342-demo.tldraw.xyz/');
     expect(pill.getAttribute('target')).toBe('_blank');
   });
 
   it('opens a run on GitHub where the reader is', () => {
     location.href = 'https://github.com/tldraw/tldraw/pull/11342';
-    const pill = deploymentPill(read(VIA_ACTIONS));
+    const pill = deploymentPill(entry(read(VIA_ACTIONS)));
     expect(pill.getAttribute('href')).toContain('/actions/runs/');
     expect(pill.hasAttribute('target')).toBe(false);
   });

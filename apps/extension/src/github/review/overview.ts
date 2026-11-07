@@ -25,7 +25,7 @@ import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassi
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
 import { crawlConversation } from './crawler';
 import type { Deployment } from './deployments';
-import { deploymentOf, latestDeployments, shownAsPreview } from './deployments';
+import { deploymentEntries, deploymentOf, deploymentsOfPreview, pinnedToBuild, previewLinks } from './deployments';
 import { threadFragmentOf } from './thread-fragment';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
@@ -53,7 +53,7 @@ import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiv
 import type { BotRequestClick } from './bot-requests';
 import { awaitingReaction, botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
 import { pollTriggerReactions, resetTriggerReactions, withFetchedReactions } from './trigger-reactions';
-import { AGENT_NOTES_KEY, ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, DEPLOYMENTS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
+import { AGENT_NOTES_KEY, ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, noteSubKey, renderAgentNotesList, renderDeploymentsList, renderPreviewsList, PANEL_CLASS, panelSignature, CHECKS_KEY, DEPLOYMENTS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setNoteProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -68,7 +68,7 @@ import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots, triggerFor } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
 import { botCommentControls, chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
-import type { ChatByline, ChatRerun, ChatThreadLink } from './chat';
+import type { ChatByline, ChatLink, ChatRerun, ChatThreadLink } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
@@ -655,6 +655,11 @@ function closureGroups(crawled: Crawled): { readonly groups: readonly FoldGroup[
   const events = crawled.events.map((event) => ({ anchor: event.anchor, root: event.root, kind: closureKindOf(event.root), actor: authorOf(event.root)?.login ?? '', at: Date.parse(findIn(event.root, 'relative-time, time-ago, time')?.getAttribute('datetime') ?? '') }));
   const comments = crawled.comments.map((entry) => ({ author: entry.author.login, bot: entry.author.bot, anchor: entry.comment.anchor, root: entry.root, at: Date.parse(entry.comment.createdAt), preview: firstSentence(entry.comment.body), kind: entry.comment.kind }));
   return groupClosures(events, comments);
+}
+
+/** "Last successful preview" on a preview's byline, while its latest deployment is not a success. */
+function lastSuccessLink(href: string | null): ChatLink | undefined {
+  return href === null ? undefined : { label: 'Last successful preview', href, title: 'Open the last successful preview' };
 }
 
 /** Every deployment event on the page, in timeline order. */
@@ -1445,7 +1450,7 @@ function openRow(key: string, batches: readonly Batch[], grouping: GeldSettings[
     visit.openSubKey = sub;
   }
   // A line in the Review bots or Reports list opens inside its row the same way.
-  if (key === BOTS_KEY || key === REPORTS_KEY || key === AGENT_NOTES_KEY) visit.openSubKey = sub;
+  if (key === BOTS_KEY || key === REPORTS_KEY || key === AGENT_NOTES_KEY || key === PREVIEWS_KEY || key === DEPLOYMENTS_KEY) visit.openSubKey = sub;
   visit.openKey = key;
 }
 
@@ -3184,9 +3189,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // it was truncated, when the page fills in what it left out.
   const progress = ingesting && (composed.freshness !== 'fresh' || found?.meta.truncated === true) ? ingestProgress() : null;
   const allPreviews = phase('previews', () => previewsOn(crawledDom, meta));
-  const deployments = latestDeployments(allDeployments.filter((deployment) => !shownAsPreview(deployment, allPreviews)));
-  const shownEnvironments = new Set(deployments.map((group) => group.latest.environment.toLowerCase()));
-  deploymentAnchors = new Set(allDeployments.filter((deployment) => shownEnvironments.has(deployment.environment.toLowerCase())).map((deployment) => deployment.anchor));
+  // An earlier push's preview opens its own build, which GitHub's deployment events name; the comment links the branch.
+  const splitPreviews = latestPreviews(allPreviews);
+  const previews = { latest: splitPreviews.latest, archived: splitPreviews.archived.map((entry) => pinnedToBuild(entry, deploymentsOfPreview(entry, splitPreviews.latest, allDeployments))) };
+  const deployments = deploymentEntries(allDeployments, previews.latest);
+  deploymentAnchors = new Set(allDeployments.map((deployment) => deployment.anchor));
   // Reporter bots' reports (test failures on their runners, coverage), read from the page's comments in timeline order.
   // ...and the services that report through a check whose Details lead to their site (Chromatic), read from the merge box.
   const allReports = phase('reports', () => [
@@ -3344,7 +3351,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     checks: checkCountsFrom(checksSectionText() ?? boxText),
     requiredFailing: requiredFailingIn(checksSection()),
     workflowApproval: approvalButton === null ? null : workflowApprovalLabel(approvalButton),
-    previews: latestPreviews(allPreviews),
+    previews,
+    previewLinks: (entry) => previewLinks(entry, previews, allDeployments),
     reports,
     grouping: settings.reviewGrouping,
     view: digestViewOf(settings),
@@ -3716,6 +3724,21 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         // What agents and review bots wrote into the description, each tool's note opening in place.
         renderAgentNotesList(mounted.slot, model, panelHandlers, (note) => noteCopy(note.versions.at(-1)?.blocks ?? []));
         if (visit.openSubKey !== null && !model.agentNotes.some((note) => noteSubKey(note.id) === visit.openSubKey)) visit.openSubKey = null;
+      } else if (visit.openKey === PREVIEWS_KEY || visit.openKey === DEPLOYMENTS_KEY) {
+        // A preview's or a deployment's line opens to its host's comment; the byline leads to the last good build
+        // (a preview whose latest deployment is not one) or to the host's page for the deployment.
+        const view = visit.openKey === PREVIEWS_KEY ? renderPreviewsList(mounted.slot, model, panelHandlers) : renderDeploymentsList(mounted.slot, model, panelHandlers);
+        const anchor = view.open === null ? null : 'latest' in view.open ? view.open.comment : view.open.anchor;
+        const link = view.open === null ? undefined : 'latest' in view.open ? (view.open.page === null ? undefined : { label: 'Deployment', href: view.open.page, title: `Open the ${view.open.latest.environment} deployment` }) : lastSuccessLink(model.previewLinks(view.open).lastSuccess);
+        const comment = anchor === null ? undefined : crawledDom.comments.find((entry) => entry.comment.anchor === anchor);
+        const commentNode = anchor === null ? null : (entryNodes.get(anchor) ?? timelineRootOf(anchor));
+        if (view.nested !== null && anchor !== null && commentNode !== null) {
+          const byline = dressByline({ login: comment?.author.login ?? '', bot: true, avatarSrc: model.avatarForAnchor(anchor), time: model.timeFor(anchor) }, anchor);
+          renderCommentChat(view.nested, commentNode, link === undefined ? byline : { ...byline, link });
+        } else if (visit.openSubKey !== null && (view.open === null || commentNode === null)) {
+          // A line whose comment left the page (or that is gone itself): nothing to keep open.
+          visit.openSubKey = null;
+        }
       } else if (visit.openKey === REPORTS_KEY) {
         // The reporters' latest reports; the open line's comment stands under it as a one-bubble chat (a check's
         // report has no comment: the list shows its detail itself).

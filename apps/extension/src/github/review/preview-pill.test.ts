@@ -5,7 +5,7 @@ import { previewPill } from './panel';
 
 const logs = 'https://dash.cloudflare.com/?to=/account/workers/services/view/movember-tracker/production/builds/build';
 const entry: Preview = { host: 'cloudflare', project: 'movember-tracker', status: 'failed', url: null, inspectUrl: logs, anchor: 'issuecomment-1' };
-const model = { avatarForAnchor: () => null };
+const model = { avatarForAnchor: () => null, previewLinks: (preview: Preview) => ({ href: preview.url ?? preview.inspectUrl, lastSuccess: null }) };
 
 describe('preview pill navigation', () => {
   it('links a failed Cloudflare deployment to its build logs', () => {

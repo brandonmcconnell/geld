@@ -8402,6 +8402,18 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   cursor: default;
 }
 
+/* Except one that opens to its host's comment (overview.ts): that line is a control, as a report's is. */
+.geld-review__row--preview[data-opens]:hover,
+.geld-review__row--preview[data-opens][data-open] {
+  --geld-row-bg: var(--geld-review-subtle);
+  background: var(--geld-review-subtle);
+}
+
+.geld-review__row--preview[data-opens],
+.geld-review__row--preview[data-opens] .geld-review__main {
+  cursor: pointer;
+}
+
 /* The push's CI, beside the round's progress glyph. */
 .geld-review__health[data-ci='success'] {
   color: var(--geld-review-done-fg);

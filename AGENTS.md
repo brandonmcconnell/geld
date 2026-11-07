@@ -1128,8 +1128,14 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   the page's parse wins for comments both know.
   The row carries a pill per current preview (host avatar, project, state glyph;
   a link to the preview), wrapping like the bots' pills;
-  open, one line per preview with Open/Inspect (static rows: no hover surface, no pointer;
-  they start at the row edge so their state glyph stands in the header glyphs' column).
+  open, one line per preview with Open/Inspect (they start at the row edge so their state glyph stands in the header glyphs' column).
+  **The pill always says the latest deployment and opens the site as near as there is one** (`previewLinks` in `review/deployments.ts`): the preview, else the last good build while the latest failed, else the host's page for the deployment, else its run.
+  Vercel rewrites its one comment for every deployment, Building, Error, Building, Ready (tldraw/tldraw#11342's edit history, Nov 2026), so the comment is always about the latest, and on an Error it drops the Preview link and keeps only its deployment page.
+  The last good build comes from GitHub's deployment events for the environment named after the project ("Preview – examples" is `examples`'s, `deploymentsOfPreview`;
+  a host with one project and one environment, Vercel's bare "Preview", is matched without the name), else from an archived ready preview.
+  A line opens to the host's comment as a one-bubble chat, as a Reports line does (`previewSubKey`: host, project and anchor, since Vercel's one comment holds every project), and while the latest deployment is not a success its byline carries "Last successful preview" where Rerun sits on a bot's (`ChatByline.link`).
+  A round's preview lines stay static: no hover surface, no pointer.
+  An archived preview opens its own build (`pinnedToBuild`: the deployment GitHub recorded by the time Vercel wrote that row), not the branch's address, which serves the newest build.
   The row's own glyph is Octicon `browser`, where a preview opens (the `rocket`, GitHub's mark for deployments, is the Deployments row's), then "N archived previews from earlier pushes" behind a heading.
   A push's row (batch grouping) has room for one summary pill — the hosts' marks overlapping and "N previews" — and shows the named pills in a strip once open.
   A failed preview shows in its glyph and does not tint the row.
@@ -1137,14 +1143,22 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   a skipped deployment's pill is faded with a `not-allowed` cursor and is not a link (its line keeps Inspect).
   `ICON_IN_PROGRESS` is Primer's Spinner markup and needs `fill: none !important` — GitHub's `.octicon { fill: currentColor }` otherwise fills its track into a dot.
 - **GitHub's deployment events are a row of their own, `Deployments`, shown only when the timeline has one** (`review/deployments.ts`, `deploymentsRow` in `panel.ts`, asked for in geld#398).
-  `deploymentOf` reads an `event-N` row whose sentence says "deployed to", "temporarily deployed to" or "had a problem deploying to": the environment (a link or plain text), View deployment's address, the run that made it (the "deployed" link when it leads elsewhere, GitHub Actions' job), the actor, the App a person deployed through ("— with GitHub Actions"), the time and GitHub's status label (Inactive, Failure, none for an active one).
+  `deploymentOf` reads an `event-N` row whose sentence says "deployed to", "temporarily deployed to" or "had a problem deploying to": the environment (a link or plain text), View deployment's address, the run that made it, the actor, the App a person deployed through ("— with GitHub Actions"), the time and GitHub's status label (Inactive, Failure, none for an active one).
+  The "deployed" link is a run only when it is GitHub's (`/actions/runs/`, or the page's host);
+  an App (Vercel) links the word to the deployment's address, and an Ignored build has nothing else.
   Three shapes were read from public pull requests in Nov 2026 (tldraw/tldraw#11342, nodejs/nodejs.org#9313) and are pinned in `deployments.test.ts`: a person through GitHub Actions, an App (Vercel) and `github-actions[bot]`.
   `latestDeployments` keeps each environment once by its latest deployment, with how many times it was deployed.
-  A deployment by an App whose comments the Previews row reads (Vercel posts both) is that row's, not this one's (`shownAsPreview`, never for the generic or GitHub Actions hosts).
+  **Previews and Deployments are two rows on purpose** (decided Nov 2026): a preview leads to the site, a deployment to its page, so a Vercel project is in both, and hosts that only comment (pkg.pr.new, CodeSandbox) are previews, not deployments.
+  `deploymentEntries` gives each environment what the host's comment adds: its page for the latest deployment (Vercel's, with the build logs: the comment's status link) and the comment itself, matched as `deploymentsOfPreview` matches.
   Every deployment event leaves the "N timeline events" row and folds silently (the `deployments` group), so that row keeps what happened to the pull request itself, and a permalink to one opens the Deployments row (`deploymentAnchors` in `seatFor`).
-  A pill per environment: the mark of what deployed it (the App it went through, else the App that made it, never a person's face), the environment's name and its state glyph (active a green check, inactive the same check muted, failed a red X, deploying Primer's spinner), a link to the deployment, else to its run.
+  A pill per environment: the mark of what deployed it (the App it went through, else the App that made it, never a person's face), the environment's name and its state glyph (active a green check, inactive the same check muted, failed a red X, deploying Primer's spinner).
+  It opens the deployment's page as near as there is one (`deploymentHref`): the host's, else the run, else the deployment's address.
   A link on github.com (a run) opens in the reader's tab and anything else in a new one (`linkTargetFor`), so ⌘ or Ctrl still opens a tab the browser's way.
-  Open, one line per environment laid out like a preview's: state, mark (a person's picture when no App deployed it), name, then the state in words, "by login" only when someone other than the pull request's author deployed it, and "N deployments" when there were several, with Open, Logs and the time on the right.
+  Open, one line per environment laid out like a preview's: state, mark (a person's picture when no App deployed it), name, then the state in words, "by login" only when someone other than the pull request's author deployed it, and "N deployments" when there were several.
+  On the right: Run (the latest's), "Last successful deployment" (muted, the run of the last success, only while the latest is not one and only when that run is known), "Open" only for a deployment with neither a run nor a host page, and the time.
+  A line the host commented on opens to that comment, with "Deployment" on its byline for the host's page;
+  the others are static.
+  Vercel's comment links only its current deployment page, so an older success has no page of its own, and its line offers none.
   "With GitHub Actions" is the mark, not words.
   Every environment shows, as every row does today: choosing which ones per repository is parked (`.cursor/ideas/per-repo-digest-rows.md`).
 - **Reporter bots have a row of their own, `Reports`, shown only when one has posted** (`@geld/review/reporters.ts`, `reportsRow` in `panel.ts`).

@@ -67,6 +67,14 @@ function absoluteHref(link: Element | null | undefined): string | null {
   }
 }
 
+function isOnPageHost(href: string): boolean {
+  try {
+    return new URL(href).host === location.host;
+  } catch {
+    return false;
+  }
+}
+
 /** The sentence's words before its time link, with the status label, the actor's "Bot" label and the buttons left out. */
 function sentenceOf(body: Element): string {
   const parts: string[] = [];
@@ -107,8 +115,10 @@ function readDeployment(row: Element): Deployment | null {
   const view = links.find((link) => /^view deployment$/i.test(text(link)));
   const action = links.find((link) => /deploy/i.test(text(link)) && link !== view);
   const environmentLink = links.find((link) => text(link) === environment && link !== actorLink);
-  const url = absoluteHref(view) ?? absoluteHref(environmentLink);
   const actionHref = absoluteHref(action);
+  // The "deployed" link is the run on GitHub Actions; an App (Vercel) links the word to the deployment's address instead.
+  const actionIsRun = actionHref !== null && (isOnPageHost(actionHref) || /\/actions\/runs\/\d+/.test(actionHref));
+  const url = absoluteHref(view) ?? absoluteHref(environmentLink) ?? (actionIsRun ? null : actionHref);
   const viaLink = links.find((link) => link !== actorLink && link.closest('[data-test-selector="pr-timeline-events-actor-avatar"]') === null && /\/apps\//.test(link.getAttribute('href') ?? '') && text(link) !== '');
   const viaAvatar = viaLink?.previousElementSibling instanceof HTMLImageElement ? viaLink.previousElementSibling : null;
   const label = text(body.querySelector(STATUS_LABEL)).toLowerCase();
@@ -118,7 +128,7 @@ function readDeployment(row: Element): Deployment | null {
     environment,
     state,
     url,
-    logUrl: actionHref !== null && actionHref !== url ? actionHref : null,
+    logUrl: actionIsRun ? actionHref : null,
     actor,
     actorAvatar: actorAvatar === null ? null : actorAvatar.getAttribute('src'),
     via: viaLink === undefined ? null : { name: text(viaLink), avatarSrc: viaAvatar?.getAttribute('src') ?? null },
@@ -140,14 +150,96 @@ export function latestDeployments(all: readonly Deployment[]): readonly Deployme
 }
 
 /**
- * A deployment the Previews row already shows: one an App made whose comments the row reads (Vercel posts both a
- * comment and a deployment per project). A host that takes any bot's comments (`generic`, GitHub Actions' Azure
- * notes) says nothing about who deployed, so only a host of its own counts.
+ * The preview host whose comments say what this deployment is (Vercel posts both a comment and a deployment per
+ * project). A host that takes any bot's comments (`generic`, GitHub Actions' Azure notes) says nothing about who
+ * deployed, so only a host of its own counts.
  */
-export function shownAsPreview(deployment: Deployment, previews: readonly Preview[]): boolean {
+function hostOf(deployment: Deployment): string | null {
   const host = previewHostFor(deployment.actor);
-  if (host === null || host.id === 'generic' || host.logins.includes('github-actions[bot]')) return false;
-  return previews.some((preview) => preview.host === host.id);
+  if (host === null || host.id === 'generic' || host.logins.includes('github-actions[bot]')) return null;
+  return host.id;
+}
+
+/** "Preview – examples" is the `examples` project's: the name ends the environment, after a break. */
+function namesProject(environment: string, project: string): boolean {
+  const env = environment.trim().toLowerCase();
+  const name = project.trim().toLowerCase();
+  if (name === '' || !env.endsWith(name)) return false;
+  const before = env.charAt(env.length - name.length - 1);
+  return before === '' || !/[\p{L}\p{N}]/u.test(before);
+}
+
+function isSuccess(deployment: Deployment): boolean {
+  return deployment.state === 'active' || deployment.state === 'inactive';
+}
+
+/**
+ * A preview's deployments, in timeline order: its host's, to the environment named after its project. A host with
+ * one project on the page and one environment (Vercel calls it "Preview" then) is matched without the name.
+ */
+export function deploymentsOfPreview(preview: Preview, previews: readonly Preview[], all: readonly Deployment[]): readonly Deployment[] {
+  const hosts = all.filter((deployment) => hostOf(deployment) === preview.host);
+  const named = hosts.filter((deployment) => namesProject(deployment.environment, preview.project));
+  if (named.length > 0) {
+    const environment = named.at(-1)?.environment.toLowerCase();
+    return named.filter((deployment) => deployment.environment.toLowerCase() === environment);
+  }
+  const projects = new Set(previews.filter((entry) => entry.host === preview.host).map((entry) => entry.project.toLowerCase()));
+  const environments = new Set(hosts.map((deployment) => deployment.environment.toLowerCase()));
+  return projects.size === 1 && environments.size === 1 ? hosts : [];
+}
+
+/** What a preview's pill and line open: the site, as near as there is one, and the last good build while the latest is not. */
+export interface PreviewLinks {
+  /** The pill's link: the preview, else the last good build, else the host's page for the deployment, else its run. */
+  readonly href: string | null;
+  /** The last successful build's site, while the latest deployment is not a success; null otherwise. */
+  readonly lastSuccess: string | null;
+}
+
+export function previewLinks(preview: Preview, previews: { readonly latest: readonly Preview[]; readonly archived: readonly Preview[] }, all: readonly Deployment[]): PreviewLinks {
+  const deployments = deploymentsOfPreview(preview, previews.latest, all);
+  const good = [...deployments].reverse().find((deployment) => isSuccess(deployment) && deployment.url !== null)?.url ?? previews.archived.filter((entry) => entry.host === preview.host && entry.project === preview.project && entry.status === 'ready' && entry.url !== null).at(-1)?.url ?? null;
+  const run = deployments.at(-1)?.logUrl ?? null;
+  return { href: preview.url ?? good ?? preview.inspectUrl ?? run, lastSuccess: preview.status === 'ready' ? null : good };
+}
+
+const PIN_SLACK_MS = 60_000;
+
+/**
+ * An earlier push's preview with its own build's address: Vercel's one comment links the branch, which serves the
+ * newest build, so an archived preview opened that. The build GitHub recorded by the time the row was written is
+ * the one it was about.
+ */
+export function pinnedToBuild(preview: Preview, deployments: readonly Deployment[]): Preview {
+  const written = Date.parse(preview.updatedAt ?? '');
+  if (preview.status !== 'ready' || Number.isNaN(written)) return preview;
+  const build = [...deployments].reverse().find((deployment) => deployment.url !== null && isSuccess(deployment) && Date.parse(deployment.at) <= written + PIN_SLACK_MS);
+  return build?.url === undefined || build.url === null ? preview : { ...preview, url: build.url };
+}
+
+/** One environment in the Deployments row: its latest deployment and what the host's comment adds to it. */
+export interface DeploymentEntry extends DeploymentGroup {
+  /** The host's own page for the latest deployment (Vercel's, with its build logs), from its comment. */
+  readonly page: string | null;
+  /** The host's comment about the environment, which its line opens to. */
+  readonly comment: string | null;
+  /** The run behind the last successful deployment, while the latest is not one. */
+  readonly lastSuccessRun: string | null;
+}
+
+export function deploymentEntries(all: readonly Deployment[], previews: readonly Preview[]): readonly DeploymentEntry[] {
+  return latestDeployments(all).map((group) => {
+    const preview = previews.find((entry) => deploymentsOfPreview(entry, previews, all).some((deployment) => deployment.anchor === group.latest.anchor)) ?? null;
+    const environment = group.latest.environment.toLowerCase();
+    const lastRun = isSuccess(group.latest) ? null : ([...all].reverse().find((deployment) => deployment.environment.toLowerCase() === environment && isSuccess(deployment) && deployment.logUrl !== null)?.logUrl ?? null);
+    return { ...group, page: preview?.inspectUrl ?? null, comment: preview?.anchor ?? null, lastSuccessRun: lastRun };
+  });
+}
+
+/** Where a deployment's pill goes: the host's page for it, else the run that made it, else the deployment itself. */
+export function deploymentHref(entry: DeploymentEntry): string | null {
+  return entry.page ?? entry.latest.logUrl ?? entry.latest.url;
 }
 
 /** The mark a deployment wears: the App it went through, else the App that made it; a person's face says nothing. */
