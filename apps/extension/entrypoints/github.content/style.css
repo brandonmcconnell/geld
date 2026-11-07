@@ -787,6 +787,11 @@ html[data-geld-quick-review] details.js-reviews-container {
   align-self: center;
 }
 
+/* After "Merge status", spaced as GitHub spaces its own review button there (`tmp-ml-2`). */
+.geld-quick-review[data-geld-place='mini']:not(:first-child) {
+  margin-left: 8px;
+}
+
 .geld-quick-review[data-geld-place] .geld-quick-review__segment.btn {
   height: 28px;
 }

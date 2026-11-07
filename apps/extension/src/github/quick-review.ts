@@ -482,6 +482,9 @@ function stickyPlace(state: Mounted): { readonly place: Place; readonly put: (ro
   if (mini !== null) {
     const actions = mini.querySelector<HTMLElement>('[class*="miniHeaderInner"] > [class*="actions"]');
     if (!state.toolbarStuck || actions === null) return null;
+    // Signed in the header holds "Merge status" and GitHub's own (hidden) review button: the group takes the button's place.
+    const own = actions.querySelector<HTMLElement>(`:scope > :is(${GITHUB_REVIEW_CONTROL})`);
+    if (own !== null) return { place: 'mini', put: (root) => own.insertAdjacentElement('beforebegin', root), placed: (root) => own.previousElementSibling === root };
     return { place: 'mini', put: (root) => actions.prepend(root), placed: (root) => actions.firstElementChild === root };
   }
   const header = document.querySelector<HTMLElement>(STICKY_PR_HEADER);
