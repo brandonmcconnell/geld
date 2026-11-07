@@ -1,4 +1,4 @@
-import { ITALIC_SLOPE, METRICS, toFontUnits, UPM, WEIGHT_NAMES, type Weight, WEIGHTS, weightParams } from './grid';
+import { ITALIC_SLOPE, METRICS, toFontUnits, UNIT, UPM, WEIGHT_NAMES, type Weight, WEIGHTS, weightParams } from './grid';
 import { LOCL, type LoclLanguage } from './glyphs-cyrillic';
 import { FIGURE_NAMES, TABULAR_SIGNS } from './glyphs-figures';
 import { VIETNAMESE_PAIRS } from './marks';
@@ -283,6 +283,10 @@ export function features(master: Master): string {
     ...caseFeatures(master, names),
     ...alternates.rest,
     ...swashFeatures(master, names),
+    // Capital spacing (cpsp, off): half a unit each side of every capital, for text set in capitals.
+    'feature cpsp {',
+    `  pos @Uppercase <${UNIT / 2} 0 ${UNIT} 0>;`,
+    '} cpsp;',
     // Ornaments (3.7), offered from the bullet: frames, bullets, a grid and the emblem.
     ...(names.has('ornm01') ? ['feature ornm {', `  sub bullet from [${['ornm01', 'ornm02', 'ornm03', 'ornm04', 'ornm05', 'uniE000'].filter((n) => names.has(n)).join(' ')}];`, '} ornm;'] : []),
     // Only as a word of its own: Geldern, Geldbörse and Gelder keep their letters.

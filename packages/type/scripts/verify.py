@@ -274,6 +274,9 @@ def check_alternates(path: Path, data: bytes, weight: int, cases: list[dict]) ->
     ):
         got = [n for n, _ in shape(data, weight, text, features=features)]
         check(got == names, f"{path.name} at {weight}: {text} with {features} shaped {got}")
+    _, plain = shape_total(data, weight, "HH", {"kern": False})
+    _, spaced = shape_total(data, weight, "HH", {"kern": False, "cpsp": True})
+    check(spaced - plain == 100, f"{path.name} at {weight}: cpsp spaced HH by {spaced - plain}, not 100")
     font = TTFont(path)
     tags = {r.FeatureTag: r.Feature for r in font["GSUB"].table.FeatureList.FeatureRecord}
     for case in cases:

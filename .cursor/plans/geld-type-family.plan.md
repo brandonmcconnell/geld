@@ -300,7 +300,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 | `calt` | Arrows, contextual punctuation, code ligature pieces | on |
 | `rvrn` | Heavy-weight substitutions in variable fonts (3.4) | on |
 | `case` | Case-sensitive forms | off |
-| `cpsp` | Capital spacing | off |
+| `cpsp` | Capital spacing: half a unit each side of every capital (done, checked in every compiled font) | off |
 | `dlig` | Discretionary and code ligatures | off |
 | `smcp`, `c2sc` | Small caps (D14) | off |
 | `lnum`, `onum` | Lining (default) and oldstyle figures | lining |
