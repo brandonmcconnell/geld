@@ -347,6 +347,41 @@ describe('related links in the sidebar', () => {
     expect(linear?.querySelector('.geld-related__state')?.textContent).toBe('In Progress');
     expect(linear?.querySelector('.geld-related__state')?.getAttribute('data-tone')).toBe('open');
     expect(linear?.getAttribute('title')).toBe('In Progress · Open issue in Linear · Fix the login redirect · acme · from Linear · Work');
+    expect(document.querySelectorAll('.geld-related__details')).toHaveLength(1);
+  });
+
+  it('opens what the account read in a dialog: state, where, author, the description as text and the way to the service', async () => {
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    history.replaceState(null, '', '/acme/web/pull/7');
+    connected.answers = new Map([
+      [
+        'linear:acme:ENG-12',
+        {
+          key: 'linear:acme:ENG-12',
+          status: 'ok',
+          service: 'linear',
+          connection: 'Work',
+          details: { title: 'Fix the login redirect', state: 'In Progress', tone: 'open', author: 'Ada', updatedAt: null, where: 'ENG-12 · Engineering', body: 'It loops on `/login`.\n\n<img src=x onerror=alert(1)>', messages: [] },
+        },
+      ],
+    ]);
+    document.body.innerHTML = '<div class="js-comment-container"><div class="js-comment-body markdown-body"><p><a href="https://linear.app/acme/issue/ENG-12">ENG-12</a></p></div></div>' + railsSidebar();
+    const rerun = (): void => applyRelatedLinks(true, rerun, true);
+    rerun();
+    await settle();
+    await settle();
+    document.querySelector<HTMLButtonElement>('.geld-related__details')?.click();
+    const dialog = document.querySelector('dialog.geld-related-dialog');
+    expect(dialog?.querySelector('.Overlay-title')?.textContent).toBe('Fix the login redirect');
+    expect(dialog?.querySelector('.geld-related-dialog__meta')?.textContent).toBe('In ProgressENG-12 · Engineering · by Ada');
+    expect(dialog?.querySelector('.geld-related-dialog__body code')?.textContent).toBe('/login');
+    expect(dialog?.querySelector('.geld-related-dialog__body img')).toBeNull();
+    expect(dialog?.querySelector('.geld-related-dialog__body')?.textContent).toContain('<img src=x onerror=alert(1)>');
+    expect(dialog?.querySelector('a.geld-related-dialog__open')?.getAttribute('href')).toBe('https://linear.app/acme/issue/ENG-12');
+    expect(dialog?.querySelector('.geld-related-dialog__from')?.textContent).toBe('Read with your Linear account Work');
+    dialog?.remove();
   });
 
   it('asks nothing of connected accounts while the experiment is off', async () => {

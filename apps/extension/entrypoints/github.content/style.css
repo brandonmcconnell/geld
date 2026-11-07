@@ -8662,6 +8662,110 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   color: var(--fgColor-muted, #59636e);
 }
 
+/* A row a connected account read opens its details from an eye beside the link, shown under the pointer or focus. */
+.geld-related__item:has(> .geld-related__details) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.geld-related__item > .geld-related__link {
+  flex: 1 1 auto;
+}
+
+.geld-related__details {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fgColor-muted, #59636e);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.geld-related__item:hover > .geld-related__details,
+.geld-related__item:focus-within > .geld-related__details {
+  opacity: 1;
+}
+
+.geld-related__details:hover,
+.geld-related__details:focus-visible {
+  background: var(--control-transparent-bgColor-hover, rgb(208 215 222 / 32%));
+  color: var(--fgColor-default, #1f2328);
+}
+
+@media (hover: none) {
+  .geld-related__details {
+    opacity: 1;
+  }
+}
+
+.geld-related-dialog__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 4px 0 0;
+  color: var(--fgColor-muted, #59636e);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.geld-related-dialog__content {
+  max-height: 60vh;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.geld-related-dialog__content p {
+  margin: 0 0 8px;
+}
+
+.geld-related-dialog__messages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.geld-related-dialog__byline {
+  color: var(--fgColor-muted, #59636e);
+  font-size: 12px;
+}
+
+.geld-related-dialog__byline strong {
+  color: var(--fgColor-default, #1f2328);
+}
+
+.geld-related-dialog__empty,
+.geld-related-dialog__from {
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-related-dialog__footer {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.geld-related-dialog__from {
+  font-size: 12px;
+}
+
+.geld-related-dialog__open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* A connected account's word for the state, in GitHub's state colours, never cut: the title gives way first. */
 .geld-related__state {
   flex: none;

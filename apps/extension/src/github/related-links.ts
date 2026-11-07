@@ -2,7 +2,9 @@ import { browser } from 'wxt/browser';
 import { isDependencyUpdate, relatedLinksFrom } from '@geld/review/related-links';
 import type { LinkCandidate, RelatedKind, RelatedLink } from '@geld/review/related-links';
 import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
+import type { LinkDetails } from '@geld/review/link-resolvers/index';
 import type { LinkAnswerView } from '../lib/connections';
+import { openLinkDetails } from './link-details-dialog';
 import { forgetLinkDetails, linkDetails } from './link-details';
 import { pageFetch } from './page-fetch';
 import { descriptionBody } from './review/description';
@@ -13,6 +15,7 @@ import {
   ICON_ALERT,
   ICON_COMMENT_DISCUSSION,
   ICON_COPILOT,
+  ICON_EYE,
   ICON_FILE,
   ICON_GIT_MERGE,
   ICON_GIT_PULL_REQUEST,
@@ -211,6 +214,8 @@ interface Connected {
   readonly state: string | null;
   readonly tone: string | null;
   readonly from: string;
+  readonly account: string;
+  readonly details: LinkDetails;
 }
 
 /**
@@ -252,7 +257,7 @@ function rowsOf(links: readonly RelatedLink[], connected: boolean, onChange: () 
     if (answer !== undefined && answer !== 'pending' && answer.status === 'ok') {
       const { details } = answer;
       const from = [link.service, answer.connection].filter((part) => part !== '').join(' · ');
-      return { ...link, title: details.title, state: null, connected: { state: details.state, tone: details.tone, from } };
+      return { ...link, title: details.title, state: null, connected: { state: details.state, tone: details.tone, from, account: answer.connection, details } };
     }
     if (index >= lookups || !onHost(link)) return { ...link, state: null, connected: null };
     const details = refDetails(link.href, onChange);
@@ -312,7 +317,14 @@ function rowOf(link: RelatedRow): HTMLElement {
       ? []
       : [createElement('span', { class: `${SECTION_CLASS}__state`, 'data-tone': link.connected.tone ?? 'neutral', 'aria-hidden': 'true' }, [link.connected.state])]),
   ]);
-  return createElement('li', { class: `${SECTION_CLASS}__item`, 'data-kind': link.kind }, [anchor]);
+  const item = createElement('li', { class: `${SECTION_CLASS}__item`, 'data-kind': link.kind }, [anchor]);
+  const { connected } = link;
+  if (connected !== null) {
+    const open = createElement('button', { type: 'button', class: `${SECTION_CLASS}__details`, 'aria-label': `Details: ${connected.details.title}`, title: 'Details' }, [svgFromString(ICON_EYE)]);
+    open.addEventListener('click', () => openLinkDetails(link, connected.details, connected.account));
+    item.append(open);
+  }
+  return item;
 }
 
 const TITLE = 'Related links';
