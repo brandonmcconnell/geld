@@ -97,7 +97,7 @@ Starting stems in grid units, vertical cap stems, to be tuned in Phase 3:
 ### 2.4 Corners
 - [ ] Cut corners only (D1). Every glyph's cuts follow the cut rule (2.2).
 - [ ] Confusable pairs checked anyway: O 0 D Q, I l 1 |, rn m, cl d, S 5, Z 2, B 8, G 6.
-- [ ] The emblem drawn as a glyph (3.7).
+- [x] The emblem drawn as a glyph (3.7): the logomark from `assets/brand` at the capitals' height, the same at every weight and upright in italic, the dark mark in Geld Dark Sans.
 
 ### 2.5 Italic
 - [x] The slanted grid at 1:7 (D9), leaning around the middle of the x-height so glyphs stay centred. `post.italicAngle`, `hhea` caret slope and `OS/2` fsSelection italic.
@@ -181,11 +181,11 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [ ] Arrowheads built on the grid's 45°. Every arrow shares one shaft thickness and one head per weight, which is also what the ligated arrows (5.3) use, so a typed `->` and a real → match.
 
 ### 3.7 Shapes, marks and dingbats
-- [ ] Geometric shapes: ■ □ ▪ ▫ ▬ ▲ △ ▶ ▷ ▼ ▽ ◀ ◁ ◆ ◇ ○ ● ◉ ◌ ◐ ◑ ◒ ◓ ◢ ◣ ◤ ◥, each in a cut version too. (Done: GF Latin Plus's ■ □ ▪ ▫, the sixteen triangles, ◆ ◇ ◊ ○ ● ◦ ◌, as solid and hollow shapes with cut corners.)
-- [ ] Checks and marks: ✓ ✔ ✗ ✘ ✕ ✖ ★ ☆ ☐ ☑ ☒ ♥ ⚑ ⚠.
-- [ ] Box drawing and block elements, a basic set in Sans (the full set is Mono's, section 19).
-- [ ] Ornaments (`ornm`): the Geld emblem, cut-corner frames, bullets and grid patterns.
-- [ ] Private Use Area: the emblem at U+E000 and the wordmark lockup at U+E001, documented.
+- [x] Geometric shapes: ■ □ ▪ ▫ ▬ ▲ △ ▶ ▷ ▼ ▽ ◀ ◁ ◆ ◇ ○ ● ◉ ◌ ◐ ◑ ◒ ◓ ◢ ◣ ◤ ◥, each in a cut version too (the shapes carry the cut corners; the square-cornered versions come with the square style, D1).
+- [x] Checks and marks: ✓ ✔ ✗ ✘ ✕ ✖ ★ ☆ ☐ ☑ ☒ ♥ ⚑ ⚠.
+- [x] Box drawing and block elements, a basic set in Sans (the full set is Mono's, section 19): light and heavy lines, corners, tees and crosses, █ ▀ ▄ ▌ ▐ ░ ▒ ▓, in a 12-unit cell over the whole line box, upright in italic and not inset in Geld Dark Sans so they join from cell to cell.
+- [x] Ornaments (`ornm`, from the bullet): the Geld emblem, cut-corner frames, bullets and a grid pattern.
+- [x] Private Use Area: the emblem at U+E000 and the wordmark lockup at U+E001 (documented here; the usage guide is to repeat it).
 
 ### 3.8 Greek and Cyrillic (v1, D10)
 - [x] Greek (GF Greek Core): monotonic. Letters shared with Latin are the Latin glyph as a component, capitals with tonos set it before the letter.
@@ -316,7 +316,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 | `titl` | Titling forms | off |
 | `ornm` | Ornaments (3.7) | off |
 
-- [ ] Feature names stored in the font for every `ss` and `cv` (`featureNames` and `cvParameters`), so Figma, InDesign and macOS show "Single-storey a" rather than "ss01".
+- [x] Feature names stored in the font for every `ss` and `cv` (`featureNames` and `cvParameters`), so Figma, InDesign and macOS show "Single-storey a" rather than "ss01". Checked in every compiled font.
 - [ ] Lookup order documented, since `ss20` and the swash rules depend on it.
 - [ ] CSS mapping documented: `font-variant-numeric`, `-caps`, `-ligatures`, `-alternates` and `font-feature-settings`.
 
