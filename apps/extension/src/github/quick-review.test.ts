@@ -2019,11 +2019,11 @@ describe('the tab bar button', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = pathOf(input);
       asked.push(url);
-      return url === '/acme/widgets/pull/11' ? new Response(`<html><body>${WRITER_HTML}</body></html>`, { status: 200 }) : new Response('{}', { status: 404 });
+      return url === '/acme/widgets/pull/11?overview=false' ? new Response(`<html><body>${WRITER_HTML}</body></html>`, { status: 200 }) : new Response('{}', { status: 404 });
     }));
     window.history.replaceState(null, '', '/acme/widgets/pull/11/changes');
     applyQuickReview(true, { page: { kind: 'pull-files', diffUrl: null, stateKey: '/acme/widgets/pull/11' }, groups: [groupAt(counts())], headSha: () => SHA });
-    expect(asked).not.toContain('/acme/widgets/pull/11');
+    expect(asked).not.toContain('/acme/widgets/pull/11?overview=false');
     segment('comment').click();
     // A placeholder in the writer's shape holds its place, focused so Escape still closes the box; no plain field shows first.
     const placeholder = document.querySelector<HTMLElement>('.geld-quick-review__panel .geld-quick-review__writer-placeholder');
@@ -2033,7 +2033,7 @@ describe('the tab bar button', () => {
     expect(document.activeElement).toBe(placeholder);
     await settle();
     await settle();
-    expect(asked.filter((url) => url === '/acme/widgets/pull/11')).toHaveLength(1);
+    expect(asked.filter((url) => url === '/acme/widgets/pull/11?overview=false')).toHaveLength(1);
     const field = document.querySelector('.geld-quick-review__panel .js-previewable-comment-form textarea');
     if (!(field instanceof HTMLTextAreaElement)) throw new Error('no writer');
     expect(placeholder.isConnected).toBe(false);
@@ -2044,7 +2044,7 @@ describe('the tab bar button', () => {
     document.querySelector('.geld-quick-review__group[aria-label="Submit review"]')?.dispatchEvent(new Event('pointerenter'));
     segment('comment').click();
     expect(document.querySelector('.geld-quick-review__panel .js-previewable-comment-form textarea')).not.toBeNull();
-    expect(asked.filter((url) => url === '/acme/widgets/pull/11')).toHaveLength(1);
+    expect(asked.filter((url) => url === '/acme/widgets/pull/11?overview=false')).toHaveLength(1);
   });
 
   it('falls back to a plain field when the writer cannot be read', async () => {

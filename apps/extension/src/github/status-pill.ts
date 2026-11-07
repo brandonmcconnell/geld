@@ -297,6 +297,13 @@ export function syncStatusPills(on: boolean, onOpen: (pill: HTMLButtonElement, c
       label.removeAttribute(ATTR_HIDDEN);
       continue;
     }
+    // The Overview's label is already GitHub's own status menu (a button around it, "Convert to draft", "Close pull
+    // request"): it stays GitHub's, since Geld's pill inside that button only passed its clicks to GitHub's menu.
+    if (label.closest('button[aria-haspopup]') !== null) {
+      existing?.remove();
+      label.removeAttribute(ATTR_HIDDEN);
+      continue;
+    }
     const pill = existing ?? createPill(onOpen);
     dress(pill, label);
     if (existing === null) label.after(pill);
