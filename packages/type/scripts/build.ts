@@ -9,17 +9,18 @@
  * Independent compiles run in parallel, one per core (GELD_TYPE_JOBS overrides), and each phase prints its time.
  */
 import { spawn } from 'node:child_process';
-import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { toFontUnits, WEIGHTS } from '../src/grid';
+import { toFontUnits, type Weight, WEIGHTS } from '../src/grid';
 import { alignKerning, computeKerning, type Kerning, kerningClasses, resolvedValue } from '../src/kerning';
 import { ALTERNATES, alternateName } from '../src/alternates';
 import { CODE_GROUPS, CODE_LIGATURES, codePieceName } from '../src/code-ligatures';
 import { buildMaster, type Family, type Master, type Style } from '../src/master';
 import { proofPage } from '../src/proof';
 import { decorationMetrics, designspace, postscriptName, productionNames, sourceFileName, ufoFiles } from '../src/ufo';
+import { fallbackFace, featureCss, fontFaceCss, fontPackageJson, fontPackageReadme, type SubsetMap, subsetsFor, webFileName } from '../src/web';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const build = join(root, 'build');
@@ -82,6 +83,9 @@ const kernings = new Map<string, Kerning>();
 
 /** What the source says each compiled font must contain, for scripts/verify.py, taken while each master is built. */
 const expected: Record<string, Record<string, Record<string, unknown>>> = {};
+/** Each family's web subsets per style, and its fallback faces, taken from the masters as they are built. */
+const webSubsets = new Map<Family, Partial<SubsetMap>>();
+const fallbacks = new Map<Family, string[]>();
 
 function writeSources(): string[] {
   rmSync(build, { recursive: true, force: true });
@@ -108,6 +112,11 @@ function writeSources(): string[] {
         }
         const name = family === 'sans' ? 'GeldSans' : 'GeldDarkSans';
         ((expected[name] ??= {})[style] ??= {})[weight] = manifestEntry(master, kernings.get(key)!);
+        if (weight === 400) {
+          const codepoints = master.glyphs.flatMap((g) => (g.unicode === undefined ? [] : [g.unicode]));
+          webSubsets.set(family, { ...webSubsets.get(family), [style]: subsetsFor(codepoints) });
+        }
+        if (weight === 400 || weight === 700) fallbacks.set(family, [...(fallbacks.get(family) ?? []), fallbackFace(master, weight === 400 ? 'regular' : 'bold')]);
       }
     }
     const file = join(build, `${family === 'sans' ? 'GeldSans' : 'GeldDarkSans'}.designspace`);
@@ -170,6 +179,46 @@ function manifestEntry(master: Master, kerning: Kerning): Record<string, unknown
   };
 }
 
+/** The subsets of every web font, the variable and each static, as job files for subset.py, one per core. */
+function webSubsetJobs(): string[] {
+  const all: { font: string; out: string; codepoints: number[] }[] = [];
+  for (const family of families)
+    for (const style of styles) {
+      const fonts: [string, Weight | 'wght'][] = [
+        [join(dist, 'variable', `${family === 'sans' ? 'GeldSans' : 'GeldDarkSans'}${style === 'italic' ? '-Italic' : ''}[wght].ttf`), 'wght'],
+        ...WEIGHTS.map((w): [string, Weight] => [join(dist, 'ttf', `${postscriptName(family, w, style)}.ttf`), w]),
+      ];
+      for (const [font, weight] of fonts)
+        for (const subset of webSubsets.get(family)![style]!) all.push({ font, out: join(dist, 'web', webFileName(family, subset.name, weight, style)), codepoints: subset.codepoints });
+    }
+  return chunks(all, jobs).map((list, i) => {
+    const file = join(build, `subset-jobs-${i}.json`);
+    writeFileSync(file, JSON.stringify(list));
+    return file;
+  });
+}
+
+/** The web package's CSS: each family's variable and static faces with their fallbacks, the feature classes, and what verify.py checks the subsets against. */
+function writeWebCss(): void {
+  const subsets: Record<string, SubsetMap> = {};
+  for (const family of families) {
+    const map: SubsetMap = { roman: webSubsets.get(family)!.roman!, italic: webSubsets.get(family)!.italic! };
+    subsets[family] = map;
+    const slug = family === 'sans' ? 'geld-sans' : 'geld-dark-sans';
+    writeFileSync(join(dist, 'web', `${slug}.css`), fontFaceCss(family, map, true, fallbacks.get(family)!));
+    writeFileSync(join(dist, 'web', `${slug}-static.css`), fontFaceCss(family, map, false, fallbacks.get(family)!));
+  }
+  writeFileSync(join(dist, 'web', 'geld-features.css'), featureCss());
+  const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
+  writeFileSync(join(dist, 'package.json'), fontPackageJson(version));
+  writeFileSync(join(dist, 'README.md'), fontPackageReadme(version));
+  const weights: (Weight | 'wght')[] = ['wght', ...WEIGHTS];
+  const files = families.flatMap((family) =>
+    styles.flatMap((style) => weights.flatMap((weight) => subsets[family]![style].map((subset) => ({ file: webFileName(family, subset.name, weight, style), family, style, weight, subset: subset.name })))),
+  );
+  writeFileSync(join(dist, 'subsets.json'), `${JSON.stringify({ subsets, files })}\n`);
+}
+
 async function compile(spaces: string[]): Promise<void> {
   rmSync(dist, { recursive: true, force: true });
   // The variable fonts are fontc's (seconds, where fontmake took a quarter of an hour each); the statics are still
@@ -184,17 +233,20 @@ async function compile(spaces: string[]): Promise<void> {
     await phase('finish statics', () => runAll(chunks(statics, jobs).map((files) => [join(root, 'scripts', 'finish.py'), '--static', ...files])));
     const hinted = fonts('ttf');
     mkdirSync(join(dist, 'web'), { recursive: true });
+    const subsetJobs = webSubsetJobs();
     // D18: the static TTFs are hinted with ttfautohint, but the web fonts are made from them unhinted, so hinting writes
     // beside each TTF and replaces it only once the web fonts exist.
     await phase('woff2 and hinting', () =>
       runAll([
         ...chunks([...fonts('variable'), ...hinted], jobs).map((files) => [join(root, 'scripts', 'woff2.py'), join(dist, 'web'), ...files]),
+        ...subsetJobs.map((file) => [join(root, 'scripts', 'subset.py'), file]),
         ...hinted.map((path) => ['-m', 'ttfautohint', '--no-info', '--stem-width-mode=nss', path, `${path}.hinted`]),
       ]),
     );
     for (const path of hinted) renameSync(`${path}.hinted`, path);
     await phase('hinted flags', () => run([join(root, 'scripts', 'finish.py'), '--hinted', ...hinted]));
   }
+  if (!quick) writeWebCss();
   writeFileSync(join(dist, 'proof.html'), proofPage());
   writeFileSync(join(dist, 'manifest.json'), `${JSON.stringify(expected, null, 2)}\n`);
   await phase('verify', () => run([join(root, 'scripts', 'verify.py'), `--jobs=${jobs}`, ...(quick ? ['--quick'] : [])], true));

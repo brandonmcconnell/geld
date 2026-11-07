@@ -4,6 +4,7 @@ Fails (exit 1) when a font's advances, character map, decoration metrics, italic
 flags or HarfBuzz shaping differ from the source, or when Geld Dark Sans and Geld Sans differ in width.
 """
 
+import io
 import json
 import os
 import re
@@ -363,12 +364,63 @@ def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None
         check_alternates(path, data, int(weight), expected["alternates"])
 
 
+# Words the web subsets are shaped with, each checked in the subsets that hold all of its characters.
+SUBSET_WORDS = "-> => ff fi ft Te Ta AV std::x 1/2 <= != www Ġ Łódź Đức ẞ Привет Ђорђе Ωμέγα ἀρχή → ★ ▓ ✓ ⚠ ⇝".split()
+
+
+def ttf_bytes(path: Path) -> bytes:
+    font = TTFont(path)
+    font.flavor = None
+    out = io.BytesIO()
+    font.save(out)
+    return out.getvalue()
+
+
+def positions(data: bytes, weight: int, text: str, features: dict) -> list[tuple[int, int, int]]:
+    font = hb.Font(hb.Face(data))
+    font.set_variations({"wght": weight})
+    buf = hb.Buffer()
+    buf.add_str(text)
+    buf.guess_segment_properties()
+    hb.shape(font, buf, features)
+    return [(p.x_advance, p.x_offset, p.y_offset) for p in buf.glyph_positions]
+
+
+def check_subset(path: Path, full: Path, codepoints: list[int], weights: list[int]) -> None:
+    """A web subset holds exactly its characters the full font has, carries the full font's tables, and shapes every
+    word it can set, with and without dlig, as the full font does."""
+    font = TTFont(path)
+    check_tables(path, font)
+    full_cmap = set(TTFont(full).getBestCmap())
+    check(set(font.getBestCmap()) == set(codepoints) & full_cmap, f"{path.name}: characters differ from its subset")
+    data, reference = ttf_bytes(path), ttf_bytes(full)
+    held = set(font.getBestCmap())
+    words = [w for w in SUBSET_WORDS if all(ord(c) in held for c in w)]
+    for weight in weights:
+        for features in ({}, {"dlig": True}):
+            for word in words:
+                check(positions(data, weight, word, features) == positions(reference, weight, word, features), f"{path.name} at {weight}: {word} with {features} sets differently from the full font")
+
+
+def check_css() -> None:
+    """Every font the web CSS names exists, and every subset file is served by some CSS."""
+    named = set()
+    for css in (DIST / "web").glob("*.css"):
+        for url in re.findall(r'url\("\./([^"]+)"\)', css.read_text()):
+            named.add(url)
+            check((DIST / "web" / url).exists(), f"{css.name} names {url}, which was not built")
+    subset_files = {entry["file"] for entry in json.loads((DIST / "subsets.json").read_text())["files"]}
+    check(subset_files <= named, f"subsets no CSS serves: {sorted(subset_files - named)[:5]}")
+
+
 def run_check(task: tuple) -> list[str]:
     """One font's checks in a worker process, which hands back what failed."""
     failures.clear()
     kind, path, *args = task
     if kind == "web":
         check_tables(path, TTFont(path))
+    elif kind == "subset":
+        check_subset(path, *args)
     else:
         {"static": check_static, "variable": check_variable}[kind](path, *args)
     return list(failures)
@@ -389,7 +441,20 @@ def main() -> None:
                     for folder, ext in (("ttf", "ttf"), ("otf", "otf")):
                         tasks.append(("static", DIST / folder / f"{expected['postscriptName']}.{ext}", expected, italic))
     if not quick:
-        tasks += [("web", path) for path in sorted((DIST / "web").glob("*.woff2"))]
+        subsets = json.loads((DIST / "subsets.json").read_text())
+        subset_files = {entry["file"] for entry in subsets["files"]}
+        tasks += [("web", path) for path in sorted((DIST / "web").glob("*.woff2")) if path.name not in subset_files]
+        names = {"sans": "GeldSans", "dark": "GeldDarkSans"}
+        for entry in subsets["files"]:
+            family, style, weight = names[entry["family"]], entry["style"], entry["weight"]
+            codepoints = next(s["codepoints"] for s in subsets["subsets"][entry["family"]][style] if s["name"] == entry["subset"])
+            if weight == "wght":
+                full, weights = DIST / "variable" / f"{family}{'-Italic' if style == 'italic' else ''}[wght].ttf", [100, 400, 900]
+            else:
+                full, weights = DIST / "web" / f"{manifest[family][style][str(weight)]['postscriptName']}.woff2", [weight]
+            tasks.append(("subset", DIST / "web" / entry["file"], full, codepoints, weights))
+    if not quick:
+        check_css()
     with ProcessPoolExecutor(max_workers=jobs) as pool:
         found = [f for result in pool.map(run_check, tasks) for f in result]
     failures.clear()

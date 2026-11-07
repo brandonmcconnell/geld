@@ -2,9 +2,13 @@ name: Type
 
 # Builds Geld Sans and Geld Dark Sans from packages/type, checks the compiled fonts against the
 # source, and keeps them as an artifact. TypeScript tests for the package run in CI's `pnpm check`.
+# A `type-vX.Y.Z` tag (X.Y.Z the package's version) also publishes a GitHub Release with a zip per
+# family and the @geld/fonts package, never marked latest: the site's install buttons read the
+# latest release, which is the extension's.
 on:
   push:
     branches: [main]
+    tags: ['type-v*']
     paths: ['packages/type/**', 'assets/brand/**', '.github/workflows/type.yml']
   pull_request:
     paths: ['packages/type/**', 'assets/brand/**', '.github/workflows/type.yml']
@@ -41,4 +45,31 @@ jobs:
             packages/type/dist/otf
             packages/type/dist/web
             packages/type/dist/proof.html
+            packages/type/dist/package.json
+            packages/type/dist/README.md
           if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/type-v')
+    needs: fonts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: geld-sans-fonts
+          path: dist
+      - name: Package and publish
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version="${GITHUB_REF_NAME#type-v}"
+          packaged="$(node -p "require('./package.json').version")"
+          if [ "$version" != "$packaged" ]; then echo "Tag $GITHUB_REF_NAME does not match the package version $packaged"; exit 1; fi
+          zip -r "../GeldSans-$version.zip" README.md variable/GeldSans* ttf/GeldSans-* otf/GeldSans-* web/geld-sans* web/GeldSans* web/geld-features.css
+          zip -r "../GeldDarkSans-$version.zip" README.md variable/GeldDarkSans* ttf/GeldDarkSans-* otf/GeldDarkSans-* web/geld-dark-sans* web/GeldDarkSans* web/geld-features.css
+          npm pack --pack-destination ..
+          gh release create "$GITHUB_REF_NAME" ../*.zip ../*.tgz --title "Geld Sans $version" --latest=false --generate-notes

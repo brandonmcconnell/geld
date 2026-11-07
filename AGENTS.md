@@ -36,6 +36,8 @@ packages/type/       @geld/type — Geld Sans and Geld Dark Sans: glyph skeleton
                      variable fonts, fontmake for the statics, in parallel; Python tools in
                      requirements.txt) into static, variable and web fonts, about eight minutes.
                      `pnpm type:build --quick` builds and checks the variable fonts only, for iterating.
+                     The web package is `@geld/fonts` in dist/ (src/web.ts): unicode-range subsets, CSS
+                     with size-adjusted fallbacks and one class per feature, released on `type-v*` tags.
                      Plan: `.cursor/plans/geld-type-family.plan.md`. Built by `.github/workflows/type.yml`.
 assets/brand/        Logo + logomark SVGs (black and white variants), and the logomark on a pixel grid for small icons. Both apps reference these.
 .github/workflows/   CI: `pnpm check` (typecheck + tests everywhere), `pnpm catalog:check` (generated
