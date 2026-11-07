@@ -8662,6 +8662,29 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   color: var(--fgColor-muted, #59636e);
 }
 
+/* A connected account's word for the state, in GitHub's state colours, never cut: the title gives way first. */
+.geld-related__state {
+  flex: none;
+  padding: 0 6px;
+  border: var(--borderWidth-thin, 1px) solid currentColor;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-related__state[data-tone='open'] {
+  color: var(--fgColor-open, #1a7f37);
+}
+
+.geld-related__state[data-tone='done'] {
+  color: var(--fgColor-done, #8250df);
+}
+
+.geld-related__state[data-tone='closed'] {
+  color: var(--fgColor-closed, #d1242f);
+}
+
 /*
  * The Overview sidebar in Geld's order (`orderSidebars`): Reviewers, Related links, Activity, then GitHub's. GitHub's
  * line above every section but the first in page order becomes a line above every section but the first shown.

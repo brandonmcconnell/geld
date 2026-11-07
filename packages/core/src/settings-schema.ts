@@ -571,6 +571,14 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       },
       {
         kind: 'toggle',
+        key: 'connectedServices',
+        label: 'Connected services',
+        description: 'Read related links with your own Linear, Jira, GitHub, GitLab, Bitbucket and Slack accounts, so they show their real titles and state. Accounts are added under Connected services and stay on this device.',
+        popup: false,
+        surfaces: ['extension'],
+      },
+      {
+        kind: 'toggle',
         key: 'holdToMerge',
         label: 'Hold ⌘ to merge from the status pill',
         description: 'While ⌘ (Ctrl on Windows and Linux) is held, the pull request’s status pill becomes a Merge button whenever GitHub would merge it now. Off, the pill only opens its menu of statuses.',

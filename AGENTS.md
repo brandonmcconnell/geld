@@ -784,7 +784,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The tooltip holds the action, the title and the place (a Slack or Linear workspace, a Jira site).
   The title is the URL's slug where it has one (Linear, Shortcut, Notion, Figma, Confluence, YouTrack), since an author's link words may be anything, else the link's own words when they say more than the service, noun and identifier (`titleFromText`: "Open in Web", "Slack Thread" and "Linear LIM-1391" say nothing).
   In a service's own bot comment the words come first (`matchSpec`'s `official`): Linear's full-title linkback words the issue's title whole and cased, where its slug is lowercased and cut short.
-  Nothing is fetched: names that need the service's own API (a Slack thread's channel and first message, a Jira issue's title) are the plan's second step.
+  Nothing else is fetched unless the reader connected an account for the link's service (Connected services, below).
   The section is found by its heading, never by GitHub's classes: from the heading reading "Assignees" it climbs to the child of a list holding at least two other sections titled as GitHub's are (Reviewers, Labels, Activity…), skipping headings inside pickers and overlays (an assignee picker repeats the title), and Geld's section goes after every one found.
   That finds both sidebars GitHub serves at `/pull/N`.
   The conversation's Rails sidebar is `.discussion-sidebar-item`s with an `h3` signed out and a `summary` signed in, and gets a Rails item.
@@ -815,6 +815,16 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   GitHub reads `/repos/…/issues/N` (a pull request's `merged_at` says merged) and discussions through GraphQL, on `api.github.com` or an Enterprise host's `/api/v3`;
   GitLab sends `PRIVATE-TOKEN` and reads a work item as an issue;
   Bitbucket pairs an Atlassian API token with its email (or an app password with the username).
+  In the extension it is the experiment `connectedServices` (off by default, extension only, a personal key a repository config may not set).
+  Accounts are `local:connections` (`src/lib/connections.ts`, `normalizeConnections` on every read), with `local:connectionHints` and the answer cache `local:linkDetails`, which any change to the accounts clears.
+  Every provider call runs in the background (`geld:resolve-links`, at most 32 links, four at a time), never in the content script, and only for an account whose origins the browser has allowed (`requestOrigins` from the options page's click, within the existing optional `https://*/*`, so the manifest does not change and an update never disables the extension).
+  The content script (`src/github/link-details.ts`) asks once per link per visit for the rows that show, and again after a failure's `Retry-After` (else a minute).
+  A listener it calls may call `linkDetails` again, which resets the listener set, so it always iterates a copy: iterating the live set while it is refilled never ends.
+  A row a connected account read takes that account's title over the slug or the link's words, a state pill in GitHub's state colours (`.geld-related__state`), and "from Linear · Work" in its tooltip.
+  GitHub's own references on the page's host keep reading GitHub's hovercard with the reader's session, so a GitHub token is only for an account this browser is not signed in to or another Enterprise host.
+  The options page's Connected services card (`entrypoints/options/connections-card.ts`, service copy in `src/lib/connection-services.ts`) lists the accounts per service on one grid, so Link details and AI context stand in two columns.
+  "Test and save" asks for the service's origins, calls `identify` (the account and the workspaces it opens), and saves.
+  Turning AI context on asks `window.confirm` first.
 - **The description's header reads author, time and GitHub's edit menu** (`review/description-byline.ts`, `compactDescriptionByline`, wherever the digest is, independent of `collapseDescription`): GitHub's line says "brandonmcconnell commented Nov 2 – with Cursor • edited by cursor Bot ▾" (the "– with <App>" part only to signed-in readers, as loose words and an `/apps/` link;
   signed out it is absent).
   The App's mark is already on the author's picture, so the line's direct children other than the author's `strong`, the `a.js-timestamp`, the `.js-comment-edit-history` span and GitHub's narrow-screen picture are hidden (`data-geld-desc-byline` on the line, `data-geld-desc-keep` on what stays;
