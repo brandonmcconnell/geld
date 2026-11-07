@@ -2990,6 +2990,9 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   phase('review', () => applyReviewOverviewPass(settings, paths, bots));
 }
 
+/** The description was shortened by a pass that found the digest off, which no teardown will undo. */
+let shortenedWithDigestOff = false;
+
 function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string[] | null, bots?: RepoBotsHint): void {
   reviewPass += 1;
   if (paths !== undefined) diffPaths = paths;
@@ -2999,7 +3002,18 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   if (page.kind !== 'pull-conversation' || !settings.enabled || !settings.prOverview) {
     // Nothing mounted (a files page, a list): the page-wide cleanup queries have nothing to find.
     if (visit.pageKey !== '') teardownReviewOverview(page.kind !== 'pull-conversation' && settings.enabled && settings.prOverview);
-    syncDigestOffBar(page.kind === 'pull-conversation' && settings.enabled && !settings.prOverview);
+    const digestOff = page.kind === 'pull-conversation' && settings.enabled && !settings.prOverview;
+    syncDigestOffBar(digestOff);
+    // Shortening the description is a setting of its own: with the digest off it folds there too, its Agent notes at its foot.
+    if (digestOff) {
+      shortenDescription(settings.collapseDescription);
+      shortenedWithDigestOff = settings.collapseDescription;
+    } else if (shortenedWithDigestOff) {
+      shortenedWithDigestOff = false;
+      // Off to another tab the folds go with the page GitHub replaces, as when the digest is on (see `teardownReviewOverview`).
+      if (page.kind !== 'pull-conversation' && settings.enabled) releaseDescription();
+      else shortenDescription(false);
+    }
     return;
   }
   removeDigestOffBar();
@@ -3912,12 +3926,12 @@ let leftoverTimer: number | null = null;
 
 /** Fold the description in the frame GitHub renders it, as on a switch back to the conversation tab, rather than a pass later. */
 export function foldDescriptionNow(settings: GeldSettings): void {
-  if (!settings.enabled || !settings.prOverview || !settings.collapseDescription) return;
+  if (!settings.enabled || !settings.collapseDescription) return;
   const page = describePage(new URL(window.location.href));
   if (page.kind !== 'pull-conversation') return;
   // The full timeline shows the description whole, and that choice belongs to the visit that made it.
-  if (visit.pageKey === page.stateKey && visit.fullTimeline) return;
-  if (descriptionUnshortened()) shortenDescription(true, { toolsAway: true });
+  if (settings.prOverview && visit.pageKey === page.stateKey && visit.fullTimeline) return;
+  if (descriptionUnshortened()) shortenDescription(true, { toolsAway: settings.prOverview });
 }
 
 /**

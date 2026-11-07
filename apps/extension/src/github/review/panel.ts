@@ -28,7 +28,7 @@ import { formatSyncAge } from '../../ui/sync-age';
 import type { Closure, ClosureKind, EventHeadline } from './fold';
 import { headlineText } from './fold';
 import { ATTR_TELEPORTED, reclaimOrphans, restoreAll } from './teleport';
-import { isOverviewPage, overviewDescription } from './overview-page';
+import { overviewColumnGap, overviewDescription } from './overview-page';
 import { ATTR_NOTE, ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import type { ReviewerCandidate } from './reviewers';
 import { shapeMark } from './mark-shape';
@@ -42,8 +42,8 @@ export const PANEL_CLASS = 'geld-review';
 export const ATTR_PANEL = 'data-geld-review-panel';
 /** On the description card the panel is attached to (squares its bottom corners). */
 export const ATTR_ATTACHED = 'data-geld-attached';
-/** On the panel: it stands as a box of its own (the Overview) rather than grown out of the description card. */
-const ATTR_STANDALONE = 'data-geld-standalone';
+/** On the panel: it grows out of the Overview's description box, across the gap its column leaves between boxes. */
+const ATTR_OVERVIEW = 'data-geld-overview';
 const ATTR_SIG = 'data-geld-review-sig';
 const ATTR_SLOT = 'data-geld-slot';
 /** On every row and slot under a group heading: the group it belongs to, so folding the group is an attribute flip (`syncPanelGroups`). */
@@ -2948,7 +2948,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     // Folded groups are not in the signature: whatever panel stays, it shows the groups as the model has them.
     syncGroups(existing, model.collapsedGroups);
     if (existing.getAttribute(ATTR_SIG) === signature) {
-      seatStandalone(existing);
+      seatOverviewPanel(existing);
       return { root: existing, slot };
     }
     if (options.holdRebuild === true && existing.getAttribute(ATTR_OPEN) === openNow) return { root: existing, slot };
@@ -2972,12 +2972,11 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   // Quick-viewed nodes live inside the old panel; send them home before it goes.
   restoreAll(carried === null ? undefined : (node) => carried.contains(node));
   if (existing !== null) reclaimOrphans(existing, carried ?? undefined);
-  // On the Overview the digest is a box of its own between GitHub's status strip and the description, not grown out of it.
-  const standalone = isOverviewPage();
   for (const stale of document.querySelectorAll(`[${ATTR_ATTACHED}]`)) {
-    if (stale !== card || standalone) stale.removeAttribute(ATTR_ATTACHED);
+    if (stale !== card) stale.removeAttribute(ATTR_ATTACHED);
   }
-  if (!standalone) card.setAttribute(ATTR_ATTACHED, '');
+  card.setAttribute(ATTR_ATTACHED, '');
+  const columnGap = overviewColumnGap(card);
   // Read before anything moves: this forces a layout, and a layout with the old panel gone and the new one not
   // yet in makes the browser's scroll anchoring shift the page up by the panel's height — and it does not shift
   // it back when the new panel lands. The old panel is replaced in one mutation below, never removed first.
@@ -3099,7 +3098,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     }
   }
 
-  const panel = createElement('section', { class: PANEL_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_PANEL]: '', [ATTR_SIG]: signature, [ATTR_OPEN]: openNow, 'aria-label': 'Geld review digest', ...(standalone ? { [ATTR_STANDALONE]: '' } : {}) }, [
+  const panel = createElement('section', { class: PANEL_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_PANEL]: '', [ATTR_SIG]: signature, [ATTR_OPEN]: openNow, 'aria-label': 'Geld review digest', ...(columnGap === null ? {} : { [ATTR_OVERVIEW]: '' }) }, [
     head,
     ...(intro === null ? [] : [intro]),
     ...(aiNote === null ? [] : [aiNote]),
@@ -3131,6 +3130,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   );
   panel.style.marginLeft = cardMargins.left;
   panel.style.marginRight = cardMargins.right;
+  if (columnGap !== null) panel.style.marginTop = `calc(-1px - ${columnGap})`;
   const freshBody = carried === null ? null : panel.querySelector<HTMLElement>(`[${ATTR_SLOT}="${CHECKS_KEY}"] > .${PANEL_CLASS}__slot-body`);
   if (existing !== null && existing.parentNode !== null) {
     if (carried !== null && freshBody !== null) {
@@ -3142,9 +3142,9 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
       existing.replaceWith(panel);
     }
   } else {
-    card.insertAdjacentElement(standalone ? 'beforebegin' : 'afterend', panel);
+    card.insertAdjacentElement('afterend', panel);
   }
-  seatStandalone(panel);
+  seatOverviewPanel(panel);
   syncSpinners(panel);
   watchBrandSelection();
   syncBrandSelection();
@@ -3157,6 +3157,8 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     nudge.append(createElement('a', { class: `${NUDGE_CLASS}__link`, href: 'https://www.geld.sh/how-it-works#summary', target: '_blank', rel: 'noreferrer' }, ['See how']), document.createTextNode('.'));
     // The card hangs over the timeline rail (ml-n3) and covers it; plain text cannot, so start it past the rail.
     nudge.style.marginRight = cardMargins.right;
+    // The Overview has no rail: the line stands close under the digest's edge, at its end, across the column's gap.
+    if (columnGap !== null) nudge.style.marginTop = `calc(8px - ${columnGap})`;
     if (oldNudge !== null) {
       // Same reason as the panel: swapped in place, and its indent carried over so no layout is forced here.
       nudge.style.paddingLeft = oldNudge instanceof HTMLElement ? oldNudge.style.paddingLeft : '';
@@ -3175,21 +3177,21 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
 }
 
 /**
- * Keep the Overview's digest right above the description. GitHub renders the status strip above it late (it waits on
- * the merge box), and React puts a new child before the next node it owns, which would leave the strip under the digest.
+ * Keep the Overview's digest right under the description, its nudge under it: the boxes around them are React's,
+ * which puts a node it renders anew before the next node it owns, between the description and the digest.
  */
-function seatStandalone(panel: HTMLElement): void {
-  if (!panel.hasAttribute(ATTR_STANDALONE)) return;
+function seatOverviewPanel(panel: HTMLElement): void {
+  if (!panel.hasAttribute(ATTR_OVERVIEW)) return;
   const card = overviewDescription();
-  if (card === null || panel.nextElementSibling === card) return;
+  if (card === null || card.nextElementSibling === panel) return;
   const nudge = panel.nextElementSibling?.classList.contains(NUDGE_CLASS) === true ? panel.nextElementSibling : null;
-  card.before(panel);
+  card.after(panel);
   if (nudge !== null) panel.after(nudge);
 }
 
 /** Pixels from the nudge's left edge to just past the timeline rail (GitHub draws it at a TimelineItem's left edge). */
 function railIndent(nudge: HTMLElement): number {
-  if (nudge.previousElementSibling?.hasAttribute(ATTR_STANDALONE) === true) return 0;
+  if (nudge.previousElementSibling?.hasAttribute(ATTR_OVERVIEW) === true) return 0;
   const item = document.querySelector('.js-discussion .TimelineItem, .js-timeline-item .TimelineItem, .TimelineItem, [class*="TimelineItem"]');
   if (!(item instanceof HTMLElement)) return 24;
   const rail = item.getBoundingClientRect().left + 2;

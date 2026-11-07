@@ -639,8 +639,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   It is a "For you" strip (`[class*="CondensedForYouContainer"]`: the merge status as three cards, and signed in the next action with GitHub's merge button), the description in a box of its own (`section[aria-label="Description"]`, its "Edited ▾" menu floated to the inline end, so the text wraps around it), a Comments section (`h2#overview-comments`) and a sidebar;
   the other timeline events live in a side panel that is not in the page until opened.
   Readers can land on either page, or on the conversation inside the new React layout, so every reading takes both shapes and nothing assumes one.
-  **The digest stands as a box of its own between the strip and the description** (`data-geld-standalone`, rounded, in the column's 16px gap), not grown out of the description: `seatStandalone` keeps it right above the description, since GitHub renders the strip late and React puts a new child before the next node it owns.
-  The digest-off line still grows out of the description's bottom edge, taking back the column's gap (`digest-off.ts`).
+  **The digest grows out of the description's bottom edge, one box with it, as on the conversation** (`data-geld-overview`): the column spaces its boxes with a 16px gap, which the digest and the digest-off line take back (`overviewColumnGap`, a negative top margin), and `seatOverviewPanel` keeps the digest right after the description, since React puts a node it renders anew before the next node it owns.
+  The owner chose (Nov 2026) to keep it under the description, as on the conversation, rather than above it under the strip.
+  The "Built from this page" line stands close under the digest, at its end, 12px in from its corner, where the conversation's clears the timeline rail.
+  **With Agent notes in the description** (the digest off) the body is a flex column, which beside the floated "Edited" menu was narrowed for its whole height: the menu stands in the box's corner instead (`position: absolute`) and the first block keeps its width in room beside it (`--geld-desc-meta-room`, read in `measure`).
   The description folds, cuts and gathers its agent notes as on the conversation (`descriptionBody` reads the box's `.markdown-body`, the reactions row is the box's `Reactions for the description` toolbar).
   **The Comments section is the timeline**: each entry is a `[data-testid="timeline-item"]` (`data-item-type` `issue`, `review_summary`, `commit_group`), folded in compact mode like a timeline row, with the section's heading row (heading, All/Unresolved/Mine, filter, sort) folded silently too, its 400px `min-height` dropped and the Stack's gap zeroed while folded.
   An issue comment is an `article#issuecomment-N`, a review an `article#pullrequestreview-N` holding its own words and one `article` per thread (no id), and a review with no words a `div#pullrequestreview-N[role=group]` around its threads' boxes;
@@ -698,7 +700,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The legend button carries a chevron pointing up, the way the legend opens, turned over while it is open.
   `teardownReviewOverview` calls `closeFlow`, which closes the dialog and drops the reads still queued, so Geld turned off leaves nothing over the page.
   The diagram is drawn by hand on purpose, with no graph library.
-- **The description above the digest is shortened so the digest is in reach** (`review/description.ts`, `shortenDescription`, setting `collapseDescription`, on by default wherever the digest is).
+- **The description above the digest is shortened so the digest is in reach** (`review/description.ts`, `shortenDescription`, setting `collapseDescription`, on by default).
+  It is a setting of its own: with the digest off the description folds too, its Agent notes at its foot, until the setting is turned off (`shortenedWithDigestOff` in overview.ts undoes what no teardown will).
   Agent-written descriptions often ran a couple of thousand pixels, which put the digest well below the fold.
   **A heading with nothing to read in it is a divider, not a section** (`isBlankHeading`, `data-geld-desc-blank`): review bots post `## &nbsp;` or an empty `<h2>` for the thin rule GitHub draws under an h1 or h2, finer than a `---`.
   Only whitespace, zero-width characters, comments, GitHub's anchor link and Geld's toggle inside it count as blank, and an image or other picture does not.

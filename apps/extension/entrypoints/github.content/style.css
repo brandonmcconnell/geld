@@ -2494,7 +2494,7 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
 }
 
 /* The Overview's Comments entries: the same wait for the pass that reads them, once the digest stands above the description. */
-html[data-geld-timeline='compact']:has(.geld-review[data-geld-standalone]) [data-component='Stack'] > [data-testid='timeline-item']:not([data-geld-seen]):not(.geld-review *) {
+html[data-geld-timeline='compact']:has(.geld-review[data-geld-overview]) [data-component='Stack'] > [data-testid='timeline-item']:not([data-geld-seen]):not(.geld-review *) {
   content-visibility: hidden !important;
   min-height: 0 !important;
   margin: 0 !important;
@@ -2556,12 +2556,6 @@ html[data-geld-timeline='compact'] section:has(> [data-geld-folded] #overview-co
    * line shifts only when the number of digits does. Inherited by everything in the panel, GitHub's loaned
    * checks list included. */
   font-variant-numeric: tabular-nums;
-}
-
-/* The Overview's digest is a box of its own between GitHub's status strip and the description, in the column's 16px rhythm. */
-.geld-review[data-geld-standalone] {
-  margin: 0;
-  border-radius: 6px;
 }
 
 /*
@@ -4219,6 +4213,13 @@ svg.geld-lucide {
 
 .geld-review-hovercard--report a.geld-review-hovercard__open:hover {
   text-decoration: underline;
+}
+
+/* Under the Overview's digest there is no rail to clear: the line stands at the digest's end, a little in from its corner. */
+.geld-review[data-geld-overview] + .geld-review-nudge {
+  margin-bottom: 0;
+  padding-right: 12px;
+  text-align: right;
 }
 
 .geld-review-nudge a {
@@ -7821,6 +7822,26 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 [data-geld-desc][data-geld-desc-agents] {
   display: flex !important;
   flex-direction: column;
+}
+
+/*
+ * On the Overview the description's "Edited" menu floats beside it, and a column beside a float is narrowed for its
+ * whole height: the menu stands in the box's corner instead, the first block keeping room beside it (description.ts).
+ */
+section[aria-label='Description']:has([data-geld-desc-agents]) {
+  position: relative;
+}
+
+section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-desc-agents]) {
+  position: absolute;
+  top: 16px;
+  inset-inline-end: 16px;
+  float: none;
+  margin: 0;
+}
+
+[data-geld-desc][data-geld-desc-agents] > :first-child {
+  padding-inline-end: var(--geld-desc-meta-room, 0px);
 }
 
 /* 1 is "Show full description", between the author's cut text and the agents' (mirrored in description.ts). */

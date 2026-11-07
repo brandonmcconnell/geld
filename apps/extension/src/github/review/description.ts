@@ -543,8 +543,22 @@ function spanOf(block: Element, top: number): { readonly block: Element; readonl
   return { block, start: start - top, end: end - top };
 }
 
+/**
+ * The Overview floats its "Edited" menu beside the description, and a body laid out as a column (Agent notes at its
+ * foot) would be narrowed beside a float for its whole height. The stylesheet takes the menu out of the flow there and
+ * keeps this much room beside the first block instead: the menu's width and its 16px margin.
+ */
+const META_ROOM_PROPERTY = '--geld-desc-meta-room';
+
+function keepMetaRoom(body: HTMLElement): void {
+  const meta = body.hasAttribute(ATTR_AGENTS) ? (body.closest(OVERVIEW_DESCRIPTION)?.querySelector('[class*="editMetadata"]') ?? null) : null;
+  const width = meta === null ? 0 : meta.getBoundingClientRect().width;
+  setProperty(body, META_ROOM_PROPERTY, width > 0 ? `${Math.ceil(width) + 16}px` : null);
+}
+
 function measure(body: HTMLElement): void {
   clearCut(body);
+  keepMetaRoom(body);
   const author = blocksOf(body).filter((block) => !block.hasAttribute(ATTR_AGENT) && !block.hasAttribute(ATTR_TOOL) && !block.hasAttribute(ATTR_BLANK));
   const top = body.getBoundingClientRect().top;
   const spans = author.map((block) => spanOf(block, top));
@@ -818,7 +832,10 @@ function clear(): void {
     if (element instanceof HTMLElement) element.style.removeProperty(LIFT_PROPERTY);
   }
   for (const element of document.querySelectorAll(`[data-geld-desc]`)) {
-    if (element instanceof HTMLElement) element.style.removeProperty(DROP_PROPERTY);
+    if (element instanceof HTMLElement) {
+      element.style.removeProperty(DROP_PROPERTY);
+      element.style.removeProperty(META_ROOM_PROPERTY);
+    }
   }
   for (const element of document.querySelectorAll(`.${TOGGLE_CLASS}, .${MORE_CLASS}, .${AGENTS_CLASS}, .${AGENT_CLASS}`)) element.remove();
   for (const element of document.querySelectorAll(`[${ATTR_AGENT}]`)) {

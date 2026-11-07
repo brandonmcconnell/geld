@@ -24,6 +24,16 @@ export function isOverviewPage(root: ParentNode = document): boolean {
   return overviewDescription(root) !== null;
 }
 
+/**
+ * The gap the Overview's column leaves between its boxes, for a box of Geld's to take back so it grows out of the
+ * description's edge as on the conversation; null off the Overview.
+ */
+export function overviewColumnGap(box: Element): string | null {
+  if (!box.matches(OVERVIEW_DESCRIPTION) || box.parentElement === null) return null;
+  const gap = getComputedStyle(box.parentElement).rowGap;
+  return /^\d/.test(gap) ? gap : null;
+}
+
 /** The Comments section: its heading row, the list of entries and, signed in, the composer. */
 export function overviewCommentsSection(root: ParentNode = document): HTMLElement | null {
   return root.querySelector(COMMENTS_HEADING)?.closest<HTMLElement>('section') ?? null;

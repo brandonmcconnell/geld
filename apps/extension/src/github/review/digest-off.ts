@@ -13,7 +13,7 @@ import { settingsItem } from '../../lib/storage';
 import { brandMark } from './brand';
 import { viewChoice } from './digest-view';
 import { ATTR_ATTACHED, ATTR_PANEL, PANEL_CLASS, descriptionCard } from './panel';
-import { isOverviewPage } from './overview-page';
+import { overviewColumnGap } from './overview-page';
 import { ATTR_VIEW_SUBTITLE, fitOffLineOnResize, OFF_SUBTITLE, OFF_TITLE } from './view-fit';
 import { requestViewFocus, takeViewFocus } from './view-focus';
 
@@ -57,8 +57,8 @@ export function syncDigestOffBar(show: boolean): void {
   bar.style.marginLeft = cardStyle.marginLeft;
   bar.style.marginRight = cardStyle.marginRight;
   // The Overview spaces its boxes with the column's gap: the line takes it back to grow out of the description's edge.
-  const gap = card.parentElement === null ? '' : getComputedStyle(card.parentElement).rowGap;
-  if (isOverviewPage() && /^\d/.test(gap)) bar.style.marginTop = `calc(-1px - ${gap})`;
+  const gap = overviewColumnGap(card);
+  if (gap !== null) bar.style.marginTop = `calc(-1px - ${gap})`;
   card.insertAdjacentElement('afterend', bar);
   fitOffLineOnResize(bar);
   if (takeViewFocus('off-line')) {
