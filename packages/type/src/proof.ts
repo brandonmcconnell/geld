@@ -28,6 +28,10 @@ const LIGATURES = [
   { text: 'a -> b <- c <-> d --> e <== f ==> g => h ->> i', css: 'font-feature-settings: "ss20"' },
   { text: 'x <= y >= z <=> w --- x<-1', css: '' },
   { text: 'Made by Geld · Geldern', css: 'font-variant-ligatures: discretionary-ligatures' },
+  { text: 'a<=b x!=y a===b a<=>b x|>f a&&b a||b std::vec x:=1 0..<n a<<b x>>=1 // c /* */ ~> <~~', css: 'font-variant-ligatures: discretionary-ligatures' },
+  { text: 'a<=b x!=y a===b a<=>b x|>f a&&b a||b std::vec x:=1 0..<n a<<b x>>=1 // c /* */ ~> <~~', css: '' },
+  { text: '(c) 2026 Acme(TM) - [x] done [ ] todo 1920x1080 · f(c) http://x', css: 'font-variant-ligatures: discretionary-ligatures' },
+  { text: 'A-Z 12:30 a-z · wait -- what --- no', css: 'font-feature-settings: "ss10"' },
 ];
 const escape = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
