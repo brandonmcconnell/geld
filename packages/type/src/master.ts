@@ -32,10 +32,11 @@ export interface Master {
  */
 export function buildMaster(family: Family, style: Style, weight: Weight): Master {
   const params = weightParams(weight);
-  const g = drawContext(params.v, params.h);
-  const pen = { v: params.v, h: params.h };
+  const upper = drawContext(params.v, params.h);
+  const lower = drawContext(params.v, params.h, true);
   const glyphs: MasterGlyph[] = GLYPHS.map((def) => {
-    let contours = def.draw(g).flatMap((stroke) => expandStroke(stroke, pen));
+    const g = def.lower ? lower : upper;
+    let contours = def.draw(g).flatMap((stroke) => expandStroke(stroke, g.pen));
     if (params.snap) contours = contours.map((c) => snap(c, 0.5));
     const box = bounds(contours);
     contours = contours.map((c) => translate(c, def.lsb - box.minX));

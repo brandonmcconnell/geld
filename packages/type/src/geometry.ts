@@ -14,12 +14,22 @@ export interface PathPoint extends Vec {
 }
 
 /**
- * A stroke's centreline. An open stroke ends square at its first and last points,
- * so those points sit on the outline; a closed stroke draws an outer and an inner contour.
+ * How an open stroke ends at its first or last point, which always lies on the outline:
+ * `butt` square to the stroke, `flat` level (a diagonal's foot on the baseline, an apex at the cap height).
+ */
+export type Cap = 'butt' | 'flat';
+
+/**
+ * A stroke's centreline. An open stroke ends at its first and last points, so those points sit on
+ * the outline; a closed stroke draws an outer and an inner contour.
  */
 export interface Stroke {
   points: PathPoint[];
   closed: boolean;
+  /** A pen of its own, for thinner lowercase horizontals, dots and diagonals. */
+  pen?: Pen;
+  startCap?: Cap;
+  endCap?: Cap;
 }
 
 export interface Pen {
@@ -93,14 +103,17 @@ export function insertCuts(stroke: Stroke, pen: Pen): Vec[] {
     const a = unit(sub(p, prev));
     const b = unit(sub(next, p));
     if (Math.abs(a.x * b.x + a.y * b.y) > 1e-6) throw new Error('Only a right-angled corner can be cut');
-    const leg = cutLeg(widthAlong(a, pen), widthAlong(b, pen));
+    const roomBefore = length(sub(p, prev)) * (prev.cut ? 0.49 : 0.98);
+    const roomAfter = length(sub(next, p)) * (next.cut ? 0.49 : 0.98);
+    const leg = Math.min(cutLeg(widthAlong(a, pen), widthAlong(b, pen)), roomBefore, roomAfter);
     out.push(sub(p, scale(a, leg)), add(p, scale(b, leg)));
   });
   return out;
 }
 
 /** Offsets a centreline by half its width on each side, joining segments at the intersection of their edges. */
-export function expandStroke(stroke: Stroke, pen: Pen): Contour[] {
+export function expandStroke(stroke: Stroke, masterPen: Pen): Contour[] {
+  const pen = stroke.pen ?? masterPen;
   let points = insertCuts(stroke, pen);
   if (stroke.closed && signedArea(points) < 0) points = points.reverse();
   const n = points.length;
@@ -124,12 +137,18 @@ export function expandStroke(stroke: Stroke, pen: Pen): Contour[] {
     const inner = points.map((_, i) => corner(i, 1)).reverse();
     return [outer, inner];
   }
-  const right: Vec[] = [shifted(0, -1)];
+  const last = segments - 1;
+  const end = (seg: number, at: Vec, side: 1 | -1, cap: Cap | undefined): Vec => {
+    const edge = add(at, scale(left(dirs[seg]!), side * half[seg]!));
+    if (cap !== 'flat' || Math.abs(dirs[seg]!.y) < EPS) return edge;
+    return lineIntersection(at, { x: 1, y: 0 }, edge, dirs[seg]!);
+  };
+  const right: Vec[] = [end(0, points[0]!, -1, stroke.startCap)];
   for (let i = 1; i < n - 1; i++) right.push(corner(i, -1));
-  right.push(add(points[n - 1]!, scale(left(dirs[segments - 1]!), -half[segments - 1]!)));
-  const leftSide: Vec[] = [add(points[n - 1]!, scale(left(dirs[segments - 1]!), half[segments - 1]!))];
+  right.push(end(last, points[n - 1]!, -1, stroke.endCap));
+  const leftSide: Vec[] = [end(last, points[n - 1]!, 1, stroke.endCap)];
   for (let i = n - 2; i >= 1; i--) leftSide.push(corner(i, 1));
-  leftSide.push(shifted(0, 1));
+  leftSide.push(end(0, points[0]!, 1, stroke.startCap));
   return [[...right, ...leftSide]];
 }
 
