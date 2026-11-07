@@ -2,6 +2,7 @@ import {
   ALL,
   bar,
   box,
+  chevronLeft,
   comma,
   DASH_AXIS,
   diagonal,
@@ -21,10 +22,6 @@ import {
 } from './draw';
 import type { Stroke } from './geometry';
 
-/** A chevron pointing left, centred on y, for ‹ « < and their mirrors. */
-function chevron(g: DrawContext, w: number, y: number, spread: number): Stroke {
-  return withPen(open(p(w, y + spread), p(0, y), p(w, y - spread)), g.diag);
-}
 
 function questionStrokes(g: DrawContext): Stroke[] {
   const w = g.wide(7.5);
@@ -140,14 +137,14 @@ export const SYMBOLS: GlyphDef[] = [
     unicode: 0x3c,
     lsb: 1,
     rsb: 1,
-    draw: (g) => [chevron(g, g.wide(8), MATH_AXIS, 4)],
+    draw: (g) => chevronLeft(g, g.wide(8), MATH_AXIS, 4),
   },
   {
     name: 'greater',
     unicode: 0x3e,
     lsb: 1,
     rsb: 1,
-    draw: (g) => mirror([chevron(g, g.wide(8), MATH_AXIS, 4)], g.wide(8) / 2),
+    draw: (g) => mirror(chevronLeft(g, g.wide(8), MATH_AXIS, 4), g.wide(8) / 2),
   },
   {
     name: 'at',
@@ -243,21 +240,21 @@ export const SYMBOLS: GlyphDef[] = [
     rsb: 1.25,
     draw: (g) => [...comma(g, 0, 0), ...comma(g, g.dot + 1.25, 0)],
   },
-  { name: 'guilsinglleft', unicode: 0x2039, lsb: 1, rsb: 1, draw: (g) => [chevron(g, 3, DASH_AXIS, 3)] },
-  { name: 'guilsinglright', unicode: 0x203a, lsb: 1, rsb: 1, draw: (g) => mirror([chevron(g, 3, DASH_AXIS, 3)], 1.5) },
+  { name: 'guilsinglleft', unicode: 0x2039, lsb: 1, rsb: 1, draw: (g) => chevronLeft(g, 3, DASH_AXIS, 3) },
+  { name: 'guilsinglright', unicode: 0x203a, lsb: 1, rsb: 1, draw: (g) => mirror(chevronLeft(g, 3, DASH_AXIS, 3), 1.5) },
   {
     name: 'guillemetleft',
     unicode: 0xab,
     lsb: 1,
     rsb: 1,
-    draw: (g) => [chevron(g, 3, DASH_AXIS, 3), ...shift([chevron(g, 3, DASH_AXIS, 3)], 2.5 + g.v, 0)],
+    draw: (g) => [...chevronLeft(g, 3, DASH_AXIS, 3), ...shift(chevronLeft(g, 3, DASH_AXIS, 3), 2.5 + g.v, 0)],
   },
   {
     name: 'guillemetright',
     unicode: 0xbb,
     lsb: 1,
     rsb: 1,
-    draw: (g) => mirror([chevron(g, 3, DASH_AXIS, 3), ...shift([chevron(g, 3, DASH_AXIS, 3)], 2.5 + g.v, 0)], (3 + 2.5 + g.v) / 2),
+    draw: (g) => mirror([...chevronLeft(g, 3, DASH_AXIS, 3), ...shift(chevronLeft(g, 3, DASH_AXIS, 3), 2.5 + g.v, 0)], (3 + 2.5 + g.v) / 2),
   },
   { name: 'exclamdown', unicode: 0xa1, lsb: 1.5, rsb: 1.5, draw: (g) => rotate180([stem(0, g.dot + 1.5, g.cap), dot(g, 0, 0)], 0, 5) },
   { name: 'questiondown', unicode: 0xbf, lsb: 1, rsb: 1, draw: (g) => rotate180(questionStrokes(g), g.wide(7.5) / 2, 5) },

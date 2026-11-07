@@ -6,6 +6,7 @@ import {
   DASH_AXIS,
   diagonal,
   dot,
+  type DrawContext,
   fromStemTop,
   type GlyphDef,
   LEFT,
@@ -22,9 +23,11 @@ import {
   withPen,
   zed,
 } from './draw';
+import type { Stroke } from './geometry';
 import { figureVariants } from './glyphs-figures';
 import { LATIN_EXTRA } from './glyphs-latin';
 import { LATIN1 } from './glyphs-latin1';
+import { PLUS } from './glyphs-plus';
 import { SYMBOLS } from './glyphs-symbols';
 
 const UPPER: GlyphDef[] = [
@@ -746,6 +749,187 @@ const PUNCTUATION: GlyphDef[] = [
   },
 ];
 
+const letter = (name: string): GlyphDef => [...UPPER, ...LOWER].find((d) => d.name === name)!;
+
+/** A sign drawn on a letter: the letter's strokes and `extra`, spaced like the letter unless told otherwise. */
+function onLetter(name: string, unicode: number, base: string, extra: (g: DrawContext) => Stroke[], spacing?: { lsb: number; rsb: number }): GlyphDef {
+  const def = letter(base);
+  return {
+    name,
+    unicode,
+    ...(def.lower ? { lower: true } : {}),
+    lsb: spacing?.lsb ?? def.lsb,
+    rsb: spacing?.rsb ?? def.rsb,
+    draw: (g) => [...def.draw(g), ...extra(g)],
+  };
+}
+
+const through = (x: number) => stem(x, -2, 16);
+
+/** Currency signs and letterlike symbols that are a letter with strokes added. */
+const ON_LETTERS: GlyphDef[] = [
+  onLetter('naira', 0x20a6, 'N', (g) => [bar(-1.5, g.wide(9.5) + 1.5, 5), bar(-1.5, g.wide(9.5) + 1.5, 9)], { lsb: 0.5, rsb: 0.5 }),
+  onLetter('won', 0x20a9, 'W', (g) => [bar(-0.5, g.wide(15) + 0.5, 5.5), bar(-0.5, g.wide(15) + 0.5, 8.75)]),
+  onLetter('kip', 0x20ad, 'K', () => [bar(-1.5, 6, 7)], { lsb: 0.5, rsb: 0.3 }),
+  onLetter('tugrik', 0x20ae, 'T', (g) => {
+    const x = g.wide(11) / 2;
+    return [withPen(open(p(x - 2.75, 3.5), p(x + 2.75, 6.5)), g.diag), withPen(open(p(x - 2.75, 7), p(x + 2.75, 10)), g.diag)];
+  }),
+  onLetter('peso', 0x20b1, 'P', (g) => [bar(-1.75, g.wide(9.5) + 1.5, 8.75), bar(-1.75, g.wide(9.5) + 1.5, 11.25)], { lsb: 0.5, rsb: 0.5 }),
+  onLetter('guarani', 0x20b2, 'G', (g) => [through(g.wide(10) / 2)]),
+  onLetter('hryvnia', 0x20b4, 'S', (g) => [bar(-1, g.wide(9.5) + 1, 5), bar(-1, g.wide(9.5) + 1, 9)], { lsb: 0.5, rsb: 0.5 }),
+  onLetter('cedi', 0x20b5, 'C', (g) => [through(g.wide(10) / 2)]),
+  onLetter('tenge', 0x20b8, 'T', (g) => [bar(0, g.wide(11), g.top(10.5))]),
+  onLetter('ruble', 0x20bd, 'P', () => [bar(-1.75, 5, 3.25)], { lsb: 0.5, rsb: 1 }),
+  onLetter('bitcoin', 0x20bf, 'B', (g) => [stem(2.5, -2, 1), stem(2.5, g.cap - 1, 16), stem(5.5, -2, 1), stem(5.5, g.cap - 1, 16)]),
+  onLetter('baht', 0x0e3f, 'B', () => [through(3.5)]),
+  onLetter('colonmonetary', 0x20a1, 'C', (g) => {
+    const w = g.wide(10);
+    return [withPen(open(p(w * 0.3, -1.5), p(w * 0.5, 15.5)), g.diag), withPen(open(p(w * 0.58, -1.5), p(w * 0.78, 15.5)), g.diag)];
+  }),
+  onLetter('dong', 0x20ab, 'd', (g) => {
+    const w = g.wide(8);
+    return [bar(w - 3, w + g.v / 2 + 1.25, 12.5), bar(0, w + 1.5, g.top(-1.5))];
+  }),
+];
+
+const DRAWN_SIGNS: GlyphDef[] = [
+  {
+    name: 'Ohm',
+    unicode: 0x2126,
+    lsb: 0.75,
+    rsb: 0.75,
+    draw: (g) => {
+      const w = g.wide(11);
+      const leg = 3.5 - Math.max(0, g.v - 2) * 0.75;
+      const y = Math.max(4, g.h * 1.5 + 1.5);
+      const t = g.top(g.cap);
+      const b = g.bottom(0);
+      return [
+        open(p(leg, y), p(0, y, true), p(0, t, true), p(w, t, true), p(w, y, true), p(w - leg, y)),
+        stem(leg, 0, y + g.h / 2),
+        stem(w - leg, 0, y + g.h / 2),
+        bar(-0.5, leg, b),
+        bar(w - leg, w + 0.5, b),
+      ];
+    },
+  },
+  {
+    name: 'pi',
+    unicode: 0x3c0,
+    lower: true,
+    lsb: 0.75,
+    rsb: 0.75,
+    draw: (g) => {
+      const w = g.wide(8);
+      return [bar(-1, w + 1, g.top(g.xHeight)), stem(1, 0, g.xHeight), stem(w - 1, 0, g.xHeight)];
+    },
+  },
+  {
+    name: 'litre',
+    unicode: 0x2113,
+    lower: true,
+    lsb: 1,
+    rsb: 0.75,
+    draw: (g) => [open(p(0, g.ascender), p(0, g.bottom(0), true), p(g.wide(2.5), g.bottom(0))), withPen(open(p(-1.75, 5.5), p(1.75, 9)), g.diag)],
+  },
+  {
+    name: 'numero',
+    unicode: 0x2116,
+    lsb: 1.5,
+    rsb: 1,
+    draw: (g) => {
+      const n = letter('N');
+      const w = g.wide(9.5) + g.v / 2 + 1.5;
+      const o = smaller([box(0, g.wide(8), g.bottom(0), g.top(g.xHeight), ALL)], 0.6, 7, g.pen, 0.8);
+      return [...n.draw(g), ...shift(o, w, 0), withPen(bar(w - 0.5, w + g.wide(8) * 0.6 + 0.5, 5), { v: g.v * 0.8, h: g.h * 0.8 })];
+    },
+  },
+  {
+    name: 'estimated',
+    unicode: 0x212e,
+    lsb: 1,
+    rsb: 1,
+    draw: (g) => {
+      const w = g.wide(10);
+      const top = g.top(12);
+      const b = g.bottom(0);
+      return [open(p(0, 6), p(w, 6), p(w, top, true), p(0, top, true), p(0, b, true), p(w, b, true), p(w, 3))];
+    },
+  },
+  {
+    name: 'Dcircle',
+    unicode: 0x24b9,
+    lsb: 1,
+    rsb: 1,
+    draw: (g) => {
+      const w = g.wide(13);
+      const inner = smaller(letter('D').draw(g), 0.5, 0, g.pen, 0.8).map((st) => ({ ...st, points: st.points.map((q) => ({ ...q, x: q.x + w / 2 - 2.5, y: q.y + 3.5 })) }));
+      return [box(0, w, g.bottom(0), g.top(g.cap), ALL), ...inner];
+    },
+  },
+  {
+    name: 'sheqel',
+    unicode: 0x20aa,
+    lsb: 1.25,
+    rsb: 1.25,
+    draw: (g) => {
+      const w = g.wide(12);
+      const x1 = w * 0.33;
+      const x2 = w * 0.67;
+      const t = g.top(11);
+      const b = g.bottom(0);
+      return [open(p(0, 0), p(0, t), p(x2, t, true), p(x2, 4)), open(p(x1, 7), p(x1, b), p(w, b, true), p(w, 11))];
+    },
+  },
+  {
+    name: 'rupeeindian',
+    unicode: 0x20b9,
+    lsb: 1,
+    rsb: 1,
+    draw: (g) => {
+      const w = g.wide(9);
+      const t = g.top(g.cap);
+      const m = 7;
+      return [bar(0, w, t), bar(0, w, 10.25), open(p(w * 0.4, t), p(w * 0.75, t, true), p(w * 0.75, m, true), p(0, m)), diagonal(g, 2.5, m, w * 0.8, 0, [false, true])];
+    },
+  },
+  {
+    name: 'lira',
+    unicode: 0x20ba,
+    lsb: 1,
+    rsb: 1,
+    draw: (g) => {
+      const w = g.wide(9);
+      const x = 2.5;
+      const b = g.bottom(0);
+      return [open(p(x, g.cap), p(x, b), p(w, b, true), p(w, 5)), withPen(open(p(0, 5), p(6, 8)), g.diag), withPen(open(p(0, 8), p(6, 11)), g.diag)];
+    },
+  },
+  {
+    name: 'manat',
+    unicode: 0x20bc,
+    lsb: 1,
+    rsb: 1,
+    draw: (g) => {
+      const w = g.wide(10);
+      const t = g.top(10);
+      return [open(p(0, 0), p(0, t, true), p(w, t, true), p(w, 0)), stem(w / 2, 0, 13)];
+    },
+  },
+  {
+    name: 'lari',
+    unicode: 0x20be,
+    lsb: 1,
+    rsb: 1,
+    draw: (g) => {
+      const w = g.wide(10);
+      const b = g.bottom(0);
+      return [open(p(0, 9), p(0, b, true), p(w, b, true), p(w, 6)), stem(w * 0.38, 3, g.cap), stem(w * 0.68, 3, g.cap)];
+    },
+  },
+];
+
 /** ™ is a superior T and M, drawn from the capitals at the superiors' size. */
 const TRADEMARK: GlyphDef = {
   name: 'trademark',
@@ -769,7 +953,7 @@ const NOTDEF: GlyphDef = {
   draw: (g) => [box(0, g.wide(7), g.bottom(0), g.top(g.cap), [false, false, false, false])],
 };
 
-export const GLYPHS: GlyphDef[] = [NOTDEF, ...UPPER, ...LOWER, ...FIGURES, ...figureVariants(FIGURES), ...PUNCTUATION, TRADEMARK, ...SYMBOLS, ...LATIN_EXTRA, ...LATIN1];
+export const GLYPHS: GlyphDef[] = [NOTDEF, ...UPPER, ...LOWER, ...FIGURES, ...figureVariants(FIGURES), ...PUNCTUATION, TRADEMARK, ...ON_LETTERS, ...DRAWN_SIGNS, ...PLUS, ...SYMBOLS, ...LATIN_EXTRA, ...LATIN1];
 
 export const SPACES: SpaceDef[] = [
   { name: 'space', unicode: 0x20, advance: 5 },

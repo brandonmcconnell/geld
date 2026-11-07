@@ -116,7 +116,7 @@ const orthogonal = (contours: Contour[]) =>
 
 describe('heavy weights', () => {
   /** B and 8 have a notch at the waist, and Q's tail and ł's and ø's strokes cross, by design. */
-  const notched = new Set(['B', 'eight', 'Q', 'lslash', 'Lslash', 'oslash', 'Oslash']);
+  const notched = new Set(['B', 'eight', 'Q', 'lslash', 'Lslash', 'oslash', 'Oslash', 'litre']);
 
   it('keep every letter and figure counter at least 1.4 units open (superiors and ordinals in proportion), Black included', () => {
     const tight: string[] = [];

@@ -140,6 +140,33 @@ export function comma(g: DrawContext, x: number, y: number, scale = 1): Stroke[]
   return [square, withPen(level(open(p(x + size * 0.2, y + 0.3 * scale), p(x - size * 0.35, y - 2.5 * scale)), false, true), tail)];
 }
 
+/** A solid shape from its outline, corners cut where `p(…, true)` asks, with cuts of `leg` units. */
+export const solid = (points: PathPoint[], leg = 1.25): Stroke => ({ points, closed: true, fill: true, pen: { v: 0, h: 0, cut: leg } });
+
+/** The same shape hollow, its wall `wall` units thick. */
+export const hollow = (points: PathPoint[], wall: number, leg = 1.25): Stroke => ({ ...solid(points, leg), hole: wall });
+
+/** An octagon standing in for a circle (○ ● ◦ ∅): a square of side `size` with regular-octagon cuts. */
+export const octagon = (cx: number, cy: number, size: number): PathPoint[] => {
+  const r = size / 2;
+  return [p(cx - r, cy - r, true), p(cx + r, cy - r, true), p(cx + r, cy + r, true), p(cx - r, cy + r, true)];
+};
+export const octagonLeg = (size: number) => size * (1 - Math.SQRT1_2);
+
+/** Turns strokes by `deg` degrees anticlockwise about (cx, cy): arrows in eight directions from one. */
+export const rotate = (strokes: Stroke[], deg: number, cx: number, cy: number): Stroke[] => {
+  const a = (deg * Math.PI) / 180;
+  const c = Math.round(Math.cos(a) * 1e12) / 1e12;
+  const s = Math.round(Math.sin(a) * 1e12) / 1e12;
+  return mapPoints(strokes, (q) => ({ ...q, x: cx + (q.x - cx) * c - (q.y - cy) * s, y: cy + (q.x - cx) * s + (q.y - cy) * c }));
+};
+
+/** A chevron pointing left with a small upright tip, so two diagonals meet without a mitred spike: < ‹ « ⟨. */
+export function chevronLeft(g: DrawContext, w: number, y: number, spread: number): Stroke[] {
+  const tip = (x1: number, y1: number): Stroke => withPen({ points: [p(0, y), p(x1, y1)], closed: false, startCap: 'upright', endCap: 'flat' }, g.diag);
+  return [tip(w, y + spread), tip(w, y - spread)];
+}
+
 /** Math sits on this centre line, the hyphen and strikeout on the x-height's middle. */
 export const MATH_AXIS = 6;
 export const DASH_AXIS = METRICS.xHeight / 2;
