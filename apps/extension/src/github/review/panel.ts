@@ -617,7 +617,7 @@ function restoreFocus(root: Element, key: string | null): void {
  * picks them up on any element, `img` included); a bot's carries Geld's
  * identity-card hook, since GitHub has no hovercard for Apps.
  */
-function whoAttributes(login: string, bot: boolean): Readonly<Record<string, string>> {
+export function whoAttributes(login: string, bot: boolean): Readonly<Record<string, string>> {
   if (login === '') return {};
   // Only an App (`…[bot]`) lacks GitHub's card; a bot-like person's account has one.
   if (bot && /\[bot\]$/i.test(login)) return { [ATTR_WHO]: login };
