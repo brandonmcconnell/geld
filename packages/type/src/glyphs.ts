@@ -37,6 +37,8 @@ export interface GlyphDef {
   lsb: number;
   rsb: number;
   draw(g: DrawContext): Stroke[];
+  /** The italic's own form, where the italic is not the roman slanted. */
+  italic?(g: DrawContext): Stroke[];
 }
 
 export interface SpaceDef {
@@ -344,6 +346,10 @@ const LOWER_DEFS: GlyphDef[] = [
       const t = g.top(g.xHeight);
       return [open(p(0, t), p(w, t, true), p(w, 0)), box(0, w, g.bottom(0), 5.25, LEFT)];
     },
+    italic: (g) => {
+      const w = g.wide(7.5);
+      return [stem(w, 0, g.xHeight), box(0, w, g.bottom(0), g.top(g.xHeight), LEFT)];
+    },
   },
   {
     name: 'b',
@@ -394,6 +400,11 @@ const LOWER_DEFS: GlyphDef[] = [
     draw: (g) => {
       const t = g.top(g.ascender);
       return [open(p(0, 0), p(0, t, true), p(g.wide(4), t)), bar(-1.5, g.wide(3.5), g.top(g.xHeight))];
+    },
+    italic: (g) => {
+      const t = g.top(g.ascender);
+      const d = g.bottom(g.descender);
+      return [open(p(-2.5, d), p(0, d, true), p(0, t, true), p(g.wide(4), t)), bar(-1.5, g.wide(3.5), g.top(g.xHeight))];
     },
   },
   {
@@ -452,7 +463,14 @@ const LOWER_DEFS: GlyphDef[] = [
       ];
     },
   },
-  { name: 'l', unicode: 0x6c, lsb: 1.5, rsb: 1.5, draw: (g) => [stem(0, 0, g.ascender)] },
+  {
+    name: 'l',
+    unicode: 0x6c,
+    lsb: 1.5,
+    rsb: 1.5,
+    draw: (g) => [stem(0, 0, g.ascender)],
+    italic: (g) => [open(p(0, g.ascender), p(0, g.bottom(0), true), p(g.wide(2.5), g.bottom(0)))],
+  },
   {
     name: 'm',
     unicode: 0x6d,
@@ -569,6 +587,11 @@ const LOWER_DEFS: GlyphDef[] = [
       const w = g.wide(8.5);
       const tail = (w / 2) * (-g.descender / g.xHeight);
       return [diagonal(g, 0, g.xHeight, w / 2, 0), diagonal(g, w, g.xHeight, w / 2 - tail, g.descender)];
+    },
+    italic: (g) => {
+      const w = g.wide(7);
+      const d = g.bottom(g.descender);
+      return [open(p(0, g.xHeight), p(0, g.bottom(0), true), p(w, g.bottom(0))), open(p(w, g.xHeight), p(w, d, true), p(0, d))];
     },
   },
   { name: 'z', unicode: 0x7a, lsb: 0.75, rsb: 0.75, draw: (g) => zed(g, g.wide(7.5), g.xHeight) },
