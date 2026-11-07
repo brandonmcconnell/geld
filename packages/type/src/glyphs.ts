@@ -10,6 +10,7 @@ import { smallCaps } from './glyphs-smallcaps';
 import { LATIN_EXTRA } from './glyphs-latin';
 import { LATIN1 } from './glyphs-latin1';
 import { MORE } from './glyphs-more';
+import { ARROWS_MORE, KEYS } from './glyphs-arrows';
 import { PLUS } from './glyphs-plus';
 import { SYMBOLS } from './glyphs-symbols';
 
@@ -27,6 +28,8 @@ const DRAWN: GlyphDef[] = [
   ...PLUS,
   ...SYMBOLS,
   ...MORE,
+  ...ARROWS_MORE,
+  ...KEYS,
   ...LATIN_EXTRA,
   ...LATIN1,
   ...AFRICAN,

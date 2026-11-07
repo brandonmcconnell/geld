@@ -1,4 +1,6 @@
 import { CODE_LIGATURES, codePieceName } from './code-ligatures';
+import { ALIASES, PLACED } from './composites';
+import { GLYPHS, SPACES } from './glyphs';
 import { bounds, type Contour, cutLeg, expandStroke, insetContour, winding } from './geometry';
 import { ITALIC_SLOPE, METRICS, WEIGHTS } from './grid';
 import { MATH_AXIS } from './draw';
@@ -55,6 +57,20 @@ describe('masters', () => {
 });
 
 describe('character set', () => {
+  it('gives every glyph its own name and every character one glyph, so no definition replaces another', () => {
+    const defs = [...GLYPHS, ...ALIASES, ...PLACED, ...SPACES];
+    const seen = (key: (d: (typeof defs)[number]) => string | number | undefined) => {
+      const counts = new Map<string | number, number>();
+      for (const d of defs) {
+        const k = key(d);
+        if (k !== undefined) counts.set(k, (counts.get(k) ?? 0) + 1);
+      }
+      return [...counts].filter(([, n]) => n > 1).map(([k]) => k);
+    };
+    expect(seen((d) => d.name)).toEqual([]);
+    expect(seen((d) => d.unicode)).toEqual([]);
+  });
+
   const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
   const chars = [...range(0x20, 0x7e), ...range(0xa0, 0xff), ...range(0x100, 0x17f)];
 
