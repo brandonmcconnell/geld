@@ -1,0 +1,23 @@
+{
+  "name": "@geld/type",
+  "version": "0.1.0",
+  "description": "Geld Sans and Geld Dark Sans: glyph skeletons on the brand grid, the geometry engine that draws every weight, and the build that compiles static, variable and web fonts.",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "tsc --noEmit && vitest run",
+    "build": "tsx scripts/build.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.0"
+  }
+}

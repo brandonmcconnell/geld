@@ -25,6 +25,7 @@
     "safari:open": "pnpm --filter @geld/extension safari:open",
     "dev:site": "pnpm --filter @geld/site dev",
     "build:site": "pnpm --filter @geld/site build",
+    "type:build": "pnpm --filter @geld/type build",
     "brand:icons": "node scripts/brand-icons.mjs",
     "catalog:build": "tsx scripts/catalog-build.ts",
     "catalog:check": "tsx scripts/catalog-build.ts --check",
