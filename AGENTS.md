@@ -40,6 +40,8 @@ Releases: every push to `main` that touches the extension (apps/extension, apps/
 
 Commands (root): `pnpm check` (typecheck + tests for core and the extension, lint + production build of the site, and `catalog:check`), `pnpm test`, `pnpm build`, `pnpm zip:all` (zips for all four browsers into `apps/extension/.output/`), `pnpm dev` (extension; it does **not** launch a browser — load `apps/extension/.output/chrome-mv3-dev` once with "Load unpacked" in your own Chrome, or `firefox-mv2-dev` via about:debugging, and WXT rebuilds and reloads it on change; a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings the launcher back per developer), `pnpm dev:site`.
 
+Open the site at `http://localhost:3000`. Next's dev server treats `127.0.0.1` as a cross-origin host and blocks the client runtime, so the page stays the static shell and clicks do nothing. `localhost` hydrates.
+
 ## Conventions
 
 - TypeScript strict everywhere. **Never use `any`**, explicitly or implicitly, and never `ZodTypeAny`. Prefer type guards and `unknown` over casts; the codebase has no `as X` casts outside a couple of well-commented interop shims. Keep it that way.
