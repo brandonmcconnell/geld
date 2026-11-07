@@ -31,6 +31,8 @@ import type { PathPoint, Stroke } from './geometry';
 /** Arrows: one right-pointing arrow on the math axis, turned for the other seven directions. */
 const ARROW_LENGTH = 12;
 const HEAD = 4;
+/** Double arrows are longer, so the white between their bars still shows between two heads at Black. */
+const DOUBLE_LENGTH = 14;
 
 /** The shaft stops inside the head, so nothing shows through the point. */
 function arrowRight(heads: { start?: boolean; end?: boolean } = { end: true }): Stroke[] {
@@ -42,6 +44,36 @@ function arrowRight(heads: { start?: boolean; end?: boolean } = { end: true }): 
   if (heads.start) out.push(head(0, -1));
   return out;
 }
+
+/**
+ * Double arrows (⇒ ⇐ ⇔): the equals sign's two bars and a head grown by their spread, so its arms reach as far past the
+ * outer bar as a single arrow's reach past its shaft. Each bar ends on the arm's centre line, inside its ink.
+ */
+function doubleArrowRight(g: DrawContext, heads: { start?: boolean; end?: boolean } = { end: true }): { strokes: Stroke[]; length: number } {
+  const y = MATH_AXIS;
+  const spread = g.y(1.75) + g.h / 2;
+  const reach = spread + HEAD - 1;
+  // Two heads keep a stem's width of white between their arms' ends.
+  const length = heads.start && heads.end ? Math.max(DOUBLE_LENGTH, 2 * reach + 2 * g.v) : DOUBLE_LENGTH;
+  const from = heads.start ? spread : 0;
+  const to = heads.end ? length - spread : length;
+  const out: Stroke[] = [bar(from, to, y + spread), bar(from, to, y - spread)];
+  const head = (x: number, dir: 1 | -1) => open(p(x - dir * reach, y + reach), p(x, y), p(x - dir * reach, y - reach));
+  if (heads.end) out.push(head(length, 1));
+  if (heads.start) out.push(head(0, -1));
+  return { strokes: out, length };
+}
+
+const doubleArrow = (name: string, unicode: number, deg: number, heads?: { start?: boolean; end?: boolean }): GlyphDef => ({
+  name,
+  unicode,
+  lsb: 1,
+  rsb: 1,
+  draw: (g) => {
+    const { strokes, length } = doubleArrowRight(g, heads);
+    return rotate(strokes, deg, length / 2, MATH_AXIS);
+  },
+});
 
 const turned = (deg: number, heads?: { start?: boolean; end?: boolean }) => rotate(arrowRight(heads), deg, ARROW_LENGTH / 2, MATH_AXIS);
 
@@ -119,6 +151,12 @@ export const PLUS: GlyphDef[] = [
   arrow('arrowupright', 0x2197, 45),
   arrow('arrowdownright', 0x2198, -45),
   arrow('arrowdownleft', 0x2199, -135),
+  doubleArrow('arrowdblleft', 0x21d0, 180),
+  doubleArrow('arrowdblup', 0x21d1, 90),
+  doubleArrow('arrowdblright', 0x21d2, 0),
+  doubleArrow('arrowdbldown', 0x21d3, -90),
+  doubleArrow('arrowdblboth', 0x21d4, 0, { start: true, end: true }),
+  doubleArrow('arrowdblupdn', 0x21d5, 90, { start: true, end: true }),
 
   shape('filledbox', 0x25a0, () => [solid(squarePts(BIG))]),
   shape('whitesquare', 0x25a1, (g) => [hollow(squarePts(BIG), wall(g))]),
