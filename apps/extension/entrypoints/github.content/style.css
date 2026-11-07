@@ -8621,6 +8621,37 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   color: var(--fgColor-muted, #59636e);
 }
 
+/*
+ * The Overview sidebar in Geld's order (`orderSidebars`): Reviewers, Related links, Activity, then GitHub's. GitHub's
+ * line above every section but the first in page order becomes a line above every section but the first shown.
+ * Its rule (`.sidebar > [data-overview-sidebar-item] ~ [data-overview-sidebar-item]`) weighs three; the first's must outweigh it.
+ */
+[data-geld-sidebar-order] > * {
+  order: 10;
+}
+
+[data-geld-sidebar-order] > [data-geld-order='reviewers'] {
+  order: 1;
+}
+
+[data-geld-sidebar-order] > [data-geld-order='related'] {
+  order: 2;
+}
+
+[data-geld-sidebar-order] > [data-geld-order='activity'] {
+  order: 3;
+}
+
+[data-geld-sidebar-order] > [data-overview-sidebar-item] {
+  border-top: var(--borderWidth-thin, 1px) solid var(--borderColor-muted, #d1d9e0b3);
+  padding-top: var(--base-size-12, 12px);
+}
+
+[data-geld-sidebar-order][data-geld-sidebar-order] > [data-overview-sidebar-item][data-geld-order-first] {
+  border-top: 0;
+  padding-top: 0;
+}
+
 /* Under the rows' text, past the 16px mark and its 8px gap. */
 .geld-related__more {
   padding: 2px 0 2px 24px;
