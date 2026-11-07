@@ -15,6 +15,7 @@ const box = (over: Partial<MergeBox>): MergeBox => ({
   canBypass: false,
   unbypassable: false,
   methods: ['MERGE'],
+  bypassMethods: ['MERGE'],
   commitTitle: '',
   commitMessage: '',
   authorEmail: null,

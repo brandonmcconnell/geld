@@ -4,7 +4,7 @@ import type { MergeSubmission } from './merge-actions';
 import { actionErrorText, autoMergeRequest, bypassBeside, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict } from './merge-actions';
 
 /** A `page_data/merge_box` answer as GitHub gave it on brandonmcconnell/geld#74 (Oct 2026), trimmed. */
-function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean; readonly email?: string; readonly emails?: readonly string[] | null; readonly conflict?: boolean } = {}): unknown {
+function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean; readonly email?: string; readonly emails?: readonly string[] | null; readonly conflict?: boolean; readonly methodStatus?: string } = {}): unknown {
   return {
     pullRequest: {
       state: 'OPEN',
@@ -25,8 +25,8 @@ function payload(overrides: { readonly state?: string; readonly draft?: boolean;
           allowableStatus: overrides.direct ?? 'ALLOWED',
           name: 'DIRECT_MERGE',
           mergeMethods: [
-            { allowableStatus: 'ALLOWED', isDefault: false, name: 'MERGE' },
-            { allowableStatus: 'ALLOWED', isDefault: true, name: 'SQUASH' },
+            { allowableStatus: overrides.methodStatus ?? 'ALLOWED', isDefault: false, name: 'MERGE' },
+            { allowableStatus: overrides.methodStatus ?? 'ALLOWED', isDefault: true, name: 'SQUASH' },
             { allowableStatus: 'BLOCKED', isDefault: false, name: 'REBASE' },
           ],
         },
@@ -64,6 +64,7 @@ describe('parseMergeBox', () => {
       canBypass: false,
       unbypassable: false,
       methods: ['SQUASH', 'MERGE'],
+      bypassMethods: ['SQUASH', 'MERGE'],
       commitTitle: 'Submit review from any pull request tab (#74)',
       commitMessage: '* Submit review from any pull request tab',
       authorEmail: 'brandon@dreamthinkbuild.com',
@@ -140,6 +141,23 @@ describe('mergeOffer', () => {
 
   it('offers the queue wherever the repository has one, even where a direct merge would also go, as GitHub does', () => {
     expect(mergeOffer(read({ queue: 'ALLOWED' }), null)).toBe('queue');
+  });
+
+  it('offers an admin the methods GitHub allows only with the bypass', () => {
+    // geld#454: blocked on its review rules, GitHub lists the admin's methods as ALLOWED_WITH_BYPASS and its merge box offers them.
+    const blocked = parseMergeBox(payload({ state: 'UNMERGEABLE', canBypass: true, methodStatus: 'ALLOWED_WITH_BYPASS' }));
+    if (blocked === null) throw new Error('unreadable');
+    expect(blocked.methods).toEqual([]);
+    expect(blocked.bypassMethods).toEqual(['SQUASH', 'MERGE']);
+    expect(mergeOffer(blocked, blocked)).toBe('bypass');
+    expect(mergeOffer(blocked, null)).toBe('bypass');
+    const wholly = parseMergeBox(payload({ state: 'UNMERGEABLE', canBypass: true, direct: 'ALLOWED_WITH_BYPASS', methodStatus: 'ALLOWED_WITH_BYPASS' }));
+    expect(wholly?.bypassMethods).toEqual(['SQUASH', 'MERGE']);
+    expect(wholly === null ? null : mergeOffer(wholly, null)).toBe('bypass');
+    // Without the admin's bypass, those methods are not the reader's to use.
+    const reader = parseMergeBox(payload({ state: 'UNMERGEABLE', methodStatus: 'ALLOWED_WITH_BYPASS' }));
+    if (reader === null) throw new Error('unreadable');
+    expect(mergeOffer(reader, null)).toBeNull();
   });
 
   it('puts an admin’s bypass beside the queue or auto-merge, never beside a merge GitHub would take now', () => {

@@ -37,6 +37,8 @@ export interface MergeBox {
   readonly unbypassable: boolean;
   /** The direct merge methods the repository allows the reader, GitHub's default first. */
   readonly methods: readonly MergeMethod[];
+  /** The methods an admin's bypass may use: those plus the ones GitHub allows only past the rules (`ALLOWED_WITH_BYPASS`). */
+  readonly bypassMethods: readonly MergeMethod[];
   /** GitHub's prefilled commit for the method asked for (none for a rebase). */
   readonly commitTitle: string;
   readonly commitMessage: string;
@@ -92,6 +94,14 @@ export function mergeableNow(requirementsState: unknown, mergeStateStatus: unkno
 /** The failed merge conditions GitHub's merge box treats as beyond an admin's bypass (conflicts, the repository's or the reader's state). */
 const UNBYPASSABLE: ReadonlySet<string> = new Set(['PULL_REQUEST_MERGE_CONFLICT_STATE', 'PULL_REQUEST_REPO_STATE', 'PULL_REQUEST_USER_STATE']);
 
+function methodsIn(listed: readonly unknown[], statuses: readonly string[]): readonly MergeMethod[] {
+  return listed
+    .filter((method): method is Record<string, unknown> => isRecord(method) && typeof method.allowableStatus === 'string' && statuses.includes(method.allowableStatus) && isMethod(method.name))
+    .sort((a, b) => Number(b.isDefault === true) - Number(a.isDefault === true))
+    .map((method) => method.name)
+    .filter(isMethod);
+}
+
 /** A `page_data/merge_box` answer, or null when it is not one. */
 export function parseMergeBox(payload: unknown): MergeBox | null {
   if (!isRecord(payload) || !isRecord(payload.pullRequest)) return null;
@@ -101,12 +111,10 @@ export function parseMergeBox(payload: unknown): MergeBox | null {
   const direct = actions.find((action): action is Record<string, unknown> => isRecord(action) && action.name === 'DIRECT_MERGE');
   // GitHub shows "Merge when ready" when the queue's action is allowed, as it shows its merge button for the direct one.
   const queue = actions.find((action): action is Record<string, unknown> => isRecord(action) && action.name === 'MERGE_QUEUE');
-  const allowed = direct !== undefined && direct.allowableStatus === 'ALLOWED' && Array.isArray(direct.mergeMethods) ? direct.mergeMethods : [];
-  const methods = allowed
-    .filter((method): method is Record<string, unknown> => isRecord(method) && method.allowableStatus === 'ALLOWED' && isMethod(method.name))
-    .sort((a, b) => Number(b.isDefault === true) - Number(a.isDefault === true))
-    .map((method) => method.name)
-    .filter(isMethod);
+  const listed = direct !== undefined && Array.isArray(direct.mergeMethods) ? direct.mergeMethods : [];
+  const methods = direct?.allowableStatus === 'ALLOWED' ? methodsIn(listed, ['ALLOWED']) : [];
+  // An admin blocked by the rules sees the merge and its methods as ALLOWED_WITH_BYPASS, and GitHub's merge box offers them.
+  const bypassMethods = direct?.allowableStatus === 'ALLOWED' || direct?.allowableStatus === 'ALLOWED_WITH_BYPASS' ? methodsIn(listed, ['ALLOWED', 'ALLOWED_WITH_BYPASS']) : [];
   // GitHub's merge box sends the default email only while it offers emails to pick from: with none (a pull request a bot
   // opened, whose noreply address is the default) it sends no email and GitHub takes the reader's own, which the bot's is not.
   const offered = Array.isArray(requirements.possibleCommitAuthorEmails) && requirements.possibleCommitAuthorEmails.length > 0;
@@ -134,6 +142,7 @@ export function parseMergeBox(payload: unknown): MergeBox | null {
     canBypass: pull.viewerCanAdminBypassMergeRequirements === true,
     unbypassable,
     methods,
+    bypassMethods,
     commitTitle: stringOf(requirements.commitMessageHeadline),
     commitMessage: stringOf(requirements.commitMessageBody),
     authorEmail: email === '' ? null : email,
@@ -174,7 +183,7 @@ export function mergeOffer(box: MergeBox, asBypass: MergeBox | null): MergeOffer
 function bypassMerges(box: MergeBox, asBypass: MergeBox | null): boolean {
   if (!box.canBypass || box.autoMerging || box.unbypassable || asBypass?.unbypassable === true) return false;
   if (box.mergeable && !box.canQueue) return false;
-  return (asBypass?.methods.length ?? 0) > 0 || box.methods.length > 0;
+  return (asBypass?.bypassMethods.length ?? 0) > 0 || box.bypassMethods.length > 0;
 }
 
 /**
@@ -372,7 +381,7 @@ export interface MergeActions {
 export async function readMergeActions(pullPath: string): Promise<MergeActions | null> {
   const first = await fetchMergeBox(pullPath, 'SQUASH', false);
   if (first === null) return null;
-  const method = first.methods[0] ?? 'SQUASH';
+  const method = first.methods[0] ?? first.bypassMethods[0] ?? 'SQUASH';
   // The squash box's commit title and message would be sent under another method: no reading is safer than that.
   const box = method === 'SQUASH' ? first : await fetchMergeBox(pullPath, method, false);
   if (box === null) return null;
@@ -380,7 +389,7 @@ export async function readMergeActions(pullPath: string): Promise<MergeActions |
   const asBypass = box.canBypass && (!box.mergeable || box.canQueue) ? await fetchMergeBox(pullPath, method, true) : null;
   const offer = mergeOffer(box, asBypass);
   const stack = box.stacked ? await readStack(pullPath, box) : null;
-  return { box, offer, bypass: bypassBeside(box, asBypass, offer), bypassMethods: asBypass?.methods ?? [], stack };
+  return { box, offer, bypass: bypassBeside(box, asBypass, offer), bypassMethods: asBypass?.bypassMethods ?? box.bypassMethods, stack };
 }
 
 /** The reason a merge or close failed, in GitHub's words when it gave any. */
