@@ -1,5 +1,5 @@
 import type { Pen, PathPoint, Stroke } from './geometry';
-import { LOWERCASE_CONTRAST, METRICS } from './grid';
+import { CUT_OUTER, CUT_OUTER_LOWER, METRICS } from './grid';
 
 /**
  * What a glyph's skeleton is drawn with. x is a centreline coordinate (a left stem sits at 0),
@@ -14,6 +14,8 @@ export interface DrawContext {
   diag: Pen;
   /** Side of a square dot (i, j, period, colon, exclamation). */
   dot: number;
+  /** The least opening between a terminal and the stroke it faces. */
+  aperture: number;
   /** A width between stem centres at SemiBold, grown or narrowed with the stem so counters keep their room. */
   wide(n: number): number;
   top(y: number): number;
@@ -391,7 +393,7 @@ const LOWER_DEFS: GlyphDef[] = [
     rsb: 0.2,
     draw: (g) => {
       const t = g.top(g.ascender);
-      return [open(p(0, 0), p(0, t, true), p(g.wide(4), t)), bar(-2, g.wide(3.5), g.top(g.xHeight))];
+      return [open(p(0, 0), p(0, t, true), p(g.wide(4), t)), bar(-1.5, g.wide(3.5), g.top(g.xHeight))];
     },
   },
   {
@@ -457,9 +459,9 @@ const LOWER_DEFS: GlyphDef[] = [
     lsb: 1.5,
     rsb: 1.4,
     draw: (g) => {
-      const w = g.wide(6);
+      const w = g.wide(6.5);
       const t = g.top(g.xHeight);
-      return [stem(0, 0, g.xHeight), open(p(0, t), p(w, t, true), p(w, 0)), open(p(w, t), p(2 * w, t, true), p(2 * w, 0))];
+      return [stem(0, 0, g.xHeight), open(p(0, t), p(w, t), p(w, 0)), open(p(w, t), p(2 * w, t, true), p(2 * w, 0))];
     },
   },
   {
@@ -650,7 +652,7 @@ const FIGURES: GlyphDef[] = [
       const w = g.wide(9);
       const t = g.top(g.cap);
       const b = g.bottom(0);
-      return [open(p(w, 10.5), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, 8, true), p(0, 8))];
+      return [open(p(w, Math.max(10.5, 8 + g.h / 2 + g.aperture)), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, 8, true), p(0, 8))];
     },
   },
   {
@@ -682,7 +684,7 @@ const FIGURES: GlyphDef[] = [
       const w = g.wide(9);
       const t = g.top(g.cap);
       const b = g.bottom(0);
-      return [open(p(0, 3.5), p(0, b, true), p(w, b, true), p(w, t, true), p(0, t, true), p(0, 6, true), p(w, 6))];
+      return [open(p(0, Math.min(3.5, 6 - g.h / 2 - g.aperture)), p(0, b, true), p(w, b, true), p(w, t, true), p(0, t, true), p(0, 6, true), p(w, 6))];
     },
   },
 ];
@@ -718,7 +720,8 @@ const PUNCTUATION: GlyphDef[] = [
       const w = g.wide(7.5);
       const t = g.top(g.cap);
       const x = w / 2;
-      return [open(p(0, 10.5), p(0, t, true), p(w, t, true), p(w, 8.5, true), p(x, 8.5, true), p(x, g.dot + 1.5)), dot(g, x, 0)];
+      const arm = Math.min(8.5, g.cap - g.h * 1.5 - g.aperture);
+      return [open(p(0, 10.5), p(0, t, true), p(w, t, true), p(w, arm, true), p(x, arm, true), p(x, g.dot + 1.5)), dot(g, x, 0)];
     },
   },
   { name: 'hyphen', unicode: 0x2d, lsb: 1, rsb: 1, draw: (g) => [bar(0, g.wide(4.5), DASH_AXIS)] },
@@ -810,15 +813,19 @@ const GROWTH = 0.5;
 /** Diagonals are drawn this much lighter than stems, so they look as heavy. */
 const DIAGONAL_WEIGHT = 0.92;
 
-export function drawContext(v: number, h: number, lower = false): DrawContext {
-  const hc = lower ? h * LOWERCASE_CONTRAST : h;
+/** The least opening between a terminal and the stroke it turns toward, as in 6, 9 and ?. */
+const APERTURE = 1.6;
+
+export function drawContext(v: number, hc: number, lower = false): DrawContext {
+  const cut = lower ? CUT_OUTER_LOWER : CUT_OUTER;
   const diag = { v: v * DIAGONAL_WEIGHT, h: hc * DIAGONAL_WEIGHT };
   return {
     v,
     h: hc,
-    pen: { v, h: hc },
+    pen: { v, h: hc, cut },
     diag,
     dot: v * 1.1 + 0.2,
+    aperture: APERTURE,
     wide: (n) => n + GROWTH * (v - 2),
     top: (y) => y - hc / 2,
     bottom: (y) => y + hc / 2,
