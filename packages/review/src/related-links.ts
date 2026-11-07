@@ -1107,6 +1107,7 @@ export function relatedLinksFrom(candidates: readonly LinkCandidate[], options: 
  */
 export function isDependencyUpdate(text: string): boolean {
   const words = text.replace(/\s+/g, ' ');
-  // Dependabot's description opens on "Bumps"; a person's "bumps zod from 3 to 4" in passing is no dependency update.
-  return /\bThis PR contains the following updates\b/.test(words) || /^\s*Bumps (?:the \S+ group|\S+ from \S+ to \S+)/.test(words) || /\bDependabot will resolve any conflicts\b/.test(words);
+  // Each opens its description on its own words, so a person quoting them further on ("Renovate's "This PR contains the
+  // following updates"") writes no dependency update.
+  return /^\s*This PR contains the following updates:/.test(words) || /^\s*Bumps (?:the \S+ group|\S+ from \S+ to \S+)/.test(words) || /\bDependabot will resolve any conflicts with this PR as long as you don't alter it yourself\b/.test(words);
 }
