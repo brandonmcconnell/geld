@@ -6,7 +6,7 @@ import { GLYPHS, SPACES } from './glyphs';
 import { FIGURE_NAMES } from './glyphs-figures';
 import { CYRILLIC_LOCL_ACCENTED } from './glyphs-cyrillic';
 import { accentedSmallCaps, SMALL_CAP_EXTRA_ACCENTED, SMALL_CAP_PLACED } from './glyphs-smallcaps';
-import { ALTERNATES, alternateName } from './alternates';
+import { ALTERNATES, alternateName, OCTAGONAL_DOTS } from './alternates';
 import { CODE_LIGATURES, codePieceName } from './code-ligatures';
 import { LOCKUP, lockupGlyph } from './lockup';
 import { DARK_INSET_RATIO, ITALIC_SLOPE, METRICS, toFontUnits, UNIT, type Weight, weightParams } from './grid';
@@ -134,10 +134,17 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   const place = (p: Vec): Vec => (italic ? { x: p.x + p.y * ITALIC_SLOPE - ITALIC_SLOPE * ITALIC_PIVOT, y: p.y } : p);
   const placeAnchors = (anchors: Anchor[]) => anchors.map((a) => ({ ...a, ...place(a) }));
 
-  const glyphs: MasterGlyph[] = GLYPHS.map((def) => {
+  const contextOf = (def: GlyphDef) => {
     const cursive = italic && def.italic !== undefined;
-    const g = def.smallcap && !cursive ? small : def.lower || def.smallcap ? lower : upper;
-    const strokes = cursive ? def.italic!(g) : def.draw(g);
+    return { cursive, g: def.smallcap && !cursive ? small : def.lower || def.smallcap ? lower : upper };
+  };
+  const strokesOf = (def: GlyphDef, dots?: 'octagon') => {
+    const { cursive, g: base } = contextOf(def);
+    const g = dots ? { ...base, dotShape: dots } : base;
+    return { g, strokes: cursive ? def.italic!(g) : def.draw(g) };
+  };
+  const build = (def: GlyphDef, dots?: 'octagon'): MasterGlyph => {
+    const { g, strokes } = strokesOf(def, dots);
     let contours = strokes.flatMap((stroke) => expandStroke(stroke, g.pen, slope));
     if (params.snap && !italic) contours = snapJoined(contours, 0.5);
     const box = bounds(contours);
@@ -156,7 +163,8 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
       anchors,
       mark: false,
     };
-  });
+  };
+  const glyphs: MasterGlyph[] = GLYPHS.map((def) => build(def));
 
   const inkWidth = (gl: MasterGlyph) => {
     const b = bounds(gl.contours);
@@ -177,6 +185,15 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   glyphs.forEach((gl, i) => {
     if (GLYPHS[i]?.tabular) centre(gl, tabularAdvance);
   });
+  // ss07: every drawing whose dots change with octagonal ones, spaced and centred as its default.
+  for (const def of GLYPHS) {
+    if (/\.(ss|cv)\d\d$/.test(def.name) || JSON.stringify(strokesOf(def).strokes) === JSON.stringify(strokesOf(def, 'octagon').strokes)) continue;
+    const gl = { ...build(def, 'octagon'), name: `${def.name}.${OCTAGONAL_DOTS}` };
+    delete gl.unicode;
+    if (MATH_OPERATORS.includes(def.name)) centre(gl, mathAdvance);
+    if (def.tabular) centre(gl, tabularAdvance);
+    glyphs.push(gl);
+  }
   // An alternate that would draw as this style's default is only in the other style (the italic's l is tailed already).
   const elsewhere = new Set(ALTERNATES.filter((alt) => alt.only && alt.only !== style).map(alternateName));
   for (let i = glyphs.length - 1; i >= 0; i--) if (elsewhere.has(glyphs[i]!.name)) glyphs.splice(i, 1);
@@ -271,7 +288,10 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   for (const def of MARKS)
     for (const form of def.caseForm ? (['lower', 'case'] as const) : (['lower'] as const)) {
       const height = MARK_HEIGHT[form];
-      let contours = def.draw(lower, height).flatMap((stroke) => expandStroke(stroke, lower.pen, slope));
+      for (const dots of [undefined, 'octagon'] as const) {
+      const ctx = dots ? { ...lower, dotShape: dots } : lower;
+      if (dots && JSON.stringify(def.draw(ctx, height)) === JSON.stringify(def.draw(lower, height))) continue;
+      let contours = def.draw(ctx, height).flatMap((stroke) => expandStroke(stroke, lower.pen, slope));
       if (def.hang) {
         const top = bounds(contours).maxY;
         contours = contours.map((c) => translate(c, 0, -BELOW_GAP - top));
@@ -281,7 +301,8 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
         contours = contours.map((c) => translate(c, 0, -bottom));
       }
       const box = bounds(contours);
-      const name = form === 'case' ? `${def.name}.case` : def.name;
+      const plain = form === 'case' ? `${def.name}.case` : def.name;
+      const name = dots ? `${plain}.${OCTAGONAL_DOTS}` : plain;
       const above = def.attach === 'top' || def.attach === 'topright' || def.attach === 'horn';
       const stackGap = form === 'case' ? 0.4 : 0.75;
       const stack: Anchor = above ? { name: def.attach, x: 0, y: box.maxY + stackGap } : { name: def.attach, x: 0, y: box.minY - 0.5 };
@@ -289,13 +310,14 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
       markReach.set(name, bounds(slant(contours)).maxX);
       glyphs.push({
         name,
-        ...(form === 'lower' && def.unicode !== undefined ? { unicode: def.unicode } : {}),
+        ...(form === 'lower' && !dots && def.unicode !== undefined ? { unicode: def.unicode } : {}),
         advance: 0,
         contours: finish(contours, name),
         components: [],
         anchors: placeAnchors([{ name: `_${def.attach}`, x: 0, y: 0 }, stack]),
         mark: true,
       });
+      }
     }
 
   const byName = new Map(glyphs.map((gl) => [gl.name, gl]));
@@ -376,6 +398,19 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   for (const space of SPACES) {
     const advance = space.advance === 'tabular' ? tabularAdvance : typeof space.advance === 'number' ? space.advance : byName.get(space.advance.like)!.advance;
     glyphs.push({ name: space.name, unicode: space.unicode, advance, contours: [], components: [], anchors: [], mark: false });
+  }
+  // ss07 composites: whatever is built on a glyph or mark with octagonal dots (ä, ż, ǟ) gets them too.
+  const octagonal = new Set(glyphs.filter((gl) => gl.name.endsWith(`.${OCTAGONAL_DOTS}`)).map((gl) => gl.name.slice(0, -OCTAGONAL_DOTS.length - 1)));
+  for (let grown = true; grown; ) {
+    grown = false;
+    for (const gl of [...glyphs]) {
+      if (!gl.components.length || octagonal.has(gl.name) || gl.name.endsWith(`.${OCTAGONAL_DOTS}`) || !gl.components.some((c) => octagonal.has(c.glyph))) continue;
+      const variant: MasterGlyph = { ...gl, name: `${gl.name}.${OCTAGONAL_DOTS}`, components: gl.components.map((c) => (octagonal.has(c.glyph) ? { ...c, glyph: `${c.glyph}.${OCTAGONAL_DOTS}` } : c)) };
+      delete variant.unicode;
+      glyphs.push(variant);
+      octagonal.add(gl.name);
+      grown = true;
+    }
   }
   const master: Master = { family, style, weight, glyphs };
   glyphs.push(...codeLigatureGlyphs(master, place, italic ? ITALIC_SLOPE : 0, undarkened));

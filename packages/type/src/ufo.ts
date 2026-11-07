@@ -3,7 +3,7 @@ import { LOCL, type LoclLanguage } from './glyphs-cyrillic';
 import { FIGURE_NAMES, TABULAR_SIGNS } from './glyphs-figures';
 import { VIETNAMESE_PAIRS } from './marks';
 import type { Kerning } from './kerning';
-import { type Alternate, ALTERNATES, alternateName, STYLISTIC_SETS } from './alternates';
+import { type Alternate, ALTERNATES, alternateName, OCTAGONAL_DOTS, STYLISTIC_SETS } from './alternates';
 import { CODE_GROUPS, CODE_LIGATURES, CODE_OPERATORS, type CodeGroup, codePieceName } from './code-ligatures';
 import { LOCKUP } from './lockup';
 import { ARCH_LIGATURES, FAMILY_NAMES, type Family, type Master, type Style, TEXT_LIGATURES } from './master';
@@ -426,11 +426,16 @@ function alternateFeatures(master: Master, names: Set<string>): { aalt: string[]
       .map((g) => [g.name.slice(0, -suffix.length), g.name] as [string, string]);
     owned.set(alt, [[alt.glyph, name], ...accented]);
   }
-  if (!owned.size) return { aalt: [], rest: [] };
+  if (!owned.size && !names.has(`period.${OCTAGONAL_DOTS}`)) return { aalt: [], rest: [] };
   const subs = (pairs: [string, string][]) => pairs.map(([a, b]) => `  sub ${a} by ${b};`);
   const rest: string[] = [];
+  // Octagonal dots are drawn for every glyph with dots rather than listed (master.ts).
+  const dotted = [...names].filter((n) => n.endsWith(`.${OCTAGONAL_DOTS}`) && names.has(n.slice(0, -OCTAGONAL_DOTS.length - 1)) && !/\.(ss|cv)\d\d\./.test(n));
   for (const [tag, label] of Object.entries(STYLISTIC_SETS)) {
-    const pairs = [...owned].filter(([alt]) => alt.set === tag).flatMap(([, ps]) => ps);
+    const pairs = [
+      ...[...owned].filter(([alt]) => alt.set === tag).flatMap(([, ps]) => ps),
+      ...(tag === OCTAGONAL_DOTS ? dotted.map((n) => [n.slice(0, -OCTAGONAL_DOTS.length - 1), n] as [string, string]) : []),
+    ];
     if (pairs.length) rest.push(`feature ${tag} {`, `  featureNames { name "${label}"; };`, ...subs(pairs), `} ${tag};`);
   }
   for (const [alt, pairs] of owned) rest.push(`feature ${alt.cv} {`, `  cvParameters { FeatUILabelNameID { name "${alt.label}"; }; };`, ...subs(pairs), `} ${alt.cv};`);

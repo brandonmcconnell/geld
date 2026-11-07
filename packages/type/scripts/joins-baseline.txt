@@ -690,3 +690,12 @@ sans:roman:700 s_p
 sans:roman:700 s_t
 sans:roman:800 s_p
 sans:roman:800 s_t
+sans:italic:100 questiondown.ss07
+sans:italic:100 question.ss07
+sans:italic:900 dieresistonos.ss07
+sans:roman:100 questiondown.ss07
+sans:roman:100 question.ss07
+sans:roman:200 questiondown.ss07
+sans:roman:200 question.ss07
+sans:roman:600 dieresistonos.ss07
+sans:roman:900 dieresistonos.ss07

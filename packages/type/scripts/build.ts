@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { toFontUnits, WEIGHTS } from '../src/grid';
 import { alignKerning, computeKerning, type Kerning, kerningClasses, resolvedValue } from '../src/kerning';
+import { ALTERNATES, alternateName } from '../src/alternates';
 import { CODE_GROUPS, CODE_LIGATURES, codePieceName } from '../src/code-ligatures';
 import { buildMaster, type Family, type Master, type Style } from '../src/master';
 import { proofPage } from '../src/proof';
@@ -77,6 +78,20 @@ function codeLigatureCases(master: Master): { text: string; feature: string; pie
   });
 }
 
+/** Each alternate in this master: its character, the glyph it becomes, and the features that turn it on (its set, its cv, salt when first). */
+function alternateCases(master: Master): { char: string; glyph: string; features: string[] }[] {
+  const names = new Set(master.glyphs.map((g) => g.name));
+  const first = new Set<string>();
+  return ALTERNATES.flatMap((alt) => {
+    const glyph = alternateName(alt);
+    const base = master.glyphs.find((g) => g.name === alt.glyph);
+    if (!names.has(glyph) || base?.unicode === undefined) return [];
+    const features = [...(alt.set ? [alt.set] : []), alt.cv, ...(first.has(alt.glyph) ? [] : ['salt'])];
+    first.add(alt.glyph);
+    return [{ char: String.fromCodePoint(base.unicode), glyph, features }];
+  });
+}
+
 /** What the source says each compiled font must contain, for scripts/verify.py. */
 function manifest(): Record<string, Record<string, Record<string, unknown>>> {
   const out: Record<string, Record<string, Record<string, unknown>>> = {};
@@ -97,6 +112,7 @@ function manifest(): Record<string, Record<string, Record<string, unknown>>> {
           decorationThickness: Math.round(deco.thickness),
           strikeoutPosition: Math.round(deco.strikeoutPosition),
           codeLigatures: codeLigatureCases(master),
+          alternates: alternateCases(master),
           kerning: Object.fromEntries(KERNING_SAMPLES.map(([x, y]) => [`${x} ${y}`, Math.round(toFontUnits(resolvedValue(kernings.get(`${style} ${weight}`)!, x, y)))])),
         };
       }

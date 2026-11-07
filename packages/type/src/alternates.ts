@@ -234,6 +234,9 @@ function sixStraight(g: DrawContext): Stroke[] {
   return [level(open(p(w * 0.6, g.cap), p(0, top + g.y(2.5)), p(0, b, true), p(w, b, true), p(w, top, true), p(0, top)), true, false)];
 }
 
+/** The set of octagonal dots, drawn rather than listed: every glyph and mark whose dots are octagons in it (master.ts). */
+export const OCTAGONAL_DOTS = 'ss07';
+
 /** Each alternate's glyph name: its set's tag, or its cv's when it is in none. */
 export const alternateName = (alt: Alternate) => `${alt.glyph}.${alt.set ?? alt.cv}`;
 

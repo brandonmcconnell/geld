@@ -14,6 +14,8 @@ export interface DrawContext {
   diag: Pen;
   /** Side of a square dot (i, j, period, colon, exclamation). */
   dot: number;
+  /** The dots' shape where a stylistic set asks for another (ss07: octagons); square otherwise. */
+  dotShape?: 'octagon';
   /** The least opening between a terminal and the stroke it faces. */
   aperture: number;
   /** A width between stem centres at SemiBold, grown or narrowed with the stem so counters keep their room. */
@@ -93,6 +95,13 @@ export function diagonal(g: DrawContext, x0: number, y0: number, x1: number, y1:
 
 /** A square dot standing on y. */
 export function dot(g: DrawContext, x: number, y: number): Stroke {
+  if (g.dotShape === 'octagon') {
+    // A regular octagon in the square's place: each corner cut by the side over 2 + √2.
+    const [r, c] = [g.dot / 2, g.dot / (2 + Math.SQRT2)];
+    const [cx, cy] = [x, y + r];
+    const pts = [p(cx - r + c, cy - r), p(cx + r - c, cy - r), p(cx + r, cy - r + c), p(cx + r, cy + r - c), p(cx + r - c, cy + r), p(cx - r + c, cy + r), p(cx - r, cy + r - c), p(cx - r, cy - r + c)];
+    return { points: pts, closed: true, fill: true, pen: { v: 0, h: 0 } };
+  }
   return withPen(open(p(x, y), p(x, y + g.dot)), { v: g.dot, h: g.dot });
 }
 
