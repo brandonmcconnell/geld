@@ -1110,7 +1110,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   A push's row (batch grouping) has room for one summary pill — the hosts' marks overlapping and "N previews" — and shows the named pills in a strip once open.
   The row tints only when a preview failed.
   Pills wear the same state glyphs as the CI breakdown and the per-preview lines (`PREVIEW_GLYPH`: check, x, Primer's spinner, skip);
-  a skipped deployment's pill is faded with a `not-allowed` cursor and is not a link (its line keeps Inspect).
+  a pill links to its preview, else to the host's own page for that deployment (`inspectUrl`: its logs, inspector or dashboard, the same link as the line's Logs/Inspect), and is a dashed `<span>` only when the host gave neither.
+  The rule is the same for every state: a skipped deployment's inspector is a real page (Vercel links its own "Skipped" word to it, and it says why nothing was built), so a skipped pill links there too. It is still faded whether it links or not, so it never reads as a live preview, and only one with nothing to visit has the `not-allowed` cursor.
   `ICON_IN_PROGRESS` is Primer's Spinner markup and needs `fill: none !important` — GitHub's `.octicon { fill: currentColor }` otherwise fills its track into a dot.
 - **Reporter bots have a row of their own, `Reports`, shown only when one has posted** (`@geld/review/reporters.ts`, `reportsRow` in `panel.ts`).
   A reporter is a CI-side tool that posts a *report* on the PR (Blacksmith: "Found N test failures on Blacksmith runners" with the failing tests and logs;

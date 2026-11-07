@@ -8055,10 +8055,13 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   }
 }
 
-/* A skipped deployment with nothing to visit: the pill fades and says so on hover; the line below keeps its Inspect.
- * One that still links somewhere (Vercel's "Ignored": the branch's last deployment) stays a plain link. */
-.geld-review__deploy[data-status='skipped']:not(a) {
+/* A skipped deployment fades whether or not it links (to its inspector, or for Vercel's "Ignored" the branch's last
+ * deployment), so it never reads as a live preview. One with nothing to visit says so with the cursor too. */
+.geld-review__deploy[data-status='skipped'] {
   opacity: 0.55;
+}
+
+.geld-review__deploy[data-status='skipped']:not(a) {
   cursor: not-allowed;
 }
 
