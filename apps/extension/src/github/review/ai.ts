@@ -44,8 +44,11 @@ import {
   summaryRecord,
   summaryUserPrompt,
 } from '@geld/review';
-import type { Carried } from '@geld/review';
+import type { Carried, LinkedContextItem } from '@geld/review';
+import { contextText } from '@geld/review/link-resolvers/index';
 import { browser } from 'wxt/browser';
+import { requestLinkDetails } from '../../lib/connections';
+import { relatedLinksOnPage } from '../related-links';
 import type { AiRunRecord, JevDecision } from '../../lib/local-state';
 import { AI_RUNS_CAP, aiGatewayItem, aiKeyItem, aiRunsItem, jevDecisionsItem, jevKeyItem, jevSourceItem } from '../../lib/local-state';
 import type { AiCompleteRequest, AiEvaluateRequest } from '../../lib/messages';
@@ -161,8 +164,8 @@ export type AiState =
   | { readonly kind: 'ready' }
   | { readonly kind: 'nothing' }
   | { readonly kind: 'running' }
-  | { readonly kind: 'current'; readonly ranAt: string }
-  | { readonly kind: 'stale'; readonly ranAt: string }
+  | { readonly kind: 'current'; readonly ranAt: string; readonly contextFrom: readonly string[] }
+  | { readonly kind: 'stale'; readonly ranAt: string; readonly contextFrom: readonly string[] }
   | { readonly kind: 'failed'; readonly ranAt: string; readonly error: string };
 
 export function aiStateFor(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings): AiState {
@@ -173,7 +176,8 @@ export function aiStateFor(meta: GeldPrMeta, comments: readonly RawComment[], se
   if (summaryInput(withAi(meta).items).length === 0) return { kind: 'nothing' };
   if (lastRun === null) return { kind: 'ready' };
   if (lastRun.error !== undefined) return { kind: 'failed', ranAt: lastRun.ranAt, error: lastRun.error };
-  return hasWork(meta, comments, settings) ? { kind: 'stale', ranAt: lastRun.ranAt } : { kind: 'current', ranAt: lastRun.ranAt };
+  const contextFrom = lastRun.contextFrom ?? [];
+  return hasWork(meta, comments, settings) ? { kind: 'stale', ranAt: lastRun.ranAt, contextFrom } : { kind: 'current', ranAt: lastRun.ranAt, contextFrom };
 }
 
 /** Whether a run now would ask the model anything: items whose sources the last run did not see, or a TL;DR behind the items. */
@@ -273,6 +277,33 @@ async function complete(settings: GeldSettings, apiKey: string, system: string, 
   return response.ok ? { ok: true, text: response.text } : { ok: false, reason: response.reason };
 }
 
+export const LINKED_CONTEXT_ITEM_CAP = 4000;
+export const LINKED_CONTEXT_CAP = 12_000;
+
+/**
+ * With Connected services on, what the related links' tickets and conversations say, read by the accounts the reader
+ * turned AI context on for (and only those), capped per item and in all; and which accounts gave it, for the notice.
+ */
+export async function linkedContext(settings: GeldSettings): Promise<{ readonly items: readonly LinkedContextItem[]; readonly from: readonly string[] }> {
+  if (!settings.connectedServices) return { items: [], from: [] };
+  const links = relatedLinksOnPage();
+  if (links.length === 0) return { items: [], from: [] };
+  const answers = await requestLinkDetails(links, 'ai');
+  const items: LinkedContextItem[] = [];
+  const from = new Set<string>();
+  let total = 0;
+  for (const link of links) {
+    const answer = answers.get(link.key);
+    if (answer === undefined || answer.status !== 'ok') continue;
+    const text = contextText(link, answer.details, Math.min(LINKED_CONTEXT_ITEM_CAP, LINKED_CONTEXT_CAP - total));
+    if (text.length < 40) break;
+    items.push({ source: link.service, text });
+    from.add([link.service, answer.connection].filter((part) => part !== '').join(' · '));
+    total += text.length;
+  }
+  return { items, from: [...from] };
+}
+
 export interface ConsolidateRun {
   /** Something changed: re-apply to show it. */
   readonly changed: boolean;
@@ -321,9 +352,12 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
     for (const item of pending) inFlight.delete(item.id);
     onProgress();
   }
+  let contextFrom: readonly string[] = [];
   if (needsTldr && failure === null) {
     const items = applyConsolidation(meta.items, new Map<string, Carried>(), [...rewrites.values()]);
-    const result = await complete(settings, apiKey, SUMMARY_SYSTEM, summaryUserPrompt(summaryInput(items), summary?.tldr ?? null), SUMMARY_JSON_SCHEMA, 'geld_summary');
+    const linked = await linkedContext(settings);
+    contextFrom = linked.from;
+    const result = await complete(settings, apiKey, SUMMARY_SYSTEM, summaryUserPrompt(summaryInput(items), summary?.tldr ?? null, linked.items), SUMMARY_JSON_SCHEMA, 'geld_summary');
     if (!result.ok) failure = result.reason;
     else {
       const parsed = parseSummaryOutput(result.text);
@@ -332,7 +366,7 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
     }
   }
   inFlight.delete('tldr');
-  lastRun = { ranAt, rewrites: [...rewrites.values()], ...(summary === undefined ? {} : { summary }), ...(failure === null ? {} : { error: failure }) };
+  lastRun = { ranAt, rewrites: [...rewrites.values()], ...(summary === undefined ? {} : { summary }), ...(failure === null ? {} : { error: failure }), ...(contextFrom.length === 0 ? {} : { contextFrom }) };
   await store(lastRun);
   onProgress();
   return { changed: true };
