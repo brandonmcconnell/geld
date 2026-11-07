@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest';
 import { threadRootOf } from './actions';
-import { crawlConversation, crawlLeftovers, crawlReviews, reactionsOf, resetCrawlCache } from './crawler';
+import { crawlConversation, crawlLeftovers, crawlReviews, crawlSidebarReviewers, reactionsOf, resetCrawlCache } from './crawler';
 import { editLogUrlOf, nodeIdOf } from './edit-times';
 import { isOverviewPage, overviewCommentsControls, overviewCommentsSection, overviewNewestFirst } from './overview-page';
 
@@ -140,5 +140,20 @@ describe('an Overview run of commits', () => {
       </div></div>
     </div></section>`;
     expect(crawlLeftovers(new Set(), () => false).map((entry) => [entry.kind, entry.count])).toEqual([['commit', 58]]);
+  });
+});
+
+describe("the Overview sidebar's Reviewers", () => {
+  it('reads each reviewer and the sentence of their status tooltip', () => {
+    document.body.innerHTML = `<section aria-label="Reviewers"><ul class="reviewerList__x">
+      <li class="reviewerRow__GGvypX"><span><a href="/apps/coderabbitai"><span><img src="https://avatars.githubusercontent.com/in/347564?s=40&v=4"></span><span class="reviewerName__kuuPXF">coderabbitai[bot]</span></a></span>
+        <span><a class="statusIcon__gxAEMz" aria-labelledby="tip-a" href="#"><svg class="octicon octicon-comment"></svg></a><span id="tip-a" role="tooltip">coderabbitai[bot] left review comments</span></span></li>
+      <li class="reviewerRow__GGvypX"><span><a href="/alice"><span><img src="https://avatars.githubusercontent.com/u/9?v=4"></span><span class="reviewerName__kuuPXF">alice</span></a></span>
+        <span><span class="statusIcon__gxAEMz" aria-labelledby="tip-b"><svg class="octicon octicon-dot-fill"></svg></span><span id="tip-b" role="tooltip">Awaiting requested review from alice</span></span></li>
+    </ul></section>`;
+    expect(crawlSidebarReviewers().map((entry) => [entry.login, entry.state, entry.bot])).toEqual([
+      ['coderabbitai[bot]', 'commented', true],
+      ['alice', 'awaiting', false],
+    ]);
   });
 });

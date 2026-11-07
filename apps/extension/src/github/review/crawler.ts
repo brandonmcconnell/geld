@@ -973,7 +973,7 @@ function sidebarReviewerState(text: string, glyph: Element | null): SidebarRevie
  */
 export function crawlSidebarReviewers(root: ParentNode = document): readonly SidebarReviewer[] {
   const block = root.querySelector(SIDEBAR_REVIEWERS);
-  if (block === null) return [];
+  if (block === null) return overviewSidebarReviewers(root);
   const out: SidebarReviewer[] = [];
   for (const who of block.querySelectorAll<HTMLElement>('[data-assignee-name]')) {
     const login = who.getAttribute('data-assignee-name') ?? '';
@@ -991,6 +991,32 @@ export function crawlSidebarReviewers(root: ParentNode = document): readonly Sid
     // Copilot's row draws an octicon, not a picture: its App's mark comes from the registry by the App's slug.
     const appMark = app === undefined ? null : appAvatarForLogin(`${app}[bot]`);
     out.push({ login, avatarSrc: srcOfImage(who.querySelector('img')) ?? appMark ?? avatarSrcForLogin(login), state, bot });
+  }
+  return out;
+}
+
+/**
+ * The Overview sidebar's Reviewers: one `reviewerRow` per reviewer, the name linked to their profile (an App's to
+ * `/apps/<slug>`), and a status icon whose tooltip says the sentence ("X left review comments", "Awaiting requested
+ * review from X"), its octicon the fallback.
+ */
+function overviewSidebarReviewers(root: ParentNode): readonly SidebarReviewer[] {
+  const out: SidebarReviewer[] = [];
+  for (const row of root.querySelectorAll<HTMLElement>('section[aria-label="Reviewers"] li[class*="reviewerRow"]')) {
+    const link = row.querySelector<HTMLAnchorElement>('a[href]:has([class*="reviewerName"])');
+    const name = (row.querySelector('[class*="reviewerName"]')?.textContent ?? '').trim();
+    const href = link?.getAttribute('href') ?? '';
+    const app = /^\/apps\/([^/?#]+)/.exec(href)?.[1];
+    const login = app === undefined ? name : /\[bot\]$/i.test(name) ? name : `${app}[bot]`;
+    if (login === '' || out.some((entry) => entry.login === login)) continue;
+    const control = row.querySelector<HTMLElement>('[class*="statusIcon"]');
+    const labelledBy = control?.getAttribute('aria-labelledby') ?? '';
+    const tip = labelledBy === '' ? null : row.ownerDocument.getElementById(labelledBy);
+    const text = [tip?.textContent ?? '', control?.getAttribute('aria-label') ?? ''].join(' ');
+    const state = sidebarReviewerState(text, control?.querySelector('svg.octicon') ?? null);
+    if (state === null) continue;
+    const appMark = app === undefined ? null : appAvatarForLogin(`${app}[bot]`);
+    out.push({ login, avatarSrc: srcOfImage(row.querySelector('img')) ?? appMark ?? avatarSrcForLogin(login), state, bot: app !== undefined || /\[bot\]$/i.test(login) });
   }
   return out;
 }
