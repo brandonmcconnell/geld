@@ -1,4 +1,5 @@
 import { isTrackerStatusRequest,readTrackerStatuses } from '../src/lib/tracker-service';
+import { isResolveLinksRequest, resolveLinksInBackground } from '../src/lib/connections';
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
@@ -542,6 +543,12 @@ export default defineBackground(() => {
   recordDiagnostic({ kind: 'worker-start' });
   browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
     if(isTrackerStatusRequest(message)){void readTrackerStatuses(message,sender.url??sender.tab?.url).then(sendResponse);return true;}
+    if (isResolveLinksRequest(message)) {
+      void resolveLinksInBackground(message)
+        .catch(() => ({ answers: [] }))
+        .then(sendResponse);
+      return true;
+    }
     if (isErrorReportMessage(message)) {
       void queueErrorReports(message.errors).catch(() => undefined);
       return undefined;

@@ -51,8 +51,19 @@ const QUESTIONS: readonly Question[] = [
         The only network requests Geld makes are to GitHub (
         {allHosts(DEFAULT_SETTINGS).join(', ')} plus any Enterprise hosts you add): to fetch diffs GitHub would serve you anyway and, if you opt into
         sign-in, to read and write a secret gist on your own account. Settings live in your browser&apos;s sync storage. If you turn on error reports in the options, Geld&apos;s own errors also go to geld.sh,
-        with addresses, names and page text removed first. See the{' '}
-        <Link href="/privacy">privacy policy</Link>.
+        with addresses, names and page text removed first. If you add your own accounts under Connected services, the related links on the page are
+        also sent to the services they belong to, with your key, for their titles and state. See the <Link href="/privacy">privacy policy</Link>.
+      </p>
+    ),
+  },
+  {
+    id: 'connected-services',
+    question: 'How do related links get their real titles?',
+    answer: (
+      <p>
+        Add your own Linear, Jira, GitHub, GitLab or Bitbucket accounts under Connected services in the extension options (an experiment for now). For each
+        related link Geld asks the account that can open that workspace, from your browser, with your key. Keys stay on your device and are never synced
+        or sent to Geld. AI context is a separate choice per account and is off until you turn it on.
       </p>
     ),
   },

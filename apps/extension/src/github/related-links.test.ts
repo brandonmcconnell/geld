@@ -18,6 +18,16 @@ vi.mock('./page-fetch', () => ({
   },
 }));
 
+const connected = vi.hoisted((): { asked: string[][]; answers: Map<string, unknown> } => ({ asked: [], answers: new Map() }));
+vi.mock('../lib/connections', () => ({
+  MAX_LINKS_PER_REQUEST: 32,
+  watchConnections: () => () => undefined,
+  requestLinkDetails: async (links: readonly { key: string }[]) => {
+    connected.asked.push(links.map((link) => link.key));
+    return new Map(links.flatMap((link) => (connected.answers.has(link.key) ? [[link.key, connected.answers.get(link.key)]] : [])));
+  },
+}));
+
 import { applyRelatedLinks, assigneesSections, relatedLinksOnPage, relatedText, removeRelatedLinks } from './related-links';
 
 // mintlify/mint#14542's footer as GitHub renders it, after the author's own words.
@@ -311,5 +321,39 @@ describe('related links in the sidebar', () => {
     document.querySelector<HTMLButtonElement>('.geld-related__more')?.click();
     await settle();
     expect(lookups()).toBe(11);
+  });
+
+  it('shows what a connected account read of a link: its title, its state and which account', async () => {
+    history.replaceState(null, '', '/acme/web/pull/7');
+    connected.asked = [];
+    connected.answers = new Map([
+      [
+        'linear:acme:ENG-12',
+        { key: 'linear:acme:ENG-12', status: 'ok', service: 'linear', connection: 'Work', details: { title: 'Fix the login redirect', state: 'In Progress', tone: 'open', author: null, updatedAt: null, where: null, body: null, messages: [] } },
+      ],
+    ]);
+    document.body.innerHTML =
+      '<div class="js-comment-container"><div class="js-comment-body markdown-body"><p><a href="https://linear.app/acme/issue/ENG-12">ENG-12</a> <a href="https://github.com/acme/web/issues/3">#3</a></p></div></div>' + railsSidebar();
+    const rerun = (): void => applyRelatedLinks(true, rerun, true);
+    rerun();
+    expect(connected.asked).toEqual([]);
+    await settle();
+    expect(connected.asked).toEqual([['linear:acme:ENG-12']]);
+    await settle();
+    const row = document.querySelector('.geld-related__link');
+    expect(row?.querySelector('.geld-related__text')?.textContent).toBe('#3 Nav overview is a group of one');
+    const linear = document.querySelectorAll('.geld-related__link')[1];
+    expect(linear?.querySelector('.geld-related__text')?.textContent).toBe('ENG-12 Fix the login redirect');
+    expect(linear?.querySelector('.geld-related__state')?.textContent).toBe('In Progress');
+    expect(linear?.querySelector('.geld-related__state')?.getAttribute('data-tone')).toBe('open');
+    expect(linear?.getAttribute('title')).toBe('In Progress · Open issue in Linear · Fix the login redirect · acme · from Linear · Work');
+  });
+
+  it('asks nothing of connected accounts while the experiment is off', async () => {
+    connected.asked = [];
+    document.body.innerHTML = '<div class="js-comment-container"><div class="js-comment-body markdown-body"><p><a href="https://linear.app/acme/issue/ENG-12">ENG-12</a></p></div></div>' + railsSidebar();
+    applyRelatedLinks(true);
+    await settle();
+    expect(connected.asked).toEqual([]);
   });
 });

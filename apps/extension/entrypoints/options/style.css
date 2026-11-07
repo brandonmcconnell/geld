@@ -769,3 +769,96 @@ body {
 .options__tracker-fields { display: grid; gap: 12px; }
 .options__tracker-fields[hidden], .options__tracker .options__field[hidden] { display: none; }
 .options__tracker > .geld-button { justify-self: start; }
+
+/* Connected services: one group per service, one row per account with its two uses. */
+.options__connection-head {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.options__connection-head .geld-help {
+  margin-top: 2px;
+}
+
+/* The legend and every account row share one grid, so the two uses stand in two columns down the card. */
+.options__connection-legend,
+.options__connection {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px 88px 184px;
+  align-items: center;
+  gap: 8px;
+}
+
+.options__connection-legend {
+  align-items: end;
+}
+
+.options__connection-column {
+  font-size: 12px;
+  text-align: center;
+}
+
+.options__connection-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.options__connection-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.options__connection {
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.options__connection-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.options__connection-name {
+  font-weight: 500;
+}
+
+.options__connection-meta {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.options__connection-use {
+  display: flex;
+  justify-content: center;
+  cursor: pointer;
+}
+
+/* The column headings say which box is which; each box keeps its words for screen readers in its label. */
+.options__connection-use > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.options__connection-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+}
+
+.options__connection-field {
+  display: grid;
+  gap: 4px;
+}

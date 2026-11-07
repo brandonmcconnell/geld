@@ -5,7 +5,7 @@ import { gitlabResolver } from './gitlab';
 import { jiraResolver } from './jira';
 import { linearResolver } from './linear';
 import { record } from './http';
-import { isServiceId, type Connection, type ConnectionDraft, type ConnectionHints, type FetchLike, type Identity, type LinkDetails, type LinkResolver, type Resolution, type ServiceId } from './types';
+import { isServiceId, type Connection, type ConnectionDraft, type ConnectionUse, type ConnectionHints, type FetchLike, type Identity, type LinkDetails, type LinkResolver, type Resolution, type ServiceId } from './types';
 
 export * from './types';
 export { adfText } from './jira';
@@ -37,11 +37,11 @@ export function resolverForLink(link: RelatedLink): LinkResolver | null {
  * same repository or workspace, then those whose workspaces include the link's, then those that do not say which
  * workspaces they open. One that names other workspaces only is never asked.
  */
-export function candidatesFor(link: RelatedLink, connections: readonly Connection[], hints: ConnectionHints = {}): Connection[] {
+export function candidatesFor(link: RelatedLink, connections: readonly Connection[], hints: ConnectionHints = {}, purpose: keyof ConnectionUse = 'details'): Connection[] {
   const resolver = resolverForLink(link);
   if (resolver === null) return [];
   const workspace = resolver.workspaceOf(link);
-  const eligible = connections.filter((connection) => connection.service === resolver.service && connection.use.details && connection.secret !== '');
+  const eligible = connections.filter((connection) => connection.service === resolver.service && connection.use[purpose] && connection.secret !== '');
   const matches = (connection: Connection): boolean => connection.covers.length === 0 || workspace === null || connection.covers.includes(workspace);
   const hinted = resolver
     .hintKeys(link)
@@ -142,7 +142,7 @@ export interface CachedAnswer {
 
 /** Per link and the set of connections that may answer it, so a connection added since is asked. */
 export function cacheKey(link: RelatedLink, candidates: readonly Connection[]): string {
-  return `${link.key}|${candidates.map((connection) => connection.id).join(',')}`;
+  return `${link.key}|${candidates.map((connection) => connection.id).sort().join(',')}`;
 }
 
 export function ttlFor(answer: LinkAnswer, service: ServiceId | null, longTitles: readonly ServiceId[] = ['slack', 'teams', 'discord']): number {

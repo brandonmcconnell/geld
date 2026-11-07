@@ -154,6 +154,11 @@ export interface GeldSettings {
    */
   readonly holdToMerge: boolean;
   /**
+   * Read related links with the reader's own connected accounts (Linear, Jira, GitHub, GitLab, Bitbucket, Slack) for
+   * their titles and state. The accounts themselves are kept on the device, never in settings.
+   */
+  readonly connectedServices: boolean;
+  /**
    * Extra bot logins to treat as review bots (one per line). Built-in bots
    * (Bugbot, Greptile, Copilot, …) are always recognised.
    */
@@ -269,6 +274,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   relatedLinks: true,
   quickReview: true,
   holdToMerge: false,
+  connectedServices: false,
   reviewBots: [],
   aiEnabled: false,
   aiBaseUrl: '',
@@ -532,6 +538,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     relatedLinks: bool(record, 'relatedLinks', DEFAULT_SETTINGS.relatedLinks),
     quickReview: bool(record, 'quickReview', DEFAULT_SETTINGS.quickReview),
     holdToMerge: bool(record, 'holdToMerge', DEFAULT_SETTINGS.holdToMerge),
+    connectedServices: bool(record, 'connectedServices', DEFAULT_SETTINGS.connectedServices),
     reviewBots: isStringArray(record.reviewBots) ? record.reviewBots : DEFAULT_SETTINGS.reviewBots,
     aiEnabled: bool(record, 'aiEnabled', DEFAULT_SETTINGS.aiEnabled),
     aiBaseUrl: typeof record.aiBaseUrl === 'string' ? normalizeAiBaseUrl(record.aiBaseUrl) : DEFAULT_SETTINGS.aiBaseUrl,

@@ -58,6 +58,7 @@ import { aiGatewayItem, aiKeyItem, jevKeyItem, jevSourceItem } from '../../src/l
 import type { ModelInfo } from '@geld/review';
 import { decisionModelsIn, defaultDecisionModel, isEvaluationModel, jevModelFor, knownDecisionModels, TYPESAFE_API } from '@geld/review';
 import { issueTrackerEditor } from '../../src/ui/issue-tracker-editor';
+import { mountConnectionsCard } from './connections-card';
 import { modelCombobox } from '../../src/ui/model-combobox';
 import { accountItem, appClientIdItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, syncStateItem } from '../../src/lib/account';
 import type { GitHubAccount, SyncState } from '../../src/lib/account';
@@ -1473,10 +1474,14 @@ async function main(): Promise<void> {
   // this watch (typically right after install); read once more so it is not missed.
   applyCatalog(await catalogItem.getValue());
 
+  const connectionsCard = mountConnectionsCard(requireElement('connections-root', HTMLDivElement), { enabled: () => settings.connectedServices });
+
   /* Keep the page in sync with changes made elsewhere (popup, other windows, gist sync). */
   let lastSignature = categorySignature(settings);
   settingsItem.watch((next) => {
+    const connectedChanged = next.connectedServices !== settings.connectedServices;
     settings = next;
+    if (connectedChanged) connectionsCard.refresh();
     for (const { field, set } of toggleSwitches) set(next[field.key]);
     for (const { field, set } of reviewSwitches) set(next[field.key]);
     for (const show of choiceSetters) show(next);

@@ -2,6 +2,8 @@ import { browser } from 'wxt/browser';
 import { isDependencyUpdate, relatedLinksFrom } from '@geld/review/related-links';
 import type { LinkCandidate, RelatedKind, RelatedLink } from '@geld/review/related-links';
 import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
+import type { LinkAnswerView } from '../lib/connections';
+import { forgetLinkDetails, linkDetails } from './link-details';
 import { pageFetch } from './page-fetch';
 import { descriptionBody } from './review/description';
 import { appLoginOf } from './review/login';
@@ -204,8 +206,18 @@ export function assigneesSections(): HTMLElement[] {
   return [...found];
 }
 
-/** A row: the link, and for GitHub's own issues and pull requests what GitHub's hovercard says of it. */
-type RelatedRow = RelatedLink & { readonly state: RefState | null };
+/** What one of the reader's connected accounts read of a link: its state and which account read it. */
+interface Connected {
+  readonly state: string | null;
+  readonly tone: string | null;
+  readonly from: string;
+}
+
+/**
+ * A row: the link, for GitHub's own issues and pull requests what GitHub's hovercard says of it, and what a connected
+ * account read of it.
+ */
+type RelatedRow = RelatedLink & { readonly state: RefState | null; readonly connected: Connected | null };
 
 /** GitHub's glyph for an issue or pull request in each state, in GitHub's colour for it (as its hovercard's badge has them). */
 const STATE_GLYPHS: Readonly<Record<RefState, { readonly icon: string; readonly tone: string; readonly word: string }>> = {
@@ -231,12 +243,20 @@ const NOUN_GLYPHS: Readonly<Record<string, string>> = { issue: ICON_ISSUE_OPENED
  */
 const MAX_LOOKUPS = 32;
 
-function rowsOf(links: readonly RelatedLink[], onChange: () => void): RelatedRow[] {
+function rowsOf(links: readonly RelatedLink[], connected: boolean, onChange: () => void): RelatedRow[] {
   const lookups = Math.min(showAll ? links.length : SHOWN_LINKS, MAX_LOOKUPS);
+  const onHost = (link: RelatedLink): boolean => link.key.startsWith('github:') && new URL(link.href).hostname === location.hostname;
+  const answers = connected ? linkDetails(links.slice(0, lookups).filter((link) => !onHost(link)), onChange) : new Map<string, LinkAnswerView | 'pending'>();
   return links.map((link, index) => {
-    if (index >= lookups || !link.key.startsWith('github:') || new URL(link.href).hostname !== location.hostname) return { ...link, state: null };
+    const answer = answers.get(link.key);
+    if (answer !== undefined && answer !== 'pending' && answer.status === 'ok') {
+      const { details } = answer;
+      const from = [link.service, answer.connection].filter((part) => part !== '').join(' · ');
+      return { ...link, title: details.title, state: null, connected: { state: details.state, tone: details.tone, from } };
+    }
+    if (index >= lookups || !onHost(link)) return { ...link, state: null, connected: null };
     const details = refDetails(link.href, onChange);
-    return details === null ? { ...link, state: null } : { ...link, title: details.title, state: details.state };
+    return details === null ? { ...link, state: null, connected: null } : { ...link, title: details.title, state: details.state, connected: null };
   });
 }
 
@@ -274,8 +294,9 @@ export function relatedText(link: RelatedLink): string {
 
 function rowOf(link: RelatedRow): HTMLElement {
   const named = link.ref !== null || link.title !== null;
-  const state = link.state === null ? null : STATE_GLYPHS[link.state].word || null;
-  const tip = [state, link.action, link.title, link.context].filter((part) => part !== null && part !== '').join(' · ');
+  const state = link.state === null ? (link.connected?.state ?? null) : STATE_GLYPHS[link.state].word || null;
+  const from = link.connected === null ? null : `from ${link.connected.from}`;
+  const tip = [state, link.action, link.title, link.context, from].filter((part) => part !== null && part !== '').join(' · ');
   const parts = named
     ? [
         ...(link.ref === null ? [] : [createElement('span', { class: `${SECTION_CLASS}__ref` }, [link.ref])]),
@@ -287,6 +308,9 @@ function rowOf(link: RelatedRow): HTMLElement {
   const anchor = createElement('a', { class: `${SECTION_CLASS}__link`, href: link.href, target: '_blank', rel: 'noopener noreferrer', title: tip, 'aria-label': link.context === null ? label : `${label}, ${link.context}` }, [
     markOf(link),
     createElement('span', { class: `${SECTION_CLASS}__text` }, parts),
+    ...(link.connected?.state === null || link.connected === null
+      ? []
+      : [createElement('span', { class: `${SECTION_CLASS}__state`, 'data-tone': link.connected.tone ?? 'neutral', 'aria-hidden': 'true' }, [link.connected.state])]),
   ]);
   return createElement('li', { class: `${SECTION_CLASS}__item`, 'data-kind': link.kind }, [anchor]);
 }
@@ -392,6 +416,7 @@ function removeSections(): void {
 
 export function removeRelatedLinks(): void {
   removeSections();
+  forgetLinkDetails();
   authors.clear();
   orderSidebars([]);
 }
@@ -457,10 +482,10 @@ let requestPass: () => void = () => undefined;
  * Draw, move back into place or take away the sections. Writes only where the links or the place changed. `onChange`
  * asks for another pass when a description read from GitHub lands.
  */
-export function applyRelatedLinks(active: boolean, onChange: () => void = () => undefined): void {
+export function applyRelatedLinks(active: boolean, onChange: () => void = () => undefined, connected = false): void {
   requestPass = onChange;
   const afters = active ? assigneesSections() : [];
-  const links = afters.length === 0 ? [] : rowsOf(relatedLinksOnPage(onChange), onChange);
+  const links = afters.length === 0 ? [] : rowsOf(relatedLinksOnPage(onChange), connected, onChange);
   if (links.length === 0) {
     if (mounted.size > 0) removeSections();
     orderSidebars(afters);

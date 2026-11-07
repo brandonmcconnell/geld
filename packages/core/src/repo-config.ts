@@ -58,6 +58,7 @@ const BOT_ID = /^[a-z][a-z0-9-]*$/;
 const PERSONAL_KEYS = [
   'enabled',
   'repoRules',
+  'connectedServices',
   'hiddenAuthors',
   'groupHidden',
   'expandedByDefault',
