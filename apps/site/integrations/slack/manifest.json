@@ -1,0 +1,20 @@
+{
+  "_metadata": { "major_version": 1, "minor_version": 1 },
+  "display_information": {
+    "name": "Geld",
+    "description": "See the Slack threads a pull request links to, beside the pull request on GitHub.",
+    "long_description": "Geld is a browser extension for code review on GitHub. Its Related links section lists the tickets, threads and agent sessions a pull request links to. Connect Slack and a link to a Slack thread shows the thread's first message as its title, how many replies it has and which channel it is in, and opens to the whole thread. Geld signs in as you, so it reads only channels you are already in, never direct messages, and it never posts. The token stays in your browser and is never sent to Geld.",
+    "background_color": "#0a0a0a"
+  },
+  "oauth_config": {
+    "redirect_urls": ["https://www.geld.sh/connect/slack/callback"],
+    "scopes": {
+      "user": ["channels:history", "groups:history", "channels:read", "groups:read", "users:read"]
+    }
+  },
+  "settings": {
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}
