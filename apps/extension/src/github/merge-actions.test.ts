@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import type { MergeSubmission } from './merge-actions';
-import { actionErrorText, autoMergeRequest, bypassBeside, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict } from './merge-actions';
+import { actionErrorText, autoMergeRequest, bypassBeside, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict, embeddedStack, methodHint, rememberMethod } from './merge-actions';
 
 /** A `page_data/merge_box` answer as GitHub gave it on brandonmcconnell/geld#74 (Oct 2026), trimmed. */
 function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean; readonly email?: string; readonly emails?: readonly string[] | null; readonly conflict?: boolean; readonly methodStatus?: string } = {}): unknown {
@@ -261,5 +261,39 @@ describe('parseStack', () => {
     const request = stackQueueRequest('/o/r/pull/7', 'n');
     expect(request.url).toBe('/o/r/pull/7/page_data/enqueue_stack');
     expect(request.init.body).toBe('{"mergeAction":"MERGE_QUEUE"}');
+  });
+});
+
+describe('the stack the page embeds', () => {
+  const script = (layout: unknown): string => `<script type="application/json" data-target="react-app.embeddedData">${JSON.stringify({ payload: { pullRequestsLayoutRoute: layout } })}</script>`;
+  const pulls = [
+    { number: 478, title: 'Top', state: 'OPEN', url: '/o/r/pull/478' },
+    { number: 477, title: 'Bottom', state: 'OPEN', url: '/o/r/pull/477' },
+  ];
+
+  it('lists the members top first with no request, when the payload is this pull request’s', () => {
+    const root = document.createElement('div');
+    root.innerHTML = script({ pullRequest: { number: 478 }, stack: { pulls } });
+    expect(embeddedStack('/o/r/pull/478', root)).toEqual([
+      { number: 478, path: '/o/r/pull/478', title: 'Top', current: true },
+      { number: 477, path: '/o/r/pull/477', title: 'Bottom', current: false },
+    ]);
+  });
+
+  it('says none for a pull request in no stack, and nothing for another pull request’s payload', () => {
+    const root = document.createElement('div');
+    root.innerHTML = script({ pullRequest: { number: 470 }, stack: null });
+    expect(embeddedStack('/o/r/pull/470', root)).toBe('none');
+    expect(embeddedStack('/o/r/pull/478', root)).toBeNull();
+  });
+});
+
+describe('the remembered merge method', () => {
+  it('is squash until a read says otherwise, per repository', () => {
+    window.localStorage.clear();
+    expect(methodHint('o/r')).toBe('SQUASH');
+    rememberMethod('o/r', 'MERGE');
+    expect(methodHint('o/r')).toBe('MERGE');
+    expect(methodHint('o/other')).toBe('SQUASH');
   });
 });
