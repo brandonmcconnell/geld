@@ -9550,3 +9550,61 @@ dialog.geld-lightbox {
   outline: 2px solid var(--focus-outlineColor, #0969da);
   outline-offset: -2px;
 }
+
+/* The Overview's recommended action: GitHub's "View merge status" as an info button, and Geld's merge beside it. */
+button[data-geld-merge-info] {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  padding: 0;
+}
+
+button[data-geld-merge-info] > [data-component='buttonContent'] {
+  display: none;
+}
+
+.geld-overview-merge__info {
+  display: flex;
+  color: var(--fgColor-muted, #59636e);
+}
+
+div:has(> [data-geld-overview-merge]) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.geld-overview-merge {
+  display: inline-flex;
+}
+
+.geld-overview-merge__caret {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  padding: 0;
+}
+
+.geld-overview-merge__caret .octicon {
+  margin: 0;
+}
+
+.geld-overview-merge__button--danger.btn {
+  border-color: var(--button-danger-borderColor-hover, var(--borderColor-danger-emphasis, #cf222e));
+  background: var(--button-danger-bgColor-hover, var(--bgColor-danger-emphasis, #cf222e));
+  color: var(--button-danger-fgColor-hover, var(--fgColor-onEmphasis, #ffffff));
+  box-shadow: none;
+}
+
+.geld-overview-merge__button--danger.btn:hover {
+  border-color: var(--button-danger-borderColor-active, var(--borderColor-danger-emphasis, #cf222e));
+  background: var(--button-danger-bgColor-active, #a40e26);
+}
+
+.geld-overview-merge__menu {
+  width: 300px;
+}
+
+.geld-overview-merge__menu .geld-quick-review__menu-note {
+  white-space: normal;
+}

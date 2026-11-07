@@ -24,6 +24,7 @@ import { ICON_ALERT_FILL_12, ICON_CHECK, ICON_CHECK_SEND, ICON_CHEVRON_DOWN, ICO
 import { pageFetch } from './page-fetch';
 import { reportError } from '../lib/error-capture';
 import { isOverviewPage } from './review/overview-page';
+import { overviewMergeOf, removeOverviewMerge, syncOverviewMerge } from './overview-merge';
 
 /**
  * The review controls in the pull request's tab bar, left of the line
@@ -334,6 +335,10 @@ interface Mounted {
   /** The snapshot card while it shows, and the timer that shows or hides it. */
   snapshot: HTMLElement | null;
   snapshotTimer: number;
+  /** The method the Overview's merge button merges with, once the reader picks one from its caret. */
+  overviewMethod: MergeMethod | null;
+  /** The control a merge box opened from the Overview's merge button hangs under, right edge on its right edge. */
+  panelAnchor: HTMLElement | null;
   /** What the merge box last said the reader may do, for {@link mergeFor}; null until read. */
   mergeActions: MergeActions | null;
   mergeFor: string | null;
@@ -569,6 +574,7 @@ export function removeQuickReview(): void {
   removeStand();
   // Pills the hint put in place before the controls were made go too.
   removeStatusPills();
+  removeOverviewMerge();
   if (mounted === null) return;
   closePanel();
   // Not settled: a placeholder menu's close would put back the pills this teardown has just removed.
@@ -654,6 +660,8 @@ function createControls(pullPath: string, context: QuickReviewContext): Mounted 
     opener: null,
     pills: [],
     statusOpener: null,
+    overviewMethod: null,
+    panelAnchor: null,
     statusOpenerPlace: null,
     statusMenu: null,
     statusMenuKeys: null,
@@ -1224,6 +1232,14 @@ function showStatus(state: Mounted): void {
   // success dresses them as merged until the reload.
   state.pills = syncStatusPills(on || holding || (state.sending && state.pills.length > 0), openFromPill);
   showInstantMerge(state);
+  const overviewMerge = state.sending ? null : overviewMergeOf(actions);
+  syncOverviewMerge(overviewMerge, state.overviewMethod ?? overviewMerge?.methods[0] ?? 'SQUASH', {
+    onMerge: (method, anchor) => openMergeBox(state, null, overviewMerge?.kind === 'bypass', method, anchor),
+    onMethod: (method) => {
+      state.overviewMethod = method;
+      showStatus(state);
+    },
+  });
   if (state.statusMenu !== null && (state.statusOpener === null || !state.pills.includes(state.statusOpener))) {
     // GitHub re-rendered its header (on the Overview about two seconds into a load, and the mini header as it scrolls)
     // and the pill with it: the open menu goes to the pill that took its place, standing where the opener stood, rather
@@ -1762,6 +1778,7 @@ function closePanel(restoreFocus = false): void {
   mounted.panelRefresh = null;
   const opener = mounted.opener === null ? null : buttonFor(mounted, mounted.opener);
   mounted.opener = null;
+  mounted.panelAnchor = null;
   opener?.setAttribute('aria-expanded', 'false');
   document.removeEventListener('pointerdown', onOutsidePointer, true);
   window.removeEventListener('resize', positionPanel);
@@ -1774,7 +1791,7 @@ function closePanel(restoreFocus = false): void {
 function onOutsidePointer(event: PointerEvent): void {
   if (mounted === null || mounted.panel === null) return;
   const target = event.target;
-  if (target instanceof Node && (mounted.panel.contains(target) || mounted.root.contains(target) || mounted.pills.some((pill) => pill.contains(target)))) return;
+  if (target instanceof Node && (mounted.panel.contains(target) || mounted.root.contains(target) || mounted.pills.some((pill) => pill.contains(target)) || mounted.panelAnchor?.contains(target) === true)) return;
   closePanel();
 }
 
@@ -1786,10 +1803,12 @@ function onOutsidePointer(event: PointerEvent): void {
 function positionPanel(): void {
   if (mounted === null || mounted.panel === null) return;
   // A box chosen from the status pill hangs under the pill, its left edge on the pill's; the review boxes under the group.
-  const pill = mounted.opener !== null && !isReviewEvent(mounted.opener) && mounted.statusOpener?.isConnected === true ? mounted.statusOpener : null;
-  const anchor = pill ?? mounted.root;
+  // One from the Overview's merge button hangs under that button, its right edge on the button's.
+  const button = mounted.panelAnchor?.isConnected === true ? mounted.panelAnchor : null;
+  const pill = button === null && mounted.opener !== null && !isReviewEvent(mounted.opener) && mounted.statusOpener?.isConnected === true ? mounted.statusOpener : null;
+  const anchor = button ?? pill ?? mounted.root;
   if (!anchor.isConnected) return;
-  const fixed = pill === null ? mounted.root.hasAttribute(ATTR_PLACE) : pill.closest(STICKY_HEADERS) !== null;
+  const fixed = button !== null ? false : pill === null ? mounted.root.hasAttribute(ATTR_PLACE) : pill.closest(STICKY_HEADERS) !== null;
   const rect = anchor.getBoundingClientRect();
   const width = mounted.panel.offsetWidth;
   const left = Math.max(16, Math.min(pill === null ? rect.right - width : rect.left, document.documentElement.clientWidth - width - 16));
@@ -2482,14 +2501,14 @@ async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Ste
  * take it, GitHub's own checkbox, which the confirmation waits on. Read
  * afresh as it opens, since checks and reviews land meanwhile.
  */
-function openMergeBox(state: Mounted, failure: string | null = null, pastRules = false): void {
+function openMergeBox(state: Mounted, failure: string | null = null, pastRules = false, initial: MergeMethod | null = null, anchor: HTMLElement | null = null): void {
   const pullPath = state.pullPath;
   const known = state.mergeActions;
   if (known === null || known.offer === null) return;
   const bypass = pastRules || known.offer === 'bypass';
   // Past the rules a queue's repository may allow no direct method otherwise: the box read past them lists them.
   const methods = bypass && known.bypassMethods.length > 0 ? known.bypassMethods : known.box.methods;
-  let method: MergeMethod = methods[0] ?? 'SQUASH';
+  let method: MergeMethod = initial !== null && methods.includes(initial) ? initial : (methods[0] ?? 'SQUASH');
   let box: MergeBox = known.box;
   // The method `box`'s commit was written for: until the chosen method's has come, the confirmation waits.
   let boxFor: MergeMethod = known.box.methods[0] ?? known.box.bypassMethods[0] ?? 'SQUASH';
@@ -2498,6 +2517,7 @@ function openMergeBox(state: Mounted, failure: string | null = null, pastRules =
   let edited = false;
 
   const select = createElement('select', { class: 'form-select select-sm geld-quick-review__method', 'aria-label': 'Merge method' }, methods.map((name) => createElement('option', { value: name }, [METHOD_LABEL[name]])));
+  select.value = method;
   select.hidden = methods.length < 2;
   const title = createElement('input', { type: 'text', class: 'form-control input-sm width-full geld-quick-review__commit-title', 'aria-label': 'Commit message' });
   const message = createElement('textarea', { class: 'form-control width-full geld-quick-review__body geld-quick-review__commit-body', 'aria-label': 'Extended description', rows: '4' });
@@ -2587,6 +2607,10 @@ function openMergeBox(state: Mounted, failure: string | null = null, pastRules =
   submit.addEventListener('click', () => void send());
 
   showPanel(state, panel, 'merge');
+  if (anchor !== null) {
+    state.panelAnchor = anchor;
+    positionPanel();
+  }
   state.panelRefresh = refresh;
   fill();
   refresh();
