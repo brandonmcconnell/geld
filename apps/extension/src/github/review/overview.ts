@@ -451,6 +451,18 @@ function reseatOpenItem(meta: GeldPrMeta): void {
   if (visit.settling !== null && visit.settling.itemKey === key) visit.settling = { ...visit.settling, itemKey: visit[field] };
 }
 
+/**
+ * The open thread where the grouping shows it, after the grouping changed under it (a settings rebuild keeps the
+ * visit): by type it opens inside its round, by push an open thread is a row of its own under Needs attention.
+ */
+function seatOpenThread(batches: readonly Batch[], grouping: GeldSettings['reviewGrouping']): void {
+  const key = grouping === 'batch' ? visit.openSubKey : visit.openKey;
+  if (key === null || !key.startsWith('item:')) return;
+  // By push a resolved thread stays inside its push, already where it shows.
+  if (grouping === 'batch' && !batches.some((batch) => batch.items.some((item) => itemKey(item.id) === key && isOpenStatus(item.status)))) return;
+  openRow(key, batches, grouping);
+}
+
 /** How long an open line's conversation may be absent from the crawl before the line is given up. */
 const OPEN_LINE_GRACE_MS = 5000;
 
@@ -3207,6 +3219,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   );
   settleAfterResolve(meta, batches);
   reseatOpenItem(meta);
+  seatOpenThread(batches, settings.reviewGrouping);
   reseatOpenLine(batches);
   // A round's bot comment lines and its preview pills both stand for their comments: neither needs a fold row too.
   const batchedAnchors = new Set([...batches.flatMap((batch) => [...batch.comments.map((entry) => entry.anchor), ...batch.previews.map((entry) => entry.anchor)]), ...botLineAnchors, ...reportLineAnchors]);
@@ -3963,8 +3976,8 @@ export function teardownReviewOverview(why: 'stop' | 'leave' | 'rebuild' = 'stop
     shortenDescription(false);
     compactDescriptionByline(false);
   }
-  visit.pendingAnchor = null;
   if (why === 'rebuild') return;
+  visit.pendingAnchor = null;
   visit.openKey = null;
   visit.pageKey = '';
 }

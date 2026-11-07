@@ -2758,7 +2758,6 @@ function normalizeSettings(value) {
     digestViewChosenAt: typeof record4.digestViewChosenAt === "string" ? record4.digestViewChosenAt : DEFAULT_SETTINGS.digestViewChosenAt,
     reviewGrouping: isReviewGrouping(record4.reviewGrouping) ? record4.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
     collapseDescription: bool(record4, "collapseDescription", DEFAULT_SETTINGS.collapseDescription),
-    attachmentLightbox: bool(record4, "attachmentLightbox", DEFAULT_SETTINGS.attachmentLightbox),
     quickReview: bool(record4, "quickReview", DEFAULT_SETTINGS.quickReview),
     holdToMerge: bool(record4, "holdToMerge", DEFAULT_SETTINGS.holdToMerge),
     reviewBots: isStringArray(record4.reviewBots) ? record4.reviewBots : DEFAULT_SETTINGS.reviewBots,
@@ -2867,7 +2866,6 @@ var init_settings = __esm({
       digestViewChosenAt: "",
       reviewGrouping: "type",
       collapseDescription: true,
-      attachmentLightbox: true,
       quickReview: true,
       holdToMerge: false,
       reviewBots: [],
@@ -3299,7 +3297,6 @@ var init_settings_validate = __esm({
       "quickReview",
       "holdToMerge",
       "collapseDescription",
-      "attachmentLightbox",
       "aiEnabled",
       "aiJev"
     ];
@@ -11095,8 +11092,7 @@ var init_repo_config = __esm({
       "suggestedFixes",
       "autoViewed",
       "testOutline",
-      "testSyntaxes",
-      "attachmentLightbox"
+      "testSyntaxes"
     ];
     SCOPE_RESET = "[*]";
   }
@@ -11308,14 +11304,6 @@ var init_settings_schema = __esm({
             description: "Fold each section of the pull request description under its heading. A description still taller than 500px is cut there with a control to show the rest.",
             popup: true,
             popupDescription: "Fold its sections under their headings."
-          },
-          {
-            kind: "toggle",
-            key: "attachmentLightbox",
-            label: "Attachment lightbox",
-            description: "Preview image attachments in issues and pull requests with zoom and pan.",
-            popup: false,
-            surfaces: ["extension"]
           },
           {
             kind: "toggle",
