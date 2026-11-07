@@ -6,7 +6,7 @@
  *   pnpm --filter @geld/type build --sources  only the UFOs and designspaces
  */
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { toFontUnits, WEIGHTS } from '../src/grid';
@@ -15,7 +15,7 @@ import { ALTERNATES, alternateName } from '../src/alternates';
 import { CODE_GROUPS, CODE_LIGATURES, codePieceName } from '../src/code-ligatures';
 import { buildMaster, type Family, type Master, type Style } from '../src/master';
 import { proofPage } from '../src/proof';
-import { decorationMetrics, designspace, postscriptName, sourceFileName, ufoFiles } from '../src/ufo';
+import { decorationMetrics, designspace, postscriptName, productionNames, sourceFileName, ufoFiles } from '../src/ufo';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const build = join(root, 'build');
@@ -113,6 +113,7 @@ function manifest(): Record<string, Record<string, Record<string, unknown>>> {
           strikeoutPosition: Math.round(deco.strikeoutPosition),
           codeLigatures: codeLigatureCases(master),
           alternates: alternateCases(master),
+          productionNames: productionNames(master),
           kerning: Object.fromEntries(KERNING_SAMPLES.map(([x, y]) => [`${x} ${y}`, Math.round(toFontUnits(resolvedValue(kernings.get(`${style} ${weight}`)!, x, y)))])),
         };
       }
@@ -136,6 +137,12 @@ function compile(spaces: string[]): void {
   for (const folder of ['variable', 'ttf'])
     for (const file of readdirSync(join(dist, folder)).filter((f) => f.endsWith('.ttf')))
       run(['-m', 'fontTools.ttLib.woff2', 'compress', '-o', join(dist, 'web', file.replace(/\.ttf$/, '.woff2')), join(dist, folder, file)]);
+  // D18: the static TTFs are hinted with ttfautohint, after the web fonts were made from them unhinted.
+  for (const file of readdirSync(join(dist, 'ttf')).filter((f) => f.endsWith('.ttf'))) {
+    const path = join(dist, 'ttf', file);
+    run(['-m', 'ttfautohint', '--no-info', '--stem-width-mode=nss', path, `${path}.hinted`]);
+    renameSync(`${path}.hinted`, path);
+  }
   writeFileSync(join(dist, 'proof.html'), proofPage());
   writeFileSync(join(dist, 'manifest.json'), `${JSON.stringify(manifest(), null, 2)}\n`);
   run([join(root, 'scripts', 'verify.py')]);

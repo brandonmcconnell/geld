@@ -99,6 +99,11 @@ function fontInfo(master: Master): PlistValue {
     openTypeNameDesigner: 'Brandon McConnell',
     openTypeNameManufacturer: 'Geld',
     openTypeNameManufacturerURL: 'https://www.geld.sh',
+    openTypeNameDesignerURL: 'https://www.geld.sh',
+    openTypeOS2VendorID: 'GELD',
+    // Latin text, sans (normal), the weight's own class, modern proportions, no contrast or stroke variation,
+    // straight arms, a normal or oblique contact letterform, standard midline, a large x-height.
+    openTypeOS2Panose: [2, 11, PANOSE_WEIGHT[weight], 3, 2, 2, 2, style === 'italic' ? 9 : 2, 2, 4],
     unitsPerEm: UPM,
     capHeight: toFontUnits(METRICS.cap),
     xHeight: toFontUnits(METRICS.xHeight),
@@ -493,6 +498,35 @@ function swashFeatures(master: Master, names: Set<string>): string[] {
   return out;
 }
 
+const PANOSE_WEIGHT: Record<Weight, number> = { 100: 2, 200: 3, 300: 4, 400: 5, 500: 6, 600: 7, 700: 8, 800: 9, 900: 10 };
+
+/**
+ * Production names for the glyph names that are not valid PostScript names (Be-cy, alpha-latin, zhe-cy.loclBGR): each
+ * name part with a hyphen becomes its character's uniXXXX, suffixes kept, so `be-cy.sc` ships as `uni0431.sc`.
+ * Every other name ships as it is.
+ */
+export function productionNames(master: Master): Record<string, string> {
+  const unicodeOf = new Map(master.glyphs.flatMap((g) => (g.unicode === undefined ? [] : [[g.name, g.unicode] as const])));
+  const valid = /^[A-Za-z_.][A-Za-z0-9_.]*$/;
+  const part = (name: string) => {
+    if (valid.test(name)) return name;
+    const u = unicodeOf.get(name);
+    if (u !== undefined) return u > 0xffff ? `u${u.toString(16).toUpperCase()}` : `uni${u.toString(16).toUpperCase().padStart(4, '0')}`;
+    return name.replace(/[^A-Za-z0-9_.]/g, '');
+  };
+  const out: Record<string, string> = {};
+  const taken = new Set(master.glyphs.map((g) => g.name).filter((n) => valid.test(n)));
+  for (const g of master.glyphs) {
+    if (valid.test(g.name)) continue;
+    const [base, ...suffixes] = g.name.split('.');
+    let name = [base!.split('_').map(part).join('_'), ...suffixes.map((s) => s.replace(/[^A-Za-z0-9_]/g, ''))].join('.');
+    while (taken.has(name)) name = `${name}.alt`;
+    taken.add(name);
+    out[g.name] = name;
+  }
+  return out;
+}
+
 /** Every file of one master's UFO, keyed by its path inside the .ufo folder. */
 export function ufoFiles(master: Master, kerning?: Kerning): Map<string, string> {
   const files = new Map<string, string>();
@@ -503,6 +537,10 @@ export function ufoFiles(master: Master, kerning?: Kerning): Map<string, string>
     'lib.plist',
     plist({
       'public.glyphOrder': master.glyphs.map((g) => g.name),
+      // Shipped glyph names must be valid PostScript names: only those that are not get production names.
+      'public.postscriptNames': productionNames(master),
+      // A composite built on composites is flattened in the fonts, as renderers and fontbakery prefer.
+      'com.github.googlei18n.ufo2ft.filters': [{ name: 'flattenComponents', pre: true }],
       'public.openTypeCategories': Object.fromEntries(master.glyphs.map((g) => [g.name, g.mark ? 'mark' : 'base'])),
     }),
   );

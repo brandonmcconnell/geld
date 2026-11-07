@@ -1,7 +1,8 @@
 """Finishing touches fontmake leaves out, applied to the variable fonts in place.
 
 Glyphs are drawn as overlapping strokes and keep their overlaps in variable fonts, so each
-glyph gets OVERLAP_SIMPLE: without it macOS can render the overlaps with seams.
+glyph gets OVERLAP_SIMPLE: without it macOS can render the overlaps with seams. Each also gets
+its variations PostScript name prefix.
 """
 
 import sys
@@ -18,6 +19,11 @@ def finish(path: str) -> None:
         glyph = glyf[name]
         if glyph.numberOfContours > 0:
             glyph.flags[0] |= OVERLAP_SIMPLE
+    # The variations PostScript name prefix (name ID 25), from which apps name the instances: GeldSans, GeldSansItalic.
+    family = font["name"].getDebugName(16) or font["name"].getDebugName(1)
+    italic = bool(font["OS/2"].fsSelection & 1)
+    prefix = family.replace(" ", "") + ("Italic" if italic else "")
+    font["name"].setName(prefix, 25, 3, 1, 0x409)
     font.save(path)
 
 
