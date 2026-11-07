@@ -74,7 +74,7 @@ import { fitChips, stopFittingChips } from './fit-chips';
 import { stopWatchingBrandSelection } from './brand';
 import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrphanedLoans, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
-import { isOverviewPage, openCollapsedThreads, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection } from './overview-page';
+import { isOverviewPage, openCollapsedThreads, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, showAllOverviewComments } from './overview-page';
 import { pageFetch } from '../page-fetch';
 import { closeFlow, openFlowDialog } from './flow';
 
@@ -3141,7 +3141,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     if (clickLoadMore()) visit.loadMoreTries += 1;
   }
   const compacting = settings.compactTimeline !== 'off';
-  // The Overview's Unresolved or Mine view is a list the reader asked for (the For you strip's comments card opens it): it stays.
+  // The digest folds the Overview's view switch, so a narrower view (Unresolved, Mine) is turned back to All, the one with the composer.
+  // The timeline folds once All is showing, since the narrower list holds none of the entries the digest reads.
+  if (compacting && !visit.fullTimeline && showAllOverviewComments()) reapplySoon();
   const hidingTimeline = compacting && !visit.fullTimeline && !overviewCommentsFiltered();
   // "X closed this" with the comment X left as they did: one row, the comment its content.
   const closures = phase('closures', () => (hidingTimeline ? closureGroups(crawledDom) : { groups: [], paired: new Set<string>() }));

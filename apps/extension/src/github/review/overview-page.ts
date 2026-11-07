@@ -53,8 +53,28 @@ export function overviewCommentsControls(section: HTMLElement): HTMLElement | nu
  * (`?comments:mode=thread-previews`), so a reader who follows it asked to see that list.
  */
 export function overviewCommentsFiltered(root: ParentNode = document): boolean {
-  const first = overviewCommentsSection(root)?.querySelector('ul[aria-label="Comments view mode"] li button[aria-pressed]') ?? null;
+  const first = allCommentsButton(root);
   return first !== null && first.getAttribute('aria-pressed') !== 'true';
+}
+
+function allCommentsButton(root: ParentNode): HTMLElement | null {
+  return overviewCommentsSection(root)?.querySelector<HTMLElement>('ul[aria-label="Comments view mode"] li button[aria-pressed]') ?? null;
+}
+
+const ALL_PRESS_GAP_MS = 2000;
+let allPressedAt = Number.NEGATIVE_INFINITY;
+
+/**
+ * Presses the Comments section's "All" when a narrower view is chosen, since the digest folds the view switch away
+ * and only All has the composer: left on Unresolved or Mine the reader had no comment box and no way back to one.
+ * Answers whether it pressed, at most once per `ALL_PRESS_GAP_MS` so a view GitHub does not switch is not pressed every pass.
+ */
+export function showAllOverviewComments(root: ParentNode = document, now = Date.now()): boolean {
+  const all = allCommentsButton(root);
+  if (all === null || all.getAttribute('aria-pressed') === 'true' || now - allPressedAt < ALL_PRESS_GAP_MS) return false;
+  allPressedAt = now;
+  all.click();
+  return true;
 }
 
 const newestFirst = new WeakMap<Element, { readonly icon: Element; readonly descending: boolean }>();

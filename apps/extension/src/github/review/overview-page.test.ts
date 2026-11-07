@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { threadRootOf } from './actions';
 import { crawlConversation, crawlLeftovers, crawlReviews, crawlSidebarReviewers, reactionsOf, resetCrawlCache } from './crawler';
 import { editLogUrlOf, nodeIdOf } from './edit-times';
-import { isOverviewPage, overviewCommentsControls, overviewCommentsSection, overviewNewestFirst } from './overview-page';
+import { isOverviewPage, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, overviewNewestFirst, showAllOverviewComments } from './overview-page';
 
 /** An Overview comment's header as GitHub rendered it on brandonmcconnell/geld#461 (Nov 2026), trimmed. */
 function header(login: string, href: string, at: string, muted = '', extra = ''): string {
@@ -155,5 +155,29 @@ describe("the Overview sidebar's Reviewers", () => {
       ['coderabbitai[bot]', 'commented', true],
       ['alice', 'awaiting', false],
     ]);
+  });
+});
+
+describe("the Overview's Comments view", () => {
+  const VIEWS = `<section><div><h2 id="overview-comments">Comments</h2><ul aria-label="Comments view mode"><li><button aria-pressed="false">All</button></li><li><button aria-pressed="true">Unresolved</button></li><li><button aria-pressed="false">Mine</button></li></ul></div></section>`;
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('is turned back to All, the view with the composer, once per gap', () => {
+    document.body.innerHTML = VIEWS;
+    const pressed: string[] = [];
+    for (const button of document.querySelectorAll('button')) button.addEventListener('click', () => pressed.push(button.textContent ?? ''));
+    expect(overviewCommentsFiltered()).toBe(true);
+    expect(showAllOverviewComments(document, 10_000)).toBe(true);
+    expect(showAllOverviewComments(document, 10_500)).toBe(false);
+    expect(pressed).toEqual(['All']);
+  });
+
+  it('is left alone on All', () => {
+    document.body.innerHTML = VIEWS.replace('"false">All', '"true">All').replace('"true">Unresolved', '"false">Unresolved');
+    expect(overviewCommentsFiltered()).toBe(false);
+    expect(showAllOverviewComments(document, 100_000)).toBe(false);
   });
 });
