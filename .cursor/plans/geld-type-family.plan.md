@@ -204,6 +204,8 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [ ] Tabular figures and Mono get no kerning, by construction.
 - [ ] Collision checks: no kerned pair overlaps, including accents (for example T with ť, Ŵ with ŵ).
 - [x] Seams and slivers: no two contours touch along a line (a hairline once anti-aliased) and no parallel edges face across a gap under 0.35 units, in any glyph, family, style or weight (`seams.ts`, tested).
+- [x] Joins: each glyph's strokes merged as a renderer fills them (`scripts/joins.py`, skia-pathops) and the outline searched for what a clean join never leaves: a short step or shelf where two strokes miss (a short edge between a convex and a concave corner, a 45° cut excepted), a sliver edge, or an ink spike under 32°, in roman and italic at every weight (`pnpm --filter @geld/type joins`, in the Type workflow). The faults still open are listed in `scripts/joins-baseline.txt`; a new one fails. `scripts/sheet.ts` draws glyphs large from the source, `joins-sheet.py` and `joins-zoom.py` circle and magnify what the check finds.
+- [ ] Clear `joins-baseline.txt`: mostly hairline edges under 0.3 units at Black and in mark joins, plus ≈ and & at heavy weights.
 - [ ] Space kerning (space with A, T, V, Y, quotes) where it helps.
 - [ ] Review with standard kerning test texts across languages, and with Geld's own UI strings.
 
