@@ -1,6 +1,9 @@
 import { bounds, type Contour, expandStroke, insetContour, shear, snap, translate } from './geometry';
 import { drawContext, GLYPHS, SPACES } from './glyphs';
-import { DARK_INSET_RATIO, ITALIC_SLOPE, type Weight, weightParams } from './grid';
+import { DARK_INSET_RATIO, ITALIC_SLOPE, METRICS, type Weight, weightParams } from './grid';
+
+/** Italics lean around the middle of the x-height, so a slanted glyph stays centred in its advance. */
+const ITALIC_PIVOT = METRICS.xHeight / 2;
 
 export type Family = 'sans' | 'dark';
 export type Style = 'roman' | 'italic';
@@ -36,13 +39,15 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   const lower = drawContext(params.v, params.hl, true);
   const glyphs: MasterGlyph[] = GLYPHS.map((def) => {
     const g = def.lower ? lower : upper;
-    let contours = def.draw(g).flatMap((stroke) => expandStroke(stroke, g.pen));
-    if (params.snap) contours = contours.map((c) => snap(c, 0.5));
+    const italic = style === 'italic';
+    const strokes = italic && def.italic ? def.italic(g) : def.draw(g);
+    let contours = strokes.flatMap((stroke) => expandStroke(stroke, g.pen, italic ? ITALIC_SLOPE : 0));
+    if (params.snap && !italic) contours = contours.map((c) => snap(c, 0.5));
     const box = bounds(contours);
     contours = contours.map((c) => translate(c, def.lsb - box.minX));
     const advance = def.lsb + (box.maxX - box.minX) + def.rsb;
     if (family === 'dark') contours = contours.map((c) => insetContour(c, params.v * DARK_INSET_RATIO));
-    if (style === 'italic') contours = contours.map((c) => shear(c, ITALIC_SLOPE));
+    if (italic) contours = contours.map((c) => translate(shear(c, ITALIC_SLOPE), -ITALIC_SLOPE * ITALIC_PIVOT));
     return { name: def.name, ...(def.unicode === undefined ? {} : { unicode: def.unicode }), advance, contours };
   });
   for (const space of SPACES) glyphs.push({ name: space.name, unicode: space.unicode, advance: space.advance, contours: [] });

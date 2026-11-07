@@ -100,9 +100,9 @@ Starting stems in grid units, vertical cap stems, to be tuned in Phase 3:
 - [ ] The emblem drawn as a glyph (3.7).
 
 ### 2.5 Italic
-- [ ] The slanted grid at 1:7 (D9). `post.italicAngle`, `hhea` caret slope and `OS/2` fsSelection italic.
-- [ ] Cuts on a sheared corner. Shearing makes the top-left and bottom-right corners obtuse and the other two acute, so the cut legs are tuned so both read as the same cut.
-- [ ] Italic-only forms (D8): a, g, f, l, y and e, plus exit strokes as `ss08`.
+- [x] The slanted grid at 1:7 (D9), leaning around the middle of the x-height so glyphs stay centred. `post.italicAngle`, `hhea` caret slope and `OS/2` fsSelection italic.
+- [x] Cuts on a sheared corner. Shearing makes the top-left and bottom-right corners obtuse and the other two acute, so each cut's leg is scaled before the slant and every outer cut comes out the same length (tested to 0.1%). Grid snapping applies to the roman only.
+- [x] Italic-only forms (D8): single-storey a, a descending f, a tailed l and a u-shaped y. g is single-storey in both styles, and e keeps the roman form. Exit strokes come as `ss08` with the features (phase 8).
 - [ ] Italic spacing and kerning, done separately from roman.
 - [ ] Italic swashes (2.8 and section 7).
 
@@ -434,7 +434,7 @@ Each phase ends with a review. The next phase starts only once its deliverable i
 2. **Foundations.** (Done: `packages/type`, see its PR.) The package, the grid, the geometry engine (cuts, weight, contrast, the dark grade, slant), the build into real fonts with `H O n o`, `G E L D` and space, the wordmark test (D7), a first proof page, and CI. Deliverable: working static, variable and web fonts for Geld Sans and Geld Dark Sans, roman and a provisional italic, every weight.
 3. **Design core.** (First draft done in every weight: A to Z, a to z, 0 to 9 and `. , : ; ! ? - – — ' " ( ) [ ] / _ + =`. Shapes and spacing are refined in phases 4 and 7.) A to Z, a to z, 0 to 9 and basic punctuation at Regular and SemiBold. Deliverable: a proof of the core in two weights.
 4. **Weights.** (Done for the core: contrast, the three-horizontals budget, apertures and a counter test.) Thin to Black, contrast and the three-horizontals budget, `avar`. Deliverable: the core in all nine weights.
-5. **Italic.** Slanted grid, italic forms and their spacing. Deliverable: the core in italic, all weights.
+5. **Italic.** (Done for the core: slanted construction, even cuts, italic forms. Italic spacing and kerning come with phase 7.) Slanted grid, italic forms and their spacing. Deliverable: the core in italic, all weights.
 6. **Character set.** Accents and marks, extended Latin, figure sets, punctuation, currency, math, arrows, shapes, small caps. Deliverable: full GF Latin Pro coverage.
 7. **Spacing and kerning.** Deliverable: kerned proofs in every style.
 8. **Features.** Ligatures, code ligatures, alternates, swashes, every feature in section 7. Deliverable: all shaping tests passing.

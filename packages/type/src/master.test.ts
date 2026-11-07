@@ -1,5 +1,5 @@
 import { bounds, type Contour, cutLeg, expandStroke, insetContour, winding } from './geometry';
-import { WEIGHTS } from './grid';
+import { ITALIC_SLOPE, WEIGHTS } from './grid';
 import { buildMaster, type Family, type Style } from './master';
 
 const shape = (family: Family, style: Style, weight: (typeof WEIGHTS)[number]) =>
@@ -125,5 +125,36 @@ describe('heavy weights', () => {
         if (gap < 1.4) tight.push(`${glyph.name} ${weight}: ${gap.toFixed(2)}`);
       }
     expect(tight).toEqual([]);
+  });
+});
+
+describe('italic', () => {
+  /** Edges that are neither level nor on the slant: the cuts. */
+  const cutEdges = (contour: Contour) =>
+    contour
+      .map((p, i) => {
+        const q = contour[(i + 1) % contour.length]!;
+        return { dx: q.x - p.x, dy: q.y - p.y };
+      })
+      .filter(({ dx, dy }) => Math.abs(dy) > 1e-6 && Math.abs(dx / dy - ITALIC_SLOPE) > 1e-6)
+      .map(({ dx, dy }) => Math.hypot(dx, dy));
+
+  it('cuts every corner of a slanted box to the same length, sharp corners and blunt alike', () => {
+    for (const weight of WEIGHTS) {
+      const o = buildMaster('sans', 'italic', weight).glyphs.find((g) => g.name === 'O')!;
+      const [outer, inner] = o.contours.map(cutEdges);
+      expect(outer).toHaveLength(4);
+      expect(Math.max(...outer!) / Math.min(...outer!), `O ${weight}`).toBeLessThan(1.001);
+      expect(Math.min(...inner!), `O ${weight}`).toBeGreaterThan(0.25);
+    }
+  });
+
+  it('draws italic forms of a, f, l and y rather than slanting the roman', () => {
+    const roman = buildMaster('sans', 'roman', 400).glyphs;
+    const italic = buildMaster('sans', 'italic', 400).glyphs;
+    for (const name of ['a', 'f', 'l', 'y']) {
+      const points = (glyphs: typeof roman) => glyphs.find((g) => g.name === name)!.contours.map((c) => c.length);
+      expect(points(italic), name).not.toEqual(points(roman));
+    }
   });
 });
