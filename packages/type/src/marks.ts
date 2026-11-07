@@ -26,6 +26,12 @@ export const MARK_GAP = { lower: 1.25, case: 1 } as const;
 
 /** Accents are drawn a little lighter than the letters they sit on. */
 const accentPen = (g: DrawContext) => ({ v: g.v * 0.9, h: g.h * 0.9 });
+/**
+ * Marks with a counter or a turn in their small height (tilde, breve, hook above): their strokes stop
+ * growing past about Regular, or at Black the stroke alone is taller than the mark and it closes up,
+ * and their cuts are half the letters', which would eat the mark's short uprights.
+ */
+const smallMarkPen = (g: DrawContext) => ({ v: Math.min(g.v * 0.9, 2), h: Math.min(g.h * 0.9, 1.3), cut: 1 });
 
 const acute = (g: DrawContext, height: number, dx = 0): Stroke =>
   withPen(level(open(p(dx - 0.9, 0), p(dx + 0.9, height))), accentPen(g));
@@ -46,9 +52,12 @@ const MARKS_ABOVE: MarkDef[] = [
     attach: 'top',
     caseForm: true,
     draw: (g, h) => {
-      const s = Math.max(1, h - g.h);
-      const y = g.h / 2;
-      return [withPen(open(p(-1.5 * s, y), p(-0.5 * s, y + s, true), p(0.5 * s, y, true), p(1.5 * s, y + s)), accentPen(g))];
+      // Up, a flat top, down, a flat bottom, up: every corner obtuse, so none needs a cut that could close it.
+      const pen = smallMarkPen(g);
+      const s = Math.min(1.4, Math.max(0.9, h - pen.h - 0.3));
+      const a = 2.75;
+      const y = pen.h / 2;
+      return [withPen(open(p(-a, y), p(-a + s, y + s), p(-s / 2, y + s), p(s / 2, y), p(a - s, y), p(a, y + s)), pen)];
     },
   },
   { name: 'macroncomb', unicode: 0x304, attach: 'top', caseForm: true, draw: (g) => [withPen(bar(-2.4, 2.4, g.h / 2), accentPen(g))] },
@@ -57,7 +66,11 @@ const MARKS_ABOVE: MarkDef[] = [
     unicode: 0x306,
     attach: 'top',
     caseForm: true,
-    draw: (g, h) => [withPen(open(p(-2, h), p(-2, g.h / 2, true), p(2, g.h / 2, true), p(2, h)), accentPen(g))],
+    draw: (g, h) => {
+      const pen = smallMarkPen(g);
+      const x = Math.max(2.3, pen.v / 2 + 1);
+      return [withPen(open(p(-x, h), p(-x, pen.h / 2, true), p(x, pen.h / 2, true), p(x, h)), pen)];
+    },
   },
   { name: 'dotaccentcomb', unicode: 0x307, attach: 'top', caseForm: true, draw: (g) => [dot(g, 0, 0)] },
   {
@@ -75,7 +88,13 @@ const MARKS_ABOVE: MarkDef[] = [
     unicode: 0x309,
     attach: 'top',
     caseForm: true,
-    draw: (g, h) => [withPen(open(p(-1.1, h), p(1.1, h, true), p(1.1, 0)), accentPen(g))],
+    draw: (g, h) => {
+      // The top of a question mark: a bar, its right side, and a bar back to the middle.
+      const pen = smallMarkPen(g);
+      const x = Math.max(1.4, pen.v / 2 + 0.8);
+      const top = Math.max(h, 2 * pen.h + 0.8);
+      return [withPen(open(p(-x, top - pen.h / 2), p(x, top - pen.h / 2, true), p(x, pen.h / 2, true), p(-0.3 * x, pen.h / 2)), pen)];
+    },
   },
   {
     name: 'ringcomb',
@@ -83,8 +102,8 @@ const MARKS_ABOVE: MarkDef[] = [
     attach: 'top',
     caseForm: true,
     draw: (g, h) => {
-      const pen = { v: g.v * 0.72, h: g.h * 0.72 };
-      const size = Math.max(pen.v, pen.h) + (h < MARK_HEIGHT.lower ? 1.1 : 1.3);
+      const pen = { v: Math.min(g.v * 0.72, 1.7), h: Math.min(g.h * 0.72, 1.7) };
+      const size = Math.max(pen.v, pen.h) + (h < MARK_HEIGHT.lower ? 1.3 : 1.6);
       return [withPen(box(-size / 2, size / 2, pen.h / 2, pen.h / 2 + size, ALL), pen)];
     },
   },

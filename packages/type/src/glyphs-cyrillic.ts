@@ -22,6 +22,8 @@ import {
   tailAfter,
   tailAfterLeg,
   tailReach,
+  withPen,
+  INSIDE,
 } from './draw';
 import type { Stroke } from './geometry';
 import { METRICS } from './grid';
@@ -179,8 +181,22 @@ const gheHook: Draw = (g) => {
 };
 /** Ҝ: K with a short upright stroke through its upper arm. */
 const kaStroke: Draw = (g) => {
-  const x = g.v + 1.8;
-  return [...letter('K').draw(g), stem(x, g.y(6), g.y(11))];
+  const x = g.v + 1.6;
+  const w = g.wide(9.5);
+  const y0 = g.y(4.5);
+  const reach = w + g.v / 2 - g.foot(w, g.cap - y0);
+  // Through K's arm, clearing its edges by 1.25 where they come nearest the stroke's ends.
+  const along = (at: number) => y0 + ((g.cap - y0) * at) / reach;
+  const half = (Math.hypot(g.diag.v * reach, g.diag.h * (g.cap - y0)) / Math.hypot(reach, g.cap - y0) / 2) * (Math.hypot(reach, g.cap - y0) / reach);
+  // The leg leaves the arm further out than K's, so the stroke crosses the arm alone.
+  const t = 0.6;
+  return [
+    stem(0, 0, g.cap),
+    withPen(level(open(p(0, y0), p(reach, g.cap)), false, true), g.diag),
+    diagonal(g, reach * t, along(reach * t), reach, 0, [false, true]),
+    // With no room to clear the arm below the cap (heavy weights) the stroke ends inside it, showing only below.
+    stem(x, along(x - g.v / 2) - half - 1.25, along(x + g.v / 2) + half + 1.25 <= g.cap ? along(x + g.v / 2) + half + 1.25 : along(x - g.v / 2) + half - INSIDE),
+  ];
 };
 /** Ҹ: a wider Ч with a short upright stroke through the middle of its bar. */
 const cheStroke: Draw = (g) => {

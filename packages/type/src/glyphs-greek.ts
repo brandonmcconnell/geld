@@ -275,10 +275,11 @@ function zetaStrokes(g: DrawContext, xi: boolean) {
   const d = g.bottom(g.descender);
   const start = edgeAt(g.diag, w - e, top, e, 0, g.h, -1) + INSIDE;
   const middle = g.y(7.5);
-  const reach = edgeAt(g.diag, w - e, top, e, 0, middle + g.h / 2, -1) - 1.25;
+  const left = edgeAt(g.diag, w - e, top, e, 0, middle - g.h / 2, -1) - 1.25;
+  const right = Math.max(w * 0.8, edgeAt(g.diag, w - e, top, e, 0, middle + g.h / 2, 1) + 1.5);
   return [
     barIntoDiagonal(g, 0, w, top, [e, 0])[0]!,
-    ...(xi ? [bar(reach, w * 0.8, middle)] : []),
+    ...(xi ? [bar(left, right, middle)] : []),
     diagonal(g, w - e, top, e, 0),
     open(p(start, b), p(w, b, true), p(w, d, true), p(w - 2.5, d)),
   ];
