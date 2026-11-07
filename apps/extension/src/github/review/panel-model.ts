@@ -422,6 +422,22 @@ export function checksTone(counts: CheckCounts, requiredFailing: boolean | null)
   return null;
 }
 
+/** The CI status row's tint: only the red of a failing required check, since the glyph already says the rest. */
+export function checksRowTone(counts: CheckCounts, requiredFailing: boolean | null): Tone | null {
+  return checksTone(counts, requiredFailing) === 'bad' ? 'bad' : null;
+}
+
+/**
+ * A push's row by push: amber while a thread is unresolved (red is kept for a
+ * failing required check), green once its threads are settled or its CI
+ * passed. A failing CI is the push's glyph alone, since the last commit's
+ * summary does not say whether the failing check is required.
+ */
+export function pushRowTone(openThreads: boolean, ci: 'success' | 'failure' | 'pending' | null, allDone: boolean): Tone | null {
+  if (openThreads) return 'warn';
+  return allDone || ci === 'success' ? 'good' : null;
+}
+
 export function checksSummary(counts: CheckCounts): string {
   const parts: string[] = [];
   if (counts.failure > 0) parts.push(`${counts.failure} failing`);

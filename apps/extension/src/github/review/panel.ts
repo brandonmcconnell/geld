@@ -18,7 +18,7 @@ import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/revie
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
 import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL } from '../ui/icons';
-import { authorLabels, botDetail, botHealth, checksHealth, checksSummary, checksTone, checksTotal, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
+import { authorLabels, botDetail, botHealth, checksHealth, checksRowTone, checksSummary, checksTotal, pushRowTone, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
 import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import type { AiState } from './ai';
@@ -910,16 +910,6 @@ function pushContents(batch: Batch): string {
 
 const CI_WORDS: Readonly<Record<'success' | 'failure' | 'pending', string>> = { success: 'checks passed', failure: 'checks failed', pending: 'checks running' };
 
-function pushTone(batch: Batch, allDone: boolean): Tone | null {
-  const open = batch.items.some((item) => isOpenStatus(item.status));
-  // A push's CI is its last commit's summary, which does not say whether the failing check is required, so a
-  // failure there is the glyph's to show, never the row's. Red belongs to a failing required check alone, so an
-  // unresolved thread is amber.
-  if (open) return 'warn';
-  if (batch.ciGlyph === 'success') return 'good';
-  return allDone && batch.ciGlyph !== 'failure' ? 'good' : null;
-}
-
 function batchProgress(batch: Batch): { readonly done: number; readonly total: number } {
   return { done: batch.items.filter((item) => !isOpenStatus(item.status)).length, total: batch.items.length };
 }
@@ -1007,7 +997,7 @@ function batchRow(batch: Batch, model: PanelModel, handlers: PanelHandlers): HTM
   // A push is red while CI failed or a thread is open, green once CI passed (or, with no CI to read, once its threads
   // are all resolved) and nothing is open, and plain while CI is still running with nothing to resolve. A comment
   // that lands later and opens a thread turns a green push red again.
-  const tone: Tone | null = byPush ? pushTone(batch, allDone) : allDone ? 'good' : null;
+  const tone: Tone | null = byPush ? pushRowTone(batch.items.some((item) => isOpenStatus(item.status)), batch.ciGlyph, allDone) : allDone ? 'good' : null;
   const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--batch`, 'data-geld-batch': batch.key, 'data-state': allDone ? 'done' : total === 0 ? 'none' : 'open', ...toneAttr(tone) }, [
     ...(byPush ? [createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(ICON_REPO_PUSH)])] : [lead, avatarStack(batch.avatars, batch.names[0] ?? '', true, batch.avatars.length)]),
     main,
@@ -2074,7 +2064,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     mainClickToggles(main, () => handlers.onToggle(CHECKS_KEY));
     // The one status row that tints, and only red for a failing required check: an optional failure, a bot, a report
     // or a preview that failed says so in its glyph alone, since none of them holds the pull request back.
-    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(checksTone(counts, model.requiredFailing) === 'bad' ? 'bad' : null) }, [
+    const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health, ...toneAttr(checksRowTone(counts, model.requiredFailing)) }, [
       createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [model.checksRing ?? checksRing(counts)]),
       rowLabel('CI checks', 'CI'),
       main,
