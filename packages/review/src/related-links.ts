@@ -45,6 +45,11 @@ export interface RelatedLink {
 export interface LinkCandidate {
   readonly href: string;
   readonly text: string;
+  /**
+   * Who wrote the comment the link is in; absent for the description. A comment's link counts only when its author
+   * is the service's own bot (`officialSources`): Linear's linkback naming its issue, not a person pasting one.
+   */
+  readonly author?: string | null;
 }
 
 interface Match {
@@ -346,6 +351,16 @@ const linkSpecs: readonly LinkSpec[] = [
     host: /^(?:app\.)?replicas\.dev$/,
     path: new RegExp(`^/workspaces/(${UUID})/?$`),
     read: ({ path }) => ({ id: group(path, 1), noun: 'workspace' }),
+    verb: 'View',
+    bot: 'replicas',
+  },
+  {
+    id: 'replicas-automation',
+    service: 'Replicas',
+    kind: 'agent',
+    host: /^(?:app\.)?replicas\.dev$/,
+    path: new RegExp(`^/automations/(${UUID})/?$`),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'automation' }),
     verb: 'View',
     bot: 'replicas',
   },
@@ -842,6 +857,7 @@ const GENERIC_WORDS = new Set([
   'link', 'here', 'this', 'that', 'view', 'open', 'see', 'show', 'follow', 'in', 'on', 'the', 'a', 'to', 'at', 'of', 'for', 'and', 'with', 'via', 'from', 'my', 'your',
   'web', 'desktop', 'app', 'browser', 'thread', 'message', 'channel', 'session', 'task', 'run', 'workspace', 'issue', 'ticket', 'story', 'card', 'page', 'doc', 'project',
   'conversation', 'chat', 'agent', 'automation', 'review', 'findings', 'finding', 'work', 'details', 'trace', 'cloud', 's', 'url', 'reference',
+  'explain', 'change', 'changes', 'diff', 'guided', 'stack', 'summary', 'check', 'go', 'jump', 'visit',
 ]);
 
 /** The link's own words as its title, when they say more than the service, noun and identifier (and are not its URL). */
@@ -948,6 +964,41 @@ function githubRank(link: RelatedLink, options: RelatedOptions): number {
   return GITHUB_NOUN_ORDER.indexOf(link.noun) * NEARNESS_ORDER.length + NEARNESS_ORDER.indexOf(nearness(link.context ?? '', options));
 }
 
+/**
+ * The bots that speak for a service in a comment, beyond the review bots the registry names (`LinkSpec.bot`), keyed by
+ * spec id. Read from what each App's comments link to on public pull requests (Nov 2026): Linear's linkback,
+ * Atlassian's Jira bot, ClickUp's, Codegen's trace links.
+ */
+const OFFICIAL_SOURCES: Readonly<Record<string, readonly string[]>> = {
+  linear: ['linear[bot]'],
+  jira: ['atlassian[bot]'],
+  confluence: ['atlassian[bot]'],
+  'confluence-short': ['atlassian[bot]'],
+  clickup: ['clickup[bot]'],
+  'clickup-doc': ['clickup[bot]'],
+  codegen: ['codegen-sh[bot]'],
+  tembo: ['tembo[bot]'],
+  'tembo-task': ['tembo[bot]'],
+  factory: ['factory-droid[bot]'],
+  'factory-automation': ['factory-droid[bot]'],
+  jules: ['google-labs-jules[bot]'],
+  copilot: ['copilot-swe-agent[bot]'],
+  openhands: ['openhands-ai[bot]'],
+  opencode: ['opencode-agent[bot]'],
+  lovable: ['lovable-dev[bot]'],
+  graphite: ['graphite-app[bot]'],
+  'graphite-agent': ['graphite-app[bot]'],
+  sentry: ['sentry[bot]'],
+};
+
+/** Whether `author` is one of the service's own bots, so its comment is a source for that service's links. */
+export function officialSourceOf(specId: string, author: string): boolean {
+  const spec = linkSpecs.find((candidate) => candidate.id === specId);
+  if (spec === undefined) return false;
+  const logins = [...(OFFICIAL_SOURCES[spec.id] ?? []), ...(spec.bot === undefined ? [] : botById(spec.bot)?.logins ?? [])];
+  return logins.some((login) => login.toLowerCase() === author.toLowerCase());
+}
+
 function readLink(candidate: LinkCandidate, options: RelatedOptions = {}): { readonly link: RelatedLink; readonly rank: number } | null {
   let url: URL;
   try {
@@ -956,10 +1007,14 @@ function readLink(candidate: LinkCandidate, options: RelatedOptions = {}): { rea
     return null;
   }
   if (url.protocol !== 'https:' || url.username !== '' || url.password !== '' || url.port !== '') return null;
+  const author = candidate.author ?? null;
   for (const spec of linkSpecs) {
     const link = matchSpec(spec, url, candidate.text);
-    if (link !== null) return { link, rank: spec.rank ?? 0 };
+    if (link === null) continue;
+    return author === null || officialSourceOf(spec.id, author) ? { link, rank: spec.rank ?? 0 } : null;
   }
+  // GitHub's own references come from the description only: every comment is full of them.
+  if (author !== null) return null;
   if (url.hostname !== 'github.com' && !(options.githubHosts ?? []).includes(url.hostname)) return null;
   const link = readGitHub(url, candidate.text, options);
   return link === null ? null : { link, rank: 0 };

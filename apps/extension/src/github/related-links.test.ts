@@ -176,6 +176,21 @@ describe('related links in the sidebar', () => {
     expect(relatedLinksOnPage().map((link) => link.key)).toEqual(['linear:acme:ENG-9']);
   });
 
+  it('reads an App’s comment for its own service only, and never a person’s', () => {
+    const comment = (author: string, links: string): string => `<div class="timeline-comment"><div class="timeline-comment-header"><a class="author" href="${author}">x</a></div><div class="comment-body markdown-body"><p>${links}</p></div></div>`;
+    document.body.innerHTML =
+      '<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>The description.</p></div></div>' +
+      comment('/octocat', '<a href="https://linear.app/acme/issue/ENG-1">ENG-1</a>') +
+      comment('/apps/linear', '<a href="https://linear.app/acme/issue/ENG-2">ENG-2</a> <a href="https://acme.slack.com/archives/C0123ABCD/p1793123214352139">thread</a>') +
+      comment('/apps/replicas-connector', '<a href="https://app.replicas.dev/workspaces/9e2a6c22-c7ad-49f7-8219-fe70dd1c8010"><img alt="Replicas Workspace"></a> <a href="https://app.greptile.com/review/github/acme/web/pull/9"><img alt="View in Greptile"></a>');
+    expect(relatedLinksOnPage().map((link) => link.key)).toEqual(['linear:acme:ENG-2', 'replicas:9e2a6c22-c7ad-49f7-8219-fe70dd1c8010']);
+  });
+
+  it('passes over a box that holds several comments rather than guess whose the links are', () => {
+    document.body.innerHTML = '<div class="group"><a href="/apps/linear">linear</a><div class="markdown-body"><a href="https://linear.app/acme/issue/ENG-3">ENG-3</a></div><div class="markdown-body"><a href="https://linear.app/acme/issue/ENG-4">ENG-4</a></div></div>';
+    expect(relatedLinksOnPage()).toEqual([]);
+  });
+
   it('takes nothing from a dependency update, whose links are upstream release notes', () => {
     document.body.innerHTML = '<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>This PR contains the following updates:</p><p><a href="https://gitlab.com/cznic/sqlite/-/issues/263">#263</a></p></div></div>';
     expect(relatedLinksOnPage()).toEqual([]);

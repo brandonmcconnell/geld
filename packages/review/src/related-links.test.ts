@@ -43,6 +43,8 @@ describe('relatedLinkOf', () => {
     expect(read('https://linear.app/wulfgardr/issue/WUL-766', 'WUL-766')?.title).toBeNull();
     expect(read('https://linear.app/acme/issue/ENG-12', 'https://linear.app/acme/issue/ENG-12')?.title).toBeNull();
     expect(read('https://cursor.com/agents/bc-4507257a-6c22-519d-8c1e-408ad9f0bf88', 'Open in Web')?.title).toBeNull();
+    expect(read('https://app.coderabbit.ai/change-stack/acme/web/pull/3?scope=x', 'Explain Change →')?.title).toBeNull();
+    expect(read('https://welibrary.atlassian.net/browse/LC-2379', 'Check Jira issue')?.title).toBeNull();
   });
 
   it('tells a Slack thread, a message, a direct message and a channel apart', () => {
@@ -221,6 +223,26 @@ describe('GitHub references', () => {
     for (const href of ['https://github.com/acme/web', 'https://github.com/acme/web/commit/3b2f94ba', 'https://github.com/acme/web/blob/main/a.ts', 'https://github.com/orgs/acme/discussions/1', 'https://github.com/acme/web/issues', 'https://github.com/user-attachments/assets/b72f2dc7-4558-488d-877c-eb53a7f4beef']) {
       expect(readHere(href), href).toBeNull();
     }
+  });
+});
+
+describe('official sources in comments', () => {
+  const fromComment = (href: string, author: string) => relatedLinkOf({ href, text: '', author });
+
+  it('takes a comment’s link only when its author is that service’s own bot', () => {
+    expect(fromComment('https://linear.app/wulfgardr/issue/WUL-766', 'linear[bot]')?.ref).toBe('WUL-766');
+    expect(fromComment('https://linear.app/wulfgardr/issue/WUL-766', 'octocat')).toBeNull();
+    expect(fromComment('https://welibrary.atlassian.net/browse/LC-12', 'atlassian[bot]')?.ref).toBe('LC-12');
+    expect(fromComment('https://app.replicas.dev/workspaces/9e2a6c22-c7ad-49f7-8219-fe70dd1c8010', 'replicas-connector[bot]')?.noun).toBe('workspace');
+    expect(fromComment('https://app.replicas.dev/automations/9e2a6c22-c7ad-49f7-8219-fe70dd1c8010', 'replicas-connector[bot]')?.noun).toBe('automation');
+    expect(fromComment('https://app.devin.ai/sessions/d71d660849c3422eadd668dd12739bac', 'devin-ai-integration[bot]')?.noun).toBe('session');
+    expect(fromComment('https://codegen.com/agent/trace/171445', 'codegen-sh[bot]')?.noun).toBe('run');
+  });
+
+  it('takes nothing a bot says of another service, nor GitHub references', () => {
+    expect(fromComment('https://mintlify.slack.com/archives/C0BCMJ9JFA9/p1793123214352139', 'linear[bot]')).toBeNull();
+    expect(fromComment('https://app.greptile.com/review/github/acme/web/pull/9', 'replicas-connector[bot]')).toBeNull();
+    expect(fromComment('https://github.com/acme/web/issues/12', 'linear[bot]')).toBeNull();
   });
 });
 
