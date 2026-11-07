@@ -3,6 +3,7 @@ import { LOCL, type LoclLanguage } from './glyphs-cyrillic';
 import { FIGURE_NAMES, TABULAR_SIGNS } from './glyphs-figures';
 import { VIETNAMESE_PAIRS } from './marks';
 import type { Kerning } from './kerning';
+import { LOCKUP } from './lockup';
 import { FAMILY_NAMES, type Family, type Master, type Style, TEXT_LIGATURES } from './master';
 
 const VERSION = { major: 0, minor: 1 };
@@ -269,6 +270,17 @@ export function features(master: Master): string {
     'feature liga {',
     ...TEXT_LIGATURES.filter((parts) => names.has(parts.join('_'))).map((parts) => `  sub ${parts.join(' ')} by ${parts.join('_')};`),
     '} liga;',
+    // Only as a word of its own: Geldern, Geldbörse and Gelder keep their letters.
+    ...(names.has(LOCKUP.name)
+      ? [
+          `@GeldWordLetters = [${master.glyphs.filter((g) => g.unicode !== undefined && /\p{L}/u.test(String.fromCodePoint(g.unicode))).map((g) => g.name).join(' ')}];`,
+          'feature dlig {',
+          `  ignore sub @GeldWordLetters ${LOCKUP.letters.map((l) => `${l}'`).join(' ')};`,
+          `  ignore sub ${LOCKUP.letters.map((l) => `${l}'`).join(' ')} @GeldWordLetters;`,
+          `  sub ${LOCKUP.letters.map((l) => `${l}'`).join(' ')} by ${LOCKUP.name};`,
+          '} dlig;',
+        ]
+      : []),
   ].join('\n');
 }
 

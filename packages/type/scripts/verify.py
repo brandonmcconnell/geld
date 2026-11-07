@@ -159,7 +159,7 @@ def check_small_caps(path: Path, data: bytes) -> None:
 
 
 def check_ligatures(path: Path, data: bytes, weight: int) -> None:
-    """ff ft tt become one glyph by default, as wide as the letters set apart, with a caret between them; liga off or smcp keeps the letters."""
+    """ff ft tt become one glyph by default, as wide as the letters set apart, with a caret between them; liga off or smcp keeps the letters. "Geld" as a word becomes the wordmark under dlig."""
     font = TTFont(path)
     carets = font["GDEF"].table.LigCaretList
     with_carets = set(carets.Coverage.glyphs) if carets else set()
@@ -173,6 +173,15 @@ def check_ligatures(path: Path, data: bytes, weight: int) -> None:
         check(name in with_carets, f"{path.name}: {name} has no ligature caret")
         small = [n for n, _ in shape(data, weight, text, features={"smcp": True})]
         check(small == [f"{c}.sc" for c in text], f"{path.name} at {weight}: smcp {text} shaped {small}")
+    for text, features, names in (
+        ("Geld", {"dlig": True}, ["G_e_l_d"]),
+        ("Geld!", {"dlig": True}, ["G_e_l_d", "exclam"]),
+        ("Geldern", {"dlig": True}, list("Geldern")),
+        ("Geld", {}, list("Geld")),
+    ):
+        got = [n for n, _ in shape(data, weight, text, features=features)]
+        check(got == names, f"{path.name} at {weight}: {text} with {features} shaped {got}")
+    check("G_e_l_d" in with_carets, f"{path.name}: the Geld lockup has no carets")
 
 
 def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None:
