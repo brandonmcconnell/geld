@@ -120,12 +120,12 @@ describe('heavy weights', () => {
   /** B and 8 (and в, B's small capital, and its Bulgarian form) have a notch at the waist, Q's tail and ł's and ø's strokes cross, and ʾ ʿ are open angles, by design. */
   const notched = new Set(['B', 'eight', 'Q', 'lslash', 'Lslash', 'oslash', 'Oslash', 'litre', 've-cy', 've-cy.loclBGR', 'ringhalfleftmod', 'ringhalfrightmod']);
 
-  it('keep every letter and figure counter at least 1.4 units open (superiors, ordinals and modifier letters in proportion), Black included', () => {
+  it('keep every letter, figure and currency counter at least 1.4 units open (superiors, ordinals and modifier letters in proportion), Black included', () => {
     const tight: string[] = [];
     for (const weight of WEIGHTS)
       for (const glyph of buildMaster('sans', 'roman', weight).glyphs) {
         const char = glyph.unicode === undefined ? '' : String.fromCodePoint(glyph.unicode);
-        if (!(/[\p{L}\p{N}]/u.test(char) || glyph.name.includes('.locl')) || notched.has(glyph.name) || !orthogonal(glyph.contours)) continue;
+        if (!(/[\p{L}\p{N}\p{Sc}]/u.test(char) || /\.(locl|tf|osf|tosf)|^zero\./.test(glyph.name)) || notched.has(glyph.name) || !orthogonal(glyph.contours)) continue;
         const small = /superior|inferior|\.dnom|^ord|mod$/.test(glyph.name);
         const gap = narrowestCounter(glyph.contours);
         if (gap < (small ? 0.75 : 1.4)) tight.push(`${glyph.name} ${weight}: ${gap.toFixed(2)}`);
@@ -194,6 +194,36 @@ describe('math operators', () => {
       });
       expect(centres, `${weight}`).toEqual(OPERATORS.map((n) => [n, MATH_AXIS]));
       expect(new Set(glyphs.map((g) => g.advance)).size, `${weight} widths`).toBe(1);
+    }
+  });
+});
+
+describe('figures', () => {
+  const tabular = (name: string) => /\.(tf|tosf)(\.|$)/.test(name) || name === 'figurespace';
+
+  it('give every tabular figure and sign one width, with at least 0.4 units of space on each side', () => {
+    const faults: string[] = [];
+    for (const weight of WEIGHTS) {
+      const glyphs = buildMaster('sans', 'roman', weight).glyphs;
+      const width = glyphs.find((g) => g.name === 'zero.tf')!.advance;
+      for (const glyph of glyphs.filter((g) => tabular(g.name))) {
+        if (Math.abs(glyph.advance - width) > 1e-9) faults.push(`${glyph.name} ${weight}: advance ${glyph.advance.toFixed(2)}`);
+        if (!glyph.contours.length) continue;
+        const b = bounds(glyph.contours);
+        if (b.minX < 0.4 || glyph.advance - b.maxX < 0.4) faults.push(`${glyph.name} ${weight}: sides ${b.minX.toFixed(2)} ${(glyph.advance - b.maxX).toFixed(2)}`);
+      }
+    }
+    expect(faults).toEqual([]);
+  });
+
+  it('set oldstyle 0 1 2 on the x-height, 6 and 8 to the cap height and 3 4 5 7 9 below the baseline', () => {
+    const glyphs = buildMaster('sans', 'roman', 400).glyphs;
+    const box = (name: string) => bounds(glyphs.find((g) => g.name === name)!.contours);
+    for (const name of ['zero', 'one', 'two']) expect(box(`${name}.osf`).maxY, name).toBeCloseTo(METRICS.xHeight, 0);
+    for (const name of ['six', 'eight']) expect(box(`${name}.osf`).maxY, name).toBeCloseTo(METRICS.cap, 0);
+    for (const name of ['three', 'four', 'five', 'seven', 'nine']) {
+      expect(box(`${name}.osf`).minY, name).toBeCloseTo(METRICS.descender, 0);
+      expect(box(`${name}.osf`).maxY, name).toBeCloseTo(METRICS.xHeight, 0);
     }
   });
 });

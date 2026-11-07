@@ -38,10 +38,11 @@ export const LATIN1: GlyphDef[] = [
     lsb: 1.25,
     rsb: 0.9,
     draw: (g) => {
-      const w = g.wide(7.5);
+      const w = g.wide(8);
       const t = g.top(g.xHeight);
       const b = g.bottom(0);
-      return [open(p(w, 7), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, 3)), stem(w / 2, -2, 12)];
+      const thin = Math.min(g.v, w - g.v - 3.8);
+      return [open(p(w, g.y(7)), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, g.y(3))), withPen(stem(w / 2, g.y(-2), g.y(12)), { v: thin, h: g.h })];
     },
   },
   {

@@ -152,7 +152,11 @@ export const PLACED: PlacedDef[] = [
   ...FRACTIONS.map(([name, unicode, numerator, denominator]) => ({
     name,
     unicode,
-    parts: [{ glyph: `${numerator}superior`, after: true }, { glyph: 'fraction', after: true }, { glyph: `${denominator}.dnom`, after: true }],
+    parts: [
+      { glyph: `${numerator}superior`, after: true },
+      { glyph: 'fraction', after: true },
+      ...denominator.split(' ').map((figure) => ({ glyph: `${figure}.dnom`, after: true })),
+    ],
   })),
 ];
 

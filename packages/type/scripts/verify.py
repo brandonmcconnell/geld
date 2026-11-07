@@ -57,7 +57,7 @@ def shape_total(data: bytes, weight: int, text: str) -> tuple[list[str], int]:
     return names, sum(pos.x_advance for pos in buf.glyph_positions)
 
 
-def shape(data: bytes, weight: int, text: str, language: str | None = None):
+def shape(data: bytes, weight: int, text: str, language: str | None = None, features: dict | None = None):
     font = hb.Font(hb.Face(data))
     font.set_variations({"wght": weight})
     buf = hb.Buffer()
@@ -65,7 +65,7 @@ def shape(data: bytes, weight: int, text: str, language: str | None = None):
     buf.guess_segment_properties()
     if language:
         buf.language = language
-    hb.shape(font, buf)
+    hb.shape(font, buf, features or {})
     return [(font.glyph_to_string(i.codepoint), p) for i, p in zip(buf.glyph_infos, buf.glyph_positions)]
 
 
@@ -107,6 +107,28 @@ def check_locl(path: Path, data: bytes, italic: bool) -> None:
         check(got == names, f"{path.name}: {language} {text!r} shaped {got}")
 
 
+def check_figures(path: Path, data: bytes) -> None:
+    """Every figure feature reaches its glyphs, and the tabular ones share one width."""
+    expected = [
+        ("10", {"tnum": True}, ["one.tf", "zero.tf"]),
+        ("30", {"onum": True}, ["three.osf", "zero.osf"]),
+        ("30", {"onum": True, "tnum": True}, ["three.tosf", "zero.tosf"]),
+        ("0", {"zero": True}, ["zero.zero"]),
+        ("0", {"zero": True, "tnum": True}, ["zero.tf.zero"]),
+        ("$5", {"tnum": True}, ["dollar.tf", "five.tf"]),
+        ("1/2", {"frac": True}, ["onesuperior", "fraction", "two.dnom"]),
+        ("12", {"sups": True}, ["onesuperior", "twosuperior"]),
+        ("2+", {"sinf": True}, ["twoinferior", "plusinferior"]),
+        ("1o", {"ordn": True}, ["one", "ordmasculine"]),
+        ("1o", {}, ["one", "o"]),
+    ]
+    for text, features, names in expected:
+        got = [n for n, _ in shape(data, 400, text, features=features)]
+        check(got == names, f"{path.name}: {text!r} with {features} shaped {got}")
+    widths = {pos.x_advance for _, pos in shape(data, 400, "0123456789$€", features={"tnum": True})}
+    check(len(widths) == 1, f"{path.name}: tabular widths differ {sorted(widths)}")
+
+
 def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None:
     font = TTFont(path)
     cmap = set(font.getBestCmap())
@@ -122,6 +144,7 @@ def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None
     check(bool(font["OS/2"].fsSelection & 1) == italic, f"{path.name}: italic bit")
     data = path.read_bytes()
     check_locl(path, data, italic)
+    check_figures(path, data)
     for weight, expected in by_weight.items():
         instance = instantiateVariableFont(TTFont(path), {"wght": int(weight)})
         got = advances(instance)
