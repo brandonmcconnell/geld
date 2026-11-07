@@ -1,9 +1,10 @@
 import { accentedFromUnicode, LATIN_RANGES, PLACED, SPACING_ACCENTS } from './composites';
-import { drawContext } from './draw';
-import { bounds, type Contour, expandStroke, insetContour, shear, snap, translate, type Vec } from './geometry';
+import { type DrawContext, drawContext, type GlyphDef } from './draw';
+import { measuredSidebearings, type SpacingZone } from './spacing';
+import { bounds, type Contour, expandStroke, insetContour, shear, snap, translate, type Vec, winding } from './geometry';
 import { GLYPHS, SPACES } from './glyphs';
 import { DARK_INSET_RATIO, ITALIC_SLOPE, METRICS, type Weight, weightParams } from './grid';
-import { type Attachment, MARK_GAP, MARK_HEIGHT, MARKS } from './marks';
+import { type Attachment, BELOW_GAP, MARK_GAP, MARK_HEIGHT, MARKS } from './marks';
 
 /** Italics lean around the middle of the x-height, so a slanted glyph stays centred in its advance. */
 const ITALIC_PIVOT = METRICS.xHeight / 2;
@@ -53,17 +54,41 @@ const isUpperChar = (cp: number | undefined) => {
   return c !== c.toLowerCase() && c === c.toUpperCase();
 };
 
+/**
+ * Which spacing zone a drawn glyph is measured in: letters and figures are spaced by their white
+ * (spacing.ts); punctuation and symbols keep their hand-set sidebearings.
+ */
+function spacingZone(def: GlyphDef, g: DrawContext): SpacingZone | undefined {
+  if (def.unicode === undefined) return undefined;
+  const c = String.fromCodePoint(def.unicode);
+  if (/\p{Nd}/u.test(c)) return { bottom: 0, top: g.cap, target: 1.3, depth: 2.5, min: 0.3 };
+  if (!/\p{L}/u.test(c)) return undefined;
+  if (def.lower || /\p{Ll}/u.test(c)) return { bottom: 0, top: g.xHeight, target: 1.45, depth: 2, min: 0.15 };
+  return { bottom: 0, top: g.cap, target: 1.6, depth: 2.8, min: 0.2 };
+}
+
+/** Math operators share one width, their ink centred in it, so a row of + − = × ÷ aligns. */
+const MATH_OPERATORS = ['plus', 'minus', 'equal', 'multiply', 'divide', 'less', 'greater', 'approxequal', 'notequal', 'asciitilde', 'plusminus', 'logicalnot', 'lessequal', 'greaterequal'];
+const MATH_SIDE = 1.25;
+
+/** The rightmost ink a little above the baseline: where an ogonek can hang from the stroke, not from a cut corner. */
+function inkEndAtBaseline(contours: Contour[], box: { minX: number; maxX: number }): number {
+  const y = 0.3;
+  for (let x = box.maxX; x > box.minX; x -= 0.05) if (winding(contours, { x, y }) !== 0) return x;
+  return box.maxX;
+}
+
 /** Where marks attach to a drawn glyph, from its Geld Sans outline: centred above and below, the ogonek under the last stroke. */
 function baseAnchors(contours: Contour[], upper: boolean, v: number, name: string): Anchor[] {
   if (!contours.length) return [];
   const box = bounds(contours);
   const cx = (box.minX + box.maxX) / 2;
   const gap = upper ? MARK_GAP.case : MARK_GAP.lower;
-  const topright = name === 'L' ? { x: box.minX + v + 0.9, y: METRICS.cap - 3 } : { x: box.maxX + 0.9, y: box.maxY - 3 };
+  const topright = name === 'L' ? { x: box.minX + v + 0.9, y: METRICS.cap - 3 } : { x: box.maxX + 0.9, y: Math.max(box.maxY - 3, METRICS.xHeight + 1.25) };
   return [
     { name: 'top', x: cx, y: box.maxY + gap },
-    { name: 'bottom', x: cx, y: 0 },
-    { name: 'ogonek', x: box.maxX - v / 2, y: 0 },
+    { name: 'bottom', x: box.minY < -1 ? box.minX + (box.maxX - box.minX) * 0.3 : cx, y: 0 },
+    { name: 'ogonek', x: inkEndAtBaseline(contours, box) - v / 2, y: 0 },
     { name: 'topright', ...topright },
     { name: 'horn', x: box.maxX - 0.3, y: box.maxY - 2.5 },
   ];
@@ -95,25 +120,53 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     let contours = strokes.flatMap((stroke) => expandStroke(stroke, g.pen, slope));
     if (params.snap && !italic) contours = contours.map((c) => snap(c, 0.5));
     const box = bounds(contours);
-    contours = contours.map((c) => translate(c, def.lsb - box.minX));
-    const advance = def.lsb + (box.maxX - box.minX) + def.rsb;
+    const zone = spacingZone(def, g);
+    const { lsb, rsb } = zone ? measuredSidebearings(contours, box.minX, box.maxX, zone) : def;
+    contours = contours.map((c) => translate(c, lsb - box.minX));
+    const advance = lsb + (box.maxX - box.minX) + rsb;
     const anchors = baseAnchors(contours, isUpperChar(def.unicode), params.v, def.name);
     return {
       name: def.name,
       ...(def.unicode === undefined ? {} : { unicode: def.unicode }),
       advance,
-      contours: finish(contours),
+      contours,
       components: [],
-      anchors: placeAnchors(anchors),
+      anchors,
       mark: false,
     };
   });
+
+  const operators = glyphs.filter((gl) => MATH_OPERATORS.includes(gl.name));
+  const inkWidth = (gl: MasterGlyph) => {
+    const b = bounds(gl.contours);
+    return b.maxX - b.minX;
+  };
+  const mathAdvance = Math.max(...operators.map(inkWidth)) + 2 * MATH_SIDE;
+  for (const gl of operators) {
+    const b = bounds(gl.contours);
+    const dx = (mathAdvance - (b.maxX - b.minX)) / 2 - b.minX;
+    gl.contours = gl.contours.map((c) => translate(c, dx));
+    gl.anchors = gl.anchors.map((a) => ({ ...a, x: a.x + dx }));
+    gl.advance = mathAdvance;
+  }
+  for (const gl of glyphs) {
+    gl.contours = finish(gl.contours);
+    gl.anchors = placeAnchors(gl.anchors);
+  }
 
   const markAttach = new Map<string, Attachment>();
   for (const def of MARKS)
     for (const form of def.caseForm ? (['lower', 'case'] as const) : (['lower'] as const)) {
       const height = MARK_HEIGHT[form];
-      const contours = def.draw(lower, height).flatMap((stroke) => expandStroke(stroke, lower.pen, slope));
+      let contours = def.draw(lower, height).flatMap((stroke) => expandStroke(stroke, lower.pen, slope));
+      if (def.hang) {
+        const top = bounds(contours).maxY;
+        contours = contours.map((c) => translate(c, 0, -BELOW_GAP - top));
+      }
+      if (def.attach === 'top') {
+        const bottom = bounds(contours).minY;
+        contours = contours.map((c) => translate(c, 0, -bottom));
+      }
       const box = bounds(contours);
       const name = form === 'case' ? `${def.name}.case` : def.name;
       const above = def.attach === 'top' || def.attach === 'topright' || def.attach === 'horn';

@@ -1,11 +1,11 @@
-import { diagonal, type GlyphDef, smaller } from './draw';
+import { diagonal, type GlyphDef, inPen, shift } from './draw';
 import { METRICS } from './grid';
 
 /** Superiors and inferiors are the figures at this size, drawn a little lighter than scale alone would make them. */
 const SMALL = 0.6;
 const SMALL_PEN = 0.8;
 /** Past SemiBold the small figures lighten further, as the lowercase does, so 6, 8 and 9 stay open at Black. */
-const smallPen = (v: number) => SMALL_PEN - Math.max(0, v - 2) * 0.14;
+export const smallPen = (v: number) => SMALL_PEN - Math.max(0, v - 2) * 0.14;
 /** Superiors (and numerators) hang from the cap height; inferiors sit below the baseline. */
 const SUPERIOR_RISE = METRICS.cap * (1 - SMALL);
 const INFERIOR_DROP = -2;
@@ -21,7 +21,10 @@ export function figureVariants(figures: GlyphDef[]): GlyphDef[] {
     ...(unicode === undefined ? {} : { unicode }),
     lsb: fig.lsb * SMALL,
     rsb: fig.rsb * SMALL,
-    draw: (g) => smaller(fig.draw(g), SMALL, dy, g.pen, smallPen(g.v)),
+    draw: (g) => {
+      const small = g.sub(METRICS.cap * SMALL, smallPen(g.v));
+      return shift(inPen(small, fig.draw(small)), 0, dy);
+    },
   });
   NAMES.forEach((name, i) => {
     const fig = figures.find((f) => f.name === name);

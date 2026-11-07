@@ -14,6 +14,8 @@ export interface MarkDef {
   attach: Attachment;
   /** A `.case` version for capitals, flatter and closer. */
   caseForm?: boolean;
+  /** Hangs clear below the base: placed by its own outline so its top is BELOW_GAP under the baseline at every weight. */
+  hang?: boolean;
   draw(g: DrawContext, height: number): Stroke[];
 }
 
@@ -73,7 +75,7 @@ const MARKS_ABOVE: MarkDef[] = [
     unicode: 0x309,
     attach: 'top',
     caseForm: true,
-    draw: (g, h) => [withPen(open(p(-1.3, h * 0.6), p(-1.3, h, true), p(1, h, true), p(1, h * 0.45, true), p(0, h * 0.45), p(0, 0)), accentPen(g))],
+    draw: (g, h) => [withPen(open(p(-1.1, h), p(1.1, h, true), p(1.1, 0)), accentPen(g))],
   },
   {
     name: 'ringcomb',
@@ -82,11 +84,20 @@ const MARKS_ABOVE: MarkDef[] = [
     caseForm: true,
     draw: (g, h) => {
       const pen = { v: g.v * 0.72, h: g.h * 0.72 };
-      const size = Math.max(pen.v, pen.h) + (h < MARK_HEIGHT.lower ? 0.8 : 1);
+      const size = Math.max(pen.v, pen.h) + (h < MARK_HEIGHT.lower ? 1.1 : 1.3);
       return [withPen(box(-size / 2, size / 2, pen.h / 2, pen.h / 2 + size, ALL), pen)];
     },
   },
-  { name: 'hungarumlautcomb', unicode: 0x30b, attach: 'top', caseForm: true, draw: (g, h) => [acute(g, h, -1.3), acute(g, h, 1.3)] },
+  {
+    name: 'hungarumlautcomb',
+    unicode: 0x30b,
+    attach: 'top',
+    caseForm: true,
+    draw: (g, h) => {
+      const dx = 1.1 + g.v * 0.55;
+      return [acute(g, h, -dx), acute(g, h, dx)];
+    },
+  },
   {
     name: 'caroncomb',
     unicode: 0x30c,
@@ -95,18 +106,19 @@ const MARKS_ABOVE: MarkDef[] = [
     draw: (g, h) => [diagonal(g, -2.2, h, 0, 0), diagonal(g, 2.2, h, 0, 0)].map((s) => withPen(s, accentPen(g))),
   },
   { name: 'commaturnedabovecomb', unicode: 0x312, attach: 'top', draw: (g) => rotate180(comma(g, 0, 0, 0.75), 0, (g.dot * 0.75 - 2.5 * 0.75) / 2) },
-  { name: 'dotbelowcomb', unicode: 0x323, attach: 'bottom', draw: (g) => [dot(g, 0, -1.25 - g.dot)] },
-  { name: 'verticallinebelowcomb', unicode: 0x329, attach: 'bottom', draw: (g) => [withPen(open(p(0, -1.1), p(0, -3.6)), accentPen(g))] },
-  { name: 'commaaccentcomb', unicode: 0x326, attach: 'bottom', draw: (g) => comma(g, 0, -0.6 - g.dot * 0.65, 0.65) },
+  { name: 'dotbelowcomb', unicode: 0x323, attach: 'bottom', hang: true, draw: (g) => [dot(g, 0, 0)] },
+  { name: 'verticallinebelowcomb', unicode: 0x329, attach: 'bottom', hang: true, draw: (g) => [withPen(open(p(0, 0), p(0, 2.5)), accentPen(g))] },
+  { name: 'commaaccentcomb', unicode: 0x326, attach: 'bottom', hang: true, draw: (g) => comma(g, 0, 0, 0.65) },
   {
     name: 'cedillacomb',
     unicode: 0x327,
     attach: 'bottom',
     draw: (g) => {
       const pen = accentPen(g);
-      const top = -1 - pen.h / 2;
-      const bottom = -3.5 + pen.h / 2;
-      return [withPen(open(p(0, 0.5), p(0, top), p(1.6, top, true), p(1.6, bottom, true), p(-1.2, bottom)), pen)];
+      const top = -1.1 - pen.h / 2;
+      const bottom = top - pen.h - 1.2;
+      const x = Math.max(1.6, pen.v + 0.9);
+      return [withPen(open(p(0, g.h / 2), p(0, top), p(x, top, true), p(x, bottom, true), p(-1.2, bottom)), pen)];
     },
   },
   {
@@ -116,7 +128,7 @@ const MARKS_ABOVE: MarkDef[] = [
     draw: (g) => {
       const pen = accentPen(g);
       const bottom = -3.5 + pen.h / 2;
-      return [withPen(open(p(0, 0.5), p(0, bottom, true), p(2.2, bottom)), pen)];
+      return [withPen(open(p(0, g.h * 0.75), p(0, bottom, true), p(2.2, bottom)), pen)];
     },
   },
   {
@@ -135,15 +147,16 @@ const MARKS_ABOVE: MarkDef[] = [
   },
 ];
 
-/** Marks hanging below the baseline: they hang from the base's bottom anchor with this gap. */
-const BELOW_GAP = 1.1;
+/** The gap between the baseline and the top of a mark hanging below it. */
+export const BELOW_GAP = 1.1;
 
 function belowMarks(): MarkDef[] {
   const below = (name: string, unicode: number, above: MarkDef['draw'], height = 2) => ({
     name,
     unicode,
     attach: 'bottom' as const,
-    draw: (g: DrawContext) => shift(above(g, height), 0, -BELOW_GAP - height - g.h / 2),
+    hang: true,
+    draw: (g: DrawContext) => above(g, height),
   });
   const find = (name: string) => MARKS_ABOVE.find((m) => m.name === name)!.draw;
   return [
@@ -174,7 +187,7 @@ function vietnameseMarks(): MarkDef[] {
     caseForm: true,
     draw: (g: DrawContext, height: number) => [
       ...find(first).draw(g, height),
-      ...shift(find(second).draw(g, height * 0.8), second === 'gravecomb' ? -2.9 : 2.9, height * 0.55),
+      ...shift(find(second).draw(g, height * 0.8), second === 'gravecomb' ? -2.6 : 2.6, height * 0.55),
     ],
   }));
 }

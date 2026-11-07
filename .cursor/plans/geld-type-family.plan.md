@@ -113,7 +113,7 @@ Starting stems in grid units, vertical cap stems, to be tuned in Phase 3:
 - [ ] Documented use: `@media (prefers-color-scheme: dark)` switching `font-family` to Geld Dark Sans.
 
 ### 2.7 Spacing model
-- [ ] Sidebearings by side profile, in grid units: straight stems (H, n), cut rounds (O, o, closer to straight than a true curve because the cut is only 2 units), diagonals (V, v), open sides (C right, r right, L right, T), and each punctuation class.
+- [x] Sidebearings measured, not set by hand (`spacing.ts`, after HT Letterspacer's area method): each side's white across the x-height (lowercase) or cap height (capitals, figures) is measured row by row, capped so open shapes do not over-tighten, and the sidebearing brings white plus sidebearing to the side space of a straight stem. Every letter and figure, every weight. Punctuation keeps hand-set sidebearings; math operators share one width.
 - [ ] Proof the spacing with H, O, n and o control strings before any kerning.
 - [ ] Spaces: space, no-break space, en and em space and quad, three-, four- and six-per-em spaces, figure space, punctuation space, thin space, hair space, narrow no-break space, plus zero-width space, ZWJ, ZWNJ, word joiner, soft hyphen and BOM.
 - [ ] Tabular widths for figures, currency, math operators, `:` `.` `,` and the figure space.
@@ -166,7 +166,7 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [ ] Guillemets and quotes for French, German and Polish quoting styles, spaced properly.
 
 ### 3.4 Currency
-- [ ] $ ¢ £ ¤ ¥ € ₹ ₽ ₩ ₺ ₴ ₦ ₱ ₫ ₪ ₡ ₸ ₼ ₾ ₿ ₵ ₲ ₭ and the ruble, rupee and other GF Pro symbols.
+- [x] $ ¢ £ ¤ ¥ € ₹ ₽ ₩ ₺ ₴ ₦ ₱ ₫ ₪ ₡ ₸ ₼ ₾ ₿ ₵ ₲ ₭ ₮ ₨ ฿ (GF Latin Plus).
 - [ ] Heavy-weight substitutions where a symbol fills in (for example $ with a partial bar from 700 up), through feature variations (`rvrn`).
 - [ ] Tabular forms of every currency sign.
 
@@ -181,7 +181,7 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [ ] Arrowheads built on the grid's 45°. Every arrow shares one shaft thickness and one head per weight, which is also what the ligated arrows (5.3) use, so a typed `->` and a real → match.
 
 ### 3.7 Shapes, marks and dingbats
-- [ ] Geometric shapes: ■ □ ▪ ▫ ▬ ▲ △ ▶ ▷ ▼ ▽ ◀ ◁ ◆ ◇ ○ ● ◉ ◌ ◐ ◑ ◒ ◓ ◢ ◣ ◤ ◥, each in a cut version too.
+- [ ] Geometric shapes: ■ □ ▪ ▫ ▬ ▲ △ ▶ ▷ ▼ ▽ ◀ ◁ ◆ ◇ ○ ● ◉ ◌ ◐ ◑ ◒ ◓ ◢ ◣ ◤ ◥, each in a cut version too. (Done: GF Latin Plus's ■ □ ▪ ▫, the sixteen triangles, ◆ ◇ ◊ ○ ● ◦ ◌, as solid and hollow shapes with cut corners.)
 - [ ] Checks and marks: ✓ ✔ ✗ ✘ ✕ ✖ ★ ☆ ☐ ☑ ☒ ♥ ⚑ ⚠.
 - [ ] Box drawing and block elements, a basic set in Sans (the full set is Mono's, section 19).
 - [ ] Ornaments (`ornm`): the Geld emblem, cut-corner frames, bullets and grid patterns.
@@ -200,6 +200,7 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [ ] Kerning per weight, in roman and in italic, shared by Geld Dark Sans, interpolating cleanly through the variable fonts.
 - [ ] Tabular figures and Mono get no kerning, by construction.
 - [ ] Collision checks: no kerned pair overlaps, including accents (for example T with ť, Ŵ with ŵ).
+- [x] Seams and slivers: no two contours touch along a line (a hairline once anti-aliased) and no parallel edges face across a gap under 0.35 units, in any glyph, family, style or weight (`seams.ts`, tested).
 - [ ] Space kerning (space with A, T, V, Y, quotes) where it helps.
 - [ ] Review with standard kerning test texts across languages, and with Geld's own UI strings.
 
@@ -435,7 +436,7 @@ Each phase ends with a review. The next phase starts only once its deliverable i
 3. **Design core.** (First draft done in every weight: A to Z, a to z, 0 to 9 and `. , : ; ! ? - – — ' " ( ) [ ] / _ + =`. Shapes and spacing are refined in phases 4 and 7.) A to Z, a to z, 0 to 9 and basic punctuation at Regular and SemiBold. Deliverable: a proof of the core in two weights.
 4. **Weights.** (Done for the core: contrast, the three-horizontals budget, apertures and a counter test.) Thin to Black, contrast and the three-horizontals budget, `avar`. Deliverable: the core in all nine weights.
 5. **Italic.** (Done for the core: slanted construction, even cuts, italic forms. Italic spacing and kerning come with phase 7.) Slanted grid, italic forms and their spacing. Deliverable: the core in italic, all weights.
-6. **Character set.** (Under way: Basic Latin, Latin-1 and Latin Extended-A done, with combining marks, `.case` marks, `ccmp`, superiors, inferiors and fractions.) Accents and marks, extended Latin, figure sets, punctuation, currency, math, arrows, shapes, small caps. Deliverable: full GF Latin Pro coverage.
+6. **Character set.** (Under way: GF Latin Kernel, Core, Plus, Vietnamese and Pri-African complete and enforced by `verify.py`, with combining marks, `.case` marks, `ccmp`, superiors, inferiors and fractions.) Accents and marks, extended Latin, figure sets, punctuation, currency, math, arrows, shapes, small caps. Deliverable: full GF Latin Pro coverage.
 7. **Spacing and kerning.** Deliverable: kerned proofs in every style.
 8. **Features.** Ligatures, code ligatures, alternates, swashes, every feature in section 7. Deliverable: all shaping tests passing.
 9. **Production.** Tables, hinting, QA, packaging, the specimen page, release. Deliverable: Geld Sans v1 released.

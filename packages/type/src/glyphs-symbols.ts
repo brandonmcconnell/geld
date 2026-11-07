@@ -2,6 +2,7 @@ import {
   ALL,
   bar,
   box,
+  chevronLeft,
   comma,
   DASH_AXIS,
   diagonal,
@@ -21,10 +22,6 @@ import {
 } from './draw';
 import type { Stroke } from './geometry';
 
-/** A chevron pointing left, centred on y, for ‹ « < and their mirrors. */
-function chevron(g: DrawContext, w: number, y: number, spread: number): Stroke {
-  return withPen(open(p(w, y + spread), p(0, y), p(w, y - spread)), g.diag);
-}
 
 function questionStrokes(g: DrawContext): Stroke[] {
   const w = g.wide(7.5);
@@ -40,6 +37,15 @@ const quote = (g: DrawContext, turned: boolean, x: number): Stroke[] => {
   const strokes = comma(g, x, top);
   return turned ? rotate180(strokes, x, (top - 2.5 + g.cap) / 2) : strokes;
 };
+
+/** { as one stroke: hooks at the ends, and a 45° point at the middle reaching left. */
+function brace(g: DrawContext): Stroke[] {
+  const w = g.wide(4.5);
+  const x = 1.75 + g.v / 2;
+  const top = g.top(15.5);
+  const bottom = g.bottom(-3.5);
+  return [open(p(w, top), p(x, top, true), p(x, 6 + x), p(0, 6), p(x, 6 - x), p(x, bottom, true), p(w, bottom))];
+}
 
 export const SYMBOLS: GlyphDef[] = [
   {
@@ -98,9 +104,10 @@ export const SYMBOLS: GlyphDef[] = [
     rsb: 0.75,
     draw: (g) => {
       const w = g.wide(12);
-      const size = Math.max(g.v, g.h) + 1.6;
+      const inner = Math.max(1.6, 4.4 - Math.max(g.v, g.h));
+      const size = Math.max(g.v, g.h) + inner;
       const e = g.foot(w, g.cap);
-      return [ring(g, 0, g.cap - size - g.h, 1.6), ring(g, w - size, 0, 1.6), diagonal(g, w - e, g.cap, e, 0)];
+      return [ring(g, 0, g.cap - size - g.h, inner), ring(g, w - size, 0, inner), diagonal(g, w - e, g.cap, e, 0)];
     },
   },
   {
@@ -115,8 +122,8 @@ export const SYMBOLS: GlyphDef[] = [
       return [
         box(0.75, w * 0.6, mid, g.top(g.cap), ALL),
         open(p(w * 0.6, mid), p(0, mid, true), p(0, b, true), p(w * 0.75, b)),
-        diagonal(g, 1.5, mid + 0.5, w + g.v / 2 - g.foot(w, mid), 0, [false, true]),
-        bar(w * 0.55, w + 0.5, 5.5),
+        diagonal(g, 0.75 + w * 0.2, mid, w + g.v / 2 - g.foot(w, mid), 0, [false, true]),
+        bar(w * 0.55, w + 0.5, Math.min(5.5, mid - g.h - 1.6)),
       ];
     },
   },
@@ -140,14 +147,14 @@ export const SYMBOLS: GlyphDef[] = [
     unicode: 0x3c,
     lsb: 1,
     rsb: 1,
-    draw: (g) => [chevron(g, g.wide(8), MATH_AXIS, 4)],
+    draw: (g) => chevronLeft(g, 4.5, MATH_AXIS),
   },
   {
     name: 'greater',
     unicode: 0x3e,
     lsb: 1,
     rsb: 1,
-    draw: (g) => mirror([chevron(g, g.wide(8), MATH_AXIS, 4)], g.wide(8) / 2),
+    draw: (g) => mirror(chevronLeft(g, 4.5, MATH_AXIS), 2.25),
   },
   {
     name: 'at',
@@ -178,34 +185,13 @@ export const SYMBOLS: GlyphDef[] = [
       return [diagonal(g, 0, 7, w / 2, g.cap, [false, true]), diagonal(g, w, 7, w / 2, g.cap, [false, true])];
     },
   },
-  {
-    name: 'braceleft',
-    unicode: 0x7b,
-    lsb: 1,
-    rsb: 0.75,
-    draw: (g) => {
-      const w = g.wide(4.5);
-      const x = 1.75 + g.v / 2;
-      return [
-        open(p(w, g.top(15.5)), p(x, g.top(15.5), true), p(x, 6 + g.h / 2)),
-        bar(0, x, 6),
-        open(p(x, 6 - g.h / 2), p(x, g.bottom(-3.5), true), p(w, g.bottom(-3.5))),
-      ];
-    },
-  },
+  { name: 'braceleft', unicode: 0x7b, lsb: 1, rsb: 0.75, draw: (g) => brace(g) },
   {
     name: 'braceright',
     unicode: 0x7d,
     lsb: 0.75,
     rsb: 1,
-    draw: (g) => {
-      const w = g.wide(4.5);
-      const x = 1.75 + g.v / 2;
-      return mirror(
-        [open(p(w, g.top(15.5)), p(x, g.top(15.5), true), p(x, 6 + g.h / 2)), bar(0, x, 6), open(p(x, 6 - g.h / 2), p(x, g.bottom(-3.5), true), p(w, g.bottom(-3.5)))],
-        w / 2,
-      );
-    },
+    draw: (g) => mirror(brace(g), (g.wide(4.5) + 0) / 2),
   },
   { name: 'bar', unicode: 0x7c, lsb: 1.75, rsb: 1.75, draw: () => [stem(0, -3.5, 15.5)] },
   {
@@ -243,21 +229,21 @@ export const SYMBOLS: GlyphDef[] = [
     rsb: 1.25,
     draw: (g) => [...comma(g, 0, 0), ...comma(g, g.dot + 1.25, 0)],
   },
-  { name: 'guilsinglleft', unicode: 0x2039, lsb: 1, rsb: 1, draw: (g) => [chevron(g, 3, DASH_AXIS, 3)] },
-  { name: 'guilsinglright', unicode: 0x203a, lsb: 1, rsb: 1, draw: (g) => mirror([chevron(g, 3, DASH_AXIS, 3)], 1.5) },
+  { name: 'guilsinglleft', unicode: 0x2039, lsb: 1, rsb: 1, draw: (g) => chevronLeft(g, 3, DASH_AXIS) },
+  { name: 'guilsinglright', unicode: 0x203a, lsb: 1, rsb: 1, draw: (g) => mirror(chevronLeft(g, 3, DASH_AXIS), 1.5) },
   {
     name: 'guillemetleft',
     unicode: 0xab,
     lsb: 1,
     rsb: 1,
-    draw: (g) => [chevron(g, 3, DASH_AXIS, 3), ...shift([chevron(g, 3, DASH_AXIS, 3)], 2.5 + g.v, 0)],
+    draw: (g) => [...chevronLeft(g, 3, DASH_AXIS), ...shift(chevronLeft(g, 3, DASH_AXIS), 2.5 + g.v, 0)],
   },
   {
     name: 'guillemetright',
     unicode: 0xbb,
     lsb: 1,
     rsb: 1,
-    draw: (g) => mirror([chevron(g, 3, DASH_AXIS, 3), ...shift([chevron(g, 3, DASH_AXIS, 3)], 2.5 + g.v, 0)], (3 + 2.5 + g.v) / 2),
+    draw: (g) => mirror([...chevronLeft(g, 3, DASH_AXIS), ...shift(chevronLeft(g, 3, DASH_AXIS), 2.5 + g.v, 0)], (3 + 2.5 + g.v) / 2),
   },
   { name: 'exclamdown', unicode: 0xa1, lsb: 1.5, rsb: 1.5, draw: (g) => rotate180([stem(0, g.dot + 1.5, g.cap), dot(g, 0, 0)], 0, 5) },
   { name: 'questiondown', unicode: 0xbf, lsb: 1, rsb: 1, draw: (g) => rotate180(questionStrokes(g), g.wide(7.5) / 2, 5) },

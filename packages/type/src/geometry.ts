@@ -15,9 +15,10 @@ export interface PathPoint extends Vec {
 
 /**
  * How an open stroke ends at its first or last point, which always lies on the outline:
- * `butt` square to the stroke, `flat` level (a diagonal's foot on the baseline, an apex at the cap height).
+ * `butt` square to the stroke, `flat` level (a diagonal's foot on the baseline, an apex at the cap height),
+ * `upright` vertical (the tip of a chevron, where two diagonals meet).
  */
-export type Cap = 'butt' | 'flat';
+export type Cap = 'butt' | 'flat' | 'upright';
 
 /**
  * A stroke's centreline. An open stroke ends at its first and last points, so those points sit on
@@ -28,6 +29,12 @@ export interface Stroke {
   closed: boolean;
   /** A pen of its own, for thinner lowercase horizontals, dots and diagonals. */
   pen?: Pen;
+  /**
+   * A closed stroke that is a solid shape: the points are its outline (cuts included), not a
+   * centreline. With `hole`, the shape is hollow, its wall that thick (□ △ ○).
+   */
+  fill?: boolean;
+  hole?: number;
   startCap?: Cap;
   endCap?: Cap;
 }
@@ -132,6 +139,11 @@ export function insertCuts(stroke: Stroke, pen: Pen, slope = 0): Vec[] {
 /** Offsets a centreline by half its width on each side; `slope` is the italic's, so cuts come out even once slanted. */
 export function expandStroke(stroke: Stroke, masterPen: Pen, slope = 0): Contour[] {
   const pen = stroke.pen ?? masterPen;
+  if (stroke.fill) {
+    let shape = insertCuts(stroke, { v: 0, h: 0, ...(pen.cut === undefined ? {} : { cut: pen.cut }) }, slope);
+    if (signedArea(shape) < 0) shape = shape.reverse();
+    return stroke.hole ? [shape, insetContour(shape, stroke.hole).reverse()] : [shape];
+  }
   let points = insertCuts(stroke, pen, slope);
   if (stroke.closed && signedArea(points) < 0) points = points.reverse();
   const n = points.length;
@@ -158,8 +170,9 @@ export function expandStroke(stroke: Stroke, masterPen: Pen, slope = 0): Contour
   const last = segments - 1;
   const end = (seg: number, at: Vec, side: 1 | -1, cap: Cap | undefined): Vec => {
     const edge = add(at, scale(left(dirs[seg]!), side * half[seg]!));
-    if (cap !== 'flat' || Math.abs(dirs[seg]!.y) < EPS) return edge;
-    return lineIntersection(at, { x: 1, y: 0 }, edge, dirs[seg]!);
+    if (cap === 'flat' && Math.abs(dirs[seg]!.y) > EPS) return lineIntersection(at, { x: 1, y: 0 }, edge, dirs[seg]!);
+    if (cap === 'upright' && Math.abs(dirs[seg]!.x) > EPS) return lineIntersection(at, { x: 0, y: 1 }, edge, dirs[seg]!);
+    return edge;
   };
   const right: Vec[] = [end(0, points[0]!, -1, stroke.startCap)];
   for (let i = 1; i < n - 1; i++) right.push(corner(i, -1));
