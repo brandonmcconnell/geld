@@ -1235,6 +1235,8 @@ function showStatus(state: Mounted): void {
       state.statusOpener = heir;
       heir.setAttribute('aria-expanded', 'true');
       positionStatusMenu(state);
+      // A reading that landed while the menu had no pill skipped it: the menu takes it now.
+      refreshOpenMenu(state);
     }
   }
 }

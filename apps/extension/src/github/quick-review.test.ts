@@ -992,6 +992,43 @@ describe('the tab bar button', () => {
     expect(title.value).toBe('');
   });
 
+  it('fills a menu whose mini-header pill GitHub re-rendered while the options were on their way', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    rememberStatusHint('acme/widgets', true);
+    let answer: () => void = () => undefined;
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (!pathOf(input).includes('/page_data/merge_box')) return new Response('{}', { status: 404 });
+        await answered;
+        return new Response(mergeBox('MERGEABLE', true, { convert: true }), { status: 200 });
+      }),
+    );
+    const mini = '<button type="button" aria-haspopup="true"><span data-component="StateLabel" data-status="pullOpened" data-size="small">Open</span></button>';
+    document.body.insertAdjacentHTML('afterbegin', `<div data-testid="diff-comparison-viewer-sticky-header-slot"><div class="metadata">${mini}</div></div>`);
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 3; i += 1) await settle();
+    const miniPill = (): HTMLButtonElement | null => document.querySelector<HTMLButtonElement>('[data-testid="diff-comparison-viewer-sticky-header-slot"] button[data-geld-status-pill]');
+    miniPill()?.click();
+    expect(document.querySelector('.geld-quick-review__status-menu')?.getAttribute('data-placeholder')).toBe('loading');
+    // GitHub re-renders the mini header: its button goes, and with it the pill's place.
+    const slot = document.querySelector('[data-testid="diff-comparison-viewer-sticky-header-slot"] .metadata');
+    slot?.replaceChildren();
+    answer();
+    for (let i = 0; i < 4; i += 1) await settle();
+    slot?.insertAdjacentHTML('beforeend', mini);
+    reassertStatusPills();
+    const menu = document.querySelector('.geld-quick-review__status-menu');
+    expect(menu?.hasAttribute('data-placeholder')).toBe(false);
+    expect(menuRows().map((row) => row[1])).toContain('Convert to draft');
+    expect(miniPill()?.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('opens the status menu with a line that says why when there is nothing to offer', async () => {
     window.localStorage.clear();
     resetStatusHints();
