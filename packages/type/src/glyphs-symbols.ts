@@ -53,7 +53,7 @@ export const SYMBOLS: GlyphDef[] = [
     unicode: 0x2212,
     lsb: 1,
     rsb: 1,
-    draw: (g) => [bar(0, g.wide(8), MATH_AXIS)],
+    draw: (g) => [bar(0, g.wide(8), g.y(MATH_AXIS))],
   },
   {
     name: 'Euro',
@@ -65,10 +65,13 @@ export const SYMBOLS: GlyphDef[] = [
       const x = 2;
       const t = g.top(g.cap);
       const b = g.bottom(0);
+      const thin = Math.min(g.h, g.y(4.6) - g.h);
+      const d = thin / 2 + 0.8;
+      const pen = { v: g.v, h: thin };
       return [
-        open(p(w + x, 10), p(w + x, t, true), p(x, t, true), p(x, b, true), p(w + x, b, true), p(w + x, 4)),
-        bar(-0.5, x + 5, 8.5),
-        bar(-0.5, x + 5, 5.5),
+        open(p(w + x, g.y(10)), p(w + x, t, true), p(x, t, true), p(x, b, true), p(w + x, b, true), p(w + x, g.y(4))),
+        withPen(bar(-0.5, x + 5, g.cap / 2 + d), pen),
+        withPen(bar(-0.5, x + 5, g.cap / 2 - d), pen),
       ];
     },
   },

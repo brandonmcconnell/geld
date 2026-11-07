@@ -115,8 +115,8 @@ Starting stems in grid units, vertical cap stems, to be tuned in Phase 3:
 ### 2.7 Spacing model
 - [x] Sidebearings measured, not set by hand (`spacing.ts`, after HT Letterspacer's area method): each side's white across the x-height (lowercase) or cap height (capitals, figures) is measured row by row, capped so open shapes do not over-tighten, and the sidebearing brings white plus sidebearing to the side space of a straight stem. Every letter and figure, every weight. Punctuation keeps hand-set sidebearings; math operators share one width.
 - [ ] Proof the spacing with H, O, n and o control strings before any kerning.
-- [ ] Spaces: space, no-break space, en and em space and quad, three-, four- and six-per-em spaces, figure space, punctuation space, thin space, hair space, narrow no-break space, plus zero-width space, ZWJ, ZWNJ, word joiner, soft hyphen and BOM.
-- [ ] Tabular widths for figures, currency, math operators, `:` `.` `,` and the figure space.
+- [x] Spaces: space, no-break space, en and em space and quad, three-, four- and six-per-em spaces, figure space (the tabular width), punctuation space (the period), thin space, hair space, narrow no-break space, medium mathematical space, plus zero-width space, ZWJ, ZWNJ, word joiner, soft hyphen and BOM.
+- [x] Tabular widths for figures, currency and the figure space: the widest lining figure plus 1.25 each side, signs wider than a figure condensed to fit (tested: one width, at least 0.4 units each side). Math operators share a width of their own. `:` `.` `,` keep their own fixed widths, which already line up; set to the figure width they spaced columns apart ("1 , 1 1 1 . 1 1").
 - [ ] Spacing for `case` forms and small caps.
 
 ### 2.8 Swash design language
@@ -149,14 +149,14 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [ ] Coverage checked against GF Latin Core, Plus, Pro, African and Vietnamese, and with Shaperglot for every language Hyperglot lists for those sets. (`verify.py` requires GF Latin Kernel, Core, Vietnamese and Pri-African in full; Plus and African are next.)
 
 ### 3.2 Figures
-- [ ] Proportional lining figures (default).
-- [ ] Tabular lining (`tnum`).
-- [ ] Proportional and tabular oldstyle (`onum`).
-- [ ] Superscript, subscript and scientific inferior (`sups`, `subs`, `sinf`) for 0 to 9, + − = ( ) . ,
-- [ ] Numerators and denominators (`numr`, `dnom`) and the fraction slash ⁄.
-- [ ] Precomposed fractions: ½ ⅓ ⅔ ¼ ¾ ⅕ to ⅞ and ↉.
-- [ ] Ordinals ª º and `ordn` for 1st, 2nd, Nº.
-- [ ] Zero variants: open, slashed and dotted (`zero`, `cv`).
+- [x] Proportional lining figures (default).
+- [x] Tabular lining (`tnum`).
+- [x] Proportional and tabular oldstyle (`onum`): 0 1 2 on the x-height, 6 8 to the cap height, 3 4 5 7 9 hanging to the descender.
+- [x] Superscript, subscript and scientific inferior (`sups`, `subs`, `sinf`) for 0 to 9, + − = ( ) . ,
+- [x] Numerators and denominators (`numr`, `dnom`), the fraction slash ⁄ and `frac`.
+- [x] Precomposed fractions: ½ ⅓ ⅔ ¼ ¾ ⅕ to ⅞, ⅐ ⅑ ⅒ and ↉.
+- [x] Ordinals ª º and `ordn` (a figure followed by a or o).
+- [x] Zero variants: open (default), slashed (`zero`) and dotted, in every figure set; the dotted zero gets its `cv` with the features (phase 8).
 - [ ] Small-cap figures (`c2sc`).
 - [ ] Circled and negative circled numerals ① to ⑳ and ❶ to ❿, decided in Phase 7.
 
@@ -168,7 +168,7 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 ### 3.4 Currency
 - [x] $ ¢ £ ¤ ¥ € ₹ ₽ ₩ ₺ ₴ ₦ ₱ ₫ ₪ ₡ ₸ ₼ ₾ ₿ ₵ ₲ ₭ ₮ ₨ ฿ (GF Latin Plus).
 - [ ] Heavy-weight substitutions where a symbol fills in (for example $ with a partial bar from 700 up), through feature variations (`rvrn`).
-- [ ] Tabular forms of every currency sign.
+- [x] Tabular forms of every currency sign but ₨ (two letters wide), condensed where wider than a figure.
 
 ### 3.5 Math and technical symbols
 - [ ] Operators: + − × ÷ = ≠ ≈ ≡ ≤ ≥ ± ∓ ¬ ∞ ∂ ∆ ∇ ∏ ∑ √ ∫ ∝ ∠ ∧ ∨ ∩ ∪ ∈ ∉ ∋ ⊂ ⊃ ⊆ ⊇ ⊕ ⊗ ⊥ ∀ ∃ ∅ ∘ ∙ ⋅ ∗ ∕ ′ ″ ‰ µ Ω ℓ °.
