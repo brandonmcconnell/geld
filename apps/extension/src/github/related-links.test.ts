@@ -299,6 +299,43 @@ describe('related links in the sidebar', () => {
     expect(document.querySelectorAll('.geld-related__link')[0]?.getAttribute('title')).toBe('Merged · Open pull request on GitHub · Cache fetches across routes · vercel/next.js');
   });
 
+  it('lists GitHub’s own references under Mentions, after Related links, in the Rails sidebar and the Overview one', () => {
+    history.replaceState(null, '', '/acme/web/pull/7');
+    const description = DESCRIPTION.replace('<h2>Summary</h2>', '<h2>Summary</h2><p>Fixes <a class="issue-link js-issue-link" href="https://github.com/acme/web/issues/12">#12</a>.</p>');
+    document.body.innerHTML = description + railsSidebar();
+    applyRelatedLinks(true);
+    const titled = (): (string | null)[][] => [...document.querySelectorAll('.geld-related')].map((section) => [section.getAttribute('data-geld-section'), section.querySelector('h3, h4')?.textContent ?? null]);
+    expect(titled()).toEqual([
+      ['related', 'Related links'],
+      ['mentions', 'Mentions'],
+    ]);
+    const [related, mentions] = document.querySelectorAll('.geld-related');
+    expect(related?.previousElementSibling?.textContent).toContain('Reviewers');
+    expect(related?.nextElementSibling).toBe(mentions);
+    expect(mentions?.nextElementSibling?.textContent).toContain('Assignees');
+    expect([...(related?.querySelectorAll('.geld-related__text') ?? [])].map((text) => text.textContent)).toEqual(['DOC-77 Sdk nav overview', 'Open thread in Slack', 'View workspace in Replicas']);
+    expect([...(mentions?.querySelectorAll('.geld-related__text') ?? [])].map((text) => text.textContent)).toEqual([expect.stringMatching(/^#12\b/)]);
+    applyRelatedLinks(true);
+    expect(document.querySelectorAll('.geld-related')[1]).toBe(mentions);
+    removeRelatedLinks();
+
+    document.body.innerHTML = description + overviewSidebar;
+    applyRelatedLinks(true);
+    const list = document.querySelector('.info__x');
+    expect([...(list?.children ?? [])].slice(0, 5).map((child) => [child.getAttribute('aria-label'), child.getAttribute('data-geld-order')])).toEqual([
+      ['Activity', 'activity'],
+      ['Reviewers', 'reviewers'],
+      ['Related links', 'related'],
+      ['Mentions', 'mentions'],
+      ['Proof of presence', null],
+    ]);
+    removeRelatedLinks();
+
+    document.body.innerHTML = `<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>After <a href="https://github.com/acme/web/pull/5">#5</a>.</p></div></div>${railsSidebar()}`;
+    applyRelatedLinks(true);
+    expect(titled()).toEqual([['mentions', 'Mentions']]);
+  });
+
   it('looks up only the rows that show, the rest once Show N more opens them', async () => {
     history.replaceState(null, '', '/acme/web/pull/7');
     const refs = Array.from({ length: 11 }, (_, index) => `<a href="https://github.com/acme/web/issues/${index + 100}">#${index + 100}</a>`).join(' ');

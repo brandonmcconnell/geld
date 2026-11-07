@@ -8663,7 +8663,7 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 }
 
 /*
- * The Overview sidebar in Geld's order (`orderSidebars`): Reviewers, Related links, Activity, then GitHub's. GitHub's
+ * The Overview sidebar in Geld's order (`orderSidebars`): Reviewers, Related links, Mentions, Activity, then GitHub's. GitHub's
  * line above every section but the first in page order becomes a line above every section but the first shown.
  * Its rule (`.sidebar > [data-overview-sidebar-item] ~ [data-overview-sidebar-item]`) weighs three; the first's must outweigh it.
  */
@@ -8685,8 +8685,12 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   order: 2;
 }
 
-[data-geld-sidebar-order] > [data-geld-order='activity'] {
+[data-geld-sidebar-order] > [data-geld-order='mentions'] {
   order: 3;
+}
+
+[data-geld-sidebar-order] > [data-geld-order='activity'] {
+  order: 4;
 }
 
 [data-geld-sidebar-order] > [data-overview-sidebar-item] {
