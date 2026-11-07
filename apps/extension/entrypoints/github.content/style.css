@@ -2527,6 +2527,27 @@ html[data-geld-timeline='compact'] section:has(> [data-geld-folded] #overview-co
   border-bottom-right-radius: 0 !important;
 }
 
+/* The Overview's status row heads the description: one box, the card's bottom border the line between them. */
+[data-geld-status-joined] {
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+[data-geld-joined-below] {
+  margin-top: calc(-1px - var(--geld-join-gap, 0px)) !important;
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
+
+/*
+ * GitHub's checks overlay under the top card stays open while the digest folds the card's mini statuses, its list lent
+ * to the CI row: the empty overlay, and the list for the moment before it is lent (after Escape reopens it), never show.
+ */
+html[data-geld-timeline='compact']:has(.geld-review[data-geld-overview]) [class*='OverlayPortalRoot']:has([role='group'][aria-label='Checks']) {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 .geld-review [hidden] {
   display: none !important;
 }

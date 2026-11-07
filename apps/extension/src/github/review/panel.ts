@@ -28,7 +28,7 @@ import { formatSyncAge } from '../../ui/sync-age';
 import type { Closure, ClosureKind, EventHeadline } from './fold';
 import { headlineText } from './fold';
 import { ATTR_TELEPORTED, reclaimOrphans, restoreAll } from './teleport';
-import { overviewColumnGap, overviewDescription } from './overview-page';
+import { OVERVIEW_FOR_YOU, overviewColumnGap, overviewDescription } from './overview-page';
 import { ATTR_NOTE, ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import type { ReviewerCandidate } from './reviewers';
 import { shapeMark } from './mark-shape';
@@ -42,10 +42,12 @@ export const PANEL_CLASS = 'geld-review';
 export const ATTR_PANEL = 'data-geld-review-panel';
 /** On the description card the panel is attached to (squares its bottom corners). */
 export const ATTR_ATTACHED = 'data-geld-attached';
+/** Geld's own list of the head's checks, which stands in a CI row until GitHub's list is on the page to lend. */
+export const ATTR_CHECK_RUNS = 'data-geld-check-runs';
 /** On the panel: it grows out of the Overview's description box, across the gap its column leaves between boxes. */
 const ATTR_OVERVIEW = 'data-geld-overview';
 const ATTR_SIG = 'data-geld-review-sig';
-const ATTR_SLOT = 'data-geld-slot';
+export const ATTR_SLOT = 'data-geld-slot';
 /** On every row and slot under a group heading: the group it belongs to, so folding the group is an attribute flip (`syncPanelGroups`). */
 const ATTR_IN_GROUP = 'data-geld-in-group';
 /**
@@ -2194,7 +2196,7 @@ const RUN_PREVIEW_STATUS: Readonly<Record<CheckState, Preview['status']>> = { su
 export function renderCheckRunsList(slot: HTMLElement, runs: readonly RawCheckRun[]): void {
   const order: readonly CheckState[] = ['failure', 'pending', 'queued', 'neutral', 'success', 'skipped'];
   const sorted = [...runs].sort((a, b) => order.indexOf(checkStateOfRun(a)) - order.indexOf(checkStateOfRun(b)) || a.name.localeCompare(b.name));
-  const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list' });
+  const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list', [ATTR_CHECK_RUNS]: '' });
   for (const run of sorted) {
     const status = RUN_PREVIEW_STATUS[checkStateOfRun(run)];
     const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-preview-status': status, role: 'img', 'aria-label': checkStateOfRun(run) }, [icon(PREVIEW_GLYPH[status])]);
@@ -2976,6 +2978,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     if (stale !== card) stale.removeAttribute(ATTR_ATTACHED);
   }
   card.setAttribute(ATTR_ATTACHED, '');
+  joinOverviewStatus(card);
   const columnGap = overviewColumnGap(card);
   // Read before anything moves: this forces a layout, and a layout with the old panel gone and the new one not
   // yet in makes the browser's scroll anchoring shift the page up by the panel's height — and it does not shift
@@ -3183,6 +3186,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
 function seatOverviewPanel(panel: HTMLElement): void {
   if (!panel.hasAttribute(ATTR_OVERVIEW)) return;
   const card = overviewDescription();
+  if (card !== null) joinOverviewStatus(card);
   if (card === null || card.nextElementSibling === panel) return;
   const nudge = panel.nextElementSibling?.classList.contains(NUDGE_CLASS) === true ? panel.nextElementSibling : null;
   card.after(panel);
@@ -3235,5 +3239,36 @@ export function unmountPanel(): void {
   panel?.remove();
   document.querySelector(`.${NUDGE_CLASS}`)?.remove();
   for (const card of document.querySelectorAll(`[${ATTR_ATTACHED}]`)) card.removeAttribute(ATTR_ATTACHED);
+  unjoinOverviewStatus(null);
+}
+
+const ATTR_STATUS_JOINED = 'data-geld-status-joined';
+const ATTR_JOINED_BELOW = 'data-geld-joined-below';
+
+/**
+ * On the Overview, the top card's status row (what to do next, with its merge or conflict button) heads the description:
+ * the card stands right above the description with their touching corners square and the column's gap taken back, the
+ * card's bottom border the line between them, as the digest grows out of the description's bottom edge.
+ */
+function joinOverviewStatus(card: HTMLElement): void {
+  const above = card.previousElementSibling;
+  const status = above instanceof HTMLElement && above.matches(OVERVIEW_FOR_YOU) ? above : null;
+  unjoinOverviewStatus(status === null ? null : card);
+  if (status === null) return;
+  if (!status.hasAttribute(ATTR_STATUS_JOINED)) status.setAttribute(ATTR_STATUS_JOINED, '');
+  if (card.hasAttribute(ATTR_JOINED_BELOW)) return;
+  card.setAttribute(ATTR_JOINED_BELOW, '');
+  const gap = overviewColumnGap(card);
+  if (gap !== null) card.style.setProperty('--geld-join-gap', gap);
+}
+
+function unjoinOverviewStatus(keep: HTMLElement | null): void {
+  for (const joined of document.querySelectorAll<HTMLElement>(`[${ATTR_JOINED_BELOW}]`)) {
+    if (joined === keep) continue;
+    joined.removeAttribute(ATTR_JOINED_BELOW);
+    joined.style.removeProperty('--geld-join-gap');
+  }
+  const status = keep?.previousElementSibling ?? null;
+  for (const joined of document.querySelectorAll(`[${ATTR_STATUS_JOINED}]`)) if (joined !== status) joined.removeAttribute(ATTR_STATUS_JOINED);
 }
 

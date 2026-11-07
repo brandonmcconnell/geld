@@ -51,7 +51,7 @@ import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiv
 import type { BotRequestClick } from './bot-requests';
 import { awaitingReaction, botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
 import { pollTriggerReactions, resetTriggerReactions, withFetchedReactions } from './trigger-reactions';
-import { AGENT_NOTES_KEY, ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, descriptionCard, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderCheckRunsList, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
+import { AGENT_NOTES_KEY, ATTR_CHECK_RUNS, ATTR_CTL_SLOT, ATTR_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, descriptionCard, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderCheckRunsList, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setNoteProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -74,7 +74,7 @@ import { fitChips, stopFittingChips } from './fit-chips';
 import { stopWatchingBrandSelection } from './brand';
 import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrphanedLoans, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
-import { isOverviewPage, openCollapsedThreads, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, showAllOverviewComments } from './overview-page';
+import { closeOverviewChecks, isOverviewPage, OVERVIEW_FOR_YOU, OVERVIEW_MINI_STATUS, openCollapsedThreads, openOverviewChecks, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, showAllOverviewComments } from './overview-page';
 import { pageFetch } from '../page-fetch';
 import { closeFlow, openFlowDialog } from './flow';
 
@@ -869,6 +869,8 @@ function mergeBox(): HTMLElement | null {
 let checksSectionEl: HTMLElement | null = null;
 /** Where that section came from — the merge box — so its text can be read while the section is away. */
 let mergeHomeEl: HTMLElement | null = null;
+/** The digest folds the Overview's top card this pass, so the checks list under it is the CI row's to show. */
+let overviewChecksInDigest = false;
 /**
  * The pass in which the search last came up empty. A merged pull request
  * has no checks heading at all, and the search by headings reads the text
@@ -887,8 +889,22 @@ let reviewPass = 0;
  * merge box itself.
  */
 function checksSection(): HTMLElement | null {
+  // The Overview's list is the CI row's only while the digest folds the top card it hangs from; with the card shown it is GitHub's.
+  if (!overviewChecksInDigest && isOverviewPage()) return null;
   if (checksSectionEl !== null && checksSectionEl.isConnected) return checksSectionEl;
   if (checksMissedInPass === reviewPass) return null;
+  // The Overview's list exists only while its Checks mini status is open, and the mini status's progress bar carries
+  // the same "9 successful checks" words: the heading search below took the bar for the section.
+  if (isOverviewPage()) {
+    const list = overviewChecksList();
+    if (list === null) {
+      checksMissedInPass = reviewPass;
+      return null;
+    }
+    checksSectionEl = list;
+    mergeHomeEl = list.parentElement;
+    return list;
+  }
   // The React merge box labels its sections; nothing else on the page carries this label.
   const labelled = document.querySelector('section[aria-label="Checks"]');
   if (labelled instanceof HTMLElement && labelled.closest('.geld-review') === null) {
@@ -936,7 +952,7 @@ const AWAITING_APPROVAL = /\b(\d+) workflows? awaiting approval/i;
  */
 function approveWorkflowsButton(): HTMLButtonElement | HTMLInputElement | null {
   const section = checksSection();
-  const scopes = [mergeBox() ?? mergeHomeEl, section, ...(section === null ? [] : wornPiecesOf(section))];
+  const scopes = [mergeBox() ?? mergeHomeEl, document.querySelector<HTMLElement>(OVERVIEW_FOR_YOU), section, ...(section === null ? [] : wornPiecesOf(section))];
   for (const scope of scopes) {
     if (scope === null) continue;
     for (const control of scope.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button, input[type="submit"], input[type="button"]')) {
@@ -2951,6 +2967,10 @@ function completePath(path: string, hash: string | null, meta: GeldPrMeta): stri
  */
 function slotNeedsRender(slot: HTMLElement): boolean {
   if (slot.childElementCount === 0) return true;
+  // GitHub's checks list is back (the Overview's overlay, reopened after Escape closed it): it takes the stand-in's place.
+  if (slot.querySelector(`[${ATTR_CHECK_RUNS}]`) !== null && checksSection() !== null) return true;
+  // And the other way: the Overview's top card shows again, so its list goes home and the stand-in takes over.
+  if (slot.parentElement?.getAttribute(ATTR_SLOT) === CHECKS_KEY && isOverviewPage() && checksSection() === null && slot.querySelector(`[${ATTR_CHECK_RUNS}]`) === null) return true;
   if ([...slot.querySelectorAll<HTMLElement>('.geld-review__qv, .geld-review__chat-body')].some((view) => view.childElementCount === 0)) return true;
   return [...slot.querySelectorAll<HTMLElement>('.geld-review__chat')].some(chatNeedsRedress);
 }
@@ -3145,6 +3165,12 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // The timeline folds once All is showing, since the narrower list holds none of the entries the digest reads.
   if (compacting && !visit.fullTimeline && showAllOverviewComments()) reapplySoon();
   const hidingTimeline = compacting && !visit.fullTimeline && !overviewCommentsFiltered();
+  // The top card's Checks, Comments and Approvals fold into the digest with the timeline: the checks list GitHub draws
+  // once Checks is open is the CI row's, as the merge box's is on the classic page. Closed again when the card shows.
+  overviewChecksInDigest = hidingTimeline && isOverviewPage();
+  if (overviewChecksInDigest) {
+    if (openOverviewChecks()) reapplySoon();
+  } else closeOverviewChecks();
   // "X closed this" with the comment X left as they did: one row, the comment its content.
   const closures = phase('closures', () => (hidingTimeline ? closureGroups(crawledDom) : { groups: [], paired: new Set<string>() }));
   const groups = phase('folds', () => [...foldGroups(meta, settings, crawledDom, closures.paired), ...closures.groups]);
@@ -3214,6 +3240,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     const commentsSection = overviewCommentsSection();
     const controls = commentsSection === null ? null : overviewCommentsControls(commentsSection);
     if (controls !== null) foldTargets.push({ key: 'overview-controls', label: '', author: null, nodes: [controls], silent: true });
+    // Comments and Approvals repeat the digest's threads meter and Reviews row, and Checks is the CI row's.
+    const mini = document.querySelector<HTMLElement>(OVERVIEW_MINI_STATUS);
+    if (mini !== null && mini.closest(`.${PANEL_CLASS}`) === null) foldTargets.push({ key: 'overview-mini-status', label: '', author: null, nodes: [mini], silent: true });
   }
   // Whatever is left in the timeline — commits, mentions, bots' bare "reviewed" lines — folds too, so nothing
   // stands under the panel but the merge box; commits and mentions get rows in the activity section.
@@ -3947,6 +3976,7 @@ export function teardownReviewOverview(leaving = false): void {
   // First: nothing asked for earlier may run after this. Pending passes are dropped, fetches in flight cancelled,
   // and every later callback finds the overview unmounted (`lastSettings`).
   lastSettings = null;
+  overviewChecksInDigest = false;
   closeFlow();
   setAutoLoading(false);
   deferredWhileHidden = false;
@@ -3970,6 +4000,7 @@ export function teardownReviewOverview(leaving = false): void {
   stopFittingChips();
   stopWatchingBrandSelection();
   unmountPanel();
+  closeOverviewChecks();
   removeDigestOffBar();
   hideSummary(null);
   if (leftoverTimer !== null) window.clearTimeout(leftoverTimer);

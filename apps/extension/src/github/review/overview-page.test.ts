@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { threadRootOf } from './actions';
 import { crawlConversation, crawlLeftovers, crawlReviews, crawlSidebarReviewers, reactionsOf, resetCrawlCache } from './crawler';
 import { editLogUrlOf, nodeIdOf } from './edit-times';
-import { isOverviewPage, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, overviewNewestFirst, showAllOverviewComments } from './overview-page';
+import { closeOverviewChecks, isOverviewPage, openOverviewChecks, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, overviewNewestFirst, showAllOverviewComments } from './overview-page';
 
 /** An Overview comment's header as GitHub rendered it on brandonmcconnell/geld#461 (Nov 2026), trimmed. */
 function header(login: string, href: string, at: string, muted = '', extra = ''): string {
@@ -179,5 +179,40 @@ describe("the Overview's Comments view", () => {
     document.body.innerHTML = VIEWS.replace('"false">All', '"true">All').replace('"true">Unresolved', '"false">Unresolved');
     expect(overviewCommentsFiltered()).toBe(false);
     expect(showAllOverviewComments(document, 100_000)).toBe(false);
+  });
+});
+
+describe("the Overview's checks list", () => {
+  const card = (expanded: boolean): string =>
+    `<div class="MiniStatusGrid__x"><section aria-label="Merge status"><section aria-label="${expanded ? 'Collapse' : 'Expand'} checks"><button>${expanded ? 'Collapse' : 'Expand'} checks</button></section></section></div>`;
+  const overlay = '<div class="OverlayPortalRoot__x"><div><div role="group" aria-label="Checks"><div class="expandableWrapper__x">9 successful checks</div></div></div></div>';
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('is opened while the digest folds the card, again once gone, and closed by Geld only when it opened it', () => {
+    document.body.innerHTML = card(false);
+    const pressed: string[] = [];
+    document.body.addEventListener('click', (event) => pressed.push(event.target instanceof Element ? (event.target.textContent ?? '') : ''));
+    expect(openOverviewChecks(document, 10_000)).toBe(true);
+    expect(openOverviewChecks(document, 10_500)).toBe(false);
+    document.body.innerHTML = card(true) + overlay;
+    expect(overviewChecksList()?.getAttribute('aria-label')).toBe('Checks');
+    expect(openOverviewChecks(document, 20_000)).toBe(false);
+    closeOverviewChecks();
+    closeOverviewChecks();
+    expect(pressed).toEqual(['Expand checks', 'Collapse checks']);
+  });
+
+  it('waits to close while its list is on loan to the CI row', () => {
+    document.body.innerHTML = card(false);
+    openOverviewChecks(document, 30_000);
+    document.body.innerHTML = card(true) + overlay.replace('<div class="expandableWrapper__x">9 successful checks</div>', '<!--geld:quick-view:1-->');
+    const pressed: string[] = [];
+    document.body.addEventListener('click', (event) => pressed.push(event.target instanceof Element ? (event.target.textContent ?? '') : ''));
+    expect(overviewChecksList()).toBeNull();
+    closeOverviewChecks();
+    expect(pressed).toEqual([]);
   });
 });

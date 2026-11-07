@@ -10,6 +10,8 @@
 
 export const OVERVIEW_DESCRIPTION = 'section[aria-label="Description"]';
 export const OVERVIEW_FOR_YOU = '[class*="CondensedForYouContainer"]';
+/** The top card's row of three mini statuses (Checks, Comments, Approvals) under its status row. */
+export const OVERVIEW_MINI_STATUS = '[class*="MiniStatusGrid"]';
 /** One entry of the Comments section: a comment, a review with its threads, or a run of commits. */
 export const OVERVIEW_ITEM = '[data-testid="timeline-item"]';
 /** A review thread's own box inside its review (an `article` without an id, the review's being `pullrequestreview-N`). */
@@ -115,3 +117,53 @@ export function openCollapsedThreads(root: ParentNode = document): number {
 }
 
 const pressed = new WeakSet<Element>();
+
+/**
+ * GitHub's checks list on the Overview: the merge box's own list (`expandableWrapper`, its groups, gear and each check's
+ * menu), drawn in an overlay under the top card once its Checks mini status is expanded, and not in the page before.
+ */
+export function overviewChecksList(root: ParentNode = document): HTMLElement | null {
+  for (const group of root.querySelectorAll<HTMLElement>('[role="group"][aria-label="Checks"]')) {
+    if (group.closest('.geld-review') === null && group.querySelector('[class*="expandableWrapper"]') !== null) return group;
+  }
+  return null;
+}
+
+function checksToggle(root: ParentNode, label: 'Expand checks' | 'Collapse checks'): HTMLElement | null {
+  return root.querySelector<HTMLElement>(`${OVERVIEW_MINI_STATUS} section[aria-label="${label}"] > button`);
+}
+
+const CHECKS_PRESS_GAP_MS = 2000;
+let checksPressedAt = Number.NEGATIVE_INFINITY;
+let checksOpenedHere = false;
+
+/**
+ * Opens the checks list while the digest folds the top card's mini statuses, so the CI row can show GitHub's list as on
+ * the classic page. Escape anywhere closes GitHub's overlay, so it is opened again whenever it is gone, at most once per
+ * `CHECKS_PRESS_GAP_MS`. Answers whether it pressed.
+ */
+export function openOverviewChecks(root: ParentNode = document, now = Date.now()): boolean {
+  if (overviewChecksList(root) !== null || now - checksPressedAt < CHECKS_PRESS_GAP_MS) return false;
+  const expand = checksToggle(root, 'Expand checks');
+  if (expand === null) return false;
+  checksPressedAt = now;
+  checksOpenedHere = true;
+  expand.click();
+  return true;
+}
+
+/** Closes the list Geld opened once the digest no longer folds the card, as long as the list is at home and not lent to a row. */
+export function closeOverviewChecks(root: ParentNode = document): void {
+  if (!checksOpenedHere) return;
+  const overlay = [...root.querySelectorAll('[role="group"][aria-label="Checks"]')].find((group) => group.closest('.geld-review') === null);
+  if (overlay === undefined) {
+    checksOpenedHere = false;
+    return;
+  }
+  // Its list still on loan to the CI row: closed on a later pass, once the loan is home.
+  if (overviewChecksList(root) === null) return;
+  const collapse = checksToggle(root, 'Collapse checks');
+  if (collapse === null) return;
+  checksOpenedHere = false;
+  collapse.click();
+}
