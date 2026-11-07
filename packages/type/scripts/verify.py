@@ -17,7 +17,7 @@ DIST = Path(__file__).resolve().parent.parent / "dist"
 OVERLAP_SIMPLE = 0x40
 SAMPLE = "HOnoGELD"
 # Google Fonts' glyph sets the fonts must cover in full; each is added here once it is complete.
-GLYPHSETS = ["GF_Latin_Kernel", "GF_Latin_Core", "GF_Latin_Vietnamese", "GF_Latin_PriAfrican"]
+GLYPHSETS = ["GF_Latin_Kernel", "GF_Latin_Core", "GF_Latin_Plus", "GF_Latin_Vietnamese", "GF_Latin_PriAfrican"]
 
 failures: list[str] = []
 

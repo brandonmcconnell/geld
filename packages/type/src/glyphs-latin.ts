@@ -1,4 +1,4 @@
-import { ALL, bar, box, diagonal, type DrawContext, type GlyphDef, LEFT, level, mirror, open, p, RIGHT, rotate180, stem, vee, withPen } from './draw';
+import { ALL, bar, box, diagonal, type DrawContext, type GlyphDef, LEFT, level, mirror, open, p, RIGHT, rotate180, stem, withPen, yArms } from './draw';
 import type { Stroke } from './geometry';
 
 /** Latin letters with no Unicode decomposition into a base and marks, drawn on their own. */
@@ -156,7 +156,7 @@ const UPPER: GlyphDef[] = [
     draw: (g) => {
       const w = g.wide(11);
       const e = g.foot(w / 2, g.cap - 6);
-      return [...vee(g, 0, w, g.cap, 6), stem(w / 2, 0, 6), bar(w - e, w + 2, g.top(g.cap))];
+      return [...yArms(g, w, g.cap, 6), bar(w - e, w + 2, g.top(g.cap))];
     },
   },
   {

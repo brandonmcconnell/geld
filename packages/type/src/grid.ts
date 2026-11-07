@@ -13,7 +13,7 @@ export const METRICS = {
   lineDescender: -5,
   /** What renderers must not clip: accents stacked on capitals (Ǻ, Ỗ at Black) rise past the line box, as in any font set for Vietnamese. */
   clipAscender: 23,
-  clipDescender: -6,
+  clipDescender: -7,
 } as const;
 
 export const WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const;

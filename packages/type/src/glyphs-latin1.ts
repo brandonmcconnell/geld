@@ -1,27 +1,35 @@
-import { ALL, bar, box, diagonal, type DrawContext, type GlyphDef, LEFT, MATH_AXIS, open, p, ring, smaller, stem, vee, withPen } from './draw';
+import { smallPen } from './glyphs-figures';
+import { ALL, bar, box, crossbarReach, diagonal, type DrawContext, type GlyphDef, LEFT, MATH_AXIS, open, p, inPen, shift, stem, withPen, yArms } from './draw';
 import type { Stroke } from './geometry';
 
-/** The C inside © and the R inside ®, drawn small in the circle's middle. */
-function enclosed(g: DrawContext, inner: (g: DrawContext) => Stroke[]): Stroke[] {
+/** The C inside © and the R inside ®, drawn natively at their size and centred in the frame. */
+function enclosed(g: DrawContext, inner: (g: DrawContext) => Stroke[], width: number): Stroke[] {
   const w = g.wide(13);
-  const t = g.top(g.cap);
-  const b = g.bottom(0);
-  const k = 0.5;
-  const pen = { v: g.v * 0.8, h: g.h * 0.8 };
-  return [box(0, w, b, t, ALL), ...smaller(inner(g), k, 0, g.pen, 0.8).map((s) => ({ ...s, points: s.points.map((q) => ({ ...q, x: q.x + w / 2 - 2.6, y: q.y + 3.5 })), pen: s.pen ?? pen }))];
+  const small = g.sub(g.cap * 0.45, smallPen(g.v));
+  return [box(0, w, g.bottom(-1), g.top(g.cap + 1), ALL), ...shift(inPen(small, inner(small)), w / 2 - small.wide(width) / 2, (g.cap - small.cap) / 2)];
 }
 
 const smallC = (g: DrawContext): Stroke[] => {
   const w = g.wide(10);
   const t = g.top(g.cap);
   const b = g.bottom(0);
-  return [open(p(w, 9), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, 5))];
+  return [open(p(w, g.y(9)), p(w, t, true), p(0, t, true), p(0, b, true), p(w, b, true), p(w, g.y(5)))];
 };
 
 const smallR = (g: DrawContext): Stroke[] => {
   const w = g.wide(9.5);
-  return [stem(0, 0, g.cap), box(0, w, 6, g.top(g.cap), [false, true, true, false]), diagonal(g, w * 0.4, 6, w + g.v / 2 - g.foot(w * 0.6, 6), 0, [false, true])];
+  const bowl = g.y(6);
+  return [stem(0, 0, g.cap), box(0, w, bowl, g.top(g.cap), [false, true, true, false]), diagonal(g, w * 0.4, bowl, w + g.v / 2 - g.foot(w * 0.6, bowl), 0, [false, true])];
 };
+
+/** ª º: a lowercase letter drawn at superior size, standing at the cap height, over a rule. */
+function ordinal(g: DrawContext, letter: (s: DrawContext) => [Stroke[], number]): Stroke[] {
+  const small = g.sub(g.cap * 0.7, smallPen(g.v) * 0.85, true);
+  const [strokes, w] = letter(small);
+  const rise = g.cap - small.xHeight;
+  const under = rise - small.h / 2 - 1.5;
+  return [...shift(inPen(small, strokes), 0, rise), withPen(bar(-small.v / 2, w + small.v / 2, under), small.pen)];
+}
 
 export const LATIN1: GlyphDef[] = [
   {
@@ -56,12 +64,12 @@ export const LATIN1: GlyphDef[] = [
     rsb: 1,
     draw: (g) => {
       const size = Math.max(g.v, g.h) + 2.5;
-      const x0 = 1.5;
-      const y0 = MATH_AXIS - size / 2 - g.h / 2;
-      const ear = (ax: number, ay: number, dx: number, dy: number) => withPen(open(p(ax, ay), p(ax + dx, ay + dy)), g.diag);
+      const x0 = 1.75;
       const x1 = x0 + size;
-      const y1 = y0 + g.h + size;
-      return [ring(g, x0, y0, 2.5), ear(x0, y0 + g.h / 2, -1.5, -1.5), ear(x1, y0 + g.h / 2, 1.5, -1.5), ear(x0, y1 - g.h / 2, -1.5, 1.5), ear(x1, y1 - g.h / 2, 1.5, 1.5)];
+      const y0 = MATH_AXIS - size / 2;
+      const y1 = MATH_AXIS + size / 2;
+      const ear = (ax: number, ay: number, dx: number, dy: number) => withPen(open(p(ax, ay), p(ax + dx, ay + dy)), g.diag);
+      return [box(x0, x1, y0, y1, [false, false, false, false]), ear(x0, y0, -1.75, -1.75), ear(x1, y0, 1.75, -1.75), ear(x0, y1, -1.75, 1.75), ear(x1, y1, 1.75, 1.75)];
     },
   },
   {
@@ -71,31 +79,28 @@ export const LATIN1: GlyphDef[] = [
     rsb: 0.3,
     draw: (g) => {
       const w = g.wide(11);
-      return [...vee(g, 0, w, g.cap, 6), stem(w / 2, 0, 6), bar(w / 2 - 3.5, w / 2 + 3.5, 4.75), bar(w / 2 - 3.5, w / 2 + 3.5, 1.75 + g.h / 2)];
+      return [...yArms(g, w, g.cap, 6), bar(w / 2 - 3.5, w / 2 + 3.5, 4.75), bar(w / 2 - 3.5, w / 2 + 3.5, 1.75 + g.h / 2)];
     },
   },
-  { name: 'copyright', unicode: 0xa9, lsb: 1, rsb: 1, draw: (g) => enclosed(g, smallC) },
-  { name: 'registered', unicode: 0xae, lsb: 1, rsb: 1, draw: (g) => enclosed(g, smallR) },
+  { name: 'copyright', unicode: 0xa9, lsb: 1, rsb: 1, draw: (g) => enclosed(g, smallC, 10) },
+  { name: 'registered', unicode: 0xae, lsb: 1, rsb: 1, draw: (g) => enclosed(g, smallR, 9.5) },
   {
     name: 'ordfeminine',
     unicode: 0xaa,
     lsb: 1,
     rsb: 1,
-    draw: (g) => {
-      const w = g.wide(7.5);
-      const strokes = [stem(w, 0, g.xHeight), box(0, w, g.bottom(0), g.top(g.xHeight), LEFT)];
-      return [...smaller(strokes, 0.6, 8, g.pen, 0.8), withPen(bar(0, w * 0.6 + 0.5, 6.8 - g.h * 0.4), { v: g.v * 0.8, h: g.h * 0.8 })];
-    },
+    draw: (g) => ordinal(g, (s) => {
+      const w = s.wide(7.5);
+      const t = s.top(s.xHeight);
+      return [[open(p(0, t), p(w, t, true), p(w, 0)), box(0, w, s.bottom(0), s.y(5.25), LEFT)], w];
+    }),
   },
   {
     name: 'ordmasculine',
     unicode: 0xba,
     lsb: 1,
     rsb: 1,
-    draw: (g) => {
-      const w = g.wide(8);
-      return [...smaller([box(0, w, g.bottom(0), g.top(g.xHeight), ALL)], 0.6, 8, g.pen, 0.8), withPen(bar(0, w * 0.6, 6.8 - g.h * 0.4), { v: g.v * 0.8, h: g.h * 0.8 })];
-    },
+    draw: (g) => ordinal(g, (s) => [[box(0, s.wide(8), s.bottom(0), s.top(s.xHeight), ALL)], s.wide(8)]),
   },
   {
     name: 'mu',
@@ -137,7 +142,7 @@ export const LATIN1: GlyphDef[] = [
     rsb: 0.5,
     draw: (g) => {
       const b = g.bottom(0);
-      return [open(p(0, 13), p(0, b, true), p(g.wide(3.5), b)), bar(-1.5, g.wide(3.5), g.top(g.xHeight)), bar(-1.5, g.wide(3.5), 4.75)];
+      return [open(p(0, 13), p(0, b, true), p(g.wide(3.5), b)), bar(-crossbarReach(g), g.wide(3.5), g.top(g.xHeight)), bar(-crossbarReach(g), g.v / 2 + 1.25, (g.xHeight + 0.55) / 2)];
     },
   },
 ];

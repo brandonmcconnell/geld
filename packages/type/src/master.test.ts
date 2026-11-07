@@ -1,6 +1,8 @@
 import { bounds, type Contour, cutLeg, expandStroke, insetContour, winding } from './geometry';
 import { ITALIC_SLOPE, METRICS, WEIGHTS } from './grid';
+import { MATH_AXIS } from './draw';
 import { buildMaster, type Family, flatten, type Style } from './master';
+import { findSeams } from './seams';
 
 const shape = (family: Family, style: Style, weight: (typeof WEIGHTS)[number]) =>
   buildMaster(family, style, weight).glyphs.map((g) => [g.name, g.contours.map((c) => c.length)]);
@@ -116,7 +118,7 @@ const orthogonal = (contours: Contour[]) =>
 
 describe('heavy weights', () => {
   /** B and 8 have a notch at the waist, and Q's tail and ł's and ø's strokes cross, by design. */
-  const notched = new Set(['B', 'eight', 'Q', 'lslash', 'Lslash', 'oslash', 'Oslash']);
+  const notched = new Set(['B', 'eight', 'Q', 'lslash', 'Lslash', 'oslash', 'Oslash', 'litre']);
 
   it('keep every letter and figure counter at least 1.4 units open (superiors and ordinals in proportion), Black included', () => {
     const tight: string[] = [];
@@ -159,6 +161,39 @@ describe('italic', () => {
     for (const name of ['a', 'f', 'l', 'y']) {
       const points = (glyphs: typeof roman) => glyphs.find((g) => g.name === name)!.contours.map((c) => c.length);
       expect(points(italic), name).not.toEqual(points(roman));
+    }
+  });
+});
+
+describe('seams and slivers', () => {
+  it('leaves no touching edges and no sliver gaps in any glyph, family, style or weight', () => {
+    const faults: string[] = [];
+    for (const family of ['sans', 'dark'] as const)
+      for (const style of ['roman', 'italic'] as const)
+        for (const weight of WEIGHTS) {
+          const master = buildMaster(family, style, weight);
+          for (const glyph of master.glyphs) {
+            const seams = findSeams(flatten(master, glyph));
+            if (seams.length) faults.push(`${family} ${style} ${weight} ${glyph.name}: ${seams[0]!.kind} ${seams[0]!.gap.toFixed(2)}`);
+          }
+        }
+    expect(faults).toEqual([]);
+  });
+});
+
+describe('math operators', () => {
+  const OPERATORS = ['plus', 'minus', 'equal', 'multiply', 'divide', 'less', 'greater', 'approxequal', 'notequal', 'asciitilde'];
+
+  it('centre on one axis and share one width', () => {
+    for (const weight of [100, 400, 900] as const) {
+      const master = buildMaster('sans', 'roman', weight);
+      const glyphs = OPERATORS.map((n) => master.glyphs.find((g) => g.name === n)!);
+      const centres = glyphs.map((g) => {
+        const b = bounds(flatten(master, g));
+        return [g.name, Math.round(((b.minY + b.maxY) / 2) * 100) / 100];
+      });
+      expect(centres, `${weight}`).toEqual(OPERATORS.map((n) => [n, MATH_AXIS]));
+      expect(new Set(glyphs.map((g) => g.advance)).size, `${weight} widths`).toBe(1);
     }
   });
 });
