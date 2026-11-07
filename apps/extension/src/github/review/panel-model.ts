@@ -369,6 +369,26 @@ function stateOfWord(word: string): CheckState | null {
 }
 
 /**
+ * Check counts from check runs read elsewhere than the merge box (the head commit's status partial): the Overview
+ * tab shows no checks section, only a "Checks" card that opens a panel of its own.
+ */
+export function checkCountsOfRuns(runs: readonly { readonly status: string; readonly conclusion: string | null }[]): CheckCounts | null {
+  if (runs.length === 0) return null;
+  const counts = { ...EMPTY_CHECKS };
+  for (const run of runs) counts[checkStateOfRun(run)] += 1;
+  return counts;
+}
+
+export function checkStateOfRun(run: { readonly status: string; readonly conclusion: string | null }): CheckState {
+  if (run.status === 'queued' || run.status === 'pending' || run.status === 'waiting' || run.status === 'requested') return 'queued';
+  if (run.status !== 'completed') return 'pending';
+  if (run.conclusion === 'success') return 'success';
+  if (run.conclusion === 'skipped') return 'skipped';
+  if (run.conclusion === 'neutral' || run.conclusion === 'stale') return 'neutral';
+  return 'failure';
+}
+
+/**
  * Check counts from the merge box's own headings: the new merge box writes
  * "1 in progress check", "3 skipped checks", "8 successful checks"; the
  * legacy one "All checks have passed" plus one row per check. Returns null

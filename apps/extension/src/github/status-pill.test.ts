@@ -109,3 +109,12 @@ describe('showMergedPills', () => {
     expect(document.querySelector('button[data-geld-status-pill]')?.outerHTML).toBe(merged);
   });
 });
+
+describe("the Overview's status label", () => {
+  it("is left to GitHub when it is GitHub's own status menu", () => {
+    document.body.innerHTML = `<div data-component="PageHeader"><button type="button" aria-haspopup="true" aria-label="Pull request state: Open"><span data-component="StateLabel" data-status="pullOpened">Open</span></button></div>`;
+    expect(syncStatusPills(true, () => undefined)).toEqual([]);
+    expect(document.querySelector('[data-geld-status-hidden]')).toBeNull();
+    document.body.replaceChildren();
+  });
+});

@@ -14,6 +14,8 @@
  * with a shared token.
  */
 
+import { OVERVIEW_ITEM, overviewNewestFirst } from './overview-page';
+
 export const ATTR_TELEPORTED = 'data-geld-teleported';
 const PLACEHOLDER_PREFIX = 'geld:quick-view:';
 let nextToken = 0;
@@ -356,7 +358,28 @@ export function compareHome(a: Node, b: Node): number {
   // at home, so compare them where they are. A comparator that answered 0 here let the sort put them either
   // way round, and the last bot comment - the verdict's source - changed with every pass.
   if (x === y) return a === b ? 0 : (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1;
-  return (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1;
+  const order = (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1;
+  return newestFirstEntries(a, b, x, y) ? -order : order;
+}
+
+/** The Overview entry `node` belongs to: around it where it stands (a whole entry on loan is its own), else around its home. */
+function entryOf(node: Node, home: Node): Element | null {
+  const around = (at: Node): Element | null => (at instanceof Element ? at : at.parentElement)?.closest(OVERVIEW_ITEM) ?? null;
+  return around(node) ?? around(home);
+}
+
+/**
+ * Two nodes in different entries of an Overview Comments section listed newest first: the page's order is the
+ * timeline's backwards. The section is found from where each entry lives at home, since a whole entry on loan to the
+ * digest leaves only its placeholder in the section, and that placeholder is in no entry.
+ */
+function newestFirstEntries(a: Node, b: Node, x: Node, y: Node): boolean {
+  const one = entryOf(a, x);
+  const two = entryOf(b, y);
+  if (one === null || two === null || one === two) return false;
+  const home = homeOf(one);
+  const section = (home instanceof Element ? home : home.parentElement)?.closest('section') ?? null;
+  return section !== null && section.contains(homeOf(two)) && overviewNewestFirst(section);
 }
 
 export function teleportedNodes(): readonly HTMLElement[] {

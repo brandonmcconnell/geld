@@ -50,7 +50,7 @@ import { markCrawlDirty, resetCrawlCache } from './review/crawler';
 import type { RepoBotsHint } from './review/panel-model';
 import { LIVE_CATCH_UP_EVENT, liveCatchUpDue } from './review/live-regions';
 import { catchUpTimeline } from './review/timeline-catchup';
-import { applyReviewOverview, foldDescriptionNow, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
+import { applyReviewOverview, dressOverviewNow, foldDescriptionNow, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
 import { setFlowSource } from './review/flow';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { applyTestFolds, clearTestFolds, forgetLinkedFold, hasHiddenLines } from './ui/test-folds';
@@ -501,6 +501,9 @@ export class GeldController {
     if (this.settings.quickReview && this.mayDressPage()) reassertStatusPills();
     // The description GitHub just rendered (a switch back to the conversation tab) is folded in its first frame.
     if (this.mayDressPage()) foldDescriptionNow(this.settings);
+    // The Overview's top card, which GitHub draws and re-renders between passes, dressed in its first frame, and the
+    // digest back after a re-render of the column took it.
+    dressOverviewNow(this.settings, this.mayDressPage());
     // GitHub's skeleton back in the counts wrapper the group stands in by its fallback: out before this frame paints.
     if (this.settings.quickReview && this.currentPage !== null && quickReviewStandBusy()) this.placeQuickReview(this.currentPage, new URL(window.location.href));
     this.schedule(false);

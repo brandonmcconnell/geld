@@ -23,6 +23,7 @@ import { fetchReviewers, REVIEW_BY_HASH, REVIEWS_HASH, reviewLink, standingRevie
 import { ICON_ALERT_FILL_12, ICON_CHECK, ICON_CHECK_SEND, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CODE_REVIEW, ICON_CODE_REVIEW_SEND, ICON_COMMENT, ICON_COMMENT_SEND, ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_SPINNER, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_X, ICON_X_SEND } from './ui/icons';
 import { pageFetch } from './page-fetch';
 import { reportError } from '../lib/error-capture';
+import { isOverviewPage } from './review/overview-page';
 
 /**
  * The review controls in the pull request's tab bar, left of the line
@@ -79,10 +80,12 @@ const STICKY_TOOLBAR = 'section[class*="stickyHeader"], .js-sticky';
 const STICKY_REVIEW_CONTROL = `:is(${STICKY_TOOLBAR}) :is(${GITHUB_REVIEW_CONTROL})`;
 /** The compact pull request header the other tabs show once the page header has scrolled away: `display: none` until it sticks. */
 const STICKY_PR_HEADER = '[class*="prHeader"][class*="stickyHeader"]';
+/** The Overview's mini header: always there, sticking to the viewport's top once the page header has scrolled under it. */
+const OVERVIEW_MINI_HEADER = '[data-testid="diff-comparison-viewer-sticky-header-slot"]';
 /** The headers that stay put as the page scrolls, React's and the classic one: a box under a pill there is fixed. */
 const STICKY_HEADERS = '[class*="stickyHeader"], .gh-header-sticky';
 
-type Place = 'toolbar' | 'header';
+type Place = 'toolbar' | 'header' | 'mini';
 const SUBMITTED_MS = 3000;
 /** On the group while the instant key is held: ✓ and ✗ then send on a click, and the stylesheet swaps their glyphs for the sending ones. */
 const ATTR_INSTANT = 'data-instant';
@@ -218,6 +221,8 @@ function anchorOf(groups: readonly HeaderStatGroup[]): HTMLElement | null {
     // GitHub hides the header's counts on narrow screens: placed there, the button would be hidden with them while
     // GitHub's own was hidden for it, leaving no way to review. A style read, not a layout one.
     if (!host.checkVisibility()) continue;
+    // The Overview writes the counts beside the branches, under the title: the group still belongs at the tab bar's end.
+    if (host.closest('[data-component="PageHeader.Description"]') !== null) continue;
     if (host.id === 'diffstat' || host.closest('[data-component="PageHeader"], .gh-header, #partial-discussion-header') !== null) return host;
   }
   return null;
@@ -234,7 +239,8 @@ const MARK_CLASS = 'geld-quick-review__mark';
  * nothing in its place.
  */
 function standAnchor(): HTMLElement | null {
-  const row = [...document.querySelectorAll<HTMLElement>('[data-component="PageHeader"] [class*="PageHeader-Navigation"]')].find((el) => el.querySelector('nav[class*="TabNav"]') !== null) ?? null;
+  // The conversation's tab bar is a `TabNav`, the Overview's an `UnderlineNav`; both rows end in GitHub's counts wrapper.
+  const row = [...document.querySelectorAll<HTMLElement>('[data-component="PageHeader"] [class*="PageHeader-Navigation"]')].find((el) => el.querySelector('nav[class*="TabNav"], nav[class*="UnderlineNav"]') !== null) ?? null;
   if (row === null) {
     removeStand();
     return null;
@@ -471,6 +477,16 @@ function stickyPlace(state: Mounted): { readonly place: Place; readonly put: (ro
     if (!state.toolbarStuck) return null;
     return { place: 'toolbar', put: (root) => control.insertAdjacentElement('beforebegin', root), placed: (root) => control.previousElementSibling === root };
   }
+  // The Overview's mini header, stuck: first among its actions (before the panel toggles), as the tab bar has it at its end.
+  const mini = state.toolbar?.isConnected === true && state.toolbar.matches(OVERVIEW_MINI_HEADER) ? state.toolbar : null;
+  if (mini !== null) {
+    const actions = mini.querySelector<HTMLElement>('[class*="miniHeaderInner"] > [class*="actions"]');
+    if (!state.toolbarStuck || actions === null) return null;
+    // Signed in the header holds "Merge status" and GitHub's own (hidden) review button: the group takes the button's place.
+    const own = actions.querySelector<HTMLElement>(`:scope > :is(${GITHUB_REVIEW_CONTROL})`);
+    if (own !== null) return { place: 'mini', put: (root) => own.insertAdjacentElement('beforebegin', root), placed: (root) => own.previousElementSibling === root };
+    return { place: 'mini', put: (root) => actions.prepend(root), placed: (root) => actions.firstElementChild === root };
+  }
   const header = document.querySelector<HTMLElement>(STICKY_PR_HEADER);
   if (header === null || !isStuck(header)) return null;
   // Inside the title row, after the title (which gives way), so the row's centred width and padding hold it as the page's content edge.
@@ -484,7 +500,7 @@ function stickyPlace(state: Mounted): { readonly place: Place; readonly put: (ro
  * compact header shows on that very flip, so the move is never seen.
  */
 function watchSticky(state: Mounted): void {
-  const toolbar = document.querySelector(STICKY_REVIEW_CONTROL)?.closest(STICKY_TOOLBAR) ?? null;
+  const toolbar = document.querySelector(STICKY_REVIEW_CONTROL)?.closest(STICKY_TOOLBAR) ?? (isOverviewPage() ? document.querySelector(OVERVIEW_MINI_HEADER) : null);
   const header = document.querySelector(STICKY_PR_HEADER);
   if (toolbar === state.toolbar && header === state.header) return;
   const newToolbar = toolbar !== state.toolbar;
