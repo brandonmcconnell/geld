@@ -99,18 +99,28 @@ function markOf(link: RelatedLink): Element {
   return glyph;
 }
 
-/** "Linear LIM-1391", "Slack thread", "Replicas workspace". */
-export function relatedName(link: RelatedLink): string {
-  return `${link.service} ${link.label}`;
+/**
+ * What a row says: the identifier and title when the link names either ("LIM-1391 Fix the nav"), else what following
+ * it does ("Open issue in Linear", "View workspace in Replicas"), the service being in its mark. Exported for its test.
+ */
+export function relatedText(link: RelatedLink): string {
+  const named = [link.ref, link.title].filter((part) => part !== null && part !== '');
+  return named.length > 0 ? named.join(' ') : link.action;
 }
 
 function rowOf(link: RelatedLink): HTMLElement {
-  const detail = link.title ?? link.context;
+  const named = link.ref !== null || link.title !== null;
   const tip = [link.action, link.title, link.context].filter((part) => part !== null && part !== '').join(' · ');
-  const anchor = createElement('a', { class: `${SECTION_CLASS}__link`, href: link.href, target: '_blank', rel: 'noopener noreferrer', title: tip, 'aria-label': `${relatedName(link)}${detail === null ? '' : `, ${detail}`}. ${link.action}` }, [
+  const parts = named
+    ? [
+        ...(link.ref === null ? [] : [createElement('span', { class: `${SECTION_CLASS}__ref` }, [link.ref])]),
+        ...(link.title === null ? [] : [createElement('span', { class: `${SECTION_CLASS}__title` }, [link.title])]),
+      ]
+    : [createElement('span', { class: `${SECTION_CLASS}__action` }, [link.action])];
+  const label = named ? `${relatedText(link)}. ${link.action}` : link.action;
+  const anchor = createElement('a', { class: `${SECTION_CLASS}__link`, href: link.href, target: '_blank', rel: 'noopener noreferrer', title: tip, 'aria-label': link.context === null ? label : `${label}, ${link.context}` }, [
     markOf(link),
-    createElement('span', { class: `${SECTION_CLASS}__name` }, [relatedName(link)]),
-    ...(detail === null ? [] : [createElement('span', { class: `${SECTION_CLASS}__detail` }, [detail])]),
+    createElement('span', { class: `${SECTION_CLASS}__text` }, parts),
   ]);
   return createElement('li', { class: `${SECTION_CLASS}__item`, 'data-kind': link.kind }, [anchor]);
 }

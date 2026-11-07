@@ -754,8 +754,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The patterns were read from public pull request bodies through GitHub search in Nov 2026, and each is pinned by a test with the surveyed shape;
   the survey and what is left for later are in `.cursor/plans/related-links.plan.md`.
   Two links to one thing share a key (Cursor's "Open in Web" and "Open in Cursor", Devin's session and its Desktop link, a Slack thread's root message with and without `thread_ts`) and the web page is kept over the desktop deep link (`rank`).
-  A row is the service's mark (its GitHub App's avatar, `avatars.githubusercontent.com/in/<appId>`, else a bundled tracker icon, else an octicon by kind), "<Service> <label>" ("Linear LIM-1391", "Slack thread", "Replicas workspace") and a muted title or place, opening the link in a new tab.
-  The title is the link's own words when they say more than the service and label (`titleFromText`: "Open in Web", "Slack Thread" and "Linear LIM-1391" say nothing), else the URL's slug (Linear, Shortcut, Notion, Figma, Confluence).
+  A row is the service's mark (its GitHub App's avatar, `avatars.githubusercontent.com/in/<appId>`, else a bundled tracker icon, else an octicon by kind), then one line cut with an ellipsis, opening the link in a new tab.
+  That line is the link's identifier and title when it names either ("LIM-1391 Fix the SDK nav", the identifier muted), else what following it does ("Open issue in Linear", "Open thread in Slack", "View workspace in Replicas": `RelatedLink.action`, verb, noun and service), never the service's name in front, which the mark already says.
+  The tooltip holds the action, the title and the place (a Slack or Linear workspace, a Jira site).
+  The title is the link's own words when they say more than the service, noun and identifier (`titleFromText`: "Open in Web", "Slack Thread" and "Linear LIM-1391" say nothing), else the URL's slug (Linear, Shortcut, Notion, Figma, Confluence).
   Nothing is fetched: names that need the service's own API (a Slack thread's channel and first message, a Jira issue's title) are the plan's second step.
   The section is found by its heading, never by GitHub's classes: from the heading reading "Assignees" it climbs to the child of a list holding at least two other sections titled as GitHub's are (Reviewers, Labels, Activity…), skipping headings inside pickers and overlays (an assignee picker repeats the title), and Geld's section goes after every one found.
   That finds both sidebars GitHub serves at `/pull/N`.

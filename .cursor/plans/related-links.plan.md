@@ -73,8 +73,8 @@ Not found in bodies: Factory sessions (only `sessions/new`), Sweep and Charlie s
 
 ## Second step: names and a context card
 
-Today a row says "Slack thread · mintlify" or "Linear LIM-1391 · <slug words>".
-The aim is the real name (the channel and the thread's first line, the issue's title and state, the session's title and status), shown in a card on click, with Cmd/Ctrl-click and middle-click still opening the URL as any link does.
+Today a row says "LIM-1391 <slug words>" when the link names an identifier or title, and "Open thread in Slack" or "View workspace in Replicas" when it names neither.
+The aim is "{id} {title} {description}" from the service itself (the issue's title and state, the channel and the thread's first line, the session's title and status) on the same truncated line, a card on click, with Cmd/Ctrl-click and middle-click still opening the URL as any link does.
 
 ### What each service allows
 

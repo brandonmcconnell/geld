@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('wxt/browser', () => ({ browser: { runtime: { getURL: (path: string) => `chrome-extension://test${path}` } } }));
 
-import { applyRelatedLinks, assigneesSections, relatedLinksOnPage, removeRelatedLinks } from './related-links';
+import { applyRelatedLinks, assigneesSections, relatedLinksOnPage, relatedText, removeRelatedLinks } from './related-links';
 
 // mintlify/mint#14542's footer as GitHub renders it, after the author's own words.
 const DESCRIPTION =
@@ -41,6 +41,11 @@ afterEach(() => {
 });
 
 describe('related links in the sidebar', () => {
+  it('names a link by its identifier and title, or by what following it does', () => {
+    document.body.innerHTML = DESCRIPTION;
+    expect(relatedLinksOnPage().map(relatedText)).toEqual(['DOC-77 Sdk nav overview', 'Open thread in Slack', 'View workspace in Replicas']);
+  });
+
   it('reads the description and Linear’s linkback, leaving code alone', () => {
     document.body.innerHTML = `${DESCRIPTION}<div class="timeline-comment"><a class="author" href="/apps/linear">linear</a><div class="comment-body"><p><a href="https://linear.app/mintlify/issue/DOC-80">DOC-80</a></p></div></div>`;
     expect(relatedLinksOnPage().map((link) => link.key)).toEqual([
@@ -59,8 +64,11 @@ describe('related links in the sidebar', () => {
       expect(section?.previousElementSibling?.textContent).toContain('Assignees');
       expect(section?.classList.contains('discussion-sidebar-item')).toBe(true);
       expect(section?.querySelector('h3')?.textContent).toBe('Related links');
-      expect([...(section?.querySelectorAll('.geld-related__name') ?? [])].map((name) => name.textContent)).toEqual(['Linear DOC-77', 'Slack thread', 'Replicas workspace']);
-      expect(section?.querySelector('a')?.getAttribute('title')).toBe('Open in Linear · Sdk nav overview · mintlify');
+      expect([...(section?.querySelectorAll('.geld-related__text') ?? [])].map((text) => text.textContent)).toEqual(['DOC-77Sdk nav overview', 'Open thread in Slack', 'View workspace in Replicas']);
+      expect([...(section?.querySelectorAll('.geld-related__text > *') ?? [])].map((part) => part.className)).toEqual(['geld-related__ref', 'geld-related__title', 'geld-related__action', 'geld-related__action']);
+      const first = section?.querySelector('a');
+      expect(first?.getAttribute('title')).toBe('Open issue in Linear · Sdk nav overview · mintlify');
+      expect(first?.getAttribute('aria-label')).toBe('DOC-77 Sdk nav overview. Open issue in Linear, mintlify');
       removeRelatedLinks();
     }
   });

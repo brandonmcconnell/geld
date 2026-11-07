@@ -22,14 +22,16 @@ export interface RelatedLink {
   readonly kind: RelatedKind;
   /** "Linear", "Slack", "Replicas". */
   readonly service: string;
-  /** What the link leads to within the service: "LIM-1391", "thread", "workspace". */
-  readonly label: string;
+  /** What the link leads to within the service: "issue", "thread", "workspace". */
+  readonly noun: string;
+  /** The identifier the service shows for it, when the link names one: "LIM-1391", "sc-123". */
+  readonly ref: string | null;
   /** What it is called, when the link's words or its URL say: a ticket's title from its slug, the link's own text. */
   readonly title: string | null;
   /** Where it lives: a Slack workspace, a Jira site, a Linear workspace. */
   readonly context: string | null;
   readonly href: string;
-  /** The words for following it: "View in Replicas", "Open in Slack". */
+  /** The words for following it: "View workspace in Replicas", "Open thread in Slack". */
   readonly action: string;
   /** The GitHub App whose mark stands for the service (`avatars.githubusercontent.com/in/<id>`). */
   readonly appId: number | null;
@@ -53,7 +55,8 @@ interface Match {
 interface Reading {
   /** Unique within the service. */
   readonly id: string;
-  readonly label: string;
+  readonly noun: string;
+  readonly ref?: string | null;
   readonly title?: string | null;
   readonly context?: string | null;
 }
@@ -109,7 +112,7 @@ const linkSpecs: readonly LinkSpec[] = [
     path: /^\/([\w-]+)\/issue\/([A-Za-z][A-Za-z0-9_]*-\d+)(?:\/([\w-]+))?\/?$/,
     read: ({ path }) => {
       const key = group(path, 2).toUpperCase();
-      return { id: `${group(path, 1)}:${key}`, label: key, title: path[3] === undefined ? null : slugTitle(path[3]), context: group(path, 1) };
+      return { id: `${group(path, 1)}:${key}`, noun: 'issue', ref: key, title: path[3] === undefined ? null : slugTitle(path[3]), context: group(path, 1) };
     },
     appId: 20150,
     icon: 'linear',
@@ -120,7 +123,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'ticket',
     host: /^linear\.app$/,
     path: /^\/([\w-]+)\/(project|document)\/([\w-]+?)-([0-9a-f]{12})(?:\/(?:overview|issues|updates|documents|activity))?\/?$/,
-    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}:${group(path, 4)}`, label: group(path, 2), title: slugTitle(group(path, 3)), context: group(path, 1) }),
+    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}:${group(path, 4)}`, noun: group(path, 2), title: slugTitle(group(path, 3)), context: group(path, 1) }),
     appId: 20150,
     icon: 'linear',
   },
@@ -130,7 +133,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'ticket',
     host: /^([a-z0-9][a-z0-9-]*)\.atlassian\.net$/,
     path: /^\/browse\/([A-Z][A-Z0-9_]*-\d+)\/?$/,
-    read: ({ host, path }) => ({ id: `${group(host, 1)}:${group(path, 1)}`, label: group(path, 1), context: group(host, 1) }),
+    read: ({ host, path }) => ({ id: `${group(host, 1)}:${group(path, 1)}`, noun: 'issue', ref: group(path, 1), context: group(host, 1) }),
     icon: 'jira',
   },
   {
@@ -143,7 +146,7 @@ const linkSpecs: readonly LinkSpec[] = [
     query: { selectedIssue: /^[A-Z][A-Z0-9_]*-\d+$/ },
     read: ({ host, query }) => {
       const key = query.get('selectedIssue') ?? '';
-      return { id: `${group(host, 1)}:${key}`, label: key, context: group(host, 1) };
+      return { id: `${group(host, 1)}:${key}`, noun: 'issue', ref: key, context: group(host, 1) };
     },
     icon: 'jira',
     rank: 1,
@@ -154,7 +157,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'ticket',
     host: /^([a-z0-9][a-z0-9-]*)\.youtrack\.cloud$/,
     path: /^\/issue\/([A-Za-z][A-Za-z0-9_]*-\d+)(?:\/([\w-]+))?\/?$/,
-    read: ({ host, path }) => ({ id: `${group(host, 1)}:${group(path, 1)}`, label: group(path, 1), title: path[2] === undefined ? null : slugTitle(path[2]), context: group(host, 1) }),
+    read: ({ host, path }) => ({ id: `${group(host, 1)}:${group(path, 1)}`, noun: 'issue', ref: group(path, 1), title: path[2] === undefined ? null : slugTitle(path[2]), context: group(host, 1) }),
     icon: 'youtrack',
   },
   {
@@ -163,7 +166,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'ticket',
     host: /^app\.shortcut\.com$/,
     path: /^\/([\w-]+)\/story\/(\d+)(?:\/([\w-]+))?\/?$/,
-    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}`, label: `sc-${group(path, 2)}`, title: path[3] === undefined ? null : slugTitle(path[3]), context: group(path, 1) }),
+    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}`, noun: 'story', ref: `sc-${group(path, 2)}`, title: path[3] === undefined ? null : slugTitle(path[3]), context: group(path, 1) }),
   },
   {
     id: 'asana',
@@ -171,7 +174,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'ticket',
     host: /^app\.asana\.com$/,
     path: /^\/(?:0\/\d+\/(\d+)(?:\/f)?|1\/\d+\/(?:project\/\d+\/)?task\/(\d+))\/?$/,
-    read: ({ path }) => ({ id: path[1] ?? group(path, 2), label: 'task' }),
+    read: ({ path }) => ({ id: path[1] ?? group(path, 2), noun: 'task' }),
     icon: 'asana',
   },
   {
@@ -180,7 +183,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'ticket',
     host: /^app\.clickup\.com$/,
     path: /^\/t\/(?:\d+\/)?([A-Za-z0-9-]+)\/?$/,
-    read: ({ path }) => ({ id: group(path, 1), label: group(path, 1) }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'task', ref: group(path, 1) }),
     appId: 68952,
   },
   {
@@ -189,7 +192,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'ticket',
     host: /^trello\.com$/,
     path: /^\/c\/([A-Za-z0-9]{8})(?:\/(?:\d+-)?([\w-]+))?\/?$/,
-    read: ({ path }) => ({ id: group(path, 1), label: 'card', title: path[2] === undefined ? null : slugTitle(path[2]) }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'card', title: path[2] === undefined ? null : slugTitle(path[2]) }),
   },
 
   // Conversations.
@@ -205,11 +208,11 @@ const linkSpecs: readonly LinkSpec[] = [
       const channel = group(path, 1);
       const direct = channel.startsWith('D');
       const context = [workspace, direct ? 'direct message' : null].filter((part) => part !== null).join(' · ') || null;
-      if (path[2] === undefined) return { id: `${workspace ?? ''}:${channel}`, label: direct ? 'direct message' : 'channel', context: workspace };
+      if (path[2] === undefined) return { id: `${workspace ?? ''}:${channel}`, noun: direct ? 'direct message' : 'channel', context: workspace };
       const ts = `${group(path, 2)}.${group(path, 3)}`;
       const thread = query.get('thread_ts');
       const root = thread !== undefined && /^\d{10}\.\d{6}$/.test(thread) ? thread : null;
-      return { id: `${workspace ?? ''}:${channel}:${root ?? ts}`, label: root !== null || /\bthread\b/i.test(text) ? 'thread' : 'message', context };
+      return { id: `${workspace ?? ''}:${channel}:${root ?? ts}`, noun: root !== null || /\bthread\b/i.test(text) ? 'thread' : 'message', context };
     },
     appId: 7100,
   },
@@ -220,7 +223,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'conversation',
     host: /^app\.slack\.com$/,
     path: /^\/client\/(T[A-Z0-9]+)\/([CDGZ][A-Z0-9]{6,})(?:\/thread\/[CDGZ][A-Z0-9]{6,}-(\d{10}\.\d{6}))?\/?$/,
-    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}${path[3] === undefined ? '' : `:${path[3]}`}`, label: path[3] === undefined ? 'channel' : 'thread' }),
+    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}${path[3] === undefined ? '' : `:${path[3]}`}`, noun: path[3] === undefined ? 'channel' : 'thread' }),
     appId: 7100,
   },
   {
@@ -229,7 +232,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'conversation',
     host: /^(?:www\.|ptb\.|canary\.)?discord(?:app)?\.com$/,
     path: /^\/channels\/(\d+|@me)\/(\d+)(?:\/(\d+))?\/?$/,
-    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}:${path[3] ?? ''}`, label: path[3] === undefined ? 'channel' : 'message' }),
+    read: ({ path }) => ({ id: `${group(path, 1)}:${group(path, 2)}:${path[3] ?? ''}`, noun: path[3] === undefined ? 'channel' : 'message' }),
   },
   {
     id: 'teams',
@@ -237,7 +240,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'conversation',
     host: /^teams\.microsoft\.com$/,
     path: /^\/l\/(message|channel|chat)\/([^/]+)(?:\/[^/]+)*\/?$/,
-    read: ({ path }) => ({ id: `${group(path, 1)}:${decodeSafe(group(path, 2))}`, label: group(path, 1) }),
+    read: ({ path }) => ({ id: `${group(path, 1)}:${decodeSafe(group(path, 2))}`, noun: group(path, 1) }),
     appId: 66341,
   },
 
@@ -248,7 +251,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^(?:app\.)?replicas\.dev$/,
     path: new RegExp(`^/workspaces/(${UUID})/?$`),
-    read: ({ path }) => ({ id: group(path, 1), label: 'workspace' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'workspace' }),
     verb: 'View',
     bot: 'replicas',
   },
@@ -258,7 +261,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^app\.devin\.ai$/,
     path: /^\/sessions\/([0-9a-f]{32})\/?$/,
-    read: ({ path }) => ({ id: group(path, 1), label: 'session' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'session' }),
     verb: 'View',
     bot: 'devin',
   },
@@ -268,7 +271,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^app\.devin\.ai$/,
     path: /^\/desktop\/session\/([0-9a-f]{32})\/?$/,
-    read: ({ path }) => ({ id: group(path, 1), label: 'session' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'session' }),
     actionTarget: 'Devin Desktop',
     bot: 'devin',
     rank: 1,
@@ -279,7 +282,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^(?:www\.)?cursor\.com$/,
     path: new RegExp(`^/agents/(bc-${UUID})/?$`),
-    read: ({ path }) => ({ id: group(path, 1), label: 'agent' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'agent' }),
     verb: 'View',
     bot: 'bugbot',
   },
@@ -291,7 +294,7 @@ const linkSpecs: readonly LinkSpec[] = [
     host: /^(?:www\.)?cursor\.com$/,
     path: /^\/background-agent\/?$/,
     query: { bcId: new RegExp(`^bc-${UUID}$`) },
-    read: ({ query }) => ({ id: query.get('bcId') ?? '', label: 'agent' }),
+    read: ({ query }) => ({ id: query.get('bcId') ?? '', noun: 'agent' }),
     bot: 'bugbot',
     rank: 1,
   },
@@ -301,7 +304,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^(?:www\.)?cursor\.com$/,
     path: new RegExp(`^/automations/(${UUID})/?$`),
-    read: ({ path }) => ({ id: group(path, 1), label: 'automation' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'automation' }),
     verb: 'View',
     bot: 'bugbot',
   },
@@ -311,7 +314,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^chatgpt\.com$/,
     path: new RegExp(`^/codex/tasks/(task_[a-z]_[0-9a-f]{32}|${UUID})/?$`),
-    read: ({ path }) => ({ id: group(path, 1), label: 'task' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'task' }),
     verb: 'View',
     bot: 'codex',
   },
@@ -321,7 +324,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^claude\.ai$/,
     path: /^\/code\/(session_[A-Za-z0-9]{20,})\/?$/,
-    read: ({ path }) => ({ id: group(path, 1), label: 'session' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'session' }),
     verb: 'View',
     bot: 'claude',
   },
@@ -331,7 +334,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^jules\.google\.com$/,
     path: /^\/(session|task)\/(\d{6,})\/?$/,
-    read: ({ path }) => ({ id: group(path, 2), label: group(path, 1) }),
+    read: ({ path }) => ({ id: group(path, 2), noun: group(path, 1) }),
     verb: 'View',
     appId: 842251,
   },
@@ -342,7 +345,7 @@ const linkSpecs: readonly LinkSpec[] = [
     host: /^github\.com$/,
     path: /^\/copilot\/tasks\/pull\/(PR_[\w-]+)\/?$/,
     query: { session_id: new RegExp(`^${UUID}$`) },
-    read: ({ query }) => ({ id: query.get('session_id') ?? '', label: 'session' }),
+    read: ({ query }) => ({ id: query.get('session_id') ?? '', noun: 'session' }),
     verb: 'View',
     appId: 1143301,
   },
@@ -352,7 +355,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^github\.com$/,
     path: new RegExp(`^/${REPO_PART}/${REPO_PART}/pull/\\d+/agent-sessions/(${UUID})/?$`),
-    read: ({ path }) => ({ id: group(path, 1), label: 'session' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'session' }),
     verb: 'View',
     appId: 1143301,
   },
@@ -362,7 +365,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^app\.factory\.ai$/,
     path: /^\/sessions\/(?!new\/?$)([\w-]{8,})\/?$/,
-    read: ({ path }) => ({ id: group(path, 1), label: 'session' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'session' }),
     verb: 'View',
     appId: 358017,
   },
@@ -373,7 +376,7 @@ const linkSpecs: readonly LinkSpec[] = [
     host: /^app\.factory\.ai$/,
     path: /^\/automations\/?$/,
     query: { editAutomationId: new RegExp(`^${UUID}$`) },
-    read: ({ query }) => ({ id: query.get('editAutomationId') ?? '', label: 'automation' }),
+    read: ({ query }) => ({ id: query.get('editAutomationId') ?? '', noun: 'automation' }),
     verb: 'View',
     appId: 358017,
   },
@@ -383,7 +386,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^ampcode\.com$/,
     path: new RegExp(`^/threads/(T-${UUID})/?$`),
-    read: ({ path }) => ({ id: group(path, 1), label: 'thread' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'thread' }),
     verb: 'View',
   },
   {
@@ -392,7 +395,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^app\.all-hands\.dev$/,
     path: new RegExp(`^/(?:canvas/)?conversations/([0-9a-f]{32}|${UUID})/?$`),
-    read: ({ path }) => ({ id: group(path, 1), label: 'conversation' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'conversation' }),
     verb: 'View',
     appId: 1062359,
   },
@@ -402,7 +405,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^codegen\.com$/,
     path: /^\/agent\/trace\/(\d+)\/?$/,
-    read: ({ path }) => ({ id: group(path, 1), label: 'run' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'run' }),
     verb: 'View',
     appId: 321279,
   },
@@ -412,7 +415,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^app\.tembo\.io$/,
     path: new RegExp(`^/sessions/(${UUID})/?$`),
-    read: ({ path }) => ({ id: group(path, 1), label: 'session' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'session' }),
     verb: 'View',
     appId: 1223475,
   },
@@ -423,7 +426,7 @@ const linkSpecs: readonly LinkSpec[] = [
     host: /^app\.tembo\.io$/,
     path: /^\/reviews\/redirect\/?$/,
     query: { sessionId: new RegExp(`^${UUID}$`) },
-    read: ({ query }) => ({ id: query.get('sessionId') ?? '', label: 'session' }),
+    read: ({ query }) => ({ id: query.get('sessionId') ?? '', noun: 'session' }),
     verb: 'View',
     appId: 1223475,
     rank: 1,
@@ -434,7 +437,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^(?:www\.)?terragonlabs\.com$/,
     path: new RegExp(`^/task/(${UUID})/?$`),
-    read: ({ path }) => ({ id: group(path, 1), label: 'task' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'task' }),
     verb: 'View',
   },
   {
@@ -443,7 +446,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^app\.warp\.dev$/,
     path: new RegExp(`^/conversation/(${UUID})/?$`),
-    read: ({ path }) => ({ id: group(path, 1), label: 'conversation' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'conversation' }),
     verb: 'View',
   },
   {
@@ -452,7 +455,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^(?:oz|platform)\.warp\.dev$/,
     path: new RegExp(`^/(?:[\\w-]+/)?runs/(${UUID})/?$`),
-    read: ({ path }) => ({ id: group(path, 1), label: 'run' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'run' }),
     verb: 'View',
   },
   {
@@ -461,7 +464,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^cosine\.sh$/,
     path: new RegExp(`^/(${REPO_PART})/(${REPO_PART})/task/([a-z0-9]{10,})/?$`),
-    read: ({ path }) => ({ id: group(path, 3), label: 'task' }),
+    read: ({ path }) => ({ id: group(path, 3), noun: 'task' }),
     verb: 'View',
   },
   {
@@ -470,7 +473,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^opencode\.ai$/,
     path: /^\/s\/([A-Za-z0-9]{6,})\/?$/,
-    read: ({ path }) => ({ id: group(path, 1), label: 'session' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'session' }),
     verb: 'View',
     appId: 1549082,
   },
@@ -480,7 +483,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^lovable\.dev$/,
     path: new RegExp(`^/projects/(${UUID})/?$`),
-    read: ({ path }) => ({ id: group(path, 1), label: 'project' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'project' }),
     appId: 818760,
   },
   {
@@ -489,7 +492,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^v0\.(?:app|dev)$/,
     path: /^\/(?:[\w-]+\/)?chat\/([\w-]+)\/?$/,
-    read: ({ path }) => ({ id: group(path, 1), label: 'chat' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'chat' }),
     appId: 8329,
   },
   {
@@ -498,7 +501,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'agent',
     host: /^app\.graphite\.dev$/,
     path: new RegExp(`^/background-agents/${REPO_PART}/${REPO_PART}/task/(bgt_\\w+)/?$`),
-    read: ({ path }) => ({ id: group(path, 1), label: 'agent task' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'agent task' }),
     verb: 'View',
     appId: 158384,
   },
@@ -510,7 +513,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'review',
     host: /^app\.devin\.ai$/,
     path: new RegExp(`^/review/(${REPO_PART})/(${REPO_PART})/pull/(\\d+)/?$`),
-    read: ({ path }) => ({ id: `${group(path, 1)}/${group(path, 2)}#${group(path, 3)}`.toLowerCase(), label: 'findings' }),
+    read: ({ path }) => ({ id: `${group(path, 1)}/${group(path, 2)}#${group(path, 3)}`.toLowerCase(), noun: 'findings' }),
     verb: 'View',
     bot: 'devin',
   },
@@ -520,7 +523,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'review',
     host: /^app\.greptile\.com$/,
     path: /^\/(?!api\/|-\/)((?:[\w.-]+\/)+pull\/\d+)\/?$/,
-    read: ({ path }) => ({ id: group(path, 1).toLowerCase(), label: 'review' }),
+    read: ({ path }) => ({ id: group(path, 1).toLowerCase(), noun: 'review' }),
     verb: 'View',
     bot: 'greptile',
   },
@@ -532,7 +535,7 @@ const linkSpecs: readonly LinkSpec[] = [
     host: /^app\.greptile\.com$/,
     path: /^\/-\/switch-tenant\/?$/,
     query: { next: /^\/((?:[\w.-]+\/)+pull\/\d+)\/?$/ },
-    read: ({ query }) => ({ id: (query.get('next') ?? '').replace(/^\/|\/$/g, '').toLowerCase(), label: 'review' }),
+    read: ({ query }) => ({ id: (query.get('next') ?? '').replace(/^\/|\/$/g, '').toLowerCase(), noun: 'review' }),
     verb: 'View',
     bot: 'greptile',
   },
@@ -542,7 +545,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'review',
     host: /^app\.coderabbit\.ai$/,
     path: /^\/change-stack\/([\w./-]+?)\/?$/,
-    read: ({ path }) => ({ id: group(path, 1).toLowerCase(), label: 'change stack' }),
+    read: ({ path }) => ({ id: group(path, 1).toLowerCase(), noun: 'change stack' }),
     verb: 'View',
     bot: 'coderabbit',
   },
@@ -552,7 +555,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'review',
     host: /^(?:www\.)?cubic\.dev$/,
     path: /^\/pr\/([\w./-]+?)\/?$/,
-    read: ({ path }) => ({ id: group(path, 1).toLowerCase(), label: 'guided diff' }),
+    read: ({ path }) => ({ id: group(path, 1).toLowerCase(), noun: 'guided diff' }),
     verb: 'View',
     bot: 'cubic',
   },
@@ -562,7 +565,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'review',
     host: /^app\.graphite\.dev$/,
     path: new RegExp(`^/github/pr/(${REPO_PART})/(${REPO_PART})/(\\d+)(?:/[^/]*)?/?$`),
-    read: ({ path }) => ({ id: `${group(path, 1)}/${group(path, 2)}#${group(path, 3)}`.toLowerCase(), label: 'pull request' }),
+    read: ({ path }) => ({ id: `${group(path, 1)}/${group(path, 2)}#${group(path, 3)}`.toLowerCase(), noun: 'pull request' }),
     verb: 'View',
     appId: 158384,
   },
@@ -574,7 +577,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'doc',
     host: /^(?:(?:www\.)?notion\.so|[\w-]+\.notion\.site)$/,
     path: /^\/(?:[\w-]+\/)?(?:([\w%-]*?)-)?([0-9a-f]{32})\/?$/,
-    read: ({ path }) => ({ id: group(path, 2), label: 'page', title: path[1] === undefined ? null : slugTitle(path[1]) }),
+    read: ({ path }) => ({ id: group(path, 2), noun: 'page', title: path[1] === undefined ? null : slugTitle(path[1]) }),
   },
   {
     id: 'confluence',
@@ -582,7 +585,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'doc',
     host: /^([a-z0-9][a-z0-9-]*)\.atlassian\.net$/,
     path: /^\/wiki\/spaces\/([\w~-]+)\/pages\/(\d+)(?:\/([^/]+))?\/?$/,
-    read: ({ host, path }) => ({ id: `${group(host, 1)}:${group(path, 2)}`, label: 'page', title: path[3] === undefined ? null : slugTitle(path[3]), context: group(host, 1) }),
+    read: ({ host, path }) => ({ id: `${group(host, 1)}:${group(path, 2)}`, noun: 'page', title: path[3] === undefined ? null : slugTitle(path[3]), context: group(host, 1) }),
     icon: 'jira',
   },
   {
@@ -591,7 +594,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'doc',
     host: /^(?:www\.)?figma\.com$/,
     path: /^\/(file|design|board|proto|slides|deck|make)\/([A-Za-z0-9]{22,128})(?:\/([^/]+))?\/?$/,
-    read: ({ path }) => ({ id: group(path, 2), label: group(path, 1) === 'board' ? 'board' : group(path, 1) === 'slides' || group(path, 1) === 'deck' ? 'slides' : 'file', title: path[3] === undefined ? null : slugTitle(path[3]) }),
+    read: ({ path }) => ({ id: group(path, 2), noun: group(path, 1) === 'board' ? 'board' : group(path, 1) === 'slides' || group(path, 1) === 'deck' ? 'slides' : 'file', title: path[3] === undefined ? null : slugTitle(path[3]) }),
     appId: 1136528,
   },
   {
@@ -600,7 +603,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'doc',
     host: /^docs\.google\.com$/,
     path: /^\/(document|spreadsheets|presentation|forms)\/d\/(?:e\/)?([\w-]{20,})(?:\/[\w./-]*)?$/,
-    read: ({ path }) => ({ id: group(path, 2), label: GOOGLE_LABELS[group(path, 1)] ?? 'doc' }),
+    read: ({ path }) => ({ id: group(path, 2), noun: GOOGLE_LABELS[group(path, 1)] ?? 'doc' }),
   },
   {
     id: 'loom',
@@ -608,7 +611,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'doc',
     host: /^(?:www\.)?loom\.com$/,
     path: /^\/(?:share|embed)\/(?:[\w-]+-)?([0-9a-f]{32})\/?$/,
-    read: ({ path }) => ({ id: group(path, 1), label: 'video' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'video' }),
   },
   {
     id: 'warp-notebook',
@@ -616,7 +619,7 @@ const linkSpecs: readonly LinkSpec[] = [
     kind: 'doc',
     host: /^app\.warp\.dev$/,
     path: /^\/drive\/notebook\/([\w-]{10,})\/?$/,
-    read: ({ path }) => ({ id: group(path, 1), label: 'notebook' }),
+    read: ({ path }) => ({ id: group(path, 1), noun: 'notebook' }),
   },
 
   // Errors.
@@ -628,7 +631,7 @@ const linkSpecs: readonly LinkSpec[] = [
     path: /^\/(?:organizations\/([\w-]+)\/)?issues\/(\d+|[A-Z0-9]+(?:-[A-Z0-9]+)+)\/?(?:events\/[\w-]+\/?)?$/,
     read: ({ host, path }) => {
       const org = host[1] ?? path[1] ?? null;
-      return { id: `${org ?? ''}:${group(path, 2)}`, label: /^\d+$/.test(group(path, 2)) ? 'issue' : group(path, 2), context: org };
+      return { id: `${org ?? ''}:${group(path, 2)}`, noun: 'issue', ref: /^\d+$/.test(group(path, 2)) ? null : group(path, 2), context: org };
     },
     appId: 12637,
   },
@@ -644,20 +647,20 @@ function decodeSafe(value: string): string {
   }
 }
 
-/** Words a link's text uses that say nothing the service and label do not: "Open in Web", "Slack Thread", "Linear LIM-1391". */
+/** Words a link's text uses that say nothing the service, noun and identifier do not: "Open in Web", "Slack Thread", "Linear LIM-1391". */
 const GENERIC_WORDS = new Set([
   'link', 'here', 'this', 'that', 'view', 'open', 'see', 'show', 'follow', 'in', 'on', 'the', 'a', 'to', 'at', 'of', 'for', 'and', 'with', 'via', 'from', 'my', 'your',
   'web', 'desktop', 'app', 'browser', 'thread', 'message', 'channel', 'session', 'task', 'run', 'workspace', 'issue', 'ticket', 'story', 'card', 'page', 'doc', 'project',
   'conversation', 'chat', 'agent', 'automation', 'review', 'findings', 'finding', 'work', 'details', 'trace', 'cloud', 's', 'url', 'reference',
 ]);
 
-/** The link's own words as its title, when they say more than the service and the label (and are not its URL). */
-function titleFromText(text: string, service: string, label: string): string | null {
+/** The link's own words as its title, when they say more than the service, noun and identifier (and are not its URL). */
+function titleFromText(text: string, service: string, noun: string, ref: string | null): string | null {
   const words = text.replace(/\s+/g, ' ').trim();
   if (words === '' || /^(?:https?:\/\/|www\.)\S+$/i.test(words)) return null;
-  const withoutKey = words.replace(new RegExp(`^${escapeRegExp(label)}\\s*[:·–—-]?\\s*`, 'i'), '').trim();
+  const withoutKey = ref === null ? words : words.replace(new RegExp(`^(?:${escapeRegExp(service)}\\s+)?${escapeRegExp(ref)}\\s*[:·–—-]?\\s*`, 'i'), '').trim();
   const wordsOf = (value: string): string[] => value.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word !== '');
-  const known = new Set([...wordsOf(service), ...wordsOf(label)]);
+  const known = new Set([...wordsOf(service), ...wordsOf(noun), ...wordsOf(ref ?? '')]);
   const telling = wordsOf(withoutKey).filter((word) => !GENERIC_WORDS.has(word) && !known.has(word) && !/^\d+$/.test(word));
   return telling.length === 0 ? null : withoutKey;
 }
@@ -679,17 +682,19 @@ function matchSpec(spec: LinkSpec, url: URL, text: string): RelatedLink | null {
   }
   const reading = spec.read({ url, host, path, query, text });
   if (reading === null || reading.id === '') return null;
-  const title = titleFromText(text, spec.service, reading.label) ?? reading.title ?? null;
+  const ref = reading.ref ?? null;
+  const title = titleFromText(text, spec.service, reading.noun, ref) ?? reading.title ?? null;
   const target = spec.actionTarget ?? spec.service;
   return {
     key: `${spec.id}:${reading.id}`,
     kind: spec.kind,
     service: spec.service,
-    label: reading.label,
+    noun: reading.noun,
+    ref,
     title,
     context: reading.context ?? null,
     href: url.href,
-    action: `${spec.verb ?? 'Open'} in ${target}`,
+    action: `${spec.verb ?? 'Open'} ${reading.noun} in ${target}`,
     appId: spec.appId ?? (spec.bot === undefined ? null : botById(spec.bot)?.appId ?? null),
     icon: spec.icon ?? null,
   };

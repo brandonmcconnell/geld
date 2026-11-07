@@ -9,24 +9,28 @@ describe('relatedLinkOf', () => {
       key: 'replicas:9e2a6c22-c7ad-49f7-8219-fe70dd1c8010',
       kind: 'agent',
       service: 'Replicas',
-      label: 'workspace',
+      noun: 'workspace',
+      ref: null,
       title: null,
-      action: 'View in Replicas',
+      action: 'View workspace in Replicas',
       appId: 2176876,
     });
     expect(read('https://replicas.dev/workspaces/9e2a6c22-c7ad-49f7-8219-fe70dd1c8010')?.key).toBe('replicas:9e2a6c22-c7ad-49f7-8219-fe70dd1c8010');
     expect(read('https://mintlify.slack.com/archives/C0BCMJ9JFA9/p1793123214352139?thread_ts=1793123214.352139&cid=C0BCMJ9JFA9', 'Slack Thread')).toMatchObject({
       key: 'slack:mintlify:C0BCMJ9JFA9:1793123214.352139',
       kind: 'conversation',
-      label: 'thread',
+      noun: 'thread',
+      ref: null,
       title: null,
       context: 'mintlify',
-      action: 'Open in Slack',
+      action: 'Open thread in Slack',
     });
     expect(read('https://linear.app/rpd-34/issue/LIM-1391/featstreaming-add-buffered-streamingencoder-wrapper-and-flush-policy', 'Linear LIM-1391')).toMatchObject({
       key: 'linear:rpd-34:LIM-1391',
       kind: 'ticket',
-      label: 'LIM-1391',
+      noun: 'issue',
+      ref: 'LIM-1391',
+      action: 'Open issue in Linear',
       title: 'Featstreaming add buffered streamingencoder wrapper and flush policy',
       context: 'rpd-34',
       icon: 'linear',
@@ -42,11 +46,11 @@ describe('relatedLinkOf', () => {
   });
 
   it('tells a Slack thread, a message, a direct message and a channel apart', () => {
-    expect(read('https://replicas-group.slack.com/archives/C0C4EG8J4D7/p1793254029666000', 'Slack Thread')?.label).toBe('thread');
-    expect(read('https://replicas-group.slack.com/archives/C0C4EG8J4D7/p1793254029666000', 'see here')?.label).toBe('message');
+    expect(read('https://replicas-group.slack.com/archives/C0C4EG8J4D7/p1793254029666000', 'Slack Thread')?.noun).toBe('thread');
+    expect(read('https://replicas-group.slack.com/archives/C0C4EG8J4D7/p1793254029666000', 'see here')?.noun).toBe('message');
     expect(read('https://superserve-ai.slack.com/archives/D0C8P610CTC/p1793256576237969?thread_ts=1793256576.237969&cid=D0C8P610CTC')?.context).toBe('superserve-ai · direct message');
-    expect(read('https://acme.slack.com/archives/C0123ABCD')).toMatchObject({ label: 'channel', context: 'acme' });
-    expect(read('https://app.slack.com/client/T06T9CEDK4G/C0123UCREZKP/thread/C0123UCREZKP-1793123214.352139')?.label).toBe('thread');
+    expect(read('https://acme.slack.com/archives/C0123ABCD')).toMatchObject({ noun: 'channel', context: 'acme' });
+    expect(read('https://app.slack.com/client/T06T9CEDK4G/C0123UCREZKP/thread/C0123UCREZKP-1793123214.352139')?.noun).toBe('thread');
     expect(read('https://hooks.slack.com/archives/C0123ABCD')).toBeNull();
     expect(read('https://acme.slack.com/apps/A123')).toBeNull();
   });
@@ -73,7 +77,7 @@ describe('relatedLinkOf', () => {
       ['https://lovable.dev/projects/4769ebff-6bdf-4cec-a73b-e4b457ab1d5c', 'Lovable', 'project'],
       ['https://app.factory.ai/automations?editAutomationId=4769ebff-6bdf-4cec-a73b-e4b457ab1d5c', 'Factory', 'automation'],
     ];
-    for (const [href, service, label] of cases) expect(read(href), href).toMatchObject({ kind: 'agent', service, label });
+    for (const [href, service, noun] of cases) expect(read(href), href).toMatchObject({ kind: 'agent', service, noun, ref: null });
     for (const href of [
       'https://cursor.com/dashboard/cloud-agents#my-pull-requests',
       'https://cursor.com/assets/images/open-in-web-dark.png',
@@ -100,20 +104,20 @@ describe('relatedLinkOf', () => {
   });
 
   it('reads tickets, docs and errors by their exact shapes', () => {
-    expect(read('https://bro73.atlassian.net/browse/SCRUM-59')).toMatchObject({ key: 'jira:bro73:SCRUM-59', label: 'SCRUM-59', context: 'bro73', action: 'Open in Jira' });
+    expect(read('https://bro73.atlassian.net/browse/SCRUM-59')).toMatchObject({ key: 'jira:bro73:SCRUM-59', noun: 'issue', ref: 'SCRUM-59', context: 'bro73', action: 'Open issue in Jira' });
     expect(read('https://acme.atlassian.net/jira/software/projects/ENG/boards/3?selectedIssue=ENG-42')).toMatchObject({ key: 'jira:acme:ENG-42' });
     expect(read('https://acme.atlassian.net/jira/software/projects/ENG/boards/3')).toBeNull();
     expect(read('https://acme.atlassian.net/wiki/spaces/ENG/pages/123456/Release+checklist')).toMatchObject({ service: 'Confluence', title: 'Release checklist' });
-    expect(read('https://app.shortcut.com/acme/story/123/fix-login')).toMatchObject({ label: 'sc-123', title: 'Fix login' });
+    expect(read('https://app.shortcut.com/acme/story/123/fix-login')).toMatchObject({ noun: 'story', ref: 'sc-123', title: 'Fix login' });
     expect(read('https://www.notion.so/citizenlab/Changelog-How-it-works-0123456789abcdef0123456789abcdef')).toMatchObject({ service: 'Notion', title: 'Changelog How it works' });
     expect(read('https://www.notion.so/my-integrations')).toBeNull();
-    expect(read('https://www.figma.com/design/AbCdEfGhIjKlMnOpQrStUv/Geld-Design?node-id=1-2')).toMatchObject({ label: 'file', title: 'Geld Design' });
-    expect(read('https://docs.google.com/document/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/edit')).toMatchObject({ label: 'doc' });
-    expect(read('https://www.loom.com/share/0123456789abcdef0123456789abcdef')).toMatchObject({ label: 'video' });
-    expect(read('https://tita-30.sentry.io/issues/GEOG-2A')).toMatchObject({ kind: 'error', label: 'GEOG-2A', context: 'tita-30' });
-    expect(read('https://sentry.io/organizations/warpdotdev/issues/123456/')).toMatchObject({ label: 'issue', context: 'warpdotdev' });
+    expect(read('https://www.figma.com/design/AbCdEfGhIjKlMnOpQrStUv/Geld-Design?node-id=1-2')).toMatchObject({ noun: 'file', title: 'Geld Design' });
+    expect(read('https://docs.google.com/document/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/edit')).toMatchObject({ noun: 'doc' });
+    expect(read('https://www.loom.com/share/0123456789abcdef0123456789abcdef')).toMatchObject({ noun: 'video' });
+    expect(read('https://tita-30.sentry.io/issues/GEOG-2A')).toMatchObject({ kind: 'error', noun: 'issue', ref: 'GEOG-2A', context: 'tita-30' });
+    expect(read('https://sentry.io/organizations/warpdotdev/issues/123456/')).toMatchObject({ noun: 'issue', ref: null, context: 'warpdotdev' });
     expect(read('https://linear.app/developers/graphql')).toBeNull();
-    expect(read('https://linear.app/acme/project/geld-related-links-0123456789ab/overview')).toMatchObject({ label: 'project', title: 'Geld related links' });
+    expect(read('https://linear.app/acme/project/geld-related-links-0123456789ab/overview')).toMatchObject({ noun: 'project', ref: null, title: 'Geld related links', action: 'Open project in Linear' });
   });
 });
 
