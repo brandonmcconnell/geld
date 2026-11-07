@@ -439,7 +439,11 @@ function alternateFeatures(master: Master, names: Set<string>): { aalt: string[]
     ];
     if (pairs.length) rest.push(`feature ${tag} {`, `  featureNames { name "${label}"; };`, ...subs(pairs), `} ${tag};`);
   }
-  for (const [alt, pairs] of owned) rest.push(`feature ${alt.cv} {`, `  cvParameters { FeatUILabelNameID { name "${alt.label}"; }; };`, ...subs(pairs), `} ${alt.cv};`);
+  // One block per cv, which may take several glyphs (' and " are one variant).
+  const byCv = new Map<string, { label: string; pairs: [string, string][] }>();
+  for (const [alt, pairs] of owned) byCv.set(alt.cv, { label: byCv.get(alt.cv)?.label ?? alt.label, pairs: [...(byCv.get(alt.cv)?.pairs ?? []), ...pairs] });
+  for (const [cv, { label, pairs }] of [...byCv].sort(([a], [b]) => a.localeCompare(b)))
+    rest.push(`feature ${cv} {`, `  cvParameters { FeatUILabelNameID { name "${label}"; }; };`, ...subs(pairs), `} ${cv};`);
   const all = new Map<string, string[]>();
   for (const pairs of owned.values()) for (const [a, b] of pairs) all.set(a, [...(all.get(a) ?? []), b]);
   rest.push('feature salt {', ...[...all].map(([a, bs]) => `  sub ${a} by ${bs[0]};`), '} salt;');

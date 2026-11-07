@@ -1,4 +1,4 @@
-import { bar, box, diagonal, type DrawContext, dot, edgeAt, type GlyphDef, INSIDE, level, meeting, open, p, rotate, spanOf, stem, withPen } from './draw';
+import { bar, box, crossbarReach, diagonal, type DrawContext, dot, edgeAt, type GlyphDef, INSIDE, level, meeting, open, p, rotate, spanOf, stem, withPen } from './draw';
 import type { Stroke } from './geometry';
 
 /**
@@ -220,6 +220,117 @@ export const ALTERNATES: Alternate[] = [
   { glyph: 'h', set: 'ss08', cv: 'cv18', label: 'Italic h with an exit', only: 'italic', draw: (g) => { const w = g.wide(7); const t = g.top(g.xHeight); const b = g.bottom(0); return [stem(0, 0, g.ascender), open(p(0, t), p(w, t, true), p(w, b, true), p(w + exit(g), b))]; } },
   { glyph: 'i', set: 'ss08', cv: 'cv19', label: 'Italic i with an exit', only: 'italic', draw: (g) => [open(p(0, g.xHeight), p(0, g.bottom(0), true), p(exit(g), g.bottom(0))), dot(g, 0, g.xHeight + g.y(1.5))] },
   { glyph: 'u', set: 'ss08', cv: 'cv20', label: 'Italic u with an exit', only: 'italic', draw: (g) => { const w = g.wide(7); const b = g.bottom(0); return [open(p(0, g.xHeight), p(0, b, true), p(w + exit(g), b)), stem(w, 0, g.xHeight)]; } },
+
+  // Character variants in no set (6.2).
+  {
+    glyph: 'G',
+    cv: 'cv21',
+    label: 'G without a bar',
+    draw: (g) => {
+      const w = g.wide(10);
+      const y = g.top(Math.max(g.cap / 2, 2 * g.h + 1.6));
+      return [open(p(w, g.y(9)), p(w, g.top(g.cap), true), p(0, g.top(g.cap), true), p(0, g.bottom(0), true), p(w, g.bottom(0)), p(w, y))];
+    },
+  },
+  {
+    glyph: 'J',
+    cv: 'cv22',
+    label: 'J with a top bar',
+    draw: (g, base) => {
+      const w = g.wide(8);
+      return [...base.draw(g), bar(w - g.wide(3.5), w + g.v / 2, g.top(g.cap))];
+    },
+  },
+  {
+    glyph: 'Q',
+    cv: 'cv23',
+    label: 'Q with an upright tail',
+    draw: (g) => {
+      const w = g.wide(10);
+      return [box(0, w, g.bottom(0), g.top(g.cap), [true, true, true, true]), stem(w / 2, -2.75, g.h / 2)];
+    },
+  },
+  {
+    glyph: 'W',
+    cv: 'cv24',
+    label: 'Crossed W',
+    draw: (g) => {
+      const w = g.wide(15);
+      return [...meeting(g, [0, g.cap], [w * 0.66, g.cap], w * 0.33, 0), ...meeting(g, [w * 0.34, g.cap], [w, g.cap], w * 0.67, 0)];
+    },
+  },
+  {
+    glyph: 't',
+    cv: 'cv25',
+    label: 't with a square foot',
+    draw: (g) => {
+      const b = g.bottom(0);
+      return [open(p(0, g.y(13)), p(0, b), p(g.wide(3.5), b)), bar(-crossbarReach(g), g.wide(3.5), g.top(g.xHeight))];
+    },
+  },
+  { glyph: 'f', cv: 'cv26', label: 'Descending f', draw: italicForm, only: 'roman' },
+  {
+    glyph: 'seven',
+    cv: 'cv27',
+    label: '7 with a crossbar',
+    draw: (g, base) => {
+      const w = g.wide(9);
+      const x = (w - spanOf(g.diag, w * 0.65, g.cap) + w * 0.35) / 2;
+      // As long as the diagonal is wide at its middle, and as far again past it each side as an overhang must be.
+      const half = g.diag.v + 1.75;
+      return [...base.draw(g), bar(x - half, x + half, g.cap / 2)];
+    },
+  },
+  {
+    glyph: 'dollar',
+    cv: 'cv28',
+    label: 'Dollar with stubs',
+    draw: (g) => {
+      const w = g.wide(9.5);
+      const t = g.top(g.cap);
+      const b = g.bottom(0);
+      return [
+        open(p(w, 10), p(w, t, true), p(0, t, true), p(0, g.cap / 2, true), p(w, g.cap / 2, true), p(w, b, true), p(0, b, true), p(0, 4)),
+        stem(w / 2, -2, g.h / 2),
+        stem(w / 2, g.cap - g.h / 2, 16),
+      ];
+    },
+  },
+  {
+    glyph: 'numbersign',
+    cv: 'cv29',
+    label: 'Slanted number sign',
+    draw: (g) => {
+      const w = g.wide(9);
+      const lean = 1.5;
+      // Each bar is centred on the slanted stems at its own height, standing out past them as the upright sign's do.
+      const at = (y: number) => lean * ((y - 7) / 6);
+      // The stems lean across a bar's own height too, so a heavy bar reaches further to stand out at its top and bottom.
+      const extra = 0.25 + (lean * g.h) / 12;
+      return [
+        diagonal(g, w * 0.3 - lean, 1, w * 0.3 + lean, 13),
+        diagonal(g, w * 0.7 - lean, 1, w * 0.7 + lean, 13),
+        bar(at(4.75) - extra, w + at(4.75) + extra, 4.75),
+        bar(at(9.25) - extra, w + at(9.25) + extra, 9.25),
+      ];
+    },
+  },
+  { glyph: 'quotesingle', cv: 'cv30', label: 'Slanted straight quotes', draw: (g) => [diagonal(g, 0.75, g.cap - 4, 1.75, g.cap)] },
+  { glyph: 'quotedbl', cv: 'cv30', label: 'Slanted straight quotes', draw: (g) => [diagonal(g, 0.75, g.cap - 4, 1.75, g.cap), diagonal(g, g.v + 2.25, g.cap - 4, g.v + 3.25, g.cap)] },
+  {
+    glyph: 'asterisk',
+    cv: 'cv31',
+    label: 'Five-armed asterisk',
+    draw: (g) => {
+      const c = { x: 2.6, y: 11 };
+      const r = Math.max(2.75, 1.4 * g.diag.v + 0.5);
+      const round = { v: g.diag.v, h: g.diag.v };
+      return [90, 162, 234, 306, 18].map((deg) => {
+        const a = (deg * Math.PI) / 180;
+        return withPen(open(p(c.x, c.y), p(c.x + r * Math.cos(a), c.y + r * Math.sin(a))), round);
+      });
+    },
+  },
 ];
 
 /** The exit stroke's length past the stem. */
