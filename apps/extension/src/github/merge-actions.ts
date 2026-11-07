@@ -353,12 +353,20 @@ export function parseStack(payload: unknown, pullPath: string): readonly StackMe
  * missing or another pull request's (GitHub's router keeps the first page's payload across soft navigations).
  */
 export function embeddedStack(pullPath: string, root: ParentNode = document): readonly StackMember[] | 'none' | null {
-  const number = Number(/\/pull\/(\d+)/.exec(pullPath)?.[1] ?? Number.NaN);
+  const page = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(pullPath);
+  if (page === null) return null;
+  const [, owner = '', repo = '', number = ''] = page;
+  // The number alone is not this pull request: a payload kept from another repository's pull request of the same
+  // number would hand its stack's paths to every stack action.
+  const repoPrefix = `/${owner}/${repo}/pull/`.toLowerCase();
   for (const script of root.querySelectorAll('script[type="application/json"][data-target="react-app.embeddedData"]')) {
     const layout = layoutRouteOf(script);
-    if (layout === null || !isRecord(layout.pullRequest) || layout.pullRequest.number !== number) continue;
+    if (layout === null || !isRecord(layout.pullRequest) || layout.pullRequest.number !== Number(number)) continue;
     if (layout.stack === null) return 'none';
-    return parseStack({ stack: layout.stack }, pullPath);
+    const stack = layout.stack;
+    if (!isRecord(stack) || stringOf(stack.repositoryOwnerLogin).toLowerCase() !== owner.toLowerCase() || stringOf(stack.repositoryName).toLowerCase() !== repo.toLowerCase()) return null;
+    const members = parseStack({ stack }, pullPath);
+    return members !== null && members.every((member) => member.path.toLowerCase().startsWith(repoPrefix)) ? members : null;
   }
   return null;
 }

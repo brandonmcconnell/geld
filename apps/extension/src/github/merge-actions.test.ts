@@ -273,11 +273,19 @@ describe('the stack the page embeds', () => {
 
   it('lists the members top first with no request, when the payload is this pull request’s', () => {
     const root = document.createElement('div');
-    root.innerHTML = script({ pullRequest: { number: 478 }, stack: { pulls } });
+    root.innerHTML = script({ pullRequest: { number: 478 }, stack: { repositoryOwnerLogin: 'o', repositoryName: 'r', pulls } });
     expect(embeddedStack('/o/r/pull/478', root)).toEqual([
       { number: 478, path: '/o/r/pull/478', title: 'Top', current: true },
       { number: 477, path: '/o/r/pull/477', title: 'Bottom', current: false },
     ]);
+  });
+
+  it('is not taken from another repository’s pull request of the same number', () => {
+    const root = document.createElement('div');
+    root.innerHTML = script({ pullRequest: { number: 478 }, stack: { repositoryOwnerLogin: 'other', repositoryName: 'repo', pulls: pulls.map((pull) => ({ ...pull, url: pull.url.replace('/o/r/', '/other/repo/') })) } });
+    expect(embeddedStack('/o/r/pull/478', root)).toBeNull();
+    root.innerHTML = script({ pullRequest: { number: 478 }, stack: { repositoryOwnerLogin: 'o', repositoryName: 'r', pulls: [pulls[0], { ...pulls[1], url: '/other/repo/pull/477' }] } });
+    expect(embeddedStack('/o/r/pull/478', root)).toBeNull();
   });
 
   it('says none for a pull request in no stack, and nothing for another pull request’s payload', () => {
@@ -306,7 +314,7 @@ describe('reading a stack', () => {
 
   it('takes the page’s embedded stack for the first read only, then asks GitHub, so a member merged since drops out', async () => {
     document.body.innerHTML = `<script type="application/json" data-target="react-app.embeddedData">${JSON.stringify({
-      payload: { pullRequestsLayoutRoute: { pullRequest: { number: 9 }, stack: { pulls: [{ number: 9, title: 'Top', state: 'OPEN', url: '/o/r/pull/9' }, { number: 8, title: 'Bottom', state: 'OPEN', url: '/o/r/pull/8' }] } } },
+      payload: { pullRequestsLayoutRoute: { pullRequest: { number: 9 }, stack: { repositoryOwnerLogin: 'o', repositoryName: 'r', pulls: [{ number: 9, title: 'Top', state: 'OPEN', url: '/o/r/pull/9' }, { number: 8, title: 'Bottom', state: 'OPEN', url: '/o/r/pull/8' }] } } },
     })}</script>`;
     const asked: string[] = [];
     vi.stubGlobal(
