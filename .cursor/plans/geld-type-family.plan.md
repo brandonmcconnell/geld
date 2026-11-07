@@ -258,26 +258,26 @@ Default in Sans per D13. Mono turns most of them on by default (section 19).
 ## 6. Alternates
 
 ### 6.1 Stylistic sets (named in the font, so apps show their names)
-- [ ] `ss01` Single-storey a.
-- [ ] `ss02` Double-storey g (or single-storey, whichever is not the default after Phase 2).
-- [ ] `ss03` Disambiguation: a tailed l, a barred I, a slashed 0 and a 1 with a base.
-- [ ] `ss04` Open digits: open 4, straight-backed 6 and 9, a flat-topped 3.
-- [ ] `ss05` Alternate R, K and M (splayed M, straight-legged R).
-- [ ] `ss06` Straight y and j tails.
-- [ ] `ss07` Dot shape: square, octagon or diamond.
-- [ ] `ss08` Italic exit strokes on n m h i u l.
-- [ ] `ss09` The wordmark's letterforms, for setting Geld brand text, if they differ from the defaults.
+- [x] `ss01` Single-storey a (roman only: the italic's a is single-storey already).
+- [x] `ss02` Double-storey g (the default is single-storey): a bowl at the x-height with an ear, a link and a loop under the baseline, its horizontals capped at 2.4 units so both counters stay open at Black.
+- [x] `ss03` Disambiguation: a tailed l (roman; the italic's is tailed), a barred I, a slashed 0 and a 1 with a base.
+- [x] `ss04` Open digits: open 4, straight-backed 6 and 9, a flat-topped 3.
+- [x] `ss05` Alternate R, K and M: splayed M (the w turned over), a K with both arms from the stem, and an R with its leg from the stem (a straight vertical leg was tried and read as an A in this octagonal style).
+- [x] `ss06` Straight y and j tails (the roman y is straight already, so its alternate is the italic's).
+- [x] `ss07` Dot shape: octagonal dots in place of the square ones, drawn for every glyph and mark with dots and followed by every composite built on them (314 glyphs). A diamond is not offered yet.
+- [x] `ss08` Italic exit strokes on n m h i u (the italic's l has its tail already); italic only.
+- [x] `ss09` The wordmark's letterforms, for setting Geld brand text, if they differ from the defaults: they do not (SemiBold G E L D are the logo's letters point for point, checked), so ss09 stays unused and the logo itself is the `dlig` lockup.
 - [x] `ss10` Dash ligatures (5.3).
 - [x] `ss11` to `ss16` Code ligature groups (5.3).
-- [ ] `ss17` Circled numerals.
+- [x] `ss17` Circled numerals: ⓪ ①–⑨ encoded, an octagonal ring around the denominator figure, and ss17 maps the figures to them.
 - [ ] `ss18` reserved.
 - [ ] `ss19` reserved.
-- [ ] `ss20` No arrow ligatures (5.2).
+- [x] `ss20` No arrow ligatures (5.2).
 
 ### 6.2 Character variants (`cv01` to `cv40` or so, each with a name)
-- [ ] One `cv` per alternate glyph, so a single character can change without a whole set: a, g, G (spur or bar), J, K, M, Q (tail styles), R, W (crossed or plain), t (cut or square foot), f, l, I, y, ß (and the sharp-s capital), 0, 1, 3, 4, 6, 7 (with or without crossbar), 9, $, &, @, %, *, ?, !, ¶, # (slanted or upright), { } (style), and quotes (straight or slanted).
-- [ ] `salt` mapping to each glyph's first alternate, for apps that only offer one switch.
-- [ ] `aalt` listing every alternate, for the glyph palettes in InDesign and Illustrator.
+- [ ] One `cv` per alternate glyph, so a single character can change without a whole set (done: cv01–cv31 for a, g, l, I, 0, 1, j, y, 4, 6, 9, 3, R, K, M, italic n m h i u, G, J, Q, W, t, f, 7, $, #, quotes and *, each named in the font; still to come: ß and ẞ, &, @, %, ?, !, ¶, { }): a, g, G (spur or bar), J, K, M, Q (tail styles), R, W (crossed or plain), t (cut or square foot), f, l, I, y, ß (and the sharp-s capital), 0, 1, 3, 4, 6, 7 (with or without crossbar), 9, $, &, @, %, *, ?, !, ¶, # (slanted or upright), { } (style), and quotes (straight or slanted).
+- [x] `salt` mapping to each glyph's first alternate, for apps that only offer one switch.
+- [x] `aalt` listing every alternate, for the glyph palettes in InDesign and Illustrator. Accented letters follow their base in every set and cv (á under ss01), an alternate keeps its letter's anchors, and `verify.py` checks every alternate under its set, cv and salt in every compiled font.
 
 ### 6.3 Swashes
 - [ ] Swash caps (`swsh`): A, J, K, M, N, Q, R, Y, and as many more as the language works for in Phase 7.
