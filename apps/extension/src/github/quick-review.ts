@@ -17,8 +17,8 @@ import { inlineText } from './review/inline-text';
 import type { SidebarReviewer, SidebarReviewerState } from './review/crawler';
 import { catchUpAfterPost } from './review/timeline-catchup';
 import type { ReviewTally } from './review-tally';
-import type { PullStatus, StackAction, StackChoice, StackGroup, StatusOption } from './status-pill';
-import { ATTR_INSTANT_MERGE, labelBehind, rememberStatusHint, removeStatusPills, showMergedPills, STATUS_INFO, stackConfirmWords, stackGroups, statusHint, statusOf, statusOptions, syncStatusPills } from './status-pill';
+import type { PillPlace, PullStatus, StackAction, StackChoice, StackGroup, StatusOption } from './status-pill';
+import { ATTR_INSTANT_MERGE, labelBehind, pillPlace, rememberStatusHint, removeStatusPills, showMergedPills, STATUS_INFO, stackConfirmWords, stackGroups, statusHint, statusOf, statusOptions, syncStatusPills } from './status-pill';
 import { fetchReviewers, REVIEW_BY_HASH, REVIEWS_HASH, reviewLink, standingReviewers, tallyOf, tallyWords } from './review-tally';
 import { ICON_ALERT_FILL_12, ICON_CHECK, ICON_CHECK_SEND, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CODE_REVIEW, ICON_CODE_REVIEW_SEND, ICON_COMMENT, ICON_COMMENT_SEND, ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_SPINNER, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_X, ICON_X_SEND } from './ui/icons';
 import { pageFetch } from './page-fetch';
@@ -320,6 +320,8 @@ interface Mounted {
   pills: readonly HTMLButtonElement[];
   /** The pill the status menu, or a box chosen from it, came from: the box hangs under it and focus goes back to it. */
   statusOpener: HTMLButtonElement | null;
+  /** Where the opener stood when the menu opened, for the pill that takes its place when GitHub re-renders it. */
+  statusOpenerPlace: PillPlace | null;
   statusMenu: HTMLElement | null;
   /** Ends the open status menu's listeners. */
   statusMenuKeys: AbortController | null;
@@ -652,6 +654,7 @@ function createControls(pullPath: string, context: QuickReviewContext): Mounted 
     opener: null,
     pills: [],
     statusOpener: null,
+    statusOpenerPlace: null,
     statusMenu: null,
     statusMenuKeys: null,
     tally,
@@ -1222,11 +1225,13 @@ function showStatus(state: Mounted): void {
   state.pills = syncStatusPills(on || holding || (state.sending && state.pills.length > 0), openFromPill);
   showInstantMerge(state);
   if (state.statusMenu !== null && (state.statusOpener === null || !state.pills.includes(state.statusOpener))) {
-    // GitHub re-rendered its header (on the Overview, about two seconds into a load) and the pill with it: the open
-    // menu goes to the pill that took its place rather than closing under the reader.
-    const heir = state.statusOpener === null || state.statusOpener.isConnected ? null : (state.pills[0] ?? null);
-    if (heir === null) closeStatusMenu(state);
-    else {
+    // GitHub re-rendered its header (on the Overview about two seconds into a load, and the mini header as it scrolls)
+    // and the pill with it: the open menu goes to the pill that took its place, standing where the opener stood, rather
+    // than closing under the reader. Until GitHub has rendered that one, the menu stays where it is.
+    const opener = state.statusOpener;
+    const heir = state.pills.find((pill) => pillPlace(pill) === state.statusOpenerPlace) ?? null;
+    if (opener === null || opener.isConnected || state.pills.length === 0) closeStatusMenu(state);
+    else if (heir !== null) {
       state.statusOpener = heir;
       heir.setAttribute('aria-expanded', 'true');
       positionStatusMenu(state);
@@ -1342,6 +1347,7 @@ function toggleStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
   if (same || state.sending) return;
   closePanel();
   state.statusOpener = pill;
+  state.statusOpenerPlace = pillPlace(pill);
   if (state.mergeActions !== null) {
     openStatusMenu(state, pill);
     return;
@@ -1553,7 +1559,8 @@ function placeSubmenu(item: HTMLElement, submenu: HTMLElement): void {
 function positionStatusMenu(state: Mounted): void {
   const menu = state.statusMenu;
   const pill = state.statusOpener;
-  if (menu === null || pill === null) return;
+  // A pill GitHub took away with its header: the menu waits where it is for the pill that takes its place.
+  if (menu === null || pill === null || !pill.isConnected) return;
   const rect = pill.getBoundingClientRect();
   const left = Math.max(8, Math.min(rect.left, document.documentElement.clientWidth - menu.offsetWidth - 8));
   menu.style.left = `${Math.round(left)}px`;

@@ -128,6 +128,17 @@ describe("the Overview's status label", () => {
     document.body.replaceChildren();
   });
 
+  it('is taken over in the mini header too, which stands stuck to the top once the page header scrolls away', () => {
+    document.body.innerHTML = `<div data-testid="diff-comparison-viewer-sticky-header-slot"><div class="miniHeaderInner__x"><div class="metadata__x"><button type="button" aria-haspopup="true"><span data-component="StateLabel" data-status="pullOpened" data-size="small">Open</span></button></div></div></div>
+      <div data-component="PageHeader"><button type="button" aria-haspopup="true"><span data-component="StateLabel" data-status="pullOpened">Open</span></button></div>`;
+    const pills = syncStatusPills(true, () => undefined);
+    expect(pills).toHaveLength(2);
+    expect(pills[0]?.closest('[data-testid="diff-comparison-viewer-sticky-header-slot"]')).not.toBeNull();
+    expect(pills[0]?.getAttribute('data-size')).toBe('small');
+    expect([...document.querySelectorAll('button[aria-haspopup="true"]')].every((button) => button.hasAttribute('data-geld-status-hidden'))).toBe(true);
+    document.body.replaceChildren();
+  });
+
   it('leaves no pill behind when GitHub swaps its status button for a merged label in place', () => {
     document.body.innerHTML = `<div data-component="PageHeader"><div class="row"><button type="button" aria-haspopup="true" aria-label="Pull request state: Open"><span data-component="StateLabel" data-status="pullOpened">Open</span></button></div></div>`;
     const [pill] = syncStatusPills(true, () => undefined);

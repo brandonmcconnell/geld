@@ -207,7 +207,9 @@ export function stackConfirmWords(action: StackAction, choice: StackChoice): str
   return `${verb[action]} (${list})?`;
 }
 
-const GITHUB_PILLS = '[data-component="PageHeader"] [data-component="StateLabel"], .gh-header-meta .State, .gh-header-sticky .State';
+// The Overview's mini header (stuck to the top once the page header scrolls away) carries a status menu of its own.
+const GITHUB_PILLS =
+  '[data-component="PageHeader"] [data-component="StateLabel"], [data-testid="diff-comparison-viewer-sticky-header-slot"] [data-component="StateLabel"], .gh-header-meta .State, .gh-header-sticky .State';
 const ATTR_HIDDEN = 'data-geld-status-hidden';
 const ATTR_PILL = 'data-geld-status-pill';
 
@@ -289,6 +291,13 @@ function mergedCopy(label: Element): Element {
  */
 function hostOf(label: HTMLElement): HTMLElement {
   return label.closest<HTMLElement>('button[aria-haspopup]') ?? label;
+}
+
+export type PillPlace = 'mini' | 'header';
+
+/** Where a pill stands: the Overview's mini header, or the page header (the classic page's sticky header counts as that). */
+export function pillPlace(pill: Element): PillPlace {
+  return pill.closest('[data-testid="diff-comparison-viewer-sticky-header-slot"]') !== null ? 'mini' : 'header';
 }
 
 /** GitHub's label behind a pill: the element before it, or the label inside GitHub's status button there. */
