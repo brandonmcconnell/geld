@@ -65,6 +65,10 @@ this file lists what a reviewer must check.
 - Work done on the `apply()` path that forces layout (`getBoundingClientRect`, `offsetHeight`) — it
   runs on every DOM mutation while large diffs stream in.
   Measurements belong in observers.
+- A reading of the pull request page that knows only one of its shapes: the conversation (classic timeline, or the
+  conversation inside the React layout) and the Overview tab (`review/overview-page.ts`: the description in its own box,
+  the Comments section's `[data-testid="timeline-item"]` entries listed newest first).
+  Readers land on either, so a selector or a placement added for one needs the other's too.
 - Styles that do not follow GitHub's theme tokens (`--fgColor-*`, `--bgColor-*`, `--borderColor-*`)
   or ignore dark/high-contrast/colorblind themes.
 - UI copy that is vague;

@@ -633,6 +633,37 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The controller turns that into `RepoBotsHint.apiTriggers` (bot id → command), and `triggerFor` is what Rerun, the request menu and its line titles post.
   `/geld run` is a trigger like any other (`isTriggerComment`, `botsTriggeredBy`, `botByTrigger`: the whole comment on one line, known ids only, the same grammar the workflow's script uses), but it is acknowledged by the workflow, not the bot: the crawler keeps each reaction's emoji (`reactionsOf` → `RawComment.reactions`, from "github-actions[bot] reacted with rocket emoji") and the Action reads the same from the API (`reactionGroups` → `RawIssueComment.reactions`), an App's 🚀 is the run taken and its 👎 or no answer after `ACK_GRACE_MS` is no run (`geldRunAnswer`), so a repository without the workflow, or without the key, leaves the earlier verdict standing.
   Rerun reads its trigger at the click and the request menu's triggers are in the panel signature, so a workflow found after the panel was drawn is used at once.
+- **GitHub's Overview tab gets the digest too** (`review/overview-page.ts`, Nov 2026).
+  The Overview is the React page GitHub offers in place of the conversation (`?overview=true`, `prs_overview_as_index_route`;
+  the "Preview ▾" menu beside the title opts in and out, `?overview=false` opts out for a visit).
+  It is a "For you" strip (`[class*="CondensedForYouContainer"]`: the merge status as three cards, and signed in the next action with GitHub's merge button), the description in a box of its own (`section[aria-label="Description"]`, its "Edited ▾" menu floated to the inline end, so the text wraps around it), a Comments section (`h2#overview-comments`) and a sidebar;
+  the other timeline events live in a side panel that is not in the page until opened.
+  Readers can land on either page, or on the conversation inside the new React layout, so every reading takes both shapes and nothing assumes one.
+  **The digest stands as a box of its own between the strip and the description** (`data-geld-standalone`, rounded, in the column's 16px gap), not grown out of the description: `seatStandalone` keeps it right above the description, since GitHub renders the strip late and React puts a new child before the next node it owns.
+  The digest-off line still grows out of the description's bottom edge, taking back the column's gap (`digest-off.ts`).
+  The description folds, cuts and gathers its agent notes as on the conversation (`descriptionBody` reads the box's `.markdown-body`, the reactions row is the box's `Reactions for the description` toolbar).
+  **The Comments section is the timeline**: each entry is a `[data-testid="timeline-item"]` (`data-item-type` `issue`, `review_summary`, `commit_group`), folded in compact mode like a timeline row, with the section's heading row (heading, All/Unresolved/Mine, filter, sort) folded silently too, its 400px `min-height` dropped and the Stack's gap zeroed while folded.
+  An issue comment is an `article#issuecomment-N`, a review an `article#pullrequestreview-N` holding its own words and one `article` per thread (no id), and a review with no words a `div#pullrequestreview-N[role=group]` around its threads' boxes;
+  a thread's comments are `div#discussion_rN` inside its box's `[data-testid="review-thread"]`.
+  The author is the header's `a[data-testid="avatar-link"]` (an App's links to `/apps/<slug>` in an issue comment's header, to `/<slug>[bot]` in a review's), the verdict the header's muted words ("approved", "requested changes", "commented";
+  a dismissed review reads "previously approved"), never its screen-reader heading, which says "X commented" whatever the review was.
+  **A thread's file, line and state are its box's**, not its comments' container's (`threadFrameOf`): the heading's file link into the Changes tab (wrapped in direction marks), its "Line 341" span (the text runs "…mdLine 341", so no word boundary, and a comment's "Line 44" would win), its "Resolved" label;
+  a mutation in the box's header marks the thread for a fresh reading.
+  `threadRootOf` answers the box, so a thread opens in the digest with its diff lines, and the chat hides GitHub's own header row in it.
+  **GitHub collapses a resolved thread to its heading** ("Open review comment in …"), its comments in the page only once opened: while the timeline is folded `openCollapsedThreads` presses each disclosure once, as the conversation's minimized reviews are fetched.
+  **The section lists newest first by default** (its sort button wears `octicon-sort-desc`;
+  the reader can pick oldest first or code order, kept in their browser), so `compareHome` reverses the page's order between two entries while it does (`overviewNewestFirst`, read from the button's glyph): rounds, the crawl and the head's latest push all read in timeline order.
+  Commit rows (`[data-testid="timeline-commit-row"]`) link to the commit in the Changes tab (`/pull/N/changes/<sha>`), which `conversationHeadSha` reads as it reads `/commits/<sha>`, and their pictures are `data-hovercard-type="user"` for people.
+  Reactions are a toolbar (`[role=toolbar][aria-label^="Reactions for"]`) of buttons named by emoji ("👍 1 reaction") whose `aria-describedby` tooltip lists who reacted, names only.
+  **Edit logs are found by node id** (`edit-times.ts`): the Overview's "Last edited by X ▾" button loads the log through its API and names no URL, so an edited comment's log is `/user_content_edits/show_edit_history_log/<IC_|PRR_|PRRC_ node id>` (served signed out too), and the description's the pull request's own (`PR_…`, from the page's embedded payload when it is this pull request's).
+  **The CI checks row reads the head's checks when there is no checks section** (`checkCountsOfRuns`, `renderCheckRunsList`): the Overview's merge status is a card that opens a panel of its own, so on an open pull request the row counts the runs the commit's status partial lists (`headChecks`) and opens to one line per check with its Details.
+  A merged or closed pull request gets no such row, as on the conversation, where it has no merge box.
+  **The review group stands at the tab bar's end**: the Overview writes the counts beside the branches under the title (`[data-component="PageHeader.Description"]`), which `anchorOf` passes over, and leaves GitHub's counts wrapper in the tab row (an `UnderlineNav`, not a `TabNav`) empty for `standAnchor`;
+  scrolled, the group rides the Overview's mini header, which is always there and sticks to the top (`[data-testid="diff-comparison-viewer-sticky-header-slot"]`, read like the Files changed toolbar, first among its actions, `data-geld-place="mini"`).
+  A one-bubble chat reads an Overview `article` as its message and hides a review's thread boxes inside it, and GitHub's fade-in on a mounted box (`fadein`, 0.5 s) is off in the panel, where every move restarted it and the chat showed blank.
+  What Geld posts is left to the section's own live channel (`catchUpAfterPost` answers false there, so nothing reloads).
+  Not covered yet: the timeline events the Overview moved into its side panel (merges, force-pushes, review requests, cross-references;
+  `page_data/timeline` has them), so the digest's "N timeline events" and mentions rows and its force-push rounds are the conversation's only, and the sidebar's Reviewers block, which the harness below cannot render.
 - **Flow: the changed files as a diagram of what imports what** (`review/flow.ts`, `@geld/core/file-flow.ts`).
   A "Flow" button (Lucide's `workflow` mark, `ICON_WORKFLOW`;
   Lucide marks are outlines and `svg.geld-lucide` sets `fill: none !important`, since GitHub's `.octicon { fill: currentColor }` otherwise fills their shapes solid) stands in the Geld row just left of the grouping control wherever the digest does (`prOverview`), on every pull request, one file or many: opened before the diff has loaded, the dialog says it is waiting for the diff and draws when the source arrives.
@@ -1740,3 +1771,8 @@ install the built folder with Puppeteer's `browser.installExtension()` after lau
 the flag is what makes `Extensions.loadUnpacked` available;
 the pipe is required for it), and bring a tab to the front before interacting with it (background tabs stall element handles).
 The full launch recipe, with a service-worker sanity check, is in `.claude/skills/github-surface/SKILL.md` §4.
+
+**The Overview tab can be rendered from a signed-out session**: its route code is in the page's public bundles and every `page_data/*` endpoint it reads (`conversation_comments`, `threads`, `timeline`, `description`, `tab_counts`) answers signed out.
+Intercept the pull request's document, set `appPayload.enabled_features.prs_overview_as_index_route` to true and `payload.pullRequestsLayoutRoute.featureStates.overview` to `ENABLED` in its `react-app.embeddedData`, rename the payload's `pullRequestsConversationsRoute` to `pullRequestsOverviewIndexRoute`, set `data-ssr="false"` and empty the react root, and do the same to the `?overview=true` JSON the route asks for;
+a `<meta name="user-login">` puts the review group up.
+The merge box (`page_data/merge_box`) and the sidebar need a session and show GitHub's error box.
