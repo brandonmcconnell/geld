@@ -10,9 +10,16 @@
  * diagonal are sampled. An edge that is not covered means a cutout; covered
  * edges with clear diagonals mean a disc; anything else is a tile. Whether
  * any pixel is transparent says nothing: a solid tile with anti-aliased or
- * rounded corners (Claude's, cubic's) has some and is still a tile. Answers
- * are kept per URL for the page's life; until one is in, the mark wears its
- * square frame.
+ * rounded corners (Claude's, cubic's) has some and is still a tile.
+ *
+ * A cutout is read twice more, for where it overlaps other marks and needs a
+ * tile of its own: a solid blob over most of the square whose edge is nearly
+ * all one colour has that colour as its `ground` (a picture that falls just
+ * short of a tile, filled out to one everywhere, so no white shows round
+ * it), and any other picture gets the `inset` that keeps its
+ * art a tenth of the size clear of the tile's edge. Answers are kept per URL
+ * for the page's life, never longer: an App's avatar URL stays the same when
+ * its picture changes. Until one is in, the mark wears its square frame.
  */
 export type MarkShape = 'round' | 'square' | 'cutout';
 
@@ -22,14 +29,28 @@ export type MarkInk = 'dark' | 'light';
 interface MarkReading {
   readonly shape: MarkShape;
   readonly ink: MarkInk | null;
+  /** The colour a cutout's own edge is drawn in (`rgb(r g b)`), when nearly all of it is one. */
+  readonly ground: string | null;
+  /** The share of the tile's size to pad a cutout's art in by on a tile, 0 when it is clear of the edge already. */
+  readonly inset: number;
 }
 
 const ATTR_SHAPE = 'data-shape';
 const ATTR_INK = 'data-ink';
+const ATTR_GROUND = 'data-ground';
+const VAR_GROUND = '--geld-mark-ground';
+const VAR_INSET = '--geld-mark-inset';
 const COVERED_ALPHA = 128;
+const VISIBLE_ALPHA = 32;
 const DARK_INK = 0.25;
 const LIGHT_INK = 0.85;
-const SQUARE: MarkReading = { shape: 'square', ink: null };
+const INSET_TARGET = 0.1;
+const EDGE_BAND = 0.06;
+const GROUND_AREA = 0.5;
+const GROUND_FILL = 0.7;
+const GROUND_SHARE = 0.85;
+const GROUND_DISTANCE = 32;
+const SQUARE: MarkReading = { shape: 'square', ink: null, ground: null, inset: 0 };
 const readings = new Map<string, MarkReading>();
 const pending = new Map<string, Promise<MarkReading>>();
 
@@ -45,11 +66,81 @@ export function readMark(data: Uint8ClampedArray, width: number, height: number)
   const midX = Math.floor(width / 2);
   const midY = Math.floor(height / 2);
   const edges = [alpha(midX, 1), alpha(midX, height - 2), alpha(1, midY), alpha(width - 2, midY)];
-  if (edges.some((value) => value < COVERED_ALPHA)) return { shape: 'cutout', ink: inkOf(data) };
+  if (edges.some((value) => value < COVERED_ALPHA)) return cutoutOf(data, width, height);
   const x = Math.round(width / 10);
   const y = Math.round(height / 10);
   const diagonals = [alpha(x, y), alpha(width - 1 - x, y), alpha(x, height - 1 - y), alpha(width - 1 - x, height - 1 - y)];
-  return diagonals.every((value) => value < 32) ? { shape: 'round', ink: null } : SQUARE;
+  return diagonals.every((value) => value < 32) ? { ...SQUARE, shape: 'round' } : SQUARE;
+}
+
+function cutoutOf(data: Uint8ClampedArray, width: number, height: number): MarkReading {
+  const band = Math.max(1, Math.round(Math.min(width, height) * EDGE_BAND));
+  const red = new Uint32Array(256);
+  const green = new Uint32Array(256);
+  const blue = new Uint32Array(256);
+  const edge: number[] = [];
+  let solid = 0;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      const alpha = data[index + 3] ?? 0;
+      if (alpha >= VISIBLE_ALPHA) {
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      }
+      if (alpha < COVERED_ALPHA) continue;
+      solid += 1;
+      if (Math.min(x, y, width - 1 - x, height - 1 - y) >= band) continue;
+      edge.push(index);
+      count(red, data[index]);
+      count(green, data[index + 1]);
+      count(blue, data[index + 2]);
+    }
+  }
+  const ink = inkOf(data);
+  if (maxX < 0) return { shape: 'cutout', ink, ground: null, inset: 0 };
+  const box = (maxX - minX + 1) * (maxY - minY + 1);
+  // Only a solid blob over most of the tile has a ground: a glyph's strokes reaching the edge are not one.
+  const blob = box >= width * height * GROUND_AREA && solid >= box * GROUND_FILL;
+  const ground = blob ? groundOf(data, edge, [red, green, blue]) : null;
+  if (ground !== null) return { shape: 'cutout', ink, ground, inset: 0 };
+  const margin = Math.min(minX / width, (width - 1 - maxX) / width, minY / height, (height - 1 - maxY) / height);
+  // Padding p of the tile leaves art with margin m at p + m(1 - 2p) from the edge; solved for the target.
+  const inset = margin >= INSET_TARGET ? 0 : Math.round(((INSET_TARGET - margin) / (1 - 2 * margin)) * 1000) / 1000;
+  return { shape: 'cutout', ink, ground: null, inset };
+}
+
+function groundOf(data: Uint8ClampedArray, edge: readonly number[], histograms: readonly [Uint32Array, Uint32Array, Uint32Array]): string | null {
+  if (edge.length === 0) return null;
+  const red = medianOf(histograms[0], edge.length);
+  const green = medianOf(histograms[1], edge.length);
+  const blue = medianOf(histograms[2], edge.length);
+  let near = 0;
+  for (const index of edge) {
+    const distance = ((data[index] ?? 0) - red) ** 2 + ((data[index + 1] ?? 0) - green) ** 2 + ((data[index + 2] ?? 0) - blue) ** 2;
+    if (distance <= GROUND_DISTANCE ** 2) near += 1;
+  }
+  return near >= edge.length * GROUND_SHARE ? `rgb(${red} ${green} ${blue})` : null;
+}
+
+function count(histogram: Uint32Array, value: number | undefined): void {
+  const bin = value ?? 0;
+  histogram[bin] = (histogram[bin] ?? 0) + 1;
+}
+
+function medianOf(histogram: Uint32Array, count: number): number {
+  let seen = 0;
+  for (let value = 0; value < histogram.length; value += 1) {
+    seen += histogram[value] ?? 0;
+    if (seen * 2 >= count) return value;
+  }
+  return histogram.length - 1;
 }
 
 function inkOf(data: Uint8ClampedArray): MarkInk | null {
@@ -90,16 +181,23 @@ function sampleMark(src: string): Promise<MarkReading> {
   });
 }
 
-function wear(img: Element, reading: MarkReading): void {
+function wear(img: HTMLElement, reading: MarkReading): void {
   if (reading.shape === 'square') return;
   img.setAttribute(ATTR_SHAPE, reading.shape);
   if (reading.ink !== null) img.setAttribute(ATTR_INK, reading.ink);
+  if (reading.ground !== null) {
+    img.setAttribute(ATTR_GROUND, '');
+    img.style.setProperty(VAR_GROUND, reading.ground);
+  }
+  if (reading.inset > 0) img.style.setProperty(VAR_INSET, String(reading.inset));
 }
 
 /**
  * Gives `img` the shape of its picture: `data-shape="round"` for a disc (or
  * when the page already drew it round), `data-shape="cutout"` (with
- * `data-ink` for near-black or near-white ink) for a glyph on a transparent
+ * `data-ink` for near-black or near-white ink, `data-ground` and
+ * `--geld-mark-ground` for one whose edge is one colour, `--geld-mark-inset`
+ * for one whose art comes near the edge) for a glyph on a transparent
  * ground, nothing for a tile. The first time a picture is seen the answer
  * comes later, and is then written on every mark in the document showing
  * that picture, so a panel rebuilt in the meantime is caught up without
@@ -123,7 +221,7 @@ export function shapeMark(img: HTMLElement, src: string, roundOnPage: boolean): 
     readings.set(src, reading);
     if (reading.shape === 'square') return;
     for (const mark of document.querySelectorAll('img.geld-review__bot-icon, img.geld-review__avatar, img.geld-review-hovercard__avatar')) {
-      if (mark.getAttribute('src') === src && !mark.hasAttribute(ATTR_SHAPE)) wear(mark, reading);
+      if (mark instanceof HTMLElement && mark.getAttribute('src') === src && !mark.hasAttribute(ATTR_SHAPE)) wear(mark, reading);
     }
   });
 }
