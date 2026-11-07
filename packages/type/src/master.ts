@@ -6,7 +6,8 @@ import { GLYPHS, SPACES } from './glyphs';
 import { FIGURE_NAMES } from './glyphs-figures';
 import { CYRILLIC_LOCL_ACCENTED } from './glyphs-cyrillic';
 import { accentedSmallCaps, SMALL_CAP_EXTRA_ACCENTED, SMALL_CAP_PLACED } from './glyphs-smallcaps';
-import { DARK_INSET_RATIO, ITALIC_SLOPE, METRICS, UNIT, type Weight, weightParams } from './grid';
+import { LOCKUP, lockupGlyph } from './lockup';
+import { DARK_INSET_RATIO, ITALIC_SLOPE, METRICS, toFontUnits, UNIT, type Weight, weightParams } from './grid';
 import { type Attachment, BELOW_GAP, MARK_GAP, MARK_HEIGHT, MARKS } from './marks';
 
 /** Italics lean around the middle of the x-height, so a slanted glyph stays centred in its advance. */
@@ -203,8 +204,9 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     const carets: Anchor[] = [];
     parts.forEach((name, i) => {
       const bar = bars.get(name)!;
-      // Whole font units, as the compiler rounds each letter's advance: the ligature is exactly as wide as its letters set apart.
-      const step = Math.round(bar.advance * UNIT) / UNIT;
+      // Whole font units, rounded as the UFO writes each letter's advance and the compiler then rounds it (342.49999 to
+      // 342.5 to 343): the ligature is exactly as wide as its letters set apart.
+      const step = Math.floor(toFontUnits(bar.advance) + 0.5) / UNIT;
       const offset = place({ x, y: 0 });
       const origin = place({ x: 0, y: 0 });
       components.push({ glyph: name, dx: offset.x - origin.x, dy: 0 });
@@ -222,6 +224,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     });
     glyphs.push({ name: parts.join('_'), advance: x, contours: finish(bridges), components, anchors: placeAnchors(carets), mark: false });
   }
+  glyphs.push({ name: LOCKUP.name, ...lockupGlyph(family === 'dark'), components: [], mark: false });
 
   const markAttach = new Map<string, Attachment>();
   /** How far right each mark's ink reaches before Geld Dark Sans's inset, which must not change an advance. */
