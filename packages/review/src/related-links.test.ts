@@ -277,6 +277,23 @@ describe('official sources in comments', () => {
     expect(titleOf([worded, bare])).toEqual([['DEV-9627', 'the nav thing']]);
   });
 
+  it('takes Linear Code’s comment as Linear’s: its issue with the title and its review of this pull request, not of another', () => {
+    const author = 'linear-code[bot]';
+    const links = relatedLinksFrom(
+      [
+        { href: 'https://linear.app/acme/issue/ENG-12/fix-the-sdk-nav', text: 'ENG-12 Fix the SDK nav', author },
+        { href: 'https://linear.app/acme/review/fix-the-sdk-nav-0a1b2c3d4e5f', text: 'acme/web#40', author },
+        { href: 'https://linear.app/acme/review/feat-api-read-the-nav-from-the-sdk-6f5e4d3c2b1a', text: 'acme/api#7', author },
+        { href: 'https://linear.app/acme/review/fix-the-sdk-nav-0a1b2c3d4e5f?openGuide=true', text: 'Review in Linear', author },
+      ],
+      { repository: 'acme/web', self: 'acme/web#40' },
+    );
+    expect(links.map((link) => [link.ref, link.title, link.action])).toEqual([
+      ['ENG-12', 'Fix the SDK nav', 'Open issue in Linear'],
+      [null, null, 'Open review in Linear'],
+    ]);
+  });
+
   it('reads Linear’s review of the pull request, under its linkback', () => {
     const review = fromComment('https://linear.app/alt-design/review/link-the-settings-page-from-alt-tools-in-the-control-panel-nav-169931068019?openGuide=true', 'linear[bot]');
     expect(review).toMatchObject({ kind: 'review', service: 'Linear', noun: 'review', title: null, action: 'Open review in Linear' });

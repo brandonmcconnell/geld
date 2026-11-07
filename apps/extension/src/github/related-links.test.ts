@@ -76,12 +76,12 @@ describe('related links in the sidebar', () => {
     ]);
   });
 
-  it('stands under Assignees in the Rails sidebar, signed in or out, as one of its items', () => {
+  it('stands under Reviewers in the Rails sidebar, signed in or out, as one of its items, and under Assignees with no Reviewers', () => {
     for (const signedIn of [false, true]) {
       document.body.innerHTML = DESCRIPTION + railsSidebar(signedIn);
       applyRelatedLinks(true);
       const section = document.querySelector<HTMLElement>('.geld-related');
-      expect(section?.previousElementSibling?.textContent).toContain('Assignees');
+      expect(section?.previousElementSibling?.textContent).toContain('Reviewers');
       expect(section?.classList.contains('discussion-sidebar-item')).toBe(true);
       expect(section?.querySelector('h3')?.textContent).toBe('Related links');
       expect([...(section?.querySelectorAll('.geld-related__text') ?? [])].map((text) => text.textContent)).toEqual(['DOC-77 Sdk nav overview', 'Open thread in Slack', 'View workspace in Replicas']);
@@ -91,17 +91,32 @@ describe('related links in the sidebar', () => {
       expect(first?.getAttribute('aria-label')).toBe('DOC-77 Sdk nav overview. Open issue in Linear, mintlify');
       removeRelatedLinks();
     }
+    document.body.innerHTML = DESCRIPTION + railsSidebar();
+    [...document.querySelectorAll('.discussion-sidebar-item')].find((item) => item.textContent?.includes('Reviewers'))?.remove();
+    expect(document.body.textContent).not.toContain('Reviewers');
+    applyRelatedLinks(true);
+    expect(document.querySelector('.geld-related')?.previousElementSibling?.textContent).toContain('Assignees');
   });
 
-  it('stands under Assignees on the Overview page in GitHub’s SidebarSection shape, and not in its picker', () => {
+  it('stands after the hidden fragment GitHub keeps after Reviewers, so Assignees stays a sidebar item’s neighbour', () => {
+    document.body.innerHTML = DESCRIPTION + railsSidebar();
+    const reviewers = [...document.querySelectorAll('.discussion-sidebar-item')].find((item) => item.textContent?.includes('Reviewers'));
+    reviewers?.after(document.createRange().createContextualFragment('<include-fragment class="d-none is-error"><h3 class="blankslate-heading">Uh oh!</h3></include-fragment>'));
+    applyRelatedLinks(true);
+    const section = document.querySelector('.geld-related');
+    expect(section?.previousElementSibling?.tagName).toBe('INCLUDE-FRAGMENT');
+    expect(section?.nextElementSibling?.textContent).toContain('Assignees');
+  });
+
+  it('stands under Reviewers on the Overview page in GitHub’s SidebarSection shape, and not in its picker', () => {
     document.body.innerHTML = DESCRIPTION + overviewSidebar;
     expect(assigneesSections().map((section) => section.getAttribute('aria-label'))).toEqual(['Assignees']);
     applyRelatedLinks(true);
     const sections = document.querySelectorAll<HTMLElement>('.geld-related');
     expect(sections).toHaveLength(1);
     const section = sections[0];
-    expect(section?.previousElementSibling?.getAttribute('aria-label')).toBe('Assignees');
-    expect(section?.nextElementSibling?.getAttribute('aria-label')).toBe('Labels');
+    expect(section?.previousElementSibling?.getAttribute('aria-label')).toBe('Reviewers');
+    expect(section?.nextElementSibling?.getAttribute('aria-label')).toBe('Proof of presence');
     expect(section?.outerHTML).toMatch(/^<section class="geld-related" aria-label="Related links" data-overview-sidebar-item=""/);
     expect(section?.firstElementChild?.outerHTML).toBe('<div class="header__wx"><h4 class="title__Gf geld-related__heading">Related links</h4></div>');
     expect(section?.lastElementChild?.className).toBe('content__rf');
@@ -118,9 +133,9 @@ describe('related links in the sidebar', () => {
     expect(placed).toEqual([
       ['Activity', 'activity', false],
       ['Reviewers', 'reviewers', true],
+      ['Related links', 'related', false],
       ['Proof of presence', null, false],
       ['Assignees', null, false],
-      ['Related links', 'related', false],
       ['Labels', null, false],
       ['Projects', null, false],
       ['Milestones', null, false],
@@ -158,7 +173,7 @@ describe('related links in the sidebar', () => {
     expect(section?.tagName).toBe('SECTION');
     expect(section?.classList.contains('section__a')).toBe(true);
     expect(section?.querySelector('h3')?.className).toBe('heading__b geld-related__heading');
-    expect(section?.previousElementSibling?.textContent).toContain('Assignees');
+    expect(section?.previousElementSibling?.textContent).toContain('Reviewers');
   });
 
   it('writes nothing again while nothing changed, comes back after GitHub replaces the sidebar, and goes when off', () => {
@@ -170,7 +185,7 @@ describe('related links in the sidebar', () => {
     document.getElementById('partial-discussion-sidebar')?.replaceWith(document.createRange().createContextualFragment(railsSidebar()));
     applyRelatedLinks(true);
     expect(document.querySelectorAll('.geld-related')).toHaveLength(1);
-    expect(document.querySelector('.geld-related')?.previousElementSibling?.textContent).toContain('Assignees');
+    expect(document.querySelector('.geld-related')?.previousElementSibling?.textContent).toContain('Reviewers');
     applyRelatedLinks(false);
     expect(document.querySelector('.geld-related')).toBeNull();
   });
