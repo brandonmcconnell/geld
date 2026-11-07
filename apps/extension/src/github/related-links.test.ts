@@ -391,4 +391,19 @@ describe('related links in the sidebar', () => {
     await settle();
     expect(connected.asked).toEqual([]);
   });
+
+  it('says a link waiting on its service’s limit shows its title shortly', async () => {
+    history.replaceState(null, '', '/acme/web/pull/7');
+    const key = 'slack:acme:C0123456789:1793123214.352139';
+    connected.answers = new Map([[key, { key, status: 'failed', reason: 'rate-limited', message: null, retryAfterMs: 30_000 }]]);
+    document.body.innerHTML =
+      '<div class="js-comment-container"><div class="js-comment-body markdown-body"><p><a href="https://acme.slack.com/archives/C0123456789/p1793123214352139">thread</a></p></div></div>' + railsSidebar();
+    const rerun = (): void => applyRelatedLinks(true, rerun, true);
+    rerun();
+    await settle();
+    await settle();
+    const pill = document.querySelector('.geld-related__state');
+    expect(pill?.textContent).toBe('Shortly');
+    expect(pill?.getAttribute('title')).toBe('Slack asked Geld to wait before reading more. The title shows shortly.');
+  });
 });

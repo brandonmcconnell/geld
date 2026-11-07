@@ -4,11 +4,13 @@ import { githubResolver } from './github';
 import { gitlabResolver } from './gitlab';
 import { jiraResolver } from './jira';
 import { linearResolver } from './linear';
+import { slackResolver } from './slack';
 import { record } from './http';
 import { isServiceId, type Connection, type ConnectionDraft, type ConnectionUse, type ConnectionHints, type FetchLike, type Identity, type LinkDetails, type LinkResolver, type Resolution, type ServiceId } from './types';
 
 export * from './types';
 export { adfText } from './jira';
+export { SLACK_API, SLACK_LIMITED_METHODS, SLACK_USER_SCOPES, slackFailure, slackText } from './slack';
 
 const RESOLVERS = new Map<ServiceId, LinkResolver>([
   ['linear', linearResolver],
@@ -16,6 +18,7 @@ const RESOLVERS = new Map<ServiceId, LinkResolver>([
   ['github', githubResolver],
   ['gitlab', gitlabResolver],
   ['bitbucket', bitbucketResolver],
+  ['slack', slackResolver],
 ]);
 
 /** Services added in a later step register here, so this module never imports their platform code. */

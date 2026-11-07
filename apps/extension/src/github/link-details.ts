@@ -32,12 +32,18 @@ function flush(): void {
   void requestLinkDetails(links).then((answers) => {
     if (asked !== page) return;
     let changed = false;
+    let retry: number | null = null;
     for (const link of links) {
       const view = answers.get(link.key);
       entries.set(link.key, { view: view ?? { key: link.key, status: 'none' }, at: Date.now() });
       if (view !== undefined && view.status !== 'none') changed = true;
+      if (view?.status === 'failed') retry = Math.min(retry ?? Infinity, view.retryAfterMs ?? RETRY_MS);
     }
     if (changed) for (const listener of [...listeners]) listener();
+    // A link waiting on a service's limit is asked again when the wait is over, which needs a pass.
+    if (retry !== null) setTimeout(() => {
+      if (asked === page) for (const listener of [...listeners]) listener();
+    }, retry + 500);
   });
 }
 

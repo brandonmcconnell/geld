@@ -222,7 +222,7 @@ interface Connected {
  * A row: the link, for GitHub's own issues and pull requests what GitHub's hovercard says of it, and what a connected
  * account read of it.
  */
-type RelatedRow = RelatedLink & { readonly state: RefState | null; readonly connected: Connected | null };
+type RelatedRow = RelatedLink & { readonly state: RefState | null; readonly connected: Connected | null; readonly waiting?: string };
 
 /** GitHub's glyph for an issue or pull request in each state, in GitHub's colour for it (as its hovercard's badge has them). */
 const STATE_GLYPHS: Readonly<Record<RefState, { readonly icon: string; readonly tone: string; readonly word: string }>> = {
@@ -258,6 +258,9 @@ function rowsOf(links: readonly RelatedLink[], connected: boolean, onChange: () 
       const { details } = answer;
       const from = [link.service, answer.connection].filter((part) => part !== '').join(' · ');
       return { ...link, title: details.title, state: null, connected: { state: details.state, tone: details.tone, from, account: answer.connection, details } };
+    }
+    if (answer !== undefined && answer !== 'pending' && answer.status === 'failed' && answer.reason === 'rate-limited') {
+      return { ...link, state: null, connected: null, waiting: `${link.service} asked Geld to wait before reading more. The title shows shortly.` };
     }
     if (index >= lookups || !onHost(link)) return { ...link, state: null, connected: null };
     const details = refDetails(link.href, onChange);
@@ -316,6 +319,7 @@ function rowOf(link: RelatedRow): HTMLElement {
     ...(link.connected?.state === null || link.connected === null
       ? []
       : [createElement('span', { class: `${SECTION_CLASS}__state`, 'data-tone': link.connected.tone ?? 'neutral', 'aria-hidden': 'true' }, [link.connected.state])]),
+    ...(link.waiting === undefined ? [] : [createElement('span', { class: `${SECTION_CLASS}__state`, 'data-tone': 'neutral', title: link.waiting }, ['Shortly'])]),
   ]);
   const item = createElement('li', { class: `${SECTION_CLASS}__item`, 'data-kind': link.kind }, [anchor]);
   const { connected } = link;
