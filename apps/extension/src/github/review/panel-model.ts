@@ -410,16 +410,32 @@ export function toneOf(health: Health): Tone | null {
 }
 
 /**
- * The CI row's tint: red when a required check failed, amber when only
- * optional ones did (`requiredFailing` is null when the list does not say
- * which are required — then every failure counts), none while anything is
- * still running, green once everything passed.
+ * The CI row's tint: red only when a check GitHub marks required failed, amber
+ * for any other failure (`requiredFailing` is null when the list does not say
+ * which are required, and an unknown failure is not counted as required), none
+ * while anything is still running, green once everything passed.
  */
 export function checksTone(counts: CheckCounts, requiredFailing: boolean | null): Tone | null {
-  if (counts.failure > 0) return requiredFailing === false ? 'warn' : 'bad';
+  if (counts.failure > 0) return requiredFailing === true ? 'bad' : 'warn';
   if (counts.pending > 0 || counts.queued > 0) return null;
   if (counts.success > 0) return 'good';
   return null;
+}
+
+/** The CI status row's tint: only the red of a failing required check, since the glyph already says the rest. */
+export function checksRowTone(counts: CheckCounts, requiredFailing: boolean | null): Tone | null {
+  return checksTone(counts, requiredFailing) === 'bad' ? 'bad' : null;
+}
+
+/**
+ * A push's row by push: amber while a thread is unresolved (red is kept for a
+ * failing required check), green once its threads are settled or its CI
+ * passed. A failing CI is the push's glyph alone, since the last commit's
+ * summary does not say whether the failing check is required.
+ */
+export function pushRowTone(openThreads: boolean, ci: 'success' | 'failure' | 'pending' | null, allDone: boolean): Tone | null {
+  if (openThreads) return 'warn';
+  return allDone || ci === 'success' ? 'good' : null;
 }
 
 export function checksSummary(counts: CheckCounts): string {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReviewItem } from '@geld/review';
-import { authorLabels, botHealth, checkCountsFrom, checksHealth, checksSummary, checksTotal, digestMarkdown, EMPTY_CHECKS, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, sortItems, splitItems, standingReviewers, verdictLabel, verdictTone } from './panel-model';
+import { authorLabels, botHealth, checkCountsFrom, checksHealth, checksRowTone, checksSummary, checksTone, checksTotal, digestMarkdown, EMPTY_CHECKS, isCurrent, itemMarkdown, newerSummaryAnchor, pushRowTone, requiredReviewsFrom, sortItems, splitItems, standingReviewers, verdictLabel, verdictTone } from './panel-model';
 
 function item(id: string, status: ReviewItem['status']): ReviewItem {
   return { id, title: id, rewritten: false, severity: 'suggestion', status, sources: [{ anchor: 'discussion_r1', kind: 'thread', author: 'alice' }] };
@@ -111,6 +111,29 @@ describe('status rows', () => {
     expect(checkCountsFrom('Some checks were not successful\n1 failing, 7 skipped, 59 successful checks\nCollapse checks\n1 failing check\nChecks settings\n7 skipped checks\nSkipped Sep 18, 2026 — not active\n59 successful checks')).toEqual({ success: 59, failure: 1, queued: 0, pending: 0, skipped: 7, neutral: 0 });
     // Expanded with a single state: the heading and the group repeat "3 successful checks".
     expect(checkCountsFrom('All checks have passed\n3 successful checks\n3 successful checks')).toEqual({ success: 3, failure: 0, queued: 0, pending: 0, skipped: 0, neutral: 0 });
+  });
+
+  it('tints the CI row red only for a failing check GitHub marks required', () => {
+    const failing = { ...EMPTY_CHECKS, success: 5, failure: 1 };
+    expect(checksTone(failing, true)).toBe('bad');
+    expect(checksTone(failing, false)).toBe('warn');
+    // The list marks nothing required: an unknown failure is not counted as a required one.
+    expect(checksTone(failing, null)).toBe('warn');
+    expect(checksRowTone(failing, true)).toBe('bad');
+    expect(checksRowTone(failing, false)).toBeNull();
+    expect(checksRowTone(failing, null)).toBeNull();
+    // Passing or still running never tints the row, whatever the list says.
+    expect(checksRowTone({ ...EMPTY_CHECKS, success: 6 }, null)).toBeNull();
+    expect(checksRowTone({ ...EMPTY_CHECKS, pending: 2, failure: 1 }, true)).toBe('bad');
+  });
+
+  it('tints a push amber for an unresolved thread and never for its CI', () => {
+    expect(pushRowTone(true, 'failure', false)).toBe('warn');
+    expect(pushRowTone(true, 'success', false)).toBe('warn');
+    expect(pushRowTone(false, 'failure', true)).toBe('good');
+    expect(pushRowTone(false, 'failure', false)).toBeNull();
+    expect(pushRowTone(false, 'success', false)).toBe('good');
+    expect(pushRowTone(false, 'pending', false)).toBeNull();
   });
 
   it('keeps pending (not started) apart from in progress, as GitHub counts them', () => {
