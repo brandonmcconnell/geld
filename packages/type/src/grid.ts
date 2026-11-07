@@ -8,8 +8,8 @@ export const METRICS = {
   xHeight: 10,
   ascender: 15,
   descender: -4,
-  /** Line box: 19 + 5 = 24 units, a 1.2 line height. */
-  lineAscender: 19,
+  /** Line box: 20 + 5 = 25 units, a 1.25 line height, room for accents stacked on capitals. */
+  lineAscender: 20,
   lineDescender: -5,
 } as const;
 

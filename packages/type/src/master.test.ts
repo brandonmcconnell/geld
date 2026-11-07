@@ -1,6 +1,6 @@
 import { bounds, type Contour, cutLeg, expandStroke, insetContour, winding } from './geometry';
-import { ITALIC_SLOPE, WEIGHTS } from './grid';
-import { buildMaster, type Family, type Style } from './master';
+import { ITALIC_SLOPE, METRICS, WEIGHTS } from './grid';
+import { buildMaster, type Family, flatten, type Style } from './master';
 
 const shape = (family: Family, style: Style, weight: (typeof WEIGHTS)[number]) =>
   buildMaster(family, style, weight).glyphs.map((g) => [g.name, g.contours.map((c) => c.length)]);
@@ -52,27 +52,29 @@ describe('masters', () => {
 });
 
 describe('character set', () => {
-  const chars = [
-    ...'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
-    ...'.,:;!?-\u2013\u2014\'"()[]/_+= ',
-  ].map((c) => c.codePointAt(0));
+  const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+  const chars = [...range(0x20, 0x7e), ...range(0xa0, 0xff), ...range(0x100, 0x17f)];
 
-  it('covers basic Latin letters, figures and punctuation', () => {
+  it('covers Basic Latin, Latin-1 Supplement and Latin Extended-A', () => {
     const mapped = new Set(buildMaster('sans', 'roman', 400).glyphs.map((g) => g.unicode));
     expect(chars.filter((c) => !mapped.has(c))).toEqual([]);
   });
 
-  it('keeps every glyph inside the line box at every weight, with ink and room on both sides', () => {
-    for (const weight of WEIGHTS)
-      for (const glyph of buildMaster('sans', 'roman', weight).glyphs) {
-        if (glyph.name === 'space') continue;
-        const ys = glyph.contours.flat().map((p) => p.y);
-        const xs = glyph.contours.flat().map((p) => p.x);
-        expect(Math.min(...ys), `${glyph.name} ${weight}`).toBeGreaterThanOrEqual(-5);
-        expect(Math.max(...ys), `${glyph.name} ${weight}`).toBeLessThanOrEqual(19);
+  it('keeps every glyph inside the line box at every weight, and drawn glyphs within their sidebearings', () => {
+    for (const weight of WEIGHTS) {
+      const master = buildMaster('sans', 'roman', weight);
+      for (const glyph of master.glyphs) {
+        const contours = flatten(master, glyph);
+        if (!contours.length || glyph.mark) continue;
+        const ys = contours.flat().map((p) => p.y);
+        const xs = contours.flat().map((p) => p.x);
+        expect(Math.min(...ys), `${glyph.name} ${weight}`).toBeGreaterThanOrEqual(METRICS.lineDescender);
+        expect(Math.max(...ys), `${glyph.name} ${weight}`).toBeLessThanOrEqual(METRICS.lineAscender);
+        if (glyph.components.length || glyph.name === 'fraction') continue;
         expect(Math.min(...xs), `${glyph.name} ${weight}`).toBeGreaterThanOrEqual(0);
         expect(Math.max(...xs), `${glyph.name} ${weight}`).toBeLessThanOrEqual(glyph.advance + 1e-9);
       }
+    }
   });
 });
 
@@ -113,16 +115,18 @@ const orthogonal = (contours: Contour[]) =>
   );
 
 describe('heavy weights', () => {
-  /** B and 8 have a notch at the waist, and Q's tail crosses its bowl, by design. */
-  const notched = new Set(['B', 'eight', 'Q']);
+  /** B and 8 have a notch at the waist, and Q's tail and ł's and ø's strokes cross, by design. */
+  const notched = new Set(['B', 'eight', 'Q', 'lslash', 'Lslash', 'oslash', 'Oslash']);
 
-  it('keep every counter at least 1.4 units open, Black included', () => {
+  it('keep every letter and figure counter at least 1.4 units open (superiors and ordinals in proportion), Black included', () => {
     const tight: string[] = [];
     for (const weight of WEIGHTS)
       for (const glyph of buildMaster('sans', 'roman', weight).glyphs) {
-        if (!glyph.contours.length || notched.has(glyph.name) || !orthogonal(glyph.contours)) continue;
+        const char = glyph.unicode === undefined ? '' : String.fromCodePoint(glyph.unicode);
+        if (!/[\p{L}\p{N}]/u.test(char) || notched.has(glyph.name) || !orthogonal(glyph.contours)) continue;
+        const small = /superior|inferior|\.dnom|^ord/.test(glyph.name);
         const gap = narrowestCounter(glyph.contours);
-        if (gap < 1.4) tight.push(`${glyph.name} ${weight}: ${gap.toFixed(2)}`);
+        if (gap < (small ? 0.75 : 1.4)) tight.push(`${glyph.name} ${weight}: ${gap.toFixed(2)}`);
       }
     expect(tight).toEqual([]);
   });

@@ -137,9 +137,9 @@ These are not font styles. The renderer draws them from metrics the font provide
 Targets are Google Fonts' published glyph sets, so coverage is checkable by tool. Every encoded character is drawn in roman and italic, at every weight, in Geld Sans and Geld Dark Sans. Counts are approximate.
 
 ### 3.1 Latin (v1)
-- [ ] Basic Latin (U+0020 to 007E), 95 characters.
-- [ ] Latin-1 Supplement (U+00A0 to 00FF), 96.
-- [ ] Latin Extended-A (U+0100 to 017F), all 128, including Ŀ ŀ ĳ Ĳ ŉ ſ.
+- [x] Basic Latin (U+0020 to 007E), 95 characters.
+- [x] Latin-1 Supplement (U+00A0 to 00FF), 96.
+- [x] Latin Extended-A (U+0100 to 017F), all 128, including Ŀ ŀ ĳ Ĳ ŉ ſ. Accented letters are components (base and marks), generated from Unicode's own decompositions, with the Latvian comma below, the vertical caron of ď ľ Ľ ť, and dotless i and j under marks.
 - [ ] Latin Extended-B, the GF Latin Pro selection: Ș ș Ț ț, Ə ə, Ɓ ɓ, Ɗ ɗ, Ƴ ƴ, Ɛ ɛ, Ɔ ɔ, Ŋ ŋ, Ɲ ɲ, Ǎ ǎ and the pinyin carons, Ǵ ǵ, Ǹ ǹ, Ǻ ǻ, Ǽ ǽ, Ǿ ǿ and others.
 - [ ] Latin Extended Additional: all of Vietnamese (about 200), plus Ẁ ẁ Ẃ ẃ Ẅ ẅ Ỳ ỳ ẞ Ḃ ḃ Ḋ ḋ Ḟ ḟ Ṁ ṁ Ṗ ṗ Ṡ ṡ Ṫ ṫ.
 - [ ] IPA and phonetic letters the African and Pro sets need (ɑ ɒ ɡ ɪ ʃ ʊ ʋ ʒ ʔ and others).
@@ -435,7 +435,7 @@ Each phase ends with a review. The next phase starts only once its deliverable i
 3. **Design core.** (First draft done in every weight: A to Z, a to z, 0 to 9 and `. , : ; ! ? - – — ' " ( ) [ ] / _ + =`. Shapes and spacing are refined in phases 4 and 7.) A to Z, a to z, 0 to 9 and basic punctuation at Regular and SemiBold. Deliverable: a proof of the core in two weights.
 4. **Weights.** (Done for the core: contrast, the three-horizontals budget, apertures and a counter test.) Thin to Black, contrast and the three-horizontals budget, `avar`. Deliverable: the core in all nine weights.
 5. **Italic.** (Done for the core: slanted construction, even cuts, italic forms. Italic spacing and kerning come with phase 7.) Slanted grid, italic forms and their spacing. Deliverable: the core in italic, all weights.
-6. **Character set.** Accents and marks, extended Latin, figure sets, punctuation, currency, math, arrows, shapes, small caps. Deliverable: full GF Latin Pro coverage.
+6. **Character set.** (Under way: Basic Latin, Latin-1 and Latin Extended-A done, with combining marks, `.case` marks, `ccmp`, superiors, inferiors and fractions.) Accents and marks, extended Latin, figure sets, punctuation, currency, math, arrows, shapes, small caps. Deliverable: full GF Latin Pro coverage.
 7. **Spacing and kerning.** Deliverable: kerned proofs in every style.
 8. **Features.** Ligatures, code ligatures, alternates, swashes, every feature in section 7. Deliverable: all shaping tests passing.
 9. **Production.** Tables, hinting, QA, packaging, the specimen page, release. Deliverable: Geld Sans v1 released.
