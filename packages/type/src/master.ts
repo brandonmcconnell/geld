@@ -1,10 +1,11 @@
 import { accentedFromUnicode, ALIASES, GREEK_TONOS, LATIN_RANGES, PLACED, type PlacedDef, SPACING_ACCENTS } from './composites';
 import { type DrawContext, drawContext, type GlyphDef, smallCapContext } from './draw';
 import { measuredSidebearings, type SpacingZone } from './spacing';
-import { bounds, type Contour, expandStroke, insetContour, shear, snap, translate, type Vec, winding } from './geometry';
+import { bounds, type Contour, expandStroke, insetContour, shear, snapJoined, translate, type Vec, winding } from './geometry';
 import { GLYPHS, SPACES } from './glyphs';
 import { FIGURE_NAMES } from './glyphs-figures';
 import { CYRILLIC_LOCL_ACCENTED } from './glyphs-cyrillic';
+import { accentedSmallCaps, SMALL_CAP_EXTRA_ACCENTED, SMALL_CAP_PLACED } from './glyphs-smallcaps';
 import { DARK_INSET_RATIO, ITALIC_SLOPE, METRICS, type Weight, weightParams } from './grid';
 import { type Attachment, BELOW_GAP, MARK_GAP, MARK_HEIGHT, MARKS } from './marks';
 
@@ -129,7 +130,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     const g = def.smallcap && !cursive ? small : def.lower || def.smallcap ? lower : upper;
     const strokes = cursive ? def.italic!(g) : def.draw(g);
     let contours = strokes.flatMap((stroke) => expandStroke(stroke, g.pen, slope));
-    if (params.snap && !italic) contours = contours.map((c) => snap(c, 0.5));
+    if (params.snap && !italic) contours = snapJoined(contours, 0.5);
     const box = bounds(contours);
     const zone = spacingZone(def, g);
     const { lsb, rsb } = zone ? measuredSidebearings(contours, box.minX, box.maxX, zone) : def;
@@ -221,14 +222,16 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
       const advance = def.advance ?? (x || byName.get(def.parts[0]!.glyph)!.advance);
       const only = def.parts.length === 1 ? byName.get(def.parts[0]!.glyph) : undefined;
       const anchors = only ? only.anchors.map((a) => ({ ...a, x: a.x + components[0]!.dx, y: a.y + components[0]!.dy })) : [];
-      glyphs.push({ name: def.name, unicode: def.unicode, advance, contours: [], components, anchors, mark: false });
+      glyphs.push({ name: def.name, ...(def.unicode === undefined ? {} : { unicode: def.unicode }), advance, contours: [], components, anchors, mark: false });
       byName.set(def.name, glyphs[glyphs.length - 1]!);
-      names.set(def.unicode, def.name);
+      if (def.unicode !== undefined) names.set(def.unicode, def.name);
     }
   };
   placeAll(ALIASES);
 
-  for (const def of [...accentedFromUnicode(LATIN_RANGES, names, caseMarks), ...CYRILLIC_LOCL_ACCENTED]) {
+  const accented = accentedFromUnicode(LATIN_RANGES, names, caseMarks);
+  const smallCapAccents = [...accentedSmallCaps(accented, (name) => byName.has(name)), ...SMALL_CAP_EXTRA_ACCENTED];
+  for (const def of [...accented, ...CYRILLIC_LOCL_ACCENTED, ...smallCapAccents]) {
     const base = byName.get(def.base);
     if (!base) continue;
     const components: Component[] = [{ glyph: def.base, dx: 0, dy: 0 }];
@@ -250,7 +253,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     byName.set(def.name, glyphs[glyphs.length - 1]!);
   }
 
-  placeAll([...PLACED, ...GREEK_TONOS]);
+  placeAll([...PLACED, ...GREEK_TONOS, ...SMALL_CAP_PLACED]);
 
 
   for (const accent of SPACING_ACCENTS) {

@@ -42,7 +42,7 @@ Exact geometry, for reference: a 45° cut of leg `c` on a stroke of thickness `d
 | D11 | **How glyphs are made.** | Code first: a centreline skeleton per glyph in TypeScript, expanded by a geometry engine for every weight, the dark grade and the italic slant. UFOs are exported only for review. |
 | D12 | **Symbol ligatures.** | One glyph per character, so the text stays two characters, and the caret, selection and deletion work per character. **In Geld Sans the pieces are narrower than the characters they replace**, so `->` reads as one compact arrow rather than taking the room of a hyphen and a greater-than sign. In Mono each piece keeps its cell. Text ligatures such as `fi` are real ligature glyphs with caret positions. |
 | D13 | **Ligature defaults in Sans.** | Arrows on by default (`calt`), with `ss20` turning them off. Every other code ligature off by default but available, both in `dlig` and as named stylistic set groups, so turning them on in code is one line (`font-feature-settings: "dlig"`, or one `ss` per group). The usage guide and the web CSS package give ready-made classes for this. |
-| D14 | **Small caps in v1.** | Yes, for GF Latin Core with figures and punctuation. |
+| D14 | **Small caps in v1.** | Yes, for GF Latin Core with figures and punctuation. (Done: every Latin Core letter, accented ones as the base's small capital with lowercase marks, figures, & ! ¡; ? ¿ left out, their bowl, gap and dot do not fit the x-height at Black.) |
 | D15 | **Optical size axis.** | Not in v1. |
 | D16 | **Licence.** | **SIL OFL 1.1**, agreed by the owner. AGENTS.md has an agent prepare licence changes and the owner commit them, so the licence file and the package's licence field are the owner's to commit. |
 | D17 | **Where Geld uses its own font.** | geld.sh, the extension's popup and options pages, store art and the emblem in PUA. |
@@ -157,7 +157,7 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [x] Precomposed fractions: ½ ⅓ ⅔ ¼ ¾ ⅕ to ⅞, ⅐ ⅑ ⅒ and ↉.
 - [x] Ordinals ª º and `ordn` (a figure followed by a or o).
 - [x] Zero variants: open (default), slashed (`zero`) and dotted, in every figure set; the dotted zero gets its `cv` with the features (phase 8).
-- [ ] Small-cap figures (`c2sc`).
+- [x] Small-cap figures (`c2sc`).
 - [ ] Circled and negative circled numerals ① to ⑳ and ❶ to ❿, decided in Phase 7.
 
 ### 3.3 Punctuation
@@ -204,6 +204,8 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [ ] Tabular figures and Mono get no kerning, by construction.
 - [ ] Collision checks: no kerned pair overlaps, including accents (for example T with ť, Ŵ with ŵ).
 - [x] Seams and slivers: no two contours touch along a line (a hairline once anti-aliased) and no parallel edges face across a gap under 0.35 units, in any glyph, family, style or weight (`seams.ts`, tested).
+- [x] Joins: each glyph's strokes merged as a renderer fills them (`scripts/joins.py`, skia-pathops) and the outline searched for what a clean join never leaves: a short step or shelf where two strokes miss (a short edge between a convex and a concave corner, a 45° cut excepted), a sliver edge, or an ink spike under 32°, in roman and italic at every weight (`pnpm --filter @geld/type joins`, in the Type workflow). The faults still open are listed in `scripts/joins-baseline.txt`; a new one fails. `scripts/sheet.ts` draws glyphs large from the source, `joins-sheet.py` and `joins-zoom.py` circle and magnify what the check finds.
+- [ ] Clear `joins-baseline.txt`: mostly hairline edges under 0.3 units at Black and in mark joins, plus ≈ and & at heavy weights.
 - [ ] Space kerning (space with A, T, V, Y, quotes) where it helps.
 - [ ] Review with standard kerning test texts across languages, and with Geld's own UI strings.
 

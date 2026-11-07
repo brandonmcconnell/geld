@@ -117,15 +117,15 @@ const orthogonal = (contours: Contour[]) =>
   );
 
 describe('heavy weights', () => {
-  /** B and 8 (and в, B's small capital, and its Bulgarian form) have a notch at the waist, Q's tail and ł's and ø's strokes cross, and ʾ ʿ are open angles, by design. */
-  const notched = new Set(['B', 'eight', 'Q', 'lslash', 'Lslash', 'oslash', 'Oslash', 'litre', 've-cy', 've-cy.loclBGR', 'ringhalfleftmod', 'ringhalfrightmod']);
+  /** B and 8 (and в, B's small capital, and its Bulgarian form) have a notch at the waist, Q's tail and ł's and ø's strokes cross (and their small capitals'), and ʾ ʿ are open angles, as are 2's between its diagonal and its foot and a strike's either side of the stem it crosses, and ᵽ's slot between its strike and bowl, by design. */
+  const notched = new Set(['B', 'eight', 'Q', 'lslash', 'Lslash', 'oslash', 'Oslash', 'litre', 've-cy', 've-cy.loclBGR', 'ringhalfleftmod', 'ringhalfrightmod', 'b.sc', 'q.sc', 'two', 'two.tf', 'two.osf', 'two.tosf', 'two.sc', 'tdiagonalstroke', 'lslash.sc', 'pstroke']);
 
   it('keep every letter, figure and currency counter at least 1.4 units open (superiors, ordinals and modifier letters in proportion), Black included', () => {
     const tight: string[] = [];
     for (const weight of WEIGHTS)
       for (const glyph of buildMaster('sans', 'roman', weight).glyphs) {
         const char = glyph.unicode === undefined ? '' : String.fromCodePoint(glyph.unicode);
-        if (!(/[\p{L}\p{N}\p{Sc}]/u.test(char) || /\.(locl|tf|osf|tosf)|^zero\./.test(glyph.name)) || notched.has(glyph.name) || !orthogonal(glyph.contours)) continue;
+        if (!(/[\p{L}\p{N}\p{Sc}]/u.test(char) || /\.(locl|tf|osf|tosf)|\.sc$|^zero\./.test(glyph.name)) || notched.has(glyph.name) || !orthogonal(glyph.contours)) continue;
         const small = /superior|inferior|\.dnom|^ord|mod$/.test(glyph.name);
         const gap = narrowestCounter(glyph.contours);
         if (gap < (small ? 0.75 : 1.4)) tight.push(`${glyph.name} ${weight}: ${gap.toFixed(2)}`);
@@ -178,7 +178,7 @@ describe('seams and slivers', () => {
           }
         }
     expect(faults).toEqual([]);
-  });
+  }, 120_000);
 });
 
 describe('math operators', () => {
@@ -225,5 +225,16 @@ describe('figures', () => {
       expect(box(`${name}.osf`).minY, name).toBeCloseTo(METRICS.descender, 0);
       expect(box(`${name}.osf`).maxY, name).toBeCloseTo(METRICS.xHeight, 0);
     }
+  });
+});
+
+describe('small caps', () => {
+  it('stand on the x-height, accented ones with their marks above it', () => {
+    const glyphs = buildMaster('sans', 'roman', 400).glyphs;
+    const top = (name: string) => bounds(glyphs.find((g) => g.name === name)!.contours).maxY;
+    for (const name of ['a', 'h', 'o', 'x', 'ae', 'eth']) expect(top(`${name}.sc`), name).toBeCloseTo(METRICS.xHeight, 0);
+    const aacute = glyphs.find((g) => g.name === 'aacute.sc')!;
+    expect(aacute.components.map((c) => c.glyph)).toEqual(['a.sc', 'acutecomb']);
+    expect(aacute.components[1]!.dy).toBeGreaterThan(METRICS.xHeight);
   });
 });

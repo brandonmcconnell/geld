@@ -30,6 +30,7 @@ jobs:
       - run: pnpm install --frozen-lockfile --filter @geld/type...
       - run: pip install -r packages/type/requirements.txt
       - run: pnpm --filter @geld/type check
+      - run: pnpm --filter @geld/type joins
       - run: pnpm --filter @geld/type build
       - uses: actions/upload-artifact@v7
         with:

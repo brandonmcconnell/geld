@@ -1,5 +1,4 @@
 import {
-  ALL,
   bar,
   box,
   chevronLeft,
@@ -19,16 +18,23 @@ import {
   shift,
   stem,
   withPen,
+  crossbarReach,
+  tildeStroke,
+  edgeAt,
+  INSIDE,
+  spanOf,
+  OVERHANG,
 } from './draw';
 import type { Stroke } from './geometry';
+import { CUT_OUTER } from './grid';
 
 
 function questionStrokes(g: DrawContext): Stroke[] {
   const w = g.wide(7.5);
   const t = g.top(g.cap);
   const x = w / 2;
-  const arm = Math.min(8.5, g.cap - g.h * 1.5 - g.aperture);
-  return [open(p(0, 10.5), p(0, t, true), p(w, t, true), p(w, arm, true), p(x, arm, true), p(x, g.dot + 1.5)), dot(g, x, 0)];
+  const arm = Math.min(g.y(8.5), g.cap - g.h * 1.5 - g.aperture);
+  return [open(p(0, g.y(10.5)), p(0, t, true), p(w, t, true), p(w, arm, true), p(x, arm, true), p(x, g.dot + 1.5)), dot(g, x, 0)];
 }
 
 /** ’ is a comma hung from the cap height; ‘ is the same comma turned about its own centre. */
@@ -40,8 +46,8 @@ const quote = (g: DrawContext, turned: boolean, x: number): Stroke[] => {
 
 /** { as one stroke: hooks at the ends, and a 45° point at the middle reaching left. */
 function brace(g: DrawContext): Stroke[] {
-  const w = g.wide(4.5);
   const x = 1.75 + g.v / 2;
+  const w = x + Math.max(g.wide(4.5) - x, CUT_OUTER + g.v / 2 + 1);
   const top = g.top(15.5);
   const bottom = g.bottom(-3.5);
   return [open(p(w, top), p(x, top, true), p(x, 6 + x), p(0, 6), p(x, 6 - x), p(x, bottom, true), p(w, bottom))];
@@ -70,8 +76,8 @@ export const SYMBOLS: GlyphDef[] = [
       const pen = { v: g.v, h: thin };
       return [
         open(p(w + x, g.y(10)), p(w + x, t, true), p(x, t, true), p(x, b, true), p(w + x, b, true), p(w + x, g.y(4))),
-        withPen(bar(-0.5, x + 5, g.cap / 2 + d), pen),
-        withPen(bar(-0.5, x + 5, g.cap / 2 - d), pen),
+        withPen(bar(x - crossbarReach(g), x + 5, g.cap / 2 + d), pen),
+        withPen(bar(x - crossbarReach(g), x + 5, g.cap / 2 - d), pen),
       ];
     },
   },
@@ -121,12 +127,18 @@ export const SYMBOLS: GlyphDef[] = [
     draw: (g) => {
       const w = g.wide(10);
       const b = g.bottom(0);
-      const mid = 8;
+      const mid = g.y(8);
+      const x1 = w + g.v / 2 - g.foot(w, mid);
+      const right = w * 0.6 + g.v / 2;
+      // The diagonal leaves the loop flush with its right side: its right edge at the bar's lower edge is the loop's.
+      let x0 = right - spanOf(g.diag, x1 - right, mid);
+      for (let i = 0; i < 6; i++) x0 = right - spanOf(g.diag, x1 - x0, mid) - ((x1 - x0) * g.h) / 2 / mid + INSIDE;
+      const arm = Math.max(g.h / 2 + 1.4, Math.min(g.y(5.5), mid - g.h - 1.6));
       return [
-        box(0.75, w * 0.6, mid, g.top(g.cap), ALL),
-        open(p(w * 0.6, mid), p(0, mid, true), p(0, b, true), p(w * 0.75, b)),
-        diagonal(g, 0.75 + w * 0.2, mid, w + g.v / 2 - g.foot(w, mid), 0, [false, true]),
-        bar(w * 0.55, w + 0.5, Math.min(5.5, mid - g.h - 1.6)),
+        box(0.75, w * 0.6, mid, g.top(g.cap), [true, false, true, true]),
+        open(p(w * 0.6, mid), p(0, mid, true), p(0, b, true), p(edgeAt(g.diag, x0, mid, x1, 0, 0, -1) + INSIDE, b)),
+        diagonal(g, x0, mid, x1, 0),
+        bar(edgeAt(g.diag, x0, mid, x1, 0, arm + g.h / 2, 1) - INSIDE, Math.max(w + 0.5, edgeAt(g.diag, x0, mid, x1, 0, arm - g.h / 2, 1) + OVERHANG), arm),
       ];
     },
   },
@@ -137,12 +149,14 @@ export const SYMBOLS: GlyphDef[] = [
     rsb: 1,
     draw: (g) => {
       const c = { x: 2.6, y: 11 };
-      const r = 2.75;
+      const r = Math.max(2.75, 1.4 * g.diag.v + 0.5);
+      // One round pen for all three, so the six arms are alike and meet at single points.
+      const round = { v: g.diag.v, h: g.diag.v };
       const arm = (deg: number) => {
         const a = (deg * Math.PI) / 180;
-        return withPen(open(p(c.x - r * Math.cos(a), c.y - r * Math.sin(a)), p(c.x + r * Math.cos(a), c.y + r * Math.sin(a))), g.diag);
+        return withPen(open(p(c.x - r * Math.cos(a), c.y - r * Math.sin(a)), p(c.x + r * Math.cos(a), c.y + r * Math.sin(a))), round);
       };
-      return [stem(c.x, c.y - r, c.y + r), arm(30), arm(150)];
+      return [withPen(open(p(c.x, c.y - r), p(c.x, c.y + r)), round), arm(30), arm(150)];
     },
   },
   {
@@ -171,7 +185,7 @@ export const SYMBOLS: GlyphDef[] = [
       const x0 = 3 + g.v / 2;
       const x1 = w - 3 - g.v / 2;
       return [
-        open(p(w, 2), p(w, top, true), p(0, top, true), p(0, bottom, true), p(w * 0.8, bottom)),
+        open(p(w, 3), p(w, top, true), p(0, top, true), p(0, bottom, true), p(w * 0.8, bottom)),
         box(x0, x1, 3 + g.h / 2, 9.5 - g.h / 2, LEFT),
         open(p(x1, 9.5), p(x1, 3 + g.h / 2), p(w, 3 + g.h / 2)),
       ];
@@ -203,9 +217,8 @@ export const SYMBOLS: GlyphDef[] = [
     lsb: 1,
     rsb: 1,
     draw: (g) => {
-      const s = 2.25;
-      const y = MATH_AXIS - s / 2;
-      return [withPen(open(p(0, y), p(s, y + s, true), p(2 * s, y, true), p(3 * s, y + s)), g.pen)];
+      const s = 1.75;
+      return [tildeStroke(0, g.wide(8), MATH_AXIS - s / 2, s)];
     },
   },
   { name: 'quoteleft', unicode: 0x2018, lsb: 1.25, rsb: 1.25, draw: (g) => quote(g, true, 0) },

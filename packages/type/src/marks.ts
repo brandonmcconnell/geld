@@ -1,5 +1,5 @@
-import { ALL, bar, box, comma, diagonal, dot, type DrawContext, level, open, p, rotate180, shift, withPen } from './draw';
-import type { Stroke } from './geometry';
+import { ALL, bar, box, comma, diagonal, dot, type DrawContext, level, open, p, rotate180, shift, spanOf, withPen , tildeStroke } from './draw';
+import { expandStroke, type Stroke } from './geometry';
 
 /** Where a mark attaches: the base's anchor of the same name, matched by the mark's `_name` anchor at its origin. */
 export type Attachment = 'top' | 'bottom' | 'ogonek' | 'topright' | 'horn' | 'center';
@@ -26,6 +26,15 @@ export const MARK_GAP = { lower: 1.25, case: 1 } as const;
 
 /** Accents are drawn a little lighter than the letters they sit on. */
 const accentPen = (g: DrawContext) => ({ v: g.v * 0.9, h: g.h * 0.9 });
+/**
+ * Marks with a counter or a turn in their small height (tilde, breve, hook above): their strokes stop
+ * growing past about Regular, or at Black the stroke alone is taller than the mark and it closes up,
+ * and their cuts are half the letters', which would eat the mark's short uprights.
+ */
+/** Circumflex and caron: the arms stop growing at Black, and spread with the pen, so the opening under the apex stays open. */
+const chevronPen = (g: DrawContext) => ({ v: Math.min(g.v * 0.9, 2.4), h: Math.min(g.h * 0.9, 2.4) });
+const chevronHalf = (g: DrawContext) => Math.max(2.2, chevronPen(g).v * 0.6 + 1.1);
+const smallMarkPen = (g: DrawContext) => ({ v: Math.min(g.v * 0.9, 2), h: Math.min(g.h * 0.9, 1.3), cut: 1 });
 
 const acute = (g: DrawContext, height: number, dx = 0): Stroke =>
   withPen(level(open(p(dx - 0.9, 0), p(dx + 0.9, height))), accentPen(g));
@@ -38,7 +47,7 @@ const MARKS_ABOVE: MarkDef[] = [
     unicode: 0x302,
     attach: 'top',
     caseForm: true,
-    draw: (g, h) => [diagonal(g, -2.2, 0, 0, h), diagonal(g, 2.2, 0, 0, h)].map((s) => withPen(s, accentPen(g))),
+    draw: (g, h) => [diagonal(g, -chevronHalf(g), 0, 0, h), diagonal(g, chevronHalf(g), 0, 0, h)].map((s) => withPen(s, chevronPen(g))),
   },
   {
     name: 'tildecomb',
@@ -46,9 +55,12 @@ const MARKS_ABOVE: MarkDef[] = [
     attach: 'top',
     caseForm: true,
     draw: (g, h) => {
-      const s = Math.max(1, h - g.h);
-      const y = g.h / 2;
-      return [withPen(open(p(-1.5 * s, y), p(-0.5 * s, y + s, true), p(0.5 * s, y, true), p(1.5 * s, y + s)), accentPen(g))];
+      // Up, a flat top, down, a flat bottom, up: every corner obtuse, so none needs a cut that could close it.
+      const pen = smallMarkPen(g);
+      const s = Math.min(1.4, Math.max(0.9, h - pen.h - 0.3));
+      const a = 2.75;
+      const y = pen.h / 2;
+      return [withPen(tildeStroke(-a, a, y, s), pen)];
     },
   },
   { name: 'macroncomb', unicode: 0x304, attach: 'top', caseForm: true, draw: (g) => [withPen(bar(-2.4, 2.4, g.h / 2), accentPen(g))] },
@@ -57,7 +69,11 @@ const MARKS_ABOVE: MarkDef[] = [
     unicode: 0x306,
     attach: 'top',
     caseForm: true,
-    draw: (g, h) => [withPen(open(p(-2, h), p(-2, g.h / 2, true), p(2, g.h / 2, true), p(2, h)), accentPen(g))],
+    draw: (g, h) => {
+      const pen = smallMarkPen(g);
+      const x = Math.max(2.3, pen.v / 2 + 1);
+      return [withPen(open(p(-x, h), p(-x, pen.h / 2, true), p(x, pen.h / 2, true), p(x, h)), pen)];
+    },
   },
   { name: 'dotaccentcomb', unicode: 0x307, attach: 'top', caseForm: true, draw: (g) => [dot(g, 0, 0)] },
   {
@@ -75,7 +91,13 @@ const MARKS_ABOVE: MarkDef[] = [
     unicode: 0x309,
     attach: 'top',
     caseForm: true,
-    draw: (g, h) => [withPen(open(p(-1.1, h), p(1.1, h, true), p(1.1, 0)), accentPen(g))],
+    draw: (g, h) => {
+      // The top of a question mark: a bar, its right side, and a bar back to the middle.
+      const pen = smallMarkPen(g);
+      const x = Math.max(1.4, pen.v / 2 + 0.8);
+      const top = Math.max(h, 2 * pen.h + 0.8);
+      return [withPen(open(p(-x, top - pen.h / 2), p(x, top - pen.h / 2, true), p(x, pen.h / 2, true), p(-0.3 * x, pen.h / 2)), pen)];
+    },
   },
   {
     name: 'ringcomb',
@@ -83,8 +105,8 @@ const MARKS_ABOVE: MarkDef[] = [
     attach: 'top',
     caseForm: true,
     draw: (g, h) => {
-      const pen = { v: g.v * 0.72, h: g.h * 0.72 };
-      const size = Math.max(pen.v, pen.h) + (h < MARK_HEIGHT.lower ? 1.1 : 1.3);
+      const pen = { v: Math.min(g.v * 0.72, 1.7), h: Math.min(g.h * 0.72, 1.7) };
+      const size = Math.max(pen.v, pen.h) + (h < MARK_HEIGHT.lower ? 1.3 : 1.6);
       return [withPen(box(-size / 2, size / 2, pen.h / 2, pen.h / 2 + size, ALL), pen)];
     },
   },
@@ -103,7 +125,7 @@ const MARKS_ABOVE: MarkDef[] = [
     unicode: 0x30c,
     attach: 'top',
     caseForm: true,
-    draw: (g, h) => [diagonal(g, -2.2, h, 0, 0), diagonal(g, 2.2, h, 0, 0)].map((s) => withPen(s, accentPen(g))),
+    draw: (g, h) => [diagonal(g, -chevronHalf(g), h, 0, 0), diagonal(g, chevronHalf(g), h, 0, 0)].map((s) => withPen(s, chevronPen(g))),
   },
   {
     name: 'dblgravecomb',
@@ -210,10 +232,21 @@ function vietnameseMarks(): MarkDef[] {
     name: `${first}_${second}`,
     attach: 'top' as const,
     caseForm: true,
-    draw: (g: DrawContext, height: number) => [
-      ...find(first).draw(g, height),
-      ...shift(find(second).draw(g, height * 0.8), second === 'gravecomb' ? -2.6 : 2.6, height * 0.55),
-    ],
+    draw: (g: DrawContext, height: number) => {
+      // The tone mark stands 0.7 clear of the circumflex's arm on its side, measured from both outlines.
+      const side = second === 'gravecomb' ? -1 : 1;
+      const x = chevronHalf(g);
+      const pen = chevronPen(g);
+      const lift = height * 0.55;
+      const arm = (y: number) => side * (x * (1 - y / height) + spanOf(pen, x, height));
+      const tone = find(second).draw(g, height * 0.8);
+      const points = tone.flatMap((s) => expandStroke(s, g.pen, 0)).flat();
+      const reach = points
+        .filter((q) => q.y + lift <= height)
+        .map((q) => side * (arm(q.y + lift) + side * 0.7 - q.x))
+        .reduce((a, b) => Math.max(a, b), 0);
+      return [...find(first).draw(g, height), ...shift(tone, side * Math.max(2.6, reach), lift)];
+    },
   }));
 }
 
