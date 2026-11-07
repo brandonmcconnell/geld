@@ -450,7 +450,7 @@ const BEYOND_LOWER: GlyphDef[] = [
     lsb: 0.5,
     rsb: 0.5,
     draw: (g) => {
-      const y = g.y(6);
+      const y = g.y(6.5);
       const left = -(g.v + 2.5);
       const top = y + g.h + 3;
       return [...draw('L')(g), open(p(g.v / 2 + 1.5, y), p(left, y, true), p(left, top, true), p(0, top))];
