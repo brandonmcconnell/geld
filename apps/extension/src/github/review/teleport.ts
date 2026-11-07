@@ -163,11 +163,26 @@ export function teleportInto(slot: HTMLElement, nodes: readonly HTMLElement[]): 
   syncInteractionMarks();
 }
 
-const restoreHooks: (() => void)[] = [];
+const restoreHooks: { readonly hook: () => void; readonly owner: Element | null }[] = [];
+let restoreOwner: Element | null = null;
 
 /** Run `hook` the next time everything goes home (state a quick view changed on GitHub's nodes). */
 export function onRestore(hook: () => void): void {
-  restoreHooks.push(hook);
+  restoreHooks.push({ hook, owner: restoreOwner });
+}
+
+/**
+ * Register the hooks `dress` adds as `owner`'s, so a view carried whole into a rebuilt panel (an open chat, see
+ * chat.ts `parkChats`) keeps its dressing while everything else goes home and is undressed.
+ */
+export function ownedBy<T>(owner: Element, dress: () => T): T {
+  const before = restoreOwner;
+  restoreOwner = owner;
+  try {
+    return dress();
+  } finally {
+    restoreOwner = before;
+  }
 }
 
 /** Stop tracking a loaned node React has already discarded (its parent re-rendered without it). */
@@ -251,8 +266,15 @@ export function adoptReplacement(oldNode: HTMLElement, newNode: HTMLElement): bo
  * they are (a slot carried whole into the next panel), and so do the restore
  * hooks, since a hook cannot be told apart by loan.
  */
-export function restoreAll(keep?: (node: HTMLElement) => boolean): void {
-  if (keep === undefined) for (const hook of restoreHooks.splice(0)) hook();
+export function restoreAll(keep?: (node: HTMLElement) => boolean, keepOwner?: (owner: Element | null) => boolean): void {
+  if (keep === undefined) for (const { hook } of restoreHooks.splice(0)) hook();
+  else if (keepOwner !== undefined) {
+    // Only the hooks of what goes home run; a kept view's stay registered for the time it goes home itself.
+    const staying = restoreHooks.filter(({ owner }) => keepOwner(owner));
+    const leaving = restoreHooks.filter(({ owner }) => !keepOwner(owner));
+    restoreHooks.splice(0, restoreHooks.length, ...staying);
+    for (const { hook } of leaving) hook();
+  }
   for (const [key, entry] of [...moved]) {
     if (keep?.(entry.node) === true) continue;
     // A placeholder that is gone means another party already sent the node home (a newer Geld

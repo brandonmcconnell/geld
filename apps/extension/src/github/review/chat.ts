@@ -20,7 +20,7 @@ import { fitPathInto } from './path-fit';
 import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
 import { ATTR_EDITED_FOR, ATTR_TIME_FOR } from './panel';
-import { isTeleported, onRestore, teleportInto } from './teleport';
+import { isTeleported, onRestore, ownedBy, restoreAll, teleportInto } from './teleport';
 import { inlineText } from './inline-text';
 import { armViaHovercard } from './via';
 import type { ViaBot } from './via';
@@ -153,8 +153,14 @@ export function dressArrivals(root: ParentNode = document): boolean {
       const messages = messagesIn(thread, true);
       const fresh = messages.filter((message) => !message.hasAttribute(ATTR_MESSAGE));
       if (fresh.length === 0) continue;
-      annotateMessages(messages, viewer, false);
-      for (const message of fresh) placeControls(message);
+      const dress = (): void => {
+        annotateMessages(messages, viewer, false);
+        for (const message of fresh) placeControls(message);
+      };
+      // The chat's own dressing, so a chat carried into a rebuilt panel keeps what arrived in it too.
+      const owner = body.closest(`.${CHATS_CLASS}`);
+      if (owner === null) dress();
+      else ownedBy(owner, dress);
       dressed = true;
     }
   }
@@ -177,8 +183,23 @@ function icon(markup: string): SVGElement {
  * control at the bottom.
  */
 export function renderChatView(slot: HTMLElement, threads: readonly HTMLElement[], handlers: ChatHandlers): void {
-  const list = createElement('div', { class: 'geld-review__chats' });
+  const key = threads.map(threadAnchorOf).join(' ');
+  // The same threads a rebuilt panel carried over (`parkChats`): the chat goes back as it was, loans, reply box and all.
+  if (key !== '' && parked !== null && parked.getAttribute(ATTR_CHAT_KEY) === key) {
+    const chats = parked;
+    parked = null;
+    slot.replaceChildren();
+    moveInto(slot, chats);
+    parking?.remove();
+    parking = null;
+    return;
+  }
+  const list = createElement('div', { class: CHATS_CLASS, [ATTR_CHAT_KEY]: key });
   slot.replaceChildren(list);
+  ownedBy(list, () => dressThreads(list, threads, handlers));
+}
+
+function dressThreads(list: HTMLElement, threads: readonly HTMLElement[], handlers: ChatHandlers): void {
   const viewer = viewerLogin();
   const pathEls: [HTMLElement, string][] = [];
   for (const thread of threads) {
@@ -212,6 +233,54 @@ export function renderChatView(slot: HTMLElement, threads: readonly HTMLElement[
   if (list.childElementCount === 0) list.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
   // Fitted once the chats have their width: file name whole, the start first, "…" for what does not fit.
   for (const [element, path] of pathEls) fitPathInto(element, path);
+}
+
+const CHATS_CLASS = 'geld-review__chats';
+/** On a thread chat's list: the threads it shows, by their first comment, to tell whether a rebuilt panel shows the same. */
+const ATTR_CHAT_KEY = 'data-geld-chat-key';
+
+/** A thread chat carried out of a panel being rebuilt, until the new panel takes it back or the pass sends it home. */
+let parked: HTMLElement | null = null;
+let parking: HTMLElement | null = null;
+
+/** A move that keeps a node's state (focus, an iframe, a running animation) where the browser can (`moveBefore`). */
+function moveInto(parent: HTMLElement, node: HTMLElement): void {
+  const mover: unknown = Reflect.get(parent, 'moveBefore');
+  if (typeof mover === 'function') {
+    try {
+      Reflect.apply(mover, parent, [node, null]);
+      return;
+    } catch {
+      // A plain move below.
+    }
+  }
+  parent.append(node);
+}
+
+/**
+ * A panel rebuilt for anything (a bot's summary edited, checks ticking) sent every loan home and lent it again, so
+ * the open thread's reply box remounted under the reader and a click landing in that moment was lost. The open
+ * thread chat is parked instead, its loans and dressing kept (`ownedBy`), and `renderChatView` takes it back when the
+ * new panel shows the same threads. Returns the parked chat, for the rebuild to keep its loans; null when none.
+ */
+export function parkChats(panel: Element): HTMLElement | null {
+  releaseParkedChats();
+  const chats = panel.querySelector<HTMLElement>(`.${CHATS_CLASS}[${ATTR_CHAT_KEY}]:not([${ATTR_CHAT_KEY}=""])`);
+  if (chats === null) return null;
+  parking = createElement('div', { hidden: '', [OWN_UI_ATTRIBUTE]: '' });
+  document.body.append(parking);
+  moveInto(parking, chats);
+  parked = chats;
+  return chats;
+}
+
+/** A parked chat no view took back this pass: its loans go home and its dressing comes off. */
+export function releaseParkedChats(): void {
+  const chats = parked;
+  parked = null;
+  if (chats !== null) restoreAll((node) => !chats.contains(node), (owner) => owner !== chats);
+  parking?.remove();
+  parking = null;
 }
 
 /** Who posted a top-level comment and when, as the crawl read it, for the byline over its bubble. */
@@ -714,7 +783,9 @@ export function redressComposer(form: HTMLElement): void {
   const thread = form.closest<HTMLElement>('.js-resolvable-timeline-thread-container, [data-testid="review-thread"], .review-thread-component');
   if (side === null || thread === null) return;
   for (const stale of side.querySelectorAll('.geld-review__composer-resolved')) stale.remove();
-  labelComposer(thread, form, side);
+  const owner = form.closest(`.${CHATS_CLASS}`);
+  if (owner === null) labelComposer(thread, form, side);
+  else ownedBy(owner, () => labelComposer(thread, form, side));
 }
 
 /**
