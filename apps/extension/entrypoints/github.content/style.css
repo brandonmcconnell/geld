@@ -3738,20 +3738,10 @@ svg.geld-lucide {
   white-space: nowrap;
 }
 
+/* A status row's own glyph keeps the muted colour whatever the row says: only a tinted row (`data-tone`, the CI row
+   with a required check failing) colours it, below. The pills and lights in the row carry their states. */
 .geld-review__row--status .geld-review__status--muted {
   color: var(--geld-review-muted);
-}
-
-.geld-review__row--status[data-health='good'] .geld-review__status--muted {
-  color: var(--geld-review-done-fg);
-}
-
-.geld-review__row--status[data-health='warn'] .geld-review__status--muted {
-  color: var(--geld-review-attention-fg);
-}
-
-.geld-review__row--status[data-health='bad'] .geld-review__status--muted {
-  color: var(--geld-review-danger-fg);
 }
 
 /* A bot: icon · name · detail · traffic light, in one outlined pill whose corners follow the icon's. */
