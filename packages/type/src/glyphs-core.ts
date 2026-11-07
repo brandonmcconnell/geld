@@ -28,6 +28,7 @@ import {
   meeting,
   edgeAt,
   footFor,
+  strikeThrough,
 } from './draw';
 import type { Stroke } from './geometry';
 import { smallPen } from './glyphs-figures';
@@ -790,10 +791,15 @@ export const ON_LETTERS: GlyphDef[] = [
     const across = (y: number) => bar(edge(y), w - edge(y), y);
     return [across(high), across(low)];
   }),
-  onLetter('kip', 0x20ad, 'K', (g) => [bar(-crossbarReach(g), g.wide(6), g.y(7))], { lsb: 0.5, rsb: 0.3 }),
+  onLetter('kip', 0x20ad, 'K', (g) => {
+    const w = g.wide(9.5);
+    const y0 = g.y(4.5);
+    const y = g.y(7);
+    return [bar(-crossbarReach(g), edgeAt(g.diag, 0, y0, w + g.v / 2 - g.foot(w, g.cap - y0), g.cap, y + g.h / 2, 1) + 1.25, y)];
+  }, { lsb: 0.5, rsb: 0.3 }),
   onLetter('tugrik', 0x20ae, 'T', (g) => {
     const x = g.wide(11) / 2;
-    return [withPen(open(p(x - 2.75, g.y(3.5)), p(x + 2.75, g.y(6.5))), g.diag), withPen(open(p(x - 2.75, g.y(7)), p(x + 2.75, g.y(10))), g.diag)];
+    return [strikeThrough(g, x, g.y(5), 3 / 5.5), strikeThrough(g, x, g.y(8.5), 3 / 5.5)];
   }),
   onLetter('peso', 0x20b1, 'P', (g) => [bar(-crossbarReach(g), 0, g.top(g.cap)), bar(-crossbarReach(g), 0, g.y(6))], { lsb: 0.5, rsb: 1 }),
   onLetter('guarani', 0x20b2, 'G', (g) => [through(g.wide(10) / 2)]),
@@ -943,7 +949,7 @@ export const DRAWN_SIGNS: GlyphDef[] = [
       const t = g.top(g.cap);
       const second = g.cap - g.h * 1.5 - 1.6;
       const m = second - g.h - Math.max(1.6, 4.5 - g.h);
-      return [bar(0, w, t), bar(0, w, second), open(p(0, second), p(w * 0.75, second, true), p(w * 0.75, m, true), p(0, m)), diagonal(g, 2.5, m, w * 0.8, 0, [false, true])];
+      return [bar(0, w, t), bar(0, w, second), open(p(0, second), p(w * 0.75, second, true), p(w * 0.75, m, true), p(0, m)), diagonal(g, 2.5, m, w * 0.8, 0)];
     },
   },
   {
@@ -955,7 +961,7 @@ export const DRAWN_SIGNS: GlyphDef[] = [
       const w = g.wide(9);
       const x = 2.5;
       const b = g.bottom(0);
-      return [open(p(x, g.cap), p(x, b), p(w, b, true), p(w, g.y(5))), withPen(open(p(0, g.y(5)), p(6, g.y(8))), g.diag), withPen(open(p(0, g.y(8)), p(6, g.y(11))), g.diag)];
+      return [open(p(x, g.cap), p(x, b), p(w, b, true), p(w, g.y(5))), strikeThrough(g, x, g.y(6.5), 0.5), strikeThrough(g, x, g.y(9.5), 0.5)];
     },
   },
   {

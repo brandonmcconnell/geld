@@ -1,5 +1,5 @@
 import type { PlacedDef } from './composites';
-import { ALL, bar, box, diagonal, dot, type DrawContext, type GlyphDef, open, p, RIGHT, stem, vee, withPen, yArms, barIntoDiagonal, edgeAt, footFor, INSIDE } from './draw';
+import { ALL, bar, box, diagonal, dot, type DrawContext, type GlyphDef, open, p, RIGHT, stem, vee, withPen, yArms, barIntoDiagonal, edgeAt, footFor, INSIDE, kaWithTail } from './draw';
 import { letter } from './glyphs-core';
 import { sigma } from './glyphs-plus';
 
@@ -67,7 +67,7 @@ const UPPER: GlyphDef[] = [
     unicode: 0x3cf,
     lsb: 1.5,
     rsb: 0.3,
-    draw: (g) => [...letter('K').draw(g), stem(g.wide(9.5) + 0.5, -2.75, g.h)],
+    draw: (g) => kaWithTail(g, letter('K').draw(g)),
   },
 ];
 
@@ -133,7 +133,7 @@ const LOWER_DEFS: GlyphDef[] = [
     unicode: 0x3b9,
     lsb: 1.5,
     rsb: 0.75,
-    draw: (g) => [open(p(0, g.xHeight), p(0, g.bottom(0), true), p(g.wide(2.25), g.bottom(0)))],
+    draw: (g) => [open(p(0, g.xHeight), p(0, g.bottom(0), true), p(Math.max(g.wide(2.25), g.v / 2 + 2.5), g.bottom(0)))],
   },
   {
     name: 'lambda',

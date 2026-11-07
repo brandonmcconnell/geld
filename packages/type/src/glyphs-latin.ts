@@ -1,5 +1,6 @@
 import { ALL, bar, box, diagonal, type DrawContext, type GlyphDef, LEFT, level, mirror, open, p, RIGHT, rotate180, stem, withPen, yArms, barIntoDiagonal, diagonalOntoBar, edgeAt, INSIDE , crossbarReach , strikeThrough , strikeReach } from './draw';
 import type { Stroke } from './geometry';
+import { sigma } from './glyphs-plus';
 
 /** Latin letters with no Unicode decomposition into a base and marks, drawn on their own. */
 const UPPER: GlyphDef[] = [
@@ -211,13 +212,7 @@ const UPPER: GlyphDef[] = [
     unicode: 0x1a9,
     lsb: 0.75,
     rsb: 0.75,
-    draw: (g) => {
-      const w = g.wide(10);
-      const t = g.top(g.cap);
-      const b = g.bottom(0);
-      const e = g.foot(w * 0.55, g.cap / 2);
-      return [bar(0, w, t), bar(0, w, b), diagonal(g, e, g.cap, w * 0.55, g.cap / 2, [true, false]), diagonal(g, w * 0.55, g.cap / 2, e, 0, [false, true])];
-    },
+    draw: (g) => sigma(g, g.wide(10)),
   },
   {
     name: 'Ezh',

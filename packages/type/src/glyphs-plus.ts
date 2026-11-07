@@ -23,6 +23,7 @@ import {
   INSIDE,
   edgeAt,
   crossbarReach,
+  meeting,
 } from './draw';
 import type { PathPoint, Stroke } from './geometry';
 
@@ -206,11 +207,10 @@ export const PLUS: GlyphDef[] = [
       const w = g.wide(11);
       const t = g.top(g.cap + 1);
       const x = 4.5;
-      return [
-        withPen(open(p(0, 6), p(x, 0)), g.diag),
-        withPen({ points: [p(x, 0), p(w * 0.65, t)], closed: false, startCap: 'flat' }, g.diag),
-        bar(w * 0.65 - g.foot(w * 0.65 - x, t), w, t),
-      ];
+      const top = g.cap + 1;
+      const [tick, long] = meeting(g, [0, 6], [w * 0.65, top], x, 0);
+      const foot = long!.points[0]!;
+      return [tick!, long!, bar(edgeAt(g.diag, foot.x, 0, w * 0.65, top, top - g.h, 1) - INSIDE, w, t)];
     },
   },
   {
@@ -256,7 +256,7 @@ export const PLUS: GlyphDef[] = [
     draw: (g) => {
       const w = g.wide(8);
       const gap = 1.75 + g.h / 2;
-      return [bar(0, w, MATH_AXIS + gap), bar(0, w, MATH_AXIS - gap), withPen(open(p(w * 0.3, MATH_AXIS - 5.5), p(w * 0.7, MATH_AXIS + 5.5)), g.diag)];
+      return [bar(0, w, MATH_AXIS + gap), bar(0, w, MATH_AXIS - gap), diagonal(g, w * 0.3, MATH_AXIS - gap - g.h / 2 - 1.5, w * 0.7, MATH_AXIS + gap + g.h / 2 + 1.5)];
     },
   },
   {

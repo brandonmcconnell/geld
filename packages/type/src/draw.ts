@@ -1,4 +1,4 @@
-import type { Pen, PathPoint, Stroke } from './geometry';
+import { type Pen, type PathPoint, type Stroke, widthAlong } from './geometry';
 import { CUT_OUTER, CUT_OUTER_LOWER, METRICS } from './grid';
 
 /**
@@ -118,9 +118,13 @@ export function meeting(g: DrawContext, a: [number, number], b: [number, number]
  */
 export function yArms(g: DrawContext, w: number, top: number, join: number, foot = 0): Stroke[] {
   const c = w / 2;
-  // The stem's top corners land on the arms' inner edges (just inside them), so the arms run into the stem with no step.
-  const reach = (c - g.v / 2 + INSIDE - edgeAt(g.diag, 0, top, c, join, top, 1)) / (c / (top - join));
-  return [diagonal(g, 0, top, c, join, [true, false]), diagonal(g, w, top, c, join, [true, false]), stem(c, foot, top - reach)];
+  return [diagonal(g, 0, top, c, join, [true, false]), diagonal(g, w, top, c, join, [true, false]), stem(c, foot, yStemTop(g, w, top, join))];
+}
+
+/** Where Y's stem ends: its top corners land on the arms' inner edges (just inside them), so the arms run into the stem with no step. */
+export function yStemTop(g: DrawContext, w: number, top: number, join: number): number {
+  const c = w / 2;
+  return top - (c - g.v / 2 + INSIDE - edgeAt(g.diag, 0, top, c, join, top, 1)) / (c / (top - join));
 }
 
 /** Z and z: two bars and a diagonal whose level ends sit flush inside the bars' corners. */
@@ -171,13 +175,18 @@ export function diagonalOntoBar(g: DrawContext, from: [number, number], x: numbe
  * A 45° stroke struck through a stem at x around height y (Ł ł ƛ): level ends clearing the stem by
  * 1.25 at their nearest corner, so the stroke reads as crossing rather than as a stub.
  */
-export function strikeThrough(g: DrawContext, x: number, y: number): Stroke {
-  const reach = strikeReach(g);
-  return diagonal(g, x - reach, y - reach, x + reach, y + reach);
+export function strikeThrough(g: DrawContext, x: number, y: number, slope = 1): Stroke {
+  const reach = strikeReach(g, slope);
+  const ends: [number, number, number, number] = [x - reach, y - reach * slope, x + reach, y + reach * slope];
+  // Shallower than 45° a level end would be a spike: the ends are square to the stroke instead.
+  return slope >= 1 ? diagonal(g, ...ends) : withPen(open(p(ends[0], ends[1]), p(ends[2], ends[3])), g.diag);
 }
 
-/** How far a strikeThrough's ends reach from its centre, across and up. */
-export const strikeReach = (g: DrawContext) => g.v / 2 + 1.25 + spanOf(g.diag, 1, 1);
+/** How far a strikeThrough's ends reach from its centre, across (and `slope` times that up), measured so its nearest end corner clears the stem by 1.25. */
+export const strikeReach = (g: DrawContext, slope = 1) => {
+  const corner = slope >= 1 ? spanOf(g.diag, 1, slope) : (widthAlong({ x: 1, y: slope }, g.diag) / 2) * (slope / Math.hypot(1, slope));
+  return g.v / 2 + 1.25 + corner;
+};
 
 /** Where the line through a and b crosses the line through c and d. */
 export function crossing(a: [number, number], b: [number, number], c: [number, number], d: [number, number]): [number, number] {
@@ -185,6 +194,27 @@ export function crossing(a: [number, number], b: [number, number], c: [number, n
   const [sx, sy] = [d[0] - c[0], d[1] - c[1]];
   const t = ((c[0] - a[0]) * sy - (c[1] - a[1]) * sx) / (rx * sy - ry * sx);
   return [a[0] + t * rx, a[1] + t * ry];
+}
+
+/** How far the bottom bar runs past a stroke to carry a tail: a stem's width, so the tail stands against the stroke, but never less than reads as a foot at light weights. */
+export const tailReach = (g: DrawContext) => Math.max(g.v, 1.5);
+/** Ц's tail: the bottom bar runs on from `from` past the stroke at x, and the tail hangs from that end, its outer edge flush with the bar's. */
+export const tailAfter = (g: DrawContext, x: number, from: number): Stroke[] => {
+  const end = x + g.v / 2 + tailReach(g);
+  return [bar(from, end, g.bottom(0)), stem(end - g.v / 2, -2.75, g.h)];
+};
+/** The same tail after a diagonal leg whose level foot is centred on x and spans `e` either side: the bar starts at the foot's inner corner. */
+export const tailAfterLeg = (g: DrawContext, x: number, e: number): Stroke[] => {
+  const end = x + e + tailReach(g);
+  return [bar(x - e, end, g.bottom(0)), stem(end - g.v / 2, -2.75, g.h)];
+};
+
+/** K with a tail after its leg (Қ Ϗ): the leg's foot carries a bar to the tail. */
+export function kaWithTail(g: DrawContext, k: Stroke[]): Stroke[] {
+  const w = g.wide(9.5);
+  const y0 = g.y(4.5);
+  const reach = w + g.v / 2 - g.foot(w, g.cap - y0);
+  return [...k, ...tailAfterLeg(g, reach, spanOf(g.diag, reach * 0.6, y0 + (g.cap - y0) * 0.4))];
 }
 
 /**

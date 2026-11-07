@@ -18,6 +18,10 @@ import {
   yArms,
   crossbarReach,
   crossing,
+  kaWithTail,
+  tailAfter,
+  tailAfterLeg,
+  tailReach,
 } from './draw';
 import type { Stroke } from './geometry';
 import { METRICS } from './grid';
@@ -32,18 +36,6 @@ type Draw = (g: DrawContext) => Stroke[];
 
 /** A short tail below the baseline at x: Ц Щ Җ Қ Ң Ҳ Ҷ and their lowercase. */
 const descender = (g: DrawContext, x: number): Stroke => stem(x, -2.75, g.h);
-/** How far the bottom bar runs past a stroke to carry a tail: a stem's width, so the tail stands against the stroke, but never less than reads as a foot at light weights. */
-const tailReach = (g: DrawContext) => Math.max(g.v, 1.5);
-/** Ц's tail: the bottom bar runs on from `from` past the stroke at x, and the tail hangs from that end, its outer edge flush with the bar's. */
-const tailAfter = (g: DrawContext, x: number, from: number): Stroke[] => {
-  const end = x + g.v / 2 + tailReach(g);
-  return [bar(from, end, g.bottom(0)), descender(g, end - g.v / 2)];
-};
-/** The same tail after a diagonal leg whose level foot is centred on x and spans `e` either side: the bar starts at the foot's inner corner. */
-const tailAfterLeg = (g: DrawContext, x: number, e: number): Stroke[] => {
-  const end = x + e + tailReach(g);
-  return [bar(x - e, end, g.bottom(0)), descender(g, end - g.v / 2)];
-};
 
 const pe: Draw = (g) => {
   const w = g.wide(9.5);
@@ -252,12 +244,7 @@ const DRAWN: { name: string; unicode: number; lower?: number; lsb: number; rsb: 
     lower: 0x49b,
     lsb: 1.5,
     rsb: 0.3,
-    draw: (g) => {
-      const w = g.wide(9.5);
-      const y0 = g.y(4.5);
-      const reach = w + g.v / 2 - g.foot(w, g.cap - y0);
-      return [...letter('K').draw(g), ...tailAfterLeg(g, reach, spanOf(g.diag, reach * 0.6, (y0 + (g.cap - y0) * 0.4)))];
-    },
+    draw: (g) => kaWithTail(g, letter('K').draw(g)),
   },
   { name: 'Endescender-cy', unicode: 0x4a2, lower: 0x4a3, lsb: 1.5, rsb: 0.5, draw: (g) => [...letter('H').draw(g), ...tailAfter(g, g.wide(9), g.wide(9))] },
   { name: 'Ustraight-cy', unicode: 0x4ae, lsb: 0.3, rsb: 0.3, draw: ue },

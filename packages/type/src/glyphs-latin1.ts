@@ -1,5 +1,5 @@
 import { smallPen } from './glyphs-figures';
-import { ALL, bar, box, crossbarReach, diagonal, type DrawContext, type GlyphDef, LEFT, MATH_AXIS, open, p, inPen, shift, stem, withPen, yArms } from './draw';
+import { ALL, bar, box, crossbarReach, diagonal, type DrawContext, type GlyphDef, LEFT, MATH_AXIS, open, p, inPen, shift, stem, withPen, yArms , edgeAt  } from './draw';
 import type { Stroke } from './geometry';
 
 /** The C inside © and the R inside ®, drawn natively at their size and centred in the frame. */
@@ -55,7 +55,7 @@ export const LATIN1: GlyphDef[] = [
       const x = 2.5;
       const t = g.top(g.cap);
       const b = g.bottom(0);
-      return [open(p(w, 11), p(w, t, true), p(x, t, true), p(x, b)), bar(0, w, b), bar(0, x + 4, g.cap / 2)];
+      return [open(p(w, g.y(11)), p(w, t, true), p(x, t, true), p(x, b)), bar(x - crossbarReach(g), w, b), bar(x - crossbarReach(g), x + 4, g.cap / 2)];
     },
   },
   {
@@ -80,7 +80,25 @@ export const LATIN1: GlyphDef[] = [
     rsb: 0.3,
     draw: (g) => {
       const w = g.wide(11);
-      return [...yArms(g, w, g.cap, 6), bar(w / 2 - 3.5, w / 2 + 3.5, 4.75), bar(w / 2 - 3.5, w / 2 + 3.5, 1.75 + g.h / 2)];
+      const reach = 3.5;
+      // The upper bar stays 1.4 below where the arms' outer edges meet the stem, the lower one 1.6 below it or on the
+      // baseline rather than over a stub of stem, and where both do not fit under arms meeting at 6 the arms meet higher.
+      const clearance = (join: number) => {
+        let lo = 0;
+        let hi = g.cap;
+        for (let i = 0; i < 30; i++) {
+          const y = (lo + hi) / 2;
+          if (edgeAt(g.diag, 0, g.cap, w / 2, join, y, -1) < w / 2 - g.v / 2) hi = y;
+          else lo = y;
+        }
+        return lo - 1.4;
+      };
+      const lowest = 1.5 * g.h + 1.6;
+      let join = 6;
+      while (clearance(join) - g.h / 2 < lowest && join < g.cap - 3) join += 0.1;
+      const upper = Math.max(lowest, Math.min(4.75, clearance(join) - g.h / 2));
+      const lower = upper - g.h - 1.6 - g.h < 1.25 ? g.h / 2 : Math.min(1.75 + g.h / 2, upper - g.h - 1.6);
+      return [...yArms(g, w, g.cap, join), bar(w / 2 - reach, w / 2 + reach, upper), bar(w / 2 - reach, w / 2 + reach, lower)];
     },
   },
   { name: 'copyright', unicode: 0xa9, lsb: 1, rsb: 1, draw: (g) => enclosed(g, smallC, 10) },

@@ -144,7 +144,7 @@ export const TABULAR_SIGNS: Record<string, number> = {
   cent: 1,
   sterling: 1,
   currency: 1,
-  yen: 0.95,
+  yen: 0.88,
   Euro: 0.88,
   rupeeindian: 1,
   ruble: 0.97,

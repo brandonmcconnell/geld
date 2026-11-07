@@ -138,12 +138,14 @@ export const SYMBOLS: GlyphDef[] = [
     rsb: 1,
     draw: (g) => {
       const c = { x: 2.6, y: 11 };
-      const r = 2.75;
+      const r = Math.max(2.75, 1.4 * g.diag.v + 0.5);
+      // One round pen for all three, so the six arms are alike and meet at single points.
+      const round = { v: g.diag.v, h: g.diag.v };
       const arm = (deg: number) => {
         const a = (deg * Math.PI) / 180;
-        return withPen(open(p(c.x - r * Math.cos(a), c.y - r * Math.sin(a)), p(c.x + r * Math.cos(a), c.y + r * Math.sin(a))), g.diag);
+        return withPen(open(p(c.x - r * Math.cos(a), c.y - r * Math.sin(a)), p(c.x + r * Math.cos(a), c.y + r * Math.sin(a))), round);
       };
-      return [stem(c.x, c.y - r, c.y + r), arm(30), arm(150)];
+      return [withPen(open(p(c.x, c.y - r), p(c.x, c.y + r)), round), arm(30), arm(150)];
     },
   },
   {
