@@ -158,6 +158,23 @@ def check_small_caps(path: Path, data: bytes) -> None:
     check(got == ["one.sc", "ampersand.sc"], f"{path.name}: c2sc 1& shaped {got}")
 
 
+def check_ligatures(path: Path, data: bytes, weight: int) -> None:
+    """ff ft tt become one glyph by default, as wide as the letters set apart, with a caret between them; liga off or smcp keeps the letters."""
+    font = TTFont(path)
+    carets = font["GDEF"].table.LigCaretList
+    with_carets = set(carets.Coverage.glyphs) if carets else set()
+    for text in ("ff", "ft", "tt"):
+        name = "_".join(text)
+        joined, width = shape_total(data, weight, text, {"kern": False})
+        check(joined == [name], f"{path.name} at {weight}: {text} shaped {joined}")
+        apart, apart_width = shape_total(data, weight, text, {"kern": False, "liga": False})
+        check(apart == list(text), f"{path.name} at {weight}: {text} without liga shaped {apart}")
+        check(width == apart_width, f"{path.name} at {weight}: {name} is {width} wide, its letters {apart_width}")
+        check(name in with_carets, f"{path.name}: {name} has no ligature caret")
+        small = [n for n, _ in shape(data, weight, text, features={"smcp": True})]
+        check(small == [f"{c}.sc" for c in text], f"{path.name} at {weight}: smcp {text} shaped {small}")
+
+
 def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None:
     font = TTFont(path)
     cmap = set(font.getBestCmap())
@@ -186,6 +203,7 @@ def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None
         want = sum(expected["advances"][c] for c in SAMPLE)
         check(abs(total - want) <= len(SAMPLE), f"{path.name} at {weight}: shaped width {total}, source {want}")
         check_kerning(path, data, int(weight), expected["kerning"])
+        check_ligatures(path, data, int(weight))
 
 
 def main() -> None:

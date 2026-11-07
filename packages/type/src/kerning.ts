@@ -36,6 +36,8 @@ export const MIN_MARK_GAP = 0.4;
 /** Values are kept in quarter grid units (12.5 font units), and smaller ones than this are left out. */
 const QUANTUM = 0.25;
 const LEAST = 0.75;
+/** Ink this near a glyph's own side may meet its neighbour's unkerned. */
+const OVERHANG_READ = 0.05;
 /** Letters whose sides are this close in every row share a kerning class. */
 const SAME = 0.3;
 /** The most any pair is kerned: LT and L’ are kerned no further than T o. */
@@ -155,13 +157,14 @@ function measure(a: Profile, b: Profile): { value: number; least: number } | und
 
 
 /** Every kerned glyph's profile in one master. */
-function profilesOf(master: Master): Map<string, Profile> {
+export function profilesOf(master: Master): Map<string, Profile> {
   const byName = new Map(master.glyphs.map((g) => [g.name, g]));
   const unicodeOf = (g: MasterGlyph): number | undefined => {
     if (g.unicode !== undefined) return g.unicode;
     const base = byName.get(baseOf(g, byName));
     if (base && base !== g && base.unicode !== undefined) return base.unicode;
-    return byName.get(g.name.split('.')[0]!)?.unicode;
+    // A ligature (f_f) kerns as its letters: lowercase Latin, like its first.
+    return byName.get(g.name.split('.')[0]!.split('_')[0]!)?.unicode;
   };
   const profiles = new Map<string, Profile>();
   for (const g of master.glyphs) {
@@ -203,16 +206,25 @@ export function kerningClasses(master: Master): KerningClasses {
   const cluster = (side: 'left' | 'right') => {
     const classes = new Map<string, string[]>();
     const firsts: [string, (number | null)[], boolean][] = [];
-    for (const [base, names] of families) {
-      const b = profiles.get(base)!;
+    const add = (key: string, names: string[]) => {
+      const b = profiles.get(key)!;
       const w = white(b, side);
       const home = firsts.find(([, v, s]) => s === b.sign && same(v, w))?.[0];
       if (home) classes.get(home)!.push(...names);
       else {
-        classes.set(base, [...names]);
-        firsts.push([base, w, b.sign]);
+        classes.set(key, [...names]);
+        firsts.push([key, w, b.sign]);
       }
+    };
+    // A member whose mark hangs past this side (ï, ť) clashes where its letter does not: classed apart, its clashes are class pairs.
+    const reaching = (p: Profile) => p[side].some((x) => x != null && (side === 'left' ? x < OVERHANG_READ : x > p.advance - OVERHANG_READ));
+    const apart: string[] = [];
+    for (const [base, names] of families) {
+      const own = reaching(profiles.get(base)!) ? names : names.filter((n) => !reaching(profiles.get(n)!));
+      apart.push(...names.filter((n) => !own.includes(n)));
+      if (own.length) add(own.includes(base) ? base : own[0]!, own);
     }
+    for (const n of apart) add(n, [n]);
     return classes;
   };
   return { right: cluster('right'), left: cluster('left') };
@@ -280,7 +292,8 @@ export function computeKerning(master: Master, classes: KerningClasses): Kerning
       const m = measure(pa, profiles.get(second)!);
       if (!m) continue;
       const limit = measure(rightHull.get(first)!, leftHull.get(second)!)?.least ?? m.least;
-      const value = Math.min(MOST, Math.max(quantize(m.value), room(Math.max(-MOST, m.least, limit))));
+      // A pair the spacing set close is left as it is (A.): only an actual clash opens a pair, below.
+      const value = Math.min(0, Math.max(quantize(m.value), room(Math.min(0, Math.max(-MOST, m.least, limit)))));
       if (Math.abs(value) < LEAST) continue;
       const k1 = `public.kern1.${first}`;
       const k2 = `public.kern2.${second}`;
@@ -316,7 +329,94 @@ export function computeKerning(master: Master, classes: KerningClasses): Kerning
       void b;
     }
   }
+  // Glyphs whose ink reaches past their own side (f's hook, ï's dieresis, j's tail) can meet unkerned:
+  // where they would, the pair is opened up to its least gap.
+  const byClass = (map: Map<string, string[]>, prefix: string) => new Map([...map].flatMap(([k, names]) => names.map((n) => [n, `${prefix}${k}`] as const)));
+  const firstOf = byClass(classes.right, 'public.kern1.');
+  const secondOf = byClass(classes.left, 'public.kern2.');
+  const current = (x: string, y: string) => pairs.get(x)?.get(y) ?? pairs.get(x)?.get(secondOf.get(y)!) ?? pairs.get(firstOf.get(x)!)?.get(y) ?? pairs.get(firstOf.get(x)!)?.get(secondOf.get(y)!) ?? 0;
+  const needs = new Map<string, Map<string, number>>();
+  for (const [a, b] of overhangingPairs(profiles)) {
+    const least = clash(a, b);
+    if (least === undefined || current(a.name, b.name) >= least) continue;
+    if (!needs.has(a.name)) needs.set(a.name, new Map());
+    needs.get(a.name)!.set(b.name, Math.min(MOST, room(least)));
+  }
+  // Where every member of a class that can meet a glyph needs opening against it, one glyph-class pair says it,
+  // and where every member of a class has such a pair against one class, a class pair.
+  const profileOf = (n: string) => profiles.get(n) ?? profiles.get(n.replace(/^public\.kern[12]\./, ''));
+  const lift = (classesOf: Map<string, string[]>, prefix: string, flip: boolean) => {
+    const byGlyph = new Map<string, Map<string, number>>();
+    for (const [a, row] of needs)
+      for (const [b, v] of row) {
+        const [glyph, member] = flip ? [b, a] : [a, b];
+        if (!byGlyph.has(glyph)) byGlyph.set(glyph, new Map());
+        byGlyph.get(glyph)!.set(member, v);
+      }
+    for (const [glyph, row] of byGlyph)
+      for (const [k, members] of classesOf) {
+        const g = profileOf(glyph);
+        const meeting = members.filter((m) => !g || meets(flip ? profiles.get(m)! : g, flip ? g : profiles.get(m)!));
+        if (meeting.length < 2 || !meeting.every((m) => row.has(m))) continue;
+        const value = Math.max(...meeting.map((m) => row.get(m)!));
+        if (flip) set(`${prefix}${k}`, glyph, value);
+        else set(glyph, `${prefix}${k}`, value);
+        for (const m of meeting) {
+          const [a, b] = flip ? [m, glyph] : [glyph, m];
+          needs.get(a)!.delete(b);
+          if (needs.get(a)!.size === 0) needs.delete(a);
+          pairs.get(a)?.delete(b);
+        }
+      }
+  };
+  for (const [a, row] of needs) for (const [b, v] of row) if (current(a, b) >= v) row.delete(b);
+  const wanted = [...needs].flatMap(([a, row]) => [...row].map(([b, v]) => [a, b, v] as const));
+  lift(classes.left, 'public.kern2.', false);
+  lift(classes.right, 'public.kern1.', true);
+  for (const [a, row] of needs) for (const [b, v] of row) if (current(a, b) < v) set(a, b, v);
+  // Glyph-class pairs that cover a whole class become one class pair.
+  for (const [k1, members] of classes.right) {
+    const seconds = new Map<string, number[]>();
+    for (const m of members)
+      for (const [s2, v] of pairs.get(m) ?? []) if (s2.startsWith('public.kern2.') && v > 0) seconds.set(s2, [...(seconds.get(s2) ?? []), v]);
+    for (const [s2, vs] of seconds) {
+      const others = classes.left.get(s2.slice('public.kern2.'.length))!;
+      const meeting = members.filter((m) => others.some((o) => meets(profiles.get(m)!, profiles.get(o)!)));
+      if (meeting.length < 2 || !meeting.every((m) => pairs.get(m)?.has(s2))) continue;
+      set(`public.kern1.${k1}`, s2, Math.max(...vs));
+      for (const m of meeting) pairs.get(m)!.delete(s2);
+    }
+  }
+  for (const [k, row] of [...pairs]) if (row.size === 0) pairs.delete(k);
+  // A lifted pair can sit behind a glyph's own exception, which the font reads first: there the glyph pair is stated.
+  for (const [a, b, v] of wanted) if (current(a, b) < v) set(a, b, v);
   return { groups, pairs };
+}
+
+/** Whether two glyphs can stand side by side: the same script, and a small cap never beside a lowercase letter (smcp turns them all). */
+function meets(a: Profile, b: Profile): boolean {
+  const small = (p: Profile) => p.name.includes('.sc');
+  return !(a.script && b.script && a.script !== b.script) && !(small(a) !== small(b) && (small(a) ? b : a).kind === 'lower');
+}
+
+/** Every same-script letter pair in which either glyph's ink reaches past its side toward the other (f's hook, ï's dieresis, j's tail). */
+function* overhangingPairs(profiles: Map<string, Profile>): Generator<[Profile, Profile]> {
+  const all = [...profiles.values()].filter((p) => !p.sign);
+  const right = new Set(all.filter((p) => p.right.some((x) => x != null && x > p.advance - OVERHANG_READ)));
+  const left = new Set(all.filter((p) => p.left.some((x) => x != null && x < OVERHANG_READ)));
+  for (const a of all) for (const b of right.has(a) ? all : left) if (meets(a, b)) yield [a, b];
+}
+
+/** How far a pair must open to stop colliding: ink overlapping, or a mark within MIN_MARK_GAP of its neighbour; undefined when it does not. */
+export function clash(a: Profile, b: Profile): number | undefined {
+  let least = -Infinity;
+  for (let i = 0; i < ROWS; i++) {
+    const ra = a.right[i];
+    const lb = b.left[i];
+    if (ra == null || lb == null) continue;
+    least = Math.max(least, (a.mark[i] || b.mark[i] ? MIN_MARK_GAP : 0) - (a.advance - ra + lb));
+  }
+  return least > 0 ? least : undefined;
 }
 
 /** The value the kerning gives a glyph pair, as the font resolves it: glyph pairs, then glyph and class, then classes. */
@@ -366,6 +466,11 @@ export function kerningCollisions(master: Master, kerning: Kerning): string[] {
           if (value < Math.min(0, least) - 1e-6) found.push(`${x} ${y}: ${value} past ${least.toFixed(2)}`);
         }
     }
+  }
+  for (const [a, b] of overhangingPairs(profiles)) {
+    const least = clash(a, b);
+    const value = resolve(a.name, b.name);
+    if (least !== undefined && value < Math.min(MOST, least) - 1e-6) found.push(`${a.name} ${b.name}: ${value} clashes, needs ${least.toFixed(2)}`);
   }
   return found;
 }

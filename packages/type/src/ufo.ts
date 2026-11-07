@@ -3,7 +3,7 @@ import { LOCL, type LoclLanguage } from './glyphs-cyrillic';
 import { FIGURE_NAMES, TABULAR_SIGNS } from './glyphs-figures';
 import { VIETNAMESE_PAIRS } from './marks';
 import type { Kerning } from './kerning';
-import { FAMILY_NAMES, type Family, type Master, type Style } from './master';
+import { FAMILY_NAMES, type Family, type Master, type Style, TEXT_LIGATURES } from './master';
 
 const VERSION = { major: 0, minor: 1 };
 
@@ -264,6 +264,11 @@ export function features(master: Master): string {
     '',
     ...figureFeatures(names),
     ...smallCapFeatures(master, names),
+    // After the small caps, so small-cap text keeps its own f and t.
+    '',
+    'feature liga {',
+    ...TEXT_LIGATURES.filter((parts) => names.has(parts.join('_'))).map((parts) => `  sub ${parts.join(' ')} by ${parts.join('_')};`),
+    '} liga;',
   ].join('\n');
 }
 
