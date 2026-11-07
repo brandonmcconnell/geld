@@ -424,6 +424,8 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
     // or its own reading from a visit moments ago, which the read under way then replaces.
     mounted.mergeActions = recentActions(pullPath);
     mounted.mergeRetries = 0;
+    // A method picked from the Overview's caret was for that pull request: this one starts on its repository's default.
+    mounted.overviewMethod = null;
     mounted.stateWords = null;
     showStatus(mounted);
     showVerdict(mounted, null);
@@ -1788,7 +1790,9 @@ async function runStatus(state: Mounted, action: Exclude<StatusAction, 'merge'>)
 }
 
 function buttonFor(state: Mounted, opener: Opener): HTMLElement | null {
-  return isReviewEvent(opener) ? state.segments[opener] : state.statusOpener;
+  if (isReviewEvent(opener)) return state.segments[opener];
+  // A box opened from the Overview's merge button belongs to that button, for its pressed look and for focus when it closes.
+  return state.panelAnchor?.querySelector<HTMLElement>('.geld-overview-merge__main') ?? state.statusOpener;
 }
 
 function closePanel(restoreFocus = false): void {
@@ -1882,11 +1886,12 @@ function fitField(panel: HTMLElement, room: number): void {
 /** Placed again as the box changes size (the writer arriving, a reason shown, pending comments opening): one over its anchor grows upward. */
 let panelResize: ResizeObserver | null = null;
 
-function showPanel(state: Mounted, panel: HTMLElement, opener: Opener): void {
+function showPanel(state: Mounted, panel: HTMLElement, opener: Opener, anchor: HTMLElement | null = null): void {
   closePanel();
   closeStatusMenu(state);
   state.panel = panel;
   state.opener = opener;
+  state.panelAnchor = anchor;
   buttonFor(state, opener)?.setAttribute('aria-expanded', 'true');
   document.body.append(panel);
   panelResize = new ResizeObserver(() => positionPanel());
@@ -2629,11 +2634,7 @@ function openMergeBox(state: Mounted, failure: string | null = null, pastRules =
   cancel.addEventListener('click', () => closePanel(true));
   submit.addEventListener('click', () => void send());
 
-  showPanel(state, panel, 'merge');
-  if (anchor !== null) {
-    state.panelAnchor = anchor;
-    positionPanel();
-  }
+  showPanel(state, panel, 'merge', anchor);
   state.panelRefresh = refresh;
   fill();
   refresh();
