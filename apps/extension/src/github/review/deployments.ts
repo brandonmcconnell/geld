@@ -179,14 +179,16 @@ function isSuccess(deployment: Deployment): boolean {
  */
 export function deploymentsOfPreview(preview: Preview, previews: readonly Preview[], all: readonly Deployment[]): readonly Deployment[] {
   const hosts = all.filter((deployment) => hostOf(deployment) === preview.host);
-  const named = hosts.filter((deployment) => namesProject(deployment.environment, preview.project));
+  const projects = [...new Set([preview.project, ...previews.filter((entry) => entry.host === preview.host).map((entry) => entry.project)].map((project) => project.toLowerCase()))];
+  // "Preview – tldraw-docs" names `docs` too: an environment is the longest project name it ends in.
+  const ownerOf = (environment: string): string | undefined => projects.filter((project) => namesProject(environment, project)).sort((a, b) => b.length - a.length)[0];
+  const named = hosts.filter((deployment) => ownerOf(deployment.environment) === preview.project.toLowerCase());
   if (named.length > 0) {
     const environment = named.at(-1)?.environment.toLowerCase();
     return named.filter((deployment) => deployment.environment.toLowerCase() === environment);
   }
-  const projects = new Set(previews.filter((entry) => entry.host === preview.host).map((entry) => entry.project.toLowerCase()));
   const environments = new Set(hosts.map((deployment) => deployment.environment.toLowerCase()));
-  return projects.size === 1 && environments.size === 1 ? hosts : [];
+  return projects.length === 1 && environments.size === 1 ? hosts : [];
 }
 
 /** What a preview's pill and line open: the site, as near as there is one, and the last good build while the latest is not. */
@@ -199,7 +201,7 @@ export interface PreviewLinks {
 
 export function previewLinks(preview: Preview, previews: { readonly latest: readonly Preview[]; readonly archived: readonly Preview[] }, all: readonly Deployment[]): PreviewLinks {
   const deployments = deploymentsOfPreview(preview, previews.latest, all);
-  const good = [...deployments].reverse().find((deployment) => isSuccess(deployment) && deployment.url !== null)?.url ?? previews.archived.filter((entry) => entry.host === preview.host && entry.project === preview.project && entry.status === 'ready' && entry.url !== null).at(-1)?.url ?? null;
+  const good = [...deployments].reverse().find((deployment) => isSuccess(deployment) && deployment.url !== null)?.url ?? previews.archived.find((entry) => entry.host === preview.host && entry.project === preview.project && entry.status === 'ready' && entry.url !== null)?.url ?? null;
   const run = deployments.at(-1)?.logUrl ?? null;
   return { href: preview.url ?? good ?? preview.inspectUrl ?? run, lastSuccess: preview.status === 'ready' ? null : good };
 }

@@ -3191,7 +3191,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const allPreviews = phase('previews', () => previewsOn(crawledDom, meta));
   // An earlier push's preview opens its own build, which GitHub's deployment events name; the comment links the branch.
   const splitPreviews = latestPreviews(allPreviews);
-  const previews = { latest: splitPreviews.latest, archived: splitPreviews.archived.map((entry) => pinnedToBuild(entry, deploymentsOfPreview(entry, splitPreviews.latest, allDeployments))) };
+  const pinned = new Map(splitPreviews.archived.map((entry) => [entry, pinnedToBuild(entry, deploymentsOfPreview(entry, splitPreviews.latest, allDeployments))] as const));
+  const previews = { latest: splitPreviews.latest, archived: splitPreviews.archived.map((entry) => pinned.get(entry) ?? entry) };
+  // The rounds show the same earlier previews, so they open the same builds.
+  const roundPreviews = allPreviews.map((entry) => pinned.get(entry) ?? entry);
   const deployments = deploymentEntries(allDeployments, previews.latest);
   deploymentAnchors = new Set(allDeployments.map((deployment) => deployment.anchor));
   // Reporter bots' reports (test failures on their runners, coverage), read from the page's comments in timeline order.
@@ -3232,7 +3235,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const pushRoots = new Set(leftoverList.filter((entry) => entry.kind === 'push').map((entry) => entry.root));
   const commitRoots = leftoverList.filter((entry) => entry.kind === 'commit' || entry.kind === 'push').map((entry) => entry.root);
   const batches = phase('batches', () =>
-    buildBatches(meta, crawledDom, settings, commitRoots, pushRoots, roundEntries, allPreviews).map((batch) => {
+    buildBatches(meta, crawledDom, settings, commitRoots, pushRoots, roundEntries, roundPreviews).map((batch) => {
       const pinnedComments = pinOpenEntry(batch.comments);
       return pinnedComments === batch.comments ? batch : { ...batch, comments: pinnedComments };
     }),

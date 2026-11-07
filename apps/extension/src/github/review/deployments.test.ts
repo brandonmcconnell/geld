@@ -146,6 +146,21 @@ describe('previews and deployments', () => {
     expect(deploymentsOfPreview(examples, [examples, docs], all).map((deployment) => deployment.anchor)).toEqual(['event-1', 'event-3']);
   });
 
+  it('gives an environment to the longest project name it ends in', () => {
+    const short: Preview = { ...examples, project: 'docs' };
+    expect(deploymentsOfPreview(short, [short, docs], all)).toEqual([]);
+    expect(deploymentsOfPreview(docs, [short, docs], all).map((deployment) => deployment.anchor)).toEqual(['event-2']);
+  });
+
+  it('falls back to the newest archived success, the archive being newest first', () => {
+    const netlify: Preview = { host: 'netlify', project: 'site', status: 'failed', url: null, inspectUrl: null, anchor: 'issuecomment-9' };
+    const archived: Preview[] = [
+      { ...netlify, status: 'ready', url: 'https://newer.netlify.app', anchor: 'issuecomment-8' },
+      { ...netlify, status: 'ready', url: 'https://older.netlify.app', anchor: 'issuecomment-7' },
+    ];
+    expect(previewLinks(netlify, { latest: [netlify], archived }, []).lastSuccess).toBe('https://newer.netlify.app');
+  });
+
   it('matches a host with one project and one environment by that alone', () => {
     const single: Preview = { ...docs, project: 'nodejs-org' };
     const preview = [vercel('event-9', 'Preview', 'active', 'https://nodejs-k9a.vercel.app', '2026-11-06T17:22:00Z')];
