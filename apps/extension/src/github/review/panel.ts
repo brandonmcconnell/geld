@@ -1195,8 +1195,10 @@ function aiButton(state: AiState, handlers: PanelHandlers): HTMLElement | null {
           : state.kind === 'failed'
             ? `The last run could not get an answer: ${state.error}`
             : 'Run the model again';
+  const linked = state.kind === 'current' || state.kind === 'stale' ? state.contextFrom : [];
+  const fullTitle = linked.length === 0 ? title : `${title}. It also read linked context from ${linked.join(', ')}`;
   // `aria-disabled` rather than `disabled` for nothing-to-triage: a disabled button gets no hover, and the title is the explanation.
-  const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__ai-btn`, 'data-state': state.kind, 'aria-label': `${label}. ${title}`, title, [ATTR_FOCUS]: 'ai', ...(state.kind === 'running' ? { 'aria-busy': 'true', disabled: '' } : state.kind === 'nothing' ? { 'aria-disabled': 'true' } : {}) }, [
+  const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__ai-btn`, 'data-state': state.kind, 'aria-label': `${label}. ${fullTitle}`, title: fullTitle, [ATTR_FOCUS]: 'ai', ...(state.kind === 'running' ? { 'aria-busy': 'true', disabled: '' } : state.kind === 'nothing' ? { 'aria-disabled': 'true' } : {}) }, [
     icon(ICON_SPARKLE_FILL),
     createElement('span', { class: `${PANEL_CLASS}__ai-label` }, [label]),
   ]);

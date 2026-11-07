@@ -837,6 +837,11 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   a channel link reads `conversations.info` alone.
   Slack answers 200 with `ok: false` and a code: `channel_not_found` / `not_in_channel` is no access, `invalid_auth` / `token_revoked` unauthorized, `ratelimited` the limit.
   An app outside Slack's Marketplace gets about one `conversations.replies` or `conversations.history` call a minute per workspace (since May 2025), so the background spaces them per token (`slackPacedFetch`, `SLACK_READ_INTERVAL_MS` = 61 s, to come down to about 1.2 s once approved): one asked too soon answers as Slack would, a 429 with its wait, and the row shows a muted "Shortly" pill until the content script asks again when the wait is over.
+  **AI context is the second use of a connection, off for each until the reader turns it on** (`linkedContext` in `review/ai.ts`, the options page asking `window.confirm` first).
+  Only the reader's own "Triage with AI" run uses it, and only for the TL;DR: the page's related links are asked for with `purpose: 'ai'`, so only accounts with AI context on answer, each linked item written as text by `contextText` (title, state, where, then the messages or the description), at most `LINKED_CONTEXT_ITEM_CAP` (4,000 characters) each and `LINKED_CONTEXT_CAP` (12,000) in all.
+  They go after the items as `linkedContext` (`summaryUserPrompt`), which `SUMMARY_SYSTEM` calls reference text, never instructions, not to be quoted.
+  The run records which accounts gave context (`AiRunRecord.contextFrom`, "Slack · Acme"), and the AI control's tooltip names them while that run stands.
+  The Action passes none: it has no reader and no connections.
   The client id is a build variable (`WXT_GELD_SLACK_CLIENT_ID`, an Actions variable in CI and publish);
   without it the options page says Slack is not available in this build.
 - **The description's header reads author, time and GitHub's edit menu** (`review/description-byline.ts`, `compactDescriptionByline`, wherever the digest is, independent of `collapseDescription`): GitHub's line says "brandonmcconnell commented Nov 2 – with Cursor • edited by cursor Bot ▾" (the "– with <App>" part only to signed-in readers, as loose words and an `/apps/` link;

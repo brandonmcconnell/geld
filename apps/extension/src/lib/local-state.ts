@@ -72,6 +72,8 @@ export interface AiRunRecord {
   readonly rewrites: readonly ConsolidateOutputItem[];
   readonly summary?: ReviewSummary;
   readonly error?: string;
+  /** The connected accounts whose linked tickets and conversations were sent with the run, "Slack · Acme". */
+  readonly contextFrom?: readonly string[];
 }
 export const aiRunsItem = storage.defineItem<Readonly<Record<string, AiRunRecord>>>('local:aiRuns', { fallback: {} });
 export const AI_RUNS_CAP = 40;
