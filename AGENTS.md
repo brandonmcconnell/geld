@@ -837,6 +837,11 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The Overview page (behind `prs_overview_as_index_route`, the index route in place of Conversation, `?overview=false` opting out;
   its `OverviewInfo` lists Activity, Reviewers, Proof of presence, Assignees, Labels, Projects, Milestones, Development, Deployments, Participants, read from GitHub's `pull-requests` bundle in Nov 2026) is `SidebarSection`s: `<section aria-label data-overview-sidebar-item>` with a header `div > h4` (or a gear's `h4 > button > span`) and a content `div`, every class a hashed CSS module's.
   There Geld's section is built in that shape with classes taken from the page: the title's from the leaf reading the neighbour's title, the header's from a section with a plain header, the content's from the neighbour's last child.
+  The Overview sidebar is shown in Geld's order (`orderSidebars`): Reviewers, Related links, Activity, then GitHub's own order for the rest;
+  the classic sidebar keeps GitHub's, with Related links under Assignees.
+  Its list is a flex column (`.sidebar__… { display: flex; flex-direction: column; gap: 16px }`), so the order is CSS `order` on attributes (`data-geld-sidebar-order` on the list, `data-geld-order` on the three), never React's nodes moved.
+  GitHub draws the line between sections as `.sidebar > [data-overview-sidebar-item] ~ [data-overview-sidebar-item]`, above every section but the first in page order, which is no longer the first shown, so on an ordered list the stylesheet draws it above every section but the one marked `data-geld-order-first`, at a weight above GitHub's rule.
+  The attributes are written only when they change (the controller's observer does not watch them) and removed on teardown.
   Any other shape gets the neighbour's tag and classes and its heading's.
   It is put back whenever GitHub replaces the sidebar, written only when its links or its place changed, and drawn only when there is a link to show.
   It runs as a guarded step of its own (`guard('content:related-links', …)`), so a sidebar GitHub changed under it costs the section, recorded in the diagnostics, and never the digest the pass mounts after it.

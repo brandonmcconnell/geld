@@ -109,6 +109,38 @@ describe('related links in the sidebar', () => {
     expect(document.getElementById('__primerPortalRoot__')?.querySelector('.geld-related')).toBeNull();
   });
 
+  it('orders the Overview sidebar Reviewers, Related links, Activity, then GitHub’s order, and leaves the classic one alone', () => {
+    document.body.innerHTML = DESCRIPTION + overviewSidebar;
+    applyRelatedLinks(true);
+    const list = document.querySelector('.info__x');
+    expect(list?.hasAttribute('data-geld-sidebar-order')).toBe(true);
+    const placed = [...(list?.children ?? [])].map((child) => [child.getAttribute('aria-label'), child.getAttribute('data-geld-order'), child.hasAttribute('data-geld-order-first')]);
+    expect(placed).toEqual([
+      ['Activity', 'activity', false],
+      ['Reviewers', 'reviewers', true],
+      ['Proof of presence', null, false],
+      ['Assignees', null, false],
+      ['Related links', 'related', false],
+      ['Labels', null, false],
+      ['Projects', null, false],
+      ['Milestones', null, false],
+      ['Development', null, false],
+      ['2 participants', null, false],
+    ]);
+    removeRelatedLinks();
+    expect(document.querySelectorAll('[data-geld-sidebar-order], [data-geld-order], [data-geld-order-first]')).toHaveLength(0);
+    document.body.innerHTML = DESCRIPTION + railsSidebar();
+    applyRelatedLinks(true);
+    expect(document.querySelectorAll('[data-geld-sidebar-order]')).toHaveLength(0);
+  });
+
+  it('orders the Overview sidebar with no related links to show, and marks the first shown when Reviewers is not there', () => {
+    document.body.innerHTML = overviewSidebar.replace(/<section aria-label="Reviewers"[\s\S]*?<\/section>/, '');
+    applyRelatedLinks(true);
+    expect(document.querySelector('.geld-related')).toBeNull();
+    expect(document.querySelector('[data-geld-order-first]')?.getAttribute('aria-label')).toBe('Activity');
+  });
+
   it('stands in every Overview sidebar the page shows, and leaves when React drops one', () => {
     document.body.innerHTML = DESCRIPTION + overviewSidebar + overviewSidebar;
     applyRelatedLinks(true);

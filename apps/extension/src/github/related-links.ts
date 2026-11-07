@@ -361,12 +361,71 @@ function sectionLike(neighbour: HTMLElement, links: readonly RelatedRow[]): HTML
 /** Our section after each Assignees section, keyed by it, with the links it was drawn from. */
 let mounted = new Map<HTMLElement, { readonly section: HTMLElement; readonly signature: string }>();
 
-export function removeRelatedLinks(): void {
+function removeSections(): void {
   for (const { section } of mounted.values()) section.remove();
   mounted = new Map();
   for (const stray of document.querySelectorAll(`.${SECTION_CLASS}[${OWN_UI_ATTRIBUTE}]`)) stray.remove();
   showAll = false;
+}
+
+export function removeRelatedLinks(): void {
+  removeSections();
   authors.clear();
+  orderSidebars([]);
+}
+
+const ATTR_ORDERED = 'data-geld-sidebar-order';
+const ATTR_PLACE = 'data-geld-order';
+const ATTR_FIRST = 'data-geld-order-first';
+
+/** Where a section of the Overview sidebar is shown, before GitHub's order for the rest: Reviewers, Related links, Activity. */
+const PLACES = ['reviewers', 'related', 'activity'] as const;
+type Place = (typeof PLACES)[number];
+
+function placeOf(section: Element): Place | null {
+  if (section.classList.contains(SECTION_CLASS) && section.hasAttribute(OWN_UI_ATTRIBUTE)) return 'related';
+  const name = (section.getAttribute('aria-label') ?? words(titleOf(section) ?? section)).toLowerCase();
+  if (name === 'reviewers') return 'reviewers';
+  return name === 'activity' || name.startsWith('activity (') ? 'activity' : null;
+}
+
+function setAttribute(element: Element, name: string, value: string | null): void {
+  if (value === null) {
+    if (element.hasAttribute(name)) element.removeAttribute(name);
+  } else if (element.getAttribute(name) !== value) {
+    element.setAttribute(name, value);
+  }
+}
+
+/**
+ * The Overview sidebar shows Reviewers, then Related links, then Activity, then GitHub's own order. Its list is a flex
+ * column, so the order is CSS `order` on attributes, never React's nodes moved. GitHub draws the line above every
+ * section but the first in page order, which no longer is the first shown, so on an ordered list the stylesheet draws
+ * it above every section but the one marked first here. The classic sidebar keeps its order.
+ */
+function orderSidebars(afters: readonly HTMLElement[]): void {
+  const lists = new Set<Element>(afters.filter((after) => after.hasAttribute('data-overview-sidebar-item')).map((after) => after.parentElement).filter((list) => list !== null));
+  for (const stale of document.querySelectorAll(`[${ATTR_ORDERED}]`)) {
+    if (lists.has(stale)) continue;
+    stale.removeAttribute(ATTR_ORDERED);
+    for (const child of stale.children) {
+      child.removeAttribute(ATTR_PLACE);
+      child.removeAttribute(ATTR_FIRST);
+    }
+  }
+  for (const list of lists) {
+    setAttribute(list, ATTR_ORDERED, '');
+    const children = [...list.children];
+    const places = children.map(placeOf);
+    children.forEach((child, index) => setAttribute(child, ATTR_PLACE, places[index] ?? null));
+    const rank = (index: number): number => {
+      const place = places[index] ?? null;
+      return place === null ? PLACES.length : PLACES.indexOf(place);
+    };
+    const shown = children.map((child, index) => ({ child, index })).filter(({ child }) => child.hasAttribute('data-overview-sidebar-item'));
+    const first = shown.sort((a, b) => rank(a.index) - rank(b.index) || a.index - b.index)[0]?.child ?? null;
+    for (const child of children) setAttribute(child, ATTR_FIRST, child === first ? '' : null);
+  }
 }
 
 /** The controller's pass, for rows "Show N more" reveals to look their details up. */
@@ -381,7 +440,8 @@ export function applyRelatedLinks(active: boolean, onChange: () => void = () => 
   const afters = active ? assigneesSections() : [];
   const links = afters.length === 0 ? [] : rowsOf(relatedLinksOnPage(onChange), onChange);
   if (links.length === 0) {
-    if (mounted.size > 0) removeRelatedLinks();
+    if (mounted.size > 0) removeSections();
+    orderSidebars(afters);
     return;
   }
   const signature = JSON.stringify(links);
@@ -399,4 +459,5 @@ export function applyRelatedLinks(active: boolean, onChange: () => void = () => 
   }
   for (const [after, { section }] of mounted) if (!next.has(after)) section.remove();
   mounted = next;
+  orderSidebars(afters);
 }
