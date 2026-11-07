@@ -18,7 +18,18 @@ const KERNING = [
   'Голова Тула Уход Гора ГОД ТАК',
   'Τα Τόπος Υόρκη ΑΥΤΟ Γάτα',
   'f. r, y. v. w. (J) [f] 11 17 71 74',
+  'Geld Settings · 12 files hidden · Request a review · Review bots · CI checks · Previews · Today, 7:41 PM',
 ];
+
+/** Ligatures: text ligatures, arrows (on by default, then with ss20) and the Geld lockup under dlig. */
+const LIGATURES = [
+  { text: 'off effort attic fifty fjord', css: '' },
+  { text: 'a -> b <- c <-> d --> e <== f ==> g => h ->> i', css: '' },
+  { text: 'a -> b <- c <-> d --> e <== f ==> g => h ->> i', css: 'font-feature-settings: "ss20"' },
+  { text: 'x <= y >= z <=> w --- x<-1', css: '' },
+  { text: 'Made by Geld · Geldern', css: 'font-variant-ligatures: discretionary-ligatures' },
+];
+const escape = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /** A standalone page for reviewing the build: open dist/proof.html from disk. */
 export function proofPage(): string {
@@ -66,6 +77,7 @@ p { margin: 0 0 8px; font-size: 40px; }
 </header>
 <section class="sample"><h2>Strings</h2>${strings}</section>
 <section class="sample"><h2>Kerning</h2>${KERNING.map((k) => `<p>${k}</p><p class="unkerned">${k}</p>`).join('\n')}</section>
+<section class="sample"><h2>Ligatures</h2>${LIGATURES.map((l) => `<p style='${l.css}'>${escape(l.text)}</p>`).join('\n')}</section>
 <section class="sample big"><h2>Large</h2>${SAMPLES[0]}<br>${SAMPLES[1]}<br>${SAMPLES[2]}</section>
 <section class="sample waterfall"><h2>Weights</h2>${waterfall}</section>
 <section class="sample waterfall" style="--s: italic"><h2>Italic</h2>${waterfall}</section>

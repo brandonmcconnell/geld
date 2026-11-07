@@ -43,9 +43,9 @@ const OVERHANG_READ = 0.05;
 const SAME = 0.3;
 /** The most any pair is kerned: LT and L’ are kerned no further than T o. */
 const MOST = 2.5;
-/** How much of an open side's white a word space beside it gives back, and at most. */
-const SPACE_STRENGTH = 0.35;
-const SPACE_MOST = 1.5;
+/** How much of an open side's white a word space beside it gives back, and at most: the space is 5 units, and between two open sides (VAT TAYLOR) it keeps 70%. */
+const SPACE_STRENGTH = 0.25;
+const SPACE_MOST = 0.75;
 
 
 type Case = keyof typeof DEPTH;
