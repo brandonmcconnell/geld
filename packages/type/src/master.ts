@@ -6,8 +6,10 @@ import { GLYPHS, SPACES } from './glyphs';
 import { FIGURE_NAMES } from './glyphs-figures';
 import { CYRILLIC_LOCL_ACCENTED } from './glyphs-cyrillic';
 import { accentedSmallCaps, SMALL_CAP_EXTRA_ACCENTED, SMALL_CAP_PLACED } from './glyphs-smallcaps';
+import { ALTERNATES, alternateName, OCTAGONAL_DOTS, SWASHES, swashName } from './alternates';
 import { CODE_LIGATURES, codePieceName } from './code-ligatures';
-import { LOCKUP, lockupGlyph } from './lockup';
+import { BOX_DRAWING } from './glyphs-dingbats';
+import { EMBLEM, emblemGlyph, LOCKUP, LOCKUP_CODE, lockupGlyph } from './lockup';
 import { DARK_INSET_RATIO, ITALIC_SLOPE, METRICS, toFontUnits, UNIT, type Weight, weightParams } from './grid';
 import { type Attachment, BELOW_GAP, MARK_GAP, MARK_HEIGHT, MARKS } from './marks';
 
@@ -126,25 +128,47 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   const slant = (contours: Contour[]) => (italic ? contours.map((c) => translate(shear(c, ITALIC_SLOPE), -ITALIC_SLOPE * ITALIC_PIVOT)) : contours);
   /** Each glyph's outline before Geld Dark Sans's inset, slanted, for measurements both families must share. */
   const undarkened = new Map<string, Contour[]>();
+  // Box drawing and blocks fill their cells to the edge in both families and stand upright in the italic, so lines run
+  // on from cell to cell and row to row: an inset or a slant would open a seam or a step between them.
+  const edgeToEdge = new Set(BOX_DRAWING.map((d) => d.name));
   const finish = (contours: Contour[], name?: string) => {
-    if (name) undarkened.set(name, slant(contours));
-    return slant(family === 'dark' ? contours.map((c) => insetContour(c, params.v * DARK_INSET_RATIO)) : contours);
+    const cell = name !== undefined && edgeToEdge.has(name);
+    const lean = (cs: Contour[]) => (cell ? cs : slant(cs));
+    if (name) undarkened.set(name, lean(contours));
+    return lean(family === 'dark' && !cell ? contours.map((c) => insetContour(c, params.v * DARK_INSET_RATIO)) : contours);
   };
   const place = (p: Vec): Vec => (italic ? { x: p.x + p.y * ITALIC_SLOPE - ITALIC_SLOPE * ITALIC_PIVOT, y: p.y } : p);
   const placeAnchors = (anchors: Anchor[]) => anchors.map((a) => ({ ...a, ...place(a) }));
 
-  const glyphs: MasterGlyph[] = GLYPHS.map((def) => {
+  const contextOf = (def: GlyphDef) => {
     const cursive = italic && def.italic !== undefined;
-    const g = def.smallcap && !cursive ? small : def.lower || def.smallcap ? lower : upper;
-    const strokes = cursive ? def.italic!(g) : def.draw(g);
-    let contours = strokes.flatMap((stroke) => expandStroke(stroke, g.pen, slope));
-    if (params.snap && !italic) contours = snapJoined(contours, 0.5);
+    return { cursive, g: def.smallcap && !cursive ? small : def.lower || def.smallcap ? lower : upper };
+  };
+  const strokesOf = (def: GlyphDef, dots?: 'octagon') => {
+    const { cursive, g: base } = contextOf(def);
+    const g = dots ? { ...base, dotShape: dots } : base;
+    return { g, strokes: cursive ? def.italic!(g) : def.draw(g) };
+  };
+  const outline = (def: GlyphDef, dots?: 'octagon') => {
+    const { g, strokes } = strokesOf(def, dots);
+    const contours = strokes.flatMap((stroke) => expandStroke(stroke, g.pen, slope));
+    return { g, contours: params.snap && !italic ? snapJoined(contours, 0.5) : contours };
+  };
+  /** Where a drawing's origin goes and how wide it is: measured, framed, or as set in its definition. */
+  const spacing = (def: GlyphDef, contours: Contour[], g: DrawContext) => {
     const box = bounds(contours);
     const zone = spacingZone(def, g);
     const frame = def.frame?.(g);
     const { lsb, rsb } = frame ? { lsb: box.minX - frame.origin, rsb: 0 } : zone ? measuredSidebearings(contours, box.minX, box.maxX, zone) : { ...def, ...def.sidebearings?.(g) };
-    contours = contours.map((c) => translate(c, lsb - box.minX));
-    const advance = frame ? frame.advance : lsb + (box.maxX - box.minX) + rsb;
+    return { dx: lsb - box.minX, advance: frame ? frame.advance : lsb + (box.maxX - box.minX) + rsb };
+  };
+  const defByName = new Map(GLYPHS.map((d) => [d.name, d]));
+  const build = (def: GlyphDef, dots?: 'octagon'): MasterGlyph => {
+    const { g, contours: drawn } = outline(def, dots);
+    // A swash is placed as its letter is, so the flourish hangs past the letter's own sides.
+    const like = def.like ? defByName.get(def.like) : undefined;
+    const { dx, advance } = like ? (({ g: lg, contours: lc }) => spacing(like, lc, lg))(outline(like, dots)) : spacing(def, drawn, g);
+    const contours = drawn.map((c) => translate(c, dx));
     const anchors = baseAnchors(contours, isUpperChar(def.unicode ?? def.stands), params.v, def.name);
     return {
       name: def.name,
@@ -155,7 +179,8 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
       anchors,
       mark: false,
     };
-  });
+  };
+  const glyphs: MasterGlyph[] = GLYPHS.map((def) => build(def));
 
   const inkWidth = (gl: MasterGlyph) => {
     const b = bounds(gl.contours);
@@ -176,6 +201,27 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   glyphs.forEach((gl, i) => {
     if (GLYPHS[i]?.tabular) centre(gl, tabularAdvance);
   });
+  // ss07: every drawing whose dots change with octagonal ones, spaced and centred as its default.
+  for (const def of GLYPHS) {
+    if (/\.(ss|cv)\d\d$/.test(def.name) || JSON.stringify(strokesOf(def).strokes) === JSON.stringify(strokesOf(def, 'octagon').strokes)) continue;
+    const gl = { ...build(def, 'octagon'), name: `${def.name}.${OCTAGONAL_DOTS}` };
+    delete gl.unicode;
+    if (MATH_OPERATORS.includes(def.name)) centre(gl, mathAdvance);
+    if (def.tabular) centre(gl, tabularAdvance);
+    glyphs.push(gl);
+  }
+  // An alternate that would draw as this style's default is only in the other style (the italic's l is tailed already).
+  const elsewhere = new Set(ALTERNATES.filter((alt) => alt.only && alt.only !== style).map(alternateName));
+  for (let i = glyphs.length - 1; i >= 0; i--) if (elsewhere.has(glyphs[i]!.name)) glyphs.splice(i, 1);
+  // An alternate keeps its letter's anchors, so an exit or a tail never moves a horn or an accent off the letter.
+  for (const alt of [...ALTERNATES.map((a) => ({ name: alternateName(a), glyph: a.glyph })), ...SWASHES.map((sw) => ({ name: swashName(sw), glyph: sw.glyph }))]) {
+    const gl = glyphs.find((x) => x.name === alt.name);
+    const base = glyphs.find((x) => x.name === alt.glyph);
+    if (!gl || !base) continue;
+    const dx = bounds(gl.contours).minX - bounds(base.contours).minX;
+    gl.anchors = base.anchors.map((a) => ({ ...a, x: a.x + dx }));
+  }
+
   // Where each ligature's letters have their crossbars, read before the slant and the dark inset so the bridge between them takes both.
   const bars = new Map(
     TEXT_LIGATURES.flatMap((parts) => parts).map((name) => {
@@ -233,6 +279,8 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     glyphs.push({ name: parts.join('_'), advance: x, contours: finish(bridges, parts.join('_')), components, anchors: placeAnchors(carets), mark: false });
   }
   glyphs.push({ name: LOCKUP.name, ...lockupGlyph(family === 'dark'), components: [], mark: false });
+  glyphs.push({ ...EMBLEM, ...emblemGlyph(family === 'dark'), components: [], anchors: [], mark: false });
+  glyphs.push({ ...LOCKUP_CODE, advance: glyphs.find((gl) => gl.name === LOCKUP.name)!.advance, contours: [], components: [{ glyph: LOCKUP.name, dx: 0, dy: 0 }], anchors: [], mark: false });
 
   for (const arch of arches) {
     if (!arch) continue;
@@ -258,7 +306,10 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   for (const def of MARKS)
     for (const form of def.caseForm ? (['lower', 'case'] as const) : (['lower'] as const)) {
       const height = MARK_HEIGHT[form];
-      let contours = def.draw(lower, height).flatMap((stroke) => expandStroke(stroke, lower.pen, slope));
+      for (const dots of [undefined, 'octagon'] as const) {
+      const ctx = dots ? { ...lower, dotShape: dots } : lower;
+      if (dots && JSON.stringify(def.draw(ctx, height)) === JSON.stringify(def.draw(lower, height))) continue;
+      let contours = def.draw(ctx, height).flatMap((stroke) => expandStroke(stroke, lower.pen, slope));
       if (def.hang) {
         const top = bounds(contours).maxY;
         contours = contours.map((c) => translate(c, 0, -BELOW_GAP - top));
@@ -268,7 +319,8 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
         contours = contours.map((c) => translate(c, 0, -bottom));
       }
       const box = bounds(contours);
-      const name = form === 'case' ? `${def.name}.case` : def.name;
+      const plain = form === 'case' ? `${def.name}.case` : def.name;
+      const name = dots ? `${plain}.${OCTAGONAL_DOTS}` : plain;
       const above = def.attach === 'top' || def.attach === 'topright' || def.attach === 'horn';
       const stackGap = form === 'case' ? 0.4 : 0.75;
       const stack: Anchor = above ? { name: def.attach, x: 0, y: box.maxY + stackGap } : { name: def.attach, x: 0, y: box.minY - 0.5 };
@@ -276,13 +328,14 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
       markReach.set(name, bounds(slant(contours)).maxX);
       glyphs.push({
         name,
-        ...(form === 'lower' && def.unicode !== undefined ? { unicode: def.unicode } : {}),
+        ...(form === 'lower' && !dots && def.unicode !== undefined ? { unicode: def.unicode } : {}),
         advance: 0,
         contours: finish(contours, name),
         components: [],
         anchors: placeAnchors([{ name: `_${def.attach}`, x: 0, y: 0 }, stack]),
         mark: true,
       });
+      }
     }
 
   const byName = new Map(glyphs.map((gl) => [gl.name, gl]));
@@ -314,7 +367,12 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
 
   const accented = accentedFromUnicode(LATIN_RANGES, names, caseMarks);
   const smallCapAccents = [...accentedSmallCaps(accented, (name) => byName.has(name)), ...SMALL_CAP_EXTRA_ACCENTED];
-  for (const def of [...accented, ...CYRILLIC_LOCL_ACCENTED, ...smallCapAccents]) {
+  // Accented letters follow their base's alternates: á.ss01 is á on the single-storey a.
+  const alternatesOf = (name: string) => ALTERNATES.filter((alt) => alt.glyph === name && byName.has(alternateName(alt)));
+  const accentedAlternates = accented.flatMap((def) =>
+    alternatesOf(def.base).map((alt) => ({ ...def, name: `${def.name}.${alternateName(alt).split('.')[1]}`, base: alternateName(alt), unicode: undefined })),
+  );
+  for (const def of [...accented, ...CYRILLIC_LOCL_ACCENTED, ...smallCapAccents, ...accentedAlternates]) {
     const base = byName.get(def.base);
     if (!base) continue;
     const components: Component[] = [{ glyph: def.base, dx: 0, dy: 0 }];
@@ -339,6 +397,35 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
 
   placeAll([...PLACED, ...GREEK_TONOS, ...SMALL_CAP_PLACED, ...CASE_FORMS]);
 
+  // Circled numerals ⓪ ①–⑨ (and ss17): the ring with a denominator figure centred in it, measured before the dark inset.
+  const ring = byName.get('numeralring');
+  if (ring) {
+    const inkBox = (gl: MasterGlyph) => bounds(undarkened.get(gl.name) ?? gl.contours);
+    const r = inkBox(ring);
+    FIGURE_NAMES.forEach((fig, d) => {
+      const small = byName.get(`${fig}.dnom`);
+      if (!small) return;
+      const f = inkBox(small);
+      const dy = (r.minY + r.maxY) / 2 - (f.minY + f.maxY) / 2;
+      const at = place({ x: (r.minX + r.maxX) / 2 - (f.minX + f.maxX) / 2, y: dy });
+      const origin = place({ x: 0, y: 0 });
+      const glyph: MasterGlyph = {
+        name: `${fig}circle`,
+        unicode: d === 0 ? 0x24ea : 0x2460 + d - 1,
+        advance: ring.advance,
+        contours: [],
+        components: [
+          { glyph: 'numeralring', dx: 0, dy: 0 },
+          { glyph: small.name, dx: at.x - origin.x, dy },
+        ],
+        anchors: [],
+        mark: false,
+      };
+      glyphs.push(glyph);
+      byName.set(glyph.name, glyph);
+    });
+  }
+
 
   for (const accent of SPACING_ACCENTS) {
     const mark = byName.get(accent.mark)!;
@@ -358,6 +445,19 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   for (const space of SPACES) {
     const advance = space.advance === 'tabular' ? tabularAdvance : typeof space.advance === 'number' ? space.advance : byName.get(space.advance.like)!.advance;
     glyphs.push({ name: space.name, unicode: space.unicode, advance, contours: [], components: [], anchors: [], mark: false });
+  }
+  // ss07 composites: whatever is built on a glyph or mark with octagonal dots (ä, ż, ǟ) gets them too.
+  const octagonal = new Set(glyphs.filter((gl) => gl.name.endsWith(`.${OCTAGONAL_DOTS}`)).map((gl) => gl.name.slice(0, -OCTAGONAL_DOTS.length - 1)));
+  for (let grown = true; grown; ) {
+    grown = false;
+    for (const gl of [...glyphs]) {
+      if (!gl.components.length || octagonal.has(gl.name) || gl.name.endsWith(`.${OCTAGONAL_DOTS}`) || !gl.components.some((c) => octagonal.has(c.glyph))) continue;
+      const variant: MasterGlyph = { ...gl, name: `${gl.name}.${OCTAGONAL_DOTS}`, components: gl.components.map((c) => (octagonal.has(c.glyph) ? { ...c, glyph: `${c.glyph}.${OCTAGONAL_DOTS}` } : c)) };
+      delete variant.unicode;
+      glyphs.push(variant);
+      octagonal.add(gl.name);
+      grown = true;
+    }
   }
   const master: Master = { family, style, weight, glyphs };
   glyphs.push(...codeLigatureGlyphs(master, place, italic ? ITALIC_SLOPE : 0, undarkened));

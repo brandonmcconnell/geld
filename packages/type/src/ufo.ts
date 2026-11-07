@@ -1,8 +1,9 @@
-import { ITALIC_SLOPE, METRICS, toFontUnits, UPM, WEIGHT_NAMES, type Weight, WEIGHTS, weightParams } from './grid';
+import { ITALIC_SLOPE, METRICS, toFontUnits, UNIT, UPM, WEIGHT_NAMES, type Weight, WEIGHTS, weightParams } from './grid';
 import { LOCL, type LoclLanguage } from './glyphs-cyrillic';
 import { FIGURE_NAMES, TABULAR_SIGNS } from './glyphs-figures';
 import { VIETNAMESE_PAIRS } from './marks';
 import type { Kerning } from './kerning';
+import { type Alternate, ALTERNATES, alternateName, CIRCLED_NUMERALS, OCTAGONAL_DOTS, STYLISTIC_SETS, type Swash, SWASHES, swashName } from './alternates';
 import { CODE_GROUPS, CODE_LIGATURES, CODE_OPERATORS, type CodeGroup, codePieceName } from './code-ligatures';
 import { LOCKUP } from './lockup';
 import { ARCH_LIGATURES, FAMILY_NAMES, type Family, type Master, type Style, TEXT_LIGATURES } from './master';
@@ -230,6 +231,7 @@ export function features(master: Master): string {
     .filter((g) => !g.mark && g.unicode !== undefined && /\p{Lu}/u.test(String.fromCodePoint(g.unicode)))
     .map((g) => g.name);
   const above = master.glyphs.filter((g) => g.mark && g.anchors.some((a) => a.name === '_top' || a.name === '_topright')).map((g) => g.name);
+  const alternates = alternateFeatures(master, names);
   return [
     'languagesystem DFLT dflt;',
     'languagesystem latn dflt;',
@@ -244,6 +246,7 @@ export function features(master: Master): string {
     `@CaseMarksCase = [${marks.map((m) => `${m}.case`).join(' ')}];`,
     `@Uppercase = [${upper.join(' ')}];`,
     '',
+    ...alternates.aalt,
     'feature ccmp {',
     "  sub i' @MarksAbove by dotlessi;",
     "  sub j' @MarksAbove by dotlessj;",
@@ -278,6 +281,14 @@ export function features(master: Master): string {
     ...arrowFeatures(names),
     ...codeLigatureFeatures(master, names),
     ...caseFeatures(master, names),
+    ...alternates.rest,
+    ...swashFeatures(master, names),
+    // Capital spacing (cpsp, off): half a unit each side of every capital, for text set in capitals.
+    'feature cpsp {',
+    `  pos @Uppercase <${UNIT / 2} 0 ${UNIT} 0>;`,
+    '} cpsp;',
+    // Ornaments (3.7), offered from the bullet: frames, bullets, a grid and the emblem.
+    ...(names.has('ornm01') ? ['feature ornm {', `  sub bullet from [${['ornm01', 'ornm02', 'ornm03', 'ornm04', 'ornm05', 'uniE000'].filter((n) => names.has(n)).join(' ')}];`, '} ornm;'] : []),
     // Only as a word of its own: Geldern, Geldbörse and Gelder keep their letters.
     ...(names.has(LOCKUP.name)
       ? [
@@ -405,6 +416,81 @@ function caseFeatures(master: Master, names: Set<string>): string[] {
     ...forms.map((n) => `  sub ${n} by ${n}.case;`),
     '} case;',
   ];
+}
+
+/**
+ * The alternates' features (alternates.ts): each stylistic set and character variant with its name, `salt` with every
+ * glyph's first alternate, and `aalt` (first, as the spec asks) with all of them. Accented letters go with their base.
+ */
+function alternateFeatures(master: Master, names: Set<string>): { aalt: string[]; rest: string[] } {
+  const owned = new Map<Alternate, [string, string][]>();
+  for (const alt of ALTERNATES) {
+    const name = alternateName(alt);
+    if (!names.has(name)) continue;
+    const suffix = name.slice(alt.glyph.length);
+    const accented = master.glyphs
+      .filter((g) => g.name.endsWith(suffix) && g.components[0]?.glyph === name && names.has(g.name.slice(0, -suffix.length)))
+      .map((g) => [g.name.slice(0, -suffix.length), g.name] as [string, string]);
+    owned.set(alt, [[alt.glyph, name], ...accented]);
+  }
+  if (!owned.size && !names.has(`period.${OCTAGONAL_DOTS}`)) return { aalt: [], rest: [] };
+  const subs = (pairs: [string, string][]) => pairs.map(([a, b]) => `  sub ${a} by ${b};`);
+  const rest: string[] = [];
+  // Octagonal dots are drawn for every glyph with dots rather than listed (master.ts).
+  const dotted = [...names].filter((n) => n.endsWith(`.${OCTAGONAL_DOTS}`) && names.has(n.slice(0, -OCTAGONAL_DOTS.length - 1)) && !/\.(ss|cv)\d\d\./.test(n));
+  for (const [tag, label] of Object.entries(STYLISTIC_SETS)) {
+    const pairs = [
+      ...[...owned].filter(([alt]) => alt.set === tag).flatMap(([, ps]) => ps),
+      ...(tag === OCTAGONAL_DOTS ? dotted.map((n) => [n.slice(0, -OCTAGONAL_DOTS.length - 1), n] as [string, string]) : []),
+      ...(tag === CIRCLED_NUMERALS ? FIGURE_NAMES.filter((f) => names.has(`${f}circle`)).map((f) => [f, `${f}circle`] as [string, string]) : []),
+    ];
+    if (pairs.length) rest.push(`feature ${tag} {`, `  featureNames { name "${label}"; };`, ...subs(pairs), `} ${tag};`);
+  }
+  // One block per cv, which may take several glyphs (' and " are one variant).
+  const byCv = new Map<string, { label: string; pairs: [string, string][] }>();
+  for (const [alt, pairs] of owned) byCv.set(alt.cv, { label: byCv.get(alt.cv)?.label ?? alt.label, pairs: [...(byCv.get(alt.cv)?.pairs ?? []), ...pairs] });
+  for (const [cv, { label, pairs }] of [...byCv].sort(([a], [b]) => a.localeCompare(b)))
+    rest.push(`feature ${cv} {`, `  cvParameters { FeatUILabelNameID { name "${label}"; }; };`, ...subs(pairs), `} ${cv};`);
+  const all = new Map<string, string[]>();
+  for (const pairs of owned.values()) for (const [a, b] of pairs) all.set(a, [...(all.get(a) ?? []), b]);
+  rest.push('feature salt {', ...[...all].map(([a, bs]) => `  sub ${a} by ${bs[0]};`), '} salt;');
+  return { aalt: ['feature aalt {', ...[...all].map(([a, bs]) => `  sub ${a} from [${bs.join(' ')}];`), '} aalt;', ''], rest };
+}
+
+/**
+ * Swashes (alternates.ts): swsh, init and fina each take theirs outright; cswh puts entries and the capitals that
+ * reach back at a word's start and exits at its end, never before or after another letter; the italic's ss18 is cswh
+ * by name, since swashes belong most naturally to the italic.
+ */
+function swashFeatures(master: Master, names: Set<string>): string[] {
+  const present = SWASHES.filter((sw) => names.has(swashName(sw)) && names.has(sw.glyph));
+  if (!present.length) return [];
+  const subs = (list: Swash[]) => list.map((sw) => `  sub ${sw.glyph} by ${swashName(sw)};`);
+  const letterNames = new Set(master.glyphs.filter((g) => g.unicode !== undefined && /\p{L}/u.test(String.fromCodePoint(g.unicode))).map((g) => g.name));
+  const letters = master.glyphs.filter((g) => letterNames.has(g.name) || letterNames.has(g.name.split('.')[0]!)).map((g) => g.name);
+  const start = present.filter((sw) => sw.kind === 'init' || (sw.kind === 'swsh' && sw.starts));
+  const end = present.filter((sw) => sw.kind === 'fina');
+  const out = [`@SwashLetters = [${letters.join(' ')}];`];
+  for (const kind of ['swsh', 'init', 'fina'] as const) {
+    const list = present.filter((sw) => sw.kind === kind);
+    if (list.length) out.push(`feature ${kind} {`, ...subs(list), `} ${kind};`);
+  }
+  out.push(
+    'lookup cswh_start {',
+    `  ignore sub @SwashLetters [${start.map((sw) => sw.glyph).join(' ')}]';`,
+    ...start.map((sw) => `  sub ${sw.glyph}' by ${swashName(sw)};`),
+    '} cswh_start;',
+    'lookup cswh_end {',
+    `  ignore sub [${end.map((sw) => sw.glyph).join(' ')}]' @SwashLetters;`,
+    ...end.map((sw) => `  sub ${sw.glyph}' by ${swashName(sw)};`),
+    '} cswh_end;',
+    'feature cswh {',
+    '  lookup cswh_start;',
+    '  lookup cswh_end;',
+    '} cswh;',
+  );
+  if (master.style === 'italic') out.push('feature ss18 {', '  featureNames { name "Italic swashes"; };', '  lookup cswh_start;', '  lookup cswh_end;', '} ss18;');
+  return out;
 }
 
 /** Every file of one master's UFO, keyed by its path inside the .ufo folder. */

@@ -242,6 +242,51 @@ def check_code_ligatures(path: Path, data: bytes, weight: int, cases: list[dict]
         check(got == names, f"{path.name} at {weight}: {text!r} with {features} shaped {got}")
 
 
+def check_alternates(path: Path, data: bytes, weight: int, cases: list[dict]) -> None:
+    """Every alternate under each of its features, its character unchanged without them, an accented letter with its
+    base (á under ss01), and every set and cv named in the font for the apps that list them."""
+    for case in cases:
+        plain = [n for n, _ in shape(data, weight, case["char"])]
+        check(plain != [case["glyph"]], f"{path.name} at {weight}: {case['char']} is {case['glyph']} by default")
+        for feature in case["features"]:
+            got = [n for n, _ in shape(data, weight, case["char"], features={feature: True})]
+            check(got == [case["glyph"]], f"{path.name} at {weight}: {case['char']} with {feature} shaped {got}")
+    got = [n for n, _ in shape(data, weight, "12", features={"ss17": True})]
+    check(got == ["onecircle", "twocircle"], f"{path.name} at {weight}: 12 with ss17 shaped {got}")
+    got = [n for n, _ in shape(data, weight, "iä", features={"ss07": True})]
+    check(got == ["i.ss07", "adieresis.ss07"], f"{path.name} at {weight}: iä with ss07 shaped {got}")
+    if any(c["glyph"] == "a.ss01" for c in cases):
+        got = [n for n, _ in shape(data, weight, "á", features={"ss01": True})]
+        check(got == ["aacute.ss01"], f"{path.name} at {weight}: á with ss01 shaped {got}")
+    italic = "Italic" in path.name
+    for text, features, names in (
+        ("A", {"swsh": True}, ["A.swsh"]),
+        ("g", {"swsh": True}, ["g.swsh"]),
+        ("l", {"init": True}, ["l.init"]),
+        ("n", {"fina": True}, ["n.fina"]),
+        ("Mann", {"cswh": True}, ["M.swsh", "a", "n", "n.fina"]),
+        ("lane", {"cswh": True}, ["l.init", "a", "n", "e.fina"]),
+        ("Kant", {"cswh": True}, ["K", "a", "n", "t.fina"]),
+        ("lane", {}, ["l", "a", "n", "e"]),
+        ("•", {"ornm": True}, ["ornm01"]),
+        ("\ue000\ue001", {}, ["uniE000", "uniE001"]),
+        *((("lane", {"ss18": True}, ["l.init", "a", "n", "e.fina"]),) if italic else ()),
+    ):
+        got = [n for n, _ in shape(data, weight, text, features=features)]
+        check(got == names, f"{path.name} at {weight}: {text} with {features} shaped {got}")
+    _, plain = shape_total(data, weight, "HH", {"kern": False})
+    _, spaced = shape_total(data, weight, "HH", {"kern": False, "cpsp": True})
+    check(spaced - plain == 100, f"{path.name} at {weight}: cpsp spaced HH by {spaced - plain}, not 100")
+    font = TTFont(path)
+    tags = {r.FeatureTag: r.Feature for r in font["GSUB"].table.FeatureList.FeatureRecord}
+    for case in cases:
+        for feature in case["features"]:
+            if feature == "salt":
+                continue
+            params = tags[feature].FeatureParams
+            check(params is not None, f"{path.name}: {feature} has no name for apps to show")
+
+
 def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None:
     font = TTFont(path)
     cmap = set(font.getBestCmap())
@@ -272,6 +317,7 @@ def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None
         check_kerning(path, data, int(weight), expected["kerning"])
         check_ligatures(path, data, int(weight))
         check_code_ligatures(path, data, int(weight), expected["codeLigatures"])
+        check_alternates(path, data, int(weight), expected["alternates"])
 
 
 def main() -> None:

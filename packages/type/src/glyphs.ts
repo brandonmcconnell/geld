@@ -1,5 +1,7 @@
+import { alternateDefs, swashDefs } from './alternates';
 import type { GlyphDef, SpaceDef } from './draw';
 import { AFRICAN } from './glyphs-african';
+import { BOX_DRAWING, DINGBATS, ORNAMENTS } from './glyphs-dingbats';
 import { DRAWN_SIGNS, FIGURES, LOWER, NOTDEF, ON_LETTERS, PUNCTUATION, TRADEMARK, UPPER } from './glyphs-core';
 import { CYRILLIC, CYRILLIC_LOCL } from './glyphs-cyrillic';
 import { figureSets, figureVariants, signScripts, tabularSigns } from './glyphs-figures';
@@ -28,9 +30,12 @@ const DRAWN: GlyphDef[] = [
   ...CYRILLIC,
   ...CYRILLIC_LOCL,
   ...GREEK,
+  ...DINGBATS,
+  ...BOX_DRAWING,
+  ...ORNAMENTS,
 ];
 
-export const GLYPHS: GlyphDef[] = [...DRAWN, ...figureSets(FIGURES), ...tabularSigns(DRAWN), ...signScripts(DRAWN), ...smallCaps(DRAWN)];
+export const GLYPHS: GlyphDef[] = [...DRAWN, ...alternateDefs(DRAWN), ...swashDefs(DRAWN), ...figureSets(FIGURES), ...tabularSigns(DRAWN), ...signScripts(DRAWN), ...smallCaps(DRAWN)];
 
 /** Spaces, in grid units of a 20-unit em: the quads and fixed spaces as Unicode defines them, the figure space as wide as a tabular figure, the punctuation space as a period. */
 export const SPACES: SpaceDef[] = [

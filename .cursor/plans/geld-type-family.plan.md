@@ -97,7 +97,7 @@ Starting stems in grid units, vertical cap stems, to be tuned in Phase 3:
 ### 2.4 Corners
 - [ ] Cut corners only (D1). Every glyph's cuts follow the cut rule (2.2).
 - [ ] Confusable pairs checked anyway: O 0 D Q, I l 1 |, rn m, cl d, S 5, Z 2, B 8, G 6.
-- [ ] The emblem drawn as a glyph (3.7).
+- [x] The emblem drawn as a glyph (3.7): the logomark from `assets/brand` at the capitals' height, the same at every weight and upright in italic, the dark mark in Geld Dark Sans.
 
 ### 2.5 Italic
 - [x] The slanted grid at 1:7 (D9), leaning around the middle of the x-height so glyphs stay centred. `post.italicAngle`, `hhea` caret slope and `OS/2` fsSelection italic.
@@ -181,11 +181,11 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [ ] Arrowheads built on the grid's 45°. Every arrow shares one shaft thickness and one head per weight, which is also what the ligated arrows (5.3) use, so a typed `->` and a real → match.
 
 ### 3.7 Shapes, marks and dingbats
-- [ ] Geometric shapes: ■ □ ▪ ▫ ▬ ▲ △ ▶ ▷ ▼ ▽ ◀ ◁ ◆ ◇ ○ ● ◉ ◌ ◐ ◑ ◒ ◓ ◢ ◣ ◤ ◥, each in a cut version too. (Done: GF Latin Plus's ■ □ ▪ ▫, the sixteen triangles, ◆ ◇ ◊ ○ ● ◦ ◌, as solid and hollow shapes with cut corners.)
-- [ ] Checks and marks: ✓ ✔ ✗ ✘ ✕ ✖ ★ ☆ ☐ ☑ ☒ ♥ ⚑ ⚠.
-- [ ] Box drawing and block elements, a basic set in Sans (the full set is Mono's, section 19).
-- [ ] Ornaments (`ornm`): the Geld emblem, cut-corner frames, bullets and grid patterns.
-- [ ] Private Use Area: the emblem at U+E000 and the wordmark lockup at U+E001, documented.
+- [x] Geometric shapes: ■ □ ▪ ▫ ▬ ▲ △ ▶ ▷ ▼ ▽ ◀ ◁ ◆ ◇ ○ ● ◉ ◌ ◐ ◑ ◒ ◓ ◢ ◣ ◤ ◥, each in a cut version too (the shapes carry the cut corners; the square-cornered versions come with the square style, D1).
+- [x] Checks and marks: ✓ ✔ ✗ ✘ ✕ ✖ ★ ☆ ☐ ☑ ☒ ♥ ⚑ ⚠.
+- [x] Box drawing and block elements, a basic set in Sans (the full set is Mono's, section 19): light and heavy lines, corners, tees and crosses, █ ▀ ▄ ▌ ▐ ░ ▒ ▓, in a 12-unit cell over the whole line box, upright in italic and not inset in Geld Dark Sans so they join from cell to cell.
+- [x] Ornaments (`ornm`, from the bullet): the Geld emblem, cut-corner frames, bullets and a grid pattern.
+- [x] Private Use Area: the emblem at U+E000 and the wordmark lockup at U+E001 (documented here; the usage guide is to repeat it).
 
 ### 3.8 Greek and Cyrillic (v1, D10)
 - [x] Greek (GF Greek Core): monotonic. Letters shared with Latin are the Latin glyph as a component, capitals with tonos set it before the letter.
@@ -258,33 +258,33 @@ Default in Sans per D13. Mono turns most of them on by default (section 19).
 ## 6. Alternates
 
 ### 6.1 Stylistic sets (named in the font, so apps show their names)
-- [ ] `ss01` Single-storey a.
-- [ ] `ss02` Double-storey g (or single-storey, whichever is not the default after Phase 2).
-- [ ] `ss03` Disambiguation: a tailed l, a barred I, a slashed 0 and a 1 with a base.
-- [ ] `ss04` Open digits: open 4, straight-backed 6 and 9, a flat-topped 3.
-- [ ] `ss05` Alternate R, K and M (splayed M, straight-legged R).
-- [ ] `ss06` Straight y and j tails.
-- [ ] `ss07` Dot shape: square, octagon or diamond.
-- [ ] `ss08` Italic exit strokes on n m h i u l.
-- [ ] `ss09` The wordmark's letterforms, for setting Geld brand text, if they differ from the defaults.
+- [x] `ss01` Single-storey a (roman only: the italic's a is single-storey already).
+- [x] `ss02` Double-storey g (the default is single-storey): a bowl at the x-height with an ear, a link and a loop under the baseline, its horizontals capped at 2.4 units so both counters stay open at Black.
+- [x] `ss03` Disambiguation: a tailed l (roman; the italic's is tailed), a barred I, a slashed 0 and a 1 with a base.
+- [x] `ss04` Open digits: open 4, straight-backed 6 and 9, a flat-topped 3.
+- [x] `ss05` Alternate R, K and M: splayed M (the w turned over), a K with both arms from the stem, and an R with its leg from the stem (a straight vertical leg was tried and read as an A in this octagonal style).
+- [x] `ss06` Straight y and j tails (the roman y is straight already, so its alternate is the italic's).
+- [x] `ss07` Dot shape: octagonal dots in place of the square ones, drawn for every glyph and mark with dots and followed by every composite built on them (314 glyphs). A diamond is not offered yet.
+- [x] `ss08` Italic exit strokes on n m h i u (the italic's l has its tail already); italic only.
+- [x] `ss09` The wordmark's letterforms, for setting Geld brand text, if they differ from the defaults: they do not (SemiBold G E L D are the logo's letters point for point, checked), so ss09 stays unused and the logo itself is the `dlig` lockup.
 - [x] `ss10` Dash ligatures (5.3).
 - [x] `ss11` to `ss16` Code ligature groups (5.3).
-- [ ] `ss17` Circled numerals.
-- [ ] `ss18` reserved.
+- [x] `ss17` Circled numerals: ⓪ ①–⑨ encoded, an octagonal ring around the denominator figure, and ss17 maps the figures to them.
+- [x] `ss18` Italic swashes (6.3), in the italic fonts.
 - [ ] `ss19` reserved.
-- [ ] `ss20` No arrow ligatures (5.2).
+- [x] `ss20` No arrow ligatures (5.2).
 
 ### 6.2 Character variants (`cv01` to `cv40` or so, each with a name)
-- [ ] One `cv` per alternate glyph, so a single character can change without a whole set: a, g, G (spur or bar), J, K, M, Q (tail styles), R, W (crossed or plain), t (cut or square foot), f, l, I, y, ß (and the sharp-s capital), 0, 1, 3, 4, 6, 7 (with or without crossbar), 9, $, &, @, %, *, ?, !, ¶, # (slanted or upright), { } (style), and quotes (straight or slanted).
-- [ ] `salt` mapping to each glyph's first alternate, for apps that only offer one switch.
-- [ ] `aalt` listing every alternate, for the glyph palettes in InDesign and Illustrator.
+- [ ] One `cv` per alternate glyph, so a single character can change without a whole set (done: cv01–cv36 for a, g, l, I, 0, 1, j, y, 4, 6, 9, 3, R, K, M, italic n m h i u, G, J, Q, W, t, f, 7, $, #, quotes, *, ß, %, ?, ¶ and { }, each named in the font; a two-bowled capital ẞ was dropped since it reads as B; still to come: &, @ and !): a, g, G (spur or bar), J, K, M, Q (tail styles), R, W (crossed or plain), t (cut or square foot), f, l, I, y, ß (and the sharp-s capital), 0, 1, 3, 4, 6, 7 (with or without crossbar), 9, $, &, @, %, *, ?, !, ¶, # (slanted or upright), { } (style), and quotes (straight or slanted).
+- [x] `salt` mapping to each glyph's first alternate, for apps that only offer one switch.
+- [x] `aalt` listing every alternate, for the glyph palettes in InDesign and Illustrator. Accented letters follow their base in every set and cv (á under ss01), an alternate keeps its letter's anchors, and `verify.py` checks every alternate under its set, cv and salt in every compiled font.
 
 ### 6.3 Swashes
-- [ ] Swash caps (`swsh`): A, J, K, M, N, Q, R, Y, and as many more as the language works for in Phase 7.
-- [ ] Lowercase swashes: entry forms (`init`) for ascenders d h k l, exit forms (`fina`) for a e n m t, and descender swashes for g j p q y.
-- [ ] Contextual swashes (`cswh`): only at the start or end of a word, never beside a colliding letter (2.8).
-- [ ] Italic swashes as their own set, since swashes belong most naturally in italic.
-- [ ] Titling alternates (`titl`) for caps at display sizes, if Phase 7 shows a need.
+- [x] Swash caps (`swsh`): A, J, K, M, N, Q, R, Y, each its letter with a flourish (a foot, a sweep under the baseline, a run-on tail), placed and spaced as the letter with the flourish hanging into the space beside it. More can follow where Phase 7 finds the language works.
+- [x] Lowercase swashes: entry forms (`init`) for ascenders b d h k l, exit forms (`fina`) for a e n m t, and descender swashes for g j p q y (in `swsh`).
+- [x] Contextual swashes (`cswh`): only at the start or end of a word, never beside a colliding letter (2.8): entries and the capitals that reach back (A J M N Y) at a word's start, exits at its end; K and R, whose feet run forward into the next letter, stay in `swsh` only.
+- [x] Italic swashes as their own set, since swashes belong most naturally in italic: `ss18` ("Italic swashes"), in the italic fonts, runs the contextual swashes by name.
+- [ ] Titling alternates (`titl`) for caps at display sizes, if Phase 7 shows a need (not yet shown).
 
 ## 7. OpenType features
 
@@ -300,7 +300,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 | `calt` | Arrows, contextual punctuation, code ligature pieces | on |
 | `rvrn` | Heavy-weight substitutions in variable fonts (3.4) | on |
 | `case` | Case-sensitive forms | off |
-| `cpsp` | Capital spacing | off |
+| `cpsp` | Capital spacing: half a unit each side of every capital (done, checked in every compiled font) | off |
 | `dlig` | Discretionary and code ligatures | off |
 | `smcp`, `c2sc` | Small caps (D14) | off |
 | `lnum`, `onum` | Lining (default) and oldstyle figures | lining |
@@ -316,7 +316,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 | `titl` | Titling forms | off |
 | `ornm` | Ornaments (3.7) | off |
 
-- [ ] Feature names stored in the font for every `ss` and `cv` (`featureNames` and `cvParameters`), so Figma, InDesign and macOS show "Single-storey a" rather than "ss01".
+- [x] Feature names stored in the font for every `ss` and `cv` (`featureNames` and `cvParameters`), so Figma, InDesign and macOS show "Single-storey a" rather than "ss01". Checked in every compiled font.
 - [ ] Lookup order documented, since `ss20` and the swash rules depend on it.
 - [ ] CSS mapping documented: `font-variant-numeric`, `-caps`, `-ligatures`, `-alternates` and `font-feature-settings`.
 
