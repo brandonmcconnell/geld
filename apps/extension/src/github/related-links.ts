@@ -1,0 +1,362 @@
+import { browser } from 'wxt/browser';
+import { isDependencyUpdate, relatedLinksFrom } from '@geld/review/related-links';
+import type { LinkCandidate, RelatedKind, RelatedLink } from '@geld/review/related-links';
+import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
+import { pageFetch } from './page-fetch';
+import { descriptionBody } from './review/description';
+import { refDetails } from './review/refs';
+import type { RefState } from './review/refs';
+import {
+  ICON_ALERT,
+  ICON_COMMENT_DISCUSSION,
+  ICON_COPILOT,
+  ICON_FILE,
+  ICON_GIT_MERGE,
+  ICON_GIT_PULL_REQUEST,
+  ICON_GIT_PULL_REQUEST_CLOSED,
+  ICON_GIT_PULL_REQUEST_DRAFT,
+  ICON_ISSUE_CLOSED,
+  ICON_ISSUE_OPENED,
+  ICON_LINK_EXTERNAL,
+} from './ui/icons';
+
+/**
+ * "Related links" in the pull request's sidebar, under Assignees: the tickets, chat threads, agent sessions, review
+ * tools and docs the description links to (and Linear's linkback comment), read by `@geld/review`'s registry.
+ */
+
+const SECTION_CLASS = 'geld-related';
+
+/** The headings of GitHub's own sidebar sections, which tell the sidebar's list apart from whatever holds it. */
+const SECTION_HEADING = /^(?:activity|reviewers|assignees|labels|projects|milestones?|development|deployments|notifications|participants|\d+ participants?)$/i;
+
+const HEADINGS = 'h2, h3, h4, summary, [role="heading"], .discussion-sidebar-heading';
+
+const KIND_ICONS: Readonly<Record<RelatedKind, string>> = {
+  ticket: ICON_ISSUE_OPENED,
+  conversation: ICON_COMMENT_DISCUSSION,
+  agent: ICON_COPILOT,
+  review: ICON_LINK_EXTERNAL,
+  doc: ICON_FILE,
+  error: ICON_ALERT,
+};
+
+const words = (element: Element): string => (element.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+/** A link's target and the words it shows, its pictures' alt text included (a badge is an image in a link). */
+function candidateOf(link: HTMLAnchorElement): LinkCandidate | null {
+  const raw = link.getAttribute('href') ?? '';
+  let href: string;
+  try {
+    href = new URL(raw, location.href).href;
+  } catch {
+    return null;
+  }
+  const alts = [...link.querySelectorAll('img[alt]')].map((image) => image.getAttribute('alt') ?? '');
+  return { href, text: [words(link), ...alts].join(' ').trim() };
+}
+
+function linksIn(root: ParentNode): LinkCandidate[] {
+  return [...root.querySelectorAll<HTMLAnchorElement>('a[href]')]
+    .filter((link) => link.closest(`pre, [${OWN_UI_ATTRIBUTE}]`) === null)
+    .map(candidateOf)
+    .filter((candidate) => candidate !== null);
+}
+
+/** The description's links, or none for a dependency update, whose links are the upstream projects' release notes. */
+function descriptionLinks(body: ParentNode & Node): LinkCandidate[] {
+  return isDependencyUpdate(body.textContent ?? '') ? [] : linksIn(body);
+}
+
+/**
+ * Linear's linkback comment ("<!-- linear-linkback -->", the issue's key linked) names the issue when the description
+ * does not. Its author link leads to `/apps/linear` in either conversation; the comment is the nearest box above it
+ * that holds rendered Markdown.
+ */
+function linearLinkbacks(): LinkCandidate[] {
+  return [...document.querySelectorAll('a[href$="/apps/linear"]')].flatMap((author) => {
+    if (author.closest(`.markdown-body, [${OWN_UI_ATTRIBUTE}]`) !== null) return [];
+    let box: Element | null = author.parentElement;
+    for (let depth = 0; box !== null && depth < 8; depth++, box = box.parentElement) {
+      const body = box.querySelector('.markdown-body, .comment-body');
+      if (body !== null) return linksIn(body);
+    }
+    return [];
+  });
+}
+
+/** How long a fetched description stands before it is read again: an edit shows within this. */
+const FETCHED_DESCRIPTION_MS = 2 * 60 * 1000;
+
+/**
+ * The description where the page does not hold it as the conversation does (GitHub's Overview page renders it through
+ * its Markdown viewer, sometimes in a side panel): GitHub's own `page_data/description`, the JSON that page loads,
+ * `bodyHtml` read into a detached document so nothing in it loads or runs.
+ */
+interface Fetched {
+  pull: string;
+  at: number;
+  pending: boolean;
+  body: Document | null;
+}
+
+const fetched: Fetched = { pull: '', at: 0, pending: false, body: null };
+
+async function readJson(answer: Response): Promise<unknown> {
+  if (!answer.ok) return null;
+  const value: unknown = await answer.json();
+  return value;
+}
+
+function pullPath(): string | null {
+  return /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(location.pathname)?.[0] ?? null;
+}
+
+function fetchedDescription(onChange: () => void): Document | null {
+  const pull = pullPath();
+  if (pull === null) return null;
+  if (fetched.pull !== pull) Object.assign(fetched, { pull, at: 0, pending: false, body: null });
+  if (!fetched.pending && Date.now() - fetched.at > FETCHED_DESCRIPTION_MS) {
+    fetched.pending = true;
+    void pageFetch(`${pull}/page_data/description`, { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'GitHub-Verified-Fetch': 'true' }, credentials: 'same-origin' })
+      .then(readJson)
+      .catch(() => null)
+      .then((value: unknown) => {
+        if (fetched.pull !== pull) return;
+        const html = typeof value === 'object' && value !== null && 'bodyHtml' in value && typeof value.bodyHtml === 'string' ? value.bodyHtml : null;
+        const before = fetched.body?.body.innerHTML ?? null;
+        Object.assign(fetched, { at: Date.now(), pending: false, body: html === null ? fetched.body : new DOMParser().parseFromString(html, 'text/html') });
+        if ((fetched.body?.body.innerHTML ?? null) !== before) onChange();
+      });
+  }
+  return fetched.body;
+}
+
+/** Every related link the page holds, in the registry's order. Exported for its test. */
+export function relatedLinksOnPage(onChange: () => void = () => undefined): RelatedLink[] {
+  const body = descriptionBody() ?? fetchedDescription(onChange)?.body ?? null;
+  const pull = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(location.pathname);
+  const repository = pull === null ? null : `${pull[1] ?? ''}/${pull[2] ?? ''}`;
+  return relatedLinksFrom([...(body === null ? [] : descriptionLinks(body)), ...linearLinkbacks()], {
+    githubHosts: [location.hostname],
+    repository,
+    self: pull === null ? null : `${repository ?? ''}#${pull[3] ?? ''}`,
+  });
+}
+
+const isHeading = (element: Element): boolean => SECTION_HEADING.test(words(element));
+
+/** Pickers and menus GitHub opens over the page repeat a section's title ("Assignees" over the list of people). */
+const OVERLAYS = '[role="dialog"], [role="menu"], [role="listbox"], [popover], .Overlay, #__primerPortalRoot__, details-menu, .select-menu-modal';
+
+/** A sidebar section's own title: its first heading, which names it. */
+const titleOf = (section: Element): Element | null => section.querySelector(HEADINGS);
+
+/**
+ * Every Assignees section on the page, each found by its heading and climbed to the child of the list that holds
+ * the other sections (two or more of them titled as GitHub's are). So the Rails sidebar (`.discussion-sidebar-item`,
+ * an `h3` signed out, a `summary` signed in) and the Overview page's (`section[data-overview-sidebar-item]` with an
+ * `h4`, or an `h4 > button > span` with a gear) are found alike. Exported for its test.
+ */
+export function assigneesSections(): HTMLElement[] {
+  const found = new Set<HTMLElement>();
+  for (const heading of document.querySelectorAll(HEADINGS)) {
+    if (words(heading).toLowerCase() !== 'assignees' || heading.closest(`.markdown-body, [${OWN_UI_ATTRIBUTE}], ${OVERLAYS}`) !== null) continue;
+    let section: Element = heading;
+    for (let depth = 0; depth < 6 && section.parentElement !== null && section.parentElement !== document.body; depth++) {
+      const list = section.parentElement;
+      const others = [...list.children].filter((child) => child !== section && !child.hasAttribute(OWN_UI_ATTRIBUTE) && (() => {
+        const title = titleOf(child);
+        return title !== null && isHeading(title);
+      })());
+      if (others.length >= 2) {
+        if (section instanceof HTMLElement && titleOf(section) === heading) found.add(section);
+        break;
+      }
+      section = list;
+    }
+  }
+  return [...found];
+}
+
+/** A row: the link, and for GitHub's own issues and pull requests what GitHub's hovercard says of it. */
+type RelatedRow = RelatedLink & { readonly state: RefState | null };
+
+/** GitHub's glyph for an issue or pull request in each state, in GitHub's colour for it. */
+const STATE_GLYPHS: Readonly<Record<RefState, { readonly icon: string; readonly tone: string; readonly word: string }>> = {
+  open: { icon: ICON_GIT_PULL_REQUEST, tone: 'open', word: 'Open' },
+  draft: { icon: ICON_GIT_PULL_REQUEST_DRAFT, tone: 'draft', word: 'Draft' },
+  merged: { icon: ICON_GIT_MERGE, tone: 'done', word: 'Merged' },
+  closed: { icon: ICON_GIT_PULL_REQUEST_CLOSED, tone: 'closed', word: 'Closed' },
+  'issue-open': { icon: ICON_ISSUE_OPENED, tone: 'open', word: 'Open' },
+  'issue-closed': { icon: ICON_ISSUE_CLOSED, tone: 'done', word: 'Closed' },
+  unknown: { icon: ICON_ISSUE_OPENED, tone: 'unknown', word: '' },
+};
+
+const NOUN_GLYPHS: Readonly<Record<string, string>> = { issue: ICON_ISSUE_OPENED, 'pull request': ICON_GIT_PULL_REQUEST, discussion: ICON_COMMENT_DISCUSSION };
+
+/**
+ * GitHub's own references get their title and state from GitHub's hovercard (`refs.ts`, once per reference per
+ * visit), when they live on this page's host; `onChange` asks for a pass when one lands.
+ */
+function rowsOf(links: readonly RelatedLink[], onChange: () => void): RelatedRow[] {
+  return links.map((link) => {
+    if (!link.key.startsWith('github:') || new URL(link.href).hostname !== location.hostname) return { ...link, state: null };
+    const details = refDetails(link.href, onChange);
+    return details === null ? { ...link, state: null } : { ...link, title: details.title, state: details.state };
+  });
+}
+
+function glyphOf(icon: string, tone: string): Element {
+  const glyph = svgFromString(icon);
+  glyph.classList.add(`${SECTION_CLASS}__mark`);
+  glyph.setAttribute('data-tone', tone);
+  return glyph;
+}
+
+function markOf(link: RelatedRow): Element {
+  if (link.key.startsWith('github:')) {
+    if (link.state !== null) return glyphOf(STATE_GLYPHS[link.state].icon, STATE_GLYPHS[link.state].tone);
+    return glyphOf(NOUN_GLYPHS[link.noun] ?? ICON_ISSUE_OPENED, 'unknown');
+  }
+  if (link.appId !== null) {
+    return createElement('img', { class: `${SECTION_CLASS}__mark ${SECTION_CLASS}__mark--app`, src: `https://avatars.githubusercontent.com/in/${link.appId}?s=32&v=4`, alt: '', width: '16', height: '16' });
+  }
+  if (link.icon !== null) {
+    return createElement('img', { class: `${SECTION_CLASS}__mark`, src: browser.runtime.getURL(`/tracker-icons/${link.icon}.svg`), alt: '', width: '16', height: '16' });
+  }
+  const glyph = svgFromString(KIND_ICONS[link.kind]);
+  glyph.classList.add(`${SECTION_CLASS}__mark`, 'fgColor-muted');
+  return glyph;
+}
+
+/**
+ * What a row says: the identifier and title when the link names either ("LIM-1391 Fix the nav"), else what following
+ * it does ("Open issue in Linear", "View workspace in Replicas"), the service being in its mark. Exported for its test.
+ */
+export function relatedText(link: RelatedLink): string {
+  const named = [link.ref, link.title].filter((part) => part !== null && part !== '');
+  return named.length > 0 ? named.join(' ') : link.action;
+}
+
+function rowOf(link: RelatedRow): HTMLElement {
+  const named = link.ref !== null || link.title !== null;
+  const state = link.state === null ? null : STATE_GLYPHS[link.state].word || null;
+  const tip = [state, link.action, link.title, link.context].filter((part) => part !== null && part !== '').join(' · ');
+  const parts = named
+    ? [
+        ...(link.ref === null ? [] : [createElement('span', { class: `${SECTION_CLASS}__ref` }, [link.ref])]),
+        ...(link.title === null ? [] : [createElement('span', { class: `${SECTION_CLASS}__title` }, [link.title])]),
+      ]
+    : [createElement('span', { class: `${SECTION_CLASS}__action` }, [link.action])];
+  const label = `${state === null ? '' : `${state}. `}${named ? `${relatedText(link)}. ${link.action}` : link.action}`;
+  const anchor = createElement('a', { class: `${SECTION_CLASS}__link`, href: link.href, target: '_blank', rel: 'noopener noreferrer', title: tip, 'aria-label': link.context === null ? label : `${label}, ${link.context}` }, [
+    markOf(link),
+    createElement('span', { class: `${SECTION_CLASS}__text` }, parts),
+  ]);
+  return createElement('li', { class: `${SECTION_CLASS}__item`, 'data-kind': link.kind }, [anchor]);
+}
+
+const TITLE = 'Related links';
+
+/** How many rows show before "Show N more": a description that links a dozen tickets should not push Labels off screen. */
+export const SHOWN_LINKS = 8;
+
+/** Whether the reader asked for every row on this page; kept across redraws, forgotten on teardown. */
+let showAll = false;
+
+function listOf(links: readonly RelatedRow[]): HTMLElement {
+  const rows = links.map(rowOf);
+  const list = createElement('ul', { class: `${SECTION_CLASS}__list` }, rows);
+  const extra = rows.slice(SHOWN_LINKS);
+  if (extra.length === 0 || showAll) return list;
+  for (const row of extra) row.hidden = true;
+  const more = createElement('button', { type: 'button', class: `btn-link ${SECTION_CLASS}__more` }, [`Show ${extra.length} more`]);
+  more.addEventListener('click', () => {
+    showAll = true;
+    for (const row of extra) row.hidden = false;
+    more.parentElement?.remove();
+  });
+  list.append(createElement('li', { class: `${SECTION_CLASS}__item` }, [more]));
+  return list;
+}
+
+/** The Rails sidebar's item: `div.discussion-sidebar-item` with an `h3.discussion-sidebar-heading`. */
+function railsSection(links: readonly RelatedRow[]): HTMLElement {
+  return createElement('div', { class: `discussion-sidebar-item ${SECTION_CLASS}`, [OWN_UI_ATTRIBUTE]: '', 'data-geld-shape': 'rails' }, [
+    createElement('h3', { class: `discussion-sidebar-heading text-bold ${SECTION_CLASS}__heading` }, [TITLE]),
+    listOf(links),
+  ]);
+}
+
+/**
+ * The Overview page's section (GitHub's `SidebarSection`): `<section aria-label data-overview-sidebar-item>` holding
+ * a header `div` with the title's `h4` and a content `div`, every class a CSS module's, so each is taken from the page.
+ * The title's class is the leaf that reads the neighbour's title (the `h4`, or the `span` inside a gear's button), the
+ * header's from a section whose header is the plain `div > h4`, the content's from the neighbour's last child.
+ */
+function overviewSection(neighbour: HTMLElement, links: readonly RelatedRow[]): HTMLElement {
+  const name = words(titleOf(neighbour) ?? neighbour);
+  const leaf = [...neighbour.querySelectorAll('h2, h3, h4, span')].find((element) => element.childElementCount === 0 && words(element) === name);
+  const plainHeader = neighbour.parentElement?.querySelector(':scope > [data-overview-sidebar-item] > div:first-child:has(> h4:only-child)') ?? null;
+  const content = neighbour.lastElementChild;
+  return createElement('section', { class: SECTION_CLASS, 'aria-label': TITLE, 'data-overview-sidebar-item': '', [OWN_UI_ATTRIBUTE]: '', 'data-geld-shape': 'overview' }, [
+    createElement('div', { class: plainHeader?.className ?? '' }, [createElement('h4', { class: `${leaf?.className ?? ''} ${SECTION_CLASS}__heading`.trim() }, [TITLE])]),
+    createElement('div', { class: content !== null && content !== titleOf(neighbour)?.parentElement ? content.className : '' }, [listOf(links)]),
+  ]);
+}
+
+/** Any other sidebar: the neighbour's tag and classes, and its title's. */
+function sectionLike(neighbour: HTMLElement, links: readonly RelatedRow[]): HTMLElement {
+  if (neighbour.classList.contains('discussion-sidebar-item')) return railsSection(links);
+  if (neighbour.hasAttribute('data-overview-sidebar-item')) return overviewSection(neighbour, links);
+  const section = document.createElement(neighbour.localName);
+  section.className = `${neighbour.className} ${SECTION_CLASS}`.trim();
+  section.setAttribute(OWN_UI_ATTRIBUTE, '');
+  const theirs = titleOf(neighbour);
+  const level = theirs !== null && /^H[2-4]$/.test(theirs.tagName) ? theirs.localName : 'h3';
+  const heading = document.createElement(level);
+  heading.className = theirs === null || level !== theirs.localName ? 'discussion-sidebar-heading text-bold' : theirs.className;
+  heading.classList.add(`${SECTION_CLASS}__heading`);
+  heading.textContent = TITLE;
+  section.append(heading, listOf(links));
+  return section;
+}
+
+/** Our section after each Assignees section, keyed by it, with the links it was drawn from. */
+let mounted = new Map<HTMLElement, { readonly section: HTMLElement; readonly signature: string }>();
+
+export function removeRelatedLinks(): void {
+  for (const { section } of mounted.values()) section.remove();
+  mounted = new Map();
+  for (const stray of document.querySelectorAll(`.${SECTION_CLASS}[${OWN_UI_ATTRIBUTE}]`)) stray.remove();
+  showAll = false;
+}
+
+/**
+ * Draw, move back into place or take away the sections. Writes only where the links or the place changed. `onChange`
+ * asks for another pass when a description read from GitHub lands.
+ */
+export function applyRelatedLinks(active: boolean, onChange: () => void = () => undefined): void {
+  const afters = active ? assigneesSections() : [];
+  const links = afters.length === 0 ? [] : rowsOf(relatedLinksOnPage(onChange), onChange);
+  if (links.length === 0) {
+    if (mounted.size > 0) removeRelatedLinks();
+    return;
+  }
+  const signature = JSON.stringify(links);
+  const next = new Map<HTMLElement, { readonly section: HTMLElement; readonly signature: string }>();
+  for (const after of afters) {
+    const known = mounted.get(after);
+    if (known !== undefined && known.signature === signature && known.section.isConnected && after.nextElementSibling === known.section) {
+      next.set(after, known);
+      continue;
+    }
+    known?.section.remove();
+    const section = sectionLike(after, links);
+    after.after(section);
+    next.set(after, { section, signature });
+  }
+  for (const [after, { section }] of mounted) if (!next.has(after)) section.remove();
+  mounted = next;
+}

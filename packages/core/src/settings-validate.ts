@@ -72,6 +72,7 @@ const BOOLEAN_KEYS = [
   'holdToMerge',
   'collapseDescription',
   'attachmentLightbox',
+  'relatedLinks',
   'aiEnabled',
   'aiJev',
 ] as const;

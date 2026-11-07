@@ -38,6 +38,13 @@ const CURSOR_AGENT =
 const CLAUDE = '<p dir="auto">🤖 Generated with <a href="https://claude.com/claude-code">Claude Code</a></p>';
 const DEVIN = '<p dir="auto">Link to Devin session: <a href="https://app.devin.ai/sessions/854b1146">https://app.devin.ai/sessions/854b1146</a></p>';
 
+// mintlify/mint#14542's footer as GitHub renders `<div align="center">` and the co-author line under it.
+const REPLICAS =
+  '<div align="center" dir="auto"><sub>Created by <b>Brandon McConnell</b> (<a href="mailto:brandon@mintlify.com">brandon@mintlify.com</a>) with <a href="https://replicas.dev" rel="nofollow">Replicas</a></sub><br>' +
+  '<br><a href="https://app.replicas.dev/workspaces/9e2a6c22-c7ad-49f7-8219-fe70dd1c8010" rel="nofollow"><img alt="Replicas Workspace" src="w.svg"></a>&nbsp;' +
+  '<a href="https://mintlify.slack.com/archives/C0BCMJ9JFA9/p1793123214352139?thread_ts=1793123214.352139&amp;cid=C0BCMJ9JFA9" rel="nofollow"><img alt="Slack Thread" src="s.svg"></a></div>' +
+  '<p dir="auto">Co-Authored-By: replicas-connector[bot] <a href="mailto:replicas-connector[bot]@users.noreply.github.com">replicas-connector[bot]@users.noreply.github.com</a></p>';
+
 const at = (id: string, start: number, end: number, title: number | null = null): { id: string; start: number; end: number; title: number | null } => ({ id, start, end, title });
 const spans = (html: string): ReturnType<typeof at>[] => toolBlocksOf(blocksOf(html)).map(({ id, start, end, title }) => ({ id, start, end, title }));
 
@@ -69,6 +76,12 @@ describe('toolBlocksOf', () => {
       at('claude-code', 3, 4),
       at('devin', 5, 5),
     ]);
+  });
+
+  it('finds Replicas’ footer with the rule above it and its co-author line under it', () => {
+    expect(spans(`<p>mine</p>${CLAUDE}<hr>${REPLICAS}${BUGBOT}`)).toEqual([at('claude-code', 1, 1), at('replicas', 2, 4), at('bugbot', 5, 5)]);
+    expect(spans(`${REPLICAS.replace('</p>', '')}<br>Co-Authored-By: replicas-dev[bot]</p><p>Co-Authored-By: Replicas &lt;1+tryreplicas@users.noreply.github.com&gt;</p><p>mine</p>`)).toEqual([at('replicas', 0, 2)]);
+    expect(spans('<div align="center"><sub>Built with <a href="https://replicas.dev">Replicas</a> in mind</sub></div>')).toEqual([]);
   });
 
   it('names each tool and the mark it wears', () => {
