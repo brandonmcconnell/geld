@@ -609,6 +609,52 @@ describe('the tab bar button', () => {
     expect(document.querySelector<HTMLElement>('.geld-quick-review__bypass')?.hidden).toBe(false);
   });
 
+  it('opens a stack’s menu on the page’s own merge box, the choices that take other members joining as their boxes land', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    let release: () => void = () => undefined;
+    const others = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = pathOf(input);
+        if (url.endsWith('/page_data/stacks')) return new Response(JSON.stringify({ stack: { pulls: [9, 7].map((number) => ({ number, title: `PR ${number}`, state: 'OPEN', url: `/acme/widgets/pull/${number}` })) } }), { status: 200 });
+        if (url.includes('/page_data/merge_box')) {
+          if (url.includes('/pull/9/')) await others;
+          const payload: unknown = JSON.parse(mergeBox('BLOCKED', true, { convert: true }));
+          const requirements: unknown = typeof payload === 'object' && payload !== null ? Reflect.get(payload, 'mergeRequirements') : null;
+          if (typeof requirements !== 'object' || requirements === null) throw new Error('fixture');
+          Reflect.set(requirements, 'conditions', [{ type: 'STACK', result: 'PASSED', isStacked: true }]);
+          return new Response(JSON.stringify(payload), { status: 200 });
+        }
+        return new Response('{}', { status: 404 });
+      }),
+    );
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 6; i += 1) await settle();
+    pill()?.click();
+    expect(menuRows()).toEqual([
+      ['draft', 'Convert to draft'],
+      ['closed', 'Close'],
+      ['', 'Loading stack choices…'],
+    ]);
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="close"]')?.click();
+    expect([...document.querySelectorAll('.geld-quick-review__status-submenu .geld-quick-review__menu-label')].map((label) => label.textContent)).toEqual(['This pull request']);
+    release();
+    for (let i = 0; i < 6; i += 1) await settle();
+    // The open menu takes the full reading in place.
+    expect(document.querySelector('.geld-quick-review__status-menu')).not.toBeNull();
+    expect(menuRows()).toEqual([
+      ['draft', 'Convert to draft'],
+      ['closed', 'Close'],
+    ]);
+    document.querySelector<HTMLButtonElement>('.geld-quick-review__status-menu [data-action="close"]')?.click();
+    expect([...document.querySelectorAll('.geld-quick-review__status-submenu .geld-quick-review__menu-label')].map((label) => label.textContent)).toEqual(['This pull request', 'Entire stack']);
+  });
+
   it('groups a stack’s menu by type, each opening its choices beside it, and confirms one that changes several', async () => {
     window.localStorage.clear();
     resetStatusHints();
@@ -944,6 +990,43 @@ describe('the tab bar button', () => {
     for (let i = 0; i < 3; i += 1) await settle();
     // The squash commit stays out of a merge commit's fields.
     expect(title.value).toBe('');
+  });
+
+  it('fills a menu whose mini-header pill GitHub re-rendered while the options were on their way', async () => {
+    window.localStorage.clear();
+    resetStatusHints();
+    rememberStatusHint('acme/widgets', true);
+    let answer: () => void = () => undefined;
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (!pathOf(input).includes('/page_data/merge_box')) return new Response('{}', { status: 404 });
+        await answered;
+        return new Response(mergeBox('MERGEABLE', true, { convert: true }), { status: 200 });
+      }),
+    );
+    const mini = '<button type="button" aria-haspopup="true"><span data-component="StateLabel" data-status="pullOpened" data-size="small">Open</span></button>';
+    document.body.insertAdjacentHTML('afterbegin', `<div data-testid="diff-comparison-viewer-sticky-header-slot"><div class="metadata">${mini}</div></div>`);
+    withLabel('Open', 'pullOpened');
+    mount();
+    for (let i = 0; i < 3; i += 1) await settle();
+    const miniPill = (): HTMLButtonElement | null => document.querySelector<HTMLButtonElement>('[data-testid="diff-comparison-viewer-sticky-header-slot"] button[data-geld-status-pill]');
+    miniPill()?.click();
+    expect(document.querySelector('.geld-quick-review__status-menu')?.getAttribute('data-placeholder')).toBe('loading');
+    // GitHub re-renders the mini header: its button goes, and with it the pill's place.
+    const slot = document.querySelector('[data-testid="diff-comparison-viewer-sticky-header-slot"] .metadata');
+    slot?.replaceChildren();
+    answer();
+    for (let i = 0; i < 4; i += 1) await settle();
+    slot?.insertAdjacentHTML('beforeend', mini);
+    reassertStatusPills();
+    const menu = document.querySelector('.geld-quick-review__status-menu');
+    expect(menu?.hasAttribute('data-placeholder')).toBe(false);
+    expect(menuRows().map((row) => row[1])).toContain('Convert to draft');
+    expect(miniPill()?.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('opens the status menu with a line that says why when there is nothing to offer', async () => {

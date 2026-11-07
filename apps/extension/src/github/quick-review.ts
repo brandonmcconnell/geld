@@ -8,7 +8,7 @@ import type { HeaderStatGroup } from './header-stats';
 import { countsSkeletonStandIn, countsWrapperBusy, isCountsStandIn } from './header-stats';
 import { detectHeadSha } from './head-sha';
 import type { MergeActions, MergeBox, MergeMethod, StatusAction } from './merge-actions';
-import { actionErrorText, autoMergeRequest, closeRequest, draftRequest, fetchMergeBox, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, methodHint, readMergeActions, queueRequest, readyRequest, rememberMethod, reopenRequest, stackQueueRequest, viewerVerdict } from './merge-actions';
+import { actionErrorText, autoMergeRequest, closeRequest, draftRequest, fetchMergeBox, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, methodHint, prefetchMergeBox, readMergeActions, queueRequest, readyRequest, rememberMethod, reopenRequest, stackQueueRequest, viewerVerdict } from './merge-actions';
 import type { PageInfo } from './page';
 import { pullRequestStateWords } from './page';
 import type { PendingComment } from './pending-review';
@@ -17,8 +17,8 @@ import { inlineText } from './review/inline-text';
 import type { SidebarReviewer, SidebarReviewerState } from './review/crawler';
 import { catchUpAfterPost } from './review/timeline-catchup';
 import type { ReviewTally } from './review-tally';
-import type { PullStatus, StackAction, StackChoice, StackGroup, StatusOption } from './status-pill';
-import { ATTR_INSTANT_MERGE, rememberStatusHint, removeStatusPills, showMergedPills, STATUS_INFO, stackConfirmWords, stackGroups, statusHint, statusOf, statusOptions, syncStatusPills } from './status-pill';
+import type { PillPlace, PullStatus, StackAction, StackChoice, StackGroup, StatusOption } from './status-pill';
+import { ATTR_INSTANT_MERGE, labelBehind, pillPlace, rememberStatusHint, removeStatusPills, showMergedPills, STATUS_INFO, stackConfirmWords, stackGroups, statusHint, statusOf, statusOptions, syncStatusPills } from './status-pill';
 import { fetchReviewers, REVIEW_BY_HASH, REVIEWS_HASH, reviewLink, standingReviewers, tallyOf, tallyWords } from './review-tally';
 import { ICON_ALERT_FILL_12, ICON_CHECK, ICON_CHECK_SEND, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CODE_REVIEW, ICON_CODE_REVIEW_SEND, ICON_COMMENT, ICON_COMMENT_SEND, ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_SPINNER, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_X, ICON_X_SEND } from './ui/icons';
 import { pageFetch } from './page-fetch';
@@ -320,6 +320,8 @@ interface Mounted {
   pills: readonly HTMLButtonElement[];
   /** The pill the status menu, or a box chosen from it, came from: the box hangs under it and focus goes back to it. */
   statusOpener: HTMLButtonElement | null;
+  /** Where the opener stood when the menu opened, for the pill that takes its place when GitHub re-renders it. */
+  statusOpenerPlace: PillPlace | null;
   statusMenu: HTMLElement | null;
   /** Ends the open status menu's listeners. */
   statusMenuKeys: AbortController | null;
@@ -335,8 +337,10 @@ interface Mounted {
   /** What the merge box last said the reader may do, for {@link mergeFor}; null until read. */
   mergeActions: MergeActions | null;
   mergeFor: string | null;
-  /** A merge box read is in flight: the status menu says "Loading options…" rather than nothing. */
+  /** A merge box read is in flight, or a retry is waiting: the status menu says "Loading options…" rather than nothing. */
   mergeLoading: boolean;
+  /** The read of `mergeInFlight`'s pull request is out now: a click waits for it rather than starting another. */
+  mergeInFlight: string | null;
   /** Each read of the merge box takes the next number: an answer from a read a newer one replaced is dropped, whatever order they land in. */
   mergeRead: number;
   /** Failed reads in a row for this pull request: the next waits `MERGE_RETRY_MS` doubled per failure, up to `MERGE_RETRIES`. */
@@ -650,6 +654,7 @@ function createControls(pullPath: string, context: QuickReviewContext): Mounted 
     opener: null,
     pills: [],
     statusOpener: null,
+    statusOpenerPlace: null,
     statusMenu: null,
     statusMenuKeys: null,
     tally,
@@ -660,6 +665,7 @@ function createControls(pullPath: string, context: QuickReviewContext): Mounted 
     mergeActions: null,
     mergeFor: null,
     mergeLoading: false,
+    mergeInFlight: null,
     mergeRead: 0,
     mergeRetries: 0,
     stateWords: null,
@@ -901,9 +907,16 @@ async function loadMergeActions(state: Mounted): Promise<MergeActions | null> {
     showReviewers();
   });
   state.mergeLoading = true;
+  state.mergeInFlight = pullPath;
   const repo = repoOf(pullPath);
-  const actions = await readMergeActions(pullPath, repo === null ? 'SQUASH' : methodHint(repo));
+  const actions = await readMergeActions(pullPath, repo === null ? 'SQUASH' : methodHint(repo), (partial) => {
+    if (!current()) return;
+    state.mergeActions = partial;
+    showStatus(state);
+    refreshOpenMenu(state);
+  });
   if (!current()) return null;
+  state.mergeInFlight = null;
   // GitHub answers 503 in waves: a failed read is tried again in seconds, the menu still loading meanwhile, rather than
   // after the minute's refresh with "could not be read" in between.
   const retrying = actions === null && state.mergeRetries < MERGE_RETRIES;
@@ -925,6 +938,31 @@ async function loadMergeActions(state: Mounted): Promise<MergeActions | null> {
     retrying ? MERGE_RETRY_MS * 2 ** (state.mergeRetries - 1) : MERGE_REFRESH_MS,
   );
   return actions;
+}
+
+const PREFETCH_WAIT_MS = 5000;
+
+/**
+ * The page's merge box asked for as the content script starts, before the controls are mounted, which waits on GitHub
+ * drawing its header: the first read then takes that answer (`readMergeActions`). Only for a signed-in reader, which
+ * the head's `user-login` meta says as soon as it streams in (GitHub's `logged_in` cookie is HttpOnly).
+ */
+export function prefetchStatusOptions(path: string = window.location.pathname): void {
+  const pullPath = pullPathOf(path);
+  if (pullPath === null) return;
+  const settle = (): boolean => {
+    const login = document.querySelector<HTMLMetaElement>('meta[name="user-login"]');
+    if (login === null) return false;
+    const repo = repoOf(pullPath);
+    if (login.content !== '') prefetchMergeBox(pullPath, repo === null ? 'SQUASH' : methodHint(repo));
+    return true;
+  };
+  if (settle()) return;
+  const watch = new MutationObserver(() => {
+    if (settle()) watch.disconnect();
+  });
+  watch.observe(document, { childList: true, subtree: true });
+  window.setTimeout(() => watch.disconnect(), PREFETCH_WAIT_MS);
 }
 
 /** The last reading of each pull request's merge box this page made, so coming back to one shows its menu at once. */
@@ -1186,7 +1224,21 @@ function showStatus(state: Mounted): void {
   // success dresses them as merged until the reload.
   state.pills = syncStatusPills(on || holding || (state.sending && state.pills.length > 0), openFromPill);
   showInstantMerge(state);
-  if (state.statusMenu !== null && (state.statusOpener === null || !state.pills.includes(state.statusOpener))) closeStatusMenu(state);
+  if (state.statusMenu !== null && (state.statusOpener === null || !state.pills.includes(state.statusOpener))) {
+    // GitHub re-rendered its header (on the Overview about two seconds into a load, and the mini header as it scrolls)
+    // and the pill with it: the open menu goes to the pill that took its place, standing where the opener stood, rather
+    // than closing under the reader. Until GitHub has rendered that one, the menu stays where it is.
+    const opener = state.statusOpener;
+    const heir = state.pills.find((pill) => pillPlace(pill) === state.statusOpenerPlace) ?? null;
+    if (opener === null || opener.isConnected || state.pills.length === 0) closeStatusMenu(state);
+    else if (heir !== null) {
+      setStatusOpener(state, heir);
+      heir.setAttribute('aria-expanded', 'true');
+      positionStatusMenu(state);
+      // A reading that landed while the menu had no pill skipped it: the menu takes it now.
+      refreshOpenMenu(state);
+    }
+  }
 }
 
 /** Every pill's click: a pill may be put in place before the controls are mounted (`reassertStatusPills`). */
@@ -1238,7 +1290,7 @@ function showInstantMerge(state: Mounted): void {
 async function instantMerge(state: Mounted, pill: HTMLButtonElement): Promise<void> {
   closeStatusMenu(state);
   closePanel();
-  state.statusOpener = pill;
+  setStatusOpener(state, pill);
   const pullPath = state.pullPath;
   // What was read may be a minute old: an approval dismissed, a failing check or changes requested since must not merge in one click.
   for (const each of state.pills) each.setAttribute('aria-busy', 'true');
@@ -1291,19 +1343,26 @@ function repoOf(pullPath: string): string | null {
   return /^\/([^/]+\/[^/]+)\/pull\//.exec(pullPath)?.[1] ?? null;
 }
 
+/** The pill a menu or a 1-click merge belongs to, and where it stands, for the pill that takes its place. */
+function setStatusOpener(state: Mounted, pill: HTMLButtonElement): void {
+  state.statusOpener = pill;
+  state.statusOpenerPlace = pillPlace(pill);
+}
+
 function toggleStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
   const same = state.statusMenu !== null && state.statusOpener === pill;
   closeStatusMenu(state);
   if (same || state.sending) return;
   closePanel();
-  state.statusOpener = pill;
+  setStatusOpener(state, pill);
   if (state.mergeActions !== null) {
     openStatusMenu(state, pill);
     return;
   }
-  // Opened before the merge box answered (on the hint, or after a read that failed): the read starts first, so the menu
-  // says it is loading, and the options take its place when they land.
-  void loadMergeActions(state);
+  // Opened before the merge box answered (on the hint, or after a read that failed): a read starts unless one is under
+  // way, so the menu says it is loading, and the options take its place when they land. Starting another over the one
+  // under way threw that one's answer away and waited for a whole new read.
+  if (state.mergeInFlight !== state.pullPath) void loadMergeActions(state);
   openStatusMenu(state, pill);
 }
 
@@ -1403,6 +1462,10 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
     item.addEventListener('pointerenter', () => openSubmenu(item, group, false));
     menu.append(item);
   }
+  // The page's own choices are in; a merge past the rules and the stack's choices that take other members are on their way.
+  if (actions?.partial === true) {
+    menu.append(createElement('div', { class: 'geld-quick-review__menu-item geld-quick-review__menu-empty', role: 'menuitem', 'aria-disabled': 'true', 'data-more-loading': '' }, [createElement('span', { class: 'geld-quick-review__menu-label' }, [groups !== null ? 'Loading stack choices…' : 'Loading more options…'])]));
+  }
   const keys = new AbortController();
   state.statusMenu = menu;
   state.statusMenuKeys = keys;
@@ -1424,9 +1487,10 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
         closeSubmenu(true);
       } else if (event.key === 'Escape') {
         event.preventDefault();
-        const label = pill.previousElementSibling;
+        const opener = state.statusOpener ?? pill;
+        const label = labelBehind(opener);
         closeStatusMenu(state);
-        returnStatusFocus(state, pill, label);
+        returnStatusFocus(state, opener, label);
       } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
         const list = inSubmenu && submenu !== null ? [...submenu.querySelectorAll<HTMLButtonElement>('.geld-quick-review__menu-item')] : items();
@@ -1448,7 +1512,7 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
     'pointerdown',
     (event) => {
       const target = event.target;
-      if (target instanceof Node && (menu.contains(target) || pill.contains(target))) return;
+      if (target instanceof Node && (menu.contains(target) || (state.statusOpener ?? pill).contains(target))) return;
       closeStatusMenu(state);
     },
     { capture: true, signal: keys.signal },
@@ -1458,7 +1522,7 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
     'focusout',
     (event) => {
       const next = event.relatedTarget;
-      if (next instanceof Node && (menu.contains(next) || pill.contains(next))) return;
+      if (next instanceof Node && (menu.contains(next) || (state.statusOpener ?? pill).contains(next))) return;
       closeStatusMenu(state);
     },
     { signal: keys.signal },
@@ -1502,7 +1566,8 @@ function placeSubmenu(item: HTMLElement, submenu: HTMLElement): void {
 function positionStatusMenu(state: Mounted): void {
   const menu = state.statusMenu;
   const pill = state.statusOpener;
-  if (menu === null || pill === null) return;
+  // A pill GitHub took away with its header: the menu waits where it is for the pill that takes its place.
+  if (menu === null || pill === null || !pill.isConnected) return;
   const rect = pill.getBoundingClientRect();
   const left = Math.max(8, Math.min(rect.left, document.documentElement.clientWidth - menu.offsetWidth - 8));
   menu.style.left = `${Math.round(left)}px`;
@@ -1512,8 +1577,8 @@ function positionStatusMenu(state: Mounted): void {
 /** What a status menu offers, to tell whether a fresh read changed it. */
 function menuSignature(actions: MergeActions | null): string {
   const groups = stackMenuOf(actions);
-  if (groups !== null) return JSON.stringify(groups.map((group) => [group.action, group.note, group.choices.map((choice) => [choice.scope, choice.count, choice.targets.map((target) => target.number)])]));
-  return JSON.stringify(actions === null ? null : flatStatusOptions(actions).map((option) => [option.action, option.note, option.bypass === true]));
+  if (groups !== null) return JSON.stringify([actions?.partial === true, groups.map((group) => [group.action, group.note, group.choices.map((choice) => [choice.scope, choice.count, choice.targets.map((target) => target.number)])])]);
+  return JSON.stringify([actions?.partial === true, actions === null ? null : flatStatusOptions(actions).map((option) => [option.action, option.note, option.bypass === true])]);
 }
 
 /**

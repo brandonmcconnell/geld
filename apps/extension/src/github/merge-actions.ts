@@ -402,17 +402,47 @@ async function readStackMembers(pullPath: string): Promise<readonly StackMember[
   }
 }
 
+interface MemberBoxes {
+  /** Filled as each lands, so a reading can be made before the slowest. */
+  readonly boxes: ReadonlyMap<number, MergeBox>;
+  readonly done: Promise<void>;
+  readonly settled: () => boolean;
+}
+
 /** Every member's merge box but the page's own, which the caller reads and adds. */
-async function memberBoxes(members: readonly StackMember[]): Promise<Map<number, MergeBox>> {
+function memberBoxes(members: readonly StackMember[]): MemberBoxes {
   const boxes = new Map<number, MergeBox>();
-  await Promise.all(
+  let settled = false;
+  const done = Promise.all(
     members.map(async (member) => {
       if (member.current) return;
       const read = await fetchMergeBox(member.path, 'SQUASH', false);
       if (read !== null) boxes.set(member.number, read);
     }),
-  );
-  return boxes;
+  ).then(() => {
+    settled = true;
+  });
+  return { boxes, done, settled: () => settled };
+}
+
+const PREFETCH_FRESH_MS = 10_000;
+const prefetched = new Map<string, { readonly method: MergeMethod; readonly at: number; readonly box: Promise<MergeBox | null> }>();
+
+/**
+ * Ask for the page's merge box as the content script starts, before GitHub has drawn the header the controls wait for:
+ * GitHub's own status menu on the Overview reads its box at load, and Geld's first read started half a second after.
+ */
+export function prefetchMergeBox(pullPath: string, method: MergeMethod): void {
+  // One no read took (the controls never mounted) is spent once stale, or a visit back to the pull request asked nothing.
+  const known = prefetched.get(pullPath);
+  if (known !== undefined && Date.now() - known.at < PREFETCH_FRESH_MS) return;
+  prefetched.set(pullPath, { method, at: Date.now(), box: fetchMergeBox(pullPath, method, false) });
+}
+
+function takePrefetched(pullPath: string, method: MergeMethod): Promise<MergeBox | null> | null {
+  const entry = prefetched.get(pullPath);
+  prefetched.delete(pullPath);
+  return entry !== undefined && entry.method === method && Date.now() - entry.at < PREFETCH_FRESH_MS ? entry.box : null;
 }
 
 export interface MergeActions {
@@ -424,6 +454,8 @@ export interface MergeActions {
   readonly bypass: boolean;
   /** The direct methods the bypass may use, as the box read past the rules lists them (a queue's repository may allow none otherwise). */
   readonly bypassMethods: readonly MergeMethod[];
+  /** Some members' boxes are still on their way: choices that take them are not offered yet. */
+  readonly partial?: true;
 }
 
 /**
@@ -438,32 +470,47 @@ const lastStacked = new Map<string, boolean>();
  * `method` is the repository's default as last read, asked for first so the box needs no second read for its commit.
  * A stack's members have their boxes read beside this one's, so the menu waits on one box, not a chain.
  */
-export async function readMergeActions(pullPath: string, method: MergeMethod = 'SQUASH'): Promise<MergeActions | null> {
+export async function readMergeActions(pullPath: string, method: MergeMethod = 'SQUASH', onPartial?: (actions: MergeActions) => void): Promise<MergeActions | null> {
   const known = lastStacked.get(pullPath);
   const embedded = known === undefined ? embeddedStack(pullPath) : null;
   const listed = embedded !== null && embedded !== 'none' ? Promise.resolve(embedded) : known === true ? readStackMembers(pullPath) : null;
-  const early = listed === null ? null : listed.then((members) => (members === null ? null : { members, boxes: memberBoxes(members) }));
-  const first = await fetchMergeBox(pullPath, method, false);
+  const early = listed === null ? null : listed.then((members) => (members === null ? null : { members, live: memberBoxes(members) }));
+  const first = await (takePrefetched(pullPath, method) ?? fetchMergeBox(pullPath, method, false));
   if (first === null) return null;
   const preferred = first.methods[0] ?? first.bypassMethods[0] ?? 'SQUASH';
   // Another method's commit title and message would be sent under this one: no reading is safer than that.
   const box = preferred === method ? first : await fetchMergeBox(pullPath, preferred, false);
   if (box === null) return null;
   lastStacked.set(pullPath, box.stacked);
-  const stackRead = async (): Promise<Stack | null> => {
+  const stackRead = async (): Promise<{ readonly members: readonly StackMember[]; readonly live: MemberBoxes } | null> => {
     if (!box.stacked) return null;
     const head = early === null ? null : await early;
-    const members = head?.members ?? (await readStackMembers(pullPath));
-    if (members === null) return null;
-    const boxes = new Map(await (head?.boxes ?? memberBoxes(members)));
-    const current = members.find((member) => member.current);
-    if (current !== undefined) boxes.set(current.number, box);
-    return { members, boxes };
+    if (head !== null) return head;
+    // A first read can start before GitHub has streamed its payload in; by the time the box is back it usually has.
+    const late = known === undefined ? embeddedStack(pullPath) : null;
+    const members = late !== null && late !== 'none' ? late : await readStackMembers(pullPath);
+    return members === null ? null : { members, live: memberBoxes(members) };
   };
   // Past the rules: where it is not mergeable, or where a queue stands in a direct merge's way.
-  const [asBypass, stack] = await Promise.all([box.canBypass && (!box.mergeable || box.canQueue) ? fetchMergeBox(pullPath, preferred, true) : Promise.resolve(null), stackRead()]);
+  const bypassRead = box.canBypass && (!box.mergeable || box.canQueue) ? fetchMergeBox(pullPath, preferred, true) : null;
+  const listedStack = await stackRead();
+  const stackNow = (): Stack | null => {
+    if (listedStack === null) return null;
+    const boxes = new Map(listedStack.live.boxes);
+    const current = listedStack.members.find((member) => member.current);
+    if (current !== undefined) boxes.set(current.number, box);
+    return { members: listedStack.members, boxes };
+  };
+  // The page's own box is what this pull request's choices need: they show now, and a merge past the rules and the
+  // stack's wider choices join when the box read past the rules and the other members' boxes land.
+  if (onPartial !== undefined && (bypassRead !== null || (listedStack !== null && !listedStack.live.settled()))) {
+    const offer = mergeOffer(box, null);
+    onPartial({ box, offer, bypass: false, bypassMethods: box.bypassMethods, stack: stackNow(), partial: true });
+  }
+  const asBypass = bypassRead === null ? null : await bypassRead;
+  await listedStack?.live.done;
   const offer = mergeOffer(box, asBypass);
-  return { box, offer, bypass: bypassBeside(box, asBypass, offer), bypassMethods: asBypass?.bypassMethods ?? box.bypassMethods, stack };
+  return { box, offer, bypass: bypassBeside(box, asBypass, offer), bypassMethods: asBypass?.bypassMethods ?? box.bypassMethods, stack: stackNow() };
 }
 
 /** The reason a merge or close failed, in GitHub's words when it gave any. */

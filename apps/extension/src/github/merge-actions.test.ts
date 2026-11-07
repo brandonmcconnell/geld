@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MergeSubmission } from './merge-actions';
-import { actionErrorText, autoMergeRequest, bypassBeside, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict, embeddedStack, methodHint, readMergeActions, rememberMethod } from './merge-actions';
+import { actionErrorText, autoMergeRequest, bypassBeside, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict, embeddedStack, methodHint, prefetchMergeBox, readMergeActions, rememberMethod } from './merge-actions';
 
 /** A `page_data/merge_box` answer as GitHub gave it on brandonmcconnell/geld#74 (Oct 2026), trimmed. */
 function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean; readonly email?: string; readonly emails?: readonly string[] | null; readonly conflict?: boolean; readonly methodStatus?: string } = {}): unknown {
@@ -334,5 +334,24 @@ describe('reading a stack', () => {
     const second = await readMergeActions('/o/r/pull/9', 'SQUASH');
     expect(asked.filter((path) => path.endsWith('/page_data/stacks'))).toHaveLength(1);
     expect(second?.stack?.members.map((member) => member.number)).toEqual([9]);
+  });
+});
+
+describe('the prefetched merge box', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('is asked for again once a prefetch no read took has gone stale', () => {
+    vi.useFakeTimers();
+    const asked = vi.fn(async () => new Response(JSON.stringify(payload())));
+    vi.stubGlobal('fetch', asked);
+    prefetchMergeBox('/o/r/pull/3', 'SQUASH');
+    prefetchMergeBox('/o/r/pull/3', 'SQUASH');
+    expect(asked).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(11_000);
+    prefetchMergeBox('/o/r/pull/3', 'SQUASH');
+    expect(asked).toHaveBeenCalledTimes(2);
   });
 });

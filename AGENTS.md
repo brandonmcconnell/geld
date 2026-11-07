@@ -691,7 +691,14 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   What Geld posts is left to the section's own live channel (`catchUpAfterPost` answers false there, so nothing reloads): a comment from the review group showed in the folded section, and in the digest, within half a second (geld#470, signed in, Nov 2026).
   **The sidebar's Reviewers** are `section[aria-label="Reviewers"] li[class*="reviewerRow"]`, the name in `[class*="reviewerName"]` linked to the profile (an App's to `/apps/<slug>`), the status icon's `aria-labelledby` tooltip saying the conversation sidebar's sentence (`overviewSidebarReviewers`).
   It has no request form, so the Reviews row's Request a review for people is the conversation's only.
-  **The status label is GitHub's own menu there** (a `button[aria-haspopup]` around the `StateLabel`, offering Convert to draft and Close pull request), so Geld leaves it and puts no pill in it: a pill inside that button passed every click to GitHub's menu, and its own never opened.
+  **The status label is GitHub's own menu there** (a `button[aria-haspopup]` around the `StateLabel`, offering Convert to draft and Close pull request), and Geld's pill takes its place as on every other tab: the button is hidden whole and the pill stands after it (`hostOf`, `labelBehind`), since a pill inside that button passed every click to GitHub's menu.
+  The owner chose (Nov 2026) to override it once Geld's menu was at least as quick: GitHub's offers neither the merge nor the stack's choices.
+  Measured signed in on geld#480 (a stack of three) and #470, from navigation to a menu with options, clicking the pill from the moment it shows: GitHub's own 2.17 to 2.29 s on #480;
+  Geld's 1.74 to 1.93 s there (this pull request's own choices first, the stack's joining moments later) and 1.45 to 1.62 s on #470.
+  GitHub re-renders the header about two seconds into a load, replacing its button, so the pill is made anew: an open menu is handed to the pill that took its place rather than closed (`showStatus`).
+  The Overview's mini header (`[data-testid="diff-comparison-viewer-sticky-header-slot"]`, stuck to the top once the page header scrolls away) has a status menu of its own, taken over the same way.
+  GitHub re-renders it as it scrolls, so a menu opened from it remembers where its opener stood (`pillPlace`, `statusOpenerPlace`) and goes to the pill that takes its place there, waiting where it is until GitHub has rendered that one: handed to the first pill in the page, it jumped to the page header's, scrolled out of sight.
+  A merge in place (GitHub's own merge button on the Overview) swaps the status button for a plain merged label rendered after Geld's pill, which no label then stood before, so the old "Open" pill stayed beside GitHub's "Merged" until a reload: every sync now removes a pill that is not after one of GitHub's labels (`syncStatusPills`).
   The comment box's writer comes from the conversation asked for by name (`?overview=false`), which a reader in the preview is otherwise not served: the parameter holds for that one request and changes no preference (checked signed in, Nov 2026).
   Not covered yet: the timeline events the Overview moved into its side panel (merges, force-pushes, review requests, cross-references;
   `page_data/timeline` has them), so the digest's "N timeline events" and mentions rows and its force-push rounds are the conversation's only.
@@ -1464,6 +1471,11 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `page_data/stacks` is read only where the payload says nothing.
   On geld#478 (a stack of two) everything was in 1.7 s after navigation where the chain took 3.1 s.
   A read that fails is tried again after 1.5, 3 and 6 s (`MERGE_RETRIES`), the menu saying "Loading options…" meanwhile, before it says the options could not be read.
+  **The page's own box is asked for before anything else** (`prefetchStatusOptions`, from the content script's start, as soon as the head's `user-login` meta says someone is signed in, since GitHub's `logged_in` cookie is HttpOnly;
+  `prefetchMergeBox`, taken by the first read within 10 s): the first read used to start only when the controls mounted, half a second after GitHub's own.
+  **The menu opens on that box alone** (`readMergeActions`' `onPartial`, `MergeActions.partial`): this pull request's own choices show as soon as its box and the stack's member list are in, with "Loading stack choices…" (or "Loading more options…") under them, and a merge past the rules and the stack's wider choices join when the box read past the rules and the other members' boxes land;
+  the open menu takes the full reading in place (`refreshOpenMenu`).
+  **A click never restarts a read under way** (`mergeInFlight`): a click before the options arrived started a second read, which threw the first one's answer away and waited for a whole new chain.
   The last reading of each pull request is kept for two minutes (`recentActions`), so coming back to one in the same tab shows its menu at once while it is read again.
   It is read again the moment the header's state label changes (`pullRequestStateWords` in `page.ts`, `Mounted.stateWords`, compared every pass): GitHub converts a draft, marks it ready, merges, closes and reopens in place, rewriting the label, and until the minute's read the menu offered what no longer applied.
   A label still empty while the header streams in is no change, so a page load reads once.
