@@ -2533,12 +2533,12 @@ html[data-geld-timeline='compact'] section:has(> [data-geld-folded] #overview-co
  * (`data-geld-top-card`, set before paint) and the page's own markup, so it holds from GitHub's first frame and
  * through the re-render that swaps the server-rendered boxes for React's, where attributes on the boxes were lost.
  */
-html[data-geld-top-card] [class*='CondensedForYouContainer']:has(+ section[aria-label='Description']) {
+html[data-geld-top-card] [class*='CondensedForYouContainer']:has(> section[aria-label='Recommended action']):has(+ section[aria-label='Description']) {
   border-bottom-left-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
 }
 
-html[data-geld-top-card] [class*='CondensedForYouContainer'] + section[aria-label='Description'] {
+html[data-geld-top-card] [class*='CondensedForYouContainer']:has(> section[aria-label='Recommended action']) + section[aria-label='Description'] {
   margin-top: calc(-1px - var(--geld-overview-gap, 24px)) !important;
   border-top-left-radius: 0 !important;
   border-top-right-radius: 0 !important;
@@ -2551,6 +2551,15 @@ html[data-geld-top-card] section[aria-label='Description']:has(+ .geld-review) {
 
 /* Comments and Approvals repeat the digest's threads meter and Reviews row, and Checks is the CI row's. */
 html[data-geld-top-card='folded'] [class*='CondensedForYouContainer'] > [class*='MiniStatusGrid'] {
+  display: none !important;
+}
+
+/*
+ * GitHub drops the status row when it has nothing to say (no checks, nothing to do): the card then holds only the
+ * folded mini statuses and would stand as its own two borders over the description, so it goes, and the description
+ * keeps its own top edge (the join above needs the row).
+ */
+html[data-geld-top-card='folded'] [class*='CondensedForYouContainer']:not(:has(> section[aria-label='Recommended action'])) {
   display: none !important;
 }
 
