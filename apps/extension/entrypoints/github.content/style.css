@@ -782,6 +782,16 @@ html[data-geld-quick-review] details.js-reviews-container {
   padding-left: 16px;
 }
 
+/* In the Overview's stuck mini header, before its divider and panel toggles. */
+.geld-quick-review[data-geld-place='mini'] {
+  align-self: center;
+}
+
+/* After "Merge status", spaced as GitHub spaces its own review button there (`tmp-ml-2`). */
+.geld-quick-review[data-geld-place='mini']:not(:first-child) {
+  margin-left: 8px;
+}
+
 .geld-quick-review[data-geld-place] .geld-quick-review__segment.btn {
   height: 28px;
 }
@@ -2488,10 +2498,54 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
   border: 0 !important;
 }
 
+/* The Overview's Comments entries: the same wait for the pass that reads them, once the digest stands above the description. */
+html[data-geld-timeline='compact']:has(.geld-review[data-geld-overview]) [data-component='Stack'] > [data-testid='timeline-item']:not([data-geld-seen]):not(.geld-review *) {
+  content-visibility: hidden !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+/* They stand in a column with a gap between them, which each folded entry would keep: the gap goes while folding. */
+html[data-geld-timeline='compact'] [data-component='Stack']:has(> [data-testid='timeline-item'][data-geld-folded]) {
+  gap: 0 !important;
+}
+
+html[data-geld-timeline='compact'] [data-component='Stack']:has(> [data-testid='timeline-item'][data-geld-folded]) > [data-testid='timeline-item']:not([data-geld-folded]) + [data-testid='timeline-item']:not([data-geld-folded]) {
+  margin-top: 16px;
+}
+
+/* The Comments section keeps room for its entries while they load: with its heading folded it holds nothing to wait for. */
+html[data-geld-timeline='compact'] section:has(> [data-geld-folded] #overview-comments) {
+  min-height: 0 !important;
+}
+
 /* The description card the panel grows out of: one box, shared border. */
 [data-geld-attached] {
   border-bottom-left-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
+}
+
+/* The Overview's status row heads the description: one box, the card's bottom border the line between them. */
+[data-geld-status-joined] {
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+[data-geld-joined-below] {
+  margin-top: calc(-1px - var(--geld-join-gap, 0px)) !important;
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
+
+/*
+ * GitHub's checks overlay under the top card stays open while the digest folds the card's mini statuses, its list lent
+ * to the CI row: the empty overlay, and the list for the moment before it is lent (after Escape reopens it), never show.
+ */
+html[data-geld-timeline='compact']:has(.geld-review[data-geld-overview]) [class*='OverlayPortalRoot']:has([role='group'][aria-label='Checks']) {
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 .geld-review [hidden] {
@@ -4187,6 +4241,13 @@ svg.geld-lucide {
   text-decoration: underline;
 }
 
+/* Under the Overview's digest there is no rail to clear: the line stands at the digest's end, a little in from its corner. */
+.geld-review[data-geld-overview] + .geld-review-nudge {
+  margin-bottom: 0;
+  padding-right: 12px;
+  text-align: right;
+}
+
 .geld-review-nudge a {
   color: inherit;
   text-decoration: underline;
@@ -5417,6 +5478,29 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 }
 
 /* ---- the body: GitHub's thread, laid out as messages ---- */
+
+/* The Overview fades a comment's box in as it mounts, and a move restarts the fade: in the panel it simply shows. */
+.geld-review article[data-geld-teleported],
+.geld-review [data-geld-teleported] article {
+  animation: none !important;
+}
+
+/* An Overview review's box holds its threads' boxes too: opened as the review's words, its threads are rows of their own. */
+.geld-review__chat[data-geld-chat='comment'] article[data-geld-teleported] article {
+  display: none !important;
+}
+
+/* An Overview thread's box in a chat: the chat is the box, and its head names the file GitHub's header repeats. */
+.geld-review__chat-body > article[data-geld-teleported] {
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.geld-review__chat-body > article[data-geld-teleported] > :first-child:has(h2 a[href*='/changes']) {
+  display: none !important;
+}
 
 /* GitHub's own thread header (chevron, path, "Show resolved") and its collapsed-thread controls: the chat's head says it. */
 .geld-review__chat-body review-thread-collapsible > .d-flex:first-child,
@@ -7764,6 +7848,26 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 [data-geld-desc][data-geld-desc-agents] {
   display: flex !important;
   flex-direction: column;
+}
+
+/*
+ * On the Overview the description's "Edited" menu floats beside it, and a column beside a float is narrowed for its
+ * whole height: the menu stands in the box's corner instead, the first block keeping room beside it (description.ts).
+ */
+section[aria-label='Description']:has([data-geld-desc-agents]) {
+  position: relative;
+}
+
+section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-desc-agents]) {
+  position: absolute;
+  top: 16px;
+  inset-inline-end: 16px;
+  float: none;
+  margin: 0;
+}
+
+[data-geld-desc][data-geld-desc-agents] > :first-child {
+  padding-inline-end: var(--geld-desc-meta-room, 0px);
 }
 
 /* 1 is "Show full description", between the author's cut text and the agents' (mirrored in description.ts). */
