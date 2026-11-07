@@ -27,10 +27,13 @@ import {
   tildeStroke,
 } from './draw';
 import type { PathPoint, Stroke } from './geometry';
+import { DARK_INSET_RATIO } from './grid';
 
 /** Arrows: one right-pointing arrow on the math axis, turned for the other seven directions. */
 const ARROW_LENGTH = 12;
 const HEAD = 4;
+/** Double arrows are longer, so the white between their bars still shows between two heads at Black. */
+const DOUBLE_LENGTH = 14;
 
 /** The shaft stops inside the head, so nothing shows through the point. */
 function arrowRight(heads: { start?: boolean; end?: boolean } = { end: true }): Stroke[] {
@@ -42,6 +45,36 @@ function arrowRight(heads: { start?: boolean; end?: boolean } = { end: true }): 
   if (heads.start) out.push(head(0, -1));
   return out;
 }
+
+/**
+ * Double arrows (⇒ ⇐ ⇔): the equals sign's two bars and a head grown by their spread, so its arms reach as far past the
+ * outer bar as a single arrow's reach past its shaft. Each bar ends on the arm's centre line, inside its ink.
+ */
+function doubleArrowRight(g: DrawContext, heads: { start?: boolean; end?: boolean } = { end: true }): { strokes: Stroke[]; length: number } {
+  const y = MATH_AXIS;
+  const spread = g.y(1.75) + g.h / 2;
+  const reach = spread + HEAD - 1;
+  // Two heads keep a stem's width of white between their arms' ends.
+  const length = heads.start && heads.end ? Math.max(DOUBLE_LENGTH, 2 * reach + 2 * g.v) : DOUBLE_LENGTH;
+  const from = heads.start ? spread : 0;
+  const to = heads.end ? length - spread : length;
+  const out: Stroke[] = [bar(from, to, y + spread), bar(from, to, y - spread)];
+  const head = (x: number, dir: 1 | -1) => open(p(x - dir * reach, y + reach), p(x, y), p(x - dir * reach, y - reach));
+  if (heads.end) out.push(head(length, 1));
+  if (heads.start) out.push(head(0, -1));
+  return { strokes: out, length };
+}
+
+const doubleArrow = (name: string, unicode: number, deg: number, heads?: { start?: boolean; end?: boolean }): GlyphDef => ({
+  name,
+  unicode,
+  lsb: 1,
+  rsb: 1,
+  draw: (g) => {
+    const { strokes, length } = doubleArrowRight(g, heads);
+    return rotate(strokes, deg, length / 2, MATH_AXIS);
+  },
+});
 
 const turned = (deg: number, heads?: { start?: boolean; end?: boolean }) => rotate(arrowRight(heads), deg, ARROW_LENGTH / 2, MATH_AXIS);
 
@@ -108,7 +141,84 @@ export function sigma(g: DrawContext, w: number): Stroke[] {
   return [bar(topStart, w, t), bar(bottomStart, w, b), withPen(level(open(p(e, g.cap), p(tip, half), p(e, 0))), g.diag)];
 }
 
+/**
+ * Arrow ligature pieces (D12): `->` stays two glyphs, a shaft for the hyphen and a head for the greater-than sign, drawn
+ * from the arrow itself and together exactly as wide as →, so the arrow is compact and each character keeps its own
+ * glyph for the caret and selection. A piece's shaft runs past its side into its neighbour's, by more than Geld Dark
+ * Sans's inset and on the half unit SemiBold snaps to, so no seam shows: the overlap is a negative sidebearing.
+ */
+const SPLIT = 5;
+const MIDDLE = 4;
+type Piece = 'start' | 'middle' | 'end' | 'head' | 'tail' | 'inner' | 'innertail';
+export const ARROW_PIECES: { name: string; piece: Piece; double: boolean }[] = [
+  { name: 'hyphen.arrow_start', piece: 'start', double: false },
+  { name: 'hyphen.arrow_middle', piece: 'middle', double: false },
+  { name: 'hyphen.arrow_end', piece: 'end', double: false },
+  { name: 'greater.arrow_head', piece: 'head', double: false },
+  { name: 'less.arrow_head', piece: 'tail', double: false },
+  { name: 'greater.arrow_inner', piece: 'inner', double: false },
+  { name: 'less.arrow_inner', piece: 'innertail', double: false },
+  { name: 'equal.arrow_start', piece: 'start', double: true },
+  { name: 'equal.arrow_middle', piece: 'middle', double: true },
+  { name: 'equal.arrow_end', piece: 'end', double: true },
+  { name: 'greater.arrow_dblhead', piece: 'head', double: true },
+  { name: 'less.arrow_dblhead', piece: 'tail', double: true },
+  { name: 'greater.arrow_dblinner', piece: 'inner', double: true },
+];
+
+function arrowPiece(name: string, piece: Piece, double: boolean): GlyphDef {
+  const into = (g: DrawContext) => Math.ceil((0.25 + g.v * DARK_INSET_RATIO) * 2) / 2;
+  const spread = (g: DrawContext) => g.y(1.75) + g.h / 2;
+  const shaft = (g: DrawContext, from: number, to: number): Stroke[] =>
+    double ? [bar(from, to, MATH_AXIS + spread(g)), bar(from, to, MATH_AXIS - spread(g))] : [bar(from, to, MATH_AXIS)];
+  // The head piece: the arrow's own head, and its shaft from the split to where the arrow's stops inside the head.
+  const head = (g: DrawContext): { strokes: Stroke[]; length: number } => {
+    const { strokes, length } = double ? doubleArrowRight(g) : { strokes: arrowRight(), length: ARROW_LENGTH };
+    const end = length - (double ? spread(g) : HEAD / 2);
+    return { strokes: [...shaft(g, SPLIT - into(g), end), ...strokes.slice(double ? 2 : 1)], length };
+  };
+  const joint = (g: DrawContext) => -into(g);
+  // The head behind the last one (->>): the shaft runs through its piece, and the tip stands back from the joint by
+  // part of a stem, so the two heads keep their white between them at every weight.
+  // As wide as the head and its set-back, so its arms start a unit before the piece, never past the shaft they sit on.
+  const reachOf = (g: DrawContext) => (double ? spread(g) + HEAD - 1 : HEAD);
+  const innerWidth = (g: DrawContext) => Math.max(MIDDLE, reachOf(g) + 0.75 * g.v - 1);
+  const inner = (g: DrawContext): Stroke[] => {
+    const reach = reachOf(g);
+    const tip = innerWidth(g) - 0.75 * g.v;
+    // The shaft starts behind the arms' ends, inside the piece before, so an arm never ends on the shaft's end.
+    return [...shaft(g, Math.min(-into(g), tip - reach - g.v), innerWidth(g) + into(g)), open(p(tip - reach, MATH_AXIS + reach), p(tip, MATH_AXIS), p(tip - reach, MATH_AXIS - reach))];
+  };
+  const framed = (g: DrawContext) => ({ origin: 0, advance: innerWidth(g) });
+  switch (piece) {
+    case 'start':
+      return { name, lsb: 1, rsb: 0, sidebearings: (g) => ({ rsb: joint(g) }), draw: (g) => shaft(g, 0, SPLIT + into(g)) };
+    case 'middle':
+      return { name, lsb: 0, rsb: 0, sidebearings: (g) => ({ lsb: joint(g), rsb: joint(g) }), draw: (g) => shaft(g, 0, MIDDLE + 2 * into(g)) };
+    case 'end':
+      return { name, lsb: 0, rsb: 1, sidebearings: (g) => ({ lsb: joint(g) }), draw: (g) => shaft(g, 0, SPLIT + into(g)) };
+    case 'head':
+      return { name, lsb: 0, rsb: 1, sidebearings: (g) => ({ lsb: joint(g) }), draw: (g) => head(g).strokes };
+    case 'inner':
+      return { name, lsb: 0, rsb: 0, frame: framed, draw: inner };
+    case 'innertail':
+      return { name, lsb: 0, rsb: 0, frame: framed, draw: (g) => rotate(inner(g), 180, innerWidth(g) / 2, MATH_AXIS) };
+    case 'tail':
+      return {
+        name,
+        lsb: 1,
+        rsb: 0,
+        sidebearings: (g) => ({ rsb: joint(g) }),
+        draw: (g) => {
+          const { strokes, length } = head(g);
+          return rotate(strokes, 180, length / 2, MATH_AXIS);
+        },
+      };
+  }
+}
+
 export const PLUS: GlyphDef[] = [
+  ...ARROW_PIECES.map(({ name, piece, double }) => arrowPiece(name, piece, double)),
   arrow('arrowleft', 0x2190, 180),
   arrow('arrowup', 0x2191, 90),
   arrow('arrowright', 0x2192, 0),
@@ -119,6 +229,12 @@ export const PLUS: GlyphDef[] = [
   arrow('arrowupright', 0x2197, 45),
   arrow('arrowdownright', 0x2198, -45),
   arrow('arrowdownleft', 0x2199, -135),
+  doubleArrow('arrowdblleft', 0x21d0, 180),
+  doubleArrow('arrowdblup', 0x21d1, 90),
+  doubleArrow('arrowdblright', 0x21d2, 0),
+  doubleArrow('arrowdbldown', 0x21d3, -90),
+  doubleArrow('arrowdblboth', 0x21d4, 0, { start: true, end: true }),
+  doubleArrow('arrowdblupdn', 0x21d5, 90, { start: true, end: true }),
 
   shape('filledbox', 0x25a0, () => [solid(squarePts(BIG))]),
   shape('whitesquare', 0x25a1, (g) => [hollow(squarePts(BIG), wall(g))]),

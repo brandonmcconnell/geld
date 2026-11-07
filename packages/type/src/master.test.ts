@@ -62,6 +62,23 @@ describe('character set', () => {
     expect(chars.filter((c) => !mapped.has(c))).toEqual([]);
   });
 
+  it('draws each arrow ligature as wide as the arrow it stands for, narrower than its characters set apart', () => {
+    for (const style of ['roman', 'italic'] as const)
+      for (const weight of WEIGHTS) {
+        const master = buildMaster('sans', style, weight);
+        const width = (...names: string[]) => names.reduce((t, n) => t + master.glyphs.find((g) => g.name === n)!.advance, 0);
+        for (const [pieces, arrow, chars] of [
+          [['hyphen.arrow_start', 'greater.arrow_head'], 'arrowright', ['hyphen', 'greater']],
+          [['less.arrow_head', 'hyphen.arrow_end'], 'arrowleft', ['less', 'hyphen']],
+          [['equal.arrow_start', 'greater.arrow_dblhead'], 'arrowdblright', ['equal', 'greater']],
+          [['less.arrow_dblhead', 'equal.arrow_end'], 'arrowdblleft', ['less', 'equal']],
+        ] as const) {
+          expect(width(...pieces), `${style} ${weight} ${arrow}`).toBeCloseTo(width(arrow), 6);
+          expect(width(...pieces), `${style} ${weight} ${arrow}`).toBeLessThan(width(...chars));
+        }
+      }
+  });
+
   it('keeps every glyph inside the clipping box at every weight, and drawn glyphs within their sidebearings', () => {
     for (const weight of WEIGHTS) {
       const master = buildMaster('sans', 'roman', weight);
@@ -72,7 +89,8 @@ describe('character set', () => {
         const xs = contours.flat().map((p) => p.x);
         expect(Math.min(...ys), `${glyph.name} ${weight}`).toBeGreaterThanOrEqual(METRICS.clipDescender);
         expect(Math.max(...ys), `${glyph.name} ${weight}`).toBeLessThanOrEqual(METRICS.clipAscender);
-        if (glyph.components.length || glyph.name === 'fraction') continue;
+        // Arrow pieces reach into their neighbours by design (D12).
+        if (glyph.components.length || glyph.name === 'fraction' || glyph.name.includes('.arrow_')) continue;
         expect(Math.min(...xs), `${glyph.name} ${weight}`).toBeGreaterThanOrEqual(0);
         expect(Math.max(...xs), `${glyph.name} ${weight}`).toBeLessThanOrEqual(glyph.advance + 1e-9);
       }

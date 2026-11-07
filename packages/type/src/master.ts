@@ -6,13 +6,19 @@ import { GLYPHS, SPACES } from './glyphs';
 import { FIGURE_NAMES } from './glyphs-figures';
 import { CYRILLIC_LOCL_ACCENTED } from './glyphs-cyrillic';
 import { accentedSmallCaps, SMALL_CAP_EXTRA_ACCENTED, SMALL_CAP_PLACED } from './glyphs-smallcaps';
-import { DARK_INSET_RATIO, ITALIC_SLOPE, METRICS, type Weight, weightParams } from './grid';
+import { LOCKUP, lockupGlyph } from './lockup';
+import { DARK_INSET_RATIO, ITALIC_SLOPE, METRICS, toFontUnits, UNIT, type Weight, weightParams } from './grid';
 import { type Attachment, BELOW_GAP, MARK_GAP, MARK_HEIGHT, MARKS } from './marks';
 
 /** Italics lean around the middle of the x-height, so a slanted glyph stays centred in its advance. */
 const ITALIC_PIVOT = METRICS.xHeight / 2;
+/** The text ligatures: pairs whose crossbars would all but touch, drawn as one bar (fi fl fj fb fh fk are clear of each other and need none). */
+export const TEXT_LIGATURES = [['f', 'f'], ['f', 't'], ['t', 't']] as const;
+
 /** Ơ Ư ơ ư are wider than O U o u by the horn that reaches out of them. */
 const HORN_ROOM = 1.5;
+/** The least room right of the horn's tip, so a heavier horn widens its glyph rather than reaching into the next. */
+const HORN_SIDE = 0.3;
 
 export type Family = 'sans' | 'dark';
 export type Style = 'roman' | 'italic';
@@ -116,12 +122,8 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   const small = smallCapContext(params.v, params.hl);
   const italic = style === 'italic';
   const slope = italic ? ITALIC_SLOPE : 0;
-  const finish = (contours: Contour[]) => {
-    let out = contours;
-    if (family === 'dark') out = out.map((c) => insetContour(c, params.v * DARK_INSET_RATIO));
-    if (italic) out = out.map((c) => translate(shear(c, ITALIC_SLOPE), -ITALIC_SLOPE * ITALIC_PIVOT));
-    return out;
-  };
+  const slant = (contours: Contour[]) => (italic ? contours.map((c) => translate(shear(c, ITALIC_SLOPE), -ITALIC_SLOPE * ITALIC_PIVOT)) : contours);
+  const finish = (contours: Contour[]) => slant(family === 'dark' ? contours.map((c) => insetContour(c, params.v * DARK_INSET_RATIO)) : contours);
   const place = (p: Vec): Vec => (italic ? { x: p.x + p.y * ITALIC_SLOPE - ITALIC_SLOPE * ITALIC_PIVOT, y: p.y } : p);
   const placeAnchors = (anchors: Anchor[]) => anchors.map((a) => ({ ...a, ...place(a) }));
 
@@ -133,9 +135,10 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     if (params.snap && !italic) contours = snapJoined(contours, 0.5);
     const box = bounds(contours);
     const zone = spacingZone(def, g);
-    const { lsb, rsb } = zone ? measuredSidebearings(contours, box.minX, box.maxX, zone) : def;
+    const frame = def.frame?.(g);
+    const { lsb, rsb } = frame ? { lsb: box.minX - frame.origin, rsb: 0 } : zone ? measuredSidebearings(contours, box.minX, box.maxX, zone) : { ...def, ...def.sidebearings?.(g) };
     contours = contours.map((c) => translate(c, lsb - box.minX));
-    const advance = lsb + (box.maxX - box.minX) + rsb;
+    const advance = frame ? frame.advance : lsb + (box.maxX - box.minX) + rsb;
     const anchors = baseAnchors(contours, isUpperChar(def.unicode ?? def.stands), params.v, def.name);
     return {
       name: def.name,
@@ -167,12 +170,66 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
   glyphs.forEach((gl, i) => {
     if (GLYPHS[i]?.tabular) centre(gl, tabularAdvance);
   });
+  // Where each ligature's letters have their crossbars, read before the slant and the dark inset so the bridge between them takes both.
+  const bars = new Map(
+    TEXT_LIGATURES.flatMap((parts) => parts).map((name) => {
+      const gl = glyphs.find((x) => x.name === name)!;
+      const y = METRICS.xHeight - lower.h / 2;
+      const xs = gl.contours.flatMap((c) => c.flatMap((a, i) => {
+        const b = c[(i + 1) % c.length]!;
+        return (a.y <= y && b.y > y) || (b.y <= y && a.y > y) ? [a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x)] : [];
+      }));
+      const [left, right] = [Math.min(...xs), Math.max(...xs)];
+      // The bar's own top and bottom near its end, as drawn (SemiBold snaps them to the half unit).
+      const at = right - 0.25;
+      const ys = gl.contours
+        .flatMap((c) => c.flatMap((a, i) => {
+          const b = c[(i + 1) % c.length]!;
+          return (a.x <= at && b.x > at) || (b.x <= at && a.x > at) ? [a.y + ((at - a.x) / (b.x - a.x)) * (b.y - a.y)] : [];
+        }))
+        .sort((p, q) => p - q);
+      const bottom = Math.max(...ys.filter((v) => v <= y));
+      const top = Math.min(...ys.filter((v) => v >= y));
+      return [name, { left, right, advance: gl.advance, top, bottom }] as const;
+    }),
+  );
   for (const gl of glyphs) {
     gl.contours = finish(gl.contours);
     gl.anchors = placeAnchors(gl.anchors);
   }
+  // ff ft tt: the two letters with one crossbar, bridged where the two would otherwise all but touch.
+  for (const parts of TEXT_LIGATURES) {
+    let x = 0;
+    const components: Component[] = [];
+    const bridges: Contour[] = [];
+    const carets: Anchor[] = [];
+    parts.forEach((name, i) => {
+      const bar = bars.get(name)!;
+      // Whole font units, rounded as the UFO writes each letter's advance and the compiler then rounds it (342.49999 to
+      // 342.5 to 343): the ligature is exactly as wide as its letters set apart.
+      const step = Math.floor(toFontUnits(bar.advance) + 0.5) / UNIT;
+      const offset = place({ x, y: 0 });
+      const origin = place({ x: 0, y: 0 });
+      components.push({ glyph: name, dx: offset.x - origin.x, dy: 0 });
+      const next = parts[i + 1];
+      if (next) {
+        // Into each bar by more than Geld Dark Sans's inset, which trims the bridge's ends too.
+        const into = 0.5 + (family === 'dark' ? params.v * DARK_INSET_RATIO : 0);
+        const from = x + bar.right - into;
+        const to = x + step + bars.get(next)!.left + into;
+        const [top, bottom] = [Math.min(bar.top, bars.get(next)!.top), Math.max(bar.bottom, bars.get(next)!.bottom)];
+        bridges.push([{ x: from, y: bottom }, { x: to, y: bottom }, { x: to, y: top }, { x: from, y: top }]);
+        carets.push({ name: `caret_${i + 1}`, x: x + step, y: 0 });
+      }
+      x += step;
+    });
+    glyphs.push({ name: parts.join('_'), advance: x, contours: finish(bridges), components, anchors: placeAnchors(carets), mark: false });
+  }
+  glyphs.push({ name: LOCKUP.name, ...lockupGlyph(family === 'dark'), components: [], mark: false });
 
   const markAttach = new Map<string, Attachment>();
+  /** How far right each mark's ink reaches before Geld Dark Sans's inset, which must not change an advance. */
+  const markReach = new Map<string, number>();
   for (const def of MARKS)
     for (const form of def.caseForm ? (['lower', 'case'] as const) : (['lower'] as const)) {
       const height = MARK_HEIGHT[form];
@@ -191,6 +248,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
       const stackGap = form === 'case' ? 0.4 : 0.75;
       const stack: Anchor = above ? { name: def.attach, x: 0, y: box.maxY + stackGap } : { name: def.attach, x: 0, y: box.minY - 0.5 };
       markAttach.set(name, def.attach);
+      markReach.set(name, bounds(slant(contours)).maxX);
       glyphs.push({
         name,
         ...(form === 'lower' && def.unicode !== undefined ? { unicode: def.unicode } : {}),
@@ -248,8 +306,9 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
       const next = anchorOf(mark, attach)!;
       reached.set(attach, { x: next.x + dx, y: next.y + dy });
     }
-    const horn = def.marks.includes('horncomb') ? HORN_ROOM : 0;
-    glyphs.push({ name: def.name, ...(def.unicode === undefined ? {} : { unicode: def.unicode }), advance: base.advance + horn, contours: [], components, anchors: [], mark: false });
+    const hornAt = components.find((c) => c.glyph === 'horncomb');
+    const advance = hornAt ? Math.max(base.advance + HORN_ROOM, hornAt.dx + markReach.get('horncomb')! + HORN_SIDE) : base.advance;
+    glyphs.push({ name: def.name, ...(def.unicode === undefined ? {} : { unicode: def.unicode }), advance, contours: [], components, anchors: [], mark: false });
     byName.set(def.name, glyphs[glyphs.length - 1]!);
   }
 

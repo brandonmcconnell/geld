@@ -2,7 +2,9 @@ import { ITALIC_SLOPE, METRICS, toFontUnits, UPM, WEIGHT_NAMES, type Weight, WEI
 import { LOCL, type LoclLanguage } from './glyphs-cyrillic';
 import { FIGURE_NAMES, TABULAR_SIGNS } from './glyphs-figures';
 import { VIETNAMESE_PAIRS } from './marks';
-import { FAMILY_NAMES, type Family, type Master, type Style } from './master';
+import type { Kerning } from './kerning';
+import { LOCKUP } from './lockup';
+import { FAMILY_NAMES, type Family, type Master, type Style, TEXT_LIGATURES } from './master';
 
 const VERSION = { major: 0, minor: 1 };
 
@@ -263,11 +265,75 @@ export function features(master: Master): string {
     '',
     ...figureFeatures(names),
     ...smallCapFeatures(master, names),
+    // After the small caps, so small-cap text keeps its own f and t.
+    '',
+    'feature liga {',
+    ...TEXT_LIGATURES.filter((parts) => names.has(parts.join('_'))).map((parts) => `  sub ${parts.join(' ')} by ${parts.join('_')};`),
+    '} liga;',
+    ...arrowFeatures(names),
+    // Only as a word of its own: Geldern, Geldbörse and Gelder keep their letters.
+    ...(names.has(LOCKUP.name)
+      ? [
+          `@GeldWordLetters = [${master.glyphs.filter((g) => g.unicode !== undefined && /\p{L}/u.test(String.fromCodePoint(g.unicode))).map((g) => g.name).join(' ')}];`,
+          'feature dlig {',
+          `  ignore sub @GeldWordLetters ${LOCKUP.letters.map((l) => `${l}'`).join(' ')};`,
+          `  ignore sub ${LOCKUP.letters.map((l) => `${l}'`).join(' ')} @GeldWordLetters;`,
+          `  sub ${LOCKUP.letters.map((l) => `${l}'`).join(' ')} by ${LOCKUP.name};`,
+          '} dlig;',
+        ]
+      : []),
   ].join('\n');
 }
 
+/**
+ * The arrow sequences (5.3, D13: on by default in calt), longest first, each as the pieces its characters become.
+ * A sequence only stands whole: not inside a longer run of hyphens, equals or brackets (--->, <=>, ->>), and <= is
+ * never a fat arrow (a fat left arrow is <==).
+ */
+const ARROWS: [string, string[]][] = [
+  ['<-->', ['less.arrow_head', 'hyphen.arrow_middle', 'hyphen.arrow_middle', 'greater.arrow_head']],
+  ['<==>', ['less.arrow_dblhead', 'equal.arrow_middle', 'equal.arrow_middle', 'greater.arrow_dblhead']],
+  ['<->', ['less.arrow_head', 'hyphen.arrow_middle', 'greater.arrow_head']],
+  ['-->', ['hyphen.arrow_start', 'hyphen.arrow_middle', 'greater.arrow_head']],
+  ['<--', ['less.arrow_head', 'hyphen.arrow_middle', 'hyphen.arrow_end']],
+  ['==>', ['equal.arrow_start', 'equal.arrow_middle', 'greater.arrow_dblhead']],
+  ['<==', ['less.arrow_dblhead', 'equal.arrow_middle', 'equal.arrow_end']],
+  ['->>', ['hyphen.arrow_start', 'greater.arrow_inner', 'greater.arrow_head']],
+  ['<<-', ['less.arrow_head', 'less.arrow_inner', 'hyphen.arrow_end']],
+  ['=>>', ['equal.arrow_start', 'greater.arrow_dblinner', 'greater.arrow_dblhead']],
+  ['->', ['hyphen.arrow_start', 'greater.arrow_head']],
+  ['<-', ['less.arrow_head', 'hyphen.arrow_end']],
+  ['=>', ['equal.arrow_start', 'greater.arrow_dblhead']],
+];
+const ARROW_CHARS: Record<string, string> = { '-': 'hyphen', '=': 'equal', '<': 'less', '>': 'greater' };
+
+function arrowFeatures(names: Set<string>): string[] {
+  const used = ARROWS.filter(([, pieces]) => pieces.every((n) => names.has(n)));
+  if (!used.length) return [];
+  const rules: string[] = [];
+  for (const [text, pieces] of used) {
+    const chars = [...text].map((c) => ARROW_CHARS[c]!);
+    rules.push(`  ignore sub [hyphen equal less] ${chars.map((c, i) => (i === 0 ? `${c}'` : c)).join(' ')};`);
+    rules.push(`  ignore sub ${chars.map((c, i) => (i === 0 ? `${c}'` : c)).join(' ')} [hyphen equal greater];`);
+    chars.forEach((c, i) => rules.push(`  sub ${[...pieces.slice(0, i), `${c}'`, ...chars.slice(i + 1)].join(' ')} by ${pieces[i]};`));
+  }
+  const pieces = [...new Set(used.flatMap(([, ps]) => ps))].sort();
+  return [
+    'feature calt {',
+    '  lookup arrows {',
+    ...rules.map((r) => `  ${r}`),
+    '  } arrows;',
+    '} calt;',
+    // After calt, so it maps the pieces calt made back to their characters.
+    'feature ss20 {',
+    '  featureNames { name "No arrow ligatures"; };',
+    `  sub [${pieces.join(' ')}] by [${pieces.map((n) => n.split('.')[0]).join(' ')}];`,
+    '} ss20;',
+  ];
+}
+
 /** Every file of one master's UFO, keyed by its path inside the .ufo folder. */
-export function ufoFiles(master: Master): Map<string, string> {
+export function ufoFiles(master: Master, kerning?: Kerning): Map<string, string> {
   const files = new Map<string, string>();
   files.set('metainfo.plist', plist({ creator: 'sh.geld.type', formatVersion: 3 }));
   files.set('fontinfo.plist', plist(fontInfo(master)));
@@ -280,6 +346,14 @@ export function ufoFiles(master: Master): Map<string, string> {
     }),
   );
   files.set('features.fea', features(master));
+  if (kerning) {
+    const names = new Set(master.glyphs.map((g) => g.name));
+    files.set('groups.plist', plist(Object.fromEntries([...kerning.groups].map(([group, members]) => [group, members.filter((n) => names.has(n))]))));
+    files.set(
+      'kerning.plist',
+      plist(Object.fromEntries([...kerning.pairs].map(([first, row]) => [first, Object.fromEntries([...row].map(([second, value]) => [second, Math.round(toFontUnits(value))]))]))),
+    );
+  }
   const contents: Record<string, string> = {};
   for (const glyph of master.glyphs) {
     const file = glifFileName(glyph.name);

@@ -10,6 +10,7 @@ import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { toFontUnits, WEIGHTS } from '../src/grid';
+import { alignKerning, computeKerning, type Kerning, kerningClasses, resolvedValue } from '../src/kerning';
 import { buildMaster, type Family, type Style } from '../src/master';
 import { proofPage } from '../src/proof';
 import { decorationMetrics, designspace, postscriptName, sourceFileName, ufoFiles } from '../src/ufo';
@@ -26,6 +27,9 @@ function run(args: string[]): void {
   if (result.status !== 0) throw new Error(`${python} ${args.join(' ')} failed`);
 }
 
+/** Each style and weight's kerning, Geld Sans's, which Geld Dark Sans shares. */
+const kernings = new Map<string, Kerning>();
+
 function writeSources(): string[] {
   rmSync(build, { recursive: true, force: true });
   const spaces: string[] = [];
@@ -33,7 +37,14 @@ function writeSources(): string[] {
     for (const style of styles)
       for (const weight of WEIGHTS) {
         const ufo = join(build, sourceFileName(family, style, weight));
-        for (const [path, text] of ufoFiles(buildMaster(family, style, weight))) {
+        // Geld Dark Sans takes Geld Sans's kerning, so switching families never reflows text.
+        const key = `${style} ${weight}`;
+        if (!kernings.has(key)) {
+          const classes = kerningClasses(buildMaster('sans', style, 400));
+          const aligned = alignKerning(WEIGHTS.map((w) => computeKerning(buildMaster('sans', style, w), classes)));
+          WEIGHTS.forEach((w, i) => kernings.set(`${style} ${w}`, aligned[i]!));
+        }
+        for (const [path, text] of ufoFiles(buildMaster(family, style, weight), kernings.get(key))) {
           mkdirSync(dirname(join(ufo, path)), { recursive: true });
           writeFileSync(join(ufo, path), text);
         }
@@ -44,6 +55,12 @@ function writeSources(): string[] {
   }
   return spaces;
 }
+
+/** Pairs whose kerning verify.py checks in every compiled font, kerned and unkerned alike. */
+const KERNING_SAMPLES: [string, string][] = [
+  ['T', 'o'], ['T', 'a'], ['A', 'V'], ['L', 'T'], ['P', 'period'], ['Y', 'o'], ['quoteleft', 'A'], ['T', 'eacute'], ['Tcaron', 'a'],
+  ['Ge-cy', 'o-cy'], ['Tau', 'alpha'], ['H', 'H'], ['n', 'n'], ['o', 'o'], ['one.tf', 'one.tf'], ['f', 'period'], ['V', 'a'], ['T', 'space'], ['space', 'Y'], ['f', 'idieresis'],
+];
 
 /** What the source says each compiled font must contain, for scripts/verify.py. */
 function manifest(): Record<string, Record<string, Record<string, unknown>>> {
@@ -64,6 +81,7 @@ function manifest(): Record<string, Record<string, Record<string, unknown>>> {
           underlinePosition: Math.round(deco.underlinePosition),
           decorationThickness: Math.round(deco.thickness),
           strikeoutPosition: Math.round(deco.strikeoutPosition),
+          kerning: Object.fromEntries(KERNING_SAMPLES.map(([x, y]) => [`${x} ${y}`, Math.round(toFontUnits(resolvedValue(kernings.get(`${style} ${weight}`)!, x, y)))])),
         };
       }
       byStyle[style] = byWeight;

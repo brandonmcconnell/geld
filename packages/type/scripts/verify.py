@@ -16,6 +16,7 @@ from fontTools.varLib.instancer import instantiateVariableFont
 DIST = Path(__file__).resolve().parent.parent / "dist"
 OVERLAP_SIMPLE = 0x40
 SAMPLE = "HOnoGELD"
+CHAR_NAMES = {"-": "hyphen", "=": "equal", "<": "less", ">": "greater"}
 # Google Fonts' glyph sets the fonts must cover in full; each is added here once it is complete.
 GLYPHSETS = ["GF_Latin_Kernel", "GF_Latin_Core", "GF_Latin_Plus", "GF_Latin_Vietnamese", "GF_Latin_PriAfrican", "GF_Latin_African", "GF_Latin_Beyond", "GF_TransLatin_Pinyin", "GF_TransLatin_Arabic", "GF_Greek_Core", "GF_Cyrillic_Core", "GF_Cyrillic_Plus"]
 
@@ -44,15 +45,36 @@ def check_static(path: Path, expected: dict, italic: bool) -> None:
     check(bool(os2.fsSelection & 1) == italic, f"{path.name}: italic bit")
     check((post.italicAngle != 0) == italic, f"{path.name}: italic angle")
     check(bool(os2.fsSelection & 0x80), f"{path.name}: USE_TYPO_METRICS")
+    widths = advances(font)
+    for name in ("f_f", "f_t", "t_t"):
+        letters = sum(widths[part] for part in name.split("_"))
+        check(widths[name] == letters, f"{path.name}: {name} is {widths[name]} wide, its letters {letters}")
 
 
-def shape_total(data: bytes, weight: int, text: str) -> tuple[list[str], int]:
+def check_kerning(path: Path, data: bytes, weight: int, expected: dict) -> None:
+    """Each sample pair moves by the source's kerning, resolved through its classes and exceptions (Dark Sans shares Sans's)."""
+    chars = {name: chr(code) for code, name in TTFont(path).getBestCmap().items()}
+    for pair, want in expected.items():
+        first, second = pair.split(" ")
+        tabular = first.endswith(".tf")
+        text = chars[first.removesuffix(".tf")] + chars[second.removesuffix(".tf")]
+        widths = []
+        for kern in (True, False):
+            names, total = shape_total(data, weight, text, {"kern": kern, "tnum": tabular})
+            check(names == [first, second], f"{path.name} at {weight}: {pair} shaped {names}")
+            widths.append(total)
+        got = widths[0] - widths[1]
+        check(abs(got - want) <= 1, f"{path.name} at {weight}: {pair} kerned {got}, source {want}")
+
+
+def shape_total(data: bytes, weight: int, text: str, features: dict | None = None) -> tuple[list[str], int]:
+    """Shaped glyph names and total advance, unkerned unless asked: the advances alone."""
     font = hb.Font(hb.Face(data))
     font.set_variations({"wght": weight})
     buf = hb.Buffer()
     buf.add_str(text)
     buf.guess_segment_properties()
-    hb.shape(font, buf)
+    hb.shape(font, buf, {"kern": False} if features is None else features)
     names = [font.glyph_to_string(info.codepoint) for info in buf.glyph_infos]
     return names, sum(pos.x_advance for pos in buf.glyph_positions)
 
@@ -141,6 +163,54 @@ def check_small_caps(path: Path, data: bytes) -> None:
     check(got == ["one.sc", "ampersand.sc"], f"{path.name}: c2sc 1& shaped {got}")
 
 
+def check_ligatures(path: Path, data: bytes, weight: int) -> None:
+    """ff ft tt become one glyph by default, as wide as the letters set apart, with a caret between them; liga off or smcp keeps the letters. "Geld" as a word becomes the wordmark under dlig."""
+    font = TTFont(path)
+    carets = font["GDEF"].table.LigCaretList
+    with_carets = set(carets.Coverage.glyphs) if carets else set()
+    for text in ("ff", "ft", "tt"):
+        name = "_".join(text)
+        joined, width = shape_total(data, weight, text, {"kern": False})
+        check(joined == [name], f"{path.name} at {weight}: {text} shaped {joined}")
+        apart, apart_width = shape_total(data, weight, text, {"kern": False, "liga": False})
+        check(apart == list(text), f"{path.name} at {weight}: {text} without liga shaped {apart}")
+        # varLib rounds deltas solved through neighbouring masters, so each advance may drift a unit (statics are exact).
+        check(abs(width - apart_width) <= len(text), f"{path.name} at {weight}: {name} is {width} wide, its letters {apart_width}")
+        check(name in with_carets, f"{path.name}: {name} has no ligature caret")
+        small = [n for n, _ in shape(data, weight, text, features={"smcp": True})]
+        check(small == [f"{c}.sc" for c in text], f"{path.name} at {weight}: smcp {text} shaped {small}")
+    for text, features, names in (
+        ("Geld", {"dlig": True}, ["G_e_l_d"]),
+        ("Geld!", {"dlig": True}, ["G_e_l_d", "exclam"]),
+        ("Geldern", {"dlig": True}, list("Geldern")),
+        ("Geld", {}, list("Geld")),
+    ):
+        got = [n for n, _ in shape(data, weight, text, features=features)]
+        check(got == names, f"{path.name} at {weight}: {text} with {features} shaped {got}")
+    check("G_e_l_d" in with_carets, f"{path.name}: the Geld lockup has no carets")
+    # Arrows (D12): pieces as wide as the arrow they draw, whole sequences only, ss20 and calt off give the characters back.
+    for text, names, like in (
+        ("->", ["hyphen.arrow_start", "greater.arrow_head"], "→"),
+        ("<-", ["less.arrow_head", "hyphen.arrow_end"], "←"),
+        ("=>", ["equal.arrow_start", "greater.arrow_dblhead"], "⇒"),
+        ("<->", ["less.arrow_head", "hyphen.arrow_middle", "greater.arrow_head"], None),
+        ("==>", ["equal.arrow_start", "equal.arrow_middle", "greater.arrow_dblhead"], None),
+        ("->>", ["hyphen.arrow_start", "greater.arrow_inner", "greater.arrow_head"], None),
+        ("<<-", ["less.arrow_head", "less.arrow_inner", "hyphen.arrow_end"], None),
+    ):
+        got, width = shape_total(data, weight, text, {"kern": False})
+        check(got == names, f"{path.name} at {weight}: {text} shaped {got}")
+        if like:
+            _, want = shape_total(data, weight, like, {"kern": False})
+            check(abs(width - want) <= len(text), f"{path.name} at {weight}: {text} is {width} wide, {like} {want}")
+    for text in ("<=", "<=>", "--->", "-->>", ">>", ">=", "=>="):
+        got, _ = shape_total(data, weight, text, {"kern": False})
+        check(got == [CHAR_NAMES[c] for c in text], f"{path.name} at {weight}: {text} shaped {got}")
+    for features in ({"ss20": True}, {"calt": False}):
+        got, _ = shape_total(data, weight, "->", {"kern": False, **features})
+        check(got == ["hyphen", "greater"], f"{path.name} at {weight}: -> with {features} shaped {got}")
+
+
 def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None:
     font = TTFont(path)
     cmap = set(font.getBestCmap())
@@ -168,6 +238,8 @@ def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None
         check(names == list(SAMPLE), f"{path.name} at {weight}: shaped {names}")
         want = sum(expected["advances"][c] for c in SAMPLE)
         check(abs(total - want) <= len(SAMPLE), f"{path.name} at {weight}: shaped width {total}, source {want}")
+        check_kerning(path, data, int(weight), expected["kerning"])
+        check_ligatures(path, data, int(weight))
 
 
 def main() -> None:

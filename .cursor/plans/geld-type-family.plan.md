@@ -196,30 +196,32 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 
 ## 4. Kerning
 
-- [ ] Kerning groups for both sides of every glyph, derived from side profiles. Alternates, small caps and swashes get their own groups.
-- [ ] Class kerning first, then exceptions only where a class cannot be right (for example Tě, ľ, ď, Ť with following lowercase, and Tï).
+- [x] Kerning groups for both sides of every kerned glyph, derived from side profiles (`src/kerning.ts`): each glyph kerns as the letter it is built on, and letters whose side matches within 0.3 units in every row share a class (B D E F H K L P R start with a stem). Small caps get their own groups; alternates and swashes will when they exist.
+- [x] Class kerning first, measured as the spacing is: the white two glyphs leave across the rows they share, each side capped at a depth, against the spacing's target for their cases (or a sign's own white), 70% of the excess taken back, and half the excess of their closest approach (parallel diagonals, A V). Exceptions only where a member's mark or tail would come too close (Tě, Ťa, Tä at Black), stated against the other class where its side is the class's own letter.
 - [ ] The pairs that matter: caps with caps (AV, LT, TA, VA, AY), caps with lowercase (Ta, Te, To, Tr, Ty, Va, Yo, Fo, P.), lowercase pairs (r, f, v, w, y with punctuation), quotes and apostrophes ("A", L', 'T), punctuation after caps (T, V. F:), figures in proportional mode (11, 17, 71, 1.), slashes and parentheses (/A, (J), and `case` forms.
-- [ ] Kerning in quarter grid units (12.5 font units), so values stay on a known subgrid.
-- [ ] Kerning per weight, in roman and in italic, shared by Geld Dark Sans, interpolating cleanly through the variable fonts.
-- [ ] Tabular figures and Mono get no kerning, by construction.
-- [ ] Collision checks: no kerned pair overlaps, including accents (for example T with ť, Ŵ with ŵ).
+- [x] Kerning in quarter grid units (12.5 font units), at most 2.5 units, and none under 0.75.
+- [x] Kerning per weight, in roman and in italic, shared by Geld Dark Sans, with one set of classes per style and every exception stated at every weight (`alignKerning`), so the variable fonts interpolate it cleanly. `verify.py` shapes sample pairs in every compiled font at every weight against the source.
+- [x] Tabular figures get no kerning, by construction (tested, and checked in the compiled fonts). Mono will not have any.
+- [x] Collision checks: no kerned pair comes closer than 0.9 units, or 0.4 where a mark is one of the two, checked member by member at Thin, Regular and Black in roman and italic (`kerning.test.ts`).
+- [x] Pairs whose ink would meet unkerned are opened (fï, Hï at Black, Vietnamese stacks): any letter pair where either glyph reaches past its side is measured, and opened until its ink clears, or clears by 0.4 where a mark is involved. Accented letters that hang past a side (ï, ť) get classes of their own on that side, so these are class pairs, not thousands of exceptions. Small caps and lowercase never meet (smcp turns them all), so they are not paired. Kerning never opens a pair just because the spacing set it close (A.).
 - [x] Seams and slivers: no two contours touch along a line (a hairline once anti-aliased) and no parallel edges face across a gap under 0.35 units, in any glyph, family, style or weight (`seams.ts`, tested).
 - [x] Joins: each glyph's strokes merged as a renderer fills them (`scripts/joins.py`, skia-pathops) and the outline searched for what a clean join never leaves: a short step or shelf where two strokes miss (a short edge between a convex and a concave corner, a 45° cut excepted), a sliver edge, or an ink spike under 32°, in roman and italic at every weight (`pnpm --filter @geld/type joins`, in the Type workflow). The faults still open are listed in `scripts/joins-baseline.txt`; a new one fails. `scripts/sheet.ts` draws glyphs large from the source, `joins-sheet.py` and `joins-zoom.py` circle and magnify what the check finds.
 - [ ] Clear `joins-baseline.txt`: mostly hairline edges under 0.3 units at Black and in mark joins, plus ≈ and & at heavy weights.
-- [ ] Space kerning (space with A, T, V, Y, quotes) where it helps.
-- [ ] Review with standard kerning test texts across languages, and with Geld's own UI strings.
+- [x] Space kerning where it helps: a word space beside a side that opens from the top or bottom of its case's height (T V Y L A F P J, r f v y, Г Ч У) takes back a quarter of that white, at most 0.75 units a side, measured upright in italic, so the 5-unit space between two open sides (VAT TAYLOR) keeps 70% (at 35% and 1.5 units it read as one word at Black). White an arm closes off (between E's arms) does not count, and signs get none: a closing quote or a period keeps the full sentence space.
+- [x] Review with standard kerning test texts across languages, and with Geld's own UI strings (the proof page's Kerning section, kerned over unkerned, at every weight: Latin, Czech, Slovak, Polish, French, Spanish, Russian, Greek, and the digest's labels).
 
 ## 5. Ligatures
 
 ### 5.1 Text ligatures
-- [ ] Decide per pair whether the octagonal shapes collide at all: f with i, f with l, f with f, f with t, ffi, ffl, f with j, f with b, f with h, f with k, and t with t.
-- [ ] Draw ligature glyphs only for the pairs that collide (`liga`), with caret positions in `GDEF` so the cursor can go between the letters.
-- [ ] Discretionary ligatures (`dlig`): ct, st, sp and "Geld" to the wordmark lockup.
+- [x] Decide per pair whether the octagonal shapes collide at all, measured at every weight: f with i, l, j, b, h and k stay clear (the hook ends over the space and the next letter's stem starts past it; ffi and ffl are f_f followed by i or l, clear the same way); f with f, f with t and t with t bring their crossbars within 0.8 units, 0.48 for tt at Black, so they ligate.
+- [x] Draw ligature glyphs only for the pairs that collide (`liga`), with caret positions in `GDEF` so the cursor can go between the letters: ff, ft and tt, whose crossbars came within 0.8 units (0.48 for tt at Black), drawn as the two letters with one bar. fi fl fj fb fh fk stay apart (no collision; fï is opened by kerning). smcp runs first, so small caps never ligate. `verify.py` checks the substitution, the width and the caret in every compiled font.
+- [x] "Geld" to the wordmark lockup (`dlig`): the logo read from `assets/brand`, the same at every weight and upright in italic (a brand mark that thins or slants is no longer the mark), the dark logo in Geld Dark Sans; only as a word of its own, so Geldern keeps its letters; carets between the letters typed.
+- [ ] Discretionary ligatures (`dlig`): ct, st and sp.
 
 ### 5.2 Ligature mechanics (D12)
-- [ ] Symbol and code ligatures are contextual pieces (`calt`), one glyph per character, so text, selection, the caret and deletion stay per character. In Geld Sans the pieces are narrower than the characters they replace, so the arrow is compact (D12). In Mono each piece keeps its cell.
-- [ ] Kerning between pieces so the joined shape is continuous.
-- [ ] Turning off: `calt` off (CSS `font-variant-ligatures: no-contextual`) removes them all, `ss20` removes only the default arrows (it runs after `calt` and maps the pieces back).
+- [x] Symbol and code ligatures are contextual pieces (`calt`), one glyph per character, so text, selection, the caret and deletion stay per character. In Geld Sans the pieces are narrower than the characters they replace, so the arrow is compact (D12). In Mono each piece keeps its cell. Arrows are built this way: start, middle, end and head pieces drawn from → and ⇒ themselves, together exactly as wide as the arrow (tested at every weight), each reaching into its neighbour by more than Geld Dark Sans's inset so no seam shows.
+- [x] Kerning between pieces so the joined shape is continuous: pieces are excluded from kerning, and their negative sidebearings (the overlap) are what joins them.
+- [x] Turning off: `calt` off (CSS `font-variant-ligatures: no-contextual`) removes them all, `ss20` (named "No arrow ligatures") removes only the default arrows (it runs after `calt` and maps the pieces back). Checked in every compiled font.
 - [ ] Ligatures checked with `letter-spacing` set, since browsers drop optional ligatures when letters are spaced, and the result documented.
 
 ### 5.3 Symbol and code ligatures (in Sans and in Mono)
@@ -247,7 +249,7 @@ Default in Sans per D13. Mono turns most of them on by default (section 19).
 
 - [ ] Each group as its own stylistic set as well (`ss11` arrows, `ss12` comparison, `ss13` logic, `ss14` comments and markup, `ss15` scope, `ss16` shifts), so apps without `dlig` can pick groups.
 - [ ] Turning them on is one line in CSS (`font-feature-settings: "dlig"`, or `"ss12"` for one group), and the web CSS package ships classes such as `.geld-code-ligatures` for it (D13).
-- [ ] Conflicts handled: `<-` inside `x<-1` (code reads as "less than minus one", so `ss20` documents the way out), `-->` as an HTML comment end, `<=` read as ≤ and never as ⇐ (a fat left arrow needs `<==`).
+- [x] Conflicts handled: `<-` inside `x<-1` becomes an arrow (code reads it as "less than minus one", so `ss20` is the documented way out), `-->` as an HTML comment end becomes an arrow too, `<=` stays as typed and is never ⇐ (a fat left arrow needs `<==`), `<=>` stays as typed (the spaceship, never ⇔), and a sequence inside a longer run (`--->`, `-->>`, `=>=`) stays as typed. Arrows and fat arrows, including `->>` `<<-` `=>>`, are done; the double arrows ⇐ ⇑ ⇒ ⇓ ⇔ ⇕ were drawn for them.
 - [ ] Prose forms in Sans (`ss10`, off by default): `--` to an en dash and `---` to an em dash.
 - [ ] Symbol forms in Sans (`dlig`): `(c)` ©, `(r)` ®, `(tm)` ™, `[ ]` ☐, `[x]` ☑, `1/2` and other fractions through `frac`, and `x` between digits (1920x1080) as ×.
 - [ ] Contextual punctuation (`calt`, on): the colon centred between figures (12:30), and the hyphen raised between caps (A-Z).
