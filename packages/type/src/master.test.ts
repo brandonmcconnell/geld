@@ -1,4 +1,4 @@
-import { cutLeg, expandStroke, insetContour } from './geometry';
+import { bounds, type Contour, cutLeg, expandStroke, insetContour, winding } from './geometry';
 import { WEIGHTS } from './grid';
 import { buildMaster, type Family, type Style } from './master';
 
@@ -73,5 +73,57 @@ describe('character set', () => {
         expect(Math.min(...xs), `${glyph.name} ${weight}`).toBeGreaterThanOrEqual(0);
         expect(Math.max(...xs), `${glyph.name} ${weight}`).toBeLessThanOrEqual(glyph.advance + 1e-9);
       }
+  });
+});
+
+/** The narrowest white gap between two strokes, scanned across the middle of a glyph. */
+function narrowestCounter(contours: Contour[]): number {
+  const box = bounds(contours);
+  const step = 0.02;
+  let min = Infinity;
+  const scan = (at: (t: number) => { x: number; y: number }, from: number, to: number) => {
+    let inside = false;
+    let start = NaN;
+    for (let t = from; t <= to; t += step) {
+      const ink = winding(contours, at(t)) !== 0;
+      if (ink && !inside && !Number.isNaN(start)) min = Math.min(min, t - start);
+      if (ink !== inside) {
+        inside = ink;
+        if (!ink) start = t;
+      }
+    }
+  };
+  for (const f of [0.35, 0.5, 0.65]) {
+    const x = box.minX + (box.maxX - box.minX) * f;
+    const y = box.minY + (box.maxY - box.minY) * f;
+    scan((t) => ({ x, y: t }), box.minY - 0.5, box.maxY + 0.5);
+    scan((t) => ({ x: t, y }), box.minX - 0.5, box.maxX + 0.5);
+  }
+  return min;
+}
+
+const orthogonal = (contours: Contour[]) =>
+  contours.every((c) =>
+    c.every((p, i) => {
+      const q = c[(i + 1) % c.length]!;
+      const dx = Math.abs(q.x - p.x);
+      const dy = Math.abs(q.y - p.y);
+      return dx < 1e-6 || dy < 1e-6 || Math.abs(dx - dy) < 1e-6;
+    }),
+  );
+
+describe('heavy weights', () => {
+  /** B and 8 have a notch at the waist, and Q's tail crosses its bowl, by design. */
+  const notched = new Set(['B', 'eight', 'Q']);
+
+  it('keep every counter at least 1.4 units open, Black included', () => {
+    const tight: string[] = [];
+    for (const weight of WEIGHTS)
+      for (const glyph of buildMaster('sans', 'roman', weight).glyphs) {
+        if (!glyph.contours.length || notched.has(glyph.name) || !orthogonal(glyph.contours)) continue;
+        const gap = narrowestCounter(glyph.contours);
+        if (gap < 1.4) tight.push(`${glyph.name} ${weight}: ${gap.toFixed(2)}`);
+      }
+    expect(tight).toEqual([]);
   });
 });

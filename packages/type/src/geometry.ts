@@ -37,6 +37,8 @@ export interface Pen {
   v: number;
   /** Horizontal stroke. */
   h: number;
+  /** The outer leg this pen's cuts aim for, when not the caps' CUT_OUTER. */
+  cut?: number;
 }
 
 const EPS = 1e-9;
@@ -66,9 +68,9 @@ export function widthAlong(u: Vec, pen: Pen): number {
  * outer corner and `L - k` on the inner one, with `k = (w / 2)(2 - √2)`. The outer leg aims for
  * CUT_OUTER, and grows instead when the inner leg would otherwise drop below CUT_INNER_MIN.
  */
-export function cutLeg(wIn: number, wOut: number): number {
+export function cutLeg(wIn: number, wOut: number, outer = CUT_OUTER): number {
   const k = ((wIn + wOut) / 4) * (2 - Math.SQRT2);
-  return Math.max(CUT_OUTER - k, CUT_INNER_MIN + k);
+  return Math.max(outer - k, CUT_INNER_MIN + k);
 }
 
 function lineIntersection(p1: Vec, d1: Vec, p2: Vec, d2: Vec): Vec {
@@ -105,7 +107,7 @@ export function insertCuts(stroke: Stroke, pen: Pen): Vec[] {
     if (Math.abs(a.x * b.x + a.y * b.y) > 1e-6) throw new Error('Only a right-angled corner can be cut');
     const roomBefore = length(sub(p, prev)) * (prev.cut ? 0.49 : 0.98);
     const roomAfter = length(sub(next, p)) * (next.cut ? 0.49 : 0.98);
-    const leg = Math.min(cutLeg(widthAlong(a, pen), widthAlong(b, pen)), roomBefore, roomAfter);
+    const leg = Math.min(cutLeg(widthAlong(a, pen), widthAlong(b, pen), pen.cut), roomBefore, roomAfter);
     out.push(sub(p, scale(a, leg)), add(p, scale(b, leg)));
   });
   return out;

@@ -54,11 +54,23 @@ const CONTRAST: Record<Weight, number> = {
   900: 0.84,
 };
 
-/** Lowercase horizontals are lighter than the caps', so three of them fit an x-height. */
-export const LOWERCASE_CONTRAST = 0.88;
+/** Lowercase horizontals are lighter than the caps', more so as the weight grows, so three of them still fit an x-height at Black. */
+const LOWERCASE_CONTRAST: Record<Weight, number> = {
+  100: 0.88,
+  200: 0.88,
+  300: 0.88,
+  400: 0.88,
+  500: 0.88,
+  600: 0.88,
+  700: 0.85,
+  800: 0.81,
+  900: 0.77,
+};
 
 /** The outer leg a cut aims for, and the least its inner leg may shrink to at heavy weights. */
 export const CUT_OUTER = 2;
+/** Lowercase cuts scale with the x-height, so small counters keep straight walls. */
+export const CUT_OUTER_LOWER = 1.5;
 export const CUT_INNER_MIN = 0.5;
 
 /** Geld Dark Sans insets every edge by a tenth of the stem: 0.2 units at SemiBold, as the dark logo does. */
@@ -73,13 +85,16 @@ export interface WeightParams {
   v: number;
   /** Horizontal stroke. */
   h: number;
+  /** Lowercase horizontal stroke. */
+  hl: number;
   /** Whether outlines snap to the half-unit grid, which only the grid weight does. */
   snap: boolean;
 }
 
 export function weightParams(weight: Weight): WeightParams {
   const v = STEMS[weight];
-  return { weight, v, h: v * CONTRAST[weight], snap: weight === 600 };
+  const h = v * CONTRAST[weight];
+  return { weight, v, h, hl: h * LOWERCASE_CONTRAST[weight], snap: weight === 600 };
 }
 
 export function toFontUnits(units: number): number {

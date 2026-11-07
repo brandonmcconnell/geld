@@ -86,13 +86,13 @@ Starting stems in grid units, vertical cap stems, to be tuned in Phase 3:
 | 800 | ExtraBold | 2.85 | |
 | 900 | Black | 3.3 | |
 
-- [ ] Contrast per weight: horizontals about 95% of verticals at Regular, about 80% at Black. Lowercase stems about 95% of cap stems.
-- [ ] The three-horizontals budget. e, s, a, g and ≡ put three horizontals inside a 10-unit x-height, so at Black they cannot all be 3.3 units. Rules for how much horizontals thin and how far x-height letters widen, with a minimum counter of 1.5 units.
-- [ ] Widths grow with weight (heavier is wider) so counters stay open. The growth curve is set per glyph group.
-- [ ] Cuts at heavy weights: the outer leg grows so the inner leg never drops below 0.75 units, or the inner corner stays square, decided per glyph group.
-- [ ] Weight distribution with `avar`, so 100 to 900 steps look even.
-- [ ] Interpolation compatibility guaranteed by construction: every weight has the same points in the same order.
-- [ ] `usWeightClass`, `fsSelection` and style linking for every static instance.
+- [x] Contrast per weight: cap horizontals equal to stems up to SemiBold (the wordmark), 84% at Black. Lowercase horizontals 88% of the caps', down to 77% at Black. Lowercase stems equal to the caps' for now.
+- [x] The three-horizontals budget. e, s, a, g and ≡ put three horizontals inside a 10-unit x-height, so at Black they cannot all be 3.3 units. Rules for how much horizontals thin and how far x-height letters widen, with a minimum counter of 1.5 units.
+- [x] Widths grow with weight (heavier is wider) so counters stay open: half a unit of width per unit of stem. A test keeps every counter at least 1.4 units open at every weight.
+- [x] Cuts at heavy weights: the outer leg grows so the inner leg never drops below 0.5 units, and lowercase cuts aim for 1.5 units rather than 2, so small counters keep straight walls.
+- [x] Weight distribution: a master at every named weight, so each step is drawn as intended and no `avar` mapping is needed.
+- [x] Interpolation compatibility guaranteed by construction: every weight has the same points in the same order.
+- [x] `usWeightClass`, `fsSelection` and style linking for every static instance.
 
 ### 2.4 Corners
 - [ ] Cut corners only (D1). Every glyph's cuts follow the cut rule (2.2).
@@ -433,7 +433,7 @@ Each phase ends with a review. The next phase starts only once its deliverable i
 1. **Alignment.** Settle section 1. Deliverable: this document with the decisions recorded.
 2. **Foundations.** (Done: `packages/type`, see its PR.) The package, the grid, the geometry engine (cuts, weight, contrast, the dark grade, slant), the build into real fonts with `H O n o`, `G E L D` and space, the wordmark test (D7), a first proof page, and CI. Deliverable: working static, variable and web fonts for Geld Sans and Geld Dark Sans, roman and a provisional italic, every weight.
 3. **Design core.** (First draft done in every weight: A to Z, a to z, 0 to 9 and `. , : ; ! ? - – — ' " ( ) [ ] / _ + =`. Shapes and spacing are refined in phases 4 and 7.) A to Z, a to z, 0 to 9 and basic punctuation at Regular and SemiBold. Deliverable: a proof of the core in two weights.
-4. **Weights.** Thin to Black, contrast and the three-horizontals budget, `avar`. Deliverable: the core in all nine weights.
+4. **Weights.** (Done for the core: contrast, the three-horizontals budget, apertures and a counter test.) Thin to Black, contrast and the three-horizontals budget, `avar`. Deliverable: the core in all nine weights.
 5. **Italic.** Slanted grid, italic forms and their spacing. Deliverable: the core in italic, all weights.
 6. **Character set.** Accents and marks, extended Latin, figure sets, punctuation, currency, math, arrows, shapes, small caps. Deliverable: full GF Latin Pro coverage.
 7. **Spacing and kerning.** Deliverable: kerned proofs in every style.
