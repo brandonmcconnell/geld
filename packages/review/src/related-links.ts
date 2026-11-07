@@ -338,8 +338,15 @@ const linkSpecs: readonly LinkSpec[] = [
     service: 'Microsoft Teams',
     kind: 'conversation',
     host: /^teams\.microsoft\.com$/,
-    path: /^\/l\/(message|channel|chat)\/([^/]+)(?:\/[^/]+)*\/?$/,
-    read: ({ path }) => ({ id: `${group(path, 1)}:${decodeSafe(group(path, 2))}`, noun: group(path, 1) }),
+    // `/l/message/<thread>/<message id>`, `/l/channel/<channel>/<name>`, `/l/chat/0/0?users=…`: a message is one of
+    // many in its thread, and a chat is told apart only by its query.
+    path: /^\/l\/(message|channel|chat)\/([^/]+)(?:\/([^/]+))?(?:\/[^/]+)*\/?$/,
+    read: ({ url, path }) => {
+      const kind = group(path, 1);
+      const where = decodeSafe(group(path, 2));
+      const id = kind === 'message' ? `${where}:${path[3] ?? ''}` : kind === 'chat' ? `${where}:${path[3] ?? ''}${url.search}` : where;
+      return { id: `${kind}:${id}`, noun: kind };
+    },
     appId: 66341,
   },
 
@@ -914,6 +921,11 @@ export interface RelatedOptions {
   readonly repository?: string | null;
   /** The pull request being read (`owner/repo#N`), which is never one of its own related links. */
   readonly self?: string | null;
+  /**
+   * The page's host. A reference on another host (github.com from an Enterprise page) is another thing even with the
+   * same owner, repository and number: never the page's repository, its owner's, or the pull request itself.
+   */
+  readonly host?: string | null;
 }
 
 /** An issue, pull request or discussion, or one of a pull request's tabs; a link to a comment in it carries a hash. */
@@ -926,21 +938,24 @@ function readGitHub(url: URL, text: string, options: RelatedOptions): RelatedLin
   if (path === null || owner === undefined || GITHUB_NOT_OWNERS.has(owner.toLowerCase())) return null;
   const repository = `${owner}/${group(path, 2)}`;
   const number = group(path, 4);
-  const id = `${repository}#${number}`.toLowerCase();
-  if (options.self !== undefined && options.self !== null && id === options.self.toLowerCase()) return null;
   const noun = group(path, 3) === 'pull' ? 'pull request' : group(path, 3) === 'issues' ? 'issue' : 'discussion';
-  const near = nearness(repository, options);
+  const sameHost = sameHostAs(url.hostname, options);
+  const id = `${repository}#${number}`.toLowerCase();
+  // Discussions are numbered on their own, so only an issue or a pull request can be the one being read.
+  if (noun !== 'discussion' && sameHost && options.self !== undefined && options.self !== null && id === options.self.toLowerCase()) return null;
+  const near = nearness(url.hostname, repository, options);
   const ref = near === 'repository' ? `#${number}` : near === 'owner' ? `${group(path, 2)}#${number}` : `${repository}#${number}`;
+  const host = url.hostname === 'github.com' ? '' : `${url.hostname.toLowerCase()}/`;
   return {
     // Issues and pull requests share one numbering, so a link to either is the same thing.
-    key: `github:${noun === 'discussion' ? 'd:' : ''}${id}`,
+    key: `github:${host}${noun === 'discussion' ? 'd:' : ''}${id}`,
     kind: 'github',
     service: 'GitHub',
     noun,
     ref,
     // GitHub writes a reference as `#12`, `owner/repo#12` or `#12 (comment)`, none of them a title.
     title: /^(?:[\w.-]+\/)?(?:[\w.-]+)?#\d+(?:\s*\(comment\))?$/.test(text.trim()) ? null : titleFromText(text, 'GitHub', noun, ref),
-    context: repository,
+    context: `${host}${repository}`,
     href: url.href,
     action: `Open ${noun} on GitHub`,
     appId: null,
@@ -948,12 +963,17 @@ function readGitHub(url: URL, text: string, options: RelatedOptions): RelatedLin
   };
 }
 
+function sameHostAs(hostname: string, options: RelatedOptions): boolean {
+  return options.host === undefined || options.host === null || hostname.toLowerCase() === options.host.toLowerCase();
+}
+
 /** How near a reference's repository is to the page's: the same repository, the same owner, or elsewhere. */
-function nearness(repository: string, options: RelatedOptions): 'repository' | 'owner' | 'elsewhere' {
+function nearness(hostname: string, repository: string, options: RelatedOptions): 'repository' | 'owner' | 'elsewhere' {
   const here = (options.repository ?? '').toLowerCase();
   const there = repository.toLowerCase();
-  if (here !== '' && there === here) return 'repository';
-  return here !== '' && there.split('/')[0] === here.split('/')[0] ? 'owner' : 'elsewhere';
+  if (here === '' || !sameHostAs(hostname, options)) return 'elsewhere';
+  if (there === here) return 'repository';
+  return there.split('/')[0] === here.split('/')[0] ? 'owner' : 'elsewhere';
 }
 
 const NEARNESS_ORDER = ['repository', 'owner', 'elsewhere'];
@@ -961,7 +981,9 @@ const GITHUB_NOUN_ORDER = ['pull request', 'issue', 'discussion'];
 
 /** GitHub's own references in reading order: pull requests, then issues, then discussions, each nearest first. */
 function githubRank(link: RelatedLink, options: RelatedOptions): number {
-  return GITHUB_NOUN_ORDER.indexOf(link.noun) * NEARNESS_ORDER.length + NEARNESS_ORDER.indexOf(nearness(link.context ?? '', options));
+  const url = new URL(link.href);
+  const repository = /^\/([^/]+\/[^/]+)\//.exec(url.pathname)?.[1] ?? '';
+  return GITHUB_NOUN_ORDER.indexOf(link.noun) * NEARNESS_ORDER.length + NEARNESS_ORDER.indexOf(nearness(url.hostname, repository, options));
 }
 
 /**
