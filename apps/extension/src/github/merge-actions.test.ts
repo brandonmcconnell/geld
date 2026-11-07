@@ -105,7 +105,9 @@ describe('mergeableNow', () => {
     // mintlify/mint#13535 (Oct 2026): GitHub's merge box offered Squash and merge.
     expect(mergeableNow('MERGEABLE_IF_STATUSES_PASS', 'CLEAN')).toBe(true);
     expect(mergeableNow('MERGEABLE_IF_STATUSES_PASS', 'HAS_HOOKS')).toBe(true);
-    for (const status of ['BEHIND', 'BLOCKED', 'UNSTABLE', 'DIRTY', 'UNKNOWN', undefined]) expect(mergeableNow('MERGEABLE_IF_STATUSES_PASS', status)).toBe(false);
+    // geld#486 (Nov 2026): a check that is not required still running, and GitHub's merge box offered Squash and merge.
+    expect(mergeableNow('MERGEABLE_IF_STATUSES_PASS', 'UNSTABLE')).toBe(true);
+    for (const status of ['BEHIND', 'BLOCKED', 'DIRTY', 'UNKNOWN', undefined]) expect(mergeableNow('MERGEABLE_IF_STATUSES_PASS', status)).toBe(false);
     expect(mergeableNow('BLOCKED', 'CLEAN')).toBe(false);
   });
 });
