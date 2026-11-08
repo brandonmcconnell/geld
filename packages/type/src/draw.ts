@@ -71,7 +71,7 @@ export interface SpaceDef {
   advance: number | 'tabular' | { like: string };
 }
 
-export const p = (x: number, y: number, cut = false): PathPoint => (cut ? { x, y, cut } : { x, y });
+export const p = (x: number, y: number, cut: boolean | 'keep' = false): PathPoint => (cut ? { x, y, cut } : { x, y });
 export const open = (...points: PathPoint[]): Stroke => ({ points, closed: false });
 export const closed = (...points: PathPoint[]): Stroke => ({ points, closed: true });
 export const level = (stroke: Stroke, start = true, end = true): Stroke => ({
@@ -82,13 +82,16 @@ export const level = (stroke: Stroke, start = true, end = true): Stroke => ({
 export const withPen = (stroke: Stroke, pen: Pen): Stroke => ({ ...stroke, pen });
 
 /** A box with each corner cut or square, listed bottom-left, bottom-right, top-right, top-left. */
-export function box(x0: number, x1: number, y0: number, y1: number, cuts: [boolean, boolean, boolean, boolean]): Stroke {
+type Cut = boolean | 'keep';
+export function box(x0: number, x1: number, y0: number, y1: number, cuts: [Cut, Cut, Cut, Cut]): Stroke {
   const [bl, br, tr, tl] = cuts;
   return closed(p(x0, y0, bl), p(x1, y0, br), p(x1, y1, tr), p(x0, y1, tl));
 }
 export const ALL: [boolean, boolean, boolean, boolean] = [true, true, true, true];
 export const RIGHT: [boolean, boolean, boolean, boolean] = [false, true, true, false];
 export const LEFT: [boolean, boolean, boolean, boolean] = [true, false, false, true];
+/** The same cuts kept in the square style too, where they tell the glyph apart from another. */
+export const kept = (cuts: [Cut, Cut, Cut, Cut]): [Cut, Cut, Cut, Cut] => [cuts[0] && 'keep', cuts[1] && 'keep', cuts[2] && 'keep', cuts[3] && 'keep'];
 
 /** A diagonal with level ends, drawn with the diagonal pen. */
 export function diagonal(g: DrawContext, x0: number, y0: number, x1: number, y1: number, ends: [boolean, boolean] = [true, true]): Stroke {
@@ -318,7 +321,7 @@ export const hollow = (points: PathPoint[], wall: number, leg = 1.25): Stroke =>
 /** An octagon standing in for a circle (○ ● ◦ ∅): a square of side `size` with regular-octagon cuts. */
 export const octagon = (cx: number, cy: number, size: number): PathPoint[] => {
   const r = size / 2;
-  return [p(cx - r, cy - r, true), p(cx + r, cy - r, true), p(cx + r, cy + r, true), p(cx - r, cy + r, true)];
+  return [p(cx - r, cy - r, 'keep'), p(cx + r, cy - r, 'keep'), p(cx + r, cy + r, 'keep'), p(cx - r, cy + r, 'keep')];
 };
 export const octagonLeg = (size: number) => size * (1 - Math.SQRT1_2);
 

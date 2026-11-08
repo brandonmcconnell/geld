@@ -196,10 +196,11 @@ const IPA_DEFS: GlyphDef[] = [
 ];
 
 /** A stroke through the middle of a letter, from the tilde's own wave in a lighter pen, as ᵽ's stroke is, so its notches stay open at Black: ᵬ ᵭ ᵮ. */
+// Its turns' cuts draw the wave, so the square style keeps them.
 const tildeAcross = (g: DrawContext, x: number, y: number): Stroke => {
   const s = 1.75;
   const pen = { ...g.pen, v: Math.min(g.v, 1.6), h: Math.min(g.h, 1.6) };
-  return withPen(open(p(x - 1.5 * s, y - s / 2), p(x - 0.5 * s, y + s / 2, true), p(x + 0.5 * s, y - s / 2, true), p(x + 1.5 * s, y + s / 2)), pen);
+  return withPen(open(p(x - 1.5 * s, y - s / 2), p(x - 0.5 * s, y + s / 2, 'keep'), p(x + 0.5 * s, y - s / 2, 'keep'), p(x + 1.5 * s, y + s / 2)), pen);
 };
 
 /** Letters with a tilde through their middle (GF Phonetics), each at its stem or its middle. */

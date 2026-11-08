@@ -5,7 +5,7 @@
 import { ALTERNATES, STYLISTIC_SETS } from './alternates';
 import { CODE_GROUPS } from './code-ligatures';
 import { METRICS, toFontUnits, UPM, WEIGHTS, type Weight } from './grid';
-import type { Family, Master, Style } from './master';
+import { FAMILIES, type Family, FAMILY_NAMES, type Master, type Style } from './master';
 
 /** Parses a CSS unicode-range list ("U+0000-00FF, U+0131") into inclusive ranges. */
 function parseRanges(text: string): [number, number][] {
@@ -70,8 +70,10 @@ export function unicodeRange(codepoints: number[]): string {
   return runs.map(([from, to]) => (from === to ? `U+${hex(from)}` : `U+${hex(from)}-${hex(to)}`)).join(', ');
 }
 
-export const familyName = (family: Family) => (family === 'sans' ? 'Geld Sans' : 'Geld Dark Sans');
-const slug = (family: Family) => (family === 'sans' ? 'geld-sans' : 'geld-dark-sans');
+export const familyName = (family: Family) => FAMILY_NAMES[family];
+/** The family's CSS and web font file prefix: geld-sans, geld-dark-sans-cut. */
+export const familySlug = (family: Family) => FAMILY_NAMES[family].toLowerCase().replace(/\s/g, '-');
+const slug = familySlug;
 
 /** A web font's file: `geld-sans-latin-wght-normal.woff2` for the variable font, `geld-sans-latin-700-italic.woff2` for a static. */
 export function webFileName(family: Family, subset: string, weight: Weight | 'wght', style: Style): string {
@@ -222,12 +224,12 @@ export function featureLabels(): [string, string][] {
  * left to the owner to add (D16), as every licence change in this repository is.
  */
 export function fontPackageJson(version: string): string {
-  const css = ['geld-sans', 'geld-sans-static', 'geld-dark-sans', 'geld-dark-sans-static', 'geld-features'];
+  const css = [...FAMILIES.flatMap((family) => [familySlug(family), `${familySlug(family)}-static`]), 'geld-features'];
   return `${JSON.stringify(
     {
       name: '@geld/fonts',
       version,
-      description: 'Geld Sans and Geld Dark Sans: variable, static and web fonts, with CSS for the web fonts and their features.',
+      description: 'Geld Sans and Geld Sans Cut, each with its dark grade: variable, static and web fonts, with CSS for the web fonts and their features.',
       files: ['web/*.woff2', 'web/*.css', 'variable/*.ttf', 'ttf/*.ttf', 'otf/*.otf', 'README.md', 'specimen.html'],
       exports: {
         ...Object.fromEntries(css.map((name) => [`./${name}.css`, `./web/${name}.css`])),
@@ -249,7 +251,7 @@ export function fontPackageReadme(version: string): string {
   return [
     '# Geld Sans',
     '',
-    `Version ${version}. Geld Sans and Geld Dark Sans, its grade for light text on dark backgrounds, drawn on the Geld brand grid in nine weights (100 to 900), roman and italic.`,
+    `Version ${version}. Drawn on the Geld brand grid in nine weights (100 to 900), roman and italic, in two corner styles: Geld Sans, square-cornered, and Geld Sans Cut, its corners cut at 45° as the Geld wordmark's are. Each has a dark grade for light text on dark backgrounds, Geld Dark Sans and Geld Dark Sans Cut.`,
     '',
     '## On the web',
     '',
@@ -261,7 +263,9 @@ export function fontPackageReadme(version: string): string {
     '@media (prefers-color-scheme: dark) { body { font-family: "Geld Dark Sans", "Geld Dark Sans Fallback", sans-serif; } }',
     '```',
     '',
-    '`geld-sans-static.css` serves one file per weight instead. Each font is cut by `unicode-range` (latin, latin-ext, vietnamese, greek, cyrillic, cyrillic-ext and symbols), so a page loads only the scripts it shows. The fallback faces are Arial sized to Geld\'s widths and line height, so text does not move when the fonts arrive. Geld Dark Sans has the same widths as Geld Sans, so switching between them never reflows text.',
+    'For the cut corners, import `geld-sans-cut.css` (and `geld-dark-sans-cut.css`) and name "Geld Sans Cut". Each style is spaced for its own corners (square corners carry more ink at the edges, so Geld Sans sets a little wider), and each dark grade shares its light grade\'s widths.',
+    '',
+    '`geld-sans-static.css` serves one file per weight instead. Each font is cut by `unicode-range` (latin, latin-ext, vietnamese, greek, cyrillic, cyrillic-ext and symbols), so a page loads only the scripts it shows. The fallback faces are Arial sized to Geld\'s widths and line height, so text does not move when the fonts arrive. Each dark grade has the same widths as its light grade, so switching between them never reflows text.',
     '',
     '## Features',
     '',

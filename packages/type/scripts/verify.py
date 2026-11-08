@@ -1,7 +1,7 @@
 """Checks the compiled fonts against dist/manifest.json, which the build writes from the TypeScript source.
 
 Fails (exit 1) when a font's advances, character map, decoration metrics, italic flags, overlap
-flags or HarfBuzz shaping differ from the source, or when Geld Dark Sans and Geld Sans differ in width.
+flags or HarfBuzz shaping differ from the source, or when a dark grade and its light grade differ in width.
 """
 
 import io
@@ -22,7 +22,7 @@ OVERLAP_SIMPLE = 0x40
 SAMPLE = "HOnoGELD"
 CHAR_NAMES = {"-": "hyphen", "=": "equal", "<": "less", ">": "greater"}
 # Google Fonts' glyph sets the fonts must cover in full; each is added here once it is complete.
-GLYPHSETS = ["GF_Latin_Kernel", "GF_Latin_Core", "GF_Latin_Plus", "GF_Latin_Vietnamese", "GF_Latin_PriAfrican", "GF_Latin_African", "GF_Latin_Beyond", "GF_TransLatin_Pinyin", "GF_TransLatin_Arabic", "GF_Greek_Core", "GF_Cyrillic_Core", "GF_Cyrillic_Plus", "GF_Phonetics_IPAStandard", "GF_Phonetics_APA"]
+GLYPHSETS = ["GF_Latin_Kernel", "GF_Latin_Core", "GF_Latin_Plus", "GF_Latin_Vietnamese", "GF_Latin_PriAfrican", "GF_Latin_African", "GF_Latin_Beyond", "GF_TransLatin_Pinyin", "GF_TransLatin_Arabic", "GF_Greek_Core", "GF_Greek_Plus", "GF_Cyrillic_Core", "GF_Cyrillic_Plus", "GF_Phonetics_IPAStandard", "GF_Phonetics_APA"]
 
 failures: list[str] = []
 # The source name of each glyph shipped under a production name (ufo.ts productionNames), for the font being checked.
@@ -449,7 +449,7 @@ def main() -> None:
         subsets = json.loads((DIST / "subsets.json").read_text())
         subset_files = {entry["file"] for entry in subsets["files"]}
         tasks += [("web", path) for path in sorted((DIST / "web").glob("*.woff2")) if path.name not in subset_files]
-        names = {"sans": "GeldSans", "dark": "GeldDarkSans"}
+        names = {"sans": "GeldSans", "dark": "GeldDarkSans", "sans-cut": "GeldSansCut", "dark-cut": "GeldDarkSansCut"}
         for entry in subsets["files"]:
             family, style, weight = names[entry["family"]], entry["style"], entry["weight"]
             codepoints = next(s["codepoints"] for s in subsets["subsets"][entry["family"]][style] if s["name"] == entry["subset"])
@@ -464,13 +464,14 @@ def main() -> None:
         found = [f for result in pool.map(run_check, tasks) for f in result]
     failures.clear()
     failures.extend(found)
-    sans, dark = manifest["GeldSans"], manifest["GeldDarkSans"]
-    for style in sans:
-        for weight in sans[style]:
-            check(
-                sans[style][weight]["advances"] == dark[style][weight]["advances"],
-                f"Geld Dark Sans {style} {weight} differs in width from Geld Sans",
-            )
+    for light, dark_name in (("GeldSans", "GeldDarkSans"), ("GeldSansCut", "GeldDarkSansCut")):
+        sans, dark = manifest[light], manifest[dark_name]
+        for style in sans:
+            for weight in sans[style]:
+                check(
+                    sans[style][weight]["advances"] == dark[style][weight]["advances"],
+                    f"{dark_name} {style} {weight} differs in width from {light}",
+                )
     if failures:
         print("\n".join(failures))
         sys.exit(1)

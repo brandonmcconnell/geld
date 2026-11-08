@@ -4,7 +4,7 @@ import { GREEK_ALIASES, GREEK_TONOS, GREEK_TONOS_CAPS } from './glyphs-greek';
 import { MORE_ALIASES } from './glyphs-more';
 import { KEYS_ALIASES } from './glyphs-arrows';
 import { IPA_ALIASES } from './glyphs-ipa';
-import { VIETNAMESE_PAIRS } from './marks';
+import { GREEK_PAIRS, VIETNAMESE_PAIRS } from './marks';
 import { FRACTIONS } from './glyphs-figures';
 
 /** A precomposed letter: a base and the marks stacked on it, each attaching to the anchor its mark names. */
@@ -52,10 +52,14 @@ const MARK_SUFFIX: Record<number, { mark: string; suffix: string }> = {
   0x330: { mark: 'tildebelowcomb', suffix: 'tildebelow' },
   0x331: { mark: 'macronbelowcomb', suffix: 'macronbelow' },
   0x329: { mark: 'verticallinebelowcomb', suffix: 'verticallinebelow' },
+  0x313: { mark: 'commaabovecomb', suffix: 'psili' },
+  0x314: { mark: 'commareversedabovecomb', suffix: 'dasia' },
+  0x342: { mark: 'perispomenicomb', suffix: 'perispomeni' },
+  0x345: { mark: 'ypogegrammenicomb', suffix: 'ypogegrammeni' },
 };
 
 /** Marks that attach below the base, so they leave i and j their dots. */
-const BELOW = /^(dotbelow|commaaccent|cedilla|ogonek|\w+belowcomb)/;
+const BELOW = /^(dotbelow|commaaccent|cedilla|ogonek|ypogegrammeni|\w+belowcomb)/;
 
 /** Latvian writes a comma below where Unicode decomposes to a cedilla, and ģ turns it above. */
 const LATVIAN_COMMA = new Set([0x122, 0x136, 0x137, 0x13b, 0x13c, 0x145, 0x146, 0x156, 0x157]);
@@ -71,6 +75,62 @@ const TONOS_BESIDE = new Set(GREEK_TONOS_CAPS.map(([, unicode]) => unicode));
 
 const isUpper = (c: string) => c !== c.toLowerCase() && c === c.toUpperCase();
 
+/** Polytonic Greek's marks beside a capital, by the marks above it in Unicode's order: Ἀ Ἄ Ὦ. */
+const BESIDE_MARKS: Record<string, string> = {
+  '313': 'psili',
+  '314': 'dasia',
+  '300': 'varia',
+  '301': 'tonos:oxia',
+  '313 300': 'psilivaria',
+  '313 301': 'psilioxia',
+  '313 342': 'psiliperispomeni',
+  '314 300': 'dasiavaria',
+  '314 301': 'dasiaoxia',
+  '314 342': 'dasiaperispomeni',
+};
+const YPOGEGRAMMENI = 0x345;
+
+/** A Greek capital with its marks set before it and, for the iota subscript, an iota after it (prosgegrammeni): ᾌ. */
+export interface BesideDef {
+  name: string;
+  unicode: number;
+  base: string;
+  /** The spacing mark set before the capital. */
+  mark?: string;
+  /** An iota adscript after it. */
+  iota: boolean;
+}
+
+const GREEK_CAPITALS: Record<number, string> = {
+  0x391: 'Alpha',
+  0x395: 'Epsilon',
+  0x397: 'Eta',
+  0x399: 'Iota',
+  0x39f: 'Omicron',
+  0x3a1: 'Rho',
+  0x3a5: 'Upsilon',
+  0x3a9: 'Omega',
+};
+
+/** Every polytonic capital in Greek Extended whose marks go beside it, from Unicode's decompositions. */
+export const GREEK_BESIDE: BesideDef[] = (() => {
+  const out: BesideDef[] = [];
+  for (let cp = 0x1f08; cp <= 0x1ffc; cp++) {
+    const [base, ...marks] = [...String.fromCodePoint(cp).normalize('NFD')].map((c) => c.codePointAt(0)!);
+    const capital = base === undefined ? undefined : GREEK_CAPITALS[base];
+    if (!capital || marks.length === 0) continue;
+    const above = marks.filter((m) => m !== YPOGEGRAMMENI);
+    const iota = marks.includes(YPOGEGRAMMENI);
+    const entry = above.length ? BESIDE_MARKS[above.map((m) => m.toString(16)).join(' ')] : undefined;
+    if (above.length && !entry) continue;
+    // The tonos glyph stands for the oxia, but the name says oxia, since Ά (U+0386) is Alphatonos already.
+    const [mark, word] = entry?.split(':') ?? [];
+    out.push({ name: `${capital}${word ?? mark ?? ''}${iota ? 'prosgegrammeni' : ''}`, unicode: cp, base: capital, ...(mark ? { mark } : {}), iota });
+  }
+  return out;
+})();
+const GREEK_BESIDE_CODES = new Set(GREEK_BESIDE.map((d) => d.unicode));
+
 /**
  * Precomposed letters in the given ranges, from Unicode's own decompositions, so every one of
  * them is a base glyph plus mark glyphs. Code points with no decomposition, or whose base is not
@@ -80,7 +140,7 @@ export function accentedFromUnicode(ranges: [number, number][], names: Map<numbe
   const out: AccentedDef[] = [];
   for (const [from, to] of ranges)
     for (let cp = from; cp <= to; cp++) {
-      if (names.has(cp) || TONOS_BESIDE.has(cp)) continue;
+      if (names.has(cp) || TONOS_BESIDE.has(cp) || GREEK_BESIDE_CODES.has(cp)) continue;
       const [baseChar, ...markChars] = [...String.fromCodePoint(cp).normalize('NFD')];
       if (!baseChar || markChars.length === 0) continue;
       const baseCp = baseChar.codePointAt(0)!;
@@ -114,13 +174,16 @@ export function accentedFromUnicode(ranges: [number, number][], names: Map<numbe
         suffix += name;
       }
       if (marks.length === 0) continue;
-      for (const [first, second] of VIETNAMESE_PAIRS) {
+      for (const [first, second] of [...VIETNAMESE_PAIRS, ...GREEK_PAIRS]) {
         const plain = (m: string) => m.replace(/\.case$/, '');
         const i = marks.findIndex((m, k) => plain(m) === first && plain(marks[k + 1] ?? '') === second);
         if (i >= 0) marks.splice(i, 2, `${first}_${second}${marks[i]!.endsWith('.case') ? '.case' : ''}`);
       }
       const base = (top && DOTLESS[baseName]) || baseName;
-      out.push({ name: baseName.replace(/(-cy)?$/, `${suffix}$1`), unicode: cp, base, marks });
+      // Greek Extended's letters with oxia are canonically the tonos letters (ά is ά), whose names they would otherwise take.
+      const oxia = String.fromCodePoint(cp).normalize('NFC') !== String.fromCodePoint(cp);
+      const name = baseName.replace(/(-cy)?$/, `${oxia ? suffix.replace(/acute$/, 'oxia') : suffix}$1`);
+      out.push({ name, unicode: cp, base, marks });
     }
   return out;
 }
@@ -170,7 +233,7 @@ export const PLACED: PlacedDef[] = [
 ];
 
 /** Spacing accents: the combining mark, centred on a five-unit advance over the x-height. */
-export const SPACING_ACCENTS: { name: string; unicode: number; mark: string; below?: boolean }[] = [
+export const SPACING_ACCENTS: { name: string; unicode: number; mark: string | string[]; below?: boolean }[] = [
   { name: 'grave', unicode: 0x60, mark: 'gravecomb' },
   { name: 'acute', unicode: 0xb4, mark: 'acutecomb' },
   { name: 'dieresis', unicode: 0xa8, mark: 'dieresiscomb' },
@@ -184,7 +247,31 @@ export const SPACING_ACCENTS: { name: string; unicode: number; mark: string; bel
   { name: 'ogonek', unicode: 0x2db, mark: 'ogonekcomb', below: true },
   { name: 'tilde', unicode: 0x2dc, mark: 'tildecomb' },
   { name: 'hungarumlaut', unicode: 0x2dd, mark: 'hungarumlautcomb' },
+  // Polytonic Greek's spacing marks, several of them a breathing beside an accent or under a perispomeni.
+  { name: 'psili', unicode: 0x1fbf, mark: 'commaabovecomb' },
+  { name: 'koronis', unicode: 0x1fbd, mark: 'commaabovecomb' },
+  { name: 'dasia', unicode: 0x1ffe, mark: 'commareversedabovecomb' },
+  { name: 'perispomeni', unicode: 0x1fc0, mark: 'perispomenicomb' },
+  { name: 'psilivaria', unicode: 0x1fcd, mark: 'commaabovecomb_gravecomb' },
+  { name: 'psilioxia', unicode: 0x1fce, mark: 'commaabovecomb_acutecomb' },
+  { name: 'psiliperispomeni', unicode: 0x1fcf, mark: ['commaabovecomb', 'perispomenicomb'] },
+  { name: 'dasiavaria', unicode: 0x1fdd, mark: 'commareversedabovecomb_gravecomb' },
+  { name: 'dasiaoxia', unicode: 0x1fde, mark: 'commareversedabovecomb_acutecomb' },
+  { name: 'dasiaperispomeni', unicode: 0x1fdf, mark: ['commareversedabovecomb', 'perispomenicomb'] },
+  { name: 'dialytikaperispomeni', unicode: 0x1fc1, mark: ['dieresiscomb', 'perispomenicomb'] },
+  { name: 'dialytikavaria', unicode: 0x1fed, mark: ['dieresiscomb', 'gravecomb'] },
+  { name: 'ypogegrammeni', unicode: 0x37a, mark: 'ypogegrammenicomb', below: true },
 ];
+
+/** Greek code points that are glyphs the font has under another name (Unicode's own equivalences), placed after the spacing accents. */
+export const GREEK_SPACING_ALIASES: PlacedDef[] = (
+  [
+    ['oxia', 0x1ffd, 'acute'],
+    ['varia', 0x1fef, 'grave'],
+    ['dialytikaoxia', 0x1fee, 'dieresistonos'],
+    ['prosgegrammeni', 0x1fbe, 'iota'],
+  ] as const
+).map(([name, unicode, glyph]) => ({ name, unicode, parts: [{ glyph, after: true }] }));
 
 /** Glyphs that are another glyph under a second code point (Cyrillic and Greek letters shared with Latin), placed before the accented letters that use them. */
 export const ALIASES: PlacedDef[] = [...CYRILLIC_ALIASES, ...GREEK_ALIASES, ...AFRICAN_ALIASES, ...MORE_ALIASES, ...KEYS_ALIASES, ...IPA_ALIASES];
@@ -198,6 +285,7 @@ export const LATIN_RANGES: [number, number][] = [
   [0x370, 0x3ff],
   [0x400, 0x4ff],
   [0x1e00, 0x1eff],
+  [0x1f00, 0x1fff],
   [0x2c60, 0x2c7f],
   [0xa720, 0xa7ff],
   [0xab30, 0xab6f],

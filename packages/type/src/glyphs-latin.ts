@@ -1,4 +1,4 @@
-import { ALL, bar, box, diagonal, type DrawContext, type GlyphDef, LEFT, level, mirror, open, p, RIGHT, rotate180, stem, withPen, yArms, barIntoDiagonal, diagonalOntoBar, edgeAt, INSIDE , crossbarReach , strikeThrough , strikeReach } from './draw';
+import { ALL, bar, box, diagonal, kept, type DrawContext, type GlyphDef, LEFT, level, mirror, open, p, RIGHT, rotate180, stem, withPen, yArms, barIntoDiagonal, diagonalOntoBar, edgeAt, INSIDE , crossbarReach , strikeThrough , strikeReach } from './draw';
 import type { Stroke } from './geometry';
 import { sigma } from './glyphs-plus';
 
@@ -475,7 +475,7 @@ const LOWER_DEFS: GlyphDef[] = [
     rsb: 1.5,
     draw: (g) => {
       const w = g.wide(7.5);
-      return [stem(w, 0, g.xHeight), box(0, w, g.bottom(0), g.top(g.xHeight), LEFT)];
+      return [stem(w, 0, g.xHeight), box(0, w, g.bottom(0), g.top(g.xHeight), kept(LEFT))];
     },
   },
   {

@@ -1,7 +1,7 @@
-import { accentedFromUnicode, ALIASES, CASE_FORMS, GREEK_TONOS, LATIN_RANGES, PLACED, type PlacedDef, SPACING_ACCENTS } from './composites';
+import { accentedFromUnicode, ALIASES, CASE_FORMS, GREEK_BESIDE, GREEK_SPACING_ALIASES, GREEK_TONOS, LATIN_RANGES, PLACED, type PlacedDef, SPACING_ACCENTS } from './composites';
 import { type DrawContext, drawContext, type GlyphDef, MATH_AXIS, open, p, smallCapContext } from './draw';
 import { measuredSidebearings, type SpacingZone } from './spacing';
-import { bounds, type Contour, expandStroke, insetContour, shear, snapJoined, translate, type Vec, winding } from './geometry';
+import { bounds, type Contour, type Corners, expandStroke, insetContour, shear, snapJoined, translate, type Vec, winding, withCorners } from './geometry';
 import { GLYPHS, SPACES } from './glyphs';
 import { FIGURE_NAMES } from './glyphs-figures';
 import { CYRILLIC_LOCL_ACCENTED } from './glyphs-cyrillic';
@@ -18,18 +18,30 @@ const ITALIC_PIVOT = METRICS.xHeight / 2;
 /** The text ligatures: pairs whose crossbars would all but touch, drawn as one bar (fi fl fj fb fh fk are clear of each other and need none). */
 export const TEXT_LIGATURES = [['f', 'f'], ['f', 't'], ['t', 't']] as const;
 
+/** The white between a polytonic capital's marks and the capital: Ἀ. */
+const BESIDE_GAP = 0.6;
 /** Ơ Ư ơ ư are wider than O U o u by the horn that reaches out of them. */
 const HORN_ROOM = 1.5;
 /** The least room right of the horn's tip, so a heavier horn widens its glyph rather than reaching into the next. */
 const HORN_SIDE = 0.3;
 
-export type Family = 'sans' | 'dark';
+/** The two corner styles, each with its dark grade: Geld Sans is square-cornered, Geld Sans Cut cuts its corners at 45°. */
+export type Family = 'sans' | 'dark' | 'sans-cut' | 'dark-cut';
 export type Style = 'roman' | 'italic';
+export const FAMILIES: Family[] = ['sans', 'dark', 'sans-cut', 'dark-cut'];
 
 export const FAMILY_NAMES: Record<Family, string> = {
   sans: 'Geld Sans',
   dark: 'Geld Dark Sans',
+  'sans-cut': 'Geld Sans Cut',
+  'dark-cut': 'Geld Dark Sans Cut',
 };
+/** The family name without spaces, as file and PostScript names spell it. */
+export const familyFileName = (family: Family) => FAMILY_NAMES[family].replace(/\s/g, '');
+export const isDark = (family: Family) => family === 'dark' || family === 'dark-cut';
+export const cornersOf = (family: Family): Corners => (family === 'sans-cut' || family === 'dark-cut' ? 'cut' : 'square');
+/** The light grade of a family's corner style, whose spacing and kerning its dark grade shares. */
+export const lightOf = (family: Family): Family => (cornersOf(family) === 'cut' ? 'sans-cut' : 'sans');
 
 export interface Anchor extends Vec {
   name: string;
@@ -119,6 +131,10 @@ function baseAnchors(contours: Contour[], upper: boolean, v: number, name: strin
  * are components (a base and its marks), placed by anchors read from the Geld Sans outlines.
  */
 export function buildMaster(family: Family, style: Style, weight: Weight): Master {
+  return withCorners(cornersOf(family), () => drawMaster(family, style, weight));
+}
+
+function drawMaster(family: Family, style: Style, weight: Weight): Master {
   const params = weightParams(weight);
   const upper = drawContext(params.v, params.h);
   const lower = drawContext(params.v, params.hl, true);
@@ -135,7 +151,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     const cell = name !== undefined && edgeToEdge.has(name);
     const lean = (cs: Contour[]) => (cell ? cs : slant(cs));
     if (name) undarkened.set(name, lean(contours));
-    return lean(family === 'dark' && !cell ? contours.map((c) => insetContour(c, params.v * DARK_INSET_RATIO)) : contours);
+    return lean(isDark(family) && !cell ? contours.map((c) => insetContour(c, params.v * DARK_INSET_RATIO)) : contours);
   };
   const place = (p: Vec): Vec => (italic ? { x: p.x + p.y * ITALIC_SLOPE - ITALIC_SLOPE * ITALIC_PIVOT, y: p.y } : p);
   const placeAnchors = (anchors: Anchor[]) => anchors.map((a) => ({ ...a, ...place(a) }));
@@ -267,7 +283,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
       const next = parts[i + 1];
       if (next) {
         // Into each bar by more than Geld Dark Sans's inset, which trims the bridge's ends too.
-        const into = 0.5 + (family === 'dark' ? params.v * DARK_INSET_RATIO : 0);
+        const into = 0.5 + (isDark(family) ? params.v * DARK_INSET_RATIO : 0);
         const from = x + bar.right - into;
         const to = x + step + bars.get(next)!.left + into;
         const [top, bottom] = [Math.min(bar.top, bars.get(next)!.top), Math.max(bar.bottom, bars.get(next)!.bottom)];
@@ -278,8 +294,8 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     });
     glyphs.push({ name: parts.join('_'), advance: x, contours: finish(bridges, parts.join('_')), components, anchors: placeAnchors(carets), mark: false });
   }
-  glyphs.push({ name: LOCKUP.name, ...lockupGlyph(family === 'dark'), components: [], mark: false });
-  glyphs.push({ ...EMBLEM, ...emblemGlyph(family === 'dark'), components: [], anchors: [], mark: false });
+  glyphs.push({ name: LOCKUP.name, ...lockupGlyph(isDark(family)), components: [], mark: false });
+  glyphs.push({ ...EMBLEM, ...emblemGlyph(isDark(family)), components: [], anchors: [], mark: false });
   glyphs.push({ ...LOCKUP_CODE, advance: glyphs.find((gl) => gl.name === LOCKUP.name)!.advance, contours: [], components: [{ glyph: LOCKUP.name, dx: 0, dy: 0 }], anchors: [], mark: false });
 
   for (const arch of arches) {
@@ -391,7 +407,9 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     }
     const hornAt = components.find((c) => c.glyph === 'horncomb');
     const advance = hornAt ? Math.max(base.advance + HORN_ROOM, hornAt.dx + markReach.get('horncomb')! + HORN_SIDE) : base.advance;
-    glyphs.push({ name: def.name, ...(def.unicode === undefined ? {} : { unicode: def.unicode }), advance, contours: [], components, anchors: [], mark: false });
+    // The base's anchors, each one a mark used moved to where the mark leaves it, so a further mark stacks on: ẹ́, ą́.
+    const anchors = base.anchors.map((a) => ({ ...a, ...(reached.get(a.name) ?? {}) }));
+    glyphs.push({ name: def.name, ...(def.unicode === undefined ? {} : { unicode: def.unicode }), advance, contours: [], components, anchors, mark: false });
     byName.set(def.name, glyphs[glyphs.length - 1]!);
   }
 
@@ -460,18 +478,56 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
 
 
   for (const accent of SPACING_ACCENTS) {
-    const mark = byName.get(accent.mark)!;
-    const own = anchorOf(mark, `_${markAttach.get(accent.mark)}`)!;
-    const at = place({ x: 2.5, y: accent.below ? 0 : METRICS.xHeight + MARK_GAP.lower });
-    glyphs.push({
-      name: accent.name,
-      unicode: accent.unicode,
-      advance: 5,
-      contours: [],
-      components: [{ glyph: accent.mark, dx: at.x - own.x, dy: at.y - own.y }],
-      anchors: [],
-      mark: false,
-    });
+    // Several marks stack as they do on a letter, each on the anchor the one before it reached.
+    const marks = typeof accent.mark === 'string' ? [accent.mark] : accent.mark;
+    const lightInk = (name: string) => bounds(undarkened.get(name) ?? byName.get(name)!.contours);
+    const wide = Math.max(...marks.map((m) => lightInk(m).maxX - lightInk(m).minX));
+    const advance = Math.max(5, wide + 2);
+    let at: Vec = place({ x: advance / 2, y: accent.below ? 0 : METRICS.xHeight + MARK_GAP.lower });
+    const components: Component[] = [];
+    for (const name of marks) {
+      const mark = byName.get(name)!;
+      const attach = markAttach.get(name)!;
+      const own = anchorOf(mark, `_${attach}`)!;
+      const [dx, dy] = [at.x - own.x, at.y - own.y];
+      components.push({ glyph: name, dx, dy });
+      const next = anchorOf(mark, attach)!;
+      at = { x: next.x + dx, y: next.y + dy };
+    }
+    glyphs.push({ name: accent.name, unicode: accent.unicode, advance, contours: [], components, anchors: [], mark: false });
+    byName.set(accent.name, glyphs[glyphs.length - 1]!);
+  }
+  placeAll(GREEK_SPACING_ALIASES);
+
+  // Polytonic capitals: the marks before the letter, their top on the cap height, as Ά has its tonos (and an iota after it for ᾼ).
+  // Measured before the dark inset, so both grades get the same advances.
+  const inkOf = (gl: MasterGlyph): ReturnType<typeof bounds> => {
+    const parts = [...(undarkened.get(gl.name) ?? gl.contours), ...gl.components.flatMap((c) => {
+      const b = inkOf(byName.get(c.glyph)!);
+      return [[{ x: b.minX + c.dx, y: b.minY + c.dy }, { x: b.maxX + c.dx, y: b.maxY + c.dy }]];
+    })];
+    return bounds(parts);
+  };
+  for (const def of GREEK_BESIDE) {
+    const base = byName.get(def.base)!;
+    const components: Component[] = [];
+    let x = 0;
+    if (def.mark) {
+      const mark = byName.get(def.mark)!;
+      const ink = inkOf(mark);
+      const lift = METRICS.cap - ink.maxY;
+      components.push({ glyph: def.mark, dx: 0.5 - ink.minX + lift * slope, dy: lift });
+      // The capital's ink starts BESIDE_GAP after the mark's, whatever its sidebearing (Ω's feet reach out to it).
+      x = 0.5 + (ink.maxX - ink.minX) + BESIDE_GAP - inkOf(base).minX;
+    }
+    components.push({ glyph: def.base, dx: x, dy: 0 });
+    x += base.advance;
+    if (def.iota) {
+      components.push({ glyph: 'iota', dx: x - 0.5, dy: 0 });
+      x += byName.get('iota')!.advance - 0.5;
+    }
+    glyphs.push({ name: def.name, unicode: def.unicode, advance: x, contours: [], components, anchors: [], mark: false });
+    byName.set(def.name, glyphs[glyphs.length - 1]!);
   }
 
   for (const space of SPACES) {

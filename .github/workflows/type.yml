@@ -69,7 +69,10 @@ jobs:
           version="${GITHUB_REF_NAME#type-v}"
           packaged="$(node -p "require('./package.json').version")"
           if [ "$version" != "$packaged" ]; then echo "Tag $GITHUB_REF_NAME does not match the package version $packaged"; exit 1; fi
-          zip -r "../GeldSans-$version.zip" README.md variable/GeldSans* ttf/GeldSans-* otf/GeldSans-* web/geld-sans* web/GeldSans* web/geld-features.css
-          zip -r "../GeldDarkSans-$version.zip" README.md variable/GeldDarkSans* ttf/GeldDarkSans-* otf/GeldDarkSans-* web/geld-dark-sans* web/GeldDarkSans* web/geld-features.css
+          # One zip per family. Geld Sans's globs would also take Geld Sans Cut's files, so the cut ones are excluded.
+          for family in GeldSans:geld-sans GeldDarkSans:geld-dark-sans GeldSansCut:geld-sans-cut GeldDarkSansCut:geld-dark-sans-cut; do
+            name="${family%%:*}"; slug="${family#*:}"
+            zip -r "../$name-$version.zip" README.md specimen.html "variable/$name[wght].ttf" "variable/$name-Italic[wght].ttf" ttf/"$name"-* otf/"$name"-* web/"$name"-* web/"$slug".css web/"$slug"-static.css web/"$slug"-* web/geld-features.css -x "web/$slug-cut*"
+          done
           npm pack --pack-destination ..
           gh release create "$GITHUB_REF_NAME" ../*.zip ../*.tgz --title "Geld Sans $version" --latest=false --generate-notes

@@ -31,10 +31,11 @@ apps/dashboard/      @geld/dashboard — independent Next.js review workspace, B
 packages/domain/     @geld/domain — provider-neutral contracts, access and billing rules.
 packages/providers/  @geld/providers — provider clients behind token sources.
 packages/ui/         @geld/ui — shared Base UI presentation primitives.
-packages/type/       @geld/type — Geld Sans and Geld Dark Sans: glyph skeletons on the brand grid,
+packages/type/       @geld/type — Geld Sans (square corners) and Geld Sans Cut (45° cuts), each with a dark grade:
+                     glyph skeletons on the brand grid, cuts the square style keeps marked `'keep'`,
                      the geometry engine that draws every weight, and `pnpm type:build` (fontc for the
                      variable fonts, fontmake for the statics, in parallel; Python tools in
-                     requirements.txt) into static, variable and web fonts, about eight minutes.
+                     requirements.txt) into static, variable and web fonts, about fifteen minutes.
                      `pnpm type:build --quick` builds and checks the variable fonts only, for iterating.
                      The web package is `@geld/fonts` in dist/ (src/web.ts): unicode-range subsets, CSS
                      with size-adjusted fallbacks and one class per feature, released on `type-v*` tags.

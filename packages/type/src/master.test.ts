@@ -4,7 +4,7 @@ import { GLYPHS, SPACES } from './glyphs';
 import { bounds, type Contour, cutLeg, expandStroke, insetContour, winding } from './geometry';
 import { ITALIC_SLOPE, METRICS, WEIGHTS } from './grid';
 import { MATH_AXIS } from './draw';
-import { buildMaster, type Family, flatten, type Style } from './master';
+import { buildMaster, FAMILIES, type Family, flatten, isDark, lightOf, type Style } from './master';
 import { findSeams } from './seams';
 
 const shape = (family: Family, style: Style, weight: (typeof WEIGHTS)[number]) =>
@@ -34,21 +34,64 @@ describe('geometry', () => {
 });
 
 describe('masters', () => {
+  it('name every glyph once, so none takes the place of another in the font', () => {
+    for (const family of ['sans', 'sans-cut'] as const) {
+      const names = buildMaster(family, 'roman', 400).glyphs.map((g) => g.name);
+      expect(names.filter((n, i) => names.indexOf(n) !== i), family).toEqual([]);
+    }
+  });
+
   it('draw every weight with the same contours and points, so the weights interpolate', () => {
-    for (const family of ['sans', 'dark'] as const)
+    for (const family of FAMILIES)
       for (const style of ['roman', 'italic'] as const) {
         const reference = shape(family, style, 400);
         for (const weight of WEIGHTS) expect(shape(family, style, weight), `${family} ${style} ${weight}`).toEqual(reference);
       }
   });
 
-  it('give Geld Dark Sans the advance widths of Geld Sans, so switching never reflows', () => {
-    for (const weight of WEIGHTS)
-      for (const style of ['roman', 'italic'] as const) {
-        const sans = buildMaster('sans', style, weight).glyphs.map((g) => g.advance);
-        const dark = buildMaster('dark', style, weight).glyphs.map((g) => g.advance);
-        expect(dark).toEqual(sans);
-      }
+  it('give each dark grade the advance widths of its light grade, so switching never reflows', () => {
+    for (const family of FAMILIES.filter(isDark))
+      for (const weight of WEIGHTS)
+        for (const style of ['roman', 'italic'] as const) {
+          const sans = buildMaster(lightOf(family), style, weight).glyphs.map((g) => g.advance);
+          const dark = buildMaster(family, style, weight).glyphs.map((g) => g.advance);
+          expect(dark, `${family} ${style} ${weight}`).toEqual(sans);
+        }
+  });
+
+  it('square the corners of Geld Sans, keeping only the cuts that tell glyphs apart', () => {
+    const points = (family: Family, name: string, style: Style = 'roman') =>
+      buildMaster(family, style, 400).glyphs.find((g) => g.name === name)!.contours.reduce((n, c) => n + c.length, 0);
+    expect(points('sans', 'O')).toBe(8);
+    expect(points('sans-cut', 'O')).toBe(16);
+    // D against O, 0 5 8 against O S B, and a single-storey a or ɑ against o.
+    for (const [kept, plain] of [['D', 'O'], ['zero', 'O'], ['five', 'S'], ['eight', 'B'], ['alpha-latin', 'o'], ['Alpha-latin', 'O']] as const)
+      expect(points('sans', kept), `${kept} keeps its cuts`).toBeGreaterThan(points('sans', plain));
+    expect(points('sans', 'a', 'italic')).toBeGreaterThan(points('sans', 'o', 'italic'));
+  });
+
+  it('keep apart in Geld Sans every two letters or figures that Geld Sans Cut keeps apart', () => {
+    for (const style of ['roman', 'italic'] as const) {
+      // Each letter and figure sampled on a half-unit raster, with its advance.
+      const raster = (family: Family) => {
+        const master = buildMaster(family, style, 400);
+        const out = new Map<string, string>();
+        for (const glyph of master.glyphs) {
+          if (glyph.unicode === undefined || !/[\p{L}\p{N}]/u.test(String.fromCodePoint(glyph.unicode))) continue;
+          const contours = flatten(master, glyph);
+          let ink = '';
+          for (let y = -6; y <= 20; y += 0.5) for (let x = -1; x <= glyph.advance + 1; x += 0.5) ink += winding(contours, { x, y }) ? '#' : '.';
+          out.set(glyph.name, `${glyph.advance.toFixed(1)} ${ink}`);
+        }
+        return out;
+      };
+      const square = raster('sans');
+      const cut = raster('sans-cut');
+      const alike = new Map<string, string[]>();
+      for (const [name, ink] of square) alike.set(ink, [...(alike.get(ink) ?? []), name]);
+      const merged = [...alike.values()].filter((names) => new Set(names.map((n) => cut.get(n))).size > 1);
+      expect(merged, style).toEqual([]);
+    }
   });
 
   it('keep heavy-weight inner cuts open', () => {
@@ -178,14 +221,15 @@ describe('heavy weights', () => {
 
   it('keep every letter, figure and currency counter at least 1.4 units open (superiors, ordinals and modifier letters in proportion), Black included', () => {
     const tight: string[] = [];
-    for (const weight of WEIGHTS)
-      for (const glyph of buildMaster('sans', 'roman', weight).glyphs) {
-        const char = glyph.unicode === undefined ? '' : String.fromCodePoint(glyph.unicode);
-        if (!(/[\p{L}\p{N}\p{Sc}]/u.test(char) || /\.(locl|tf|osf|tosf)|\.sc$|^zero\./.test(glyph.name)) || notched.has(glyph.name) || !orthogonal(glyph.contours)) continue;
-        const small = /superior|inferior|\.dnom|^ord|mod$/.test(glyph.name);
-        const gap = narrowestCounter(glyph.contours);
-        if (gap < (small ? 0.75 : 1.4)) tight.push(`${glyph.name} ${weight}: ${gap.toFixed(2)}`);
-      }
+    for (const family of ['sans', 'sans-cut'] as const)
+      for (const weight of WEIGHTS)
+        for (const glyph of buildMaster(family, 'roman', weight).glyphs) {
+          const char = glyph.unicode === undefined ? '' : String.fromCodePoint(glyph.unicode);
+          if (!(/[\p{L}\p{N}\p{Sc}]/u.test(char) || /\.(locl|tf|osf|tosf)|\.sc$|^zero\./.test(glyph.name)) || notched.has(glyph.name) || !orthogonal(glyph.contours)) continue;
+          const small = /superior|inferior|\.dnom|^ord|mod$/.test(glyph.name);
+          const gap = narrowestCounter(glyph.contours);
+          if (gap < (small ? 0.75 : 1.4)) tight.push(`${family} ${glyph.name} ${weight}: ${gap.toFixed(2)}`);
+        }
     expect(tight).toEqual([]);
   });
 });
@@ -203,7 +247,7 @@ describe('italic', () => {
 
   it('cuts every corner of a slanted box to the same length, sharp corners and blunt alike', () => {
     for (const weight of WEIGHTS) {
-      const o = buildMaster('sans', 'italic', weight).glyphs.find((g) => g.name === 'O')!;
+      const o = buildMaster('sans-cut', 'italic', weight).glyphs.find((g) => g.name === 'O')!;
       const [outer, inner] = o.contours.map(cutEdges);
       expect(outer).toHaveLength(4);
       expect(Math.max(...outer!) / Math.min(...outer!), `O ${weight}`).toBeLessThan(1.001);
@@ -212,8 +256,9 @@ describe('italic', () => {
   });
 
   it('draws italic forms of a, f, l and y, and Cyrillic и п т ц, rather than slanting the roman', () => {
-    const roman = buildMaster('sans', 'roman', 400).glyphs;
-    const italic = buildMaster('sans', 'italic', 400).glyphs;
+    // The cut style, where a different form shows as a different point structure.
+    const roman = buildMaster('sans-cut', 'roman', 400).glyphs;
+    const italic = buildMaster('sans-cut', 'italic', 400).glyphs;
     for (const name of ['a', 'f', 'l', 'y', 'ii-cy', 'pe-cy', 'te-cy', 'tse-cy']) {
       const points = (glyphs: typeof roman) => glyphs.find((g) => g.name === name)!.contours.map((c) => c.length);
       expect(points(italic), name).not.toEqual(points(roman));
@@ -224,7 +269,7 @@ describe('italic', () => {
 describe('seams and slivers', () => {
   it('leaves no touching edges and no sliver gaps in any glyph, family, style or weight', () => {
     const faults: string[] = [];
-    for (const family of ['sans', 'dark'] as const)
+    for (const family of FAMILIES)
       for (const style of ['roman', 'italic'] as const)
         for (const weight of WEIGHTS) {
           const master = buildMaster(family, style, weight);
@@ -234,7 +279,7 @@ describe('seams and slivers', () => {
           }
         }
     expect(faults).toEqual([]);
-  }, 120_000);
+  }, 300_000);
 });
 
 describe('math operators', () => {

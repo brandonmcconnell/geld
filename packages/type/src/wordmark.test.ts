@@ -49,19 +49,19 @@ function coverage(contours: Contour[]): string {
   return rows.join('\n');
 }
 
-describe('the wordmark is Geld Sans SemiBold', () => {
+describe('the wordmark is Geld Sans Cut SemiBold', () => {
   const names = ['G', 'E', 'L', 'D'];
 
   it('matches geld-logo.svg letter for letter', () => {
-    const master = buildMaster('sans', 'roman', 600);
+    const master = buildMaster('sans-cut', 'roman', 600);
     letters(brand('geld-logo.svg')).forEach((logo, i) => {
       const glyph = master.glyphs.find((g) => g.name === names[i])!;
       expect(coverage(glyph.contours), names[i]).toBe(coverage(logo));
     });
   });
 
-  it('matches geld-logo-white.svg as Geld Dark Sans', () => {
-    const master = buildMaster('dark', 'roman', 600);
+  it('matches geld-logo-white.svg as Geld Dark Sans Cut', () => {
+    const master = buildMaster('dark-cut', 'roman', 600);
     letters(brand('geld-logo-white.svg')).forEach((logo, i) => {
       const glyph = master.glyphs.find((g) => g.name === names[i])!;
       expect(coverage(glyph.contours), names[i]).toBe(coverage(logo));

@@ -1,12 +1,13 @@
 import { smallPen } from './glyphs-figures';
-import { ALL, bar, box, crossbarReach, diagonal, type DrawContext, type GlyphDef, LEFT, MATH_AXIS, open, p, inPen, shift, stem, withPen, yArms , edgeAt  } from './draw';
+import { kept, ALL, bar, box, crossbarReach, diagonal, type DrawContext, type GlyphDef, LEFT, MATH_AXIS, open, p, inPen, shift, stem, withPen, yArms , edgeAt  } from './draw';
 import type { Stroke } from './geometry';
 
 /** The C inside © and the R inside ®, drawn natively at their size and centred in the frame. */
 function enclosed(g: DrawContext, inner: (g: DrawContext) => Stroke[], width: number): Stroke[] {
   const w = g.wide(13);
   const small = g.sub(g.cap * 0.45, smallPen(g.v));
-  return [box(0, w, g.bottom(-1), g.top(g.cap + 1), ALL), ...shift(inPen(small, inner(small)), w / 2 - small.wide(width) / 2, (g.cap - small.cap) / 2)];
+  // The ring is a circle's stand-in, an octagon in both corner styles.
+  return [box(0, w, g.bottom(-1), g.top(g.cap + 1), kept(ALL)), ...shift(inPen(small, inner(small)), w / 2 - small.wide(width) / 2, (g.cap - small.cap) / 2)];
 }
 
 const smallC = (g: DrawContext): Stroke[] => {

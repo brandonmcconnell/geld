@@ -66,13 +66,17 @@ ${face('Geld Sans', 'GeldSans[wght]', 'normal')}
 ${face('Geld Sans', 'GeldSans-Italic[wght]', 'italic')}
 ${face('Geld Dark Sans', 'GeldDarkSans[wght]', 'normal')}
 ${face('Geld Dark Sans', 'GeldDarkSans-Italic[wght]', 'italic')}
+${face('Geld Sans Cut', 'GeldSansCut[wght]', 'normal')}
+${face('Geld Sans Cut', 'GeldSansCut-Italic[wght]', 'italic')}
+${face('Geld Dark Sans Cut', 'GeldDarkSansCut[wght]', 'normal')}
+${face('Geld Dark Sans Cut', 'GeldDarkSansCut-Italic[wght]', 'italic')}
 body { margin: 0; font: 14px system-ui, sans-serif; color: #111; background: #fff; }
 header { position: sticky; top: 0; display: flex; gap: 24px; align-items: center; padding: 12px 24px; background: #f4f4f4; border-bottom: 1px solid #ddd; }
 section { padding: 24px; border-bottom: 1px solid #eee; }
 h2 { margin: 0 0 12px; font: 600 12px system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.06em; color: #666; }
-.sample { font-family: 'Geld Sans'; font-weight: var(--w, 400); font-style: var(--s, normal); }
+.sample { font-family: var(--family, 'Geld Sans'); font-weight: var(--w, 400); font-style: var(--s, normal); }
 .unkerned { font-kerning: none; color: #999; margin-top: -0.6em; }
-.dark-family { font-family: 'Geld Dark Sans'; }
+.dark-family { font-family: var(--dark-family, 'Geld Dark Sans'); }
 .row { display: flex; align-items: baseline; gap: 16px; line-height: 1.2; }
 .tag { flex: 0 0 120px; font: 11px ui-monospace, monospace; color: #888; }
 .big { font-size: 80px; line-height: 1.2; }
@@ -88,6 +92,7 @@ p { margin: 0 0 8px; font-size: 40px; }
 <header>
   <label>Weight <input id="w" type="range" min="100" max="900" step="1" value="400"> <output id="wo">400</output></label>
   <label><input id="i" type="checkbox"> Italic</label>
+  <label><input id="c" type="checkbox"> Cut corners</label>
 </header>
 <section class="sample"><h2>Strings</h2>${strings}</section>
 <section class="sample"><h2>Kerning</h2>${KERNING.map((k) => `<p>${k}</p><p class="unkerned">${k}</p>`).join('\n')}</section>
@@ -105,9 +110,16 @@ p { margin: 0 0 8px; font-size: 40px; }
 </div>
 </section>
 <script>
-const w = document.getElementById('w'), wo = document.getElementById('wo'), i = document.getElementById('i');
-const apply = () => { document.body.style.setProperty('--w', w.value); document.body.style.setProperty('--s', i.checked ? 'italic' : 'normal'); wo.value = w.value; };
-w.oninput = apply; i.onchange = apply; apply();
+const w = document.getElementById('w'), wo = document.getElementById('wo'), i = document.getElementById('i'), c = document.getElementById('c');
+const apply = () => {
+  const s = document.body.style;
+  s.setProperty('--w', w.value);
+  s.setProperty('--s', i.checked ? 'italic' : 'normal');
+  s.setProperty('--family', c.checked ? "'Geld Sans Cut'" : "'Geld Sans'");
+  s.setProperty('--dark-family', c.checked ? "'Geld Dark Sans Cut'" : "'Geld Dark Sans'");
+  wo.value = w.value;
+};
+w.oninput = apply; i.onchange = apply; c.onchange = apply; apply();
 </script>
 </body>
 </html>

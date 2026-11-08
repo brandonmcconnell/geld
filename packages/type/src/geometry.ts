@@ -9,9 +9,27 @@ export interface Vec {
 export type Contour = Vec[];
 
 export interface PathPoint extends Vec {
-  /** Cut this corner at 45°. Only corners between perpendicular segments can be cut. */
-  cut?: boolean;
+  /**
+   * Cut this corner at 45°. Only corners between perpendicular segments can be cut. `'keep'` is a cut the square style
+   * keeps too, where the cut tells the glyph apart from another (D from O) or draws a shape (an octagon for a circle).
+   */
+  cut?: boolean | 'keep';
 }
+
+/** The two corner styles: Geld Sans Cut's 45° cuts, and Geld Sans's square corners on the same grid. */
+export type Corners = 'cut' | 'square';
+let corners: Corners = 'cut';
+/** Draws with the given corner style; a master is built synchronously inside one call. */
+export function withCorners<T>(style: Corners, draw: () => T): T {
+  const before = corners;
+  corners = style;
+  try {
+    return draw();
+  } finally {
+    corners = before;
+  }
+}
+const cuts = (p: PathPoint) => (corners === 'cut' ? p.cut !== undefined && p.cut !== false : p.cut === 'keep');
 
 /**
  * How an open stroke ends at its first or last point, which always lies on the outline:
@@ -114,7 +132,7 @@ export function insertCuts(stroke: Stroke, pen: Pen, slope = 0): Vec[] {
   const { points, closed } = stroke;
   const out: Vec[] = [];
   points.forEach((p, i) => {
-    if (!p.cut) {
+    if (!cuts(p)) {
       out.push({ x: p.x, y: p.y });
       return;
     }
@@ -124,8 +142,8 @@ export function insertCuts(stroke: Stroke, pen: Pen, slope = 0): Vec[] {
     const a = unit(sub(p, prev));
     const b = unit(sub(next, p));
     if (Math.abs(a.x * b.x + a.y * b.y) > 1e-6) throw new Error('Only a right-angled corner can be cut');
-    const roomBefore = length(sub(p, prev)) * (prev.cut ? 0.49 : 0.98);
-    const roomAfter = length(sub(next, p)) * (next.cut ? 0.49 : 0.98);
+    const roomBefore = length(sub(p, prev)) * (cuts(prev) ? 0.49 : 0.98);
+    const roomAfter = length(sub(next, p)) * (cuts(next) ? 0.49 : 0.98);
     const wIn = widthAlong(a, pen);
     const wOut = widthAlong(b, pen);
     const k = ((wIn + wOut) / 4) * (2 - Math.SQRT2);
@@ -136,8 +154,32 @@ export function insertCuts(stroke: Stroke, pen: Pen, slope = 0): Vec[] {
   return out;
 }
 
+/**
+ * How far past the stroke it turns from a terminal reaches at least in the square style: the cut style's cut
+ * makes up a short terminal's length, and squared it was a nub (0.37 units on e at Black).
+ */
+export const SQUARE_STUB = 0.6;
+
+/** In the square style, lengthens an open stroke's end that turns at a dropped cut, to SQUARE_STUB past the stroke before it. */
+function squareStubs(stroke: Stroke, pen: Pen): Stroke {
+  const { points } = stroke;
+  if (corners !== 'square' || stroke.closed || stroke.fill || points.length < 3) return stroke;
+  const out = [...points];
+  const reach = (end: number, corner: number, before: number) => {
+    const q = out[corner]!;
+    if (q.cut !== true) return;
+    const stub = sub(out[end]!, q);
+    const need = widthAlong(unit(sub(q, out[before]!)), pen) / 2 + SQUARE_STUB;
+    if (length(stub) < need) out[end] = { ...out[end]!, ...add(q, scale(unit(stub), need)) };
+  };
+  reach(out.length - 1, out.length - 2, out.length - 3);
+  reach(0, 1, 2);
+  return { ...stroke, points: out };
+}
+
 /** Offsets a centreline by half its width on each side; `slope` is the italic's, so cuts come out even once slanted. */
-export function expandStroke(stroke: Stroke, masterPen: Pen, slope = 0): Contour[] {
+export function expandStroke(drawn: Stroke, masterPen: Pen, slope = 0): Contour[] {
+  const stroke = squareStubs(drawn, drawn.pen ?? masterPen);
   const pen = stroke.pen ?? masterPen;
   if (stroke.fill) {
     let shape = insertCuts(stroke, { v: 0, h: 0, ...(pen.cut === undefined ? {} : { cut: pen.cut }) }, slope);

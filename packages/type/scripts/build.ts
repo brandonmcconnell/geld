@@ -17,16 +17,16 @@ import { toFontUnits, type Weight, WEIGHTS } from '../src/grid';
 import { alignKerning, computeKerning, type Kerning, kerningClasses, resolvedValue } from '../src/kerning';
 import { ALTERNATES, alternateName } from '../src/alternates';
 import { CODE_GROUPS, CODE_LIGATURES, codePieceName } from '../src/code-ligatures';
-import { buildMaster, type Family, type Master, type Style } from '../src/master';
+import { buildMaster, FAMILIES, type Family, familyFileName, lightOf, type Master, type Style } from '../src/master';
 import { proofPage } from '../src/proof';
 import { specimenPage } from '../src/specimen';
 import { decorationMetrics, designspace, postscriptName, productionNames, sourceFileName, ufoFiles } from '../src/ufo';
-import { fallbackFace, featureCss, fontFaceCss, fontPackageJson, fontPackageReadme, type SubsetMap, subsetsFor, webFileName } from '../src/web';
+import { fallbackFace, featureCss, fontFaceCss, fontPackageJson, fontPackageReadme, familySlug, type SubsetMap, subsetsFor, webFileName } from '../src/web';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const build = join(root, 'build');
 const dist = join(root, 'dist');
-const families: Family[] = ['sans', 'dark'];
+const families: Family[] = FAMILIES;
 const styles: Style[] = ['roman', 'italic'];
 const python = process.env.PYTHON ?? 'python3';
 const quick = process.argv.includes('--quick');
@@ -82,7 +82,7 @@ async function phase<T>(name: string, work: () => T | Promise<T>): Promise<T> {
   return result;
 }
 
-/** Each style and weight's kerning, Geld Sans's, which Geld Dark Sans shares. */
+/** Each corner style, style and weight's kerning, measured on the light grade, which the dark grade shares. */
 const kernings = new Map<string, Kerning>();
 
 /** What the source says each compiled font must contain, for scripts/verify.py, taken while each master is built. */
@@ -96,17 +96,18 @@ function writeSources(): string[] {
   const spaces: string[] = [];
   for (const family of families) {
     for (const style of styles) {
-      // The Geld Sans masters the kerning is measured on are the ones written, rather than built a second time.
+      // The light masters the kerning is measured on are the ones written, rather than built a second time.
       const measured = new Map<number, Master>();
       for (const weight of WEIGHTS) {
         const ufo = join(build, sourceFileName(family, style, weight));
-        // Geld Dark Sans takes Geld Sans's kerning, so switching families never reflows text.
-        const key = `${style} ${weight}`;
+        // A dark grade takes its light grade's kerning, so switching between them never reflows text.
+        const light = lightOf(family);
+        const key = `${light} ${style} ${weight}`;
         if (!kernings.has(key)) {
-          for (const w of WEIGHTS) measured.set(w, buildMaster('sans', style, w));
+          for (const w of WEIGHTS) measured.set(w, buildMaster(light, style, w));
           const classes = kerningClasses(measured.get(400)!);
           const aligned = alignKerning(WEIGHTS.map((w) => computeKerning(measured.get(w)!, classes)));
-          WEIGHTS.forEach((w, i) => kernings.set(`${style} ${w}`, aligned[i]!));
+          WEIGHTS.forEach((w, i) => kernings.set(`${light} ${style} ${w}`, aligned[i]!));
         }
         const master = measured.get(weight) ?? buildMaster(family, style, weight);
         measured.delete(weight);
@@ -114,7 +115,7 @@ function writeSources(): string[] {
           mkdirSync(dirname(join(ufo, path)), { recursive: true });
           writeFileSync(join(ufo, path), text);
         }
-        const name = family === 'sans' ? 'GeldSans' : 'GeldDarkSans';
+        const name = familyFileName(family);
         ((expected[name] ??= {})[style] ??= {})[weight] = manifestEntry(master, kernings.get(key)!);
         if (weight === 400) {
           const codepoints = master.glyphs.flatMap((g) => (g.unicode === undefined ? [] : [g.unicode]));
@@ -123,7 +124,7 @@ function writeSources(): string[] {
         if (weight === 400 || weight === 700) fallbacks.set(family, [...(fallbacks.get(family) ?? []), fallbackFace(master, weight === 400 ? 'regular' : 'bold')]);
       }
     }
-    const file = join(build, `${family === 'sans' ? 'GeldSans' : 'GeldDarkSans'}.designspace`);
+    const file = join(build, `${familyFileName(family)}.designspace`);
     writeFileSync(file, designspace(family));
     spaces.push(file);
   }
@@ -189,7 +190,7 @@ function webSubsetJobs(): string[] {
   for (const family of families)
     for (const style of styles) {
       const fonts: [string, Weight | 'wght'][] = [
-        [join(dist, 'variable', `${family === 'sans' ? 'GeldSans' : 'GeldDarkSans'}${style === 'italic' ? '-Italic' : ''}[wght].ttf`), 'wght'],
+        [join(dist, 'variable', `${familyFileName(family)}${style === 'italic' ? '-Italic' : ''}[wght].ttf`), 'wght'],
         ...WEIGHTS.map((w): [string, Weight] => [join(dist, 'ttf', `${postscriptName(family, w, style)}.ttf`), w]),
       ];
       for (const [font, weight] of fonts)
@@ -208,7 +209,7 @@ function writeWebCss(): void {
   for (const family of families) {
     const map: SubsetMap = { roman: webSubsets.get(family)!.roman!, italic: webSubsets.get(family)!.italic! };
     subsets[family] = map;
-    const slug = family === 'sans' ? 'geld-sans' : 'geld-dark-sans';
+    const slug = familySlug(family);
     writeFileSync(join(dist, 'web', `${slug}.css`), fontFaceCss(family, map, true, fallbacks.get(family)!));
     writeFileSync(join(dist, 'web', `${slug}-static.css`), fontFaceCss(family, map, false, fallbacks.get(family)!));
   }
