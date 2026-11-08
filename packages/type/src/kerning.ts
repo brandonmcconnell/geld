@@ -231,9 +231,34 @@ export function kerningClasses(master: Master): KerningClasses {
       if (own.length) add(own.includes(base) ? base : own[0]!, own);
     }
     for (const n of apart) add(n, [n]);
-    return classes;
+    // A class with no core letter is left out: its row and column would grow the class matrix for every class, and
+    // GPOS was 1.2 MB of a 1.9 MB variable font. Its glyphs keep their spacing and take no class kerning.
+    return new Map([...classes].filter(([, names]) => names.some((n) => kernedByClass(byName.get(n), byName))));
   };
   return { right: cluster('right'), left: cluster('left') };
+}
+
+/**
+ * The core the class kerning covers: Latin-1 and Latin Extended-A, the Romanian comma letters, Vietnamese, basic Greek
+ * and Cyrillic, punctuation and currency (GF Latin Core and Plus, Vietnamese, Greek Core, Cyrillic Core and Plus).
+ */
+const KERNED_RANGES: [number, number][] = [
+  [0x20, 0x7e],
+  [0xa0, 0x17f],
+  [0x218, 0x21b],
+  [0x370, 0x3ff],
+  [0x400, 0x45f],
+  [0x490, 0x4ff],
+  [0x1ea0, 0x1ef9],
+  [0x2000, 0x206f],
+  [0x20a0, 0x20cf],
+];
+
+/** Whether a glyph is in the core, by its own character or, for an alternate, small capital or case form, its base's. */
+function kernedByClass(glyph: MasterGlyph | undefined, byName: Map<string, MasterGlyph>): boolean {
+  if (!glyph) return false;
+  const u = glyph.unicode ?? byName.get(glyph.name.split('.')[0]!)?.unicode;
+  return u !== undefined && KERNED_RANGES.some(([from, to]) => u >= from && u <= to);
 }
 
 const white = (p: Profile, side: 'left' | 'right') => p[side].map((x) => (x === null ? null : side === 'left' ? x : p.advance - x));

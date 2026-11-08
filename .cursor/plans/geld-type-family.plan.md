@@ -364,7 +364,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 - [ ] Outline checks: contour direction, no stray points, no zero-length segments, no overlaps in statics, extreme points.
 - [ ] Coverage against the target glyph sets (3.1), and Shaperglot per language.
 - [ ] Kerning collision checks (section 4).
-- [ ] GPOS size: the class kerning compiles to a 1.2 MB class matrix (about 390 left by 330 right classes, many with one glyph), most of each variable font. Merging classes with identical rows saves only about ten; a smaller GPOS needs coarser classes, a kerning design change. Then fontc packs the italic again.
+- [ ] GPOS size: the class kerning compiled to a 1.4 MB class matrix (about 410 by 390 classes, a third of them one glyph), most of each variable font, and fontc could no longer pack it. Classes with no core letter (outside Latin-1, Latin Extended-A, Vietnamese, basic Greek and Cyrillic) are now left out, so their glyphs keep their spacing and take no class kerning: about 295 by 265 classes, GPOS 0.87 MB, and fontc packs all four variable fonts again. Merging classes with identical or near rows saves only about ten; splitting classes by script makes more of them, since fontc keeps one kerning lookup. Further: coarser classes for the core, a kerning design change.
 - [ ] Metric consistency across the family.
 - [ ] diffenator2 between builds, so every change shows what it changed.
 
