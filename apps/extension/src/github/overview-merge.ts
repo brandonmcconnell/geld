@@ -128,6 +128,20 @@ function greenMerges(scope: Element): void {
   }
 }
 
+/**
+ * GitHub disables or enables its merge in place, by an attribute the controller's observer does not hear: the section
+ * is watched for those itself, so the colour follows at once. Only `data-variant` is written back, which it does not watch.
+ */
+let disabledWatch: { readonly section: Element; readonly observer: MutationObserver } | null = null;
+
+function watchDisabled(section: Element): void {
+  if (disabledWatch?.section === section) return;
+  disabledWatch?.observer.disconnect();
+  const observer = new MutationObserver(() => greenMerges(section));
+  observer.observe(section, { subtree: true, attributes: true, attributeFilter: ['disabled', 'aria-disabled', 'data-inactive'] });
+  disabledWatch = { section, observer };
+}
+
 function isDisabled(button: HTMLButtonElement): boolean {
   return button.disabled || button.getAttribute('aria-disabled') === 'true' || button.getAttribute('data-inactive') === 'true';
 }
@@ -141,7 +155,10 @@ export function syncOverviewMerge(merge: OverviewMerge | null, method: MergeMeth
   const section = document.querySelector(SECTION);
   const buttons = section === null ? [] : viewStatusButtons(section);
   for (const button of buttons) iconify(button);
-  if (section !== null) greenMerges(section);
+  if (section !== null) {
+    greenMerges(section);
+    watchDisabled(section);
+  }
   const anchor = buttons[0] ?? null;
   const row = anchor?.closest('[data-testid="for-you-item-row"]') ?? null;
   const existing = document.querySelector<HTMLElement>(`[${ATTR_MERGE}]`);
@@ -255,6 +272,8 @@ function closeMethodMenu(): void {
 }
 
 export function removeOverviewMerge(): void {
+  disabledWatch?.observer.disconnect();
+  disabledWatch = null;
   closeMethodMenu();
   for (const control of document.querySelectorAll(`[${ATTR_MERGE}]`)) control.remove();
   for (const button of document.querySelectorAll<HTMLButtonElement>(`button[${ATTR_INFO}]`)) restore(button);
