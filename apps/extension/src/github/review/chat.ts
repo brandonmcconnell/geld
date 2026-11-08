@@ -200,7 +200,9 @@ export function renderChatView(slot: HTMLElement, threads: readonly HTMLElement[
     })
     .join(' ');
   // The same threads a rebuilt panel carried over (`parkChats`): the chat goes back as it was, loans, reply box and all.
-  if (key !== '' && parked !== null && parked.getAttribute(ATTR_CHAT_KEY) === key) {
+  // Only while it still holds these very threads: GitHub may have replaced one at home meanwhile (`dropOrphanedLoans`
+  // dropped the stale copy from the chat), and the fresh thread can carry the same anchor, path and source.
+  if (key !== '' && parked !== null && parked.getAttribute(ATTR_CHAT_KEY) === key && threads.every((thread) => parked?.contains(thread) === true)) {
     const chats = parked;
     parked = null;
     slot.replaceChildren();
