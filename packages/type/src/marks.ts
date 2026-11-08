@@ -1,5 +1,5 @@
-import { ALL, bar, box, comma, diagonal, dot, type DrawContext, level, open, p, rotate180, shift, spanOf, stem, tildeStroke, withPen } from './draw';
-import { expandStroke, type Stroke } from './geometry';
+import { ALL, bar, box, comma, diagonal, dot, type DrawContext, level, open, p, rotate180, shift, solid, spanOf, stem, tildeStroke, withPen } from './draw';
+import { bounds, expandStroke, type Stroke } from './geometry';
 
 /** Where a mark attaches: the base's anchor of the same name, matched by the mark's `_name` anchor at its origin. */
 export type Attachment = 'top' | 'bottom' | 'ogonek' | 'topright' | 'horn' | 'center';
@@ -39,6 +39,34 @@ const smallMarkPen = (g: DrawContext) => ({ v: Math.min(g.v * 0.9, 2), h: Math.m
 const acute = (g: DrawContext, height: number, dx = 0): Stroke =>
   withPen(level(open(p(dx - 0.9, 0), p(dx + 0.9, height))), accentPen(g));
 
+function tilde(g: DrawContext, h: number): Stroke[] {
+  // Up, a flat top, down, a flat bottom, up: every corner obtuse, so none needs a cut that could close it.
+  const pen = smallMarkPen(g);
+  const s = Math.min(1.4, Math.max(0.9, h - pen.h - 0.3));
+  const a = 2.75;
+  const y = pen.h / 2;
+  return [withPen(tildeStroke(-a, a, y, s), pen)];
+}
+
+const dieresis = (g: DrawContext): Stroke[] => {
+  const x = g.dot / 2 + 0.9;
+  return [dot(g, -x, 0), dot(g, x, 0)];
+};
+
+/**
+ * The smooth breathing standing on the mark's origin: a square head and a tail that leans out to the left under it,
+ * as a small ’ does.
+ */
+const breathingHead = (g: DrawContext) => Math.min(g.dot * 0.9, 2.4);
+const breathingHeight = (g: DrawContext) => breathingHead(g) + 1.1;
+function breathing(g: DrawContext): Stroke[] {
+  const s = breathingHead(g);
+  const tail = breathingHeight(g) - s;
+  const lean = 0.7;
+  const tip = 0.3;
+  return [solid([p(-s / 2, tail + s), p(s / 2, tail + s), p(s / 2, tail), p(-s / 2 - lean + tip, 0), p(-s / 2 - lean, 0)], 0.001)];
+}
+
 const MARKS_ABOVE: MarkDef[] = [
   { name: 'gravecomb', unicode: 0x300, attach: 'top', caseForm: true, draw: (g, h) => [withPen(level(open(p(0.9, 0), p(-0.9, h))), accentPen(g))] },
   { name: 'acutecomb', unicode: 0x301, attach: 'top', caseForm: true, draw: (g, h) => [acute(g, h)] },
@@ -54,14 +82,7 @@ const MARKS_ABOVE: MarkDef[] = [
     unicode: 0x303,
     attach: 'top',
     caseForm: true,
-    draw: (g, h) => {
-      // Up, a flat top, down, a flat bottom, up: every corner obtuse, so none needs a cut that could close it.
-      const pen = smallMarkPen(g);
-      const s = Math.min(1.4, Math.max(0.9, h - pen.h - 0.3));
-      const a = 2.75;
-      const y = pen.h / 2;
-      return [withPen(tildeStroke(-a, a, y, s), pen)];
-    },
+    draw: (g, h) => tilde(g, h),
   },
   { name: 'macroncomb', unicode: 0x304, attach: 'top', caseForm: true, draw: (g) => [withPen(bar(-2.4, 2.4, g.h / 2), accentPen(g))] },
   {
@@ -81,10 +102,7 @@ const MARKS_ABOVE: MarkDef[] = [
     unicode: 0x308,
     attach: 'top',
     caseForm: true,
-    draw: (g) => {
-      const x = g.dot / 2 + 0.9;
-      return [dot(g, -x, 0), dot(g, x, 0)];
-    },
+    draw: (g) => dieresis(g),
   },
   {
     name: 'hookabovecomb',
@@ -145,7 +163,13 @@ const MARKS_ABOVE: MarkDef[] = [
     draw: (g, h) => [withPen(open(p(-2, 0), p(-2, h - g.h / 2, true), p(2, h - g.h / 2, true), p(2, 0)), accentPen(g))],
   },
   { name: 'verticallineabovecomb', unicode: 0x30d, attach: 'top', caseForm: true, draw: (g, h) => [withPen(open(p(0, 0), p(0, h)), accentPen(g))] },
-  { name: 'commaabovecomb', unicode: 0x313, attach: 'top', draw: (g) => comma(g, 0, 0, 0.75) },
+  // Greek's smooth breathing (psili), and the koronis drawn the same.
+  { name: 'commaabovecomb', unicode: 0x313, attach: 'top', draw: (g) => breathing(g) },
+  { name: 'koroniscomb', unicode: 0x343, attach: 'top', draw: (g) => breathing(g) },
+  // The rough breathing (dasia) is the smooth one turned, as ‘ is ’ turned: head down, tail up to the right.
+  { name: 'commareversedabovecomb', unicode: 0x314, attach: 'top', draw: (g) => rotate180(breathing(g), 0, breathingHeight(g) / 2) },
+  { name: 'perispomenicomb', unicode: 0x342, attach: 'top', draw: (g, h) => tilde(g, h) },
+  { name: 'dialytikatonoscomb', unicode: 0x344, attach: 'top', draw: (g, h) => [...dieresis(g), shift([acute(g, h * 0.8)], 0, g.dot + 0.6)].flat() },
   { name: 'commaaboverightcomb', unicode: 0x315, attach: 'topright', draw: (g) => comma(g, 0, 0, 0.65) },
   { name: 'dotaboverightcomb', unicode: 0x358, attach: 'topright', draw: (g) => [dot(g, 0, 0)] },
   { name: 'strokeshortoverlaycomb', unicode: 0x335, attach: 'center', draw: (g) => [withPen(bar(-2.25, 2.25, 0), accentPen(g))] },
@@ -186,6 +210,8 @@ const MARKS_ABOVE: MarkDef[] = [
   },
   { name: 'dotbelowcomb', unicode: 0x323, attach: 'bottom', hang: true, draw: (g) => [dot(g, 0, 0)] },
   { name: 'verticallinebelowcomb', unicode: 0x329, attach: 'bottom', hang: true, draw: (g) => [withPen(open(p(0, 0), p(0, 2.5)), accentPen(g))] },
+  // The iota subscript: a short iota hung under the vowel.
+  { name: 'ypogegrammenicomb', unicode: 0x345, attach: 'bottom', hang: true, draw: (g) => [withPen(open(p(0, 0), p(0, 1.8)), accentPen(g))] },
   { name: 'commaaccentcomb', unicode: 0x326, attach: 'bottom', hang: true, draw: (g) => comma(g, 0, 0, 0.65) },
   {
     name: 'cedillacomb',
@@ -338,4 +364,29 @@ function toneMarks(): MarkDef[] {
   ];
 }
 
-export const MARKS: MarkDef[] = [...MARKS_ABOVE, ...belowMarks(), ...vietnameseMarks(), ...toneMarks()];
+/** Greek's breathing and accent set side by side, the breathing first: ἄ ἃ ἅ ἂ. */
+export const GREEK_PAIRS: [string, string][] = [
+  ['commaabovecomb', 'acutecomb'],
+  ['commaabovecomb', 'gravecomb'],
+  ['commareversedabovecomb', 'acutecomb'],
+  ['commareversedabovecomb', 'gravecomb'],
+];
+
+function greekPairMarks(): MarkDef[] {
+  const find = (name: string) => MARKS_ABOVE.find((m) => m.name === name)!;
+  return GREEK_PAIRS.map(([first, second]) => ({
+    name: `${first}_${second}`,
+    attach: 'top' as const,
+    draw: (g: DrawContext, height: number) => {
+      // A unit of white between the two inks, measured from their outlines, and the pair centred on the mark's origin.
+      const [a, b] = [find(first).draw(g, height), find(second).draw(g, height)];
+      const ink = (strokes: Stroke[]) => bounds(strokes.flatMap((st) => expandStroke(st, g.pen, 0)));
+      const [ia, ib] = [ink(a), ink(b)];
+      const dx = ia.maxX + 1 - ib.minX;
+      const centre = (ia.minX + ib.maxX + dx) / 2;
+      return [...shift(a, -centre, 0), ...shift(b, dx - centre, 0)];
+    },
+  }));
+}
+
+export const MARKS: MarkDef[] = [...MARKS_ABOVE, ...belowMarks(), ...vietnameseMarks(), ...greekPairMarks(), ...toneMarks()];

@@ -34,6 +34,13 @@ describe('geometry', () => {
 });
 
 describe('masters', () => {
+  it('name every glyph once, so none takes the place of another in the font', () => {
+    for (const family of ['sans', 'sans-cut'] as const) {
+      const names = buildMaster(family, 'roman', 400).glyphs.map((g) => g.name);
+      expect(names.filter((n, i) => names.indexOf(n) !== i), family).toEqual([]);
+    }
+  });
+
   it('draw every weight with the same contours and points, so the weights interpolate', () => {
     for (const family of FAMILIES)
       for (const style of ['roman', 'italic'] as const) {

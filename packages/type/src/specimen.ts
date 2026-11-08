@@ -41,7 +41,7 @@ const BLOCKS: [string, number, number][] = [
 const LANGUAGE_SUPPORT = [
   'Latin: GF Latin Kernel, Core, Plus, Vietnamese, African and Beyond (most languages written in Latin, Vietnamese and the languages of Africa)',
   'Pinyin and Arabic transliteration',
-  'Greek: GF Greek Core (monotonic Greek)',
+  'Greek: GF Greek Core and Plus (monotonic and polytonic Greek)',
   'Cyrillic: GF Cyrillic Core and Plus (Russian, Ukrainian, Belarusian, Bulgarian with its local forms, Serbian and Macedonian, and the languages of Central Asia and the Caucasus written in Cyrillic)',
   'Phonetics: the full International Phonetic Alphabet (GF Phonetics IPA Standard) and the Americanist alphabet (APA)',
 ];
