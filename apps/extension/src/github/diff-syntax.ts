@@ -1,15 +1,26 @@
 import hljs from 'highlight.js/lib/core';
 import bash from 'highlight.js/lib/languages/bash';
+import javascript from 'highlight.js/lib/languages/javascript';
+import typescript from 'highlight.js/lib/languages/typescript';
+import xml from 'highlight.js/lib/languages/xml';
 import type { DiffEntry } from './model';
 
 hljs.registerLanguage('bash', bash);
+hljs.registerLanguage('javascript', javascript);
+hljs.registerLanguage('typescript', typescript);
+hljs.registerLanguage('xml', xml);
 
 const SCOPES = ['plain', 'keyword', 'built_in', 'literal', 'number', 'string', 'comment', 'variable', 'subst', 'title', 'meta', 'attr'] as const;
 type Scope = (typeof SCOPES)[number];
+type DiffLanguage = 'bash' | 'javascript' | 'typescript';
+const DIFF_CODE = '.blob-code-inner[data-code-marker], .diff-text:not(.hunk) > .diff-text-inner:last-child';
+const NATIVE_TOKENS = `:is(${DIFF_CODE}) :is([class^="pl-"], [class*=" pl-"])`;
+const MAX_SOURCE_LENGTH = 100_000;
+const ATTR_DIFF_SYNTAX = 'data-geld-diff-syntax';
 type SyntaxRanges = Map<Scope, StaticRange[]>;
 interface SourceText { readonly node: Text; readonly text: string }
 interface Line { readonly number: number; readonly nodes: readonly SourceText[]; readonly text: string }
-interface PaintedFile { readonly lines: readonly Line[]; readonly beforeCount: number; readonly ranges: SyntaxRanges }
+interface PaintedFile { readonly language: DiffLanguage; readonly lines: readonly Line[]; readonly beforeCount: number; readonly ranges: SyntaxRanges }
 const painted = new Map<HTMLElement, PaintedFile>();
 
 function textNodes(root: Node): SourceText[] {
@@ -23,7 +34,7 @@ function textNodes(root: Node): SourceText[] {
 
 function linesOf(root: HTMLElement, side: 'L' | 'R'): Line[] {
   const lines: Line[] = [];
-  for (const content of root.querySelectorAll<HTMLElement>('.blob-code-inner[data-code-marker], .diff-text:not(.hunk) .diff-text-inner')) {
+  for (const content of root.querySelectorAll<HTMLElement>(DIFF_CODE)) {
     const cell = content.closest('td');
     if (cell === null) continue;
     const code = content.closest('.diff-text');
@@ -40,7 +51,10 @@ function linesOf(root: HTMLElement, side: 'L' | 'R'): Line[] {
     let number: number;
     if (numbered !== undefined) number = Number(numbered.getAttribute('data-line-number'));
     else if (numbers.length === 2) number = Number(numbers[side === 'L' ? 0 : 1]?.textContent);
-    else if (anchor?.[1] === side) number = Number(anchor[2]);
+    else if (numbers.length === 1 && cell.hasAttribute('data-diff-side')) {
+      if (cell.getAttribute('data-diff-side') !== (side === 'L' ? 'left' : 'right')) continue;
+      number = Number(numbers[0]?.textContent);
+    } else if (anchor?.[1] === side) number = Number(anchor[2]);
     else continue;
     if (!Number.isInteger(number) || number <= 0) continue;
     const nodes = textNodes(content);
@@ -64,12 +78,12 @@ function scopeOf(node: Node): Scope {
   return 'plain';
 }
 
-function paintBlock(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: ReadonlySet<Text>): void {
+function paintBlock(lines: readonly Line[], language: DiffLanguage, ranges: SyntaxRanges, skipNodes: ReadonlySet<Text>): void {
   const source = lines.map((line) => line.text).join('\n');
-  if (source.length > 100_000) return;
+  if (source.length > MAX_SOURCE_LENGTH) return;
   // Only highlight.js's escaped output is parsed, in a detached template. GitHub's nodes stay untouched.
   const template = document.createElement('template');
-  template.innerHTML = hljs.highlight(source, { language: 'bash', ignoreIllegals: true }).value;
+  template.innerHTML = hljs.highlight(source, { language, ignoreIllegals: true }).value;
   const sourceNodes: { readonly node: Text; readonly start: number; readonly end: number }[] = [];
   let offset = 0;
   for (const line of lines) {
@@ -89,7 +103,7 @@ function paintBlock(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: Rea
       if (original === undefined || original.start >= end) break;
       const start = Math.max(offset, original.start);
       const stop = Math.min(end, original.end);
-      if (start < stop && !skipNodes.has(original.node)) {
+      if (start < stop && (language === 'bash' || scope !== 'plain') && !skipNodes.has(original.node)) {
         const range = new StaticRange({
           startContainer: original.node, startOffset: start - original.start,
           endContainer: original.node, endOffset: stop - original.start,
@@ -211,44 +225,79 @@ function highlightRuns(lines: readonly Line[], ranges: SyntaxRanges, skipNodes: 
   };
   for (const found of blocks) {
     const shell = stepShells.get(found.step) ?? inherited(jobShells, found.job) ?? (workflowShell || inherited(runnerShells, found.job) || '');
-    if (shell === '' || /^(?:bash|sh)(?:\s|$)/.test(shell)) paintBlock(found.lines, ranges, skipNodes);
+    if (shell === '' || /^(?:bash|sh)(?:\s|$)/.test(shell)) paintBlock(found.lines, 'bash', ranges, skipNodes);
   }
+}
+
+function paintSide(lines: readonly Line[], language: DiffLanguage, ranges: SyntaxRanges, skipNodes: ReadonlySet<Text>): void {
+  if (language === 'bash') {
+    highlightRuns(lines, ranges, skipNodes);
+    return;
+  }
+
+  let sourceLength = 0;
+  for (const line of lines) {
+    sourceLength += line.text.length + 1;
+    if (sourceLength > MAX_SOURCE_LENGTH) return;
+  }
+
+  let block: Line[] = [];
+  for (const line of lines) {
+    const previous = block.at(-1);
+    if (previous !== undefined && line.number !== previous.number + 1) {
+      paintBlock(block, language, ranges, skipNodes);
+      block = [];
+    }
+    block.push(line);
+  }
+  if (block.length > 0) paintBlock(block, language, ranges, skipNodes);
+}
+
+function languageOf(path: string): DiffLanguage | undefined {
+  if (/^\.github\/workflows\/[^/]+\.ya?ml$/.test(path)) return 'bash';
+  if (/\.(?:tsx?|[cm]ts)$/.test(path)) return 'typescript';
+  if (/\.(?:jsx?|[cm]js)$/.test(path)) return 'javascript';
+  return undefined;
 }
 
 function setHighlights(): void {
   for (const scope of SCOPES) {
     const highlight = new Highlight();
     for (const file of painted.values()) for (const range of file.ranges.get(scope) ?? []) highlight.add(range);
-    if (highlight.size === 0) CSS.highlights.delete(`geld-shell-${scope}`);
-    else CSS.highlights.set(`geld-shell-${scope}`, highlight);
+    if (highlight.size === 0) CSS.highlights.delete(`geld-syntax-${scope}`);
+    else CSS.highlights.set(`geld-syntax-${scope}`, highlight);
   }
 }
 
-export function applyWorkflowSyntax(entries: readonly DiffEntry[]): void {
+export function applyDiffSyntax(entries: readonly DiffEntry[]): void {
+  document.documentElement.toggleAttribute(ATTR_DIFF_SYNTAX, entries.length > 0);
   if (typeof CSS === 'undefined' || CSS.highlights === undefined || typeof Highlight === 'undefined' || typeof StaticRange === 'undefined') return;
   const roots = new Set<HTMLElement>();
   let changed = false;
   for (const entry of entries) {
-    if (!/^\.github\/workflows\/[^/]+\.ya?ml$/.test(entry.path)) continue;
+    const language = languageOf(entry.path);
+    if (language === undefined) continue;
+    if (language !== 'bash' && entry.root.querySelector(NATIVE_TOKENS) !== null) continue;
     roots.add(entry.root);
     const before = linesOf(entry.root, 'L');
     const after = linesOf(entry.root, 'R');
     const lines = [...before, ...after];
     const cached = painted.get(entry.root);
-    if (cached !== undefined && cached.beforeCount === before.length && sameLines(cached.lines, lines)) continue;
+    if (cached?.language === language && cached.beforeCount === before.length && sameLines(cached.lines, lines)) continue;
     const ranges: SyntaxRanges = new Map();
     // Shared context is painted from the new side, where an edited quote may give it a different meaning.
-    highlightRuns(before, ranges, new Set(after.flatMap((line) => line.nodes.map((part) => part.node))));
-    highlightRuns(after, ranges, new Set());
-    painted.set(entry.root, { lines, beforeCount: before.length, ranges });
+    paintSide(before, language, ranges, new Set(after.flatMap((line) => line.nodes.map((part) => part.node))));
+    paintSide(after, language, ranges, new Set());
+    painted.set(entry.root, { language, lines, beforeCount: before.length, ranges });
     changed = true;
   }
   for (const root of painted.keys()) if (!roots.has(root)) { painted.delete(root); changed = true; }
   if (changed) setHighlights();
 }
 
-export function removeWorkflowSyntax(): void {
+export function removeDiffSyntax(): void {
+  document.documentElement.removeAttribute(ATTR_DIFF_SYNTAX);
   painted.clear();
   if (typeof CSS === 'undefined' || CSS.highlights === undefined) return;
-  for (const scope of SCOPES) CSS.highlights.delete(`geld-shell-${scope}`);
+  for (const scope of SCOPES) CSS.highlights.delete(`geld-syntax-${scope}`);
 }

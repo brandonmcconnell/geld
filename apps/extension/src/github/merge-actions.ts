@@ -513,6 +513,20 @@ export async function readMergeActions(pullPath: string, method: MergeMethod = '
   return { box, offer, bypass: bypassBeside(box, asBypass, offer), bypassMethods: asBypass?.bypassMethods ?? box.bypassMethods, stack: stackNow() };
 }
 
+/**
+ * Whether a refresh's partial reading may wait for its complete one, leaving the complete reading in hand standing: only
+ * while the pull request stands as it did (state, draft, what it may merge with) and its stack has the same members in
+ * the same order. A member joined or gone changes what a stack merge takes (`enqueue_stack` takes every pull request
+ * below), so the partial reading then stands in, which offers no stack choice until every member's box is read.
+ */
+export function partialMayWait(held: MergeActions, partial: MergeActions): boolean {
+  const a = held.box;
+  const b = partial.box;
+  if (a.state !== b.state || a.draft !== b.draft || a.stacked !== b.stacked || a.mergeable !== b.mergeable || a.canQueue !== b.canQueue || held.offer !== partial.offer) return false;
+  const members = (actions: MergeActions): string => actions.stack?.members.map((member) => `${member.number}${member.current ? '*' : ''}`).join(',') ?? '';
+  return members(held) === members(partial);
+}
+
 /** The reason a merge or close failed, in GitHub's words when it gave any. */
 export type StatusAction = 'merge' | 'queue' | 'auto' | 'close' | 'ready' | 'draft' | 'reopen';
 

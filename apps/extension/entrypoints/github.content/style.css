@@ -782,6 +782,16 @@ html[data-geld-quick-review] details.js-reviews-container {
   padding-left: 16px;
 }
 
+/* In GitHub's bar over every tab, first among its actions: 8px before a button of GitHub's that shows ("Merge status"),
+ * none before its divider, which spaces itself. */
+.geld-quick-review[data-geld-place='bar'] {
+  align-self: center;
+}
+
+.geld-quick-review[data-geld-place='bar']:has(+ button:not([class*='ReviewMenuButton'])) {
+  margin-right: 8px;
+}
+
 /* In the Overview's stuck mini header, before its divider and panel toggles. */
 .geld-quick-review[data-geld-place='mini'] {
   align-self: center;
@@ -5635,7 +5645,8 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   animation: none !important;
 }
 
-/* An Overview review's box holds its threads' boxes too: opened as the review's words, its threads are rows of their own. */
+/* An Overview review's box holds its threads' boxes too: opened as the review's words (or pinned over one of its threads), its threads are rows of their own. */
+.geld-review__chat-context article[data-geld-teleported] article,
 .geld-review__chat[data-geld-chat='comment'] article[data-geld-teleported] article {
   display: none !important;
 }
@@ -7339,7 +7350,7 @@ a.geld-review__rerun:hover {
   list-style: none;
 }
 
-/* On the commits list's grid: glyph at the row's edge, a 20px avatar column 10px on, text 16px after that; 29px rows, 12px type. */
+/* Who mentioned it first, at the row's edge (a 20px avatar column), then the reference led by its state glyph; 29px rows, 12px type. */
 .geld-review__mention {
   display: flex;
   align-items: center;
@@ -7348,19 +7359,21 @@ a.geld-review__rerun:hover {
   font-size: 12px;
 }
 
+/* Sized to the 12px text it leads, 4px from the reference. */
 .geld-review__mention-state {
   display: inline-flex;
   flex: 0 0 auto;
+  align-self: center;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  margin-right: 10px;
+  width: 12px;
+  margin-right: -2px;
   color: var(--geld-review-muted);
 }
 
 .geld-review__mention-state .octicon {
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
 }
 
 .geld-review__mention[data-state='open'] .geld-review__mention-state,
@@ -7385,7 +7398,7 @@ a.geld-review__rerun:hover {
   flex: 0 0 auto;
   width: 20px;
   height: 20px;
-  margin-right: 16px;
+  margin-right: 10px;
 }
 
 .geld-review__mention-link {
@@ -8186,6 +8199,8 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
  */
 [data-geld-desc-cap][data-geld-desc-long] > [data-geld-desc-cut-edge] {
   max-height: var(--geld-desc-cut-height);
+  /* CUT_GAP_PX in description.ts: the fade below is solid over this gap, so the text ends at 0%. */
+  margin-bottom: 16px !important;
   overflow: hidden !important;
 }
 
@@ -8195,7 +8210,7 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
   width: fit-content;
 }
 
-/* Inside the body, after the author's blocks: its ::before fades the text above it out. */
+/* Inside the body, after the author's blocks: its ::before fades the text above it out, to nothing at the cut. */
 .geld-desc-more {
   display: none;
   position: relative;
@@ -8228,6 +8243,12 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
   background: linear-gradient(to bottom, transparent, var(--bgColor-default, var(--color-canvas-default, #fff)));
   pointer-events: none;
   z-index: 1;
+}
+
+/* A block clipped above it: solid over that block's fixed 16px margin, so its text ends at nothing where it is cut. */
+[data-geld-desc-cap][data-geld-desc-long]:has(> [data-geld-desc-cut-edge]) > .geld-desc-more::before {
+  height: calc(96px + 16px);
+  background: linear-gradient(to bottom, transparent, var(--bgColor-default, var(--color-canvas-default, #fff)) calc(100% - 16px));
 }
 
 /*
@@ -8768,40 +8789,73 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
 }
 
 
-/* Embedded shell in workflow run blocks, without replacing GitHub's diff nodes. */
-::highlight(geld-shell-plain),
-::highlight(geld-shell-subst) {
-  color: var(--fgColor-default);
-}
-
-::highlight(geld-shell-keyword) {
+/* GitHub's global stylesheet owns these token colors. Zero specificity lets it take over when it loads. */
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) .pl-k) {
   color: var(--color-prettylights-syntax-keyword);
 }
 
-::highlight(geld-shell-built_in),
-::highlight(geld-shell-title) {
-  color: var(--color-prettylights-syntax-entity);
-}
-
-::highlight(geld-shell-literal),
-::highlight(geld-shell-number),
-::highlight(geld-shell-attr) {
-  color: var(--color-prettylights-syntax-constant);
-}
-
-::highlight(geld-shell-string) {
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) :is(.pl-s, .pl-pds, .pl-sr)) {
   color: var(--color-prettylights-syntax-string);
 }
 
-::highlight(geld-shell-comment) {
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) .pl-c) {
   color: var(--color-prettylights-syntax-comment);
 }
 
-::highlight(geld-shell-variable) {
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) .pl-c1) {
+  color: var(--color-prettylights-syntax-constant);
+}
+
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) :is(.pl-e, .pl-en)) {
+  color: var(--color-prettylights-syntax-entity);
+}
+
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) .pl-ent) {
+  color: var(--color-prettylights-syntax-entity-tag);
+}
+
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) :is(.pl-v, .pl-smw)) {
   color: var(--color-prettylights-syntax-variable);
 }
 
-::highlight(geld-shell-meta) {
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) .pl-s .pl-v) {
+  color: var(--color-prettylights-syntax-constant);
+}
+
+/* Diff syntax colors on GitHub's original text nodes. */
+::highlight(geld-syntax-plain),
+::highlight(geld-syntax-subst) {
+  color: var(--fgColor-default);
+}
+
+::highlight(geld-syntax-keyword) {
+  color: var(--color-prettylights-syntax-keyword);
+}
+
+::highlight(geld-syntax-built_in),
+::highlight(geld-syntax-title) {
+  color: var(--color-prettylights-syntax-entity);
+}
+
+::highlight(geld-syntax-literal),
+::highlight(geld-syntax-number),
+::highlight(geld-syntax-attr) {
+  color: var(--color-prettylights-syntax-constant);
+}
+
+::highlight(geld-syntax-string) {
+  color: var(--color-prettylights-syntax-string);
+}
+
+::highlight(geld-syntax-comment) {
+  color: var(--color-prettylights-syntax-comment);
+}
+
+::highlight(geld-syntax-variable) {
+  color: var(--color-prettylights-syntax-variable);
+}
+
+::highlight(geld-syntax-meta) {
   color: var(--color-prettylights-syntax-comment);
 }
 
@@ -8888,7 +8942,7 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
 }
 
 /*
- * The Overview sidebar in Geld's order (`orderSidebars`): Reviewers, Related links, Activity, then GitHub's. GitHub's
+ * The Overview sidebar in Geld's order (`orderSidebars`): Reviewers, Related links, Mentions, Activity, then GitHub's. GitHub's
  * line above every section but the first in page order becomes a line above every section but the first shown.
  * Its rule (`.sidebar > [data-overview-sidebar-item] ~ [data-overview-sidebar-item]`) weighs three; the first's must outweigh it.
  */
@@ -8910,8 +8964,12 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
   order: 2;
 }
 
-[data-geld-sidebar-order] > [data-geld-order='activity'] {
+[data-geld-sidebar-order] > [data-geld-order='mentions'] {
   order: 3;
+}
+
+[data-geld-sidebar-order] > [data-geld-order='activity'] {
+  order: 4;
 }
 
 [data-geld-sidebar-order] > [data-overview-sidebar-item] {
@@ -9623,4 +9681,157 @@ div:has(> [data-geld-overview-merge]) {
 
 .geld-overview-merge__menu .geld-quick-review__menu-note {
   white-space: normal;
+}
+
+/*
+ * The Overview's review comments in a chat, laid out as the conversation's (its markup differs: a header grid of
+ * picture, name and time, actions and badges; the body and the reactions toolbar in one wrapper). The picture stands
+ * in the gutter up and to the left of the bubble, the name and the time on one line above it; the ⋯ and the picker
+ * are moved beside the bubble and the pills under it by chat.ts (`placeOverviewControls`).
+ */
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'],
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'] > div {
+  display: flex !important;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'] [class*='AvatarContainer'] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  margin: 0 !important;
+}
+
+.geld-review__chat [data-geld-mine] > [data-geld-part='meta'] [data-testid='comment-header'] [class*='AvatarContainer'] {
+  right: 0;
+  left: auto;
+}
+
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'] [class*='AvatarContainer'] img {
+  width: var(--geld-chat-avatar) !important;
+  height: var(--geld-chat-avatar) !important;
+}
+
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header-left-side-items'],
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header-left-side-items'] > * {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 !important;
+  padding: 0 !important;
+  white-space: nowrap;
+}
+
+.geld-review__chat [data-geld-mine] > [data-geld-part='meta'] [data-testid='comment-header-left-side-items'] {
+  flex-direction: row-reverse !important;
+}
+
+.geld-review__chat [data-geld-part='meta'] a[data-testid='avatar-link'] {
+  color: var(--fgColor-default, var(--color-fg-default, #1f2328)) !important;
+  font-size: 13px !important;
+  font-weight: 600;
+}
+
+/* Badges ("Author", "Bot") and whatever is left of the actions holder once its ⋯ is beside the bubble. */
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header-right-side-items'] {
+  display: none !important;
+}
+
+.geld-review__chat [data-geld-run='mid'] > [data-geld-part='meta'] [data-testid='comment-header'],
+.geld-review__chat [data-geld-run='last'] > [data-geld-part='meta'] [data-testid='comment-header'] {
+  display: none !important;
+}
+
+/* The bubble's inner wrappers keep no padding of their own, and the line GitHub draws down a reply's left goes. */
+.geld-review__chat [data-geld-part='bubble'] [class*='BodyHTMLContainer'] {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.geld-review__chat [data-geld-part='bubble'] > [class*='ReplyWrapper'] {
+  display: none !important;
+}
+
+.geld-review__chat [data-geld-message][class*='isReply'] {
+  border: 0 !important;
+}
+
+/* The pills under the bubble: GitHub's toolbar, 2px down, mirrored on the reader's own side. */
+.geld-review__chat .geld-review__msg-reactions [role='toolbar'],
+.geld-review__chat .geld-review__msg-reactions [role='toolbar'] ~ *,
+.geld-review__chat .geld-review__msg-reactions > div,
+.geld-review__chat .geld-review__msg-reactions > div > div {
+  margin: 0 !important;
+}
+
+.geld-review__chat .geld-review__msg-reactions > div:not(:has(button)) {
+  display: none !important;
+}
+
+.geld-review__chat .geld-review__msg-reactions [role='toolbar'] {
+  margin-top: 2px !important;
+}
+
+.geld-review__chat [data-geld-mine] .geld-review__msg-reactions [role='toolbar'] {
+  justify-content: flex-end;
+}
+
+/* The Overview's tooltips moved with their buttons stay out of the side slot's flow. */
+.geld-review__msg-actions > [role='tooltip'],
+.geld-review__msg-actions > [data-component='Tooltip'] {
+  position: absolute;
+}
+
+/* The composer: the reader's picture, GitHub's "Write a reply" as the chat's round field, Resolve on its right. */
+.geld-review__chat-body article[data-geld-teleported] :has(> [class*='CompactCommentInputContainer']) {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.geld-review__chat-body article[data-geld-teleported] :has(> :has(> [class*='CompactCommentInputContainer'])) {
+  padding: 8px 12px 10px !important;
+  border-top: 1px solid var(--geld-review-border-muted);
+  background: var(--geld-review-bg) !important;
+}
+
+.geld-review__composer-avatar {
+  flex: 0 0 auto;
+  width: var(--geld-chat-avatar);
+  height: var(--geld-chat-avatar);
+  border-radius: 50%;
+}
+
+.geld-review__chat-body [class*='CompactCommentInputContainer'] {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 32px !important;
+  margin: 0 !important;
+  padding: 0 12px !important;
+  border: 1px solid var(--geld-review-border) !important;
+  border-radius: 16px !important;
+  background: var(--geld-review-bg) !important;
+  color: var(--geld-review-muted) !important;
+  font-size: 13px !important;
+  text-align: left;
+  box-shadow: none !important;
+}
+
+.geld-review__chat-body [class*='CompactCommentInputContainer']:hover {
+  border-color: var(--geld-review-muted) !important;
+}
+
+.geld-review__composer-side[hidden] {
+  display: none !important;
+}
+
+.geld-review__composer-resolve.btn {
+  height: 32px;
+  font-size: 14px;
+  font-weight: 500;
 }

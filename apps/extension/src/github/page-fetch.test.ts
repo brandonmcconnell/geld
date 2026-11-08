@@ -50,6 +50,13 @@ describe('pageFetch', () => {
     await expect(pageFetch('/acme/widgets/pull/7/partials/thread', { signal: already.signal })).rejects.toMatchObject({ name: 'AbortError' });
   });
 
+  it('keeps the Link header GitHub pages its timeline data with, where the answer is rebuilt (Firefox)', async () => {
+    const link = '</acme/widgets/pull/7/page_data/timeline?after=Y3Vy&per_page=25>; rel="next"';
+    vi.stubGlobal('content', { fetch: async () => new Response('{"items":[]}', { status: 200, headers: { 'Content-Type': 'application/json', Link: link } }) });
+    const response = await pageFetch('/acme/widgets/pull/7/page_data/timeline');
+    expect(response.headers.get('link')).toBe(link);
+  });
+
   it('keeps an answer with no body empty', async () => {
     vi.stubGlobal('content', { fetch: async () => new Response(null, { status: 204 }) });
     const response = await pageFetch('/acme/widgets/pull/7/page_data/abandon_review', { method: 'DELETE' });

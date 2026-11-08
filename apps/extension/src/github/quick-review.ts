@@ -8,7 +8,7 @@ import type { HeaderStatGroup } from './header-stats';
 import { countsSkeletonStandIn, countsWrapperBusy, isCountsStandIn } from './header-stats';
 import { detectHeadSha } from './head-sha';
 import type { MergeActions, MergeBox, MergeMethod, StatusAction } from './merge-actions';
-import { actionErrorText, autoMergeRequest, awaitMergedState, closeRequest, draftRequest, fetchMergeBox, isStackRequest, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, methodHint, prefetchMergeBox, readMergeActions, queueRequest, readyRequest, rememberMethod, reopenRequest, settleStackMerge, stackQueueRequest, viewerVerdict } from './merge-actions';
+import { actionErrorText, autoMergeRequest, awaitMergedState, closeRequest, draftRequest, fetchMergeBox, isStackRequest, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, methodHint, partialMayWait, prefetchMergeBox, readMergeActions, queueRequest, readyRequest, rememberMethod, reopenRequest, settleStackMerge, stackQueueRequest, viewerVerdict } from './merge-actions';
 import type { PageInfo } from './page';
 import { pullRequestStateWords } from './page';
 import type { PendingComment } from './pending-review';
@@ -85,8 +85,65 @@ const STICKY_PR_HEADER = '[class*="prHeader"][class*="stickyHeader"]';
 const OVERVIEW_MINI_HEADER = '[data-testid="diff-comparison-viewer-sticky-header-slot"]';
 /** The headers that stay put as the page scrolls, React's and the classic one: a box under a pill there is fixed. */
 const STICKY_HEADERS = '[class*="stickyHeader"], .gh-header-sticky';
+/**
+ * GitHub's bar over every tab of the new pull request page (Overview, Commits, Checks, Files changed; Nov 2026), now
+ * always shown: the number and title, then its actions ("Merge status", GitHub's review button, the panel toggles).
+ */
+const PERSISTENT_BAR_ACTIONS = '[data-testid="diff-comparison-viewer-sticky-header-slot"][class*="Persistent"] [data-testid="diff-comparison-viewer-sticky-header-bar"] [class*="miniHeaderInner"] > [class*="actions"]';
 
-type Place = 'toolbar' | 'header' | 'mini';
+function persistentBarActions(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(PERSISTENT_BAR_ACTIONS);
+}
+
+/**
+ * Whether the group stood in each repository's pages last time, for the next load's first frame (`applyReviewGroupHint`):
+ * per repository, since Geld can be off for one and on for the next. At most `GROUP_HINT_CAP` repositories, oldest out.
+ */
+const GROUP_HINT_KEY = 'geld:review-group';
+const GROUP_HINT_CAP = 200;
+
+function readGroupHints(): Record<string, boolean> {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(GROUP_HINT_KEY) ?? '{}');
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'));
+  } catch {
+    return {};
+  }
+}
+
+/** Written only when it changes; the repository moves to the end, so the cap drops the one seen longest ago. */
+export function rememberReviewGroup(repo: string | null, on: boolean): void {
+  if (repo === null) return;
+  const hints = readGroupHints();
+  if (hints[repo] === on) return;
+  delete hints[repo];
+  hints[repo] = on;
+  const entries = Object.entries(hints);
+  try {
+    window.localStorage.setItem(GROUP_HINT_KEY, JSON.stringify(Object.fromEntries(entries.slice(Math.max(0, entries.length - GROUP_HINT_CAP)))));
+  } catch {
+    // Storage blocked: GitHub's review button shows until the controls mount, as before.
+  }
+}
+
+/**
+ * On a pull request page, before anything else runs: GitHub's review button gives way from its first frame when the
+ * group stood in the page last time, rather than showing until the controls mount (the stylesheet hides it on this
+ * attribute). The first pass takes the attribute back wherever the group does not mount (Geld off there, signed out).
+ */
+/** Startup stood down before any controls were made, with no copy to take over (the extension reloaded): GitHub's button back. */
+export function withdrawReviewGroupHint(): void {
+  if (mounted === null) document.documentElement.removeAttribute(ATTR_ACTIVE);
+}
+
+export function applyReviewGroupHint(path: string = window.location.pathname): void {
+  if (!/^\/[^/]+\/[^/]+\/pull\/\d+(?:\/|$)/.test(path)) return;
+  const repo = repoOf(path);
+  if (repo !== null && readGroupHints()[repo] === true) document.documentElement.setAttribute(ATTR_ACTIVE, '');
+}
+
+type Place = 'toolbar' | 'header' | 'mini' | 'bar';
 const SUBMITTED_MS = 3000;
 /** On the group while the instant key is held: ✓ and ✗ then send on a click, and the stylesheet swaps their glyphs for the sending ones. */
 const ATTR_INSTANT = 'data-instant';
@@ -408,6 +465,7 @@ function draftFor(pullPath: string): Draft {
 export function applyQuickReview(enabled: boolean, context: QuickReviewContext): void {
   const pullPath = pullPathOf(window.location.pathname);
   if (!enabled || !context.page.kind.startsWith('pull') || pullPath === null || viewerLogin() === '') {
+    if (!enabled) rememberReviewGroup(repoOf(window.location.pathname), false);
     removeQuickReview();
     return;
   }
@@ -454,14 +512,17 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
     const pill = mounted.pills.includes(clicked) ? clicked : (mounted.pills.find((each) => pillPlace(each) === pillPlace(clicked)) ?? null);
     if (pill !== null && mounted.statusMenu === null) toggleStatusMenu(mounted, pill);
   }
-  if (anchor === null) {
+  // GitHub's always-shown bar holds the group whatever the tab bar shows; without it, the counts are its anchor.
+  if (anchor === null && persistentBarActions() === null) {
+    // Nowhere to stand: GitHub's own review button shows, and so it does from the next load's first frame.
+    rememberReviewGroup(repoOf(pullPath), false);
     unplace(mounted);
     return;
   }
   mounted.anchor = anchor;
   watchSticky(mounted);
   place(mounted);
-  const host = anchor.parentElement;
+  const host = anchor?.parentElement ?? null;
   if (mounted.host !== host) {
     mounted.host?.removeAttribute(ATTR_HOST);
     mounted.host = host;
@@ -469,6 +530,7 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
   if (host !== null && !host.hasAttribute(ATTR_HOST)) host.setAttribute(ATTR_HOST, '');
   // Written only when it changes: every write is a mutation record, and passes run on mutations.
   if (!document.documentElement.hasAttribute(ATTR_ACTIVE)) document.documentElement.setAttribute(ATTR_ACTIVE, '');
+  rememberReviewGroup(repoOf(pullPath), true);
 }
 
 function isStuck(element: Element): boolean {
@@ -495,6 +557,9 @@ function measureToolbarStuck(toolbar: Element): boolean {
  * stuck, the group in view in the tab bar.
  */
 function stickyPlace(state: Mounted): { readonly place: Place; readonly put: (root: HTMLElement) => void; readonly placed: (root: HTMLElement) => boolean } | null {
+  // The bar GitHub now shows over every tab: first among its actions, left of "Merge status", always.
+  const bar = persistentBarActions();
+  if (bar !== null) return { place: 'bar', put: (root) => bar.prepend(root), placed: (root) => bar.firstElementChild === root };
   const control = document.querySelector<HTMLElement>(STICKY_REVIEW_CONTROL);
   if (control !== null) {
     if (!state.toolbarStuck) return null;
@@ -551,8 +616,8 @@ function followToolbar(state: Mounted): void {
 
 /** In a stuck header, so it is always to hand while reviewing; otherwise before the tab bar's counts. */
 function place(state: Mounted): void {
-  // Nothing to stand beside (GitHub hides the counts on narrow screens): GitHub's own button is the one shown.
-  if (state.anchor === null) return;
+  // Nothing to stand beside (GitHub hides the counts on narrow screens, and no bar holds the group): GitHub's own button is the one shown.
+  if (state.anchor === null && persistentBarActions() === null) return;
   const sticky = stickyPlace(state);
   if (sticky !== null) {
     if (!sticky.placed(state.root)) sticky.put(state.root);
@@ -936,8 +1001,9 @@ async function loadMergeActions(state: Mounted): Promise<MergeActions | null> {
     if (!current()) return;
     // A refresh (each minute, on return, after the state label changed) already holds a complete reading of this pull
     // request: the page's box alone, before the stack's other members are read, would take away the Overview's merge
-    // button and the menu's stack choices for the moment until they are, and put them back.
-    if (state.mergeActions !== null && state.mergeActions.partial !== true) return;
+    // button and the menu's stack choices for the moment until they are, and put them back. Not when it says the stack
+    // or the pull request changed: the choices held would then name pull requests a stack merge no longer takes alone.
+    if (state.mergeActions !== null && state.mergeActions.partial !== true && partialMayWait(state.mergeActions, partial)) return;
     state.mergeActions = partial;
     showStatus(state);
     refreshOpenMenu(state);
@@ -1387,6 +1453,9 @@ export function reassertStatusPills(): void {
   if (pullPath === null) return;
   if (mounted !== null && mounted.pullPath === pullPath) {
     showStatus(mounted);
+    // GitHub re-renders its bar (on load, between tabs): the group goes back in the same frame.
+    const bar = persistentBarActions();
+    if (bar !== null && bar.firstElementChild !== mounted.root) place(mounted);
     return;
   }
   const repo = repoOf(pullPath);

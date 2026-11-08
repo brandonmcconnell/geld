@@ -11,6 +11,8 @@ export const DESCRIPTION_CAP_PX = 500;
 const CAP_SLACK_PX = 80;
 /** The least of a block the cut runs through that stays on show: the fade's height (style.css), so it fades out, not a sliver. */
 const CUT_EDGE_MIN_PX = 96;
+/** The clipped block's bottom margin, fixed in style.css so the fade, solid over it, ends the text at the cut. */
+const CUT_GAP_PX = 16;
 
 /** On a block of the description hidden under a folded heading. */
 const ATTR_FOLD = 'data-geld-desc-fold';
@@ -484,7 +486,6 @@ interface CarriedRails {
   readonly size: string;
   readonly after: string;
   readonly chevronY: string;
-  readonly marginBottom: number;
 }
 
 function railsOfEdge(block: Element): CarriedRails | null {
@@ -498,7 +499,6 @@ function railsOfEdge(block: Element): CarriedRails | null {
     size: block.style.getPropertyValue('--geld-desc-rail-size'),
     after: style.getPropertyValue('--geld-desc-after').trim() || '0px',
     chevronY: style.getPropertyValue('--geld-desc-chevron-y').trim() || '0px',
-    marginBottom: pixels(style.marginBottom),
   };
 }
 
@@ -515,7 +515,7 @@ function carryRails(body: HTMLElement, carried: CarriedRails, height: number): v
   setProperty(more, '--geld-desc-rail-size', carried.size);
   setProperty(more, '--geld-desc-after', carried.after);
   setProperty(more, '--geld-desc-chevron-y', carried.chevronY);
-  setProperty(more, '--geld-desc-carry-height', `${height + carried.marginBottom}px`);
+  setProperty(more, '--geld-desc-carry-height', `${height + CUT_GAP_PX}px`);
 }
 
 /**

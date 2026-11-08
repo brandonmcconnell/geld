@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { MergeSubmission } from './merge-actions';
-import { actionErrorText, autoMergeRequest, awaitMergedState, bypassBeside, isStackRequest, mergeRequestStatusUrl, settleStackMerge, stackMergeId, stackMergeState, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict, embeddedStack, methodHint, prefetchMergeBox, readMergeActions, rememberMethod } from './merge-actions';
+import type { MergeActions, MergeSubmission } from './merge-actions';
+import { actionErrorText, partialMayWait, autoMergeRequest, awaitMergedState, bypassBeside, isStackRequest, mergeRequestStatusUrl, settleStackMerge, stackMergeId, stackMergeState, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict, embeddedStack, methodHint, prefetchMergeBox, readMergeActions, rememberMethod } from './merge-actions';
 
 /** A `page_data/merge_box` answer as GitHub gave it on brandonmcconnell/geld#74 (Oct 2026), trimmed. */
 function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean; readonly email?: string; readonly emails?: readonly string[] | null; readonly conflict?: boolean; readonly methodStatus?: string } = {}): unknown {
@@ -491,5 +491,24 @@ describe('a stack merge GitHub is still running', () => {
     await vi.advanceTimersByTimeAsync(2000);
     expect(await merged).toBe(true);
     expect(asked).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('partialMayWait', () => {
+  const box = parseMergeBox(payload({ state: 'MERGEABLE', stacked: true }));
+  const member = (number: number, current = false) => ({ number, path: `/o/r/pull/${number}`, title: `PR ${number}`, current });
+  const reading = (numbers: readonly number[], over: Partial<MergeActions> = {}): MergeActions => {
+    if (box === null) throw new Error('fixture');
+    return { box, offer: 'merge', bypass: false, bypassMethods: [], stack: { members: numbers.map((number, at) => member(number, at === 0)), boxes: new Map() }, ...over };
+  };
+
+  it('lets a refresh’s partial reading wait while the pull request and its stack stand as they did', () => {
+    expect(partialMayWait(reading([3, 2, 1]), reading([3, 2, 1], { partial: true }))).toBe(true);
+  });
+
+  it('puts the partial reading in place when the stack’s members or the pull request’s standing changed', () => {
+    expect(partialMayWait(reading([3, 2, 1]), reading([3, 4, 2, 1], { partial: true }))).toBe(false);
+    expect(partialMayWait(reading([3, 2, 1]), reading([3, 1], { partial: true }))).toBe(false);
+    expect(partialMayWait(reading([3, 2, 1]), reading([3, 2, 1], { offer: null, partial: true }))).toBe(false);
   });
 });

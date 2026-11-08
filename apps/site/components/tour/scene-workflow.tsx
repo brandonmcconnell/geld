@@ -9,10 +9,10 @@ import { Ping } from '@/components/tour/ping';
 import { PrWindow } from '@/components/tour/pr-window';
 import { Switch } from '@/components/ui/switch';
 
-/** Token kinds, named for highlight.js's Bash scopes the extension paints (workflow-syntax.ts), plus GitHub's YAML key. */
+/** Token kinds, named for highlight.js's Bash scopes the extension paints (diff-syntax.ts), plus GitHub's YAML key. */
 type Token = 'plain' | 'key' | 'string' | 'keyword' | 'built_in' | 'variable' | 'comment';
 
-/** GitHub's prettylights colours for each scope, as the extension's `::highlight(geld-shell-*)` rules map them. */
+/** GitHub's prettylights colours for each scope, as the extension's `::highlight(geld-syntax-*)` rules map them. */
 const COLOR: Record<Token, string> = {
   plain: '',
   key: 'text-[light-dark(#116329,#7ee787)]',

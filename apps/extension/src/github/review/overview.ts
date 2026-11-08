@@ -53,7 +53,7 @@ import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiv
 import type { BotRequestClick } from './bot-requests';
 import { awaitingReaction, botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
 import { pollTriggerReactions, resetTriggerReactions, withFetchedReactions } from './trigger-reactions';
-import { AGENT_NOTES_KEY, ATTR_CHECK_RUNS, ATTR_CTL_SLOT, ATTR_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, descriptionCard, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, reseatPanelNow, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderCheckRunsList, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel, renderDeploymentsList, renderPreviewsList, DEPLOYMENTS_KEY } from './panel';
+import { AGENT_NOTES_KEY, ATTR_CHECK_RUNS, ATTR_CTL_SLOT, ATTR_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, descriptionCard, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, reseatPanelNow, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderCheckRunsList, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel, renderDeploymentsList, renderPreviewsList, DEPLOYMENTS_KEY, whoAttributes } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setNoteProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -67,7 +67,9 @@ import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel }
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots, triggerFor } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
-import { botCommentControls, chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
+import { timelineMentionsFor } from './timeline-mentions';
+import type { MentionLine } from './quick-view';
+import { botCommentControls, chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf, parkChats, releaseParkedChats } from './chat';
 import type { ChatByline, ChatLink, ChatRerun, ChatThreadLink } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
@@ -834,6 +836,46 @@ function withManualDone(meta: GeldPrMeta): GeldPrMeta {
   return { ...meta, items: meta.items.map((item) => (visit.manualDone.has(item.id) && isOpenStatus(item.status) ? { ...item, status: 'done-manual' } : item)) };
 }
 
+/** What the description mentions, with its author's picture on each line when `withAuthor` (only the open view shows it). */
+function descriptionMentions(withAuthor = false): readonly MentionLine[] {
+  const card = descriptionCard();
+  const body = card?.querySelector('.comment-body, .markdown-body, [data-testid="markdown-body"]') ?? null;
+  const self = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(location.pathname)?.[0];
+  // A description that links to its own pull request ("#493 itself showed…") is not mentioning another.
+  const others = (lines: readonly MentionLine[]): readonly MentionLine[] => lines.filter((line) => self === undefined || line.href.replace(/^https:\/\/[^/]+/, '').replace(/[#?].*$/, '') !== self);
+  if (!withAuthor || card === null) return others(outgoingMentions(body));
+  // The Overview's description box shows no author, so a link or picture in it is someone the description mentions: the
+  // header names the author there, and GitHub serves a person's picture by login.
+  const overview = isOverviewPage();
+  const login = overview ? prAuthorLogin() : (authorOf(card)?.login ?? prAuthorLogin());
+  const avatar = overview ? (login === null ? null : `https://avatars.githubusercontent.com/${encodeURIComponent(login)}?s=40`) : (avatarSrcOf(card) ?? (login === null ? null : `https://avatars.githubusercontent.com/${encodeURIComponent(login)}?s=40`));
+  return others(outgoingMentions(body, login === null || avatar === null ? null : { login, avatarSrc: avatar }));
+}
+
+/**
+ * On the Overview, what mentions this pull request: its page holds no cross-reference rows (they live in its activity
+ * panel, outside the page until opened), so they are read from the timeline data that panel reads.
+ */
+function incomingReadMentions(): readonly MentionLine[] {
+  if (!isOverviewPage()) return [];
+  const pullPath = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(location.pathname)?.[0];
+  if (pullPath === undefined) return [];
+  return (timelineMentionsFor(pullPath, reapplySoon) ?? []).map((mention) => ({
+    href: mention.href,
+    ref: mention.ref,
+    title: mention.title,
+    state: mention.state,
+    avatar:
+      mention.login === ''
+        ? null
+        : createElement('a', { class: 'geld-review__mention-who', href: mention.bot ? `/apps/${mention.login.replace(/\[bot\]$/, '')}` : `/${mention.login}`, ...whoAttributes(mention.login, mention.bot) }, [
+            createElement('img', { class: 'geld-review__avatar', 'data-kind': mention.bot ? 'bot' : 'user', src: mention.avatarUrl, alt: `@${mention.login}`, width: '20', height: '20' }),
+          ]),
+    time: '',
+    at: mention.at,
+  }));
+}
+
 function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
   return groups.filter((group) => group.silent !== true).map((group) => {
     const firstAnchor = firstAnchorIn(group.nodes[0] ?? null);
@@ -851,6 +893,7 @@ function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
       timeAnchor: headlineNode === null ? firstAnchor : headlineNode.id,
       ...(group.closure === undefined ? {} : { closure: group.closure }),
       ...(group.headline === undefined ? {} : { headline: group.headline }),
+      ...(group.refs === undefined ? {} : { refs: group.refs }),
     };
   });
 }
@@ -2298,10 +2341,11 @@ function botAvatarByLogin(botId: string): string | null {
 
 /** The pull request's author, from the page header (the description card when the header is not there). */
 function prAuthorLogin(): string | null {
-  const header = document.querySelector('.gh-header-meta a.author, [data-testid="issue-metadata-author"] a, .gh-header-meta a[data-hovercard-type="user"]');
+  const header = document.querySelector('.gh-header-meta a.author, [data-testid="issue-metadata-author"] a, .gh-header-meta a[data-hovercard-type="user"], [data-component="PageHeader"] a[data-hovercard-type="user"]');
   const login = header === null ? null : loginOfLink(header);
   if (login !== null && login !== '') return login;
-  const card = document.querySelector('[data-geld-attached]');
+  // The Overview's description box names no author: a link in it would be someone the description mentions.
+  const card = isOverviewPage() ? null : document.querySelector('[data-geld-attached]');
   return card === null ? null : (authorOf(card)?.login ?? null);
 }
 
@@ -3307,7 +3351,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const claimed = new Set<HTMLElement>(foldTargets.flatMap((group) => [...group.nodes]));
   const leftoverList = phase('leftovers', () => crawlLeftovers(claimed, threadCommentsComing));
   if (hidingTimeline) {
-    const leftovers = groupLeftovers(leftoverList);
+    // With the description's mentions, the Overview's incoming ones read from its timeline data: neither has a row of the page's.
+    const leftovers = groupLeftovers(leftoverList, [...descriptionMentions(), ...incomingReadMentions()].map((line) => `${line.href} ${line.title} ${line.state}`));
     groups.push(...leftovers);
     foldTargets.push(...leftovers);
   }
@@ -3764,7 +3809,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     },
   };
   phaseSince('model', modelStart);
-  const mounted = phase('panel', () => mountPanel(model, panelHandlers, { holdRebuild: fragmentRenderTimer !== null }));
+  const mounted = phase('panel', () => mountPanel(model, panelHandlers, { holdRebuild: fragmentRenderTimer !== null, parkChats }));
   scheduleTimeRefresh();
   if (mounted !== null) {
     watchLoans(mounted.root);
@@ -3780,7 +3825,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const slotsStart = performance.now();
   if (mounted?.slot !== null && mounted?.slot !== undefined && visit.openKey !== null) {
     const nodes = quickViewFor(visit.openKey, meta, groups);
-    if (nodes.length === 0) {
+    // The description's own mentions have no timeline row, so the Mentions row can stand with no nodes to show.
+    const onlyOutgoing = visit.openKey === foldKey('mentions') && (descriptionMentions().length > 0 || incomingReadMentions().length > 0);
+    if (nodes.length === 0 && !onlyOutgoing) {
       // An open thread row (by push) whose thread is momentarily out of the crawl keeps its row through the grace.
       if (!visit.openKey.startsWith('item:') || openLineStillMissing()) {
         visit.openKey = null;
@@ -3879,15 +3926,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           renderQuickView(mounted.slot, nodes);
         }
       } else if (visit.openKey === foldKey('mentions')) {
-        const card = descriptionCard();
-        const cardAuthor = card === null ? null : authorOf(card);
-        const cardAvatar = card === null ? null : avatarSrcOf(card);
-        renderMentionsView(
-          mounted.slot,
-          nodes,
-          outgoingMentions(card?.querySelector('.comment-body, .markdown-body, [data-testid="markdown-body"]') ?? null, cardAuthor === null || cardAvatar === null ? null : { login: cardAuthor.login, avatarSrc: cardAvatar }),
-          (href) => refDetails(href, reapplySoon),
-        );
+        renderMentionsView(mounted.slot, nodes, descriptionMentions(true), (href) => refDetails(href, reapplySoon), incomingReadMentions());
       } else if (visit.openKey.startsWith('item:')) {
         // Each review thread as its chat: the path, the hunk, the comment it came from pinned, every message.
         const item = meta.items.find((entry) => itemKey(entry.id) === visit.openKey);
@@ -3900,6 +3939,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   } else {
     restoreAll();
   }
+  // A thread chat the rebuild parked that no view took back (another row opened, or none): home now.
+  releaseParkedChats();
   releasePanelPin();
   phaseSince('slots', slotsStart);
   // After the slots render (an open chat's byline time cell is created there): give every time cell its hover title
@@ -4102,6 +4143,7 @@ export function teardownReviewOverview(why: 'stop' | 'leave' | 'rebuild' = 'stop
   stopFittingChips();
   stopWatchingBrandSelection();
   unmountPanel();
+  releaseParkedChats();
   closeOverviewChecks();
   removeDigestOffBar();
   hideSummary(null);

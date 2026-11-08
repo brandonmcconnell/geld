@@ -24,7 +24,8 @@ import {
 
 /**
  * "Related links" in the pull request's sidebar, under Reviewers: the tickets, chat threads, agent sessions, review
- * tools and docs the description links to (and Linear's linkback comment), read by `@geld/review`'s registry.
+ * tools and docs the description links to (and Linear's linkback comment), read by `@geld/review`'s registry. GitHub's
+ * own issues, pull requests and discussions stand apart under it, as "Mentions".
  */
 
 const SECTION_CLASS = 'geld-related';
@@ -231,8 +232,8 @@ const NOUN_GLYPHS: Readonly<Record<string, string>> = { issue: ICON_ISSUE_OPENED
  */
 const MAX_LOOKUPS = 32;
 
-function rowsOf(links: readonly RelatedLink[], onChange: () => void): RelatedRow[] {
-  const lookups = Math.min(showAll ? links.length : SHOWN_LINKS, MAX_LOOKUPS);
+function rowsOf(links: readonly RelatedLink[], group: Group, onChange: () => void): RelatedRow[] {
+  const lookups = Math.min(showAll.has(group) ? links.length : SHOWN_LINKS, MAX_LOOKUPS);
   return links.map((link, index) => {
     if (index >= lookups || !link.key.startsWith('github:') || new URL(link.href).hostname !== location.hostname) return { ...link, state: null };
     const details = refDetails(link.href, onChange);
@@ -291,23 +292,28 @@ function rowOf(link: RelatedRow): HTMLElement {
   return createElement('li', { class: `${SECTION_CLASS}__item`, 'data-kind': link.kind }, [anchor]);
 }
 
-const TITLE = 'Related links';
+/** The two sections, in the order they stand: the context the pull request came from, then GitHub's own references. */
+type Group = 'related' | 'mentions';
+
+const TITLES: Readonly<Record<Group, string>> = { related: 'Related links', mentions: 'Mentions' };
+
+const ATTR_GROUP = 'data-geld-section';
 
 /** How many rows show before "Show N more": a description that links a dozen tickets should not push Labels off screen. */
 export const SHOWN_LINKS = 8;
 
-/** Whether the reader asked for every row on this page; kept across redraws, forgotten on teardown. */
-let showAll = false;
+/** The sections whose every row the reader asked for on this page; kept across redraws, forgotten on teardown. */
+const showAll = new Set<Group>();
 
-function listOf(links: readonly RelatedRow[]): HTMLElement {
+function listOf(links: readonly RelatedRow[], group: Group): HTMLElement {
   const rows = links.map(rowOf);
   const list = createElement('ul', { class: `${SECTION_CLASS}__list` }, rows);
   const extra = rows.slice(SHOWN_LINKS);
-  if (extra.length === 0 || showAll) return list;
+  if (extra.length === 0 || showAll.has(group)) return list;
   for (const row of extra) row.hidden = true;
   const more = createElement('button', { type: 'button', class: `btn-link ${SECTION_CLASS}__more` }, [`Show ${extra.length} more`]);
   more.addEventListener('click', () => {
-    showAll = true;
+    showAll.add(group);
     for (const row of extra) row.hidden = false;
     more.parentElement?.remove();
     requestPass();
@@ -317,10 +323,10 @@ function listOf(links: readonly RelatedRow[]): HTMLElement {
 }
 
 /** The Rails sidebar's item: `div.discussion-sidebar-item` with an `h3.discussion-sidebar-heading`. */
-function railsSection(links: readonly RelatedRow[]): HTMLElement {
-  return createElement('div', { class: `discussion-sidebar-item ${SECTION_CLASS}`, [OWN_UI_ATTRIBUTE]: '', 'data-geld-shape': 'rails' }, [
-    createElement('h3', { class: `discussion-sidebar-heading text-bold ${SECTION_CLASS}__heading` }, [TITLE]),
-    listOf(links),
+function railsSection(links: readonly RelatedRow[], group: Group): HTMLElement {
+  return createElement('div', { class: `discussion-sidebar-item ${SECTION_CLASS}`, [OWN_UI_ATTRIBUTE]: '', [ATTR_GROUP]: group, 'data-geld-shape': 'rails' }, [
+    createElement('h3', { class: `discussion-sidebar-heading text-bold ${SECTION_CLASS}__heading` }, [TITLES[group]]),
+    listOf(links, group),
   ]);
 }
 
@@ -330,31 +336,32 @@ function railsSection(links: readonly RelatedRow[]): HTMLElement {
  * The title's class is the leaf that reads the neighbour's title (the `h4`, or the `span` inside a gear's button), the
  * header's from a section whose header is the plain `div > h4`, the content's from the neighbour's last child.
  */
-function overviewSection(neighbour: HTMLElement, links: readonly RelatedRow[]): HTMLElement {
+function overviewSection(neighbour: HTMLElement, links: readonly RelatedRow[], group: Group): HTMLElement {
   const name = words(titleOf(neighbour) ?? neighbour);
   const leaf = [...neighbour.querySelectorAll('h2, h3, h4, span')].find((element) => element.childElementCount === 0 && words(element) === name);
   const plainHeader = neighbour.parentElement?.querySelector(':scope > [data-overview-sidebar-item] > div:first-child:has(> h4:only-child)') ?? null;
   const content = neighbour.lastElementChild;
-  return createElement('section', { class: SECTION_CLASS, 'aria-label': TITLE, 'data-overview-sidebar-item': '', [OWN_UI_ATTRIBUTE]: '', 'data-geld-shape': 'overview' }, [
-    createElement('div', { class: plainHeader?.className ?? '' }, [createElement('h4', { class: `${leaf?.className ?? ''} ${SECTION_CLASS}__heading`.trim() }, [TITLE])]),
-    createElement('div', { class: content !== null && content !== titleOf(neighbour)?.parentElement ? content.className : '' }, [listOf(links)]),
+  return createElement('section', { class: SECTION_CLASS, 'aria-label': TITLES[group], 'data-overview-sidebar-item': '', [OWN_UI_ATTRIBUTE]: '', [ATTR_GROUP]: group, 'data-geld-shape': 'overview' }, [
+    createElement('div', { class: plainHeader?.className ?? '' }, [createElement('h4', { class: `${leaf?.className ?? ''} ${SECTION_CLASS}__heading`.trim() }, [TITLES[group]])]),
+    createElement('div', { class: content !== null && content !== titleOf(neighbour)?.parentElement ? content.className : '' }, [listOf(links, group)]),
   ]);
 }
 
 /** Any other sidebar: the neighbour's tag and classes, and its title's. */
-function sectionLike(neighbour: HTMLElement, links: readonly RelatedRow[]): HTMLElement {
-  if (neighbour.classList.contains('discussion-sidebar-item')) return railsSection(links);
-  if (neighbour.hasAttribute('data-overview-sidebar-item')) return overviewSection(neighbour, links);
+function sectionLike(neighbour: HTMLElement, links: readonly RelatedRow[], group: Group): HTMLElement {
+  if (neighbour.classList.contains('discussion-sidebar-item')) return railsSection(links, group);
+  if (neighbour.hasAttribute('data-overview-sidebar-item')) return overviewSection(neighbour, links, group);
   const section = document.createElement(neighbour.localName);
   section.className = `${neighbour.className} ${SECTION_CLASS}`.trim();
   section.setAttribute(OWN_UI_ATTRIBUTE, '');
+  section.setAttribute(ATTR_GROUP, group);
   const theirs = titleOf(neighbour);
   const level = theirs !== null && /^H[2-4]$/.test(theirs.tagName) ? theirs.localName : 'h3';
   const heading = document.createElement(level);
   heading.className = theirs === null || level !== theirs.localName ? 'discussion-sidebar-heading text-bold' : theirs.className;
   heading.classList.add(`${SECTION_CLASS}__heading`);
-  heading.textContent = TITLE;
-  section.append(heading, listOf(links));
+  heading.textContent = TITLES[group];
+  section.append(heading, listOf(links, group));
   return section;
 }
 
@@ -380,14 +387,29 @@ function placeFor(assignees: HTMLElement): HTMLElement {
   return place;
 }
 
-/** Our section in the sidebar of each Assignees section, keyed by it, with the links it was drawn from. */
-let mounted = new Map<HTMLElement, { readonly section: HTMLElement; readonly signature: string }>();
+interface Mounted {
+  readonly sections: readonly HTMLElement[];
+  readonly signature: string;
+}
+
+/** Our sections in the sidebar of each Assignees section, keyed by it, with the links they were drawn from. */
+let mounted = new Map<HTMLElement, Mounted>();
 
 function removeSections(): void {
-  for (const { section } of mounted.values()) section.remove();
+  for (const { sections } of mounted.values()) for (const section of sections) section.remove();
   mounted = new Map();
   for (const stray of document.querySelectorAll(`.${SECTION_CLASS}[${OWN_UI_ATTRIBUTE}]`)) stray.remove();
-  showAll = false;
+  showAll.clear();
+}
+
+/** Whether the sections still stand right after `place`, one after another. */
+function standsAfter(place: HTMLElement, sections: readonly HTMLElement[]): boolean {
+  let previous: Element = place;
+  for (const section of sections) {
+    if (!section.isConnected || previous.nextElementSibling !== section) return false;
+    previous = section;
+  }
+  return true;
 }
 
 export function removeRelatedLinks(): void {
@@ -400,12 +422,12 @@ const ATTR_ORDERED = 'data-geld-sidebar-order';
 const ATTR_PLACE = 'data-geld-order';
 const ATTR_FIRST = 'data-geld-order-first';
 
-/** Where a section of the Overview sidebar is shown, before GitHub's order for the rest: Reviewers, Related links, Activity. */
-const PLACES = ['reviewers', 'related', 'activity'] as const;
+/** Where a section of the Overview sidebar is shown, before GitHub's order for the rest: Reviewers, Related links, Mentions, Activity. */
+const PLACES = ['reviewers', 'related', 'mentions', 'activity'] as const;
 type Place = (typeof PLACES)[number];
 
 function placeOf(section: Element): Place | null {
-  if (section.classList.contains(SECTION_CLASS) && section.hasAttribute(OWN_UI_ATTRIBUTE)) return 'related';
+  if (section.classList.contains(SECTION_CLASS) && section.hasAttribute(OWN_UI_ATTRIBUTE)) return section.getAttribute(ATTR_GROUP) === 'mentions' ? 'mentions' : 'related';
   const name = (section.getAttribute('aria-label') ?? words(titleOf(section) ?? section)).toLowerCase();
   if (name === 'reviewers') return 'reviewers';
   return name === 'activity' || name.startsWith('activity (') ? 'activity' : null;
@@ -420,7 +442,7 @@ function setAttribute(element: Element, name: string, value: string | null): voi
 }
 
 /**
- * The Overview sidebar shows Reviewers, then Related links, then Activity, then GitHub's own order. Its list is a flex
+ * The Overview sidebar shows Reviewers, then Related links, Mentions and Activity, then GitHub's own order. Its list is a flex
  * column, so the order is CSS `order` on attributes, never React's nodes moved. GitHub draws the line above every
  * section but the first in page order, which no longer is the first shown, so on an ordered list the stylesheet draws
  * it above every section but the one marked first here. The classic sidebar keeps its order.
@@ -460,27 +482,35 @@ let requestPass: () => void = () => undefined;
 export function applyRelatedLinks(active: boolean, onChange: () => void = () => undefined): void {
   requestPass = onChange;
   const afters = active ? assigneesSections() : [];
-  const links = afters.length === 0 ? [] : rowsOf(relatedLinksOnPage(onChange), onChange);
-  if (links.length === 0) {
-    if (mounted.size > 0) removeSections();
+  const all = afters.length === 0 ? [] : relatedLinksOnPage(onChange);
+  const groups = ([
+    ['related', rowsOf(all.filter((link) => link.kind !== 'github'), 'related', onChange)],
+    ['mentions', rowsOf(all.filter((link) => link.kind === 'github'), 'mentions', onChange)],
+  ] as const).filter(([, rows]) => rows.length > 0);
+  if (groups.length === 0) {
+    if (mounted.size > 0 || document.querySelector(`.${SECTION_CLASS}[${OWN_UI_ATTRIBUTE}]`) !== null) removeSections();
     orderSidebars(afters);
     return;
   }
-  const signature = JSON.stringify(links);
-  const next = new Map<HTMLElement, { readonly section: HTMLElement; readonly signature: string }>();
+  const signature = JSON.stringify(groups);
+  const next = new Map<HTMLElement, Mounted>();
   for (const after of afters) {
     const place = placeFor(after);
     const known = mounted.get(after);
-    if (known !== undefined && known.signature === signature && known.section.isConnected && place.nextElementSibling === known.section) {
+    if (known !== undefined && known.signature === signature && standsAfter(place, known.sections)) {
       next.set(after, known);
       continue;
     }
-    known?.section.remove();
-    const section = sectionLike(after, links);
-    place.after(section);
-    next.set(after, { section, signature });
+    for (const section of known?.sections ?? []) section.remove();
+    const sections = groups.map(([group, rows]) => sectionLike(after, rows, group));
+    place.after(...sections);
+    next.set(after, { sections, signature });
   }
-  for (const [after, { section }] of mounted) if (!next.has(after)) section.remove();
+  for (const [after, { sections }] of mounted) if (!next.has(after)) for (const section of sections) section.remove();
+  // A section left by another copy of Geld (one an extension reload or update retired, or a second build installed
+  // beside this one) stood beside this one's as a second section: only the sections drawn here stay.
+  const ours = new Set([...next.values()].flatMap(({ sections }) => sections));
+  for (const stray of document.querySelectorAll(`.${SECTION_CLASS}[${OWN_UI_ATTRIBUTE}]`)) if (!(stray instanceof HTMLElement) || !ours.has(stray)) stray.remove();
   mounted = next;
   orderSidebars(afters);
 }

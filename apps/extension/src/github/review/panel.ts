@@ -29,7 +29,7 @@ import { requestDetail, requestSentence } from './bot-requests';
 import { formatSyncAge } from '../../ui/sync-age';
 import type { Closure, ClosureKind, EventHeadline } from './fold';
 import { headlineText } from './fold';
-import { ATTR_TELEPORTED, reclaimOrphans, restoreAll } from './teleport';
+import { ATTR_TELEPORTED, reclaimOrphans, restoreAll, teleportedNodes } from './teleport';
 import { overviewColumnGap, overviewDescription } from './overview-page';
 import { ATTR_NOTE, ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import type { ReviewerCandidate } from './reviewers';
@@ -113,6 +113,8 @@ export interface FoldRow {
   readonly headline?: EventHeadline;
   /** A state change paired with its comment (fold.ts `Closure`): the row reads "X closed this" with the comment's first line. */
   readonly closure?: Closure;
+  /** The Mentions row: what the description mentions, so an edit that swaps one link for another redraws its open view. */
+  readonly refs?: readonly string[];
 }
 
 
@@ -617,7 +619,7 @@ function restoreFocus(root: Element, key: string | null): void {
  * picks them up on any element, `img` included); a bot's carries Geld's
  * identity-card hook, since GitHub has no hovercard for Apps.
  */
-function whoAttributes(login: string, bot: boolean): Readonly<Record<string, string>> {
+export function whoAttributes(login: string, bot: boolean): Readonly<Record<string, string>> {
   if (login === '') return {};
   // Only an App (`…[bot]`) lacks GitHub's card; a bot-like person's account has one.
   if (bot && /\[bot\]$/i.test(login)) return { [ATTR_WHO]: login };
@@ -2999,7 +3001,7 @@ function signatureOf(model: PanelModel): string {
     bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.severity ?? ''}:${bot.reviewedSha}:${bot.sourceId ?? ''}`),
     botRequests: [...model.botRequests].map(([id, state]) => `${id}:${state.kind === 'starting' ? 'starting' : state.reason}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
-    folds: model.folds.map((fold) => `${fold.key}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}:${fold.closure?.preview ?? ''}:${fold.headline === undefined ? '' : `${fold.headline.kind}${fold.headline.actor}${fold.headline.target ?? ''}${fold.headline.avatarSrc ?? ''}`}`),
+    folds: model.folds.map((fold) => `${fold.key}:${fold.label}:${(fold.refs ?? []).join(' ')}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}:${fold.closure?.preview ?? ''}:${fold.headline === undefined ? '' : `${fold.headline.kind}${fold.headline.actor}${fold.headline.target ?? ''}${fold.headline.avatarSrc ?? ''}`}`),
     batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.commits.length}/${batch.commitCount}/${batch.forcePushes}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}${entry.url ?? ''}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
     grouping: model.grouping,
     view: model.view,
@@ -3093,6 +3095,11 @@ export interface MountOptions {
    * chat home and back every few hundred milliseconds.
    */
   readonly holdRebuild?: boolean;
+  /**
+   * Takes the open thread chat out of the panel being rebuilt, its loans kept, for the new panel to take back
+   * (chat.ts `parkChats`); returns the parked chat, or null when there is none.
+   */
+  readonly parkChats?: (panel: Element) => HTMLElement | null;
 }
 
 export function mountPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions = {}): MountedPanel | null {
@@ -3172,8 +3179,15 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   // list jumped to its top. It is carried into the new panel instead, with a move that keeps its state.
   const carried = existing !== null && model.openKey === CHECKS_KEY ? existing.querySelector<HTMLElement>(`[${ATTR_SLOT}="${CHECKS_KEY}"] > .${PANEL_CLASS}__slot-body`) : null;
   pinPanelHost(existing);
+  // An open thread chat is parked rather than sent home, and taken back if the new panel shows the same threads.
+  const chats = existing !== null && carried === null ? (options.parkChats?.(existing) ?? null) : null;
   // Quick-viewed nodes live inside the old panel; send them home before it goes.
-  restoreAll(carried === null ? undefined : (node) => carried.contains(node));
+  if (carried !== null) restoreAll((node) => carried.contains(node));
+  else if (chats !== null) {
+    const parkedLoans = new Set(teleportedNodes().filter((node) => chats.contains(node)));
+    restoreAll((node) => parkedLoans.has(node), (owner) => owner === chats);
+  }
+  else restoreAll();
   if (existing !== null) reclaimOrphans(existing, carried ?? undefined);
   for (const stale of document.querySelectorAll(`[${ATTR_ATTACHED}]`)) {
     if (stale !== card) stale.removeAttribute(ATTR_ATTACHED);

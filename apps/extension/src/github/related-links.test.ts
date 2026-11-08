@@ -98,6 +98,28 @@ describe('related links in the sidebar', () => {
     expect(document.querySelector('.geld-related')?.previousElementSibling?.textContent).toContain('Assignees');
   });
 
+  it('leaves one section: a section another copy of Geld left in the sidebar goes, wherever it stands', () => {
+    document.body.innerHTML = DESCRIPTION + overviewSidebar;
+    applyRelatedLinks(true);
+    const ours = document.querySelector('.geld-related');
+    // What a retired copy's section looks like: the same element, drawn by a copy that no longer tracks it.
+    const after = ours?.cloneNode(true);
+    if (after instanceof HTMLElement) document.querySelector('[aria-label="Proof of presence"]')?.after(after);
+    applyRelatedLinks(true);
+    const kept = document.querySelectorAll('.geld-related');
+    expect(kept).toHaveLength(1);
+    expect(kept[0] === ours).toBe(true);
+    // Before ours it stands in our place: ours is drawn again there, and the leftover still goes.
+    const before = ours?.cloneNode(true);
+    if (before instanceof HTMLElement) ours?.before(before);
+    applyRelatedLinks(true);
+    const again = document.querySelectorAll('.geld-related');
+    expect(again).toHaveLength(1);
+    expect(again[0] === before).toBe(false);
+    expect(again[0]?.previousElementSibling?.getAttribute('aria-label')).toBe('Reviewers');
+    removeRelatedLinks();
+  });
+
   it('stands after the hidden fragment GitHub keeps after Reviewers, so Assignees stays a sidebar item’s neighbour', () => {
     document.body.innerHTML = DESCRIPTION + railsSidebar();
     const reviewers = [...document.querySelectorAll('.discussion-sidebar-item')].find((item) => item.textContent?.includes('Reviewers'));
@@ -297,6 +319,43 @@ describe('related links in the sidebar', () => {
       ['open', 'octicon octicon-issue-opened geld-related__mark'],
     ]);
     expect(document.querySelectorAll('.geld-related__link')[0]?.getAttribute('title')).toBe('Merged · Open pull request on GitHub · Cache fetches across routes · vercel/next.js');
+  });
+
+  it('lists GitHub’s own references under Mentions, after Related links, in the Rails sidebar and the Overview one', () => {
+    history.replaceState(null, '', '/acme/web/pull/7');
+    const description = DESCRIPTION.replace('<h2>Summary</h2>', '<h2>Summary</h2><p>Fixes <a class="issue-link js-issue-link" href="https://github.com/acme/web/issues/12">#12</a>.</p>');
+    document.body.innerHTML = description + railsSidebar();
+    applyRelatedLinks(true);
+    const titled = (): (string | null)[][] => [...document.querySelectorAll('.geld-related')].map((section) => [section.getAttribute('data-geld-section'), section.querySelector('h3, h4')?.textContent ?? null]);
+    expect(titled()).toEqual([
+      ['related', 'Related links'],
+      ['mentions', 'Mentions'],
+    ]);
+    const [related, mentions] = document.querySelectorAll('.geld-related');
+    expect(related?.previousElementSibling?.textContent).toContain('Reviewers');
+    expect(related?.nextElementSibling).toBe(mentions);
+    expect(mentions?.nextElementSibling?.textContent).toContain('Assignees');
+    expect([...(related?.querySelectorAll('.geld-related__text') ?? [])].map((text) => text.textContent)).toEqual(['DOC-77 Sdk nav overview', 'Open thread in Slack', 'View workspace in Replicas']);
+    expect([...(mentions?.querySelectorAll('.geld-related__text') ?? [])].map((text) => text.textContent)).toEqual([expect.stringMatching(/^#12\b/)]);
+    applyRelatedLinks(true);
+    expect(document.querySelectorAll('.geld-related')[1]).toBe(mentions);
+    removeRelatedLinks();
+
+    document.body.innerHTML = description + overviewSidebar;
+    applyRelatedLinks(true);
+    const list = document.querySelector('.info__x');
+    expect([...(list?.children ?? [])].slice(0, 5).map((child) => [child.getAttribute('aria-label'), child.getAttribute('data-geld-order')])).toEqual([
+      ['Activity', 'activity'],
+      ['Reviewers', 'reviewers'],
+      ['Related links', 'related'],
+      ['Mentions', 'mentions'],
+      ['Proof of presence', null],
+    ]);
+    removeRelatedLinks();
+
+    document.body.innerHTML = `<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>After <a href="https://github.com/acme/web/pull/5">#5</a>.</p></div></div>${railsSidebar()}`;
+    applyRelatedLinks(true);
+    expect(titled()).toEqual([['mentions', 'Mentions']]);
   });
 
   it('looks up only the rows that show, the rest once Show N more opens them', async () => {
