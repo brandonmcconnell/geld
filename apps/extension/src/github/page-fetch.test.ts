@@ -36,6 +36,20 @@ describe('pageFetch', () => {
     expect(page).toHaveBeenCalledWith(`${location.origin}/acme/widgets/pull/7/page_data/merge_box`, { method: 'GET' });
   });
 
+  it('still honours that signal: an aborted caller gets the abort, never the late answer', async () => {
+    let answer: (response: Response) => void = () => undefined;
+    vi.stubGlobal('content', { fetch: () => new Promise<Response>((resolve) => (answer = resolve)) });
+    const pending = new AbortController();
+    const waiting = pageFetch('/acme/widgets/pull/7/partials/thread', { signal: pending.signal });
+    pending.abort();
+    answer(new Response('<div>late</div>', { status: 200 }));
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
+
+    const already = new AbortController();
+    already.abort();
+    await expect(pageFetch('/acme/widgets/pull/7/partials/thread', { signal: already.signal })).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
   it('keeps an answer with no body empty', async () => {
     vi.stubGlobal('content', { fetch: async () => new Response(null, { status: 204 }) });
     const response = await pageFetch('/acme/widgets/pull/7/page_data/abandon_review', { method: 'DELETE' });
