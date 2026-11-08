@@ -5635,7 +5635,8 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   animation: none !important;
 }
 
-/* An Overview review's box holds its threads' boxes too: opened as the review's words, its threads are rows of their own. */
+/* An Overview review's box holds its threads' boxes too: opened as the review's words (or pinned over one of its threads), its threads are rows of their own. */
+.geld-review__chat-context article[data-geld-teleported] article,
 .geld-review__chat[data-geld-chat='comment'] article[data-geld-teleported] article {
   display: none !important;
 }
@@ -9637,4 +9638,157 @@ div:has(> [data-geld-overview-merge]) {
 
 .geld-overview-merge__menu .geld-quick-review__menu-note {
   white-space: normal;
+}
+
+/*
+ * The Overview's review comments in a chat, laid out as the conversation's (its markup differs: a header grid of
+ * picture, name and time, actions and badges; the body and the reactions toolbar in one wrapper). The picture stands
+ * in the gutter up and to the left of the bubble, the name and the time on one line above it; the ⋯ and the picker
+ * are moved beside the bubble and the pills under it by chat.ts (`placeOverviewControls`).
+ */
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'],
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'] > div {
+  display: flex !important;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'] [class*='AvatarContainer'] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  margin: 0 !important;
+}
+
+.geld-review__chat [data-geld-mine] > [data-geld-part='meta'] [data-testid='comment-header'] [class*='AvatarContainer'] {
+  right: 0;
+  left: auto;
+}
+
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'] [class*='AvatarContainer'] img {
+  width: var(--geld-chat-avatar) !important;
+  height: var(--geld-chat-avatar) !important;
+}
+
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header-left-side-items'],
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header-left-side-items'] > * {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 !important;
+  padding: 0 !important;
+  white-space: nowrap;
+}
+
+.geld-review__chat [data-geld-mine] > [data-geld-part='meta'] [data-testid='comment-header-left-side-items'] {
+  flex-direction: row-reverse !important;
+}
+
+.geld-review__chat [data-geld-part='meta'] a[data-testid='avatar-link'] {
+  color: var(--fgColor-default, var(--color-fg-default, #1f2328)) !important;
+  font-size: 13px !important;
+  font-weight: 600;
+}
+
+/* Badges ("Author", "Bot") and whatever is left of the actions holder once its ⋯ is beside the bubble. */
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header-right-side-items'] {
+  display: none !important;
+}
+
+.geld-review__chat [data-geld-run='mid'] > [data-geld-part='meta'] [data-testid='comment-header'],
+.geld-review__chat [data-geld-run='last'] > [data-geld-part='meta'] [data-testid='comment-header'] {
+  display: none !important;
+}
+
+/* The bubble's inner wrappers keep no padding of their own, and the line GitHub draws down a reply's left goes. */
+.geld-review__chat [data-geld-part='bubble'] [class*='BodyHTMLContainer'] {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.geld-review__chat [data-geld-part='bubble'] > [class*='ReplyWrapper'] {
+  display: none !important;
+}
+
+.geld-review__chat [data-geld-message][class*='isReply'] {
+  border: 0 !important;
+}
+
+/* The pills under the bubble: GitHub's toolbar, 2px down, mirrored on the reader's own side. */
+.geld-review__chat .geld-review__msg-reactions [role='toolbar'],
+.geld-review__chat .geld-review__msg-reactions [role='toolbar'] ~ *,
+.geld-review__chat .geld-review__msg-reactions > div,
+.geld-review__chat .geld-review__msg-reactions > div > div {
+  margin: 0 !important;
+}
+
+.geld-review__chat .geld-review__msg-reactions > div:not(:has(button)) {
+  display: none !important;
+}
+
+.geld-review__chat .geld-review__msg-reactions [role='toolbar'] {
+  margin-top: 2px !important;
+}
+
+.geld-review__chat [data-geld-mine] .geld-review__msg-reactions [role='toolbar'] {
+  justify-content: flex-end;
+}
+
+/* The Overview's tooltips moved with their buttons stay out of the side slot's flow. */
+.geld-review__msg-actions > [role='tooltip'],
+.geld-review__msg-actions > [data-component='Tooltip'] {
+  position: absolute;
+}
+
+/* The composer: the reader's picture, GitHub's "Write a reply" as the chat's round field, Resolve on its right. */
+.geld-review__chat-body article[data-geld-teleported] :has(> [class*='CompactCommentInputContainer']) {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.geld-review__chat-body article[data-geld-teleported] :has(> :has(> [class*='CompactCommentInputContainer'])) {
+  padding: 8px 12px 10px !important;
+  border-top: 1px solid var(--geld-review-border-muted);
+  background: var(--geld-review-bg) !important;
+}
+
+.geld-review__composer-avatar {
+  flex: 0 0 auto;
+  width: var(--geld-chat-avatar);
+  height: var(--geld-chat-avatar);
+  border-radius: 50%;
+}
+
+.geld-review__chat-body [class*='CompactCommentInputContainer'] {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 32px !important;
+  margin: 0 !important;
+  padding: 0 12px !important;
+  border: 1px solid var(--geld-review-border) !important;
+  border-radius: 16px !important;
+  background: var(--geld-review-bg) !important;
+  color: var(--geld-review-muted) !important;
+  font-size: 13px !important;
+  text-align: left;
+  box-shadow: none !important;
+}
+
+.geld-review__chat-body [class*='CompactCommentInputContainer']:hover {
+  border-color: var(--geld-review-muted) !important;
+}
+
+.geld-review__composer-side[hidden] {
+  display: none !important;
+}
+
+.geld-review__composer-resolve.btn {
+  height: 32px;
+  font-size: 14px;
+  font-weight: 500;
 }

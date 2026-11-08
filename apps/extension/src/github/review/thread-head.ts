@@ -44,7 +44,9 @@ export function outermostReviewOf(node: Element): HTMLElement | null {
 export function threadHeadOf(thread: Element, at: number, summaries: readonly SameRunCandidate[] | null): ThreadHead | null {
   const review = outermostReviewOf(thread);
   const reviewNode = review === null ? null : reviewCommentOf(review);
-  if (review !== null && reviewNode !== null && !reviewNode.contains(thread)) return { anchor: review.id, review: reviewNode };
+  // An Overview review is one box, its words and its threads' boxes together: the box is its comment though it holds the thread.
+  const overviewBox = reviewNode !== null && reviewNode === review && review.tagName === 'ARTICLE';
+  if (review !== null && reviewNode !== null && (overviewBox || !reviewNode.contains(thread))) return { anchor: review.id, review: reviewNode };
   if (summaries === null) return null;
   const anchor = sameRunAnchor(summaries, at, SAME_RUN_BEFORE_MS, RUN_SETTLE_MS);
   return anchor === null ? null : { anchor, review: null };

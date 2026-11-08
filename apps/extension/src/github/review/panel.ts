@@ -29,7 +29,7 @@ import { requestDetail, requestSentence } from './bot-requests';
 import { formatSyncAge } from '../../ui/sync-age';
 import type { Closure, ClosureKind, EventHeadline } from './fold';
 import { headlineText } from './fold';
-import { ATTR_TELEPORTED, reclaimOrphans, restoreAll } from './teleport';
+import { ATTR_TELEPORTED, reclaimOrphans, restoreAll, teleportedNodes } from './teleport';
 import { overviewColumnGap, overviewDescription } from './overview-page';
 import { ATTR_NOTE, ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import type { ReviewerCandidate } from './reviewers';
@@ -3095,6 +3095,11 @@ export interface MountOptions {
    * chat home and back every few hundred milliseconds.
    */
   readonly holdRebuild?: boolean;
+  /**
+   * Takes the open thread chat out of the panel being rebuilt, its loans kept, for the new panel to take back
+   * (chat.ts `parkChats`); returns the parked chat, or null when there is none.
+   */
+  readonly parkChats?: (panel: Element) => HTMLElement | null;
 }
 
 export function mountPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions = {}): MountedPanel | null {
@@ -3174,8 +3179,15 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   // list jumped to its top. It is carried into the new panel instead, with a move that keeps its state.
   const carried = existing !== null && model.openKey === CHECKS_KEY ? existing.querySelector<HTMLElement>(`[${ATTR_SLOT}="${CHECKS_KEY}"] > .${PANEL_CLASS}__slot-body`) : null;
   pinPanelHost(existing);
+  // An open thread chat is parked rather than sent home, and taken back if the new panel shows the same threads.
+  const chats = existing !== null && carried === null ? (options.parkChats?.(existing) ?? null) : null;
   // Quick-viewed nodes live inside the old panel; send them home before it goes.
-  restoreAll(carried === null ? undefined : (node) => carried.contains(node));
+  if (carried !== null) restoreAll((node) => carried.contains(node));
+  else if (chats !== null) {
+    const parkedLoans = new Set(teleportedNodes().filter((node) => chats.contains(node)));
+    restoreAll((node) => parkedLoans.has(node), (owner) => owner === chats);
+  }
+  else restoreAll();
   if (existing !== null) reclaimOrphans(existing, carried ?? undefined);
   for (const stale of document.querySelectorAll(`[${ATTR_ATTACHED}]`)) {
     if (stale !== card) stale.removeAttribute(ATTR_ATTACHED);

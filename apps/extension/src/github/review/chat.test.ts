@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { botCommentControls, dressArrivals, hideAgentRerunControls, messagesIn, renderChatView, takeAgentViewLink } from './chat';
+import { botCommentControls, dressArrivals, hideAgentRerunControls, messagesIn, parkChats, releaseParkedChats, renderChatView, takeAgentViewLink } from './chat';
 
 /**
  * Two shapes carry the `minimized-comment` class. A review's own body card
@@ -215,5 +215,57 @@ describe('dressArrivals', () => {
     expect(reply.querySelector('[data-geld-part="bubble"]')).not.toBeNull();
     // Nothing left to dress: the pass that follows has no reason to rebuild the chat.
     expect(dressArrivals(document)).toBe(false);
+  });
+});
+
+describe('a thread chat parked over a panel rebuild', () => {
+  const byId = (id: string): HTMLElement => {
+    const element = document.getElementById(id);
+    if (!(element instanceof HTMLElement)) throw new Error(`fixture has no #${id}`);
+    return element;
+  };
+  const panel = (): HTMLElement => {
+    const element = document.querySelector('.geld-review');
+    if (!(element instanceof HTMLElement)) throw new Error('fixture has no panel');
+    return element;
+  };
+  const handlers = { pathOf: () => 'src/a.ts', onCopy: () => undefined, sourceOf: () => null, sourceOpen: () => false, onToggleSource: () => undefined, onOpenAnchor: () => undefined };
+  const threadAt = (home: HTMLElement): HTMLElement => {
+    home.innerHTML = '<div class="js-resolvable-timeline-thread-container"><div id="discussion_r42" class="review-comment js-comment"><div class="timeline-comment-header"><a class="author" href="/octocat">octocat</a></div><div class="comment-body markdown-body"><p>A note.</p></div></div></div>';
+    const thread = home.firstElementChild;
+    if (!(thread instanceof HTMLElement)) throw new Error('fixture');
+    return thread;
+  };
+
+  it('comes back with its thread when the same thread is rendered again', () => {
+    document.body.innerHTML = '<div id="home"></div><section class="geld-review"><div id="slot"></div></section>';
+    const home = byId('home');
+    const slot = byId('slot');
+    const thread = threadAt(home);
+    renderChatView(slot, [thread], handlers);
+    const chats = slot.querySelector('.geld-review__chats');
+    parkChats(panel());
+    renderChatView(slot, [thread], handlers);
+    expect(slot.querySelector('.geld-review__chats')).toBe(chats);
+    expect(slot.contains(thread)).toBe(true);
+    releaseParkedChats();
+  });
+
+  it('is not taken back without its thread: GitHub replaced the thread at home, same anchor and path', () => {
+    document.body.innerHTML = '<div id="home"></div><section class="geld-review"><div id="slot"></div></section>';
+    const home = byId('home');
+    const slot = byId('slot');
+    const stale = threadAt(home);
+    renderChatView(slot, [stale], handlers);
+    const chats = slot.querySelector('.geld-review__chats');
+    // What `dropOrphanedLoans` leaves: the stale copy gone from the chat, a fresh one at home under the same anchor.
+    stale.remove();
+    const fresh = threadAt(document.createElement('div'));
+    home.replaceChildren(fresh);
+    parkChats(panel());
+    renderChatView(slot, [fresh], handlers);
+    expect(slot.querySelector('.geld-review__chats')).not.toBe(chats);
+    expect(slot.contains(fresh)).toBe(true);
+    releaseParkedChats();
   });
 });

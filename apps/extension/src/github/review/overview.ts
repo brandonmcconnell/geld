@@ -69,7 +69,7 @@ import { NO_REPO_BOTS, requestableBots, triggerFor } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
 import { timelineMentionsFor } from './timeline-mentions';
 import type { MentionLine } from './quick-view';
-import { botCommentControls, chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
+import { botCommentControls, chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf, parkChats, releaseParkedChats } from './chat';
 import type { ChatByline, ChatLink, ChatRerun, ChatThreadLink } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
@@ -3809,7 +3809,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     },
   };
   phaseSince('model', modelStart);
-  const mounted = phase('panel', () => mountPanel(model, panelHandlers, { holdRebuild: fragmentRenderTimer !== null }));
+  const mounted = phase('panel', () => mountPanel(model, panelHandlers, { holdRebuild: fragmentRenderTimer !== null, parkChats }));
   scheduleTimeRefresh();
   if (mounted !== null) {
     watchLoans(mounted.root);
@@ -3939,6 +3939,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   } else {
     restoreAll();
   }
+  // A thread chat the rebuild parked that no view took back (another row opened, or none): home now.
+  releaseParkedChats();
   releasePanelPin();
   phaseSince('slots', slotsStart);
   // After the slots render (an open chat's byline time cell is created there): give every time cell its hover title
@@ -4141,6 +4143,7 @@ export function teardownReviewOverview(why: 'stop' | 'leave' | 'rebuild' = 'stop
   stopFittingChips();
   stopWatchingBrandSelection();
   unmountPanel();
+  releaseParkedChats();
   closeOverviewChecks();
   removeDigestOffBar();
   hideSummary(null);
