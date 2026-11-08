@@ -8186,6 +8186,8 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
  */
 [data-geld-desc-cap][data-geld-desc-long] > [data-geld-desc-cut-edge] {
   max-height: var(--geld-desc-cut-height);
+  /* CUT_GAP_PX in description.ts: the fade below is solid over this gap, so the text ends at 0%. */
+  margin-bottom: 16px !important;
   overflow: hidden !important;
 }
 
@@ -8195,7 +8197,7 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
   width: fit-content;
 }
 
-/* Inside the body, after the author's blocks: its ::before fades the text above it out. */
+/* Inside the body, after the author's blocks: its ::before fades the text above it out, to nothing at the cut. */
 .geld-desc-more {
   display: none;
   position: relative;
@@ -8224,8 +8226,8 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
   bottom: 100%;
   left: 0;
   right: 0;
-  height: 96px;
-  background: linear-gradient(to bottom, transparent, var(--bgColor-default, var(--color-canvas-default, #fff)));
+  height: calc(96px + 16px);
+  background: linear-gradient(to bottom, transparent, var(--bgColor-default, var(--color-canvas-default, #fff)) calc(100% - 16px));
   pointer-events: none;
   z-index: 1;
 }
