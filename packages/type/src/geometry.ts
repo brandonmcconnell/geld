@@ -154,8 +154,32 @@ export function insertCuts(stroke: Stroke, pen: Pen, slope = 0): Vec[] {
   return out;
 }
 
+/**
+ * How far past the stroke it turns from a terminal reaches at least in the square style: the cut style's cut
+ * makes up a short terminal's length, and squared it was a nub (0.37 units on e at Black).
+ */
+export const SQUARE_STUB = 0.6;
+
+/** In the square style, lengthens an open stroke's end that turns at a dropped cut, to SQUARE_STUB past the stroke before it. */
+function squareStubs(stroke: Stroke, pen: Pen): Stroke {
+  const { points } = stroke;
+  if (corners !== 'square' || stroke.closed || stroke.fill || points.length < 3) return stroke;
+  const out = [...points];
+  const reach = (end: number, corner: number, before: number) => {
+    const q = out[corner]!;
+    if (q.cut !== true) return;
+    const stub = sub(out[end]!, q);
+    const need = widthAlong(unit(sub(q, out[before]!)), pen) / 2 + SQUARE_STUB;
+    if (length(stub) < need) out[end] = { ...out[end]!, ...add(q, scale(unit(stub), need)) };
+  };
+  reach(out.length - 1, out.length - 2, out.length - 3);
+  reach(0, 1, 2);
+  return { ...stroke, points: out };
+}
+
 /** Offsets a centreline by half its width on each side; `slope` is the italic's, so cuts come out even once slanted. */
-export function expandStroke(stroke: Stroke, masterPen: Pen, slope = 0): Contour[] {
+export function expandStroke(drawn: Stroke, masterPen: Pen, slope = 0): Contour[] {
+  const stroke = squareStubs(drawn, drawn.pen ?? masterPen);
   const pen = stroke.pen ?? masterPen;
   if (stroke.fill) {
     let shape = insertCuts(stroke, { v: 0, h: 0, ...(pen.cut === undefined ? {} : { cut: pen.cut }) }, slope);

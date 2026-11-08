@@ -1,7 +1,7 @@
 # Joins that do not yet meet cleanly (scripts/joins.py), one master and glyph a line. A fault not listed fails pnpm joins;
 # fix one and drop its line. Most are under 0.3 units, at Black or in mark joins. The sans: lines are the square style's
-# first reading: mostly ledges where a cut used to stand between two corners (terminal stubs, a bowl's step), then
-# short edges where a stroke meets a square corner it was drawn to meet at a cut.
+# first reading: mostly ledges where a cut used to stand between two corners (terminal stubs, a bowl's step), which a
+# pass at Black found read as drawn, and short edges, most of them shared with the cut style (tildes, ₩).
 sans-cut:italic:100 acutegraveacutecomb
 sans-cut:italic:100 AE
 sans-cut:italic:100 breveinvertedbelowcomb
@@ -2087,6 +2087,7 @@ sans:roman:600 dieresistonos
 sans:roman:600 dieresistonos.ss07
 sans:roman:600 dmiddletilde
 sans:roman:600 e
+sans:roman:600 emod
 sans:roman:600 eopen
 sans:roman:600 eopenmod
 sans:roman:600 eopenreversed
@@ -2107,6 +2108,7 @@ sans:roman:600 glottalstopmod
 sans:roman:600 glottalstopreversedmod
 sans:roman:600 glottalstopreversedsmallmod
 sans:roman:600 glottalstopsmall
+sans:roman:600 gmod
 sans:roman:600 gscript
 sans:roman:600 gstroke
 sans:roman:600 hbar.sc
