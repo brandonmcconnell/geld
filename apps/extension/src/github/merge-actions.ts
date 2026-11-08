@@ -307,9 +307,9 @@ function fetchNonce(): string {
 }
 
 /** The merge box for a method, or null when GitHub could not say. */
-export async function fetchMergeBox(pullPath: string, method: MergeMethod, bypass: boolean): Promise<MergeBox | null> {
+export async function fetchMergeBox(pullPath: string, method: MergeMethod, bypass: boolean, signal?: AbortSignal): Promise<MergeBox | null> {
   try {
-    const response = await pageFetch(mergeBoxUrl(pullPath, method, bypass), { credentials: 'same-origin', headers: headers(fetchNonce(), false) });
+    const response = await pageFetch(mergeBoxUrl(pullPath, method, bypass), { credentials: 'same-origin', headers: headers(fetchNonce(), false), ...(signal === undefined ? {} : { signal }) });
     if (!response.ok) return null;
     return parseMergeBox(await response.json());
   } catch {
@@ -580,6 +580,31 @@ const STACK_POLL_MISSES = 5;
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, ms));
 
+/** The longest one read of a stack merge's status may take, so a stalled connection cannot keep the controls busy. */
+const STATUS_READ_MS = 15_000;
+const LEFT_CHECK_MS = 250;
+
+/**
+ * A read that gives up, with null, at its deadline or once `wanted` turns false, aborting the request where the
+ * browser lets the signal reach it (in Firefox the page's own fetch sends it, and only the wait ends).
+ */
+function readWithin<T>(read: (signal: AbortSignal) => Promise<T>, ms: number, wanted: () => boolean): Promise<T | null> {
+  const abort = new AbortController();
+  return new Promise<T | null>((resolve) => {
+    const finish = (value: T | null): void => {
+      window.clearTimeout(deadline);
+      window.clearInterval(watch);
+      abort.abort();
+      resolve(value);
+    };
+    const deadline = window.setTimeout(() => finish(null), ms);
+    const watch = window.setInterval(() => {
+      if (!wanted()) finish(null);
+    }, LEFT_CHECK_MS);
+    read(abort.signal).then(finish, () => finish(null));
+  });
+}
+
 /**
  * Wait until a stack merge `enqueue_stack` answered for has settled, reading `merge_request_status` as GitHub's merge
  * box does. A refusal comes back with GitHub's words; anything else (settled, not followable, `wanted` turning false)
@@ -595,33 +620,44 @@ export async function settleStackMerge(pullPath: string, answer: unknown, wanted
     await delay(wait);
     wait *= STACK_POLL_GROWTH;
     if (!wanted()) return null;
-    try {
-      const response = await pageFetch(mergeRequestStatusUrl(pullPath, uuid), { credentials: 'same-origin', cache: 'no-store', headers: headers(fetchNonce(), false) });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const read = stackMergeState(await response.json());
-      if (read.kind === 'settled') return null;
-      if (read.kind === 'failed') return { payload: read.payload, status: response.status };
-      misses = 0;
-    } catch {
+    const read = await readWithin(
+      async (signal) => {
+        const response = await pageFetch(mergeRequestStatusUrl(pullPath, uuid), { credentials: 'same-origin', cache: 'no-store', headers: headers(fetchNonce(), false), signal });
+        return response.ok ? { status: response.status, state: stackMergeState(await response.json()) } : null;
+      },
+      Math.max(0, Math.min(STATUS_READ_MS, STACK_POLL_LIMIT_MS - (Date.now() - started))),
+      wanted,
+    );
+    if (!wanted()) return null;
+    if (read === null) {
       misses += 1;
       if (misses >= STACK_POLL_MISSES) return null;
+      continue;
     }
+    if (read.state.kind === 'settled') return null;
+    if (read.state.kind === 'failed') return { payload: read.state.payload, status: read.status };
+    misses = 0;
   }
   return null;
 }
 
-const MERGED_READS = 10;
+const MERGED_WAIT_MS = 10_000;
 const MERGED_READ_MS = 1000;
 
 /**
- * Wait, a few seconds at most, until the merge box reads the pull request as merged: a page reloaded before then is
- * served open, and its pill turned back from merged.
+ * Wait, ten seconds at most however the reads go, until the merge box reads the pull request as merged: a page
+ * reloaded before then is served open, and its pill turned back from merged.
  */
 export async function awaitMergedState(pullPath: string, wanted: () => boolean): Promise<boolean> {
-  for (let read = 0; read < MERGED_READS && wanted(); read += 1) {
-    if (read > 0) await delay(MERGED_READ_MS);
-    if (!wanted()) return false;
-    const box = await fetchMergeBox(pullPath, 'SQUASH', false);
+  const until = Date.now() + MERGED_WAIT_MS;
+  for (let read = 0; wanted(); read += 1) {
+    if (read > 0) {
+      if (until - Date.now() <= MERGED_READ_MS) return false;
+      await delay(MERGED_READ_MS);
+    }
+    const left = until - Date.now();
+    if (left <= 0 || !wanted()) return false;
+    const box = await readWithin((signal) => fetchMergeBox(pullPath, 'SQUASH', false, signal), left, wanted);
     if (box?.state === 'MERGED') return true;
   }
   return false;

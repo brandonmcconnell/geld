@@ -422,6 +422,47 @@ describe('a stack merge GitHub is still running', () => {
     expect(asked).toHaveBeenCalledTimes(1);
   });
 
+  it('gives a stalled status read a deadline, and stops waiting on it the moment the reader leaves', async () => {
+    vi.useFakeTimers();
+    const asked = vi.fn(() => new Promise<Response>(() => undefined));
+    vi.stubGlobal('fetch', asked);
+    let settled: unknown = 'waiting';
+    void settleStackMerge('/o/r/pull/9', { status: 'pending', uuid: 'u1' }, () => true).then((result) => {
+      settled = result;
+    });
+    await vi.advanceTimersByTimeAsync(1000 + 15_000);
+    expect(asked).toHaveBeenCalledTimes(1);
+    // A second read is asked for once the first gives up; five stalled reads in a row and the merge is taken as done.
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(asked).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(settled).toBeNull();
+    expect(asked).toHaveBeenCalledTimes(5);
+
+    let here = true;
+    const leaving = settleStackMerge('/o/r/pull/9', { status: 'pending', uuid: 'u2' }, () => here);
+    await vi.advanceTimersByTimeAsync(1000);
+    here = false;
+    await vi.advanceTimersByTimeAsync(300);
+    expect(await leaving).toBeNull();
+  });
+
+  it('waits ten seconds at most for the merged state, however long a read stalls', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
+    let merged: unknown = 'waiting';
+    void awaitMergedState('/o/r/pull/9', () => true).then((result) => {
+      merged = result;
+    });
+    await vi.advanceTimersByTimeAsync(9_900);
+    expect(merged).toBe('waiting');
+    await vi.advanceTimersByTimeAsync(200);
+    expect(merged).toBe(false);
+  });
+
   it('waits until the page’s own pull request reads merged before it is reloaded', async () => {
     vi.useFakeTimers();
     const states = ['OPEN', 'OPEN', 'MERGED'];

@@ -215,6 +215,8 @@ const ATTR_PILL = 'data-geld-status-pill';
 
 /** The words a pill was last dressed from, so a pass rewrites it only when GitHub's label changed. */
 const dressedFrom = new WeakMap<HTMLElement, string>();
+/** The label each pill was last dressed merged from (`showMergedPills`). */
+const mergedFrom = new WeakMap<HTMLElement, string>();
 
 function labelKey(label: Element): string {
   return [label.className, label.getAttribute('data-status'), label.getAttribute('data-size'), label.getAttribute('title'), label.textContent].join('|');
@@ -253,17 +255,19 @@ export const ATTR_INSTANT_MERGE = 'data-geld-instant-merge';
  */
 export function showMergedPills(pills: readonly HTMLButtonElement[]): void {
   for (const pill of pills) {
-    const shown = labelBehind(pill);
-    if (!pill.hasAttribute('aria-haspopup') && shown !== null && dressedFrom.get(pill) === labelKey(shown)) continue;
+    const label = labelBehind(pill);
+    // Already merged from GitHub's label as it stands. A label GitHub changed in place since has had the pill dressed from
+    // it again (`syncStatusPills`), still open, so it is dressed merged again.
+    if (label !== null && mergedFrom.get(pill) === labelKey(label)) continue;
     pill.removeAttribute(ATTR_INSTANT_MERGE);
     // The held key's "Merge now: …", which would otherwise outlast the merge as the pill's name.
     pill.removeAttribute('aria-label');
     pill.removeAttribute('aria-haspopup');
     pill.removeAttribute('aria-expanded');
-    const label = labelBehind(pill);
     if (label === null) continue;
     dress(pill, mergedCopy(label));
     dressedFrom.set(pill, labelKey(label));
+    mergedFrom.set(pill, labelKey(label));
   }
 }
 

@@ -29,6 +29,13 @@ describe('pageFetch', () => {
     expect(await response.json()).toEqual({ error: 'Review body is required' });
   });
 
+  it('leaves the content script’s abort signal out of the page’s fetch, which belongs to another world', async () => {
+    const page = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('content', { fetch: page });
+    await pageFetch('/acme/widgets/pull/7/page_data/merge_box', { method: 'GET', signal: new AbortController().signal });
+    expect(page).toHaveBeenCalledWith(`${location.origin}/acme/widgets/pull/7/page_data/merge_box`, { method: 'GET' });
+  });
+
   it('keeps an answer with no body empty', async () => {
     vi.stubGlobal('content', { fetch: async () => new Response(null, { status: 204 }) });
     const response = await pageFetch('/acme/widgets/pull/7/page_data/abandon_review', { method: 'DELETE' });
