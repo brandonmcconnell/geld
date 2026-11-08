@@ -844,9 +844,11 @@ function descriptionMentions(withAuthor = false): readonly MentionLine[] {
   // A description that links to its own pull request ("#493 itself showed…") is not mentioning another.
   const others = (lines: readonly MentionLine[]): readonly MentionLine[] => lines.filter((line) => self === undefined || line.href.replace(/^https:\/\/[^/]+/, '').replace(/[#?].*$/, '') !== self);
   if (!withAuthor || card === null) return others(outgoingMentions(body));
-  const login = authorOf(card)?.login ?? prAuthorLogin();
-  // The Overview's description box shows no author: the header names them, and GitHub serves a person's picture by login.
-  const avatar = avatarSrcOf(card) ?? (login === null ? null : `https://avatars.githubusercontent.com/${encodeURIComponent(login)}?s=40`);
+  // The Overview's description box shows no author, so a link or picture in it is someone the description mentions: the
+  // header names the author there, and GitHub serves a person's picture by login.
+  const overview = isOverviewPage();
+  const login = overview ? prAuthorLogin() : (authorOf(card)?.login ?? prAuthorLogin());
+  const avatar = overview ? (login === null ? null : `https://avatars.githubusercontent.com/${encodeURIComponent(login)}?s=40`) : (avatarSrcOf(card) ?? (login === null ? null : `https://avatars.githubusercontent.com/${encodeURIComponent(login)}?s=40`));
   return others(outgoingMentions(body, login === null || avatar === null ? null : { login, avatarSrc: avatar }));
 }
 
@@ -2342,7 +2344,8 @@ function prAuthorLogin(): string | null {
   const header = document.querySelector('.gh-header-meta a.author, [data-testid="issue-metadata-author"] a, .gh-header-meta a[data-hovercard-type="user"], [data-component="PageHeader"] a[data-hovercard-type="user"]');
   const login = header === null ? null : loginOfLink(header);
   if (login !== null && login !== '') return login;
-  const card = document.querySelector('[data-geld-attached]');
+  // The Overview's description box names no author: a link in it would be someone the description mentions.
+  const card = isOverviewPage() ? null : document.querySelector('[data-geld-attached]');
   return card === null ? null : (authorOf(card)?.login ?? null);
 }
 
