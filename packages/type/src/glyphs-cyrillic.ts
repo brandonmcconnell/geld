@@ -241,6 +241,18 @@ const shcha: Draw = (g) => {
   return [...sha(g).slice(0, 3), ...tailAfter(g, w, 0)];
 };
 
+const yusBig: Draw = (g) => {
+  const w = g.wide(12);
+  const m = g.cap / 2;
+  // The V starts inside the bar and the Λ stands on the baseline, their outer edges flush with 0 and w.
+  const t = g.top(g.cap);
+  // The V and the Λ overlap a unit across the middle: meeting edge to edge, the dark grade's inset parted them.
+  const [low, high] = [m - 0.5, m + 0.5];
+  const top = spanOf(g.diag, w / 2, t - low);
+  const foot = spanOf(g.diag, w / 2, high);
+  return [bar(0, w, t), ...vee(g, top, w - top, t, low), stem(w / 2, 0, m), ...rotate180(vee(g, foot, w - foot, high, 0), w / 2, high / 2)];
+};
+
 /** Capitals with their own drawing; `lower` is the lowercase code point that is the same skeleton as a small capital. */
 const DRAWN: { name: string; unicode: number; lower?: number; lsb: number; rsb: number; draw: Draw }[] = [
   { name: 'Be-cy', unicode: 0x411, lsb: 1.5, rsb: 1.25, draw: be },
@@ -317,6 +329,10 @@ const DRAWN: { name: string; unicode: number; lower?: number; lsb: number; rsb: 
   },
   // The stroke leaves 1.6 of stem above it; ҟ is k with the stroke across its ascender, as ħ has it (LOWER_OWN).
   { name: 'Kastroke-cy', unicode: 0x49e, lsb: 0.5, rsb: 0.3, draw: (g) => [...letter('K').draw(g), across(g, 0, g.cap - g.h / 2 - 1.6)] },
+  // Big yus (historical Bulgarian): a bar over a V and a Λ meeting at the middle, a stem down from their point.
+  { name: 'Yusbig-cy', unicode: 0x46a, lower: 0x46b, lsb: 0.5, rsb: 0.5, draw: yusBig },
+  // Yat (Bulgarian's historical spelling): the soft sign with a bar through its stem above the bowl.
+  { name: 'Yat-cy', unicode: 0x462, lsb: 0.75, rsb: 1.25, draw: (g) => [...softSign(g, g.y(7)), across(g, 0, g.y(11.5))] },
   { name: 'Tedescender-cy', unicode: 0x4ac, lower: 0x4ad, lsb: 0.5, rsb: 0.5, draw: (g) => [...letter('T').draw(g), ...tailAfter(g, g.wide(11) / 2, g.wide(11) / 2)] },
   { name: 'Tetse-cy', unicode: 0x4b4, lower: 0x4b5, lsb: 0.5, rsb: 0.5, draw: (g) => [bar(-g.wide(4.5), g.wide(4.5), g.top(g.cap)), ...tse(g)] },
   {
@@ -395,6 +411,15 @@ const SMALL_OF_LATIN: [string, number, string][] = [
 
 /** Lowercase with forms of their own: б ђ ћ ү ұ. */
 const LOWER_OWN: GlyphDef[] = [
+  // ѣ rises to the ascender, its bar on the x-height, its bowl the soft sign's.
+  {
+    name: 'yat-cy',
+    unicode: 0x463,
+    lower: true,
+    lsb: 0.75,
+    rsb: 1.25,
+    draw: (g) => [stem(0, 0, g.ascender), box(0, g.wide(8), g.bottom(0), g.y(5.5), RIGHT), across(g, 0, g.xHeight)],
+  },
   { name: 'kastroke-cy', unicode: 0x49f, lower: true, lsb: 0.5, rsb: 0.3, draw: (g) => [...letter('k').draw(g), across(g, 0, (g.xHeight + g.ascender) / 2)] },
   {
     name: 'be-cy',
