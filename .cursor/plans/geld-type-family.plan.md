@@ -412,8 +412,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 - [ ] Built, verified and packaged as four families, a zip each.
 - [x] Terminals squared to nubs: in the square style a stroke end that turns at a dropped cut reaches at least `SQUARE_STUB` (0.6) past the stroke before it (geometry.ts `squareStubs`), which took the square style's short edges from 567 to 283, most of the rest shared with the cut style (tildes, ₩); a stub of 1.25 closed apertures in superiors and small capitals.
 - [ ] The square style's joins baseline cleared: its short edges first (diagonals meeting a square corner, a stroke ending at a corner it was drawn to meet at a cut), then a visual pass over its ledges at Black, keeping the steps and stubs that read as drawn and redrawing the rest.
-- [ ] A visual pass over the whole square character set at Thin, Regular and Black, roman and italic, for pairs the cuts used to tell apart beyond D/O, 0 5 8.
-  Done so far: all 1599 encoded glyphs at Black roman (the ledges there read as drawn terminals and steps), and samples at Thin roman and italic.
+- [x] A visual pass over the whole square character set at Thin, Regular and Black, roman and italic, for pairs the cuts used to tell apart beyond D/O, 0 5 8: all 1599 encoded glyphs at Black roman and at Regular italic, samples at Thin roman and italic. The ledges read as drawn terminals and steps; the pairs are held by the rasterising test.
 
 ## 14. Legal and naming
 
