@@ -275,7 +275,7 @@ Default in Sans per D13. Mono turns most of them on by default (section 19).
 - [x] `ss20` No arrow ligatures (5.2).
 
 ### 6.2 Character variants (`cv01` to `cv40` or so, each with a name)
-- [ ] One `cv` per alternate glyph, so a single character can change without a whole set (done: cv01–cv36 for a, g, l, I, 0, 1, j, y, 4, 6, 9, 3, R, K, M, italic n m h i u, G, J, Q, W, t, f, 7, $, #, quotes, *, ß, %, ?, ¶ and { }, each named in the font; a two-bowled capital ẞ was dropped since it reads as B; still to come: &, @ and !): a, g, G (spur or bar), J, K, M, Q (tail styles), R, W (crossed or plain), t (cut or square foot), f, l, I, y, ß (and the sharp-s capital), 0, 1, 3, 4, 6, 7 (with or without crossbar), 9, $, &, @, %, *, ?, !, ¶, # (slanted or upright), { } (style), and quotes (straight or slanted).
+- [x] One `cv` per alternate glyph, so a single character can change without a whole set (cv01–cv39 for a, g, l, I, 0, 1, j, y, 4, 6, 9, 3, R, K, M, italic n m h i u, G, J, Q, W, t, f, 7, $, #, quotes, *, ß, %, ?, ¶, { }, & (cv37, an Et ampersand: E and t sharing the x-height bar), @ (cv38, closed in a square) and ! ¡ (cv39, the stroke brought to a 45° point), each named in the font; a two-bowled capital ẞ was dropped since it reads as B): a, g, G (spur or bar), J, K, M, Q (tail styles), R, W (crossed or plain), t (cut or square foot), f, l, I, y, ß (and the sharp-s capital), 0, 1, 3, 4, 6, 7 (with or without crossbar), 9, $, &, @, %, *, ?, !, ¶, # (slanted or upright), { } (style), and quotes (straight or slanted).
 - [x] `salt` mapping to each glyph's first alternate, for apps that only offer one switch.
 - [x] `aalt` listing every alternate, for the glyph palettes in InDesign and Illustrator. Accented letters follow their base in every set and cv (á under ss01), an alternate keeps its letter's anchors, and `verify.py` checks every alternate under its set, cv and salt in every compiled font.
 
@@ -341,7 +341,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
   - `src/glyphs/`: one skeleton per glyph, or per family of glyphs (n h m u share parts), with anchors for accents.
   - `src/features/`: `.fea` files, hand-written for ligatures and alternates, generated for kerning, marks and `aalt`.
   - `scripts/build.ts`: writes UFO masters and a designspace, then compiles.
-- [x] Compiler: `fontc` (Google's Rust compiler, fast) or `fontmake` (Python), chosen by building a test font with both in Phase 1. Both: fontc builds the variable fonts (nine seconds for the four, where fontmake took a quarter of an hour each, with the same tables and every verify check passing), fontmake the statics, which fontc does not make. A full build is about eight minutes on four cores and `--quick` (variable fonts only) about five.
+- [x] Compiler: `fontc` (Google's Rust compiler, fast) or `fontmake` (Python), chosen by building a test font with both in Phase 1. fontc 1.0 drops GPOS whole when it cannot repack an overflowing class-kerning subtable, as the italic's now overflows, so a variable font that comes out without GPOS or GSUB is built again with fontmake (`variable.py`), and the build says so. Both: fontc builds the variable fonts (nine seconds for the four, where fontmake took a quarter of an hour each, with the same tables and every verify check passing), fontmake the statics, which fontc does not make. A full build is about eight minutes on four cores and `--quick` (variable fonts only) about five.
 - [ ] Python tools pinned in one requirements file and run through `uv`: fontTools, fontmake or fontc, gftools, fontbakery, ttfautohint, Shaperglot.
 - [ ] One command builds everything (`pnpm type:build`), with outputs in `packages/type/dist/`, never committed. Release artifacts come from CI.
 - [ ] Builds are reproducible: the same sources give byte-identical fonts.
@@ -364,6 +364,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 - [ ] Outline checks: contour direction, no stray points, no zero-length segments, no overlaps in statics, extreme points.
 - [ ] Coverage against the target glyph sets (3.1), and Shaperglot per language.
 - [ ] Kerning collision checks (section 4).
+- [ ] GPOS size: the class kerning compiles to a 1.2 MB class matrix (about 390 left by 330 right classes, many with one glyph), most of each variable font. Merging classes with identical rows saves only about ten; a smaller GPOS needs coarser classes, a kerning design change. Then fontc packs the italic again.
 - [ ] Metric consistency across the family.
 - [ ] diffenator2 between builds, so every change shows what it changed.
 

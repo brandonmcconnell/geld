@@ -1,4 +1,4 @@
-import { bar, box, crossbarReach, mirror, solid, yArms, yStemTop, diagonal, type DrawContext, dot, edgeAt, type GlyphDef, INSIDE, level, meeting, open, p, rotate, spanOf, stem, withPen } from './draw';
+import { ALL, bar, box, crossbarReach, LEFT, mirror, rotate180, solid, yArms, yStemTop, diagonal, type DrawContext, dot, edgeAt, type GlyphDef, INSIDE, level, meeting, open, p, rotate, spanOf, stem, withPen } from './draw';
 import type { Stroke } from './geometry';
 
 /**
@@ -385,7 +385,40 @@ export const ALTERNATES: Alternate[] = [
   },
   { glyph: 'braceleft', cv: 'cv36', label: 'Braces with a flat middle', draw: (g) => flatBrace(g) },
   { glyph: 'braceright', cv: 'cv36', label: 'Braces with a flat middle', draw: (g) => mirror(flatBrace(g), g.wide(4.5) / 2) },
+  {
+    // The & as the ligature it came from: E and t sharing one bar at the x-height.
+    glyph: 'ampersand',
+    cv: 'cv37',
+    label: 'Et ampersand',
+    draw: (g) => {
+      const w = g.wide(10);
+      const t = g.top(g.cap);
+      const b = g.bottom(0);
+      const stemX = w * 0.72;
+      return [open(p(w * 0.5, t), p(0, t, true), p(0, b, true), p(w * 0.5, b)), bar(0, w, g.top(g.xHeight)), open(p(stemX, g.y(13)), p(stemX, b, true), p(w, b))];
+    },
+  },
+  {
+    glyph: 'at',
+    cv: 'cv38',
+    label: '@ with a closed square',
+    draw: (g) => {
+      const w = g.wide(13);
+      const x0 = 3 + g.v / 2;
+      const x1 = w - 3 - g.v / 2;
+      return [box(0, w, g.bottom(-2), g.top(g.cap), ALL), box(x0, x1, 3 + g.h / 2, 9.5 - g.h / 2, LEFT), open(p(x1, 9.5), p(x1, 3 + g.h / 2), p(w, 3 + g.h / 2))];
+    },
+  },
+  { glyph: 'exclam', cv: 'cv39', label: 'Pointed exclamation marks', draw: (g) => pointedExclam(g) },
+  { glyph: 'exclamdown', cv: 'cv39', label: 'Pointed exclamation marks', draw: (g) => rotate180(pointedExclam(g), 0, 5) },
 ];
+
+/** ! with its stroke brought to a point by two 45° cuts above the dot, in place of a level end. */
+function pointedExclam(g: DrawContext): Stroke[] {
+  const a = g.v / 2;
+  const tip = g.dot + 1.5;
+  return [solid([p(-a, g.cap), p(a, g.cap), p(a, tip + a), p(0, tip), p(-a, tip + a)], 0.001), dot(g, 0, 0)];
+}
 
 /** { with its middle a level tick out of an upright, as the brackets are built, rather than a 45° point. */
 function flatBrace(g: DrawContext): Stroke[] {

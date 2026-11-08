@@ -43,7 +43,10 @@ function run(args: string[], shown = false): Promise<void> {
     child.stderr?.on('data', (chunk: Buffer) => output.push(chunk));
     child.on('error', reject);
     child.on('close', (code) => {
-      if (code === 0) resolve();
+      if (code === 0) {
+        for (const line of Buffer.concat(output).toString().split('\n')) if (line.startsWith('geld: ')) console.log(line.slice(6));
+        resolve();
+      }
       else reject(new Error(`${python} ${args.join(' ')} failed:\n${Buffer.concat(output).toString()}`));
     });
   });
@@ -221,11 +224,12 @@ function writeWebCss(): void {
 
 async function compile(spaces: string[]): Promise<void> {
   rmSync(dist, { recursive: true, force: true });
-  // The variable fonts are fontc's (seconds, where fontmake took a quarter of an hour each); the statics are still
-  // fontmake's, the OTFs first since they take longest (overlaps removed and the CFF subroutinized for nine weights).
+  // The variable fonts are fontc's (seconds, where fontmake took a quarter of an hour each), queued first since one
+  // fontc cannot pack is built again with fontmake (variable.py), which then runs beside the statics. The statics are
+  // still fontmake's, the OTFs first since they take longest (overlaps removed and the CFF subroutinized for nine weights).
   const statics = (output: string) => spaces.map((space) => ['-m', 'fontmake', '-m', space, '-i', '-o', output, '--output-dir', join(dist, output)]);
   const variable = spaces.map((space) => [join(root, 'scripts', 'variable.py'), space, join(dist, 'variable')]);
-  await phase('compile', () => runAll(quick ? variable : [...statics('otf'), ...statics('ttf'), ...variable]));
+  await phase('compile', () => runAll(quick ? variable : [...variable, ...statics('otf'), ...statics('ttf')]));
   const fonts = (folder: string) => readdirSync(join(dist, folder)).filter((f) => f.endsWith('.ttf')).map((f) => join(dist, folder, f));
   await phase('finish', () => run([join(root, 'scripts', 'finish.py'), ...fonts('variable')]));
   if (!quick) {
