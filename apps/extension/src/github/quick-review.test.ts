@@ -3,7 +3,7 @@ import type { HeaderStatGroup } from './header-stats';
 import { syncCountsStandIn } from './header-stats';
 import { rememberStatusHint, resetStatusHints } from './status-pill';
 import { snapshot as perfSnapshot } from '../lib/perf';
-import { applyQuickReview, applyReviewGroupHint, canSubmit, isInstantClick, pullPathOf, quickReviewStandBusy, reassertStatusPills, rememberReviewGroup, removeQuickReview, reviewErrorText, segmentHint, submitReviewRequest, timelineCommentRequest } from './quick-review';
+import { applyQuickReview, applyReviewGroupHint, canSubmit, isInstantClick, pullPathOf, quickReviewStandBusy, reassertStatusPills, rememberReviewGroup, removeQuickReview, withdrawReviewGroupHint, reviewErrorText, segmentHint, submitReviewRequest, timelineCommentRequest } from './quick-review';
 
 const SHA = 'a'.repeat(40);
 
@@ -2176,6 +2176,13 @@ describe('the review group hint for the first frame', () => {
     expect(document.documentElement.hasAttribute('data-geld-quick-review')).toBe(false);
     applyReviewGroupHint('/acme/widgets/pull/7/changes');
     expect(document.documentElement.hasAttribute('data-geld-quick-review')).toBe(true);
+  });
+
+  it('gives GitHub’s button back when startup stands down before any controls were made', () => {
+    rememberReviewGroup('acme/widgets', true);
+    applyReviewGroupHint('/acme/widgets/pull/7');
+    withdrawReviewGroupHint();
+    expect(document.documentElement.hasAttribute('data-geld-quick-review')).toBe(false);
   });
 
   it('leaves GitHub’s button alone once the group stood down there (Geld off, the repository left out, nowhere to stand)', () => {

@@ -3,7 +3,7 @@ import { defineContentScript } from 'wxt/utils/define-content-script';
 import { GeldController, IDLE_STATE } from '../../src/github/controller';
 import { prefetchStatusOptions } from '../../src/github/quick-review';
 import { applyTopCardHint } from '../../src/github/review/top-card';
-import { applyReviewGroupHint } from '../../src/github/quick-review';
+import { applyReviewGroupHint, withdrawReviewGroupHint } from '../../src/github/quick-review';
 import type { TabState, TabStateMessage } from '../../src/lib/messages';
 import { isGetTabStateMessage, isPerfReportMessage, isRevealFileMessage, isToggleHiddenMessage } from '../../src/lib/messages';
 import type { PerfSnapshot } from '../../src/lib/perf';
@@ -47,6 +47,8 @@ export default defineContentScript({
     const retireEarly = (why: string): void => {
       retired = true;
       mark(`retired:${why}`);
+      // A takeover's copy decides GitHub's review button itself; an invalidated context leaves nobody to, so the hint goes.
+      if (why === 'invalidated') withdrawReviewGroupHint();
       stopErrorCapture();
     };
     let retire = (why: string): void => retireEarly(why);

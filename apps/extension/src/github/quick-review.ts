@@ -132,6 +132,11 @@ export function rememberReviewGroup(repo: string | null, on: boolean): void {
  * group stood in the page last time, rather than showing until the controls mount (the stylesheet hides it on this
  * attribute). The first pass takes the attribute back wherever the group does not mount (Geld off there, signed out).
  */
+/** Startup stood down before any controls were made, with no copy to take over (the extension reloaded): GitHub's button back. */
+export function withdrawReviewGroupHint(): void {
+  if (mounted === null) document.documentElement.removeAttribute(ATTR_ACTIVE);
+}
+
 export function applyReviewGroupHint(path: string = window.location.pathname): void {
   if (!/^\/[^/]+\/[^/]+\/pull\/\d+(?:\/|$)/.test(path)) return;
   const repo = repoOf(path);
