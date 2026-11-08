@@ -24,6 +24,7 @@ const LETTERS: [string, number, string][] = [
   ['kgreenlandic', 0x138, 'K'],
   ['dotlessi', 0x131, 'I'],
   ['schwa', 0x259, 'Schwa'],
+  ['saltillo', 0xa78c, 'Saltillo'],
 ];
 
 /** ? and ¿ are left out: on the x-height at Black their bowl, gap and dot need more than its 10 units. */
@@ -38,9 +39,26 @@ const lighter =
     return inPen(light, draw(light));
   };
 
+/** Latin's lowercase beyond the list: IPA, African and Extended-B letters whose capital is drawn too (ɛ ɔ ɲ ɓ ꞌ), for languages that use them. */
+const LATIN_LOWER = /^[\u0180-\u02af\u1d00-\u1dbf\u1e00-\u1eff\u2c60-\u2c7f\ua720-\ua7ff\uab30-\uab6f]$/u;
+/** Capitals whose bars and counters do not fit the x-height at heavy weights (Ʊ's counter, the bars of Ƀ Ǥ Ꝉ Ɍ Ᵽ). */
+const NO_SMALL_CAP = new Set(['upsilon-latin', 'btopbar', 'gstroke', 'lmiddletilde', 'rstroke', 'pstroke']);
+function moreLetters(defs: GlyphDef[]): [string, number, string][] {
+  const listed = new Set([...LETTERS.map(([lower]) => lower), ...NO_SMALL_CAP]);
+  const byUnicode = new Map(defs.flatMap((d) => (d.unicode === undefined ? [] : [[d.unicode, d.name] as const])));
+  return defs.flatMap((d): [string, number, string][] => {
+    if (d.unicode === undefined || listed.has(d.name)) return [];
+    const char = String.fromCodePoint(d.unicode);
+    const upper = char.toUpperCase();
+    if (!LATIN_LOWER.test(char) || !/\p{Ll}/u.test(char) || [...upper].length !== 1 || upper === char) return [];
+    const capital = byUnicode.get(upper.codePointAt(0)!);
+    return capital ? [[d.name, d.unicode, capital]] : [];
+  });
+}
+
 export function smallCaps(defs: GlyphDef[]): GlyphDef[] {
   const find = (name: string) => defs.find((d) => d.name === name);
-  const letters = LETTERS.flatMap(([lower, unicode, upper]): GlyphDef[] => {
+  const letters = [...LETTERS, ...moreLetters(defs)].flatMap(([lower, unicode, upper]): GlyphDef[] => {
     const def = find(upper);
     return def ? [{ name: `${lower}.sc`, stands: unicode, smallcap: true, lsb: def.lsb, rsb: def.rsb, draw: def.draw }] : [];
   });
@@ -65,6 +83,12 @@ export function accentedSmallCaps(accented: AccentedDef[], has: (name: string) =
   });
 }
 
-/** Small capitals built from parts: ĳ, and the Turkish dotted i that `smcp` gives Turkish and Azeri text. */
-export const SMALL_CAP_PLACED: PlacedDef[] = [{ name: 'ij.sc', parts: [{ glyph: 'i.sc', after: true }, { glyph: 'j.sc', after: true }] }];
+/** Small capitals built from parts: ĳ, ŀ and ſ, and the Turkish dotted i that `smcp` gives Turkish and Azeri text. */
+export const SMALL_CAP_PLACED: PlacedDef[] = [
+  { name: 'ij.sc', parts: [{ glyph: 'i.sc', after: true }, { glyph: 'j.sc', after: true }] },
+  // Catalan ŀ is Ŀ small: the middle dot inside the small L, as Ŀ has it (5 units in) at the small capital's breadth.
+  { name: 'ldot.sc', parts: [{ glyph: 'l.sc' }, { glyph: 'periodcentered', dx: 5 * SMALL_CAP_BREADTH }] },
+  // The long s is an s, and its small capital is s's.
+  { name: 'longs.sc', parts: [{ glyph: 's.sc', after: true }] },
+];
 export const SMALL_CAP_EXTRA_ACCENTED: AccentedDef[] = [{ name: 'idotaccent.sc', base: 'i.sc', marks: ['dotaccentcomb'] }];

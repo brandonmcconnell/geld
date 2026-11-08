@@ -470,6 +470,8 @@ const BEYOND_MODIFIERS: GlyphDef[] = [
   { name: 'commareversedmod', unicode: 0x2bd, lsb: 1.25, rsb: 1.25, draw: (g) => mirror(quoteRight.draw(g), 0) },
   { name: 'ringhalfrightmod', unicode: 0x2be, lsb: 1, rsb: 1, draw: halfRing },
   { name: 'ringhalfleftmod', unicode: 0x2bf, lsb: 1, rsb: 1, draw: (g) => mirror(halfRing(g), 1) },
+  // The capital saltillo is the straight quote grown down the capital's height, so its small capital stands apart from ꞌ.
+  { name: 'Saltillo', unicode: 0xa78b, lsb: 1.25, rsb: 1.25, draw: (g) => [stem(0, g.cap - 7, g.cap)] },
 ];
 
 export const AFRICAN: GlyphDef[] = [
@@ -498,7 +500,6 @@ export const AFRICAN_ALIASES: PlacedDef[] = (
     ['commaturnedmod', 0x2bb, 'quoteleft'],
     ['apostrophedblmod', 0x2ee, 'quotedblright'],
     ['colonmod', 0xa789, 'colon'],
-    ['Saltillo', 0xa78b, 'quotesingle'],
     ['saltillo', 0xa78c, 'quotesingle'],
     ['primemod', 0x2b9, 'minute'],
     ['chi-latin', 0xab53, 'chi'],
