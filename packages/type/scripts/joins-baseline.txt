@@ -891,3 +891,7 @@ sans:italic:300 ccurl
 sans:italic:300 zcurl
 sans:roman:300 ccurl
 sans:roman:300 zcurl
+sans:italic:100 Hahook-cy
+sans:italic:200 Hahook-cy
+sans:roman:100 Hahook-cy
+sans:roman:200 Hahook-cy

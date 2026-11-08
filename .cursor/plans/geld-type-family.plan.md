@@ -193,6 +193,7 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [x] Cyrillic (GF Cyrillic Core and Plus). Lowercase is the capital's skeleton as a small capital, with italic forms of its own (и п т ц as u n m and u with a tail).
 - [x] Bulgarian `locl` forms (Л, в г д ж и й ѝ к л п т ц ш щ ъ ь ю) and Serbian and Macedonian italic forms (г д п т; Macedonian keeps г), checked by shaping in every compiled font.
 - [ ] Serbian б, and Bulgarian з in its own proportions, both optional by the sources.
+- [ ] GF Cyrillic Pro: 46 of the 54 letters it adds to Cyrillic Plus are drawn (tails, hooks, strokes and ticks on letters the font has; Ӡ Ԑ Ԝ are Ʒ Ɛ W). Left: Abkhazian Ҩ ҩ Ҽ ҽ Ҿ ҿ and Unicode 16's Ᲊ ᲊ, whose forms need a reference rather than a guess.
 
 ## 4. Kerning
 
