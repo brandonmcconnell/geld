@@ -782,6 +782,16 @@ html[data-geld-quick-review] details.js-reviews-container {
   padding-left: 16px;
 }
 
+/* In GitHub's bar over every tab, first among its actions: 8px before a button of GitHub's that shows ("Merge status"),
+ * none before its divider, which spaces itself. */
+.geld-quick-review[data-geld-place='bar'] {
+  align-self: center;
+}
+
+.geld-quick-review[data-geld-place='bar']:has(+ button:not([class*='ReviewMenuButton'])) {
+  margin-right: 8px;
+}
+
 /* In the Overview's stuck mini header, before its divider and panel toggles. */
 .geld-quick-review[data-geld-place='mini'] {
   align-self: center;
