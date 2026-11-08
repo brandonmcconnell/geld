@@ -862,6 +862,7 @@ function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
       timeAnchor: headlineNode === null ? firstAnchor : headlineNode.id,
       ...(group.closure === undefined ? {} : { closure: group.closure }),
       ...(group.headline === undefined ? {} : { headline: group.headline }),
+      ...(group.refs === undefined ? {} : { refs: group.refs }),
     };
   });
 }
@@ -3318,7 +3319,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const claimed = new Set<HTMLElement>(foldTargets.flatMap((group) => [...group.nodes]));
   const leftoverList = phase('leftovers', () => crawlLeftovers(claimed, threadCommentsComing));
   if (hidingTimeline) {
-    const leftovers = groupLeftovers(leftoverList, descriptionMentions().length);
+    const leftovers = groupLeftovers(leftoverList, descriptionMentions().map((line) => `${line.href} ${line.title}`));
     groups.push(...leftovers);
     foldTargets.push(...leftovers);
   }
