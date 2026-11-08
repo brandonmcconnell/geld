@@ -462,7 +462,7 @@ export function applyRelatedLinks(active: boolean, onChange: () => void = () => 
   const afters = active ? assigneesSections() : [];
   const links = afters.length === 0 ? [] : rowsOf(relatedLinksOnPage(onChange), onChange);
   if (links.length === 0) {
-    if (mounted.size > 0) removeSections();
+    if (mounted.size > 0 || document.querySelector(`.${SECTION_CLASS}[${OWN_UI_ATTRIBUTE}]`) !== null) removeSections();
     orderSidebars(afters);
     return;
   }
@@ -481,6 +481,10 @@ export function applyRelatedLinks(active: boolean, onChange: () => void = () => 
     next.set(after, { section, signature });
   }
   for (const [after, { section }] of mounted) if (!next.has(after)) section.remove();
+  // A section left by another copy of Geld (one an extension reload or update retired, or a second build installed
+  // beside this one) stood beside this one as a second "Related links": only the sections drawn here stay.
+  const ours = new Set([...next.values()].map(({ section }) => section));
+  for (const stray of document.querySelectorAll(`.${SECTION_CLASS}[${OWN_UI_ATTRIBUTE}]`)) if (!(stray instanceof HTMLElement) || !ours.has(stray)) stray.remove();
   mounted = next;
   orderSidebars(afters);
 }

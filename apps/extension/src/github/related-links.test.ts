@@ -98,6 +98,19 @@ describe('related links in the sidebar', () => {
     expect(document.querySelector('.geld-related')?.previousElementSibling?.textContent).toContain('Assignees');
   });
 
+  it('leaves one section: a section another copy of Geld left in the sidebar goes', () => {
+    document.body.innerHTML = DESCRIPTION + overviewSidebar;
+    applyRelatedLinks(true);
+    const ours = document.querySelector('.geld-related');
+    // What a retired copy's section looks like: the same element, drawn by a copy that no longer tracks it.
+    const left = ours?.cloneNode(true);
+    if (left instanceof HTMLElement) ours?.before(left);
+    expect(document.querySelectorAll('.geld-related')).toHaveLength(2);
+    applyRelatedLinks(true);
+    expect([...document.querySelectorAll('.geld-related')]).toEqual([ours]);
+    removeRelatedLinks();
+  });
+
   it('stands after the hidden fragment GitHub keeps after Reviewers, so Assignees stays a sidebar item’s neighbour', () => {
     document.body.innerHTML = DESCRIPTION + railsSidebar();
     const reviewers = [...document.querySelectorAll('.discussion-sidebar-item')].find((item) => item.textContent?.includes('Reviewers'));

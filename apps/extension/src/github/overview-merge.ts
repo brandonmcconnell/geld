@@ -112,11 +112,24 @@ function githubMergeButtons(scope: Element): HTMLButtonElement[] {
  */
 function greenMerges(scope: Element): void {
   for (const button of githubMergeButtons(scope)) {
+    const original = button.getAttribute(ATTR_VARIANT);
+    // A merge GitHub disables (a required check still running) stays grey, as GitHub draws it: green would offer it.
+    if (isDisabled(button)) {
+      if (original !== null) {
+        button.setAttribute('data-variant', original);
+        button.removeAttribute(ATTR_VARIANT);
+      }
+      continue;
+    }
     const variant = button.getAttribute('data-variant');
     if (variant === null || variant === 'primary') continue;
-    if (!button.hasAttribute(ATTR_VARIANT)) button.setAttribute(ATTR_VARIANT, variant);
+    if (original === null) button.setAttribute(ATTR_VARIANT, variant);
     button.setAttribute('data-variant', 'primary');
   }
+}
+
+function isDisabled(button: HTMLButtonElement): boolean {
+  return button.disabled || button.getAttribute('aria-disabled') === 'true' || button.getAttribute('data-inactive') === 'true';
 }
 
 /**
