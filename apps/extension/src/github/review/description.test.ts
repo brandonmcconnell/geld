@@ -365,8 +365,8 @@ describe('shortenDescription', () => {
     expect(more?.hasAttribute('data-geld-desc-carry')).toBe(true);
     expect(more?.style.getPropertyValue('--geld-desc-rails')).toBe(list.style.getPropertyValue('--geld-desc-rails'));
     expect(more?.style.getPropertyValue('--geld-desc-rail-pos')).toBe(list.style.getPropertyValue('--geld-desc-rail-pos'));
-    // From the list's top to the cut: 500 - 140.
-    expect(more?.style.getPropertyValue('--geld-desc-carry-height')).toBe('360px');
+    // From the list's top to the cut (500 - 140), then through the clipped block's fixed 16px margin to the button.
+    expect(more?.style.getPropertyValue('--geld-desc-carry-height')).toBe('376px');
     more?.click();
     expect(body.querySelector('[data-geld-desc-carry]')).toBeNull();
   });
