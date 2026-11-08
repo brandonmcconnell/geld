@@ -75,7 +75,8 @@ export const CODE_LIGATURES: CodeLigature[] = [
   { text: '?.', group: 'logic', parts: [c('question'), c('period')], joint: 0.4 },
   { text: '?:', group: 'logic', parts: [c('question'), c('colon')], joint: 0.4 },
   { text: '++', group: 'logic', parts: [c('plus'), c('plus')], joint: 0.4 },
-  { text: '--', group: 'logic', parts: [c('minus'), c('minus')], joint: -0.75 },
+  // Two hyphens joined into one bar: two minus signs ran wider than the hyphens they stand for.
+  { text: '--', group: 'logic', parts: [c('hyphen'), c('hyphen')], joint: -0.75 },
 
   { text: '<!--', group: 'comments', parts: [c('less'), c('exclam'), c('hyphen'), c('hyphen')], joint: 0.4 },
   { text: '</>', group: 'comments', parts: [c('less'), c('slash'), c('greater')], joint: 0.2 },
@@ -137,4 +138,7 @@ const SHORT: Record<string, string> = {
 };
 
 /** The glyph each character of a code ligature becomes: `less.c_lteq1`, the `c_` keeping them out of kerning. */
-export const codePieceName = (charName: string, lig: CodeLigature, i: number) => `${charName}.c_${[...lig.text].map((ch) => SHORT[ch]).join('')}${i + 1}`;
+/** Texts two groups draw differently (-- is a decrement under dlig and an en dash under ss10), whose pieces carry their group. */
+const SHARED_TEXTS = new Set(CODE_LIGATURES.map((l) => l.text).filter((t, i, all) => all.indexOf(t) !== i));
+export const codePieceName = (charName: string, lig: CodeLigature, i: number) =>
+  `${charName}.c_${[...lig.text].map((ch) => SHORT[ch]).join('')}${i + 1}${SHARED_TEXTS.has(lig.text) ? `_${lig.group}` : ''}`;
