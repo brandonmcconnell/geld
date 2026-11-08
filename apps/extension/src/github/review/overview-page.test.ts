@@ -12,7 +12,7 @@ function header(login: string, href: string, at: string, muted = '', extra = '')
   return `<div data-testid="comment-header" class="ActivityHeaderContainer__sf0_ID"><div class="activityHeader__V45NcJ">
     <h3 class="sr-only">${login} commented <relative-time datetime="${at}">on Nov 7, 2026</relative-time></h3>
     <div><a class="avatarLink__sqWzwe" href="${href}" aria-label="@${login}'s profile"><img data-testid="github-avatar" alt="@${login}" src="https://avatars.githubusercontent.com/u/1?v=4&size=48"></a></div>
-    <div data-testid="comment-header-left-side-items"><div><a data-testid="avatar-link" href="${href}">${login}</a>${href.startsWith('/apps/') ? '<span data-component="Label">Bot</span>' : ''}</div>
+    <div data-testid="comment-header-left-side-items"><div><a data-testid="avatar-link" href="${href}" data-hovercard-url="/users/${encodeURIComponent(/\[bot\]$/.test(login) || href.startsWith('/apps/') ? `${login.replace(/\[bot\]$/, '')}[bot]` : login)}/hovercard" data-hovercard-type="user">${login}</a>${href.startsWith('/apps/') ? '<span data-component="Label">Bot</span>' : ''}</div>
       <div class="footer__x">${muted === '' ? '' : `<span class="HeaderMutedText__oT4m5j">${muted}</span>`}<span class="HeaderMutedText__oT4m5j"><a href="#"><relative-time datetime="${at}">on Nov 7, 2026</relative-time></a></span></div></div>
     <div data-testid="comment-header-right-side-items">${extra}<button aria-label="More actions">⋯</button></div>
   </div></div>`;
@@ -136,6 +136,14 @@ describe('the Overview tab', () => {
       ['pullrequestreview-10', 'approved', 'pullrequestreview-10'],
       ['pullrequestreview-20', 'commented', null],
     ]);
+  });
+
+  it("keeps a bot's review a bot's once the chat has dropped \"[bot]\" from its thread's name", () => {
+    mount();
+    for (const name of document.querySelectorAll('#pullrequestreview-20 a[data-testid="avatar-link"]')) name.textContent = (name.textContent ?? '').replace(/\[bot\]$/, '');
+    resetCrawlCache();
+    expect(crawlReviews().find((review) => review.anchor === 'pullrequestreview-20')?.author).toEqual({ login: 'coderabbitai[bot]', bot: true });
+    expect(crawlConversation().comments.find((entry) => entry.comment.anchor === 'discussion_r400')?.author).toEqual({ login: 'coderabbitai[bot]', bot: true });
   });
 
   it('reads who reacted from the reaction tooltips', () => {

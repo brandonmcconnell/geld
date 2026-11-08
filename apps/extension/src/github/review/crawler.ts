@@ -8,7 +8,7 @@
 
 import type { CommentReaction, PreviewDoc, RawCheckRun, RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
 import { appAvatarForLogin, looksLikeSummaryBody } from '@geld/review';
-import { appLoginOf, loginOfLink } from './login';
+import { loginOfLink } from './login';
 import { OVERVIEW_ITEM, OVERVIEW_THREAD_FRAME, overviewCommentsSection } from './overview-page';
 import { closestAtHome, compareHome, homeOf, wornPiecesOf } from './teleport';
 import { count as perfCount } from '../../lib/perf';
@@ -62,12 +62,15 @@ export function authorOf(root: Element): Author | null {
   if (link === null) return null;
   const text = (link.textContent ?? '').replace(/\s+/g, ' ').trim().replace(/^@/, '');
   if (text === '') return null;
-  const href = link.getAttribute('href') ?? '';
-  const labelled = [...(link.parentElement?.querySelectorAll('.Label, [data-testid="bot-label"], [data-component="Label"]') ?? [])].some((label) => /^bot$/i.test((label.textContent ?? '').trim()));
-  const bot = /\[bot\]$/i.test(text) || appLoginOf(href) !== null || labelled;
-  if (bot) return { login: appLoginOf(href) ?? (/\[bot\]$/i.test(text) ? text : `${text}[bot]`), bot };
-  // A person by their login, whatever the link reads: "Connor Peet (connor4312)" where full names are shown.
-  return { login: loginOfLink(link) ?? text, bot };
+  // GitHub's React header labels an App "Bot", or "AI" when GitHub counts it an agent.
+  const labelled = [...(link.parentElement?.querySelectorAll('.Label, [data-testid="bot-label"], [data-component="Label"]') ?? [])].some((label) => /^(?:bot|ai)$/i.test((label.textContent ?? '').trim()));
+  // Who it is comes from where the link leads, never its words alone: the Overview chat shows "greptile-apps" for
+  // a link to `/greptile-apps[bot]`, and "Name (login)" is what full names read as.
+  const linked = loginOfLink(link);
+  if (linked !== null && /\[bot\]$/i.test(linked)) return { login: linked, bot: true };
+  if (/\[bot\]$/i.test(text)) return { login: text, bot: true };
+  if (labelled) return { login: `${text}[bot]`, bot: true };
+  return { login: linked ?? text, bot: false };
 }
 
 /**

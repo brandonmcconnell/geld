@@ -234,14 +234,17 @@ function pinOpenEntry(entries: readonly ReviewEntry[]): readonly ReviewEntry[] {
  * requested review from X" controls (the merge box only says "2 pending
  * reviews" behind a collapsed group). Lines with nothing to open. Read from
  * the sidebar block first; the bare controls are the fallback for a sidebar
- * whose rows the block read did not recognise.
+ * whose rows the block read did not recognise. People only: an App asked to
+ * review (Copilot) is the Review bots row's, and the fallback must not put
+ * back one the block read skipped.
  */
 function awaitingReviewers(sidebar: readonly SidebarReviewer[]): ReviewEntry[] {
-  const out: ReviewEntry[] = sidebar.filter((reviewer) => reviewer.state === 'awaiting').map((reviewer) => sidebarEntry(reviewer, 'awaiting'));
+  const out: ReviewEntry[] = sidebar.filter((reviewer) => reviewer.state === 'awaiting' && !reviewer.bot).map((reviewer) => sidebarEntry(reviewer, 'awaiting'));
   for (const control of document.querySelectorAll<HTMLElement>('[aria-label^="Awaiting requested review from" i]')) {
     const login = /from\s+(\S+)/i.exec(control.getAttribute('aria-label') ?? '')?.[1] ?? '';
-    if (login === '' || out.some((entry) => entry.author === login)) continue;
+    if (login === '' || /\[bot\]$/i.test(login) || out.some((entry) => entry.author === login) || sidebar.some((reviewer) => reviewer.bot && reviewer.login.replace(/\[bot\]$/i, '').toLowerCase() === login.toLowerCase())) continue;
     const item = control.closest('.d-flex, li, [data-testid]') ?? control.parentElement;
+    if (item !== null && item.querySelector('a[href^="/apps/"]') !== null) continue;
     const image = item?.querySelector<HTMLImageElement>('img.avatar, img[class*="avatar"]') ?? null;
     out.push({ anchor: `awaiting:${login}`, author: login, avatarSrc: image === null ? avatarSrcForLogin(login) : normalizeAvatarSrc(image.currentSrc || image.getAttribute('src') || ''), state: 'awaiting', preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null });
   }
