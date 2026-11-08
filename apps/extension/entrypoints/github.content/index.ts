@@ -4,6 +4,7 @@ import { GeldController, IDLE_STATE } from '../../src/github/controller';
 import { prefetchStatusOptions } from '../../src/github/quick-review';
 import { applyTopCardHint } from '../../src/github/review/top-card';
 import { applyReviewGroupHint, withdrawReviewGroupHint } from '../../src/github/quick-review';
+import { applyDescriptionFoldHint, stopEarlyDescriptionFold } from '../../src/github/review/description';
 import type { TabState, TabStateMessage } from '../../src/lib/messages';
 import { isGetTabStateMessage, isPerfReportMessage, isRevealFileMessage, isToggleHiddenMessage } from '../../src/lib/messages';
 import type { PerfSnapshot } from '../../src/lib/perf';
@@ -36,6 +37,7 @@ export default defineContentScript({
     // Before any await: GitHub can paint the Overview's top card before the settings arrive.
     applyTopCardHint();
     applyReviewGroupHint();
+    applyDescriptionFoldHint();
     const stopErrorCapture = installErrorCapture('content');
     document.dispatchEvent(new CustomEvent(TAKEOVER));
     // Listen before the first await: a copy injected while this one still loads its settings
@@ -49,6 +51,7 @@ export default defineContentScript({
       mark(`retired:${why}`);
       // A takeover's copy decides GitHub's review button itself; an invalidated context leaves nobody to, so the hint goes.
       if (why === 'invalidated') withdrawReviewGroupHint();
+      stopEarlyDescriptionFold();
       stopErrorCapture();
     };
     let retire = (why: string): void => retireEarly(why);
@@ -148,6 +151,8 @@ export default defineContentScript({
     controller = started;
     mark('controller-start');
     started.start();
+    // The controller's own mutation callback folds the description before paint from here on.
+    stopEarlyDescriptionFold();
 
     const unwatchSettings = settingsItem.watch((settings) => {
       showBadge = settings.showBadge;
