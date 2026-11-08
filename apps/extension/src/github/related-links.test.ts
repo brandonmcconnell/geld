@@ -98,6 +98,28 @@ describe('related links in the sidebar', () => {
     expect(document.querySelector('.geld-related')?.previousElementSibling?.textContent).toContain('Assignees');
   });
 
+  it('leaves one section: a section another copy of Geld left in the sidebar goes, wherever it stands', () => {
+    document.body.innerHTML = DESCRIPTION + overviewSidebar;
+    applyRelatedLinks(true);
+    const ours = document.querySelector('.geld-related');
+    // What a retired copy's section looks like: the same element, drawn by a copy that no longer tracks it.
+    const after = ours?.cloneNode(true);
+    if (after instanceof HTMLElement) document.querySelector('[aria-label="Proof of presence"]')?.after(after);
+    applyRelatedLinks(true);
+    const kept = document.querySelectorAll('.geld-related');
+    expect(kept).toHaveLength(1);
+    expect(kept[0] === ours).toBe(true);
+    // Before ours it stands in our place: ours is drawn again there, and the leftover still goes.
+    const before = ours?.cloneNode(true);
+    if (before instanceof HTMLElement) ours?.before(before);
+    applyRelatedLinks(true);
+    const again = document.querySelectorAll('.geld-related');
+    expect(again).toHaveLength(1);
+    expect(again[0] === before).toBe(false);
+    expect(again[0]?.previousElementSibling?.getAttribute('aria-label')).toBe('Reviewers');
+    removeRelatedLinks();
+  });
+
   it('stands after the hidden fragment GitHub keeps after Reviewers, so Assignees stays a sidebar item’s neighbour', () => {
     document.body.innerHTML = DESCRIPTION + railsSidebar();
     const reviewers = [...document.querySelectorAll('.discussion-sidebar-item')].find((item) => item.textContent?.includes('Reviewers'));

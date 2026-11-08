@@ -92,6 +92,32 @@ describe('syncOverviewMerge', () => {
     expect(variants()).toEqual(['default', 'default']);
   });
 
+  it('leaves a merge GitHub disables grey, and gives it back its grey when GitHub disables it later', () => {
+    render('<button data-component="Button" data-variant="default" aria-disabled="true" type="button">Squash and merge</button>');
+    syncOverviewMerge(null, 'SQUASH', handlers);
+    expect(document.querySelector('button')?.getAttribute('data-variant')).toBe('default');
+    const button = document.querySelector('button');
+    button?.setAttribute('aria-disabled', 'false');
+    syncOverviewMerge(null, 'SQUASH', handlers);
+    expect(button?.getAttribute('data-variant')).toBe('primary');
+    button?.setAttribute('aria-disabled', 'true');
+    syncOverviewMerge(null, 'SQUASH', handlers);
+    expect([button?.getAttribute('data-variant'), button?.hasAttribute('data-geld-merge-variant')]).toEqual(['default', false]);
+  });
+
+  it('follows GitHub disabling its merge in place, with no pass in between', async () => {
+    render('<button data-component="Button" data-variant="default" aria-disabled="false" type="button">Squash and merge</button>');
+    syncOverviewMerge(null, 'SQUASH', handlers);
+    const button = document.querySelector('button');
+    expect(button?.getAttribute('data-variant')).toBe('primary');
+    button?.setAttribute('aria-disabled', 'true');
+    await Promise.resolve();
+    expect(button?.getAttribute('data-variant')).toBe('default');
+    button?.setAttribute('aria-disabled', 'false');
+    await Promise.resolve();
+    expect(button?.getAttribute('data-variant')).toBe('primary');
+  });
+
   it('adds no second merge where GitHub shows its own, and nothing when there is nothing to merge', () => {
     render('<button type="button">Squash and merge</button><button type="button" aria-label="Select merge method"></button>');
     syncOverviewMerge({ kind: 'merge', methods: ['SQUASH'] }, 'SQUASH', handlers);

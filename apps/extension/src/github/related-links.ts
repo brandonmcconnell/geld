@@ -488,7 +488,7 @@ export function applyRelatedLinks(active: boolean, onChange: () => void = () => 
     ['mentions', rowsOf(all.filter((link) => link.kind === 'github'), 'mentions', onChange)],
   ] as const).filter(([, rows]) => rows.length > 0);
   if (groups.length === 0) {
-    if (mounted.size > 0) removeSections();
+    if (mounted.size > 0 || document.querySelector(`.${SECTION_CLASS}[${OWN_UI_ATTRIBUTE}]`) !== null) removeSections();
     orderSidebars(afters);
     return;
   }
@@ -507,6 +507,10 @@ export function applyRelatedLinks(active: boolean, onChange: () => void = () => 
     next.set(after, { sections, signature });
   }
   for (const [after, { sections }] of mounted) if (!next.has(after)) for (const section of sections) section.remove();
+  // A section left by another copy of Geld (one an extension reload or update retired, or a second build installed
+  // beside this one) stood beside this one's as a second section: only the sections drawn here stay.
+  const ours = new Set([...next.values()].flatMap(({ sections }) => sections));
+  for (const stray of document.querySelectorAll(`.${SECTION_CLASS}[${OWN_UI_ATTRIBUTE}]`)) if (!(stray instanceof HTMLElement) || !ours.has(stray)) stray.remove();
   mounted = next;
   orderSidebars(afters);
 }
