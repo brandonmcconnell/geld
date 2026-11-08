@@ -1,4 +1,4 @@
-import { ALL, bar, box, comma, diagonal, dot, type DrawContext, level, open, p, rotate180, shift, spanOf, withPen , tildeStroke } from './draw';
+import { ALL, bar, box, comma, diagonal, dot, type DrawContext, level, open, p, rotate180, shift, spanOf, stem, tildeStroke, withPen } from './draw';
 import { expandStroke, type Stroke } from './geometry';
 
 /** Where a mark attaches: the base's anchor of the same name, matched by the mark's `_name` anchor at its origin. */
@@ -150,6 +150,40 @@ const MARKS_ABOVE: MarkDef[] = [
   { name: 'dotaboverightcomb', unicode: 0x358, attach: 'topright', draw: (g) => [dot(g, 0, 0)] },
   { name: 'strokeshortoverlaycomb', unicode: 0x335, attach: 'center', draw: (g) => [withPen(bar(-2.25, 2.25, 0), accentPen(g))] },
   { name: 'commaturnedabovecomb', unicode: 0x312, attach: 'top', draw: (g) => rotate180(comma(g, 0, 0, 0.75), 0, (g.dot * 0.75 - 2.5 * 0.75) / 2) },
+  // IPA's marks above: the overline, the unreleased corner, the ×, the tie bar over two letters, and contour tones.
+  { name: 'overlinecomb', unicode: 0x305, attach: 'top', caseForm: true, draw: (g) => [withPen(bar(-3, 3, g.h / 2), accentPen(g))] },
+  {
+    name: 'leftangleabovecomb',
+    unicode: 0x31a,
+    attach: 'top',
+    draw: (g, h) => {
+      // Its upright reaches a clear stroke below the bar at every weight.
+      const y = Math.max(h, accentPen(g).h + 1.6);
+      return [withPen(open(p(-1.75, y), p(1, y), p(1, 0)), accentPen(g))];
+    },
+  },
+  {
+    name: 'xabovecomb',
+    unicode: 0x33d,
+    attach: 'top',
+    draw: (g, h) => {
+      const r = h / 2;
+      return [withPen(open(p(-r, 0), p(r, h)), accentPen(g)), withPen(open(p(-r, h), p(r, 0)), accentPen(g))];
+    },
+  },
+  { name: 'dblbreveinvertedcomb', unicode: 0x361, attach: 'top', draw: (g, h) => [withPen(open(p(-1, 0), p(-1, h, true), p(7, h, true), p(7, 0)), accentPen(g))] },
+  // The contour tones zig-zag at 45°, so each turn is a right angle, cut as every corner is.
+  { name: 'graveacutegravecomb', unicode: 0x1dc8, attach: 'top', draw: (g, h) => [withPen(open(p(-1.5 * h, h), p(-0.5 * h, 0, true), p(0.5 * h, h, true), p(1.5 * h, 0)), accentPen(g))] },
+  { name: 'acutegraveacutecomb', unicode: 0x1dc9, attach: 'top', draw: (g, h) => [withPen(open(p(-1.5 * h, 0), p(-0.5 * h, h, true), p(0.5 * h, 0, true), p(1.5 * h, h)), accentPen(g))] },
+  {
+    name: 'tildeoverlaycomb',
+    unicode: 0x334,
+    attach: 'center',
+    draw: (g) => {
+      const pen = smallMarkPen(g);
+      return [withPen(tildeStroke(-3.5, 3.5, -0.7, 1.4), pen)];
+    },
+  },
   { name: 'dotbelowcomb', unicode: 0x323, attach: 'bottom', hang: true, draw: (g) => [dot(g, 0, 0)] },
   { name: 'verticallinebelowcomb', unicode: 0x329, attach: 'bottom', hang: true, draw: (g) => [withPen(open(p(0, 0), p(0, 2.5)), accentPen(g))] },
   { name: 'commaaccentcomb', unicode: 0x326, attach: 'bottom', hang: true, draw: (g) => comma(g, 0, 0, 0.65) },
@@ -194,6 +228,20 @@ const MARKS_ABOVE: MarkDef[] = [
 /** The gap between the baseline and the top of a mark hanging below it. */
 export const BELOW_GAP = 1.1;
 
+/** ⊣ ⊢ ⊥ ⊤ + as small marks: a bar and an upright crossing or meeting it, each reaching 1.3 past the other's edge. */
+function tack(g: DrawContext, kind: 'left' | 'right' | 'up' | 'down' | 'plus'): Stroke[] {
+  const pen = accentPen(g);
+  const across = pen.v / 2 + 1.3;
+  const up = pen.h / 2 + 1.3;
+  const [cx, cy] = [0, up];
+  const stroke = (s: Stroke) => withPen(s, pen);
+  if (kind === 'plus') return [stroke(bar(cx - across, cx + across, cy)), stroke(stem(cx, cy - up, cy + up))];
+  if (kind === 'up') return [stroke(bar(-across, across, pen.h / 2)), stroke(stem(0, pen.h / 2, 2 * up))];
+  if (kind === 'down') return [stroke(bar(-across, across, 2 * up - pen.h / 2)), stroke(stem(0, 0, 2 * up - pen.h / 2))];
+  const x = kind === 'left' ? 1 : -1;
+  return [stroke(stem(x, cy - up, cy + up)), stroke(bar(Math.min(x, x - 2 * x * across), Math.max(x, x - 2 * x * across), cy))];
+}
+
 function belowMarks(): MarkDef[] {
   const below = (name: string, unicode: number, above: MarkDef['draw'], height = 2) => ({
     name,
@@ -213,6 +261,25 @@ function belowMarks(): MarkDef[] {
     below('breveinvertedbelowcomb', 0x32f, find('breveinvertedcomb')),
     below('lowlinecomb', 0x332, (g) => [withPen(bar(-2.75, 2.75, g.h / 2), accentPen(g))], 0),
     below('dblmacronbelowcomb', 0x35f, (g) => [withPen(bar(-2, 8, g.h / 2), accentPen(g))], 0),
+    below('caronbelowcomb', 0x32c, find('caroncomb'), MARK_HEIGHT.lower),
+    // IPA's marks below, in the accents' lighter strokes: each arm reaches 1.3 past the stroke it crosses, at every weight.
+    below('tackleftbelowcomb', 0x318, (g) => tack(g, 'left')),
+    below('tackrightbelowcomb', 0x319, (g) => tack(g, 'right')),
+    below('tackupbelowcomb', 0x31d, (g) => tack(g, 'up')),
+    below('tackdownbelowcomb', 0x31e, (g) => tack(g, 'down')),
+    below('plusbelowcomb', 0x31f, (g) => tack(g, 'plus')),
+    below('minusbelowcomb', 0x320, (g) => [withPen(bar(-1.75, 1.75, g.h / 2), accentPen(g))], 0),
+    below('bridgebelowcomb', 0x32a, (g) => [withPen(open(p(-2, 0), p(-2, 3), p(2, 3), p(2, 0)), smallMarkPen(g))]),
+    below('bridgeinvertedbelowcomb', 0x33a, (g) => [withPen(open(p(-2, 3), p(-2, 0), p(2, 0), p(2, 3)), smallMarkPen(g))]),
+    below('ringhalfleftbelowcomb', 0x31c, (g) => [withPen(open(p(1.25, 3), p(-1.25, 3, true), p(-1.25, 0, true), p(1.25, 0)), smallMarkPen(g))]),
+    below('ringhalfrightbelowcomb', 0x339, (g) => [withPen(open(p(-1.25, 3), p(1.25, 3, true), p(1.25, 0, true), p(-1.25, 0)), smallMarkPen(g))]),
+    below('squarebelowcomb', 0x33b, (g) => [withPen(box(-1.75, 1.75, 0, 3, [false, false, false, false]), smallMarkPen(g))]),
+    below('seagullbelowcomb', 0x33c, (g) => [withPen(open(p(-3.5, 3), p(-3.5, 0), p(3.5, 0), p(3.5, 3)), smallMarkPen(g)), withPen(stem(0, -smallMarkPen(g).h / 2 + 0.2, 2.5), smallMarkPen(g))]),
+    below('dblverticallinebelowcomb', 0x348, (g) => {
+      const x = accentPen(g).v / 2 + 0.75;
+      return [withPen(stem(-x, 0, 2.5), accentPen(g)), withPen(stem(x, 0, 2.5), accentPen(g))];
+    }),
+    below('dblbrevebelowcomb', 0x35c, (g) => [withPen(open(p(-1, 3), p(-1, 0, true), p(7, 0, true), p(7, 3)), accentPen(g))]),
   ];
 }
 

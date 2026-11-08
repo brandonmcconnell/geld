@@ -3,7 +3,9 @@
  * the font already draws, each built from that letter so it is spaced and joined as the letter is.
  */
 import type { PlacedDef } from './composites';
-import { ALL, bar, box, type DrawContext, type GlyphDef, mirror, OVERHANG, open, p, rotate180, stem, withPen } from './draw';
+import { ALL, bar, box, type DrawContext, type GlyphDef, mirror, OVERHANG, open, p, ring, rotate180, solid, stem, withPen } from './draw';
+import { superiorOf } from './glyphs-figures';
+import { GREEK } from './glyphs-greek';
 import type { Stroke } from './geometry';
 import { DRAWN_SIGNS, letter } from './glyphs-core';
 import { hookRight, LATIN_EXTRA } from './glyphs-latin';
@@ -155,7 +157,88 @@ const IPA_DEFS: GlyphDef[] = [
   },
 ];
 
-export const IPA: GlyphDef[] = IPA_DEFS.map((d) => ({ ...d, lower: true }));
+/** A stroke through the middle of a letter, from the tilde's own wave in a lighter pen, as ᵽ's stroke is, so its notches stay open at Black: ᵬ ᵭ ᵮ. */
+const tildeAcross = (g: DrawContext, x: number, y: number): Stroke => {
+  const s = 1.75;
+  const pen = { ...g.pen, v: Math.min(g.v, 1.6), h: Math.min(g.h, 1.6) };
+  return withPen(open(p(x - 1.5 * s, y - s / 2), p(x - 0.5 * s, y + s / 2, true), p(x + 0.5 * s, y - s / 2, true), p(x + 1.5 * s, y + s / 2)), pen);
+};
+
+/** Letters with a tilde through their middle (GF Phonetics), each at its stem or its middle. */
+const MIDDLE_TILDE: [string, number, string, (g: DrawContext) => number, (g: DrawContext) => number][] = [
+  // On b and d through the ascender above the bowl, as ɫ has it.
+  ['bmiddletilde', 0x1d6c, 'b', () => 0, (g) => (g.xHeight + g.ascender) / 2],
+  ['dmiddletilde', 0x1d6d, 'd', (g) => g.wide(8), (g) => (g.xHeight + g.ascender) / 2],
+  ['fmiddletilde', 0x1d6e, 'f', () => 0, (g) => g.y(5)],
+  ['mmiddletilde', 0x1d6f, 'm', (g) => g.wide(6.5), (g) => g.xHeight / 2],
+  ['nmiddletilde', 0x1d70, 'n', () => 0, (g) => g.xHeight / 2],
+  ['pmiddletilde', 0x1d71, 'p', () => 0, (g) => g.xHeight / 2],
+  ['rmiddletilde', 0x1d72, 'r', () => 0, (g) => g.xHeight / 2],
+  ['rfishhookmiddletilde', 0x1d73, 'rfishhook', () => 0, (g) => g.xHeight / 2],
+  ['smiddletilde', 0x1d74, 's', (g) => g.wide(7) / 2, (g) => g.xHeight / 2],
+  ['tmiddletilde', 0x1d75, 't', () => 0, (g) => g.xHeight / 2],
+  ['zmiddletilde', 0x1d76, 'z', (g) => g.wide(7.5) / 2, (g) => g.xHeight / 2],
+];
+
+const LIGHTER = 0.75;
+
+/** Chao tone letters ˥ to ˩: a stem the cap height tall on the right, its tick at one of five levels. */
+const toneBar = (name: string, unicode: number, level: number): GlyphDef => ({
+  name,
+  unicode,
+  lsb: 1,
+  rsb: 1,
+  draw: (g) => {
+    const w = 3.5;
+    const y = g.bottom(0) + ((g.top(g.cap) - g.bottom(0)) * level) / 4;
+    return [stem(w, 0, g.cap), bar(0, w, y)];
+  },
+});
+
+/** ː ˑ: triangles pointing at each other, the upper alone for the half-long mark. */
+const triangle = (g: DrawContext, y: number, down: boolean): Stroke => {
+  const a = 1 + g.v / 2;
+  return solid(down ? [p(-a, y + a), p(a, y + a), p(0, y)] : [p(-a, y - a), p(a, y - a), p(0, y)], 0.001);
+};
+
+const IPA_SIGNS: GlyphDef[] = [
+  superiorOf(letter('h'), 'hmod', 0x2b0),
+  superiorOf(letter('j'), 'jmod', 0x2b2),
+  superiorOf(letter('l'), 'lmod', 0x2e1),
+  superiorOf(letter('g'), 'gmod', 0x1d4d, true, LIGHTER),
+  superiorOf({ ...GREEK.find((d) => d.name === 'gamma')!, lower: true }, 'gammamod', 0x2e0, true, LIGHTER),
+  toneBar('extrahightonebarmod', 0x2e5, 4),
+  toneBar('hightonebarmod', 0x2e6, 3),
+  toneBar('midtonebarmod', 0x2e7, 2),
+  toneBar('lowtonebarmod', 0x2e8, 1),
+  toneBar('extralowtonebarmod', 0x2e9, 0),
+  { name: 'colontriangularmod', unicode: 0x2d0, lsb: 1, rsb: 1, draw: (g) => [triangle(g, g.y(5.5), true), triangle(g, g.y(4.5), false)] },
+  { name: 'colontriangularhalfmod', unicode: 0x2d1, lsb: 1, rsb: 1, draw: (g) => [triangle(g, g.y(5.5), true)] },
+  { name: 'rhotichookmod', unicode: 0x2de, lsb: 0.5, rsb: 1, draw: (g) => [open(p(0, g.y(6.5)), p(2.5 + g.v / 2, g.y(6.5), true), p(2.5 + g.v / 2, g.y(9.5)))] },
+  { name: 'ringlowmod', unicode: 0x2f3, lsb: 1, rsb: 1, draw: (g) => [ring(g, 0, -4, 1.6)] },
+  {
+    // ‿ the tie under two letters: a shallow bracket below the baseline, its corners cut where it would curve.
+    name: 'undertie',
+    unicode: 0x203f,
+    lsb: 0,
+    rsb: 0,
+    draw: (g) => {
+      const b = g.bottom(-3.5);
+      return [open(p(0, 0), p(0, b, true), p(8, b, true), p(8, 0))];
+    },
+  },
+  { name: 'arrowupraisedmod', unicode: 0xa71b, lsb: 1, rsb: 1, draw: (g) => [stem(0, g.cap - 5, g.cap - 1), open(p(-1.75, g.cap - 1.75), p(0, g.cap), p(1.75, g.cap - 1.75))] },
+  { name: 'arrowdownraisedmod', unicode: 0xa71c, lsb: 1, rsb: 1, draw: (g) => [stem(0, g.cap - 4, g.cap), open(p(-1.75, g.cap - 3.25), p(0, g.cap - 5), p(1.75, g.cap - 3.25))] },
+];
+
+export const IPA: GlyphDef[] = [
+  ...IPA_DEFS.map((d) => ({ ...d, lower: true })),
+  ...MIDDLE_TILDE.map(([name, unicode, base, x, y]): GlyphDef => {
+    const def = IPA_DEFS.find((d) => d.name === base) ?? latin(base);
+    return { ...def, name, unicode, lower: true, draw: (g) => [...def.draw(g), tildeAcross(g, x(g), y(g))] };
+  }),
+  ...IPA_SIGNS,
+];
 
 /** IPA letters that are small capitals, or a letter of another script, under their own code points. */
 export const IPA_ALIASES: PlacedDef[] = (
@@ -169,5 +252,6 @@ export const IPA_ALIASES: PlacedDef[] = (
     ['Nsmall', 0x274, 'n.sc'],
     ['OEsmall', 0x276, 'oe.sc'],
     ['philatin', 0x278, 'phi'],
+    ['Dsmall', 0x1d05, 'd.sc'],
   ] as const
 ).map(([name, unicode, glyph]) => ({ name, unicode, parts: [{ glyph, after: true }] }));
