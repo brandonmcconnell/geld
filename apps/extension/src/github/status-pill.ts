@@ -253,6 +253,8 @@ export const ATTR_INSTANT_MERGE = 'data-geld-instant-merge';
  */
 export function showMergedPills(pills: readonly HTMLButtonElement[]): void {
   for (const pill of pills) {
+    const shown = labelBehind(pill);
+    if (!pill.hasAttribute('aria-haspopup') && shown !== null && dressedFrom.get(pill) === labelKey(shown)) continue;
     pill.removeAttribute(ATTR_INSTANT_MERGE);
     // The held key's "Merge now: …", which would otherwise outlast the merge as the pill's name.
     pill.removeAttribute('aria-label');

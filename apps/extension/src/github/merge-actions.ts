@@ -543,6 +543,90 @@ export function mergeWentThrough(payload: unknown): boolean {
   return isRecord(payload) && payload.status !== 'failed' && payload.error === undefined;
 }
 
+export function isStackRequest(url: string): boolean {
+  return /\/page_data\/enqueue_stack(?:$|[?#])/.test(url);
+}
+
+/**
+ * Where a stack merge GitHub took stands, from `enqueue_stack`'s answer or a read of `merge_request_status`: settled
+ * (`merged`, or `enqueued` into the merge queue), refused, or still under way. GitHub merges a stack one pull request at a
+ * time from its foot, a second or so each, and may answer before it has finished, with an id to ask about.
+ */
+export type StackMergeState = { readonly kind: 'settled' } | { readonly kind: 'failed'; readonly payload: unknown } | { readonly kind: 'running' };
+
+export function stackMergeState(payload: unknown): StackMergeState {
+  const status = isRecord(payload) ? payload.status : undefined;
+  if (status === 'failed') return { kind: 'failed', payload };
+  return status === 'merged' || status === 'enqueued' ? { kind: 'settled' } : { kind: 'running' };
+}
+
+/** The id `enqueue_stack` answers with while the merge is still under way, or null when it says nothing more is coming. */
+export function stackMergeId(payload: unknown): string | null {
+  if (stackMergeState(payload).kind !== 'running' || !isRecord(payload)) return null;
+  const uuid = stringOf(payload.uuid).trim();
+  return uuid === '' ? null : uuid;
+}
+
+export function mergeRequestStatusUrl(pullPath: string, uuid: string): string {
+  return `${pullPath}/page_data/merge_request_status/${encodeURIComponent(uuid)}`;
+}
+
+/** GitHub's own merge box polls at 1 s, growing by half each time, and gives up after ten minutes. */
+const STACK_POLL_FIRST_MS = 1000;
+const STACK_POLL_GROWTH = 1.5;
+const STACK_POLL_LIMIT_MS = 600_000;
+/** Reads of the status in a row that may fail before the merge is taken as done, as GitHub took the request. */
+const STACK_POLL_MISSES = 5;
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+/**
+ * Wait until a stack merge `enqueue_stack` answered for has settled, reading `merge_request_status` as GitHub's merge
+ * box does. A refusal comes back with GitHub's words; anything else (settled, not followable, `wanted` turning false)
+ * resolves with null, since GitHub took the request.
+ */
+export async function settleStackMerge(pullPath: string, answer: unknown, wanted: () => boolean): Promise<{ readonly payload: unknown; readonly status: number } | null> {
+  const uuid = stackMergeId(answer);
+  if (uuid === null) return null;
+  const started = Date.now();
+  let wait = STACK_POLL_FIRST_MS;
+  let misses = 0;
+  while (wanted() && Date.now() - started + wait <= STACK_POLL_LIMIT_MS) {
+    await delay(wait);
+    wait *= STACK_POLL_GROWTH;
+    if (!wanted()) return null;
+    try {
+      const response = await pageFetch(mergeRequestStatusUrl(pullPath, uuid), { credentials: 'same-origin', cache: 'no-store', headers: headers(fetchNonce(), false) });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const read = stackMergeState(await response.json());
+      if (read.kind === 'settled') return null;
+      if (read.kind === 'failed') return { payload: read.payload, status: response.status };
+      misses = 0;
+    } catch {
+      misses += 1;
+      if (misses >= STACK_POLL_MISSES) return null;
+    }
+  }
+  return null;
+}
+
+const MERGED_READS = 10;
+const MERGED_READ_MS = 1000;
+
+/**
+ * Wait, a few seconds at most, until the merge box reads the pull request as merged: a page reloaded before then is
+ * served open, and its pill turned back from merged.
+ */
+export async function awaitMergedState(pullPath: string, wanted: () => boolean): Promise<boolean> {
+  for (let read = 0; read < MERGED_READS && wanted(); read += 1) {
+    if (read > 0) await delay(MERGED_READ_MS);
+    if (!wanted()) return false;
+    const box = await fetchMergeBox(pullPath, 'SQUASH', false);
+    if (box?.state === 'MERGED') return true;
+  }
+  return false;
+}
+
 /**
  * Each repository's default merge method as last read, so the next read asks for that method's box first and needs no
  * second one for its commit (a repository whose default is not squash cost two merge boxes in a row before the menu

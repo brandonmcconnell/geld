@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MergeSubmission } from './merge-actions';
-import { actionErrorText, autoMergeRequest, bypassBeside, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict, embeddedStack, methodHint, prefetchMergeBox, readMergeActions, rememberMethod } from './merge-actions';
+import { actionErrorText, autoMergeRequest, awaitMergedState, bypassBeside, isStackRequest, mergeRequestStatusUrl, settleStackMerge, stackMergeId, stackMergeState, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict, embeddedStack, methodHint, prefetchMergeBox, readMergeActions, rememberMethod } from './merge-actions';
 
 /** A `page_data/merge_box` answer as GitHub gave it on brandonmcconnell/geld#74 (Oct 2026), trimmed. */
 function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean; readonly email?: string; readonly emails?: readonly string[] | null; readonly conflict?: boolean; readonly methodStatus?: string } = {}): unknown {
@@ -353,5 +353,84 @@ describe('the prefetched merge box', () => {
     vi.advanceTimersByTime(11_000);
     prefetchMergeBox('/o/r/pull/3', 'SQUASH');
     expect(asked).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('a stack merge GitHub is still running', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('reads enqueue_stack’s answer as GitHub’s merge box does', () => {
+    expect(isStackRequest('/o/r/pull/9/page_data/enqueue_stack')).toBe(true);
+    expect(isStackRequest('/o/r/pull/9/page_data/merge')).toBe(false);
+    expect(stackMergeState({ status: 'merged' })).toEqual({ kind: 'settled' });
+    expect(stackMergeState({ status: 'enqueued' })).toEqual({ kind: 'settled' });
+    expect(stackMergeState({ status: 'failed', error: 'Out of date' }).kind).toBe('failed');
+    expect(stackMergeState({ status: 'pending', uuid: 'a-b' })).toEqual({ kind: 'running' });
+    expect(stackMergeId({ status: 'pending', uuid: 'a-b' })).toBe('a-b');
+    expect(stackMergeId({ status: 'merged', uuid: 'a-b' })).toBeNull();
+    // Nothing to ask about: GitHub took the request, as before.
+    expect(stackMergeId({ status: 'pending' })).toBeNull();
+    expect(mergeRequestStatusUrl('/o/r/pull/9', 'a/b')).toBe('/o/r/pull/9/page_data/merge_request_status/a%2Fb');
+  });
+
+  it('waits on merge_request_status until the stack is merged', async () => {
+    vi.useFakeTimers();
+    const answers = [{ status: 'running' }, { status: 'running' }, { status: 'merged' }];
+    const asked = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toContain('/o/r/pull/9/page_data/merge_request_status/u1');
+      return new Response(JSON.stringify(answers.shift()));
+    });
+    vi.stubGlobal('fetch', asked);
+    let settled: unknown = 'waiting';
+    void settleStackMerge('/o/r/pull/9', { status: 'pending', uuid: 'u1' }, () => true).then((result) => {
+      settled = result;
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(settled).toBe('waiting');
+    await vi.advanceTimersByTimeAsync(1500 + 2250);
+    expect(asked).toHaveBeenCalledTimes(3);
+    expect(settled).toBeNull();
+  });
+
+  it('comes back with GitHub’s words when the stack merge fails', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ status: 'failed', error: 'Base branch was modified' }))),
+    );
+    const settling = settleStackMerge('/o/r/pull/9', { status: 'pending', uuid: 'u1' }, () => true);
+    await vi.advanceTimersByTimeAsync(1000);
+    const failed = await settling;
+    expect(failed).not.toBeNull();
+    expect(actionErrorText('merge', failed?.status ?? 0, failed?.payload)).toBe('GitHub could not merge the pull request: Base branch was modified');
+  });
+
+  it('asks nothing for an answer that is already settled, and stops once the reader has left', async () => {
+    vi.useFakeTimers();
+    const asked = vi.fn(async () => new Response(JSON.stringify({ status: 'running' })));
+    vi.stubGlobal('fetch', asked);
+    expect(await settleStackMerge('/o/r/pull/9', { status: 'merged' }, () => true)).toBeNull();
+    let here = true;
+    const settling = settleStackMerge('/o/r/pull/9', { status: 'pending', uuid: 'u1' }, () => here);
+    await vi.advanceTimersByTimeAsync(1000);
+    here = false;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await settling).toBeNull();
+    expect(asked).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits until the page’s own pull request reads merged before it is reloaded', async () => {
+    vi.useFakeTimers();
+    const states = ['OPEN', 'OPEN', 'MERGED'];
+    // The pull request's own `state` is the first in the answer.
+    const asked = vi.fn(async () => new Response(JSON.stringify(payload()).replace('"state":"OPEN"', `"state":"${states.shift() ?? 'MERGED'}"`)));
+    vi.stubGlobal('fetch', asked);
+    const merged = awaitMergedState('/o/r/pull/9', () => true);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(await merged).toBe(true);
+    expect(asked).toHaveBeenCalledTimes(3);
   });
 });
