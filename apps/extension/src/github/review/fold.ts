@@ -60,10 +60,8 @@ export interface FoldGroup {
   readonly closure?: Closure;
   /** The timeline events group: the state change among them, for the row to read at a glance (see `eventHeadline`). */
   readonly headline?: EventHeadline;
-  /** What the row counts when that is not its nodes (the Mentions row lists lines read from elsewhere too). */
-  readonly count?: number;
-  /** What the row lists, when its nodes do not say (lines read from elsewhere): a change redraws the row and its view. */
-  readonly version?: string;
+  /** The Mentions group: what the description mentions, which has no timeline node to tell an edit by. */
+  readonly refs?: readonly string[];
 }
 
 export type ClosureKind = 'merged' | 'closed' | 'reopened';
@@ -267,8 +265,11 @@ export function groupBotRuns(
   return groups;
 }
 
-/** The rest of the timeline, by kind: commits and mentions get rows in the activity section; bots' bare review lines fold silently. */
-export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: LeftoverKind; readonly root: HTMLElement; readonly count?: number }>): readonly FoldGroup[] {
+/**
+ * The rest of the timeline, by kind: commits and mentions get rows in the activity section; bots' bare review lines
+ * fold silently. `outgoing` is what the description mentions (its links), which has no timeline row and still makes one.
+ */
+export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: LeftoverKind; readonly root: HTMLElement; readonly count?: number }>, outgoing: readonly string[] = []): readonly FoldGroup[] {
   const by = (kind: LeftoverKind): HTMLElement[] => leftovers.filter((entry) => entry.kind === kind).map((entry) => entry.root);
   const groups: FoldGroup[] = [];
   // Force-push events sit with the commits: both are pushes, and the row reads "from a to b" like a commit line.
@@ -280,7 +281,8 @@ export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: Leftove
     groups.push({ key: 'commits', label: parts.join(' · '), author: null, nodes: [...commits, ...pushes], section: 'activity' });
   }
   const mentions = by('mention');
-  if (mentions.length > 0) groups.push({ key: 'mentions', label: `${mentions.length} mention${mentions.length === 1 ? '' : 's'}`, author: null, nodes: mentions, section: 'activity' });
+  const mentionCount = mentions.length + outgoing.length;
+  if (mentionCount > 0) groups.push({ key: 'mentions', label: `${mentionCount} mention${mentionCount === 1 ? '' : 's'}`, author: null, nodes: mentions, section: 'activity', ...(outgoing.length === 0 ? {} : { refs: outgoing }) });
   const silent = by('review-event');
   if (silent.length > 0) groups.push({ key: 'bot-reviews', label: '', author: null, nodes: silent, silent: true });
   // "X added 2 commits" headers say nothing the commits row does not; a minimized comment or a resolved thread still

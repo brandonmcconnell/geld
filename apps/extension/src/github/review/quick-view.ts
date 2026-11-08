@@ -418,18 +418,15 @@ function completeLine(line: MentionLine, lookup: RefLookup): MentionLine {
   return { ...line, title: found.title, state: line.state === 'unknown' || found.state !== 'unknown' ? found.state : line.state };
 }
 
-/** On the commits list's grid: state glyph, avatar (or its space), `owner/repo#N` and the title as one link, time. */
+/** Who mentioned it first (their avatar, or its space), then one link of state glyph, `owner/repo#N` and title, then the time. */
 function mentionRow(line: MentionLine): HTMLElement {
   const isPull = line.state === 'unknown' ? line.href.includes('/pull/') : !line.state.startsWith('issue');
   const anchor = createElement('a', { class: 'geld-review__mention-link', href: line.href, 'data-hovercard-type': isPull ? 'pull_request' : 'issue', 'data-hovercard-url': `${line.href.replace(/[#?].*$/, '')}/hovercard` }, [
+    createElement('span', { class: 'geld-review__mention-state', role: 'img', 'aria-label': STATE_LABEL[line.state], title: STATE_LABEL[line.state] }, [svgFromString(REF_ICON[line.state])]),
     ...(line.ref === '' ? [] : [createElement('span', { class: 'geld-review__mention-ref' }, [line.ref])]),
     createElement('span', { class: 'geld-review__mention-title' }, [line.title]),
   ]);
-  const row = createElement('li', { class: 'geld-review__mention', 'data-state': line.state }, [
-    createElement('span', { class: 'geld-review__mention-state', role: 'img', 'aria-label': STATE_LABEL[line.state], title: STATE_LABEL[line.state] }, [svgFromString(REF_ICON[line.state])]),
-    line.avatar ?? createElement('span', { class: 'geld-review__mention-who', 'aria-hidden': 'true' }),
-    anchor,
-  ]);
+  const row = createElement('li', { class: 'geld-review__mention', 'data-state': line.state }, [line.avatar ?? createElement('span', { class: 'geld-review__mention-who', 'aria-hidden': 'true' }), anchor]);
   if (line.at !== undefined && line.at !== '') row.append(relativeTimeElement(line.at, 'geld-review__time'));
   else if (line.time !== '') row.append(createElement('span', { class: 'geld-review__time' }, [line.time]));
   return row;

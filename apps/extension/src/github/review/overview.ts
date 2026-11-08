@@ -66,9 +66,9 @@ import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots, triggerFor } from './panel-model';
-import type { MentionLine } from './quick-view';
-import { mentionLinesOf, outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
+import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
 import { timelineMentionsFor } from './timeline-mentions';
+import type { MentionLine } from './quick-view';
 import { botCommentControls, chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf, parkChats, releaseParkedChats } from './chat';
 import type { ChatByline, ChatLink, ChatRerun, ChatThreadLink } from './chat';
 import { viaBotOf } from './via';
@@ -836,15 +836,18 @@ function withManualDone(meta: GeldPrMeta): GeldPrMeta {
   return { ...meta, items: meta.items.map((item) => (visit.manualDone.has(item.id) && isOpenStatus(item.status) ? { ...item, status: 'done-manual' } : item)) };
 }
 
-/** What the description mentions, its author as the mentioner. */
-function descriptionMentions(): readonly MentionLine[] {
+/** What the description mentions, with its author's picture on each line when `withAuthor` (only the open view shows it). */
+function descriptionMentions(withAuthor = false): readonly MentionLine[] {
   const card = descriptionCard();
-  const cardLogin = (card === null ? null : authorOf(card)?.login) ?? prAuthorLogin();
-  // The Overview's description box shows no author: the header names them, and GitHub serves a person's picture by login.
-  const cardAvatar = (card === null ? null : avatarSrcOf(card)) ?? (cardLogin === null ? null : `https://avatars.githubusercontent.com/${encodeURIComponent(cardLogin)}?s=40`);
+  const body = card?.querySelector('.comment-body, .markdown-body, [data-testid="markdown-body"]') ?? null;
   const self = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(location.pathname)?.[0];
   // A description that links to its own pull request ("#493 itself showed…") is not mentioning another.
-  return outgoingMentions(card?.querySelector('.comment-body, .markdown-body, [data-testid="markdown-body"]') ?? null, cardLogin === null || cardAvatar === null ? null : { login: cardLogin, avatarSrc: cardAvatar }).filter((line) => self === undefined || line.href.replace(/^https:\/\/[^/]+/, '').replace(/[#?].*$/, '') !== self);
+  const others = (lines: readonly MentionLine[]): readonly MentionLine[] => lines.filter((line) => self === undefined || line.href.replace(/^https:\/\/[^/]+/, '').replace(/[#?].*$/, '') !== self);
+  if (!withAuthor || card === null) return others(outgoingMentions(body));
+  const login = authorOf(card)?.login ?? prAuthorLogin();
+  // The Overview's description box shows no author: the header names them, and GitHub serves a person's picture by login.
+  const avatar = avatarSrcOf(card) ?? (login === null ? null : `https://avatars.githubusercontent.com/${encodeURIComponent(login)}?s=40`);
+  return others(outgoingMentions(body, login === null || avatar === null ? null : { login, avatarSrc: avatar }));
 }
 
 /**
@@ -871,24 +874,6 @@ function incomingReadMentions(): readonly MentionLine[] {
   }));
 }
 
-/**
- * The Mentions row counts every line its view lists: the page's cross-reference rows (or, on the Overview, the
- * timeline's), and what the description mentions. It used to need a row of the page's own, so a pull request only
- * mentioning others (geld#493) and every pull request on the Overview had none.
- */
-function withMentionsBeyondTimeline(groups: readonly FoldGroup[]): readonly FoldGroup[] {
-  const existing = groups.find((group) => group.key === 'mentions');
-  // Lines, not rows: a "This was referenced" row holds several, and the view lists each.
-  const lines = [...(existing?.nodes ?? []).flatMap((node) => mentionLinesOf(node)), ...incomingReadMentions(), ...descriptionMentions()];
-  const count = lines.length;
-  if (count === 0) return groups;
-  const label = `${count} mention${count === 1 ? '' : 's'}`;
-  // The lines read from the timeline's data and the description are no nodes of the row's: what they say redraws it.
-  const version = lines.map((line) => `${line.href}:${line.state}:${line.title}`).join('|');
-  if (existing !== undefined) return groups.map((group) => (group === existing ? { ...group, label, count, version } : group));
-  return [...groups, { key: 'mentions', label, author: null, nodes: [], section: 'activity', count, version }];
-}
-
 function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
   return groups.filter((group) => group.silent !== true).map((group) => {
     const firstAnchor = firstAnchorIn(group.nodes[0] ?? null);
@@ -898,8 +883,7 @@ function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
       key: group.key,
       label: group.label,
       section: group.section ?? 'comments',
-      count: group.count ?? group.nodes.length,
-      ...(group.version === undefined ? {} : { version: group.version }),
+      count: group.nodes.length,
       avatarSrc: group.author === null ? null : avatarSrcOf(group.nodes[0] ?? null),
       author: group.author,
       firstAnchor,
@@ -907,6 +891,7 @@ function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
       timeAnchor: headlineNode === null ? firstAnchor : headlineNode.id,
       ...(group.closure === undefined ? {} : { closure: group.closure }),
       ...(group.headline === undefined ? {} : { headline: group.headline }),
+      ...(group.refs === undefined ? {} : { refs: group.refs }),
     };
   });
 }
@@ -3029,12 +3014,7 @@ function quickViewFor(key: string, meta: GeldPrMeta, groups: readonly FoldGroup[
     const content = section.querySelector<HTMLElement>('[class*="expandableWrapper"]');
     return [content ?? section];
   }
-  if (key.startsWith('fold:')) {
-    const group = groups.find((entry) => foldKey(entry.key) === key);
-    // The Mentions row can stand on what the timeline's data and the description say, with no rows of the page's own.
-    if (group?.key === 'mentions' && group.nodes.length === 0) return [document.documentElement];
-    return group?.nodes ?? [];
-  }
+  if (key.startsWith('fold:')) return groups.find((group) => foldKey(group.key) === key)?.nodes ?? [];
   const item = meta.items.find((entry) => itemKey(entry.id) === key);
   return item === undefined ? [] : itemNodes(item);
 }
@@ -3368,7 +3348,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const claimed = new Set<HTMLElement>(foldTargets.flatMap((group) => [...group.nodes]));
   const leftoverList = phase('leftovers', () => crawlLeftovers(claimed, threadCommentsComing));
   if (hidingTimeline) {
-    const leftovers = withMentionsBeyondTimeline(groupLeftovers(leftoverList));
+    // With the description's mentions, the Overview's incoming ones read from its timeline data: neither has a row of the page's.
+    const leftovers = groupLeftovers(leftoverList, [...descriptionMentions(), ...incomingReadMentions()].map((line) => `${line.href} ${line.title} ${line.state}`));
     groups.push(...leftovers);
     foldTargets.push(...leftovers);
   }
@@ -3841,7 +3822,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const slotsStart = performance.now();
   if (mounted?.slot !== null && mounted?.slot !== undefined && visit.openKey !== null) {
     const nodes = quickViewFor(visit.openKey, meta, groups);
-    if (nodes.length === 0) {
+    // The description's own mentions have no timeline row, so the Mentions row can stand with no nodes to show.
+    const onlyOutgoing = visit.openKey === foldKey('mentions') && (descriptionMentions().length > 0 || incomingReadMentions().length > 0);
+    if (nodes.length === 0 && !onlyOutgoing) {
       // An open thread row (by push) whose thread is momentarily out of the crawl keeps its row through the grace.
       if (!visit.openKey.startsWith('item:') || openLineStillMissing()) {
         visit.openKey = null;
@@ -3940,9 +3923,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           renderQuickView(mounted.slot, nodes);
         }
       } else if (visit.openKey === foldKey('mentions')) {
-        // The group's own rows: with none (the Overview, or only the description's mentions) the slot is opened on the page itself.
-        const rows = groups.find((group) => group.key === 'mentions')?.nodes ?? [];
-        renderMentionsView(mounted.slot, rows, descriptionMentions(), (href) => refDetails(href, reapplySoon), incomingReadMentions());
+        renderMentionsView(mounted.slot, nodes, descriptionMentions(true), (href) => refDetails(href, reapplySoon), incomingReadMentions());
       } else if (visit.openKey.startsWith('item:')) {
         // Each review thread as its chat: the path, the hunk, the comment it came from pinned, every message.
         const item = meta.items.find((entry) => itemKey(entry.id) === visit.openKey);

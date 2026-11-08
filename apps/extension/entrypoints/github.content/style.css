@@ -7340,7 +7340,7 @@ a.geld-review__rerun:hover {
   list-style: none;
 }
 
-/* On the commits list's grid: glyph at the row's edge, a 20px avatar column 10px on, text 16px after that; 29px rows, 12px type. */
+/* Who mentioned it first, at the row's edge (a 20px avatar column), then the reference led by its state glyph; 29px rows, 12px type. */
 .geld-review__mention {
   display: flex;
   align-items: center;
@@ -7349,19 +7349,21 @@ a.geld-review__rerun:hover {
   font-size: 12px;
 }
 
+/* Sized to the 12px text it leads, 4px from the reference. */
 .geld-review__mention-state {
   display: inline-flex;
   flex: 0 0 auto;
+  align-self: center;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  margin-right: 10px;
+  width: 12px;
+  margin-right: -2px;
   color: var(--geld-review-muted);
 }
 
 .geld-review__mention-state .octicon {
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
 }
 
 .geld-review__mention[data-state='open'] .geld-review__mention-state,
@@ -7386,7 +7388,7 @@ a.geld-review__rerun:hover {
   flex: 0 0 auto;
   width: 20px;
   height: 20px;
-  margin-right: 16px;
+  margin-right: 10px;
 }
 
 .geld-review__mention-link {
@@ -8187,6 +8189,8 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
  */
 [data-geld-desc-cap][data-geld-desc-long] > [data-geld-desc-cut-edge] {
   max-height: var(--geld-desc-cut-height);
+  /* CUT_GAP_PX in description.ts: the fade below is solid over this gap, so the text ends at 0%. */
+  margin-bottom: 16px !important;
   overflow: hidden !important;
 }
 
@@ -8196,7 +8200,7 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
   width: fit-content;
 }
 
-/* Inside the body, after the author's blocks: its ::before fades the text above it out. */
+/* Inside the body, after the author's blocks: its ::before fades the text above it out, to nothing at the cut. */
 .geld-desc-more {
   display: none;
   position: relative;
@@ -8229,6 +8233,12 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
   background: linear-gradient(to bottom, transparent, var(--bgColor-default, var(--color-canvas-default, #fff)));
   pointer-events: none;
   z-index: 1;
+}
+
+/* A block clipped above it: solid over that block's fixed 16px margin, so its text ends at nothing where it is cut. */
+[data-geld-desc-cap][data-geld-desc-long]:has(> [data-geld-desc-cut-edge]) > .geld-desc-more::before {
+  height: calc(96px + 16px);
+  background: linear-gradient(to bottom, transparent, var(--bgColor-default, var(--color-canvas-default, #fff)) calc(100% - 16px));
 }
 
 /*
@@ -8889,7 +8899,7 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
 }
 
 /*
- * The Overview sidebar in Geld's order (`orderSidebars`): Reviewers, Related links, Activity, then GitHub's. GitHub's
+ * The Overview sidebar in Geld's order (`orderSidebars`): Reviewers, Related links, Mentions, Activity, then GitHub's. GitHub's
  * line above every section but the first in page order becomes a line above every section but the first shown.
  * Its rule (`.sidebar > [data-overview-sidebar-item] ~ [data-overview-sidebar-item]`) weighs three; the first's must outweigh it.
  */
@@ -8911,8 +8921,12 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
   order: 2;
 }
 
-[data-geld-sidebar-order] > [data-geld-order='activity'] {
+[data-geld-sidebar-order] > [data-geld-order='mentions'] {
   order: 3;
+}
+
+[data-geld-sidebar-order] > [data-geld-order='activity'] {
+  order: 4;
 }
 
 [data-geld-sidebar-order] > [data-overview-sidebar-item] {
