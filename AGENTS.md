@@ -1906,10 +1906,12 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
   put the values in `apps/site/.env.local` (see `.env.example`, or `vercel env pull` from the Development scope) with a different `AUTH_SECRET` per environment.
   Without real credentials the flow can be exercised against a fetch mock, which is how it was verified.
 
-## Workflow syntax highlighting
+## Diff syntax highlighting
 
-`src/github/workflow-syntax.ts` colors shell in visible `.github/workflows/*.yml` and `.yaml` multiline `run` blocks on classic and React diffs.
-It uses only highlight.js core and Bash, GitHub's syntax theme tokens and CSS Custom Highlights over `StaticRange`s, leaving GitHub's nodes intact.
+`src/github/diff-syntax.ts` colors shell in visible `.github/workflows/*.yml` and `.yaml` multiline `run` blocks on classic and React diffs.
+It uses highlight.js grammars, GitHub's syntax theme tokens and CSS Custom Highlights over `StaticRange`s, leaving GitHub's nodes intact.
+For JavaScript and TypeScript it colors plain diff files only while GitHub supplies no native syntax spans, with each side and contiguous run of lines tokenized independently.
+If GitHub sends syntax spans but its global stylesheet fails to load, zero-specificity rules supply their theme colors until GitHub's styles take over.
 Old and new sides are tokenized separately, with shared context painted from the new side.
 Each script's shell is the step's `shell`, else the job's `defaults.run.shell`, else the workflow's, else the runner's default (PowerShell on Windows), decided once the whole visible side is read, since a job may name its runner or defaults after its steps;
 a default comes only from `defaults.run.shell` (a `shell` under `env` is a variable), and a section after a gap in the diff keeps what it reads to itself, falling back on the section before it, since the gap may hide another job's name.
