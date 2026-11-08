@@ -108,6 +108,32 @@ describe('showMergedPills', () => {
     syncStatusPills(true, () => undefined);
     expect(document.querySelector('button[data-geld-status-pill]')?.outerHTML).toBe(merged);
   });
+
+  it('leaves a pill already shown merged as it is when asked again, and dresses a new one GitHub’s header brought', () => {
+    pillAfterMerge(react('pullOpened', 'Open', ICON_GIT_PULL_REQUEST, 'octicon-git-pull-request'));
+    const first = document.querySelector('button[data-geld-status-pill] .geld-status-pill__lead');
+    showMergedPills(syncStatusPills(true, () => undefined));
+    expect(document.querySelector('button[data-geld-status-pill] .geld-status-pill__lead')).toBe(first);
+    // GitHub re-rendered its header from before the merge: a fresh pill, dressed merged too.
+    document.querySelector('button[data-geld-status-pill]')?.remove();
+    const pills = syncStatusPills(true, () => undefined);
+    showMergedPills(pills);
+    expect(pills[0]?.textContent).toContain('Merged');
+    expect(pills[0]?.hasAttribute('aria-haspopup')).toBe(false);
+  });
+
+  it('dresses the pill merged again when GitHub changes its open label in place under it', () => {
+    pillAfterMerge(react('pullOpened', 'Open', ICON_GIT_PULL_REQUEST, 'octicon-git-pull-request'));
+    const label = document.querySelector('[data-component="StateLabel"]');
+    label?.setAttribute('data-size', 'small');
+    label?.classList.add('prc-StateLabel-y');
+    const pills = syncStatusPills(true, () => undefined);
+    expect(pills[0]?.getAttribute('data-status')).toBe('pullOpened');
+    showMergedPills(pills);
+    expect(pills[0]?.getAttribute('data-status')).toBe('pullMerged');
+    expect(pills[0]?.getAttribute('data-size')).toBe('small');
+    expect(pills[0]?.textContent).toContain('Merged');
+  });
 });
 
 describe("the Overview's status label", () => {
