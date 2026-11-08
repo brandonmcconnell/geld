@@ -8,7 +8,7 @@ import type { HeaderStatGroup } from './header-stats';
 import { countsSkeletonStandIn, countsWrapperBusy, isCountsStandIn } from './header-stats';
 import { detectHeadSha } from './head-sha';
 import type { MergeActions, MergeBox, MergeMethod, StatusAction } from './merge-actions';
-import { actionErrorText, autoMergeRequest, closeRequest, draftRequest, fetchMergeBox, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, methodHint, partialMayWait, prefetchMergeBox, readMergeActions, queueRequest, readyRequest, rememberMethod, reopenRequest, stackQueueRequest, viewerVerdict } from './merge-actions';
+import { actionErrorText, autoMergeRequest, awaitMergedState, closeRequest, draftRequest, fetchMergeBox, isStackRequest, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, methodHint, partialMayWait, prefetchMergeBox, readMergeActions, queueRequest, readyRequest, rememberMethod, reopenRequest, settleStackMerge, stackQueueRequest, viewerVerdict } from './merge-actions';
 import type { PageInfo } from './page';
 import { pullRequestStateWords } from './page';
 import type { PendingComment } from './pending-review';
@@ -425,6 +425,8 @@ interface Mounted {
   panelCleanup: (() => void) | null;
   /** A review on its way: the controls and the box wait for it. */
   sending: boolean;
+  /** The pull request whose merge went through and whose pills stand merged until the reload, whatever the page or a read says meanwhile. */
+  mergedShown: string | null;
   submittedTimer: number;
   /** The pending comments last read for {@link pendingFor}; null until read (or when GitHub could not say). */
   pending: readonly PendingComment[] | null;
@@ -765,6 +767,7 @@ function createControls(pullPath: string, context: QuickReviewContext): Mounted 
     panelRefresh: null,
     panelCleanup: null,
     sending: false,
+    mergedShown: null,
     submittedTimer: 0,
     pending: null,
     pendingFor: null,
@@ -1302,6 +1305,15 @@ let hashSince: { readonly hash: string; readonly at: number } | null = null;
  * while it is the reader's own standing verdict.
  */
 function showStatus(state: Mounted): void {
+  if (state.mergedShown !== null && state.mergedShown === state.pullPath) {
+    // Merged and waiting on the reload: a read saying merged (no options), or GitHub's header re-rendered from before
+    // the merge, would otherwise take the merged pill away and show the open label again.
+    closeStatusMenu(state, false);
+    state.pills = syncStatusPills(true, openFromPill);
+    showMergedPills(state.pills);
+    syncOverviewMerge(null, 'SQUASH', { onMerge: () => undefined, onMethod: () => undefined });
+    return;
+  }
   const actions = state.mergeActions;
   if (actions !== null) showVerdict(state, heldVerdict(state) ?? viewerVerdict(actions.box, viewerLogin()));
   const repo = repoOf(state.pullPath);
@@ -1426,6 +1438,7 @@ async function instantMerge(state: Mounted, pill: HTMLButtonElement): Promise<vo
  */
 function showMerged(state: Mounted, pullPath: string): void {
   if (mounted !== state || state.pullPath !== pullPath || pullPathOf(window.location.pathname) !== pullPath) return;
+  state.mergedShown = pullPath;
   state.pills = syncStatusPills(true, openFromPill);
   showMergedPills(state.pills);
 }
@@ -1806,7 +1819,7 @@ async function runStackChoice(state: Mounted, action: StackAction, choice: Stack
     const request = STACK_REQUEST[action];
     steps = choice.targets.map((member) => ({ number: member.number, request: request(member.path, nonce) }));
   }
-  const done = action === 'merge' ? () => (here() ? showMergedPills(state.pills) : undefined) : undefined;
+  const done = action === 'merge' ? () => showMerged(state, pullPath) : undefined;
   let left = steps;
   const send = async (): Promise<string | null> => {
     if (!here()) return null;
@@ -2555,7 +2568,12 @@ async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Ste
           const response = await pageFetch(step.request.url, step.request.init);
           const payload: unknown = await response.json().catch(() => null);
           const refused = typeof payload === 'object' && payload !== null && Reflect.get(payload, 'status') === 'failed';
-          return !response.ok || refused ? actionErrorText(kind, response.status, payload) : null;
+          if (!response.ok || refused) return actionErrorText(kind, response.status, payload);
+          const stackPath = isStackRequest(step.request.url) ? pullPathOf(step.request.url) : null;
+          // A stack merge can be answered while GitHub is still merging it, the page's own pull request last when merged
+          // from the top: reloaded then, the page came back open and the pill turned back from merged.
+          const settled = stackPath === null ? null : await settleStackMerge(stackPath, payload, here);
+          return settled === null ? null : actionErrorText(kind, settled.status, settled.payload);
         } catch {
           return actionErrorText(kind, 0, null);
         }
@@ -2573,7 +2591,8 @@ async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Ste
     if (!here()) return null;
     done();
     if (inPlace === undefined) {
-      window.location.reload();
+      if (kind === 'merge' && steps.some((step) => isStackRequest(step.request.url))) await awaitMergedState(state.pullPath, here);
+      if (here()) window.location.reload();
       return null;
     }
     showDone(state, inPlace.done);

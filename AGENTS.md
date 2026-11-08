@@ -86,6 +86,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Firefox (MV2) runs a content script's `fetch` in the extension's sandbox: a relative path throws before any request goes out, and an absolute one goes out with no Origin or Referer, which GitHub's CSRF check refuses on every write (a 422 reading "Your browser did something unexpected", seen in Firefox 159 in Nov 2026).
   `pageFetch` resolves the path against the page and, for the page's own host, sends it with Firefox's `content.fetch`, the page's own, then reads the answer into a Response of the content script's (what it parses would otherwise belong to the page, and `instanceof` fails).
   Chrome and Safari have no `content.fetch` and their `fetch` already acts as the page, so the break only shows in Firefox and its forks (Zen, Floorp).
+  An abort signal is the content script's and is not handed to `content.fetch`: `pageFetch` honours it itself, rejecting with the abort the moment it fires, so a caller that cancelled never acts on a late answer, though the request may still finish in the page.
   A test that stubs `location` keeps `href` and `origin`: they are getters, which `{ ...window.location }` drops.
 - UI copy is short and specific, with no em or en dashes and no semicolons (a plain sentence break, a comma or a middle dot instead);
   commit messages explain *why*.
@@ -1562,6 +1563,11 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   a merge then goes through the top of the choice's `enqueue_stack` (`DIRECT_MERGE` with GitHub's default method and the commit it would write, read afresh) and "Merge when ready" as `{ mergeAction: 'MERGE_QUEUE' }` alone (`stackQueueRequest`, also what a stacked pull request's own "Merge when ready" sends), the rest as one request per pull request, top first (`sendSteps`), stopping at the first GitHub refuses with its reason and a retry of what was left (`openRetryBox`), and the menu read again when any before it went through.
   A stacked pull request whose stack could not be read gets the flat menu without its merge and its place in the queue (`flatStatusOptions`): both would take every pull request below it, which only the stack names.
   a refusal shows GitHub's error and rule errors in the box, success reloads the page.
+  **A stack merge is followed to its end before the reload** (`settleStackMerge`, `awaitMergedState`, merge-actions.ts): GitHub merges a stack one pull request at a time from its foot, about a second each (geld#466 to #493 merged 23:12:49 to 23:12:54 UTC, Nov 2026), and `enqueue_stack` may answer before it has finished, with a `uuid` and a status other than `merged`, `enqueued` or `failed`.
+  GitHub's own merge box then polls `page_data/merge_request_status/<uuid>` (1 s, growing by half, up to ten minutes) until one of those, a `failed` there being a refusal with its `error`, and Geld does the same (read from its bundle, Nov 2026).
+  Reloaded at the answer, as Geld used to, the page came back open (the pull request being read, merged from the top, is merged last): the pill showed Merged for a moment and then the open label again until a manual reload.
+  While GitHub merges, the pills stay busy;
+  once the status says merged they are dressed merged (`mergedShown`, which keeps them so through any pass, read or header re-render until the reload), and the reload waits, ten seconds at most, until the merge box reads the page's own pull request as `MERGED`.
   **The reader's standing verdict is drawn pressed in** (`showVerdict`, `data-current`, Primer's selected surface with an inner shadow and the glyph in its verdict colour, "(your current review)" in its name), read from the merge box's `latestOpinionatedReviews` (each reviewer's latest approval or request for changes, dismissed ones gone);
   still a button that leaves a new review.
   GitHub keeps one standing verdict per reviewer, so approving after requesting changes replaces it (and the other way round) while a comment-only review leaves it standing: after a review goes through the pressed segment follows at once and the merge box is read again.
@@ -1909,10 +1915,12 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
   put the values in `apps/site/.env.local` (see `.env.example`, or `vercel env pull` from the Development scope) with a different `AUTH_SECRET` per environment.
   Without real credentials the flow can be exercised against a fetch mock, which is how it was verified.
 
-## Workflow syntax highlighting
+## Diff syntax highlighting
 
-`src/github/workflow-syntax.ts` colors shell in visible `.github/workflows/*.yml` and `.yaml` multiline `run` blocks on classic and React diffs.
-It uses only highlight.js core and Bash, GitHub's syntax theme tokens and CSS Custom Highlights over `StaticRange`s, leaving GitHub's nodes intact.
+`src/github/diff-syntax.ts` colors shell in visible `.github/workflows/*.yml` and `.yaml` multiline `run` blocks on classic and React diffs.
+It uses highlight.js grammars, GitHub's syntax theme tokens and CSS Custom Highlights over `StaticRange`s, leaving GitHub's nodes intact.
+For JavaScript and TypeScript it colors plain diff files only while GitHub supplies no native syntax spans, with each side and contiguous run of lines tokenized independently.
+If GitHub sends syntax spans but its global stylesheet fails to load, zero-specificity rules supply their theme colors until GitHub's styles take over.
 Old and new sides are tokenized separately, with shared context painted from the new side.
 Each script's shell is the step's `shell`, else the job's `defaults.run.shell`, else the workflow's, else the runner's default (PowerShell on Windows), decided once the whole visible side is read, since a job may name its runner or defaults after its steps;
 a default comes only from `defaults.run.shell` (a `shell` under `env` is a variable), and a section after a gap in the diff keeps what it reads to itself, falling back on the section before it, since the gap may hide another job's name.
