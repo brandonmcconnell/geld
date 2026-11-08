@@ -354,23 +354,43 @@ export function parseStack(payload: unknown, pullPath: string): readonly StackMe
  * no request has to come first: `none` where the page says the pull request is in no stack, null where the payload is
  * missing or another pull request's (GitHub's router keeps the first page's payload across soft navigations).
  */
-export function embeddedStack(pullPath: string, root: ParentNode = document): readonly StackMember[] | 'none' | null {
+export function embeddedStackRecord(pullPath: string, root: ParentNode = document): Record<string, unknown> | 'none' | null {
   const page = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(pullPath);
   if (page === null) return null;
   const [, owner = '', repo = '', number = ''] = page;
-  // The number alone is not this pull request: a payload kept from another repository's pull request of the same
-  // number would hand its stack's paths to every stack action.
-  const repoPrefix = `/${owner}/${repo}/pull/`.toLowerCase();
   for (const script of root.querySelectorAll('script[type="application/json"][data-target="react-app.embeddedData"]')) {
     const layout = layoutRouteOf(script);
     if (layout === null || !isRecord(layout.pullRequest) || layout.pullRequest.number !== Number(number)) continue;
     if (layout.stack === null) return 'none';
     const stack = layout.stack;
+    // The number alone is not this pull request: a payload kept from another repository's pull request of the same
+    // number would hand its stack's paths to every stack action.
     if (!isRecord(stack) || stringOf(stack.repositoryOwnerLogin).toLowerCase() !== owner.toLowerCase() || stringOf(stack.repositoryName).toLowerCase() !== repo.toLowerCase()) return null;
-    const members = parseStack({ stack }, pullPath);
-    return members !== null && members.every((member) => member.path.toLowerCase().startsWith(repoPrefix)) ? members : null;
+    return stack;
   }
   return null;
+}
+
+/** The members of the stack the page embeds, its paths all in this repository. */
+export function embeddedStack(pullPath: string, root: ParentNode = document): readonly StackMember[] | 'none' | null {
+  const stack = embeddedStackRecord(pullPath, root);
+  if (stack === null || stack === 'none') return stack;
+  const page = /^\/([^/]+)\/([^/]+)\/pull\//.exec(pullPath);
+  const repoPrefix = `/${page?.[1] ?? ''}/${page?.[2] ?? ''}/pull/`.toLowerCase();
+  const members = parseStack({ stack }, pullPath);
+  return members !== null && members.every((member) => member.path.toLowerCase().startsWith(repoPrefix)) ? members : null;
+}
+
+/** GitHub's `page_data/stacks` for a pull request, as it answered, or null when it did not. */
+export async function fetchStackPayload(pullPath: string): Promise<unknown> {
+  try {
+    const response = await pageFetch(`${pullPath}/page_data/stacks`, { credentials: 'same-origin', headers: headers(fetchNonce(), false) });
+    if (!response.ok) return null;
+    const payload: unknown = await response.json();
+    return payload;
+  } catch {
+    return null;
+  }
 }
 
 const layoutRoutes = new WeakMap<Element, { readonly text: string; readonly layout: Record<string, unknown> | null }>();
@@ -394,12 +414,8 @@ function layoutRouteOf(script: Element): Record<string, unknown> | null {
 }
 
 async function readStackMembers(pullPath: string): Promise<readonly StackMember[] | null> {
-  try {
-    const response = await pageFetch(`${pullPath}/page_data/stacks`, { credentials: 'same-origin', headers: headers(fetchNonce(), false) });
-    return response.ok ? parseStack(await response.json(), pullPath) : null;
-  } catch {
-    return null;
-  }
+  const payload = await fetchStackPayload(pullPath);
+  return payload === null ? null : parseStack(payload, pullPath);
 }
 
 interface MemberBoxes {

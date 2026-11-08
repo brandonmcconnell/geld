@@ -60,6 +60,8 @@ afterEach(() => {
 
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
+const titled = (): (string | null)[][] => [...document.querySelectorAll('.geld-related')].map((section) => [section.getAttribute('data-geld-section'), section.querySelector('h3, h4')?.textContent ?? null]);
+
 describe('related links in the sidebar', () => {
   it('names a link by its identifier and title, or by what following it does', () => {
     document.body.innerHTML = DESCRIPTION;
@@ -321,24 +323,24 @@ describe('related links in the sidebar', () => {
     expect(document.querySelectorAll('.geld-related__link')[0]?.getAttribute('title')).toBe('Merged · Open pull request on GitHub · Cache fetches across routes · vercel/next.js');
   });
 
-  it('lists GitHub’s own references under Mentions, after Related links, in the Rails sidebar and the Overview one', () => {
+  it('lists the description’s issues and pull requests under Related work, after Related links, in the Rails sidebar and the Overview one', () => {
     history.replaceState(null, '', '/acme/web/pull/7');
     const description = DESCRIPTION.replace('<h2>Summary</h2>', '<h2>Summary</h2><p>Fixes <a class="issue-link js-issue-link" href="https://github.com/acme/web/issues/12">#12</a>.</p>');
     document.body.innerHTML = description + railsSidebar();
     applyRelatedLinks(true);
-    const titled = (): (string | null)[][] => [...document.querySelectorAll('.geld-related')].map((section) => [section.getAttribute('data-geld-section'), section.querySelector('h3, h4')?.textContent ?? null]);
     expect(titled()).toEqual([
       ['related', 'Related links'],
-      ['mentions', 'Mentions'],
+      ['work', 'Related work'],
     ]);
-    const [related, mentions] = document.querySelectorAll('.geld-related');
+    const [related, work] = document.querySelectorAll('.geld-related');
     expect(related?.previousElementSibling?.textContent).toContain('Reviewers');
-    expect(related?.nextElementSibling).toBe(mentions);
-    expect(mentions?.nextElementSibling?.textContent).toContain('Assignees');
+    expect(related?.nextElementSibling).toBe(work);
+    expect(work?.nextElementSibling?.textContent).toContain('Assignees');
     expect([...(related?.querySelectorAll('.geld-related__text') ?? [])].map((text) => text.textContent)).toEqual(['DOC-77 Sdk nav overview', 'Open thread in Slack', 'View workspace in Replicas']);
-    expect([...(mentions?.querySelectorAll('.geld-related__text') ?? [])].map((text) => text.textContent)).toEqual([expect.stringMatching(/^#12\b/)]);
+    expect([...(work?.querySelectorAll('.geld-related__text') ?? [])].map((text) => text.textContent)).toEqual([expect.stringMatching(/^#12\b/)]);
+    expect(work?.querySelector('.geld-related__all')?.textContent).toBe('See all mentions');
     applyRelatedLinks(true);
-    expect(document.querySelectorAll('.geld-related')[1]).toBe(mentions);
+    expect(document.querySelectorAll('.geld-related')[1]).toBe(work);
     removeRelatedLinks();
 
     document.body.innerHTML = description + overviewSidebar;
@@ -348,14 +350,72 @@ describe('related links in the sidebar', () => {
       ['Activity', 'activity'],
       ['Reviewers', 'reviewers'],
       ['Related links', 'related'],
-      ['Mentions', 'mentions'],
+      ['Related work', 'work'],
       ['Proof of presence', null],
     ]);
     removeRelatedLinks();
 
     document.body.innerHTML = `<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>After <a href="https://github.com/acme/web/pull/5">#5</a>.</p></div></div>${railsSidebar()}`;
     applyRelatedLinks(true);
-    expect(titled()).toEqual([['mentions', 'Mentions']]);
+    expect(titled()).toEqual([['work', 'Related work']]);
+  });
+
+  it('leads Related work with the stack as one row, leaving its pull requests out, its card listing them on hover', () => {
+    vi.useFakeTimers();
+    history.replaceState(null, '', '/acme/web/pull/7');
+    const pull = (number: number, state: string, branch: string): string => `{"number":${number},"title":"Step ${number}","state":"${state}","url":"/acme/web/pull/${number}","headBranch":"${branch}"}`;
+    const stack = `{"id":1,"number":193,"position":2,"size":3,"repositoryOwnerLogin":"acme","repositoryName":"web","pulls":[${pull(8, 'OPEN', 'step/3')},${pull(7, 'OPEN', 'step/2')},${pull(6, 'MERGED', 'step/1')}]}`;
+    const embedded = `<script type="application/json" data-target="react-app.embeddedData">{"payload":{"pullRequestsLayoutRoute":{"pullRequest":{"number":7},"stack":${stack}}}}</script>`;
+    document.body.innerHTML =
+      embedded +
+      '<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>After <a class="issue-link js-issue-link" href="https://github.com/acme/web/pull/6">#6</a>, see <a class="issue-link js-issue-link" href="https://github.com/acme/web/issues/12">#12</a>.</p></div></div>' +
+      railsSidebar();
+    applyRelatedLinks(true);
+    const work = document.querySelector('[data-geld-section="work"]');
+    const rows = [...(work?.querySelectorAll('.geld-related__item') ?? [])];
+    expect(rows.map((row) => [row.getAttribute('data-kind'), row.querySelector('.geld-related__text')?.textContent ?? row.textContent])).toEqual([
+      ['stack', 'Stack #193 2 of 3'],
+      ['github', expect.stringMatching(/^#12\b/)],
+      [null, 'See all mentions'],
+    ]);
+    const stackLink = work?.querySelector<HTMLAnchorElement>('[data-kind="stack"] a');
+    expect(stackLink?.getAttribute('href')).toBe('/acme/web/stack/193');
+    stackLink?.dispatchEvent(new MouseEvent('mouseenter'));
+    vi.advanceTimersByTime(400);
+    const card = document.querySelector('.geld-stack-card');
+    expect(card?.querySelector('.geld-stack-card__title')?.getAttribute('href')).toBe('/acme/web/stack/193');
+    expect([...(card?.querySelectorAll('.geld-stack-card__link') ?? [])].map((link) => [link.getAttribute('href'), link.textContent, link.getAttribute('aria-current')])).toEqual([
+      ['/acme/web/pull/8', 'Step 8#8 · step/3', null],
+      ['/acme/web/pull/7', 'Step 7#7 · step/2', 'page'],
+      ['/acme/web/pull/6', 'Step 6#6 · step/1', null],
+    ]);
+    expect(card?.querySelector('[data-state="merged"]')).not.toBeNull();
+    stackLink?.dispatchEvent(new MouseEvent('mouseleave'));
+    vi.advanceTimersByTime(300);
+    expect(document.querySelector('.geld-stack-card')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('opens the digest’s Mentions row from See all mentions', () => {
+    history.replaceState(null, '', '/acme/web/pull/7');
+    document.body.innerHTML =
+      '<div class="geld-review"><ul><li class="geld-review__group" data-group="activity"><button type="button" aria-expanded="true">Other activity</button></li>' +
+      '<li class="geld-review__row" data-geld-fold="mentions" data-geld-in-group="activity"><button type="button" class="geld-review__main" aria-expanded="false">2 mentions</button></li></ul></div>' +
+      `<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>After <a href="https://github.com/acme/web/pull/5">#5</a>.</p></div></div>${railsSidebar()}`;
+    const main = document.querySelector<HTMLButtonElement>('.geld-review__main');
+    let clicks = 0;
+    main?.addEventListener('click', () => {
+      clicks += 1;
+      main.setAttribute('aria-expanded', 'true');
+    });
+    const scroll = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => undefined);
+    applyRelatedLinks(true);
+    document.querySelector<HTMLAnchorElement>('.geld-related__all')?.click();
+    expect(clicks).toBe(1);
+    expect(scroll).toHaveBeenCalled();
+    document.querySelector<HTMLAnchorElement>('.geld-related__all')?.click();
+    expect(clicks).toBe(1);
+    scroll.mockRestore();
   });
 
   it('looks up only the rows that show, the rest once Show N more opens them', async () => {

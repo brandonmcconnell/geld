@@ -1,0 +1,29 @@
+// @vitest-environment happy-dom
+import { describe, expect, it } from 'vitest';
+import { parsePageStack } from './stack';
+
+const pull = (number: number, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ number, title: `Step ${number}`, state: 'OPEN', url: `/acme/web/pull/${number}`, headBranch: `step/${number}`, ...extra });
+
+describe('parsePageStack', () => {
+  it('reads GitHub’s stack: its number and page, where this pull request stands, every pull request with its state', () => {
+    const stack = parsePageStack({ number: 193, position: 2, size: 3, repositoryOwnerLogin: 'acme', repositoryName: 'web', pulls: [pull(8, { isDraft: true }), pull(7), pull(6, { state: 'MERGED' })] }, '/acme/web/pull/7');
+    expect(stack).toEqual({
+      number: 193,
+      path: '/acme/web/stack/193',
+      position: 2,
+      size: 3,
+      pulls: [
+        { number: 8, title: 'Step 8', state: 'draft', path: '/acme/web/pull/8', headBranch: 'step/8', current: false },
+        { number: 7, title: 'Step 7', state: 'open', path: '/acme/web/pull/7', headBranch: 'step/7', current: true },
+        { number: 6, title: 'Step 6', state: 'merged', path: '/acme/web/pull/6', headBranch: 'step/6', current: false },
+      ],
+    });
+  });
+
+  it('reads no stack that does not hold this pull request, or that it cannot read whole', () => {
+    expect(parsePageStack({ number: 1, pulls: [pull(8)] }, '/acme/web/pull/7')).toBeNull();
+    expect(parsePageStack({ number: 1, pulls: [pull(7), { number: 8 }] }, '/acme/web/pull/7')).toBeNull();
+    expect(parsePageStack({ pulls: [pull(7)] }, '/acme/web/pull/7')).toBeNull();
+    expect(parsePageStack({ number: 1, pulls: [pull(7)] }, '/acme/web/pull/7')?.path).toBe('/acme/web/stack/1');
+  });
+});

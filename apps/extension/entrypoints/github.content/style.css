@@ -8942,7 +8942,7 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
 }
 
 /*
- * The Overview sidebar in Geld's order (`orderSidebars`): Reviewers, Related links, Mentions, Activity, then GitHub's. GitHub's
+ * The Overview sidebar in Geld's order (`orderSidebars`): Reviewers, Related links, Related work, Activity, then GitHub's. GitHub's
  * line above every section but the first in page order becomes a line above every section but the first shown.
  * Its rule (`.sidebar > [data-overview-sidebar-item] ~ [data-overview-sidebar-item]`) weighs three; the first's must outweigh it.
  */
@@ -8964,7 +8964,7 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
   order: 2;
 }
 
-[data-geld-sidebar-order] > [data-geld-order='mentions'] {
+[data-geld-sidebar-order] > [data-geld-order='work'] {
   order: 3;
 }
 
@@ -8987,6 +8987,137 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
   padding: 2px 0 2px 24px;
   font-size: 12px;
   line-height: 20px;
+}
+
+/* "See all mentions" leads to the digest's Mentions row, so it shows only while the page has one. */
+.geld-related__item--all {
+  display: none;
+}
+
+body:has(.geld-review [data-geld-fold='mentions']) .geld-related__item--all {
+  display: block;
+}
+
+.geld-related__all {
+  display: inline-block;
+  padding: 2px 0 2px 24px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+/* A Related work stack row's card: GitHub's stack popover, drawn by Geld (`ui/stack-card.ts`). */
+.geld-stack-card {
+  position: fixed;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  max-width: calc(100vw - 16px);
+  max-height: min(480px, calc(100vh - 16px));
+  overflow: hidden;
+  color: var(--fgColor-default, #1f2328);
+  background: var(--overlay-bgColor, var(--bgColor-default, #ffffff));
+  border: var(--borderWidth-thin, 1px) solid var(--borderColor-default, #d1d9e0);
+  border-radius: var(--borderRadius-large, 12px);
+  box-shadow: var(--shadow-floating-large, 0 0 0 1px #d1d9e080, 0 40px 80px 0 #25292e3d);
+}
+
+.geld-stack-card__header {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  gap: 8px;
+  padding: 12px 16px 8px;
+}
+
+.geld-stack-card__title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--fgColor-default, #1f2328) !important;
+}
+
+.geld-stack-card__count {
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-stack-card__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0 8px 8px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.geld-stack-card__link {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  color: var(--fgColor-default, #1f2328) !important;
+  text-decoration: none !important;
+  border-radius: var(--borderRadius-medium, 6px);
+}
+
+.geld-stack-card__link:hover,
+.geld-stack-card__link:focus-visible {
+  background: var(--control-transparent-bgColor-hover, #818b981a);
+}
+
+/* The page's own pull request, marked as GitHub marks the current item of a nav list. */
+.geld-stack-card__link[aria-current='page'] {
+  background: var(--control-transparent-bgColor-selected, #818b9826);
+  box-shadow: inset 4px 0 0 var(--borderColor-accent-emphasis, #0969da);
+}
+
+.geld-stack-card__state {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+.geld-stack-card__state[data-state='open'] {
+  color: var(--fgColor-open, #1a7f37);
+}
+
+.geld-stack-card__state[data-state='merged'] {
+  color: var(--fgColor-done, #8250df);
+}
+
+.geld-stack-card__state[data-state='closed'] {
+  color: var(--fgColor-closed, #d1242f);
+}
+
+.geld-stack-card__state[data-state='draft'] {
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-stack-card__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.geld-stack-card__pull {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-stack-card__meta {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--fgColor-muted, #59636e);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Flow: the changed files as cards, linked from each file to what it imports. */

@@ -7,6 +7,9 @@ import { descriptionBody } from './review/description';
 import { appLoginOf } from './review/login';
 import { refDetails } from './review/refs';
 import type { RefState } from './review/refs';
+import { forgetPageStack, pageStack } from './stack';
+import type { PageStack } from './stack';
+import { attachStackCard, hideStackCard } from './ui/stack-card';
 import {
   ICON_ALERT,
   ICON_COMMENT_DISCUSSION,
@@ -20,12 +23,14 @@ import {
   ICON_ISSUE_OPENED,
   ICON_LINK_EXTERNAL,
   ICON_SKIP,
+  ICON_STACK,
 } from './ui/icons';
 
 /**
  * "Related links" in the pull request's sidebar, under Reviewers: the tickets, chat threads, agent sessions, review
- * tools and docs the description links to (and Linear's linkback comment), read by `@geld/review`'s registry. GitHub's
- * own issues, pull requests and discussions stand apart under it, as "Mentions".
+ * tools and docs the description links to (and Linear's linkback comment), read by `@geld/review`'s registry. Under it
+ * "Related work": the stack the pull request is in, as one row, and the issues and pull requests its description links
+ * to, leaving out the stack's own; every reference either way is the digest's Mentions row, which it links to.
  */
 
 const SECTION_CLASS = 'geld-related';
@@ -292,10 +297,65 @@ function rowOf(link: RelatedRow): HTMLElement {
   return createElement('li', { class: `${SECTION_CLASS}__item`, 'data-kind': link.kind }, [anchor]);
 }
 
-/** The two sections, in the order they stand: the context the pull request came from, then GitHub's own references. */
-type Group = 'related' | 'mentions';
+/** The two sections, in the order they stand: the context the pull request came from, then the work it goes with. */
+type Group = 'related' | 'work';
 
-const TITLES: Readonly<Record<Group, string>> = { related: 'Related links', mentions: 'Mentions' };
+const TITLES: Readonly<Record<Group, string>> = { related: 'Related links', work: 'Related work' };
+
+/** The stack the page's pull request is in, for its row's card to read when it opens. */
+let currentStack: PageStack | null = null;
+
+/** The stack as one row: its glyph, "Stack #193" and where this pull request stands in it, the card on hover. */
+function stackRowOf(stack: PageStack): HTMLElement {
+  const glyph = svgFromString(ICON_STACK);
+  glyph.classList.add(`${SECTION_CLASS}__mark`, 'fgColor-muted');
+  const place = stack.position === null ? null : `${stack.position} of ${stack.size}`;
+  const anchor = createElement('a', {
+    class: `${SECTION_CLASS}__link`,
+    href: stack.path,
+    'aria-label': `Stack #${stack.number}${place === null ? '' : `, this pull request ${place}`}. Open stack on GitHub`,
+  }, [
+    glyph,
+    createElement('span', { class: `${SECTION_CLASS}__text` }, [
+      createElement('span', { class: `${SECTION_CLASS}__title` }, [`Stack #${stack.number}`]),
+      ...(place === null ? [] : [' ', createElement('span', { class: `${SECTION_CLASS}__ref` }, [place])]),
+    ]),
+  ]);
+  attachStackCard(anchor, () => currentStack);
+  return createElement('li', { class: `${SECTION_CLASS}__item`, 'data-kind': 'stack' }, [anchor]);
+}
+
+/** The digest's Mentions row: where every reference to and from the pull request is listed. */
+const MENTIONS_ROW = '.geld-review [data-geld-fold="mentions"]';
+
+/** Opens the digest's Mentions row, its Activity group first when that is folded, and brings it into view. */
+function openDigestMentions(): void {
+  const row = document.querySelector<HTMLElement>(MENTIONS_ROW);
+  if (row === null) return;
+  const group = row.getAttribute('data-geld-in-group');
+  const heading = group === null ? null : document.querySelector<HTMLButtonElement>(`.geld-review [data-group="${CSS.escape(group)}"] button[aria-expanded="false"]`);
+  heading?.click();
+  const open = (): void => {
+    const current = document.querySelector<HTMLElement>(MENTIONS_ROW);
+    const main = current?.querySelector<HTMLButtonElement>('.geld-review__main');
+    if (current === null || main === null || main === undefined) return;
+    current.scrollIntoView({ block: 'center' });
+    if (main.getAttribute('aria-expanded') !== 'true') main.click();
+    main.focus({ preventScroll: true });
+  };
+  // Unfolding the group rebuilds nothing, but a row hidden a moment ago lays out only on the next frame.
+  if (heading === null || heading === undefined) open();
+  else requestAnimationFrame(open);
+}
+
+function allMentionsLink(): HTMLElement {
+  const link = createElement('a', { class: `${SECTION_CLASS}__all`, href: '#geld-mentions' }, ['See all mentions']);
+  link.addEventListener('click', (event) => {
+    event.preventDefault();
+    openDigestMentions();
+  });
+  return createElement('li', { class: `${SECTION_CLASS}__item ${SECTION_CLASS}__item--all` }, [link]);
+}
 
 const ATTR_GROUP = 'data-geld-section';
 
@@ -305,9 +365,10 @@ export const SHOWN_LINKS = 8;
 /** The sections whose every row the reader asked for on this page; kept across redraws, forgotten on teardown. */
 const showAll = new Set<Group>();
 
-function listOf(links: readonly RelatedRow[], group: Group): HTMLElement {
+function listOf(links: readonly RelatedRow[], group: Group, stack: PageStack | null = null): HTMLElement {
   const rows = links.map(rowOf);
-  const list = createElement('ul', { class: `${SECTION_CLASS}__list` }, rows);
+  const list = createElement('ul', { class: `${SECTION_CLASS}__list` }, [...(stack === null ? [] : [stackRowOf(stack)]), ...rows]);
+  if (group === 'work') list.append(allMentionsLink());
   const extra = rows.slice(SHOWN_LINKS);
   if (extra.length === 0 || showAll.has(group)) return list;
   for (const row of extra) row.hidden = true;
@@ -318,15 +379,18 @@ function listOf(links: readonly RelatedRow[], group: Group): HTMLElement {
     more.parentElement?.remove();
     requestPass();
   });
-  list.append(createElement('li', { class: `${SECTION_CLASS}__item` }, [more]));
+  const footer = list.querySelector(`.${SECTION_CLASS}__item--all`);
+  const moreItem = createElement('li', { class: `${SECTION_CLASS}__item` }, [more]);
+  if (footer === null) list.append(moreItem);
+  else footer.before(moreItem);
   return list;
 }
 
 /** The Rails sidebar's item: `div.discussion-sidebar-item` with an `h3.discussion-sidebar-heading`. */
-function railsSection(links: readonly RelatedRow[], group: Group): HTMLElement {
+function railsSection(links: readonly RelatedRow[], group: Group, stack: PageStack | null): HTMLElement {
   return createElement('div', { class: `discussion-sidebar-item ${SECTION_CLASS}`, [OWN_UI_ATTRIBUTE]: '', [ATTR_GROUP]: group, 'data-geld-shape': 'rails' }, [
     createElement('h3', { class: `discussion-sidebar-heading text-bold ${SECTION_CLASS}__heading` }, [TITLES[group]]),
-    listOf(links, group),
+    listOf(links, group, stack),
   ]);
 }
 
@@ -336,21 +400,21 @@ function railsSection(links: readonly RelatedRow[], group: Group): HTMLElement {
  * The title's class is the leaf that reads the neighbour's title (the `h4`, or the `span` inside a gear's button), the
  * header's from a section whose header is the plain `div > h4`, the content's from the neighbour's last child.
  */
-function overviewSection(neighbour: HTMLElement, links: readonly RelatedRow[], group: Group): HTMLElement {
+function overviewSection(neighbour: HTMLElement, links: readonly RelatedRow[], group: Group, stack: PageStack | null): HTMLElement {
   const name = words(titleOf(neighbour) ?? neighbour);
   const leaf = [...neighbour.querySelectorAll('h2, h3, h4, span')].find((element) => element.childElementCount === 0 && words(element) === name);
   const plainHeader = neighbour.parentElement?.querySelector(':scope > [data-overview-sidebar-item] > div:first-child:has(> h4:only-child)') ?? null;
   const content = neighbour.lastElementChild;
   return createElement('section', { class: SECTION_CLASS, 'aria-label': TITLES[group], 'data-overview-sidebar-item': '', [OWN_UI_ATTRIBUTE]: '', [ATTR_GROUP]: group, 'data-geld-shape': 'overview' }, [
     createElement('div', { class: plainHeader?.className ?? '' }, [createElement('h4', { class: `${leaf?.className ?? ''} ${SECTION_CLASS}__heading`.trim() }, [TITLES[group]])]),
-    createElement('div', { class: content !== null && content !== titleOf(neighbour)?.parentElement ? content.className : '' }, [listOf(links, group)]),
+    createElement('div', { class: content !== null && content !== titleOf(neighbour)?.parentElement ? content.className : '' }, [listOf(links, group, stack)]),
   ]);
 }
 
 /** Any other sidebar: the neighbour's tag and classes, and its title's. */
-function sectionLike(neighbour: HTMLElement, links: readonly RelatedRow[], group: Group): HTMLElement {
-  if (neighbour.classList.contains('discussion-sidebar-item')) return railsSection(links, group);
-  if (neighbour.hasAttribute('data-overview-sidebar-item')) return overviewSection(neighbour, links, group);
+function sectionLike(neighbour: HTMLElement, links: readonly RelatedRow[], group: Group, stack: PageStack | null): HTMLElement {
+  if (neighbour.classList.contains('discussion-sidebar-item')) return railsSection(links, group, stack);
+  if (neighbour.hasAttribute('data-overview-sidebar-item')) return overviewSection(neighbour, links, group, stack);
   const section = document.createElement(neighbour.localName);
   section.className = `${neighbour.className} ${SECTION_CLASS}`.trim();
   section.setAttribute(OWN_UI_ATTRIBUTE, '');
@@ -361,7 +425,7 @@ function sectionLike(neighbour: HTMLElement, links: readonly RelatedRow[], group
   heading.className = theirs === null || level !== theirs.localName ? 'discussion-sidebar-heading text-bold' : theirs.className;
   heading.classList.add(`${SECTION_CLASS}__heading`);
   heading.textContent = TITLES[group];
-  section.append(heading, listOf(links, group));
+  section.append(heading, listOf(links, group, stack));
   return section;
 }
 
@@ -414,6 +478,9 @@ function standsAfter(place: HTMLElement, sections: readonly HTMLElement[]): bool
 
 export function removeRelatedLinks(): void {
   removeSections();
+  hideStackCard();
+  forgetPageStack();
+  currentStack = null;
   authors.clear();
   orderSidebars([]);
 }
@@ -423,11 +490,11 @@ const ATTR_PLACE = 'data-geld-order';
 const ATTR_FIRST = 'data-geld-order-first';
 
 /** Where a section of the Overview sidebar is shown, before GitHub's order for the rest: Reviewers, Related links, Mentions, Activity. */
-const PLACES = ['reviewers', 'related', 'mentions', 'activity'] as const;
+const PLACES = ['reviewers', 'related', 'work', 'activity'] as const;
 type Place = (typeof PLACES)[number];
 
 function placeOf(section: Element): Place | null {
-  if (section.classList.contains(SECTION_CLASS) && section.hasAttribute(OWN_UI_ATTRIBUTE)) return section.getAttribute(ATTR_GROUP) === 'mentions' ? 'mentions' : 'related';
+  if (section.classList.contains(SECTION_CLASS) && section.hasAttribute(OWN_UI_ATTRIBUTE)) return section.getAttribute(ATTR_GROUP) === 'work' ? 'work' : 'related';
   const name = (section.getAttribute('aria-label') ?? words(titleOf(section) ?? section)).toLowerCase();
   if (name === 'reviewers') return 'reviewers';
   return name === 'activity' || name.startsWith('activity (') ? 'activity' : null;
@@ -442,7 +509,7 @@ function setAttribute(element: Element, name: string, value: string | null): voi
 }
 
 /**
- * The Overview sidebar shows Reviewers, then Related links, Mentions and Activity, then GitHub's own order. Its list is a flex
+ * The Overview sidebar shows Reviewers, then Related links, Related work and Activity, then GitHub's own order. Its list is a flex
  * column, so the order is CSS `order` on attributes, never React's nodes moved. GitHub draws the line above every
  * section but the first in page order, which no longer is the first shown, so on an ordered list the stylesheet draws
  * it above every section but the one marked first here. The classic sidebar keeps its order.
@@ -472,6 +539,17 @@ function orderSidebars(afters: readonly HTMLElement[]): void {
   }
 }
 
+/** A reference's place as a stack member's, `host/owner/repo/pull/N`: a link to an issue of that number is not the pull request. */
+function stackKeyOf(link: RelatedLink): string {
+  try {
+    const url = new URL(link.href);
+    const pull = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(url.pathname)?.[0];
+    return pull === undefined ? '' : `${url.hostname}${pull}`.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
 /** The controller's pass, for rows "Show N more" reveals to look their details up. */
 let requestPass: () => void = () => undefined;
 
@@ -483,10 +561,14 @@ export function applyRelatedLinks(active: boolean, onChange: () => void = () => 
   requestPass = onChange;
   const afters = active ? assigneesSections() : [];
   const all = afters.length === 0 ? [] : relatedLinksOnPage(onChange);
+  const stack = afters.length === 0 ? null : pageStack(onChange);
+  currentStack = stack;
+  const inStack = new Set((stack?.pulls ?? []).map((pull) => `${location.hostname}${pull.path}`.toLowerCase()));
+  const work = all.filter((link) => link.kind === 'github' && !inStack.has(stackKeyOf(link)));
   const groups = ([
-    ['related', rowsOf(all.filter((link) => link.kind !== 'github'), 'related', onChange)],
-    ['mentions', rowsOf(all.filter((link) => link.kind === 'github'), 'mentions', onChange)],
-  ] as const).filter(([, rows]) => rows.length > 0);
+    ['related', rowsOf(all.filter((link) => link.kind !== 'github'), 'related', onChange), null],
+    ['work', rowsOf(work, 'work', onChange), stack],
+  ] as const).filter(([, rows, lead]) => rows.length > 0 || lead !== null);
   if (groups.length === 0) {
     if (mounted.size > 0 || document.querySelector(`.${SECTION_CLASS}[${OWN_UI_ATTRIBUTE}]`) !== null) removeSections();
     orderSidebars(afters);
@@ -502,7 +584,7 @@ export function applyRelatedLinks(active: boolean, onChange: () => void = () => 
       continue;
     }
     for (const section of known?.sections ?? []) section.remove();
-    const sections = groups.map(([group, rows]) => sectionLike(after, rows, group));
+    const sections = groups.map(([group, rows, lead]) => sectionLike(after, rows, group, lead));
     place.after(...sections);
     next.set(after, { sections, signature });
   }
