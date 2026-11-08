@@ -142,8 +142,8 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [x] Latin Extended-A (U+0100 to 017F), all 128, including Ŀ ŀ ĳ Ĳ ŉ ſ. Accented letters are components (base and marks), generated from Unicode's own decompositions, with the Latvian comma below, the vertical caron of ď ľ Ľ ť, and dotless i and j under marks.
 - [x] Latin Extended-B, the GF Latin Pro selection (94 of the block so far, everything GF Latin Core, Vietnamese and Pri-African need): Ș ș Ț ț, Ə ə, Ɓ ɓ, Ɗ ɗ, Ƴ ƴ, Ɛ ɛ, Ɔ ɔ, Ŋ ŋ, Ɲ ɲ, Ǎ ǎ and the pinyin carons, Ǵ ǵ, Ǹ ǹ, Ǻ ǻ, Ǽ ǽ, Ǿ ǿ and others.
 - [x] Latin Extended Additional: 246 of 256, all of Vietnamese with the side-by-side circumflex pairs, plus Ẁ ẁ Ẃ ẃ Ẅ ẅ Ỳ ỳ ẞ Ḃ ḃ Ḋ ḋ Ḟ ḟ Ṁ ṁ Ṗ ṗ Ṡ ṡ Ṫ ṫ.
-- [ ] IPA and phonetic letters the African and Pro sets need (ɑ ɒ ɡ ɪ ʃ ʊ ʋ ʒ ʔ and others).
-- [ ] Spacing modifier letters: ˆ ˇ ˘ ˙ ˚ ˛ ˜ ˝ ˈ ˌ ʹ ʺ ʻ ʼ ʽ.
+- [x] IPA and phonetic letters the African and Pro sets need (ɑ ɒ ɡ ɪ ʃ ʊ ʋ ʒ ʔ and others): GF Phonetics IPA Standard and APA complete, letters, modifiers, tone letters and combining marks, checked by `verify.py`.
+- [x] Spacing modifier letters: ˆ ˇ ˘ ˙ ˚ ˛ ˜ ˝ ˈ ˌ ʹ ʺ ʻ ʼ ʽ.
 - [x] Combining diacritics (U+0300 to 036F), the ones GF Latin Pro lists (about 40), plus U+25CC ◌ for showing a combining mark alone. Including the double grave, inverted breve, vertical line above, comma above (right), dot above right, short stroke overlay (on a new `center` anchor), low line, double macron below and the four macron-acute and grave-macron tone marks.
 - [ ] Language-specific forms (`locl`): Catalan ŀl, Dutch IJ and ij with `IJ`/`ij` acute, Turkish and Azeri i and İ under `smcp` and case mapping, Polish kreska (a steeper acute), Romanian comma-below Ș and Ț, Lithuanian dotted i with accents, Navajo ogonek, and the German ẞ for uppercase.
 - [ ] Coverage checked against GF Latin Core, Plus, Pro, African and Vietnamese, and with Shaperglot for every language Hyperglot lists for those sets. (`verify.py` requires GF Latin Kernel, Core, Vietnamese and Pri-African in full; Plus and African are next.)
@@ -158,10 +158,10 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [x] Ordinals ª º and `ordn` (a figure followed by a or o).
 - [x] Zero variants: open (default), slashed (`zero`) and dotted, in every figure set; the dotted zero gets its `cv` with the features (phase 8).
 - [x] Small-cap figures (`c2sc`).
-- [ ] Circled and negative circled numerals ① to ⑳ and ❶ to ❿, decided in Phase 7.
+- [ ] Circled and negative circled numerals ① to ⑳ and ❶ to ❿, decided in Phase 7. ① to ⑳ done (⑩ to ⑳ in a ring widened to hold two figures at Black); ❶ to ❿ need the figure knocked out of a solid ring, which needs the figure's strokes merged into one outline first (the variable fonts keep overlaps), and the build has no outline union yet.
 
 ### 3.3 Punctuation
-- [ ] All the ASCII and Latin-1 punctuation, plus ‐ ‑ ‒ – — ― ‖ ‘ ’ ‚ ‛ “ ” „ ‟ † ‡ • ‣ ․ ‥ … ‧ ‰ ‱ ′ ″ ‴ ‹ › ※ ‼ ‽ ⁄ ⁎ ⁓ and the interrobang.
+- [x] All the ASCII and Latin-1 punctuation, plus ‐ ‑ ‒ – — ― ‖ ‘ ’ ‚ ‛ “ ” „ ‟ † ‡ • ‣ ․ ‥ … ‧ ‰ ‱ ′ ″ ‴ ‹ › ※ ‼ ‽ ⁄ ⁎ ⁓ and the interrobang.
 - [ ] Case-sensitive forms (`case`): ( ) [ ] { } ¡ ¿ « » ‹ › - ‐ – — · • @ and the math operators raised to cap height.
 - [ ] Guillemets and quotes for French, German and Polish quoting styles, spaced properly.
 
@@ -171,14 +171,14 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [x] Tabular forms of every currency sign but ₨ (two letters wide), condensed where wider than a figure.
 
 ### 3.5 Math and technical symbols
-- [ ] Operators: + − × ÷ = ≠ ≈ ≡ ≤ ≥ ± ∓ ¬ ∞ ∂ ∆ ∇ ∏ ∑ √ ∫ ∝ ∠ ∧ ∨ ∩ ∪ ∈ ∉ ∋ ⊂ ⊃ ⊆ ⊇ ⊕ ⊗ ⊥ ∀ ∃ ∅ ∘ ∙ ⋅ ∗ ∕ ′ ″ ‰ µ Ω ℓ °.
-- [ ] Letterlike: ℃ ℉ № ℗ ℠ ™ ℮ ℓ Ω ℹ.
-- [ ] Keys (macOS and keyboard): ⌘ ⌥ ⌃ ⇧ ⇪ ⇥ ⇤ ⏎ ↩ ⌫ ⌦ ⎋ ⏏ ⌂ ⌀ ⎈ ⏻ ⏼.
-- [ ] Geld's UI already prints "⌘ 1-click review", so ⌘ ⌥ ⌃ ⇧ must be drawn to match the letters.
+- [x] Operators: + − × ÷ = ≠ ≈ ≡ ≤ ≥ ± ∓ ¬ ∞ ∂ ∆ ∇ ∏ ∑ √ ∫ ∝ ∠ ∧ ∨ ∩ ∪ ∈ ∉ ∋ ⊂ ⊃ ⊆ ⊇ ⊕ ⊗ ⊥ ∀ ∃ ∅ ∘ ∙ ⋅ ∗ ∕ ′ ″ ‰ µ Ω ℓ °.
+- [x] Letterlike: ℃ ℉ № ℗ ℠ ™ ℮ ℓ Ω ℹ.
+- [x] Keys (macOS and keyboard): ⌘ ⌥ ⌃ ⇧ ⇪ ⇥ ⇤ ⏎ ↩ ⌫ ⌦ ⎋ ⏏ ⌂ ⌀ ⎈ ⏻ ⏼.
+- [x] Geld's UI already prints "⌘ 1-click review", so ⌘ ⌥ ⌃ ⇧ must be drawn to match the letters.
 
 ### 3.6 Arrows
-- [ ] The Arrows block (U+2190 to 21FF) selection: ← ↑ → ↓ ↔ ↕ ↖ ↗ ↘ ↙ ↩ ↪ ↰ ↱ ↲ ↳ ↴ ↵ ↶ ↷ ↺ ↻ ⇄ ⇅ ⇆ ⇇ ⇈ ⇉ ⇊ ⇐ ⇑ ⇒ ⇓ ⇔ ⇕ ⇠ ⇡ ⇢ ⇣ ⇤ ⇥ ⇦ ⇧ ⇨ ⇩, plus ⟵ ⟶ ⟷ ⟸ ⟹ ⟺ ⤴ ⤵ and ➔.
-- [ ] Arrowheads built on the grid's 45°. Every arrow shares one shaft thickness and one head per weight, which is also what the ligated arrows (5.3) use, so a typed `->` and a real → match.
+- [x] The Arrows block (U+2190 to 21FF) selection: ← ↑ → ↓ ↔ ↕ ↖ ↗ ↘ ↙ ↩ ↪ ↰ ↱ ↲ ↳ ↴ ↵ ↶ ↷ ↺ ↻ ⇄ ⇅ ⇆ ⇇ ⇈ ⇉ ⇊ ⇐ ⇑ ⇒ ⇓ ⇔ ⇕ ⇠ ⇡ ⇢ ⇣ ⇤ ⇥ ⇦ ⇧ ⇨ ⇩, plus ⟵ ⟶ ⟷ ⟸ ⟹ ⟺ ⤴ ⤵ and ➔.
+- [x] Arrowheads built on the grid's 45°. Every arrow shares one shaft thickness and one head per weight, which is also what the ligated arrows (5.3) use, so a typed `->` and a real → match.
 
 ### 3.7 Shapes, marks and dingbats
 - [x] Geometric shapes: ■ □ ▪ ▫ ▬ ▲ △ ▶ ▷ ▼ ▽ ◀ ◁ ◆ ◇ ○ ● ◉ ◌ ◐ ◑ ◒ ◓ ◢ ◣ ◤ ◥, each in a cut version too (the shapes carry the cut corners; the square-cornered versions come with the square style, D1).
