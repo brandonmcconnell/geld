@@ -881,3 +881,13 @@ sans:roman:700 pmiddletilde
 sans:roman:700 rfishhookmiddletilde
 sans:roman:700 rmiddletilde
 sans:roman:700 tmiddletilde
+sans:roman:300 lezh
+sans:roman:400 lezh
+sans:roman:500 lezh
+sans:roman:600 lezh
+sans:roman:200 zcurl
+sans:roman:700 zcurl
+sans:italic:300 ccurl
+sans:italic:300 zcurl
+sans:roman:300 ccurl
+sans:roman:300 zcurl

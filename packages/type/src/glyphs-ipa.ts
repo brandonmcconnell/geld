@@ -3,10 +3,11 @@
  * the font already draws, each built from that letter so it is spaced and joined as the letter is.
  */
 import type { PlacedDef } from './composites';
-import { ALL, bar, box, type DrawContext, type GlyphDef, mirror, OVERHANG, open, p, ring, rotate180, solid, stem, withPen } from './draw';
+import { ALL, bar, box, type DrawContext, type GlyphDef, mirror, OVERHANG, open, p, ring, rotate180, solid, stem, withPen, zed } from './draw';
 import { superiorOf } from './glyphs-figures';
 import { GREEK } from './glyphs-greek';
 import type { Stroke } from './geometry';
+import { AFRICAN } from './glyphs-african';
 import { DRAWN_SIGNS, letter } from './glyphs-core';
 import { hookRight, LATIN_EXTRA } from './glyphs-latin';
 
@@ -25,6 +26,15 @@ const rhotic = (g: DrawContext, x: number): Stroke => {
   const y = Math.max(g.y(6.5), g.xHeight - 5.25 + g.h + 2);
   const arm = 2.5 + g.v;
   return open(p(x, y), p(x + arm, y, true), p(x + arm, y + Math.max(2.5, 1.5 * g.h + 1)));
+};
+/**
+ * The curl of ɕ ʑ, the base running on to it: past the letter's end, down, back under the base and up through it just
+ * inside the letter's end, so the loop's counter keeps 1.6 at Black without crowding the letter's own counter.
+ */
+const curl = (g: DrawContext, end: number, b: number) => {
+  const s = Math.max(2.5, g.v + 1.6);
+  const tail = end - 1.5;
+  return [p(tail + s, b, true), p(tail + s, b - s, true), p(tail, b - s, true), p(tail, b + g.h / 2 + 1.6)];
 };
 const strike = (g: DrawContext, x: number, y: number): Stroke => bar(x - g.v / 2 - OVERHANG, x + g.v / 2 + OVERHANG, y);
 
@@ -141,6 +151,34 @@ const IPA_DEFS: GlyphDef[] = [
   },
   { name: 'schwahook', unicode: 0x25a, lsb: 1, rsb: 0.5, draw: (g) => [...draw('schwa')(g), rhotic(g, g.wide(8))] },
   { name: 'eopenreversedhook', unicode: 0x25d, lsb: 1, rsb: 0.5, draw: (g) => [...mirror(draw('eopen')(g), g.wide(7) / 2), rhotic(g, g.wide(7))] },
+  // ɕ ʑ: the base turns down at its end, runs back under itself and rises through it into the counter, a loop below
+  // the baseline cut where it would curve and grown with the stroke; the rise through the base is what tells it from a cedilla.
+  {
+    name: 'ccurl',
+    unicode: 0x255,
+    lsb: 1.25,
+    rsb: 0.5,
+    draw: (g) => {
+      const w = g.wide(7.5);
+      const [t, b] = [g.top(g.xHeight), g.bottom(0)];
+      return [open(p(w, g.y(7)), p(w, t, true), p(0, t, true), p(0, b, true), ...curl(g, w, b))];
+    },
+  },
+  {
+    name: 'zcurl',
+    unicode: 0x291,
+    lsb: 0.75,
+    rsb: 0.5,
+    draw: (g) => {
+      const w = g.wide(7.5);
+      const b = g.bottom(0);
+      // z's base, the curl's start, drawn as one stroke with it.
+      const [top, base, diagonal] = zed(g, w, g.xHeight);
+      return [top!, diagonal!, open(p(base!.points[0]!.x, b), ...curl(g, w, b))];
+    },
+  },
+  // ɮ l and ʒ: the stem rises from the left end of ʒ's top bar, as r's stem meets its arm.
+  { name: 'lezh', unicode: 0x26e, lsb: 1.5, rsb: 0.75, draw: (g) => [stem(0, g.xHeight - g.h, g.ascender), ...draw('ezh')(g)] },
   {
     name: 'glottalstopstroke',
     unicode: 0x2a1,
@@ -231,7 +269,18 @@ const IPA_SIGNS: GlyphDef[] = [
   { name: 'arrowdownraisedmod', unicode: 0xa71c, lsb: 1, rsb: 1, draw: (g) => [stem(0, g.cap - 4, g.cap), open(p(-1.75, g.cap - 3.25), p(0, g.cap - 5), p(1.75, g.cap - 3.25))] },
 ];
 
+/** Small capitals IPA adds, drawn from the capitals at small-cap size: ʛ from Ɠ, ᵻ from Ɨ, ᵾ from Ʉ, ʁ R turned. */
+const smallCap = (from: GlyphDef, name: string, unicode: number, draw?: GlyphDef['draw']): GlyphDef => ({ ...from, name, unicode, smallcap: true, ...(draw ? { draw } : {}) });
+const african = (name: string) => AFRICAN.find((d) => d.name === name)!;
+const IPA_SMALL_CAPS: GlyphDef[] = [
+  smallCap(african('Ghook'), 'Gsmallhook', 0x29b),
+  smallCap(african('Istroke'), 'Ismallstroke', 0x1d7b),
+  smallCap(african('Ubar'), 'Usmallstroke', 0x1d7e),
+  { ...smallCap(letter('R'), 'Rsmallinverted', 0x281, (g) => rotate180(letter('R').draw(g), g.wide(9.5) / 2, g.cap / 2)), lsb: 0.4, rsb: 1.5 },
+];
+
 export const IPA: GlyphDef[] = [
+  ...IPA_SMALL_CAPS,
   ...IPA_DEFS.map((d) => ({ ...d, lower: true })),
   ...MIDDLE_TILDE.map(([name, unicode, base, x, y]): GlyphDef => {
     const def = IPA_DEFS.find((d) => d.name === base) ?? latin(base);
