@@ -54,21 +54,21 @@ Exact geometry, for reference: a 45° cut of leg `c` on a stroke of thickness `d
 ### 2.1 Grid and metrics
 - [ ] Grid spec document: units, UPM, the snapping rule (grid weights land on whole units, other weights land on 0.05-unit steps), and where half units are allowed.
 - [ ] Vertical metrics: cap height, x-height, ascender, descender, overshoot policy (flat octagonal tops need none, diagonal apexes such as A V W need a small one), and the accent zone above caps and above lowercase.
-- [ ] Line metrics: `hhea` and `OS/2` typo ascender and descender set equal, line gap 0, `USE_TYPO_METRICS` on, `usWinAscent` and `usWinDescent` covering the tallest stacked Vietnamese accent and the deepest descender so Windows never clips. Default line height about 1.2.
+- [x] Line metrics: `hhea` and `OS/2` typo ascender and descender set equal, line gap 0, `USE_TYPO_METRICS` on, `usWinAscent` and `usWinDescent` covering the tallest stacked Vietnamese accent and the deepest descender so Windows never clips. Default line height about 1.2.
 - [ ] Baseline and height alignment across Geld Sans and Geld Dark Sans, roman and italic, so switching never moves a line.
-- [ ] `post.underlinePosition` and `post.underlineThickness`, plus `OS/2` strikeout position and size (2.9).
+- [x] `post.underlinePosition` and `post.underlineThickness`, plus `OS/2` strikeout position and size (2.9).
 - [ ] Super and subscript metrics (`ySuperscript*`, `ySubscript*`) matching the `sups` and `subs` glyphs.
 - [ ] Recommended pixel sizes documented: 10, 20, 30 and 40px are on the grid.
 
 ### 2.2 Construction rules
 - [ ] The vocabulary of strokes: vertical, horizontal, 45° diagonal, and the "steep" diagonals A V W X Y K need (slopes on the grid, such as 2:5 and 1:3, listed in the spec).
 - [ ] The cut rule: a cut where a curve would be, its leg at each weight, and the inner leg (`c − d(2 − √2)`, snapped).
-- [ ] Structural and decorative cuts tagged for every glyph (D1).
+- [x] Structural and decorative cuts tagged for every glyph (D1). Done as `'keep'` on the structural ones (13b); every other cut is decorative.
 - [ ] Terminals: square, cut or diagonal, per glyph family (c e s a r f j t y).
 - [ ] Joins: how a stem meets a bowl (n h m u b d p q), with notches or ink traps at heavy weights so joins do not fill in.
 - [ ] Diagonal joins (v w x y k) thinned so they look the same weight as stems.
 - [ ] Dots and tittles (i j ä ü ! ? ;) as squares, octagons or diamonds, with one default and the rest as alternates (ss07).
-- [ ] Accents drawn on the same grid (acute, grave, circumflex, caron, breve, ring, tilde, macron, dieresis, dot, ogonek, cedilla, double acute, horn, hook above, comma below), each with its cap form (`.case`).
+- [x] Accents drawn on the same grid (acute, grave, circumflex, caron, breve, ring, tilde, macron, dieresis, dot, ogonek, cedilla, double acute, horn, hook above, comma below), each with its cap form (`.case`).
 - [ ] Optical corrections listed per glyph: horizontals thinner than verticals, crossbars thinner, the round letters a touch wider than straight ones, the diagonals' overshoot.
 
 ### 2.3 Weights (100 to 900)
@@ -95,26 +95,26 @@ Starting stems in grid units, vertical cap stems, to be tuned in Phase 3:
 - [x] `usWeightClass`, `fsSelection` and style linking for every static instance.
 
 ### 2.4 Corners
-- [ ] Two corner styles (D1): Geld Sans Cut's cuts follow the cut rule (2.2), Geld Sans squares them but for the structural ones.
-- [ ] Confusable pairs checked anyway: O 0 D Q, I l 1 |, rn m, cl d, S 5, Z 2, B 8, G 6.
+- [x] Two corner styles (D1): Geld Sans Cut's cuts follow the cut rule (2.2), Geld Sans squares them but for the structural ones.
+- [x] Confusable pairs checked anyway: O 0 D Q, I l 1 |, rn m, cl d, S 5, Z 2, B 8, G 6. For the square style a test rasterises every letter and figure and fails on any two the cut style keeps apart.
 - [x] The emblem drawn as a glyph (3.7): the logomark from `assets/brand` at the capitals' height, the same at every weight and upright in italic, the dark mark in Geld Dark Sans.
 
 ### 2.5 Italic
 - [x] The slanted grid at 1:7 (D9), leaning around the middle of the x-height so glyphs stay centred. `post.italicAngle`, `hhea` caret slope and `OS/2` fsSelection italic.
 - [x] Cuts on a sheared corner. Shearing makes the top-left and bottom-right corners obtuse and the other two acute, so each cut's leg is scaled before the slant and every outer cut comes out the same length (tested to 0.1%). Grid snapping applies to the roman only.
 - [x] Italic-only forms (D8): single-storey a, a descending f, a tailed l and a u-shaped y. g is single-storey in both styles, and e keeps the roman form. Exit strokes come as `ss08` with the features (phase 8).
-- [ ] Italic spacing and kerning, done separately from roman.
+- [x] Italic spacing and kerning, done separately from roman.
 - [ ] Italic swashes (2.8 and section 7).
 
 ### 2.6 Geld Dark Sans
 - [x] The dark grade: every edge of the Geld Sans outline inset by a tenth of the stem, as the dark logo was made from the light one (0.2 units at SemiBold, matched by a test against `geld-logo-white.svg`).
 - [x] Advance widths and sidebearings measured from the Geld Sans outlines, identical in both families (checked in the source and in the compiled fonts), so switching families in dark mode never reflows text. Kerning will be shared the same way.
-- [ ] A family of its own (D3) in every weight, roman and italic, static and variable, with its own `name` table entries.
-- [ ] Documented use: `@media (prefers-color-scheme: dark)` switching `font-family` to Geld Dark Sans.
+- [x] A family of its own (D3) in every weight, roman and italic, static and variable, with its own `name` table entries.
+- [x] Documented use: `@media (prefers-color-scheme: dark)` switching `font-family` to Geld Dark Sans.
 
 ### 2.7 Spacing model
 - [x] Sidebearings measured, not set by hand (`spacing.ts`, after HT Letterspacer's area method): each side's white across the x-height (lowercase) or cap height (capitals, figures) is measured row by row, capped so open shapes do not over-tighten, and the sidebearing brings white plus sidebearing to the side space of a straight stem. Every letter and figure, every weight. Punctuation keeps hand-set sidebearings; math operators share one width.
-- [ ] Proof the spacing with H, O, n and o control strings before any kerning.
+- [x] Proof the spacing with H, O, n and o control strings before any kerning.
 - [x] Spaces: space, no-break space, en and em space and quad, three-, four- and six-per-em spaces, figure space (the tabular width), punctuation space (the period), thin space, hair space, narrow no-break space, medium mathematical space, plus zero-width space, ZWJ, ZWNJ, word joiner, soft hyphen and BOM.
 - [x] Tabular widths for figures, currency and the figure space: the widest lining figure plus 1.25 each side, signs wider than a figure condensed to fit (tested: one width, at least 0.4 units each side). Math operators share a width of their own. `:` `.` `,` keep their own fixed widths, which already line up; set to the figure width they spaced columns apart ("1 , 1 1 1 . 1 1").
 - [ ] Spacing for `case` forms and small caps.
@@ -125,8 +125,8 @@ Starting stems in grid units, vertical cap stems, to be tuned in Phase 3:
 
 ### 2.9 Underline and strikethrough
 These are not font styles. The renderer draws them from metrics the font provides.
-- [ ] Underline thickness tracks each weight's horizontal stroke (about 70% of it, clamped to 0.5 to 1.5 units), and strikeout thickness matches it.
-- [ ] Underline position clears the baseline by about 1.5 units, above the descender, so `text-decoration-skip-ink` reads well.
+- [x] Underline thickness tracks each weight's horizontal stroke (about 70% of it, clamped to 0.5 to 1.5 units), and strikeout thickness matches it.
+- [x] Underline position clears the baseline by about 1.5 units, above the descender, so `text-decoration-skip-ink` reads well.
 - [ ] Strikeout position on the centre of the hyphen and en dash bar, so a struck word lines up with its dashes.
 - [x] Both vary with weight in the variable fonts (`MVAR` tags `unds`, `strs`, `stro`), checked against the source by `scripts/verify.py`.
 - [ ] Checked with `text-decoration-thickness: from-font` in Chrome, Safari and Firefox, and in Word, Pages and Google Docs.
@@ -146,7 +146,7 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 - [x] Spacing modifier letters: ˆ ˇ ˘ ˙ ˚ ˛ ˜ ˝ ˈ ˌ ʹ ʺ ʻ ʼ ʽ.
 - [x] Combining diacritics (U+0300 to 036F), the ones GF Latin Pro lists (about 40), plus U+25CC ◌ for showing a combining mark alone. Including the double grave, inverted breve, vertical line above, comma above (right), dot above right, short stroke overlay (on a new `center` anchor), low line, double macron below and the four macron-acute and grave-macron tone marks.
 - [ ] Language-specific forms (`locl`): Catalan ŀl, Dutch IJ and ij with `IJ`/`ij` acute, Turkish and Azeri i and İ under `smcp` and case mapping, Polish kreska (a steeper acute), Romanian comma-below Ș and Ț, Lithuanian dotted i with accents, Navajo ogonek, and the German ẞ for uppercase.
-- [ ] Coverage checked against GF Latin Core, Plus, Pro, African and Vietnamese, and with Shaperglot for every language Hyperglot lists for those sets. (`verify.py` requires GF Latin Kernel, Core, Vietnamese and Pri-African in full; Plus and African are next.)
+- [ ] Coverage checked against GF Latin Core, Plus, Pro, African and Vietnamese, and with Shaperglot for every language Hyperglot lists for those sets. Shaperglot first run (Nov 2026) found Greek unsupported (Extended's oxia letters, canonically the tonos ones, took their names), marks not stacking on precomposed letters (ẹ́ ą́ ã̀: composites carried no anchors), and no small capitals for ɛ ɔ ɲ ɓ ŀ ſ ꞌ. Fixed: composites inherit their base's anchors with the stacked ones raised, every name is tested unique, and small capitals come for every Latin lowercase whose capital is drawn but six whose bars do not fit (Ʊ Ƀ Ǥ Ꝉ Ɍ Ᵽ). Latin Plus went from 491 to 838 supported languages, Latin African from 199 to 509, Greek is supported, Cyrillic Plus 37 of 38. (`verify.py` requires every Latin set Google Fonts' glyphsets defines in full: Kernel, Core, Plus, Vietnamese, Pri-African, African and Beyond, which took the place of Latin Pro, and the Pinyin and Arabic transliteration sets. Shaperglot not yet run.)
 
 ### 3.2 Figures
 - [x] Proportional lining figures (default).
@@ -189,7 +189,7 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 
 ### 3.8 Greek and Cyrillic (v1, D10)
 - [x] Greek (GF Greek Core): monotonic. Letters shared with Latin are the Latin glyph as a component, capitals with tonos set it before the letter.
-- [ ] Greek polytonic (GF Greek Plus), a later step.
+- [x] Greek polytonic (GF Greek Plus, all 238), required by `verify.py`. The breathings are the font's quotes small: the smooth one a ’ with a square head, the rough one turned, as ‘ is. Beside an oxia or varia they stand side by side, the breathing first (`GREEK_PAIRS`), and a perispomeni stacks over them. Capitals take their marks before the letter, top on the cap height and BESIDE_GAP clear of its ink (`GREEK_BESIDE`), and an iota after it for the iota subscript (prosgegrammeni). The spacing marks (᾿ ῾ ῍ ῎ ῏ ῝ ῞ ῟ ῀ ῁ ῭ ͺ) stack marks as letters do.
 - [x] Cyrillic (GF Cyrillic Core and Plus). Lowercase is the capital's skeleton as a small capital, with italic forms of its own (и п т ц as u n m and u with a tail).
 - [x] Bulgarian `locl` forms (Л, в г д ж и й ѝ к л п т ц ш щ ъ ь ю) and Serbian and Macedonian italic forms (г д п т; Macedonian keeps г), checked by shaping in every compiled font.
 - [ ] Serbian б, and Bulgarian з in its own proportions, both optional by the sources.
@@ -199,7 +199,7 @@ Targets are Google Fonts' published glyph sets, so coverage is checkable by tool
 
 - [x] Kerning groups for both sides of every kerned glyph, derived from side profiles (`src/kerning.ts`): each glyph kerns as the letter it is built on, and letters whose side matches within 0.3 units in every row share a class (B D E F H K L P R start with a stem). Small caps get their own groups; alternates and swashes will when they exist.
 - [x] Class kerning first, measured as the spacing is: the white two glyphs leave across the rows they share, each side capped at a depth, against the spacing's target for their cases (or a sign's own white), 70% of the excess taken back, and half the excess of their closest approach (parallel diagonals, A V). Exceptions only where a member's mark or tail would come too close (Tě, Ťa, Tä at Black), stated against the other class where its side is the class's own letter.
-- [ ] The pairs that matter: caps with caps (AV, LT, TA, VA, AY), caps with lowercase (Ta, Te, To, Tr, Ty, Va, Yo, Fo, P.), lowercase pairs (r, f, v, w, y with punctuation), quotes and apostrophes ("A", L', 'T), punctuation after caps (T, V. F:), figures in proportional mode (11, 17, 71, 1.), slashes and parentheses (/A, (J), and `case` forms.
+- [x] The pairs that matter: caps with caps (AV, LT, TA, VA, AY), caps with lowercase (Ta, Te, To, Tr, Ty, Va, Yo, Fo, P.), lowercase pairs (r, f, v, w, y with punctuation), quotes and apostrophes ("A", L', 'T), punctuation after caps (T, V. F:), figures in proportional mode (11, 17, 71, 1.), slashes and parentheses (/A, (J), and `case` forms.
 - [x] Kerning in quarter grid units (12.5 font units), at most 2.5 units, and none under 0.75.
 - [x] Kerning per weight, in roman and in italic, shared by Geld Dark Sans, with one set of classes per style and every exception stated at every weight (`alignKerning`), so the variable fonts interpolate it cleanly. `verify.py` shapes sample pairs in every compiled font at every weight against the source.
 - [x] Tabular figures get no kerning, by construction (tested, and checked in the compiled fonts). Mono will not have any.
@@ -331,12 +331,12 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 - [x] Overlaps kept in variable fonts with the `OVERLAP_SIMPLE` flag, and removed in statics.
 - [ ] `name` table: family and style (IDs 1, 2, 16, 17), full and PostScript names (4, 6), the variations PostScript prefix (25), version, copyright, trademark, manufacturer, designer, URLs, licence and licence URL (13, 14). All but the licence (13, 14) and trademark (7), which are the owner's to commit (D16).
 - [x] `OS/2`: weight and width classes, `fsSelection`, `fsType` 0 (installable), PANOSE, Unicode and code page ranges, vendor ID ("GELD"; registering it with Microsoft is the owner's).
-- [ ] `head`, `hhea`, `post` and `maxp` consistent across the family, with `fontRevision` matching the version string.
+- [x] `head`, `hhea`, `post` and `maxp` consistent across the family, with `fontRevision` matching the version string.
 - [x] Glyph names: readable names in sources, production names (`uniXXXX`) in the shipped fonts where a readable name is not a valid PostScript name (`be-cy`), readable names elsewhere.
 
 ## 9. Engineering
 
-- [ ] Package `packages/type` (`@geld/type`), TypeScript like the rest of the repository:
+- [x] Package `packages/type` (`@geld/type`), TypeScript like the rest of the repository:
   - `src/grid.ts`: units, metrics and the snapping rules.
   - `src/geometry/`: the stroke expansion engine (centreline to outline, chamfer and square joins, inset and offset for weight and grade, shearing for italic), with unit tests.
   - `src/glyphs/`: one skeleton per glyph, or per family of glyphs (n h m u share parts), with anchors for accents.
@@ -344,7 +344,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
   - `scripts/build.ts`: writes UFO masters and a designspace, then compiles.
 - [x] Compiler: `fontc` (Google's Rust compiler, fast) or `fontmake` (Python), chosen by building a test font with both in Phase 1. fontc 1.0 drops GPOS whole when it cannot repack an overflowing class-kerning subtable, as the italic's now overflows, so a variable font that comes out without GPOS or GSUB is built again with fontmake (`variable.py`), and the build says so. Both: fontc builds the variable fonts (nine seconds for the four, where fontmake took a quarter of an hour each, with the same tables and every verify check passing), fontmake the statics, which fontc does not make. A full build is about eight minutes on four cores and `--quick` (variable fonts only) about five.
 - [ ] Python tools pinned in one requirements file and run through `uv`: fontTools, fontmake or fontc, gftools, fontbakery, ttfautohint, Shaperglot.
-- [ ] One command builds everything (`pnpm type:build`), with outputs in `packages/type/dist/`, never committed. Release artifacts come from CI.
+- [x] One command builds everything (`pnpm type:build`), with outputs in `packages/type/dist/`, never committed. Release artifacts come from CI.
 - [ ] Builds are reproducible: the same sources give byte-identical fonts.
 - [ ] A browser glyph lab (internal page in `apps/site`, not linked or indexed): the grid, the skeleton, the outline at any weight, grade, corner and slant, and any glyph next to its neighbours.
 - [ ] UFO export for review in Glyphs or RoboFont (D11). Edits made there are copied back into the source by hand.
@@ -365,7 +365,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 - [ ] Outline checks: contour direction, no stray points, no zero-length segments, no overlaps in statics, extreme points.
 - [ ] Coverage against the target glyph sets (3.1), and Shaperglot per language.
 - [ ] Kerning collision checks (section 4).
-- [ ] GPOS size: the class kerning compiled to a 1.4 MB class matrix (about 410 by 390 classes, a third of them one glyph), most of each variable font, and fontc could no longer pack it. Classes with no core letter (outside Latin-1, Latin Extended-A, Vietnamese, basic Greek and Cyrillic) are now left out, so their glyphs keep their spacing and take no class kerning: about 295 by 265 classes, GPOS 0.87 MB, and fontc packs all four variable fonts again. Merging classes with identical or near rows saves only about ten; splitting classes by script makes more of them, since fontc keeps one kerning lookup. Further: coarser classes for the core, a kerning design change.
+- [x] GPOS size: the class kerning compiled to a 1.4 MB class matrix (about 410 by 390 classes, a third of them one glyph), most of each variable font, and fontc could no longer pack it. Classes with no core letter (outside Latin-1, Latin Extended-A, Vietnamese, basic Greek and Cyrillic) are now left out, so their glyphs keep their spacing and take no class kerning: about 295 by 265 classes, GPOS 0.87 MB, and fontc packs all four variable fonts again. Merging classes with identical or near rows saves only about ten; splitting classes by script makes more of them, since fontc keeps one kerning lookup. Further: coarser classes for the core, a kerning design change.
 - [ ] Metric consistency across the family.
 - [ ] diffenator2 between builds, so every change shows what it changed.
 
@@ -376,7 +376,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 
 ### 11.3 Visual tests
 - [ ] SVG snapshots of every glyph at each anchor weight in each style, compared in CI.
-- [ ] Proof pages, generated: character set, waterfall, spacing strings, kerning texts, language samples, feature on and off pairs, UI strings from the digest and the site.
+- [x] Proof pages, generated: character set, waterfall, spacing strings, kerning texts, language samples, feature on and off pairs, UI strings from the digest and the site.
 - [ ] PDF proofs for print review.
 
 ### 11.4 Apps
@@ -409,7 +409,7 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 
 - [x] The corner style in the engine: `withCorners`, `'keep'` cuts, `Family` with `sans-cut` and `dark-cut`; the logo glyphs read from assets/brand whatever the style.
 - [x] Structural cuts tagged: D, single-storey a and ɑ Ɑ, 0, 5, 8, the circle stand-ins and the tildes, tested (`square the corners of Geld Sans…`).
-- [ ] Built, verified and packaged as four families, a zip each.
+- [x] Built, verified and packaged as four families, a zip each.
 - [x] Terminals squared to nubs: in the square style a stroke end that turns at a dropped cut reaches at least `SQUARE_STUB` (0.6) past the stroke before it (geometry.ts `squareStubs`), which took the square style's short edges from 567 to 283, most of the rest shared with the cut style (tildes, ₩); a stub of 1.25 closed apertures in superiors and small capitals.
 - [ ] The square style's joins baseline cleared: its short edges first (diagonals meeting a square corner, a stroke ending at a corner it was drawn to meet at a cut), then a visual pass over its ledges at Black, keeping the steps and stubs that read as drawn and redrawing the rest.
 - [x] A visual pass over the whole square character set at Thin, Regular and Black, roman and italic, for pairs the cuts used to tell apart beyond D/O, 0 5 8: all 1599 encoded glyphs at Black roman and at Regular italic, samples at Thin roman and italic. The ledges read as drawn terminals and steps; the pairs are held by the rasterising test.
@@ -421,6 +421,20 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 - [ ] A check that "Geld Sans" and "Geld Mono" do not clash with existing font names.
 - [ ] Copyright line and designer credits.
 - [ ] Contributor terms for outside contributions (CLA.md already covers the repository).
+
+## Status (Nov 2026)
+
+**Geld Sans is done, on the owner's decision.** Its four families (Geld Sans, Geld Dark Sans, Geld Sans Cut, Geld Dark Sans Cut) build, verify and package from `pnpm type:build`, and the PR stack carries them. What remains to ship is the owner's: the licence (D16), the name-clash check, merging the stack and tagging the first `type-v*` release, which also lets the specimen go up on geld.sh.
+
+**Geld Mono is deferred to a future goal, on the owner's decision, because of cost.** Section 19 stays as its starting list.
+
+**Known and not blocking**, left for later:
+
+- ❶–❿, which need the figure knocked out of a solid ring (3.6).
+- The 8 Cyrillic Pro letters still undrawn: Abkhazian Ҩ ҩ Ҽ ҽ Ҿ ҿ and Unicode 16's Ᲊ ᲊ, which need a reference.
+- ǥ's small capital (Finnish Sami): its bar does not fit the x-height at heavy weights, so `smcp` leaves ǥ as it is.
+- The joins baselines, the square style's especially (13b): ledges read as drawn terminals and steps, and short edges of 0.05 to 0.45 units.
+- The cross-platform rendering checks (section 10): every check so far has been in headless Chrome on Linux.
 
 ## 15. Out of scope for v1
 
@@ -455,13 +469,13 @@ Each phase ends with a review. The next phase starts only once its deliverable i
 3. **Design core.** (First draft done in every weight: A to Z, a to z, 0 to 9 and `. , : ; ! ? - – — ' " ( ) [ ] / _ + =`. Shapes and spacing are refined in phases 4 and 7.) A to Z, a to z, 0 to 9 and basic punctuation at Regular and SemiBold. Deliverable: a proof of the core in two weights.
 4. **Weights.** (Done for the core: contrast, the three-horizontals budget, apertures and a counter test.) Thin to Black, contrast and the three-horizontals budget, `avar`. Deliverable: the core in all nine weights.
 5. **Italic.** (Done for the core: slanted construction, even cuts, italic forms. Italic spacing and kerning come with phase 7.) Slanted grid, italic forms and their spacing. Deliverable: the core in italic, all weights.
-6. **Character set.** (Under way: every Latin set in Google Fonts' glyphsets — Kernel, Core, Plus, Vietnamese, Pri-African, African, Beyond, and the Pinyin and Arabic transliteration sets — plus GF Greek Core and GF Cyrillic Core and Plus, complete and enforced by `verify.py`, with combining marks, `.case` marks, `ccmp`, superiors, inferiors and fractions.) Accents and marks, extended Latin, figure sets, punctuation, currency, math, arrows, shapes, small caps. Deliverable: full GF Latin Pro coverage.
+6. **Character set.** (Under way: every Latin set in Google Fonts' glyphsets — Kernel, Core, Plus, Vietnamese, Pri-African, African, Beyond, and the Pinyin and Arabic transliteration sets — plus GF Greek Core and Plus, GF Cyrillic Core and Plus and the IPA and APA phonetic sets, complete and enforced by `verify.py`, with combining marks, `.case` marks, `ccmp`, superiors, inferiors and fractions.) Accents and marks, extended Latin, figure sets, punctuation, currency, math, arrows, shapes, small caps. Deliverable: full GF Latin Pro coverage.
 7. **Spacing and kerning.** Deliverable: kerned proofs in every style.
 8. **Features.** Ligatures, code ligatures, alternates, swashes, every feature in section 7. Deliverable: all shaping tests passing.
 9. **Production.** Tables, hinting, QA, packaging, the specimen page, release. Deliverable: Geld Sans v1 released.
 10. **Geld Mono.** Section 19.
 
-## 19. Geld Mono preview (after Sans ships)
+## 19. Geld Mono preview (deferred to a future goal)
 
 Listed now so Sans decisions do not block Mono.
 
