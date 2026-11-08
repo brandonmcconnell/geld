@@ -10,7 +10,7 @@
  */
 
 import type { DigestView } from '@geld/core';
-import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, Report, ReportPart, ReviewItem } from '@geld/review';
+import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, RawCheckRun, Report, ReportPart, ReviewItem } from '@geld/review';
 import { botAppAvatar, botById, previewHostById, reportsHealth } from '@geld/review';
 import type { AgentNote } from './agent-notes';
 import type { Deployment, DeploymentEntry, DeploymentState, PreviewLinks } from './deployments';
@@ -19,9 +19,9 @@ import { noteTone } from './note-tone';
 import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
-import { ICON_ALERT, ICON_BROWSER, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL } from '../ui/icons';
-import { authorLabels, botDetail, botHealth, checksHealth, checksRowTone, checksSummary, checksTotal, pushRowTone, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
-import type { CheckCounts, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
+import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER } from '../ui/icons';
+import { authorLabels, botDetail, botHealth, checkStateOfRun, checksHealth, checksRowTone, checksSummary, checksTotal, pushRowTone, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
+import type { CheckCounts, CheckState, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import type { AiState } from './ai';
 import type { BotRequestState } from './bot-requests';
@@ -30,6 +30,7 @@ import { formatSyncAge } from '../../ui/sync-age';
 import type { Closure, ClosureKind, EventHeadline } from './fold';
 import { headlineText } from './fold';
 import { ATTR_TELEPORTED, reclaimOrphans, restoreAll } from './teleport';
+import { overviewColumnGap, overviewDescription } from './overview-page';
 import { ATTR_NOTE, ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import type { ReviewerCandidate } from './reviewers';
 import { shapeMark } from './mark-shape';
@@ -43,8 +44,12 @@ export const PANEL_CLASS = 'geld-review';
 export const ATTR_PANEL = 'data-geld-review-panel';
 /** On the description card the panel is attached to (squares its bottom corners). */
 export const ATTR_ATTACHED = 'data-geld-attached';
+/** Geld's own list of the head's checks, which stands in a CI row until GitHub's list is on the page to lend. */
+export const ATTR_CHECK_RUNS = 'data-geld-check-runs';
+/** On the panel: it grows out of the Overview's description box, across the gap its column leaves between boxes. */
+const ATTR_OVERVIEW = 'data-geld-overview';
 const ATTR_SIG = 'data-geld-review-sig';
-const ATTR_SLOT = 'data-geld-slot';
+export const ATTR_SLOT = 'data-geld-slot';
 /** On every row and slot under a group heading: the group it belongs to, so folding the group is an attribute flip (`syncPanelGroups`). */
 const ATTR_IN_GROUP = 'data-geld-in-group';
 /**
@@ -137,8 +142,10 @@ export interface Batch {
   readonly reviews: readonly ReviewEntry[];
   /** The commit rows and force-push events of the push(es) that opened the round, in timeline order; empty for content before any push. */
   readonly commits: readonly HTMLElement[];
-  /** How many of `commits` are commit rows (the rest are force-push events). */
+  /** How many commits the round's commit rows stand for (an Overview row can hold several). */
   readonly commitCount: number;
+  /** How many of `commits` are force-push events. */
+  readonly forcePushes: number;
   /** CI as GitHub draws it beside the round's last commit; null when the page shows none. */
   readonly ciGlyph: 'success' | 'failure' | 'pending' | null;
   /** Who committed in the push, as GitHub draws them beside the commits (its `avatar-user` class decides the shape). */
@@ -913,7 +920,7 @@ function pushLabel(batch: Batch, total: number): string {
 
 /** "2 commits", "force-push", or "2 commits · force-push" for a round that had both. */
 function pushContents(batch: Batch): string {
-  const forced = batch.commits.length - batch.commitCount;
+  const forced = batch.forcePushes;
   const parts = [batch.commitCount > 0 ? plural(batch.commitCount, 'commit') : '', forced > 0 ? (forced === 1 ? 'force-push' : `${forced} force-pushes`) : ''];
   return parts.filter((part) => part !== '').join(' · ');
 }
@@ -2359,6 +2366,33 @@ function deploymentLine(entry: DeploymentEntry, model: PanelModel, handlers: Pan
   return { row, open };
 }
 
+const RUN_PREVIEW_STATUS: Readonly<Record<CheckState, Preview['status']>> = { success: 'ready', failure: 'failed', queued: 'building', pending: 'building', skipped: 'skipped', neutral: 'unknown' };
+
+/**
+ * The head's checks as lines, where the page has no checks section to show (the Overview tab's merge status is a
+ * card that opens a panel of its own): the state's glyph, the check's name leading to its Details, GitHub's words.
+ */
+export function renderCheckRunsList(slot: HTMLElement, runs: readonly RawCheckRun[]): void {
+  const order: readonly CheckState[] = ['failure', 'pending', 'queued', 'neutral', 'success', 'skipped'];
+  const sorted = [...runs].sort((a, b) => order.indexOf(checkStateOfRun(a)) - order.indexOf(checkStateOfRun(b)) || a.name.localeCompare(b.name));
+  const list = createElement('ul', { class: `${PANEL_CLASS}__rows ${PANEL_CLASS}__rows--sub`, role: 'list', [ATTR_CHECK_RUNS]: '' });
+  for (const run of sorted) {
+    const status = RUN_PREVIEW_STATUS[checkStateOfRun(run)];
+    const lead = createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--verdict`, 'data-preview-status': status, role: 'img', 'aria-label': checkStateOfRun(run) }, [icon(PREVIEW_GLYPH[status])]);
+    // The partial writes a status's words after a dash ("— Canceled by Ignored Build Step"); the line has its own separator.
+    const words = (run.description ?? '').replace(/^[\s—–-]+/, '');
+    const main = createElement('span', { class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--entry ${PANEL_CLASS}__main--static` }, [
+      createElement('span', { class: `${PANEL_CLASS}__name` }, [run.name]),
+      ...(words === '' ? [] : [createElement('span', { class: `${PANEL_CLASS}__deploy-reason`, title: words }, [words])]),
+    ]);
+    const right = createElement('span', { class: `${PANEL_CLASS}__right ${PANEL_CLASS}__right--links` });
+    if (run.detailsUrl !== undefined) right.append(createElement('a', { class: `${PANEL_CLASS}__deploy-link`, href: run.detailsUrl, target: '_blank', rel: 'noreferrer' }, ['Details ', icon(ICON_LINK_EXTERNAL)]));
+    list.append(createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--sub ${PANEL_CLASS}__row--preview`, 'data-state': status }, [lead, main, right]));
+  }
+  if (sorted.length === 0) list.append(createElement('li', { class: `${PANEL_CLASS}__empty` }, ['No checks reported yet.']));
+  slot.replaceChildren(list);
+}
+
 /* ---- Reports: reporter bots' latest reports ------------------------------- */
 
 const REPORT_GLYPH: Readonly<Record<Report['state'], string>> = {
@@ -2966,7 +3000,7 @@ function signatureOf(model: PanelModel): string {
     botRequests: [...model.botRequests].map(([id, state]) => `${id}:${state.kind === 'starting' ? 'starting' : state.reason}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
     folds: model.folds.map((fold) => `${fold.key}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}:${fold.closure?.preview ?? ''}:${fold.headline === undefined ? '' : `${fold.headline.kind}${fold.headline.actor}${fold.headline.target ?? ''}${fold.headline.avatarSrc ?? ''}`}`),
-    batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.commits.length}/${batch.commitCount}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}${entry.url ?? ''}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
+    batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.commits.length}/${batch.commitCount}/${batch.forcePushes}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}${entry.url ?? ''}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
     grouping: model.grouping,
     view: model.view,
     intro: model.intro,
@@ -3010,6 +3044,8 @@ function signatureOf(model: PanelModel): string {
  * inside the same column, so the two read as one box.
  */
 export function descriptionCard(): HTMLElement | null {
+  const overview = overviewDescription();
+  if (overview !== null) return overview;
   const classic =
     document.querySelector<HTMLElement>('.js-discussion > .js-timeline-item .timeline-comment') ??
     document.querySelector<HTMLElement>('#discussion_bucket .js-comment-container .timeline-comment');
@@ -3114,7 +3150,10 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     const slot = existing.querySelector<HTMLElement>(`[${ATTR_SLOT}] > .${PANEL_CLASS}__slot-body`);
     // Folded groups are not in the signature: whatever panel stays, it shows the groups as the model has them.
     syncGroups(existing, model.collapsedGroups);
-    if (existing.getAttribute(ATTR_SIG) === signature) return { root: existing, slot };
+    if (existing.getAttribute(ATTR_SIG) === signature) {
+      seatOverviewPanel(existing);
+      return { root: existing, slot };
+    }
     if (options.holdRebuild === true && existing.getAttribute(ATTR_OPEN) === openNow) return { root: existing, slot };
     // Someone is typing in GitHub's reply box inside the slot: a rebuild would move it and drop focus. Wait.
     const active = document.activeElement;
@@ -3140,6 +3179,9 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     if (stale !== card) stale.removeAttribute(ATTR_ATTACHED);
   }
   card.setAttribute(ATTR_ATTACHED, '');
+  const columnGap = overviewColumnGap(card);
+  // The stylesheet joins the top card's status row to the description by taking back this same gap.
+  if (columnGap !== null && document.documentElement.style.getPropertyValue('--geld-overview-gap') !== columnGap) document.documentElement.style.setProperty('--geld-overview-gap', columnGap);
   // Read before anything moves: this forces a layout, and a layout with the old panel gone and the new one not
   // yet in makes the browser's scroll anchoring shift the page up by the panel's height — and it does not shift
   // it back when the new panel lands. The old panel is replaced in one mutation below, never removed first.
@@ -3261,7 +3303,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     }
   }
 
-  const panel = createElement('section', { class: PANEL_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_PANEL]: '', [ATTR_SIG]: signature, [ATTR_OPEN]: openNow, 'aria-label': 'Geld review digest' }, [
+  const panel = createElement('section', { class: PANEL_CLASS, [OWN_UI_ATTRIBUTE]: '', [ATTR_PANEL]: '', [ATTR_SIG]: signature, [ATTR_OPEN]: openNow, 'aria-label': 'Geld review digest', ...(columnGap === null ? {} : { [ATTR_OVERVIEW]: '' }) }, [
     head,
     ...(intro === null ? [] : [intro]),
     ...(aiNote === null ? [] : [aiNote]),
@@ -3293,6 +3335,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   );
   panel.style.marginLeft = cardMargins.left;
   panel.style.marginRight = cardMargins.right;
+  if (columnGap !== null) panel.style.marginTop = `calc(-1px - ${columnGap})`;
   const freshBody = carried === null ? null : panel.querySelector<HTMLElement>(`[${ATTR_SLOT}="${CHECKS_KEY}"] > .${PANEL_CLASS}__slot-body`);
   if (existing !== null && existing.parentNode !== null) {
     if (carried !== null && freshBody !== null) {
@@ -3306,6 +3349,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   } else {
     card.insertAdjacentElement('afterend', panel);
   }
+  seatOverviewPanel(panel);
   syncSpinners(panel);
   watchBrandSelection();
   syncBrandSelection();
@@ -3318,6 +3362,8 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     nudge.append(createElement('a', { class: `${NUDGE_CLASS}__link`, href: 'https://www.geld.sh/how-it-works#summary', target: '_blank', rel: 'noreferrer' }, ['See how']), document.createTextNode('.'));
     // The card hangs over the timeline rail (ml-n3) and covers it; plain text cannot, so start it past the rail.
     nudge.style.marginRight = cardMargins.right;
+    // The Overview has no rail: the line stands close under the digest's edge, at its end, across the column's gap.
+    if (columnGap !== null) nudge.style.marginTop = `calc(8px - ${columnGap})`;
     if (oldNudge !== null) {
       // Same reason as the panel: swapped in place, and its indent carried over so no layout is forced here.
       nudge.style.paddingLeft = oldNudge instanceof HTMLElement ? oldNudge.style.paddingLeft : '';
@@ -3330,13 +3376,28 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   } else {
     oldNudge?.remove();
   }
+  seated = { panel, nudge: model.nudge ? document.querySelector<HTMLElement>(`.${NUDGE_CLASS}`) : null, path: window.location.pathname };
   // A view choice rebuilt everything around the control the reader used: focus lands on View in the new panel.
   restoreFocus(panel, focusKey ?? (takeViewFocus('panel') ? 'view' : null));
   return { root: panel, slot: panel.querySelector<HTMLElement>(`[${ATTR_SLOT}] > .${PANEL_CLASS}__slot-body`) };
 }
 
+/**
+ * Keep the Overview's digest right under the description, its nudge under it: the boxes around them are React's,
+ * which puts a node it renders anew before the next node it owns, between the description and the digest.
+ */
+function seatOverviewPanel(panel: HTMLElement): void {
+  if (!panel.hasAttribute(ATTR_OVERVIEW)) return;
+  const card = overviewDescription();
+  if (card === null || card.nextElementSibling === panel) return;
+  const nudge = panel.nextElementSibling?.classList.contains(NUDGE_CLASS) === true ? panel.nextElementSibling : null;
+  card.after(panel);
+  if (nudge !== null) panel.after(nudge);
+}
+
 /** Pixels from the nudge's left edge to just past the timeline rail (GitHub draws it at a TimelineItem's left edge). */
 function railIndent(nudge: HTMLElement): number {
+  if (nudge.previousElementSibling?.hasAttribute(ATTR_OVERVIEW) === true) return 0;
   const item = document.querySelector('.js-discussion .TimelineItem, .js-timeline-item .TimelineItem, .TimelineItem, [class*="TimelineItem"]');
   if (!(item instanceof HTMLElement)) return 24;
   const rail = item.getBoundingClientRect().left + 2;
@@ -3380,5 +3441,23 @@ export function unmountPanel(): void {
   panel?.remove();
   document.querySelector(`.${NUDGE_CLASS}`)?.remove();
   for (const card of document.querySelectorAll(`[${ATTR_ATTACHED}]`)) card.removeAttribute(ATTR_ATTACHED);
+  seated = null;
+}
+
+/** The digest as last mounted, its nudge and its page: React's re-render of the Overview's column removes them with the old column. */
+let seated: { readonly panel: HTMLElement; readonly nudge: HTMLElement | null; readonly path: string } | null = null;
+
+/**
+ * Put the Overview's digest back after the description React has just rendered anew, before the frame paints: GitHub
+ * replaces the column's server-rendered boxes once its scripts load, and the digest went with them until the next pass.
+ */
+export function reseatPanelNow(): void {
+  // A soft navigation to another pull request renders its description before the pass that builds its own digest.
+  if (seated === null || seated.panel.isConnected || !seated.panel.hasAttribute(ATTR_OVERVIEW) || seated.path !== window.location.pathname) return;
+  const card = overviewDescription();
+  if (card === null) return;
+  card.setAttribute(ATTR_ATTACHED, '');
+  card.after(seated.panel);
+  if (seated.nudge !== null) seated.panel.after(seated.nudge);
 }
 

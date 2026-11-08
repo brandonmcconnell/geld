@@ -24,6 +24,7 @@ import { fragmentHeaders } from './deeplink';
 import { revisionIndexAt } from './revisions';
 import type { Revision } from './revisions';
 import { pageFetch } from '../page-fetch';
+import { OVERVIEW_DESCRIPTION } from './overview-page';
 
 export type { Revision } from './revisions';
 
@@ -74,8 +75,18 @@ function logUrlOf(node: Element, anchor = node.id): string | null {
     const owner = menu.closest(COMMENT_ANCHOR);
     if (owner === null || owner.id === anchor) return menu.getAttribute('src');
   }
+  // The Overview's "Last edited by X" menu loads the same log through its API and names no URL: it is found by node id.
+  for (const button of node.querySelectorAll(OVERVIEW_EDIT_MENU)) {
+    if (button.closest(COMMENT_ANCHOR)?.id !== anchor) continue;
+    const nodeId = nodeIdOf(anchor, repositoryId());
+    return nodeId === null ? null : `${EDIT_LOG}${nodeId}`;
+  }
   return null;
 }
+
+/** The Overview's edit-history button, in the header of an edited comment or the description. */
+const OVERVIEW_EDIT_MENU = 'button[class*="editHistoryMenuButton"]';
+const EDIT_LOG = '/user_content_edits/show_edit_history_log/';
 
 /** GitHub's node-id prefix for each kind of comment anchor. */
 const NODE_KINDS: readonly (readonly [RegExp, string])[] = [
@@ -138,7 +149,7 @@ export function editLogUrlOf(anchor: string): string | null {
   const listed = logUrlOf(node, anchor);
   if (listed !== null || !minimized(node, anchor)) return listed;
   const nodeId = nodeIdOf(anchor, repositoryId());
-  return nodeId === null ? null : `/user_content_edits/show_edit_history_log/${nodeId}`;
+  return nodeId === null ? null : `${EDIT_LOG}${nodeId}`;
 }
 
 /** Reads the log into `log`; true when it says something it did not before. */
@@ -344,7 +355,32 @@ export function revisionAsOf(node: Element, anchor: string, at: number, settleMs
  */
 export function logUrlOfCard(body: Element): string | null {
   const card = body.closest('.timeline-comment, .js-comment-container');
-  return card?.querySelector('details-menu[src*="show_edit_history_log"]')?.getAttribute('src') ?? null;
+  const listed = card?.querySelector('details-menu[src*="show_edit_history_log"]')?.getAttribute('src') ?? null;
+  if (listed !== null) return listed;
+  // The Overview's description box: its log is the pull request's own, by the node id the page's payload carries.
+  const box = body.closest(OVERVIEW_DESCRIPTION);
+  if (box === null || box.querySelector(OVERVIEW_EDIT_MENU) === null) return null;
+  const nodeId = pullRequestNodeId();
+  return nodeId === null ? null : `${EDIT_LOG}${nodeId}`;
+}
+
+let embeddedPull: { readonly source: Element; readonly number: number; readonly nodeId: string } | null = null;
+
+/** This pull request's node id (`PR_…`) from the React page's embedded payload, when the payload is this pull request's. */
+function pullRequestNodeId(): string | null {
+  const number = Number(/\/pull\/(\d+)/.exec(location.pathname)?.[1] ?? Number.NaN);
+  if (embeddedPull === null || !embeddedPull.source.isConnected) {
+    embeddedPull = null;
+    for (const script of document.querySelectorAll('script[type="application/json"][data-target="react-app.embeddedData"]')) {
+      const text = script.textContent ?? '';
+      const pull = /"pullRequest"\s*:\s*\{[^]*?"number"\s*:\s*(\d+)[^]*?"relayId"\s*:\s*"(PR_[A-Za-z0-9_-]+)"/.exec(text);
+      if (pull?.[1] !== undefined && pull[2] !== undefined) {
+        embeddedPull = { source: script, number: Number(pull[1]), nodeId: pull[2] };
+        break;
+      }
+    }
+  }
+  return embeddedPull !== null && embeddedPull.number === number ? embeddedPull.nodeId : null;
 }
 
 /** Every revision in the log `url` (oldest first), or null while the log is on its way (`onChange` runs once it lands). */

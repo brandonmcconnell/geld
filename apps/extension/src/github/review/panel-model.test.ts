@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReviewItem } from '@geld/review';
-import { authorLabels, botHealth, checkCountsFrom, checksHealth, checksRowTone, checksSummary, checksTone, checksTotal, digestMarkdown, EMPTY_CHECKS, isCurrent, itemMarkdown, newerSummaryAnchor, pushRowTone, requiredReviewsFrom, sortItems, splitItems, standingReviewers, verdictLabel, verdictTone } from './panel-model';
+import { authorLabels, botHealth, checkCountsFrom, checkCountsOfRuns, checksHealth, checksRowTone, checksSummary, checksTone, checksTotal, digestMarkdown, EMPTY_CHECKS, isCurrent, itemMarkdown, newerSummaryAnchor, pushRowTone, requiredReviewsFrom, sortItems, splitItems, standingReviewers, verdictLabel, verdictTone } from './panel-model';
 
 function item(id: string, status: ReviewItem['status']): ReviewItem {
   return { id, title: id, rewritten: false, severity: 'suggestion', status, sources: [{ anchor: 'discussion_r1', kind: 'thread', author: 'alice' }] };
@@ -314,5 +314,22 @@ describe('reviewer groups', () => {
       ['approved', ['Ana|https://avatars.githubusercontent.com/u/1?s=80&v=4']],
       ['changes_requested', ['max|']],
     ]);
+  });
+});
+
+describe('checkCountsOfRuns', () => {
+  it('counts the head check runs by state, as the merge box headings would', () => {
+    expect(
+      checkCountsOfRuns([
+        { status: 'completed', conclusion: 'success' },
+        { status: 'completed', conclusion: 'failure' },
+        { status: 'completed', conclusion: 'cancelled' },
+        { status: 'in_progress', conclusion: null },
+        { status: 'queued', conclusion: null },
+        { status: 'completed', conclusion: 'skipped' },
+        { status: 'completed', conclusion: 'neutral' },
+      ]),
+    ).toEqual({ success: 1, failure: 2, pending: 1, queued: 1, skipped: 1, neutral: 1 });
+    expect(checkCountsOfRuns([])).toBeNull();
   });
 });

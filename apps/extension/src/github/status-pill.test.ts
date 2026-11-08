@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { MergeBox } from './merge-actions';
-import { showMergedPills, statusOptions, syncStatusPills } from './status-pill';
+import { labelBehind, showMergedPills, statusOptions, syncStatusPills } from './status-pill';
 import { ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST } from './ui/icons';
 
 const box = (over: Partial<MergeBox>): MergeBox => ({
@@ -107,5 +107,55 @@ describe('showMergedPills', () => {
     const merged = pillAfterMerge(react('pullOpened', 'Open', ICON_GIT_PULL_REQUEST, 'octicon-git-pull-request'));
     syncStatusPills(true, () => undefined);
     expect(document.querySelector('button[data-geld-status-pill]')?.outerHTML).toBe(merged);
+  });
+});
+
+describe("the Overview's status label", () => {
+  it("is GitHub's own status menu, hidden whole with Geld's pill after it, and given back when Geld steps aside", () => {
+    document.body.innerHTML = `<div data-component="PageHeader"><button type="button" aria-haspopup="true" aria-label="Pull request state: Open"><span data-component="StateLabel" data-status="pullOpened">Open</span></button></div>`;
+    const github = document.querySelector('button[aria-haspopup="true"]');
+    const [pill] = syncStatusPills(true, () => undefined);
+    expect(pill?.previousElementSibling).toBe(github);
+    expect(pill?.getAttribute('data-status')).toBe('pullOpened');
+    expect(github?.hasAttribute('data-geld-status-hidden')).toBe(true);
+    expect(github?.querySelector('[data-geld-status-pill]')).toBeNull();
+    expect(pill === undefined ? null : labelBehind(pill)).toBe(document.querySelector('[data-component="StateLabel"]'));
+    // A second pass keeps the one pill.
+    expect(syncStatusPills(true, () => undefined)).toEqual([pill]);
+    syncStatusPills(false, () => undefined);
+    expect(github?.hasAttribute('data-geld-status-hidden')).toBe(false);
+    expect(document.querySelector('[data-geld-status-pill]')).toBeNull();
+    document.body.replaceChildren();
+  });
+
+  it('is taken over in the mini header too, which stands stuck to the top once the page header scrolls away', () => {
+    document.body.innerHTML = `<div data-testid="diff-comparison-viewer-sticky-header-slot"><div class="miniHeaderInner__x"><div class="metadata__x"><button type="button" aria-haspopup="true"><span data-component="StateLabel" data-status="pullOpened" data-size="small">Open</span></button></div></div></div>
+      <div data-component="PageHeader"><button type="button" aria-haspopup="true"><span data-component="StateLabel" data-status="pullOpened">Open</span></button></div>`;
+    const pills = syncStatusPills(true, () => undefined);
+    expect(pills).toHaveLength(2);
+    expect(pills[0]?.closest('[data-testid="diff-comparison-viewer-sticky-header-slot"]')).not.toBeNull();
+    expect(pills[0]?.getAttribute('data-size')).toBe('small');
+    expect([...document.querySelectorAll('button[aria-haspopup="true"]')].every((button) => button.hasAttribute('data-geld-status-hidden'))).toBe(true);
+    document.body.replaceChildren();
+  });
+
+  it('leaves no pill behind when GitHub swaps its status button for a merged label in place', () => {
+    document.body.innerHTML = `<div data-component="PageHeader"><div class="row"><button type="button" aria-haspopup="true" aria-label="Pull request state: Open"><span data-component="StateLabel" data-status="pullOpened">Open</span></button></div></div>`;
+    const [pill] = syncStatusPills(true, () => undefined);
+    // A merge in place: GitHub drops the button and renders a plain label, after Geld's pill.
+    document.querySelector('button[aria-haspopup="true"]')?.remove();
+    pill?.after(Object.assign(document.createElement('span'), { textContent: 'Merged' }));
+    const merged = document.querySelector('.row > span');
+    merged?.setAttribute('data-component', 'StateLabel');
+    merged?.setAttribute('data-status', 'pullMerged');
+    // Nothing to switch a merged pull request to: GitHub's label alone.
+    expect(syncStatusPills(false, () => undefined)).toEqual([]);
+    expect(document.querySelectorAll('[data-geld-status-pill]')).toHaveLength(0);
+    // Still offered (a merge of Geld's own on its way): one pill, after the new label, dressed from it.
+    const [again] = syncStatusPills(true, () => undefined);
+    expect(document.querySelectorAll('[data-geld-status-pill]')).toHaveLength(1);
+    expect(again?.previousElementSibling).toBe(merged);
+    expect(again?.getAttribute('data-status')).toBe('pullMerged');
+    document.body.replaceChildren();
   });
 });

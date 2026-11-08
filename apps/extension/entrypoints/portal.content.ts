@@ -101,13 +101,25 @@ export default defineContentScript({
       Reflect.deleteProperty(parent, 'replaceChild');
     }
 
+    /**
+     * The nearest container React listens on (a root's, or a portal's: React marks each with `_reactListening…`).
+     * A portal's content is handled only from its own container, which on the Overview (GitHub's checks overlay) is
+     * inside the same `react-app` as the panel, so forwarding to the app root reached nothing.
+     */
+    function listeningContainer(from: Element): Element | null {
+      for (let at: Element | null = from; at !== null; at = at.parentElement) {
+        if (Object.keys(at).some((key) => key.startsWith('_reactListening'))) return at;
+      }
+      return null;
+    }
+
     /** The React root `parent` belongs to — through the loan when `parent` itself sits inside a loaned node. */
     function rootFor(parent: Node): Element | null {
       if (!(parent instanceof Element)) return null;
-      const direct = parent.closest(REACT_ROOT);
-      if (direct !== null) return direct;
+      // Inside a node already on loan, under the panel: the outer loan's home is this one's too.
       const outer = parent.closest(`[${ATTR}]`);
-      return outer === null ? null : (loans.get(outer.getAttribute(ATTR) ?? '')?.root ?? null);
+      const inherited = outer === null ? null : (loans.get(outer.getAttribute(ATTR) ?? '')?.root ?? null);
+      return inherited ?? listeningContainer(parent) ?? parent.closest(REACT_ROOT);
     }
 
     /** Register every placeholder currently in `parent` that we have not seen. */

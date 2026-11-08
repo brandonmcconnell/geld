@@ -131,3 +131,19 @@ describe('applyHeaderStats with nothing hidden', () => {
     expect(group.host.querySelector('[data-geld-tooltip-anchor]')).toBeNull();
   });
 });
+
+describe("the counts' narrow-screen copy", () => {
+  it('stands beside the Overview’s status button, never inside it, since Geld hides that button whole', () => {
+    document.body.innerHTML = `
+      <div data-component="PageHeader">
+        <div data-component="PageHeader.Description"><div class="row d-flex"><button type="button" aria-haspopup="true"><span data-component="StateLabel" data-status="pullOpened">Open</span></button></div></div>
+        <div class="prc-PageHeader-Navigation--uLav">${EMPTY_WRAPPER}<div class="flex-auto"><nav class="TabNav__qHkBGx"><a id="prs-files-anchor-tab" href="/o/r/pull/1/changes">Files changed</a></nav></div></div>
+      </div>`;
+    syncCountsStandIn(ZERO);
+    const group = findHeaderStatGroups()[0]!;
+    applyHeaderStats(group, EMPTY_BREAKDOWN, allCategories(DEFAULT_SETTINGS), 1);
+    const mirror = document.querySelector('.geld-header-mirror');
+    expect(mirror?.parentElement?.classList.contains('row')).toBe(true);
+    expect(mirror?.closest('button')).toBeNull();
+  });
+});

@@ -3,6 +3,7 @@ import { ICON_CHEVRON_DOWN } from '../ui/icons';
 import { botAppAvatar, botById } from '@geld/review';
 import { toolBlocksOf, verdictOf } from './description-blocks';
 import { ATTR_FINDABLE, setFindable } from './fold';
+import { OVERVIEW_DESCRIPTION } from './overview-page';
 
 /** A long description with no headings to fold is cut to this height, behind a fade and "Show full description". */
 export const DESCRIPTION_CAP_PX = 500;
@@ -10,6 +11,8 @@ export const DESCRIPTION_CAP_PX = 500;
 const CAP_SLACK_PX = 80;
 /** The least of a block the cut runs through that stays on show: the fade's height (style.css), so it fades out, not a sliver. */
 const CUT_EDGE_MIN_PX = 96;
+/** The clipped block's bottom margin, fixed in style.css so the fade, solid over it, ends the text at the cut. */
+const CUT_GAP_PX = 16;
 
 /** On a block of the description hidden under a folded heading. */
 const ATTR_FOLD = 'data-geld-desc-fold';
@@ -303,6 +306,7 @@ let observedRow: HTMLElement | null = null;
 
 export function descriptionBody(): HTMLElement | null {
   const body =
+    document.querySelector(`${OVERVIEW_DESCRIPTION} .markdown-body`) ??
     document.querySelector('.js-comment-container .js-comment-body') ??
     document.querySelector('[data-testid="issue-body"] .markdown-body') ??
     document.querySelector('.timeline-comment .comment-body');
@@ -482,7 +486,6 @@ interface CarriedRails {
   readonly size: string;
   readonly after: string;
   readonly chevronY: string;
-  readonly marginBottom: number;
 }
 
 function railsOfEdge(block: Element): CarriedRails | null {
@@ -496,7 +499,6 @@ function railsOfEdge(block: Element): CarriedRails | null {
     size: block.style.getPropertyValue('--geld-desc-rail-size'),
     after: style.getPropertyValue('--geld-desc-after').trim() || '0px',
     chevronY: style.getPropertyValue('--geld-desc-chevron-y').trim() || '0px',
-    marginBottom: pixels(style.marginBottom),
   };
 }
 
@@ -513,7 +515,7 @@ function carryRails(body: HTMLElement, carried: CarriedRails, height: number): v
   setProperty(more, '--geld-desc-rail-size', carried.size);
   setProperty(more, '--geld-desc-after', carried.after);
   setProperty(more, '--geld-desc-chevron-y', carried.chevronY);
-  setProperty(more, '--geld-desc-carry-height', `${height + carried.marginBottom}px`);
+  setProperty(more, '--geld-desc-carry-height', `${height + CUT_GAP_PX}px`);
 }
 
 /**
@@ -541,8 +543,22 @@ function spanOf(block: Element, top: number): { readonly block: Element; readonl
   return { block, start: start - top, end: end - top };
 }
 
+/**
+ * The Overview floats its "Edited" menu beside the description, and a body laid out as a column (Agent notes at its
+ * foot) would be narrowed beside a float for its whole height. The stylesheet takes the menu out of the flow there and
+ * keeps this much room beside the first block instead: the menu's width and its 16px margin.
+ */
+const META_ROOM_PROPERTY = '--geld-desc-meta-room';
+
+function keepMetaRoom(body: HTMLElement): void {
+  const meta = body.hasAttribute(ATTR_AGENTS) ? (body.closest(OVERVIEW_DESCRIPTION)?.querySelector('[class*="editMetadata"]') ?? null) : null;
+  const width = meta === null ? 0 : meta.getBoundingClientRect().width;
+  setProperty(body, META_ROOM_PROPERTY, width > 0 ? `${Math.ceil(width) + 16}px` : null);
+}
+
 function measure(body: HTMLElement): void {
   clearCut(body);
+  keepMetaRoom(body);
   const author = blocksOf(body).filter((block) => !block.hasAttribute(ATTR_AGENT) && !block.hasAttribute(ATTR_TOOL) && !block.hasAttribute(ATTR_BLANK));
   const top = body.getBoundingClientRect().top;
   const spans = author.map((block) => spanOf(block, top));
@@ -567,8 +583,8 @@ function measure(body: HTMLElement): void {
 
 /** GitHub's reactions row under the description (the reaction picker and its pills), outside the body, and its box. */
 function reactionsRowOf(body: HTMLElement): { readonly row: HTMLElement; readonly box: HTMLElement } | null {
-  const box = body.closest('.js-comment');
-  const row = box?.querySelector('.pr-review-reactions, .comment-reactions') ?? null;
+  const box = body.closest('.js-comment') ?? body.closest(OVERVIEW_DESCRIPTION);
+  const row = box?.querySelector('.pr-review-reactions, .comment-reactions') ?? box?.querySelector('[role="toolbar"][aria-label="Reactions for the description"]')?.parentElement ?? null;
   return box instanceof HTMLElement && row instanceof HTMLElement && !body.contains(row) ? { row, box } : null;
 }
 
@@ -816,7 +832,10 @@ function clear(): void {
     if (element instanceof HTMLElement) element.style.removeProperty(LIFT_PROPERTY);
   }
   for (const element of document.querySelectorAll(`[data-geld-desc]`)) {
-    if (element instanceof HTMLElement) element.style.removeProperty(DROP_PROPERTY);
+    if (element instanceof HTMLElement) {
+      element.style.removeProperty(DROP_PROPERTY);
+      element.style.removeProperty(META_ROOM_PROPERTY);
+    }
   }
   for (const element of document.querySelectorAll(`.${TOGGLE_CLASS}, .${MORE_CLASS}, .${AGENTS_CLASS}, .${AGENT_CLASS}`)) element.remove();
   for (const element of document.querySelectorAll(`[${ATTR_AGENT}]`)) {

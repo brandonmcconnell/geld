@@ -1,6 +1,8 @@
 import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { GeldController, IDLE_STATE } from '../../src/github/controller';
+import { prefetchStatusOptions } from '../../src/github/quick-review';
+import { applyTopCardHint } from '../../src/github/review/top-card';
 import type { TabState, TabStateMessage } from '../../src/lib/messages';
 import { isGetTabStateMessage, isPerfReportMessage, isRevealFileMessage, isToggleHiddenMessage } from '../../src/lib/messages';
 import type { PerfSnapshot } from '../../src/lib/perf';
@@ -30,6 +32,8 @@ export default defineContentScript({
     // any older copy still running in the page must step aside first.
     const TAKEOVER = 'geld:takeover';
     mark('script-start');
+    // Before any await: GitHub can paint the Overview's top card before the settings arrive.
+    applyTopCardHint();
     const stopErrorCapture = installErrorCapture('content');
     document.dispatchEvent(new CustomEvent(TAKEOVER));
     // Listen before the first await: a copy injected while this one still loads its settings
@@ -110,6 +114,8 @@ export default defineContentScript({
       mark('redirect-early');
       return;
     }
+    // The status menu's merge box, asked for before the catalog and the controller: GitHub's own menu reads its at load.
+    if (settings.enabled && settings.quickReview && window.top === window) prefetchStatusOptions();
     const catalog = await loadCatalog();
     mark('catalog');
     if (retired) return;
