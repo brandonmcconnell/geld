@@ -584,6 +584,16 @@ const delay = (ms: number): Promise<void> => new Promise((resolve) => window.set
 const STATUS_READ_MS = 15_000;
 const LEFT_CHECK_MS = 250;
 
+/** Sleep `ms`, ending early, within `LEFT_CHECK_MS`, once `wanted` turns false: the gaps between polls grow past a minute. */
+async function delayWhile(ms: number, wanted: () => boolean): Promise<void> {
+  const until = Date.now() + ms;
+  while (wanted()) {
+    const left = until - Date.now();
+    if (left <= 0) return;
+    await delay(Math.min(left, LEFT_CHECK_MS));
+  }
+}
+
 /**
  * A read that gives up, with null, at its deadline or once `wanted` turns false, aborting the request where the
  * browser lets the signal reach it (in Firefox the page's own fetch sends it, and only the wait ends).
@@ -617,7 +627,7 @@ export async function settleStackMerge(pullPath: string, answer: unknown, wanted
   let wait = STACK_POLL_FIRST_MS;
   let misses = 0;
   while (wanted() && Date.now() - started + wait <= STACK_POLL_LIMIT_MS) {
-    await delay(wait);
+    await delayWhile(wait, wanted);
     wait *= STACK_POLL_GROWTH;
     if (!wanted()) return null;
     const read = await readWithin(
@@ -653,7 +663,7 @@ export async function awaitMergedState(pullPath: string, wanted: () => boolean):
   for (let read = 0; wanted(); read += 1) {
     if (read > 0) {
       if (until - Date.now() <= MERGED_READ_MS) return false;
-      await delay(MERGED_READ_MS);
+      await delayWhile(MERGED_READ_MS, wanted);
     }
     const left = until - Date.now();
     if (left <= 0 || !wanted()) return false;

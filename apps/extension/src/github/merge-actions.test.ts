@@ -447,6 +447,24 @@ describe('a stack merge GitHub is still running', () => {
     expect(await leaving).toBeNull();
   });
 
+  it('stops waiting between polls within a quarter second of the reader leaving, however long the gap has grown', async () => {
+    vi.useFakeTimers();
+    const asked = vi.fn(async () => new Response(JSON.stringify({ status: 'running' })));
+    vi.stubGlobal('fetch', asked);
+    let here = true;
+    let settled: unknown = 'waiting';
+    void settleStackMerge('/o/r/pull/9', { status: 'pending', uuid: 'u1' }, () => here).then((result) => {
+      settled = result;
+    });
+    // Reads at 1 s, 2.5 s, 4.75 s, 8.125 s: the next gap is 5.06 s.
+    await vi.advanceTimersByTimeAsync(8_200);
+    expect(asked).toHaveBeenCalledTimes(4);
+    here = false;
+    await vi.advanceTimersByTimeAsync(260);
+    expect(settled).toBeNull();
+    expect(asked).toHaveBeenCalledTimes(4);
+  });
+
   it('waits ten seconds at most for the merged state, however long a read stalls', async () => {
     vi.useFakeTimers();
     vi.stubGlobal(
