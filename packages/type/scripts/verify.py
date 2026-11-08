@@ -411,6 +411,11 @@ def check_css() -> None:
             check((DIST / "web" / url).exists(), f"{css.name} names {url}, which was not built")
     subset_files = {entry["file"] for entry in json.loads((DIST / "subsets.json").read_text())["files"]}
     check(subset_files <= named, f"subsets no CSS serves: {sorted(subset_files - named)[:5]}")
+    specimen = DIST / "specimen.html"
+    check(specimen.exists(), "the specimen was not built")
+    if specimen.exists():
+        for href in re.findall(r'href="(web/[^"]+)"', specimen.read_text()):
+            check((DIST / href).exists(), f"the specimen loads {href}, which was not built")
 
 
 def run_check(task: tuple) -> list[str]:

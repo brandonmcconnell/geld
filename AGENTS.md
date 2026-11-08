@@ -38,6 +38,8 @@ packages/type/       @geld/type — Geld Sans and Geld Dark Sans: glyph skeleton
                      `pnpm type:build --quick` builds and checks the variable fonts only, for iterating.
                      The web package is `@geld/fonts` in dist/ (src/web.ts): unicode-range subsets, CSS
                      with size-adjusted fallbacks and one class per feature, released on `type-v*` tags.
+                     Its README is the usage guide and `specimen.html` (src/specimen.ts) the specimen,
+                     both generated from the source so they list exactly what the fonts hold.
                      Plan: `.cursor/plans/geld-type-family.plan.md`. Built by `.github/workflows/type.yml`.
 assets/brand/        Logo + logomark SVGs (black and white variants), and the logomark on a pixel grid for small icons. Both apps reference these.
 .github/workflows/   CI: `pnpm check` (typecheck + tests everywhere), `pnpm catalog:check` (generated

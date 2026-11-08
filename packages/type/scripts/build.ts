@@ -19,6 +19,7 @@ import { ALTERNATES, alternateName } from '../src/alternates';
 import { CODE_GROUPS, CODE_LIGATURES, codePieceName } from '../src/code-ligatures';
 import { buildMaster, type Family, type Master, type Style } from '../src/master';
 import { proofPage } from '../src/proof';
+import { specimenPage } from '../src/specimen';
 import { decorationMetrics, designspace, postscriptName, productionNames, sourceFileName, ufoFiles } from '../src/ufo';
 import { fallbackFace, featureCss, fontFaceCss, fontPackageJson, fontPackageReadme, type SubsetMap, subsetsFor, webFileName } from '../src/web';
 
@@ -220,6 +221,8 @@ function writeWebCss(): void {
     styles.flatMap((style) => weights.flatMap((weight) => subsets[family]![style].map((subset) => ({ file: webFileName(family, subset.name, weight, style), family, style, weight, subset: subset.name })))),
   );
   writeFileSync(join(dist, 'subsets.json'), `${JSON.stringify({ subsets, files })}\n`);
+  const codepoints = [...new Set(subsets.sans!.roman.flatMap((subset) => subset.codepoints))].sort((a, b) => a - b);
+  writeFileSync(join(dist, 'specimen.html'), specimenPage(version, codepoints));
 }
 
 async function compile(spaces: string[]): Promise<void> {

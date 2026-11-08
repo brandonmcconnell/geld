@@ -400,8 +400,9 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 ## 13. Documentation and specimen
 
 - [ ] A specimen page on geld.sh: the family, every weight, a live tester (weight, grade, corners, italic, every feature as a switch), the character set, the stylistic sets with their names, the ligature tables, language support and downloads.
-- [ ] A usage guide: CSS recipes (dark-mode grade, tabular figures, code ligatures on or off), recommended pixel sizes, and app instructions for turning on stylistic sets.
-- [ ] The grid spec published, since the construction is the story.
+  The page is built (`dist/specimen.html`, src/specimen.ts) and ships in the font package and the CI artifact, with everything listed but the corners switch, which waits for the square style (D1). What is left is serving it on geld.sh, which needs the fonts hosted: the first `type-v*` release, the owner's tag.
+- [x] A usage guide: CSS recipes (dark-mode grade, tabular figures, code ligatures on or off), recommended pixel sizes, and app instructions for turning on stylistic sets. The package README (`fontPackageReadme`), with the size guide shared with the specimen (`SIZE_GUIDE`).
+- [x] The grid spec published, since the construction is the story. The specimen's Construction section, read from grid.ts.
 - [ ] Brand assets regenerated from the font where they are type (the wordmark, D7).
 
 ## 14. Legal and naming
