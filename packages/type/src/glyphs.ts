@@ -11,6 +11,7 @@ import { LATIN_EXTRA } from './glyphs-latin';
 import { LATIN1 } from './glyphs-latin1';
 import { MORE } from './glyphs-more';
 import { ARROWS_MORE, KEYS } from './glyphs-arrows';
+import { IPA } from './glyphs-ipa';
 import { PLUS } from './glyphs-plus';
 import { SYMBOLS } from './glyphs-symbols';
 
@@ -33,6 +34,7 @@ const DRAWN: GlyphDef[] = [
   ...LATIN_EXTRA,
   ...LATIN1,
   ...AFRICAN,
+  ...IPA,
   ...CYRILLIC,
   ...CYRILLIC_LOCL,
   ...GREEK,

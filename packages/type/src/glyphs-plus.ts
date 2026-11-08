@@ -287,6 +287,13 @@ export const PLUS: GlyphDef[] = [
   // The ring of the circled numerals (① and ss17): an octagon of the capitals' height, its wall capped so the figure
   // inside keeps its room at Black.
   { name: 'numeralring', lsb: 1, rsb: 1, draw: (g) => [hollow(octagon(7, g.cap / 2, g.cap + 1), Math.min(Math.max(g.v, g.h) * 0.8, 1.9), octagonLeg(g.cap + 1))] },
+  // ⑩–⑳: the ring stretched to hold two figures at Black, its corners the round ring's.
+  {
+    name: 'numeralringwide',
+    lsb: 1,
+    rsb: 1,
+    draw: (g) => [hollow([p(-0.5, -0.5, true), p(23.5, -0.5, true), p(23.5, g.cap + 0.5, true), p(-0.5, g.cap + 0.5, true)], Math.min(Math.max(g.v, g.h) * 0.8, 1.9), octagonLeg(g.cap + 1))],
+  },
   pipeTriangle('pipe.right', false),
   pipeTriangle('pipe.left', true),
   squiggle('leftsquigglearrow', 0x21dc, 2, true),
