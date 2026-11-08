@@ -159,7 +159,8 @@ const LOWER_DEFS: GlyphDef[] = [
     unicode: 0x3c1,
     lsb: 1.5,
     rsb: 1.25,
-    draw: (g) => [stem(0, g.descender, 5), box(0, g.wide(8), g.bottom(0), g.top(g.xHeight), [false, true, true, true])],
+    // Its bowl's top-left cut is what tells it from p, whose stem rises there, so the square style keeps it.
+    draw: (g) => [stem(0, g.descender, 5), box(0, g.wide(8), g.bottom(0), g.top(g.xHeight), [false, true, true, 'keep'])],
   },
   {
     name: 'sigma',

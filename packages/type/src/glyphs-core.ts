@@ -14,6 +14,7 @@ import {
   MATH_AXIS,
   open,
   p,
+  kept,
   RIGHT,
   shift,
   inPen,
@@ -70,7 +71,8 @@ export const UPPER: GlyphDef[] = [
     unicode: 0x44,
     lsb: 1.5,
     rsb: 1.25,
-    draw: (g) => [box(0, g.wide(10), g.bottom(0), g.top(g.cap), RIGHT)],
+    // Its bowl's cuts are what tell it from O, so the square style keeps them.
+    draw: (g) => [box(0, g.wide(10), g.bottom(0), g.top(g.cap), kept(RIGHT))],
   },
   {
     name: 'E',
@@ -285,7 +287,7 @@ const LOWER_DEFS: GlyphDef[] = [
     },
     italic: (g) => {
       const w = g.wide(7.5);
-      return [stem(w, 0, g.xHeight), box(0, w, g.bottom(0), g.top(g.xHeight), LEFT)];
+      return [stem(w, 0, g.xHeight), box(0, w, g.bottom(0), g.top(g.xHeight), kept(LEFT))];
     },
   },
   {
@@ -540,7 +542,8 @@ export const FIGURES: GlyphDef[] = [
     unicode: 0x30,
     lsb: 1.25,
     rsb: 1.25,
-    draw: (g) => [box(0, g.wide(9), g.bottom(0), g.top(g.cap), ALL)],
+    // 0, 5 and 8 keep their cuts in the square style, so they never read as O, S and B.
+    draw: (g) => [box(0, g.wide(9), g.bottom(0), g.top(g.cap), kept(ALL))],
   },
   {
     name: 'one',
@@ -606,7 +609,7 @@ export const FIGURES: GlyphDef[] = [
       const w = g.wide(9);
       const t = g.top(g.cap);
       const b = g.bottom(0);
-      return [open(p(w, t), p(0, t), p(0, g.y(8)), p(w, g.y(8), true), p(w, b, true), p(0, b, true), p(0, g.y(4)))];
+      return [open(p(w, t), p(0, t), p(0, g.y(8)), p(w, g.y(8), 'keep'), p(w, b, 'keep'), p(0, b, 'keep'), p(0, g.y(4)))];
     },
   },
   {
@@ -641,7 +644,7 @@ export const FIGURES: GlyphDef[] = [
     rsb: 1.25,
     draw: (g) => {
       const w = g.wide(9.5);
-      return [box(g.y(0.5), w - g.y(0.5), g.cap / 2, g.top(g.cap), ALL), box(0, w, g.bottom(0), g.cap / 2, ALL)];
+      return [box(g.y(0.5), w - g.y(0.5), g.cap / 2, g.top(g.cap), kept(ALL)), box(0, w, g.bottom(0), g.cap / 2, kept(ALL))];
     },
   },
   {

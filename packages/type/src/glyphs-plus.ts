@@ -1,4 +1,5 @@
 import {
+  kept,
   ALL,
   bar,
   box,
@@ -292,7 +293,7 @@ export const PLUS: GlyphDef[] = [
     name: 'numeralringwide',
     lsb: 1,
     rsb: 1,
-    draw: (g) => [hollow([p(-0.5, -0.5, true), p(23.5, -0.5, true), p(23.5, g.cap + 0.5, true), p(-0.5, g.cap + 0.5, true)], Math.min(Math.max(g.v, g.h) * 0.8, 1.9), octagonLeg(g.cap + 1))],
+    draw: (g) => [hollow([p(-0.5, -0.5, 'keep'), p(23.5, -0.5, 'keep'), p(23.5, g.cap + 0.5, 'keep'), p(-0.5, g.cap + 0.5, 'keep')], Math.min(Math.max(g.v, g.h) * 0.8, 1.9), octagonLeg(g.cap + 1))],
   },
   pipeTriangle('pipe.right', false),
   pipeTriangle('pipe.left', true),
@@ -379,7 +380,7 @@ export const PLUS: GlyphDef[] = [
     rsb: 1,
     draw: (g) => {
       const w = g.wide(9);
-      return [box(0, w, MATH_AXIS - 5 + g.h / 2, MATH_AXIS + 5 - g.h / 2, ALL), diagonal(g, -0.5, MATH_AXIS - 6.5, w + 0.5, MATH_AXIS + 6.5)];
+      return [box(0, w, MATH_AXIS - 5 + g.h / 2, MATH_AXIS + 5 - g.h / 2, kept(ALL)), diagonal(g, -0.5, MATH_AXIS - 6.5, w + 0.5, MATH_AXIS + 6.5)];
     },
   },
   {

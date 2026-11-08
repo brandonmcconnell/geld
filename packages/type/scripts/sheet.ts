@@ -1,6 +1,8 @@
 /**
  * Renders glyphs straight from the masters, overlaps filled as one, for close visual review:
  *   tsx scripts/sheet.ts <out.png> <family> <style> <weight> <cell px> <glyph names…>
+ * The family names the corner style: sans and dark are square-cornered, sans-cut and dark-cut cut. SVG=<file> also writes
+ * the SVG, for a browser to render: librsvg drops fills where edges coincide (a square P's bowl on its stem).
  */
 import sharp from 'sharp';
 import { METRICS } from '../src/grid';
@@ -29,4 +31,5 @@ names.forEach((name, i) => {
   paths.push(`<text x="${ox}" y="${base + size * 0.25}" font-size="${Math.max(9, size / 14)}" fill="#888" font-family="monospace">${name}</text>`);
 });
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${cols * size}" height="${rows * size * 1.1}"><rect width="100%" height="100%" fill="#fff"/>${paths.join('')}</svg>`;
+if (process.env.SVG) (await import("node:fs")).writeFileSync(process.env.SVG, svg);
 await sharp(Buffer.from(svg)).png().toFile(out!);

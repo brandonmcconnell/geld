@@ -1,6 +1,7 @@
 import type { PlacedDef } from './composites';
 import {
   ALL,
+  kept,
   chevronLeft,
   diagonal,
   edgeAt,
@@ -155,7 +156,7 @@ const UPPER: GlyphDef[] = [
     rsb: 1.5,
     draw: (g) => {
       const w = g.wide(10);
-      return [stem(w, 0, g.cap), box(0, w, g.bottom(0), g.top(g.cap), LEFT)];
+      return [stem(w, 0, g.cap), box(0, w, g.bottom(0), g.top(g.cap), kept(LEFT))];
     },
   },
   { name: 'Aturned', unicode: 0x2c6f, lsb: 0.3, rsb: 0.3, draw: (g) => rotate180(draw('A')(g), g.wide(10) / 2, g.cap / 2) },
@@ -402,7 +403,7 @@ const slashThroughStem = (g: DrawContext, w: number, height: number): Stroke => 
 /** A tilde across a stem at height y: ɫ Ɫ. */
 const tildeAcross = (x: number, y: number): Stroke => {
   const s = 1.5;
-  return open(p(x - 1.5 * s, y - s / 2), p(x - 0.5 * s, y + s / 2, true), p(x + 0.5 * s, y - s / 2, true), p(x + 1.5 * s, y + s / 2));
+  return open(p(x - 1.5 * s, y - s / 2), p(x - 0.5 * s, y + s / 2, 'keep'), p(x + 0.5 * s, y - s / 2, 'keep'), p(x + 1.5 * s, y + s / 2));
 };
 /** A short stroke out of the right side of a stem, where a stroke across it would close a counter: Ǥ ǥ. */
 const spur = (g: DrawContext, x: number, y: number): Stroke => bar(x - g.v / 2, x + g.v / 2 + 1.75, y);

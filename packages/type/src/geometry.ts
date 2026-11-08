@@ -9,9 +9,27 @@ export interface Vec {
 export type Contour = Vec[];
 
 export interface PathPoint extends Vec {
-  /** Cut this corner at 45°. Only corners between perpendicular segments can be cut. */
-  cut?: boolean;
+  /**
+   * Cut this corner at 45°. Only corners between perpendicular segments can be cut. `'keep'` is a cut the square style
+   * keeps too, where the cut tells the glyph apart from another (D from O) or draws a shape (an octagon for a circle).
+   */
+  cut?: boolean | 'keep';
 }
+
+/** The two corner styles: Geld Sans Cut's 45° cuts, and Geld Sans's square corners on the same grid. */
+export type Corners = 'cut' | 'square';
+let corners: Corners = 'cut';
+/** Draws with the given corner style; a master is built synchronously inside one call. */
+export function withCorners<T>(style: Corners, draw: () => T): T {
+  const before = corners;
+  corners = style;
+  try {
+    return draw();
+  } finally {
+    corners = before;
+  }
+}
+const cuts = (p: PathPoint) => (corners === 'cut' ? p.cut !== undefined && p.cut !== false : p.cut === 'keep');
 
 /**
  * How an open stroke ends at its first or last point, which always lies on the outline:
@@ -114,7 +132,7 @@ export function insertCuts(stroke: Stroke, pen: Pen, slope = 0): Vec[] {
   const { points, closed } = stroke;
   const out: Vec[] = [];
   points.forEach((p, i) => {
-    if (!p.cut) {
+    if (!cuts(p)) {
       out.push({ x: p.x, y: p.y });
       return;
     }
@@ -124,8 +142,8 @@ export function insertCuts(stroke: Stroke, pen: Pen, slope = 0): Vec[] {
     const a = unit(sub(p, prev));
     const b = unit(sub(next, p));
     if (Math.abs(a.x * b.x + a.y * b.y) > 1e-6) throw new Error('Only a right-angled corner can be cut');
-    const roomBefore = length(sub(p, prev)) * (prev.cut ? 0.49 : 0.98);
-    const roomAfter = length(sub(next, p)) * (next.cut ? 0.49 : 0.98);
+    const roomBefore = length(sub(p, prev)) * (cuts(prev) ? 0.49 : 0.98);
+    const roomAfter = length(sub(next, p)) * (cuts(next) ? 0.49 : 0.98);
     const wIn = widthAlong(a, pen);
     const wOut = widthAlong(b, pen);
     const k = ((wIn + wOut) / 4) * (2 - Math.SQRT2);

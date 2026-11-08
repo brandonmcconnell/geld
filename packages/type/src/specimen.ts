@@ -46,6 +46,7 @@ const LANGUAGE_SUPPORT = [
   'Phonetics: the full International Phonetic Alphabet (GF Phonetics IPA Standard) and the Americanist alphabet (APA)',
 ];
 
+const CORNERS_SAMPLE = 'DOB 085 SQUARE Cut corners 2026';
 const SAMPLE = 'Geld hides the tests and the noise, so a review reads like the change it is. 0123456789 → ✓';
 
 function charset(codepoints: number[]): string {
@@ -127,6 +128,8 @@ export function specimenPage(version: string, codepoints: number[]): string {
 <title>Geld Sans ${version}</title>
 <link rel="stylesheet" href="web/geld-sans.css">
 <link rel="stylesheet" href="web/geld-dark-sans.css">
+<link rel="stylesheet" href="web/geld-sans-cut.css">
+<link rel="stylesheet" href="web/geld-dark-sans-cut.css">
 <link rel="stylesheet" href="web/geld-features.css">
 <style>
   :root { color-scheme: light dark; --ink: light-dark(#111, #eee); --muted: light-dark(#666, #999); --line: light-dark(#ddd, #333); }
@@ -154,11 +157,14 @@ export function specimenPage(version: string, codepoints: number[]): string {
 </head>
 <body>
 <h1>Geld Sans</h1>
-<p>Version ${version}. Nine weights, roman and italic, and Geld Dark Sans, its grade for light text on dark backgrounds, with the same widths so switching never reflows text. Drawn on the Geld brand grid.</p>
+<p>Version ${version}. Nine weights, roman and italic, in two corner styles drawn on the Geld brand grid: Geld Sans, square-cornered, and Geld Sans Cut, its corners cut at 45° as the wordmark's are. Each has a dark grade for light text on dark backgrounds, with the same widths so switching never reflows text.</p>
 
 <h2>Weights</h2>
 ${waterfall}
 <div class="row" style="font-style: italic; font-weight: 400"><span class="tag">Italic</span><span>${escape(SAMPLE)}</span></div>
+
+<h2>Corners</h2>
+${[400, 800].map((w) => `<div class="row" style="font-weight:${w}"><span class="tag">Geld Sans</span><span>${escape(CORNERS_SAMPLE)}</span></div>\n<div class="row" style="font-weight:${w}; font-family: 'Geld Sans Cut'"><span class="tag">Geld Sans Cut</span><span>${escape(CORNERS_SAMPLE)}</span></div>`).join('\n')}
 
 <h2>Sizes</h2>
 ${[12, 14, 16, 20, 28, 40, 64].map((size) => `<div class="row" style="font-size:${size}px"><span class="tag">${size}px</span><span>${escape(SAMPLE)}</span></div>`).join('\n')}
@@ -166,7 +172,7 @@ ${[12, 14, 16, 20, 28, 40, 64].map((size) => `<div class="row" style="font-size:
 
 <h2>Tester</h2>
 <div class="controls">
-  <label>Family <select id="family"><option value="Geld Sans">Geld Sans</option><option value="Geld Dark Sans">Geld Dark Sans</option></select></label>
+  <label>Family <select id="family"><option value="Geld Sans">Geld Sans</option><option value="Geld Dark Sans">Geld Dark Sans</option><option value="Geld Sans Cut">Geld Sans Cut</option><option value="Geld Dark Sans Cut">Geld Dark Sans Cut</option></select></label>
   <label><input type="checkbox" id="italic"> Italic</label>
   <label>Weight <input type="range" id="weight" min="100" max="900" step="1" value="400"> <span id="weight-value">400</span></label>
   <label>Size <input type="range" id="size" min="10" max="160" step="1" value="48"> <span id="size-value">48</span>px</label>
@@ -194,7 +200,8 @@ ${charset(codepoints)}
 <dl class="grid">
   <dt>The grid</dt><dd>Letters are drawn on the Geld wordmark's grid: an em of 20 units, capitals ${METRICS.cap} units tall, an x-height of ${METRICS.xHeight}, ascenders at ${METRICS.ascender} and descenders at ${METRICS.descender}, a line of 25 units.</dd>
   <dt>The stroke</dt><dd>Every letter is a skeleton of strokes expanded by one pen: 2 units at SemiBold, as the wordmark's, thinner and heavier from Thin to Black. SemiBold, the wordmark's own weight, has every edge on the half-unit grid.</dd>
-  <dt>The cut</dt><dd>Where a traditional sans has a curve, the corner is cut at 45°, the wordmark's cut; straight joins stay square. Outer corners cut 2 units deep, lowercase corners 1.5, so small counters keep straight walls.</dd>
+  <dt>The cut</dt><dd>In Geld Sans Cut, where a traditional sans has a curve, the corner is cut at 45°, the wordmark's cut; straight joins stay square. Outer corners cut 2 units deep, lowercase corners 1.5, so small counters keep straight walls.</dd>
+  <dt>The square</dt><dd>Geld Sans draws the same skeletons with square corners. It keeps a cut only where the cut tells two glyphs apart: D's bowl against O, a single-storey a's against o, and 0, 5 and 8 against O, S and B. Octagons standing in for circles stay octagons, and a tilde keeps its wave. Square corners carry more ink at a letter's edges, so each style is spaced for its own corners.</dd>
   <dt>The italic</dt><dd>A true italic: the roman sheared by 1 in 7, so a capital leans exactly 2 units, with its own cursive forms where Latin and Cyrillic italics differ from the roman.</dd>
   <dt>The dark grade</dt><dd>Geld Dark Sans is every outline inset by a tenth of the stem (0.2 units at SemiBold), as the dark logo is, with the same advance widths, spacing and kerning, so light text on dark backgrounds reads at the same weight as dark on light.</dd>
   <dt>Decoration metrics</dt><dd>Underline and strikethrough thickness and position are font metrics, set for each weight, so <code>text-decoration-thickness: from-font</code> follows the stroke.</dd>

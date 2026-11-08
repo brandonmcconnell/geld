@@ -29,10 +29,10 @@ Exact geometry, for reference: a 45° cut of leg `c` on a stroke of thickness `d
 
 | # | Decision | Agreed |
 |---|---|---|
-| D1 | **Corner styles.** | **Cut corners only.** A square-cornered style is deferred to a later goal of its own. If it is ever built, each cut gets tagged *decorative* or *structural* first, so Square keeps O, D and 0 apart. Nothing in v1 depends on that tagging. |
-| D2 | **Family name.** | **Geld Sans.** With one corner style there is no "Cut" in the name. |
+| D1 | **Corner styles.** | **Cut corners first, then square (revised Nov 2026, since the goal asks for both).** The square style draws the same skeletons with every cut off except the structural ones (`p(…, 'keep')`, `kept()`): D's bowl against O, a single-storey a's and ɑ's against o, 0 5 8 against O S B, octagons standing in for circles (○ ● ① ⑩ © ® ∅), and the tildes' wave. Each style is spaced from its own outlines, since square corners carry more ink at the sidebearings. |
+| D2 | **Family name.** | **Geld Sans** for the square corners and **Geld Sans Cut** for the cut ones, with **Geld Dark Sans** and **Geld Dark Sans Cut** their dark grades: the goal names the cut style with a single "Cut". Nothing was released under the old meaning of the name. |
 | D3 | **Dark mode.** | **Geld Dark Sans**, a family of its own with the logo's dark-mode bands baked in: every edge inset by a tenth of the stem (0.2 grid units at SemiBold, exactly the dark logo; a fixed 0.2 would leave the Thin weight almost nothing), with the same advance widths, spacing and kerning as Geld Sans, so switching families in dark mode never reflows text. It ships in every weight and in italic, like Geld Sans. Internally it is a grade of the same outlines (2.6), and no `GRAD` axis is exposed. |
-| D4 | **Corner axis.** | None, since there is one corner style. |
+| D4 | **Corner axis.** | None: the two styles are separate families. A cut corner has two points where a square one has one, and the styles are spaced apart, so an axis would need a zero-length cut in every square corner and shared spacing. |
 | D5 | **Units per em and the grid.** | 1 em = 20 grid units and UPM = 1000, so 1 unit = 50 units of the font. At 20px, 1 grid unit is 1px. Cap height is 14 units (0.70 em). |
 | D6 | **Vertical proportions.** | x-height 10 units (0.50 em), ascender 15, descender 4, as starting values checked in Phase 3. |
 | D7 | **The wordmark is a weight of the font.** | "GELD" in Geld Sans SemiBold (600) reproduces `geld-logo.svg`, checked by a test. |
@@ -95,7 +95,7 @@ Starting stems in grid units, vertical cap stems, to be tuned in Phase 3:
 - [x] `usWeightClass`, `fsSelection` and style linking for every static instance.
 
 ### 2.4 Corners
-- [ ] Cut corners only (D1). Every glyph's cuts follow the cut rule (2.2).
+- [ ] Two corner styles (D1): Geld Sans Cut's cuts follow the cut rule (2.2), Geld Sans squares them but for the structural ones.
 - [ ] Confusable pairs checked anyway: O 0 D Q, I l 1 |, rn m, cl d, S 5, Z 2, B 8, G 6.
 - [x] The emblem drawn as a glyph (3.7): the logomark from `assets/brand` at the capitals' height, the same at every weight and upright in italic, the dark mark in Geld Dark Sans.
 
@@ -400,10 +400,18 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 ## 13. Documentation and specimen
 
 - [ ] A specimen page on geld.sh: the family, every weight, a live tester (weight, grade, corners, italic, every feature as a switch), the character set, the stylistic sets with their names, the ligature tables, language support and downloads.
-  The page is built (`dist/specimen.html`, src/specimen.ts) and ships in the font package and the CI artifact, with everything listed but the corners switch, which waits for the square style (D1). What is left is serving it on geld.sh, which needs the fonts hosted: the first `type-v*` release, the owner's tag.
+  The page is built (`dist/specimen.html`, src/specimen.ts) and ships in the font package and the CI artifact, with the corners as a choice of family in its tester. What is left is serving it on geld.sh, which needs the fonts hosted: the first `type-v*` release, the owner's tag.
 - [x] A usage guide: CSS recipes (dark-mode grade, tabular figures, code ligatures on or off), recommended pixel sizes, and app instructions for turning on stylistic sets. The package README (`fontPackageReadme`), with the size guide shared with the specimen (`SIZE_GUIDE`).
 - [x] The grid spec published, since the construction is the story. The specimen's Construction section, read from grid.ts.
 - [ ] Brand assets regenerated from the font where they are type (the wordmark, D7).
+
+## 13b. The square style (D1)
+
+- [x] The corner style in the engine: `withCorners`, `'keep'` cuts, `Family` with `sans-cut` and `dark-cut`; the logo glyphs read from assets/brand whatever the style.
+- [x] Structural cuts tagged: D, single-storey a and ɑ Ɑ, 0, 5, 8, the circle stand-ins and the tildes, tested (`square the corners of Geld Sans…`).
+- [ ] Built, verified and packaged as four families, a zip each.
+- [ ] The square style's joins baseline cleared: its short edges first (diagonals meeting a square corner, a stroke ending at a corner it was drawn to meet at a cut), then a visual pass over its ledges at Black, keeping the steps and stubs that read as drawn and redrawing the rest.
+- [ ] A visual pass over the whole square character set at Thin, Regular and Black, roman and italic, for pairs the cuts used to tell apart beyond D/O, 0 5 8.
 
 ## 14. Legal and naming
 
@@ -415,7 +423,6 @@ The whole list, with defaults. Every feature is checked by shaping tests (12.2).
 
 ## 15. Out of scope for v1
 
-- [ ] A square-cornered style (D1).
 - [ ] Optical size axis (D15).
 - [ ] Width axis, condensed or extended widths.
 - [ ] Petite caps, historical forms beyond ſ.
@@ -458,7 +465,7 @@ Each phase ends with a review. The next phase starts only once its deliverable i
 Listed now so Sans decisions do not block Mono.
 
 - [ ] Cell width (about 12 units of a 20-unit em, 0.6 em) and how wide letters (m w M W) and narrow ones (i l j) adapt to it.
-- [ ] The same cut corners, weights, a Geld Dark Mono and italic, all at the same cell width, so bold and italic never change the layout.
+- [ ] The same two corner styles (Geld Mono and Geld Mono Cut), weights, dark grades and italic, all at the same cell width, so bold and italic never change the layout.
 - [ ] Code ligatures on by default (5.3), each as contextual pieces in whole cells, with groups to turn off.
 - [ ] Box drawing (U+2500 to 257F), block elements (U+2580 to 259F) and Braille patterns (U+2800 to 28FF, generated) filling the cell edge to edge, for terminal UIs and charts.
 - [ ] Symbols for Legacy Computing (U+1FB00) as a later step.

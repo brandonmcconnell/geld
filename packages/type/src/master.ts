@@ -1,7 +1,7 @@
 import { accentedFromUnicode, ALIASES, CASE_FORMS, GREEK_TONOS, LATIN_RANGES, PLACED, type PlacedDef, SPACING_ACCENTS } from './composites';
 import { type DrawContext, drawContext, type GlyphDef, MATH_AXIS, open, p, smallCapContext } from './draw';
 import { measuredSidebearings, type SpacingZone } from './spacing';
-import { bounds, type Contour, expandStroke, insetContour, shear, snapJoined, translate, type Vec, winding } from './geometry';
+import { bounds, type Contour, type Corners, expandStroke, insetContour, shear, snapJoined, translate, type Vec, winding, withCorners } from './geometry';
 import { GLYPHS, SPACES } from './glyphs';
 import { FIGURE_NAMES } from './glyphs-figures';
 import { CYRILLIC_LOCL_ACCENTED } from './glyphs-cyrillic';
@@ -23,13 +23,23 @@ const HORN_ROOM = 1.5;
 /** The least room right of the horn's tip, so a heavier horn widens its glyph rather than reaching into the next. */
 const HORN_SIDE = 0.3;
 
-export type Family = 'sans' | 'dark';
+/** The two corner styles, each with its dark grade: Geld Sans is square-cornered, Geld Sans Cut cuts its corners at 45°. */
+export type Family = 'sans' | 'dark' | 'sans-cut' | 'dark-cut';
 export type Style = 'roman' | 'italic';
+export const FAMILIES: Family[] = ['sans', 'dark', 'sans-cut', 'dark-cut'];
 
 export const FAMILY_NAMES: Record<Family, string> = {
   sans: 'Geld Sans',
   dark: 'Geld Dark Sans',
+  'sans-cut': 'Geld Sans Cut',
+  'dark-cut': 'Geld Dark Sans Cut',
 };
+/** The family name without spaces, as file and PostScript names spell it. */
+export const familyFileName = (family: Family) => FAMILY_NAMES[family].replace(/\s/g, '');
+export const isDark = (family: Family) => family === 'dark' || family === 'dark-cut';
+export const cornersOf = (family: Family): Corners => (family === 'sans-cut' || family === 'dark-cut' ? 'cut' : 'square');
+/** The light grade of a family's corner style, whose spacing and kerning its dark grade shares. */
+export const lightOf = (family: Family): Family => (cornersOf(family) === 'cut' ? 'sans-cut' : 'sans');
 
 export interface Anchor extends Vec {
   name: string;
@@ -119,6 +129,10 @@ function baseAnchors(contours: Contour[], upper: boolean, v: number, name: strin
  * are components (a base and its marks), placed by anchors read from the Geld Sans outlines.
  */
 export function buildMaster(family: Family, style: Style, weight: Weight): Master {
+  return withCorners(cornersOf(family), () => drawMaster(family, style, weight));
+}
+
+function drawMaster(family: Family, style: Style, weight: Weight): Master {
   const params = weightParams(weight);
   const upper = drawContext(params.v, params.h);
   const lower = drawContext(params.v, params.hl, true);
@@ -135,7 +149,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     const cell = name !== undefined && edgeToEdge.has(name);
     const lean = (cs: Contour[]) => (cell ? cs : slant(cs));
     if (name) undarkened.set(name, lean(contours));
-    return lean(family === 'dark' && !cell ? contours.map((c) => insetContour(c, params.v * DARK_INSET_RATIO)) : contours);
+    return lean(isDark(family) && !cell ? contours.map((c) => insetContour(c, params.v * DARK_INSET_RATIO)) : contours);
   };
   const place = (p: Vec): Vec => (italic ? { x: p.x + p.y * ITALIC_SLOPE - ITALIC_SLOPE * ITALIC_PIVOT, y: p.y } : p);
   const placeAnchors = (anchors: Anchor[]) => anchors.map((a) => ({ ...a, ...place(a) }));
@@ -267,7 +281,7 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
       const next = parts[i + 1];
       if (next) {
         // Into each bar by more than Geld Dark Sans's inset, which trims the bridge's ends too.
-        const into = 0.5 + (family === 'dark' ? params.v * DARK_INSET_RATIO : 0);
+        const into = 0.5 + (isDark(family) ? params.v * DARK_INSET_RATIO : 0);
         const from = x + bar.right - into;
         const to = x + step + bars.get(next)!.left + into;
         const [top, bottom] = [Math.min(bar.top, bars.get(next)!.top), Math.max(bar.bottom, bars.get(next)!.bottom)];
@@ -278,8 +292,8 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     });
     glyphs.push({ name: parts.join('_'), advance: x, contours: finish(bridges, parts.join('_')), components, anchors: placeAnchors(carets), mark: false });
   }
-  glyphs.push({ name: LOCKUP.name, ...lockupGlyph(family === 'dark'), components: [], mark: false });
-  glyphs.push({ ...EMBLEM, ...emblemGlyph(family === 'dark'), components: [], anchors: [], mark: false });
+  glyphs.push({ name: LOCKUP.name, ...lockupGlyph(isDark(family)), components: [], mark: false });
+  glyphs.push({ ...EMBLEM, ...emblemGlyph(isDark(family)), components: [], anchors: [], mark: false });
   glyphs.push({ ...LOCKUP_CODE, advance: glyphs.find((gl) => gl.name === LOCKUP.name)!.advance, contours: [], components: [{ glyph: LOCKUP.name, dx: 0, dy: 0 }], anchors: [], mark: false });
 
   for (const arch of arches) {
