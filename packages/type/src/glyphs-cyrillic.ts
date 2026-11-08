@@ -208,6 +208,29 @@ const oBarred: Draw = (g) => {
   const w = g.wide(10);
   return [box(0, w, g.bottom(0), g.top(g.cap), ALL), bar(0, w, g.cap / 2)];
 };
+/**
+ * A stroke's own tail: on down past the baseline and turning right, for the letters Unicode names "with tail" (Ӆ Ӊ Ӎ),
+ * where those "with descender" (Ԯ Ң Ԥ) take Ц's tail, so the two stay apart.
+ */
+const ownTail = (g: DrawContext, x: number): Stroke => {
+  const b = g.bottom(-3);
+  return open(p(x, 1), p(x, b, true), p(x + 2.5, b));
+};
+/** A hook under a stroke turning back left, as ђ's and Ҕ's do (Ӈ Ԓ), or left under the first stroke (Ԩ). */
+const hookUnder = (g: DrawContext, x: number, top: number, dir: 1 | -1 = -1): Stroke => {
+  const b = g.bottom(-3);
+  return open(p(x, top), p(x, b, true), p(x + dir * 2.5, b));
+};
+/** A short stroke across a stem at y, reaching past it by OVERHANG: Ҟ Ҍ. */
+const across = (g: DrawContext, x: number, y: number): Stroke => bar(x - crossbarReach(g), x + crossbarReach(g), y);
+const elWith = (g: DrawContext, end: [number, number][]): Stroke[] => {
+  const w = g.wide(9.5);
+  const x = g.wide(2.5);
+  const t = g.top(g.cap);
+  const b = g.bottom(0);
+  return [open(p(-0.75, b), p(x, b, true), p(x, t), p(w, t), ...end.map(([px, py], i) => p(px, py, i < end.length - 1)))];
+};
+
 const hardSign: Draw = (g) => [bar(-g.wide(2.5), 0, g.top(g.cap)), ...softSign(g)];
 const yeru: Draw = (g) => {
   const w = g.wide(8);
@@ -276,6 +299,89 @@ const DRAWN: { name: string; unicode: number; lower?: number; lsb: number; rsb: 
   { name: 'Esdescender-cy', unicode: 0x4aa, lower: 0x4ab, lsb: 1.25, rsb: 1, draw: (g) => [...letter('C').draw(g), descender(g, g.wide(10) / 2)] },
   { name: 'Cheverticalstroke-cy', unicode: 0x4b8, lower: 0x4b9, lsb: 1.5, rsb: 1.5, draw: cheStroke },
   { name: 'Obarred-cy', unicode: 0x4e8, lower: 0x4e9, lsb: 1.25, rsb: 1.25, draw: oBarred },
+  // GF Cyrillic Pro: letters of Abkhaz, Chukchi, Khanty, Kildin Sami, Nivkh and others, each a letter the font draws with
+  // a tail, hook or stroke added.
+  // Ҍ: the stroke caps the stem, reaching both ways (Ъ's reaches left only); between bowl and top it has no room at Black.
+  { name: 'Semisoft-cy', unicode: 0x48c, lower: 0x48d, lsb: 0.5, rsb: 1.25, draw: (g) => [...softSign(g, Math.min(g.y(8), g.cap - 1.5 * g.h - 1.5)), across(g, 0, g.top(g.cap))] },
+  {
+    name: 'Ertick-cy',
+    unicode: 0x48e,
+    lower: 0x48f,
+    lsb: 1.5,
+    rsb: 0.75,
+    draw: (g) => {
+      const w = g.wide(9.5);
+      // From inside the bowl's foot outward, so nothing of it shows in the bowl.
+      return [...letter('P').draw(g), diagonal(g, w * 0.5, g.y(6), w * 0.8, g.y(6) - 2.5)];
+    },
+  },
+  // The stroke leaves 1.6 of stem above it; ҟ is k with the stroke across its ascender, as ħ has it (LOWER_OWN).
+  { name: 'Kastroke-cy', unicode: 0x49e, lsb: 0.5, rsb: 0.3, draw: (g) => [...letter('K').draw(g), across(g, 0, g.cap - g.h / 2 - 1.6)] },
+  { name: 'Tedescender-cy', unicode: 0x4ac, lower: 0x4ad, lsb: 0.5, rsb: 0.5, draw: (g) => [...letter('T').draw(g), ...tailAfter(g, g.wide(11) / 2, g.wide(11) / 2)] },
+  { name: 'Tetse-cy', unicode: 0x4b4, lower: 0x4b5, lsb: 0.5, rsb: 0.5, draw: (g) => [bar(-g.wide(4.5), g.wide(4.5), g.top(g.cap)), ...tse(g)] },
+  {
+    name: 'Kahook-cy',
+    unicode: 0x4c3,
+    lower: 0x4c4,
+    lsb: 1.5,
+    rsb: 0.75,
+    draw: (g) => {
+      const w = g.wide(9);
+      const m = g.y(6);
+      const reach = w + g.v / 2 - g.foot(w, g.cap - m);
+      return [stem(0, 0, g.cap), withPen(level(open(p(0, m), p(reach, g.cap)), false, true), g.diag), open(p(0, m), p(w, m, true), p(w, g.bottom(-3), true), p(w - 2.5, g.bottom(-3)))];
+    },
+  },
+  { name: 'Eltail-cy', unicode: 0x4c5, lower: 0x4c6, lsb: 0.75, rsb: 0.5, draw: (g) => [...el(g), ownTail(g, g.wide(9.5))] },
+  { name: 'Enhook-cy', unicode: 0x4c7, lower: 0x4c8, lsb: 1.5, rsb: 1.5, draw: (g) => [stem(0, 0, g.cap), hookUnder(g, g.wide(9), g.cap), bar(0, g.wide(9), g.cap / 2)] },
+  { name: 'Entail-cy', unicode: 0x4c9, lower: 0x4ca, lsb: 1.5, rsb: 0.5, draw: (g) => [...letter('H').draw(g), ownTail(g, g.wide(9))] },
+  { name: 'Emtail-cy', unicode: 0x4cd, lower: 0x4ce, lsb: 1.5, rsb: 0.5, draw: (g) => [...letter('M').draw(g), ownTail(g, g.wide(11))] },
+  { name: 'Gedescender-cy', unicode: 0x4f6, lower: 0x4f7, lsb: 1.5, rsb: 0.5, draw: (g) => [...ge(g), ...tailAfter(g, 0, 0)] },
+  {
+    name: 'Gestrokehook-cy',
+    unicode: 0x4fa,
+    lower: 0x4fb,
+    lsb: 0.5,
+    rsb: 0.5,
+    draw: (g) => {
+      const b = g.bottom(-3);
+      return [open(p(g.wide(9), g.top(g.cap)), p(0, g.top(g.cap)), p(0, b, true), p(2.5, b)), bar(-crossbarReach(g), g.wide(4.5), g.cap / 2)];
+    },
+  },
+  {
+    name: 'Hahook-cy',
+    unicode: 0x4fc,
+    lower: 0x4fd,
+    lsb: 0.4,
+    rsb: 0.75,
+    draw: (g) => {
+      const w = g.wide(10);
+      const e = spanOf(g.diag, w, g.cap);
+      // As Ҳ's tail does, a bar along the base from the foot's inner corner past the foot, then down and back left.
+      const x = w + e + tailReach(g) - g.v / 2;
+      // Both its cut corners' inner legs fall on the hook's inner edge, so it reaches two units further than Ҕ's.
+      const b = g.bottom(-5);
+      return [...letter('X').draw(g), open(p(w - e, g.bottom(0)), p(x, g.bottom(0), true), p(x, b, true), p(x - 3.5, b))];
+    },
+  },
+  {
+    name: 'Hastroke-cy',
+    unicode: 0x4fe,
+    lower: 0x4ff,
+    lsb: 0.4,
+    rsb: 0.4,
+    draw: (g) => {
+      const w = g.wide(10);
+      // Past the diagonals' outer edges where they are widest across the bar, at its top and bottom edges.
+      const half = spanOf(g.diag, w, g.cap) + (g.h / 2) * (w / g.cap) + 1.6;
+      return [...letter('X').draw(g), bar(w / 2 - half, w / 2 + half, g.cap / 2)];
+    },
+  },
+  { name: 'Elhook-cy', unicode: 0x512, lower: 0x513, lsb: 0.75, rsb: 1.5, draw: (g) => elWith(g, [[g.wide(9.5), g.bottom(-3)], [g.wide(9.5) - 2.5, g.bottom(-3)]]) },
+  { name: 'Pedescender-cy', unicode: 0x524, lower: 0x525, lsb: 1.5, rsb: 0.5, draw: (g) => [...pe(g), ...tailAfter(g, g.wide(9.5), g.wide(9.5))] },
+  { name: 'Shhadescender-cy', unicode: 0x526, lower: 0x527, lsb: 1.5, rsb: 0.5, draw: (g) => [...shha(g), ...tailAfter(g, g.wide(9), g.wide(9))] },
+  { name: 'Enlefthook-cy', unicode: 0x528, lower: 0x529, lsb: 1.5, rsb: 1.5, draw: (g) => [hookUnder(g, 0, g.cap), stem(g.wide(9), 0, g.cap), bar(0, g.wide(9), g.cap / 2)] },
+  { name: 'Eldescender-cy', unicode: 0x52e, lower: 0x52f, lsb: 0.75, rsb: 0.5, draw: (g) => [...el(g), ...tailAfter(g, g.wide(9.5), g.wide(9.5))] },
 ];
 
 /** Lowercase that is the small capital of a Latin capital: в к м н т. */
@@ -289,6 +395,7 @@ const SMALL_OF_LATIN: [string, number, string][] = [
 
 /** Lowercase with forms of their own: б ђ ћ ү ұ. */
 const LOWER_OWN: GlyphDef[] = [
+  { name: 'kastroke-cy', unicode: 0x49f, lower: true, lsb: 0.5, rsb: 0.3, draw: (g) => [...letter('k').draw(g), across(g, 0, (g.xHeight + g.ascender) / 2)] },
   {
     name: 'be-cy',
     unicode: 0x431,
@@ -380,11 +487,21 @@ export const CYRILLIC: GlyphDef[] = [
     return { name, unicode, smallcap: true, lsb: def.lsb, rsb: def.rsb, draw: def.draw, italic: ITALIC_LOWER[name] };
   }),
   ...LOWER_OWN,
+  // The base of Ҋ ҋ, which add Й's breve (CYRILLIC_LOCL_ACCENTED): И with Ц's tail.
+  { name: 'Iitail-cy', lsb: 1.5, rsb: 0.5, draw: (g) => [...ii(g), ...tailAfter(g, g.wide(9.5), g.wide(9.5))] },
+  { name: 'iitail-cy', smallcap: true, lsb: 1.5, rsb: 0.5, draw: (g) => [...ii(g), ...tailAfter(g, g.wide(9.5), g.wide(9.5))] },
 ];
 
 /** Cyrillic letters that are the Latin glyph, shared as a component. */
 export const CYRILLIC_ALIASES: PlacedDef[] = (
   [
+    // GF Cyrillic Pro's letters that are Latin ones: Abkhazian Ӡ is Ʒ, reversed Ԑ is Ɛ, Kurdish Ԝ is W.
+    ['Dzeabkhasian-cy', 0x4e0, 'Ezh'],
+    ['dzeabkhasian-cy', 0x4e1, 'ezh'],
+    ['Zereversed-cy', 0x510, 'Eopen'],
+    ['zereversed-cy', 0x511, 'eopen'],
+    ['We-cy', 0x51c, 'W'],
+    ['we-cy', 0x51d, 'w'],
     ['A-cy', 0x410, 'A'],
     ['Ve-cy', 0x412, 'B'],
     ['Ie-cy', 0x415, 'E'],
@@ -556,6 +673,9 @@ export const CYRILLIC_LOCL: GlyphDef[] = LOCL_FORMS.map((form) => ({
 
 /** Accented letters whose base has a language form: Bulgarian й and ѝ on its u-shaped и. */
 export const CYRILLIC_LOCL_ACCENTED: AccentedDef[] = [
+  // Ҋ ҋ: И with a tail under Й's breve; Unicode gives them no decomposition, so the pairing is stated here.
+  { name: 'Iishorttail-cy', unicode: 0x48a, base: 'Iitail-cy', marks: ['brevecomb.case'] },
+  { name: 'iishorttail-cy', unicode: 0x48b, base: 'iitail-cy', marks: ['brevecomb'] },
   { name: 'iibreve-cy.loclBGR', base: 'ii-cy.loclBGR', marks: ['brevecomb'] },
   { name: 'iigrave-cy.loclBGR', base: 'ii-cy.loclBGR', marks: ['gravecomb'] },
 ];

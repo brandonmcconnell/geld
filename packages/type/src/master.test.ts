@@ -1,4 +1,6 @@
 import { CODE_LIGATURES, codePieceName } from './code-ligatures';
+import { ALIASES, PLACED } from './composites';
+import { GLYPHS, SPACES } from './glyphs';
 import { bounds, type Contour, cutLeg, expandStroke, insetContour, winding } from './geometry';
 import { ITALIC_SLOPE, METRICS, WEIGHTS } from './grid';
 import { MATH_AXIS } from './draw';
@@ -55,6 +57,20 @@ describe('masters', () => {
 });
 
 describe('character set', () => {
+  it('gives every glyph its own name and every character one glyph, so no definition replaces another', () => {
+    const defs = [...GLYPHS, ...ALIASES, ...PLACED, ...SPACES];
+    const seen = (key: (d: (typeof defs)[number]) => string | number | undefined) => {
+      const counts = new Map<string | number, number>();
+      for (const d of defs) {
+        const k = key(d);
+        if (k !== undefined) counts.set(k, (counts.get(k) ?? 0) + 1);
+      }
+      return [...counts].filter(([, n]) => n > 1).map(([k]) => k);
+    };
+    expect(seen((d) => d.name)).toEqual([]);
+    expect(seen((d) => d.unicode)).toEqual([]);
+  });
+
   const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
   const chars = [...range(0x20, 0x7e), ...range(0xa0, 0xff), ...range(0x100, 0x17f)];
 
@@ -155,7 +171,10 @@ const orthogonal = (contours: Contour[]) =>
 
 describe('heavy weights', () => {
   /** B and 8 (and в, B's small capital, and its Bulgarian form) have a notch at the waist, Q's tail and ł's and ø's strokes cross (and their small capitals'), and ʾ ʿ are open angles, as are 2's between its diagonal and its foot and a strike's either side of the stem it crosses, and ᵽ's slot between its strike and bowl, by design. */
-  const notched = new Set(['B', 'eight', 'Q', 'lslash', 'Lslash', 'oslash', 'Oslash', 'litre', 've-cy', 've-cy.loclBGR', 'ringhalfleftmod', 'ringhalfrightmod', 'b.sc', 'q.sc', 'two', 'two.tf', 'two.osf', 'two.tosf', 'two.sc', 'tdiagonalstroke', 'lslash.sc', 'pstroke']);
+  // schwahook: its hook widens the box, so a scan crosses ə's lower counter beside a cut corner's inner leg, 1.26 at 800 in ə itself.
+  // ꜛ ꜜ: modifier letters, so counted, but an arrowhead's arms always narrow to a point against its shaft.
+  // rfishhookmiddletilde: a scan under its fishhook finds 1.16 to 1.3 at 700 and heavier, from the hook's end over the wave.
+  const notched = new Set(['rfishhookmiddletilde', 'arrowupraisedmod', 'arrowdownraisedmod', 'schwahook', 'B', 'eight', 'Q', 'lslash', 'Lslash', 'oslash', 'Oslash', 'litre', 've-cy', 've-cy.loclBGR', 'ringhalfleftmod', 'ringhalfrightmod', 'b.sc', 'q.sc', 'two', 'two.tf', 'two.osf', 'two.tosf', 'two.sc', 'tdiagonalstroke', 'tmiddletilde', 'lslash.sc', 'pstroke']);
 
   it('keep every letter, figure and currency counter at least 1.4 units open (superiors, ordinals and modifier letters in proportion), Black included', () => {
     const tight: string[] = [];

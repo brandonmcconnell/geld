@@ -22,7 +22,7 @@ OVERLAP_SIMPLE = 0x40
 SAMPLE = "HOnoGELD"
 CHAR_NAMES = {"-": "hyphen", "=": "equal", "<": "less", ">": "greater"}
 # Google Fonts' glyph sets the fonts must cover in full; each is added here once it is complete.
-GLYPHSETS = ["GF_Latin_Kernel", "GF_Latin_Core", "GF_Latin_Plus", "GF_Latin_Vietnamese", "GF_Latin_PriAfrican", "GF_Latin_African", "GF_Latin_Beyond", "GF_TransLatin_Pinyin", "GF_TransLatin_Arabic", "GF_Greek_Core", "GF_Cyrillic_Core", "GF_Cyrillic_Plus"]
+GLYPHSETS = ["GF_Latin_Kernel", "GF_Latin_Core", "GF_Latin_Plus", "GF_Latin_Vietnamese", "GF_Latin_PriAfrican", "GF_Latin_African", "GF_Latin_Beyond", "GF_TransLatin_Pinyin", "GF_TransLatin_Arabic", "GF_Greek_Core", "GF_Cyrillic_Core", "GF_Cyrillic_Plus", "GF_Phonetics_IPAStandard", "GF_Phonetics_APA"]
 
 failures: list[str] = []
 # The source name of each glyph shipped under a production name (ufo.ts productionNames), for the font being checked.
@@ -411,6 +411,11 @@ def check_css() -> None:
             check((DIST / "web" / url).exists(), f"{css.name} names {url}, which was not built")
     subset_files = {entry["file"] for entry in json.loads((DIST / "subsets.json").read_text())["files"]}
     check(subset_files <= named, f"subsets no CSS serves: {sorted(subset_files - named)[:5]}")
+    specimen = DIST / "specimen.html"
+    check(specimen.exists(), "the specimen was not built")
+    if specimen.exists():
+        for href in re.findall(r'href="(web/[^"]+)"', specimen.read_text()):
+            check((DIST / href).exists(), f"the specimen loads {href}, which was not built")
 
 
 def run_check(task: tuple) -> list[str]:

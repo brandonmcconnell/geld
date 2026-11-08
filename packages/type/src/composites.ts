@@ -1,6 +1,9 @@
 import { AFRICAN_ALIASES } from './glyphs-african';
 import { CYRILLIC_ALIASES } from './glyphs-cyrillic';
 import { GREEK_ALIASES, GREEK_TONOS, GREEK_TONOS_CAPS } from './glyphs-greek';
+import { MORE_ALIASES } from './glyphs-more';
+import { KEYS_ALIASES } from './glyphs-arrows';
+import { IPA_ALIASES } from './glyphs-ipa';
 import { VIETNAMESE_PAIRS } from './marks';
 import { FRACTIONS } from './glyphs-figures';
 
@@ -184,7 +187,7 @@ export const SPACING_ACCENTS: { name: string; unicode: number; mark: string; bel
 ];
 
 /** Glyphs that are another glyph under a second code point (Cyrillic and Greek letters shared with Latin), placed before the accented letters that use them. */
-export const ALIASES: PlacedDef[] = [...CYRILLIC_ALIASES, ...GREEK_ALIASES, ...AFRICAN_ALIASES];
+export const ALIASES: PlacedDef[] = [...CYRILLIC_ALIASES, ...GREEK_ALIASES, ...AFRICAN_ALIASES, ...MORE_ALIASES, ...KEYS_ALIASES, ...IPA_ALIASES];
 
 export { GREEK_TONOS };
 

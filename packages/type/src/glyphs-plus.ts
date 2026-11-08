@@ -31,18 +31,17 @@ import type { PathPoint, Stroke } from './geometry';
 import { DARK_INSET_RATIO } from './grid';
 
 /** Arrows: one right-pointing arrow on the math axis, turned for the other seven directions. */
-const ARROW_LENGTH = 12;
-const HEAD = 4;
+export const ARROW_LENGTH = 12;
+export const HEAD = 4;
 /** Double arrows are longer, so the white between their bars still shows between two heads at Black. */
 const DOUBLE_LENGTH = 14;
 
 /** The shaft stops inside the head, so nothing shows through the point. */
-function arrowRight(heads: { start?: boolean; end?: boolean } = { end: true }): Stroke[] {
-  const y = MATH_AXIS;
-  const inset = HEAD / 2;
-  const out: Stroke[] = [bar(heads.start ? inset : 0, heads.end ? ARROW_LENGTH - inset : ARROW_LENGTH, y)];
-  const head = (x: number, dir: 1 | -1) => open(p(x - dir * HEAD, y + HEAD), p(x, y), p(x - dir * HEAD, y - HEAD));
-  if (heads.end) out.push(head(ARROW_LENGTH, 1));
+export function arrowRight(heads: { start?: boolean; end?: boolean } = { end: true }, length = ARROW_LENGTH, y = MATH_AXIS, size = HEAD): Stroke[] {
+  const inset = size / 2;
+  const out: Stroke[] = [bar(heads.start ? inset : 0, heads.end ? length - inset : length, y)];
+  const head = (x: number, dir: 1 | -1) => open(p(x - dir * size, y + size), p(x, y), p(x - dir * size, y - size));
+  if (heads.end) out.push(head(length, 1));
   if (heads.start) out.push(head(0, -1));
   return out;
 }
@@ -51,12 +50,12 @@ function arrowRight(heads: { start?: boolean; end?: boolean } = { end: true }): 
  * Double arrows (⇒ ⇐ ⇔): the equals sign's two bars and a head grown by their spread, so its arms reach as far past the
  * outer bar as a single arrow's reach past its shaft. Each bar ends on the arm's centre line, inside its ink.
  */
-function doubleArrowRight(g: DrawContext, heads: { start?: boolean; end?: boolean } = { end: true }): { strokes: Stroke[]; length: number } {
+export function doubleArrowRight(g: DrawContext, heads: { start?: boolean; end?: boolean } = { end: true }, least = DOUBLE_LENGTH): { strokes: Stroke[]; length: number } {
   const y = MATH_AXIS;
   const spread = g.y(1.75) + g.h / 2;
   const reach = spread + HEAD - 1;
   // Two heads keep a stem's width of white between their arms' ends.
-  const length = heads.start && heads.end ? Math.max(DOUBLE_LENGTH, 2 * reach + 2 * g.v) : DOUBLE_LENGTH;
+  const length = heads.start && heads.end ? Math.max(least, 2 * reach + 2 * g.v) : least;
   const from = heads.start ? spread : 0;
   const to = heads.end ? length - spread : length;
   const out: Stroke[] = [bar(from, to, y + spread), bar(from, to, y - spread)];
@@ -288,6 +287,13 @@ export const PLUS: GlyphDef[] = [
   // The ring of the circled numerals (① and ss17): an octagon of the capitals' height, its wall capped so the figure
   // inside keeps its room at Black.
   { name: 'numeralring', lsb: 1, rsb: 1, draw: (g) => [hollow(octagon(7, g.cap / 2, g.cap + 1), Math.min(Math.max(g.v, g.h) * 0.8, 1.9), octagonLeg(g.cap + 1))] },
+  // ⑩–⑳: the ring stretched to hold two figures at Black, its corners the round ring's.
+  {
+    name: 'numeralringwide',
+    lsb: 1,
+    rsb: 1,
+    draw: (g) => [hollow([p(-0.5, -0.5, true), p(23.5, -0.5, true), p(23.5, g.cap + 0.5, true), p(-0.5, g.cap + 0.5, true)], Math.min(Math.max(g.v, g.h) * 0.8, 1.9), octagonLeg(g.cap + 1))],
+  },
   pipeTriangle('pipe.right', false),
   pipeTriangle('pipe.left', true),
   squiggle('leftsquigglearrow', 0x21dc, 2, true),

@@ -172,7 +172,7 @@ export function featureCss(): string {
 }
 
 /** The standard features, by the CSS that turns each on: what the package's README tells authors. */
-const STANDARD_FEATURES: [string, string][] = [
+export const STANDARD_FEATURES: [string, string][] = [
   ['font-variant-caps: small-caps', 'Small capitals for lowercase (smcp)'],
   ['font-variant-caps: all-small-caps', 'Small capitals for both cases (smcp, c2sc)'],
   ['font-variant-numeric: oldstyle-nums', 'Oldstyle figures (onum)'],
@@ -194,6 +194,24 @@ const STANDARD_FEATURES: [string, string][] = [
   ['font-feature-settings: "ornm"', 'Ornaments for the bullet (ornm)'],
 ];
 
+/** Where each weight reads well, from its stem: one grid unit is a twentieth of the size. */
+export const SIZE_GUIDE: [string, string][] = [
+  ['Regular to Bold (400 to 700)', 'text from 12px; Regular for reading, Medium (500) for interface labels at 12 to 14px.'],
+  ['Light (300)', 'text from 17px, where its stem is a pixel wide.'],
+  ['ExtraLight (200)', 'display sizes from 25px.'],
+  ['Thin (100)', 'display sizes from 44px.'],
+  ['ExtraBold and Black (800, 900)', 'headings and short words; their counters stay open at every size, but long text tires.'],
+  ['Geld Dark Sans', 'every size where light text stands on a dark background, at the same weight as dark text on light; it has the same widths, so a theme can switch with no reflow.'],
+];
+
+/** How to install and use the fonts outside the web. */
+export const APP_GUIDE = [
+  'Desktop apps: install the static fonts from `otf/` (or `ttf/` on Windows, hinted) for apps that list one font per weight, and the variable fonts from `variable/` for apps with a weight slider (Figma, Sketch, the Adobe apps). Install one kind at a time, since two copies of a family confuse font menus.',
+  'macOS: open the fonts in Font Book and choose Install. Windows: select them, right-click and choose Install for all users. Linux: copy them into `~/.local/share/fonts` and run `fc-cache`.',
+  'Features in apps: stylistic sets and character variants carry their names in the font, so Adobe apps (the OpenType panel and the Glyphs panel), Figma (Type details) and Affinity list them by name; Word turns on stylistic sets under Font, Advanced.',
+  'Code editors: set the font family to "Geld Sans" and turn on ligatures (VS Code: `"editor.fontLigatures": true`, or a list of features such as `"\'dlig\', \'ss12\'"` for chosen groups). The arrows need no setting.',
+];
+
 /** The labels of every feature class, for the package's README. */
 export function featureLabels(): [string, string][] {
   return [...featureCss().matchAll(/^\/\* (.+) \*\/\n\.geld-([a-z0-9]+) \{/gm)].map((match) => [match[2]!, match[1]!]);
@@ -210,7 +228,7 @@ export function fontPackageJson(version: string): string {
       name: '@geld/fonts',
       version,
       description: 'Geld Sans and Geld Dark Sans: variable, static and web fonts, with CSS for the web fonts and their features.',
-      files: ['web/*.woff2', 'web/*.css', 'variable/*.ttf', 'ttf/*.ttf', 'otf/*.otf', 'README.md'],
+      files: ['web/*.woff2', 'web/*.css', 'variable/*.ttf', 'ttf/*.ttf', 'otf/*.otf', 'README.md', 'specimen.html'],
       exports: {
         ...Object.fromEntries(css.map((name) => [`./${name}.css`, `./web/${name}.css`])),
         './web/*': './web/*',
@@ -267,6 +285,31 @@ export function fontPackageReadme(version: string): string {
     ...STANDARD_FEATURES.map(([css, feature]) => `| \`${css}\` | ${feature} |`),
     '',
     'Kerning, standard ligatures, contextual alternates (the arrows), mark positioning and composition are on by default. Set `lang` on the page for local forms (Bulgarian, Macedonian and Serbian Cyrillic, Turkish and Azeri i).',
+    '',
+    '## Recipes',
+    '',
+    '```css',
+    '/* Figures that line up in tables and counters */',
+    '.numbers { font-variant-numeric: tabular-nums; }',
+    '/* Code with every ligature group on, the plain arrows off, or nothing drawn as a ligature */',
+    'code { font-variant-ligatures: discretionary-ligatures; }',
+    'code.plain-arrows { font-feature-settings: "ss20"; }',
+    'code.literal { font-variant-ligatures: none; }',
+    '/* Capitals with their own punctuation and spacing */',
+    '.caps { text-transform: uppercase; font-feature-settings: "case", "cpsp"; }',
+    '```',
+    '',
+    '## Sizes',
+    '',
+    ...SIZE_GUIDE.map(([weights, advice]) => `- **${weights}**: ${advice}`),
+    '',
+    'At 20px a grid unit is one pixel. SemiBold (600), the weight drawn on the grid itself, has 2-pixel stems there, and at 40px and its multiples every one of its edges falls on a whole pixel. The static TTFs are hinted for Windows at small sizes; the variable fonts and the web fonts are not, which suits macOS, iOS and Android, where hinting is ignored.',
+    '',
+    'Underline and strikethrough thickness and position are set for every weight: `text-decoration-thickness: from-font` draws them at the weight\'s stroke.',
+    '',
+    '## In apps',
+    '',
+    ...APP_GUIDE.map((line) => `- ${line}`),
     '',
   ].join('\n');
 }

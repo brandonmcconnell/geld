@@ -1016,6 +1016,21 @@ export const TRADEMARK: GlyphDef = {
   },
 };
 
+/** ℠, as ™ is drawn: S and M at half the cap height, standing on it. */
+export const SERVICEMARK: GlyphDef = {
+  name: 'servicemark',
+  unicode: 0x2120,
+  lsb: 1,
+  rsb: 1,
+  draw: (g) => {
+    const small = g.sub(g.cap * 0.5, smallPen(g.v) * 0.95);
+    const rise = g.cap - small.cap;
+    const s = inPen(small, UPPER.find((d) => d.name === 'S')!.draw(small));
+    const m = inPen(small, UPPER.find((d) => d.name === 'M')!.draw(small));
+    return [...shift(s, 0, rise), ...shift(m, small.wide(9.5) + small.v + 1.25, rise)];
+  },
+};
+
 export const NOTDEF: GlyphDef = {
   name: '.notdef',
   lsb: 1,

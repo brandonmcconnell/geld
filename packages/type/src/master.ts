@@ -426,6 +426,38 @@ export function buildMaster(family: Family, style: Style, weight: Weight): Maste
     });
   }
 
+  // ⑩–⑳: the wide ring with two figures, spaced by their ink and centred in it as a pair.
+  const wide = byName.get('numeralringwide');
+  if (wide) {
+    const inkBox = (gl: MasterGlyph) => bounds(undarkened.get(gl.name) ?? gl.contours);
+    const r = inkBox(wide);
+    const words = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
+    words.forEach((word, i) => {
+      const [first, second] = [...String(10 + i)].map((d) => byName.get(`${FIGURE_NAMES[Number(d)]}.dnom`));
+      if (!first || !second) return;
+      const [a, b] = [inkBox(first), inkBox(second)];
+      const bx = a.maxX + 1.25 - b.minX;
+      const dy = (r.minY + r.maxY) / 2 - (a.minY + a.maxY) / 2;
+      const x0 = (r.minX + r.maxX) / 2 - (a.minX + bx + b.maxX) / 2;
+      const origin = place({ x: 0, y: 0 });
+      const glyph: MasterGlyph = {
+        name: `${word}circle`,
+        unicode: 0x2469 + i,
+        advance: wide.advance,
+        contours: [],
+        components: [
+          { glyph: 'numeralringwide', dx: 0, dy: 0 },
+          { glyph: first.name, dx: place({ x: x0, y: dy }).x - origin.x, dy },
+          { glyph: second.name, dx: place({ x: x0 + bx, y: dy }).x - origin.x, dy },
+        ],
+        anchors: [],
+        mark: false,
+      };
+      glyphs.push(glyph);
+      byName.set(glyph.name, glyph);
+    });
+  }
+
 
   for (const accent of SPACING_ACCENTS) {
     const mark = byName.get(accent.mark)!;
