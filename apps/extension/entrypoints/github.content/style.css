@@ -7339,7 +7339,7 @@ a.geld-review__rerun:hover {
   list-style: none;
 }
 
-/* On the commits list's grid: glyph at the row's edge, a 20px avatar column 10px on, text 16px after that; 29px rows, 12px type. */
+/* Who mentioned it first, at the row's edge (a 20px avatar column), then the reference led by its state glyph; 29px rows, 12px type. */
 .geld-review__mention {
   display: flex;
   align-items: center;
@@ -7348,19 +7348,21 @@ a.geld-review__rerun:hover {
   font-size: 12px;
 }
 
+/* Sized to the 12px text it leads, 4px from the reference. */
 .geld-review__mention-state {
   display: inline-flex;
   flex: 0 0 auto;
+  align-self: center;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  margin-right: 10px;
+  width: 12px;
+  margin-right: -2px;
   color: var(--geld-review-muted);
 }
 
 .geld-review__mention-state .octicon {
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
 }
 
 .geld-review__mention[data-state='open'] .geld-review__mention-state,
@@ -7385,7 +7387,7 @@ a.geld-review__rerun:hover {
   flex: 0 0 auto;
   width: 20px;
   height: 20px;
-  margin-right: 16px;
+  margin-right: 10px;
 }
 
 .geld-review__mention-link {
@@ -8896,7 +8898,7 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
 }
 
 /*
- * The Overview sidebar in Geld's order (`orderSidebars`): Reviewers, Related links, Activity, then GitHub's. GitHub's
+ * The Overview sidebar in Geld's order (`orderSidebars`): Reviewers, Related links, Mentions, Activity, then GitHub's. GitHub's
  * line above every section but the first in page order becomes a line above every section but the first shown.
  * Its rule (`.sidebar > [data-overview-sidebar-item] ~ [data-overview-sidebar-item]`) weighs three; the first's must outweigh it.
  */
@@ -8918,8 +8920,12 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
   order: 2;
 }
 
-[data-geld-sidebar-order] > [data-geld-order='activity'] {
+[data-geld-sidebar-order] > [data-geld-order='mentions'] {
   order: 3;
+}
+
+[data-geld-sidebar-order] > [data-geld-order='activity'] {
+  order: 4;
 }
 
 [data-geld-sidebar-order] > [data-overview-sidebar-item] {
