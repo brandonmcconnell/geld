@@ -28,7 +28,7 @@ import type { ResolvedRepoConfig } from './repo-config-source';
 import { RepoConfigSource, validConfigs } from './repo-config-source';
 import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManagedText, svgFromString, writeAttribute } from './dom';
 import { conversationHeadSha, detectHeadSha, fetchHeadSha, shaFromCommitUrl, watchFilesRefresh } from './head-sha';
-import { applyQuickReview, quickReviewStandBusy, reassertStatusPills, removeQuickReview } from './quick-review';
+import { applyQuickReview, quickReviewStandBusy, reassertStatusPills, rememberReviewGroup, removeQuickReview } from './quick-review';
 import type { HeaderStatGroup } from './header-stats';
 import { applyHeaderStats, findHeaderStatGroups, holdsHeaderStats, isCountsStandIn, isSrOnlyText, removeCountsStandIn, restoreHeaderStats, syncCountsStandIn } from './header-stats';
 import type { StandIn } from './header-stats';
@@ -1051,6 +1051,7 @@ export class GeldController {
       return;
     }
     if (!this.settings.enabled) {
+      rememberReviewGroup(repoFromPathname(window.location.pathname), false);
       this.teardown();
       this.publish({ ...IDLE_STATE, allowed: false });
       return;
@@ -1071,6 +1072,8 @@ export class GeldController {
     const decision = repo === null ? { allowed: true, rule: null } : decideRepo(this.repoRules, repo);
 
     if (!decision.allowed) {
+      // A repository left out: GitHub's review button shows there from the next load's first frame too.
+      rememberReviewGroup(repo, false);
       this.teardown();
       this.publish({ ...IDLE_STATE, repo, allowed: false, rule: decision.rule?.raw ?? null });
       return;

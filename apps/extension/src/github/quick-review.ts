@@ -95,15 +95,33 @@ function persistentBarActions(): HTMLElement | null {
   return document.querySelector<HTMLElement>(PERSISTENT_BAR_ACTIONS);
 }
 
-/** Whether the group stood in the page last time, for the next load's first frame (`applyReviewGroupHint`). */
+/**
+ * Whether the group stood in each repository's pages last time, for the next load's first frame (`applyReviewGroupHint`):
+ * per repository, since Geld can be off for one and on for the next. At most `GROUP_HINT_CAP` repositories, oldest out.
+ */
 const GROUP_HINT_KEY = 'geld:review-group';
-let groupHint: boolean | null = null;
+const GROUP_HINT_CAP = 200;
 
-function rememberReviewGroup(on: boolean): void {
-  if (groupHint === on) return;
-  groupHint = on;
+function readGroupHints(): Record<string, boolean> {
   try {
-    window.localStorage.setItem(GROUP_HINT_KEY, on ? '1' : '0');
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(GROUP_HINT_KEY) ?? '{}');
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'));
+  } catch {
+    return {};
+  }
+}
+
+/** Written only when it changes; the repository moves to the end, so the cap drops the one seen longest ago. */
+export function rememberReviewGroup(repo: string | null, on: boolean): void {
+  if (repo === null) return;
+  const hints = readGroupHints();
+  if (hints[repo] === on) return;
+  delete hints[repo];
+  hints[repo] = on;
+  const entries = Object.entries(hints);
+  try {
+    window.localStorage.setItem(GROUP_HINT_KEY, JSON.stringify(Object.fromEntries(entries.slice(Math.max(0, entries.length - GROUP_HINT_CAP)))));
   } catch {
     // Storage blocked: GitHub's review button shows until the controls mount, as before.
   }
@@ -116,13 +134,8 @@ function rememberReviewGroup(on: boolean): void {
  */
 export function applyReviewGroupHint(path: string = window.location.pathname): void {
   if (!/^\/[^/]+\/[^/]+\/pull\/\d+(?:\/|$)/.test(path)) return;
-  let hint: string | null = null;
-  try {
-    hint = window.localStorage.getItem(GROUP_HINT_KEY);
-  } catch {
-    return;
-  }
-  if (hint === '1') document.documentElement.setAttribute(ATTR_ACTIVE, '');
+  const repo = repoOf(path);
+  if (repo !== null && readGroupHints()[repo] === true) document.documentElement.setAttribute(ATTR_ACTIVE, '');
 }
 
 type Place = 'toolbar' | 'header' | 'mini' | 'bar';
@@ -445,7 +458,7 @@ function draftFor(pullPath: string): Draft {
 export function applyQuickReview(enabled: boolean, context: QuickReviewContext): void {
   const pullPath = pullPathOf(window.location.pathname);
   if (!enabled || !context.page.kind.startsWith('pull') || pullPath === null || viewerLogin() === '') {
-    if (!enabled) rememberReviewGroup(false);
+    if (!enabled) rememberReviewGroup(repoOf(window.location.pathname), false);
     removeQuickReview();
     return;
   }
@@ -486,7 +499,6 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
   showCount(mounted);
   showAuthor(mounted);
   showStatus(mounted);
-  rememberReviewGroup(true);
   if (earlyPillClick !== null) {
     const clicked = earlyPillClick;
     earlyPillClick = null;
@@ -495,6 +507,8 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
   }
   // GitHub's always-shown bar holds the group whatever the tab bar shows; without it, the counts are its anchor.
   if (anchor === null && persistentBarActions() === null) {
+    // Nowhere to stand: GitHub's own review button shows, and so it does from the next load's first frame.
+    rememberReviewGroup(repoOf(pullPath), false);
     unplace(mounted);
     return;
   }
@@ -509,6 +523,7 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
   if (host !== null && !host.hasAttribute(ATTR_HOST)) host.setAttribute(ATTR_HOST, '');
   // Written only when it changes: every write is a mutation record, and passes run on mutations.
   if (!document.documentElement.hasAttribute(ATTR_ACTIVE)) document.documentElement.setAttribute(ATTR_ACTIVE, '');
+  rememberReviewGroup(repoOf(pullPath), true);
 }
 
 function isStuck(element: Element): boolean {
