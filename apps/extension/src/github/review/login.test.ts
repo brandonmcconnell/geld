@@ -31,6 +31,14 @@ describe('loginOfLink', () => {
     // An absolute link to the App is the App too.
     expect(authorOf(link('<div><a class="author" href="https://github.com/apps/greptile-apps">greptile-apps</a></div>'))).toEqual({ login: 'greptile-apps[bot]', bot: true });
   });
+
+  it("knows an App by where its link leads whatever the link reads, and by GitHub's AI label", () => {
+    const shown = '<div><a data-testid="avatar-link" href="/greptile-apps[bot]" data-hovercard-url="/users/greptile-apps%5Bbot%5D/hovercard">greptile-apps</a></div>';
+    expect(authorOf(link(shown))).toEqual({ login: 'greptile-apps[bot]', bot: true });
+    expect(authorOf(link('<div><a data-testid="avatar-link" href="/greptile-apps%5Bbot%5D">greptile-apps</a></div>'))).toEqual({ login: 'greptile-apps[bot]', bot: true });
+    expect(authorOf(link('<div><a data-testid="avatar-link" href="/devin-ai-integration">devin-ai-integration</a><span data-component="Label">AI</span></div>'))).toEqual({ login: 'devin-ai-integration[bot]', bot: true });
+    expect(authorOf(link('<div><a data-testid="avatar-link" href="/alice" data-hovercard-url="/users/alice/hovercard">Alice (alice)</a></div>'))).toEqual({ login: 'alice', bot: false });
+  });
 });
 
 describe('showLogins', () => {
