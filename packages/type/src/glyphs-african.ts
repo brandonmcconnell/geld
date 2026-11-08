@@ -443,6 +443,19 @@ const BEYOND_LOWER: GlyphDef[] = [
       return [...draw('l')(g), open(p(g.v / 2 + 1.5, y), p(left, y, true), p(left, top, true), p(0, top))];
     },
   },
+  {
+    // Ɬ, the capital of ɬ (fontbakery's case pairs): the L with ɬ's belt on its stem at the capitals' middle.
+    name: 'Lbelt',
+    unicode: 0xa7ad,
+    lsb: 0.5,
+    rsb: 0.5,
+    draw: (g) => {
+      const y = g.y(6.5);
+      const left = -(g.v + 2.5);
+      const top = y + g.h + 3;
+      return [...draw('L')(g), open(p(g.v / 2 + 1.5, y), p(left, y, true), p(left, top, true), p(0, top))];
+    },
+  },
   { name: 'astroke', unicode: 0x2c65, lsb: 0.3, rsb: 0.3, draw: (g) => [...draw('a')(g), slash(g, g.wide(7.5), g.xHeight)] },
   { name: 'tdiagonalstroke', unicode: 0x2c66, lsb: 0.5, rsb: 0.5, draw: (g) => [...draw('t')(g), strikeThrough(g, 0, Math.min(g.y(5), g.xHeight - g.h - 1.6 - strikeReach(g)))] },
 ];
@@ -471,6 +484,7 @@ export const AFRICAN: GlyphDef[] = [
 export const AFRICAN_ALIASES: PlacedDef[] = (
   [
     ['Dafrican', 0x189, 'Eth'],
+    ['Chilatin', 0xa7b3, 'X'],
     ['Obarred', 0x19f, 'Obarred-cy'],
     ['obarred', 0x275, 'obarred-cy'],
     ['gamma-latin', 0x263, 'gamma'],

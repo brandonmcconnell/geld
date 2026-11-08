@@ -4,8 +4,12 @@ Fails (exit 1) when a font's advances, character map, decoration metrics, italic
 flags or HarfBuzz shaping differ from the source, or when Geld Dark Sans and Geld Sans differ in width.
 """
 
+import io
 import json
+import os
+import re
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import glyphsets
@@ -21,6 +25,17 @@ CHAR_NAMES = {"-": "hyphen", "=": "equal", "<": "less", ">": "greater"}
 GLYPHSETS = ["GF_Latin_Kernel", "GF_Latin_Core", "GF_Latin_Plus", "GF_Latin_Vietnamese", "GF_Latin_PriAfrican", "GF_Latin_African", "GF_Latin_Beyond", "GF_TransLatin_Pinyin", "GF_TransLatin_Arabic", "GF_Greek_Core", "GF_Cyrillic_Core", "GF_Cyrillic_Plus"]
 
 failures: list[str] = []
+# The source name of each glyph shipped under a production name (ufo.ts productionNames), for the font being checked.
+SOURCE_NAMES: dict[str, str] = {}
+
+
+def source(name: str) -> str:
+    return SOURCE_NAMES.get(name, name)
+
+
+def use_names(expected: dict) -> None:
+    SOURCE_NAMES.clear()
+    SOURCE_NAMES.update({shipped: name for name, shipped in expected.get("productionNames", {}).items()})
 
 
 def check(ok: bool, message: str) -> None:
@@ -29,13 +44,36 @@ def check(ok: bool, message: str) -> None:
 
 
 def advances(font: TTFont) -> dict[str, int]:
-    return {name: font["hmtx"][name][0] for name in font.getGlyphOrder()}
+    return {source(name): font["hmtx"][name][0] for name in font.getGlyphOrder()}
+
+
+def check_tables(path: Path, font: TTFont) -> None:
+    """What every shipped font carries: valid PostScript glyph names, Geld's vendor ID and no component built on a
+    composite; the variable fonts their instance name prefix, the static TTFs their hinting (D18) and nothing else."""
+    bad = [n for n in font.getGlyphOrder() if not re.fullmatch(r"[A-Za-z_.][A-Za-z0-9_.]*", n)]
+    check(not bad, f"{path.name}: invalid glyph names {bad[:5]}")
+    check(font["OS/2"].achVendID == "GELD", f"{path.name}: vendor ID {font['OS/2'].achVendID!r}")
+    check("STAT" in font and {r.AxisTag for r in font["STAT"].table.DesignAxisRecord.Axis} == {"wght", "ital"}, f"{path.name}: no STAT with weight and italic")
+    if "glyf" in font:
+        glyf = font["glyf"]
+        nested = [n for n in font.getGlyphOrder() if glyf[n].isComposite() and any(glyf[c.glyphName].isComposite() for c in glyf[n].components)]
+        check(not nested, f"{path.name}: nested components in {nested[:5]}")
+    if "fvar" in font:
+        check(bool(font["name"].getDebugName(25)), f"{path.name}: no variations PostScript name prefix")
+    hinted = "fpgm" in font
+    check(hinted == (path.parent.name == "ttf"), f"{path.name}: hinted is {hinted}")
+    if hinted:
+        check(bool(font["head"].flags & 1 << 3), f"{path.name}: hinted without whole-pixel ppem (head flags bit 3)")
+    elif "glyf" in font:
+        check("prep" in font and "gasp" in font, f"{path.name}: unhinted without smart dropout control")
 
 
 def check_static(path: Path, expected: dict, italic: bool) -> None:
+    use_names(expected)
     font = TTFont(path)
+    check_tables(path, font)
     check(advances(font) == expected["advances"], f"{path.name}: advances differ from the source")
-    cmap = {f"{k:04X}": v for k, v in font.getBestCmap().items()}
+    cmap = {f"{k:04X}": source(v) for k, v in font.getBestCmap().items()}
     check(cmap == expected["cmap"], f"{path.name}: character map differs from the source")
     post, os2 = font["post"], font["OS/2"]
     check(post.underlinePosition == expected["underlinePosition"], f"{path.name}: underline position")
@@ -53,7 +91,7 @@ def check_static(path: Path, expected: dict, italic: bool) -> None:
 
 def check_kerning(path: Path, data: bytes, weight: int, expected: dict) -> None:
     """Each sample pair moves by the source's kerning, resolved through its classes and exceptions (Dark Sans shares Sans's)."""
-    chars = {name: chr(code) for code, name in TTFont(path).getBestCmap().items()}
+    chars = {source(name): chr(code) for code, name in TTFont(path).getBestCmap().items()}
     for pair, want in expected.items():
         first, second = pair.split(" ")
         tabular = first.endswith(".tf")
@@ -75,7 +113,7 @@ def shape_total(data: bytes, weight: int, text: str, features: dict | None = Non
     buf.add_str(text)
     buf.guess_segment_properties()
     hb.shape(font, buf, {"kern": False} if features is None else features)
-    names = [font.glyph_to_string(info.codepoint) for info in buf.glyph_infos]
+    names = [source(font.glyph_to_string(info.codepoint)) for info in buf.glyph_infos]
     return names, sum(pos.x_advance for pos in buf.glyph_positions)
 
 
@@ -88,7 +126,7 @@ def shape(data: bytes, weight: int, text: str, language: str | None = None, feat
     if language:
         buf.language = language
     hb.shape(font, buf, features or {})
-    return [(font.glyph_to_string(i.codepoint), p) for i, p in zip(buf.glyph_infos, buf.glyph_positions)]
+    return [(source(font.glyph_to_string(i.codepoint)), p) for i, p in zip(buf.glyph_infos, buf.glyph_positions)]
 
 
 def check_marks(path: Path, data: bytes, weight: int) -> None:
@@ -255,6 +293,10 @@ def check_alternates(path: Path, data: bytes, weight: int, cases: list[dict]) ->
     check(got == ["onecircle", "twocircle"], f"{path.name} at {weight}: 12 with ss17 shaped {got}")
     got = [n for n, _ in shape(data, weight, "iä", features={"ss07": True})]
     check(got == ["i.ss07", "adieresis.ss07"], f"{path.name} at {weight}: iä with ss07 shaped {got}")
+    # An alternate keeps its octagonal dots whether a set or a cv made it.
+    for text, features, names in (("Ï", {"ss03": True, "ss07": True}, ["Idieresis.ss03.ss07"]), ("Ġ", {"cv21": True, "ss07": True}, ["Gdotaccent.cv21.ss07"])):
+        got = [n for n, _ in shape(data, weight, text, features=features)]
+        check(got == names, f"{path.name} at {weight}: {text} with {features} shaped {got}")
     if any(c["glyph"] == "a.ss01" for c in cases):
         got = [n for n, _ in shape(data, weight, "á", features={"ss01": True})]
         check(got == ["aacute.ss01"], f"{path.name} at {weight}: á with ss01 shaped {got}")
@@ -288,7 +330,9 @@ def check_alternates(path: Path, data: bytes, weight: int, cases: list[dict]) ->
 
 
 def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None:
+    use_names(next(iter(by_weight.values())))
     font = TTFont(path)
+    check_tables(path, font)
     cmap = set(font.getBestCmap())
     for name in GLYPHSETS:
         missing = sorted(set(glyphsets.unicodes_per_glyphset(name)) - cmap)
@@ -320,16 +364,101 @@ def check_variable(path: Path, by_weight: dict[str, dict], italic: bool) -> None
         check_alternates(path, data, int(weight), expected["alternates"])
 
 
+# Words the web subsets are shaped with, each checked in the subsets that hold all of its characters.
+SUBSET_WORDS = "-> => ff fi ft Te Ta AV std::x 1/2 <= != www Ġ Łódź Đức ẞ Привет Ђорђе Ωμέγα ἀρχή → ★ ▓ ✓ ⚠ ⇝".split()
+
+
+def ttf_bytes(path: Path) -> bytes:
+    font = TTFont(path)
+    font.flavor = None
+    out = io.BytesIO()
+    font.save(out)
+    return out.getvalue()
+
+
+def positions(data: bytes, weight: int, text: str, features: dict) -> list[tuple[int, int, int]]:
+    font = hb.Font(hb.Face(data))
+    font.set_variations({"wght": weight})
+    buf = hb.Buffer()
+    buf.add_str(text)
+    buf.guess_segment_properties()
+    hb.shape(font, buf, features)
+    return [(p.x_advance, p.x_offset, p.y_offset) for p in buf.glyph_positions]
+
+
+def check_subset(path: Path, full: Path, codepoints: list[int], weights: list[int]) -> None:
+    """A web subset holds exactly its characters the full font has, carries the full font's tables, and shapes every
+    word it can set, with and without dlig, as the full font does."""
+    font = TTFont(path)
+    check_tables(path, font)
+    full_cmap = set(TTFont(full).getBestCmap())
+    check(set(font.getBestCmap()) == set(codepoints) & full_cmap, f"{path.name}: characters differ from its subset")
+    data, reference = ttf_bytes(path), ttf_bytes(full)
+    held = set(font.getBestCmap())
+    words = [w for w in SUBSET_WORDS if all(ord(c) in held for c in w)]
+    for weight in weights:
+        for features in ({}, {"dlig": True}):
+            for word in words:
+                check(positions(data, weight, word, features) == positions(reference, weight, word, features), f"{path.name} at {weight}: {word} with {features} sets differently from the full font")
+
+
+def check_css() -> None:
+    """Every font the web CSS names exists, and every subset file is served by some CSS."""
+    named = set()
+    for css in (DIST / "web").glob("*.css"):
+        for url in re.findall(r'url\("\./([^"]+)"\)', css.read_text()):
+            named.add(url)
+            check((DIST / "web" / url).exists(), f"{css.name} names {url}, which was not built")
+    subset_files = {entry["file"] for entry in json.loads((DIST / "subsets.json").read_text())["files"]}
+    check(subset_files <= named, f"subsets no CSS serves: {sorted(subset_files - named)[:5]}")
+
+
+def run_check(task: tuple) -> list[str]:
+    """One font's checks in a worker process, which hands back what failed."""
+    failures.clear()
+    kind, path, *args = task
+    if kind == "web":
+        check_tables(path, TTFont(path))
+    elif kind == "subset":
+        check_subset(path, *args)
+    else:
+        {"static": check_static, "variable": check_variable}[kind](path, *args)
+    return list(failures)
+
+
 def main() -> None:
+    quick = "--quick" in sys.argv
+    jobs = next((int(a.split("=")[1]) for a in sys.argv if a.startswith("--jobs=")), os.cpu_count() or 1)
     manifest = json.loads((DIST / "manifest.json").read_text())
+    tasks: list[tuple] = []
     for family, styles in manifest.items():
         for style, by_weight in styles.items():
             italic = style == "italic"
-            for weight, expected in by_weight.items():
-                for folder, ext in (("ttf", "ttf"), ("otf", "otf")):
-                    check_static(DIST / folder / f"{expected['postscriptName']}.{ext}", expected, italic)
             suffix = "-Italic" if italic else ""
-            check_variable(DIST / "variable" / f"{family}{suffix}[wght].ttf", by_weight, italic)
+            tasks.append(("variable", DIST / "variable" / f"{family}{suffix}[wght].ttf", by_weight, italic))
+            if not quick:
+                for weight, expected in by_weight.items():
+                    for folder, ext in (("ttf", "ttf"), ("otf", "otf")):
+                        tasks.append(("static", DIST / folder / f"{expected['postscriptName']}.{ext}", expected, italic))
+    if not quick:
+        subsets = json.loads((DIST / "subsets.json").read_text())
+        subset_files = {entry["file"] for entry in subsets["files"]}
+        tasks += [("web", path) for path in sorted((DIST / "web").glob("*.woff2")) if path.name not in subset_files]
+        names = {"sans": "GeldSans", "dark": "GeldDarkSans"}
+        for entry in subsets["files"]:
+            family, style, weight = names[entry["family"]], entry["style"], entry["weight"]
+            codepoints = next(s["codepoints"] for s in subsets["subsets"][entry["family"]][style] if s["name"] == entry["subset"])
+            if weight == "wght":
+                full, weights = DIST / "variable" / f"{family}{'-Italic' if style == 'italic' else ''}[wght].ttf", [100, 400, 900]
+            else:
+                full, weights = DIST / "web" / f"{manifest[family][style][str(weight)]['postscriptName']}.woff2", [weight]
+            tasks.append(("subset", DIST / "web" / entry["file"], full, codepoints, weights))
+    if not quick:
+        check_css()
+    with ProcessPoolExecutor(max_workers=jobs) as pool:
+        found = [f for result in pool.map(run_check, tasks) for f in result]
+    failures.clear()
+    failures.extend(found)
     sans, dark = manifest["GeldSans"], manifest["GeldDarkSans"]
     for style in sans:
         for weight in sans[style]:
@@ -340,7 +469,7 @@ def main() -> None:
     if failures:
         print("\n".join(failures))
         sys.exit(1)
-    print("Fonts match the source.")
+    print(f"Fonts match the source ({len(tasks)} fonts{', variable only' if quick else ''}).")
 
 
 if __name__ == "__main__":
