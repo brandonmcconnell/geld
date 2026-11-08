@@ -8768,40 +8768,73 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
 }
 
 
-/* Embedded shell in workflow run blocks, without replacing GitHub's diff nodes. */
-::highlight(geld-shell-plain),
-::highlight(geld-shell-subst) {
-  color: var(--fgColor-default);
-}
-
-::highlight(geld-shell-keyword) {
+/* GitHub's global stylesheet owns these token colors. Zero specificity lets it take over when it loads. */
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) .pl-k) {
   color: var(--color-prettylights-syntax-keyword);
 }
 
-::highlight(geld-shell-built_in),
-::highlight(geld-shell-title) {
-  color: var(--color-prettylights-syntax-entity);
-}
-
-::highlight(geld-shell-literal),
-::highlight(geld-shell-number),
-::highlight(geld-shell-attr) {
-  color: var(--color-prettylights-syntax-constant);
-}
-
-::highlight(geld-shell-string) {
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) :is(.pl-s, .pl-pds, .pl-sr)) {
   color: var(--color-prettylights-syntax-string);
 }
 
-::highlight(geld-shell-comment) {
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) .pl-c) {
   color: var(--color-prettylights-syntax-comment);
 }
 
-::highlight(geld-shell-variable) {
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) .pl-c1) {
+  color: var(--color-prettylights-syntax-constant);
+}
+
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) :is(.pl-e, .pl-en)) {
+  color: var(--color-prettylights-syntax-entity);
+}
+
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) .pl-ent) {
+  color: var(--color-prettylights-syntax-entity-tag);
+}
+
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) :is(.pl-v, .pl-smw)) {
   color: var(--color-prettylights-syntax-variable);
 }
 
-::highlight(geld-shell-meta) {
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) .pl-s .pl-v) {
+  color: var(--color-prettylights-syntax-constant);
+}
+
+/* Diff syntax colors on GitHub's original text nodes. */
+::highlight(geld-syntax-plain),
+::highlight(geld-syntax-subst) {
+  color: var(--fgColor-default);
+}
+
+::highlight(geld-syntax-keyword) {
+  color: var(--color-prettylights-syntax-keyword);
+}
+
+::highlight(geld-syntax-built_in),
+::highlight(geld-syntax-title) {
+  color: var(--color-prettylights-syntax-entity);
+}
+
+::highlight(geld-syntax-literal),
+::highlight(geld-syntax-number),
+::highlight(geld-syntax-attr) {
+  color: var(--color-prettylights-syntax-constant);
+}
+
+::highlight(geld-syntax-string) {
+  color: var(--color-prettylights-syntax-string);
+}
+
+::highlight(geld-syntax-comment) {
+  color: var(--color-prettylights-syntax-comment);
+}
+
+::highlight(geld-syntax-variable) {
+  color: var(--color-prettylights-syntax-variable);
+}
+
+::highlight(geld-syntax-meta) {
   color: var(--color-prettylights-syntax-comment);
 }
 

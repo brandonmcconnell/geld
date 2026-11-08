@@ -60,7 +60,7 @@ import { applyVirtualHiddenStyles, ATTR_VIRTUAL, removeVirtualHiddenStyles } fro
 import { detachBreakdownTooltip, removeTooltipElement } from './ui/tooltip';
 import { categoryIconFor } from './ui/icons';
 import { expandLargeDiffs } from './large-diffs';
-import { applyWorkflowSyntax, removeWorkflowSyntax } from './workflow-syntax';
+import { applyDiffSyntax, removeDiffSyntax } from './diff-syntax';
 import type { TreeSectionFile } from './ui/tree-section';
 import { fileFilterQuery, panelForSearch } from './ui/tree-search';
 import {
@@ -1096,7 +1096,7 @@ export class GeldController {
       const view = phase('read', () => legacyAdapter.read() ?? reactAdapter.read());
       this.currentView = view;
       if (view !== null) {
-        applyWorkflowSyntax(view.entries);
+        applyDiffSyntax(view.entries);
         const result = phase('files', () => this.applyView(view, page.stateKey, matcher));
         this.autoMarkViewed(view, page.stateKey, matcher);
         this.lastFiles = { view, breakdown: result.breakdown, expanded: result.expanded, renderedEntryCount: view.entries.length };
@@ -1916,7 +1916,7 @@ export class GeldController {
   }
 
   private teardownView(): void {
-    removeWorkflowSyntax();
+    removeDiffSyntax();
     for (const element of queryAll(`[${ATTR_CONTAINER}]`)) {
       element.removeAttribute(ATTR_CONTAINER);
       element.removeAttribute(ATTR_EXPANDED);
