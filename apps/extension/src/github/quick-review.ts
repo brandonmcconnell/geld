@@ -8,7 +8,7 @@ import type { HeaderStatGroup } from './header-stats';
 import { countsSkeletonStandIn, countsWrapperBusy, isCountsStandIn } from './header-stats';
 import { detectHeadSha } from './head-sha';
 import type { MergeActions, MergeBox, MergeMethod, StatusAction } from './merge-actions';
-import { actionErrorText, autoMergeRequest, closeRequest, draftRequest, fetchMergeBox, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, methodHint, prefetchMergeBox, readMergeActions, queueRequest, readyRequest, rememberMethod, reopenRequest, stackQueueRequest, viewerVerdict } from './merge-actions';
+import { actionErrorText, autoMergeRequest, closeRequest, draftRequest, fetchMergeBox, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, methodHint, partialMayWait, prefetchMergeBox, readMergeActions, queueRequest, readyRequest, rememberMethod, reopenRequest, stackQueueRequest, viewerVerdict } from './merge-actions';
 import type { PageInfo } from './page';
 import { pullRequestStateWords } from './page';
 import type { PendingComment } from './pending-review';
@@ -933,8 +933,9 @@ async function loadMergeActions(state: Mounted): Promise<MergeActions | null> {
     if (!current()) return;
     // A refresh (each minute, on return, after the state label changed) already holds a complete reading of this pull
     // request: the page's box alone, before the stack's other members are read, would take away the Overview's merge
-    // button and the menu's stack choices for the moment until they are, and put them back.
-    if (state.mergeActions !== null && state.mergeActions.partial !== true) return;
+    // button and the menu's stack choices for the moment until they are, and put them back. Not when it says the stack
+    // or the pull request changed: the choices held would then name pull requests a stack merge no longer takes alone.
+    if (state.mergeActions !== null && state.mergeActions.partial !== true && partialMayWait(state.mergeActions, partial)) return;
     state.mergeActions = partial;
     showStatus(state);
     refreshOpenMenu(state);

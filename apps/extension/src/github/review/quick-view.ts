@@ -359,6 +359,8 @@ export interface MentionLine {
   /** The mentioner's avatar link (GitHub's, cloned: its hovercard attributes work anywhere). */
   readonly avatar: HTMLElement | null;
   readonly time: string;
+  /** The mention's moment, for GitHub's live relative time in place of `time` (lines read from the timeline's data). */
+  readonly at?: string;
 }
 
 /** One line per reference in a cross-reference row ("This was referenced" rows hold several). */
@@ -425,7 +427,8 @@ function mentionRow(line: MentionLine): HTMLElement {
     createElement('span', { class: 'geld-review__mention-title' }, [line.title]),
   ]);
   const row = createElement('li', { class: 'geld-review__mention', 'data-state': line.state }, [line.avatar ?? createElement('span', { class: 'geld-review__mention-who', 'aria-hidden': 'true' }), anchor]);
-  if (line.time !== '') row.append(createElement('span', { class: 'geld-review__time' }, [line.time]));
+  if (line.at !== undefined && line.at !== '') row.append(relativeTimeElement(line.at, 'geld-review__time'));
+  else if (line.time !== '') row.append(createElement('span', { class: 'geld-review__time' }, [line.time]));
   return row;
 }
 
@@ -438,8 +441,8 @@ export type RefLookup = (href: string) => RefDetails | null;
  * description mentions. Rendered from the rows rather than moving them: a
  * mention row is all chrome.
  */
-export function renderMentionsView(slot: HTMLElement, nodes: readonly HTMLElement[], outgoing: readonly MentionLine[] = [], lookup: RefLookup = () => null): void {
-  const incoming = nodes.flatMap((node) => mentionLinesOf(node));
+export function renderMentionsView(slot: HTMLElement, nodes: readonly HTMLElement[], outgoing: readonly MentionLine[] = [], lookup: RefLookup = () => null, incomingRead: readonly MentionLine[] = []): void {
+  const incoming = [...nodes.flatMap((node) => mentionLinesOf(node)), ...incomingRead];
   const wrap = createElement('div', { class: 'geld-review__mentions-wrap' });
   const section = (label: string, lines: readonly MentionLine[]): void => {
     if (lines.length === 0) return;
