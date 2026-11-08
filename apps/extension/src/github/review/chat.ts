@@ -20,7 +20,7 @@ import { fitPathInto } from './path-fit';
 import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
 import { ATTR_EDITED_FOR, ATTR_TIME_FOR } from './panel';
-import { isTeleported, onRestore, ownedBy, restoreAll, teleportInto } from './teleport';
+import { isTeleported, onRestore, ownedBy, restoreAll, teleportedNodes, teleportInto } from './teleport';
 import { inlineText } from './inline-text';
 import { armViaHovercard } from './via';
 import type { ViaBot } from './via';
@@ -209,6 +209,9 @@ export function renderChatView(slot: HTMLElement, threads: readonly HTMLElement[
     parking = null;
     return;
   }
+  // A chat parked for something else (its strip unfolded, another thread) holds the threads on loan: home first, so
+  // this chat can borrow them.
+  releaseParkedChats();
   const list = createElement('div', { class: CHATS_CLASS, [ATTR_CHAT_KEY]: key });
   slot.replaceChildren(list);
   ownedBy(list, () => dressThreads(list, threads, handlers, sources));
@@ -289,11 +292,21 @@ export function parkChats(panel: Element): HTMLElement | null {
   return chats;
 }
 
+/** The loans inside a chat, read before any of them moves. */
+export function parkedLoans(chats: HTMLElement): readonly HTMLElement[] {
+  return teleportedNodes().filter((node) => chats.contains(node));
+}
+
 /** A parked chat no view took back this pass: its loans go home and its dressing comes off. */
 export function releaseParkedChats(): void {
   const chats = parked;
   parked = null;
-  if (chats !== null) restoreAll((node) => !chats.contains(node), (owner) => owner !== chats);
+  if (chats !== null) {
+    // Taken before anything moves: the chat's hooks remove its side slots (the controls in them leave the chat) and
+    // a thread going home takes its nested loans out of it too.
+    const inside = new Set(parkedLoans(chats));
+    restoreAll((node) => !inside.has(node), (owner) => owner !== chats);
+  }
   parking?.remove();
   parking = null;
 }

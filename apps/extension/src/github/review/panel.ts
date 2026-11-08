@@ -29,7 +29,7 @@ import { requestDetail, requestSentence } from './bot-requests';
 import { formatSyncAge } from '../../ui/sync-age';
 import type { Closure, ClosureKind, EventHeadline } from './fold';
 import { headlineText } from './fold';
-import { ATTR_TELEPORTED, reclaimOrphans, restoreAll } from './teleport';
+import { ATTR_TELEPORTED, reclaimOrphans, restoreAll, teleportedNodes } from './teleport';
 import { overviewColumnGap, overviewDescription } from './overview-page';
 import { ATTR_NOTE, ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import type { ReviewerCandidate } from './reviewers';
@@ -3183,7 +3183,10 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   const chats = existing !== null && carried === null ? (options.parkChats?.(existing) ?? null) : null;
   // Quick-viewed nodes live inside the old panel; send them home before it goes.
   if (carried !== null) restoreAll((node) => carried.contains(node));
-  else if (chats !== null) restoreAll((node) => chats.contains(node), (owner) => owner === chats);
+  else if (chats !== null) {
+    const parkedLoans = new Set(teleportedNodes().filter((node) => chats.contains(node)));
+    restoreAll((node) => parkedLoans.has(node), (owner) => owner === chats);
+  }
   else restoreAll();
   if (existing !== null) reclaimOrphans(existing, carried ?? undefined);
   for (const stale of document.querySelectorAll(`[${ATTR_ATTACHED}]`)) {
