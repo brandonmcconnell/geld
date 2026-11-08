@@ -757,6 +757,15 @@ describe('the description folded from the first frame', () => {
     expect(body.querySelector('[data-geld-desc-fold]')).not.toBeNull();
   });
 
+  it('finds the hint whatever the letter case of the repository in the URL', async () => {
+    history.replaceState(null, '', '/casey/gadgets/pull/903');
+    rememberDescriptionFold('Casey/Gadgets', { toolsAway: false });
+    applyDescriptionFoldHint('/casey/GADGETS/pull/903');
+    arrive();
+    await settle();
+    expect(descriptionUnshortened()).toBe(false);
+  });
+
   it('leaves it whole in a repository where it did not fold, or on a tab other than the conversation', async () => {
     history.replaceState(null, '', '/acme/widgets/pull/902');
     rememberDescriptionFold('acme/widgets', false);

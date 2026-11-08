@@ -2185,6 +2185,12 @@ describe('the review group hint for the first frame', () => {
     expect(document.documentElement.hasAttribute('data-geld-quick-review')).toBe(false);
   });
 
+  it('finds the hint whatever the letter case of the repository in the URL', () => {
+    rememberReviewGroup('Acme/Widgets', true);
+    applyReviewGroupHint('/acme/widgets/pull/7');
+    expect(document.documentElement.hasAttribute('data-geld-quick-review')).toBe(true);
+  });
+
   it('leaves GitHub’s button alone once the group stood down there (Geld off, the repository left out, nowhere to stand)', () => {
     rememberReviewGroup('acme/widgets', true);
     rememberReviewGroup('acme/widgets', false);

@@ -923,8 +923,10 @@ function readFoldHints(): Record<string, FoldHint> {
 }
 
 /** Written only when it changes (it is called before paint on every batch). */
-export function rememberDescriptionFold(repo: string | null, hint: FoldHint): void {
-  if (repo === null) return;
+export function rememberDescriptionFold(name: string | null, hint: FoldHint): void {
+  if (name === null) return;
+  // GitHub's repository names ignore case: `/Acme/Widgets` and `/acme/widgets` are one repository.
+  const repo = name.toLowerCase();
   const key = JSON.stringify(hint);
   if (writtenHints.get(repo) === key) return;
   writtenHints.set(repo, key);
@@ -955,7 +957,7 @@ let earlyTimer = 0;
 export function applyDescriptionFoldHint(path: string = window.location.pathname): void {
   const match = /^\/([^/]+)\/([^/]+)\/pull\/\d+\/?$/.exec(path);
   if (match === null) return;
-  const hint = readFoldHints()[`${match[1]}/${match[2]}`];
+  const hint = readFoldHints()[`${match[1]}/${match[2]}`.toLowerCase()];
   if (hint === undefined || hint === false) return;
   const fold = (records: readonly MutationRecord[] | null): void => {
     const body = descriptionBody();
