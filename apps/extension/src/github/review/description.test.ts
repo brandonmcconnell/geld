@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { descriptionUnshortened, hiddenBlocks, isBlankHeading, outlineOf, railsOf, releaseDescription, shortenDescription } from './description';
+import { applyDescriptionFoldHint, descriptionUnshortened, hiddenBlocks, isBlankHeading, outlineOf, railsOf, releaseDescription, rememberDescriptionFold, shortenDescription, stopEarlyDescriptionFold } from './description';
 
 /** One animation frame. Registered after the click, it runs after the click's own callback in the same frame. */
 const frame = (): Promise<void> => new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -724,5 +724,59 @@ describe('shortenDescription', () => {
     expect(body.lastElementChild?.textContent).toBe('Show full description');
     shortenDescription(false);
     expect(document.querySelector('.geld-desc-more, .geld-desc-toggle, [data-geld-desc-cap], [data-geld-desc-fold]')).toBeNull();
+  });
+});
+
+describe('the description folded from the first frame', () => {
+  afterEach(() => {
+    stopEarlyDescriptionFold();
+    shortenDescription(false);
+    document.body.innerHTML = '';
+    window.localStorage.clear();
+  });
+
+  const heading = (level: number, text: string): string => `<h${level}>${text}</h${level}>`;
+  const arrive = (): HTMLElement => {
+    document.body.innerHTML = `<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>intro</p>${heading(2, 'Summary')}<p>a</p>${heading(3, 'Details')}<p>b</p></div></div>`;
+    const body = document.querySelector('.js-comment-body');
+    if (!(body instanceof HTMLElement)) throw new Error('no body');
+    return body;
+  };
+  const settle = async (): Promise<void> => {
+    await Promise.resolve();
+    await Promise.resolve();
+  };
+
+  it('folds the description in the callback that sees it arrive, where it folded last time', async () => {
+    history.replaceState(null, '', '/acme/widgets/pull/901');
+    rememberDescriptionFold('acme/widgets', { toolsAway: false });
+    applyDescriptionFoldHint('/acme/widgets/pull/901');
+    const body = arrive();
+    await settle();
+    expect(descriptionUnshortened()).toBe(false);
+    expect(body.querySelector('[data-geld-desc-fold]')).not.toBeNull();
+  });
+
+  it('finds the hint whatever the letter case of the repository in the URL', async () => {
+    history.replaceState(null, '', '/casey/gadgets/pull/903');
+    rememberDescriptionFold('Casey/Gadgets', { toolsAway: false });
+    applyDescriptionFoldHint('/casey/GADGETS/pull/903');
+    arrive();
+    await settle();
+    expect(descriptionUnshortened()).toBe(false);
+  });
+
+  it('leaves it whole in a repository where it did not fold, or on a tab other than the conversation', async () => {
+    history.replaceState(null, '', '/acme/widgets/pull/902');
+    rememberDescriptionFold('acme/widgets', false);
+    applyDescriptionFoldHint('/acme/widgets/pull/902');
+    arrive();
+    await settle();
+    expect(descriptionUnshortened()).toBe(true);
+    rememberDescriptionFold('acme/widgets', { toolsAway: false });
+    applyDescriptionFoldHint('/acme/widgets/pull/902/changes');
+    arrive();
+    await settle();
+    expect(descriptionUnshortened()).toBe(true);
   });
 });

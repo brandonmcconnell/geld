@@ -113,8 +113,10 @@ function readGroupHints(): Record<string, boolean> {
 }
 
 /** Written only when it changes; the repository moves to the end, so the cap drops the one seen longest ago. */
-export function rememberReviewGroup(repo: string | null, on: boolean): void {
-  if (repo === null) return;
+export function rememberReviewGroup(name: string | null, on: boolean): void {
+  if (name === null) return;
+  // GitHub's repository names ignore case: `/Acme/Widgets` and `/acme/widgets` are one repository.
+  const repo = name.toLowerCase();
   const hints = readGroupHints();
   if (hints[repo] === on) return;
   delete hints[repo];
@@ -139,7 +141,7 @@ export function withdrawReviewGroupHint(): void {
 
 export function applyReviewGroupHint(path: string = window.location.pathname): void {
   if (!/^\/[^/]+\/[^/]+\/pull\/\d+(?:\/|$)/.test(path)) return;
-  const repo = repoOf(path);
+  const repo = repoOf(path)?.toLowerCase() ?? null;
   if (repo !== null && readGroupHints()[repo] === true) document.documentElement.setAttribute(ATTR_ACTIVE, '');
 }
 

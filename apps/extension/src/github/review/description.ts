@@ -895,3 +895,84 @@ export function descriptionUnshortened(): boolean {
 export function releaseDescription(): void {
   release();
 }
+
+/**
+ * Whether the description folds on each repository's pull requests, as the controller last decided there (Geld on, the
+ * repository allowed, "Shorten the description" on, and whether the digest takes the tools' blocks away): for the
+ * next load, whose description GitHub paints before the settings and the catalog have loaded and the controller has
+ * started. At most `FOLD_HINT_CAP` repositories, oldest out.
+ */
+const FOLD_HINT_KEY = 'geld:description-fold';
+const FOLD_HINT_CAP = 200;
+type FoldHint = { readonly toolsAway: boolean } | false;
+const writtenHints = new Map<string, string>();
+
+function readFoldHints(): Record<string, FoldHint> {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(FOLD_HINT_KEY) ?? '{}');
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+    const hints: Record<string, FoldHint> = {};
+    for (const [repo, value] of Object.entries(parsed)) {
+      if (value === false) hints[repo] = false;
+      else if (typeof value === 'object' && value !== null && 'toolsAway' in value && typeof value.toolsAway === 'boolean') hints[repo] = { toolsAway: value.toolsAway };
+    }
+    return hints;
+  } catch {
+    return {};
+  }
+}
+
+/** Written only when it changes (it is called before paint on every batch). */
+export function rememberDescriptionFold(name: string | null, hint: FoldHint): void {
+  if (name === null) return;
+  // GitHub's repository names ignore case: `/Acme/Widgets` and `/acme/widgets` are one repository.
+  const repo = name.toLowerCase();
+  const key = JSON.stringify(hint);
+  if (writtenHints.get(repo) === key) return;
+  writtenHints.set(repo, key);
+  const hints = readFoldHints();
+  if (JSON.stringify(hints[repo]) === key) return;
+  delete hints[repo];
+  hints[repo] = hint;
+  const entries = Object.entries(hints);
+  try {
+    window.localStorage.setItem(FOLD_HINT_KEY, JSON.stringify(Object.fromEntries(entries.slice(Math.max(0, entries.length - FOLD_HINT_CAP)))));
+  } catch {
+    // Storage blocked: the description folds once the controller starts, as before.
+  }
+}
+
+/** How long the early watch waits for the controller before it lets go. */
+const EARLY_FOLD_MS = 10_000;
+let earlyWatch: MutationObserver | null = null;
+let earlyTimer = 0;
+
+/**
+ * Before anything else runs, on a pull request's conversation (or Overview) where the description folded last time:
+ * the description is folded in the mutation callback that sees it arrive, before the frame paints, rather than shown
+ * whole until the controller starts (settings and catalog loaded) a few hundred milliseconds to a second later. It
+ * folds again as more of it streams in. The controller takes over (`stopEarlyDescriptionFold`) and corrects what the
+ * settings say otherwise.
+ */
+export function applyDescriptionFoldHint(path: string = window.location.pathname): void {
+  const match = /^\/([^/]+)\/([^/]+)\/pull\/\d+\/?$/.exec(path);
+  if (match === null) return;
+  const hint = readFoldHints()[`${match[1]}/${match[2]}`.toLowerCase()];
+  if (hint === undefined || hint === false) return;
+  const fold = (records: readonly MutationRecord[] | null): void => {
+    const body = descriptionBody();
+    if (body === null) return;
+    if (records !== null && body.hasAttribute(ATTR_ON) && !records.some((record) => body.contains(record.target))) return;
+    shortenDescription(true, { toolsAway: hint.toolsAway });
+  };
+  earlyWatch = new MutationObserver((records) => fold(records));
+  earlyWatch.observe(document, { childList: true, subtree: true });
+  earlyTimer = window.setTimeout(stopEarlyDescriptionFold, EARLY_FOLD_MS);
+  fold(null);
+}
+
+export function stopEarlyDescriptionFold(): void {
+  earlyWatch?.disconnect();
+  earlyWatch = null;
+  window.clearTimeout(earlyTimer);
+}

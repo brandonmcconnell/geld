@@ -8,7 +8,7 @@
 import { browser } from 'wxt/browser';
 import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
 import type { GeldSettings } from '@geld/core';
-import { digestViewOf } from '@geld/core';
+import { digestViewOf, repoFromPathname } from '@geld/core';
 import type { BotComment, BotVerdictRecord, CommentLane, GeldPrMeta, RawCheckRun, ReviewItem, ReviewerState } from '@geld/review';
 import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, commandReply, firstSentence, isOpenStatus, isReviewShaped, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, mergeCheckRuns, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
@@ -40,7 +40,7 @@ import type { ReviewerCandidate } from './reviewers';
 import { nextRunGraceEnd, withRunTimes } from './run-starts';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
-import { descriptionUnshortened, releaseDescription, shortenDescription } from './description';
+import { descriptionUnshortened, releaseDescription, rememberDescriptionFold, shortenDescription } from './description';
 import { chooseDigestView, removeDigestOffBar, syncDigestOffBar } from './digest-off';
 import { forgetViewFocusElsewhere } from './view-focus';
 import { compactDescriptionByline } from './description-byline';
@@ -4084,6 +4084,8 @@ let leftoverTimer: number | null = null;
  * say on dressing this page at all: a repository left out, or Geld off, takes back what the stored hint applied.
  */
 export function dressOverviewNow(settings: GeldSettings, allowed: boolean): void {
+  // How the description folds here, for the next load's first frame (`applyDescriptionFoldHint`).
+  if (/^\/[^/]+\/[^/]+\/pull\/\d+\/?$/.test(location.pathname)) rememberDescriptionFold(repoFromPathname(location.pathname), allowed && settings.enabled && settings.collapseDescription ? { toolsAway: settings.prOverview } : false);
   const on = allowed && settings.enabled && settings.prOverview;
   rememberTopCard(on ? (settings.compactTimeline !== 'off' ? 'folded' : 'digest') : 'off');
   if (!on) {
