@@ -520,25 +520,44 @@ function syncNarrowMirror(group: HeaderStatGroup, label: string, hasTests: boole
 }
 
 const shownHosts = new WeakMap<Element, boolean>();
+const unreportedHosts = new Set<Element>();
 let shownObserver: ResizeObserver | null = null;
+
+function setHostShown(host: Element, shown: boolean): void {
+  if (shownHosts.get(host) === shown) return;
+  shownHosts.set(host, shown);
+  const header = host.closest('[data-component="PageHeader"]');
+  for (const mirror of header?.querySelectorAll<HTMLElement>(`.${MIRROR_CLASS}`) ?? []) mirror.hidden = shown;
+}
 
 /**
  * Whether GitHub shows the header's counts, as a ResizeObserver last reported (hidden, their box is 0 × 0), and null
  * until it first has: asking the layout itself here forced a whole-page layout on every apply while the page loaded.
- * The observer's answer lands before the frame paints, and the mirror follows it there.
+ * The answer lands before the frame paints and the mirror follows it there. A host that is not rendered (a page opened
+ * narrow) gets no first report at all, so the body, always rendered, is observed beside each new host: a delivery that
+ * holds the body's report and not the host's says the host is hidden.
  */
 function hostShown(host: HTMLElement): boolean | null {
   if (typeof ResizeObserver === 'undefined') return host.getClientRects().length > 0;
-  shownObserver ??= new ResizeObserver((entries) => {
+  shownObserver ??= new ResizeObserver((entries, observer) => {
+    const reported = new Set<Element>();
     for (const entry of entries) {
-      const shown = entry.contentRect.width > 0 || entry.contentRect.height > 0;
-      if (shownHosts.get(entry.target) === shown) continue;
-      shownHosts.set(entry.target, shown);
-      const header = entry.target.closest('[data-component="PageHeader"]');
-      for (const mirror of header?.querySelectorAll<HTMLElement>(`.${MIRROR_CLASS}`) ?? []) mirror.hidden = shown;
+      if (entry.target === document.body) continue;
+      reported.add(entry.target);
+      setHostShown(entry.target, entry.contentRect.width > 0 || entry.contentRect.height > 0);
     }
+    if (!entries.some((entry) => entry.target === document.body)) return;
+    for (const pending of unreportedHosts) if (!reported.has(pending)) setHostShown(pending, false);
+    unreportedHosts.clear();
+    observer.unobserve(document.body);
   });
-  if (!shownHosts.has(host)) shownObserver.observe(host);
+  if (!shownHosts.has(host) && !unreportedHosts.has(host)) {
+    unreportedHosts.add(host);
+    shownObserver.observe(host);
+    // Observed afresh, so the body reports again in the same delivery as the host would.
+    shownObserver.unobserve(document.body);
+    shownObserver.observe(document.body);
+  }
   return shownHosts.get(host) ?? null;
 }
 
