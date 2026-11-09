@@ -39,6 +39,8 @@ export interface ModelInfo {
   /** `language`, `evaluation`, `embedding`… as the gateway types it. */
   readonly type?: string;
   readonly tags?: readonly string[];
+  /** The API paths that serve it, where the gateway says (OpenRouter: `/api/alpha/decisions`, `/api/alpha/extractions`). */
+  readonly endpoints?: readonly string[];
 }
 
 function modelInfoOf(entry: Record<string, unknown>): ModelInfo | null {
@@ -63,13 +65,18 @@ function modelInfoOf(entry: Record<string, unknown>): ModelInfo | null {
   if (context !== undefined) info.context = context;
   if (typeof entry.type === 'string') info.type = entry.type;
   if (Array.isArray(entry.tags)) info.tags = entry.tags.filter((tag): tag is string => typeof tag === 'string');
+  if (Array.isArray(entry.endpoints)) info.endpoints = entry.endpoints.filter((path): path is string => typeof path === 'string');
   return info;
 }
 
 /** `https://ai-gateway.vercel.sh/v1` and `https://api.openai.com` both work: a trailing `/v1` is folded into the path. */
+/** A base that already ends in its own OpenAI version (Gemini's `/v1beta/openai`, DeepInfra's `/v1/openai`). */
+const VERSIONED_BASE = /\/v\d+[a-z]*\w*(?:\/openai)?$/i;
+
 export function joinUrl(base: string, path: string): string {
   const origin = base.replace(/\/+$/, '').replace(/\/v1$/i, '');
-  return `${origin}/${path.replace(/^\/+/, '')}`;
+  const rest = path.replace(/^\/+/, '');
+  return `${origin}/${VERSIONED_BASE.test(origin) ? rest.replace(/^v1\//i, '') : rest}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -92,12 +99,13 @@ export async function listModels(
   fetchImpl: FetchLike,
   baseUrl: string,
   apiKey: string,
+  path = '/v1/models',
 ): Promise<
   { readonly ok: true; readonly models: readonly ModelInfo[] } | { readonly ok: false; readonly reason: string }
 > {
   if (apiKey === '') return { ok: false, reason: 'No API key.' };
   try {
-    const response = await fetchImpl(joinUrl(baseUrl, '/v1/models'), {
+    const response = await fetchImpl(joinUrl(baseUrl, path), {
       headers: {
         authorization: `Bearer ${apiKey}`,
         accept: 'application/json',
@@ -149,7 +157,9 @@ export async function completeChat(options: ChatCompletionOptions): Promise<Chat
       ? AbortSignal.any([options.signal, controller.signal])
       : (options.signal ?? controller?.signal ?? null);
   try {
-    const response = await options.fetch(joinUrl(options.baseUrl, '/v1/chat/completions'), {
+    // Detached first: a browser's native fetch called as `options.fetch(…)` throws "Illegal invocation".
+    const fetchImpl = options.fetch;
+    const response = await fetchImpl(joinUrl(options.baseUrl, '/v1/chat/completions'), {
       method: 'POST',
       headers: {
         authorization: `Bearer ${options.apiKey}`,
