@@ -3,7 +3,8 @@ import test from 'node:test';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { CODERABBIT_FIXTURE as F, createCodeRabbitFixtureOracle, codeRabbitRequestObservation, observeCodeRabbitFixture, assertCodeRabbitSource, assertCodeRabbitRequestSource, verifyCodeRabbitCommands } from './gitlab-coderabbit-acceptance.mjs';
+import { Window } from 'happy-dom';
+import { CODERABBIT_FIXTURE as F, createCodeRabbitFixtureOracle, codeRabbitDomProbe, codeRabbitRequestObservation, observeCodeRabbitFixture, assertCodeRabbitSource, assertCodeRabbitRequestSource, verifyCodeRabbitCommands } from './gitlab-coderabbit-acceptance.mjs';
 
 const SHA = 'a'.repeat(40);
 const API = 'https://gitlab.com/api/v4/projects/ark-bitcoin%2Fbark/merge_requests/2117';
@@ -64,8 +65,9 @@ test('observer reads already-issued response bodies without fetching and dispose
   fixture.dispose();assert.equal(page.listenerCount('request'), 0);assert.equal(page.listenerCount('response'), 0);
 });
 
+function nativeVersion() { const selected = { id: 1850365024, head: SHA, selected: true, latest: true, href: '/ark-bitcoin/bark/-/merge_requests/2117/diffs?diff_id=1850365024' };return { status: 'observed', count: 1, project: F.project, path: new URL(F.url).pathname, iid: F.id, type: 'MergeRequest', selected: [selected], latest: [selected] }; }
 function dom() {
-  return { items: [{ id: 'ri_source', state: 'resolved', sources: [`note_${F.note}`] }], url: F.url, state: 'partial', head: SHA, nativeHead: SHA, aiRunControls: 0, source: { anchor: `note_${F.note}`, body: '<p>Original words</p>', links: [`${F.url}#note_${F.note}`] },
+  return { items: [{ id: 'ri_source', state: 'resolved', sources: [`note_${F.note}`] }], url: F.url, state: 'partial', head: SHA, nativeHead: SHA, nativeScope: { count: 1, project: F.project, path: new URL(F.url).pathname + '.json', action: 'show' }, nativeVersion: nativeVersion(), aiRunControls: 0, source: { anchor: `note_${F.note}`, body: '<p>Original words</p>', links: [`${F.url}#note_${F.note}`] },
     native: { exists: true, body: '<p>Native words</p>', authorId: F.author, login: F.login, href: '/' + F.login, sameNode: true },
     requests: [{ source: `${F.url}#note_${F.note}` }], requestNative: { anchor: `note_${F.note}`, exists: true, body: '<p>Native words</p>', authorId: F.author, login: F.login, sameNode: true } };
 }
@@ -174,4 +176,50 @@ for (const [type, id] of [['LabelNote', '13a1d4815cdbb1b78d5fdb1eeec7e8f7ebf7c03
   oracle.observe(DISCUSSIONS + '&cursor=events', 200, [discussion(id, [event])]);
   assert.deepEqual(oracle.evidence.errors, []);assert.equal(oracle.snapshot().status, 'ready');assert.equal(oracle.snapshot().notes, 2);assert.equal(oracle.snapshot().accountNotes.length, 1);
   const invalid = createCodeRabbitFixtureOracle();invalid.observe(API, 200, metadata());invalid.observe(DISCUSSIONS, 200, [discussion(id, [{ ...event, system: false }])]);assert.equal(invalid.snapshot().status, 'unavailable');
+});
+
+// Minimal native attribute projection from run41367559862; bodies are not public-corpus fixtures.
+function nativeProjection() {
+  const window = new Window({ url: F.url, settings: { disableJavaScriptEvaluation: true, disableJavaScriptFileLoading: true, disableCSSFileLoading: true, disableIframePageLoading: true } });
+  const doc = window.document;const path = new URL(F.url).pathname;
+  doc.body.innerHTML = `<div class="merge-request" data-mr-action="show" data-project-path="ark-bitcoin/bark" data-url="${path}.json"></div><section class="geld-provider-review" data-state="ready" data-geld-review-head="${SHA}"></section>`;
+  const rapid = doc.createElement('article');rapid.className = 'rd-app';rapid.setAttribute('data-rapid-diffs', '');doc.body.append(rapid);
+  const app = { project_path: F.project, mr_path: path, iid: 2117, noteable_type: 'MergeRequest', versions: { source_versions: [{ id: 1850365024, head_sha: SHA, selected: true, latest: true, href: path + '/diffs?diff_id=1850365024' }] } };
+  rapid.setAttribute('data-app-data', JSON.stringify(app));
+  const probe = () => JSON.parse(JSON.stringify(new vm.Script(`(${codeRabbitDomProbe.toString()})(fixture)`).runInNewContext({ document: doc, location: window.location, URL, fixture: F })));
+  const assertSource = () => { const value = probe();assertCodeRabbitSource({ ...dom(), nativeScope: value.nativeScope, nativeHead: value.nativeHead, nativeVersion: value.nativeVersion }, ready().snapshot());return value; };
+  const noteable = (data) => { const node = doc.createElement('div');node.setAttribute('data-noteable-type', 'MergeRequest');node.setAttribute('data-noteable-data', typeof data === 'string' ? data : JSON.stringify(data));doc.body.append(node);return node; };
+  return { doc, rapid, app, probe, assertSource, noteable };
+}
+test('native Rapid selected/latest head and exact MR wrapper replace an absent/unknown noteable head', () => {
+  const native = nativeProjection();const value = native.assertSource();assert.equal(value.nativeHead, null);assert.deepEqual(value.nativeScope, dom().nativeScope);assert.deepEqual(value.nativeVersion, nativeVersion());
+  native.noteable({ diff_head_sha: SHA });assert.equal(native.assertSource().nativeHead, SHA);
+});
+for (const bad of ['malformed JSON', 'malformed selected head', 'stale selected version', 'conflicting current head', 'duplicate selection', 'foreign MR', 'ambiguous native app']) test(`present Rapid ${bad} cannot be waived because noteable head is absent`, () => {
+  const native = nativeProjection();const selected = native.app.versions.source_versions[0];
+  if (bad === 'malformed JSON') native.rapid.setAttribute('data-app-data', '{');
+  else {
+    if (bad === 'malformed selected head') selected.head_sha = null;
+    if (bad === 'stale selected version') { selected.latest = false;native.app.versions.source_versions.push({ ...selected, id: 1850365025, head_sha: 'b'.repeat(40), selected: false, latest: true }); }
+    if (bad === 'conflicting current head') selected.head_sha = 'b'.repeat(40);
+    if (bad === 'duplicate selection') native.app.versions.source_versions.push({ ...selected });
+    if (bad === 'foreign MR') native.app.mr_path = native.app.mr_path.replace('/2117', '/2118');
+    native.rapid.setAttribute('data-app-data', JSON.stringify(native.app));
+    if (bad === 'ambiguous native app') native.doc.body.append(native.rapid.cloneNode(true));
+  }
+  assert.throws(native.assertSource);
+});
+for (const data of ['{', 'null', { diff_head_sha: null }, { diff_head_sha: 'short' }, { diff_head_sha: 'b'.repeat(40) }]) test(`present noteable data ${JSON.stringify(data)} remains a conflicting/malformed head guard`, () => {
+  const native = nativeProjection();native.noteable(data);assert.throws(native.assertSource);
+});
+test('conflicting native head records and unknown Rapid selection fail closed', () => {
+  const native = nativeProjection();native.noteable({ diff_head_sha: SHA });native.noteable({ diff_head_sha: 'b'.repeat(40) });assert.throws(native.assertSource);
+  const unknown = nativeProjection();unknown.rapid.remove();assert.equal(unknown.probe().nativeVersion.status, 'absent');assert.throws(unknown.assertSource);
+});
+test('native scope is mandatory and note-body/owned copies do not become head evidence', () => {
+  const native = nativeProjection();const body = native.doc.createElement('div');body.className = 'note-body';body.append(native.rapid.cloneNode(true));native.doc.body.append(body);
+  const injected = native.noteable({ diff_head_sha: 'b'.repeat(40) });body.append(injected);
+  assert.equal(native.assertSource().nativeVersion.count, 1);assert.equal(native.probe().nativeHead, null);
+  native.doc.querySelector('.merge-request').setAttribute('data-project-path', 'foreign/project');assert.throws(native.assertSource);
+  native.doc.querySelector('.merge-request').remove();assert.throws(native.assertSource);
 });
