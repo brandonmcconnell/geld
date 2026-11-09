@@ -1,4 +1,5 @@
 import { browser } from 'wxt/browser';
+import { isNightlyPaused } from '../nightly/state';
 
 /**
  * Runtime registration of Geld's content script on GitHub Enterprise Server
@@ -76,6 +77,8 @@ let firefoxHandle: FirefoxRegisteredScript | null = null;
  * Idempotent: call it on startup and whenever the host list changes.
  */
 export async function syncEnterpriseHosts(hosts: readonly string[], manifestVersion: number = import.meta.env.MANIFEST_VERSION): Promise<void> {
+  // A paused nightly build runs nowhere (src/nightly/pause.ts).
+  if (__GELD_NIGHTLY__ && (await isNightlyPaused())) hosts = [];
   const matches = (await grantedHosts(hosts)).map(originPattern);
 
   if (manifestVersion === 3) {

@@ -26365,7 +26365,8 @@ var reviewItemSchema = external_exports.object({
   sources: external_exports.array(reviewSourceSchema).min(1),
   addressed: addressedSchema.optional(),
   context: external_exports.string().min(1).optional(),
-  fix: suggestedFixSchema.optional()
+  fix: suggestedFixSchema.optional(),
+  threads: external_exports.object({ total: external_exports.number().int().min(2), open: external_exports.number().int().nonnegative() }).optional()
 });
 var reviewSummarySchema = external_exports.object({
   tldr: external_exports.string().min(1),
@@ -26384,7 +26385,8 @@ var botVerdictSchema = external_exports.object({
   checkSha: sha.optional(),
   sourceId: external_exports.string().min(1).optional(),
   reason: external_exports.string().min(1).optional(),
-  runJudged: external_exports.literal(true).optional()
+  runJudged: external_exports.literal(true).optional(),
+  needsHuman: external_exports.literal(true).optional()
 });
 var reviewerSchema = external_exports.object({
   login: external_exports.string().min(1),
@@ -26523,7 +26525,8 @@ function reviewItemFrom(value) {
   const numbered = value.line === void 0 ? located : { ...located, line: value.line };
   const judged = value.addressed === void 0 ? numbered : { ...numbered, addressed: { verdict: value.addressed.verdict, evidence: value.addressed.evidence } };
   const explained = value.context === void 0 ? judged : { ...judged, context: value.context };
-  return value.fix === void 0 ? explained : { ...explained, fix: { text: value.fix.text, source: value.fix.source } };
+  const fixed = value.fix === void 0 ? explained : { ...explained, fix: { text: value.fix.text, source: value.fix.source } };
+  return value.threads === void 0 ? fixed : { ...fixed, threads: { total: value.threads.total, open: Math.min(value.threads.open, value.threads.total) } };
 }
 function botVerdictFrom(value) {
   const record2 = {
@@ -26539,7 +26542,8 @@ function botVerdictFrom(value) {
   const checked = value.checkSha === void 0 ? named : { ...named, checkSha: value.checkSha };
   const sourced = value.sourceId === void 0 ? checked : { ...checked, sourceId: value.sourceId };
   const reasoned = value.reason === void 0 ? sourced : { ...sourced, reason: value.reason };
-  return value.runJudged === void 0 ? reasoned : { ...reasoned, runJudged: true };
+  const judged = value.runJudged === void 0 ? reasoned : { ...reasoned, runJudged: true };
+  return value.needsHuman === void 0 ? judged : { ...judged, needsHuman: true };
 }
 function metaFrom(value) {
   const meta3 = {
@@ -26586,11 +26590,20 @@ var OPEN_STATUSES = /* @__PURE__ */ new Set(["open", "needs-reply", "addressed",
 function isOpenStatus(status) {
   return OPEN_STATUSES.has(status);
 }
-function openItemCount(items) {
-  return items.filter((item) => isOpenStatus(item.status)).length;
+function itemThreads(item) {
+  const total = item.threads?.total ?? 1;
+  if (!isOpenStatus(item.status)) return { total, open: 0 };
+  return { total, open: Math.max(1, Math.min(item.threads?.open ?? 1, total)) };
 }
-function doneItemCount(items) {
-  return items.length - openItemCount(items);
+function threadCounts(items) {
+  let total = 0;
+  let open2 = 0;
+  for (const item of items) {
+    const threads = itemThreads(item);
+    total += threads.total;
+    open2 += threads.open;
+  }
+  return { total, open: open2 };
 }
 function encodedPayloadLength(meta3) {
   const json2 = JSON.stringify(meta3);
@@ -26823,18 +26836,24 @@ var REVIEW_BOTS = [
     configFiles: [".ellipsis/code-review.yaml", "ellipsis.yaml"]
   },
   {
-    // Macroscope (macroscope.com, `macroscopeapp[bot]`): findings as comments, then an "#### Approvability" comment
-    // with "**Verdict:** Approved at `sha`" / "Would Approve" / "Needs Human Approval"; "Macroscope skipped reviewing
-    // this pull request. Per-review cost limit exceeded" when it will not run. `@macroscope-app review` starts one.
-    // Docs read Oct 2026 (docs.macroscope.com).
+    // Macroscope (macroscope.com, `macroscopeapp[bot]`), surveyed on ~110 public pull requests and its docs in Nov 2026
+    // (docs.macroscope.com). Its review is the "Macroscope - Correctness Check" (`neutral` with "N issues identified",
+    // `success` with "No issues identified"), each finding an inline thread headed by a severity badge, resolved by
+    // Macroscope when a push fixes it. "Macroscope - Approvability Check" and its "#### Approvability" comment ("**Verdict:**
+    // Approved at `sha`" / "Would Approve" / "Needs Human Approval", rewritten in place on every push) are a merge gate
+    // over those threads, not a count; every other "Macroscope - <title>" check is a repository's own Check Run Agent,
+    // shown as a report (`CHECK_REPORTERS`), its comments signed "Posted via Macroscope — <title>". Mentioning
+    // `@macroscope-app` starts a run, answered by "Review started…" and "Manual reviews triggered for commit…".
     id: "macroscope",
     title: "Macroscope",
     appId: 900172,
     logins: ["macroscopeapp[bot]", "macroscope-app[bot]"],
-    checkNames: ["Macroscope"],
-    triggers: ["@macroscope-app review", "@macroscopeapp review"],
-    configFiles: [],
-    conversational: true
+    checkNames: ["Macroscope - Correctness Check"],
+    neutralConclusion: "findings",
+    triggers: ["@macroscope-app review", "@macroscopeapp review", "@macroscope-app"],
+    configFiles: [".macroscope/"],
+    conversational: true,
+    resolvesThreads: true
   },
   {
     // Korbit (korbit.ai, `korbit-ai[bot]`): a review headed "### Review by Korbit AI" with a table of issues and
@@ -26930,8 +26949,17 @@ var REPORT_GRACE_MS = 90 * 1e3;
 function plainTrigger(text2) {
   return text2.replace(/[`*>~]/g, "").replace(/(^|\s)_+(?=\S)/g, "$1").replace(/(?<=\S)_+(?=\s|$)/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 }
+var API_TRIGGER_BOT_IDS = ["greptile", "bugbot", "devin"];
+var GELD_RUN = /^\/geld[ \t]+run[ \t]+([a-z][a-z0-9-]*(?:[ \t,]+[a-z][a-z0-9-]*)*)[ \t]*$/i;
+function geldRunBots(body2) {
+  const match = GELD_RUN.exec(body2.trim());
+  if (match?.[1] === void 0) return [];
+  const ids = [...new Set(match[1].toLowerCase().split(/[ \t,]+/).filter((id2) => id2 !== ""))];
+  return ids.every((id2) => API_TRIGGER_BOT_IDS.includes(id2)) ? ids : [];
+}
 var GENERIC_TRIGGER = /^(?:@[\w-]+(?:\[bot\])?|\/[\w-]+)(?:\s+(?:review|run|rerun|re-run|retrigger|full review|summary))?$/i;
 function isTriggerComment(body2, extraLogins = []) {
+  if (geldRunBots(body2).length > 0) return true;
   const lines = body2.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "");
   if (lines.length > 1) return lines.length <= 6 && lines.every((line) => isTriggerComment(line, extraLogins));
   if (isSingleTrigger(body2, extraLogins)) return true;
@@ -26984,24 +27012,47 @@ function ruleIdOf(body2) {
   const match = RULE_ID.exec(body2);
   return match?.[1]?.toLowerCase() ?? null;
 }
+var BADGE_LINE = /^\p{Extended_Pictographic}?\uFE0F?\s*\*\*(critical|high|medium|low)\*\*(?:\s+`[^`\n]*`)?$/iu;
+var GATE_HEADING = /^approvability$/i;
+function outsideCodeSpans(line, change) {
+  return line.split(/(`+[^`]*`+)/).map((part, index) => index % 2 === 1 ? part : change(part)).join("");
+}
 function firstSentence(body2) {
   const withoutCode = body2.replace(/```[\s\S]*?```/g, " ");
-  const line = withoutCode.split("\n").map((entry) => entry.trim()).filter((entry) => entry !== "" && !entry.startsWith("<") && !/^#{1,6}\s/.test(entry) && !/^[-*]\s*$/.test(entry)).map((entry) => entry.replace(/^\s*[-*]\s+/, "")).find((entry) => entry !== "") ?? "";
+  const line = withoutCode.split("\n").map((entry) => outsideCodeSpans(entry, (text2) => text2.replace(/<br\s*\/?>/gi, " ").replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/<\/?(?:sub|sup|picture|source|img|span|a|p|div)\b[^>]*>/gi, "")).replace(/^(\*\*|__)\s+/, "$1").trim()).filter((entry) => entry !== "" && /[\p{L}\p{N}]/u.test(entry) && !entry.startsWith("<") && !/^#{1,6}\s/.test(entry) && !/^[-*]\s*$/.test(entry) && !BADGE_LINE.test(entry) && !GATE_HEADING.test(entry)).map((entry) => entry.replace(/^\s*[-*]\s+/, "")).find((entry) => entry !== "") ?? "";
   const cleaned = line.replace(/\s+/g, " ").trim();
   if (cleaned === "") return "Comment";
   const sentence = sentenceOf(cleaned, 160);
   return sentence.trim();
+}
+function endsWord(text2, index) {
+  const next = closedThrough(text2, index);
+  return next >= text2.length || /[\s<]/.test(text2[next] ?? "");
+}
+function closedThrough(text2, index) {
+  let next = index + 1;
+  while (next < text2.length && /[)\]"'’”*_~]/.test(text2[next] ?? "")) next += 1;
+  return next;
+}
+var ABBREVIATION = /(?:^|[\s(])(?:e\.g|i\.e|vs|cf|viz|approx|incl|esp)$/i;
+var ETC = /(?:^|[\s(])etc$/i;
+function abbreviationGoesOn(text2, index) {
+  const before = text2.slice(0, index);
+  if (ABBREVIATION.test(before)) return true;
+  return ETC.test(before) && !/^\s+[A-Z]/.test(text2.slice(index + 1));
 }
 function sentenceOf(text2, limit) {
   let inCode = false;
   for (let index = 0; index < text2.length && index < limit; index += 1) {
     const char = text2[index];
     if (char === "`") inCode = !inCode;
-    else if (!inCode && (char === "." || char === "!" || char === "?")) return text2.slice(0, index + 1);
+    else if (!inCode && (char === "." || char === "!" || char === "?") && endsWord(text2, index) && !(char === "." && abbreviationGoesOn(text2, index))) return text2.slice(0, closedThrough(text2, index));
   }
   return text2.slice(0, limit);
 }
 function guessSeverity(body2, bot, humanQuestion) {
+  const badge = BADGE_LINE.exec(body2.replace(/<!--[\s\S]*?-->/g, "").trim().split("\n")[0]?.trim() ?? "")?.[1]?.toLowerCase();
+  if (badge !== void 0) return badge === "critical" ? "blocking" : badge === "low" ? "suggestion" : "bug";
   const text2 = body2.toLowerCase();
   if (/\b(security|critical|blocker|must fix|p0)\b/.test(text2)) return "blocking";
   if (humanQuestion || /^(why|what|how|who|where)\b/.test(text2.trim()) || text2.includes("?")) return "question";
@@ -27057,43 +27108,9 @@ function atomFrom(comment, extraLogins, options) {
     botIds,
     humanAuthors,
     resolved: comment.isResolved === true,
-    outdated: comment.isOutdated === true
-  };
-}
-function shouldMerge(a, b) {
-  if (a.path !== void 0 && a.path === b.path && a.line !== void 0 && b.line !== void 0 && Math.abs(a.line - b.line) <= 3) {
-    return true;
-  }
-  if (a.suggestion !== null && a.suggestion === b.suggestion) return true;
-  if (a.ruleId !== null && a.ruleId === b.ruleId && [...a.botIds].some((id2) => b.botIds.has(id2))) return true;
-  return false;
-}
-function mergeAtom(a, b) {
-  const botIds = new Set(a.botIds);
-  for (const id2 of b.botIds) botIds.add(id2);
-  const seen = new Set(a.sources.map((source) => source.anchor));
-  const sources = [...a.sources];
-  for (const source of b.sources) {
-    if (!seen.has(source.anchor)) {
-      seen.add(source.anchor);
-      sources.push(source);
-    }
-  }
-  const humanLead = a.humanLead || b.humanLead;
-  return {
-    sources,
-    bodies: [...a.bodies, ...b.bodies],
-    title: a.humanLead || !b.humanLead ? a.title : b.title,
-    humanLead,
-    path: a.path ?? b.path,
-    line: a.line ?? b.line,
-    suggestion: a.suggestion ?? b.suggestion,
-    suggestionBy: a.suggestion !== null ? a.suggestionBy : b.suggestionBy,
-    ruleId: a.ruleId ?? b.ruleId,
-    botIds,
-    humanAuthors: [...a.humanAuthors, ...b.humanAuthors.filter((login) => !a.humanAuthors.includes(login))],
-    resolved: a.resolved && b.resolved,
-    outdated: a.outdated || b.outdated
+    outdated: comment.isOutdated === true,
+    threads: 1,
+    openThreads: comment.isResolved === true ? 0 : 1
   };
 }
 function severityOf(atom) {
@@ -27122,7 +27139,8 @@ function itemFromAtom(atom) {
     // Resolved is the conversation's state and wins; outdated is a badge on an open one.
     status: atom.resolved ? "resolved" : atom.outdated ? "outdated" : "open",
     sources: atom.sources,
-    ...atom.suggestion !== null && atom.suggestionBy !== null ? { fix: { text: atom.suggestion, source: atom.suggestionBy } } : {}
+    ...atom.suggestion !== null && atom.suggestionBy !== null ? { fix: { text: atom.suggestion, source: atom.suggestionBy } } : {},
+    ...atom.threads > 1 ? { threads: { total: atom.threads, open: atom.openThreads } } : {}
   };
   if (atom.path !== void 0 && atom.line !== void 0) return { ...item, path: atom.path, line: atom.line };
   if (atom.path !== void 0) return { ...item, path: atom.path };
@@ -27134,32 +27152,7 @@ function isReviewItemComment(comment, extraLogins = [], options = {}) {
   return comment.kind === "thread" && comment.body.trim() !== "" && !trigger;
 }
 function clusterComments(comments, extraLogins = [], options = {}) {
-  const atoms = comments.filter((comment) => isReviewItemComment(comment, extraLogins, options)).map((comment) => atomFrom(comment, extraLogins, options));
-  const parent = atoms.map((_, index) => index);
-  const find = (index) => {
-    const current = parent[index] ?? index;
-    if (current === index) return index;
-    const root = find(current);
-    parent[index] = root;
-    return root;
-  };
-  for (let i = 0; i < atoms.length; i += 1) {
-    for (let j = i + 1; j < atoms.length; j += 1) {
-      const left = atoms[i];
-      const right = atoms[j];
-      if (left === void 0 || right === void 0) continue;
-      if (shouldMerge(left, right) && find(i) !== find(j)) parent[find(j)] = find(i);
-    }
-  }
-  const groups = /* @__PURE__ */ new Map();
-  for (let index = 0; index < atoms.length; index += 1) {
-    const atom = atoms[index];
-    if (atom === void 0) continue;
-    const root = find(index);
-    const existing = groups.get(root);
-    groups.set(root, existing === void 0 ? atom : mergeAtom(existing, atom));
-  }
-  return [...groups.values()].map(itemFromAtom);
+  return comments.filter((comment) => isReviewItemComment(comment, extraLogins, options)).map((comment) => itemFromAtom(atomFrom(comment, extraLogins, options)));
 }
 
 // ../../packages/core/src/list-surfaces.ts
@@ -27756,8 +27749,14 @@ var BUILT_IN_TEST_SYNTAXES = [
 var BARE_OPENER = new RegExp(String.raw`^\s*(?:test\.describe|describe|context|suite|it|test|specify|bench|scenario|group|testWidgets)${CHAIN}\s*\(\s*$`);
 var EACH_CLOSE = new RegExp(String.raw`^\s*(?:[\]})]*\)|\x60)\s*\((?:\s*${QUOTE})?`);
 
+// ../../packages/core/src/file-flow.ts
+var SCRIPT_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte", ".astro"];
+var STYLE_EXTENSIONS = [".css", ".scss", ".sass", ".less"];
+var RESOLVABLE_EXTENSIONS = [...SCRIPT_EXTENSIONS, ...STYLE_EXTENSIONS, ".json"];
+
 // ../../packages/core/src/format.ts
 var numberFormatter = new Intl.NumberFormat("en-US");
+var COUNT_PATTERN = String.raw`\d+(?:[.,'’\u00a0\u202f]\d{2,3})*`;
 
 // ../../packages/core/src/trackers.ts
 var TRACKER_LABELS = { linear: "Linear", jira: "Jira", github_issues: "GitHub Issues", github_projects: "GitHub Projects", gitlab: "GitLab issues", bitbucket: "Bitbucket issues", youtrack: "YouTrack", asana: "Asana", monday: "Monday" };
@@ -28149,6 +28148,7 @@ function botPhrase(bot, headSha) {
   if (bot.verdict === "clean") return `${title} clean (${tag})`;
   if (bot.score !== void 0) return `${title} ${bot.score}/5 (${tag})`;
   if (bot.count !== void 0) return `${title} ${bot.count} issue${bot.count === 1 ? "" : "s"} (${tag})`;
+  if (bot.needsHuman === true) return `${title} needs a human review (${tag})`;
   return `${title} findings (${tag})`;
 }
 function reviewerPhrase(reviewer) {
@@ -28158,10 +28158,10 @@ function reviewerPhrase(reviewer) {
   return `@${reviewer.login} commented`;
 }
 function headerLine(meta3) {
-  const open2 = openItemCount(meta3.items);
-  const done = doneItemCount(meta3.items);
-  const total = meta3.items.length;
-  const parts = [`**${done} of ${total} done**`];
+  const threads = threadCounts(meta3.items);
+  const open2 = threads.open;
+  const total = threads.total;
+  const parts = [`**${total - open2} of ${total} done**`];
   for (const bot of meta3.bots) parts.push(botPhrase(bot, meta3.headSha));
   if (open2 > 0 && total > 0) {
   }
@@ -28573,6 +28573,21 @@ var CHECK_REPORTERS = [
     checkNames: /^Gecko Security\b/i,
     project: () => null,
     short: (words) => counted(words, "vulnerability", /(\d+) (?:new )?vulnerabilit(?:y|ies)\b/i)
+  },
+  {
+    // Macroscope's Check Run Agents: a repository's own checks, one Markdown file each under `.macroscope/check-run-agents/`,
+    // named "Macroscope - <title>" ("Macroscope - Visible change evidence — Visible change: Mac evidence missing"). An agent
+    // concludes neutral when it flags something (the default ceiling, `failure` only when configured), success when it
+    // does not, skipped when it did not run ("Prerequisite check(s) not found"). Macroscope's own review (Correctness) is
+    // the Review bots row's and its Approvability gate a CI check, neither a report. Mirrors the registry's `checkNames`.
+    id: "macroscope",
+    title: "Macroscope",
+    appId: 900172,
+    hosts: [],
+    checkNames: /^Macroscope - (?!(?:Correctness|Approvability) Check$)\S/i,
+    project: (name) => /^Macroscope - (.+)$/i.exec(name)?.[1]?.trim() ?? null,
+    neutral: "failed",
+    short: () => []
   },
   {
     // GitHub's own code scanning ("CodeQL", or any uploaded tool's name): its row links to GitHub's own checks tab and
