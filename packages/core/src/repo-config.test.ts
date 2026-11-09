@@ -48,6 +48,7 @@ enabled: false
 repoRules: ["acme/*"]
 autoViewed:
   tests: true
+attachmentLightbox: false
 categories:
   docs: "yes"
 categoryPatterns:
@@ -55,7 +56,7 @@ categoryPatterns:
 `);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.issues.map((issue) => issue.path)).toEqual(['enabled', 'repoRules', 'autoViewed', 'categories.docs', 'categoryPatterns.generated[0]']);
+    expect(result.issues.map((issue) => issue.path)).toEqual(['enabled', 'repoRules', 'autoViewed', 'attachmentLightbox', 'categories.docs', 'categoryPatterns.generated[0]']);
   });
 
   it('reads the review bots a repository declares, checked against the registry when given', () => {
