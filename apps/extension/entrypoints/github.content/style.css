@@ -3612,6 +3612,10 @@ html [data-geld-person-fold][data-geld-person-fold]:not([data-geld-person-fold-o
   margin-top: 8px;
 }
 
+.geld-person-card__picker {
+  display: contents;
+}
+
 .geld-blocked-label {
   margin-left: 4px;
   vertical-align: middle;

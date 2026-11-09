@@ -14,6 +14,7 @@ import { ICON_BLOCKED, ICON_EYE_CLOSED } from './ui/icons';
  */
 
 const ATTR_CARD = 'data-geld-person-card';
+const ATTR_OFFERS = 'data-geld-person-card-offers';
 
 /** The reasons GitHub's Hide form offers (`classifier`), in its order and words. */
 const HIDE_REASONS: readonly { readonly value: string; readonly label: string }[] = [
@@ -68,7 +69,12 @@ function dress(card: Element): void {
     existing?.remove();
     return;
   }
-  if (existing !== null && existing.getAttribute(ATTR_CARD) === login) return;
+  const forms = person.blocked !== null ? person.hideForms() : [];
+  const unhide = person.unhide;
+  // The card is made again when what it offers changes (an Unhide form landing after it opened), never otherwise.
+  const offers = `${forms.length}:${unhide === null ? '' : 'unhide'}`;
+  if (existing !== null && existing.getAttribute(ATTR_CARD) === login && existing.getAttribute(ATTR_OFFERS) === offers) return;
+  const picker = forms.length > 0 ? existing?.querySelector('.geld-person-card__picker') ?? null : null;
   existing?.remove();
   const rows = card.querySelector('.Popover-message .position-relative') ?? card.querySelector('.Popover-message');
   if (rows === null || rows.childElementCount === 0 || login === undefined) return;
@@ -76,8 +82,8 @@ function dress(card: Element): void {
   const githubSaysBlocked = /\bhave blocked this user\b|\bhas blocked this user\b/i.test(rows.textContent ?? '');
   const label = person.blocked !== null && githubSaysBlocked ? null : createElement('div', { class: 'geld-person-card__label' }, [svgFromString(person.blocked !== null ? ICON_BLOCKED : ICON_EYE_CLOSED), createElement('span', {}, [person.words])]);
   const actions = createElement('div', { class: 'geld-person-card__actions' });
-  const forms = person.blocked !== null ? person.hideForms() : [];
-  if (forms.length > 0) {
+  if (picker !== null) actions.append(picker);
+  else if (forms.length > 0) {
     const hide = createElement('button', { type: 'button', class: 'btn btn-sm' }, [forms.length === 1 ? 'Hide their comment' : `Hide their ${forms.length} comments`]);
     hide.addEventListener('click', (event) => {
       event.preventDefault();
@@ -104,11 +110,10 @@ function dress(card: Element): void {
           }
         });
       });
-      actions.replaceChildren(select, go);
+      hide.replaceWith(createElement('span', { class: 'geld-person-card__picker' }, [select, go]));
     });
     actions.append(hide);
   }
-  const unhide = person.unhide;
   if (unhide !== null) {
     const button = createElement('button', { type: 'button', class: 'btn btn-sm' }, ['Unhide']);
     button.addEventListener('click', (event) => {
@@ -119,7 +124,7 @@ function dress(card: Element): void {
     actions.append(button);
   }
   if (label === null && actions.childElementCount === 0) return;
-  rows.append(createElement('div', { class: 'geld-person-card', [ATTR_CARD]: login, [OWN_UI_ATTRIBUTE]: '' }, [...(label === null ? [] : [label]), ...(actions.childElementCount > 0 ? [actions] : [])]));
+  rows.append(createElement('div', { class: 'geld-person-card', [ATTR_CARD]: login, [ATTR_OFFERS]: offers, [OWN_UI_ATTRIBUTE]: '' }, [...(label === null ? [] : [label]), ...(actions.childElementCount > 0 ? [actions] : [])]));
 }
 
 /** The people whose hovercard Geld dresses, by lowercased login; called on every pass. */
