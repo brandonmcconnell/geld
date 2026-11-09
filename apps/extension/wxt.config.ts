@@ -98,6 +98,7 @@ export default defineConfig({
         'https://github.com/*',
         'https://patch-diff.githubusercontent.com/*',
         'https://api.github.com/*',
+        'https://gitlab.com/*', 'https://bitbucket.org/*', 'https://api.bitbucket.org/*',
         // Nightly: github.com redirects a release asset's download to these hosts.
         ...(updater ? ['https://release-assets.githubusercontent.com/*', 'https://objects.githubusercontent.com/*'] : []),
       ],
