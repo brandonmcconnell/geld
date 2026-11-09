@@ -20,7 +20,7 @@ import { fitPathInto } from './path-fit';
 import { ICON_CHECK_CIRCLE, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_FILE_SYMLINK_FILE, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
 import { ATTR_EDITED_FOR, ATTR_TIME_FOR } from './panel';
-import { isTeleported, onRestore, ownedBy, restoreAll, teleportedNodes, teleportInto } from './teleport';
+import { dropOrphanedLoans, isTeleported, onRestore, ownedBy, restoreAll, teleportedNodes, teleportInto } from './teleport';
 import { inlineText } from './inline-text';
 import { armViaHovercard } from './via';
 import type { ViaBot } from './via';
@@ -111,24 +111,36 @@ export function sourceFocusKey(thread: HTMLElement): string {
  * stylesheet lays the chat out from, so the comment showed as GitHub's raw
  * card inside the chat (its own header, its own ⋯) until something else
  * happened to rebuild the panel. True when any message in a chat view is
- * unmarked, or a message's reactions row stands outside every marked part
+ * unmarked, a message's reactions row stands outside every marked part
  * (a row still inside the bubble needs nothing: it is laid out by the
- * bubble).
+ * bubble), or controls GitHub drew again wait to be placed (`controlsAstray`).
  */
 export function chatNeedsRedress(chat: HTMLElement): boolean {
-  const thread = chat.getAttribute('data-geld-chat') === 'thread';
-  for (const view of chat.querySelectorAll<HTMLElement>('.geld-review__chat-body, .geld-review__chat-context-body')) {
-    const inThread = thread && view.matches('.geld-review__chat-body');
-    for (const node of view.children) {
-      if (!(node instanceof HTMLElement) || !isTeleported(node)) continue;
-      for (const message of messagesIn(node, inThread)) {
-        if (!message.hasAttribute(ATTR_MESSAGE)) return true;
-        const row = message.querySelector<HTMLElement>(REACTIONS_SELECTOR);
-        if (row !== null && row.closest(`[${ATTR_PART}]`) === null) return true;
-      }
+  for (const { messages } of chatMessages(chat)) {
+    for (const message of messages) {
+      if (!message.hasAttribute(ATTR_MESSAGE)) return true;
+      const row = message.querySelector<HTMLElement>(REACTIONS_SELECTOR);
+      if (row !== null && row.closest(`[${ATTR_PART}]`) === null) return true;
+      if (controlsAstray(message)) return true;
     }
   }
   return false;
+}
+
+/** The messages of each comment on loan to the chats in `root` (or to the chat `root` is), read as they were dressed. */
+function chatMessages(root: ParentNode): readonly { readonly messages: readonly HTMLElement[]; readonly pinned: boolean }[] {
+  const chats = root instanceof HTMLElement && root.matches('.geld-review__chat') ? [root] : [...root.querySelectorAll<HTMLElement>('.geld-review__chat')];
+  const groups: { readonly messages: readonly HTMLElement[]; readonly pinned: boolean }[] = [];
+  for (const chat of chats) {
+    const thread = chat.getAttribute('data-geld-chat') === 'thread';
+    for (const view of chat.querySelectorAll<HTMLElement>('.geld-review__chat-body, .geld-review__chat-context-body')) {
+      const inThread = thread && view.matches('.geld-review__chat-body');
+      for (const node of view.children) {
+        if (node instanceof HTMLElement && isTeleported(node)) groups.push({ messages: messagesIn(node, inThread), pinned: !inThread });
+      }
+    }
+  }
+  return groups;
 }
 
 /**
@@ -170,6 +182,28 @@ export function dressArrivals(root: ParentNode = document): boolean {
       else ownedBy(owner, dress);
       dressed = true;
     }
+  }
+  // An Overview comment's editor opening throws its body away, pills and all, and closing it mounts a fresh body with
+  // the reaction button back inside the bubble: the discarded copies leave the side slot, the new ones go to it.
+  // A message being edited has no body, so it is no message to `messagesIn` and is read by its mark.
+  const asOwner = (message: HTMLElement, dress: () => void): void => {
+    const owner = message.closest(`.${CHATS_CLASS}`);
+    if (owner === null) dress();
+    else ownedBy(owner, dress);
+    dressed = true;
+  };
+  for (const message of root.querySelectorAll<HTMLElement>(`.geld-review__chat [${ATTR_MESSAGE}]`)) {
+    if (dropOrphanedLoans(message) > 0) asOwner(message, () => settleSlots(message));
+  }
+  for (const { messages, pinned } of chatMessages(root)) {
+    const astray = messages.filter((message) => message.hasAttribute(ATTR_MESSAGE) && controlsAstray(message));
+    const first = astray[0];
+    if (first === undefined) continue;
+    // Read again first: the fresh toolbar is a part of the message the way the first one was.
+    asOwner(first, () => {
+      annotateMessages(messages, viewer, pinned);
+      for (const message of astray) placeControls(message);
+    });
   }
   return dressed;
 }
@@ -1038,7 +1072,9 @@ const REACTION_PICKER = ':scope > reactions-menu, :scope > details.js-add-reacti
  *   it wraps.
  *
  * A ⋯ already worn by a panel row (a single comment's line wears its own) is
- * left there: `teleportInto` skips a node on loan.
+ * left there: `teleportInto` skips a node on loan. Placing again (see
+ * `controlsAstray`) moves only what is not on loan yet, into the slots that
+ * stand.
  */
 function placeControls(message: HTMLElement): void {
   if (placeOverviewControls(message)) return;
@@ -1046,16 +1082,15 @@ function placeControls(message: HTMLElement): void {
   const reactions = message.querySelector<HTMLElement>(`[${ATTR_PART}='reactions']`);
   if (meta === null || reactions === null) return;
   const row = reactions.matches(REACTIONS_ROW) ? reactions : reactions.querySelector<HTMLElement>(REACTIONS_ROW);
-  if (row !== null && row === reactions) {
-    const box = createElement('span', { class: 'geld-review__msg-reactions', [OWN_UI_ATTRIBUTE]: '' });
+  if (row !== null && row === reactions && !isTeleported(row)) {
+    const box = createElement('span', { class: REACTIONS_BOX, [OWN_UI_ATTRIBUTE]: '' });
     const bubble = message.querySelector(`:scope > [${ATTR_PART}='bubble']`);
     if (bubble !== null) bubble.after(box);
     else message.append(box);
     teleportInto(box, [row]);
     onRestore(() => box.remove());
   }
-  const side = createElement('span', { class: 'geld-review__msg-side', [OWN_UI_ATTRIBUTE]: '' });
-  message.append(side);
+  const side = sideOf(message);
   const picker = row?.querySelector<HTMLElement>(REACTION_PICKER) ?? null;
   if (picker !== null && !isTeleported(picker)) {
     teleportInto(side, [picker]);
@@ -1078,28 +1113,80 @@ function placeControls(message: HTMLElement): void {
   const menu = meta.querySelector<HTMLElement>(COMMENT_MENU);
   if (menu !== null && !isTeleported(menu)) {
     // The ⋯ opens a menu of its own; a slot of its own keeps that menu anchored to the round button.
-    const actions = createElement('span', { class: 'geld-review__msg-actions', [OWN_UI_ATTRIBUTE]: '' });
-    side.append(actions);
+    const actions = menuSlot(side);
     teleportInto(actions, [menu]);
-    if (actions.childElementCount === 0) actions.remove();
-    else {
+    if (actions.childElementCount > 0) {
       installMenuFlip();
       // A menu still open when its chat is rebuilt goes home open; its watcher and mark go with the slot.
       if (menu instanceof HTMLDetailsElement) onRestore(() => unwatchMenu(menu));
     }
   }
-  // Nothing moved (a ⋯ worn by a row, no picker when signed out): no slot, which would still take the hover.
+  settleSlots(message);
+}
+
+const SIDE = 'geld-review__msg-side';
+const REACTIONS_BOX = 'geld-review__msg-reactions';
+const ACTIONS = 'geld-review__msg-actions';
+/** On the side slot's box holding the ⋯, which stands last whatever is placed beside it later. */
+const ATTR_MENU_SLOT = 'data-geld-menu-slot';
+
+/** The message's side slot: the one an earlier placing made, else a new one at its end. */
+function sideOf(message: HTMLElement): HTMLElement {
+  const standing = message.querySelector<HTMLElement>(`:scope > .${SIDE}`);
+  if (standing !== null) return standing;
+  const side = createElement('span', { class: SIDE, [OWN_UI_ATTRIBUTE]: '' });
+  message.append(side);
+  onRestore(() => side.remove());
+  return side;
+}
+
+function menuSlot(side: HTMLElement): HTMLElement {
+  const slot = createElement('span', { class: ACTIONS, [ATTR_MENU_SLOT]: '', [OWN_UI_ATTRIBUTE]: '' });
+  side.append(slot);
+  return slot;
+}
+
+/**
+ * Slots left empty go (nothing moved into them, or what was in them went with GitHub's discarded copy of its home),
+ * since an empty side slot still takes the hover, and the ⋯ stands after a reaction button placed beside it later.
+ */
+function settleSlots(message: HTMLElement): void {
+  for (const slot of message.querySelectorAll<HTMLElement>(`:scope > .${REACTIONS_BOX}, :scope > .${SIDE} > .${ACTIONS}`)) {
+    if (slot.childElementCount === 0) slot.remove();
+  }
+  const side = message.querySelector<HTMLElement>(`:scope > .${SIDE}`);
+  if (side === null) return;
   if (side.childElementCount === 0) {
     side.remove();
     return;
   }
-  onRestore(() => side.remove());
+  const menu = side.querySelector<HTMLElement>(`:scope > [${ATTR_MENU_SLOT}]`);
+  if (menu !== null && menu !== side.lastElementChild) side.append(menu);
 }
 
 /** The Overview's comment ⋯ (a Primer ActionMenu button) and its reactions toolbar, with the button that opens the picker. */
 const OVERVIEW_MENU = 'button:is([data-testid="comment-header-hamburger"], [aria-label^="More actions for" i])';
 const OVERVIEW_REACTIONS = '[role="toolbar"][aria-label^="Reactions for"]';
 const OVERVIEW_REACT = 'button[class*="ReactionViewerAnchorButton"]';
+/** What holds another comment inside an Overview message: a review's thread boxes, under its own words. */
+const NESTED_COMMENT = 'article, [data-testid="review-thread"]';
+
+/** The first match that is the message's own, not a comment nested in it. */
+function ownMatch(message: HTMLElement, selector: string): HTMLElement | null {
+  for (const node of message.querySelectorAll<HTMLElement>(selector)) {
+    const nest = node.parentElement?.closest(NESTED_COMMENT) ?? null;
+    if (nest === null || nest === message || !message.contains(nest)) return node;
+  }
+  return null;
+}
+
+function overviewControlsOf(message: HTMLElement): { readonly toolbar: HTMLElement | null; readonly menu: HTMLElement | null; readonly bubble: HTMLElement | null } {
+  return {
+    toolbar: ownMatch(message, OVERVIEW_REACTIONS),
+    menu: ownMatch(message, `:scope > [${ATTR_PART}='meta'] ${OVERVIEW_MENU}`),
+    bubble: message.querySelector<HTMLElement>(`:scope > [${ATTR_PART}='bubble']`),
+  };
+}
 
 /**
  * The Overview's comments, laid out as the conversation's: the reactions toolbar (inside the bubble there) moves
@@ -1108,35 +1195,56 @@ const OVERVIEW_REACT = 'button[class*="ReactionViewerAnchorButton"]';
  * the message is not the Overview's.
  */
 function placeOverviewControls(message: HTMLElement): boolean {
-  const toolbar = message.querySelector<HTMLElement>(OVERVIEW_REACTIONS);
-  const menu = message.querySelector<HTMLElement>(`:scope > [${ATTR_PART}='meta'] ${OVERVIEW_MENU}`);
+  const { toolbar, menu, bubble } = overviewControlsOf(message);
   if (toolbar === null && menu === null) return false;
-  const bubble = message.querySelector<HTMLElement>(`:scope > [${ATTR_PART}='bubble']`);
-  const side = createElement('span', { class: 'geld-review__msg-side', [OWN_UI_ATTRIBUTE]: '' });
-  message.append(side);
+  const side = sideOf(message);
   if (toolbar !== null && bubble !== null) {
-    // The toolbar's wrapper, the body's sibling inside the bubble: under the bubble it is the pills' row.
-    let holder: HTMLElement = toolbar;
-    while (holder.parentElement !== null && holder.parentElement !== bubble && holder.parentElement.querySelector(BODY_SELECTOR) === null) holder = holder.parentElement;
     const react = toolbar.querySelector<HTMLElement>(OVERVIEW_REACT);
     if (react !== null && !isTeleported(react)) {
-      const slot = createElement('span', { class: 'geld-review__msg-actions', [OWN_UI_ATTRIBUTE]: '' });
-      side.append(slot);
+      const slot = createElement('span', { class: ACTIONS, [OWN_UI_ATTRIBUTE]: '' });
+      side.prepend(slot);
       teleportInto(slot, [react]);
     }
-    const box = createElement('span', { class: 'geld-review__msg-reactions', [OWN_UI_ATTRIBUTE]: '' });
-    bubble.after(box);
-    teleportInto(box, [holder]);
-    onRestore(() => box.remove());
+    if (toolbar.closest(`.${REACTIONS_BOX}`) === null) {
+      // The toolbar's wrapper, the body's sibling inside the bubble: under the bubble it is the pills' row.
+      let holder: HTMLElement = toolbar;
+      while (holder.parentElement !== null && holder.parentElement !== bubble && holder.parentElement.querySelector(BODY_SELECTOR) === null) holder = holder.parentElement;
+      const box = createElement('span', { class: REACTIONS_BOX, [OWN_UI_ATTRIBUTE]: '' });
+      bubble.after(box);
+      teleportInto(box, [holder]);
+      onRestore(() => box.remove());
+    }
   }
-  if (menu !== null && !isTeleported(menu)) {
-    const slot = createElement('span', { class: 'geld-review__msg-actions', [OWN_UI_ATTRIBUTE]: '' });
-    side.append(slot);
-    teleportInto(slot, [menu]);
-  }
-  if (side.childElementCount === 0) side.remove();
-  else onRestore(() => side.remove());
+  if (menu !== null && !isTeleported(menu)) teleportInto(menuSlot(side), [menu]);
+  settleSlots(message);
   return true;
+}
+
+/**
+ * Controls GitHub drew again inside a message whose controls were placed: React mounts an Overview comment's body
+ * afresh when its editor closes (Cancel or Update), toolbar and reaction button with it, inside the bubble. True
+ * exactly when `placeControls` would move something, so placing again settles it.
+ */
+function controlsAstray(message: HTMLElement): boolean {
+  // A one-bubble chat leaves its comment's controls where they are: the row above wears the ⋯ (`wearControls`).
+  if (message.closest('.geld-review__chat')?.getAttribute('data-geld-chat') === 'comment') return false;
+  const { toolbar, menu, bubble } = overviewControlsOf(message);
+  if (toolbar !== null || menu !== null) {
+    if (menu !== null && !isTeleported(menu)) return true;
+    if (toolbar === null || bubble === null) return false;
+    if (toolbar.closest(`.${REACTIONS_BOX}`) === null) return true;
+    const react = toolbar.querySelector<HTMLElement>(OVERVIEW_REACT);
+    return react !== null && !isTeleported(react);
+  }
+  const meta = message.querySelector<HTMLElement>(`:scope > [${ATTR_PART}='meta']`);
+  const reactions = message.querySelector<HTMLElement>(`[${ATTR_PART}='reactions']`);
+  if (meta === null || reactions === null) return false;
+  const row = reactions.matches(REACTIONS_ROW) ? reactions : reactions.querySelector<HTMLElement>(REACTIONS_ROW);
+  if (row !== null && row === reactions && !isTeleported(row)) return true;
+  const picker = row?.querySelector<HTMLElement>(REACTION_PICKER) ?? null;
+  if (picker !== null && !isTeleported(picker)) return true;
+  const commentMenu = meta.querySelector<HTMLElement>(COMMENT_MENU);
+  return commentMenu !== null && !isTeleported(commentMenu);
 }
 
 /** On a ⋯ `details` beside a bubble whose menu opens upward (see `installMenuFlip`). */
