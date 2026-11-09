@@ -1,65 +1,78 @@
-import { CATEGORIES } from '@geld/core';
 import { ArrowRightIcon } from 'lucide-react';
 import Link from 'next/link';
 
-import { BeforeAfter } from '@/components/demo/before-after';
 import { ExternalLink } from '@/components/external-link';
+import { HeroPile } from '@/components/pile/hero-pile';
 import { HERO_WORDMARK_ID } from '@/components/header-brand';
 import { InstallButtons } from '@/components/install-buttons';
+import { LogoReel } from '@/components/logo-reel';
 import { Wordmark } from '@/components/logo';
 import { PathTester } from '@/components/path-tester';
 import { Section } from '@/components/section';
+import { Tour } from '@/components/tour/tour';
 import { buttonVariants } from '@/components/ui/button';
-import { REPO_URL, TAGLINE } from '@/lib/site';
+import { HEADLINE, REPO_URL, SUBHEADLINE } from '@/lib/site';
 
 export default function HomePage() {
-  const optIn = CATEGORIES.filter((category) => !category.defaultEnabled);
+  const [firstLine, secondLine] = HEADLINE;
   return (
     <>
-      <section aria-labelledby="hero-heading" className="container-site pt-20 pb-12 sm:pt-28 sm:pb-16">
-        <div className="max-w-3xl">
-          <div id={HERO_WORDMARK_ID} className="mb-8 w-fit sm:mb-10">
-            <Wordmark height={44} alt="Geld" priority />
+      {/*
+        The hero and the reel fill the first screen below the header, so the border under the reel lands just past the fold.
+        The two spacers share what is left: the top one from 1px to 10rem, the middle one from 3rem up. Capped at 60rem so a
+        tall monitor sees more of the page rather than a stretched hero; too short to fit, the block grows and the reel drops below.
+      */}
+      <div className="relative flex min-h-[min(calc(100svh-3.5rem-1px),60rem)] flex-col">
+        <div aria-hidden="true" className="max-h-40 min-h-px grow basis-0" />
+        <section aria-labelledby="hero-heading" className="container-site" data-pile-hero>
+          <div className="max-w-3xl @container">
+            <HeroPrehydration />
+            <div id={HERO_WORDMARK_ID} className="mb-8 w-fit sm:mb-10">
+              <Wordmark height={44} alt="Geld" priority />
+            </div>
+            {/* Sized to the column, not the viewport, so each line fills it at most and never wraps. */}
+            <h1 id="hero-heading" className="text-[min(9.4cqi,3.5rem)] leading-[1.04] font-semibold tracking-tight whitespace-nowrap">
+              <span className="block">{firstLine}</span> <span className="block">{secondLine}</span>
+            </h1>
+            <p className="mt-6 text-xl tracking-tight text-muted-foreground text-balance sm:text-2xl">{SUBHEADLINE}</p>
+            <InstallButtons className="mt-8" size="lg" />
           </div>
-          <h1 id="hero-heading" className="text-4xl font-semibold tracking-tight text-balance sm:text-6xl">
-            {TAGLINE}.
-          </h1>
-          <p className="mt-5 max-w-2xl text-lg text-muted-foreground text-pretty sm:text-xl">
-            Geld is a browser extension that hides test files from GitHub diffs. Tests move to a collapsible row at the bottom, the header counts
-            exclude them, and nothing is ever deleted from the page.
+        </section>
+        <div aria-hidden="true" className="min-h-12 grow basis-0" />
+        <LogoReel className="pb-10 sm:pb-12" />
+        <HeroPile />
+      </div>
+
+      <section id="tour" aria-labelledby="tour-heading" className="pb-16 sm:pb-20">
+        <div className="container-site border-t pt-16 sm:pt-20">
+          <div className="max-w-2xl">
+            <p className="mb-4 font-mono text-[0.9375rem] font-medium tracking-[0.12em] text-muted-foreground uppercase">What it does</p>
+            <h2 id="tour-heading" className="text-2xl font-semibold tracking-tight sm:text-3xl">
+              Everything a review needs, on the page you already have open.
+            </h2>
+            <p className="mt-3 text-base text-muted-foreground text-balance">
+              Geld works inside GitHub&apos;s own pages, so replies, resolves, reactions and merges still go through GitHub. Every window below is live,
+              so try them as you scroll.
+            </p>
+          </div>
+        </div>
+        {/* Wider than the page's column: the scenes need a GitHub-sized window beside their words. */}
+        <div className="container-wide mt-12 stage:mt-24">
+          <Tour />
+        </div>
+        <div className="container-site mt-20 flex flex-col items-center text-center stage:mt-12">
+          <h3 className="text-xl font-semibold tracking-tight sm:text-2xl">Plus the parts you set once</h3>
+          <p className="mt-3 max-w-2xl text-base text-muted-foreground text-balance">
+            Categories of your own, rules per repository or organisation, a <code className="code-chip">.github/geld.yml</code> everyone who reviews
+            shares, and GitHub Enterprise Server.
           </p>
-          <InstallButtons className="mt-8" size="lg" />
+          <p className="mt-2 max-w-2xl text-base text-muted-foreground text-balance">How it works covers every change Geld makes, and what it leaves alone.</p>
+          <Link href="/how-it-works" className={buttonVariants({ variant: 'outline', className: 'mt-6' })}>
+            Everything Geld changes
+            <ArrowRightIcon aria-hidden="true" />
+          </Link>
         </div>
       </section>
-
-      <section aria-label="Before and after" className="container-site pb-16 sm:pb-24">
-        <BeforeAfter />
-      </section>
-
-      <Section
-        id="why"
-        eyebrow="Why"
-        title="A pull request is easier to judge without its scaffolding."
-        description="Tests matter, but they rarely need to be read first. Geld gets them out of the way and keeps the numbers honest."
-      >
-        <ul className="grid gap-x-10 gap-y-10 sm:grid-cols-3">
-          <Feature title="Counts you can trust">
-            <code className="code-chip">+93 −53</code> becomes <code className="code-chip">6 tests +42 −26</code>. Hover the label for the full
-            breakdown: excluding tests, including tests, tests only.
-          </Feature>
-          <Feature title="Nothing disappears">
-            Hidden files collapse into one row at the bottom of the diff and their own panel in the file tree. One click brings them back, in place.
-          </Feature>
-          <Feature title="Your rules">
-            Tests are hidden by default. {optIn.map((category) => category.title).join(', ')} are one switch away, plus your own patterns, your own
-            categories and per-repository rules.
-          </Feature>
-        </ul>
-        <Link href="/how-it-works" className={buttonVariants({ variant: 'outline', className: 'mt-10' })}>
-          How it works
-          <ArrowRightIcon aria-hidden="true" />
-        </Link>
-      </Section>
 
       <Section
         id="try"
@@ -93,11 +106,11 @@ export default function HomePage() {
   );
 }
 
-function Feature({ title, children }: { readonly title: string; readonly children: React.ReactNode }) {
-  return (
-    <li className="flex flex-col gap-2">
-      <h3 className="text-base font-semibold">{title}</h3>
-      <p className="text-sm leading-6 text-muted-foreground">{children}</p>
-    </li>
-  );
+/**
+ * Before hydration sets `data-hero` and `data-hero-fade`, the top bar's wordmark and line stay hidden behind this page's
+ * hero. Rendered by the page rather than keyed on `:root:has(#hero-wordmark)`: a `:has()` on the root restyled the
+ * whole document on every element added anywhere, which made the tour's menus slow to open.
+ */
+function HeroPrehydration() {
+  return <style>{'.header-brand:not([data-hero]){opacity:0;filter:blur(5px);pointer-events:none}.hero-divider:not([data-hero-fade]){opacity:0}'}</style>;
 }
