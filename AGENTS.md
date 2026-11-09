@@ -159,7 +159,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `seatFor` answers `{ BOTS_KEY, sub }` for it, so the chip, a permalink, "See latest" and a reaction all open this line;
   `openRow` takes the sub for list keys): earlier summaries stay in their rounds as that push's history, and the latest still *bounds* its round (`Round.seatedElsewhere`: content for `hasContent`, a round's start and its identity, shown nowhere in it — a push, a clean summary, a push are two rounds as before;
   a round left with neither push nor anything to show is dropped).
-  The chips under a summary are read per thread source, not per item (an item can merge several of one bot's threads, from one run or several).
+  The chips under a summary are read per thread source, not per item (an item from an older Action's payload can merge several of one bot's threads, from one run or several).
   **The line is remembered** (`botLineMemo`): a summary on loan to the panel (its line open, or pinned in a thread) is crawled bodiless at home, `summary` reads false and the bot's latest fell back to the run before, which changed the line's anchor and dropped the open key;
   a bot's latest word only gets newer while the comment stands, so the last line read whole is kept (anchor, words, threads — their state refreshed) while its comment is in the document and nothing newer has been read.
   Clicking a chip opens the bot's line **where the reader is** (`onOpenAnchor`);
@@ -276,8 +276,13 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The verdict carries the worst grade among the open threads, so it drops as they are resolved.
   On the page a badge is an image whose words are lost, so the crawler grades a thread from its markup with alts kept (`blockText(…, true)` writes `![alt]`) and passes it as `RawComment.grade` / `BotComment.grade`;
   the Action reads the raw Markdown.
-  **The digest counts review threads, not rows** (`threadCounts`, `itemThreads`, `ReviewItem.threads`): a row merges threads on the same lines (two bots, or one bot twice, cluster.ts), yet each is resolved on its own on GitHub and counted on its own by its bot's chip, so the Geld meter, a round's meter, the "N open threads" and "N resolved threads" headings, the summary comment's "N of M done", the copied digest and the deeplink count threads, a merged row says "2 threads" or "1 of 2 threads resolved", and the meter's total is the chips' sum plus threads from authors with no chip (people, unregistered bots).
-  prime-envs#1067 read "0/10 resolved" beside chips of 2, 8 and 1: Codex's, two of Macroscope's and Bugbot's threads shared one row.
+  **Every review thread is a row of its own** (`clusterComments`): threads are never merged, not on the same lines, not for an identical suggestion or one bot's rule, since each is resolved on its own on GitHub.
+  Rows used to merge threads within three lines of each other, and on the Overview, where every thread names its line, a finding absorbed another reviewer's thread a few lines away (mintlify/mint#14355 read "3 unresolved" over two rows, one holding Brandon's thread and Cursor's;
+  the classic page, whose threads name no line, showed all four).
+  Only the dashboard's consolidated findings group overlapping threads (`groupOverlappingThreads`, `provider-findings.ts`), where one finding resolves all of its source threads at once.
+  **The digest counts review threads** (`threadCounts`, `itemThreads`, `ReviewItem.threads`), as each bot's chip counts its own, so the Geld meter, a round's meter, the "N open threads" and "N resolved threads" headings, the summary comment's "N of M done", the copied digest and the deeplink add up to the chips' sum plus threads from authors with no chip (people, unregistered bots);
+  a payload from an older Action whose rows merged threads still counts each row's threads (`ReviewItem.threads`), and such a row says "2 threads" or "1 of 2 threads resolved".
+  prime-envs#1067 read "0/10 resolved" beside chips of 2, 8 and 1 when Codex's, two of Macroscope's and Bugbot's threads shared one row.
   Greptile's check failing on a score under the repository's bar ("Confidence 3/5 — below your required 5/5") is findings, not a run that broke, so its chip turns green once its threads are resolved rather than red "failed".
   **A stated "needs a human" with nothing counted is marked, not called findings** (`needsHuman` on the verdict and in the payload): the chip reads "needs human" (amber), the request menu "Needs human", the summary comment "needs a human review";
   any count wins over it.
@@ -452,6 +457,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **An opened conversation is a chat** (`review/chat.ts`, stylesheet section "chats").
   An item's row opens to `renderChatView`: one `.geld-review__chat` per thread container with a head (below), a pinned strip for the comment the thread came from (`threadSourceOf`: the review body holding it, else the bot's run summary, described from the crawl: avatar, "CodeRabbit's review", first line;
   it unfolds the real comment under the strip on request, moved there like the thread so it is in one place at a time, `visit.sourcesShown`), then GitHub's thread node moved whole into the body.
+  A run summary's card is the classic comment card or, on the Overview, the `article` its id is on (`summaryCardOf`): looked up by the classic classes alone, every Overview thread whose head was a bot's summary comment (Greptile's) had no strip.
+  On the Overview the thread's box takes the chat's inner bottom corners, since GitHub's reply row is an inset band to the box's edge and stood square over the chat's rounded border.
   The chat is attributes on GitHub's nodes plus CSS, never a rewrite.
   A review's own body card (`pullrequestreview-N`, "X left a comment") is the `timeline-comment-group` itself — header, body and reactions are its direct children, and it carries `minimized-comment` along with `timeline-comment` and `js-comment` whether or not it is minimized — so `messagesIn` reads a `.minimized-comment` as the wrapper of a minimized comment only when it holds a `<details>`;
   read as a wrapper the card had no message and showed raw in its chat, its own header inside the bubble (server#7851).
@@ -703,7 +710,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `aiBaseUrl` defaults to the Vercel AI Gateway (`joinUrl` folds a trailing `/v1`) and `aiModel` comes from `/v1/models`.
   No request without key + URL + model.
   Only **bot-only** items are rewritten (people's words stay theirs);
-  `planConsolidation(previous, items)` matches items to the previous summary by their source-anchor set — unchanged items **carry** the previous title/context/fix, an item that gained a source (a second bot reporting the same thing) is re-asked with `previousTitle`/`previousContext` so the wording moves as little as possible, and the TL;DR (`GeldPrMeta.summary`, `forItems` = sorted open ids) is rewritten only when the open set changed.
+  `planConsolidation(previous, items)` matches items to the previous summary by their source-anchor set — unchanged items **carry** the previous title/context/fix, an item that gained a source (a reply in its thread) is re-asked with `previousTitle`/`previousContext` so the wording moves as little as possible, and the TL;DR (`GeldPrMeta.summary`, `forItems` = sorted open ids) is rewritten only when the open set changed.
   Items may carry `context` (merged detail from every source) and `fix` (`{ text, source: 'bot' | 'human' | 'ai' }`: a source's `` ```suggestion `` block, or one the model proposed when `suggestedFixes` asks for it);
   the `suggestedFixes` setting (`all | bots | ai | off`, a `choice` field) decides which fixes are kept in the payload (Action input `suggested-fixes`) and shown (`fixVisible`).
   In the browser, results live in a per-visit cache layered onto every pass (`withAi`) so a title never flickers back;

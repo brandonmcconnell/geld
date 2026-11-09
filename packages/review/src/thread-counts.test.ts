@@ -7,8 +7,8 @@ import { deeplinkFrom, itemThreads, parseGeldPrMeta, threadCounts } from './mode
 import type { GeldPrMeta } from './model';
 import { renderSummary } from './summary-render';
 
-// prime-envs#1067's shape: Codex, Macroscope (twice) and Bugbot on the same lines of one file merge into one row, while
-// each bot's chip counts its own threads. The digest's counts are threads, so they add up to the chips.
+// prime-envs#1067's shape: Codex, Macroscope (twice) and Bugbot on the same lines of one file. Each thread is its own row
+// (a row once merged them), and the digest's counts are threads, so they add up to the bots' chips.
 const thread = (anchor: string, author: string, line: number, resolved = false): RawComment => ({
   anchor,
   kind: 'thread',
@@ -30,21 +30,18 @@ const HEAD = 'a'.repeat(40);
 const meta = (items: GeldPrMeta['items']): GeldPrMeta => ({ v: 1, generatedAt: '2026-11-08T13:00:00Z', headSha: HEAD, producer: { kind: 'action', version: '0.1.0', ai: false }, items, bots: [], reviewers: [], fold: { comments: [], events: [] } });
 
 describe('thread counts', () => {
-  it("counts a merged row's threads, as the bots' chips do", () => {
+  it("gives every thread its own row, and the rows add up to the bots' chips", () => {
     const items = clusterComments(THREADS);
-    expect(items).toHaveLength(2);
-    const merged = items.find((item) => item.sources.length > 1);
-    expect(merged?.threads).toEqual({ total: 4, open: 4 });
+    expect(items).toHaveLength(5);
+    expect(items.every((item) => item.sources.length === 1 && item.threads === undefined)).toBe(true);
     expect(threadCounts(items)).toEqual({ total: 5, open: 5 });
     const chips = verdictsFrom([], THREADS.map((entry): BotComment => ({ author: entry.author, body: entry.body, anchor: entry.anchor, createdAt: entry.createdAt, resolved: entry.isResolved === true })), HEAD);
     expect(chips.reduce((sum, bot) => sum + (bot.count ?? 0), 0)).toBe(threadCounts(items).open);
   });
 
-  it('drops a thread from the count when it is resolved, before the whole row is', () => {
+  it('resolves only the row of the thread that was resolved', () => {
     const one = clusterComments(THREADS.map((entry) => (entry.anchor === 'discussion_r3' ? { ...entry, isResolved: true } : entry)));
-    const merged = one.find((item) => item.sources.length > 1);
-    expect(merged?.status).toBe('open');
-    expect(merged === undefined ? null : itemThreads(merged)).toEqual({ total: 4, open: 3 });
+    expect(one.filter((item) => item.status === 'resolved').map((item) => item.sources[0]?.anchor)).toEqual(['discussion_r3']);
     expect(threadCounts(one)).toEqual({ total: 5, open: 4 });
     const chips = verdictsFrom([], THREADS.map((entry): BotComment => ({ author: entry.author, body: entry.body, anchor: entry.anchor, createdAt: entry.createdAt, resolved: entry.anchor === 'discussion_r3' })), HEAD);
     expect(chips.find((bot) => bot.id === 'macroscope')?.count).toBe(2);
@@ -58,9 +55,15 @@ describe('thread counts', () => {
     expect(parsed.ok && threadCounts(parsed.value.items)).toEqual({ total: 5, open: 4 });
     expect(renderSummary(meta(items))).toContain('**1 of 5 done**');
     expect(deeplinkFrom(meta(items))).toMatchObject({ open: 4, total: 5 });
-    // A payload from before the field: one thread per row.
-    const older = items.map(({ threads: _threads, ...rest }) => rest);
-    expect(threadCounts(older)).toEqual({ total: 2, open: 2 });
+  });
+
+  it("counts the threads of a row an older Action merged, as it wrote them", () => {
+    const [first, second] = clusterComments(THREADS);
+    if (first === undefined || second === undefined) throw new Error('fixture');
+    const merged = { ...first, sources: [...first.sources, ...second.sources], threads: { total: 4, open: 3 } };
+    const parsed = parseGeldPrMeta(JSON.parse(JSON.stringify(meta([merged]))));
+    expect(parsed.ok && parsed.value.items[0] !== undefined && itemThreads(parsed.value.items[0])).toEqual({ total: 4, open: 3 });
+    expect(threadCounts([merged])).toEqual({ total: 4, open: 3 });
   });
 
   it('reads a score under the repository bar as findings, resolved once its threads are', () => {
