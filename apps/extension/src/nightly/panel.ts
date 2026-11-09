@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import { buildLabel, nightlyView } from './view';
 import type { NightlyAction } from './view';
 import { manageUrl } from './conflicts';
-import { nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyStatusItem } from './state';
+import { nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyStatusItem, readNightlyStatus } from './state';
 import type { UpdateMode } from './state';
 
 /**
@@ -85,7 +85,7 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
   let blocker: string | null = null;
 
   const render = async (): Promise<void> => {
-    const [state, folder, prefs, conflict] = await Promise.all([nightlyStatusItem.getValue(), nightlyFolderItem.getValue(), nightlyPrefsItem.getValue(), nightlyConflictItem.getValue()]);
+    const [state, folder, prefs, conflict] = await Promise.all([readNightlyStatus(), nightlyFolderItem.getValue(), nightlyPrefsItem.getValue(), nightlyConflictItem.getValue()]);
     blocker = conflict?.id ?? null;
     for (const { mode, button } of modeButtons) {
       button.setAttribute('aria-checked', String(prefs.mode === mode));
@@ -112,7 +112,7 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
     const kind = current;
     busy = true;
     localError = null;
-    const failedAt = async (): Promise<string | undefined> => (await nightlyStatusItem.getValue()).failure?.at;
+    const failedAt = async (): Promise<string | undefined> => (await readNightlyStatus()).failure?.at;
     void failedAt().then(async (before) => {
       const problem = await render()
         .then(() => act(kind))
