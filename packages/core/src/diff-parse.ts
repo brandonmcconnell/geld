@@ -1,6 +1,7 @@
 import type { ChangeKindId } from './change-kinds';
 import type { CommentLines, CommentScanState, CommentSyntax } from './comment-lines';
 import { commentSyntaxFor, isCommentOnlyLine, newCommentScanState } from './comment-lines';
+import { canReadImports, importSpecifiers } from './file-flow';
 
 /** What happened to the file as a whole — the icon GitHub's file tree shows for it. */
 export type FileStatus = 'added' | 'deleted' | 'renamed' | 'modified';
@@ -25,6 +26,17 @@ export interface FileStats {
    * is unknown, or when there are too many to be worth carrying around.
    */
   readonly commentLines?: CommentLines;
+  /**
+   * The import specifiers the diff's removed lines name (`importSpecifiers`), for files whose imports Geld can read:
+   * all of a deleted file's, and those a surviving file dropped or rewrote. Read against the merge base, as the diff
+   * is. Absent when there are none (and in cache entries written before this existed).
+   */
+  readonly removedImports?: readonly string[];
+  /**
+   * From GitHub's files-tab summaries (`parseDiffSummaries`), not the diff: counts, status and the kinds those show,
+   * with no line-level facts (comment lines, removed imports), so their absence here says nothing about the change.
+   */
+  readonly summaryOnly?: true;
 }
 
 /** Above this many comment-only lines in one file the list is dropped (the `comments` kind still applies). */
@@ -107,6 +119,13 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
     newState: CommentScanState;
     commentAdded: number[];
     commentRemoved: number[];
+    /**
+     * Each hunk's old and new side as written (context lines on both), for a file whose imports can be read (else
+     * null): removed imports are read with the context around them, so a removed line inside a comment that stays is
+     * not taken for an import.
+     */
+    oldSide: string[][] | null;
+    newSide: string[][] | null;
   }
   let current: Current | null = null;
   let inHunk = false;
@@ -125,6 +144,15 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
       let stats: FileStats = { path: current.path, additions: current.additions, deletions: current.deletions, status };
       if (kinds.length > 0) stats = { ...stats, kinds };
       if (commentCount > 0 && commentCount <= MAX_COMMENT_LINES) stats = { ...stats, commentLines: { added: current.commentAdded, removed: current.commentRemoved } };
+      if (current.oldSide !== null && current.newSide !== null && current.deletions > 0) {
+        // Each hunk is read on its own: the lines between hunks are not in the diff, so a comment one hunk opens
+        // must not run on into the next.
+        const path = current.path;
+        const named = (hunks: readonly string[][]): string[] => hunks.flatMap((hunk) => importSpecifiers(path, hunk.join('\n')));
+        const kept = new Set(named(current.newSide));
+        const removedImports = [...new Set(named(current.oldSide))].filter((specifier) => !kept.has(specifier));
+        if (removedImports.length > 0) stats = { ...stats, removedImports };
+      }
       files.push(stats);
     }
     current = null;
@@ -156,6 +184,8 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
               newState: newCommentScanState(),
               commentAdded: [],
               commentRemoved: [],
+              oldSide: canReadImports(path) ? [] : null,
+              newSide: canReadImports(path) ? [] : null,
             };
       inHunk = false;
       continue;
@@ -165,6 +195,8 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
     if (line.startsWith('@@')) {
       inHunk = true;
       current.hunks += 1;
+      current.oldSide?.push([]);
+      current.newSide?.push([]);
       const header = HUNK_HEADER.exec(line);
       current.oldLine = Number(header?.[1] ?? 1);
       current.newLine = Number(header?.[2] ?? 1);
@@ -196,17 +228,21 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
       current.additions += 1;
       const text = line.slice(1);
       current.added.push(text.replace(WHITESPACE, ''));
+      current.newSide?.at(-1)?.push(text);
       if (current.syntax !== null && isCommentOnlyLine(text, current.syntax, current.newState)) current.commentAdded.push(current.newLine);
       current.newLine += 1;
     } else if (line.startsWith('-')) {
       current.deletions += 1;
       const text = line.slice(1);
       current.removed.push(text.replace(WHITESPACE, ''));
+      current.oldSide?.at(-1)?.push(text);
       if (current.syntax !== null && isCommentOnlyLine(text, current.syntax, current.oldState)) current.commentRemoved.push(current.oldLine);
       current.oldLine += 1;
     } else if (line.startsWith(' ') || line === '') {
       // Context: advances both sides and carries block-comment state along.
       const text = line.slice(1);
+      current.oldSide?.at(-1)?.push(text);
+      current.newSide?.at(-1)?.push(text);
       if (current.syntax !== null) {
         isCommentOnlyLine(text, current.syntax, current.oldState);
         isCommentOnlyLine(text, current.syntax, current.newState);

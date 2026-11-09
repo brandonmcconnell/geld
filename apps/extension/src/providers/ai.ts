@@ -4,12 +4,13 @@ import type { AddressedEvidence, GeldPrMeta, JevRequest, ProviderReviewComment, 
 import {
   applyAddressed, applyConsolidation, buildProviderReviewItems, classificationRequests,
   CONSOLIDATE_JSON_SCHEMA, CONSOLIDATE_SYSTEM, consolidateUserPrompt, doneFrom,
-  isEvaluationModel, isOpenStatus, JEV_DIRECT_MODEL, jevModelFor, META_VERSION, parseConsolidateOutput,
+  isEvaluationModel, isOpenStatus, JEV_DIRECT_MODEL, META_VERSION, parseConsolidateOutput,
   parseSummaryOutput, planConsolidation, providerReviewKey, sameProblemGroups,
   sameProblemRequest, SUMMARY_JSON_SCHEMA, SUMMARY_SYSTEM, summaryInput,
   summaryIsCurrent, summaryRecord, summaryUserPrompt, TYPESAFE_API, withSameProblem,
 } from '@geld/review';
 import { browser } from 'wxt/browser';
+import { gatewayDecisionModel } from '../lib/decision-model';
 import { hasGatewayPermission } from '../lib/ai-gateway';
 import type { AiRunRecord } from '../lib/local-state';
 import type { AiCompleteRequest, AiEvaluateRequest } from '../lib/messages';
@@ -17,6 +18,7 @@ import { isAiCompleteResponse, isAiEvaluateResponse } from '../lib/messages';
 
 interface ProviderAiCache {
   readonly headSha: string;
+  readonly decisionKey?: string;
   readonly sourceKeys: Readonly<Record<string, string>>;
   readonly summaryKey: string;
   readonly skipped: readonly string[];
@@ -57,7 +59,7 @@ const defaults: ProviderAiDependencies = {
     if (!settings.aiJev) return null;
     const { aiGatewayItem, jevKeyItem, jevSourceItem } = await import('../lib/local-state');
     const gateway = await aiGatewayItem.getValue();
-    const model = (gateway?.baseUrl === settings.aiBaseUrl ? gateway.jevModel : null) ?? jevModelFor(settings.aiBaseUrl);
+    const model = gatewayDecisionModel(settings, gateway);
     const ownKey = (await jevKeyItem.getValue()).trim();
     if (ownKey !== '' && (await jevSourceItem.getValue()) === 'own') return { baseUrl: TYPESAFE_API, apiKey: ownKey, model: JEV_DIRECT_MODEL };
     if (model !== null) return { baseUrl: settings.aiBaseUrl, apiKey: key, model };
@@ -82,8 +84,10 @@ function cacheFrom(record: AiRunRecord | null): ProviderAiCache | null {
   }
   const skipped: string[] = [];
   if (Array.isArray(value.skipped)) for (const entry of value.skipped) { const id: unknown = entry; if (typeof id !== 'string') return null; skipped.push(id); }
-  return { headSha: value.headSha, summaryKey: value.summaryKey, sourceKeys, done, skipped };
+  return { headSha: value.headSha, summaryKey: value.summaryKey, sourceKeys, done, skipped, ...(typeof value.decisionKey === 'string' ? { decisionKey: value.decisionKey } : {}) };
 }
+
+function decisionKey(settings: GeldSettings): string { return JSON.stringify([settings.aiBaseUrl, settings.aiDecisionModel]); }
 
 async function fingerprint(value: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
@@ -131,7 +135,7 @@ export class ProviderAiTriage {
 
   async load(input: ProviderReviewInput, comments: readonly ProviderReviewComment[], settings: GeldSettings): Promise<void> {
     const key = providerReviewKey(input.subject);
-    const signature = JSON.stringify([input, comments, settings.aiEnabled, settings.aiBaseUrl, settings.aiModel, settings.aiJev, settings.suggestedFixes]);
+    const signature = JSON.stringify([input, comments, settings.aiEnabled, settings.aiBaseUrl, settings.aiModel, settings.aiJev, settings.aiDecisionModel, settings.suggestedFixes]);
     if (signature === this.signature) return this.loading;
     this.generation += 1;
     const generation = this.generation;
@@ -146,7 +150,7 @@ export class ProviderAiTriage {
       const trusted = new Set((input.bots ?? []).map((bot) => bot.authorId));
       const eligible = new Set(items.filter((item) => item.sources.length > 0 && item.sources.every((source) => source.bot !== undefined && source.authorId !== undefined && trusted.has(source.authorId))).map((item) => item.id));
       const sourceKeys = Object.fromEntries(await Promise.all(items.map(async (item) => [item.id, await fingerprint(item.sources.map((source) => [source, byAnchor.get(source.anchor)]))])));
-      const summaryKey = await fingerprint([input.subject.headSha, sourceKeys, items.map((item) => [item.id, item.status, item.title]), [...eligible]]);
+      const summaryKey = await fingerprint([input.subject.headSha, decisionKey(settings), sourceKeys, items.map((item) => [item.id, item.status, item.title]), [...eligible]]);
       const runs = await this.dependencies.readRuns();
       if (generation !== this.generation) return;
       this.context = { key, input, settings, items, comments: raw, eligible, sourceKeys, summaryKey };
@@ -164,7 +168,7 @@ export class ProviderAiTriage {
     if (context === null || cache === null || !context.settings.aiEnabled) return items;
     const rewrites = (this.record?.rewrites ?? []).filter((entry) => context.eligible.has(entry.id) && cache.sourceKeys[entry.id] === context.sourceKeys[entry.id]);
     const rewritten = applyConsolidation(items, new Map(), rewrites);
-    if (cache.headSha !== context.input.subject.headSha || !context.settings.aiJev) return rewritten;
+    if (cache.headSha !== context.input.subject.headSha || cache.decisionKey !== decisionKey(context.settings) || !context.settings.aiJev) return rewritten;
     return rewritten.map((item) => {
       const answer = cache.done[item.id];
       if (answer === undefined || cache.sourceKeys[item.id] !== context.sourceKeys[item.id]) return item;
@@ -190,7 +194,7 @@ export class ProviderAiTriage {
   async run(input: ProviderReviewInput, comments: readonly ProviderReviewComment[], settings: GeldSettings): Promise<void> {
     await this.load(input, comments, settings);
     const context = this.context;
-    if (context === null || this.value.kind === 'running') return;
+    if (context === null || this.value.kind === 'running' || !context.items.some((item) => isOpenStatus(item.status))) return;
     const generation = this.generation;
     const current = (): boolean => generation === this.generation && this.context === context;
     let next = this.record;
@@ -210,7 +214,7 @@ export class ProviderAiTriage {
       const plan = planConsolidation(this.meta(context, known), context.items.filter((item) => context.eligible.has(item.id)), { comments: context.comments, wantFix: settings.suggestedFixes === 'all' || settings.suggestedFixes === 'ai' });
       const pending = new Set(plan.pending.map((item) => item.id));
       this.emit({ kind: 'running', key: context.key, pending, stale: true, ...(this.record === null ? {} : { ranAt: this.record.ranAt }) });
-      let done: ProviderAiCache['done'] = previousCache?.headSha === input.subject.headSha ? Object.fromEntries(Object.entries(previousCache.done).filter(([id]) => previousCache.sourceKeys[id] === context.sourceKeys[id])) : {};
+      let done: ProviderAiCache['done'] = previousCache?.headSha === input.subject.headSha && previousCache.decisionKey === decisionKey(settings) ? Object.fromEntries(Object.entries(previousCache.done).filter(([id]) => previousCache.sourceKeys[id] === context.sourceKeys[id])) : {};
       const rewrites = new Map((this.record?.rewrites ?? []).filter((entry) => context.eligible.has(entry.id) && previousCache?.sourceKeys[entry.id] === context.sourceKeys[entry.id]).map((entry) => [entry.id, entry]));
       const route = await this.dependencies.jevRoute(settings, apiKey);
       if (!current()) return;
@@ -244,7 +248,7 @@ export class ProviderAiTriage {
         for (const entry of output.value) rewrites.set(entry.id, entry);
       }
       const skipped = [...(previousCache?.skipped ?? []).filter((id) => previousCache?.sourceKeys[id] === context.sourceKeys[id]), ...plan.pending.filter((item) => !prose.some((candidate) => candidate.id === item.id)).map((item) => item.id)];
-      const cache: ProviderAiCache = { headSha: input.subject.headSha, sourceKeys: context.sourceKeys, summaryKey: this.record?.summary === undefined ? context.summaryKey : previousCache?.summaryKey ?? '', done, skipped };
+      const cache: ProviderAiCache = { headSha: input.subject.headSha, decisionKey: decisionKey(settings), sourceKeys: context.sourceKeys, summaryKey: this.record?.summary === undefined ? context.summaryKey : previousCache?.summaryKey ?? '', done, skipped };
       let completed: ProviderAiRunRecord = { ranAt: this.dependencies.now(), rewrites: [...rewrites.values()], providerAi: cache, ...(this.record?.summary === undefined ? {} : { summary: this.record.summary }) };
       next = completed;
       const original = this.record;

@@ -93,7 +93,7 @@ it('keeps canonical navigation and reports unavailable original sources without 
 
 async function conversationFixture() {
   const anchorHtml = '<a class="gfm gfm-merge_request" data-reference-type="merge_request" data-project="56211886" data-project-path="whitebox-aero/insta360" data-iid="34" data-merge-request="488556842" href="/whitebox-aero/insta360/-/merge_requests/34" title="Speed up camera downloads with parallel HTTP range requests">insta360!34 (merged)</a>';
-  document.body.innerHTML = `<div class="issuable-discussion"><main></main><div data-testid="description-content"><div class="md"><p>Summary</p><p>${anchorHtml}</p></div></div></div>`;
+  document.body.innerHTML = `<div class="issuable-discussion"><main></main><div data-testid="description-content"><div class="md"><p>Summary</p><h2>Related work</h2><p>${anchorHtml}</p></div></div></div>`;
   const mount = document.querySelector('main');if (mount === null) throw new Error('Missing host.');
   const reference = document.querySelector<HTMLAnchorElement>('a.gfm');if (reference === null) throw new Error('Missing original.');
   vi.spyOn(reference, 'getBoundingClientRect').mockReturnValue(new DOMRect(10, 10, 100, 20));
@@ -183,4 +183,11 @@ it('represents Bitbucket outgoing destinations by canonical URL without fabricat
   const row = panel.element.querySelector('[data-geld-reference]');
   expect(row?.getAttribute('data-geld-reference-identity')).toBe('canonical-url');
   expect(row?.hasAttribute('data-geld-reference-native-id')).toBe(false);expect(row?.hasAttribute('data-geld-reference-project')).toBe(false);
+});
+
+it('requires native comment provenance for an outgoing comment reference', () => {
+  const reference = { ...outgoing, source: { reviewUrl: url, anchor: 'note_123', author: { id: '1', login: 'alice' }, createdAt: '2026-11-09T00:00:00Z' } };
+  expect(referenceForSubject(reference, subject)).toBe(true);
+  expect(referenceForSubject({ ...reference, source: { reviewUrl: url, anchor: 'note_123' } }, subject)).toBe(false);
+  expect(referenceForSubject({ ...reference, source: { ...reference.source, createdAt: 'unknown' } }, subject)).toBe(false);
 });

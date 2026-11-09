@@ -15,10 +15,13 @@
     "check": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run build"
   },
   "dependencies": {
+    "@awesome.me/kit-2e791c163e": "1.0.4",
     "@base-ui/react": "^1.8.0",
     "@geld/core": "workspace:*",
+    "@geld/domain": "workspace:*",
     "@geld/github": "workspace:*",
     "@geld/review": "workspace:*",
+    "@geld/ui": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.2.5",
     "geist": "^1.7.2",
@@ -27,9 +30,7 @@
     "next": "^16.3.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "server-only": "^0.0.1",
-    "@geld/ui": "workspace:*",
-    "@geld/domain": "workspace:*"
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

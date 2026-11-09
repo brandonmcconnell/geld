@@ -11,6 +11,24 @@ HOSTS = {
 }
 WEB_ROLES = {'document web', 'document frame', 'html container', 'embedded'}
 ACTION_NAMES = {'click', 'press'}
+ROLE_NAMES = {
+    'ROLE_PUSH_BUTTON': 'push button', 'ROLE_DOCUMENT_WEB': 'document web',
+    'ROLE_DOCUMENT_FRAME': 'document frame', 'ROLE_HTML_CONTAINER': 'html container',
+    'ROLE_EMBEDDED': 'embedded', 'ROLE_FRAME': 'frame', 'ROLE_WINDOW': 'window',
+    'ROLE_DIALOG': 'dialog', 'ROLE_ALERT': 'alert',
+}
+
+
+def role_name(atspi, node):
+    try:
+        value = node.getRole()
+        for constant, name in ROLE_NAMES.items():
+            expected = getattr(atspi, constant, None)
+            if expected is not None and value == expected:
+                return name
+    except (AttributeError, TypeError):
+        pass
+    return node.getRoleName()
 
 
 def qualifies(dialog, provider, owned_pid):
@@ -53,7 +71,7 @@ def native_dialogs(atspi, browser_pid):
                 'unrelatedApplications': 0, 'processIdErrors': 0, 'desktopErrors': 0, 'desktopReadable': False, 'nativeNodes': 0, 'webSubtreesSkipped': 0,
                 'nativeDialogs': 0, 'nodeErrors': 0, 'nativeWindows': 0, 'activeNativeWindows': 0,
                 'showingNativeWindows': 0, 'showingActiveNativeControls': 0,
-                'roles': {role: 0 for role in ['application', 'frame', 'window', 'dialog', 'alert', 'panel', 'push button', 'tool bar', 'entry', 'other']}}
+                'reportedRoles': {}, 'roles': {role: 0 for role in ['application', 'frame', 'window', 'dialog', 'alert', 'panel', 'push button', 'tool bar', 'entry', 'other']}}
     try:
         desktop = atspi.Registry.getDesktop(0)
         applications = list(islice(iter(desktop), 65))
@@ -82,7 +100,10 @@ def native_dialogs(atspi, browser_pid):
             inspected += 1
             counters['nativeNodes'] += 1
             try:
-                role = node.getRoleName()
+                role = role_name(atspi, node)
+                reported = node.getRoleName()
+                if re.fullmatch(r'[a-zA-Z -]{1,48}', reported) and (reported in counters['reportedRoles'] or len(counters['reportedRoles']) < 32):
+                    counters['reportedRoles'][reported] = counters['reportedRoles'].get(reported, 0) + 1
                 counters['roles'][role if role in counters['roles'] else 'other'] += 1
                 web = web or role in WEB_ROLES
                 if web:
@@ -103,7 +124,7 @@ def native_dialogs(atspi, browser_pid):
                     counters['showingActiveNativeControls'] += 1
                 if role in {'dialog', 'alert'}:
                     counters['nativeDialogs'] += 1
-                    text, buttons, handles = [], [], []
+                    text, buttons, handles, unrecognized = [], [], [], []
                     children = [(node, 0)]
                     visited = 0
                     incomplete = False
@@ -113,7 +134,7 @@ def native_dialogs(atspi, browser_pid):
                         if child_depth > 16:
                             incomplete = True
                             continue
-                        child_role = child.getRoleName()
+                        child_role = role_name(atspi, child)
                         if child_role in WEB_ROLES:
                             continue
                         name = child.name or ''
@@ -121,6 +142,8 @@ def native_dialogs(atspi, browser_pid):
                             if len(name) > 1024:
                                 incomplete = True
                             text.append(name[:1024])
+                        if child_role != 'push button' and name in {'Allow', 'Cancel', "Don't allow", 'Deny'} and len(unrecognized) < 16:
+                            unrecognized.append({'role': child_role[:48], 'name': name})
                         if child_role == 'push button':
                             child_states = child.getState()
                             try:
@@ -137,7 +160,7 @@ def native_dialogs(atspi, browser_pid):
                         children.extend((descendant, child_depth + 1) for descendant in descendants[:64])
                     record = {'owned_pid': browser_pid, 'native': True, 'role': role, 'name': node.name or '',
                               'text': '\n'.join(text), 'active': active, 'showing': states.contains(atspi.STATE_SHOWING),
-                              'buttons': buttons, 'truncated': incomplete or bool(children)}
+                              'buttons': buttons, 'unrecognizedControls': unrecognized, 'truncated': incomplete or bool(children)}
                     found.append((record, handles))
                 descendants = list(islice(iter(node), 65))
                 if len(descendants) > 64:
@@ -163,6 +186,7 @@ def diagnostic(record, provider):
             'allowCount': len(allow), 'cancelCount': len(cancel), 'otherButtonCount': len(buttons) - len(allow) - len(cancel),
             'allowEnabled': len(allow) == 1 and allow[0].get('enabled') is True,
             'allowShowing': len(allow) == 1 and allow[0].get('showing') is True,
+            'unrecognizedControls': record.get('unrecognizedControls', []),
             'nativeActions': sorted({action for button in allow for action in button.get('actions', []) if action in ACTION_NAMES})}
 
 

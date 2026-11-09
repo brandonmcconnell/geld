@@ -137,3 +137,21 @@ describe('native provider count ownership', () => {
     expect(count.getAttribute('aria-label')).toBe('Added 80 lines.');
   });
 });
+
+it.each([',', '.', "'", '’', '\u00a0', '\u202f'])('preserves the native %s count separator in visible and spoken totals', (separator) => {
+  const root = document.createElement('span');
+  const label = document.createElement('strong');
+  label.textContent = `12${separator}345 additions`;
+  root.append(label);
+  root.setAttribute('aria-label', `Added 12${separator}345 lines. Removed 6${separator}789 lines.`);
+  document.body.append(root);
+  const counts = new ProviderCounts();
+  counts.write(root, 2345);
+  counts.writeLineAttribute(root, 'aria-label', { additions: 2345, deletions: 1234 });
+  expect(label.textContent).toBe(`2${separator}345 additions`);
+  expect(root.getAttribute('aria-label')).toBe(`Added 2${separator}345 lines. Removed 1${separator}234 lines.`);
+  counts.restore();
+  expect(label.textContent).toBe(`12${separator}345 additions`);
+  expect(root.getAttribute('aria-label')).toBe(`Added 12${separator}345 lines. Removed 6${separator}789 lines.`);
+  expect(root.firstElementChild).toBe(label);
+});

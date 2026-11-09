@@ -24,6 +24,7 @@ import { fragmentHeaders } from './deeplink';
 import { revisionIndexAt } from './revisions';
 import type { Revision } from './revisions';
 import { pageFetch } from '../page-fetch';
+import { OVERVIEW_DESCRIPTION } from './overview-page';
 
 export type { Revision } from './revisions';
 
@@ -44,6 +45,8 @@ const logs = new Map<string, EditLog>();
 
 interface RevisionBody {
   body: HTMLElement | null;
+  /** The revision's Markdown, HTML comments included (its "copy Markdown" item), or null when the view has none. */
+  markdown: string | null;
   pending: Promise<void> | null;
   failed: boolean;
 }
@@ -72,8 +75,18 @@ function logUrlOf(node: Element, anchor = node.id): string | null {
     const owner = menu.closest(COMMENT_ANCHOR);
     if (owner === null || owner.id === anchor) return menu.getAttribute('src');
   }
+  // The Overview's "Last edited by X" menu loads the same log through its API and names no URL: it is found by node id.
+  for (const button of node.querySelectorAll(OVERVIEW_EDIT_MENU)) {
+    if (button.closest(COMMENT_ANCHOR)?.id !== anchor) continue;
+    const nodeId = nodeIdOf(anchor, repositoryId());
+    return nodeId === null ? null : `${EDIT_LOG}${nodeId}`;
+  }
   return null;
 }
+
+/** The Overview's edit-history button, in the header of an edited comment or the description. */
+const OVERVIEW_EDIT_MENU = 'button[class*="editHistoryMenuButton"]';
+const EDIT_LOG = '/user_content_edits/show_edit_history_log/';
 
 /** GitHub's node-id prefix for each kind of comment anchor. */
 const NODE_KINDS: readonly (readonly [RegExp, string])[] = [
@@ -136,7 +149,7 @@ export function editLogUrlOf(anchor: string): string | null {
   const listed = logUrlOf(node, anchor);
   if (listed !== null || !minimized(node, anchor)) return listed;
   const nodeId = nodeIdOf(anchor, repositoryId());
-  return nodeId === null ? null : `/user_content_edits/show_edit_history_log/${nodeId}`;
+  return nodeId === null ? null : `${EDIT_LOG}${nodeId}`;
 }
 
 /** Reads the log into `log`; true when it says something it did not before. */
@@ -151,7 +164,10 @@ async function fetchLog(url: string, log: EditLog): Promise<boolean> {
       const href = button.getAttribute('data-edit-history-url');
       const at = button.querySelector('relative-time[datetime]')?.getAttribute('datetime') ?? '';
       if (href === null || Number.isNaN(Date.parse(at))) continue;
-      revisions.push({ at, url: href });
+      const name = button.querySelector('.css-truncate-target')?.textContent?.trim() ?? '';
+      const app = /\/in\/(\d+)/.exec(button.querySelector('img.avatar')?.getAttribute('src') ?? '');
+      const bot = [...button.querySelectorAll('.Label')].some((label) => /^bot$/i.test(label.textContent?.trim() ?? ''));
+      revisions.push({ at, url: href, ...(name === '' ? {} : { by: { name, bot, appId: app?.[1] === undefined ? null : Number(app[1]) } }) });
     }
     revisions.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
     const before = `${log.editedAt ?? ''}|${log.revisions.map((revision) => revision.url).join(',')}`;
@@ -274,7 +290,9 @@ async function fetchRevision(url: string, entry: RevisionBody): Promise<void> {
       entry.failed = true;
       return;
     }
-    entry.body = contentOf(new DOMParser().parseFromString(await response.text(), 'text/html'));
+    const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+    entry.body = contentOf(doc);
+    entry.markdown = (doc.querySelector('clipboard-copy[data-analytics-event*="copy_markdown_at_time"]') ?? doc.querySelector('clipboard-copy[value]'))?.getAttribute('value') ?? null;
     if (entry.body === null) entry.failed = true;
   } catch {
     entry.failed = true;
@@ -313,7 +331,7 @@ export function revisionAsOf(node: Element, anchor: string, at: number, settleMs
   if (chosen === undefined || last === undefined) return { state: 'current' };
   let entry = bodies.get(chosen.url);
   if (entry === undefined) {
-    entry = { body: null, pending: null, failed: false };
+    entry = { body: null, markdown: null, pending: null, failed: false };
     bodies.set(chosen.url, entry);
   }
   if (entry.body === null && !entry.failed && entry.pending === null) {
@@ -329,6 +347,83 @@ export function revisionAsOf(node: Element, anchor: string, at: number, settleMs
   const body = entry.body.cloneNode(true);
   if (!(body instanceof HTMLElement)) return { state: 'current' };
   return { state: 'revision', at: chosen.at, body, editsSince: revisions.length - 1 - index, editedAt: last.at };
+}
+
+/**
+ * The edit-history log of the comment card holding `body` (the pull request's description, whose card is not one of
+ * `COMMENT_ANCHOR`'s), or null when it was never edited.
+ */
+export function logUrlOfCard(body: Element): string | null {
+  const card = body.closest('.timeline-comment, .js-comment-container');
+  const listed = card?.querySelector('details-menu[src*="show_edit_history_log"]')?.getAttribute('src') ?? null;
+  if (listed !== null) return listed;
+  // The Overview's description box: its log is the pull request's own, by the node id the page's payload carries.
+  const box = body.closest(OVERVIEW_DESCRIPTION);
+  if (box === null || box.querySelector(OVERVIEW_EDIT_MENU) === null) return null;
+  const nodeId = pullRequestNodeId();
+  return nodeId === null ? null : `${EDIT_LOG}${nodeId}`;
+}
+
+let embeddedPull: { readonly source: Element; readonly number: number; readonly nodeId: string } | null = null;
+
+/** This pull request's node id (`PR_…`) from the React page's embedded payload, when the payload is this pull request's. */
+function pullRequestNodeId(): string | null {
+  const number = Number(/\/pull\/(\d+)/.exec(location.pathname)?.[1] ?? Number.NaN);
+  if (embeddedPull === null || !embeddedPull.source.isConnected) {
+    embeddedPull = null;
+    for (const script of document.querySelectorAll('script[type="application/json"][data-target="react-app.embeddedData"]')) {
+      const text = script.textContent ?? '';
+      const pull = /"pullRequest"\s*:\s*\{[^]*?"number"\s*:\s*(\d+)[^]*?"relayId"\s*:\s*"(PR_[A-Za-z0-9_-]+)"/.exec(text);
+      if (pull?.[1] !== undefined && pull[2] !== undefined) {
+        embeddedPull = { source: script, number: Number(pull[1]), nodeId: pull[2] };
+        break;
+      }
+    }
+  }
+  return embeddedPull !== null && embeddedPull.number === number ? embeddedPull.nodeId : null;
+}
+
+/** Every revision in the log `url` (oldest first), or null while the log is on its way (`onChange` runs once it lands). */
+export function revisionsIn(url: string, onChange: () => void): readonly Revision[] | null {
+  const log = logFor(url, onChange, DISPLAY_REFRESH_MS);
+  return log.fetchedAt === 0 ? null : log.revisions;
+}
+
+/** Where reading the revision `url` stands, without asking for it. */
+export function revisionState(url: string): 'unread' | 'reading' | 'read' | 'failed' {
+  const entry = bodies.get(url);
+  if (entry === undefined) return 'unread';
+  if (entry.failed) return 'failed';
+  return entry.body === null ? 'reading' : 'read';
+}
+
+/**
+ * How the comment read at the revision `url`, as GitHub rendered it (a fresh copy, the caller's): asked for the first
+ * time it is wanted, undefined while on its way (`onChange` runs once it lands), null when it cannot be read.
+ */
+export function revisionBody(url: string, onChange: () => void): HTMLElement | null | undefined {
+  let entry = bodies.get(url);
+  if (entry === undefined) {
+    entry = { body: null, markdown: null, pending: null, failed: false };
+    bodies.set(url, entry);
+  }
+  if (entry.body === null && !entry.failed && entry.pending === null) {
+    const current = entry;
+    current.pending = fetchRevision(url, current).finally(() => {
+      current.pending = null;
+      version += 1;
+      onChange();
+    });
+  }
+  if (entry.failed) return null;
+  if (entry.body === null) return undefined;
+  const body = entry.body.cloneNode(true);
+  return body instanceof HTMLElement ? body : null;
+}
+
+/** The Markdown of a revision `revisionBody` has read, or null when it has not been read or carried none. */
+export function revisionMarkdown(url: string): string | null {
+  return bodies.get(url)?.markdown ?? null;
 }
 
 /** Forget every log and revision (a new page). */

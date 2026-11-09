@@ -1,23 +1,27 @@
+import type { ProviderReviewComment } from '@geld/review';
+import { referenceSourceComments } from '../providers/references';
+import { nativeBitbucketComment } from './conversation';
 import { repositoryKey } from '@geld/core';
 import type { BitbucketReferenceTarget, ProviderReviewReference } from '../providers/references';
 import type { ProviderReviewPage } from '../providers/types';
+import type { ProviderReviewPanelEvent } from '../providers/review-panel';
 import { bitbucketDescriptionHost } from './diff';
 import { describeBitbucketPage } from './page';
 
 interface ReferenceAnchor { readonly reference: ProviderReviewReference; readonly anchor: HTMLAnchorElement; readonly href: string }
-interface ReferenceBinding { readonly page: string; readonly root: HTMLElement; readonly entries: readonly ReferenceAnchor[] }
+interface ReferenceBinding { readonly page: string; readonly root: HTMLElement | null; readonly entries: readonly ReferenceAnchor[]; readonly comments: readonly ProviderReviewComment[] }
 const bindings = new WeakMap<Document, ReferenceBinding>();
-const EXCLUDED = '[data-geld-ui],form,button,[role="button"],textarea,[contenteditable],dialog,[role="dialog"],[role="tooltip"],[popover]';
+const EXCLUDED = '[data-geld-ui],pre,code,form,button,[role="button"],textarea,[contenteditable],dialog,[role="dialog"],[role="tooltip"],[popover]';
 const MAX_ANCHORS = 200;
 
-function description(page: ProviderReviewPage, doc: Document): HTMLElement | null {
+function qualifiedPage(page: ProviderReviewPage, doc: Document): boolean {
   const current = describeBitbucketPage(new URL(doc.URL));
   if (page.provider !== 'bitbucket' || page.kind !== 'overview' || current?.kind !== 'overview' || current.url !== page.url || current.number !== page.number
-    || current.version !== page.version || repositoryKey(current.repository) !== repositoryKey(page.repository)) return null;
+    || current.version !== page.version || repositoryKey(current.repository) !== repositoryKey(page.repository)) return false;
   const headers = [...doc.querySelectorAll<HTMLElement>('[data-testid="pr-header"]')].filter((node) => node.closest(EXCLUDED) === null);
-  if (headers.length !== 1) return null;
+  if (headers.length !== 1) return false;
   const header = headers[0];
-  if (header === undefined || /^#([1-9]\d*)\s*•/.exec(header.querySelector('[data-qa="pr-branches-and-state-styles"] + span')?.textContent?.trim() ?? '')?.[1] !== page.number) return null;
+  if (header === undefined || /^#([1-9]\d*)\s*•/.exec(header.querySelector('[data-qa="pr-branches-and-state-styles"] + span')?.textContent?.trim() ?? '')?.[1] !== page.number) return false;
   const matchingRepository = [...header.querySelectorAll<HTMLAnchorElement>('a[href]')].some((anchor) => {
     if (anchor.closest(EXCLUDED) !== null) return false;
     try {
@@ -26,7 +30,11 @@ function description(page: ProviderReviewPage, doc: Document): HTMLElement | nul
         && url.pathname.replace(/\/$/, '') === `/${page.repository.path.split('/').map(encodeURIComponent).join('/')}/src`;
     } catch { return false; }
   });
-  if (!matchingRepository) return null;
+  return matchingRepository;
+}
+
+function description(page: ProviderReviewPage, doc: Document): HTMLElement | null {
+  if (!qualifiedPage(page, doc)) return null;
   const roots = [...doc.querySelectorAll<HTMLElement>('[data-qa="pull-request-description"] .ak-renderer-document')].filter((root) => root.closest(EXCLUDED) === null);
   const root = roots.length === 1 ? bitbucketDescriptionHost(doc) : null;
   return root !== null && root === roots[0] ? root : null;
@@ -45,10 +53,10 @@ function targetOf(anchor: HTMLAnchorElement, doc: Document): BitbucketReferenceT
   } catch { return null; }
 }
 
-function scan(page: ProviderReviewPage, doc: Document): { readonly root: HTMLElement; readonly entries: readonly ReferenceAnchor[] } | null {
+function scan(page: ProviderReviewPage, doc: Document, comments: readonly ProviderReviewComment[] = []): { readonly root: HTMLElement | null; readonly entries: readonly ReferenceAnchor[] } | null {
   const root = description(page, doc);
-  if (root === null) return null;
-  const anchors = [...root.querySelectorAll<HTMLAnchorElement>('a[href]')].filter((anchor) => anchor.closest(EXCLUDED) === null);
+  if (root === null && !qualifiedPage(page, doc)) return null;
+  const anchors = [...root?.querySelectorAll<HTMLAnchorElement>('a[href]') ?? []].filter((anchor) => anchor.closest(EXCLUDED) === null);
   if (anchors.length > MAX_ANCHORS) return null;
   const entries: ReferenceAnchor[] = [];
   const seen = new Set<string>();
@@ -59,19 +67,32 @@ function scan(page: ProviderReviewPage, doc: Document): { readonly root: HTMLEle
     seen.add(target.url);
     entries.push({ anchor, href: anchor.getAttribute('href') ?? '', reference: { id: JSON.stringify(['outgoing', page.url, target.url]), direction: 'outgoing', label, title: null, target, source: { reviewUrl: page.url, anchor: null } } });
   }
+  for (const comment of referenceSourceComments(comments, 'bitbucket', page.url)) {
+    const native = doc.querySelectorAll(`[id="${comment.anchor}"]`).length === 1 ? nativeBitbucketComment(comment, doc) : null;
+    const bodies = native?.querySelectorAll<HTMLElement>('[data-testid="comment-content"]') ?? [];
+    if (bodies.length !== 1) continue;
+    for (const anchor of bodies[0]?.querySelectorAll<HTMLAnchorElement>('a[href]') ?? []) {
+      if (entries.length >= MAX_ANCHORS) break;
+      const target = targetOf(anchor, doc);
+      const label = anchor.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+      if (target === null || label === '' || seen.has(target.url)) continue;
+      seen.add(target.url);
+      entries.push({ anchor, href: anchor.getAttribute('href') ?? '', reference: { id: JSON.stringify(['outgoing', page.url, target.url]), direction: 'outgoing', label, title: null, target, source: { reviewUrl: page.url, anchor: comment.anchor, author: comment.author, createdAt: comment.createdAt } } });
+    }
+  }
   return { root, entries };
 }
 
-export function readBitbucketReferences(page: ProviderReviewPage, doc: Document): readonly ProviderReviewReference[] {
-  const result = scan(page, doc);
+export function readBitbucketReferences(page: ProviderReviewPage, doc: Document, _events: readonly ProviderReviewPanelEvent[] = [], comments: readonly ProviderReviewComment[] = []): readonly ProviderReviewReference[] {
+  const result = scan(page, doc, comments);
   if (result === null) { bindings.delete(doc);return []; }
-  bindings.set(doc, { page: page.url, ...result });
+  bindings.set(doc, { page: page.url, comments, ...result });
   return result.entries.map((entry) => entry.reference);
 }
 
 export function bitbucketReferenceAnchor(reference: ProviderReviewReference, page: ProviderReviewPage, doc: Document): HTMLAnchorElement | null {
   const binding = bindings.get(doc);
-  const current = scan(page, doc);
+  const current = scan(page, doc, binding?.comments ?? []);
   if (binding === undefined || current === null || binding.page !== page.url || current.root !== binding.root) return null;
   const expected = JSON.stringify(reference);
   const original = binding.entries.find((entry) => JSON.stringify(entry.reference) === expected);

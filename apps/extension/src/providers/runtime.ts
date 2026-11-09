@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
-import { normalizeReviewAccountId, repositoryKey, trustedSummaryPublisherIdsFor, withTrustedReviewAccount } from '@geld/core';
+import { digestViewPatch, normalizeAuthorRule, normalizeReviewAccountId, repositoryKey, trustedSummaryPublisherIdsFor, withTrustedReviewAccount } from '@geld/core';
 import type { GeldSettings } from '@geld/core';
 import { buildProviderReviewItems, providerBotSupport, providerPublicationCandidate, providerReviewKey, readProviderPublication, sourceLink } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput } from '@geld/review';
@@ -9,6 +9,7 @@ import { settingsItem } from '../lib/storage';
 import { isClearDiffCacheMessage, isGetTabStateMessage, isPerfReportMessage, isRevealFileMessage, isToggleHiddenMessage } from '../lib/messages';
 import type { TabState, TabStateMessage } from '../lib/messages';
 import { mark, snapshot } from '../lib/perf';
+import { installErrorCapture } from '../lib/error-capture';
 import type { PerfSnapshot } from '../lib/perf';
 import { PROVIDER_IDLE_STATE, ProviderController } from './controller';
 import { isProviderReviewPage } from './types';
@@ -130,6 +131,7 @@ export function createProviderBotTrust(environment: ProviderBotTrustEnvironment)
 export async function startProvider(ctx: ContentScriptContext, adapter: ProviderAdapter): Promise<void> {
   if (window.top !== window) return;
   let retired = false;
+  let stopErrorCapture = (): void => undefined;
   let controller: ProviderController | null = null;
   let unwatchSettings: (() => void) | null = null;
   let unwatchCatalog: (() => void) | null = null;
@@ -163,8 +165,10 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
     mode?.stop();
     controller?.stop();
     publish(PROVIDER_IDLE_STATE);
+    quiet(stopErrorCapture);
   };
   document.dispatchEvent(new Event('geld:takeover'));
+  stopErrorCapture = installErrorCapture('content');
   document.addEventListener('geld:takeover', retire, { once: true });
   ctx.onInvalidated(retire);
   mark('script-start');
@@ -236,7 +240,17 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
     snapshot: () => observedReview,
     retired: () => retired,
   });
-  controller = new ProviderController(sourceAdapter, settings, (state) => publish(badge ? state : { ...state, hiddenCount: 0 }), catalog, configs, choices, { saveTrustedBot, saveTrustedPublisher, ...reviewed }, (url, show) => {
+  controller = new ProviderController(sourceAdapter, settings, (state) => publish(badge ? state : { ...state, hiddenCount: 0 }), catalog, configs, choices, { openSettings: async () => { if (!retired) await browser.runtime.sendMessage({ type: 'geld:open-settings' }); }, saveTrustedBot, saveTrustedPublisher, ...reviewed, unhidePerson: async (login) => {
+    if (retired) return;
+    const wanted = [login, `${adapter.id}:${login}`].map((value) => value.toLowerCase());
+    const value = await settingsItem.update((current) => ({ hiddenAuthors: current.hiddenAuthors.filter((line) => !wanted.includes(normalizeAuthorRule(line)?.toLowerCase() ?? '')) }));
+    if (!retired) controller?.updateSettings(value);
+  }, chooseDigestView: async (view) => {
+    if (retired) return;
+    const value = await settingsItem.update((current) => digestViewPatch(current, view, new Date().toISOString()));
+    if (retired) return;
+    controller?.updateSettings(value);
+  } }, (url, show) => {
     whitespace.nativeChoice(url, show);
     links.refresh();
   });

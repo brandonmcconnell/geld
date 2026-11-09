@@ -171,3 +171,35 @@ html[data-geld-provider] [data-geld-provider-author-hidden] { display: none !imp
 
 .geld-provider-header-hidden-count { display: inline-flex; align-items: baseline; color: var(--geld-provider-text-subtle); font: inherit; white-space: nowrap; cursor: help; text-decoration: underline dotted; text-underline-offset: 0.15em; }
 .geld-provider-header-hidden-count:focus-visible { outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); box-shadow: var(--geld-provider-focus-ring); }
+
+html[data-geld-provider] [data-geld-provider-person-hidden] { display: none !important; }
+.geld-provider-hidden-people, .geld-provider-hidden-person {
+  font: var(--geld-provider-font);
+  color: var(--geld-provider-text-subtle);
+  margin-block: var(--geld-provider-space-3);
+}
+.geld-provider-hidden-person, .geld-provider-hidden-people__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--geld-provider-space-3);
+}
+.geld-provider-hidden-people__row { padding-block: var(--geld-provider-space-2); }
+.geld-provider-hidden-people button, .geld-provider-hidden-person button {
+  font: inherit;
+  color: var(--geld-provider-link);
+  background: var(--geld-provider-bg);
+  border: var(--geld-provider-border-width) solid var(--geld-provider-border);
+  border-radius: var(--geld-provider-radius);
+  padding: var(--geld-provider-space-1) var(--geld-provider-space-2);
+  cursor: pointer;
+}
+.geld-provider-hidden-people button:focus-visible, .geld-provider-hidden-person button:focus-visible { outline: 2px solid var(--geld-provider-link); outline-offset: 2px; }
+
+.geld-provider-review__header { flex-wrap: wrap; }
+.geld-provider-review__standing[data-geld-bot-health] { color: var(--geld-provider-text); }
+.geld-provider-review__bot-health { margin-inline-end: var(--geld-provider-space-2); font-weight: var(--geld-provider-heading-weight); }
+.geld-provider-review__bot-health[data-health="good"] { color: var(--geld-provider-success); }
+.geld-provider-review__bot-health[data-health="warn"] { color: var(--geld-provider-warning); }
+.geld-provider-review__bot-health[data-health="severe"], .geld-provider-review__bot-health[data-health="bad"] { color: var(--geld-provider-danger); }
+.geld-provider-review__bot-health[data-health="pending"] { color: var(--geld-provider-text-subtle); }

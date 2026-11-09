@@ -1,5 +1,8 @@
+import { providerPreviews, providerPreviewDestination } from './previews';
+import { renderProviderAgentNote } from './agent-notes';
+import type { ProviderAgentNote } from './agent-notes';
 import type { ProviderCommentRenderContext } from './comment-render';
-import { botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, newestProviderBotSummary, parseInlineMarkdown, previewDocFromMarkdown, previewHostById, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, renderProviderItemMarkdown, sourceLink } from '@geld/review';
+import { botHealth, botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, newestProviderBotSummary, parseInlineMarkdown, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, renderProviderItemMarkdown, sourceLink, threadCounts } from '@geld/review';
 import type { BotVerdictRecord, ProviderPublicationRead, ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, RawCheckRun, ReviewItem, ReviewItemStatus, ReviewerState } from '@geld/review';
 import type { RepositoryIdentity } from '@geld/core';
 import type { ProviderAiState } from './ai';
@@ -58,6 +61,10 @@ export interface ProviderReviewRequirement {
 }
 
 export interface ProviderReviewPanelOptions {
+  readonly sourceInput?: ProviderReviewInput;
+  readonly agentNotes?: readonly ProviderAgentNote[];
+  readonly onRevealAgentNote?: (note: ProviderAgentNote) => void;
+  readonly onOpenSettings?: () => Promise<void>;
   readonly originalConversation?: { readonly shown: boolean; readonly toggle: () => void };
 
   readonly reviewerControls?: ProviderReviewSourceAction;
@@ -118,6 +125,7 @@ export interface ProviderReviewSourceAction {
 export interface ProviderReviewPanel {
   readonly element: HTMLElement;
   update(input: ProviderReviewInput, options?: ProviderReviewPanelOptions): void;
+  suspend(): void;
   destroy(): void;
 }
 
@@ -188,6 +196,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   const doc = host.ownerDocument;
   const panelId = `geld-provider-review-${++nextPanelId}`;
   const expanded = new Map<string, boolean>();
+  const touched = new Set<string>();
   const sourceDetails = new Map<string, boolean>();
   let input = initialInput;
   let options = initialOptions;
@@ -274,18 +283,19 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     toggle.id = `${id}-toggle`;
     toggle.setAttribute('aria-controls', `${id}-content`);
     toggle.append(node('span', label, 'geld-provider-review__section-label'));
-    const setOpen = (open: boolean): void => {
+    const setOpen = (open: boolean, chosen = false): void => {
+      if (chosen) touched.add(key);
       section.dataset.geldReviewOpen = String(open);
       toggle.setAttribute('aria-expanded', String(open));
       expanded.set(key, open);
     };
     Object.defineProperty(section, 'open', {
       get: () => section.dataset.geldReviewOpen === 'true',
-      set: setOpen,
+      set: (open: boolean) => setOpen(open, true),
     });
     toggle.addEventListener('click', () => { section.open = !section.open; });
     section.append(toggle);
-    section.open = expanded.get(key) ?? initiallyOpen;
+    setOpen(expanded.get(key) ?? initiallyOpen);
     return section;
   }
 
@@ -682,7 +692,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     if (bot.verdict === 'clean') return 'No findings';
     if (bot.verdict === 'running') return 'Review running';
     if (bot.verdict === 'loading') return 'Reading review';
-    if (bot.verdict === 'failed') return 'Review failed';
+    if (bot.verdict === 'failed') return bot.reason === undefined ? 'Review failed' : 'Review unavailable';
     return 'Review result unknown';
   }
 
@@ -696,6 +706,10 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const row = node('div', '', 'geld-provider-review__standing');
       row.dataset.geldReviewBot = id;
       row.dataset.state = verdict?.verdict ?? 'unknown';
+      const health = verdict === undefined ? 'pending' : botHealth(verdict);
+      row.dataset.geldBotHealth = health;
+      const status = node('span', { good: 'Clear', warn: 'Needs attention', severe: 'Severe findings', bad: 'Review failed', pending: 'Pending' }[health], 'geld-provider-review__bot-health');
+      status.dataset.health = health;row.append(status);
       row.append(node('strong', botById(id)?.title ?? id), doc.createTextNode(` · ${verdict === undefined ? 'No verified review result' : verdictLabel(verdict)}`));
       const accounts = (input.bots ?? []).filter((bot) => bot.id === id);
       row.append(node('p', [...new Set(accounts.map((account) => account.login ?? account.authorId))].join(', '), 'geld-provider-review__muted'));
@@ -725,10 +739,14 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return section;
   }
 
-  function itemSection(item: ReviewItem, comments: ReadonlyMap<string, ProviderReviewComment>): ReviewDisclosure {
+  function itemDisclosureKey(item: ReviewItem): string {
     const anchors = new Set(item.sources.map((source) => source.anchor));
     const threads = input.threads.filter((thread) => thread.comments.some((comment) => anchors.has(comment.anchor))).map((thread) => thread.id).sort();
-    const details = disclosure(`item:${threads.join(':') || item.id}`, '', false);
+    return `item:${threads.join(':') || item.id}`;
+  }
+
+  function itemSection(item: ReviewItem, comments: ReadonlyMap<string, ProviderReviewComment>): ReviewDisclosure {
+    const details = disclosure(itemDisclosureKey(item), '', false);
     details.classList.add('geld-provider-review__item');
     details.dataset.geldItem = item.id;
     details.dataset.state = item.status;
@@ -935,8 +953,20 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const rounds: HTMLElement[] = [];
     for (const [index, boundary] of boundaries.entries()) {
       const next = boundaries[index + 1]?.at ?? Infinity;
-      const section = disclosure(`history:push:${boundary.pushes.map((push) => push.id).join(':')}`, `Push round ${index + 1}${index === boundaries.length - 1 ? ' · Latest recorded push' : ''}`, index === boundaries.length - 1);
-      section.dataset.geldReviewRound = boundary.pushes.map((push) => push.id).join(':');
+      const ids = boundary.pushes.map((push) => push.id);
+      const roundKey = `history:push:${ids.join(':')}`;
+      if (!expanded.has(roundKey)) {
+        const previous = [...panel.querySelectorAll<HTMLElement>('[data-geld-review-round][data-geld-round-events]')].filter((round) => {
+          try { const events: unknown = JSON.parse(round.dataset.geldRoundEvents ?? '[]');return Array.isArray(events) && events.some((id: unknown) => typeof id === 'string' && ids.includes(id)); }
+          catch { return false; }
+        });
+        if (previous.length === 1 && previous[0] !== undefined) {
+          expanded.set(roundKey, previous[0].dataset.geldReviewOpen === 'true');
+          if (touched.has(previous[0].dataset.geldReviewKey ?? '')) touched.add(roundKey);
+        }
+      }
+      const section = disclosure(roundKey, `Push round ${index + 1}${index === boundaries.length - 1 ? ' · Latest recorded push' : ''}`, index === boundaries.length - 1);
+      section.dataset.geldReviewRound = ids.join(':');section.dataset.geldRoundEvents = JSON.stringify(ids);
       for (const push of boundary.pushes) section.append(eventRow(push));
       const members = entries.filter((entry) => Number.isFinite(entry.at) && entry.at >= boundary.at && entry.at < next);
       for (const entry of members) section.append(entry.render());
@@ -985,28 +1015,29 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   }
 
   function previewsSection(): HTMLElement | null {
-    const generic = previewHostById('generic');
-    if (generic === null) return null;
-    const sources = [...input.threads.flatMap((thread) => thread.comments), ...(options.comments ?? [])].filter((comment) => comment.author.automated === true && sourceLink({ anchor: comment.anchor, kind: 'comment', author: comment.author.login, url: comment.url }, input.subject) !== null);
-    sources.sort((a, b) => Date.parse(a.updatedAt ?? a.createdAt) - Date.parse(b.updatedAt ?? b.createdAt));
-    const previews = sources.flatMap((comment) => generic.parse(previewDocFromMarkdown(comment.author.login, comment.anchor, comment.body, comment.updatedAt ?? comment.createdAt)).filter((preview) => preview.url !== null && safeUrl(preview.url) !== null && new URL(preview.url).origin !== input.subject.origin).map((preview) => ({ ...preview, host: `native-account:${comment.author.id}` })));
+    const sources = [...input.threads.flatMap((thread) => thread.comments), ...(options.comments ?? [])];
+    const previews = providerPreviews(input, options.comments ?? []);
     if (previews.length === 0) return null;
     const grouped = latestPreviews(previews);
-    const section = disclosure('previews', `Preview links · ${grouped.latest.length}`, false);
-    function row(preview: (typeof previews)[number]): HTMLElement {
+    const section = disclosure('previews', `Previews · ${grouped.latest.length}`, false);
+    function row(preview: (typeof previews)[number], latest: boolean): HTMLElement {
       const value = node('div');
       const source = sources.find((comment) => comment.anchor === preview.anchor);
-      if (source === undefined || preview.url === null) return value;
+      if (source === undefined) return value;
       value.dataset.geldPreview = preview.anchor;
-      value.append(link(preview.project, preview.url, '', true), node('p', `Posted by ${source.author.login} · Reported status: ${preview.status}`, 'geld-provider-review__muted'));
-      if (preview.inspectUrl !== null && safeUrl(preview.inspectUrl) !== null) value.append(link('Inspect', preview.inspectUrl, '', true));
+      value.append(node('strong', preview.project), node('p', `Posted by ${source.author.login} · Reported status: ${preview.status}`, 'geld-provider-review__muted'));
+      if (preview.reason !== undefined) value.append(node('p', preview.reason));
+      const destination = providerPreviewDestination(preview, previews, latest);
+      if (destination !== null) value.append(link(destination.label, destination.href, '', true));
+      if (preview.inspectUrl !== null && preview.inspectUrl !== destination?.href) value.append(link('Inspect', preview.inspectUrl, '', true));
+      if (preview.updatedAt !== undefined) { const at = timestamp(preview.updatedAt);if (at !== null) value.append(at); }
       value.append(sourceComment(source));
       return value;
     }
-    for (const preview of grouped.latest) section.append(row(preview));
+    for (const preview of grouped.latest) section.append(row(preview, true));
     if (grouped.archived.length > 0) {
-      const archived = disclosure('previews:earlier', `Earlier preview links · ${grouped.archived.length}`, false);
-      for (const preview of grouped.archived) archived.append(row(preview));
+      const archived = disclosure('previews:earlier', `Earlier previews · ${grouped.archived.length}`, false);
+      for (const preview of grouped.archived) archived.append(row(preview, false));
       section.append(archived);
     }
     return section;
@@ -1113,7 +1144,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     summary.dataset.geldReviewOverview = '';
     summary.setAttribute('aria-label', 'Conversation overview');
     const comments = new Set([...input.threads.flatMap((thread) => thread.comments), ...(options.comments ?? [])].map((comment) => comment.anchor));
-    const open = items.filter((item) => isOpenStatus(item.status)).length;
+    const open = threadCounts(items).open;
     const metrics = [
       { key: 'open', label: 'Open items', value: open },
       { key: 'comments', label: 'Comments', value: comments.size },
@@ -1136,9 +1167,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const requestFocus = focused instanceof HTMLElement && panel.contains(focused) && focused.closest('[data-geld-bot-request]') !== null ? focused : null;
     const dashboardFocus = focused instanceof HTMLElement && panel.contains(focused)
       ? focused.hasAttribute('data-geld-original-conversation')
-        ? { scope: renderScope, section: null }
+        ? { scope: checksScope, section: null }
         : focused.hasAttribute('data-geld-review-toggle')
-          ? { scope: renderScope, section: focused.parentElement?.dataset.geldReviewKey ?? null }
+          ? { scope: checksScope, section: focused.parentElement?.dataset.geldReviewKey ?? null }
           : null
       : null;
     const focusedCheck = focused?.matches('a[href]') === true && panel.contains(focused) ? focused.closest<HTMLElement>('[data-geld-check-key]') : null;
@@ -1171,7 +1202,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       if (sourceLink({ anchor: comment.anchor, kind: 'comment', author: comment.author.login, url: comment.url }, input.subject) === null) return null;
       try { return [comment.anchor, options.commentSignature?.(comment)]; } catch { return [comment.anchor, null]; }
     });
-    const signature = JSON.stringify([input, options.reviewerControls?.available, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature, commentSignatures]);
+    const signature = JSON.stringify([(options.agentNotes ?? []).map(note => [note.id, note.signature]), input, options.sourceInput, options.reviewerControls?.available, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature, commentSignatures]);
     if (signature === lastSignature) {
       refreshComments();
       for (const time of panel.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
@@ -1182,7 +1213,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     }
     lastSignature = signature;
     disposeComments();
-    const nextRenderScope = JSON.stringify(input.subject);
+    const nextRenderScope = JSON.stringify([input.subject.provider, input.subject.origin, input.subject.repository, input.subject.id]);
     if (renderScope !== nextRenderScope) { renderScope = nextRenderScope;clearRenderStates();sourceSlots.clear(); }
     for (const details of panel.querySelectorAll<HTMLDetailsElement>('details[data-geld-body-disclosure]')) {
       const key = details.dataset.geldBodyDisclosure;
@@ -1198,7 +1229,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     try {
       key = providerReviewKey(input.subject);
       items = buildProviderReviewItems(input);
-      nativeItems = new Map(items.map((item) => [item.id, item]));
+      const source = options.sourceInput;
+      const native = source !== undefined && providerReviewKey(source.subject) === key && source.subject.headSha === input.subject.headSha ? buildProviderReviewItems(source) : items;
+      nativeItems = new Map(native.map((item) => [item.id, item]));
       items = options.transformItems?.(items) ?? items;
       if (options.localReviewed !== undefined) items = items.map((item) => options.localReviewed?.ids.has(item.id) === true && isOpenStatus(item.status) ? { ...item, status: 'done-manual' } : item);
       bots = buildProviderBotVerdicts(input, options.comments ?? []);
@@ -1207,7 +1240,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       panel.replaceChildren(node('h2', 'Geld review'), node('p', 'The review source could not be read.'));
       return;
     }
-    if (identity !== key) { expanded.clear(); sourceDetails.clear(); }
+    if (identity !== key) { expanded.clear(); touched.clear(); sourceDetails.clear(); }
     identity = key;
     const activeAi = ai?.state.key === key ? ai : undefined;
     panel.dataset.provider = input.subject.provider;
@@ -1223,6 +1256,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const copy = node('button', 'Copy digest', 'geld-provider-review__copy');
     copy.type = 'button';
     copy.addEventListener('click', () => {
+      if (destroyed || panel.inert || !copy.isConnected) return;
       copy.disabled = true;
       const write = options.copyText ?? ((text: string): Promise<void> => navigator.clipboard.writeText(text));
       const text = digestText();
@@ -1238,12 +1272,24 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       header.append(toggle);
     }
     header.append(copy);
+    if (options.onOpenSettings !== undefined) {
+      const settings = node('button', 'Settings', 'geld-provider-toggle geld-provider-review__settings');settings.type = 'button';settings.setAttribute('aria-label', 'Open Geld settings');
+      const status = node('span', '', 'geld-provider-review__muted');status.setAttribute('role', 'status');
+      settings.addEventListener('click', () => {
+        if (destroyed || !settings.isConnected) return;
+        settings.disabled = true;
+        void options.onOpenSettings?.().catch(() => { if (!destroyed) status.textContent = 'Settings could not be opened. Try the extension toolbar.'; }).finally(() => { settings.disabled = false; });
+      });
+      header.append(settings, status);
+    }
     if (activeAi?.enabled === true) {
       const controls = node('div', '', 'geld-provider-review__source-actions');
-      const triage = node('button', activeAi.state.kind === 'running' ? 'Triaging…' : activeAi.state.kind === 'ready' && !activeAi.state.stale ? 'Triage is current' : 'Triage with AI');
+      const hasOpenItems = items.some((item) => isOpenStatus(item.status));
+      const triage = node('button', !hasOpenItems ? 'Nothing to triage' : activeAi.state.kind === 'running' ? 'Triaging…' : activeAi.state.kind === 'ready' && !activeAi.state.stale ? 'Triage is current' : 'Triage with AI');
       triage.type = 'button';
       triage.dataset.geldAiRun = '';
-      triage.disabled = activeAi.state.kind === 'running';
+      triage.disabled = !hasOpenItems || activeAi.state.kind === 'running';
+      if (!hasOpenItems) triage.title = 'There are no open review threads to triage.';
       triage.addEventListener('click', () => { if (!destroyed) activeAi.run(); });
       controls.append(triage);
       if (activeAi.state.kind === 'running') {
@@ -1286,6 +1332,21 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     if (requirements !== null) children.push(requirements);
     const botSection = botsSection();
     if (botSection !== null) children.push(botSection);
+    if (options.agentNotes !== undefined && options.agentNotes.length > 0) {
+      const notes = disclosure('agent-notes', `Agent notes · ${options.agentNotes.length}`, false);
+      for (const note of options.agentNotes) {
+        const section = disclosure(`agent-note:${note.id}`, note.name, false);
+        if (note.preview !== '') section.append(node('p', note.preview, 'geld-provider-review__muted'));
+        const body = node('div', '', `geld-provider-review__body ${input.subject.provider === 'gitlab' ? 'md' : 'ak-renderer-document'}`);
+        body.dataset.geldAgentNote = note.id;renderProviderAgentNote(note, body);section.append(body);
+        if (options.onRevealAgentNote !== undefined) {
+          const original = node('button', 'View in description', 'geld-provider-toggle');original.type = 'button';
+          original.addEventListener('click', () => { if (!destroyed && !panel.inert && original.isConnected) options.onRevealAgentNote?.(note); });section.append(original);
+        }
+        notes.append(section);
+      }
+      children.push(notes);
+    }
     const reports = reportsSection();
     if (reports !== null) children.push(reports);
     const previews = previewsSection();
@@ -1297,7 +1358,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     else for (const group of GROUPS) {
       const members = items.filter((item) => group.statuses.includes(item.status));
       if (members.length === 0) continue;
-      const section = disclosure(`group:${group.id}`, `${group.label} · ${members.length}`, group.open);
+      const groupKey = `group:${group.id}`;
+      if (!touched.has(groupKey) && members.some(item => expanded.get(itemDisclosureKey(item)) === true)) expanded.set(groupKey, true);
+      const section = disclosure(groupKey, `${group.label} · ${threadCounts(members).total}`, group.open);
       section.dataset.geldReviewGroup = group.id;
       for (const item of members) section.append(itemSection(item, comments));
       children.push(section);
@@ -1337,7 +1400,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       }
     }
     panel.replaceChildren(...children);
-    if (copyFocus !== undefined && copyFocus.subject === nextRenderScope && (doc.activeElement === doc.body || doc.activeElement === focused)) {
+    if (copyFocus !== undefined && copyFocus.subject === JSON.stringify(input.subject) && (doc.activeElement === doc.body || doc.activeElement === focused)) {
       const route = new URL(doc.URL);route.hash = '';
       const candidates = [...panel.querySelectorAll<HTMLButtonElement>('[data-geld-item-copy]')].filter((button) => {
         const target = copyFocusTargets.get(button);
@@ -1351,7 +1414,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     for (const [key, control] of botRequests) {
       if (!panel.contains(control.element)) { control.destroy();botRequests.delete(key); }
     }
-    if (dashboardFocus !== null && dashboardFocus.scope === nextRenderScope && (doc.activeElement === doc.body || doc.activeElement === focused)) {
+    if (dashboardFocus !== null && dashboardFocus.scope === nextChecksScope && (doc.activeElement === doc.body || doc.activeElement === focused)) {
       const section = dashboardFocus.section === null ? null : [...panel.querySelectorAll<HTMLElement>('[data-geld-review-key]')].find((entry) => entry.dataset.geldReviewKey === dashboardFocus.section);
       const control = dashboardFocus.section === null ? panel.querySelector<HTMLElement>('[data-geld-original-conversation]') : section?.querySelector<HTMLElement>(':scope > [data-geld-review-toggle]');
       const hiddenParent = section?.parentElement?.closest('[data-geld-review-open="false"]');
@@ -1410,9 +1473,15 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   return {
     element: panel,
     update(nextInput, nextOptions = options) {
+      panel.inert = false;
+      panel.hidden = false;
       input = nextInput;
       options = nextOptions;
       render();
+    },
+    suspend() {
+      if (destroyed) return;
+      panel.inert = true;panel.hidden = true;disposeComments();lastSignature = '';
     },
     destroy() {
       destroyed = true;
@@ -1421,7 +1490,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       for (const control of botRequests.values()) control.destroy();
       botRequests.clear();
       identities = [];
-      expanded.clear();
+      expanded.clear();touched.clear();
       sourceDetails.clear();
       authorPresentations.clear();
       panel.remove();

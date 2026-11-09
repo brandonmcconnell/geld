@@ -176,3 +176,33 @@ print(json.dumps(results))
 `, python], { encoding: 'utf8' }));
   assert.deepEqual(result, ['ready', 'unavailable', 'unavailable', 'unavailable']);
 });
+
+test('semantic accessibility roles identify native buttons while excluding renamed web document roles', () => {
+  const result = JSON.parse(execFileSync('/usr/bin/python3', ['-B', '-c', `
+import importlib.util,json,sys,types
+spec=importlib.util.spec_from_file_location('dialog',sys.argv[1]);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+class States:
+ def contains(self,value):return True
+class Action:
+ nActions=1
+ def getName(self,index):return 'click'
+class Node:
+ def __init__(self,role,name='',children=()):self.role=role;self.name=name;self.children=children
+ def __iter__(self):return iter(self.children)
+ def getRole(self):return self.role
+ def getRoleName(self):return 'button' if self.role==43 else 'web document' if self.role==94 else 'alert' if self.role==2 else 'application'
+ def getState(self):return States()
+ def get_process_id(self):return 123
+ def queryAction(self):return Action()
+def dialog():return Node(2,'Geld permissions',[Node(1,'Read and change your data on gitlab.com'),Node(43,'Allow'),Node(43,'Cancel')])
+app=Node(1,children=[dialog(),Node(94,children=[dialog()])])
+api=types.SimpleNamespace(ROLE_PUSH_BUTTON=43,ROLE_DOCUMENT_WEB=94,ROLE_ALERT=2,STATE_ACTIVE='ACTIVE',STATE_SHOWING='SHOWING',STATE_ENABLED='ENABLED',Registry=types.SimpleNamespace(getDesktop=lambda index:[app]))
+module.owned_process=lambda pid,owner:pid==owner
+scan=module.native_dialogs(api,123)
+print(json.dumps({'dialogs':len(scan['dialogs']),'qualifies':module.qualifies(scan['dialogs'][0][0],'gitlab',123),'web':scan['counters']['webSubtreesSkipped'],'roles':scan['counters']['reportedRoles']}))
+`, python], { encoding: 'utf8' }));
+  assert.equal(result.dialogs, 1);
+  assert.equal(result.qualifies, true);
+  assert.equal(result.web, 1);
+  assert.equal(result.roles.button, 2);
+});

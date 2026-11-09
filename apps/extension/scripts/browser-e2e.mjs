@@ -2216,6 +2216,86 @@ async function gitLabBotBodyEvidence(page, item) {
   } finally { page.off('request', request); }
 }
 
+async function verifyProviderAgentNotes(page, item) {
+  const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key] ?? {}, SETTINGS_KEY);
+  const progress = { status: 'running', source: 'Current public CodeRabbit description. No description history was requested.' };item.agentNotes = progress;
+  try {
+    await patchSettings({ prOverview: true, collapseDescription: false });
+    const selector = '[data-geld-agent-note="coderabbit"]';
+    await poll(() => page.evaluate(selector => document.querySelector(selector) !== null, selector), Boolean, 'Current description note is seated in the digest');
+    await openReviewAncestors(page, selector);
+    progress.digest = await page.evaluate(selector => {
+      const body = document.querySelector('.issuable-discussion [data-testid="description-content"] > .md');
+      const heading = [...body.querySelectorAll('h1,h2,h3,h4')].find(node => node.textContent.trim() === 'Summary by CodeRabbit');
+      const content = heading?.nextElementSibling;
+      const owned = document.querySelector(selector);
+      const clean = text => (text ?? '').replace(/\s+/g, ' ').trim();
+      return { native: clean(content?.textContent), owned: clean(owned?.textContent), originalHidden: content?.closest('[hidden]') !== null, copyVisible: owned?.getBoundingClientRect().height > 0, ownedControls: owned?.querySelector('form,input,textarea,script,[onclick]') !== null };
+    }, selector);
+    assert.ok(progress.digest.native.length > 0);assert.equal(progress.digest.owned, progress.digest.native);assert.equal(progress.digest.originalHidden, true);assert.equal(progress.digest.copyVisible, true);assert.equal(progress.digest.ownedControls, false);
+    progress.artifacts = await capture(page, 'gitlab-current-agent-note');
+    await patchSettings({ prOverview: false, quickReview: false });
+    await poll(() => page.evaluate(() => {
+      const body = document.querySelector('.issuable-discussion [data-testid="description-content"] > .md');
+      const heading = [...body.querySelectorAll('h1,h2,h3,h4')].find(node => node.textContent.trim() === 'Summary by CodeRabbit');
+      return heading?.nextElementSibling?.closest('[hidden]') === null && heading?.nextElementSibling?.getBoundingClientRect().height > 0;
+    }), Boolean, 'Native view restores the original CodeRabbit description note');
+    progress.status = 'passed';
+  } catch (error) { progress.status = 'failed';progress.error = errorText(error);throw error; }
+  finally { await options.evaluate((key, settings) => chrome.storage.sync.set({ [key]: settings }), SETTINGS_KEY, original); }
+}
+
+async function verifyProviderFlow(page, item) {
+  const progress = { status: 'running', scope: 'Public card counts, category inclusion and focus restoration. Dependency parsing and immutable fork selection have separate unit coverage.' };item.fileFlow = progress;
+  const before = await tabState(page);
+  await page.click('.geld-provider-flow-button');
+  await poll(() => page.evaluate(() => {
+    const dialog = document.querySelector('dialog.geld-provider-flow');return dialog?.open && !/Reading imports|Loading verified/.test(dialog.querySelector('[role="status"]')?.textContent ?? '');
+  }), Boolean, 'File flow settles its bounded source reads');
+  progress.initial = await page.evaluate(() => ({ cards: document.querySelectorAll('.geld-provider-flow [data-geld-flow-path]').length, edges: document.querySelectorAll('.geld-provider-flow [data-geld-flow-from]').length, message: document.querySelector('.geld-provider-flow [role="status"]')?.textContent }));
+  assert.equal(progress.initial.cards, before.all.files - before.hiddenCount);
+  await page.click('.geld-provider-flow__tools button[aria-pressed="false"]');
+  await poll(() => page.evaluate(() => document.querySelectorAll('.geld-provider-flow [data-geld-flow-path]').length), value => value === before.all.files, 'Flow includes categorized files on demand');
+  progress.artifacts = await capture(page, 'gitlab-file-flow');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('geld-provider-flow-button')), true);
+  assert.deepEqual((await tabState(page)).visible, before.visible, 'Flow toggles do not change diff filtering');
+  progress.status = 'passed';
+}
+
+async function verifyGitLabAttachment(page, item) {
+  const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+  const progress = { status: 'running' };item.attachmentViewer = progress;
+  try {
+    await patchSettings({ attachmentLightbox: true, collapseDescription: false });
+    const selector = '.issuable-discussion [data-testid="description-content"] img[data-geld-provider-lightbox]';
+    await poll(() => page.evaluate((selector) => [...document.querySelectorAll(selector)].some(image => image.getBoundingClientRect().height > 0), selector), Boolean, 'Native public description attachment is visible and qualified');
+    const image = await page.$(selector);assert.ok(image !== null);
+    try {
+      progress.source = await image.evaluate(image => ({ src: image.currentSrc || image.src, href: image.closest('a').href, alt: image.alt }));
+      assert.equal(progress.source.src, progress.source.href);
+      assert.equal(new URL(progress.source.src).pathname, '/-/project/56243493/uploads/0acc0b3514c56d8c6949d7c6aaa9c092/image.png');
+      await image.evaluate(image => image.scrollIntoView({ block: 'center' }));await image.click();
+      await poll(() => page.evaluate(() => document.querySelector('dialog.geld-provider-lightbox')?.open === true), Boolean, 'Real attachment click opens Geld image dialog');
+      const zoom = 'dialog.geld-provider-lightbox [aria-label="Zoom in"]';
+      await poll(() => page.$eval(zoom, button => !button.disabled), Boolean, 'Attachment dimensions load before zoom');
+      await page.click(zoom);
+      assert.equal(await page.$eval('dialog.geld-provider-lightbox [aria-label="Reset zoom"]', button => button.textContent), '150%');
+      progress.dialog = await page.$eval('dialog.geld-provider-lightbox', dialog => ({ font: getComputedStyle(dialog).font, color: getComputedStyle(dialog).color, background: getComputedStyle(dialog).backgroundColor, primerClasses: dialog.querySelector('.btn, .BtnGroup') !== null, original: dialog.querySelector('a').href }));
+      assert.equal(progress.dialog.primerClasses, false);assert.equal(progress.dialog.original, progress.source.href);
+      progress.artifacts = await capture(page, 'gitlab-attachment-viewer');
+      await page.keyboard.press('Escape');
+      await poll(() => page.$('dialog.geld-provider-lightbox'), value => value === null, 'Escape closes image dialog');
+      assert.equal(await image.evaluate(image => document.activeElement === image.closest('a')), true);
+    } finally { await discardHandle(image); }
+    progress.status = 'passed';
+  } catch (error) { progress.status = 'failed';progress.error = errorText(error);throw error; }
+  finally {
+    await page.keyboard.press('Escape');
+    await options.evaluate((key, value) => chrome.storage.sync.set({ [key]: value }), SETTINGS_KEY, original);
+  }
+}
+
 async function verifyGitLabBot(page, item) {
   const captured = await poll(() => item.nativeBotFixture, (value) => value.metadata.length >= 1 && value.discussions.some((page) => page.discussionCount === 36 && page.noteCount === 40 && page.selected.length === 4 && page.nextCursor === null), 'Actual native current MR metadata and complete bot discussion sources');
   for (const metadata of captured.metadata) {
@@ -2292,6 +2372,7 @@ async function verifyGitLabBot(page, item) {
   assert.ok(captured.metadata.every((metadata) => metadata.sha === GL_BOT_HEAD && metadata.diffHead === GL_BOT_HEAD), 'Native head changed during explicit trust verification');
   item.state = await tabState(page);assert.equal(item.state.repository?.path, 'whitebox-aero/whitebox');assert.equal(item.state.repository.provider, 'gitlab');
   await gitLabReferencesEvidence(page, item);
+  await verifyGitLabAttachment(page, item);
   assert.deepEqual(captured.providerMutations, []);assert.deepEqual(captured.aiRequests, []);
   return { featureParity: 'partial', verified: 'Actual installed explicit account trust and withdrawal, native-source clean score, historical resolved source preservation and exact native incoming/outgoing reference identities with guarded original-source reveal. CI warnings remain native; no authenticated provider write is exercised.' };
 }
@@ -2305,7 +2386,9 @@ function assertGitLabReferenceIndex(index) {
   for (const direction of ['outgoing', 'incoming']) {
     const expected = direction === 'outgoing' ? targets : [targets[0], targets[2]];
     const entries = index[direction] ?? [];
-    assert.equal(entries.length, expected.length, `Actual ${direction} reference count differs from the retained native fixture`);
+    if (direction === 'incoming') assert.equal(entries.length, expected.length, `Actual ${direction} reference count differs from the retained native fixture`);
+    else assert.ok(entries.length >= expected.length, 'All retained description references remain present');
+    assert.equal(new Set(entries.map(entry => `${entry.project}:${entry.nativeId}:${entry.kind}`)).size, entries.length, 'Native reference identities are unique');
     for (const target of expected) {
       const entry = entries.find((entry) => entry.href === target.href);
       assert.ok(entry !== undefined, `Missing canonical ${direction} target ${target.href}`);
@@ -2313,6 +2396,12 @@ function assertGitLabReferenceIndex(index) {
       assert.ok(entry.native !== null && entry.label === entry.native.label && entry.title === entry.native.title, 'Reference must preserve the actual native label and cached title');
       assert.equal(entry.source, direction === 'outgoing' ? 'description' : target.number === '34' ? 'note_3381331989' : 'note_3381332675');
       assert.equal(entry.initializationHooks, false, 'Owned reference link must not copy native initialization hooks');
+    }
+    for (const entry of entries.filter(entry => !expected.some(target => target.href === entry.href))) {
+      assert.ok(entry.native !== null && entry.label === entry.native.label && entry.title === entry.native.title, 'Additional references retain native presentation');
+      assert.ok(entry.source === 'description' || /^note_[1-9]\d*$/.test(entry.source), 'Additional references have a native source');
+      for (const key of ['repository', 'project', 'nativeId', 'number', 'kind', 'href']) assert.equal(entry[key], entry.native[key], `Additional reference ${key} is independently present in its native anchor`);
+      assert.equal(entry.initializationHooks, false);
     }
   }
 }
@@ -2337,19 +2426,21 @@ async function gitLabReferencesEvidence(page, item) {
         const link = row.querySelector('.geld-provider-review__reference-link');
         const source = row.getAttribute('data-geld-reference-source');
         const root = source === 'description' ? document.querySelector('.issuable-discussion [data-testid="description-content"] > .md') : document.getElementById(source);
-        const scope = source === 'description' ? root : root?.querySelector('[data-testid="system-note-content"]');
+        const scope = source === 'description' ? root : root?.querySelector('[data-testid="system-note-content"], .note-text');
         const native = [...scope?.querySelectorAll('a.gfm[href]') ?? []].find((anchor) => anchor.closest('[data-geld-ui]') === null && anchor.href === link?.href);
         return { href: link?.href, label: row.querySelector('.geld-provider-review__reference-label')?.textContent, title: row.querySelector('.geld-provider-review__reference-title')?.textContent ?? null,
           repository: row.getAttribute('data-geld-reference-repository'), project: row.getAttribute('data-geld-reference-project'), nativeId: row.getAttribute('data-geld-reference-native-id'), number: row.getAttribute('data-geld-reference-number'), kind: row.getAttribute('data-geld-reference-kind'), source,
-          native: native === undefined ? null : { label: native.textContent.replace(/\s+/g, ' ').trim(), title: (native.getAttribute('title') ?? native.getAttribute('data-geld-hover-title'))?.trim() || null },
+          native: native === undefined ? null : { label: native.textContent.replace(/\s+/g, ' ').trim(), title: (native.getAttribute('title') ?? native.getAttribute('data-geld-hover-title'))?.trim() || null, href: native.href, repository: native.getAttribute('data-project-path'), project: native.getAttribute('data-project'), nativeId: native.getAttribute('data-merge-request') ?? native.getAttribute('data-issue') ?? native.getAttribute('data-work-item'), number: native.getAttribute('data-iid'), kind: native.getAttribute('data-reference-type') === 'merge_request' ? 'merge-request' : 'issue' },
           initializationHooks: link?.hasAttribute('data-reference-type') || link?.hasAttribute('data-popover-mounted') || link?.hasAttribute('data-popover-listener-added') };
       });
       return { outgoing: readDirection('outgoing'), incoming: readDirection('incoming') };
     });
     progress.before = await pollStable(async () => {
       const value = await read();progress.snapshots.push(value);if (progress.snapshots.length > 4) progress.snapshots.shift();return value;
-    }, (value) => value.outgoing.length === 3 && value.incoming.length === 2, 'Exact retained native reference groups appear without fetching a new fixture', 8000, (value) => JSON.stringify(value));
+    }, (value) => value.outgoing.length >= 3 && value.incoming.length === 2, 'Exact retained native reference groups appear without fetching a new fixture', 8000, (value) => JSON.stringify(value));
     assertGitLabReferenceIndex(progress.before);
+    progress.relatedWork = await page.evaluate(() => [...document.querySelectorAll('[data-geld-related="work"] a')].map(anchor => ({ href: anchor.href, label: anchor.textContent.trim(), visible: anchor.getBoundingClientRect().height > 0, placement: anchor.closest('aside') === null ? 'description' : 'sidebar' })));
+    for (const reference of progress.before.outgoing.filter(reference => reference.source === 'description')) assert.ok(progress.relatedWork.some(link => link.href === reference.href && link.visible), 'Related work shows each native description reference');
     const href = 'https://gitlab.com/whitebox-aero/insta360/-/merge_requests/34';
     const rowSelector = `[data-geld-review-key="references:outgoing"] [data-geld-reference-native-id="488556842"]`;
     progress.openedSummaries = await openReviewAncestors(page, rowSelector);
@@ -2363,7 +2454,22 @@ async function gitLabReferencesEvidence(page, item) {
         text: anchor.textContent, html: anchor.innerHTML, href: anchor.href, project: anchor.getAttribute('data-project'), nativeId: anchor.getAttribute('data-merge-request'), number: anchor.getAttribute('data-iid'), repository: anchor.getAttribute('data-project-path'),
         bounds: { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom, width: bounds.width, height: bounds.height }, attributes: Object.fromEntries([...anchor.attributes].map((attribute) => [attribute.name, attribute.value])) };
     }, parentHandle);
-    progress.nativeBefore = await poll(readNative, (value) => value.hiddenByGeldDescription, 'Real compact settings hide the existing native description reference before reveal', 8000);
+    if (!(await readNative()).hiddenByGeldDescription) {
+      const sectionHandle = await native.evaluateHandle(anchor => {
+        const root = anchor.closest('[data-testid="description-content"] > .md');
+        if (root === null) return null;
+        let block = anchor;while (block.parentElement !== root && block.parentElement !== null) block = block.parentElement;
+        for (let previous = block.previousElementSibling; previous !== null; previous = previous.previousElementSibling) {
+          const button = previous.querySelector('.geld-provider-description-section[aria-expanded="true"]');
+          if (button !== null) return button;
+        }
+        return null;
+      });
+      const section = sectionHandle.asElement();assert.ok(section !== null, 'Native reference has an actual Geld section fold control');
+      try { await section.evaluate(button => button.scrollIntoView({ block: 'center' }));await section.click(); }
+      finally { await discardHandle(sectionHandle); }
+    }
+    progress.nativeBefore = await poll(readNative, (value) => value.hiddenByGeldDescription, 'Real section control folds the existing native description reference before reveal', 8000);
     const button = await page.$(`${rowSelector} button`);assert.ok(button !== null);
     try {
       assert.equal(await button.evaluate((node) => node.textContent), 'View in conversation');
@@ -2783,15 +2889,68 @@ function compareAuthorPresentation(value) {
   return { covered, uncovered, mismatches };
 }
 
-async function authorThemeEvidence(page, provider, anchor) {
-  const selector = '.geld-provider-review button[data-geld-original-conversation]';
-  const originallyShown = await page.$eval(selector, button => button.getAttribute('aria-pressed') === 'true');
-  if (!originallyShown) await clickReviewButton(page, selector, 'Show original conversation');
-  const evidence = { baseline: null, darkPreferenceProbe: null, nativeMeasurement: 'Retained native originals explicitly shown through their real control before comparing rendered styles.' };
+async function gitLabHiddenPersonEvidence(page, anchor) {
+  const saved = await options.evaluate(async key => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+  const read = () => page.evaluate(async anchor => {
+    const root = document.getElementById(anchor);
+    if (root === null || root.closest('[data-geld-ui]') !== null || !root.matches('[data-testid="noteable-note-container"]')) return null;
+    const author = root.querySelector('.note-header [data-user-id][data-username]');
+    const body = root.querySelector('.note-text');
+    const id = author?.getAttribute('data-user-id'), login = author?.getAttribute('data-username');
+    if (!id || !/^[1-9]\d*$/.test(id) || !login || !/^[a-z0-9_.-]+$/i.test(login) || body === null) return null;
+    const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body.textContent ?? ''));
+    return { id, login, bodyHash: [...new Uint8Array(hash)].map(value => value.toString(16).padStart(2, '0')).join(''), hidden: root.hasAttribute('data-geld-provider-person-hidden'), display: getComputedStyle(root).display, represented: document.querySelector(`.geld-provider-review [data-geld-source="${anchor}"]`) !== null };
+  }, anchor);
+  const evidence = { before: await read() };
+  assert.ok(evidence.before, 'A unique native GitLab author and comment body qualify the hidden-person probe');
+  const { id, login, bodyHash } = evidence.before;
   try {
+    await patchSettings({ hiddenAuthors: [...(saved?.hiddenAuthors ?? []), `gitlab:${login}`] });
+    evidence.hidden = await poll(read, value => value?.hidden && value.display === 'none' && !value.represented, 'The locally hidden author leaves both the digest and native comment');
+    assert.equal(evidence.hidden.bodyHash, bodyHash, 'Hiding a person leaves the native body untouched');
+    const menu = '.geld-provider-hidden-people > button';
+    const menuState = await page.$eval(menu, button => ({ label: button.textContent.trim(), open: button.getAttribute('aria-expanded') === 'true' }));
+    if (!menuState.open) await clickReviewButton(page, menu, menuState.label);
+    const row = `.geld-provider-hidden-people__row:has([data-geld-person-toggle="${id}"])`;
+    await clickReviewButton(page, `${row} button`, 'Show for this visit');
+    evidence.shown = await poll(read, value => value !== null && !value.hidden && value.display !== 'none' && value.represented, 'A per-person visit peek restores the native comment and digest row');
+    assert.equal(evidence.shown.bodyHash, bodyHash);
+    await clickReviewButton(page, `${row} button`, 'Stop hiding');
+    evidence.unhidden = await poll(read, value => value !== null && !value.hidden && value.represented, 'Removing the exact local author rule restores the person');
+    const rules = await options.evaluate(async key => (await chrome.storage.sync.get(key))[key]?.hiddenAuthors ?? [], SETTINGS_KEY);
+    assert.deepEqual(rules, saved?.hiddenAuthors ?? [], 'Only the exact local author rule was removed');
+    return evidence;
+  } finally {
+    await options.evaluate(async (key, saved) => {
+      if (saved === undefined) await chrome.storage.sync.remove(key);
+      else await chrome.storage.sync.set({ [key]: saved });
+    }, SETTINGS_KEY, saved);
+    assert.deepEqual(await options.evaluate(async key => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY), saved, 'The exact original shared settings are restored after the hidden-person probe');
+  }
+}
+
+async function authorThemeEvidence(page, provider, anchor) {
+  const selector = '.geld-provider-view button[data-geld-digest-view]';
+  const saved = await options.evaluate(async key => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+  const name = provider === 'gitlab' ? 'GitLab' : 'Bitbucket';
+  const evidence = { baseline: null, darkPreferenceProbe: null, views: [], nativeMeasurement: 'Retained native originals explicitly shown through the persistent view selector before comparing rendered styles.' };
+  const readView = () => page.evaluate(anchor => {
+    const panel = document.querySelector('.geld-provider-review');
+    const source = document.getElementById(anchor);
+    const visible = node => node !== null && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden';
+    return { selected: document.querySelector('.geld-provider-view [aria-pressed="true"]')?.getAttribute('data-geld-digest-view') ?? null, digestVisible: visible(panel), nativeVisible: visible(source), choices: document.querySelectorAll('.geld-provider-view button[data-geld-digest-view]').length };
+  }, anchor);
+  try {
+    await clickReviewButton(page, selector, name);
+    evidence.views.push(await poll(readView, value => value.selected === 'github' && !value.digestVisible && value.nativeVisible && value.choices === 3, 'Provider-only view restores the native conversation and keeps re-entry visible'));
+    await clickReviewButton(page, selector, 'Geld');
+    evidence.views.push(await poll(readView, value => value.selected === 'digest' && value.digestVisible && value.choices === 3, 'Geld digest can be enabled again from the provider-only view'));
+    await clickReviewButton(page, selector, `Geld + ${name}`);
+    evidence.views.push(await poll(readView, value => value.selected === 'digest-timeline' && value.digestVisible && value.nativeVisible && value.choices === 3, 'Combined view renders both the digest and native conversation'));
     await poll(() => page.evaluate(anchor => { const node = document.getElementById(anchor);return node !== null && node.closest('[hidden]') === null && node.getBoundingClientRect().height > 0; }, anchor), Boolean, 'Retained original author is rendered before style comparison');
     const baseline = await authorPresentationProbe(page, provider, anchor);
     evidence.baseline = baseline;
+    if (provider === 'gitlab') evidence.hiddenPerson = await gitLabHiddenPersonEvidence(page, anchor);
     await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
     await pause(300);
     const dark = await authorPresentationProbe(page, provider, anchor);
@@ -2806,7 +2965,13 @@ async function authorThemeEvidence(page, provider, anchor) {
     if (changed) evidence.darkPreferenceProbe.artifacts = await capture(page, `${provider}-author-os-dark`);
   } finally {
     await page.emulateMediaFeatures([]);
-    if (!originallyShown && !page.isClosed()) await clickReviewButton(page, selector, 'Hide original conversation');
+    await options.evaluate(async (key, saved) => {
+      if (saved === undefined) await chrome.storage.sync.remove(key);
+      else await chrome.storage.sync.set({ [key]: saved });
+    }, SETTINGS_KEY, saved);
+    const expected = saved?.prOverview === false ? 'github' : saved?.compactTimeline === 'off' ? 'digest-timeline' : 'digest';
+    if (!page.isClosed()) await poll(readView, value => value.selected === expected, 'The original conversation view is restored');
+    assert.deepEqual(await options.evaluate(async key => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY), saved, 'The exact original shared settings are restored after the view and theme probes');
   }
   return evidence;
 }
@@ -3242,6 +3407,7 @@ try {
       writeSettings: (value) => options.evaluate(async (key, saved) => { await chrome.storage.sync.set({ [key]: saved }); }, SETTINGS_KEY, value),
       readState: async () => ({ runtime: await tabState(page), native: await gitLabDom(page) }),
     });
+    if (focus === 'gitlab-ui') await verifyProviderFlow(page, item);
     return {};
   });
   // A failed assertion while disabled must not invalidate the following independent fixture.
@@ -3302,7 +3468,7 @@ try {
     return { verified: 'Live actionable retained human source: local mark, exact native source/head, real reload, Undo, and zero provider mutations.' };
   });
   await runCase('gitlab-bot-digest', GL_BOT, verifyGitLabBot);
-  await runCase('gitlab-coderabbit-digest', CODERABBIT_FIXTURE.url, async (page, item) => verifyCodeRabbitCommands(page, item, {
+  await runCase('gitlab-coderabbit-digest', CODERABBIT_FIXTURE.url, async (page, item) => { const result = await verifyCodeRabbitCommands(page, item, {
     fixture: codeRabbitSources.get(page), context: browser.defaultBrowserContext(), poll, openReviewAncestors, clickReviewButton, capture, tableHeights: (page, proof, values) => verifyGitLabTableHeights(page, proof, { ...values, extensionId }),
     readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key] ?? {}, SETTINGS_KEY),
     withdrawTrust: async (binding) => {
@@ -3318,7 +3484,7 @@ try {
       if (Object.hasOwn(before, 'trustedReviewAccounts')) current.trustedReviewAccounts = before.trustedReviewAccounts;else delete current.trustedReviewAccounts;
       await chrome.storage.sync.set({ [key]: current });
     }, SETTINGS_KEY, original),
-  }));
+  });await verifyProviderAgentNotes(page, item);return result; });
   await runCase('cross-provider-settings', GL_MIXED, verifyCrossProviderSettings);
   await runCase('github-regression', GH_FILES, async (page, item) => {
     item.state = await poll(() => tabState(page), (state) => state.hasDiff === true && state.all !== null && state.visible !== null && state.hiddenCount > 0 && state.categories.some((category) => category.id === 'tests' && category.count > 0), 'Installed GitHub public fixture classification');

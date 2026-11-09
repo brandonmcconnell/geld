@@ -1,14 +1,15 @@
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import type { Scalar, YAMLMap } from 'yaml';
-import { SHELL_SCOPES, paintBlock, sameLines, textNodes } from '../lib/shell-highlight';
+import { SHELL_SCOPES, contiguousLines, paintBlock, sameLines, scriptLanguage, textNodes } from '../lib/shell-highlight';
 import type { ShellLine, ShellRanges, SourceText } from '../lib/shell-highlight';
 import type { ProviderDiffEntry } from '../providers/types';
 
 interface LocatedLine { readonly line: ShellLine; readonly start: number; readonly end: number }
 interface Source { readonly text: string; readonly lines: readonly LocatedLine[] }
-interface PaintedFile { readonly lines: readonly ShellLine[]; readonly beforeCount: number; readonly ranges: ShellRanges }
+interface PaintedFile { readonly script: boolean; readonly lines: readonly ShellLine[]; readonly beforeCount: number; readonly ranges: ShellRanges }
 const painted = new Map<HTMLElement, PaintedFile>();
 const PREFIX = 'geld-bitbucket-shell-';
+const SCRIPT_PREFIX = 'geld-bitbucket-script-';
 export type BitbucketSyntaxCapability = 'enabled' | 'disabled' | 'unknown';
 
 function linesOf(entry: ProviderDiffEntry, side: 'old' | 'new'): ShellLine[] {
@@ -191,11 +192,12 @@ function highlightSide(lines: readonly ShellLine[], ranges: ShellRanges, skip: R
 }
 
 function setHighlights(): void {
-  for (const scope of SHELL_SCOPES) {
+  for (const script of [false, true]) for (const scope of SHELL_SCOPES) {
     const highlight = new Highlight();
-    for (const file of painted.values()) for (const range of file.ranges.get(scope) ?? []) highlight.add(range);
-    if (highlight.size === 0) CSS.highlights.delete(PREFIX + scope);
-    else CSS.highlights.set(PREFIX + scope, highlight);
+    for (const file of painted.values()) if (file.script === script) for (const range of file.ranges.get(scope) ?? []) highlight.add(range);
+    const name = (script ? SCRIPT_PREFIX : PREFIX) + scope;
+    if (highlight.size === 0) CSS.highlights.delete(name);
+    else CSS.highlights.set(name, highlight);
   }
 }
 
@@ -207,17 +209,24 @@ export function applyBitbucketWorkflowSyntax(entries: readonly ProviderDiffEntry
   let changed = false;
   const roots = new Set<HTMLElement>();
   for (const entry of entries) {
-    if (entry.path !== 'bitbucket-pipelines.yml' || !entry.root.isConnected) continue;
+    const language = scriptLanguage(entry.path);
+    if (entry.path !== 'bitbucket-pipelines.yml' && language === null || !entry.root.isConnected) continue;
+    if (language !== null && entry.root.querySelector('.token') !== null) continue;
     roots.add(entry.root);
     const before = linesOf(entry, 'old');
     const after = linesOf(entry, 'new');
     const lines = [...before, ...after];
+    if (language !== null && lines.reduce((size, line) => size + line.text.length, 0) > 100_000) continue;
     const cached = painted.get(entry.root);
-    if (cached !== undefined && cached.beforeCount === before.length && sameLines(cached.lines, lines)) continue;
+    if (cached !== undefined && cached.script === (language !== null) && cached.beforeCount === before.length && sameLines(cached.lines, lines)) continue;
     const ranges: ShellRanges = new Map();
-    highlightSide(before, ranges, new Set(after.flatMap((line) => line.nodes.map((part) => part.node))));
-    highlightSide(after, ranges, new Set());
-    painted.set(entry.root, { lines, beforeCount: before.length, ranges });
+    const skip = new Set(after.flatMap((line) => line.nodes.map((part) => part.node)));
+    if (language === null) { highlightSide(before, ranges, skip);highlightSide(after, ranges, new Set()); }
+    else {
+      for (const group of contiguousLines(before)) paintBlock(group, ranges, skip, language);
+      for (const group of contiguousLines(after)) paintBlock(group, ranges, new Set(), language);
+    }
+    painted.set(entry.root, { script: language !== null, lines, beforeCount: before.length, ranges });
     changed = true;
   }
   for (const root of painted.keys()) if (!roots.has(root)) { painted.delete(root); changed = true; }
@@ -227,5 +236,5 @@ export function applyBitbucketWorkflowSyntax(entries: readonly ProviderDiffEntry
 export function removeBitbucketWorkflowSyntax(): void {
   painted.clear();
   if (typeof CSS === 'undefined' || CSS.highlights === undefined) return;
-  for (const scope of SHELL_SCOPES) CSS.highlights.delete(PREFIX + scope);
+  for (const scope of SHELL_SCOPES) { CSS.highlights.delete(PREFIX + scope);CSS.highlights.delete(SCRIPT_PREFIX + scope); }
 }

@@ -1,3 +1,4 @@
+import { gitLabAttachmentLink } from './attachment';
 import type { ProviderCommentRenderContext } from '../providers/comment-render';
 import { isProviderReviewPage } from '../providers/types';
 import type { ProviderAdapter } from '../providers/types';
@@ -13,7 +14,7 @@ import type { ProviderReviewComment } from '@geld/review';
 import { readGitLabThreadActions, syncGitLabNativeReviewState } from './thread-actions';
 import { fetchGitLabConfig } from './config';
 import { renderGitLabComment } from './comment-render';
-import { gitLabConversationRoots, gitLabDescriptionHost } from './conversation';
+import { gitLabConversationRoots, gitLabPersonRoots, gitLabDescriptionHost } from './conversation';
 import { createGitLabAuthorPresentationReader } from './author-presentation';
 import { gitLabReferenceAnchor, readGitLabReferences } from './references';
 import { readGitLabBotRequests } from './bot-request';
@@ -26,6 +27,7 @@ import { createGitLabDiffSyntax } from './diff-syntax';
 
 export const gitlabAdapter: ProviderAdapter = {
   id: 'gitlab',
+  attachmentLink: gitLabAttachmentLink,
   createNativeView: (doc, changed, choice) => new GitLabNativeWhitespace(doc, changed, choice),
   diffSyntax: createGitLabDiffSyntax(),
   describe: describeGitLabPage,
@@ -35,6 +37,7 @@ export const gitlabAdapter: ProviderAdapter = {
   readReferences: readGitLabReferences,
   referenceAnchor: gitLabReferenceAnchor,
   conversationRoots: gitLabConversationRoots,
+  personRoots: gitLabPersonRoots,
   descriptionHost: gitLabDescriptionHost,
   fetchDiff: (page, signal) => isProviderReviewPage(page) ? fetchGitLabDiff(page, signal) : fetchGitLabStandaloneDiff(page, signal),
   fetchConfig: fetchGitLabConfig,

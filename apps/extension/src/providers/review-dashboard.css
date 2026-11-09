@@ -100,3 +100,34 @@
   .geld-provider-review__item > .geld-provider-review__section-toggle { grid-template-columns: 1em minmax(0, 1fr) auto; }
   .geld-provider-review__item > .geld-provider-review__section-toggle > .geld-provider-review__muted { grid-column: 2 / -1; }
 }
+
+.geld-provider-view {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--geld-provider-space-2);
+  margin-block: var(--geld-provider-space-3);
+  font: var(--geld-provider-font);
+  color: var(--geld-provider-text);
+}
+.geld-provider-view__option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--geld-provider-space-2);
+  min-block-size: var(--geld-provider-button-min-height);
+  padding: var(--geld-provider-space-2) var(--geld-provider-space-3);
+  border: var(--geld-provider-border-width) solid var(--geld-provider-border);
+  border-radius: var(--geld-provider-radius);
+  background: var(--geld-provider-bg);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.geld-provider-view__option[aria-pressed="true"] { background: var(--geld-provider-bg-subtle); font-weight: var(--geld-provider-heading-weight); }
+.geld-provider-view__option:hover { background: var(--geld-provider-bg-subtle); }
+.geld-provider-view__option:focus-visible { outline: 2px solid var(--geld-provider-link); outline-offset: 2px; }
+.geld-provider-view__option:disabled { cursor: wait; opacity: .7; }
+.geld-provider-view__mark { inline-size: 16px; block-size: 16px; flex: none; }
+.geld-provider-view__status { color: var(--geld-provider-text-subtle); }
+.geld-provider-review[hidden] { display: none !important; }

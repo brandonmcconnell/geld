@@ -569,26 +569,24 @@ describe('provider conversation integrations', () => {
     expect(native.style.getPropertyPriority('--geld-provider-native-find-display')).toBe('important');
   });
 
-  it('keeps the digest near the description by honoring collapseDescription outside minimal mode and restoring every node', async () => {
+  it('keeps heading outlines independent from digest compaction and restores native nodes', async () => {
     const description = document.createElement('div');
-    description.innerHTML = '<h2>Description</h2><p>First native paragraph.</p><section><p>More native content.</p></section>';
+    description.innerHTML = '<h2>Description</h2><p>First native paragraph.</p><h2>Details</h2><section><p>More native content.</p></section>';
     document.body.append(description);
     const heading = description.firstElementChild;
     const first = description.querySelector('p');
     const more = description.querySelector('section');
     const f = fixture(snapshot(), {}, { aiEnabled: false, compactTimeline: 'compact', collapseDescription: true }, { descriptionHost: () => description });
     await vi.waitFor(() => expect(f.host.querySelector('.geld-provider-review')).not.toBeNull());
-    expect(more?.hasAttribute('data-geld-provider-description-hidden')).toBe(true);
-    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, compactTimeline: 'minimal', collapseDescription: true });
-    expect(more?.hasAttribute('data-geld-provider-description-hidden')).toBe(true);
-    expect(first?.hasAttribute('data-geld-provider-description-hidden')).toBe(false);
-    expect(description.firstElementChild).toBe(heading);
-    document.querySelector<HTMLButtonElement>('.geld-provider-description-toggle')?.click();
-    expect(more?.hasAttribute('data-geld-provider-description-hidden')).toBe(false);
-    expect(document.querySelector('.geld-provider-description-toggle')?.getAttribute('aria-expanded')).toBe('true');
-    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, compactTimeline: 'off', collapseDescription: false });
-    expect(document.querySelector('.geld-provider-description-toggle')).toBeNull();
-    expect(description.querySelector('[data-geld-provider-description-hidden]')).toBeNull();
+    expect(more?.getAttribute('hidden')).toBe('until-found');
+    expect(first?.hasAttribute('hidden')).toBe(false);
+    description.querySelector<HTMLButtonElement>('button[aria-label="Expand Details"]')?.click();
+    expect(more?.hasAttribute('hidden')).toBe(false);
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, compactTimeline: 'off', collapseDescription: true });
+    expect(description.querySelector('button[aria-label="Collapse Details"]')).not.toBeNull();
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, collapseDescription: false });
+    expect(description.querySelector('.geld-provider-description-section')).toBeNull();
+    expect(more?.hasAttribute('hidden')).toBe(false);
     expect(description.firstElementChild).toBe(heading);
   });
 
@@ -783,14 +781,14 @@ describe('scoped native review opener lifetime', () => {
 });
 
 
-it('replaces represented human comments even with timeline compaction off and restores originals on request', async () => {
+it('folds represented human comments in the digest and restores originals on request', async () => {
   const human = { ...comment('A human question'), author: { id: 'human', login: 'person' } };
   const native = document.createElement('article');native.id = human.anchor;
   const originalText = document.createTextNode(human.body);native.append(originalText);
   const unknown = document.createElement('article');unknown.id = 'note_999';unknown.textContent = 'New unread comment';
   document.body.append(native, unknown);
   const source = { ...snapshot([human]), input: { ...snapshot().input, threads: [] } };
-  const f = fixture(source, {}, { aiEnabled: false, compactTimeline: 'off' }, { conversationRoots: () => [
+  const f = fixture(source, {}, { aiEnabled: false, compactTimeline: 'compact' }, { conversationRoots: () => [
     { root: native, anchors: [native.id], kind: 'comment' }, { root: unknown, anchors: [unknown.id], kind: 'comment' },
   ] });
   await vi.waitFor(() => expect(native.getAttribute('hidden')).toBe('until-found'));
@@ -808,4 +806,114 @@ it('replaces represented human comments even with timeline compaction off and re
   expect(native.hasAttribute('hidden')).toBe(false);
   expect(unknown.hasAttribute('hidden')).toBe(false);
   expect(native.firstChild).toBe(originalText);
+});
+
+describe('persistent provider conversation views', () => {
+  it('offers re-entry without fetching while off and preserves open threads across all three views', async () => {
+    const native = document.createElement('article');native.id = 'note_1';document.body.append(native);
+    const choose = vi.fn(async () => undefined);
+    const f = fixture(snapshot(), { chooseDigestView: choose }, { aiEnabled: false, quickReview: false, prOverview: false }, {
+      conversationRoots: () => [{ root: native, anchors: ['note_1'], kind: 'comment' }],
+    });
+    expect(f.fetchReview).not.toHaveBeenCalled();
+    const view = (name: string) => f.host.querySelector<HTMLButtonElement>(`[data-geld-digest-view="${name}"]`);
+    expect(view('github')?.getAttribute('aria-pressed')).toBe('true');
+    view('digest')?.click();
+    await vi.waitFor(() => expect(choose).toHaveBeenCalledWith('digest'));
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, quickReview: false, prOverview: true, compactTimeline: 'compact' });
+    await vi.waitFor(() => expect(native.getAttribute('data-geld-provider-native-find')).toBe('folded'));
+    const panel = f.host.querySelector<HTMLElement>('.geld-provider-review');
+    const thread = panel?.querySelector<HTMLDetailsElement>('[data-geld-item]');
+    if (thread === null || thread === undefined) throw new Error('Missing review thread');
+    thread.open = true;
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, quickReview: false, prOverview: false });
+    expect(panel?.hidden).toBe(true);
+    expect(native.hasAttribute('data-geld-provider-native-find')).toBe(false);
+    expect(view('github')).not.toBeNull();
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, quickReview: false, prOverview: true, compactTimeline: 'off' });
+    expect(panel?.hidden).toBe(false);
+    expect(f.host.querySelector('.geld-provider-review')).toBe(panel);
+    expect(panel?.querySelector<HTMLDetailsElement>('[data-geld-item]')?.open).toBe(true);
+    expect(native.hasAttribute('data-geld-provider-native-find')).toBe(false);
+    expect(view('digest-timeline')?.getAttribute('aria-pressed')).toBe('true');
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, quickReview: false, prOverview: true, compactTimeline: 'compact' });
+    expect(native.getAttribute('data-geld-provider-native-find')).toBe('folded');
+    f.conversation.clear();
+    expect(f.host.querySelector('.geld-provider-view')).toBeNull();
+    expect(native.hasAttribute('data-geld-provider-native-find')).toBe(false);
+  });
+});
+
+describe('hidden people in provider conversations', () => {
+  it('filters digest counts and native comments, then restores one person for the visit', async () => {
+    const hidden = { ...comment('Hidden concern'), author: { id: 'alice-id', login: 'alice' } };
+    const visible = { ...comment('Visible concern'), id: '2', anchor: 'note_2', url: `${url}#note_2`, author: { id: 'bob-id', login: 'bob' } };
+    const base = snapshot();
+    const source = { ...base, input: { ...base.input, threads: [
+      { ...base.input.threads[0]!, comments: [hidden] },
+      { ...base.input.threads[0]!, id: 'b'.repeat(40), anchor: `discussion_${'b'.repeat(40)}`, url: visible.url, comments: [visible] },
+    ] } };
+    const first = document.createElement('article');first.id = hidden.anchor;
+    const second = document.createElement('article');second.id = visible.anchor;
+    document.body.append(first, second);
+    const f = fixture(source, {}, { aiEnabled: false, hiddenAuthors: ['alice'], compactTimeline: 'off' }, {
+      personRoots: () => [{ root: first, anchors: [hidden.anchor], kind: 'comment' }, { root: second, anchors: [visible.anchor], kind: 'comment' }],
+    });
+    await vi.waitFor(() => expect(first.hasAttribute('data-geld-provider-person-hidden')).toBe(true));
+    expect(second.hasAttribute('data-geld-provider-person-hidden')).toBe(false);
+    expect(f.host.querySelectorAll('[data-geld-item]')).toHaveLength(1);
+    expect(f.host.querySelector('.geld-provider-review')?.textContent).not.toContain('Hidden concern');
+    f.host.querySelector<HTMLButtonElement>('[data-geld-person-toggle="alice-id"]')?.click();
+    await vi.waitFor(() => expect(first.hasAttribute('data-geld-provider-person-hidden')).toBe(false));
+    expect(f.host.querySelectorAll('[data-geld-item]')).toHaveLength(2);
+    expect(source.input.threads[0]?.comments).toEqual([hidden]);
+    f.conversation.clear();
+    expect(document.querySelector('.geld-provider-hidden-person')).toBeNull();
+    expect(first.hasAttribute('data-geld-provider-person-hidden')).toBe(false);
+  });
+
+  it('uses complete native sources for a local review mark after hiding one reply', async () => {
+    const starter = { ...comment('Visible concern'), author: { id: 'bob-id', login: 'bob' } };
+    const reply = { ...comment('Hidden reply'), id: '2', anchor: 'note_2', url: `${url}#note_2`, author: { id: 'alice-id', login: 'alice' } };
+    const base = snapshot();
+    const source = { ...base, input: { ...base.input, threads: [{ ...base.input.threads[0]!, comments: [starter, reply] }] } };
+    const save = vi.fn<NonNullable<ProviderConversationServices['saveReviewed']>>(async () => undefined);
+    const f = fixture(source, { readReviewed: async () => ({}), saveReviewed: save }, { aiEnabled: false, hiddenAuthors: ['alice'] });
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-local-reviewed]')).not.toBeNull());
+    f.host.querySelector<HTMLButtonElement>('[data-geld-local-reviewed]')?.click();
+    await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save.mock.calls[0]?.[1].sources.map((entry) => entry.anchor)).toEqual([starter.anchor, reply.anchor]);
+    expect(f.host.querySelector('.geld-provider-review')?.textContent).not.toContain('Hidden reply');
+  });
+});
+
+it('retains the panel and open thread while a new-head snapshot is loading', async () => {
+  const initial = snapshot();
+  let hold = false;
+  let resolve: (value: ProviderReviewSnapshot) => void = () => {};
+  const next = new Promise<ProviderReviewSnapshot>(complete => { resolve = complete; });
+  const read = vi.fn(() => hold ? next : Promise.resolve(initial));
+  const f = fixture(initial, {}, { aiEnabled: false }, { fetchReview: read });
+  await vi.waitFor(() => expect(f.host.querySelector('.geld-provider-review__item')).not.toBeNull());
+  const panel = f.host.querySelector<HTMLElement>('.geld-provider-review')!;
+  panel.querySelector<HTMLElement & { open: boolean }>('.geld-provider-review__item')!.open = true;
+  hold = true;
+  const newHead = 'b'.repeat(40);f.apply({ ...page, headSha: newHead, version: newHead });
+  expect(f.host.querySelector('.geld-provider-review')).toBe(panel);expect(panel.hidden).toBe(true);expect(panel.inert).toBe(true);
+  resolve({ ...initial, input: { ...initial.input, subject: { ...initial.input.subject, headSha: newHead } } });
+  await vi.waitFor(() => expect(panel.dataset.geldReviewHead).toBe(newHead));
+  expect(f.host.querySelector('.geld-provider-review')).toBe(panel);expect(panel.hidden).toBe(false);
+  expect(panel.querySelector<HTMLElement & { open: boolean }>('.geld-provider-review__item')?.open).toBe(true);
+});
+
+it('seats current tool summaries in the digest and restores them in native-only mode even when shortening is off', async () => {
+  const description = document.createElement('div');description.innerHTML = '<p>Author words.</p><h2>Summary by CodeRabbit</h2><p>Generated review summary.</p>';
+  document.body.append(description);
+  const source = description.lastElementChild!;
+  const f = fixture(snapshot(), {}, { aiEnabled: false, collapseDescription: false }, { descriptionHost: () => description });
+  await vi.waitFor(() => expect(f.host.querySelector('[data-geld-agent-note="coderabbit"]')).not.toBeNull());
+  expect(f.host.querySelector('[data-geld-agent-note]')?.textContent).toContain('Generated review summary.');
+  expect(source.getAttribute('hidden')).toBe('until-found');expect(description.firstElementChild?.hasAttribute('hidden')).toBe(false);
+  f.apply(page, { ...DEFAULT_SETTINGS, prOverview: false, quickReview: false, collapseDescription: false });
+  expect(source.hasAttribute('hidden')).toBe(false);
 });

@@ -1,3 +1,4 @@
+import { isCombinedLineLabel } from '../providers/dom';
 import type { ProviderDiffEntry, ProviderDiffLine, ProviderDiffView, ProviderHeaderTarget, ProviderTreeEntry } from '../providers/types';
 import { describeGitLabPage, jsonAttribute } from './page';
 import { gitLabPathNavigator } from './navigation';
@@ -169,8 +170,7 @@ function countLabels(root: HTMLElement): NonNullable<ProviderHeaderTarget['label
     const spans = host.querySelectorAll('[data-testid="js-file-addition-line"], [data-testid="js-file-deletion-line"]');
     const text = host.getAttribute('aria-label') ?? '';
     if (host === target || spans.length === 1) labels.push({ host, attribute: 'aria-label', count });
-    else if (spans.length === 2 && (text.match(/\d[\d,\u00a0\u202f]*/g)?.length ?? 0) === 2
-      && /\bAdded\s+\d[\d,\u00a0\u202f]*\s+lines?\b/i.test(text) && /\bRemoved\s+\d[\d,\u00a0\u202f]*\s+lines?\b/i.test(text)) {
+    else if (spans.length === 2 && isCombinedLineLabel(text)) {
       labels.push({ host, attribute: 'aria-label', count: 'lines' });
     }
     seen.add(host);

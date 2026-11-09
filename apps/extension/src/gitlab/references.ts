@@ -1,3 +1,5 @@
+import type { ProviderReviewComment } from '@geld/review';
+import { referenceSourceComments } from '../providers/references';
 import { repositoryKey } from '@geld/core';
 import type { GitLabReferenceTarget, ProviderReviewReference } from '../providers/references';
 import type { ProviderReviewPanelEvent } from '../providers/review-panel';
@@ -38,7 +40,7 @@ function targetOf(anchor: HTMLAnchorElement, page: ProviderReviewPage): GitLabRe
 
 function targetKey(target: GitLabReferenceTarget): string { return JSON.stringify([target.origin, target.repository, target.projectId, target.kind, target.nativeId, target.number]); }
 
-function scan(page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[]): readonly ReferenceAnchor[] {
+function scan(page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[], comments: readonly ProviderReviewComment[] = []): readonly ReferenceAnchor[] {
   if (page.provider !== 'gitlab' || page.kind !== 'overview' || !currentPage(page, doc)) return [];
   const entries: ReferenceAnchor[] = [];
   const make = (anchor: HTMLAnchorElement, direction: ProviderReviewReference['direction'], source: ProviderReviewReference['source']): ReferenceAnchor | null => {
@@ -56,6 +58,23 @@ function scan(page: ProviderReviewPage, doc: Document, events: readonly Provider
     if (entry === null || seen.has(entry.reference.id)) continue;
     seen.add(entry.reference.id);entries.push(entry);
     if (entries.length >= MAX_REFERENCES) break;
+  }
+  const destinations = new Set(entries.map((entry) => targetKey(entry.reference.target)));
+  for (const comment of referenceSourceComments(comments, 'gitlab', page.url)) {
+    const roots = [...doc.querySelectorAll<HTMLElement>('.issuable-discussion [data-testid="noteable-note-container"][id]')].filter((root) => root.id === comment.anchor && root.closest('[data-geld-ui]') === null);
+    const root = roots.length === 1 && doc.querySelectorAll(`[id="${comment.anchor}"]`).length === 1 ? roots[0] : null;
+    const author = root?.querySelector('.note-header-info .author-name-link[data-user-id]');
+    if (root === null || root === undefined || author?.getAttribute('data-user-id') !== comment.author.id
+      || author.getAttribute('data-username') !== null && author.getAttribute('data-username')?.toLowerCase() !== comment.author.login.toLowerCase()) continue;
+    const bodies = root.querySelectorAll<HTMLElement>('.note-text');
+    if (bodies.length !== 1) continue;
+    for (const anchor of bodies[0]?.querySelectorAll<HTMLAnchorElement>('a.gfm[data-reference-type][href]') ?? []) {
+      if (anchor.closest('pre, code') !== null) continue;
+      if (entries.length >= MAX_REFERENCES) break;
+      const entry = make(anchor, 'outgoing', { reviewUrl: page.url, anchor: comment.anchor, author: comment.author, createdAt: comment.createdAt });
+      if (entry === null || destinations.has(targetKey(entry.reference.target))) continue;
+      destinations.add(targetKey(entry.reference.target));entries.push(entry);
+    }
   }
   const byId = new Map<string, ProviderReviewPanelEvent>();
   const duplicateEvents = new Set<string>();
@@ -90,11 +109,11 @@ function scan(page: ProviderReviewPage, doc: Document, events: readonly Provider
   return entries.filter(({ reference }) => !conflicts.has(JSON.stringify([reference.target.origin, reference.target.repository, reference.target.kind, reference.target.number])));
 }
 
-export function readGitLabReferences(page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[]): readonly GitLabReviewReference[] {
-  return scan(page, doc, events).map((entry) => entry.reference);
+export function readGitLabReferences(page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[], comments: readonly ProviderReviewComment[] = []): readonly GitLabReviewReference[] {
+  return scan(page, doc, events, comments).map((entry) => entry.reference);
 }
 
-export function gitLabReferenceAnchor(reference: ProviderReviewReference, page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[]): HTMLAnchorElement | null {
+export function gitLabReferenceAnchor(reference: ProviderReviewReference, page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[], comments: readonly ProviderReviewComment[] = []): HTMLAnchorElement | null {
   const expected = JSON.stringify(reference);
-  return scan(page, doc, events).find((entry) => JSON.stringify(entry.reference) === expected)?.anchor ?? null;
+  return scan(page, doc, events, comments).find((entry) => JSON.stringify(entry.reference) === expected)?.anchor ?? null;
 }

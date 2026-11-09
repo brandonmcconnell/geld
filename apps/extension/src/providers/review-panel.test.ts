@@ -200,9 +200,9 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-item]')?.open).toBe(false);
   });
 
-  it('copies one clustered concern with every actual native source rather than the whole digest', async () => {
+  it('copies one native thread and all its replies without unrelated nearby threads', async () => {
     const write = vi.fn(async (_text: string) => {});
-    const source = input([thread('a', { path: 'shared.ts', line: 5 }), thread('b', { path: 'shared.ts', line: 6 })]);
+    const source = input([thread('a', { path: 'shared.ts', line: 5, comments: [comment('1'), comment('2')] }), thread('b', { path: 'shared.ts', line: 6, comments: [comment('3')] })]);
     const panel = renderProviderReviewPanel(host(), source, { copyText: write });
     const button = panel.element.querySelector<HTMLButtonElement>('[data-geld-copy-kind="markdown"]');
     if (button === null) throw new Error('Missing item copy control');
@@ -213,7 +213,7 @@ describe('provider conversation digest', () => {
     await vi.waitFor(() => expect(write).toHaveBeenCalledOnce());
     const text = write.mock.calls[0]?.[0];
     expect(text).toContain(`${reviewUrl}#note_1`);expect(text).toContain(`${reviewUrl}#note_2`);
-    expect(text).toContain('`shared.ts:5`');expect(text).not.toContain('CI checks:');
+    expect(text).toContain('`shared.ts:5`');expect(text).not.toContain('CI checks:');expect(text).not.toContain(`${reviewUrl}#note_3`);
     await vi.waitFor(() => expect(button.disabled).toBe(false));
     expect(button.parentElement?.querySelector('[role="status"]')?.textContent).toBe('Item copied as Markdown.');
     expect(document.activeElement).toBe(button);
@@ -755,7 +755,7 @@ describe('provider conversation digest', () => {
     const unsafe = { ...comment('5', 'Preview ready: [Preview](javascript:alert(1))'), author };
     const panel = renderProviderReviewPanel(host(), input(), { comments: [latest, earlier, human, unsafe] });
     const section = panel.element.querySelector('[data-geld-review-key="previews"]');
-    expect(section?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Preview links · 1');
+    expect(section?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Previews · 1');
     expect(section?.querySelector('[data-geld-preview="note_3"]')?.textContent).toContain('native-deploy-account · Reported status: failed');
     expect(section?.querySelector('[data-geld-preview="note_3"] > a')?.getAttribute('href')).toBe('https://deploy.example/second');
     expect(section?.querySelector('[data-geld-review-key="previews:earlier"] [data-geld-preview]')?.getAttribute('data-geld-preview')).toBe('note_2');
@@ -1085,4 +1085,88 @@ it('binds every batch-history disclosure to its current content and label after 
     expect(document.getElementById(content?.getAttribute('aria-labelledby') ?? '')).toBe(button);
   }
   panel.destroy();
+});
+
+
+describe('empty provider triage control', () => {
+  it('explains why triage is unavailable and cannot start a request', () => {
+    const run = vi.fn();
+    const panel = renderProviderReviewPanel(host(), input([]), { ai: { enabled: true, state: { kind: 'idle', key: providerReviewKey(subject), pending: new Set(), stale: false }, run, cancel: vi.fn() } });
+    const button = panel.element.querySelector<HTMLButtonElement>('[data-geld-ai-run]');
+    expect(button?.textContent).toBe('Nothing to triage');
+    expect(button?.disabled).toBe(true);
+    expect(button?.title).toContain('no open review threads');
+    button?.click();
+    expect(run).not.toHaveBeenCalled();
+    panel.destroy();
+  });
+});
+
+
+it('distinguishes severe open bot findings from a completed resolved review', () => {
+  const finding = { ...comment('1', '**High Severity**\nValidate the request before trusting this value.'), author: { id: 'native-bot', login: 'project_bot', automated: true } };
+  const native = { ...input([thread('a', { comments: [finding] })]), complete: true, bots: [{ id: 'coderabbit', authorId: 'native-bot' }] };
+  const panel = renderProviderReviewPanel(host(), native);
+  expect(panel.element.querySelector('[data-geld-review-bot]')?.getAttribute('data-geld-bot-health')).toBe('severe');
+  expect(panel.element.querySelector('.geld-provider-review__bot-health')?.textContent).toBe('Severe findings');
+  panel.update({ ...native, threads: native.threads.map(thread => ({ ...thread, resolved: true })) });
+  expect(panel.element.querySelector('[data-geld-review-bot]')?.getAttribute('data-geld-bot-health')).toBe('good');
+});
+
+it('opens the shared settings UI and explains a failed request without acting after teardown', async () => {
+  const open = vi.fn(async () => { throw new Error('No popup'); });
+  const panel = renderProviderReviewPanel(host(), input(), { onOpenSettings: open });
+  const button = panel.element.querySelector<HTMLButtonElement>('[aria-label="Open Geld settings"]');
+  button?.click();await vi.waitFor(() => expect(button?.disabled).toBe(false));
+  expect(open).toHaveBeenCalledOnce();expect(panel.element.textContent).toContain('Settings could not be opened');
+  panel.destroy();button?.click();expect(open).toHaveBeenCalledOnce();
+});
+
+it('keeps open threads and their body disclosures across a new head and moves them into an untoggled resolved group', () => {
+  const native = input([thread('a')]);
+  const panel = renderProviderReviewPanel(host(), native, { renderComment: (_comment, body) => { body.innerHTML = '<details><summary>More</summary>Original detail</details>';return true; } });
+  const item = panel.element.querySelector<HTMLElement & { open: boolean }>('.geld-provider-review__item')!;
+  item.open = true;
+  const detail = panel.element.querySelector<HTMLDetailsElement>('details')!;detail.open = true;detail.dispatchEvent(new Event('toggle'));
+  panel.suspend();expect(panel.element.hidden).toBe(true);expect(panel.element.inert).toBe(true);
+  panel.update({ ...native, subject: { ...subject, headSha: 'b'.repeat(40) }, threads: native.threads.map(thread => ({ ...thread, resolved: true })) });
+  expect(panel.element.hidden).toBe(false);expect(panel.element.inert).toBe(false);
+  expect(panel.element.querySelector<HTMLElement & { open: boolean }>('.geld-provider-review__item')?.open).toBe(true);
+  expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-group="resolved"]')?.open).toBe(true);
+  expect(panel.element.querySelector<HTMLDetailsElement>('details')?.open).toBe(true);
+});
+
+it('keeps a user-folded destination group closed when an opened thread becomes resolved', () => {
+  const native = input([thread('a'), thread('b', { resolved: true })]);
+  const panel = renderProviderReviewPanel(host(), native);
+  const resolved = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-group="resolved"]')!;
+  resolved.open = true;resolved.open = false;
+  panel.element.querySelector<HTMLElement & { open: boolean }>('.geld-provider-review__item')!.open = true;
+  panel.update({ ...native, threads: native.threads.map(thread => ({ ...thread, resolved: true })) });
+  expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-group="resolved"]')?.open).toBe(false);
+});
+
+it('uses native-thread totals for an older grouped publication', () => {
+  const native = input([thread('a')]);
+  const panel = renderProviderReviewPanel(host(), native, { transformItems: items => items.map(item => ({ ...item, threads: { total: 3, open: 2 } })) });
+  expect(panel.element.querySelector('[data-geld-review-metric="open"] strong')?.textContent).toBe('2');
+  expect(panel.element.querySelector('[data-geld-review-group="open"] [data-geld-review-toggle]')?.textContent).toContain('3');
+});
+
+it('keeps a folded push round folded when another native event joins its boundary', () => {
+  const push: ProviderReviewPanelEvent = { id: 'push-1', url: reviewUrl, author: comment('1').author, body: 'Pushed commit', createdAt: '2026-11-01T11:00:00Z', kind: 'push' };
+  const native = input([thread('a')]);
+  const panel = renderProviderReviewPanel(host(), native, { reviewGrouping: 'batch', events: [push] });
+  const round = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-round]')!;round.open = false;
+  panel.update(native, { reviewGrouping: 'batch', events: [push, { ...push, id: 'push-2' }] });
+  expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-round]')?.open).toBe(false);
+});
+
+it('suspends old digest clipboard controls until a current snapshot resumes the panel', async () => {
+  const write = vi.fn(async () => {});const native = input([thread('a')]);
+  const panel = renderProviderReviewPanel(host(), native, { copyText: write });
+  panel.suspend();panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
+  await Promise.resolve();expect(write).not.toHaveBeenCalled();
+  panel.update(native);panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
+  await vi.waitFor(() => expect(write).toHaveBeenCalledOnce());
 });

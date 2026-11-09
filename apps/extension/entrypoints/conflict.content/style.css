@@ -1,0 +1,65 @@
+/* Geld Stable's bar, taken over while this nightly build is paused: only the conflict shows. */
+html[data-geld-nightly-paused] .geld-review > :not(.geld-review__head),
+html[data-geld-nightly-paused] .geld-review__tools,
+html[data-geld-nightly-paused] .geld-review__summary > :not(.geld-review__brand, .geld-review__brand-name, .geld-nightly-conflict),
+html[data-geld-nightly-paused] .geld-digest-off > :not(.geld-digest-off__brand, .geld-nightly-conflict) {
+  display: none !important;
+}
+
+html[data-geld-nightly-paused] .geld-review__head,
+html[data-geld-nightly-paused] .geld-digest-off {
+  border-color: var(--borderColor-danger-emphasis, #cf222e) !important;
+  background: var(--bgColor-danger-muted, #ffebe9) !important;
+  color: var(--fgColor-danger, #d1242f);
+}
+
+html[data-geld-nightly-paused] .geld-review__summary {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.geld-nightly-conflict {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+  margin-left: 4px;
+  font-size: 13px;
+}
+
+.geld-nightly-conflict > .octicon {
+  flex-shrink: 0;
+  color: var(--fgColor-danger, #d1242f);
+}
+
+.geld-nightly-conflict__text {
+  flex: 1 1 240px;
+  min-width: 0;
+  color: var(--fgColor-default, #1f2328);
+}
+
+.geld-nightly-conflict__button {
+  flex-shrink: 0;
+}
+
+html[data-geld-nightly-paused][data-geld-provider] .geld-provider-review > :not(.geld-provider-review__header),
+html[data-geld-nightly-paused][data-geld-provider] .geld-provider-review__header > :not(h2, .geld-nightly-conflict),
+html[data-geld-nightly-paused][data-geld-provider] .geld-provider-view > :not(.geld-nightly-conflict) { display: none !important; }
+html[data-geld-nightly-paused][data-geld-provider] .geld-nightly-conflict {
+  color: var(--geld-provider-text);
+  font: var(--geld-provider-font);
+  gap: var(--geld-provider-space-2);
+}
+html[data-geld-nightly-paused][data-geld-provider] .geld-nightly-conflict__text { color: inherit; }
+html[data-geld-nightly-paused][data-geld-provider] .geld-nightly-conflict > .octicon { color: var(--geld-provider-danger); }
+html[data-geld-nightly-paused][data-geld-provider] .geld-nightly-conflict__button {
+  color: var(--geld-provider-text);
+  background: var(--geld-provider-button-bg);
+  border: var(--geld-provider-border-width) solid var(--geld-provider-border);
+  border-radius: var(--geld-provider-radius);
+  font: inherit;
+  padding: var(--geld-provider-space-1) var(--geld-provider-space-3);
+}
+html[data-geld-nightly-paused][data-geld-provider] .geld-nightly-conflict__button:focus-visible { outline: 2px solid var(--geld-provider-link); outline-offset: 2px; }

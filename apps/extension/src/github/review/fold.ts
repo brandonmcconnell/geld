@@ -30,7 +30,7 @@ export function setFindable(node: Element, folded: boolean): void {
 }
 const ATTR_VISIT = 'data-geld-timeline';
 const ATTR_SEEN = 'data-geld-seen';
-const TIMELINE_ITEM = '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]';
+const TIMELINE_ITEM = '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"], [data-testid="timeline-item"]';
 
 /**
  * Mark every timeline item a pass has read. In compact mode an item without
@@ -60,6 +60,8 @@ export interface FoldGroup {
   readonly closure?: Closure;
   /** The timeline events group: the state change among them, for the row to read at a glance (see `eventHeadline`). */
   readonly headline?: EventHeadline;
+  /** The Mentions group: what the description mentions, which has no timeline node to tell an edit by. */
+  readonly refs?: readonly string[];
 }
 
 export type ClosureKind = 'merged' | 'closed' | 'reopened';
@@ -263,23 +265,28 @@ export function groupBotRuns(
   return groups;
 }
 
-/** The rest of the timeline, by kind: commits and mentions get rows in the activity section; bots' bare review lines fold silently. */
-export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: LeftoverKind; readonly root: HTMLElement }>): readonly FoldGroup[] {
+/**
+ * The rest of the timeline, by kind: commits and mentions get rows in the activity section; bots' bare review lines
+ * fold silently. `outgoing` is what the description mentions (its links), which has no timeline row and still makes one.
+ */
+export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: LeftoverKind; readonly root: HTMLElement; readonly count?: number }>, outgoing: readonly string[] = []): readonly FoldGroup[] {
   const by = (kind: LeftoverKind): HTMLElement[] => leftovers.filter((entry) => entry.kind === kind).map((entry) => entry.root);
   const groups: FoldGroup[] = [];
   // Force-push events sit with the commits: both are pushes, and the row reads "from a to b" like a commit line.
   const commits = by('commit');
+  const commitCount = leftovers.reduce((sum, entry) => sum + (entry.kind === 'commit' ? (entry.count ?? 1) : 0), 0);
   const pushes = by('push');
   if (commits.length + pushes.length > 0) {
-    const parts = [commits.length > 0 ? `${commits.length} commit${commits.length === 1 ? '' : 's'}` : '', pushes.length > 0 ? `${pushes.length} force-push${pushes.length === 1 ? '' : 'es'}` : ''].filter((part) => part !== '');
+    const parts = [commitCount > 0 ? `${commitCount} commit${commitCount === 1 ? '' : 's'}` : '', pushes.length > 0 ? `${pushes.length} force-push${pushes.length === 1 ? '' : 'es'}` : ''].filter((part) => part !== '');
     groups.push({ key: 'commits', label: parts.join(' · '), author: null, nodes: [...commits, ...pushes], section: 'activity' });
   }
   const mentions = by('mention');
-  if (mentions.length > 0) groups.push({ key: 'mentions', label: `${mentions.length} mention${mentions.length === 1 ? '' : 's'}`, author: null, nodes: mentions, section: 'activity' });
+  const mentionCount = mentions.length + outgoing.length;
+  if (mentionCount > 0) groups.push({ key: 'mentions', label: `${mentionCount} mention${mentionCount === 1 ? '' : 's'}`, author: null, nodes: mentions, section: 'activity', ...(outgoing.length === 0 ? {} : { refs: outgoing }) });
   const silent = by('review-event');
   if (silent.length > 0) groups.push({ key: 'bot-reviews', label: '', author: null, nodes: silent, silent: true });
-  // "X added 2 commits" headers say nothing the commits row does not; a minimized comment still fetching its
-  // content is not yet anything — listing it would only have it change kind (and the counts) a moment later.
+  // "X added 2 commits" headers say nothing the commits row does not; a minimized comment or a resolved thread still
+  // fetching its content is not yet anything — listing it would only have it change kind (and the counts) a moment later.
   const noise = [...by('noise'), ...by('pending')];
   if (noise.length > 0) groups.push({ key: 'noise', label: '', author: null, nodes: noise, silent: true });
   // "New changes since you last viewed": the panel's summary strip says it (`revisionMarker`); the row itself folds.

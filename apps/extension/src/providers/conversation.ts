@@ -1,5 +1,7 @@
-import type { GeldSettings } from '@geld/core';
-import { repositoryKey, trustedReviewAccountFor } from '@geld/core';
+import { providerAgentNotes } from './agent-notes';
+import { ProviderDescription } from './description';
+import type { DigestView, GeldSettings } from '@geld/core';
+import { compileAuthorRules, repositoryKey, trustedReviewAccountFor } from '@geld/core';
 import { botById, buildProviderReviewItems, PROVIDER_BOT_CAPABILITIES, providerBotSupport } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput, ReviewItem } from '@geld/review';
 import { ProviderAiTriage } from './ai';
@@ -7,6 +9,10 @@ import { ProviderPublishedReview } from './publication';
 import type { ProviderAiDependencies } from './ai';
 import type { ProviderReviewReference } from './references';
 import { element } from './dom';
+import { providerDigestViewChoice } from './digest-view';
+import { projectProviderPeople } from './hidden-people';
+import { ProviderHiddenPeopleView } from './hidden-people-view';
+import { ProviderRelatedContext } from './related-context';
 import { renderProviderReviewPanel } from './review-panel';
 import type { ProviderReviewPanel, ProviderSourceActionContext } from './review-panel';
 import type { ProviderAdapter, ProviderReviewPage, ProviderReviewSnapshot } from './types';
@@ -18,12 +24,11 @@ import './conversation-compact.css';
 const ACTION_NAMES = { approve: 'Approve', 'request-changes': 'Request changes', comment: 'Comment', 'open-pending-review': 'Open pending review', 'open-review': 'Open your review' };
 const actionSubject = (input: ProviderReviewInput): string => JSON.stringify([input.subject.provider, input.subject.origin, input.subject.repository, input.subject.id, input.subject.headSha]);
 
-function hiddenFlag(node: Element, name: string, hidden: boolean): void {
-  if (hidden && !node.hasAttribute(name)) node.setAttribute(name, '');
-  else if (!hidden && node.hasAttribute(name)) node.removeAttribute(name);
-}
 
 export interface ProviderConversationServices {
+  readonly openSettings?: () => Promise<void>;
+  readonly unhidePerson?: (login: string) => Promise<void>;
+  readonly chooseDigestView?: (view: DigestView) => Promise<void>;
   readonly saveTrustedBot?: (input: ProviderReviewInput, comment: ProviderReviewComment, botId: string) => Promise<void>;
   readonly saveTrustedPublisher?: (input: ProviderReviewInput, comment: ProviderReviewComment) => Promise<void>;
   readonly aiDependencies?: Partial<ProviderAiDependencies>;
@@ -70,6 +75,11 @@ export function providerReviewWithTrustedAccounts(input: ProviderReviewInput, co
 
 export class ProviderConversation {
   private key = '';
+  private viewControls: HTMLElement | null = null;
+  private viewSignature = '';
+  private readonly shownPeople = new Set<string>();
+  private readonly hiddenPeople: ProviderHiddenPeopleView;
+  private readonly related: ProviderRelatedContext;
   private generation = 0;
   private abort: AbortController | null = null;
   private snapshot: ProviderReviewSnapshot | null = null;
@@ -89,8 +99,7 @@ export class ProviderConversation {
   private nativeFind: ProviderNativeFind | null = null;
   private nativeEntries: readonly ProviderNativeFindEntry[] = [];
   private readonly originalsShown = new Set<string>();
-  private description: { readonly host: HTMLElement; readonly control: HTMLButtonElement; readonly hidden: Set<Element> } | null = null;
-  private descriptionShown = false;
+  private readonly description = new ProviderDescription();
   private originalsExpanded = false;
   private reviewedSignature = '';
   private reviewedGeneration = 0;
@@ -100,13 +109,15 @@ export class ProviderConversation {
   private reviewedError = '';
 
   constructor(private readonly adapter: ProviderAdapter, private readonly changed: () => void, private readonly services: ProviderConversationServices = {}) {
+    this.related = new ProviderRelatedContext(adapter);
+    this.hiddenPeople = new ProviderHiddenPeopleView((id, shown) => { if (shown) this.shownPeople.add(id); else this.shownPeople.delete(id); this.changed(); }, services.unhidePerson);
     this.ai = new ProviderAiTriage(() => this.changed(), services.aiDependencies);
     this.publication = new ProviderPublishedReview(() => this.changed());
   }
 
   apply(page: ProviderReviewPage | null, settings: GeldSettings): void {
     this.latestSettings = settings;
-    if (page === null || !settings.enabled || (!settings.prOverview && !settings.quickReview)) { this.clear(); return; }
+    if (page === null || !settings.enabled) { this.clear(); return; }
     const key = JSON.stringify([repositoryKey(page.repository), page.url]);
     if (key !== this.key) { this.clear(); this.key = key; }
     if (page.headSha !== null && page.headSha !== this.observedHead) {
@@ -118,16 +129,32 @@ export class ProviderConversation {
       if (this.ai.state.key !== null) this.ai.reset();
       this.snapshot = null;
       this.publication.reset();
-      this.panel?.destroy(); this.panel = null;
-      this.restoreCompact(); this.restoreDescription();
-      this.resetReviewed();
+      this.panel?.suspend();
+      this.restoreCompact();
+      this.resetReviewed(); this.hiddenPeople.clear();
+    }
+    this.related.update(page, settings, document, this.snapshot === null ? undefined : { ...this.snapshot, input: providerReviewWithTrustedAccounts(this.snapshot.input, this.snapshot.comments, settings, this.snapshot.complete) }, this.shownPeople);
+    const descriptionHost = page.kind === 'overview' ? this.adapter.descriptionHost?.(document) ?? null : null;
+    const agentNotes = providerAgentNotes(descriptionHost);
+    const descriptionKey = JSON.stringify([repositoryKey(page.repository), page.number]);
+    this.description.update(descriptionHost, descriptionKey, agentNotes, settings.prOverview && this.snapshot !== null && this.panel?.element.hidden === false && this.panel.element.dataset.state !== 'unavailable', settings.collapseDescription);
+    const wantsPeople = !compileAuthorRules(settings.hiddenAuthors).isEmpty;
+    const viewHost = page.kind === 'overview' ? this.adapter.reviewHost?.(document) ?? null : null;
+    this.updateViewChoice(viewHost, settings);
+    if (!settings.prOverview && !settings.quickReview && !wantsPeople) {
+      if (this.abort !== null) { this.generation += 1; this.abort.abort(); this.abort = null; this.nextRefresh = 0; this.snapshotVersion += 1; }
+      if (this.panel !== null) this.panel.element.hidden = true;
+      this.status?.remove(); this.status = null;
+      this.actions?.remove(); this.actions = null; this.signature = '';
+      this.restoreCompact(); this.hiddenPeople.clear();
+      return;
     }
     if (this.adapter.fetchReview === undefined) return;
     const host = page.kind === 'overview' && settings.prOverview ? this.adapter.reviewHost?.(document) ?? null : null;
     const actionHost = settings.quickReview ? this.adapter.actionHost?.(document) ?? null : null;
-    if (host === null) { this.panel?.destroy(); this.panel = null; this.status?.remove(); this.status = null; this.restoreCompact(); this.restoreDescription(); }
+    if (host === null) { if (this.panel !== null) this.panel.element.hidden = true; this.status?.remove(); this.status = null; this.restoreCompact(); }
     if (actionHost === null) { this.actions?.remove(); this.actions = null; this.signature = ''; }
-    if (host === null && actionHost === null) return;
+    if (host === null && actionHost === null && !wantsPeople) return;
     if (this.abort === null && Date.now() >= this.nextRefresh) {
       const abort = new AbortController();
       this.abort = abort;
@@ -150,13 +177,26 @@ export class ProviderConversation {
       });
     }
     const snapshot = this.snapshot;
+    if (snapshot !== null) {
+      const people = projectProviderPeople(snapshot.input, snapshot.comments, snapshot.events, settings.hiddenAuthors, this.shownPeople);
+      this.hiddenPeople.update(viewHost, people, this.adapter.personRoots?.(document, snapshot) ?? []);
+    } else this.hiddenPeople.clear();
     if (host !== null && snapshot !== null) {
       const native = providerReviewWithTrustedAccounts(snapshot.input, snapshot.comments, settings, snapshot.complete);
       this.publication.load(native, snapshot.comments, snapshot.sourceCoverage, settings);
       const publication = this.publication.result;
-      const input = publication?.input ?? native;
-      const comments = publication?.comments ?? snapshot.comments;
-      this.loadReviewed(input, comments);
+      const originalInput = publication?.input ?? native;
+      const originalComments = publication?.comments ?? snapshot.comments;
+      const people = projectProviderPeople(originalInput, originalComments, snapshot.events, settings.hiddenAuthors, this.shownPeople);
+      const input = people.input;
+      const comments = people.comments;
+      const hiddenIds = new Set(people.people.filter((person) => !person.shown).map((person) => person.id));
+      const hidden = hiddenIds.size > 0;
+      const originalItems = buildProviderReviewItems(originalInput);
+      const originalByAnchor = new Map(originalItems.flatMap((item) => item.sources.map((source) => [source.anchor, item] as const)));
+      const displayedIds = new Map(buildProviderReviewItems(input).map((item) => [item.id, originalByAnchor.get(item.sources[0]?.anchor ?? '')?.id ?? item.id]));
+      const originalId = (id: string): string => displayedIds.get(id) ?? id;
+      this.loadReviewed(originalInput, originalComments);
       if (settings.aiEnabled) void this.ai.load(input, comments, settings);
       else if (this.ai.state.key !== null) this.ai.reset();
       const repository = { provider: input.subject.provider, origin: input.subject.origin, path: input.subject.repository };
@@ -166,9 +206,22 @@ export class ProviderConversation {
       const actionKey = this.key;
       const actionHead = input.subject.headSha;
       this.status?.remove(); this.status = null;
-      const references = this.adapter.readReferences?.(page, document, snapshot.events) ?? [];
+      const references = (this.adapter.readReferences?.(page, document, people.events, [...input.threads.flatMap((thread) => thread.comments), ...comments]) ?? []).filter((reference) => (reference.source.anchor === null || !people.hiddenAnchors.has(reference.source.anchor)) && (reference.source.eventId === undefined || !people.hiddenEvents.has(reference.source.eventId)) && (reference.source.author === undefined || !hiddenIds.has(reference.source.author.id)));
       const reviewerControls = snapshot.reviewerControls;
       const options = {
+        agentNotes,
+        onRevealAgentNote: (note: (typeof agentNotes)[number]): void => {
+          const target = note.blocks[0];
+          if (this.generation !== actionGeneration || this.key !== actionKey || target === undefined || !target.isConnected || !descriptionHost?.contains(target)) return;
+          this.description.reveal(target);target.scrollIntoView({ block: 'center', behavior: 'auto' });
+          if (target instanceof HTMLElement) {
+            const tabIndex = target.getAttribute('tabindex');target.tabIndex = -1;
+            target.addEventListener('blur', () => { if (target.getAttribute('tabindex') === '-1') { if (tabIndex === null) target.removeAttribute('tabindex');else target.setAttribute('tabindex', tabIndex); } }, { once: true });
+            target.focus({ preventScroll: true });
+          }
+        },
+        ...(this.services.openSettings === undefined ? {} : { onOpenSettings: this.services.openSettings }),
+        ...(hidden ? { sourceInput: originalInput } : {}),
         ...(reviewerControls === undefined ? {} : { reviewerControls: { ...reviewerControls, activate: async (context?: ProviderSourceActionContext): Promise<boolean> => {
           const current = (): boolean => {
             if (context?.current?.() === false || this.generation !== actionGeneration || this.key !== actionKey || this.snapshot !== snapshot || !snapshot.complete
@@ -187,7 +240,7 @@ export class ProviderConversation {
             || active.diffPageUrl !== page.diffPageUrl || active.headSha !== null && active.headSha !== actionHead) return false;
           const latest = providerReviewWithTrustedAccounts(snapshot.input, snapshot.comments, this.latestSettings, snapshot.complete);
           return JSON.stringify(latest.bots) === JSON.stringify(native.bots);
-        }) ?? [],
+        }).filter((request) => !native.bots?.some((bot) => bot.id === request.botId && people.people.some((person) => person.id === bot.authorId && !person.shown))) ?? [],
         references,
         ...(this.adapter.referenceAnchor === undefined ? {} : { onRevealReference: (reference: ProviderReviewReference): boolean => {
           const current = (): ProviderReviewPage | null => {
@@ -199,10 +252,10 @@ export class ProviderConversation {
           };
           const active = current();
           if (active === null) return false;
-          const target = this.adapter.referenceAnchor?.(reference, active, document, snapshot.events);
+          const target = this.adapter.referenceAnchor?.(reference, active, document, people.events, [...input.threads.flatMap((thread) => thread.comments), ...comments]);
           if (target === undefined || target === null || target.closest('[data-geld-ui]') !== null) return false;
           if (reference.source.anchor !== null) this.revealOriginal(reference.source.anchor);
-          else if (this.description?.host.contains(target)) { this.descriptionShown = true; this.updateDescription(); }
+          else this.description.reveal(target);
           if (current() === null || !target.isConnected || target.closest('[hidden], [inert], [aria-hidden="true"]') !== null) return false;
           for (let node: HTMLElement | null = target; node !== null; node = node.parentElement) {
             const style = getComputedStyle(node);
@@ -215,7 +268,7 @@ export class ProviderConversation {
           target.focus({ preventScroll: true });
           return document.activeElement === target;
         } }),
-        originalConversation: {
+        ...(this.services.chooseDigestView === undefined ? { originalConversation: {
           shown: this.originalsExpanded,
           toggle: (): void => {
             if (this.key !== actionKey || this.generation !== actionGeneration) return;
@@ -227,6 +280,7 @@ export class ProviderConversation {
             this.changed();
           },
         },
+        } : {}),
         updating: this.abort !== null,
         version: this.snapshotVersion,
         ...(snapshot.sourceActions === undefined ? {} : { actionsForSource: (comment: ProviderReviewComment) => snapshot.sourceActions?.(comment).map((action) => ({ ...action, activate: async (context?: ProviderSourceActionContext): Promise<boolean> => {
@@ -256,8 +310,8 @@ export class ProviderConversation {
           }, 700);
           this.changed();
         },
-        comments, events: snapshot.events, complete: snapshot.complete,
-        ...(publication === null ? {} : { publication: {
+        comments, events: people.events, complete: snapshot.complete,
+        ...(publication === null || publication.candidate !== null && hiddenIds.has(publication.candidate.comment.author.id) ? {} : { publication: {
           result: publication,
           repository,
           ...(saveTrustedPublisher === undefined ? {} : { save: (comment: ProviderReviewComment): Promise<void> => saveTrustedPublisher(input, comment) }),
@@ -265,10 +319,10 @@ export class ProviderConversation {
         unavailable: [...snapshot.unavailable, ...(this.error === '' ? [] : [{ area: 'Refresh', reason: this.error }]), ...(this.publication.error === '' ? [] : [{ area: 'Published summary', reason: this.publication.error }])],
         approvalsRequired: snapshot.approvalsRequired, approvalsLeft: snapshot.approvalsLeft,
         ...(snapshot.requirements === undefined ? {} : { requirements: snapshot.requirements }),
-        transformItems: (items: Parameters<ProviderAiTriage['apply']>[0]) => this.ai.apply(publication?.items ?? items),
+        transformItems: (items: Parameters<ProviderAiTriage['apply']>[0]) => this.ai.apply(hidden ? items : publication?.items ?? items).map((item) => hidden ? { ...item, id: originalId(item.id) } : item),
         ai: {
           enabled: settings.aiEnabled,
-          state: this.ai.state,
+          state: { ...this.ai.state, pending: new Set([...this.ai.state.pending].map(originalId)) },
           run: (): void => { void this.ai.run(input, comments, settings); },
           cancel: (): void => this.ai.cancel(),
         },
@@ -278,7 +332,7 @@ export class ProviderConversation {
           ids: this.reviewed,
           pending: this.reviewedPending,
           ...(this.reviewedError === '' ? {} : { error: this.reviewedError }),
-          set: (item: ReviewItem, reviewed: boolean): void => { void this.setReviewed(input, comments, item, reviewed); },
+          set: (item: ReviewItem, reviewed: boolean): void => { const original = originalItems.find((candidate) => candidate.id === item.id); if (original !== undefined) void this.setReviewed(originalInput, originalComments, original, reviewed); },
         } }),
         ...(saveTrustedBot === undefined ? {} : { identifyReviewer: {
           repository,
@@ -312,7 +366,9 @@ export class ProviderConversation {
         this.panel?.destroy();
         this.panel = renderProviderReviewPanel(host, input, options);
       } else this.panel.update(input, options);
-      if (this.panel.element.dataset.state === 'unavailable') { this.restoreCompact();this.restoreDescription(); }
+      this.panel.element.hidden = false;
+      if (this.panel.element.dataset.state !== 'unavailable') this.description.update(descriptionHost, descriptionKey, agentNotes, true, settings.collapseDescription);
+      if (this.panel.element.dataset.state === 'unavailable') { this.restoreCompact(); }
       else this.compact(snapshot, settings);
     } else if (host !== null) {
       if (this.status === null || !this.status.isConnected) {
@@ -365,7 +421,21 @@ export class ProviderConversation {
     }
   }
 
+  private updateViewChoice(host: HTMLElement | null, settings: GeldSettings): void {
+    const choose = this.services.chooseDigestView;
+    if (host === null || choose === undefined) { this.viewControls?.remove(); this.viewControls = null; this.viewSignature = ''; return; }
+    const signature = JSON.stringify([this.key, settings.prOverview, settings.compactTimeline]);
+    if (signature === this.viewSignature && this.viewControls?.parentElement === host) return;
+    const focused = this.viewControls?.contains(document.activeElement) === true ? document.activeElement?.getAttribute('data-geld-digest-view') : null;
+    this.viewControls?.remove();
+    this.viewControls = providerDigestViewChoice(this.adapter.id, settings, choose);
+    this.viewSignature = signature;
+    host.prepend(this.viewControls);
+    if (focused !== null) this.viewControls.querySelector<HTMLButtonElement>(`[data-geld-digest-view="${focused}"]`)?.focus();
+  }
+
   private compact(snapshot: ProviderReviewSnapshot, settings: GeldSettings): void {
+    if (settings.compactTimeline === 'off') { this.restoreCompact(); return; }
     const eligible = new Set([...this.panel?.element.querySelectorAll<HTMLElement>('[data-geld-source]') ?? []].map((source) => source.dataset.geldSource).filter((anchor): anchor is string => anchor !== undefined));
     for (const reference of this.panel?.element.querySelectorAll<HTMLElement>('[data-geld-reference-source]') ?? []) {
       const anchor = reference.dataset.geldReferenceSource;
@@ -381,33 +451,6 @@ export class ProviderConversation {
     this.nativeEntries = roots.map((entry) => ({ root: entry.root, key: [...entry.anchors, ...(entry.eventIds ?? [])].sort().join('|'), anchors: entry.anchors, ...(entry.eventIds === undefined ? {} : { eventIds: entry.eventIds }), compact: true, shown: false }));
     if (this.nativeEntries.length === 0) this.restoreCompact();
     else this.syncCompact();
-    const description = settings.collapseDescription ? this.adapter.descriptionHost?.(document) ?? null : null;
-    if (this.description?.host !== description) this.restoreDescription();
-    if (description === null || description.contains(this.panel?.element ?? null)) return;
-    const first = description.querySelector('p');
-    if (first === null) { this.restoreDescription(); return; }
-    const hidden = new Set<Element>();
-    let current: Element = first;
-    while (current !== description) {
-      for (let sibling = current.nextElementSibling; sibling !== null; sibling = sibling.nextElementSibling) {
-        if (sibling.closest('[data-geld-ui]') === null) hidden.add(sibling);
-      }
-      const parent = current.parentElement;
-      if (parent === null) return;
-      current = parent;
-    }
-    if (hidden.size === 0) { this.restoreDescription(); return; }
-    if (this.description === null) {
-      const control = element('button', '', 'geld-provider-toggle geld-provider-description-toggle');
-      control.type = 'button';
-      control.addEventListener('click', () => { this.descriptionShown = !this.descriptionShown; this.updateDescription(); });
-      description.after(control);
-      this.description = { host: description, control, hidden };
-    } else {
-      for (const node of this.description.hidden) if (!hidden.has(node)) node.removeAttribute('data-geld-provider-description-hidden');
-      this.description = { ...this.description, hidden };
-    }
-    this.updateDescription();
   }
 
   private syncCompact(): void {
@@ -469,15 +512,6 @@ export class ProviderConversation {
     if (button.getAttribute('aria-expanded') !== String(shown)) button.setAttribute('aria-expanded', String(shown));
   }
 
-  private updateDescription(): void {
-    if (this.description === null) return;
-    for (const node of this.description.hidden) {
-      hiddenFlag(node, 'data-geld-provider-description-hidden', !this.descriptionShown);
-    }
-    this.description.control.textContent = this.descriptionShown ? 'Collapse description' : 'Show full description';
-    this.description.control.setAttribute('aria-expanded', String(this.descriptionShown));
-  }
-
   private revealOriginal(anchor: string): void {
     this.nativeFind?.reveal(anchor);
     const target = document.getElementById(anchor);
@@ -494,13 +528,6 @@ export class ProviderConversation {
     this.nativeEntries = [];
     for (const [root, record] of this.compacted) { root.removeAttribute('data-geld-provider-compact-hidden'); record.control.remove(); }
     this.compacted.clear();
-  }
-
-  private restoreDescription(): void {
-    if (this.description === null) return;
-    for (const node of this.description.hidden) node.removeAttribute('data-geld-provider-description-hidden');
-    this.description.control.remove();
-    this.description = null;
   }
 
   private loadReviewed(input: ProviderReviewInput, comments: readonly ProviderReviewComment[]): void {
@@ -568,10 +595,12 @@ export class ProviderConversation {
   }
 
   clear(): void {
+    this.viewControls?.remove(); this.viewControls = null; this.viewSignature = '';
+    this.hiddenPeople.clear(); this.shownPeople.clear(); this.related.clear();
     this.restoreCompact();
-    this.restoreDescription();
+
     this.originalsShown.clear();
-    this.descriptionShown = false;
+    this.description.clear();
     this.originalsExpanded = false;
     this.resetReviewed();
     if (this.refreshTimer !== null) clearTimeout(this.refreshTimer);

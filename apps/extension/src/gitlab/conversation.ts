@@ -2,13 +2,16 @@ import type { ProviderConversationRoot } from '../providers/types';
 
 const NOTES = '[data-testid="noteable-note-container"], li.js-timeline-entry.system-note';
 
-export function gitLabConversationRoots(doc: Document): readonly ProviderConversationRoot[] {
+export function gitLabConversationRoots(doc: Document): readonly ProviderConversationRoot[] { return conversationRoots(doc, true); }
+export function gitLabPersonRoots(doc: Document): readonly ProviderConversationRoot[] { return conversationRoots(doc, false); }
+
+function conversationRoots(doc: Document, grouped: boolean): readonly ProviderConversationRoot[] {
   const roots: ProviderConversationRoot[] = [];
   const seen = new Set<HTMLElement>();
   for (const note of doc.querySelectorAll<HTMLElement>(NOTES)) {
     if (note.closest('.issuable-discussion') === null || note.closest('[data-geld-ui]') !== null || !/^note_(?:[1-9]\d*|[a-f0-9]{8,64})$/.test(note.id)
       || note.querySelector('textarea, form, [contenteditable="true"]') !== null || note.querySelector(NOTES) !== null) continue;
-    const discussion = note.closest<HTMLElement>('li.note-discussion');
+    const discussion = grouped ? note.closest<HTMLElement>('li.note-discussion') : null;
     const root = discussion !== null && discussion.querySelector('textarea, form, [contenteditable="true"]') === null ? discussion : note;
     if (seen.has(root)) continue;
     const anchors = root === note ? [note.id] : [...root.querySelectorAll<HTMLElement>(NOTES)].map((entry) => entry.id);
