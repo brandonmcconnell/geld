@@ -314,7 +314,7 @@ for (const failure of [false, true]) test(`native sidebar fallback ${failure ? '
 });
 
 
-for (const scenario of ['success', 'callback-failure', 'layout-shift', 'reordered-sections', 'missed-click', 'replaced-control', 'invalid-expanded']) test(`dashboard pointer lifecycle: ${scenario}`, async () => {
+for (const views of [false, true]) for (const scenario of ['success', 'callback-failure', 'layout-shift', 'reordered-sections', 'missed-click', 'replaced-control', 'invalid-expanded']) test(`dashboard pointer lifecycle: ${scenario}, three views=${views}`, async () => {
   dashboard();
   const original = document.querySelector('#note_1');
   const order = [];
@@ -333,7 +333,19 @@ for (const scenario of ['success', 'callback-failure', 'layout-shift', 'reordere
       reviews.before(document.querySelector('[data-geld-review-key="checks"]'));
     }
   });
-  document.querySelector('[data-geld-original-conversation]').addEventListener('click', () => {
+  if (views) {
+    document.querySelector('[data-geld-original-conversation]').remove();
+    const navigation = document.createElement('nav');navigation.className = 'geld-provider-view';
+    for (const value of ['digest', 'digest-timeline', 'github']) {
+      const button = document.createElement('button');button.dataset.geldDigestView = value;button.setAttribute('aria-pressed', String(value === 'digest'));navigation.append(button);
+      button.addEventListener('click', () => {
+        const shown = value === 'digest-timeline';order.push(shown ? 'show' : 'hide');
+        if (shown) original.removeAttribute('hidden');else original.setAttribute('hidden', 'until-found');
+        for (const control of navigation.children) control.setAttribute('aria-pressed', String(control === button));
+      });
+    }
+    document.body.prepend(navigation);
+  } else document.querySelector('[data-geld-original-conversation]').addEventListener('click', () => {
     const shown = original.hasAttribute('hidden');order.push(shown ? 'show' : 'hide');
     if (shown) original.removeAttribute('hidden');else original.setAttribute('hidden', 'until-found');
   });

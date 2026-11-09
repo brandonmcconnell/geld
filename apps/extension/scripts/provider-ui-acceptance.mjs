@@ -321,6 +321,7 @@ export function providerDashboardProbe(mode = 'read') {
     originalCount: native.length, originalVisible: native.filter((entry) => visible(entry.node)).length,
     representedMounted: represented.size, representedVisible: [...represented].filter(visible).length,
     originalToggleCount: panel?.querySelectorAll('button[data-geld-original-conversation]').length ?? 0,
+    viewControls: [...document.querySelectorAll('.geld-provider-view button[data-geld-digest-view]')].slice(0, 4).map(button => ({ value: button.getAttribute('data-geld-digest-view'), pressed: button.getAttribute('aria-pressed'), visible: visible(button) })),
     appearance: appearance(panel), nativeBodyAppearance, nativeSurfaceAppearance,
     nativeSurfaceAvailable: nativeSurface !== null,
     nativeAppearance: nativeSurfaceAppearance === null ? null : { ...nativeBodyAppearance, background: nativeSurfaceAppearance.background },
@@ -336,7 +337,12 @@ export function assertProviderDashboard(snapshot, originalsVisible = false) {
   assert.ok(snapshot.sectionBindings.length >= 2, 'Dashboard sections must be present');
   assert.ok(snapshot.sectionBindings.every((section) => !section.nativeDetails && section.ownsContent && ['true', 'false'].includes(section.expanded)), 'Dashboard sections must use bound custom controls rather than plain native details');
   assert.ok(snapshot.sectionBindings.filter((section) => section.primary).length >= 2 && snapshot.sectionBindings.filter((section) => section.primary).every((section) => section.toggle), 'Primary dashboard controls must be visible');
-  assert.equal(snapshot.originalToggleCount, 1, 'Original conversation must have one explicit restore control');
+  if (snapshot.viewControls?.length > 0) {
+    assert.deepEqual(snapshot.viewControls.map(control => control.value).sort(), ['digest', 'digest-timeline', 'github']);
+    assert.ok(snapshot.viewControls.every(control => control.visible && ['true', 'false'].includes(control.pressed)), 'All three view controls must be visible and expose their selection');
+    assert.deepEqual(snapshot.viewControls.filter(control => control.pressed === 'true').map(control => control.value), [originalsVisible ? 'digest-timeline' : 'digest']);
+    assert.equal(snapshot.originalToggleCount, 0, 'Three-way view controls replace the legacy toggle');
+  } else assert.equal(snapshot.originalToggleCount, 1, 'Original conversation must have one explicit restore control');
   assert.equal(snapshot.bound, true, 'Dashboard evidence must stay on its original page');
   assert.equal(snapshot.sameOriginals, true, `Original conversation nodes and content must be retained: ${JSON.stringify(snapshot.custody)}`);
   assert.ok(snapshot.originalCount > 0, 'At least one represented original conversation entry must be exercised');
@@ -425,12 +431,14 @@ export async function verifyProviderDashboardUi(page, progress, { poll, capture,
     assert.equal(toggled.contentVisible, toggled.expanded === 'true', 'Dashboard disclosure controls actual content visibility');
     await click(sectionSelector);
     await poll(read, (value) => selected(value)?.expanded === beforeExpanded && value.sameOriginals, 'Custom dashboard disclosure restores its original state');
-    await click('button[data-geld-original-conversation]');
+    const showOriginals = progress.baseline.viewControls.length === 3 ? '.geld-provider-view button[data-geld-digest-view="digest-timeline"]' : 'button[data-geld-original-conversation]';
+    const hideOriginals = progress.baseline.viewControls.length === 3 ? '.geld-provider-view button[data-geld-digest-view="digest"]' : 'button[data-geld-original-conversation]';
+    await click(showOriginals);
     progress.originalsShown = await poll(read, (value) => value.originalVisible === value.originalCount && value.sameOriginals, 'Real Show original conversation restores retained native entries');
     assertProviderDashboard(progress.originalsShown, true);
     try { await onOriginalsShown?.(progress.originalsShown); }
     finally {
-      await click('button[data-geld-original-conversation]');
+      await click(hideOriginals);
       progress.originalsHidden = await poll(read, (value) => value.originalVisible === 0 && value.sameOriginals, 'Real Hide original conversation suppresses the same retained entries');
       assertProviderDashboard(progress.originalsHidden);
     }

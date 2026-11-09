@@ -3533,3 +3533,7 @@ Shared Related links settings describe issues and pull or merge requests without
 Provider CI status colors are confined to the observed status text and native glyph, rather than tinting the whole check row.
 A failed check or allow_failure=false does not independently prove that the check is a required merge gate.
 Earlier-head checks keep neutral status text, while the provider's separate verified merge requirements remain authoritative.
+
+Installed dashboard acceptance follows the persistent three-way view selector when present, with the legacy original-conversation toggle retained only for older source revisions.
+It verifies that every view control is visible, that the selected view agrees with native conversation visibility and that all original nodes and bodies survive the transition.
+Count-hover failure evidence includes the actual pointer receipt, visible target geometry, document visibility and current tooltip ownership rather than treating a missing tooltip as a proven parser failure.
