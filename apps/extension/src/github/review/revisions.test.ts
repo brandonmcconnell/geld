@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { revisionIndexAt } from './revisions';
+import { revisionIndexAt, sameRunAnchor } from './revisions';
 import type { Revision } from './revisions';
 
 // Greptile on mintlify/server#8382: created and filled in on Sep 25, rewritten for a re-run on Sep 26 and again on Oct 2.
@@ -30,5 +30,34 @@ describe('revisionIndexAt', () => {
 
   it('falls back to the first revision for a thread older than the comment', () => {
     expect(revisionIndexAt(greptile, Date.parse('2026-09-25T20:00:00Z'), settle)).toBe(0);
+  });
+});
+
+describe('sameRunAnchor', () => {
+  const before = 2 * 60 * 1000;
+  const summary = { anchor: 'issuecomment-1', times: greptile.map((revision) => revision.at) };
+
+  it('links a thread to the summary posted moments before it', () => {
+    expect(sameRunAnchor([summary], Date.parse('2026-09-25T20:39:52Z'), before, settle)).toBe('issuecomment-1');
+  });
+
+  it('links a later run\'s thread to the summary rewritten for that run, not only to its first post', () => {
+    expect(sameRunAnchor([summary], Date.parse('2026-10-02T18:45:00Z'), before, settle)).toBe('issuecomment-1');
+  });
+
+  it('links nothing when the summary was neither posted nor rewritten near the thread', () => {
+    // geld#349: a summary posted at 06:30 and rewritten at 08:13 is no head for a thread at 06:50.
+    const coderabbit = { anchor: 'issuecomment-2', times: ['2026-11-03T06:30:45Z', '2026-11-03T08:13:49Z'] };
+    expect(sameRunAnchor([coderabbit], Date.parse('2026-11-03T06:50:37Z'), before, settle)).toBeNull();
+  });
+
+  it('takes the nearest of two summaries in the window', () => {
+    const early = { anchor: 'issuecomment-3', times: ['2026-10-02T18:43:30Z'] };
+    const near = { anchor: 'issuecomment-4', times: ['2026-10-02T18:45:20Z'] };
+    expect(sameRunAnchor([early, near], Date.parse('2026-10-02T18:45:11Z'), before, settle)).toBe('issuecomment-4');
+  });
+
+  it('links nothing without a thread time', () => {
+    expect(sameRunAnchor([summary], Number.NaN, before, settle)).toBeNull();
   });
 });
