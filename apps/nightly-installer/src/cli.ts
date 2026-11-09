@@ -11,6 +11,9 @@ import { downloadDirectory, parseLocalState } from './profiles';
 import type { Profile } from './profiles';
 import { ask, confirm, interactive, parseChoice } from './prompt';
 import { download, latestRelease, pickBuild, verifiedEntries } from './release';
+import { banner } from './logo';
+import { step, terminalOf } from './spinner';
+import type { Terminal } from './spinner';
 import { copyToClipboard, launchFor, open } from './system';
 
 declare const INSTALLER_VERSION: string;
@@ -146,20 +149,20 @@ function attest(file: string): void {
 }
 
 /** Downloads, checks and unzips each zip once, however many profiles take it; the zip itself is deleted straight away. */
-async function buildsFor(kinds: ReadonlySet<NightlyBrowser>, stateDir: string, attestation: boolean): Promise<Map<NightlyBrowser, { readonly build: NightlyRelease; readonly entries: ZipEntry[] }>> {
-  const release = await latestRelease(fetch);
+async function buildsFor(terminal: Terminal, kinds: ReadonlySet<NightlyBrowser>, stateDir: string, attestation: boolean): Promise<Map<NightlyBrowser, { readonly build: NightlyRelease; readonly entries: ZipEntry[] }>> {
+  const release = await step(terminal, 'Finding the latest nightly build', () => latestRelease(fetch));
   const builds = new Map<NightlyBrowser, { readonly build: NightlyRelease; readonly entries: ZipEntry[] }>();
   const downloads = path.join(stateDir, 'downloads');
   await mkdir(downloads, { recursive: true });
   for (const kind of kinds) {
     const build = pickBuild(release, kind);
-    console.log(`Downloading ${build.assetName}…`);
-    const [zip, sums] = await Promise.all([download(fetch, build.assetUrl), download(fetch, build.checksumUrl)]);
+    const [zip, sums] = await step(terminal, `Downloading ${build.assetName}`, () => Promise.all([download(fetch, build.assetUrl), download(fetch, build.checksumUrl)]));
     const file = path.join(downloads, build.assetName);
     await writeFile(file, zip);
     try {
       if (attestation) attest(file);
-      builds.set(kind, { build, entries: await verifiedEntries(build, zip, new TextDecoder().decode(sums)) });
+      const entries = await step(terminal, `Checking build ${build.build} against its checksum`, () => verifiedEntries(build, zip, new TextDecoder().decode(sums)));
+      builds.set(kind, { build, entries });
     } finally {
       await rm(file, { force: true });
     }
@@ -197,6 +200,8 @@ export async function main(argv: readonly string[]): Promise<number> {
   const environment: Environment = { platform, home: os.homedir(), env: process.env };
   const api = pathApi(platform);
   const stateDir = api.join(environment.home, '.geld');
+  const terminal = terminalOf(process.stdout, process.env, process.platform);
+  if (terminal.isTTY) console.log(`\n${banner(terminal.columns, `Geld Nightly installer ${INSTALLER_VERSION}`).join('\n')}\n`);
 
   const found = await findProfiles(environment, options.browsers);
   if (found.length === 0) {
@@ -242,7 +247,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
 
   const inDownloads = new Set<string>();
-  const builds = await buildsFor(new Set(chosen.map((profile) => profile.info.zip)), stateDir, options.attestation);
+  const builds = await buildsFor(terminal, new Set(chosen.map((profile) => profile.info.zip)), stateDir, options.attestation);
   for (const { profile, dir } of targets) {
     const ready = builds.get(profile.info.zip);
     if (ready === undefined) continue;
@@ -256,9 +261,10 @@ export async function main(argv: readonly string[]): Promise<number> {
       downloadsName: inside !== '' && !inside.startsWith('..') && !api.isAbsolute(inside) ? inside.split(api.sep).join('/') : null,
     };
     if (record.downloadsName !== null) inDownloads.add(dir);
-    await writeBuild(dir, ready.entries, record);
-    await recordInstall(stateDir, record);
-    console.log(`Installed build ${ready.build.build} into ${dir}`);
+    await step(terminal, `Installing build ${ready.build.build} into ${dir}`, async () => {
+      await writeBuild(dir, ready.entries, record);
+      await recordInstall(stateDir, record);
+    });
   }
 
   if (!options.open) {

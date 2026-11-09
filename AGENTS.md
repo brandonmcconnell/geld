@@ -1333,6 +1333,12 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Chrome 156 ignores a `chrome://` URL given on its command line and opens a new tab (verified on Linux, Nov 2026), so the installer opens the profile alone and tells the reader to type `chrome://extensions`.
   Folder access outside Downloads still needs the picker and "Allow on every visit", so the popup still leads through Connect folder.
   `--verify-attestation` also checks the build's provenance with `gh attestation verify` for readers who have the GitHub CLI.
+  In a terminal it opens with Geld's logo and runs each step beside a one-character spinner, a square with one corner cut, the cut going round (`▟ ▙ ▛ ▜`, `| / - \` in the old Windows console), ending in ✓ or ✗ (`spinner.ts`).
+  The logo (`logo.ts`) is the brand grid mark (`MARK_PATH`, checked against `assets/brand/` by its test) at one unit per pixel, 7 lines by 14 columns, beside a three-line pixel wordmark with one-pixel strokes, so the letters stand to the mark about as they do in the logo.
+  **Both are half blocks only (`▀ ▄ █`), and so is the spinner (quadrant blocks)**: block elements are the one kind of glyph every terminal fits to the cell, drawing them itself or from fonts made to fill it, so the mark's 45° cuts are even steps of square pixels.
+  Smooth cuts were tried and dropped (Nov 2026): a cell is about twice as tall as it is wide, so no glyph draws a true 45° line, and the triangles that come nearest meet the blocks only in terminals that draw them themselves.
+  A font's `◢◣◤◥` sit on the baseline with room around them, the Powerline triangles (U+E0B8 to U+E0BF) show as boxes wherever the terminal leaves them to a font without them, and which terminal does what cannot be read reliably from its environment.
+  Narrower than 46 columns it shows the mark alone with its caption, and piped output, CI and `TERM=dumb` get plain lines with no logo or escape codes.
   Verified end to end in Nov 2026 against a local stand-in for github.com and its API: two profiles installed from one download, the zip gone, the path on the clipboard, Load unpacked in Chrome 156, and the next build installed by the extension into the installer's folder.
   Publishing `geld-nightly` to npm is the owner's step.
 - Settings live in `storage.sync` (`src/lib/storage.ts`, writes serialised).
