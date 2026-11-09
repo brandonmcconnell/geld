@@ -440,6 +440,7 @@ function outsideDiffCount(text: string): number {
  * CodeRabbit reviews again.
  */
 function failedPreMergeCount(text: string): number {
+  if (!hasHeading(text, FIX_ALL_HEADING)) return 0;
   const block = /\bfailed pre-merge checks:[^\S\n]*\n([\s\S]*?)(?:\bafter applying the fix\b|```|$)/i.exec(text)?.[1] ?? '';
   return block.split('\n').filter((line) => /^\s*-\s+[^:\n]{1,80}:\s*$/.test(line)).length;
 }
@@ -447,10 +448,32 @@ function failedPreMergeCount(text: string): number {
 /**
  * A review CodeRabbit posted, in its own shape whether or not it counts comments: since Nov 2026 a run with no inline
  * comment carries no "Actionable comments posted" line and no "No actionable comments" either, only its fix-all prompt
- * (and its nitpicks or additional notes, which are not actionable). Its summary comment and chat replies have neither.
+ * (and its nitpicks or additional notes, which are not actionable). Its summary comment and chat replies have neither,
+ * and a reply that quotes or names one of those headings is still a reply (`hasHeading`).
  */
 function isCodeRabbitReview(text: string): boolean {
-  return /\bprompt to fix all issues\b|\b(?:nitpick|additional) comments:?\s*\(?\d+/i.test(text);
+  return hasHeading(text, FIX_ALL_HEADING) || hasHeading(text, NOTES_HEADING);
+}
+
+const FIX_ALL_HEADING = /^prompt to fix all issues$/i;
+const NOTES_HEADING = /^(?:nitpick|additional) comments:?\s*\(?\d+\)?$/i;
+
+/** Whether a line of the body is the heading alone, its tags, bold marks and emoji aside, outside quotes and code fences. */
+function hasHeading(text: string, heading: RegExp): boolean {
+  let fenced = false;
+  for (const line of text.split('\n')) {
+    if (/^\s*```/.test(line)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced || /^\s*>/.test(line)) continue;
+    const bare = line
+      .replace(/<[^>]*>/g, '')
+      .replace(/[^\p{L}\p{N}():\s]/gu, '')
+      .trim();
+    if (heading.test(bare)) return true;
+  }
+  return false;
 }
 
 function countShapedBy(botId: string, text: string): number | null {

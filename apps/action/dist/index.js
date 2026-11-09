@@ -32008,11 +32008,27 @@ function outsideDiffCount(text) {
   return match?.[1] === void 0 ? 0 : Number.parseInt(match[1], 10);
 }
 function failedPreMergeCount(text) {
+  if (!hasHeading(text, FIX_ALL_HEADING)) return 0;
   const block = /\bfailed pre-merge checks:[^\S\n]*\n([\s\S]*?)(?:\bafter applying the fix\b|```|$)/i.exec(text)?.[1] ?? "";
   return block.split("\n").filter((line) => /^\s*-\s+[^:\n]{1,80}:\s*$/.test(line)).length;
 }
 function isCodeRabbitReview(text) {
-  return /\bprompt to fix all issues\b|\b(?:nitpick|additional) comments:?\s*\(?\d+/i.test(text);
+  return hasHeading(text, FIX_ALL_HEADING) || hasHeading(text, NOTES_HEADING);
+}
+var FIX_ALL_HEADING = /^prompt to fix all issues$/i;
+var NOTES_HEADING = /^(?:nitpick|additional) comments:?\s*\(?\d+\)?$/i;
+function hasHeading(text, heading) {
+  let fenced = false;
+  for (const line of text.split("\n")) {
+    if (/^\s*```/.test(line)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced || /^\s*>/.test(line)) continue;
+    const bare = line.replace(/<[^>]*>/g, "").replace(/[^\p{L}\p{N}():\s]/gu, "").trim();
+    if (heading.test(bare)) return true;
+  }
+  return false;
 }
 function countShapedBy(botId, text) {
   switch (botId) {

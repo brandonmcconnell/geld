@@ -48,4 +48,28 @@ describe('CodeRabbit reviews', () => {
     expect(isReviewShaped(parseBotBody(walkthrough, 'coderabbit'))).toBe(false);
     expect(isReviewShaped(parseBotBody('The current code addresses the finding. No issues found.', 'coderabbit'))).toBe(false);
   });
+
+  it('reads a chat reply that quotes or names its review headings as a reply, after an open finding too', () => {
+    const quoting = [
+      'The **Prompt to fix all issues** block and the “Additional comments: 1” note are from the earlier run.',
+      '',
+      '> 🤖 Prompt to fix all issues',
+      '> Failed pre-merge checks:',
+      '> - Docstring Coverage:',
+      '',
+      '```',
+      'Nitpick comments: 2',
+      '```',
+    ].join('\n');
+    expect(isReviewShaped(parseBotBody(quoting, 'coderabbit'))).toBe(false);
+    expect(parseBotBody(quoting, 'coderabbit').count).toBeNull();
+    const at = (minute: number): string => new Date(Date.UTC(2026, 10, 9, 5, minute)).toISOString();
+    const head = 'a'.repeat(40);
+    const counted: BotComment = { author: 'coderabbitai[bot]', body: review('**Actionable comments posted: 1**\n\n', INLINE, ''), anchor: 'pullrequestreview-3', createdAt: at(11) };
+    const thread: BotComment = { author: 'coderabbitai[bot]', body: 'Update the reconciliation condition.', anchor: 'discussion_r3', createdAt: at(11), resolved: false };
+    const reply: BotComment = { author: 'coderabbitai[bot]', body: quoting, anchor: 'issuecomment-3', createdAt: at(20) };
+    const verdict = verdictsFrom([], [counted, thread, reply], head)[0];
+    expect(verdict).toMatchObject({ verdict: 'findings', count: 1 });
+    expect(verdict?.sourceId).not.toBe('issuecomment-3');
+  });
 });
