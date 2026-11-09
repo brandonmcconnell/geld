@@ -7,7 +7,7 @@ import { mountNightlyPanel } from '../../src/nightly/panel';
 import { nightlyFolderItem } from '../../src/nightly/state';
 import type { NightlyFolder } from '../../src/nightly/state';
 import type { NightlyAction } from '../../src/nightly/view';
-import { folderIsOurs, folderPermission } from '../../src/nightly/writers';
+import { folderIsOurs, folderPermission, readInstallRecord } from '../../src/nightly/writers';
 
 installErrorCapture('options');
 
@@ -61,11 +61,15 @@ async function act(kind: NightlyAction): Promise<string | null> {
   return result.ok ? null : result.reason;
 }
 
+let installedIn: string | null = null;
+
 function renderFolder(folder: NightlyFolder | null): void {
   folderLine.textContent = folder === null ? 'No folder connected.' : folder.downloads === true ? `Downloads/${folder.name}` : folder.name;
   folderHelp.textContent =
     folder === null
-      ? 'Pick the unzipped folder you loaded with Load unpacked.'
+      ? installedIn === null
+        ? 'Pick the unzipped folder you loaded with Load unpacked.'
+        : `The installer put Geld in ${installedIn}. Pick that folder.`
       : folder.downloads === true
         ? 'This folder is in your download folder, so Geld can install builds on its own.'
         : 'When Chrome asks to let Geld edit files, choose Allow on every visit. Installs then run on their own, even after Chrome restarts. With Allow this time, each install asks again.';
@@ -88,4 +92,7 @@ connectButton.addEventListener('click', () => {
 
 mountNightlyPanel(panel, act);
 nightlyFolderItem.watch(renderFolder);
-void nightlyFolderItem.getValue().then(renderFolder);
+void readInstallRecord().then(async (record) => {
+  installedIn = record?.folder ?? null;
+  renderFolder(await nightlyFolderItem.getValue());
+});

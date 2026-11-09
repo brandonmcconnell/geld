@@ -1,20 +1,18 @@
 import { browser } from 'wxt/browser';
 import { reportError } from '../lib/error-capture';
-import { buildProblem } from './build-check';
 import { loadBackup, loadFolderHandle, saveBackup } from './handle-store';
 import type { BuildBackup } from './handle-store';
 import { isNightlyCheckMessage, isNightlyInstallMessage, isNightlyManageMessage, isNightlyRollbackMessage } from './messages';
 import { manageUrl } from './conflicts';
 import type { NightlyInstallResult } from './messages';
-import type { NightlyBrowser } from './release';
-import { compareVersions, LATEST_RELEASE_PAGE, LATEST_RELEASE_URL, parseRelease, tagFromReleaseUrl } from './release';
+import { buildProblem, compareVersions, LATEST_RELEASE_PAGE, LATEST_RELEASE_URL, manifestTextOf, parseChecksum, parseRelease, tagFromReleaseUrl } from '@geld/core/nightly';
+import type { NightlyBrowser, NightlyRelease, ZipEntry } from '@geld/core/nightly';
 import { BACKGROUND_CHECK_MINUTES, navigationDue, needsDetails } from './schedule';
 import { startPauseWatch } from './pause';
-import { nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyStatusItem, nightlyTabCountsItem } from './state';
+import { nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyProfileTokenItem, nightlyStatusItem, nightlyTabCountsItem } from './state';
 import type { NightlyFailure, NightlyStatus, UpdateMode } from './state';
-import { unzip } from './unzip';
-import type { ZipEntry } from './unzip';
-import { copyRunningBuild, downloadsReach, downloadsTarget, folderIsOurs, folderPermission, folderTarget } from './writers';
+import { decode, sha256Hex, unzip } from './unzip';
+import { acquireLock, readInstallRecord, copyRunningBuild, downloadsReach, downloadsTarget, folderIsOurs, folderPermission, folderTarget, versionOnDisk } from './writers';
 import type { BuildTarget } from './writers';
 
 /** Background side of nightly builds: looks for a newer release, marks the toolbar icon, installs and rolls back. */
@@ -200,11 +198,16 @@ async function fail(failure: NightlyFailure): Promise<Failed> {
   return { ok: false, reason: failure.reason };
 }
 
-async function downloadBuild(url: string, version: string): Promise<ZipEntry[]> {
-  const response = await fetch(url, { cache: 'no-store' });
-  if (!response.ok) throw new Error(`The download failed (${response.status}).`);
-  const entries = await unzip(new Uint8Array(await response.arrayBuffer()));
-  const problem = buildProblem(entries, version);
+/** The zip is opened only once its SHA-256 matches the one CI published beside it. */
+async function downloadBuild(release: NightlyRelease): Promise<ZipEntry[]> {
+  const [zip, sums] = await Promise.all([fetch(release.assetUrl, { cache: 'no-store' }), fetch(release.checksumUrl, { cache: 'no-store' })]);
+  if (!zip.ok) throw new Error(`The download failed (${zip.status}).`);
+  const expected = sums.ok ? parseChecksum(await sums.text(), release.assetName) : null;
+  if (expected === null) throw new Error('The release has no checksum for this build.');
+  const bytes = new Uint8Array(await zip.arrayBuffer());
+  if ((await sha256Hex(bytes)) !== expected) throw new Error('The download does not match its checksum.');
+  const entries = await unzip(bytes);
+  const problem = buildProblem(entries.map((entry) => entry.path), manifestTextOf(entries, decode), release.version);
   if (problem !== null) throw new Error(problem);
   return entries;
 }
@@ -214,17 +217,25 @@ async function downloadBuild(url: string, version: string): Promise<ZipEntry[]> 
  * `previous` that breaks off too leaves both half there, which the backup in IndexedDB can still repair.
  */
 async function replace(target: BuildTarget, next: readonly ZipEntry[], previous: BuildBackup, version: string): Promise<NightlyFailure | null> {
+  const at = new Date().toISOString();
+  try {
+    await acquireLock(target, await nightlyProfileTokenItem.getValue());
+  } catch (error) {
+    return { version, stillOn: previous.version, reason: message(error), at };
+  }
   try {
     await target.write(next, previous.files.map((file) => file.path));
     return null;
   } catch (error) {
-    const failure = { version, stillOn: previous.version, reason: message(error), at: new Date().toISOString() };
+    const failure = { version, stillOn: previous.version, reason: message(error), at };
     try {
       await target.write(previous.files, next.map((entry) => entry.path));
       return { ...failure, restored: true };
     } catch {
       return { ...failure, broken: true };
     }
+  } finally {
+    await target.writeLock(null).catch(() => undefined);
   }
 }
 
@@ -256,13 +267,19 @@ async function install(explicit: boolean): Promise<NightlyInstallResult> {
   const current = installedVersion();
   if (latest === null || !isNewer(status)) return { ok: false, reason: 'Geld is up to date.' };
   if (!explicit && !installsOnItsOwn(status)) return { ok: false, reason: 'Waiting for a newer build.' };
+  // Another profile that loads the same folder may have written this build already: it needs only a reload.
+  if ((await versionOnDisk()) === latest.version) {
+    await patchStatus({ installing: null, failure: null, lastInstall: { from: current, to: latest.version, at: new Date().toISOString(), method: 'shared' } });
+    reloadSoon();
+    return { ok: true, version: latest.version };
+  }
   const target = await installTarget();
   if ('ok' in target) return target;
   await patchStatus({ installing: latest.version, failure: null });
   let entries: ZipEntry[];
   let previous: BuildBackup;
   try {
-    entries = await downloadBuild(latest.assetUrl, latest.version);
+    entries = await downloadBuild(latest);
     // After a write that could not be undone the folder is half one build, half the other: the backup is the whole old one.
     const kept = status.failure?.broken === true ? await loadBackup() : null;
     previous = kept ?? (await copyRunningBuild(current));
@@ -305,6 +322,18 @@ async function restorePrevious(): Promise<NightlyInstallResult> {
   });
   reloadSoon();
   return { ok: true, version: backup.version };
+}
+
+/**
+ * A folder the installer put directly in the profile's download folder can be written through the downloads
+ * API, which needs no picker, so it is connected from the installer's record. Anywhere else Chrome's folder
+ * picker is the only way in, and the panel names the folder to pick.
+ */
+async function adoptInstallerFolder(): Promise<void> {
+  if ((await nightlyFolderItem.getValue()) !== null) return;
+  const record = await readInstallRecord();
+  if (record?.downloadsName === null || record?.downloadsName === undefined) return;
+  await nightlyFolderItem.setValue({ name: record.downloadsName, downloads: null, connectedAt: new Date().toISOString() });
 }
 
 /** Every GitHub page load and in-page navigation looks, in the background, so the page never waits on it. */
@@ -365,6 +394,7 @@ export function startNightly(): void {
   nightlyPrefsItem.watch(() => void checkForUpdate());
   // This worker has only just started, so no install of its own is under way: one marked is left from a worker Chrome stopped mid-install.
   void patchStatus({ installing: null }).then(showBadge);
+  void adoptInstallerFolder();
   void scheduleChecks();
   startPauseWatch();
   nightlyConflictItem.watch(() => void nightlyStatusItem.getValue().then(showBadge));

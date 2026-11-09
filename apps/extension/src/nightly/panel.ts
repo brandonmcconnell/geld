@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import { buildLabel, nightlyView } from './view';
 import type { NightlyAction } from './view';
 import { manageUrl } from './conflicts';
+import { readInstallRecord } from './writers';
 import { nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyStatusItem } from './state';
 import type { UpdateMode } from './state';
 
@@ -83,6 +84,11 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
   let busy = false;
   let current: NightlyAction | null = null;
   let blocker: string | null = null;
+  let installedIn: string | null = null;
+  void readInstallRecord().then((record) => {
+    installedIn = record?.folder ?? null;
+    void render();
+  });
 
   const render = async (): Promise<void> => {
     const [state, folder, prefs, conflict] = await Promise.all([nightlyStatusItem.getValue(), nightlyFolderItem.getValue(), nightlyPrefsItem.getValue(), nightlyConflictItem.getValue()]);
@@ -91,7 +97,7 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
       button.setAttribute('aria-checked', String(prefs.mode === mode));
       button.setAttribute('aria-pressed', String(prefs.mode === mode));
     }
-    const view = nightlyView(state, folder, version, Date.now(), conflict);
+    const view = nightlyView(state, folder, version, Date.now(), conflict, installedIn);
     headline.textContent = view.headline;
     detail.textContent = localError ?? view.detail ?? '';
     detail.hidden = detail.textContent === '';

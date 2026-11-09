@@ -1,4 +1,4 @@
-import { tagFromReleaseUrl } from './release';
+import { tagFromReleaseUrl } from '@geld/core/nightly';
 import { DETAILS_RETRY_MS, NAVIGATION_GAP_MS, navigationDue, needsDetails } from './schedule';
 import type { NightlyStatus } from './state';
 
@@ -17,7 +17,7 @@ const status = (patch: Partial<NightlyStatus>): NightlyStatus => ({
   etag: null,
   ...patch,
 });
-const release = (tag: string): NightlyStatus['latest'] => ({ tag, version: '0.1.2.1', build: 1, assetName: '', assetUrl: '', size: 0, publishedAt: '', htmlUrl: '' });
+const release = (tag: string): NightlyStatus['latest'] => ({ tag, version: '0.1.2.1', build: 1, assetName: '', assetUrl: '', checksumUrl: '', size: 0, publishedAt: '', htmlUrl: '' });
 
 describe('tagFromReleaseUrl', () => {
   it('reads the tag the latest-release redirect lands on', () => {

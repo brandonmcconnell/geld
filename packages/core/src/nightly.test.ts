@@ -1,7 +1,28 @@
 import { deflateRawSync } from 'node:zlib';
-import { buildOf, compareVersions, parseRelease } from './release';
-import { buildProblem, parseFileList, stalePaths, writeOrder } from './build-check';
-import { crc32, isSafePath, unzip } from './unzip';
+import { inflateRawSync } from 'node:zlib';
+import {
+  buildOf,
+  buildProblem,
+  compareVersions,
+  crc32,
+  isSafePath,
+  lockedOut,
+  LOCK_STALE_MS,
+  manifestTextOf,
+  parseChecksum,
+  parseFileList,
+  parseInstallRecord,
+  parseLock,
+  parseRelease,
+  readZip,
+  stalePaths,
+  tagFromReleaseUrl,
+  writeOrder,
+} from './nightly';
+import type { ZipEntry } from './nightly';
+
+const codec = { inflate: (data: Uint8Array) => new Uint8Array(inflateRawSync(data)), decode: (bytes: Uint8Array) => new TextDecoder().decode(bytes) };
+const unzip = (bytes: Uint8Array): Promise<ZipEntry[]> => readZip(bytes, codec);
 
 interface FileSpec {
   readonly path: string;
@@ -64,6 +85,7 @@ const release = {
   assets: [
     { name: 'geld-0.1.2.3270-chrome.zip', browser_download_url: 'https://github.com/brandonmcconnell/geld/releases/download/v0.1.2-build.3270/geld-0.1.2.3270-chrome.zip', size: 10, uploader: { login: 'github-actions[bot]' } },
     { name: 'geld-0.1.2.3270-chrome-nightly.zip', browser_download_url: 'https://github.com/brandonmcconnell/geld/releases/download/v0.1.2-build.3270/geld-0.1.2.3270-chrome-nightly.zip', size: 20, uploader: { login: 'github-actions[bot]' } },
+    { name: 'geld-0.1.2.3270-chrome-nightly.zip.sha256', browser_download_url: 'https://github.com/brandonmcconnell/geld/releases/download/v0.1.2-build.3270/geld-0.1.2.3270-chrome-nightly.zip.sha256', size: 99, uploader: { login: 'github-actions[bot]' } },
   ],
 };
 
@@ -75,6 +97,7 @@ describe('parseRelease', () => {
       build: 3270,
       assetName: 'geld-0.1.2.3270-chrome-nightly.zip',
       assetUrl: 'https://github.com/brandonmcconnell/geld/releases/download/v0.1.2-build.3270/geld-0.1.2.3270-chrome-nightly.zip',
+      checksumUrl: 'https://github.com/brandonmcconnell/geld/releases/download/v0.1.2-build.3270/geld-0.1.2.3270-chrome-nightly.zip.sha256',
       size: 20,
       publishedAt: '2026-11-09T09:27:39Z',
       htmlUrl: 'https://github.com/brandonmcconnell/geld/releases/tag/v0.1.2-build.3270',
@@ -82,9 +105,14 @@ describe('parseRelease', () => {
   });
 
   it('takes the build for its own browser', () => {
-    const edge = { ...release.assets[1], name: 'geld-0.1.2.3270-edge-nightly.zip', browser_download_url: 'https://github.com/brandonmcconnell/geld/releases/download/v0.1.2-build.3270/geld-0.1.2.3270-edge-nightly.zip' };
-    expect(parseRelease({ ...release, assets: [...release.assets, edge] }, 'edge')?.assetName).toBe('geld-0.1.2.3270-edge-nightly.zip');
+    const asset = (name: string) => ({ name, size: 1, uploader: { login: 'github-actions[bot]' }, browser_download_url: `https://github.com/brandonmcconnell/geld/releases/download/v0.1.2-build.3270/${name}` });
+    const assets = [...release.assets, asset('geld-0.1.2.3270-edge-nightly.zip'), asset('geld-0.1.2.3270-edge-nightly.zip.sha256')];
+    expect(parseRelease({ ...release, assets }, 'edge')?.assetName).toBe('geld-0.1.2.3270-edge-nightly.zip');
     expect(parseRelease(release, 'edge')).toBeNull();
+  });
+
+  it('refuses a build without its checksum', () => {
+    expect(parseRelease({ ...release, assets: release.assets.slice(0, 2) }, 'chrome')).toBeNull();
   });
 
   it('ignores releases from before nightly builds were published', () => {
@@ -153,24 +181,29 @@ describe('unzip', () => {
 });
 
 describe('buildProblem', () => {
-  const entry = (path: string, text: string) => ({ path, data: new TextEncoder().encode(text) });
+  const both = ['manifest.json', 'nightly.html'];
 
   it('accepts the nightly build it expects', () => {
-    expect(buildProblem([entry('manifest.json', '{"name":"Geld Nightly","version":"0.1.2.3270"}'), entry('nightly.html', '')], '0.1.2.3270')).toBeNull();
+    expect(buildProblem(both, '{"name":"Geld Nightly","version":"0.1.2.3270"}', '0.1.2.3270')).toBeNull();
   });
 
   it('refuses a store build, another version, or no manifest', () => {
-    expect(buildProblem([entry('manifest.json', '{"name":"Geld","version":"0.1.2.3270"}'), entry('nightly.html', '')], '0.1.2.3270')).toMatch('not a Geld Nightly');
-    expect(buildProblem([entry('manifest.json', '{"name":"Geld Nightly","version":"0.1.2.3269"}'), entry('nightly.html', '')], '0.1.2.3270')).toMatch('0.1.2.3269');
-    expect(buildProblem([entry('manifest.json', '{"name":"Geld Nightly","version":"0.1.2.3270"}')], '0.1.2.3270')).toMatch('not a Geld Nightly');
-    expect(buildProblem([], '0.1.2.3270')).toMatch('no manifest');
+    expect(buildProblem(both, '{"name":"Geld","version":"0.1.2.3270"}', '0.1.2.3270')).toMatch('not a Geld Nightly');
+    expect(buildProblem(both, '{"name":"Geld Nightly","version":"0.1.2.3269"}', '0.1.2.3270')).toMatch('0.1.2.3269');
+    expect(buildProblem(['manifest.json'], '{"name":"Geld Nightly","version":"0.1.2.3270"}', '0.1.2.3270')).toMatch('not a Geld Nightly');
+    expect(buildProblem([], null, '0.1.2.3270')).toMatch('no manifest');
+  });
+
+  it('reads the manifest out of a zip', async () => {
+    const entries = await unzip(zip([{ path: 'manifest.json', text: '{"name":"Geld Nightly"}' }]));
+    expect(manifestTextOf(entries, codec.decode)).toBe('{"name":"Geld Nightly"}');
   });
 });
 
 describe('stalePaths', () => {
-  it('removes what the new build dropped and keeps hidden files and Chrome metadata', () => {
+  it("removes what the new build dropped and keeps hidden files, Chrome's metadata and the installer's record", () => {
     expect(stalePaths(
-      ['manifest.json', 'chunks/old-123.js', 'chunks/new-456.js', '.DS_Store', '_metadata/verified_contents.json', 'a/.git/HEAD'],
+      ['manifest.json', 'chunks/old-123.js', 'chunks/new-456.js', '.DS_Store', '_metadata/verified_contents.json', 'a/.git/HEAD', 'nightly-install.json', 'nightly-update.lock'],
       ['manifest.json', 'chunks/new-456.js'],
     )).toEqual(['chunks/old-123.js']);
   });
@@ -198,5 +231,54 @@ describe('parseFileList', () => {
     expect(parseFileList('nope')).toBeNull();
     expect(parseFileList('{"files":["background.js"]}')).toBeNull();
     expect(parseFileList('{"files":["manifest.json",3]}')).toBeNull();
+  });
+});
+
+describe('parseChecksum', () => {
+  const hash = 'a'.repeat(64);
+  it('reads sha256sum output for the named file', () => {
+    expect(parseChecksum(`${hash}  geld-0.1.2.3270-chrome-nightly.zip\n`, 'geld-0.1.2.3270-chrome-nightly.zip')).toBe(hash);
+    expect(parseChecksum(`${hash.toUpperCase()} *geld.zip`, 'geld.zip')).toBe(hash);
+  });
+
+  it('refuses a hash for another file, or no hash', () => {
+    expect(parseChecksum(`${hash}  other.zip`, 'geld.zip')).toBeNull();
+    expect(parseChecksum('Not Found', 'geld.zip')).toBeNull();
+  });
+});
+
+describe('tagFromReleaseUrl', () => {
+  it('reads the tag the latest-release redirect lands on, and nothing else', () => {
+    expect(tagFromReleaseUrl('https://github.com/brandonmcconnell/geld/releases/tag/v0.1.2-build.3272')).toBe('v0.1.2-build.3272');
+    expect(tagFromReleaseUrl('https://github.com/login?return_to=x')).toBeNull();
+  });
+});
+
+describe('parseInstallRecord', () => {
+  const record = { folder: '/Users/me/Geld Nightly/Work', installedAt: '2026-11-09T12:00:00Z', version: '0.1.2.3270', browser: 'chrome', profile: { directory: 'Profile 1', name: 'Work' }, downloadsName: null };
+  it('reads what the installer writes', () => {
+    expect(parseInstallRecord(JSON.stringify(record))).toEqual(record);
+    expect(parseInstallRecord(JSON.stringify({ ...record, downloadsName: 'Geld Nightly Work' }))?.downloadsName).toBe('Geld Nightly Work');
+  });
+
+  it('refuses anything else', () => {
+    expect(parseInstallRecord('{}')).toBeNull();
+    expect(parseInstallRecord(JSON.stringify({ ...record, profile: 'Work' }))).toBeNull();
+    expect(parseInstallRecord('nope')).toBeNull();
+  });
+});
+
+describe('update lock', () => {
+  const NOW = 1_000_000;
+  it('keeps another writer out while its lock is fresh', () => {
+    const lock = parseLock(JSON.stringify({ token: 'other', at: NOW - 1000 }));
+    expect(lockedOut(lock, 'me', NOW)).toBe(true);
+    expect(lockedOut(lock, 'other', NOW)).toBe(false);
+    expect(lockedOut(lock, 'me', NOW + LOCK_STALE_MS)).toBe(false);
+  });
+
+  it('treats no lock or an unreadable one as free', () => {
+    expect(lockedOut(parseLock(null), 'me', NOW)).toBe(false);
+    expect(lockedOut(parseLock('garbage'), 'me', NOW)).toBe(false);
   });
 });
