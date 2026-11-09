@@ -1333,6 +1333,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Chrome 156 ignores a `chrome://` URL given on its command line and opens a new tab (verified on Linux, Nov 2026), so the installer opens the profile alone and tells the reader to type `chrome://extensions`.
   Folder access outside Downloads still needs the picker and "Allow on every visit", so the popup still leads through Connect folder.
   `--verify-attestation` also checks the build's provenance with `gh attestation verify` for readers who have the GitHub CLI.
+  In a terminal it opens with Geld's logo and runs each step beside a one-character spinner, the logomark's cut corner going round (`◤ ◥ ◢ ◣`, `| / - \` in the old Windows console), ending in ✓ or ✗ (`spinner.ts`).
+  The logo is drawn from the brand files' own paths (`logo.ts`, checked against `assets/brand/` by its test): the 14-unit grid mark and the wordmark, whose letters are also 14 units tall, at one unit per pixel in half blocks, so both are 7 lines and every 45° cut lands on a cell.
+  Narrower than 80 columns it shows the mark alone with its caption, and piped output, CI and `TERM=dumb` get plain lines with no logo or escape codes.
   Verified end to end in Nov 2026 against a local stand-in for github.com and its API: two profiles installed from one download, the zip gone, the path on the clipboard, Load unpacked in Chrome 156, and the next build installed by the extension into the installer's folder.
   Publishing `geld-nightly` to npm is the owner's step.
 - Settings live in `storage.sync` (`src/lib/storage.ts`, writes serialised).
