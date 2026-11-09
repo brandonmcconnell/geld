@@ -8,6 +8,9 @@ describe('isSettingsPatch', () => {
     expect(isSettingsPatch({ kind: 'toggle', key: 'enabled', value: false })).toBe(true);
     expect(isSettingsPatch({ kind: 'category', id: 'docs', value: true })).toBe(true);
     expect(isSettingsPatch({ kind: 'category', id: 'custom:tokens', value: false })).toBe(true);
+    expect(isSettingsPatch({ kind: 'auto-viewed', id: 'tests', value: true })).toBe(true);
+    expect(isSettingsPatch({ kind: 'auto-viewed', id: 'nope', value: true })).toBe(false);
+    expect(isSettingsPatch({ kind: 'auto-viewed', id: 'tests', value: 'yes' })).toBe(false);
     expect(isSettingsPatch({ kind: 'group', categoryId: 'tests', groupId: 'e2e', value: false })).toBe(true);
     expect(isSettingsPatch({ kind: 'category-patterns', categoryId: 'docs', lines: ['*.golden'] })).toBe(true);
     expect(isSettingsPatch({ kind: 'custom-category', category: { id: 'custom:tokens', title: 'Tokens', icon: 'paintbrush', patterns: ['tokens/**'] } })).toBe(true);
@@ -69,6 +72,8 @@ describe('applyPatch', () => {
     expect(toggled.ok && toggled.settings.categoryPatterns).toEqual({ tests: ['keep-me'] });
     const category = applyPatch(base, { kind: 'category', id: 'generated', value: true });
     expect(category.ok && category.settings.categories.generated).toBe(true);
+    const viewed = applyPatch({ ...base, autoViewed: { docs: true } }, { kind: 'auto-viewed', id: 'tests', value: true });
+    expect(viewed.ok && viewed.settings.autoViewed).toEqual({ docs: true, tests: true });
     const group = applyPatch(base, { kind: 'group', categoryId: 'tests', groupId: 'snapshots', value: false });
     expect(group.ok && group.settings.groups['tests/snapshots']).toBe(false);
     const list = applyPatch(base, { kind: 'list', key: 'repoRules', lines: ['acme', ' !acme/widgets '] });
