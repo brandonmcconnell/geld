@@ -1,4 +1,4 @@
-import { fitted, FRAMES, step } from './spinner';
+import { cells, fitted, FRAMES, step } from './spinner';
 import type { Terminal } from './spinner';
 
 function fake(isTTY: boolean): Terminal & { readonly output: () => string } {
@@ -14,6 +14,20 @@ describe('fitted', () => {
     expect([...cut].length + 3).toBe(40);
     expect(cut.endsWith('…')).toBe(true);
     expect(long.startsWith(cut.slice(0, -1))).toBe(true);
+  });
+
+  it('measures terminal cells, so a path with wide characters still fits the row', () => {
+    expect(cells('Geld')).toBe(4);
+    expect(cells('仕事')).toBe(4);
+    expect(cells('e\u0301')).toBe(1);
+    expect(cells('👍🏽')).toBe(2);
+    const wide = 'Installing build 3312 into /Users/田中/Geld Nightly/仕事のプロフィール';
+    for (const columns of [20, 33, 40, 51]) {
+      const cut = fitted(wide, columns);
+      expect(cells(cut) + 3).toBeLessThanOrEqual(columns);
+      expect(cut.endsWith('…')).toBe(true);
+      expect(wide.startsWith(cut.slice(0, -1))).toBe(true);
+    }
   });
 });
 
@@ -44,7 +58,7 @@ describe('step', () => {
     const terminal = { ...fake(true), columns: 30 };
     let output = '';
     const narrow = { ...terminal, write: (chunk: string) => void (output += chunk) };
-    const label = 'Installing build 3312 into /home/someone/Geld Nightly/Work';
+    const label = 'Installing build 3312 into /home/田中/Geld Nightly/仕事';
     let finish: () => void = () => undefined;
     const running = step(narrow, label, () => new Promise<void>((resolve) => (finish = resolve)));
     await vi.advanceTimersByTimeAsync(360);
@@ -52,7 +66,7 @@ describe('step', () => {
     await running;
     const frames = output.split('\r\u001b[2K').slice(1, -1);
     expect(frames.length).toBeGreaterThan(1);
-    for (const frame of frames) expect([...frame].length).toBeLessThanOrEqual(30);
+    for (const frame of frames) expect(cells(frame)).toBeLessThanOrEqual(30);
     expect(output).toContain(`✓ ${label}\n`);
   });
 

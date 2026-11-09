@@ -35,14 +35,56 @@ export function terminalOf(stream: NodeJS.WriteStream, env: NodeJS.ProcessEnv, p
 
 const paint = (on: boolean, code: number, text: string): string => (on ? `\u001b[${code}m${text}\u001b[39m` : text);
 
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+const ZERO_WIDTH = /^[\p{M}\p{Cf}]+$/u;
+const EMOJI = /\p{Emoji_Presentation}|\u{FE0F}/u;
+
+/** East Asian Wide and Fullwidth blocks, which terminals draw two cells wide. */
+function isWide(code: number): boolean {
+  return (
+    (code >= 0x1100 && code <= 0x115f) ||
+    (code >= 0x2e80 && code <= 0x303e) ||
+    (code >= 0x3041 && code <= 0x33ff) ||
+    (code >= 0x3400 && code <= 0x4dbf) ||
+    (code >= 0x4e00 && code <= 0x9fff) ||
+    (code >= 0xa000 && code <= 0xa4cf) ||
+    (code >= 0xac00 && code <= 0xd7a3) ||
+    (code >= 0xf900 && code <= 0xfaff) ||
+    (code >= 0xfe30 && code <= 0xfe4f) ||
+    (code >= 0xff00 && code <= 0xff60) ||
+    (code >= 0xffe0 && code <= 0xffe6) ||
+    (code >= 0x20000 && code <= 0x3fffd)
+  );
+}
+
+function graphemeCells(grapheme: string): number {
+  if (ZERO_WIDTH.test(grapheme)) return 0;
+  return EMOJI.test(grapheme) || isWide(grapheme.codePointAt(0) ?? 0) ? 2 : 1;
+}
+
+/** How many terminal cells `text` takes: a CJK character or an emoji takes two, a combining mark none. */
+export function cells(text: string): number {
+  let total = 0;
+  for (const { segment } of graphemes.segment(text)) total += graphemeCells(segment);
+  return total;
+}
+
 /**
  * The animated line cut to one row: each frame clears only the row it is on, so a line that wrapped would leave
- * a fragment behind every frame. The frame, its space and the trailing ellipsis take three columns.
+ * a fragment behind every frame. The frame, its space and the trailing ellipsis take three cells.
  */
 export function fitted(label: string, columns: number): string {
   const room = Math.max(1, columns - 3);
-  const characters = [...label];
-  return characters.length <= room ? label : `${characters.slice(0, Math.max(0, room - 1)).join('')}…`;
+  if (cells(label) <= room) return label;
+  let kept = '';
+  let used = 0;
+  for (const { segment } of graphemes.segment(label)) {
+    const width = graphemeCells(segment);
+    if (used + width > room - 1) break;
+    kept += segment;
+    used += width;
+  }
+  return `${kept}…`;
 }
 
 /** Runs `run` with `label` beside a spinner, then leaves "✓ label" or "✗ label" in its place, written once and whole. */
