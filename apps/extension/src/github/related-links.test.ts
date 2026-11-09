@@ -18,7 +18,7 @@ vi.mock('./page-fetch', () => ({
   },
 }));
 
-import { applyRelatedLinks, assigneesSections, relatedLinksOnPage, relatedText, removeRelatedLinks } from './related-links';
+import { applyRelatedLinks, assigneesSections, currentHref, relatedLinksOnPage, relatedText, removeRelatedLinks } from './related-links';
 
 // mintlify/mint#14542's footer as GitHub renders it, after the author's own words.
 const DESCRIPTION =
@@ -51,6 +51,7 @@ const reactSidebar =
   '<section class="section__a"><div><h3 class="heading__b">Assignees</h3><p>No one</p></div></section><section class="section__a"><div><h3 class="heading__b">Labels</h3></div></section></aside>';
 
 afterEach(() => {
+  vi.useRealTimers();
   removeRelatedLinks();
   document.body.innerHTML = '';
   fetches.paths = [];
@@ -59,6 +60,12 @@ afterEach(() => {
 });
 
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+// A stack of three, top first, with this pull request (#7) second, as GitHub embeds it in the page.
+const stackPull = (number: number, state: string, branch: string): string => `{"number":${number},"title":"Step ${number}","state":"${state}","url":"/acme/web/pull/${number}","headBranch":"${branch}"}`;
+const STACKED = `<script type="application/json" data-target="react-app.embeddedData">{"payload":{"pullRequestsLayoutRoute":{"pullRequest":{"number":7},"stack":{"id":1,"number":193,"position":2,"size":3,"repositoryOwnerLogin":"acme","repositoryName":"web","pulls":[${stackPull(8, 'OPEN', 'step/3')},${stackPull(7, 'OPEN', 'step/2')},${stackPull(6, 'MERGED', 'step/1')}]}}}}</script>`;
+
+const titled = (): (string | null)[][] => [...document.querySelectorAll('.geld-related')].map((section) => [section.getAttribute('data-geld-section'), section.querySelector('h3, h4')?.textContent ?? null]);
 
 describe('related links in the sidebar', () => {
   it('names a link by its identifier and title, or by what following it does', () => {
@@ -318,27 +325,26 @@ describe('related links in the sidebar', () => {
       ['done', 'octicon octicon-git-merge geld-related__mark'],
       ['open', 'octicon octicon-issue-opened geld-related__mark'],
     ]);
-    expect(document.querySelectorAll('.geld-related__link')[0]?.getAttribute('title')).toBe('Merged · Open pull request on GitHub · Cache fetches across routes · vercel/next.js');
+    expect(document.querySelectorAll('.geld-related__link')[0]?.getAttribute('title')).toBe('Merged · View pull request on GitHub · Cache fetches across routes · vercel/next.js');
   });
 
-  it('lists GitHub’s own references under Mentions, after Related links, in the Rails sidebar and the Overview one', () => {
+  it('lists the description’s issues and pull requests under Related work, after Related links, in the Rails sidebar and the Overview one', () => {
     history.replaceState(null, '', '/acme/web/pull/7');
     const description = DESCRIPTION.replace('<h2>Summary</h2>', '<h2>Summary</h2><p>Fixes <a class="issue-link js-issue-link" href="https://github.com/acme/web/issues/12">#12</a>.</p>');
     document.body.innerHTML = description + railsSidebar();
     applyRelatedLinks(true);
-    const titled = (): (string | null)[][] => [...document.querySelectorAll('.geld-related')].map((section) => [section.getAttribute('data-geld-section'), section.querySelector('h3, h4')?.textContent ?? null]);
     expect(titled()).toEqual([
       ['related', 'Related links'],
-      ['mentions', 'Mentions'],
+      ['work', 'Related work'],
     ]);
-    const [related, mentions] = document.querySelectorAll('.geld-related');
+    const [related, work] = document.querySelectorAll('.geld-related');
     expect(related?.previousElementSibling?.textContent).toContain('Reviewers');
-    expect(related?.nextElementSibling).toBe(mentions);
-    expect(mentions?.nextElementSibling?.textContent).toContain('Assignees');
+    expect(related?.nextElementSibling).toBe(work);
+    expect(work?.nextElementSibling?.textContent).toContain('Assignees');
     expect([...(related?.querySelectorAll('.geld-related__text') ?? [])].map((text) => text.textContent)).toEqual(['DOC-77 Sdk nav overview', 'Open thread in Slack', 'View workspace in Replicas']);
-    expect([...(mentions?.querySelectorAll('.geld-related__text') ?? [])].map((text) => text.textContent)).toEqual([expect.stringMatching(/^#12\b/)]);
+    expect([...(work?.querySelectorAll('.geld-related__text') ?? [])].map((text) => text.textContent)).toEqual([expect.stringMatching(/^#12\b/)]);
     applyRelatedLinks(true);
-    expect(document.querySelectorAll('.geld-related')[1]).toBe(mentions);
+    expect(document.querySelectorAll('.geld-related')[1]).toBe(work);
     removeRelatedLinks();
 
     document.body.innerHTML = description + overviewSidebar;
@@ -348,14 +354,132 @@ describe('related links in the sidebar', () => {
       ['Activity', 'activity'],
       ['Reviewers', 'reviewers'],
       ['Related links', 'related'],
-      ['Mentions', 'mentions'],
+      ['Related work', 'work'],
       ['Proof of presence', null],
     ]);
     removeRelatedLinks();
 
     document.body.innerHTML = `<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>After <a href="https://github.com/acme/web/pull/5">#5</a>.</p></div></div>${railsSidebar()}`;
     applyRelatedLinks(true);
-    expect(titled()).toEqual([['mentions', 'Mentions']]);
+    expect(titled()).toEqual([['work', 'Related work']]);
+  });
+
+  it('leads Related work with the stack as one row, leaving its pull requests out, whether linked as /pull or /issues', () => {
+    history.replaceState(null, '', '/acme/web/pull/7');
+    document.body.innerHTML =
+      STACKED +
+      '<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>After <a class="issue-link js-issue-link" href="https://github.com/acme/web/pull/6">#6</a>, before <a class="issue-link js-issue-link" href="https://github.com/acme/web/issues/8">#8</a>, see <a class="issue-link js-issue-link" href="https://github.com/acme/web/issues/12">#12</a>.</p></div></div>' +
+      railsSidebar();
+    applyRelatedLinks(true);
+    const work = document.querySelector('[data-geld-section="work"]');
+    const rows = [...(work?.querySelectorAll('.geld-related__item') ?? [])];
+    expect(rows.map((row) => [row.getAttribute('data-kind'), row.querySelector('.geld-related__text')?.textContent ?? row.textContent])).toEqual([
+      ['stack', 'Stack #193 2 of 3'],
+      ['github', expect.stringMatching(/^#12\b/)],
+    ]);
+    const stackLink = work?.querySelector<HTMLAnchorElement>('[data-kind="stack"] a');
+    expect(stackLink?.getAttribute('href')).toBe('/acme/web/stack/193');
+    // No stack badge on the page: the row is the stack page's link, nothing more.
+    expect(stackLink?.hasAttribute('aria-haspopup')).toBe(false);
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    stackLink?.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(false);
+  });
+
+  it('reads a reference written with its repository’s old name where GitHub says it lives now, so a stack member is still left out', () => {
+    history.replaceState(null, '', '/acme/web/pull/7');
+    // typed-css/typed.css#24 (Nov 2026): stacked on #23, linked in its description as brandonmcconnell/typed.css/pull/23,
+    // the repository's name before it moved; GitHub's rendered link names its hovercard at the current home.
+    const moved = '<a href="https://github.com/old-owner/web/pull/8" data-hovercard-type="pull_request" data-hovercard-url="/acme/web/pull/8/hovercard">#8</a>';
+    document.body.innerHTML = `${STACKED}<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>Stacked on ${moved}.</p></div></div>${railsSidebar()}`;
+    applyRelatedLinks(true);
+    expect([...document.querySelectorAll('[data-geld-section="work"] .geld-related__item')].map((row) => row.getAttribute('data-kind'))).toEqual(['stack']);
+    removeRelatedLinks();
+    document.body.innerHTML = `<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>See ${moved}.</p></div></div>${railsSidebar()}`;
+    expect(relatedLinksOnPage().map((link) => [link.key, link.ref, link.href])).toEqual([['github:acme/web#8', '#8', 'https://github.com/acme/web/pull/8']]);
+    // Its title and state are asked of the hovercard at the current home, which answers; the old address only redirects.
+    applyRelatedLinks(true);
+    expect(fetches.paths.filter((path) => path.endsWith('/hovercard'))).toEqual(['/acme/web/pull/8/hovercard']);
+
+    const withCard = (type: string, card: string): Element => {
+      const element = document.createElement('a');
+      element.setAttribute('data-hovercard-type', type);
+      element.setAttribute('data-hovercard-url', card);
+      return element;
+    };
+    expect(currentHref(withCard('pull_request', '/acme/web/pull/8/hovercard'), 'https://github.com/old-owner/web/pull/8/files?w=1#diff-1')).toBe('https://github.com/acme/web/pull/8/files?w=1#diff-1');
+    expect(currentHref(withCard('user', '/users/acme/hovercard'), 'https://github.com/old-owner/web/pull/8')).toBe('https://github.com/old-owner/web/pull/8');
+    expect(currentHref(withCard('issue', '/acme/web/issues/8/hovercard'), 'https://gitlab.com/old-owner/web/-/issues/8')).toBe('https://gitlab.com/old-owner/web/-/issues/8');
+  });
+
+  it('opens GitHub’s own stack popover beside the row by lending the row its anchor name, and gives it back on close', () => {
+    history.replaceState(null, '', '/acme/web/pull/7');
+    // GitHub's header badge and the Primer overlay it opens in the portal, anchored by name (as seen on geld#157, Nov 2026).
+    const badge = Object.assign(document.createElement('button'), { className: 'prc-Button stackBadge__CXihl8', textContent: '2/3' });
+    badge.setAttribute('aria-haspopup', 'true');
+    badge.setAttribute('aria-expanded', 'false');
+    let returnsFocus = false;
+    badge.addEventListener('click', () => {
+      const open = badge.getAttribute('aria-expanded') === 'true';
+      if (open) {
+        document.querySelector('[data-component="AnchoredOverlay"]')?.remove();
+        badge.setAttribute('aria-expanded', 'false');
+        if (returnsFocus) badge.focus();
+        return;
+      }
+      badge.style.setProperty('anchor-name', '--anchored-overlay-anchor-x');
+      const overlay = document.createElement('div');
+      overlay.setAttribute('data-component', 'AnchoredOverlay');
+      overlay.style.setProperty('position-anchor', '--anchored-overlay-anchor-x');
+      document.body.append(overlay);
+      badge.setAttribute('aria-expanded', 'true');
+    });
+    document.body.innerHTML = STACKED + railsSidebar();
+    document.body.prepend(badge);
+    applyRelatedLinks(true);
+    const row = document.querySelector<HTMLAnchorElement>('[data-kind="stack"] a');
+    expect(row?.getAttribute('aria-haspopup')).toBe('dialog');
+    const press = (init: MouseEventInit = {}): MouseEvent => {
+      row?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, detail: 1, ...init });
+      row?.dispatchEvent(event);
+      return event;
+    };
+    expect(press().defaultPrevented).toBe(true);
+    expect(badge.getAttribute('aria-expanded')).toBe('true');
+    expect(row?.style.getPropertyValue('anchor-name')).toBe('--anchored-overlay-anchor-x');
+    expect(row?.getAttribute('aria-expanded')).toBe('true');
+
+    // Escape: Primer hands focus back to the badge, which would scroll to the header. It lands on the row instead.
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
+    returnsFocus = true;
+    badge.click();
+    expect(document.activeElement).toBe(row);
+    expect(scrollTo).toHaveBeenCalled();
+    expect(row?.style.getPropertyValue('anchor-name')).toBe('');
+    expect(row?.getAttribute('aria-expanded')).toBe('false');
+    scrollTo.mockRestore();
+    returnsFocus = false;
+
+    // A second press while it is open from here closes it.
+    press();
+    expect(badge.getAttribute('aria-expanded')).toBe('true');
+    press();
+    expect(badge.getAttribute('aria-expanded')).toBe('false');
+
+    // A modified click is the stack page's link.
+    expect(press({ metaKey: true }).defaultPrevented).toBe(false);
+    expect(badge.getAttribute('aria-expanded')).toBe('false');
+
+    // A modified click while it is open (Primer closes it on the press) leaves nothing behind: Enter then opens it.
+    press();
+    expect(badge.getAttribute('aria-expanded')).toBe('true');
+    row?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    badge.click();
+    row?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, detail: 1, metaKey: true }));
+    expect(badge.getAttribute('aria-expanded')).toBe('false');
+    row?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, detail: 0 }));
+    expect(badge.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('looks up only the rows that show, the rest once Show N more opens them', async () => {

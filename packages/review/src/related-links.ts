@@ -971,7 +971,7 @@ function readGitHub(url: URL, text: string, options: RelatedOptions): RelatedLin
     title: /^(?:[\w.-]+\/)?(?:[\w.-]+)?#\d+(?:\s*\(comment\))?$/.test(text.trim()) ? null : titleFromText(text, 'GitHub', noun, ref),
     context: `${host}${repository}`,
     href: url.href,
-    action: `Open ${noun} on GitHub`,
+    action: `View ${noun} on GitHub`,
     appId: null,
     icon: null,
   };

@@ -8942,7 +8942,7 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
 }
 
 /*
- * The Overview sidebar in Geld's order (`orderSidebars`): Reviewers, Related links, Mentions, Activity, then GitHub's. GitHub's
+ * The Overview sidebar in Geld's order (`orderSidebars`): Reviewers, Related links, Related work, Activity, then GitHub's. GitHub's
  * line above every section but the first in page order becomes a line above every section but the first shown.
  * Its rule (`.sidebar > [data-overview-sidebar-item] ~ [data-overview-sidebar-item]`) weighs three; the first's must outweigh it.
  */
@@ -8964,7 +8964,7 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
   order: 2;
 }
 
-[data-geld-sidebar-order] > [data-geld-order='mentions'] {
+[data-geld-sidebar-order] > [data-geld-order='work'] {
   order: 3;
 }
 
@@ -8988,6 +8988,7 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
   font-size: 12px;
   line-height: 20px;
 }
+
 
 /* Flow: the changed files as cards, linked from each file to what it imports. */
 .geld-flow.Overlay {
