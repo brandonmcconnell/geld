@@ -415,7 +415,7 @@ describe('related links in the sidebar', () => {
     expect(row?.getAttribute('aria-haspopup')).toBe('dialog');
     const press = (init: MouseEventInit = {}): MouseEvent => {
       row?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-      const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, ...init });
+      const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, detail: 1, ...init });
       row?.dispatchEvent(event);
       return event;
     };
@@ -444,6 +444,16 @@ describe('related links in the sidebar', () => {
     // A modified click is the stack page's link.
     expect(press({ metaKey: true }).defaultPrevented).toBe(false);
     expect(badge.getAttribute('aria-expanded')).toBe('false');
+
+    // A modified click while it is open (Primer closes it on the press) leaves nothing behind: Enter then opens it.
+    press();
+    expect(badge.getAttribute('aria-expanded')).toBe('true');
+    row?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    badge.click();
+    row?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, detail: 1, metaKey: true }));
+    expect(badge.getAttribute('aria-expanded')).toBe('false');
+    row?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, detail: 0 }));
+    expect(badge.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('looks up only the rows that show, the rest once Show N more opens them', async () => {

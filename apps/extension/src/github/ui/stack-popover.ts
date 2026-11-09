@@ -118,12 +118,15 @@ export function attachStackPopover(row: HTMLAnchorElement): void {
     openAtPress = opened?.row === row && isOpen(opened.badge);
   });
   row.addEventListener('click', (event) => {
+    // Read and cleared on every click, kept or not, and trusted only for a click a press made (Enter's has no press,
+    // `detail` 0): a modified click, or a press dragged off the row, would otherwise leave it for the next one.
+    const pressedOpen = openAtPress && event.detail > 0;
+    openAtPress = false;
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const badge = stackBadge();
     if (badge === null) return;
     event.preventDefault();
-    const wasOpen = openAtPress || (opened?.row === row && isOpen(badge));
-    openAtPress = false;
+    const wasOpen = pressedOpen || (opened?.row === row && isOpen(badge));
     if (wasOpen) {
       if (isOpen(badge)) badge.click();
       return;
