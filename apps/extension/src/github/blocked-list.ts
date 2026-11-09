@@ -2,6 +2,12 @@
 
 export type BlockScope = 'personal' | 'org';
 
+/** Who has blocked someone: the repository's organisation, the reader, or both (each list is read on its own). */
+export interface BlockedBy {
+  readonly org: boolean;
+  readonly personal: boolean;
+}
+
 const SCRIPT_JSON = /<script\b[^>]*type="application\/json"[^>]*>([\s\S]*?)<\/script>/g;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

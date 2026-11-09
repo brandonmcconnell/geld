@@ -62,6 +62,7 @@ import { loginOfLink, showLogins } from './login';
 import { allResolved, isSevere, checkCountsFrom, checkCountsOfRuns, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, standingReviewers } from './panel-model';
 import { exactRulesFor, HiddenPeople, markedOnGitHub, lookUpUnhideForms, refreshUnhidden, sendUnhide } from './hidden-people';
 import { blockedFor } from '../blocked-users';
+import type { BlockedBy } from '../blocked-list';
 import { blockedUsersUrl } from '../blocked-list';
 import { clearSidebarPeople, syncSidebarPeople } from './sidebar-people';
 import { exactRulesFor, HiddenPeople, lookUpUnhideForms, markedOnGitHub, refreshUnhidden, sendUnhide } from './hidden-people';
@@ -3227,6 +3228,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const viewer = document.querySelector('meta[name="user-login"]')?.getAttribute('content') ?? '';
   const blockedLogins = blockedFor(owner, viewer, reapplySoon);
   const hidden = new HiddenPeople(marked, compileAuthorRules(settings.hiddenAuthors), visit.peeking, blockedLogins);
+  const blockedNow = (login: string): BlockedBy => hidden.blockedBy(login);
   const hiddenRoots: HTMLElement[] = [...hidden.markedRoots()];
   const crawledDom = {
     ...crawledAll,
@@ -3373,7 +3375,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   for (const review of reviewsAll) {
     if (hidden.isHidden(review.author.login) && !sidebarSaid.has(review.author.login.toLowerCase()) && review.state !== 'dismissed') hidden.noteVerdict(review.author.login, review.state);
   }
-  syncSidebarPeople((login) => hidden.hides(login, login.endsWith('[bot]')));
+  // Blocked people leave GitHub's sidebar whether or not anything of theirs is hidden; the pull request's state stays GitHub's.
+  syncSidebarPeople((login) => hidden.hides(login, login.endsWith('[bot]')) || blockedNow(login).org || blockedNow(login).personal);
   const hiddenAskedChanges = sidebarAll.some((reviewer) => reviewer.state === 'changes_requested' && !sidebar.includes(reviewer)) && !sidebar.some((reviewer) => reviewer.state === 'changes_requested');
   const awaiting = phase('awaiting', () => awaitingReviewers(sidebar));
   // A comment left with a close or reopen belongs to that row, not to the Reviews list or a round.
@@ -3599,6 +3602,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     aiPending: aiPending(),
     fixFor,
     hiddenPeople: hidden.people(),
+    blockedBy: blockedNow,
+    blockedKey: [...blockedLogins.entries()].map(([login, by]) => `${login}:${by.org ? 'o' : ''}${by.personal ? 'y' : ''}`).sort().join(','),
   };
   // Asynchronous answers (the AI run's progress and end) re-apply through the mounted check, never past a teardown.
   const reapply = (): void => reapplyNow();
@@ -3873,38 +3878,37 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     onUnhide: (login) => {
       const person = hidden.people().find((entry) => entry.login.toLowerCase() === login.toLowerCase());
       if (person === undefined) return;
-      if (person.why.by === 'blocked') {
-        window.open(blockedUsersUrl(person.why.scope, owner), '_blank', 'noopener');
-        return;
-      }
-      if (person.why.by === 'list') {
-        const rules = exactRulesFor(settings.hiddenAuthors, person.login);
-        if (rules.length === 0) return;
-        if (!window.confirm(`Unhide ${person.login}?\n\nTheir reviews and comments will show in your digest again, and their pull requests in your lists. This removes them from your hidden people.`)) return;
-        persist(settingsItem.patch({ hiddenAuthors: settings.hiddenAuthors.filter((line) => !rules.includes(line)) }));
-        return;
-      }
       const targets = hidden.unhideTargets(person.login);
-      if (targets.length === 0) {
-        const anchor = person.why.anchors[0];
-        if (anchor !== undefined) panelHandlers.onShowInTimeline(anchor);
+      if (targets.length > 0) {
+        const what = targets.length === 1 ? 'their hidden comment' : `their ${targets.length} hidden comments`;
+        if (!window.confirm(`Unhide ${person.login} on GitHub?\n\nThis unhides ${what} for everyone, and their reviews and comments will count in the digest again.`)) return;
+        void (async () => {
+          let refreshed = true;
+          for (const { content, form } of targets) {
+            if (!(await sendUnhide(form))) {
+              window.alert(`GitHub did not unhide ${person.login}'s comment. Try GitHub's own Unhide on it.`);
+              reapplySoon();
+              return;
+            }
+            if (!(await refreshUnhidden(content))) refreshed = false;
+          }
+          if (refreshed) reapplySoon();
+          else location.reload();
+        })();
         return;
       }
-      const what = targets.length === 1 ? 'their hidden comment' : `their ${targets.length} hidden comments`;
-      if (!window.confirm(`Unhide ${person.login} on GitHub?\n\nThis unhides ${what} for everyone, and their reviews and comments will count in the digest again.`)) return;
-      void (async () => {
-        let refreshed = true;
-        for (const { content, form } of targets) {
-          if (!(await sendUnhide(form))) {
-            window.alert(`GitHub did not unhide ${person.login}'s comment. Try GitHub's own Unhide on it.`);
-            reapplySoon();
-            return;
-          }
-          if (!(await refreshUnhidden(content))) refreshed = false;
-        }
-        if (refreshed) reapplySoon();
-        else location.reload();
-      })();
+      const rules = person.github === null ? exactRulesFor(settings.hiddenAuthors, person.login) : [];
+      if (rules.length === 0) return;
+      if (!window.confirm(`Unhide ${person.login}?\n\nTheir reviews and comments will show in your digest again, and their pull requests in your lists. This removes them from your hidden list in Geld.`)) return;
+      persist(settingsItem.patch({ hiddenAuthors: settings.hiddenAuthors.filter((line) => !rules.includes(line)) }));
+    },
+    onManageHidden: (section) => {
+      if (section === 'list') {
+        const message: OpenSettingsMessage = { type: 'geld:open-settings', section: 'lists' };
+        void browser.runtime.sendMessage(message).catch(() => undefined);
+        return;
+      }
+      window.open(blockedUsersUrl(section, owner), '_blank', 'noopener');
     },
     onShowInTimeline: (anchor) => {
       visit.fullTimeline = true;

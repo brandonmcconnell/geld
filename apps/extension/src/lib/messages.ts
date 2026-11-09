@@ -66,6 +66,8 @@ export interface ClearDiffCacheMessage {
 /** Content script → background: the digest's gear asks for Geld's settings (the toolbar popup, else the options page). */
 export interface OpenSettingsMessage {
   readonly type: 'geld:open-settings';
+  /** A settings section to open the options page at (its `data-section`), rather than the popup. */
+  readonly section?: string;
 }
 
 /** Any context → background: Geld's own errors, already scrubbed (`error-capture.ts`). */

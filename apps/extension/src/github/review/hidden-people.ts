@@ -1,14 +1,16 @@
 import type { AuthorRules } from '@geld/core';
 import { OWN_UI_ATTRIBUTE } from '../dom';
 import { pageFetch } from '../page-fetch';
-import type { BlockScope } from '../blocked-list';
+import type { BlockedBy } from '../blocked-list';
 import { fragmentHeaders } from './deeplink';
 import { loginOfLink } from './login';
 
 /**
  * People (and bots) the digest leaves out: anyone GitHub shows with content
  * hidden as spam or abuse on this pull request, and anyone matching the
- * reader's hidden people list (`hiddenAuthors`). GitHub hides one comment at
+ * reader's hidden people list (`hiddenAuthors`). GitHub is the source of
+ * truth: a person blocked without their comments hidden still shows, as
+ * GitHub shows them, and wears a block badge instead. GitHub hides one comment at
  * a time and keeps counting the rest, so a person with one comment marked as
  * spam would still put a verdict and pills in the digest; the reason says
  * something about the person, so the digest leaves all of them out. Outdated,
@@ -121,20 +123,30 @@ export function markedOnGitHub(root: ParentNode = document): readonly MarkedCont
   return found;
 }
 
-export type HiddenWhy =
-  | { readonly by: 'blocked'; readonly scope: BlockScope }
-  | { readonly by: 'github'; readonly reason: GitHubHideReason; readonly anchors: readonly string[]; readonly unhide: boolean }
-  | { readonly by: 'list'; readonly rule: string };
+/** What GitHub shows hidden of theirs: the reason, where, and whether GitHub offers the reader Unhide. */
+export interface HiddenOnGitHub {
+  readonly reason: GitHubHideReason;
+  readonly anchors: readonly string[];
+  readonly unhide: boolean;
+}
 
 /** What a hidden person's review said, as GitHub still counts it: the menu shows it in place of their pill. */
 export type HiddenVerdict = 'approved' | 'changes_requested' | 'commented';
 
-/** Someone the digest leaves out, for the hidden people menu. */
+/**
+ * Someone the digest leaves out, for the hidden people menu: GitHub shows
+ * content of theirs hidden as spam or abuse, or a line of the reader's Geld
+ * list names them. A block alone hides nobody (GitHub still shows a blocked
+ * person's content), but it says which section of the menu they stand in.
+ */
 export interface HiddenPerson {
   readonly login: string;
   readonly bot: boolean;
   readonly avatarSrc: string | null;
-  readonly why: HiddenWhy;
+  readonly github: HiddenOnGitHub | null;
+  /** The line of the reader's hidden people list that names them. */
+  readonly rule: string | null;
+  readonly blocked: BlockedBy;
   readonly verdict: HiddenVerdict | null;
   /** The reader is peeking: their content is in the digest for this visit. */
   readonly peeking: boolean;
@@ -144,9 +156,12 @@ interface Entry {
   login: string;
   bot: boolean;
   avatarSrc: string | null;
-  why: HiddenWhy;
+  github: HiddenOnGitHub | null;
+  rule: string | null;
   verdict: HiddenVerdict | null;
 }
+
+const NOT_BLOCKED: BlockedBy = { org: false, personal: false };
 
 /**
  * The pass's ledger of hidden people: `hides` answers whether a login's
@@ -161,7 +176,7 @@ export class HiddenPeople {
     marked: readonly MarkedContent[],
     private readonly rules: AuthorRules,
     private readonly peeking: ReadonlySet<string>,
-    private readonly blocked: ReadonlyMap<string, BlockScope> = new Map(),
+    private readonly blocked: ReadonlyMap<string, BlockedBy> = new Map(),
   ) {
     const byLogin = new Map<string, MarkedContent[]>();
     for (const content of marked) {
@@ -169,15 +184,16 @@ export class HiddenPeople {
       byLogin.set(key, [...(byLogin.get(key) ?? []), content]);
     }
     this.marked = byLogin;
-    for (const [key, contents] of byLogin) {
+    for (const [, contents] of byLogin) {
       const first = contents[0];
       if (first === undefined) continue;
-      this.entries.set(key, {
+      this.entries.set(first.login.toLowerCase(), {
         login: first.login,
         bot: first.bot,
         avatarSrc: contents.find((content) => content.avatarSrc !== null)?.avatarSrc ?? null,
         verdict: null,
-        why: blocked.has(key) ? { by: 'blocked', scope: blocked.get(key) ?? 'personal' } : { by: 'github', reason: first.reason, anchors: contents.flatMap((content) => (content.anchor === null ? [] : [content.anchor])), unhide: contents.some((content) => unhideFormOf(content) !== null) },
+        github: { reason: first.reason, anchors: contents.flatMap((content) => (content.anchor === null ? [] : [content.anchor])), unhide: contents.some((content) => unhideFormOf(content) !== null) },
+        rule: rules.explain(first.login),
       });
     }
   }
@@ -188,15 +204,19 @@ export class HiddenPeople {
     const key = login.toLowerCase();
     let entry = this.entries.get(key);
     if (entry === undefined) {
-      const scope = this.blocked.get(key);
-      const rule = scope === undefined ? this.rules.explain(login) : null;
-      if (scope === undefined && rule === null) return false;
-      entry = { login, bot, avatarSrc, verdict: null, why: scope !== undefined ? { by: 'blocked', scope } : { by: 'list', rule: rule ?? login } };
+      const rule = this.rules.explain(login);
+      if (rule === null) return false;
+      entry = { login, bot, avatarSrc, verdict: null, github: null, rule };
       this.entries.set(key, entry);
     } else if (entry.avatarSrc === null && avatarSrc !== null) {
       entry.avatarSrc = avatarSrc;
     }
     return !this.peeking.has(key);
+  }
+
+  /** Who has blocked `login`, whether or not anything of theirs is hidden. */
+  blockedBy(login: string): BlockedBy {
+    return this.blocked.get(login.toLowerCase()) ?? NOT_BLOCKED;
   }
 
   /** Records a hidden person's review verdict; an approval or a request for changes outranks a comment. */
@@ -235,7 +255,7 @@ export class HiddenPeople {
 
   people(): readonly HiddenPerson[] {
     return [...this.entries.values()]
-      .map((entry) => ({ login: entry.login, bot: entry.bot, avatarSrc: entry.avatarSrc, why: entry.why, verdict: entry.verdict, peeking: this.peeking.has(entry.login.toLowerCase()) }))
+      .map((entry) => ({ login: entry.login, bot: entry.bot, avatarSrc: entry.avatarSrc, github: entry.github, rule: entry.rule, blocked: this.blockedBy(entry.login), verdict: entry.verdict, peeking: this.peeking.has(entry.login.toLowerCase()) }))
       .sort((a, b) => a.login.localeCompare(b.login));
   }
 }

@@ -489,7 +489,11 @@ function applyToolbarIcon(dark: boolean): void {
  * from here; Firefox opens it only from the extension's own user actions (and its MV2 build has no `action`), and
  * Safari may not offer it, so a refusal falls back.
  */
-async function openSettings(windowId: number | undefined): Promise<void> {
+async function openSettings(windowId: number | undefined, section?: string): Promise<void> {
+  if (section !== undefined && /^[a-z-]+$/.test(section)) {
+    await browser.tabs.create({ url: `${browser.runtime.getURL('/options.html')}#${section}` }).catch(() => undefined);
+    return;
+  }
   if (import.meta.env.MANIFEST_VERSION === 3 && typeof browser.action.openPopup === 'function') {
     try {
       await browser.action.openPopup(windowId === undefined ? undefined : { windowId });
@@ -579,7 +583,7 @@ export default defineBackground(() => {
       return undefined;
     }
     if (isOpenSettingsMessage(message)) {
-      void openSettings(sender.tab?.windowId);
+      void openSettings(sender.tab?.windowId, message.section);
       return undefined;
     }
     if (isAccountActionMessage(message)) {

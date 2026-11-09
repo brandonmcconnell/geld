@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import { compileAuthorRules } from '@geld/core';
-import type { BlockScope } from '../blocked-list';
+import type { BlockedBy } from '../blocked-list';
 import { exactRulesFor, HiddenPeople, hideReasonOf, markedOnGitHub, unhideFormIn, unhideFormOf } from './hidden-people';
 
 /**
@@ -125,7 +125,7 @@ describe('HiddenPeople', () => {
     expect(hidden.hides('spam-user', false)).toBe(true);
     expect(hidden.hides('octocat', false)).toBe(false);
     expect(hidden.markedRoots()).toHaveLength(1);
-    expect(hidden.people()).toEqual([expect.objectContaining({ login: 'Spam-User', peeking: false, why: expect.objectContaining({ by: 'github', reason: 'spam', anchors: ['pullrequestreview-1000001'] }) })]);
+    expect(hidden.people()).toEqual([expect.objectContaining({ login: 'Spam-User', peeking: false, rule: null, github: expect.objectContaining({ reason: 'spam', anchors: ['pullrequestreview-1000001'] }) })]);
 
     const peeking = new HiddenPeople(marked, compileAuthorRules([]), new Set(['spam-user']));
     expect(peeking.hides('Spam-User', false)).toBe(false);
@@ -139,7 +139,7 @@ describe('HiddenPeople', () => {
     expect(hidden.hides('renovate[bot]', true, 'https://example.test/r.png')).toBe(true);
     expect(hidden.hides('Spammer', false)).toBe(true);
     expect(hidden.hides('someone', false)).toBe(false);
-    expect(hidden.people().map((person) => [person.login, person.why.by === 'list' ? person.why.rule : ''])).toEqual([
+    expect(hidden.people().map((person) => [person.login, person.rule])).toEqual([
       ['renovate[bot]', '*[bot]'],
       ['Spammer', 'spammer'],
     ]);
@@ -147,18 +147,16 @@ describe('HiddenPeople', () => {
 });
 
 describe('blocked people', () => {
-  it('hides a blocked person with nothing marked, and the block outranks a spam mark', () => {
-    const blocked = new Map<string, BlockScope>([
-      ['spam-user', 'org'],
-      ['quiet-one', 'personal'],
+  it('leaves a blocked person with nothing hidden in the digest, and says who blocked someone GitHub hid', () => {
+    const blocked = new Map<string, BlockedBy>([
+      ['spam-user', { org: true, personal: true }],
+      ['quiet-one', { org: false, personal: true }],
     ]);
     const hidden = new HiddenPeople(markedOnGitHub(page(SPAM_REVIEW)), compileAuthorRules([]), new Set(), blocked);
-    expect(hidden.hides('Quiet-One', false)).toBe(true);
-    expect(hidden.hides('someone', false)).toBe(false);
-    expect(hidden.people().map((person) => [person.login, person.why])).toEqual([
-      ['Quiet-One', { by: 'blocked', scope: 'personal' }],
-      ['Spam-User', { by: 'blocked', scope: 'org' }],
-    ]);
+    expect(hidden.hides('Quiet-One', false)).toBe(false);
+    expect(hidden.blockedBy('Quiet-One')).toEqual({ org: false, personal: true });
+    expect(hidden.hides('Spam-User', false)).toBe(true);
+    expect(hidden.people().map((person) => [person.login, person.blocked])).toEqual([['Spam-User', { org: true, personal: true }]]);
   });
 });
 
