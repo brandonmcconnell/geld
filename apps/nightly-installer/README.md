@@ -34,7 +34,7 @@ Do not move or rename the folder once it is loaded: the browser ties the extensi
 ```text
 --profile <name>       A profile to install for, by name or folder (repeatable). Default: ask.
 --all                  Every profile found.
---browser <id>         Only this browser (repeatable). Ids are listed below.
+--browser <id>         Only this browser (repeatable). `--help` lists the ids.
 --dir <folder>         Where the build folders go. Default: ~/Geld Nightly.
 --downloads            Put them in the profile's Downloads folder instead, where updates
                        need no folder picker but cleanup tools may empty the folder.
