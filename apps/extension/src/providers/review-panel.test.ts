@@ -144,9 +144,9 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector<HTMLDetailsElement>('details[data-geld-item]')?.open).toBe(false);
   });
 
-  it('copies one clustered concern with every actual native source rather than the whole digest', async () => {
+  it('copies one native thread and all its replies without unrelated nearby threads', async () => {
     const write = vi.fn(async (_text: string) => {});
-    const source = input([thread('a', { path: 'shared.ts', line: 5 }), thread('b', { path: 'shared.ts', line: 6 })]);
+    const source = input([thread('a', { path: 'shared.ts', line: 5, comments: [comment('1'), comment('2')] }), thread('b', { path: 'shared.ts', line: 6, comments: [comment('3')] })]);
     const panel = renderProviderReviewPanel(host(), source, { copyText: write });
     const button = panel.element.querySelector<HTMLButtonElement>('[data-geld-copy-kind="markdown"]');
     if (button === null) throw new Error('Missing item copy control');
