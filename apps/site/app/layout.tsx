@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { BrandSelection } from '@/components/brand-selection';
 import { CornerShapePolyfill } from '@/components/corner-shape-polyfill';
 import { RouteTransition } from '@/components/route-transition';
 import { SiteFooter } from '@/components/site-footer';
@@ -14,22 +15,22 @@ import './globals.css';
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: `${SITE_NAME} — ${TAGLINE}`,
+    default: TAGLINE,
     template: `%s · ${SITE_NAME}`,
   },
   description: DESCRIPTION,
   applicationName: SITE_NAME,
-  keywords: ['GitHub', 'pull request', 'code review', 'hide test files', 'browser extension', 'diff', 'Chrome', 'Firefox', 'Edge', 'Safari'],
+  keywords: ['GitHub', 'pull request', 'code review', 'review bots', 'review digest', 'hide test files', 'browser extension', 'diff', 'Chrome', 'Firefox', 'Edge', 'Safari'],
   openGraph: {
     type: 'website',
     siteName: SITE_NAME,
-    title: `${SITE_NAME} — ${TAGLINE}`,
+    title: TAGLINE,
     description: DESCRIPTION,
     url: SITE_URL,
   },
   twitter: {
     card: 'summary_large_image',
-    title: `${SITE_NAME} — ${TAGLINE}`,
+    title: TAGLINE,
     description: DESCRIPTION,
   },
   robots: { index: true, follow: true },
@@ -60,6 +61,7 @@ export default function RootLayout({ children }: { readonly children: React.Reac
           Skip to content
         </a>
         <SmoothHashLinks />
+        <BrandSelection />
         <CornerShapePolyfill />
         <TooltipProvider>
           <SiteHeader />

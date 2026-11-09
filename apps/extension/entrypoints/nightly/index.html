@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Geld Nightly</title>
+    <link rel="stylesheet" href="../../src/ui/base.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="nightly">
+      <header class="geld-brand nightly__header">
+        <h1 class="nightly__brand-text">
+          <picture><source media="(prefers-color-scheme: dark)" srcset="../../../../assets/brand/geld-logo-white.svg" /><img class="geld-brand__logo" src="../../../../assets/brand/geld-logo.svg" alt="Geld" width="91" height="24" /></picture>
+          <span class="geld-brand__tagline">Nightly builds. Every push to main, straight from GitHub.</span>
+        </h1>
+      </header>
+
+      <section class="nightly__card" aria-label="Updates">
+        <div id="panel"></div>
+      </section>
+
+      <section class="nightly__card" aria-labelledby="folder-title">
+        <h2 class="nightly__title" id="folder-title">Folder</h2>
+        <p class="geld-help nightly__intro">
+          Geld installs a build by writing it into the folder you chose in Load unpacked, then reloading itself.
+          It keeps a copy of the build it replaces, so a failed install is undone and Roll back can return to it.
+        </p>
+        <p class="nightly__folder" id="folder"></p>
+        <p class="geld-help nightly__intro" id="folder-help"></p>
+        <p class="nightly__error" id="folder-error" role="alert" hidden></p>
+        <div class="nightly__actions">
+          <button class="geld-button" type="button" id="connect">Connect folder</button>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

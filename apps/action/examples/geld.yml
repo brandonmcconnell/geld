@@ -7,6 +7,11 @@
 #
 # Optional AI: add repository secret GELD_AI_KEY (your own gateway key) and
 # uncomment the ai-* inputs below.
+#
+# Optional review-bot triggers: a comment `/geld run greptile` (or `bugbot`,
+# `devin`, several separated by spaces) from someone with write access starts
+# that bot through its own API, without the bot having to read the comment.
+# Store each bot's key as a repository secret, then name that secret below.
 
 name: Geld summary
 
@@ -24,9 +29,14 @@ on:
   check_run:
     types: [completed]
 
-concurrency:
-  group: geld-summary-${{ github.event.pull_request.number || github.event.issue.number || github.event.check_run.pull_requests[0].number || github.run_id }}
-  cancel-in-progress: true
+env:
+  # Names of repository secrets, never the keys themselves.
+  # Settings > Secrets and variables > Actions holds the keys. Empty keeps that bot's usual tag comment.
+  # The Geld extension reads these names (never the keys) to know which bots its Rerun can start here.
+  GELD_GREPTILE_SECRET_NAME: '' # e.g. GREPTILE_API_KEY (Greptile > Settings > Organization > API Keys)
+  GELD_BUGBOT_SECRET_NAME: ''   # e.g. CURSOR_API_KEY (Cursor Dashboard > API Keys, admin scope, Cursor Enterprise)
+  GELD_DEVIN_SECRET_NAME: ''    # e.g. DEVIN_API_KEY (a Devin service user with the UseReviewManual permission)
+  GELD_DEVIN_ORG_ID: ''         # optional: found from the key, needed only for an enterprise-wide Devin key
 
 jobs:
   summary:
@@ -34,6 +44,10 @@ jobs:
       github.event.pull_request != null ||
       github.event.issue.pull_request != null ||
       (github.event.check_run.pull_requests[0] != null)
+    # Only the newest run matters for the one summary comment, so a burst of events cancels the runs before it.
+    concurrency:
+      group: geld-summary-${{ github.event.pull_request.number || github.event.issue.number || github.event.check_run.pull_requests[0].number || github.run_id }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -50,3 +64,139 @@ jobs:
           # ai-base-url: https://ai-gateway.vercel.sh
           # model: openai/gpt-4.1-mini
           # suggested-fixes: bots
+
+  # No concurrency group on purpose: every trigger comment runs, in parallel with the others and with the summary.
+  trigger:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.action == 'created' &&
+      github.event.issue.pull_request != null &&
+      startsWith(github.event.comment.body, '/geld run')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: read
+      contents: read
+    steps:
+      - name: Start the requested review bots
+        uses: actions/github-script@v9
+        env:
+          GREPTILE_KEY: ${{ env.GELD_GREPTILE_SECRET_NAME != '' && secrets[env.GELD_GREPTILE_SECRET_NAME] || '' }}
+          BUGBOT_KEY: ${{ env.GELD_BUGBOT_SECRET_NAME != '' && secrets[env.GELD_BUGBOT_SECRET_NAME] || '' }}
+          DEVIN_KEY: ${{ env.GELD_DEVIN_SECRET_NAME != '' && secrets[env.GELD_DEVIN_SECRET_NAME] || '' }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const comment = context.payload.comment;
+            const pr = context.payload.issue;
+            const prUrl = pr.pull_request.html_url;
+            const react = (content) =>
+              github.rest.reactions.createForIssueComment({ owner, repo, comment_id: comment.id, content }).catch(() => {});
+
+            // Secrets are readable by any comment's workflow, so only people who could push may spend the bots' credits.
+            if (comment.user.type === 'Bot') return core.notice('Ignored: trigger comments from bots are not run.');
+            const { data: access } = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username: comment.user.login });
+            if (access.permission !== 'admin' && access.permission !== 'write') {
+              await react('-1');
+              return core.setFailed(`${comment.user.login} needs write access to start review bots.`);
+            }
+
+            // The whole comment, on one line: the Geld extension reads the command the same way (`geldRunBots`).
+            const known = ['greptile', 'bugbot', 'devin'];
+            const match = /^\/geld[ \t]+run[ \t]+([a-z][a-z0-9-]*(?:[ \t,]+[a-z][a-z0-9-]*)*)[ \t]*$/i.exec(comment.body.trim());
+            if (match === null) {
+              await react('-1');
+              return core.setFailed(`The command must be the whole comment, on one line: /geld run ${known.join(' | ')}`);
+            }
+            const bots = [...new Set(match[1].toLowerCase().split(/[ \t,]+/).filter(Boolean))];
+            const unknown = bots.filter((bot) => !known.includes(bot));
+            if (unknown.length > 0) {
+              await react('-1');
+              return core.setFailed(`Unknown bot (${unknown.join(', ')}). Use: /geld run ${known.join(' | ')}`);
+            }
+
+            // The workflow names the secret; a value not shaped like a secret's name is most likely a key pasted into a
+            // committed file, so it is refused (never echoed) with what to do about it.
+            const keyOf = (bot) => {
+              const setting = `GELD_${bot}_SECRET_NAME`;
+              const name = process.env[setting] ?? '';
+              if (name === '') throw new Error(`set ${setting} in the workflow to the name of the secret holding its key`);
+              if (!/^[A-Z_][A-Z0-9_]*$/.test(name)) {
+                throw new Error(`${setting} must be a secret's name as GitHub lists it (capital letters, digits, underscores), never the key itself. If a key was put there, remove it from the workflow and rotate it.`);
+              }
+              const key = process.env[`${bot}_KEY`];
+              if (!key) throw new Error(`the ${name} secret is empty or missing`);
+              return key;
+            };
+
+            // Greptile's API speaks MCP over HTTP and may answer as an event stream.
+            const readMcp = async (response) => {
+              const text = await response.text();
+              const json = (response.headers.get('content-type') ?? '').includes('text/event-stream')
+                ? JSON.parse(text.split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5)).pop() ?? '{}')
+                : JSON.parse(text || '{}');
+              if (json.error) throw new Error(json.error.message ?? 'Greptile refused the request');
+              if (json.result?.isError) throw new Error(json.result.content?.[0]?.text ?? 'Greptile refused the request');
+            };
+
+            const start = {
+              greptile: async () => {
+                const key = keyOf('GREPTILE');
+                const response = await fetch('https://api.greptile.com/mcp', {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+                  body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    method: 'tools/call',
+                    params: {
+                      name: 'trigger_code_review',
+                      arguments: {
+                        name: `${owner}/${repo}`,
+                        remote: 'github',
+                        defaultBranch: context.payload.repository.default_branch,
+                        prNumber: pr.number,
+                        // Greptile tells a self-hosted GitHub Enterprise Server apart by its address; github.com sends none.
+                        ...(context.serverUrl === 'https://github.com' ? {} : { remoteUrl: context.serverUrl }),
+                      },
+                    },
+                  }),
+                });
+                if (!response.ok) throw new Error(`Greptile answered ${response.status}`);
+                await readMcp(response);
+              },
+              bugbot: async () => {
+                const key = keyOf('BUGBOT');
+                const response = await fetch('https://api.cursor.com/bugbot/review', {
+                  method: 'POST',
+                  headers: { Authorization: `Basic ${Buffer.from(`${key}:`).toString('base64')}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ prUrl }),
+                });
+                const answer = await response.json().catch(() => ({}));
+                if (!response.ok || answer.outcome === 'error') throw new Error(answer.message ?? `Cursor answered ${response.status}`);
+              },
+              devin: async () => {
+                const key = keyOf('DEVIN');
+                // A key made in one organization's settings knows its organization; an enterprise-wide key does not.
+                let org = process.env.GELD_DEVIN_ORG_ID;
+                if (!org) {
+                  const self = await fetch('https://api.devin.ai/v3/self', { headers: { Authorization: `Bearer ${key}` } });
+                  if (!self.ok) throw new Error(`Devin answered ${self.status} when asked which organization the key belongs to`);
+                  org = (await self.json().catch(() => ({}))).org_id;
+                  if (!org) throw new Error('this Devin key spans several organizations: set GELD_DEVIN_ORG_ID in the workflow');
+                }
+                const response = await fetch(`https://api.devin.ai/v3/organizations/${encodeURIComponent(org)}/pr-reviews`, {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ pr_url: prUrl }),
+                });
+                if (!response.ok) throw new Error(`Devin answered ${response.status}`);
+              },
+            };
+
+            const results = await Promise.allSettled(bots.map((bot) => start[bot]()));
+            const failed = results.flatMap((result, index) => (result.status === 'rejected' ? [`${bots[index]}: ${result.reason.message}`] : []));
+            // The bots' APIs act for the organization the key belongs to, so who asked is recorded here, with the run.
+            for (const [index, result] of results.entries()) if (result.status === 'fulfilled') core.info(`${bots[index]}: review queued for ${comment.user.login}`);
+            await react(failed.length === 0 ? 'rocket' : '-1');
+            if (failed.length > 0) core.setFailed(failed.join('\n'));
