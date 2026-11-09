@@ -184,3 +184,10 @@ it('represents Bitbucket outgoing destinations by canonical URL without fabricat
   expect(row?.getAttribute('data-geld-reference-identity')).toBe('canonical-url');
   expect(row?.hasAttribute('data-geld-reference-native-id')).toBe(false);expect(row?.hasAttribute('data-geld-reference-project')).toBe(false);
 });
+
+it('requires native comment provenance for an outgoing comment reference', () => {
+  const reference = { ...outgoing, source: { reviewUrl: url, anchor: 'note_123', author: { id: '1', login: 'alice' }, createdAt: '2026-11-09T00:00:00Z' } };
+  expect(referenceForSubject(reference, subject)).toBe(true);
+  expect(referenceForSubject({ ...reference, source: { reviewUrl: url, anchor: 'note_123' } }, subject)).toBe(false);
+  expect(referenceForSubject({ ...reference, source: { ...reference.source, createdAt: 'unknown' } }, subject)).toBe(false);
+});

@@ -1,0 +1,16 @@
+.geld-provider-related {
+  color: var(--geld-provider-text);
+  font: var(--geld-provider-font);
+  padding-block: var(--geld-provider-space-4);
+  border-block-end: var(--geld-provider-border-width) solid var(--geld-provider-border);
+  min-inline-size: 0;
+}
+.geld-provider-related h3 { margin: 0 0 var(--geld-provider-space-3); font: inherit; font-weight: var(--geld-provider-heading-weight); }
+.geld-provider-related ul { margin: 0; padding: 0; list-style: none; }
+.geld-provider-related__row { margin-block: var(--geld-provider-space-2); min-inline-size: 0; }
+.geld-provider-related__link { color: var(--geld-provider-link); display: flex; align-items: center; gap: var(--geld-provider-space-2); overflow-wrap: anywhere; }
+.geld-provider-related__link img { flex: none; }
+.geld-provider-related__context { display: block; color: var(--geld-provider-text-subtle); overflow-wrap: anywhere; }
+.geld-provider-related button { font: inherit; color: var(--geld-provider-link); background: transparent; border: none; padding: var(--geld-provider-space-2) 0; cursor: pointer; }
+.geld-provider-related a:focus-visible, .geld-provider-related button:focus-visible { outline: 2px solid var(--geld-provider-link); outline-offset: 2px; }
+html[data-geld-provider="bitbucket"] .geld-provider-related { background: var(--geld-provider-bg); border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: var(--geld-provider-radius); padding: var(--geld-provider-space-4); box-shadow: var(--geld-provider-shadow); }

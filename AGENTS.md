@@ -3459,3 +3459,10 @@ Native person hiding uses individual qualified comment roots, leaves mixed or ed
 Per-person visit peeks are independent of the shared settings, and Stop hiding removes only exact matching local rules, never a wildcard or a different provider's qualified rule.
 These controls change Geld's local visibility and do not invoke provider block, moderation or administrator APIs.
 The GitLab public author-style probe exercises hiding, peeking and exact-rule removal against a native account and comment body hash, then restores the exact saved settings.
+
+GitLab and Bitbucket related context uses the shared link registry with native sidebar styling and local service icons.
+Description links are read without additional API requests, and official bot links require verified provider account IDs rather than a GitHub-style login.
+Related work contains only outgoing native references in the description, while comment references stay in the digest and retain their native source anchor, author and timestamp.
+GitLab comment references require the native account ID and GFM target identity, while Bitbucket references require a qualified comment permalink and canonical target URL.
+Description references win over later comment mentions, and comment mentions are ordered chronologically so the first verified source remains stable.
+Hidden-person rules also apply to bot link sources, and a per-visit peek restores those links without altering shared settings.

@@ -56,3 +56,12 @@ test('installed index helper retains progress before checks and keeps body read 
   assert.match(helper, /progress\.requests\.push/);
   assert.doesNotMatch(helper, /assert\.deepEqual\(progress\.requests, \[\]\)/);
 });
+
+test('accepts additional comment references only with matching native identity evidence', () => {
+  const value = fixture();
+  const extra = { repository: 'group/repo', project: '10', nativeId: '20', number: '30', kind: 'merge-request', href: 'https://gitlab.com/group/repo/-/merge_requests/30', source: 'note_123', label: '!30', title: 'Native title', initializationHooks: false };
+  value.outgoing.push({ ...extra, native: { ...extra } });
+  verify(value);
+  value.outgoing[value.outgoing.length - 1].native.nativeId = 'wrong';
+  assert.throws(() => verify(value));
+});
