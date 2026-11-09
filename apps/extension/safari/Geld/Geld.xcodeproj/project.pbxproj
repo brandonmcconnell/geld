@@ -29,7 +29,6 @@
 		4FE8EE2A30508337002FD173 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4FE8EDEA30508337002FD173 /* Assets.xcassets */; };
 		4FE8EE2B30508337002FD173 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FE8EDEC30508337002FD173 /* SafariWebExtensionHandler.swift */; };
 		4FE8EE2C30508337002FD173 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FE8EDEC30508337002FD173 /* SafariWebExtensionHandler.swift */; };
-		4FE8EE4730508338002FD173 /* offscreen.html in Resources */ = {isa = PBXBuildFile; fileRef = 4FE8EE3E30508338002FD173 /* offscreen.html */; };
 		4FE8EE4830508338002FD173 /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = 4FE8EE3F30508338002FD173 /* background.js */; };
 		4FE8EE4930508338002FD173 /* popup.html in Resources */ = {isa = PBXBuildFile; fileRef = 4FE8EE4030508338002FD173 /* popup.html */; };
 		4FE8EE4A30508338002FD173 /* chunks in Resources */ = {isa = PBXBuildFile; fileRef = 4FE8EE4130508338002FD173 /* chunks */; };
@@ -38,7 +37,6 @@
 		4FE8EE4D30508338002FD173 /* options.html in Resources */ = {isa = PBXBuildFile; fileRef = 4FE8EE4430508338002FD173 /* options.html */; };
 		4FE8EE4E30508338002FD173 /* icon in Resources */ = {isa = PBXBuildFile; fileRef = 4FE8EE4530508338002FD173 /* icon */; };
 		4FE8EE4F30508338002FD173 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 4FE8EE4630508338002FD173 /* assets */; };
-		4FE8EE5030508338002FD173 /* offscreen.html in Resources */ = {isa = PBXBuildFile; fileRef = 4FE8EE3E30508338002FD173 /* offscreen.html */; };
 		4FE8EE5130508338002FD173 /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = 4FE8EE3F30508338002FD173 /* background.js */; };
 		4FE8EE5230508338002FD173 /* popup.html in Resources */ = {isa = PBXBuildFile; fileRef = 4FE8EE4030508338002FD173 /* popup.html */; };
 		4FE8EE5330508338002FD173 /* chunks in Resources */ = {isa = PBXBuildFile; fileRef = 4FE8EE4130508338002FD173 /* chunks */; };
@@ -113,7 +111,6 @@
 		4FE8EE1430508337002FD173 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		4FE8EE1930508337002FD173 /* Geld Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Geld Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		4FE8EE1E30508337002FD173 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		4FE8EE3E30508338002FD173 /* offscreen.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = offscreen.html; path = Resources/offscreen.html; sourceTree = "<group>"; };
 		4FE8EE3F30508338002FD173 /* background.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = background.js; path = Resources/background.js; sourceTree = "<group>"; };
 		4FE8EE4030508338002FD173 /* popup.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = popup.html; path = Resources/popup.html; sourceTree = "<group>"; };
 		4FE8EE4130508338002FD173 /* chunks */ = {isa = PBXFileReference; lastKnownFileType = folder; name = chunks; path = Resources/chunks; sourceTree = "<group>"; };
@@ -251,7 +248,6 @@
 		4FE8EE3D30508338002FD173 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				4FE8EE3E30508338002FD173 /* offscreen.html */,
 				4FE8EE3F30508338002FD173 /* background.js */,
 				4FE8EE4030508338002FD173 /* popup.html */,
 				4FE8EE4130508338002FD173 /* chunks */,
@@ -431,7 +427,6 @@
 				4FE8EE5230508338002FD173 /* popup.html in Resources */,
 				4FE8EE5830508338002FD173 /* assets in Resources */,
 				4FE8EE5330508338002FD173 /* chunks in Resources */,
-				4FE8EE5030508338002FD173 /* offscreen.html in Resources */,
 				4FE8EE5730508338002FD173 /* icon in Resources */,
 				4FE8EE5530508338002FD173 /* manifest.json in Resources */,
 				4FE8EE5430508338002FD173 /* content-scripts in Resources */,
@@ -447,7 +442,6 @@
 				4FE8EE4930508338002FD173 /* popup.html in Resources */,
 				4FE8EE4F30508338002FD173 /* assets in Resources */,
 				4FE8EE4A30508338002FD173 /* chunks in Resources */,
-				4FE8EE4730508338002FD173 /* offscreen.html in Resources */,
 				4FE8EE4E30508338002FD173 /* icon in Resources */,
 				4FE8EE4C30508338002FD173 /* manifest.json in Resources */,
 				4FE8EE4B30508338002FD173 /* content-scripts in Resources */,
