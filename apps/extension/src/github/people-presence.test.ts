@@ -51,6 +51,10 @@ describe('applyPeoplePresence on an issue', () => {
     card?.replaceWith(fresh);
     apply('issue');
     expect(document.querySelector('#issuecomment-1')?.hasAttribute('data-geld-person-fold-open')).toBe(true);
+    // The line stays across the swap, and its button acts on the card GitHub put in its place.
+    document.querySelector('#issuecomment-1')?.previousElementSibling?.querySelector('button')?.click();
+    expect(document.querySelector('#issuecomment-1')?.hasAttribute('data-geld-person-fold-open')).toBe(false);
+    expect(document.querySelector('#issuecomment-1')?.previousElementSibling?.querySelector('button')?.textContent).toBe('Show comment');
   });
 });
 
