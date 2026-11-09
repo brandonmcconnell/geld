@@ -513,7 +513,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
     id: 'lists',
     title: 'Hidden people',
     intro:
-      'People and bots you never want to see. Their pull requests are hidden in PR lists and stacks, behind a row that says how many and shows them on click. Their reviews and comments are left out of the pull request digest, where a closed eye on the Reviews or Review bots row lists them with Peek and Unhide. Anyone GitHub shows with a comment hidden as spam or abuse is left out of the digest too. One login per line. `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).',
+      'People and bots you never want to see. Their pull requests are hidden in PR lists and stacks, behind a row that says how many and shows them on click. Their reviews and comments are left out of the pull request digest, where a closed eye on the Reviews or Review bots row lists them with Peek and Unhide. Anyone GitHub shows with a comment hidden as spam or abuse is left out of the digest too. A reply of theirs in someone else’s review thread stays in that thread. One login per line. `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).',
     fields: [
       {
         kind: 'list',

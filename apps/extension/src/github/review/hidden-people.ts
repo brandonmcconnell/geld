@@ -235,7 +235,8 @@ export class HiddenPeople {
   namesHidden(event: Element): boolean {
     for (const link of event.querySelectorAll(EVENT_PEOPLE)) {
       const login = loginOfLink(link)?.toLowerCase();
-      if (login !== undefined && this.entries.has(login) && !this.peeking.has(login)) return true;
+      // Someone on the reader's list may appear only in an event (a comment of theirs deleted), never met by `hides`.
+      if (login !== undefined && (this.entries.has(login) || this.rules.hides(login)) && !this.peeking.has(login)) return true;
     }
     return false;
   }

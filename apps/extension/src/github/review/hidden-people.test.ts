@@ -169,6 +169,8 @@ describe('namesHidden', () => {
     expect(hidden.namesHidden(event)).toBe(true);
     expect(hidden.namesHidden(other)).toBe(false);
     expect(new HiddenPeople(marked, compileAuthorRules([]), new Set(['spam-user'])).namesHidden(event)).toBe(false);
+    // Someone on the reader's list whom the page names only in an event is hidden there too.
+    expect(new HiddenPeople([], compileAuthorRules(['spam-user']), new Set()).namesHidden(event)).toBe(true);
   });
 });
 

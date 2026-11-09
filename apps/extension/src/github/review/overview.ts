@@ -124,6 +124,8 @@ interface VisitState {
   sourcesShown: Set<string>;
   /** Hidden people (lowercased logins) the reader is peeking at: their content is in the digest for this visit. */
   peeking: Set<string>;
+  /** Who was hidden when `lastReviews` was read: a reading from before someone was hidden is dropped. */
+  lastReviewsHiddenKey: string;
   archivedPreviewsOpen: boolean;
   /** Rounds whose commit rows are unfolded (batch grouping). */
   openCommits: Set<string>;
@@ -204,6 +206,7 @@ const visit: VisitState = {
   openSubKey: null,
   sourcesShown: new Set<string>(),
   peeking: new Set<string>(),
+  lastReviewsHiddenKey: '',
   archivedPreviewsOpen: false,
   openCommits: new Set<string>(),
   openPreviews: new Set<string>(),
@@ -845,17 +848,39 @@ function isStatusLine(entry: CrawledComment): boolean {
   return entry.author.bot && jevNow.lanes.get(entry.comment.anchor) === 'status';
 }
 
-/** The Action's payload without hidden people: their items' sources, their recorded reviews and their bots' verdicts. */
-function withoutHidden(meta: GeldPrMeta, hidden: HiddenPeople): GeldPrMeta {
+/**
+ * The Action's payload without hidden people: a thread a hidden person started is theirs and goes whole (the crawl
+ * leaves it out the same way), an item they only joined keeps its other sources but loses the merged context and fix
+ * that may carry their words, their recorded reviews, bot verdicts and preview comments go, and the TL;DR, written
+ * over every item, goes once anything it summed up changed.
+ */
+function withoutHidden(meta: GeldPrMeta, hidden: HiddenPeople, authorOfAnchor: (anchor: string) => string | null): GeldPrMeta {
+  const hides = (login: string): boolean => login !== '' && hidden.hides(login, login.endsWith('[bot]'));
+  let itemsChanged = false;
   const items = meta.items.flatMap((item) => {
-    const sources = item.sources.filter((source) => !hidden.hides(source.author, source.author.endsWith('[bot]')));
+    const first = item.sources[0];
+    if (first !== undefined && hides(first.author)) {
+      itemsChanged = true;
+      return [];
+    }
+    const sources = item.sources.filter((source) => !hides(source.author));
     if (sources.length === item.sources.length) return [item];
-    return sources.length === 0 ? [] : [{ ...item, sources }];
+    itemsChanged = true;
+    const { context, fix, ...rest } = item;
+    void context;
+    void fix;
+    return [{ ...rest, sources }];
   });
-  const reviewers = meta.reviewers.filter((reviewer) => !hidden.hides(reviewer.login, reviewer.login.endsWith('[bot]')));
+  const reviewers = meta.reviewers.filter((reviewer) => !hides(reviewer.login));
   const bots = meta.bots.filter((bot) => !hidden.hides(bot.login, true));
-  if (items.length === meta.items.length && reviewers.length === meta.reviewers.length && bots.length === meta.bots.length && items.every((item, index) => item === meta.items[index])) return meta;
-  return { ...meta, items, reviewers, bots };
+  const previews = meta.previews?.filter((preview) => {
+    const author = authorOfAnchor(preview.anchor);
+    return author === null || !hides(author);
+  });
+  const botsChanged = bots.length !== meta.bots.length;
+  if (!itemsChanged && !botsChanged && reviewers.length === meta.reviewers.length && previews?.length === meta.previews?.length) return meta;
+  const { summary, ...base } = meta;
+  return { ...base, items, reviewers, bots, ...(previews === undefined ? {} : { previews }), ...(summary === undefined || itemsChanged || botsChanged ? {} : { summary }) };
 }
 
 function withManualDone(meta: GeldPrMeta): GeldPrMeta {
@@ -3302,7 +3327,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       .map((entry) => ({ preview: entry, text: docText.get(entry.anchor) ?? '' })),
   );
   jevNow = phase('jev', () => jevDecisionsFor(settings, topLevel, threads, reapplySoon, unknownPreviews));
-  const meta = phase('paths', () => withWholePaths(withManualDone(withJevDone(withoutHidden({ ...composed.meta, bots: withBotRequests(composed.meta.bots, botRequests, headSha) }, hidden), jevNow.done))));
+  const meta = phase('paths', () => withWholePaths(withManualDone(withJevDone(withoutHidden({ ...composed.meta, bots: withBotRequests(composed.meta.bots, botRequests, headSha) }, hidden, (anchor) => crawledAll.comments.find((entry) => entry.comment.anchor === anchor)?.author.login ?? null), jevNow.done))));
   // A review's or run summary's threads as chips under its opened bubble, by file, each leading to its row.
   const threadLinks = (threads: readonly ReviewThreadRef[]): ChatThreadLink[] =>
     threads.map((thread) => {
@@ -3377,8 +3402,19 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   }
   // Blocked people leave GitHub's sidebar whether or not anything of theirs is hidden; the pull request's state stays GitHub's.
   syncSidebarPeople((login) => hidden.hides(login, login.endsWith('[bot]')) || blockedNow(login).org || blockedNow(login).personal);
+  // A reading kept from before someone was hidden (GitHub's hidden content loading late) must not stand in for one without them.
+  const hiddenKey = hidden
+    .people()
+    .filter((person) => !person.peeking)
+    .map((person) => person.login.toLowerCase())
+    .join(',');
+  if (visit.lastReviewsHiddenKey !== hiddenKey) {
+    visit.lastReviews = null;
+    visit.lastReviewsHiddenKey = hiddenKey;
+  }
   const hiddenAskedChanges = sidebarAll.some((reviewer) => reviewer.state === 'changes_requested' && !sidebar.includes(reviewer)) && !sidebar.some((reviewer) => reviewer.state === 'changes_requested');
-  const awaiting = phase('awaiting', () => awaitingReviewers(sidebar));
+  // The fallback reads GitHub's own "Awaiting requested review from X" controls, which the sidebar filter never saw.
+  const awaiting = phase('awaiting', () => awaitingReviewers(sidebar).filter((entry) => !hidden.hides(entry.author, false)));
   // A comment left with a close or reopen belongs to that row, not to the Reviews list or a round.
   const timelineEntries = phase('entries', () => reviewEntries(crawledDom, reviews, meta, settings).filter((entry) => !closures.paired.has(entry.anchor)));
   // The rounds are the timeline's; the sidebar's provisional lines (no row behind them yet) are the Reviews row's alone.
@@ -3881,7 +3917,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       const targets = hidden.unhideTargets(person.login);
       if (targets.length > 0) {
         const what = targets.length === 1 ? 'their hidden comment' : `their ${targets.length} hidden comments`;
-        if (!window.confirm(`Unhide ${person.login} on GitHub?\n\nThis unhides ${what} for everyone, and their reviews and comments will count in the digest again.`)) return;
+        const after = person.rule === null ? 'and their reviews and comments will count in the digest again.' : `but your digest keeps them hidden while "${person.rule}" is on your hidden list in Geld. Use Show to see them here.`;
+        if (!window.confirm(`Unhide ${person.login} on GitHub?\n\nThis unhides ${what} for everyone, ${after}`)) return;
+        // The reader may move on while GitHub answers: a reload, or a refresh of this page's nodes, is for this page only.
+        const page = location.pathname;
         void (async () => {
           let refreshed = true;
           for (const { content, form } of targets) {
@@ -3890,8 +3929,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
               reapplySoon();
               return;
             }
+            if (location.pathname !== page) return;
             if (!(await refreshUnhidden(content))) refreshed = false;
           }
+          if (location.pathname !== page) return;
           if (refreshed) reapplySoon();
           else location.reload();
         })();
@@ -3899,8 +3940,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       }
       const rules = person.github === null ? exactRulesFor(settings.hiddenAuthors, person.login) : [];
       if (rules.length === 0) return;
-      if (!window.confirm(`Unhide ${person.login}?\n\nTheir reviews and comments will show in your digest again, and their pull requests in your lists. This removes them from your hidden list in Geld.`)) return;
-      persist(settingsItem.patch({ hiddenAuthors: settings.hiddenAuthors.filter((line) => !rules.includes(line)) }));
+      const remaining = settings.hiddenAuthors.filter((line) => !rules.includes(line));
+      const still = compileAuthorRules(remaining).explain(person.login);
+      const result = still === null ? 'Their reviews and comments will show in your digest again, and their pull requests in your lists.' : `They stay hidden, since "${still}" on your hidden list in Geld matches them too.`;
+      if (!window.confirm(`Unhide ${person.login}?\n\nThis removes ${rules.length === 1 ? `"${rules[0] ?? person.login}"` : 'their lines'} from your hidden list in Geld. ${result}`)) return;
+      persist(settingsItem.patch({ hiddenAuthors: remaining }));
     },
     onManageHidden: (section) => {
       if (section === 'list') {
