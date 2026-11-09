@@ -2216,6 +2216,24 @@ async function gitLabBotBodyEvidence(page, item) {
   } finally { page.off('request', request); }
 }
 
+async function verifyProviderFlow(page, item) {
+  const progress = { status: 'running', scope: 'Public card counts, category inclusion and focus restoration. Dependency parsing and immutable fork selection have separate unit coverage.' };item.fileFlow = progress;
+  const before = await tabState(page);
+  await page.click('.geld-provider-flow-button');
+  await poll(() => page.evaluate(() => {
+    const dialog = document.querySelector('dialog.geld-provider-flow');return dialog?.open && !/Reading imports|Loading verified/.test(dialog.querySelector('[role="status"]')?.textContent ?? '');
+  }), Boolean, 'File flow settles its bounded source reads');
+  progress.initial = await page.evaluate(() => ({ cards: document.querySelectorAll('.geld-provider-flow [data-geld-flow-path]').length, edges: document.querySelectorAll('.geld-provider-flow [data-geld-flow-from]').length, message: document.querySelector('.geld-provider-flow [role="status"]')?.textContent }));
+  assert.equal(progress.initial.cards, before.all.files - before.hiddenCount);
+  await page.click('.geld-provider-flow__tools button[aria-pressed="false"]');
+  await poll(() => page.evaluate(() => document.querySelectorAll('.geld-provider-flow [data-geld-flow-path]').length), value => value === before.all.files, 'Flow includes categorized files on demand');
+  progress.artifacts = await capture(page, 'gitlab-file-flow');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('geld-provider-flow-button')), true);
+  assert.deepEqual((await tabState(page)).visible, before.visible, 'Flow toggles do not change diff filtering');
+  progress.status = 'passed';
+}
+
 async function verifyGitLabAttachment(page, item) {
   const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
   const progress = { status: 'running' };item.attachmentViewer = progress;
@@ -3360,6 +3378,7 @@ try {
       writeSettings: (value) => options.evaluate(async (key, saved) => { await chrome.storage.sync.set({ [key]: saved }); }, SETTINGS_KEY, value),
       readState: async () => ({ runtime: await tabState(page), native: await gitLabDom(page) }),
     });
+    if (focus === 'gitlab-ui') await verifyProviderFlow(page, item);
     return {};
   });
   // A failed assertion while disabled must not invalidate the following independent fixture.
