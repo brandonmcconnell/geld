@@ -5,7 +5,7 @@ const REVIEW = 'https://gitlab.com/whitebox-aero/whitebox/-/merge_requests/272';
 export const GITLAB_COPY_AUTHOR = 'group_84680077_bot_800401aaa75115e1bc0c76e02d860b8b';
 export const GITLAB_COPY_FIX = 'insta360 = {git = "https://gitlab.com/whitebox-aero/insta360", rev = "8d6fdc4acb176faf2b4449f5be90af59d4390372"}';
 export const GITLAB_COPY_MARKDOWN = [
-  '- [x] **Comment** `backend/pyproject.toml:56` · @group\\_84680077\\_bot\\_800401aaa75115e1bc0c76e02d860b8b',
+  '- [x] **Using a branch name as `rev` makes the `pyproject.toml` entry point at a mutable ref.** `backend/pyproject.toml:56` · @group\\_84680077\\_bot\\_800401aaa75115e1bc0c76e02d860b8b',
   '  Source status: resolved.', '  Suggested fix (bot):', '  ```suggestion', `  ${GITLAB_COPY_FIX}`, '  ```',
   `  Sources: [source](${REVIEW}#note_3381334872) · [source](${REVIEW}#note_3381334884)`,
 ].join('\n');

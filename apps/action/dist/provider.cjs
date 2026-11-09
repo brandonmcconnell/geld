@@ -27012,6 +27012,13 @@ function ruleIdOf(body2) {
   const match = RULE_ID.exec(body2);
   return match?.[1]?.toLowerCase() ?? null;
 }
+var LEADING_REVIEW_BADGE = /^<a href="#"><img alt="P([12])" src="https:\/\/greptile-static-assets\.s3\.amazonaws\.com\/badges\/p\1\.svg\?v=9" height="20" align="top"><\/a>[ \t]+/;
+function titleLine(line) {
+  const badge = LEADING_REVIEW_BADGE.exec(line);
+  if (badge === null) return line;
+  const text2 = line.slice(badge[0].length).trimStart();
+  return text2 !== "" && !text2.startsWith("<") && /[\p{L}\p{N}]/u.test(text2) ? text2 : line;
+}
 var BADGE_LINE = /^\p{Extended_Pictographic}?\uFE0F?\s*\*\*(critical|high|medium|low)\*\*(?:\s+`[^`\n]*`)?$/iu;
 var GATE_HEADING = /^approvability$/i;
 function outsideCodeSpans(line, change) {
@@ -27019,7 +27026,7 @@ function outsideCodeSpans(line, change) {
 }
 function firstSentence(body2) {
   const withoutCode = body2.replace(/```[\s\S]*?```/g, " ");
-  const line = withoutCode.split("\n").map((entry) => outsideCodeSpans(entry, (text2) => text2.replace(/<br\s*\/?>/gi, " ").replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/<\/?(?:sub|sup|picture|source|img|span|a|p|div)\b[^>]*>/gi, "")).replace(/^(\*\*|__)\s+/, "$1").trim()).filter((entry) => entry !== "" && /[\p{L}\p{N}]/u.test(entry) && !entry.startsWith("<") && !/^#{1,6}\s/.test(entry) && !/^[-*]\s*$/.test(entry) && !BADGE_LINE.test(entry) && !GATE_HEADING.test(entry)).map((entry) => entry.replace(/^\s*[-*]\s+/, "")).find((entry) => entry !== "") ?? "";
+  const line = withoutCode.split("\n").map((entry) => outsideCodeSpans(titleLine(entry.trim()), (text2) => text2.replace(/<br\s*\/?>/gi, " ").replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/<\/?(?:sub|sup|picture|source|img|span|a|p|div)\b[^>]*>/gi, "")).replace(/^(\*\*|__)\s+/, "$1").trim()).filter((entry) => entry !== "" && /[\p{L}\p{N}]/u.test(entry) && !entry.startsWith("<") && !/^#{1,6}\s/.test(entry) && !/^[-*]\s*$/.test(entry) && !BADGE_LINE.test(entry) && !GATE_HEADING.test(entry)).map((entry) => entry.replace(/^\s*[-*]\s+/, "")).find((entry) => entry !== "") ?? "";
   const cleaned = line.replace(/\s+/g, " ").trim();
   if (cleaned === "") return "Comment";
   const sentence = sentenceOf(cleaned, 160);

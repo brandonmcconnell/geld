@@ -67,6 +67,17 @@ export function ruleIdOf(body: string): string | null {
   return match?.[1]?.toLowerCase() ?? null;
 }
 
+// The observed Greptile inline badge is decoration, not the concern that follows it.
+// Keep this exact inert shape narrow. It grants no identity, severity or verdict trust.
+const LEADING_REVIEW_BADGE = /^<a href="#"><img alt="P([12])" src="https:\/\/greptile-static-assets\.s3\.amazonaws\.com\/badges\/p\1\.svg\?v=9" height="20" align="top"><\/a>[ \t]+/;
+
+function titleLine(line: string): string {
+  const badge = LEADING_REVIEW_BADGE.exec(line);
+  if (badge === null) return line;
+  const text = line.slice(badge[0].length).trimStart();
+  return text !== '' && !text.startsWith('<') && /[\p{L}\p{N}]/u.test(text) ? text : line;
+}
+
 /**
  * The first line worth showing, kept to one sentence. Fenced blocks go;
  * inline marks (`code`, **bold**, *italic*, ~~struck~~) stay, so a title
@@ -93,7 +104,7 @@ export function firstSentence(body: string): string {
   const line = withoutCode
     .split('\n')
     // Codex's raw "**<sub><sub>![P2 Badge](…)</sub></sub>  Resolve reference paths…**": the badge is no words, as on the page.
-    .map((entry) => outsideCodeSpans(entry, (text) => text.replace(/<br\s*\/?>/gi, ' ').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/<\/?(?:sub|sup|picture|source|img|span|a|p|div)\b[^>]*>/gi, '')).replace(/^(\*\*|__)\s+/, '$1').trim())
+    .map((entry) => outsideCodeSpans(titleLine(entry.trim()), (text) => text.replace(/<br\s*\/?>/gi, ' ').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/<\/?(?:sub|sup|picture|source|img|span|a|p|div)\b[^>]*>/gi, '')).replace(/^(\*\*|__)\s+/, '$1').trim())
     .filter((entry) => entry !== '' && /[\p{L}\p{N}]/u.test(entry) && !entry.startsWith('<') && !/^#{1,6}\s/.test(entry) && !/^[-*]\s*$/.test(entry) && !BADGE_LINE.test(entry) && !GATE_HEADING.test(entry))
     .map((entry) => entry.replace(/^\s*[-*]\s+/, ''))
     .find((entry) => entry !== '') ?? '';
