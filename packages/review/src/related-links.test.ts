@@ -187,7 +187,7 @@ describe('GitHub references', () => {
   const readHere = (href: string, text = href) => relatedLinkOf({ href, text }, options);
 
   it('reads issues, pull requests and discussions: `#N` in this repository, `repo#N` in its owner’s, `owner/repo#N` elsewhere', () => {
-    expect(readHere('https://github.com/acme/web/issues/12', '#12')).toMatchObject({ kind: 'github', service: 'GitHub', noun: 'issue', ref: '#12', title: null, context: 'acme/web', action: 'Open issue on GitHub' });
+    expect(readHere('https://github.com/acme/web/issues/12', '#12')).toMatchObject({ kind: 'github', service: 'GitHub', noun: 'issue', ref: '#12', title: null, context: 'acme/web', action: 'View issue on GitHub' });
     expect(readHere('https://github.com/acme/api/pull/5', 'acme/api#5')).toMatchObject({ ref: 'api#5', title: null });
     expect(readHere('https://github.com/vercel/next.js/pull/52514', 'vercel/next.js#52514')).toMatchObject({ noun: 'pull request', ref: 'vercel/next.js#52514', title: null });
     expect(readHere('https://github.com/acme/web/pull/3/files', 'the refactor')).toMatchObject({ ref: '#3', title: 'the refactor' });

@@ -325,7 +325,7 @@ describe('related links in the sidebar', () => {
       ['done', 'octicon octicon-git-merge geld-related__mark'],
       ['open', 'octicon octicon-issue-opened geld-related__mark'],
     ]);
-    expect(document.querySelectorAll('.geld-related__link')[0]?.getAttribute('title')).toBe('Merged · Open pull request on GitHub · Cache fetches across routes · vercel/next.js');
+    expect(document.querySelectorAll('.geld-related__link')[0]?.getAttribute('title')).toBe('Merged · View pull request on GitHub · Cache fetches across routes · vercel/next.js');
   });
 
   it('lists the description’s issues and pull requests under Related work, after Related links, in the Rails sidebar and the Overview one', () => {
@@ -397,6 +397,9 @@ describe('related links in the sidebar', () => {
     removeRelatedLinks();
     document.body.innerHTML = `<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>See ${moved}.</p></div></div>${railsSidebar()}`;
     expect(relatedLinksOnPage().map((link) => [link.key, link.ref, link.href])).toEqual([['github:acme/web#8', '#8', 'https://github.com/acme/web/pull/8']]);
+    // Its title and state are asked of the hovercard at the current home, which answers; the old address only redirects.
+    applyRelatedLinks(true);
+    expect(fetches.paths.filter((path) => path.endsWith('/hovercard'))).toEqual(['/acme/web/pull/8/hovercard']);
 
     const withCard = (type: string, card: string): Element => {
       const element = document.createElement('a');
