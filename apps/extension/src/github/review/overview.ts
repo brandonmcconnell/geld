@@ -2467,6 +2467,10 @@ function threadHandlers(item: ReviewItem | undefined, meta: GeldPrMeta, reapply:
  */
 function threadPathOf(node: HTMLElement, item: ReviewItem | undefined, meta: GeldPrMeta): string {
   const hash = diffHashOf(node) ?? diffHashOf(closestAtHome(node, TIMELINE_ROW));
+  // The thread's own file first: an item merging one finding from two files carries one path for all its threads.
+  const ownLink = node.querySelector(':scope > [class*="header"] h2 a, a.Link--primary[href*="#diff-"]');
+  const own = ownLink !== null && ownLink.closest('.comment-body, .markdown-body') === null ? (ownLink.textContent ?? '').replace(/[\u200e\u200f]/g, '').trim() : '';
+  if (own !== '' && !own.includes(' ')) return completePath(own, hash, meta);
   if (item?.path !== undefined) return completePath(item.path, hash, meta);
   const header = node.querySelector('.file-header, [data-testid="file-header"]') ?? closestAtHome(node, '.TimelineItem, .js-timeline-item')?.querySelector('.file-header, [data-testid="file-header"]') ?? null;
   const fromAttributes = header?.getAttribute('data-path') ?? header?.querySelector('a[title]')?.getAttribute('title') ?? header?.querySelector('[title]')?.getAttribute('title') ?? null;

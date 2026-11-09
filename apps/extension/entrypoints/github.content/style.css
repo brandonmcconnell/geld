@@ -5601,7 +5601,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   overflow: visible;
 }
 
-/* ---- the head: file path, copy, GitHub's link to the diff ---- */
+/* ---- the head: file path and lines, copy, jump to the comment in the diff, resolve ---- */
 
 /* The 28px icons in a 32px head leave 2px above and below; the same 2px on the right keeps the margin square. */
 .geld-review__chat-head {
@@ -5628,12 +5628,29 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   height: 14px;
 }
 
-/* Takes the space the actions leave, whatever its text: the fit is computed against that space (path-fit.ts). */
-.geld-review__chat-path {
+/* The path and its lines take the space the actions leave; the path, fitted to what the lines leave of it (path-fit.ts),
+ * runs only as long as its text so the lines follow it, as the Overview's heading has "Lines 845 - 853". */
+.geld-review__chat-where {
+  display: flex;
   flex: 1 1 0;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.geld-review__chat-path {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
+  white-space: nowrap;
+}
+
+.geld-review__chat-lines {
+  flex: 0 0 auto;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -5727,12 +5744,10 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   display: none !important;
 }
 
-/* The line range and the diff hunk the thread is about, under the head, in the diff's own type. */
+/* GitHub's "Comment on lines +3331 to +3335": the head says it ("3331-3335"). */
 .geld-review__chat-body .f6.border-bottom:has(> * > .js-multi-line-preview-start),
 .geld-review__chat-body .f6.border-bottom:has(> .js-multi-line-preview-start) {
-  padding: 6px 12px !important;
-  border-bottom: 1px solid var(--geld-review-border-muted) !important;
-  font-size: 11px;
+  display: none !important;
 }
 
 .geld-review__chat-body .blob-wrapper {
@@ -6520,13 +6535,14 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 /* ---- the composer: GitHub's reply control, always at the bottom ---- */
 
 /*
- * The reply area holds GitHub's editor (collapsed to its "Reply…" field until
- * pressed) and, for a reader who can resolve, GitHub's Resolve form, moved
- * by chat.ts into the side slot at the area's end. Collapsed, the field and
- * the side share one line, the field taking the width. Open, the editor
- * takes the whole width and the side sits at the bottom left, on the
- * editor's own action row across from Cancel and Comment (the area's bottom
- * padding is the row's, `bottom` matches it).
+ * The classic page's reply area, drawn as the Overview draws its own reply
+ * row (which the chat leaves as GitHub renders it): on the inset surface,
+ * GitHub's "Reply…" as a plain field and, for a reader who can resolve,
+ * GitHub's Resolve form, moved by chat.ts into the side slot at the area's
+ * end. Collapsed, the field and the side share one line, the field taking
+ * the width. Open, the editor takes the whole width and the side sits at the
+ * bottom left, on the editor's own action row across from Cancel and
+ * Comment (the area's bottom padding is the row's, `bottom` matches it).
  */
 .geld-review__chat-body .review-thread-reply {
   position: relative;
@@ -6535,11 +6551,11 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   align-items: center;
   gap: 8px;
   margin: 0 !important;
-  padding: 8px 12px 10px !important;
+  padding: 8px !important;
   border: 0 !important;
   border-top: 1px solid var(--geld-review-border-muted) !important;
   border-radius: 0 0 5px 5px;
-  background: var(--geld-review-bg);
+  background: var(--bgColor-inset, var(--color-canvas-inset, #f6f8fa));
 }
 
 .geld-review__chat-body .review-thread-reply > .js-inline-comment-form-container {
@@ -6558,8 +6574,13 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 
 .geld-review__chat-body .review-thread-reply:has(> .js-inline-comment-form-container.open) > .geld-review__composer-side {
   position: absolute;
-  bottom: 10px;
-  left: 12px;
+  bottom: 8px;
+  left: 8px;
+}
+
+/* Resolved, the row is the field alone, as the Overview's; the head's check unresolves. */
+.geld-review__composer-side[data-resolved] {
+  display: none !important;
 }
 
 .geld-review__composer-side > form {
@@ -6575,33 +6596,17 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   font-size: 0 !important;
 }
 
+/* Primer's medium default button, as the Overview's Resolve. */
 .geld-review__composer-side button {
   height: 32px !important;
   min-height: 32px !important;
+  padding: 0 12px !important;
+  border-radius: 6px !important;
 }
 
 .geld-review__composer-label {
   font-size: 14px;
   font-weight: 500;
-}
-
-/* "[picture] marked resolved" */
-.geld-review__composer-resolved {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--geld-review-muted);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.geld-review__composer-resolved > .geld-review__avatar {
-  width: 20px;
-  height: 20px;
-}
-
-.geld-review__composer-resolved-name {
-  font-weight: 600;
 }
 
 /* Open, the field gives way to the editor (GitHub's own rule, kept whatever order the stylesheets load in). */
@@ -6631,27 +6636,23 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   min-width: 0;
 }
 
-.geld-review__chat-body .review-thread-reply .avatar {
-  width: var(--geld-chat-avatar) !important;
-  height: var(--geld-chat-avatar) !important;
+/* The Overview's row has no picture beside its field. */
+.geld-review__chat-body .review-thread-reply .d-table-cell:has(> .avatar) {
+  display: none !important;
 }
 
-/* The collapsed "Reply…" is GitHub's; here it is drawn as the chat's field. */
+/* The collapsed "Reply…" is GitHub's; here it is drawn as the Overview's "Write a reply" field. */
 .geld-review__chat-body .review-thread-reply .review-thread-reply-button {
   min-height: 32px !important;
-  /* GitHub spaces it from the avatar with a margin on top of its full width; the row's gap does that here. */
   margin: 0 !important;
-  padding: 0 12px !important;
-  border: 1px solid var(--geld-review-border) !important;
-  border-radius: 16px !important;
-  background: var(--geld-review-bg) !important;
-  color: var(--geld-review-muted) !important;
-  font-size: 13px !important;
+  padding: 1px 8px !important;
+  border: 1px solid var(--borderColor-default, var(--color-border-default, #d1d9e0)) !important;
+  border-radius: 6px !important;
+  background: var(--bgColor-default, var(--color-canvas-default, #fff)) !important;
+  color: var(--fgColor-muted, var(--color-fg-muted, #59636e)) !important;
+  font-size: 14px !important;
+  line-height: 21px !important;
   box-shadow: none !important;
-}
-
-.geld-review__chat-body .review-thread-reply .review-thread-reply-button:hover {
-  border-color: var(--geld-review-muted) !important;
 }
 
 .geld-review__chat-body .review-thread-reply .inline-comment-form-box {
@@ -9799,53 +9800,4 @@ div:has(> [data-geld-overview-merge]) {
 .geld-review__msg-actions > [role='tooltip'],
 .geld-review__msg-actions > [data-component='Tooltip'] {
   position: absolute;
-}
-
-/* The composer: the reader's picture, GitHub's "Write a reply" as the chat's round field, Resolve on its right. */
-.geld-review__chat-body article[data-geld-teleported] :has(> [class*='CompactCommentInputContainer']) {
-  display: flex !important;
-  align-items: center;
-  gap: 8px;
-}
-
-.geld-review__chat-body article[data-geld-teleported] :has(> :has(> [class*='CompactCommentInputContainer'])) {
-  padding: 8px 12px 10px !important;
-  border-top: 1px solid var(--geld-review-border-muted);
-  background: var(--geld-review-bg) !important;
-}
-
-.geld-review__composer-avatar {
-  flex: 0 0 auto;
-  width: var(--geld-chat-avatar);
-  height: var(--geld-chat-avatar);
-  border-radius: 50%;
-}
-
-.geld-review__chat-body [class*='CompactCommentInputContainer'] {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 32px !important;
-  margin: 0 !important;
-  padding: 0 12px !important;
-  border: 1px solid var(--geld-review-border) !important;
-  border-radius: 16px !important;
-  background: var(--geld-review-bg) !important;
-  color: var(--geld-review-muted) !important;
-  font-size: 13px !important;
-  text-align: left;
-  box-shadow: none !important;
-}
-
-.geld-review__chat-body [class*='CompactCommentInputContainer']:hover {
-  border-color: var(--geld-review-muted) !important;
-}
-
-.geld-review__composer-side[hidden] {
-  display: none !important;
-}
-
-.geld-review__composer-resolve.btn {
-  height: 32px;
-  font-size: 14px;
-  font-weight: 500;
 }
