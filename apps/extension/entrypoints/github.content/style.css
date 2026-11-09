@@ -3374,6 +3374,10 @@ svg.geld-lucide {
   color: var(--geld-review-danger-fg);
 }
 
+.geld-review__request-state[data-health='severe'] {
+  color: var(--geld-review-danger-fg);
+}
+
 .geld-review__request-state[data-health='warn'] {
   color: var(--geld-review-attention-fg);
 }
@@ -3801,6 +3805,10 @@ svg.geld-lucide {
   color: var(--geld-review-danger-fg);
 }
 
+.geld-review__status--verdict[data-health='severe'] {
+  color: var(--geld-review-danger-fg);
+}
+
 .geld-review__status--verdict[data-health='pending'] {
   color: var(--geld-review-muted);
 }
@@ -4045,6 +4053,10 @@ svg.geld-lucide {
 }
 
 .geld-review__health[data-health='bad'] {
+  color: var(--geld-review-danger-fg);
+}
+
+.geld-review__health[data-health='severe'] {
   color: var(--geld-review-danger-fg);
 }
 
