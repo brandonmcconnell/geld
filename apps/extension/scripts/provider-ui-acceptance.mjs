@@ -37,6 +37,13 @@ export function providerHeaderHintTarget(groupSelector, kind = 'anchor') {
   return null;
 }
 
+export function providerHoverTargetPoint(node) {
+  const box = node.getBoundingClientRect();
+  const x = box.left + box.width / 2, y = box.top + box.height / 2;
+  const hit = document.elementFromPoint(x, y);
+  return { x, y, width: box.width, height: box.height, ready: node.isConnected && !document.hidden && box.width > 0 && box.height > 0 && x > 0 && y > 0 && x < innerWidth && y < innerHeight && hit !== null && node.contains(hit) };
+}
+
 /** Select a real actionable human item before any local-review interaction. */
 export function gitLabLocalReviewedCandidate(requiredSource = null) {
   const buttons = [...document.querySelectorAll('.geld-provider-review [data-geld-local-reviewed]')];

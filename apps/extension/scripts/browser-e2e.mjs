@@ -11,7 +11,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
-import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, GITLAB_LOCAL_REVIEW, providerHeaderHintTarget, openProviderReviewAncestors, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
+import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, GITLAB_LOCAL_REVIEW, providerHeaderHintTarget, providerHoverTargetPoint, openProviderReviewAncestors, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
 import { commentBodyPresentationProbe, compareCommentBodyPresentation } from './comment-body-branding.mjs';
 import { BITBUCKET_LOCAL_REVIEW, localReviewStorageScope, observeLocalReview, verifyBitbucketLocalReview } from './bitbucket-local-reviewed.mjs';
 import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-list-row.mjs';
@@ -1264,13 +1264,16 @@ async function installedHover(page, selector, interaction, artifactName, anchorS
     const handle = await page.evaluateHandle((target) => [...(typeof target === 'string' ? document.querySelectorAll(target) : [target])].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden') ?? null, selector);
     const control = handle.asElement();
     assert.ok(control !== null, 'Visible count hover host is missing');
+    await control.evaluate(node => node.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' }));
+    const point = await pollStable(() => control.evaluate(providerHoverTargetPoint), value => value.ready, 'Count hover target settles after native scrolling', 8000, value => JSON.stringify(value));
     await control.evaluate(node => {
       const listener = event => { globalThis.__geldHoverInput.receipt = { trusted: event.isTrusted, inside: node.contains(event.target), fromInside: event.relatedTarget instanceof Node && node.contains(event.relatedTarget) }; };
       globalThis.__geldHoverInput = { node, listener, receipt: null };node.addEventListener('mouseover', listener, true);
     });
     try {
-      await control.hover();
-      pointerProof = await control.evaluate(node => ({ receipt: globalThis.__geldHoverInput.receipt, connected: node.isConnected, hovered: node.matches(':hover'), documentHidden: document.hidden, bound: node.hasAttribute('data-geld-hover-bound'), box: { x: node.getBoundingClientRect().x, y: node.getBoundingClientRect().y, width: node.getBoundingClientRect().width, height: node.getBoundingClientRect().height } }));
+      await page.mouse.move(point.x, point.y);
+      pointerProof = { settled: point, observed: await control.evaluate(node => ({ receipt: globalThis.__geldHoverInput.receipt, connected: node.isConnected, hovered: node.matches(':hover'), documentHidden: document.hidden, bound: node.hasAttribute('data-geld-hover-bound'), box: { x: node.getBoundingClientRect().x, y: node.getBoundingClientRect().y, width: node.getBoundingClientRect().width, height: node.getBoundingClientRect().height } })) };
+      if (!preserveNativeCard) assert.ok(pointerProof.observed.receipt?.trusted && pointerProof.observed.receipt.inside && pointerProof.observed.hovered, `The settled count owner must receive real pointer input: ${JSON.stringify(pointerProof)}`);
     } finally {
       await control.evaluate(node => { node.removeEventListener('mouseover', globalThis.__geldHoverInput.listener, true);delete globalThis.__geldHoverInput; });
       await discardHandle(handle);

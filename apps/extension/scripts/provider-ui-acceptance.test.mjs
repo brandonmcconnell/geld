@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
 import { Window } from 'happy-dom';
-import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertProviderDashboard, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, GITLAB_LOCAL_REVIEW, providerHeaderHintTarget, openProviderReviewAncestors, providerDashboardProbe, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
+import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertProviderDashboard, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, GITLAB_LOCAL_REVIEW, providerHeaderHintTarget, providerHoverTargetPoint, openProviderReviewAncestors, providerDashboardProbe, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
 
 let window;
 let saved;
@@ -394,4 +394,24 @@ for (const views of [false, true]) for (const scenario of ['success', 'callback-
     assert.equal(first.receipt.microtask.current, 'true');
   }
   assert.equal(globalThis.__geldDashboardPointerReceipt, undefined);
+});
+
+
+test('hover target input uses the original visible node center and accepts its own descendants', () => {
+  const node = document.createElement('span');node.innerHTML = '<b>4</b>';document.body.append(node);
+  document.elementFromPoint = () => node.firstElementChild;
+  assert.deepEqual(providerHoverTargetPoint(node), { x: 70, y: 30, width: 100, height: 20, ready: true });
+  node.setAttribute('data-top', '100');
+  assert.equal(providerHoverTargetPoint(node).y, 110);
+  assert.equal(providerHoverTargetPoint(node).ready, true);
+});
+
+test('hover target input refuses an obscured, offscreen, empty or detached original', () => {
+  const node = document.createElement('span');document.body.append(node);
+  document.elementFromPoint = () => document.body;
+  assert.equal(providerHoverTargetPoint(node).ready, false);
+  document.elementFromPoint = () => node;
+  node.setAttribute('data-top', '1001');assert.equal(providerHoverTargetPoint(node).ready, false);
+  node.setAttribute('data-top', '20');node.setAttribute('data-width', '0');assert.equal(providerHoverTargetPoint(node).ready, false);
+  node.setAttribute('data-width', '100');node.remove();assert.equal(providerHoverTargetPoint(node).ready, false);
 });
