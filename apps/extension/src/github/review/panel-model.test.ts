@@ -218,13 +218,15 @@ describe('status rows', () => {
     // A 5/5 run with a finding still open (geld#367) is amber, and green once every thread is resolved.
     expect(botHealth({ ...base, verdict: 'findings', score: 5, count: 1 })).toBe('warn');
     expect(botHealth({ ...base, verdict: 'findings', score: 5, count: 0 })).toBe('good');
-    expect(botHealth({ ...base, verdict: 'findings', score: 2, count: 1 })).toBe('bad');
+    // Findings are amber whatever the score or severity, green once resolved: red is a run that broke.
+    expect(botHealth({ ...base, verdict: 'findings', score: 2, count: 1 })).toBe('warn');
+    expect(botHealth({ ...base, verdict: 'findings', score: 2, count: 0 })).toBe('good');
     expect(botHealth({ ...base, verdict: 'findings', score: 4 })).toBe('warn');
-    expect(botHealth({ ...base, verdict: 'findings', score: 2 })).toBe('bad');
-    expect(botHealth({ ...base, id: 'bugbot', verdict: 'findings', count: 1, severity: 'high' })).toBe('bad');
+    expect(botHealth({ ...base, verdict: 'findings', score: 2 })).toBe('warn');
+    expect(botHealth({ ...base, id: 'macroscope', verdict: 'findings', count: 8, severity: 'high' })).toBe('warn');
     expect(botHealth({ ...base, id: 'bugbot', verdict: 'clean' })).toBe('good');
-    // A low score is a failure (red X); a run the bot refused is a warning (amber triangle); a run that broke is a failure.
-    expect(botHealth({ ...base, verdict: 'findings', score: 1 })).toBe('bad');
+    // A run the bot refused is a warning (amber triangle); a run that broke is a failure.
+    expect(botHealth({ ...base, verdict: 'findings', score: 1 })).toBe('warn');
     expect(botHealth({ ...base, id: 'bugbot', verdict: 'failed', reason: 'Bugbot is disabled for this repository' })).toBe('warn');
     expect(botHealth({ ...base, id: 'bugbot', verdict: 'failed' })).toBe('bad');
     // Findings whose threads are all resolved: nothing outstanding.

@@ -5,7 +5,7 @@
 
 import type { BotVerdictRecord, GeldPrMeta, RawComment, ReviewItem, ReviewItemStatus, ReviewerRecord, ReviewerState } from '@geld/review';
 import { normalizeAvatarSrc } from './crawler';
-import { botAppAvatar, botByAppSlug, botByCheckName, botById, botByTrigger, botTitle, doneItemCount, isOpenStatus, rerunTriggerFor, REVIEW_BOTS } from '@geld/review';
+import { botAppAvatar, botByAppSlug, botByCheckName, botById, botByTrigger, botTitle, isOpenStatus, rerunTriggerFor, REVIEW_BOTS, threadCounts } from '@geld/review';
 
 /**
  * How Geld knows a bot is available on this pull request, best first:
@@ -265,7 +265,8 @@ export function digestMarkdown(meta: GeldPrMeta, subject: MarkdownSubject | null
   const lines = [`## ${title}`];
   if (meta.summary !== undefined) lines.push('', meta.summary.tldr);
   const status = [...(extras?.status ?? [])];
-  if (meta.items.length > 0) status.unshift(`${doneItemCount(meta.items)} of ${meta.items.length} review items done`);
+  const threads = threadCounts(meta.items);
+  if (threads.total > 0) status.unshift(`${threads.total - threads.open} of ${threads.total} review threads resolved`);
   if (status.length > 0) lines.push('', ...status.map((line) => `- ${line}`));
   if (meta.bots.length > 0) {
     lines.push('', '### Review bots', '');
@@ -308,10 +309,11 @@ export function botHealth(bot: BotVerdictRecord): Health {
   // pull request, the bot's setup is. A run that broke with no word is a failure.
   if (bot.verdict === 'failed') return bot.reason === undefined ? 'bad' : 'warn';
   if (bot.verdict === 'clean' || allResolved(bot)) return 'good';
-  if (bot.severity === 'high') return 'bad';
-  // A 5/5 with a finding still open is amber until its threads are resolved, as `botDetail`'s "5/5 · 1 issue" says.
+  // Findings are amber whatever their score or severity until they are resolved: red is for a run that broke. The
+  // request menu still ticks a bot whose findings came before the latest push, so a rerun is a click away.
+  // A 5/5 with a finding still open is amber too, as `botDetail`'s "5/5 · 1 issue" says.
   const open = bot.verdict === 'findings' && bot.count !== undefined && bot.count > 0;
-  if (bot.score !== undefined) return bot.score < 3 ? 'bad' : bot.score >= 5 && !open ? 'good' : 'warn';
+  if (bot.score !== undefined && bot.score >= 5 && !open) return 'good';
   return 'warn';
 }
 

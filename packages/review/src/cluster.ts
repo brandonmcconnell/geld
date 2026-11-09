@@ -69,7 +69,8 @@ export function firstSentence(body: string): string {
   const withoutCode = body.replace(/```[\s\S]*?```/g, ' ');
   const line = withoutCode
     .split('\n')
-    .map((entry) => entry.trim())
+    // Codex's raw "**<sub><sub>![P2 Badge](…)</sub></sub>  Resolve reference paths…**": the badge is no words, as on the page.
+    .map((entry) => entry.replace(/<br\s*\/?>/gi, ' ').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/<\/?(?:sub|sup|picture|source|img|span|a|p|div)\b[^>]*>/gi, '').replace(/^(\*\*|__)\s+/, '$1').trim())
     .filter((entry) => entry !== '' && !entry.startsWith('<') && !/^#{1,6}\s/.test(entry) && !/^[-*]\s*$/.test(entry) && !BADGE_LINE.test(entry) && !GATE_HEADING.test(entry))
     .map((entry) => entry.replace(/^\s*[-*]\s+/, ''))
     .find((entry) => entry !== '') ?? '';
@@ -141,6 +142,9 @@ interface Atom {
   readonly humanAuthors: string[];
   readonly resolved: boolean;
   readonly outdated: boolean;
+  /** The review threads merged into this atom, and how many of them are unresolved. */
+  readonly threads: number;
+  readonly openThreads: number;
 }
 
 function sourceOf(comment: RawComment | ThreadPeer, extraLogins: readonly string[]): ReviewSource {
@@ -178,6 +182,8 @@ function atomFrom(comment: RawComment, extraLogins: readonly string[]): Atom {
     humanAuthors,
     resolved: comment.isResolved === true,
     outdated: comment.isOutdated === true,
+    threads: 1,
+    openThreads: comment.isResolved === true ? 0 : 1,
   };
 }
 
@@ -217,6 +223,8 @@ function mergeAtom(a: Atom, b: Atom): Atom {
     humanAuthors: [...a.humanAuthors, ...b.humanAuthors.filter((login) => !a.humanAuthors.includes(login))],
     resolved: a.resolved && b.resolved,
     outdated: a.outdated || b.outdated,
+    threads: a.threads + b.threads,
+    openThreads: a.openThreads + b.openThreads,
   };
 }
 
@@ -248,6 +256,7 @@ function itemFromAtom(atom: Atom): ReviewItem {
     status: atom.resolved ? 'resolved' : atom.outdated ? 'outdated' : 'open',
     sources: atom.sources,
     ...(atom.suggestion !== null && atom.suggestionBy !== null ? { fix: { text: atom.suggestion, source: atom.suggestionBy } } : {}),
+    ...(atom.threads > 1 ? { threads: { total: atom.threads, open: atom.openThreads } } : {}),
   };
   if (atom.path !== undefined && atom.line !== undefined) return { ...item, path: atom.path, line: atom.line };
   if (atom.path !== undefined) return { ...item, path: atom.path };

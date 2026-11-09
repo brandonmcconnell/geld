@@ -31476,7 +31476,8 @@ var reviewItemSchema = external_exports.object({
   sources: external_exports.array(reviewSourceSchema).min(1),
   addressed: addressedSchema.optional(),
   context: external_exports.string().min(1).optional(),
-  fix: suggestedFixSchema.optional()
+  fix: suggestedFixSchema.optional(),
+  threads: external_exports.object({ total: external_exports.number().int().min(2), open: external_exports.number().int().nonnegative() }).optional()
 });
 var reviewSummarySchema = external_exports.object({
   tldr: external_exports.string().min(1),
@@ -31562,7 +31563,8 @@ function reviewItemFrom(value) {
   const numbered = value.line === void 0 ? located : { ...located, line: value.line };
   const judged = value.addressed === void 0 ? numbered : { ...numbered, addressed: { verdict: value.addressed.verdict, evidence: value.addressed.evidence } };
   const explained = value.context === void 0 ? judged : { ...judged, context: value.context };
-  return value.fix === void 0 ? explained : { ...explained, fix: { text: value.fix.text, source: value.fix.source } };
+  const fixed = value.fix === void 0 ? explained : { ...explained, fix: { text: value.fix.text, source: value.fix.source } };
+  return value.threads === void 0 ? fixed : { ...fixed, threads: { total: value.threads.total, open: Math.min(value.threads.open, value.threads.total) } };
 }
 function botVerdictFrom(value) {
   const record4 = {
@@ -31624,11 +31626,20 @@ var OPEN_STATUSES = /* @__PURE__ */ new Set(["open", "needs-reply", "addressed",
 function isOpenStatus(status) {
   return OPEN_STATUSES.has(status);
 }
-function openItemCount(items) {
-  return items.filter((item) => isOpenStatus(item.status)).length;
+function itemThreads(item) {
+  const total = item.threads?.total ?? 1;
+  if (!isOpenStatus(item.status)) return { total, open: 0 };
+  return { total, open: Math.max(1, Math.min(item.threads?.open ?? 1, total)) };
 }
-function doneItemCount(items) {
-  return items.length - openItemCount(items);
+function threadCounts(items) {
+  let total = 0;
+  let open2 = 0;
+  for (const item of items) {
+    const threads = itemThreads(item);
+    total += threads.total;
+    open2 += threads.open;
+  }
+  return { total, open: open2 };
 }
 function encodedPayloadLength(meta3) {
   const json2 = JSON.stringify(meta3);
@@ -31656,8 +31667,8 @@ function deeplinkFrom(meta3) {
     v: META_VERSION,
     headSha: meta3.headSha,
     generatedAt: meta3.generatedAt,
-    open: openItemCount(meta3.items),
-    total: meta3.items.length
+    open: threadCounts(meta3.items).open,
+    total: threadCounts(meta3.items).total
   };
 }
 var BASE64_TABLE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -32439,18 +32450,22 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   const checkSkipped = /* @__PURE__ */ new Map();
   const checkCurrent = /* @__PURE__ */ new Set();
   const checkCounts = /* @__PURE__ */ new Map();
+  const checkBelowBar = /* @__PURE__ */ new Set();
   const shaOver = (existing) => existing.verdict === "failed" && existing.reason !== void 0 && checkSkipped.get(existing.id) === existing.reason && !checkCurrent.has(existing.id) ? UNKNOWN_SHA : existing.reviewedSha;
   for (const check2 of checks) {
     const bot = botByCheckName(check2.name);
     if (bot === null) continue;
     const login = bot.logins[0] ?? bot.id;
     const running = check2.status !== "completed";
-    const failed = check2.conclusion === "failure" || check2.conclusion === "timed_out" || check2.conclusion === "cancelled" || check2.conclusion === "action_required" || check2.conclusion === "stale";
+    const belowBar = check2.conclusion === "failure" && /\bbelow (?:your|the) required\b/i.test(checkWords(check2));
+    const failed = !belowBar && (check2.conclusion === "failure" || check2.conclusion === "timed_out" || check2.conclusion === "cancelled" || check2.conclusion === "action_required" || check2.conclusion === "stale");
     const refused = running ? null : checkRefusal(check2);
     const skipped = refused !== null;
     const neutralFindings = check2.conclusion === "neutral" && bot.neutralConclusion === "findings";
-    const verdict = running ? "running" : failed || skipped ? "failed" : neutralFindings ? "findings" : "clean";
+    const verdict = running ? "running" : failed || skipped ? "failed" : neutralFindings || belowBar ? "findings" : "clean";
     checkVerdict.set(bot.id, verdict);
+    if (belowBar) checkBelowBar.add(bot.id);
+    else checkBelowBar.delete(bot.id);
     if (refused !== null) checkSkipped.set(bot.id, refused);
     else checkSkipped.delete(bot.id);
     if (!running && checkFoundNothingNew(check2)) checkCurrent.add(bot.id);
@@ -32617,7 +32632,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   }
   if (options.complete === true) {
     for (const [id, verdict] of checkVerdict) {
-      if (verdict !== "findings" || postedThreads.has(id) || checkCounts.has(id)) continue;
+      if (verdict !== "findings" || postedThreads.has(id) || checkCounts.has(id) || checkBelowBar.has(id)) continue;
       checkVerdict.set(id, "clean");
       const record4 = byId.get(id);
       if (record4 !== void 0 && record4.sourceId === void 0) byId.set(id, { ...record4, verdict: "clean" });
@@ -32875,7 +32890,7 @@ var BADGE_LINE = /^\p{Extended_Pictographic}?\uFE0F?\s*\*\*(critical|high|medium
 var GATE_HEADING = /^approvability$/i;
 function firstSentence(body) {
   const withoutCode2 = body.replace(/```[\s\S]*?```/g, " ");
-  const line = withoutCode2.split("\n").map((entry2) => entry2.trim()).filter((entry2) => entry2 !== "" && !entry2.startsWith("<") && !/^#{1,6}\s/.test(entry2) && !/^[-*]\s*$/.test(entry2) && !BADGE_LINE.test(entry2) && !GATE_HEADING.test(entry2)).map((entry2) => entry2.replace(/^\s*[-*]\s+/, "")).find((entry2) => entry2 !== "") ?? "";
+  const line = withoutCode2.split("\n").map((entry2) => entry2.replace(/<br\s*\/?>/gi, " ").replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/<\/?(?:sub|sup|picture|source|img|span|a|p|div)\b[^>]*>/gi, "").replace(/^(\*\*|__)\s+/, "$1").trim()).filter((entry2) => entry2 !== "" && !entry2.startsWith("<") && !/^#{1,6}\s/.test(entry2) && !/^[-*]\s*$/.test(entry2) && !BADGE_LINE.test(entry2) && !GATE_HEADING.test(entry2)).map((entry2) => entry2.replace(/^\s*[-*]\s+/, "")).find((entry2) => entry2 !== "") ?? "";
   const cleaned = line.replace(/\s+/g, " ").trim();
   if (cleaned === "") return "Comment";
   const sentence = sentenceOf(cleaned, 160);
@@ -32946,7 +32961,9 @@ function atomFrom(comment, extraLogins) {
     botIds,
     humanAuthors,
     resolved: comment.isResolved === true,
-    outdated: comment.isOutdated === true
+    outdated: comment.isOutdated === true,
+    threads: 1,
+    openThreads: comment.isResolved === true ? 0 : 1
   };
 }
 function shouldMerge(a, b) {
@@ -32982,7 +32999,9 @@ function mergeAtom(a, b) {
     botIds,
     humanAuthors: [...a.humanAuthors, ...b.humanAuthors.filter((login) => !a.humanAuthors.includes(login))],
     resolved: a.resolved && b.resolved,
-    outdated: a.outdated || b.outdated
+    outdated: a.outdated || b.outdated,
+    threads: a.threads + b.threads,
+    openThreads: a.openThreads + b.openThreads
   };
 }
 function severityOf(atom) {
@@ -33011,7 +33030,8 @@ function itemFromAtom(atom) {
     // Resolved is the conversation's state and wins; outdated is a badge on an open one.
     status: atom.resolved ? "resolved" : atom.outdated ? "outdated" : "open",
     sources: atom.sources,
-    ...atom.suggestion !== null && atom.suggestionBy !== null ? { fix: { text: atom.suggestion, source: atom.suggestionBy } } : {}
+    ...atom.suggestion !== null && atom.suggestionBy !== null ? { fix: { text: atom.suggestion, source: atom.suggestionBy } } : {},
+    ...atom.threads > 1 ? { threads: { total: atom.threads, open: atom.openThreads } } : {}
   };
   if (atom.path !== void 0 && atom.line !== void 0) return { ...item, path: atom.path, line: atom.line };
   if (atom.path !== void 0) return { ...item, path: atom.path };
@@ -33420,10 +33440,10 @@ function reviewerPhrase(reviewer) {
   return `@${reviewer.login} commented`;
 }
 function headerLine(meta3) {
-  const open2 = openItemCount(meta3.items);
-  const done = doneItemCount(meta3.items);
-  const total = meta3.items.length;
-  const parts = [`**${done} of ${total} done**`];
+  const threads = threadCounts(meta3.items);
+  const open2 = threads.open;
+  const total = threads.total;
+  const parts = [`**${total - open2} of ${total} done**`];
   for (const bot of meta3.bots) parts.push(botPhrase(bot, meta3.headSha));
   if (open2 > 0 && total > 0) {
   }

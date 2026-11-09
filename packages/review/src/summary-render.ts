@@ -14,11 +14,10 @@ import type { BotVerdictRecord, GeldPrMeta, ReviewItem, ReviewerRecord } from '.
 import {
   SUMMARY_HEADING,
   SUMMARY_MARKER,
-  doneItemCount,
   geldPrUrl,
   howItWorksUrl,
   isOpenStatus,
-  openItemCount,
+  threadCounts,
 } from './model';
 import { botTitle } from './bots';
 import { parseInlineMarkdown } from './inline-markdown';
@@ -136,10 +135,10 @@ function reviewerPhrase(reviewer: ReviewerRecord): string {
 }
 
 function headerLine(meta: GeldPrMeta): string {
-  const open = openItemCount(meta.items);
-  const done = doneItemCount(meta.items);
-  const total = meta.items.length;
-  const parts = [`**${done} of ${total} done**`];
+  const threads = threadCounts(meta.items);
+  const open = threads.open;
+  const total = threads.total;
+  const parts = [`**${total - open} of ${total} done**`];
   for (const bot of meta.bots) parts.push(botPhrase(bot, meta.headSha));
   if (open > 0 && total > 0) {
     // The counts already lead; bots follow.

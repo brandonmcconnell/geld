@@ -1236,6 +1236,8 @@ export function verdictsFrom(
   const checkCurrent = new Set<string>();
   /** What a check whose neutral means findings counted in its own words ("8 issues identified"), until threads say. */
   const checkCounts = new Map<string, number>();
+  /** Bots whose check failed on a score under the repository's bar: findings in the bot's words, whatever its threads. */
+  const checkBelowBar = new Set<string>();
   const shaOver = (existing: DerivedBotVerdict): string =>
     existing.verdict === 'failed' && existing.reason !== undefined && checkSkipped.get(existing.id) === existing.reason && !checkCurrent.has(existing.id) ? UNKNOWN_SHA : existing.reviewedSha;
 
@@ -1244,14 +1246,19 @@ export function verdictsFrom(
     if (bot === null) continue;
     const login = bot.logins[0] ?? bot.id;
     const running = check.status !== 'completed';
-    const failed = check.conclusion === 'failure' || check.conclusion === 'timed_out' || check.conclusion === 'cancelled' || check.conclusion === 'action_required' || check.conclusion === 'stale';
+    // Greptile fails its check on a score under the repository's bar ("Base review: Confidence 3/5 — below your required
+    // 5/5"): that is the review's word on the code, findings, not a run that broke.
+    const belowBar = check.conclusion === 'failure' && /\bbelow (?:your|the) required\b/i.test(checkWords(check));
+    const failed = !belowBar && (check.conclusion === 'failure' || check.conclusion === 'timed_out' || check.conclusion === 'cancelled' || check.conclusion === 'action_required' || check.conclusion === 'stale');
     // A skipped check is a run the bot did not make; its row is the word on that, as a "Review skipped" comment is.
     const refused = running ? null : checkRefusal(check);
     const skipped = refused !== null;
     // `neutral` is the bot's own word: findings for one whose docs say so (Bugbot), else a run with nothing to say.
     const neutralFindings = check.conclusion === 'neutral' && bot.neutralConclusion === 'findings';
-    const verdict = running ? 'running' : failed || skipped ? 'failed' : neutralFindings ? 'findings' : 'clean';
+    const verdict = running ? 'running' : failed || skipped ? 'failed' : neutralFindings || belowBar ? 'findings' : 'clean';
     checkVerdict.set(bot.id, verdict);
+    if (belowBar) checkBelowBar.add(bot.id);
+    else checkBelowBar.delete(bot.id);
     if (refused !== null) checkSkipped.set(bot.id, refused);
     else checkSkipped.delete(bot.id);
     if (!running && checkFoundNothingNew(check)) checkCurrent.add(bot.id);
@@ -1495,7 +1502,7 @@ export function verdictsFrom(
   if (options.complete === true) {
     for (const [id, verdict] of checkVerdict) {
       // A check that counted its findings in so many words ("8 issues identified") found them, threads or not.
-      if (verdict !== 'findings' || postedThreads.has(id) || checkCounts.has(id)) continue;
+      if (verdict !== 'findings' || postedThreads.has(id) || checkCounts.has(id) || checkBelowBar.has(id)) continue;
       checkVerdict.set(id, 'clean');
       const record = byId.get(id);
       if (record !== undefined && record.sourceId === undefined) byId.set(id, { ...record, verdict: 'clean' });
