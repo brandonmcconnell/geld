@@ -3588,6 +3588,30 @@ html [data-geld-person-fold][data-geld-person-fold]:not([data-geld-person-fold-o
   flex: 0 0 auto;
 }
 
+/* A blocked or hidden person's hovercard (person-hovercard.ts): why, and what GitHub lets the reader do. */
+.geld-person-card {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  font-size: 12px;
+}
+
+.geld-person-card__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fgColor-danger, var(--color-danger-fg));
+  font-weight: 600;
+}
+
+.geld-person-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .geld-blocked-label {
   margin-left: 4px;
   vertical-align: middle;

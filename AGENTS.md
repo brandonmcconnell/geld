@@ -1832,13 +1832,19 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The Overview words a review by someone without write access as "recommended approval", which the crawl reads as an approval (`reviewStateOf`).
 - **Blocked and hidden people on the page itself** (`people-presence.ts`, `applyPeoplePresence`, with or without the digest;
   pull requests for now).
-  Hidden here means blocked (the Blocked users lists), on the reader's hidden people list, or with a comment GitHub marked as spam or abuse;
+  GitHub decides what is hidden: someone with a comment GitHub marked as spam or abuse, or on the reader's hidden list in Geld, has their other comments fold;
+  a block alone folds nothing, since GitHub still shows a blocked person's comments, and earns the label, the notice and the hovercard's actions instead.
   only a block earns the label and the notice.
   Each comment card of theirs (a thread's comment, an issue comment, a review's words, on the conversation and the Overview;
   never the description) gets `data-geld-person-fold` and folds behind a line of Geld's just before it, shaped like GitHub's own hidden comments: "This comment was posted by a blocked user." (or "…by someone you have hidden."), Show comment and Hide comment, the choice kept per comment id for the page's life.
   The fold rule is doubled in specificity, since the digest's chat sets its messages to `display: flex !important` later in the sheet;
   a reply in someone else's thread folds inside the chat too.
   A Blocked label (Primer `Label`) stands after every link that names a blocked person by login, the header's included, and a quiet `flash` heads a pull request a blocked person opened ("This pull request was opened by X, who you have blocked.").
+  **A blocked or hidden person's hovercard offers what GitHub would** (`person-hovercard.ts`, `syncPersonHovercards`, dressing GitHub's one shared `.js-hovercard-content` whenever it shows a login Geld knows): signed in, GitHub's own card already says "You and the <org> organization have blocked this user", so Geld adds no second line then, only the actions.
+  For a blocked person whose comments GitHub still shows, "Hide their N comments" asks for one of GitHub's reasons (Spam, Abuse, Off Topic, Outdated, Duplicate, Resolved, Low Quality), confirms, and sends GitHub's own Hide form for each of their comments on the page (`form.js-timeline-comment-minimize`, `…/review_comment/<id>/minimize`, `…/reviews/<id>/minimize`, the reason in `classifier`), then reloads.
+  GitHub offers hiding all of a person's comments only while blocking them (the block's Edit dialog has labels and a note, no such option), so this is the after-the-fact way, page by page;
+  the React issue page and the Overview render no Hide forms, so there the action is not offered.
+  Someone whose comments GitHub hid gets Unhide, through the same Unhide forms the digest uses.
   GitHub's Reviewers and Participants are cleaned here (`syncSidebarPeople`), so the sidebar follows the same people with the digest off.
 - **Items opened by blocked people leave lists** (`blocked-lists.ts`, `applyBlockedListHiding`, after the author hiding in the chips phase): pull requests, issues and discussions on any list surface that reads an author, in every state.
   The list becomes a flex column (`data-geld-blocked-list`), their rows are hidden, and one quiet row of Geld's at the foot (`order: 1`) says "2 pull requests by blocked users hidden" with Show, which lays them out under it (`order: 2`) with a Blocked label beside each author, and Hide;

@@ -1,22 +1,24 @@
 import { compileAuthorRules } from '@geld/core';
-import type { BlockScope } from './blocked-list';
+import type { BlockedBy } from './blocked-list';
 import { blockedFor } from './blocked-users';
 import { createElement, OWN_UI_ATTRIBUTE } from './dom';
-import { markedOnGitHub } from './review/hidden-people';
+import { lookUpUnhideForms, markedOnGitHub, sendUnhide, unhideFormOf } from './review/hidden-people';
+import type { MarkedContent } from './review/hidden-people';
+import type { PersonCard } from './person-hovercard';
+import { removePersonHovercards, syncPersonHovercards } from './person-hovercard';
 import { loginOfLink } from './review/login';
-import { descriptionCard } from './review/panel';
+import { blockedWords, descriptionCard } from './review/panel';
 import { clearSidebarPeople, syncSidebarPeople } from './review/sidebar-people';
 
 /**
  * Where a blocked or hidden person still shows on a conversation page, with
- * or without the digest: each comment of theirs folds behind a line in the
- * shape of GitHub's own hidden comments ("This comment was posted by a blocked
- * user.", Show comment / Hide comment), a Blocked label stands beside a blocked
- * person's name wherever GitHub writes it, a notice heads a page a blocked
- * person opened, and GitHub's Reviewers and Participants leave them out.
- * Hidden means blocked (GitHub's Blocked users lists), on the reader's hidden
- * people list, or with a comment GitHub marked as spam or abuse; only a block
- * earns the label and the notice. GitHub's nodes stay where they are: a fold
+ * or without the digest. GitHub decides what is hidden: someone with a comment
+ * GitHub marked as spam or abuse, or on the reader's hidden list in Geld, has
+ * each other comment of theirs fold behind a line in the shape of GitHub's own
+ * hidden comments (Show comment / Hide comment). A block alone folds nothing,
+ * since GitHub shows a blocked person's comments: a Blocked label stands beside
+ * their name wherever GitHub writes it, a notice heads a page they opened, and
+ * GitHub's Reviewers and Participants leave them out. GitHub's nodes stay where they are: a fold
  * is an attribute the stylesheet keys on, and the line beside it is Geld's.
  */
 
@@ -31,7 +33,8 @@ const COMMENTS = '.review-comment, .timeline-comment, article[id^="issuecomment-
 const AUTHOR = 'a.author, a[data-testid="avatar-link"], [data-testid="comment-header"] a[data-hovercard-url^="/users/"], a[href^="/apps/"].author';
 const NAME_LINKS = 'a[data-hovercard-url^="/users/"]:not(.user-mention), a.author:not(.user-mention)';
 
-type Standing = { readonly kind: 'blocked'; readonly scope: BlockScope } | { readonly kind: 'hidden' };
+/** Why a person's comments fold: hidden the way GitHub hid them (blocked or not), or by the reader's list in Geld. */
+type Standing = { readonly kind: 'blocked' } | { readonly kind: 'marked' } | { readonly kind: 'list' };
 
 /** Comment ids the reader has unfolded, kept across GitHub's re-renders for the page's life. */
 const opened = new Set<string>();
@@ -57,7 +60,8 @@ function idOf(card: Element): string {
 }
 
 function foldWords(standing: Standing): string {
-  return standing.kind === 'blocked' ? 'This comment was posted by a blocked user.' : 'This comment was posted by someone you have hidden.';
+  if (standing.kind === 'blocked') return 'This comment was posted by a blocked user.';
+  return standing.kind === 'list' ? 'This comment was posted by someone on your hidden list in Geld.' : 'This comment was posted by someone with hidden comments here.';
 }
 
 function lineFor(card: Element, standing: Standing): HTMLElement {
@@ -121,7 +125,7 @@ function syncFolds(standingOf: (login: string) => Standing | null): void {
   }
 }
 
-function syncLabels(blocked: ReadonlyMap<string, BlockScope>): void {
+function syncLabels(blocked: ReadonlyMap<string, BlockedBy>): void {
   for (const link of document.querySelectorAll(NAME_LINKS)) {
     if (isOwn(link)) continue;
     const login = loginOfLink(link);
@@ -130,7 +134,8 @@ function syncLabels(blocked: ReadonlyMap<string, BlockScope>): void {
     const want = isName && login !== null && blocked.has(login.toLowerCase());
     const next = link.nextElementSibling;
     const has = next?.hasAttribute(ATTR_LABEL) === true;
-    if (want && !has) link.after(createElement('span', { class: 'Label Label--secondary geld-blocked-label', [OWN_UI_ATTRIBUTE]: '', [ATTR_LABEL]: '', title: blocked.get(login.toLowerCase()) === 'org' ? 'Blocked from this organization' : 'Blocked by you' }, ['Blocked']));
+    const by = login === null ? undefined : blocked.get(login.toLowerCase());
+    if (want && !has && by !== undefined) link.after(createElement('span', { class: 'Label Label--secondary geld-blocked-label', [OWN_UI_ATTRIBUTE]: '', [ATTR_LABEL]: '', title: blockedWords(by) }, ['Blocked']));
     if (!want && has) next?.remove();
   }
 }
@@ -145,15 +150,16 @@ function noticeHost(): Element | null {
   return document.querySelector('section[aria-label="Description"]') ?? document.querySelector('.js-discussion') ?? document.querySelector('[data-testid="issue-viewer-issue-container"]');
 }
 
-function syncNotice(blocked: ReadonlyMap<string, BlockScope>, noun: string): void {
+function syncNotice(blocked: ReadonlyMap<string, BlockedBy>, noun: string): void {
   const author = pageAuthor();
-  const scope = author === null ? undefined : blocked.get(author.toLowerCase());
+  const by = author === null ? undefined : blocked.get(author.toLowerCase());
   const existing = document.querySelector(`[${ATTR_NOTICE}]`);
-  if (author === null || scope === undefined) {
+  if (author === null || by === undefined) {
     existing?.remove();
     return;
   }
-  const text = `This ${noun} was opened by ${author}, ${scope === 'org' ? 'who is blocked from this organization' : 'who you have blocked'}.`;
+  const who = by.org && by.personal ? 'who is blocked by you and this organization' : by.org ? 'who is blocked by this organization' : 'who you have blocked';
+  const text = `This ${noun} was opened by ${author}, ${who}.`;
   if (existing !== null) {
     const words = existing.querySelector('.geld-blocked-notice__words');
     if (words !== null && words.textContent !== text) words.textContent = text;
@@ -164,6 +170,40 @@ function syncNotice(blocked: ReadonlyMap<string, BlockScope>, noun: string): voi
   const notice = createElement('div', { class: 'flash geld-blocked-notice', role: 'note', [OWN_UI_ATTRIBUTE]: '', [ATTR_NOTICE]: '' }, [createElement('span', { class: 'geld-blocked-notice__words' }, [text])]);
   if (host.matches('.js-discussion')) host.prepend(notice);
   else host.before(notice);
+}
+
+/** GitHub's Hide forms for `login`'s comments the page still shows, which GitHub renders only for someone who may hide them. */
+function hideFormsFor(login: string): readonly HTMLFormElement[] {
+  const forms: HTMLFormElement[] = [];
+  for (const card of document.querySelectorAll(COMMENTS)) {
+    if (isOwn(card) && card.closest('[data-geld-teleported]') === null) continue;
+    if (card.closest('.minimized-comment') !== null || isDescription(card) || authorOfComment(card)?.toLowerCase() !== login) continue;
+    const home = card.closest('.review-comment, [id^="pullrequestreview-"], .js-comment-container, .timeline-comment-group') ?? card;
+    const form = home.querySelector<HTMLFormElement>('form.js-timeline-comment-minimize, form[action$="/minimize"], form[action*="/minimize-comment"]');
+    if (form !== null && !forms.includes(form)) forms.push(form);
+  }
+  return forms;
+}
+
+/** Unhides `contents` through GitHub's own Unhide forms, after the reader confirms; null when GitHub offers the reader none. */
+function unhideFor(login: string, contents: readonly MarkedContent[]): (() => void) | null {
+  const forms = contents.flatMap((content) => {
+    const form = unhideFormOf(content);
+    return form === null ? [] : [form];
+  });
+  if (forms.length === 0) return null;
+  return () => {
+    if (!window.confirm(`Unhide ${login} on GitHub?\n\nThis unhides ${forms.length === 1 ? 'their hidden comment' : `their ${forms.length} hidden comments`} for everyone.`)) return;
+    void (async () => {
+      for (const form of forms) {
+        if (!(await sendUnhide(form))) {
+          window.alert(`GitHub did not unhide ${login}'s comment. Try GitHub's own Unhide on it.`);
+          return;
+        }
+      }
+      location.reload();
+    })();
+  };
 }
 
 export interface PresenceOptions {
@@ -185,21 +225,35 @@ export function applyPeoplePresence(options: PresenceOptions): void {
   const viewer = document.querySelector('meta[name="user-login"]')?.getAttribute('content') ?? '';
   const blocked = blockedFor(owner, viewer, options.schedule);
   const rules = compileAuthorRules(options.hiddenAuthors);
-  const marked = new Set(markedOnGitHub(document).map((content) => content.login.toLowerCase()));
+  const markedContent = markedOnGitHub(document);
+  lookUpUnhideForms(markedContent, options.schedule);
+  const marked = new Set(markedContent.map((content) => content.login.toLowerCase()));
+  // GitHub decides what is hidden: a block alone folds nothing (GitHub shows a blocked person's comments), it only labels.
   const standingOf = (login: string): Standing | null => {
     const key = login.toLowerCase();
-    const scope = blocked.get(key);
-    if (scope !== undefined) return { kind: 'blocked', scope };
-    return marked.has(key) || rules.hides(login) ? { kind: 'hidden' } : null;
+    if (marked.has(key)) return blocked.has(key) ? { kind: 'blocked' } : { kind: 'marked' };
+    return rules.hides(login) ? { kind: 'list' } : null;
   };
   syncFolds(standingOf);
   syncLabels(blocked);
   syncNotice(blocked, options.noun);
-  syncSidebarPeople((login) => standingOf(login) !== null);
+  // Blocked people always leave the sidebar; the pull request's state stays GitHub's.
+  syncSidebarPeople((login) => standingOf(login) !== null || blocked.has(login.toLowerCase()));
+  // Their hovercard says why, with Hide their comments for a blocked person GitHub still shows, and Unhide for the hidden.
+  const cards = new Map<string, PersonCard>();
+  const contentsOf = (login: string): readonly MarkedContent[] => markedContent.filter((content) => content.login.toLowerCase() === login);
+  for (const [login, by] of blocked) cards.set(login, { words: blockedWords(by), blocked: by, hideForms: () => hideFormsFor(login), unhide: unhideFor(login, contentsOf(login)) });
+  for (const login of marked) if (!cards.has(login)) cards.set(login, { words: 'Comments hidden on this page', blocked: null, hideForms: () => [], unhide: unhideFor(login, contentsOf(login)) });
+  for (const card of document.querySelectorAll(COMMENTS)) {
+    const login = authorOfComment(card)?.toLowerCase();
+    if (login !== undefined && !cards.has(login) && rules.hides(login)) cards.set(login, { words: 'On your hidden list in Geld', blocked: null, hideForms: () => [], unhide: null });
+  }
+  syncPersonHovercards(cards);
 }
 
 export function removePeoplePresence(): void {
   for (const card of document.querySelectorAll(`[${ATTR_FOLD}]`)) unfold(card);
   for (const node of document.querySelectorAll(`[${ATTR_LINE}], [${ATTR_LABEL}], [${ATTR_NOTICE}]`)) node.remove();
   clearSidebarPeople();
+  removePersonHovercards();
 }

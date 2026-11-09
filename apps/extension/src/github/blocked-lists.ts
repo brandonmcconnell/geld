@@ -1,5 +1,6 @@
 import { pluralize } from '@geld/core';
-import type { BlockScope } from './blocked-list';
+import type { BlockedBy } from './blocked-list';
+import { blockedWords } from './review/panel';
 import { createElement, OWN_UI_ATTRIBUTE } from './dom';
 import type { ListSurface } from './list-surfaces';
 
@@ -61,7 +62,7 @@ function rowsWithAuthors(surfaces: readonly ListSurface[]): readonly { readonly 
   return [...found.values()];
 }
 
-function labelAuthor(row: HTMLElement, author: string, scope: BlockScope): void {
+function labelAuthor(row: HTMLElement, author: string, by: BlockedBy): void {
   if (row.querySelector(`[${ATTR_LABEL}]`) !== null) return;
   const lower = author.toLowerCase();
   const link = [...row.querySelectorAll('a')].find((candidate) => {
@@ -69,7 +70,7 @@ function labelAuthor(row: HTMLElement, author: string, scope: BlockScope): void 
     return words.includes(`opened by ${lower}`) || words.includes(`author ${lower}`) || words.includes(`/users/${lower}/`) || (candidate.textContent ?? '').trim().toLowerCase() === lower;
   });
   if (link === undefined) return;
-  link.after(createElement('span', { class: 'Label Label--secondary geld-blocked-label', [OWN_UI_ATTRIBUTE]: '', [ATTR_LABEL]: '', title: scope === 'org' ? 'Blocked from this organization' : 'Blocked by you' }, ['Blocked']));
+  link.after(createElement('span', { class: 'Label Label--secondary geld-blocked-label', [OWN_UI_ATTRIBUTE]: '', [ATTR_LABEL]: '', title: blockedWords(by) }, ['Blocked']));
 }
 
 function noteText(rows: readonly BlockedRow[], shown: boolean): string {
@@ -112,7 +113,7 @@ function syncNote(list: HTMLElement, rows: readonly BlockedRow[]): void {
   }
 }
 
-export function applyBlockedListHiding(blocked: ReadonlyMap<string, BlockScope>, surfaces: readonly ListSurface[]): void {
+export function applyBlockedListHiding(blocked: ReadonlyMap<string, BlockedBy>, surfaces: readonly ListSurface[]): void {
   const byList = new Map<HTMLElement, BlockedRow[]>();
   const seen = new Set<HTMLElement>();
   for (const { row, kind, author, surface } of rowsWithAuthors(surfaces)) {
