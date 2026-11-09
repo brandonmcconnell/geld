@@ -93,6 +93,8 @@ const INLINE_ICON_CLASS = 'geld-tree-inline-icon';
 const ATTR_SWAPPED_ICON = 'data-geld-swapped-icon';
 const ATTR_TOC = 'data-geld-toc-hidden';
 const ATTR_FLASH = 'data-geld-flash';
+/** On `<html>` while Geld dresses this page, for styles of GitHub's own UI outside Geld's (its portaled reaction picker). */
+const ATTR_DRESSED = 'data-geld-on';
 
 const APPLY_DEBOUNCE_MS = 60;
 /**
@@ -1133,6 +1135,7 @@ export class GeldController {
       return;
     }
 
+    if (!document.documentElement.hasAttribute(ATTR_DRESSED)) document.documentElement.setAttribute(ATTR_DRESSED, '');
     applyAttachmentLightbox(this.settings.attachmentLightbox);
 
     // Another page state (a navigation) is always the whole page, whatever the batches said.
@@ -2022,6 +2025,7 @@ export class GeldController {
 
   /** `rebuild`: the page is dressed again right after, so the digest keeps what the reader opened and unfolded. */
   private teardown(rebuild = false): void {
+    document.documentElement.removeAttribute(ATTR_DRESSED);
     removeAttachmentLightbox();
     this.settledHeader = null;
     this.headerGroups = [];

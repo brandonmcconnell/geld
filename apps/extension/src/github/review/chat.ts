@@ -1197,7 +1197,7 @@ function placeOverviewControls(message: HTMLElement): boolean {
       // The toolbar's wrapper, the body's sibling inside the bubble: under the bubble it is the pills' row.
       let holder: HTMLElement = toolbar;
       while (holder.parentElement !== null && holder.parentElement !== bubble && holder.parentElement.querySelector(BODY_SELECTOR) === null) holder = holder.parentElement;
-      const box = createElement('span', { class: REACTIONS_BOX, [OWN_UI_ATTRIBUTE]: '' });
+      const box = createElement('span', { class: `${REACTIONS_BOX} ${REACTIONS_BOX}--overview`, [OWN_UI_ATTRIBUTE]: '' });
       bubble.after(box);
       teleportInto(box, [holder]);
       onRestore(() => box.remove());
