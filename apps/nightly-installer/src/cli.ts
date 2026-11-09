@@ -280,6 +280,6 @@ export async function main(argv: readonly string[]): Promise<number> {
     }
   }
   console.log('\nDo not move or rename these folders after loading them: Chrome ties the extension to its folder path.');
-  console.log('Run geld-nightly again any time to repair a folder. Updates after this install themselves.');
+  console.log('Run npx geld-nightly@latest again any time to repair a folder. Updates after this install themselves.');
   return 0;
 }
