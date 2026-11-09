@@ -232,7 +232,7 @@ export class BitbucketCiAdapter implements ProviderCiAdapter {
     for (const value of pr.participants) {
       const participant = object(value);
       if (participant.role !== 'REVIEWER' && participant.approved !== true && participant.state !== 'changes_requested') continue;
-      reviewers.push({ author: author(participant.user), state: participant.state === 'changes_requested' ? 'changes_requested' : participant.approved === true ? 'approved' : 'pending' });
+      reviewers.push({ author: author(participant.user), state: participant.state === 'changes_requested' ? 'changes_requested' : participant.approved === true ? 'approved' : 'pending', reviewRequest: 'unknown' });
     }
     const latestChecks = new Map<string, { readonly at: number; readonly check: RawCheckRun }>();
     for (const value of statuses) {

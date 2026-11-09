@@ -216,13 +216,14 @@ describe('native publication source currentness and fallback', () => {
   });
 
   it('does not adopt publisher bot/reviewer fields, resolution claims or rewritten human wording', async () => {
-    const input = fixture();
+    const input: ProviderReviewInput = { ...fixture(), reviewers: [{ author: { id: 'native-reviewer', login: 'alice' }, state: 'approved', reviewRequest: 'pending' }] };
     const { comment } = await published(input, (meta) => ({ ...meta, bots: [{ id: 'coderabbit', login: 'coderabbitai[bot]', verdict: 'clean', reviewedSha: HEAD }], reviewers: [{ login: 'mallory', state: 'approved' }], items: meta.items.map((item) => ({ ...item, title: 'Publisher changed the human words.', status: 'resolved', rewritten: true, addressed: { verdict: 'yes', evidence: ['Publisher claim'] } })) }));
     const value = await read(input, comment);
     expect(value.status).toBe('current');
     expect(value.items).toEqual(buildProviderReviewItems(input));
     expect(value.items[0]).toMatchObject({ status: 'open', rewritten: false, title: 'Please guard the null response.' });
     expect(value.items[0]?.addressed).toBeUndefined();
+    expect(value.input.reviewers).toEqual(input.reviewers);
   });
 
   it('rejects source URL/identity forgeries and never adopts native producer AI by its flag alone', async () => {

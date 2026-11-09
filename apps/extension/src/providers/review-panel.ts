@@ -1,5 +1,5 @@
 import { botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, parseInlineMarkdown, previewDocFromMarkdown, previewHostById, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, sourceLink } from '@geld/review';
-import type { BotVerdictRecord, ProviderPublicationRead, ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, RawCheckRun, ReviewItem, ReviewItemStatus, ReviewerState } from '@geld/review';
+import type { BotVerdictRecord, ProviderPublicationRead, ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, RawCheckRun, ReviewItem, ReviewItemStatus, ReviewerState } from '@geld/review';
 import type { RepositoryIdentity } from '@geld/core';
 import type { ProviderAiState } from './ai';
 import { renderReviewerIdentity } from './reviewer-identity';
@@ -107,6 +107,17 @@ const STANDING: Readonly<Record<ReviewerState, string>> = {
   commented: 'Commented',
   pending: 'Review requested',
 };
+
+function reviewerRequested(reviewer: ProviderReviewReviewer): boolean {
+  return reviewer.reviewRequest === 'pending' || (reviewer.reviewRequest === undefined && reviewer.state === 'pending');
+}
+
+function reviewerLabel(reviewer: ProviderReviewReviewer): string {
+  if (reviewer.reviewRequest === undefined) return STANDING[reviewer.state];
+  const standing = reviewer.state === 'pending' ? null : STANDING[reviewer.state];
+  const request = reviewer.reviewRequest === 'pending' ? 'Review requested' : reviewer.reviewRequest === 'unknown' ? 'Request state unavailable' : null;
+  return [standing ?? (request === 'Review requested' ? null : 'Reviewer'), request].filter((label) => label !== null).join(' · ');
+}
 
 const STATUS: Readonly<Record<ReviewItemStatus, string>> = {
   open: 'Open',
@@ -338,12 +349,13 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const reviewers = input.reviewers;
     const approvals = reviewers?.filter((reviewer) => reviewer.state === 'approved').length ?? 0;
     const changes = reviewers?.filter((reviewer) => reviewer.state === 'changes_requested').length ?? 0;
+    const pending = reviewers?.filter(reviewerRequested).length ?? 0;
     const required = options.approvalsRequired;
     const left = options.approvalsLeft;
     const tally = typeof required === 'number' && typeof left === 'number' && Number.isSafeInteger(required) && Number.isSafeInteger(left) && required > 0 && left >= 0 && left <= required
       ? `${required - left}/${required} required approvals`
       : countLabel(approvals, 'approval');
-    const section = disclosure('reviewers', `Reviews · ${reviewers === undefined ? 'Unavailable' : `${tally}${changes === 0 ? '' : ` · ${countLabel(changes, 'change request')}`}`}`, false);
+    const section = disclosure('reviewers', `Reviews · ${reviewers === undefined ? 'Unavailable' : `${tally}${changes === 0 ? '' : ` · ${countLabel(changes, 'change request')}`}${pending === 0 ? '' : ` · ${countLabel(pending, 'pending review')}`}`}`, false);
     if (reviewers === undefined || reviewers.length === 0) {
       section.append(node('p', reviewers === undefined ? 'Review standings could not be read.' : 'No reviewer standings.'));
       return section;
@@ -352,10 +364,13 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     for (const reviewer of reviewers) {
       const row = node('li', '', 'geld-provider-review__standing');
       row.dataset.state = reviewer.state;
+      if (reviewer.reviewRequest !== undefined) row.dataset.reviewRequest = reviewer.reviewRequest;
       const url = reviewer.url === undefined ? null : safeUrl(reviewer.url, input.subject.origin);
       row.append(url === null ? node('span', reviewer.author.login) : link(reviewer.author.login, url, reviewer.anchor ?? ''));
       if (reviewer.author.automated === true) row.append(node('span', 'Automated account', 'geld-provider-review__muted'));
-      row.append(node('span', STANDING[reviewer.state]));
+      if (reviewer.state !== 'pending' && reviewer.reviewRequest !== undefined && reviewer.reviewRequest !== 'not-pending') {
+        row.append(node('span', STANDING[reviewer.state]), node('span', ` · ${reviewer.reviewRequest === 'pending' ? 'Review requested' : 'Request state unavailable'}`, 'geld-provider-review__muted'));
+      } else row.append(node('span', reviewerLabel(reviewer)));
       list.append(row);
     }
     section.append(list);
@@ -666,7 +681,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         if (url !== null) lines.push(`Publisher: ${comment.author.login} · ${url}`);
       }
     }
-    for (const reviewer of input.reviewers ?? []) lines.push(`- ${reviewer.author.login}: ${STANDING[reviewer.state]}`);
+    for (const reviewer of input.reviewers ?? []) lines.push(`- ${reviewer.author.login}: ${reviewerLabel(reviewer)}`);
     const summary = options.ai?.enabled === true && options.ai.state.key === identity ? options.ai.state.summary : undefined;
     if (summary !== undefined) lines.push('', `AI summary: ${summary.tldr}`, '');
     for (const bot of bots) lines.push(`- ${botById(bot.id)?.title ?? bot.id}: ${verdictLabel(bot)}`);
