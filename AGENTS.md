@@ -3557,3 +3557,8 @@ the child keeps its own permalink and may have no hidden attribute while its par
 Provider preview parsers need an actual preview or inspector URL, a recognized failure explanation, or an explicit matching native service binding before a parsed row is shown.
 Review advice containing shell pipes and deployment words is not a linkless Cloudflare deployment;
 keep that comment in its native finding instead of duplicating it under Previews.
+
+The provider image viewer also handles Escape inside its dialog before native page shortcuts can suppress browser cancellation, restoring the original image link on close.
+
+A settled public MR can verify preserved round boundaries and source identities without containing unresolved work;
+report the Needs attention interaction as unverified in that case, never fabricate open items to satisfy browser acceptance.

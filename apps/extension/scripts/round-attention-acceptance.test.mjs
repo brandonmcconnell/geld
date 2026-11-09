@@ -41,7 +41,8 @@ function protocol(options = {}) {
   const listeners = new Map();let grouping = 'type';let attention = null;let opened = false;let focused = false;let input = null;let cleanup = false;let proof;let changes = 0;
   const read = () => {
     const value = baseline();value.items = [value.items[0]];value.items[0].sources[0].createdAt = '2026-10-29T16:52:16.580Z';
-    value.items[0].attention = grouping === 'batch';value.items[0].open = opened;value.items[0].focused = focused;value.attention = attention;
+    if (options.closed) value.items[0].state = 'resolved';
+    value.items[0].attention = !options.closed && grouping === 'batch';value.items[0].open = opened;value.items[0].focused = focused;value.attention = attention;
     value.rounds = grouping === 'batch' ? [{ id: '4135374883', label: 'Push round 1 · Latest recorded push', at: '2026-11-01T11:59:15.345Z' }] : [];
     value.boundary = { time: '2026-11-01T11:59:15.345Z', commits: [{ sha: headSha, project: 'gitlab-org/gitlab', url: `${baseline().url}/diffs?commit_id=${headSha}` }] };
     value.input = input;
@@ -66,6 +67,11 @@ function protocol(options = {}) {
 }
 test('synthetic protocol checks typed history, trusted keyboard, single homes and successful settings cleanup', async () => {
   const fixture = protocol();const proof = await fixture.run();assert.equal(proof.status, 'passed');assert.equal(fixture.cleanup(), true);assert.equal(fixture.listeners.size, 0);
+});
+test('a settled fixture verifies round preservation without claiming a Needs attention interaction', async () => {
+  const fixture = protocol({ closed: true });const proof = await fixture.run();
+  assert.equal(proof.status, 'partial');assert.equal(proof.attentionInteraction, 'unavailable');
+  assert.equal(proof.batch.input, null);assert.equal(fixture.cleanup(), true);assert.equal(fixture.listeners.size, 0);
 });
 for (const [label, options] of [['untrusted keyboard click', { untrusted: true }], ['source/head drift', { headDrift: true }], ['changed source words', { changedSource: true }], ['new source acquisition', { extraGet: true }], ['extension-attributed unrelated report JSON', { otherGet: true, extensionFrame: true }], ['settings cleanup failure', { cleanupFailure: true }]]) test(`synthetic protocol rejects ${label} and cleans up listeners/settings`, async () => {
   const fixture = protocol(options);await assert.rejects(fixture.run());assert.equal(fixture.result().status, 'failed');assert.equal(fixture.cleanup(), true);assert.equal(fixture.listeners.size, 0);
