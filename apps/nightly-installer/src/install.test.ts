@@ -1,0 +1,85 @@
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import type { InstallRecord } from '@geld/core/nightly';
+import { inspectTarget, recordInstall, writeBuild } from './install';
+import { parseArgs } from './cli';
+import { parseChoice } from './prompt';
+
+let root = '';
+beforeEach(async () => {
+  root = await mkdtemp(path.join(os.tmpdir(), 'geld-installer-'));
+});
+afterEach(async () => {
+  await rm(root, { recursive: true, force: true });
+});
+
+const entry = (p: string, text: string) => ({ path: p, data: new TextEncoder().encode(text) });
+const build = (version: string, extra: readonly string[] = []) => [
+  entry('manifest.json', JSON.stringify({ name: 'Geld Nightly', version })),
+  entry('nightly.html', ''),
+  ...extra.map((p) => entry(p, p)),
+];
+const record = (folder: string): InstallRecord => ({ folder, installedAt: '2026-11-09T12:00:00Z', version: '0.1.2.1', browser: 'chrome', profile: { directory: 'Default', name: 'Work' }, downloadsName: null });
+
+describe('writeBuild', () => {
+  it('writes into a new folder with the install record beside the build', async () => {
+    const dir = path.join(root, 'Geld Nightly', 'Work');
+    await writeBuild(dir, build('0.1.2.1', ['chunks/a.js']), record(dir));
+    expect((await readdir(dir)).sort()).toEqual(['chunks', 'manifest.json', 'nightly-install.json', 'nightly.html']);
+    expect(JSON.parse(await readFile(path.join(dir, 'nightly-install.json'), 'utf8')).folder).toBe(dir);
+  });
+
+  it('updates a nightly build in place, dropping what the new build lost', async () => {
+    const dir = path.join(root, 'Work');
+    await writeBuild(dir, build('0.1.2.1', ['chunks/old.js']), record(dir));
+    await writeBuild(dir, build('0.1.2.2', ['chunks/new.js']), record(dir));
+    expect(await readdir(path.join(dir, 'chunks'))).toEqual(['new.js']);
+    expect(await inspectTarget(dir)).toBe('nightly');
+  });
+
+  it('never writes over a folder that is not a nightly build', async () => {
+    const dir = path.join(root, 'Photos');
+    await mkdir(dir);
+    await writeFile(path.join(dir, 'cat.jpg'), 'meow');
+    await expect(writeBuild(dir, build('0.1.2.1'), record(dir))).rejects.toThrow('not Geld Nightly');
+    expect(await readdir(dir)).toEqual(['cat.jpg']);
+    await writeFile(path.join(root, 'manifest.json'), JSON.stringify({ name: 'Geld' }));
+    expect(await inspectTarget(root)).toBe('other');
+  });
+
+  it('waits its turn while the extension holds the lock', async () => {
+    const dir = path.join(root, 'Work');
+    await writeBuild(dir, build('0.1.2.1'), record(dir));
+    await writeFile(path.join(dir, 'nightly-update.lock'), JSON.stringify({ token: 'profile-a', at: Date.now() }));
+    await expect(writeBuild(dir, build('0.1.2.2'), record(dir))).rejects.toThrow('installing an update into this folder');
+  });
+});
+
+describe('recordInstall', () => {
+  it('keeps one entry per folder in ~/.geld, never in the build folder', async () => {
+    const state = path.join(root, '.geld');
+    await recordInstall(state, record('/a'));
+    await recordInstall(state, record('/b'));
+    await recordInstall(state, { ...record('/a'), version: '0.1.2.2' });
+    const saved = JSON.parse(await readFile(path.join(state, 'nightly.json'), 'utf8'));
+    expect(saved.installs.map((install: InstallRecord) => [install.folder, install.version])).toEqual([['/b', '0.1.2.1'], ['/a', '0.1.2.2']]);
+  });
+});
+
+describe('arguments and choices', () => {
+  it('reads the options', () => {
+    expect(parseArgs(['--profile', 'Work', '--profile', 'Default', '--browser', 'chrome,edge', '--yes'])).toMatchObject({ profiles: ['Work', 'Default'], browsers: ['chrome', 'edge'], yes: true, open: true });
+    expect(parseArgs(['--browser', 'safari'])).toMatch('Unknown browser');
+    expect(parseArgs(['--dir'])).toMatch('needs a value');
+    expect(parseArgs(['--help'])).toBe('help');
+  });
+
+  it('reads a pick from the list', () => {
+    expect(parseChoice('1,3', 3)).toEqual([0, 2]);
+    expect(parseChoice('2-3', 3)).toEqual([1, 2]);
+    expect(parseChoice('all', 2)).toEqual([0, 1]);
+    expect(parseChoice('4', 3)).toBeNull();
+    expect(parseChoice('x', 3)).toBeNull();
+  });
+});
