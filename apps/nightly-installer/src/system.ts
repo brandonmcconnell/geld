@@ -9,7 +9,7 @@ import type { BrowserInfo, Environment } from './browsers';
 
 const CLIPBOARD: Readonly<Record<string, ReadonlyArray<readonly [string, ...string[]]>>> = {
   darwin: [['pbcopy']],
-  win32: [['powershell', '-NoProfile', '-Command', 'Set-Clipboard -Value ([Console]::In.ReadToEnd().TrimEnd())']],
+  win32: [['powershell', '-NoProfile', '-Command', 'Set-Clipboard -Value (([System.IO.StreamReader]::new([Console]::OpenStandardInput(), [System.Text.Encoding]::UTF8)).ReadToEnd().TrimEnd())']],
   linux: [['wl-copy'], ['xclip', '-selection', 'clipboard'], ['xsel', '--clipboard', '--input']],
 };
 

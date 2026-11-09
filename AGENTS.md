@@ -60,6 +60,7 @@ Releases: every push to `main` that touches the extension (apps/extension, apps/
 the site's install buttons read `/releases/latest`.
 Each release also carries a `-<browser>-nightly.zip` per browser, the nightly builds (below), which the store jobs and the site's `-chrome.zip` patterns never pick up.
 Beside each nightly zip is its `.sha256`, and beside them `geld-nightly.mjs` (the installer, bundled) and its `.sha256`, all under one build-provenance attestation (`actions/attest-build-provenance`).
+Provenance names the commit that started the run, so a release built from the catalog step's own commit (signed patterns pushed in the same run) goes out unattested, with a notice in the run, rather than attested to the wrong source.
 Bump `apps/extension/package.json` `version` for a new version number;
 the build number keeps tags unique.
 `workflow_dispatch` forces a release.

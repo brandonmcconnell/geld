@@ -276,8 +276,14 @@ jobs:
         with:
           name: geld-extension-zips
           path: dist
+      # Provenance names the commit that started this run. When the catalog step committed signed patterns,
+      # the zips were built from that newer commit instead, so this release goes out unattested rather than
+      # attested to the wrong source.
+      - name: Note a release built from the catalog commit
+        if: steps.changed.outputs.release == 'true' && needs.check-and-pack.outputs.sha != github.sha
+        run: echo "::notice title=Provenance::Built from the catalog commit ${{ needs.check-and-pack.outputs.sha }}, not ${{ github.sha }}, so this release has no build attestation."
       - uses: actions/attest-build-provenance@v2
-        if: steps.changed.outputs.release == 'true'
+        if: steps.changed.outputs.release == 'true' && needs.check-and-pack.outputs.sha == github.sha
         with:
           subject-path: |
             dist/*-nightly.zip

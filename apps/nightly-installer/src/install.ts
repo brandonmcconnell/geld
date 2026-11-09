@@ -24,7 +24,8 @@ export async function inspectTarget(dir: string): Promise<TargetState> {
     return 'missing';
   }
   if (!info.isDirectory()) return 'other';
-  const names = (await readdir(dir)).filter((name) => !name.startsWith('.'));
+  // A lock (and a claim beside it) left by a run stopped before its record landed is not someone else's file.
+  const names = (await readdir(dir)).filter((name) => !name.startsWith('.') && !name.startsWith(LOCK_FILE));
   if (names.length === 0) return 'empty';
   const manifest = await readText(path.join(dir, 'manifest.json'));
   if (manifest !== null && isNightlyManifest(manifest)) return 'nightly';

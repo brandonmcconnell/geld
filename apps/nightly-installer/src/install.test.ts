@@ -31,7 +31,7 @@ describe('writeBuild', () => {
     const dir = path.join(root, 'Geld Nightly', 'Work');
     await writeBuild(dir, build('0.1.2.1', ['chunks/a.js']), record(dir));
     expect((await readdir(dir)).sort()).toEqual(['chunks', 'manifest.json', 'nightly-files.json', 'nightly-install.json', 'nightly.html']);
-    expect(JSON.parse(await readFile(path.join(dir, 'nightly-install.json'), 'utf8')).folder).toBe(dir);
+    expect((await folderRecord(dir))?.folder).toBe(dir);
   });
 
   it('updates a nightly build in place, dropping what the new build lost', async () => {
@@ -58,8 +58,16 @@ describe('writeBuild', () => {
     await writeFile(path.join(dir, 'background.js'), 'half');
     expect(await inspectTarget(dir)).toBe('nightly');
     await writeBuild(dir, build('0.1.2.1'), record(dir));
-    expect(JSON.parse(await readFile(path.join(dir, 'manifest.json'), 'utf8')).version).toBe('0.1.2.1');
+    expect(await readFile(path.join(dir, 'manifest.json'), 'utf8')).toBe(JSON.stringify({ name: 'Geld Nightly', version: '0.1.2.1' }));
     expect((await readdir(dir)).some((name) => name.endsWith('.partial'))).toBe(false);
+  });
+
+  it('takes a folder holding only a lock a stopped run left behind as empty', async () => {
+    const dir = path.join(root, 'Work');
+    await mkdir(dir);
+    await writeFile(path.join(dir, 'nightly-update.lock'), JSON.stringify({ token: 'gone', at: 0 }));
+    await writeFile(path.join(dir, 'nightly-update.lock.0f1e'), '');
+    expect(await inspectTarget(dir)).toBe('empty');
   });
 
   it('never writes over a folder that is not a nightly build', async () => {
@@ -95,9 +103,7 @@ describe('recordInstall', () => {
     await recordInstall(state, record('/a'));
     await recordInstall(state, other('/b'));
     await recordInstall(state, { ...record('/a'), version: '0.1.2.2' });
-    const saved = JSON.parse(await readFile(path.join(state, 'nightly.json'), 'utf8'));
-    expect(saved.installs.map((install: InstallRecord) => [install.folder, install.version])).toEqual([['/b', '0.1.2.1'], ['/a', '0.1.2.2']]);
-    expect((await readInstalls(state)).map((install) => install.folder)).toEqual(['/b', '/a']);
+    expect((await readInstalls(state)).map((install) => [install.folder, install.version])).toEqual([['/b', '0.1.2.1'], ['/a', '0.1.2.2']]);
   }, 15_000);
 
   it('keeps every profile when runs for different profiles record at once', async () => {
