@@ -262,7 +262,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         kind: 'toggle',
         key: 'attachmentLightbox',
         label: 'Attachment lightbox',
-        description: 'Preview image attachments in issues and pull requests with zoom and pan.',
+        description: 'View image and video attachments in a larger player in issues and pull requests.',
         popup: false,
         surfaces: ['extension'],
       },
