@@ -1,5 +1,5 @@
 export const PRIVACY_CONTACT = 'privacy@geld.sh';
-export const PRIVACY_UPDATED = 'November 1, 2026';
+export const PRIVACY_UPDATED = 'November 4, 2026';
 export const PRIVACY_SECTIONS: readonly {
   readonly id: string;
   readonly title: string;
@@ -18,6 +18,7 @@ export const PRIVACY_SECTIONS: readonly {
     paragraphs: [
       'The extension can hide review noise without a Geld account. It reads the Git provider page you are viewing and fetches diffs, page data and repository configuration using the provider session you already have. Settings and parsed diff counts are stored on your device. Diff counts can include file paths. Your browser may sync extension settings through its own sync service.',
       'The extension downloads a signed pattern catalog from GitHub. Optional GitHub settings sync stores your settings in a secret gist on your own GitHub account. A secret gist is unlisted, not a substitute for encrypted storage. Feedback and diagnostic reports are shared only when you choose to submit them.',
+      'Error reports are off by default. If you turn on Send error reports in the extension options (Chrome, Edge and Safari), the extension sends its own errors to geld.sh at most every few minutes: the error message, where in the extension’s code it happened, how often and when, the extension version and the browser. Web addresses, file paths, logins, email addresses and quoted page text are removed before sending and again on receipt, and no identifier is attached. Errors from GitHub’s own scripts are never included. Reports are written to the hosting logs on Vercel, kept there for a limited time and stored nowhere else. Turning the setting off drops reports not yet sent. Whether or not reports are on, errors stay on your device in Copy diagnostics.',
     ],
   },
   {
@@ -95,7 +96,7 @@ export const PRIVACY_SECTIONS: readonly {
     id: 'changes',
     title: 'Changes to this policy',
     paragraphs: [
-      'This policy was updated on November 1, 2026. Material changes are announced in the product or by account email before they take effect where appropriate. The public source history records policy changes.',
+      'This policy was updated on November 4, 2026. Material changes are announced in the product or by account email before they take effect where appropriate. The public source history records policy changes.',
     ],
   },
 ];
