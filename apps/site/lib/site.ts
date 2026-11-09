@@ -3,9 +3,13 @@
 /** Canonical origin. The apex `geld.sh` 308-redirects here (Vercel domain setting). */
 export const SITE_URL = 'https://www.geld.sh';
 export const SITE_NAME = 'Geld';
-export const TAGLINE = 'Review the code, not the tests';
+/** The hero's two lines, each kept on one line at every width. */
+export const HEADLINE = ['Code review is broken.', 'Geld fixes it.'] as const;
+export const TAGLINE = HEADLINE.join(' ');
+/** The short line under the headline, on the home page and the social image. */
+export const SUBHEADLINE = 'Less noise. More shipping.';
 export const DESCRIPTION =
-  'Geld is a browser extension that hides test files and other review noise from GitHub diffs, so you can review the code that matters first. Chrome, Edge, Firefox and Safari.';
+  'Geld is a browser extension that fixes code review on GitHub: one digest of the threads, bot verdicts and reviews on a pull request, a diff with the noise set aside, and review controls on every tab. Chrome, Edge, Firefox and Safari.';
 
 export const GITHUB_OWNER = 'brandonmcconnell';
 export const GITHUB_REPO = 'geld';

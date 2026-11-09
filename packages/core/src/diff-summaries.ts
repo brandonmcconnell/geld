@@ -51,7 +51,7 @@ export function parseDiffSummaries(document: unknown): readonly FileStats[] | nu
     const deletions = typeof entry.linesDeleted === 'number' && Number.isFinite(entry.linesDeleted) ? entry.linesDeleted : 0;
     const status = typeof entry.changeType === 'string' ? STATUS_BY_CHANGE_TYPE[entry.changeType] : undefined;
     const kinds = status === 'deleted' ? (['deleted'] as const) : status === 'renamed' && additions + deletions === 0 ? (['renames'] as const) : null;
-    files.push({ path: entry.path, additions, deletions, ...(status === undefined ? {} : { status }), ...(kinds === null ? {} : { kinds }) });
+    files.push({ path: entry.path, additions, deletions, ...(status === undefined ? {} : { status }), ...(kinds === null ? {} : { kinds }), summaryOnly: true });
   }
   return files;
 }
