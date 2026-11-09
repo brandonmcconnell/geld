@@ -14,6 +14,7 @@ import { verifyBitbucketHiddenAuthors } from './bitbucket-hidden-authors.mjs';
 import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-shell-acceptance.mjs';
 import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommitFixture, prepareBitbucketParentCommit } from './bitbucket-commit-oracle.mjs';
 import { gitLabCopyFixOf, verifyGitLabItemCopies } from './item-copy-acceptance.mjs';
+import { verifyGitLabRoundAttention } from './round-attention-acceptance.mjs';
 
 const extensionRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const extensionPath = resolve(extensionRoot, '.output/chrome-mv3');
@@ -2408,6 +2409,7 @@ try {
     item.authorPresentation = await authorThemeEvidence(page, 'gitlab', 'note_4118584957');
     assertAuthorThemeEvidence(item.authorPresentation);
     item.localReviewed = await localReviewedFlag(page, (evidence) => { item.nativeFragment = evidence; });
+    await verifyGitLabRoundAttention(page, item, { readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY), patchSettings, poll, openReviewAncestors, capture, headSha: item.localReviewed.sourceHead, diffPageUrl: item.state.diffPageUrl });
     return {};
   });
   await runCase('gitlab-bot-digest', GL_BOT, verifyGitLabBot);
