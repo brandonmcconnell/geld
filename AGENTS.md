@@ -3553,3 +3553,7 @@ Display names or initials alone are never enough, so Bitbucket widgets without d
 GitLab can prevent native dialog cancellation through page shortcuts, so provider Flow handles Escape inside its own dialog, stops propagation and restores the current trigger without relying only on the browser cancel event.
 Installed fragment acceptance measures GitLab's native discussion container when it wraps the source note;
 the child keeps its own permalink and may have no hidden attribute while its parent is correctly folded.
+
+Provider preview parsers need an actual preview or inspector URL, a recognized failure explanation, or an explicit matching native service binding before a parsed row is shown.
+Review advice containing shell pipes and deployment words is not a linkless Cloudflare deployment;
+keep that comment in its native finding instead of duplicating it under Previews.
