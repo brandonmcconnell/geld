@@ -1,11 +1,13 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
+import { attachmentVideoUrl, createAttachmentVideo } from './attachment-video';
 import { createAttachmentViewer } from './attachment-viewer';
 import { ICON_LINK_EXTERNAL, ICON_X } from './ui/icons';
 
 const IMAGE_ATTRIBUTE = 'data-geld-lightbox-image';
 const IMAGE_PATH = /\.(?:avif|gif|jpe?g|png|svg|webp)$/i;
 let activePath: string | null = null;
-let openDialog: HTMLDialogElement | null = null;
+let closeDialog: (() => void) | null = null;
+const videoButtons = new Map<HTMLVideoElement, HTMLButtonElement>();
 
 function isConversation(): boolean {
   return /^\/[^/]+\/[^/]+\/(?:issues|pull)\/\d+(?:\/|$)/.test(window.location.pathname);
@@ -29,23 +31,14 @@ function attachmentLink(image: HTMLImageElement): HTMLAnchorElement | null {
     || (/^\/[^/]+\/[^/]+\/(?:blob|raw)\//.test(url.pathname) && IMAGE_PATH.test(url.pathname)) ? link : null;
 }
 
-function dismiss(): void {
-  const dialog = openDialog;
-  if (dialog === null) return;
-  openDialog = null;
-  if (dialog.open) dialog.close();
-  dialog.remove();
-}
-
 /** GitHub names every upload "image" (older uploads "Image"), which says nothing a dialog title should. */
 function titleFor(image: HTMLImageElement): string {
   const alt = image.alt.trim();
   return alt === '' || /^image$/i.test(alt) ? 'Image' : alt;
 }
 
-function show(image: HTMLImageElement, link: HTMLAnchorElement): void {
-  dismiss();
-  const previousFocus = document.activeElement;
+function show(viewer: ReturnType<typeof createAttachmentViewer>, title: string, href: string, trigger: HTMLElement): void {
+  closeDialog?.();
   const titleId = `geld-lightbox-title-${Date.now()}`;
   const dialog = createElement('dialog', {
     class: 'geld-lightbox',
@@ -56,17 +49,24 @@ function show(image: HTMLImageElement, link: HTMLAnchorElement): void {
     type: 'button', class: 'geld-lightbox__close', 'aria-label': 'Close', title: 'Close (Esc)',
   }, [svgFromString(ICON_X)]);
   const original = createElement('a', {
-    class: 'btn btn-sm geld-lightbox__original', href: link.href, target: '_blank', rel: 'noopener noreferrer',
+    class: 'btn btn-sm geld-lightbox__original', href, target: '_blank', rel: 'noopener noreferrer',
   }, ['Open original', svgFromString(ICON_LINK_EXTERNAL)]);
-  const viewer = createAttachmentViewer(image);
   dialog.append(
     createElement('header', { class: 'geld-lightbox__header' }, [
-      createElement('h1', { class: 'geld-lightbox__title', id: titleId }, [titleFor(image)]),
+      createElement('h1', { class: 'geld-lightbox__title', id: titleId }, [title]),
       close,
     ]),
     createElement('div', { class: 'geld-lightbox__body' }, [viewer.stage]),
     createElement('footer', { class: 'geld-lightbox__footer' }, [viewer.controls, original]),
   );
+  const dismiss = (): void => {
+    if (closeDialog !== dismiss) return;
+    closeDialog = null;
+    viewer.dispose();
+    if (dialog.open) dialog.close();
+    dialog.remove();
+    if (trigger.isConnected) trigger.focus({ preventScroll: true });
+  };
   close.addEventListener('click', dismiss);
   dialog.addEventListener('click', (event) => {
     if (event.target === dialog) dismiss();
@@ -75,15 +75,9 @@ function show(image: HTMLImageElement, link: HTMLAnchorElement): void {
     event.preventDefault();
     dismiss();
   });
-  dialog.addEventListener('close', () => {
-    viewer.dispose();
-    if (openDialog === dialog) openDialog = null;
-    dialog.remove();
-    if (link.isConnected) link.focus({ preventScroll: true });
-    else if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true });
-  }, { once: true });
+  dialog.addEventListener('close', dismiss, { once: true });
   document.body.append(dialog);
-  openDialog = dialog;
+  closeDialog = dismiss;
   dialog.showModal();
   close.focus();
 }
@@ -96,9 +90,36 @@ function onClick(event: MouseEvent): void {
   if (!(image instanceof HTMLImageElement)) return;
   const link = attachmentLink(image);
   if (link === null) return;
-  show(image, link);
+  show(createAttachmentViewer(image), titleFor(image), link.href, link);
   event.preventDefault();
   event.stopImmediatePropagation();
+}
+
+function enhanceVideos(): void {
+  const videos = new Set(document.querySelectorAll<HTMLVideoElement>('.markdown-body video'));
+  for (const [video, button] of videoButtons) {
+    if (!videos.has(video) || attachmentVideoUrl(video) === null || video.nextElementSibling !== button) {
+      button.remove();
+      videoButtons.delete(video);
+    }
+  }
+  for (const video of videos) {
+    if (videoButtons.has(video) || attachmentVideoUrl(video) === null) continue;
+    const button = createElement('button', {
+      type: 'button', class: 'btn btn-sm geld-lightbox-trigger', 'aria-haspopup': 'dialog', [OWN_UI_ATTRIBUTE]: '',
+    }, ['Open in player']);
+    button.addEventListener('click', () => {
+      const url = attachmentVideoUrl(video);
+      if (url === null) return;
+      const summary = video.parentElement?.matches('details')
+        ? video.parentElement.querySelector(':scope > summary')?.textContent?.trim()
+        : undefined;
+      const title = video.getAttribute('aria-label')?.trim() || summary || 'Video';
+      show(createAttachmentVideo(video, url), title, url, button);
+    });
+    video.after(button);
+    videoButtons.set(video, button);
+  }
 }
 
 export function applyAttachmentLightbox(enabled = true): void {
@@ -106,9 +127,10 @@ export function applyAttachmentLightbox(enabled = true): void {
     removeAttachmentLightbox();
     return;
   }
-  if (activePath !== window.location.pathname) dismiss();
+  if (activePath !== window.location.pathname) closeDialog?.();
   activePath = window.location.pathname;
   document.addEventListener('click', onClick, true);
+  enhanceVideos();
   for (const image of document.querySelectorAll('.markdown-body img')) {
     if (image instanceof HTMLImageElement) {
       const eligible = attachmentLink(image) !== null;
@@ -119,7 +141,9 @@ export function applyAttachmentLightbox(enabled = true): void {
 
 export function removeAttachmentLightbox(): void {
   document.removeEventListener('click', onClick, true);
-  dismiss();
+  closeDialog?.();
+  for (const button of videoButtons.values()) button.remove();
+  videoButtons.clear();
   activePath = null;
   for (const image of document.querySelectorAll(`[${IMAGE_ATTRIBUTE}]`)) image.removeAttribute(IMAGE_ATTRIBUTE);
 }

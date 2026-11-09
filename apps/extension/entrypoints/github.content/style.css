@@ -9772,6 +9772,41 @@ dialog.geld-lightbox {
   text-overflow: ellipsis;
 }
 
+dialog.geld-lightbox[open]:has(.geld-lightbox__stage--large) {
+  box-sizing: border-box;
+  width: min(1600px, calc(100vw - 48px));
+  min-width: 0;
+  max-width: none;
+  height: min(1100px, calc(100dvh - 48px));
+  max-height: none;
+}
+
+@media (max-width: 600px), (max-height: 480px) {
+  dialog.geld-lightbox[open]:has(.geld-lightbox__stage--large) {
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 16px);
+  }
+}
+
+.geld-lightbox:has(.geld-lightbox__stage--large) .geld-lightbox__body {
+  flex: 1;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  place-items: stretch;
+}
+
+.geld-lightbox:has(.geld-lightbox__stage--large) :is(.geld-lightbox__header, .geld-lightbox__footer) {
+  flex: none;
+}
+
+.geld-lightbox:has(.geld-lightbox__stage--large) .geld-lightbox__footer {
+  padding: 8px;
+}
+
+.geld-lightbox__stage--large .geld-lightbox__status {
+  box-sizing: border-box;
+  width: min(320px, 100%);
+}
+
 .geld-lightbox__close {
   display: grid;
   flex: none;
@@ -9887,6 +9922,30 @@ dialog.geld-lightbox {
 .geld-lightbox :focus-visible {
   outline: 2px solid var(--focus-outlineColor, #0969da);
   outline-offset: -2px;
+}
+
+button.geld-lightbox-trigger {
+  margin: 8px;
+}
+
+.geld-lightbox__stage--video {
+  touch-action: auto;
+}
+
+.geld-lightbox__video {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  object-fit: contain;
+}
+
+.geld-lightbox__video-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 /* The Overview's recommended action: GitHub's "View merge status" as an info button, and Geld's merge beside it. */
