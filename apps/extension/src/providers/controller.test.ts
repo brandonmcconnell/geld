@@ -372,13 +372,13 @@ it('runs diff classification and popup state on a standalone commit without fetc
   expect(document.querySelector('.geld-provider-review-actions')).toBeNull();
 });
 
-it('preserves manually collapsed visible files across refreshes with expandLargeDiffs enabled', async () => {
+it('preserves first-seen and later manually collapsed visible files with expandLargeDiffs enabled', async () => {
   const files: readonly FileStats[] = [
     { path: 'src/main.ts', additions: 12, deletions: 2 },
     { path: 'src/large.ts', additions: 1200, deletions: 1 },
   ];
   const { adapter, view } = fixture('gitlab', files);
-  let largeExpanded = true;
+  let largeExpanded = false;
   const smallExpand = vi.fn(() => true);
   const largeExpand = vi.fn(() => { largeExpanded = true; return true; });
   const entries: readonly ProviderDiffEntry[] = [
@@ -393,7 +393,11 @@ it('preserves manually collapsed visible files across refreshes with expandLarge
   await settle();
   expect(controller.getTabState().hasDiff).toBe(true);
   expect(smallExpand).not.toHaveBeenCalled();
-  // Once Geld observed a large file open, a later manual collapse belongs to the user.
+  expect(largeExpand).not.toHaveBeenCalled();
+  expect(largeExpanded).toBe(false);
+  largeExpanded = true;
+  controller.requestRefresh();
+  await settle();
   largeExpanded = false;
   controller.requestRefresh();
   await settle();
@@ -401,6 +405,109 @@ it('preserves manually collapsed visible files across refreshes with expandLarge
   expect(largeExpand).not.toHaveBeenCalled();
   expect(smallExpand).not.toHaveBeenCalled();
   expect(largeExpanded).toBe(false);
+});
+
+describe('native size-loader capabilities', () => {
+  function sizeLoader(options: { readonly enabled?: boolean; readonly hiddenFile?: boolean; readonly nativeHidden?: boolean; readonly callback?: () => boolean } = {}) {
+    const path = options.hiddenFile === true ? 'src/first.test.ts' : 'src/main.ts';
+    const files: readonly FileStats[] = [{ path, additions: 12, deletions: 2 }, { path: 'src/other.ts', additions: 1, deletions: 0 }];
+    const { adapter, view } = fixture('gitlab', files);
+    const genericExpand = vi.fn(() => true);
+    const isExpanded = vi.fn(() => false);
+    const load = vi.fn(options.callback ?? (() => true));
+    let entries: readonly ProviderDiffEntry[] = [{ path, root: node('#visible'), anchor: 'visible', additions: 12, deletions: 2,
+      expandLargeDiff: load, isExpanded, expand: genericExpand, collapse: () => true }];
+    const { controller } = start({ ...adapter, readDiff: () => ({ ...view, entries, filteredPaths: new Set(options.nativeHidden === true ? [path] : []) }) }, {
+      ...DEFAULT_SETTINGS, expandLargeDiffs: options.enabled ?? true,
+    });
+    return { path, view, controller, load, genericExpand, isExpanded, getEntry: () => entries[0], setEntries: (next: readonly ProviderDiffEntry[]) => { entries = next; } };
+  }
+
+  it('uses a verified loader below the classification threshold, once per physical root and path', async () => {
+    const file = sizeLoader();
+    await settle();
+    expect(file.load).toHaveBeenCalledOnce();
+    expect(file.genericExpand).not.toHaveBeenCalled();
+    expect(file.isExpanded).not.toHaveBeenCalled();
+    file.controller.requestRefresh();
+    await settle();
+    expect(file.load).toHaveBeenCalledOnce();
+    const entry = file.getEntry();
+    if (entry === undefined) throw new Error('Missing size-loader entry.');
+    const replacement = document.createElement('article');
+    entry.root.replaceWith(replacement);
+    file.setEntries([{ ...entry, root: replacement }]);
+    file.controller.requestRefresh();
+    await settle();
+    expect(file.load).toHaveBeenCalledTimes(2);
+    expect(file.genericExpand).not.toHaveBeenCalled();
+  });
+
+  it('does not relaunch a successful request when a recycled root returns to an earlier path', async () => {
+    const file = sizeLoader();
+    await settle();
+    const entry = file.getEntry();
+    if (entry === undefined) throw new Error('Missing size-loader entry.');
+    file.setEntries([{ ...entry, path: 'src/other.ts' }]);
+    file.controller.requestRefresh();
+    await settle();
+    expect(file.load).toHaveBeenCalledTimes(2);
+    file.setEntries([entry]);
+    file.controller.requestRefresh();
+    await settle();
+    expect(file.load).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits for a live eligible native control when the capability declines a request', async () => {
+    let ready = false;
+    const file = sizeLoader({ callback: () => ready });
+    await settle();
+    const attempts = file.load.mock.calls.length;
+    expect(attempts).toBeGreaterThan(0);
+    ready = true;
+    file.controller.requestRefresh();
+    await settle();
+    expect(file.load).toHaveBeenCalledTimes(attempts + 1);
+    file.controller.requestRefresh();
+    await settle();
+    expect(file.load).toHaveBeenCalledTimes(attempts + 1);
+    expect(file.genericExpand).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['setting disabled', { enabled: false }],
+    ['Geld-hidden file', { hiddenFile: true }],
+    ['native-filtered file', { nativeHidden: true }],
+  ] as const)('does not probe a loader for a %s', async (_label, options) => {
+    const file = sizeLoader(options);
+    await settle();
+    expect(file.load).not.toHaveBeenCalled();
+    expect(file.genericExpand).not.toHaveBeenCalled();
+  });
+
+  it.each(['hidden', 'aria-hidden', 'inert', 'aria-disabled'] as const)('leaves a natively %s file untouched', async (attribute) => {
+    const file = sizeLoader();
+    const entry = file.getEntry();
+    if (entry === undefined) throw new Error('Missing size-loader entry.');
+    entry.root.setAttribute(attribute, attribute.startsWith('aria-') ? 'true' : '');
+    await settle();
+    expect(file.load).not.toHaveBeenCalled();
+    expect(file.genericExpand).not.toHaveBeenCalled();
+  });
+
+  it('does not touch an unverified or detached native file even when the adapter offers a loader', async () => {
+    const file = sizeLoader();
+    const entry = file.getEntry();
+    if (entry === undefined) throw new Error('Missing size-loader entry.');
+    file.setEntries([{ ...entry, path: 'src/stale-native.ts' }]);
+    await settle();
+    expect(file.load).not.toHaveBeenCalled();
+    file.setEntries([entry]);
+    entry.root.remove();
+    file.controller.requestRefresh();
+    await settle();
+    expect(file.load).not.toHaveBeenCalled();
+  });
 });
 
 it.each([false, true])('Show expands native hidden files and remounted roots in inline/virtualized mode (%s)', async (virtualized) => {
