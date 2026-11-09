@@ -18,12 +18,13 @@ const BITBUCKET_ANONYMOUS_COOLDOWN_MS = 62 * 60 * 1000; // Documented rolling-ho
 const FOCUSED_CASES = {
   regression: ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'github-regression', 'bitbucket-diff'],
   'bitbucket-diff': ['bitbucket-diff'],
-  'bitbucket-list': ['bitbucket-diff', 'bitbucket-list-counts'],
+  'bitbucket-list': ['bitbucket-list-counts'],
   'bitbucket-comment': ['bitbucket-comment-digest'],
   'bitbucket-commit': ['bitbucket-commit-counts'],
   'gitlab-lists': ['gitlab-project-mr-list', 'gitlab-group-mr-list'],
   'gitlab-diff': ['gitlab-mixed', 'gitlab-all-tests'],
   'gitlab-review': ['gitlab-overview-digest'],
+  'gitlab-bot': ['gitlab-bot-digest'],
   'gitlab-binary': ['gitlab-binary-counts'],
   'gitlab-references': ['gitlab-commit-link-counts', 'gitlab-native-commit-reference', 'gitlab-commit-counts'],
   github: ['github-regression'],
@@ -31,6 +32,10 @@ const FOCUSED_CASES = {
 const focus = process.env.GELD_BROWSER_FOCUS ?? 'regression';
 const GL_MIXED = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs?diff_id=2158520123';
 const GL_OVERVIEW = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334';
+const GL_BOT = 'https://gitlab.com/whitebox-aero/whitebox/-/merge_requests/272';
+const GL_BOT_HEAD = '5da09f9e31ad0d59c6f804a71380992955d1040f';
+const GL_BOT_LOGIN = 'group_84680077_bot_800401aaa75115e1bc0c76e02d860b8b';
+const GL_BOT_NOTE_IDS = ['3381334808', '3381334872', '3381334884', '3384406925'];
 const GL_COMMIT_SHA = 'db314bf4bb01ddcca61c32bc212e86bb82287f33';
 const GL_COMMIT = `https://gitlab.com/gitlab-org/gitlab/-/commit/${GL_COMMIT_SHA}`;
 const GL_COMMITS = `${GL_OVERVIEW}/commits`;
@@ -39,6 +44,12 @@ const GL_BINARY_PATH = 'doc/tutorials/observability/img/django_metrics.png';
 const GL_TESTS = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266882/diffs?diff_id=2158495265';
 const GH_FILES = 'https://github.com/wxt-dev/wxt/pull/2544/files';
 const BB_PR = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27';
+const BB_PR27_DIFF_FIXTURE = {
+  url: BB_PR,
+  all: { files: 5, additions: 46, deletions: 29 },
+  selectedFile: { path: 'pipe/pipe.py', files: 1, additions: 5, deletions: 1 },
+  provenance: { kind: 'prior_installed_public_fixture', run: 'https://github.com/brandonmcconnell/geld/actions/runs/41337759558', case: 'bitbucket-diff', basis: 'Actual installed complete5/+46−29, shared pattern filter4/+41−28 and restoration. This list slice does not repeat a native PR diff acquisition.' },
+};
 const GL_LIST_QUERY = new URLSearchParams({ state: 'all', search: 'issueMoveList' });
 const GL_PROJECT_LIST = `https://gitlab.com/gitlab-org/gitlab/-/merge_requests?${GL_LIST_QUERY}`;
 // The native Open tab uses STATUS_OPEN='opened'; the all-state group search times out upstream.
@@ -312,6 +323,7 @@ async function runCase(name, url, body, discovery = false) {
         void page.close().catch(() => undefined);
       }
     });
+    if (name === 'gitlab-bot-digest') observeGitLabBotFixture(page, item);
     const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     abort.signal.throwIfAborted();
     item.navigation = { status: response?.status() ?? null, finalUrl: safeUrl(page.url()) };
@@ -1075,6 +1087,175 @@ async function gitLabBinaryCounts(page, item) {
   } finally { await patchSettings({ enabled: original.enabled ?? true, categoryPatterns: original.categoryPatterns ?? {} }); }
 }
 
+function observeGitLabBotFixture(page, item) {
+  const evidence = { metadata: [], metadataResponses: [], discussions: [], errors: [], providerMutations: [], aiRequests: [] };
+  item.nativeBotFixture = evidence;
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (/\/(?:chat\/completions|responses|completions)\/?$/.test(url.pathname) && providerOf(url.href) === null) evidence.aiRequests.push(safeUrl(url.href));
+    if (providerOf(url.href) !== 'gitlab' || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method())) return;
+    const mutation = url.pathname === '/api/graphql' ? /\bmutation\b/.test(request.postData() ?? '') : /\/(?:notes|discussions|draft_notes|approve|unapprove|reviews|merge)(?:\/|$)/.test(url.pathname);
+    if (mutation) evidence.providerMutations.push({ method: request.method(), url: safeUrl(url.href) });
+  });
+  page.on('response', (response) => {
+    const url = new URL(response.url());
+    if (url.origin !== 'https://gitlab.com') return;
+    const metadata = decodeURIComponent(url.pathname) === '/api/v4/projects/whitebox-aero/whitebox/merge_requests/272';
+    const discussions = url.pathname === '/whitebox-aero/whitebox/-/merge_requests/272/discussions.json';
+    if (!metadata && !discussions) return;
+    if (metadata && evidence.metadataResponses.length < 12) evidence.metadataResponses.push({ url: safeUrl(url.href), status: response.status(), fromCache: response.fromCache() });
+    if (response.status() !== 200) return;
+    void response.json().then((value) => {
+      if (metadata) {
+        if (evidence.metadata.length < 12) evidence.metadata.push({ url: safeUrl(url.href), iid: value.iid, state: value.state, sha: value.sha, diffHead: value.diff_refs?.head_sha, webUrl: value.web_url });
+      } else if (Array.isArray(value) && evidence.discussions.length < 12) {
+        const selected = value.flatMap((thread) => (thread.notes ?? []).filter((note) => GL_BOT_NOTE_IDS.includes(String(note.id))).map((note) => {
+          const body = typeof note.note === 'string' ? note.note : '';
+          return { id: String(note.id), discussionId: thread.id, system: note.system, author: { id: String(note.author?.id), username: note.author?.username, bot: note.author?.bot, userType: note.author?.user_type }, url: note.noteable_note_url,
+            resolved: thread.resolved, active: thread.active, path: thread.position?.new_path ?? thread.position?.old_path ?? thread.diff_file?.new_path ?? thread.diff_file?.old_path, line: thread.position?.new_line ?? thread.position?.old_line,
+            createdAt: note.created_at, updatedAt: note.updated_at, bodySha256: createHash('sha256').update(body).digest('hex'),
+            summaryHeading: body.includes('<h3>Greptile Summary</h3>'), confidenceFive: body.includes('<h3>Confidence Score: 5/5</h3>'), safeToMerge: body.includes('Safe to merge'),
+            reviewedCommit: /Last reviewed commit:[\s\S]*?\]\(https:\/\/gitlab\.com\/whitebox-aero\/whitebox\/-\/commit\/([a-f0-9]{40})\)/.exec(body)?.[1] ?? null };
+        }));
+        evidence.discussions.push({ url: safeUrl(url.href), discussionCount: value.length, noteCount: value.reduce((sum, thread) => sum + (thread.notes?.length ?? 0), 0), nextCursor: response.headers()['x-next-page-cursor']?.trim() || null, selected });
+      }
+    }).catch((error) => { if (evidence.errors.length < 10) evidence.errors.push(errorText(error)); });
+  });
+}
+
+async function botSettings() {
+  return options.evaluate(async (key) => {
+    const settings = (await chrome.storage.sync.get(key))[key];
+    return { trustedReviewAccounts: settings?.trustedReviewAccounts ?? [], trustedSummaryPublishers: settings?.trustedSummaryPublishers ?? [], aiEnabled: settings?.aiEnabled };
+  }, SETTINGS_KEY);
+}
+
+async function clickReviewButton(page, selector, label) {
+  const handle = await page.evaluateHandle((selector, label) => [...document.querySelectorAll(selector)].find((button) => button instanceof HTMLButtonElement && !button.disabled && button.textContent.trim() === label) ?? null, selector, label);
+  const button = handle.asElement();
+  assert.ok(button !== null, `Missing actual ${label} button in ${selector}`);
+  try {
+    await button.evaluate((element) => element.scrollIntoView({ block: 'center', inline: 'nearest' }));
+    await button.click();
+    return { label, input: 'Real Puppeteer pointer click on the observed control' };
+  } finally { await discardHandle(handle); }
+}
+
+async function gitLabBotDigest(page) {
+  return page.evaluate((ids) => {
+    const panel = document.querySelector('.geld-provider-review');
+    if (panel === null) return null;
+    const format = (body) => body === null ? null : { text: body.textContent.replace(/\s+/g, ' ').trim(), headings: [...body.querySelectorAll('h1,h2,h3,h4,h5,h6')].map((node) => ({ tag: node.tagName, text: node.textContent.trim() })), tables: body.querySelectorAll('table').length, disclosures: body.querySelectorAll('details').length, codeBlocks: body.querySelectorAll('pre').length, links: [...body.querySelectorAll('a[href]')].map((link) => link.href), badges: [...body.querySelectorAll('img[src*="greptile-static-assets"]')].map((image) => ({ src: image.getAttribute('src'), alt: image.getAttribute('alt') })) };
+    const sources = ids.map((id) => {
+      const anchor = `note_${id}`;
+      const source = panel.querySelector(`[data-geld-source="${anchor}"]`);
+      const nativeCandidate = document.getElementById(anchor);
+      const native = nativeCandidate?.matches('[data-testid="noteable-note-container"]') && nativeCandidate.closest('[data-geld-ui]') === null ? nativeCandidate : null;
+      const header = native?.querySelector('.note-header a.author-name-link[data-user-id]');
+      return { id, anchor, exists: source !== null, links: [...source?.querySelectorAll(':scope > .geld-provider-review__byline > a[href]') ?? []].map((link) => link.href), body: format(source?.querySelector(':scope > .geld-provider-review__body') ?? null),
+        native: native === null ? null : { id: native.id, authorId: header?.getAttribute('data-user-id') ?? null, username: header?.getAttribute('data-username') ?? null, body: format(native.querySelector('.note-body .note-text')) } };
+    });
+    const items = [...panel.querySelectorAll('[data-geld-item]')].map((item) => ({ id: item.getAttribute('data-geld-item'), state: item.getAttribute('data-state'), metadata: item.querySelector(':scope > summary')?.textContent.replace(/\s+/g, ' ').trim(), sources: [...item.querySelectorAll('[data-geld-source]')].map((source) => source.getAttribute('data-geld-source')).filter((anchor) => ids.some((id) => anchor === `note_${id}`)) })).filter((item) => item.sources.length > 0);
+    const bots = [...panel.querySelectorAll('[data-geld-review-bot]')].map((bot) => ({ id: bot.getAttribute('data-geld-review-bot'), state: bot.getAttribute('data-state'), text: bot.textContent.replace(/\s+/g, ' ').trim(), links: [...bot.querySelectorAll('a[href]')].map((link) => link.href) }));
+    let selectedHead = null;
+    try {
+      const app = JSON.parse(document.querySelector('[data-rapid-diffs][data-app-data]')?.getAttribute('data-app-data') ?? 'null');
+      const selected = app?.versions?.source_versions?.filter((version) => version.selected === true && version.latest === true) ?? [];
+      if (app?.mr_path === '/whitebox-aero/whitebox/-/merge_requests/272' && String(app?.iid) === '272' && selected.length === 1) selectedHead = selected[0].head_sha;
+    } catch { /* The independently observed native metadata remains required. */ }
+    return { state: panel.getAttribute('data-state'), sources, items, bots, selectedHead, aiRunControls: panel.querySelectorAll('[data-geld-ai-run]').length,
+      checks: [...panel.querySelectorAll('.geld-provider-review__check')].map((row) => ({ state: row.getAttribute('data-state'), text: row.textContent.replace(/\s+/g, ' ').trim() })), unavailable: [...panel.querySelectorAll('.geld-provider-review__unavailable')].map((node) => node.textContent.trim()) };
+  }, GL_BOT_NOTE_IDS);
+}
+
+function assertGitLabBotSources(value, baseline) {
+  assert.ok(value !== null && ['ready', 'partial'].includes(value.state));
+  assert.equal(value.aiRunControls, 0, 'Bot verification must leave AI off');
+  assert.equal(value.selectedHead, GL_BOT_HEAD, 'The native selected latest version must match the exact observed current head');
+  for (const source of value.sources) {
+    assert.equal(source.exists, true, `Actual fetched source ${source.anchor} disappeared`);
+    assert.ok(source.links.includes(`${GL_BOT}#${source.anchor}`), `Source ${source.anchor} lost its original permalink`);
+    if (source.native !== null) { assert.equal(source.native.authorId, '37628862');assert.equal(source.native.username, GL_BOT_LOGIN); }
+    if (baseline !== undefined) {
+      const previous = baseline.sources.find((candidate) => candidate.id === source.id);
+      assert.deepEqual(source.body, previous?.body, 'Account trust changed original source text or formatting');
+      assert.deepEqual(source.native, previous?.native, 'Account trust changed an observed native source identity/body');
+    }
+  }
+  const summary = value.sources.find((source) => source.id === '3381334808');
+  assert.ok(summary?.body?.headings.some((heading) => heading.text === 'Greptile Summary'), 'Actual native Greptile heading was not preserved');
+  assert.ok(summary.body.headings.some((heading) => heading.text === 'Confidence Score: 5/5'), 'Actual native confidence heading was not preserved');
+  assert.ok(summary.body.tables > 0 && summary.body.disclosures > 0, 'Actual native summary table/disclosure formatting was not preserved');
+  if (baseline !== undefined) assert.deepEqual(value.checks, baseline.checks, 'Reviewer identity changed native CI facts');
+}
+
+async function verifyGitLabBot(page, item) {
+  const captured = await poll(() => item.nativeBotFixture, (value) => value.metadata.length >= 1 && value.discussions.some((page) => page.discussionCount === 36 && page.noteCount === 40 && page.selected.length === 4 && page.nextCursor === null), 'Actual native current MR metadata and complete bot discussion sources');
+  for (const metadata of captured.metadata) {
+    assert.equal(String(metadata.iid), '272');assert.equal(metadata.sha, GL_BOT_HEAD);assert.equal(metadata.diffHead, GL_BOT_HEAD);assert.equal(metadata.state, 'merged');assert.equal(metadata.webUrl, GL_BOT);
+  }
+  const discussionPage = captured.discussions.find((page) => page.selected.length === 4 && page.nextCursor === null);
+  assert.equal(discussionPage.discussionCount, 36);assert.equal(discussionPage.noteCount, 40);
+  for (const source of discussionPage.selected) {
+    assert.equal(source.author.id, '37628862');assert.equal(source.author.username, GL_BOT_LOGIN);assert.equal(source.author.bot, true);assert.equal(source.author.userType, 'project_bot');assert.equal(source.system, false);assert.equal(source.url, `${GL_BOT}#note_${source.id}`);
+  }
+  const summary = discussionPage.selected.find((source) => source.id === '3381334808');
+  assert.ok(summary?.summaryHeading && summary.confidenceFive && summary.safeToMerge);assert.equal(summary.reviewedCommit, GL_BOT_HEAD, 'The actual summary must name this full reviewed commit');
+  for (const source of discussionPage.selected.filter((source) => source.id !== '3381334808')) {
+    assert.equal(source.resolved, true);
+    assert.equal(source.active, source.id === '3384406925');
+    assert.equal(source.path, source.id === '3384406925' ? 'backend/poetry.lock' : 'backend/pyproject.toml');
+    assert.equal(source.line, source.id === '3384406925' ? 3739 : 56);
+  }
+  const initialSettings = await botSettings();
+  assert.deepEqual(initialSettings.trustedReviewAccounts, [], 'Fresh fixture must not preload reviewer trust');
+  assert.equal(initialSettings.aiEnabled, false);
+  const before = await poll(() => gitLabBotDigest(page), (value) => value !== null && ['ready', 'partial'].includes(value.state) && value.selectedHead === GL_BOT_HEAD && value.sources.every((source) => source.exists && source.body !== null), 'Installed untrusted native bot source digest with the exact selected latest head');
+  assertGitLabBotSources(before);assert.deepEqual(before.bots, [], 'Vendor-shaped content must not automatically create a bot verdict');
+  item.beforeTrust = before;
+  item.headVerification = { metadataBodyObservations: captured.metadata.length, nativeSelectedHead: before.selectedHead, summaryReviewedCommit: summary.reviewedCommit, basis: 'Exact native metadata, actual latest selected native version and hydrated installed digest. No second HTTP200 observation is inferred.' };
+  const identity = '.geld-provider-review [data-geld-source="note_3381334808"] .geld-provider-reviewer-identity';
+  const openedSummaries = await openReviewAncestors(page, `${identity} .geld-provider-reviewer-identity__choices button`);
+  const observedIdentity = await page.$eval(identity, (element) => ({ summary: element.querySelector(':scope > summary')?.textContent, metadata: element.querySelector('dl')?.textContent, open: element.open }));
+  assert.equal(observedIdentity.summary, 'Identify reviewer');assert.equal(observedIdentity.open, true);assert.ok(observedIdentity.metadata?.includes('37628862') && observedIdentity.metadata.includes(GL_BOT_LOGIN) && observedIdentity.metadata.includes('gitlab.com/whitebox-aero/whitebox'));
+  const serviceClick = await clickReviewButton(page, `${identity} .geld-provider-reviewer-identity__choices button`, 'Greptile');
+  assert.deepEqual((await botSettings()).trustedReviewAccounts, [], 'Service selection must require a separate Trust confirmation');
+  const confirmation = await page.$eval(`${identity} .geld-provider-reviewer-identity__confirmation`, (element) => ({ visible: !element.hidden, question: element.querySelector('p')?.textContent }));
+  assert.equal(confirmation.visible, true);assert.ok(confirmation.question?.includes(GL_BOT_LOGIN) && confirmation.question.includes('Greptile'));
+  const trustClick = await clickReviewButton(page, `${identity} .geld-provider-reviewer-identity__confirmation button`, 'Trust');
+  const binding = 'gitlab.com/whitebox-aero/whitebox greptile 37628862';
+  item.savedTrust = await poll(botSettings, (value) => value.trustedReviewAccounts.length === 1 && value.trustedReviewAccounts[0] === binding, 'Actual chrome.storage.sync exact repository and durable account binding after real UI trust');
+  assert.deepEqual(item.savedTrust.trustedSummaryPublishers, initialSettings.trustedSummaryPublishers, 'Reviewer trust must not authorize CI publishers');
+  const trusted = await poll(() => gitLabBotDigest(page), (value) => value?.bots.some((bot) => bot.id === 'greptile' && bot.state === 'clean' && bot.text.includes('Confidence score: 5/5')), 'Installed source-derived clean Greptile score after explicit trust');
+  assertGitLabBotSources(trusted, before);
+  assert.equal(trusted.bots.length, 1);assert.ok(trusted.bots[0].text.includes(GL_BOT_LOGIN) && trusted.bots[0].text.includes('No findings'));assert.ok(trusted.bots[0].links.includes(`${GL_BOT}#note_3381334808`));
+  const findings = trusted.items.filter((item) => item.sources.some((anchor) => anchor !== 'note_3381334808'));
+  assert.equal(findings.length, 2, 'Three historical resolved finding comments must remain two clustered items');
+  assert.deepEqual(findings.map((item) => [...item.sources].sort()).sort(), [['note_3381334872', 'note_3381334884'], ['note_3384406925']]);
+  for (const finding of findings) { assert.equal(finding.state, 'resolved');assert.ok(finding.metadata?.includes(finding.sources.includes('note_3384406925') ? 'backend/poetry.lock:3739' : 'backend/pyproject.toml:56')); }
+  item.trusted = trusted;item.identityInteraction = { openedSummaries, observedIdentity, serviceClick, confirmation, trustClick };item.trustedArtifacts = await capture(page, 'gitlab-bot-trusted');
+  await options.bringToFront();
+  await poll(() => options.$eval('#trusted-review-accounts', (area) => area.value), (value) => value.trim() === binding, 'Actual options editor observes the new explicit binding');
+  await options.click('#trusted-review-accounts');await options.keyboard.down('Control');await options.keyboard.press('KeyA');await options.keyboard.up('Control');await options.keyboard.press('Backspace');
+  const saveHandle = await options.evaluateHandle(() => document.querySelector('#trusted-review-accounts')?.parentElement?.querySelector('button') ?? null);
+  const saveButton = saveHandle.asElement();assert.ok(saveButton !== null, 'Missing actual trusted-account Save control');
+  try {
+    assert.equal(await saveButton.evaluate((element) => element.textContent), 'Save trusted accounts');
+    await saveButton.evaluate((element) => element.scrollIntoView({ block: 'center' }));await saveButton.click();
+    item.withdrawalClick = { label: 'Save trusted accounts', input: 'Real Puppeteer pointer click in the exact account setting block' };
+  } finally { await discardHandle(saveHandle); }
+  item.withdrawnSettings = await poll(botSettings, (value) => value.trustedReviewAccounts.length === 0, 'Real options Save withdraws trust from actual Chrome sync storage');
+  assert.deepEqual(item.withdrawnSettings.trustedSummaryPublishers, initialSettings.trustedSummaryPublishers);assert.equal(item.withdrawnSettings.aiEnabled, false);
+  await page.bringToFront();
+  const withdrawn = await poll(() => gitLabBotDigest(page), (value) => value !== null && value.bots.length === 0 && value.sources.every((source) => source.exists), 'Trust withdrawal removes the registry verdict while preserving every original comment');
+  assertGitLabBotSources(withdrawn, before);item.afterWithdrawal = withdrawn;
+  assert.equal(await page.$eval(`${identity} > summary`, (element) => element.textContent), 'Identify reviewer', 'Removing trust must restore explicit identification for the same native source');
+  assert.deepEqual(captured.providerMutations, [], 'Bot verification must never post, resolve, approve or trigger a provider mutation');assert.deepEqual(captured.aiRequests, [], 'AI remains off');
+  assert.ok(captured.metadata.every((metadata) => metadata.sha === GL_BOT_HEAD && metadata.diffHead === GL_BOT_HEAD), 'Native head changed during explicit trust verification');
+  item.state = await tabState(page);assert.equal(item.state.repository?.path, 'whitebox-aero/whitebox');assert.equal(item.state.repository.provider, 'gitlab');
+  return { featureParity: 'partial', verified: 'Actual installed explicit account trust and withdrawal, native-source clean score, historical resolved item/source preservation. CI warnings remain native and no authenticated provider write is exercised.' };
+}
+
 async function openReviewAncestors(page, selector) {
   let clicks = 0;
   for (let attempt = 0; attempt < 12; attempt += 1) {
@@ -1270,6 +1451,7 @@ async function nativeFragmentEvidence(page, anchor, assertSourcesUnchanged, reco
 }
 
 async function bitbucketListCounts(page) {
+  const fixture = BB_PR27_DIFF_FIXTURE;
   const selector = 'tr[data-qa="pull-request-row"]:has(a[data-qa="pull-request-row-link"][href="/atlassian/bitbucket-upload-file/pull-requests/27"]) .geld-provider-list-counts';
   const requests = [];
   const request = (request) => {
@@ -1300,10 +1482,17 @@ async function bitbucketListCounts(page) {
     const nativeList = await poll(passive, (value) => value.reviewPaths.includes('/atlassian/bitbucket-upload-file/pull-requests/27') && value.reviewPaths.length > 1 && value.chips === 0, 'Actual multi-row native Bitbucket list loads while list counts remain disabled');
     const nativeFilter = { status: 'not_used', reason: 'Native anonymous search updated its input and query URL but did not narrow the25rows in installed run41337759558. That provider behavior is not a Geld feature pass.', evidence: 'https://github.com/brandonmcconnell/geld/actions/runs/41337759558', observedSearchValue: nativeList.searchValue };
     await patchSettings({ showListStats: true });
-    const coldLabel = await poll(() => page.evaluate((selector) => [...document.querySelectorAll(selector)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0)?.textContent ?? null, selector), (value) => value !== null, 'Visible native-row chip is available for actual anonymous pointer intent');
+    const targetLabel = () => page.evaluate((selector) => [...document.querySelectorAll(selector)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0)?.textContent.replace(/\s+/g, ' ').trim() ?? null, selector);
+    const coldLabel = await poll(targetLabel, (value) => value !== null && value !== '', 'Visible native-row chip is available for actual anonymous pointer intent');
     await poll(passive, (value) => value.otherChips.length > 0, 'Other actual native list rows expose passive anonymous chips');
     const passiveBeforeIntent = await assertPassive();
-    // The prerequisite can warm PR27's complete cache; every other row in this fresh profile must remain cold.
+    const beforeIntentLabel = await targetLabel();
+    if (focus === 'bitbucket-list') {
+      assert.equal(coldLabel, 'Hover to count changes', 'Isolated list verification must start with a cold source');
+      assert.equal(beforeIntentLabel, 'Hover to count changes', 'The isolated target must stay cold until real pointer intent');
+    }
+    const sourceDemand = { mode: beforeIntentLabel === 'Hover to count changes' ? 'cold_before_intent' : /\b0 tests?\b/.test(beforeIntentLabel ?? '') && beforeIntentLabel.includes('+46') && beforeIntentLabel.includes('−29') ? 'warm_cache_before_intent' : 'noncold_all_before_intent', initialLabel: coldLabel, beforeIntentLabel, coldRequired: focus === 'bitbucket-list' };
+    if (sourceDemand.mode !== 'cold_before_intent') assert.equal(focus, 'all', 'Only the all slice may observe a prewarmed or pending target source');
     const intent = await page.evaluateHandle((selector) => [...document.querySelectorAll(selector)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0), selector);
     assert.ok(intent.asElement() !== null);
     await intent.asElement().hover();
@@ -1320,16 +1509,15 @@ async function bitbucketListCounts(page) {
     const initial = await poll(read, (value) => value !== null && /\b0 tests?\b/.test(value.text ?? '') && value.text.includes('+46') && value.text.includes('−29') && !/Counting|unavailable/.test(value.text), 'Visible native Bitbucket PR27 row settles at zero tests and+46−29');
     const pointer = await installedHover(page, selector, 'pointer', 'bitbucket-list-pointer-hover');
     const keyboard = await installedHover(page, selector, 'keyboard', 'bitbucket-list-keyboard-hover');
-    const expectedTotal = { label: 'Total', files: '5 files', additions: '+46', deletions: '−29' };
+    const expectedTotal = { label: 'Total', files: `${fixture.all.files} files`, additions: `+${fixture.all.additions}`, deletions: `−${fixture.all.deletions}` };
     for (const hover of [pointer, keyboard]) {
       assert.deepEqual(hover.rows.find((row) => row.label === 'Essential'), { ...expectedTotal, label: 'Essential' });
       assert.deepEqual(hover.rows.find((row) => row.label === 'Tests'), { label: 'Tests', files: '0 files', additions: '+0', deletions: '−0' });
       assert.deepEqual(hover.rows.find((row) => row.label === 'Total'), expectedTotal);
     }
     assert.equal(pointer.text, keyboard.text);
-    const proof = report.cases.find((item) => item.name === 'bitbucket-diff')?.derivedHidden;
-    assert.ok(proof?.path === 'pipe/pipe.py' && proof.files === 1 && Number.isFinite(proof.additions) && Number.isFinite(proof.deletions), 'Required PR27 diff must establish actual selected-file totals before its list cross-check');
-    const visible = { files: 4, additions: 46 - proof.additions, deletions: 29 - proof.deletions };
+    const proof = fixture.selectedFile;
+    const visible = { files: fixture.all.files - proof.files, additions: fixture.all.additions - proof.additions, deletions: fixture.all.deletions - proof.deletions };
     const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
     let filtered;
     let filteredHover;
@@ -1354,7 +1542,7 @@ async function bitbucketListCounts(page) {
     assert.deepEqual(statsRestored.nativeIds, initial.nativeIds);assert.deepEqual(statsRestored.nativeLinks, initial.nativeLinks);
     await poll(passive, (value) => value.otherChips.length > 0, 'Other native rows restore their cold chips');
     const passiveAfterRestore = await assertPassive();
-    return { selection: 'Actual native multi-row list is retained without search dependency or DOM hiding. Only PR27 receives explicit count intent; other anonymous chips remain cold.', nativeList, nativeFilter, coldLabel, passiveBeforeIntent, initial, pointer, keyboard, runtimeDiffProof: proof, visible, filtered, filteredHover, restored, passiveAfterCounts, statsOff, statsRestored, passiveAfterRestore,
+    return { selection: 'Actual native multi-row list is retained without search dependency or DOM hiding. Only PR27 receives explicit count intent; other anonymous chips remain cold.', nativeList, nativeFilter, coldLabel, sourceDemand, passiveBeforeIntent, initial, pointer, keyboard, priorInstalledFixture: fixture, visible, filtered, filteredHover, restored, passiveAfterCounts, statsOff, statsRestored, passiveAfterRestore,
       requestEvidence: { requests, extension: requests.filter((item) => item.extensionInitiator), nativeOrUnattributed: requests.filter((item) => !item.extensionInitiator), basis: 'Actual browser request initiator stacks identify extension frames when supplied; diff/diffstat immutable comparisons additionally retain from_pullrequest_id. Known native deployment400 responses are not count failures.' },
       nativeFingerprint: createHash('sha256').update(JSON.stringify({ ids: initial.nativeIds, links: initial.nativeLinks })).digest('hex') };
   } finally { page.off('request', request); }
@@ -1639,6 +1827,7 @@ try {
     item.localReviewed = await localReviewedFlag(page, (evidence) => { item.nativeFragment = evidence; });
     return {};
   });
+  await runCase('gitlab-bot-digest', GL_BOT, verifyGitLabBot);
   await runCase('github-regression', GH_FILES, async (page, item) => {
     item.state = await poll(() => tabState(page), (state) => state.hasDiff === true && state.all !== null && state.visible !== null && state.hiddenCount > 0 && state.categories.some((category) => category.id === 'tests' && category.count > 0), 'Installed GitHub public fixture classification');
     item.dom = await page.evaluate(() => ({ hidden: document.querySelectorAll('[data-geld="hidden"]').length, totalGeldEntries: document.querySelectorAll('[data-geld]').length }));
@@ -1748,18 +1937,21 @@ try {
         return { status: cards.length === 0 ? 'not_observed' : 'discovery', cards, assertion: 'Native cards are recorded independently; their presence is not a Geld count-hover pass.' };
       }, selector);
       item.nativeReferenceArtifacts = await capture(page, 'gitlab-native-commit-reference-observation');
-      const openCard = async () => {
-        await page.mouse.move(1, 1);
-        const movedAway = await poll(() => page.evaluate((selector, commitUrl) => {
-          const link = document.querySelector(selector);
-          const cards = [...document.querySelectorAll('.gl-popover[role="tooltip"]')].filter((node) => node.querySelector('[data-testid="commit-title-link"]')?.href === commitUrl && node.querySelector('[data-testid="commit-sha-link"]')?.href === commitUrl);
-          return { href: link?.href, commit: link?.getAttribute('data-commit'), hovered: link?.matches(':hover'), describedBy: link?.getAttribute('aria-describedby'),
-            cards: cards.map((node) => ({ id: node.id, display: getComputedStyle(node).display, height: node.getBoundingClientRect().height })) };
-        }, selector, GL_COMMIT), (value) => value.hovered === false && value.cards.every((card) => card.display === 'none' || card.height === 0), 'Genuine pointer exit closes the native commit card before reentry', 8000);
-        assert.equal(movedAway.href, GL_COMMIT);
-        assert.equal(movedAway.commit, GL_COMMIT_SHA);
-        await page.$eval(selector, (link) => link.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' }));
-        await page.hover(selector);
+      const openCard = async ({ reopen = true } = {}) => {
+        let movedAway;
+        if (reopen) {
+          await page.mouse.move(1, 1);
+          movedAway = await poll(() => page.evaluate((selector, commitUrl) => {
+            const link = document.querySelector(selector);
+            const cards = [...document.querySelectorAll('.gl-popover[role="tooltip"]')].filter((node) => node.querySelector('[data-testid="commit-title-link"]')?.href === commitUrl && node.querySelector('[data-testid="commit-sha-link"]')?.href === commitUrl);
+            return { href: link?.href, commit: link?.getAttribute('data-commit'), hovered: link?.matches(':hover'), describedBy: link?.getAttribute('aria-describedby'),
+              cards: cards.map((node) => ({ id: node.id, display: getComputedStyle(node).display, height: node.getBoundingClientRect().height })) };
+          }, selector, GL_COMMIT), (value) => value.hovered === false && value.cards.every((card) => card.display === 'none' || card.height === 0), 'Genuine pointer exit closes the native commit card before reentry', 8000);
+          assert.equal(movedAway.href, GL_COMMIT);
+          assert.equal(movedAway.commit, GL_COMMIT_SHA);
+          await page.$eval(selector, (link) => link.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' }));
+          await page.hover(selector);
+        }
         const opened = await poll(() => page.evaluate((selector, commitUrl) => {
           const link = document.querySelector(selector);
           const owners = (link?.getAttribute('aria-describedby') ?? '').split(/\s+/);
@@ -1770,12 +1962,42 @@ try {
             links: [...card.querySelectorAll('[data-testid="commit-title-link"], [data-testid="commit-sha-link"]')].map((anchor) => ({ href: anchor.href, testid: anchor.getAttribute('data-testid') })),
             chip: { text: chip.textContent.replace(/\s+/g, ' ').trim(), tabindex: chip.getAttribute('tabindex'), title: chip.getAttribute('title') } };
         }, selector, GL_COMMIT), (value) => value !== null && /\b1 test\b/.test(value.chip.text) && value.chip.text.includes('+2') && value.chip.text.includes('−0'), 'Actual ARIA-associated native commit card contains its exact source-specific Geld chip', 12_000);
-        return { ...opened, reentry: { mechanism: 'Real pointer move away, observed native close, source-preserving scroll and genuine original-link hover', movedAway } };
+        return { ...opened, reentry: { mechanism: reopen ? 'Real pointer move away, observed native close, source-preserving scroll and genuine original-link hover' : 'Existing visible native card, without resetting its lifetime', ...(movedAway === undefined ? {} : { movedAway }) } };
       };
       item.nativeCardPointer = await openCard();
       const pointerChip = `[id=${JSON.stringify(item.nativeCardPointer.id)}] .geld-provider-list-counts`;
       item.pointer = await installedHover(page, pointerChip, 'pointer', 'gitlab-native-commit-reference-pointer', undefined, { preserveNativeCard: true });
-      item.nativeCardKeyboard = await openCard();
+      let previousEscapeState;
+      item.pointerVisit = { url: page.url(), source: item.nativeLink, card: item.nativeCardPointer, escapeDismissed: item.pointer.escapeDismissed,
+        afterEscape: await poll(() => page.evaluate((selector, id) => {
+          const link = document.querySelector(selector);
+          const card = document.getElementById(id);
+          return { href: link?.href, commit: link?.getAttribute('data-commit'), mounted: link?.getAttribute('data-popover-mounted'), describedBy: link?.getAttribute('aria-describedby'),
+            card: card === null ? null : { id: card.id, display: getComputedStyle(card).display, visible: card.getBoundingClientRect().height > 0 && getComputedStyle(card).visibility !== 'hidden' } };
+        }, selector, item.nativeCardPointer.id), (value) => {
+          const state = JSON.stringify(value);
+          const settled = state === previousEscapeState;
+          previousEscapeState = state;
+          return settled;
+        }, 'Native card lifetime settles after the trusted Escape before choosing a keyboard visit', 6000) };
+      assert.equal(item.pointerVisit.afterEscape.href, GL_COMMIT);
+      assert.equal(item.pointerVisit.afterEscape.commit, GL_COMMIT_SHA);
+      if (item.pointerVisit.afterEscape.card?.visible === true) {
+        item.keyboardVisit = { mode: 'same visible native card', url: page.url(), source: item.nativeLink };
+        item.nativeCardKeyboard = await openCard({ reopen: false });
+      } else {
+        const response = await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
+        item.keyboardVisit = { mode: 'separate native visit after pointer Escape closed the provider card', navigation: { status: response?.status() ?? null, finalUrl: safeUrl(page.url()) } };
+        assert.equal(response?.status(), 200, 'Independent keyboard visit must load the same public MR');
+        assert.equal(page.url(), GL_OVERVIEW, 'Independent keyboard visit changed the native source fixture');
+        item.keyboardVisit.source = await poll(() => page.evaluate((selector) => {
+          const link = document.querySelector(selector);
+          if (link === null || link.closest('[data-geld-ui]') !== null || link.getBoundingClientRect().height === 0 || link.getAttribute('data-popover-listener-added') !== 'true') return null;
+          return { href: link.href, text: link.textContent.trim(), noteId: link.closest('[data-testid="noteable-note-container"]')?.id, referenceType: link.getAttribute('data-reference-type'), commit: link.getAttribute('data-commit'), owned: link.closest('[data-geld-ui]') !== null };
+        }, selector), (value) => value !== null, 'Same original native commit reference on the independent keyboard visit');
+        assert.deepEqual(item.keyboardVisit.source, item.nativeLink, 'Independent keyboard visit changed original native source identity');
+        item.nativeCardKeyboard = await openCard();
+      }
       assert.deepEqual(item.nativeCardKeyboard.links, item.nativeCardPointer.links, 'Count interaction changed native commit card source links');
       assert.equal(item.nativeCardKeyboard.title, item.nativeCardPointer.title);
       assert.equal(item.nativeCardKeyboard.author, item.nativeCardPointer.author);
@@ -1785,7 +2007,7 @@ try {
       for (const value of [item.pointer, item.keyboard]) assertGitLabCommitBreakdown(value);
       assert.equal(item.pointer.text, item.keyboard.text);
       item.featureParity = 'partial';
-      return { status: 'passed', verified: 'Hovering the original native commit reference preserves its actual provider card. Its exact source-specific Geld chip supports pointer and real Tab breakdowns with viewport/accessible ownership and Escape checks, retaining the native card title, author and source links. No competing tooltip is required on the original link.' };
+      return { status: 'passed', verified: 'The genuine native commit card chip supports exact pointer and real Tab breakdowns with viewport/accessible ownership and Escape checks. If native Escape closes its mounted card, the keyboard assertion uses a separately reported reload of the same source fixture. Original source identity, native card title/author and canonical links agree across visits. No competing tooltip is required on the original link.' };
     } finally { await patchSettings({ compactTimeline: original.compactTimeline ?? 'compact' }); }
   });
   await runCase('gitlab-commit-counts', GL_COMMIT, async (page, item) => {
