@@ -33,8 +33,12 @@ export interface MergeBox {
   readonly mergeable: boolean;
   /** Whether the reader is an admin GitHub lets bypass the rules that block it. */
   readonly canBypass: boolean;
+  /** Blocked by what no bypass lifts: a merge conflict, or the repository's or the reader's own state. */
+  readonly unbypassable: boolean;
   /** The direct merge methods the repository allows the reader, GitHub's default first. */
   readonly methods: readonly MergeMethod[];
+  /** The methods an admin's bypass may use: those plus the ones GitHub allows only past the rules (`ALLOWED_WITH_BYPASS`). */
+  readonly bypassMethods: readonly MergeMethod[];
   /** GitHub's prefilled commit for the method asked for (none for a rebase). */
   readonly commitTitle: string;
   readonly commitMessage: string;
@@ -79,12 +83,25 @@ function isMethod(value: unknown): value is MergeMethod {
 /**
  * Whether GitHub would merge it now, as its merge box decides: `MERGEABLE`, or `MERGEABLE_IF_STATUSES_PASS` once the
  * statuses do pass. The box reads those from its separate status query; the pull request's `mergeStateStatus` says
- * the same in one word (`CLEAN`: mergeable with passing commit status, `HAS_HOOKS`: the same with pre-receive hooks),
- * where `BEHIND`, `BLOCKED`, `UNSTABLE` and the rest are not ready.
+ * the same in one word: `CLEAN` (mergeable with passing commit status), `HAS_HOOKS` (the same with pre-receive hooks)
+ * and `UNSTABLE` (mergeable with a check that is not required still pending or failing: GitHub's merge box offers its
+ * merge there, geld#486 in Nov 2026), where `BEHIND`, `BLOCKED` (a required check, review or rule still waiting) and
+ * the rest are not ready.
  */
 export function mergeableNow(requirementsState: unknown, mergeStateStatus: unknown): boolean {
   if (requirementsState === 'MERGEABLE') return true;
-  return requirementsState === 'MERGEABLE_IF_STATUSES_PASS' && (mergeStateStatus === 'CLEAN' || mergeStateStatus === 'HAS_HOOKS');
+  return requirementsState === 'MERGEABLE_IF_STATUSES_PASS' && (mergeStateStatus === 'CLEAN' || mergeStateStatus === 'HAS_HOOKS' || mergeStateStatus === 'UNSTABLE');
+}
+
+/** The failed merge conditions GitHub's merge box treats as beyond an admin's bypass (conflicts, the repository's or the reader's state). */
+const UNBYPASSABLE: ReadonlySet<string> = new Set(['PULL_REQUEST_MERGE_CONFLICT_STATE', 'PULL_REQUEST_REPO_STATE', 'PULL_REQUEST_USER_STATE']);
+
+function methodsIn(listed: readonly unknown[], statuses: readonly string[]): readonly MergeMethod[] {
+  return listed
+    .filter((method): method is Record<string, unknown> => isRecord(method) && typeof method.allowableStatus === 'string' && statuses.includes(method.allowableStatus) && isMethod(method.name))
+    .sort((a, b) => Number(b.isDefault === true) - Number(a.isDefault === true))
+    .map((method) => method.name)
+    .filter(isMethod);
 }
 
 /** A `page_data/merge_box` answer, or null when it is not one. */
@@ -96,18 +113,17 @@ export function parseMergeBox(payload: unknown): MergeBox | null {
   const direct = actions.find((action): action is Record<string, unknown> => isRecord(action) && action.name === 'DIRECT_MERGE');
   // GitHub shows "Merge when ready" when the queue's action is allowed, as it shows its merge button for the direct one.
   const queue = actions.find((action): action is Record<string, unknown> => isRecord(action) && action.name === 'MERGE_QUEUE');
-  const allowed = direct !== undefined && direct.allowableStatus === 'ALLOWED' && Array.isArray(direct.mergeMethods) ? direct.mergeMethods : [];
-  const methods = allowed
-    .filter((method): method is Record<string, unknown> => isRecord(method) && method.allowableStatus === 'ALLOWED' && isMethod(method.name))
-    .sort((a, b) => Number(b.isDefault === true) - Number(a.isDefault === true))
-    .map((method) => method.name)
-    .filter(isMethod);
+  const listed = direct !== undefined && Array.isArray(direct.mergeMethods) ? direct.mergeMethods : [];
+  const methods = direct?.allowableStatus === 'ALLOWED' ? methodsIn(listed, ['ALLOWED']) : [];
+  // An admin blocked by the rules sees the merge and its methods as ALLOWED_WITH_BYPASS, and GitHub's merge box offers them.
+  const bypassMethods = direct?.allowableStatus === 'ALLOWED' || direct?.allowableStatus === 'ALLOWED_WITH_BYPASS' ? methodsIn(listed, ['ALLOWED', 'ALLOWED_WITH_BYPASS']) : [];
   // GitHub's merge box sends the default email only while it offers emails to pick from: with none (a pull request a bot
   // opened, whose noreply address is the default) it sends no email and GitHub takes the reader's own, which the bot's is not.
   const offered = Array.isArray(requirements.possibleCommitAuthorEmails) && requirements.possibleCommitAuthorEmails.length > 0;
   const email = offered ? stringOf(requirements.defaultCommitAuthorEmail) : '';
   const conditions = Array.isArray(requirements.conditions) ? requirements.conditions : [];
   const stacked = conditions.some((condition) => isRecord(condition) && condition.type === 'STACK' && condition.isStacked === true);
+  const unbypassable = conditions.some((condition) => isRecord(condition) && condition.result === 'FAILED' && typeof condition.type === 'string' && UNBYPASSABLE.has(condition.type));
   const reviews = Array.isArray(pull.latestOpinionatedReviews) ? pull.latestOpinionatedReviews : [];
   const verdicts: ReviewVerdict[] = [];
   for (const review of reviews) {
@@ -126,7 +142,9 @@ export function parseMergeBox(payload: unknown): MergeBox | null {
     verdicts,
     mergeable: mergeableNow(requirements.state, pull.mergeStateStatus),
     canBypass: pull.viewerCanAdminBypassMergeRequirements === true,
+    unbypassable,
     methods,
+    bypassMethods,
     commitTitle: stringOf(requirements.commitMessageHeadline),
     commitMessage: stringOf(requirements.commitMessageBody),
     authorEmail: email === '' ? null : email,
@@ -159,8 +177,15 @@ export function mergeOffer(box: MergeBox, asBypass: MergeBox | null): MergeOffer
   return null;
 }
 
+/**
+ * As GitHub's merge box offers its bypass: to an admin, while the pull request would not merge on its own (or a queue
+ * stands in the way) and auto-merge is off. The box read past the rules still says unmergeable for a failing required
+ * check, so only conflicts and the like rule the bypass out.
+ */
 function bypassMerges(box: MergeBox, asBypass: MergeBox | null): boolean {
-  return box.canBypass && asBypass?.mergeable === true && (asBypass.methods.length > 0 || box.methods.length > 0);
+  if (!box.canBypass || box.autoMerging || box.unbypassable || asBypass?.unbypassable === true) return false;
+  if (box.mergeable && !box.canQueue) return false;
+  return (asBypass?.bypassMethods.length ?? 0) > 0 || box.bypassMethods.length > 0;
 }
 
 /**
@@ -282,9 +307,9 @@ function fetchNonce(): string {
 }
 
 /** The merge box for a method, or null when GitHub could not say. */
-export async function fetchMergeBox(pullPath: string, method: MergeMethod, bypass: boolean): Promise<MergeBox | null> {
+export async function fetchMergeBox(pullPath: string, method: MergeMethod, bypass: boolean, signal?: AbortSignal): Promise<MergeBox | null> {
   try {
-    const response = await pageFetch(mergeBoxUrl(pullPath, method, bypass), { credentials: 'same-origin', headers: headers(fetchNonce(), false) });
+    const response = await pageFetch(mergeBoxUrl(pullPath, method, bypass), { credentials: 'same-origin', headers: headers(fetchNonce(), false), ...(signal === undefined ? {} : { signal }) });
     if (!response.ok) return null;
     return parseMergeBox(await response.json());
   } catch {
@@ -324,23 +349,116 @@ export function parseStack(payload: unknown, pullPath: string): readonly StackMe
   return members.some((member) => member.current) ? members : null;
 }
 
-async function readStack(pullPath: string, box: MergeBox): Promise<Stack | null> {
+/**
+ * The stack as the React page embeds it (`pullRequestsLayoutRoute.stack`, the shape `page_data/stacks` answers with), so
+ * no request has to come first: `none` where the page says the pull request is in no stack, null where the payload is
+ * missing or another pull request's (GitHub's router keeps the first page's payload across soft navigations).
+ */
+export function embeddedStackRecord(pullPath: string, root: ParentNode = document): Record<string, unknown> | 'none' | null {
+  const page = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(pullPath);
+  if (page === null) return null;
+  const [, owner = '', repo = '', number = ''] = page;
+  for (const script of root.querySelectorAll('script[type="application/json"][data-target="react-app.embeddedData"]')) {
+    const layout = layoutRouteOf(script);
+    if (layout === null || !isRecord(layout.pullRequest) || layout.pullRequest.number !== Number(number)) continue;
+    if (layout.stack === null) return 'none';
+    const stack = layout.stack;
+    // The number alone is not this pull request: a payload kept from another repository's pull request of the same
+    // number would hand its stack's paths to every stack action.
+    if (!isRecord(stack) || stringOf(stack.repositoryOwnerLogin).toLowerCase() !== owner.toLowerCase() || stringOf(stack.repositoryName).toLowerCase() !== repo.toLowerCase()) return null;
+    return stack;
+  }
+  return null;
+}
+
+/** The members of the stack the page embeds, its paths all in this repository. */
+export function embeddedStack(pullPath: string, root: ParentNode = document): readonly StackMember[] | 'none' | null {
+  const stack = embeddedStackRecord(pullPath, root);
+  if (stack === null || stack === 'none') return stack;
+  const page = /^\/([^/]+)\/([^/]+)\/pull\//.exec(pullPath);
+  const repoPrefix = `/${page?.[1] ?? ''}/${page?.[2] ?? ''}/pull/`.toLowerCase();
+  const members = parseStack({ stack }, pullPath);
+  return members !== null && members.every((member) => member.path.toLowerCase().startsWith(repoPrefix)) ? members : null;
+}
+
+/** GitHub's `page_data/stacks` for a pull request, as it answered, or null when it did not. */
+export async function fetchStackPayload(pullPath: string): Promise<unknown> {
   try {
     const response = await pageFetch(`${pullPath}/page_data/stacks`, { credentials: 'same-origin', headers: headers(fetchNonce(), false) });
     if (!response.ok) return null;
-    const members = parseStack(await response.json(), pullPath);
-    if (members === null) return null;
-    const boxes = new Map<number, MergeBox>();
-    await Promise.all(
-      members.map(async (member) => {
-        const read = member.current ? box : await fetchMergeBox(member.path, 'SQUASH', false);
-        if (read !== null) boxes.set(member.number, read);
-      }),
-    );
-    return { members, boxes };
+    const payload: unknown = await response.json();
+    return payload;
   } catch {
     return null;
   }
+}
+
+const layoutRoutes = new WeakMap<Element, { readonly text: string; readonly layout: Record<string, unknown> | null }>();
+
+function layoutRouteOf(script: Element): Record<string, unknown> | null {
+  const text = script.textContent ?? '';
+  const known = layoutRoutes.get(script);
+  if (known?.text === text) return known.layout;
+  let layout: Record<string, unknown> | null = null;
+  if (text.includes('"pullRequestsLayoutRoute"')) {
+    try {
+      const data: unknown = JSON.parse(text);
+      const route = isRecord(data) && isRecord(data.payload) ? data.payload.pullRequestsLayoutRoute : null;
+      layout = isRecord(route) ? route : null;
+    } catch {
+      layout = null;
+    }
+  }
+  layoutRoutes.set(script, { text, layout });
+  return layout;
+}
+
+async function readStackMembers(pullPath: string): Promise<readonly StackMember[] | null> {
+  const payload = await fetchStackPayload(pullPath);
+  return payload === null ? null : parseStack(payload, pullPath);
+}
+
+interface MemberBoxes {
+  /** Filled as each lands, so a reading can be made before the slowest. */
+  readonly boxes: ReadonlyMap<number, MergeBox>;
+  readonly done: Promise<void>;
+  readonly settled: () => boolean;
+}
+
+/** Every member's merge box but the page's own, which the caller reads and adds. */
+function memberBoxes(members: readonly StackMember[]): MemberBoxes {
+  const boxes = new Map<number, MergeBox>();
+  let settled = false;
+  const done = Promise.all(
+    members.map(async (member) => {
+      if (member.current) return;
+      const read = await fetchMergeBox(member.path, 'SQUASH', false);
+      if (read !== null) boxes.set(member.number, read);
+    }),
+  ).then(() => {
+    settled = true;
+  });
+  return { boxes, done, settled: () => settled };
+}
+
+const PREFETCH_FRESH_MS = 10_000;
+const prefetched = new Map<string, { readonly method: MergeMethod; readonly at: number; readonly box: Promise<MergeBox | null> }>();
+
+/**
+ * Ask for the page's merge box as the content script starts, before GitHub has drawn the header the controls wait for:
+ * GitHub's own status menu on the Overview reads its box at load, and Geld's first read started half a second after.
+ */
+export function prefetchMergeBox(pullPath: string, method: MergeMethod): void {
+  // One no read took (the controls never mounted) is spent once stale, or a visit back to the pull request asked nothing.
+  const known = prefetched.get(pullPath);
+  if (known !== undefined && Date.now() - known.at < PREFETCH_FRESH_MS) return;
+  prefetched.set(pullPath, { method, at: Date.now(), box: fetchMergeBox(pullPath, method, false) });
+}
+
+function takePrefetched(pullPath: string, method: MergeMethod): Promise<MergeBox | null> | null {
+  const entry = prefetched.get(pullPath);
+  prefetched.delete(pullPath);
+  return entry !== undefined && entry.method === method && Date.now() - entry.at < PREFETCH_FRESH_MS ? entry.box : null;
 }
 
 export interface MergeActions {
@@ -352,21 +470,77 @@ export interface MergeActions {
   readonly bypass: boolean;
   /** The direct methods the bypass may use, as the box read past the rules lists them (a queue's repository may allow none otherwise). */
   readonly bypassMethods: readonly MergeMethod[];
+  /** Some members' boxes are still on their way: choices that take them are not offered yet. */
+  readonly partial?: true;
 }
 
-/** What the reader may do now: the merge on offer and whether they may close, read with GitHub's default method. */
-export async function readMergeActions(pullPath: string): Promise<MergeActions | null> {
-  const first = await fetchMergeBox(pullPath, 'SQUASH', false);
+/**
+ * Whether each pull request was stacked when this page last read it. The embedded stack is the page's as it loaded,
+ * so it answers the first read only: a member merged in another tab stayed in it, and its merged box then ruled out
+ * every stack merge on each refresh. Later reads ask `page_data/stacks`, beside the box when the last read was stacked.
+ */
+const lastStacked = new Map<string, boolean>();
+
+/**
+ * What the reader may do now: the merge on offer and whether they may close, read with GitHub's default method.
+ * `method` is the repository's default as last read, asked for first so the box needs no second read for its commit.
+ * A stack's members have their boxes read beside this one's, so the menu waits on one box, not a chain.
+ */
+export async function readMergeActions(pullPath: string, method: MergeMethod = 'SQUASH', onPartial?: (actions: MergeActions) => void): Promise<MergeActions | null> {
+  const known = lastStacked.get(pullPath);
+  const embedded = known === undefined ? embeddedStack(pullPath) : null;
+  const listed = embedded !== null && embedded !== 'none' ? Promise.resolve(embedded) : known === true ? readStackMembers(pullPath) : null;
+  const early = listed === null ? null : listed.then((members) => (members === null ? null : { members, live: memberBoxes(members) }));
+  const first = await (takePrefetched(pullPath, method) ?? fetchMergeBox(pullPath, method, false));
   if (first === null) return null;
-  const method = first.methods[0] ?? 'SQUASH';
-  // The squash box's commit title and message would be sent under another method: no reading is safer than that.
-  const box = method === 'SQUASH' ? first : await fetchMergeBox(pullPath, method, false);
+  const preferred = first.methods[0] ?? first.bypassMethods[0] ?? 'SQUASH';
+  // Another method's commit title and message would be sent under this one: no reading is safer than that.
+  const box = preferred === method ? first : await fetchMergeBox(pullPath, preferred, false);
   if (box === null) return null;
+  lastStacked.set(pullPath, box.stacked);
+  const stackRead = async (): Promise<{ readonly members: readonly StackMember[]; readonly live: MemberBoxes } | null> => {
+    if (!box.stacked) return null;
+    const head = early === null ? null : await early;
+    if (head !== null) return head;
+    // A first read can start before GitHub has streamed its payload in; by the time the box is back it usually has.
+    const late = known === undefined ? embeddedStack(pullPath) : null;
+    const members = late !== null && late !== 'none' ? late : await readStackMembers(pullPath);
+    return members === null ? null : { members, live: memberBoxes(members) };
+  };
   // Past the rules: where it is not mergeable, or where a queue stands in a direct merge's way.
-  const asBypass = box.canBypass && (!box.mergeable || box.canQueue) ? await fetchMergeBox(pullPath, method, true) : null;
+  const bypassRead = box.canBypass && (!box.mergeable || box.canQueue) ? fetchMergeBox(pullPath, preferred, true) : null;
+  const listedStack = await stackRead();
+  const stackNow = (): Stack | null => {
+    if (listedStack === null) return null;
+    const boxes = new Map(listedStack.live.boxes);
+    const current = listedStack.members.find((member) => member.current);
+    if (current !== undefined) boxes.set(current.number, box);
+    return { members: listedStack.members, boxes };
+  };
+  // The page's own box is what this pull request's choices need: they show now, and a merge past the rules and the
+  // stack's wider choices join when the box read past the rules and the other members' boxes land.
+  if (onPartial !== undefined && (bypassRead !== null || (listedStack !== null && !listedStack.live.settled()))) {
+    const offer = mergeOffer(box, null);
+    onPartial({ box, offer, bypass: false, bypassMethods: box.bypassMethods, stack: stackNow(), partial: true });
+  }
+  const asBypass = bypassRead === null ? null : await bypassRead;
+  await listedStack?.live.done;
   const offer = mergeOffer(box, asBypass);
-  const stack = box.stacked ? await readStack(pullPath, box) : null;
-  return { box, offer, bypass: bypassBeside(box, asBypass, offer), bypassMethods: asBypass?.methods ?? [], stack };
+  return { box, offer, bypass: bypassBeside(box, asBypass, offer), bypassMethods: asBypass?.bypassMethods ?? box.bypassMethods, stack: stackNow() };
+}
+
+/**
+ * Whether a refresh's partial reading may wait for its complete one, leaving the complete reading in hand standing: only
+ * while the pull request stands as it did (state, draft, what it may merge with) and its stack has the same members in
+ * the same order. A member joined or gone changes what a stack merge takes (`enqueue_stack` takes every pull request
+ * below), so the partial reading then stands in, which offers no stack choice until every member's box is read.
+ */
+export function partialMayWait(held: MergeActions, partial: MergeActions): boolean {
+  const a = held.box;
+  const b = partial.box;
+  if (a.state !== b.state || a.draft !== b.draft || a.stacked !== b.stacked || a.mergeable !== b.mergeable || a.canQueue !== b.canQueue || held.offer !== partial.offer) return false;
+  const members = (actions: MergeActions): string => actions.stack?.members.map((member) => `${member.number}${member.current ? '*' : ''}`).join(',') ?? '';
+  return members(held) === members(partial);
 }
 
 /** The reason a merge or close failed, in GitHub's words when it gave any. */
@@ -397,4 +571,171 @@ export function actionErrorText(action: StatusAction, status: number, payload: u
 /** Whether a merge answer says it went through (GitHub answers `{ status: "merged" }`, or `"failed"` with an error). */
 export function mergeWentThrough(payload: unknown): boolean {
   return isRecord(payload) && payload.status !== 'failed' && payload.error === undefined;
+}
+
+export function isStackRequest(url: string): boolean {
+  return /\/page_data\/enqueue_stack(?:$|[?#])/.test(url);
+}
+
+/**
+ * Where a stack merge GitHub took stands, from `enqueue_stack`'s answer or a read of `merge_request_status`: settled
+ * (`merged`, or `enqueued` into the merge queue), refused, or still under way. GitHub merges a stack one pull request at a
+ * time from its foot, a second or so each, and may answer before it has finished, with an id to ask about.
+ */
+export type StackMergeState = { readonly kind: 'settled' } | { readonly kind: 'failed'; readonly payload: unknown } | { readonly kind: 'running' };
+
+export function stackMergeState(payload: unknown): StackMergeState {
+  const status = isRecord(payload) ? payload.status : undefined;
+  if (status === 'failed') return { kind: 'failed', payload };
+  return status === 'merged' || status === 'enqueued' ? { kind: 'settled' } : { kind: 'running' };
+}
+
+/** The id `enqueue_stack` answers with while the merge is still under way, or null when it says nothing more is coming. */
+export function stackMergeId(payload: unknown): string | null {
+  if (stackMergeState(payload).kind !== 'running' || !isRecord(payload)) return null;
+  const uuid = stringOf(payload.uuid).trim();
+  return uuid === '' ? null : uuid;
+}
+
+export function mergeRequestStatusUrl(pullPath: string, uuid: string): string {
+  return `${pullPath}/page_data/merge_request_status/${encodeURIComponent(uuid)}`;
+}
+
+/** GitHub's own merge box polls at 1 s, growing by half each time, and gives up after ten minutes. */
+const STACK_POLL_FIRST_MS = 1000;
+const STACK_POLL_GROWTH = 1.5;
+const STACK_POLL_LIMIT_MS = 600_000;
+/** Reads of the status in a row that may fail before the merge is taken as done, as GitHub took the request. */
+const STACK_POLL_MISSES = 5;
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+/** The longest one read of a stack merge's status may take, so a stalled connection cannot keep the controls busy. */
+const STATUS_READ_MS = 15_000;
+const LEFT_CHECK_MS = 250;
+
+/** Sleep `ms`, ending early, within `LEFT_CHECK_MS`, once `wanted` turns false: the gaps between polls grow past a minute. */
+async function delayWhile(ms: number, wanted: () => boolean): Promise<void> {
+  const until = Date.now() + ms;
+  while (wanted()) {
+    const left = until - Date.now();
+    if (left <= 0) return;
+    await delay(Math.min(left, LEFT_CHECK_MS));
+  }
+}
+
+/**
+ * A read that gives up, with null, at its deadline or once `wanted` turns false, aborting the request where the
+ * browser lets the signal reach it (in Firefox the page's own fetch sends it, and only the wait ends).
+ */
+function readWithin<T>(read: (signal: AbortSignal) => Promise<T>, ms: number, wanted: () => boolean): Promise<T | null> {
+  const abort = new AbortController();
+  return new Promise<T | null>((resolve) => {
+    const finish = (value: T | null): void => {
+      window.clearTimeout(deadline);
+      window.clearInterval(watch);
+      abort.abort();
+      resolve(value);
+    };
+    const deadline = window.setTimeout(() => finish(null), ms);
+    const watch = window.setInterval(() => {
+      if (!wanted()) finish(null);
+    }, LEFT_CHECK_MS);
+    read(abort.signal).then(finish, () => finish(null));
+  });
+}
+
+/**
+ * Wait until a stack merge `enqueue_stack` answered for has settled, reading `merge_request_status` as GitHub's merge
+ * box does. A refusal comes back with GitHub's words; anything else (settled, not followable, `wanted` turning false)
+ * resolves with null, since GitHub took the request.
+ */
+export async function settleStackMerge(pullPath: string, answer: unknown, wanted: () => boolean): Promise<{ readonly payload: unknown; readonly status: number } | null> {
+  const uuid = stackMergeId(answer);
+  if (uuid === null) return null;
+  const started = Date.now();
+  let wait = STACK_POLL_FIRST_MS;
+  let misses = 0;
+  while (wanted() && Date.now() - started + wait <= STACK_POLL_LIMIT_MS) {
+    await delayWhile(wait, wanted);
+    wait *= STACK_POLL_GROWTH;
+    if (!wanted()) return null;
+    const read = await readWithin(
+      async (signal) => {
+        const response = await pageFetch(mergeRequestStatusUrl(pullPath, uuid), { credentials: 'same-origin', cache: 'no-store', headers: headers(fetchNonce(), false), signal });
+        return response.ok ? { status: response.status, state: stackMergeState(await response.json()) } : null;
+      },
+      Math.max(0, Math.min(STATUS_READ_MS, STACK_POLL_LIMIT_MS - (Date.now() - started))),
+      wanted,
+    );
+    if (!wanted()) return null;
+    if (read === null) {
+      misses += 1;
+      if (misses >= STACK_POLL_MISSES) return null;
+      continue;
+    }
+    if (read.state.kind === 'settled') return null;
+    if (read.state.kind === 'failed') return { payload: read.state.payload, status: read.status };
+    misses = 0;
+  }
+  return null;
+}
+
+const MERGED_WAIT_MS = 10_000;
+const MERGED_READ_MS = 1000;
+
+/**
+ * Wait, ten seconds at most however the reads go, until the merge box reads the pull request as merged: a page
+ * reloaded before then is served open, and its pill turned back from merged.
+ */
+export async function awaitMergedState(pullPath: string, wanted: () => boolean): Promise<boolean> {
+  const until = Date.now() + MERGED_WAIT_MS;
+  for (let read = 0; wanted(); read += 1) {
+    if (read > 0) {
+      if (until - Date.now() <= MERGED_READ_MS) return false;
+      await delayWhile(MERGED_READ_MS, wanted);
+    }
+    const left = until - Date.now();
+    if (left <= 0 || !wanted()) return false;
+    const box = await readWithin((signal) => fetchMergeBox(pullPath, 'SQUASH', false, signal), left, wanted);
+    if (box?.state === 'MERGED') return true;
+  }
+  return false;
+}
+
+/**
+ * Each repository's default merge method as last read, so the next read asks for that method's box first and needs no
+ * second one for its commit (a repository whose default is not squash cost two merge boxes in a row before the menu
+ * could open). In the page's own storage, read and written beside the status menu's hints.
+ */
+const METHOD_KEY = 'geld:merge-method';
+const METHOD_CAP = 200;
+
+function readMethods(): Record<string, MergeMethod> {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(METHOD_KEY) ?? '{}');
+    if (!isRecord(parsed)) return {};
+    const out: Record<string, MergeMethod> = {};
+    for (const [repo, value] of Object.entries(parsed)) if (isMethod(value)) out[repo] = value;
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function methodHint(repo: string): MergeMethod {
+  return readMethods()[repo] ?? 'SQUASH';
+}
+
+export function rememberMethod(repo: string, method: MergeMethod): void {
+  const methods = readMethods();
+  if (methods[repo] === method) return;
+  delete methods[repo];
+  methods[repo] = method;
+  const entries = Object.entries(methods);
+  try {
+    window.localStorage.setItem(METHOD_KEY, JSON.stringify(Object.fromEntries(entries.slice(Math.max(0, entries.length - METHOD_CAP)))));
+  } catch {
+    // Storage full or blocked: the next read asks for squash first, as before.
+  }
 }
