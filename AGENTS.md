@@ -3466,3 +3466,7 @@ Related work contains only outgoing native references in the description, while 
 GitLab comment references require the native account ID and GFM target identity, while Bitbucket references require a qualified comment permalink and canonical target URL.
 Description references win over later comment mentions, and comment mentions are ordered chronologically so the first verified source remains stable.
 Hidden-person rules also apply to bot link sources, and a per-visit peek restores those links without altering shared settings.
+
+Nightly conflict handling includes the granted GitLab and Bitbucket runtime registrations, including Bitbucket's MAIN-world whitespace helper.
+Optional provider registration checks the nightly pause state before registering scripts, and conflict evaluation retires pre-existing provider registrations even when no GitHub registration remains.
+Resuming injects already open granted provider tabs, and conflict notices use each provider's native theme tokens without requesting new host access.

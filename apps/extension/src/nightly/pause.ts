@@ -3,6 +3,7 @@ import { grantedHosts, syncEnterpriseHosts } from '../lib/enterprise';
 import { reportError } from '../lib/error-capture';
 import { ensureContentScript, tabsOnHosts } from '../lib/inject';
 import { settingsItem } from '../lib/storage';
+import { grantedProviderHosts, isOptionalProviderScript, syncOptionalProviders } from '../lib/provider-access';
 import { CONTENT_SCRIPTS_FILE, conflictFor, parseDeclaredScripts, sameConflict } from './conflicts';
 import type { DeclaredScript } from './conflicts';
 import { nightlyConflictItem } from './state';
@@ -25,18 +26,18 @@ async function declared(): Promise<DeclaredScript[]> {
   return scripts;
 }
 
-async function registered(): Promise<{ readonly run: string[]; readonly conflict: boolean }> {
+async function registered(): Promise<{ readonly run: string[]; readonly conflict: boolean; readonly providers: boolean }> {
   const ids = (await browser.scripting.getRegisteredContentScripts()).map((script) => script.id);
-  return { run: ids.filter((id) => id.startsWith(ID_PREFIX)), conflict: ids.includes(CONFLICT_ID) };
+  return { run: ids.filter((id) => id.startsWith(ID_PREFIX)), conflict: ids.includes(CONFLICT_ID), providers: ids.some(isOptionalProviderScript) };
 }
 
-async function githubHosts(): Promise<string[]> {
-  return ['github.com', ...(await grantedHosts((await settingsItem.getValue()).enterpriseHosts))];
+async function contentHosts(): Promise<string[]> {
+  return ['github.com', ...(await grantedHosts((await settingsItem.getValue()).enterpriseHosts)), ...(await grantedProviderHosts())];
 }
 
 /** Registered for later pages and put into the open ones, which loaded while Geld Nightly still ran. */
 async function showConflict(): Promise<void> {
-  const hosts = await githubHosts();
+  const hosts = await contentHosts();
   await browser.scripting.registerContentScripts([
     { id: CONFLICT_ID, matches: hosts.map((host) => `https://${host}/*`), js: [CONFLICT_JS], css: [CONFLICT_CSS], runAt: 'document_idle', persistAcrossSessions: true },
   ]);
@@ -62,13 +63,13 @@ async function register(): Promise<void> {
   );
 }
 
-async function syncEnterprise(): Promise<void> {
-  await syncEnterpriseHosts((await settingsItem.getValue()).enterpriseHosts).catch(() => undefined);
+async function syncHosts(): Promise<void> {
+  await Promise.all([syncEnterpriseHosts((await settingsItem.getValue()).enterpriseHosts), syncOptionalProviders()]);
 }
 
-/** Puts Geld into the GitHub tabs that were open while it was paused. */
+/** Puts Geld into the granted provider tabs that were open while it was paused. */
 async function injectOpenTabs(): Promise<void> {
-  for (const tab of await tabsOnHosts(await githubHosts())) void ensureContentScript(tab.id, { reason: 'install', url: tab.url });
+  for (const tab of await tabsOnHosts(await contentHosts())) void ensureContentScript(tab.id, { reason: 'install', url: tab.url });
 }
 
 async function evaluate(): Promise<void> {
@@ -80,16 +81,16 @@ async function evaluate(): Promise<void> {
   if (!sameConflict(await nightlyConflictItem.getValue(), conflict)) await nightlyConflictItem.setValue(conflict);
   const now = await registered();
   if (conflict !== null) {
-    if (now.run.length > 0) {
+    if (now.run.length > 0 || now.providers) {
       // Unregistered before anything else can fail, so Geld never stays registered beside Geld Stable.
-      await browser.scripting.unregisterContentScripts({ ids: now.run });
-      await syncEnterprise().catch((error: unknown) => reportError('background:nightly-pause', error));
+      if (now.run.length > 0) await browser.scripting.unregisterContentScripts({ ids: now.run });
+      await syncHosts().catch((error: unknown) => reportError('background:nightly-pause', error));
       // The copies already running in open tabs retire when their extension reloads (`ctx.onInvalidated`), and with
       // the scripts unregistered first the reloaded worker finds none and does not reload again.
       browser.runtime.reload();
       return;
     }
-    await syncEnterprise();
+    await syncHosts();
     if (!now.conflict) await showConflict();
     return;
   }
@@ -97,7 +98,7 @@ async function evaluate(): Promise<void> {
   if (now.conflict) await browser.scripting.unregisterContentScripts({ ids: [CONFLICT_ID] });
   if (now.run.length > 0) return;
   await register();
-  await syncEnterprise();
+  await syncHosts();
   await injectOpenTabs();
 }
 

@@ -16,7 +16,7 @@ import './style.css';
 
 const ATTR = 'data-geld-nightly-paused';
 const NOTE = 'geld-nightly-conflict';
-const BARS = '.geld-review__summary, .geld-digest-off';
+const BARS = '.geld-review__summary, .geld-digest-off, .geld-provider-review__header, .geld-provider-view';
 
 function noteFor(conflict: Conflict): HTMLElement {
   const note = document.createElement('span');
