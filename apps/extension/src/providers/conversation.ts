@@ -1,3 +1,4 @@
+import { ProviderDescription } from './description';
 import type { DigestView, GeldSettings } from '@geld/core';
 import { compileAuthorRules, repositoryKey, trustedReviewAccountFor } from '@geld/core';
 import { botById, buildProviderReviewItems, PROVIDER_BOT_CAPABILITIES, providerBotSupport } from '@geld/review';
@@ -22,10 +23,6 @@ import './conversation-compact.css';
 const ACTION_NAMES = { approve: 'Approve', 'request-changes': 'Request changes', comment: 'Comment', 'open-pending-review': 'Open pending review', 'open-review': 'Open your review' };
 const actionSubject = (input: ProviderReviewInput): string => JSON.stringify([input.subject.provider, input.subject.origin, input.subject.repository, input.subject.id, input.subject.headSha]);
 
-function hiddenFlag(node: Element, name: string, hidden: boolean): void {
-  if (hidden && !node.hasAttribute(name)) node.setAttribute(name, '');
-  else if (!hidden && node.hasAttribute(name)) node.removeAttribute(name);
-}
 
 export interface ProviderConversationServices {
   readonly unhidePerson?: (login: string) => Promise<void>;
@@ -100,8 +97,7 @@ export class ProviderConversation {
   private nativeFind: ProviderNativeFind | null = null;
   private nativeEntries: readonly ProviderNativeFindEntry[] = [];
   private readonly originalsShown = new Set<string>();
-  private description: { readonly host: HTMLElement; readonly control: HTMLButtonElement; readonly hidden: Set<Element> } | null = null;
-  private descriptionShown = false;
+  private readonly description = new ProviderDescription();
   private originalsExpanded = false;
   private reviewedSignature = '';
   private reviewedGeneration = 0;
@@ -132,10 +128,11 @@ export class ProviderConversation {
       this.snapshot = null;
       this.publication.reset();
       this.panel?.destroy(); this.panel = null;
-      this.restoreCompact(); this.restoreDescription();
+      this.restoreCompact();
       this.resetReviewed(); this.hiddenPeople.clear();
     }
     this.related.update(page, settings, document, this.snapshot === null ? undefined : { ...this.snapshot, input: providerReviewWithTrustedAccounts(this.snapshot.input, this.snapshot.comments, settings, this.snapshot.complete) }, this.shownPeople);
+    this.description.update(page.kind === 'overview' && settings.collapseDescription ? this.adapter.descriptionHost?.(document) ?? null : null, JSON.stringify([repositoryKey(page.repository), page.number]));
     const wantsPeople = !compileAuthorRules(settings.hiddenAuthors).isEmpty;
     const viewHost = page.kind === 'overview' ? this.adapter.reviewHost?.(document) ?? null : null;
     this.updateViewChoice(viewHost, settings);
@@ -144,13 +141,13 @@ export class ProviderConversation {
       if (this.panel !== null) this.panel.element.hidden = true;
       this.status?.remove(); this.status = null;
       this.actions?.remove(); this.actions = null; this.signature = '';
-      this.restoreCompact(); this.restoreDescription(); this.hiddenPeople.clear();
+      this.restoreCompact(); this.hiddenPeople.clear();
       return;
     }
     if (this.adapter.fetchReview === undefined) return;
     const host = page.kind === 'overview' && settings.prOverview ? this.adapter.reviewHost?.(document) ?? null : null;
     const actionHost = settings.quickReview ? this.adapter.actionHost?.(document) ?? null : null;
-    if (host === null) { if (this.panel !== null) this.panel.element.hidden = true; this.status?.remove(); this.status = null; this.restoreCompact(); this.restoreDescription(); }
+    if (host === null) { if (this.panel !== null) this.panel.element.hidden = true; this.status?.remove(); this.status = null; this.restoreCompact(); }
     if (actionHost === null) { this.actions?.remove(); this.actions = null; this.signature = ''; }
     if (host === null && actionHost === null && !wantsPeople) return;
     if (this.abort === null && Date.now() >= this.nextRefresh) {
@@ -241,7 +238,7 @@ export class ProviderConversation {
           const target = this.adapter.referenceAnchor?.(reference, active, document, people.events, [...input.threads.flatMap((thread) => thread.comments), ...comments]);
           if (target === undefined || target === null || target.closest('[data-geld-ui]') !== null) return false;
           if (reference.source.anchor !== null) this.revealOriginal(reference.source.anchor);
-          else if (this.description?.host.contains(target)) { this.descriptionShown = true; this.updateDescription(); }
+          else this.description.reveal(target);
           if (current() === null || !target.isConnected || target.closest('[hidden], [inert], [aria-hidden="true"]') !== null) return false;
           for (let node: HTMLElement | null = target; node !== null; node = node.parentElement) {
             const style = getComputedStyle(node);
@@ -353,7 +350,7 @@ export class ProviderConversation {
         this.panel = renderProviderReviewPanel(host, input, options);
       } else this.panel.update(input, options);
       this.panel.element.hidden = false;
-      if (this.panel.element.dataset.state === 'unavailable') { this.restoreCompact();this.restoreDescription(); }
+      if (this.panel.element.dataset.state === 'unavailable') { this.restoreCompact(); }
       else this.compact(snapshot, settings);
     } else if (host !== null) {
       if (this.status === null || !this.status.isConnected) {
@@ -420,7 +417,7 @@ export class ProviderConversation {
   }
 
   private compact(snapshot: ProviderReviewSnapshot, settings: GeldSettings): void {
-    if (settings.compactTimeline === 'off') { this.restoreCompact(); this.restoreDescription(); return; }
+    if (settings.compactTimeline === 'off') { this.restoreCompact(); return; }
     const eligible = new Set([...this.panel?.element.querySelectorAll<HTMLElement>('[data-geld-source]') ?? []].map((source) => source.dataset.geldSource).filter((anchor): anchor is string => anchor !== undefined));
     for (const reference of this.panel?.element.querySelectorAll<HTMLElement>('[data-geld-reference-source]') ?? []) {
       const anchor = reference.dataset.geldReferenceSource;
@@ -436,33 +433,6 @@ export class ProviderConversation {
     this.nativeEntries = roots.map((entry) => ({ root: entry.root, key: [...entry.anchors, ...(entry.eventIds ?? [])].sort().join('|'), anchors: entry.anchors, ...(entry.eventIds === undefined ? {} : { eventIds: entry.eventIds }), compact: true, shown: false }));
     if (this.nativeEntries.length === 0) this.restoreCompact();
     else this.syncCompact();
-    const description = settings.collapseDescription ? this.adapter.descriptionHost?.(document) ?? null : null;
-    if (this.description?.host !== description) this.restoreDescription();
-    if (description === null || description.contains(this.panel?.element ?? null)) return;
-    const first = description.querySelector('p');
-    if (first === null) { this.restoreDescription(); return; }
-    const hidden = new Set<Element>();
-    let current: Element = first;
-    while (current !== description) {
-      for (let sibling = current.nextElementSibling; sibling !== null; sibling = sibling.nextElementSibling) {
-        if (sibling.closest('[data-geld-ui]') === null) hidden.add(sibling);
-      }
-      const parent = current.parentElement;
-      if (parent === null) return;
-      current = parent;
-    }
-    if (hidden.size === 0) { this.restoreDescription(); return; }
-    if (this.description === null) {
-      const control = element('button', '', 'geld-provider-toggle geld-provider-description-toggle');
-      control.type = 'button';
-      control.addEventListener('click', () => { this.descriptionShown = !this.descriptionShown; this.updateDescription(); });
-      description.after(control);
-      this.description = { host: description, control, hidden };
-    } else {
-      for (const node of this.description.hidden) if (!hidden.has(node)) node.removeAttribute('data-geld-provider-description-hidden');
-      this.description = { ...this.description, hidden };
-    }
-    this.updateDescription();
   }
 
   private syncCompact(): void {
@@ -524,15 +494,6 @@ export class ProviderConversation {
     if (button.getAttribute('aria-expanded') !== String(shown)) button.setAttribute('aria-expanded', String(shown));
   }
 
-  private updateDescription(): void {
-    if (this.description === null) return;
-    for (const node of this.description.hidden) {
-      hiddenFlag(node, 'data-geld-provider-description-hidden', !this.descriptionShown);
-    }
-    this.description.control.textContent = this.descriptionShown ? 'Collapse description' : 'Show full description';
-    this.description.control.setAttribute('aria-expanded', String(this.descriptionShown));
-  }
-
   private revealOriginal(anchor: string): void {
     this.nativeFind?.reveal(anchor);
     const target = document.getElementById(anchor);
@@ -549,13 +510,6 @@ export class ProviderConversation {
     this.nativeEntries = [];
     for (const [root, record] of this.compacted) { root.removeAttribute('data-geld-provider-compact-hidden'); record.control.remove(); }
     this.compacted.clear();
-  }
-
-  private restoreDescription(): void {
-    if (this.description === null) return;
-    for (const node of this.description.hidden) node.removeAttribute('data-geld-provider-description-hidden');
-    this.description.control.remove();
-    this.description = null;
   }
 
   private loadReviewed(input: ProviderReviewInput, comments: readonly ProviderReviewComment[]): void {
@@ -626,9 +580,9 @@ export class ProviderConversation {
     this.viewControls?.remove(); this.viewControls = null; this.viewSignature = '';
     this.hiddenPeople.clear(); this.shownPeople.clear(); this.related.clear();
     this.restoreCompact();
-    this.restoreDescription();
+
     this.originalsShown.clear();
-    this.descriptionShown = false;
+    this.description.clear();
     this.originalsExpanded = false;
     this.resetReviewed();
     if (this.refreshTimer !== null) clearTimeout(this.refreshTimer);

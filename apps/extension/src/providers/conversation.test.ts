@@ -569,26 +569,24 @@ describe('provider conversation integrations', () => {
     expect(native.style.getPropertyPriority('--geld-provider-native-find-display')).toBe('important');
   });
 
-  it('keeps the digest near the description by honoring collapseDescription outside minimal mode and restoring every node', async () => {
+  it('keeps heading outlines independent from digest compaction and restores native nodes', async () => {
     const description = document.createElement('div');
-    description.innerHTML = '<h2>Description</h2><p>First native paragraph.</p><section><p>More native content.</p></section>';
+    description.innerHTML = '<h2>Description</h2><p>First native paragraph.</p><h2>Details</h2><section><p>More native content.</p></section>';
     document.body.append(description);
     const heading = description.firstElementChild;
     const first = description.querySelector('p');
     const more = description.querySelector('section');
     const f = fixture(snapshot(), {}, { aiEnabled: false, compactTimeline: 'compact', collapseDescription: true }, { descriptionHost: () => description });
     await vi.waitFor(() => expect(f.host.querySelector('.geld-provider-review')).not.toBeNull());
-    expect(more?.hasAttribute('data-geld-provider-description-hidden')).toBe(true);
-    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, compactTimeline: 'minimal', collapseDescription: true });
-    expect(more?.hasAttribute('data-geld-provider-description-hidden')).toBe(true);
-    expect(first?.hasAttribute('data-geld-provider-description-hidden')).toBe(false);
-    expect(description.firstElementChild).toBe(heading);
-    document.querySelector<HTMLButtonElement>('.geld-provider-description-toggle')?.click();
-    expect(more?.hasAttribute('data-geld-provider-description-hidden')).toBe(false);
-    expect(document.querySelector('.geld-provider-description-toggle')?.getAttribute('aria-expanded')).toBe('true');
-    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, compactTimeline: 'off', collapseDescription: false });
-    expect(document.querySelector('.geld-provider-description-toggle')).toBeNull();
-    expect(description.querySelector('[data-geld-provider-description-hidden]')).toBeNull();
+    expect(more?.getAttribute('hidden')).toBe('until-found');
+    expect(first?.hasAttribute('hidden')).toBe(false);
+    description.querySelector<HTMLButtonElement>('button[aria-label="Expand Details"]')?.click();
+    expect(more?.hasAttribute('hidden')).toBe(false);
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, compactTimeline: 'off', collapseDescription: true });
+    expect(description.querySelector('button[aria-label="Collapse Details"]')).not.toBeNull();
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, collapseDescription: false });
+    expect(description.querySelector('.geld-provider-description-section')).toBeNull();
+    expect(more?.hasAttribute('hidden')).toBe(false);
     expect(description.firstElementChild).toBe(heading);
   });
 

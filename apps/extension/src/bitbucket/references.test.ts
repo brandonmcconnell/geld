@@ -112,6 +112,7 @@ it.each(['anchor-remount', 'root-remount', 'href', 'label'])('rejects a stale sy
 
 async function conversationFixture(): Promise<{ readonly conversation: ProviderConversation; readonly reference: HTMLAnchorElement; readonly scroll: ReturnType<typeof vi.fn>; readonly button: HTMLButtonElement; readonly fetchReview: ReturnType<typeof vi.fn>; readonly active: ProviderReviewPage }> {
   positive();const reference = original();
+  const heading = document.createElement('h2');heading.textContent = 'Related work';reference.parentElement?.before(heading);
   vi.spyOn(reference, 'getBoundingClientRect').mockReturnValue(new DOMRect(10, 10, 100, 20));
   const scroll = vi.fn();vi.spyOn(reference, 'scrollIntoView').mockImplementation(scroll);
   const mount = document.getElementById('fixture-digest');if (mount === null) throw new Error('Missing panel mount.');
