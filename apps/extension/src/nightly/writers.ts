@@ -1,5 +1,7 @@
 import { browser, type Browser } from 'wxt/browser';
-import { PROBE_FILE, stalePaths } from './build-check';
+import { FILE_LIST, parseFileList, PROBE_FILE, stalePaths, writeOrder } from './build-check';
+import type { BuildBackup } from './handle-store';
+import type { InstallMethod } from './state';
 import type { ZipEntry } from './unzip';
 
 /**
@@ -10,13 +12,38 @@ import type { ZipEntry } from './unzip';
  * downloads API needs no grant, but writes only under the download folder.
  */
 
-async function readOwnFile(path: string): Promise<string | null> {
+async function readOwnBytes(path: string): Promise<Uint8Array | null> {
   try {
     const response = await fetch(new URL(`/${path}`, globalThis.location.origin), { cache: 'no-store' });
-    return response.ok ? await response.text() : null;
+    return response.ok ? new Uint8Array(await response.arrayBuffer()) : null;
   } catch {
     return null;
   }
+}
+
+async function readOwnFile(path: string): Promise<string | null> {
+  const bytes = await readOwnBytes(path);
+  return bytes === null ? null : new TextDecoder().decode(bytes);
+}
+
+/** A copy of the build that is running, read through Geld's own URL, which serves an unpacked build from its folder. */
+export async function copyRunningBuild(version: string): Promise<BuildBackup> {
+  const list = await readOwnFile(FILE_LIST);
+  const paths = list === null ? null : parseFileList(list);
+  if (paths === null) throw new Error('This build cannot copy itself, so Geld will not replace it. Unzip the latest nightly build over it by hand.');
+  const files: ZipEntry[] = [];
+  for (const path of paths) {
+    const data = await readOwnBytes(path);
+    if (data === null) throw new Error(`Could not read ${path} of the running build.`);
+    files.push({ path, data });
+  }
+  return { version, files };
+}
+
+/** Writes a build over the folder Geld runs from, in `writeOrder`. `current` names the files of the build being replaced. */
+export interface BuildTarget {
+  readonly method: InstallMethod;
+  write(entries: readonly ZipEntry[], current: readonly string[]): Promise<void>;
 }
 
 async function directoryFor(root: FileSystemDirectoryHandle, path: string): Promise<FileSystemDirectoryHandle> {
@@ -68,11 +95,16 @@ export async function folderIsOurs(handle: FileSystemDirectoryHandle): Promise<b
   }
 }
 
-export async function writeToFolder(handle: FileSystemDirectoryHandle, entries: readonly ZipEntry[]): Promise<void> {
-  for (const entry of entries) await writeFile(handle, entry.path, entry.data);
-  for (const path of stalePaths(await listFiles(handle), entries.map((entry) => entry.path))) {
-    await removeFile(handle, path).catch(() => undefined);
-  }
+export function folderTarget(handle: FileSystemDirectoryHandle): BuildTarget {
+  return {
+    method: 'folder',
+    async write(entries, current) {
+      for (const entry of writeOrder(entries, current)) await writeFile(handle, entry.path, entry.data);
+      for (const path of stalePaths(await listFiles(handle), entries.map((entry) => entry.path))) {
+        await removeFile(handle, path).catch(() => undefined);
+      }
+    },
+  };
 }
 
 function base64(data: Uint8Array): string {
@@ -162,15 +194,35 @@ export async function downloadsReach(folder: string): Promise<boolean> {
   });
 }
 
-/** Files the new build dropped are left in place: the downloads API can only remove files it still lists. */
-export async function writeWithDownloads(folder: string, entries: readonly ZipEntry[]): Promise<void> {
-  await quietDownloads(async () => {
-    const queue = [...entries];
-    const worker = async (): Promise<void> => {
-      for (let entry = queue.shift(); entry !== undefined; entry = queue.shift()) {
+/** Settles only once every download has: undoing a write while some of it still lands would race it file by file. */
+async function downloadAll(folder: string, entries: readonly ZipEntry[]): Promise<void> {
+  const queue = [...entries];
+  let failed = false;
+  const worker = async (): Promise<void> => {
+    for (let entry = queue.shift(); entry !== undefined && !failed; entry = queue.shift()) {
+      try {
         await downloadFile(`${folder}/${entry.path}`, entry.data);
+      } catch (error) {
+        failed = true;
+        throw error;
       }
-    };
-    await Promise.all([worker(), worker(), worker(), worker()]);
-  });
+    }
+  };
+  const results = await Promise.allSettled([worker(), worker(), worker(), worker()]);
+  const rejected = results.find((result) => result.status === 'rejected');
+  if (rejected !== undefined) throw rejected.reason;
+}
+
+/** Files the new build dropped are left in place: the downloads API can only remove files it still lists. */
+export function downloadsTarget(folder: string): BuildTarget {
+  return {
+    method: 'downloads',
+    write: (entries, current) =>
+      quietDownloads(async () => {
+        const ordered = writeOrder(entries, current);
+        const manifest = ordered.filter((entry) => entry.path === 'manifest.json');
+        await downloadAll(folder, ordered.filter((entry) => entry.path !== 'manifest.json'));
+        await downloadAll(folder, manifest);
+      }),
+  };
 }

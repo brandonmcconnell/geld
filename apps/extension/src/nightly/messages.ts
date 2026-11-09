@@ -8,6 +8,11 @@ export interface NightlyInstallMessage {
   readonly type: 'geld:nightly-install';
 }
 
+/** Puts back the build that ran before the last install (or before an install that broke off). */
+export interface NightlyRollbackMessage {
+  readonly type: 'geld:nightly-rollback';
+}
+
 /** What an install needs that it does not have: a connected folder, or this session's access to it. */
 export type InstallNeed = 'folder' | 'permission';
 
@@ -23,6 +28,10 @@ function hasType(message: unknown, type: string): boolean {
 
 export function isNightlyCheckMessage(message: unknown): message is NightlyCheckMessage {
   return hasType(message, 'geld:nightly-check');
+}
+
+export function isNightlyRollbackMessage(message: unknown): message is NightlyRollbackMessage {
+  return hasType(message, 'geld:nightly-rollback');
 }
 
 export function isNightlyInstallMessage(message: unknown): message is NightlyInstallMessage {

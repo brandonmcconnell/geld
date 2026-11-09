@@ -4,6 +4,8 @@ import type { ZipEntry } from './unzip';
 export const NIGHTLY_NAME = 'Geld Nightly';
 /** The nightly page, present only in nightly builds. */
 export const NIGHTLY_PAGE = 'nightly.html';
+/** Every file of a nightly build, written at build time (wxt.config.ts), so the running build can copy itself before an install. */
+export const FILE_LIST = 'nightly-files.json';
 /** Written into the folder and read back through the extension's own URL to prove it is the folder Geld runs from. */
 export const PROBE_FILE = 'nightly-probe.txt';
 
@@ -38,4 +40,28 @@ export function stalePaths(existing: readonly string[], incoming: readonly strin
     const parts = path.split('/');
     return !parts.some((part) => part.startsWith('.')) && parts[0] !== '_metadata';
   });
+}
+
+export function parseFileList(text: string): string[] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed) || !Array.isArray(parsed['files'])) return null;
+  const files: readonly unknown[] = parsed['files'];
+  const paths = files.filter((file): file is string => typeof file === 'string');
+  return paths.length === files.length && paths.includes('manifest.json') ? paths : null;
+}
+
+/**
+ * The order to write a build in: files the running build does not have first, since nothing loads them yet,
+ * then the ones it shares, and the manifest last. Until the manifest is written Chrome would still start the
+ * old build, so a write that breaks off leaves as little as possible of the new one in its way.
+ */
+export function writeOrder<T extends { readonly path: string }>(entries: readonly T[], current: readonly string[]): T[] {
+  const existing = new Set(current);
+  const rank = (entry: T): number => (entry.path === 'manifest.json' ? 2 : existing.has(entry.path) ? 1 : 0);
+  return [...entries].sort((a, b) => rank(a) - rank(b));
 }

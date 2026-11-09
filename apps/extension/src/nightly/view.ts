@@ -1,0 +1,96 @@
+import { buildOf, compareVersions } from './release';
+import type { NightlyFolder, NightlyStatus } from './state';
+
+/** What the nightly panel says, worked out from the stored state alone, the same in the popup and on the page. */
+
+export type NightlyAction = 'install' | 'retry' | 'restore' | 'rollback' | 'check' | 'connect';
+export type NightlyTone = 'ok' | 'ready' | 'busy' | 'error';
+
+export interface NightlyView {
+  readonly headline: string;
+  readonly detail: string | null;
+  readonly tone: NightlyTone;
+  readonly action: { readonly kind: NightlyAction; readonly label: string } | null;
+}
+
+export function buildLabel(version: string): string {
+  const build = buildOf(version);
+  return build === null ? version : `build ${build}`;
+}
+
+export function ago(iso: string, now: number): string {
+  const relative = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+  const seconds = (new Date(iso).getTime() - now) / 1000;
+  if (Number.isNaN(seconds)) return '';
+  if (Math.abs(seconds) < 60) return 'just now';
+  if (Math.abs(seconds) < 3600) return relative.format(Math.round(seconds / 60), 'minute');
+  if (Math.abs(seconds) < 86_400) return relative.format(Math.round(seconds / 3600), 'hour');
+  return relative.format(Math.round(seconds / 86_400), 'day');
+}
+
+/** A change the reader may want to undo is offered for a day. */
+const RECENT_MS = 24 * 60 * 60 * 1000;
+
+export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null, version: string, now: number): NightlyView {
+  const latest = status.latest;
+  const newer = latest !== null && compareVersions(latest.version, version) > 0 ? latest : null;
+  if (status.installing !== null) {
+    const back = compareVersions(status.installing, version) < 0;
+    return { headline: `${back ? 'Going back to' : 'Installing'} ${buildLabel(status.installing)}…`, detail: 'Geld reloads when it is done.', tone: 'busy', action: null };
+  }
+  const failure = status.failure;
+  if (failure !== null && (failure.broken === true || (newer !== null && failure.version === newer.version))) {
+    if (failure.broken === true) {
+      return {
+        headline: `Update to ${buildLabel(failure.version)} failed`,
+        detail: `Geld could not put ${buildLabel(failure.stillOn)} back, so it may not start next time. ${failure.reason}`,
+        tone: 'error',
+        action: { kind: 'restore', label: `Restore ${buildLabel(failure.stillOn)}` },
+      };
+    }
+    return {
+      headline: `Update to ${buildLabel(failure.version)} failed`,
+      detail: `Still on ${buildLabel(failure.stillOn)}. ${failure.reason}`,
+      tone: 'error',
+      action: { kind: 'retry', label: 'Try again' },
+    };
+  }
+  if (folder === null) {
+    return {
+      headline: newer === null ? 'Up to date' : `${capital(buildLabel(newer.version))} is ready`,
+      detail: 'Connect the folder Geld runs from so it can install builds.',
+      tone: newer === null ? 'ok' : 'ready',
+      action: { kind: 'connect', label: 'Connect folder' },
+    };
+  }
+  if (newer !== null) {
+    return {
+      headline: `${capital(buildLabel(newer.version))} is ready`,
+      detail: newer.version === status.skipped ? 'You went back from it, so it waits for you.' : null,
+      tone: 'ready',
+      action: { kind: 'install', label: 'Install' },
+    };
+  }
+  const install = status.lastInstall;
+  if (install !== null && install.to === version && now - new Date(install.at).getTime() < RECENT_MS) {
+    if (install.rollback === true) {
+      return { headline: `Back on ${buildLabel(version)}`, detail: `Went back from ${buildLabel(install.from)} ${ago(install.at, now)}.`, tone: 'ok', action: null };
+    }
+    return {
+      headline: 'Up to date',
+      detail: `Updated from ${buildLabel(install.from)} ${ago(install.at, now)}.`,
+      tone: 'ok',
+      action: status.backup === install.from ? { kind: 'rollback', label: 'Roll back' } : null,
+    };
+  }
+  return {
+    headline: 'Up to date',
+    detail: status.checkError ?? (status.checkedAt === null ? 'Not checked yet.' : `Checked ${ago(status.checkedAt, now)}.`),
+    tone: status.checkError === null ? 'ok' : 'error',
+    action: { kind: 'check', label: 'Check now' },
+  };
+}
+
+function capital(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}

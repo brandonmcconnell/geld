@@ -16,44 +16,21 @@
         </h1>
       </header>
 
-      <section class="nightly__card" aria-labelledby="build-title">
-        <h2 class="nightly__title" id="build-title">This build</h2>
-        <p class="nightly__version"><span id="installed"></span> <span class="geld-muted" id="latest"></span></p>
-        <p class="geld-help" id="checked" aria-live="polite"></p>
-        <p class="nightly__note" id="last-install" hidden></p>
-        <p class="nightly__error" id="error" role="alert" hidden></p>
-        <div class="nightly__actions">
-          <button class="geld-button geld-button--primary" type="button" id="install" hidden></button>
-          <button class="geld-button" type="button" id="check">Check now</button>
-          <a class="geld-button geld-button--link" id="notes" target="_blank" rel="noreferrer" hidden>What changed</a>
-        </div>
+      <section class="nightly__card" aria-label="Updates">
+        <div id="panel"></div>
       </section>
 
       <section class="nightly__card" aria-labelledby="folder-title">
         <h2 class="nightly__title" id="folder-title">Folder</h2>
         <p class="geld-help nightly__intro">
           Geld installs a build by writing it into the folder you chose in Load unpacked, then reloading itself.
-          Connect that folder once so Geld can find it.
+          It keeps a copy of the build it replaces, so a failed install is undone and Roll back can return to it.
         </p>
         <p class="nightly__folder" id="folder"></p>
         <p class="geld-help nightly__intro" id="folder-help"></p>
+        <p class="nightly__error" id="folder-error" role="alert" hidden></p>
         <div class="nightly__actions">
           <button class="geld-button" type="button" id="connect">Connect folder</button>
-        </div>
-      </section>
-
-      <section class="nightly__card" aria-labelledby="updates-title">
-        <h2 class="nightly__title" id="updates-title">Updates</h2>
-        <div class="geld-row nightly__row">
-          <div>
-            <span class="geld-label" id="auto-label">Install updates automatically</span>
-            <p class="geld-help" id="auto-help"></p>
-          </div>
-          <button class="geld-switch" type="button" role="switch" id="auto" aria-labelledby="auto-label" aria-describedby="auto-help"></button>
-        </div>
-        <div class="geld-row nightly__row">
-          <label class="geld-label" for="interval">Check for updates every</label>
-          <select class="geld-input nightly__select" id="interval"></select>
         </div>
       </section>
     </main>

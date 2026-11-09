@@ -45,8 +45,9 @@ export function parseRelease(json: unknown): NightlyRelease | null {
   if (tag === null || match === null) return null;
   const build = Number(match[2]);
   const version = `${match[1]}.${build}`;
-  const assets = json['assets'];
-  if (!Array.isArray(assets)) return null;
+  const listed: unknown = json['assets'];
+  if (!Array.isArray(listed)) return null;
+  const assets: readonly unknown[] = listed;
   const name = nightlyAssetName(version);
   for (const asset of assets) {
     if (!isRecord(asset) || stringField(asset, 'name') !== name) continue;

@@ -68,13 +68,15 @@ Geld never calls the GitHub API. Counts come from the page when it renders per-f
 
 ### Nightly builds (Chrome, Edge and other Chromium browsers)
 
-Every release also carries `geld-<version>-chrome-nightly.zip`, a build called _Geld Nightly_ that keeps itself up to date with every push to `main`. The store builds contain none of its updater.
+Every release also carries `geld-<version>-chrome-nightly.zip`, a build called _Geld Nightly_ that keeps itself up to date with every push to `main`. It is the same production build as the store's, with an updater added. The store builds contain none of it.
 
 1. Download the nightly zip from the [latest release](https://github.com/brandonmcconnell/geld/releases/latest), unzip it into a folder you keep, and load that folder with _Load unpacked_ (Developer mode on).
-2. Click the toolbar icon, then _Updates_, and _Connect folder_: pick the same folder. Geld checks that it is the folder it runs from.
-3. The first install asks once to let Geld edit the folder. On the next one Chrome offers _Allow on every visit_: choose it, and every later build installs in the background, even after Chrome restarts. A folder kept directly in your Downloads folder needs no grant at all.
+2. Click the toolbar icon. The top of the popup shows the build, a _Manual / Automatic_ toggle and the update status. Click _Connect folder_ and pick the same folder. Geld checks that it is the folder it runs from.
+3. The first install asks once to let Geld edit the folder. On the next one Chrome offers _Allow on every visit_: choose it, and later builds install in the background, even after Chrome restarts. A folder kept directly in your Downloads folder needs no grant at all.
 
-Geld checks every hour by default (every 5 minutes at the fastest), installs a newer build, reloads itself and puts itself back into open GitHub tabs. Turn off _Install updates automatically_ to get a ↑ on the toolbar icon and an _Install_ button instead. It reads public releases, so no GitHub token is needed.
+_Automatic_ (the default) looks for a new build whenever a GitHub page loads, at most every 30 minutes, installs it and reloads Geld, which puts itself back into open GitHub tabs. _Manual_ looks every hour and shows _Install_ in the popup and a ↑ on the toolbar icon.
+
+Before writing a build, Geld keeps a copy of the one it is replacing. If the install fails partway, the copy goes back and the popup says _Update to build N failed · Still on build M_ with _Try again_. For a day after an update, _Roll back_ returns to the previous build, and Automatic skips the build you left until a newer one is out. Updates read public releases, so no GitHub token is needed. The nightly build has its own extension id, so its settings are separate from a store install's unless you sign in to sync them.
 
 ## Development
 

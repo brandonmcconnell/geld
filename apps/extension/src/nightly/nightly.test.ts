@@ -1,6 +1,6 @@
 import { deflateRawSync } from 'node:zlib';
 import { buildOf, compareVersions, parseRelease } from './release';
-import { buildProblem, stalePaths } from './build-check';
+import { buildProblem, parseFileList, stalePaths, writeOrder } from './build-check';
 import { crc32, isSafePath, unzip } from './unzip';
 
 interface FileSpec {
@@ -167,5 +167,30 @@ describe('stalePaths', () => {
       ['manifest.json', 'chunks/old-123.js', 'chunks/new-456.js', '.DS_Store', '_metadata/verified_contents.json', 'a/.git/HEAD'],
       ['manifest.json', 'chunks/new-456.js'],
     )).toEqual(['chunks/old-123.js']);
+  });
+});
+
+describe('writeOrder', () => {
+  it('writes new files first and the manifest last', () => {
+    const entries = ['manifest.json', 'background.js', 'chunks/new-2.js', 'popup.html', 'chunks/added-9.js'].map((path) => ({ path }));
+    expect(writeOrder(entries, ['manifest.json', 'background.js', 'popup.html', 'chunks/old-1.js']).map((entry) => entry.path)).toEqual([
+      'chunks/new-2.js',
+      'chunks/added-9.js',
+      'background.js',
+      'popup.html',
+      'manifest.json',
+    ]);
+  });
+});
+
+describe('parseFileList', () => {
+  it('reads the list a nightly build carries', () => {
+    expect(parseFileList('{"files":["manifest.json","background.js"]}')).toEqual(['manifest.json', 'background.js']);
+  });
+
+  it('refuses a list that is not one', () => {
+    expect(parseFileList('nope')).toBeNull();
+    expect(parseFileList('{"files":["background.js"]}')).toBeNull();
+    expect(parseFileList('{"files":["manifest.json",3]}')).toBeNull();
   });
 });

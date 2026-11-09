@@ -1,17 +1,21 @@
 import { storage } from 'wxt/utils/storage';
 import type { NightlyRelease } from './release';
 
-/** How often the background asks GitHub for a newer build, in minutes. */
-export const CHECK_INTERVALS = [5, 15, 30, 60, 180] as const;
-export type CheckInterval = (typeof CHECK_INTERVALS)[number];
+/**
+ * Automatic installs a newer build as soon as it finds one, and looks whenever a GitHub page loads once
+ * `AUTOMATIC_CHECK_MS` has passed since the last look (and on that clock with no page loading).
+ * Manual looks every `MANUAL_CHECK_MS` and only says a build is ready.
+ */
+export type UpdateMode = 'automatic' | 'manual';
+
+export const AUTOMATIC_CHECK_MS = 30 * 60 * 1000;
+export const MANUAL_CHECK_MS = 60 * 60 * 1000;
 
 export interface NightlyPrefs {
-  /** Install a newer build as soon as it is found, when Geld can write to its folder without asking. */
-  readonly auto: boolean;
-  readonly intervalMinutes: CheckInterval;
+  readonly mode: UpdateMode;
 }
 
-export const DEFAULT_NIGHTLY_PREFS: NightlyPrefs = { auto: true, intervalMinutes: 60 };
+export const DEFAULT_NIGHTLY_PREFS: NightlyPrefs = { mode: 'automatic' };
 
 export const nightlyPrefsItem = /* @__PURE__ */ storage.defineItem<NightlyPrefs>('local:nightlyPrefs', { fallback: DEFAULT_NIGHTLY_PREFS });
 
@@ -35,6 +39,20 @@ export interface NightlyInstall {
   readonly to: string;
   readonly at: string;
   readonly method: InstallMethod;
+  readonly rollback?: true;
+}
+
+export interface NightlyFailure {
+  /** The build that did not install. */
+  readonly version: string;
+  /** The build Geld is still on: the one it was on before, put back when the write had begun. */
+  readonly stillOn: string;
+  readonly reason: string;
+  readonly at: string;
+  /** The write had begun, so the old build was written back. Automatic does not try this version again. */
+  readonly restored?: true;
+  /** The write broke off and writing the old build back failed too, so the folder holds parts of both. */
+  readonly broken?: true;
 }
 
 export interface NightlyStatus {
@@ -43,8 +61,12 @@ export interface NightlyStatus {
   readonly latest: NightlyRelease | null;
   readonly checkError: string | null;
   readonly installing: string | null;
-  readonly installError: string | null;
+  readonly failure: NightlyFailure | null;
   readonly lastInstall: NightlyInstall | null;
+  /** A build the reader rolled back from: Automatic leaves it alone and waits for the next one. */
+  readonly skipped: string | null;
+  /** The version of the copy in IndexedDB (handle-store.ts) that Roll back writes. */
+  readonly backup: string | null;
   /** GitHub answers a matching `If-None-Match` with a 304, which costs nothing against the hourly API limit. */
   readonly etag: string | null;
 }
@@ -54,8 +76,10 @@ export const EMPTY_STATUS: NightlyStatus = {
   latest: null,
   checkError: null,
   installing: null,
-  installError: null,
+  failure: null,
   lastInstall: null,
+  skipped: null,
+  backup: null,
   etag: null,
 };
 

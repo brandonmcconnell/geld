@@ -1,53 +1,42 @@
 import { browser } from 'wxt/browser';
 import { isNightlyInstallResult } from './messages';
-import type { NightlyInstallMessage } from './messages';
-import { buildOf, compareVersions } from './release';
-import { nightlyStatusItem } from './state';
-import type { NightlyStatus } from './state';
+import type { NightlyCheckMessage, NightlyInstallMessage, NightlyRollbackMessage } from './messages';
+import { mountNightlyPanel } from './panel';
+import type { NightlyAction } from './view';
 
-/** The popup's nightly line: which build this is and, when a newer one is out, the button that installs it. */
+/**
+ * The popup's nightly panel. A folder picker or Chrome's permission prompt would close the popup, so what
+ * needs one (connecting the folder, an install Chrome has to allow) continues on the nightly page.
+ */
 
 function openNightlyPage(): void {
   void browser.tabs.create({ url: new URL('/nightly.html', location.origin).href }).then(() => window.close());
 }
 
-function render(section: HTMLElement, status: NightlyStatus): void {
-  const version = browser.runtime.getManifest().version;
-  const build = buildOf(version);
-  const latest = status.latest;
-  const newer = latest !== null && compareVersions(latest.version, version) > 0;
-  const text = document.createElement('p');
-  text.className = 'popup__context-line';
-  text.textContent = newer && latest !== null ? `Nightly build ${latest.build} is ready` : `Nightly ${build === null ? version : `build ${build}`}`;
-  const action = document.createElement('button');
-  action.type = 'button';
-  action.className = 'geld-button geld-button--small';
-  if (status.installing !== null) {
-    action.textContent = 'Installing…';
-    action.disabled = true;
-  } else if (newer) {
-    action.textContent = 'Install';
-    action.classList.add('geld-button--primary');
-    action.addEventListener('click', () => {
-      action.disabled = true;
-      action.textContent = 'Installing…';
-      const request: NightlyInstallMessage = { type: 'geld:nightly-install' };
-      void browser.runtime.sendMessage(request).then((result: unknown) => {
-        if (!isNightlyInstallResult(result) || !result.ok) openNightlyPage();
-      });
-    });
-  } else {
-    action.textContent = 'Updates';
-    action.classList.add('geld-button--link');
-    action.addEventListener('click', openNightlyPage);
+async function act(kind: NightlyAction): Promise<string | null> {
+  if (kind === 'connect') {
+    openNightlyPage();
+    return null;
   }
-  section.replaceChildren(text, action);
+  if (kind === 'check') {
+    const request: NightlyCheckMessage = { type: 'geld:nightly-check' };
+    await browser.runtime.sendMessage(request);
+    return null;
+  }
+  const request: NightlyInstallMessage | NightlyRollbackMessage = { type: kind === 'install' || kind === 'retry' ? 'geld:nightly-install' : 'geld:nightly-rollback' };
+  const result: unknown = await browser.runtime.sendMessage(request);
+  if (!isNightlyInstallResult(result)) return 'Geld did not answer. Try again.';
+  if (result.ok) return null;
+  if (result.need !== undefined) {
+    openNightlyPage();
+    return null;
+  }
+  return result.reason;
 }
 
 export function mountNightlyPopup(host: HTMLElement): void {
   const section = document.createElement('section');
-  section.className = 'popup__section geld-row';
+  section.className = 'popup__section';
   host.prepend(section);
-  void nightlyStatusItem.getValue().then((status) => render(section, status));
-  nightlyStatusItem.watch((status) => render(section, status));
+  mountNightlyPanel(section, act);
 }
