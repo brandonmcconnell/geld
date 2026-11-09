@@ -1121,3 +1121,52 @@ it('opens the shared settings UI and explains a failed request without acting af
   expect(open).toHaveBeenCalledOnce();expect(panel.element.textContent).toContain('Settings could not be opened');
   panel.destroy();button?.click();expect(open).toHaveBeenCalledOnce();
 });
+
+it('keeps open threads and their body disclosures across a new head and moves them into an untoggled resolved group', () => {
+  const native = input([thread('a')]);
+  const panel = renderProviderReviewPanel(host(), native, { renderComment: (_comment, body) => { body.innerHTML = '<details><summary>More</summary>Original detail</details>';return true; } });
+  const item = panel.element.querySelector<HTMLElement & { open: boolean }>('.geld-provider-review__item')!;
+  item.open = true;
+  const detail = panel.element.querySelector<HTMLDetailsElement>('details')!;detail.open = true;detail.dispatchEvent(new Event('toggle'));
+  panel.suspend();expect(panel.element.hidden).toBe(true);expect(panel.element.inert).toBe(true);
+  panel.update({ ...native, subject: { ...subject, headSha: 'b'.repeat(40) }, threads: native.threads.map(thread => ({ ...thread, resolved: true })) });
+  expect(panel.element.hidden).toBe(false);expect(panel.element.inert).toBe(false);
+  expect(panel.element.querySelector<HTMLElement & { open: boolean }>('.geld-provider-review__item')?.open).toBe(true);
+  expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-group="resolved"]')?.open).toBe(true);
+  expect(panel.element.querySelector<HTMLDetailsElement>('details')?.open).toBe(true);
+});
+
+it('keeps a user-folded destination group closed when an opened thread becomes resolved', () => {
+  const native = input([thread('a'), thread('b', { resolved: true })]);
+  const panel = renderProviderReviewPanel(host(), native);
+  const resolved = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-group="resolved"]')!;
+  resolved.open = true;resolved.open = false;
+  panel.element.querySelector<HTMLElement & { open: boolean }>('.geld-provider-review__item')!.open = true;
+  panel.update({ ...native, threads: native.threads.map(thread => ({ ...thread, resolved: true })) });
+  expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-group="resolved"]')?.open).toBe(false);
+});
+
+it('uses native-thread totals for an older grouped publication', () => {
+  const native = input([thread('a')]);
+  const panel = renderProviderReviewPanel(host(), native, { transformItems: items => items.map(item => ({ ...item, threads: { total: 3, open: 2 } })) });
+  expect(panel.element.querySelector('[data-geld-review-metric="open"] strong')?.textContent).toBe('2');
+  expect(panel.element.querySelector('[data-geld-review-group="open"] [data-geld-review-toggle]')?.textContent).toContain('3');
+});
+
+it('keeps a folded push round folded when another native event joins its boundary', () => {
+  const push: ProviderReviewPanelEvent = { id: 'push-1', url: reviewUrl, author: comment('1').author, body: 'Pushed commit', createdAt: '2026-11-01T11:00:00Z', kind: 'push' };
+  const native = input([thread('a')]);
+  const panel = renderProviderReviewPanel(host(), native, { reviewGrouping: 'batch', events: [push] });
+  const round = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-round]')!;round.open = false;
+  panel.update(native, { reviewGrouping: 'batch', events: [push, { ...push, id: 'push-2' }] });
+  expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-round]')?.open).toBe(false);
+});
+
+it('suspends old digest clipboard controls until a current snapshot resumes the panel', async () => {
+  const write = vi.fn(async () => {});const native = input([thread('a')]);
+  const panel = renderProviderReviewPanel(host(), native, { copyText: write });
+  panel.suspend();panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
+  await Promise.resolve();expect(write).not.toHaveBeenCalled();
+  panel.update(native);panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
+  await vi.waitFor(() => expect(write).toHaveBeenCalledOnce());
+});

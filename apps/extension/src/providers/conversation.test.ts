@@ -886,3 +886,22 @@ describe('hidden people in provider conversations', () => {
     expect(f.host.querySelector('.geld-provider-review')?.textContent).not.toContain('Hidden reply');
   });
 });
+
+it('retains the panel and open thread while a new-head snapshot is loading', async () => {
+  const initial = snapshot();
+  let hold = false;
+  let resolve: (value: ProviderReviewSnapshot) => void = () => {};
+  const next = new Promise<ProviderReviewSnapshot>(complete => { resolve = complete; });
+  const read = vi.fn(() => hold ? next : Promise.resolve(initial));
+  const f = fixture(initial, {}, { aiEnabled: false }, { fetchReview: read });
+  await vi.waitFor(() => expect(f.host.querySelector('.geld-provider-review__item')).not.toBeNull());
+  const panel = f.host.querySelector<HTMLElement>('.geld-provider-review')!;
+  panel.querySelector<HTMLElement & { open: boolean }>('.geld-provider-review__item')!.open = true;
+  hold = true;
+  const newHead = 'b'.repeat(40);f.apply({ ...page, headSha: newHead, version: newHead });
+  expect(f.host.querySelector('.geld-provider-review')).toBe(panel);expect(panel.hidden).toBe(true);expect(panel.inert).toBe(true);
+  resolve({ ...initial, input: { ...initial.input, subject: { ...initial.input.subject, headSha: newHead } } });
+  await vi.waitFor(() => expect(panel.dataset.geldReviewHead).toBe(newHead));
+  expect(f.host.querySelector('.geld-provider-review')).toBe(panel);expect(panel.hidden).toBe(false);
+  expect(panel.querySelector<HTMLElement & { open: boolean }>('.geld-provider-review__item')?.open).toBe(true);
+});
