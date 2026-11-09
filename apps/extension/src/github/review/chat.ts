@@ -1124,7 +1124,7 @@ function placeOverviewControls(message: HTMLElement): boolean {
       side.append(slot);
       teleportInto(slot, [react]);
     }
-    const box = createElement('span', { class: 'geld-review__msg-reactions', [OWN_UI_ATTRIBUTE]: '' });
+    const box = createElement('span', { class: 'geld-review__msg-reactions geld-review__msg-reactions--overview', [OWN_UI_ATTRIBUTE]: '' });
     bubble.after(box);
     teleportInto(box, [holder]);
     onRestore(() => box.remove());
