@@ -12,8 +12,9 @@ export function loginOfLink(link: Element): string | null {
   const href = link.getAttribute('href') ?? '';
   const app = appLoginOf(href);
   if (app !== null) return app;
-  const profile = /^(?:https?:\/\/[^/]+)?\/([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)\/?$/.exec(href)?.[1];
-  if (profile !== undefined) return profile;
+  // An App's own profile path is its login (`/greptile-apps[bot]`), as the Overview's review comments link it.
+  const profile = /^(?:https?:\/\/[^/]+)?\/([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\[bot\]|%5Bbot%5D)?)\/?$/i.exec(href)?.[1];
+  if (profile !== undefined) return profile.replace(/%5Bbot%5D$/i, '[bot]');
   const card = /^\/users\/([^/?#]+)\/hovercard/.exec(link.getAttribute('data-hovercard-url') ?? '')?.[1];
   if (card !== undefined) return decodeURIComponent(card);
   const text = (link.textContent ?? '').replace(/\s+/g, ' ').trim().replace(/^@/, '');
