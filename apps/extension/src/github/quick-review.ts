@@ -8,20 +8,24 @@ import type { HeaderStatGroup } from './header-stats';
 import { countsSkeletonStandIn, countsWrapperBusy, isCountsStandIn } from './header-stats';
 import { detectHeadSha } from './head-sha';
 import type { MergeActions, MergeBox, MergeMethod, StatusAction } from './merge-actions';
-import { actionErrorText, autoMergeRequest, closeRequest, draftRequest, fetchMergeBox, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, readMergeActions, queueRequest, readyRequest, reopenRequest, stackQueueRequest, viewerVerdict } from './merge-actions';
+import { actionErrorText, autoMergeRequest, awaitMergedState, closeRequest, draftRequest, fetchMergeBox, isStackRequest, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, methodHint, partialMayWait, prefetchMergeBox, readMergeActions, queueRequest, readyRequest, rememberMethod, reopenRequest, settleStackMerge, stackQueueRequest, viewerVerdict } from './merge-actions';
 import type { PageInfo } from './page';
 import { pullRequestStateWords } from './page';
+import { headerReactSettled, reactSettled } from './react-hydration';
 import type { PendingComment } from './pending-review';
 import { discardPendingReview, fetchPendingComments, linkOnFilesTab, pendingCountOnPage } from './pending-review';
 import { inlineText } from './review/inline-text';
 import type { SidebarReviewer, SidebarReviewerState } from './review/crawler';
 import { catchUpAfterPost } from './review/timeline-catchup';
 import type { ReviewTally } from './review-tally';
-import type { PullStatus, StackAction, StackChoice, StackGroup, StatusOption } from './status-pill';
-import { ATTR_INSTANT_MERGE, rememberStatusHint, removeStatusPills, showMergedPills, STATUS_INFO, stackConfirmWords, stackGroups, statusHint, statusOf, statusOptions, syncStatusPills } from './status-pill';
+import type { PillPlace, PullStatus, StackAction, StackChoice, StackGroup, StatusOption } from './status-pill';
+import { ATTR_INSTANT_MERGE, labelBehind, pillPlace, rememberStatusHint, removeStatusPills, showMergedPills, STATUS_INFO, stackConfirmWords, stackGroups, statusHint, statusOf, statusOptions, syncStatusPills } from './status-pill';
 import { fetchReviewers, REVIEW_BY_HASH, REVIEWS_HASH, reviewLink, standingReviewers, tallyOf, tallyWords } from './review-tally';
 import { ICON_ALERT_FILL_12, ICON_CHECK, ICON_CHECK_SEND, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CODE_REVIEW, ICON_CODE_REVIEW_SEND, ICON_COMMENT, ICON_COMMENT_SEND, ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_SPINNER, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_X, ICON_X_SEND } from './ui/icons';
 import { pageFetch } from './page-fetch';
+import { reportError } from '../lib/error-capture';
+import { isOverviewPage } from './review/overview-page';
+import { overviewMergeOf, removeOverviewMerge, syncOverviewMerge } from './overview-merge';
 
 /**
  * The review controls in the pull request's tab bar, left of the line
@@ -59,6 +63,8 @@ export interface QuickReviewContext {
   readonly headSha: () => string | null;
   /** Whether the conversation digest is on: then `#geld-reviews` waits for its Reviews row rather than settle for the sidebar. */
   readonly digest?: boolean;
+  /** Whether a held ⌘ (Ctrl) turns the status pill into a 1-click merge (`holdToMerge`). */
+  readonly holdToMerge?: boolean;
 }
 
 const GROUP_CLASS = 'geld-quick-review';
@@ -76,10 +82,71 @@ const STICKY_TOOLBAR = 'section[class*="stickyHeader"], .js-sticky';
 const STICKY_REVIEW_CONTROL = `:is(${STICKY_TOOLBAR}) :is(${GITHUB_REVIEW_CONTROL})`;
 /** The compact pull request header the other tabs show once the page header has scrolled away: `display: none` until it sticks. */
 const STICKY_PR_HEADER = '[class*="prHeader"][class*="stickyHeader"]';
+/** The Overview's mini header: always there, sticking to the viewport's top once the page header has scrolled under it. */
+const OVERVIEW_MINI_HEADER = '[data-testid="diff-comparison-viewer-sticky-header-slot"]';
 /** The headers that stay put as the page scrolls, React's and the classic one: a box under a pill there is fixed. */
 const STICKY_HEADERS = '[class*="stickyHeader"], .gh-header-sticky';
+/**
+ * GitHub's bar over every tab of the new pull request page (Overview, Commits, Checks, Files changed; Nov 2026), now
+ * always shown: the number and title, then its actions ("Merge status", GitHub's review button, the panel toggles).
+ */
+const PERSISTENT_BAR_ACTIONS = '[data-testid="diff-comparison-viewer-sticky-header-slot"][class*="Persistent"] [data-testid="diff-comparison-viewer-sticky-header-bar"] [class*="miniHeaderInner"] > [class*="actions"]';
 
-type Place = 'toolbar' | 'header';
+function persistentBarActions(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(PERSISTENT_BAR_ACTIONS);
+}
+
+/**
+ * Whether the group stood in each repository's pages last time, for the next load's first frame (`applyReviewGroupHint`):
+ * per repository, since Geld can be off for one and on for the next. At most `GROUP_HINT_CAP` repositories, oldest out.
+ */
+const GROUP_HINT_KEY = 'geld:review-group';
+const GROUP_HINT_CAP = 200;
+
+function readGroupHints(): Record<string, boolean> {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(GROUP_HINT_KEY) ?? '{}');
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'));
+  } catch {
+    return {};
+  }
+}
+
+/** Written only when it changes; the repository moves to the end, so the cap drops the one seen longest ago. */
+export function rememberReviewGroup(name: string | null, on: boolean): void {
+  if (name === null) return;
+  // GitHub's repository names ignore case: `/Acme/Widgets` and `/acme/widgets` are one repository.
+  const repo = name.toLowerCase();
+  const hints = readGroupHints();
+  if (hints[repo] === on) return;
+  delete hints[repo];
+  hints[repo] = on;
+  const entries = Object.entries(hints);
+  try {
+    window.localStorage.setItem(GROUP_HINT_KEY, JSON.stringify(Object.fromEntries(entries.slice(Math.max(0, entries.length - GROUP_HINT_CAP)))));
+  } catch {
+    // Storage blocked: GitHub's review button shows until the controls mount, as before.
+  }
+}
+
+/**
+ * On a pull request page, before anything else runs: GitHub's review button gives way from its first frame when the
+ * group stood in the page last time, rather than showing until the controls mount (the stylesheet hides it on this
+ * attribute). The first pass takes the attribute back wherever the group does not mount (Geld off there, signed out).
+ */
+/** Startup stood down before any controls were made, with no copy to take over (the extension reloaded): GitHub's button back. */
+export function withdrawReviewGroupHint(): void {
+  if (mounted === null) document.documentElement.removeAttribute(ATTR_ACTIVE);
+}
+
+export function applyReviewGroupHint(path: string = window.location.pathname): void {
+  if (!/^\/[^/]+\/[^/]+\/pull\/\d+(?:\/|$)/.test(path)) return;
+  const repo = repoOf(path)?.toLowerCase() ?? null;
+  if (repo !== null && readGroupHints()[repo] === true) document.documentElement.setAttribute(ATTR_ACTIVE, '');
+}
+
+type Place = 'toolbar' | 'header' | 'mini' | 'bar';
 const SUBMITTED_MS = 3000;
 /** On the group while the instant key is held: ✓ and ✗ then send on a click, and the stylesheet swaps their glyphs for the sending ones. */
 const ATTR_INSTANT = 'data-instant';
@@ -207,14 +274,41 @@ function authorLogin(): string | null {
   return login === '' ? null : login;
 }
 
+let shownElements = new WeakMap<Element, boolean>();
+let forgettingShown = false;
+
+/**
+ * Whether `element` is rendered, asked once per element until the window resizes or the page's stylesheets have all
+ * loaded. GitHub hides the tab bar's counts with a container query, so the answer needs a layout, and asked on every
+ * pass it forced a whole-page layout each time while GitHub was still rendering the page; a container's width only
+ * moves with the window's.
+ */
+function isShown(element: Element): boolean {
+  const known = shownElements.get(element);
+  if (known !== undefined) return known;
+  if (!forgettingShown) {
+    forgettingShown = true;
+    const forget = (): void => {
+      shownElements = new WeakMap();
+    };
+    window.addEventListener('resize', forget);
+    if (document.readyState !== 'complete') window.addEventListener('load', forget, { once: true });
+  }
+  const visible = element.checkVisibility();
+  shownElements.set(element, visible);
+  return visible;
+}
+
 /** The tab bar's line counts: the group in the pull request header (not a diff's, not Geld's narrow mirror). */
 function anchorOf(groups: readonly HeaderStatGroup[]): HTMLElement | null {
   for (const group of groups) {
     const host = group.host;
     if (!host.isConnected || host.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null) continue;
     // GitHub hides the header's counts on narrow screens: placed there, the button would be hidden with them while
-    // GitHub's own was hidden for it, leaving no way to review. A style read, not a layout one.
-    if (!host.checkVisibility()) continue;
+    // GitHub's own was hidden for it, leaving no way to review.
+    if (!isShown(host)) continue;
+    // The Overview writes the counts beside the branches, under the title: the group still belongs at the tab bar's end.
+    if (host.closest('[data-component="PageHeader.Description"]') !== null) continue;
     if (host.id === 'diffstat' || host.closest('[data-component="PageHeader"], .gh-header, #partial-discussion-header') !== null) return host;
   }
   return null;
@@ -231,7 +325,8 @@ const MARK_CLASS = 'geld-quick-review__mark';
  * nothing in its place.
  */
 function standAnchor(): HTMLElement | null {
-  const row = [...document.querySelectorAll<HTMLElement>('[data-component="PageHeader"] [class*="PageHeader-Navigation"]')].find((el) => el.querySelector('nav[class*="TabNav"]') !== null) ?? null;
+  // The conversation's tab bar is a `TabNav`, the Overview's an `UnderlineNav`; both rows end in GitHub's counts wrapper.
+  const row = [...document.querySelectorAll<HTMLElement>('[data-component="PageHeader"] [class*="PageHeader-Navigation"]')].find((el) => el.querySelector('nav[class*="TabNav"], nav[class*="UnderlineNav"]') !== null) ?? null;
   if (row === null) {
     removeStand();
     return null;
@@ -247,7 +342,7 @@ function standAnchor(): HTMLElement | null {
   const skeleton = countsSkeletonStandIn();
   if (skeleton !== null && row.contains(skeleton)) {
     document.querySelector(`.${MARK_CLASS}`)?.remove();
-    return skeleton.checkVisibility() ? skeleton : null;
+    return isShown(skeleton) ? skeleton : null;
   }
   if (home === null) {
     home = row.querySelector<HTMLElement>(`:scope > .${STAND_CLASS}`) ?? createElement('div', { class: STAND_CLASS, [OWN_UI_ATTRIBUTE]: '' });
@@ -261,7 +356,7 @@ function standAnchor(): HTMLElement | null {
     mark = createElement('span', { class: MARK_CLASS, [OWN_UI_ATTRIBUTE]: '' });
     home.append(mark);
   }
-  return home.checkVisibility() ? mark : null;
+  return isShown(home) ? mark : null;
 }
 
 /**
@@ -311,6 +406,8 @@ interface Mounted {
   pills: readonly HTMLButtonElement[];
   /** The pill the status menu, or a box chosen from it, came from: the box hangs under it and focus goes back to it. */
   statusOpener: HTMLButtonElement | null;
+  /** Where the opener stood when the menu opened, for the pill that takes its place when GitHub re-renders it. */
+  statusOpenerPlace: PillPlace | null;
   statusMenu: HTMLElement | null;
   /** Ends the open status menu's listeners. */
   statusMenuKeys: AbortController | null;
@@ -323,13 +420,21 @@ interface Mounted {
   /** The snapshot card while it shows, and the timer that shows or hides it. */
   snapshot: HTMLElement | null;
   snapshotTimer: number;
+  /** The method the Overview's merge button merges with, once the reader picks one from its caret. */
+  overviewMethod: MergeMethod | null;
+  /** The control a merge box opened from the Overview's merge button hangs under, right edge on its right edge. */
+  panelAnchor: HTMLElement | null;
   /** What the merge box last said the reader may do, for {@link mergeFor}; null until read. */
   mergeActions: MergeActions | null;
   mergeFor: string | null;
-  /** A merge box read is in flight: the status menu says "Loading options…" rather than nothing. */
+  /** A merge box read is in flight, or a retry is waiting: the status menu says "Loading options…" rather than nothing. */
   mergeLoading: boolean;
+  /** The read of `mergeInFlight`'s pull request is out now: a click waits for it rather than starting another. */
+  mergeInFlight: string | null;
   /** Each read of the merge box takes the next number: an answer from a read a newer one replaced is dropped, whatever order they land in. */
   mergeRead: number;
+  /** Failed reads in a row for this pull request: the next waits `MERGE_RETRY_MS` doubled per failure, up to `MERGE_RETRIES`. */
+  mergeRetries: number;
   /** The header's state label when the merge box was last read for it: a draft converted or marked ready, a merge or close in place, changes it. */
   stateWords: string | null;
   mergeTimer: number;
@@ -346,6 +451,8 @@ interface Mounted {
   panelCleanup: (() => void) | null;
   /** A review on its way: the controls and the box wait for it. */
   sending: boolean;
+  /** The pull request whose merge went through and whose pills stand merged until the reload, whatever the page or a read says meanwhile. */
+  mergedShown: string | null;
   submittedTimer: number;
   /** The pending comments last read for {@link pendingFor}; null until read (or when GitHub could not say). */
   pending: readonly PendingComment[] | null;
@@ -386,22 +493,31 @@ function draftFor(pullPath: string): Draft {
 export function applyQuickReview(enabled: boolean, context: QuickReviewContext): void {
   const pullPath = pullPathOf(window.location.pathname);
   if (!enabled || !context.page.kind.startsWith('pull') || pullPath === null || viewerLogin() === '') {
+    if (!enabled) rememberReviewGroup(repoOf(window.location.pathname), false);
     removeQuickReview();
     return;
   }
+  // A node of Geld's in React's header before React has hydrated it makes React throw the page's markup away and render it again.
+  if (!headerReactSettled()) return;
   // The controls' state lives on the pull request page whether or not the review group has somewhere to stand: the
   // status pill in the header needs it, and on narrow screens (GitHub hides the counts) the group stands aside alone.
-  const counted = anchorOf(context.groups);
-  if (counted !== null) removeStand();
-  const anchor = counted ?? standAnchor();
+  // GitHub's always-shown bar holds the group whatever the tab bar shows, so it needs no anchor there, nor a stand of Geld's.
+  const inBar = persistentBarActions() !== null;
+  const counted = inBar ? null : anchorOf(context.groups);
+  if (counted !== null || inBar) removeStand();
+  const anchor = inBar ? null : (counted ?? standAnchor());
   if (mounted === null) mounted = createControls(pullPath, context);
   if (mounted.pullPath !== pullPath) {
     closePanel();
     hideSnapshot(mounted);
     mounted.pullPath = pullPath;
     mounted.tally.href = `${pullPath}${REVIEWS_HASH}`;
-    // The last pull request's merge, close and standing verdict are not this one's: none until its merge box is read.
-    mounted.mergeActions = null;
+    // The last pull request's merge, close and standing verdict are not this one's: none until its merge box is read,
+    // or its own reading from a visit moments ago, which the read under way then replaces.
+    mounted.mergeActions = recentActions(pullPath);
+    mounted.mergeRetries = 0;
+    // A method picked from the Overview's caret was for that pull request: this one starts on its repository's default.
+    mounted.overviewMethod = null;
     mounted.stateWords = null;
     showStatus(mounted);
     showVerdict(mounted, null);
@@ -422,14 +538,23 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
   showCount(mounted);
   showAuthor(mounted);
   showStatus(mounted);
-  if (anchor === null) {
+  if (earlyPillClick !== null) {
+    const clicked = earlyPillClick;
+    earlyPillClick = null;
+    const pill = mounted.pills.includes(clicked) ? clicked : (mounted.pills.find((each) => pillPlace(each) === pillPlace(clicked)) ?? null);
+    if (pill !== null && mounted.statusMenu === null) toggleStatusMenu(mounted, pill);
+  }
+  // GitHub's always-shown bar holds the group whatever the tab bar shows; without it, the counts are its anchor.
+  if (anchor === null && persistentBarActions() === null) {
+    // Nowhere to stand: GitHub's own review button shows, and so it does from the next load's first frame.
+    rememberReviewGroup(repoOf(pullPath), false);
     unplace(mounted);
     return;
   }
   mounted.anchor = anchor;
   watchSticky(mounted);
   place(mounted);
-  const host = anchor.parentElement;
+  const host = anchor?.parentElement ?? null;
   if (mounted.host !== host) {
     mounted.host?.removeAttribute(ATTR_HOST);
     mounted.host = host;
@@ -437,6 +562,7 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
   if (host !== null && !host.hasAttribute(ATTR_HOST)) host.setAttribute(ATTR_HOST, '');
   // Written only when it changes: every write is a mutation record, and passes run on mutations.
   if (!document.documentElement.hasAttribute(ATTR_ACTIVE)) document.documentElement.setAttribute(ATTR_ACTIVE, '');
+  rememberReviewGroup(repoOf(pullPath), true);
 }
 
 function isStuck(element: Element): boolean {
@@ -462,17 +588,30 @@ function measureToolbarStuck(toolbar: Element): boolean {
  * compact pull request header's title row the other tabs show; null while neither is
  * stuck, the group in view in the tab bar.
  */
-function stickyPlace(state: Mounted): { readonly place: Place; readonly put: (root: HTMLElement) => void; readonly placed: (root: HTMLElement) => boolean } | null {
+function stickyPlace(state: Mounted): { readonly place: Place; readonly near: HTMLElement; readonly put: (root: HTMLElement) => void; readonly placed: (root: HTMLElement) => boolean } | null {
+  // The bar GitHub now shows over every tab: first among its actions, left of "Merge status", always.
+  const bar = persistentBarActions();
+  if (bar !== null) return { place: 'bar', near: bar, put: (root) => bar.prepend(root), placed: (root) => bar.firstElementChild === root };
   const control = document.querySelector<HTMLElement>(STICKY_REVIEW_CONTROL);
   if (control !== null) {
     if (!state.toolbarStuck) return null;
-    return { place: 'toolbar', put: (root) => control.insertAdjacentElement('beforebegin', root), placed: (root) => control.previousElementSibling === root };
+    return { place: 'toolbar', near: control, put: (root) => control.insertAdjacentElement('beforebegin', root), placed: (root) => control.previousElementSibling === root };
+  }
+  // The Overview's mini header, stuck: first among its actions (before the panel toggles), as the tab bar has it at its end.
+  const mini = state.toolbar?.isConnected === true && state.toolbar.matches(OVERVIEW_MINI_HEADER) ? state.toolbar : null;
+  if (mini !== null) {
+    const actions = mini.querySelector<HTMLElement>('[class*="miniHeaderInner"] > [class*="actions"]');
+    if (!state.toolbarStuck || actions === null) return null;
+    // Signed in the header holds "Merge status" and GitHub's own (hidden) review button: the group takes the button's place.
+    const own = actions.querySelector<HTMLElement>(`:scope > :is(${GITHUB_REVIEW_CONTROL})`);
+    if (own !== null) return { place: 'mini', near: own, put: (root) => own.insertAdjacentElement('beforebegin', root), placed: (root) => own.previousElementSibling === root };
+    return { place: 'mini', near: actions, put: (root) => actions.prepend(root), placed: (root) => actions.firstElementChild === root };
   }
   const header = document.querySelector<HTMLElement>(STICKY_PR_HEADER);
   if (header === null || !isStuck(header)) return null;
   // Inside the title row, after the title (which gives way), so the row's centred width and padding hold it as the page's content edge.
   const row = header.querySelector<HTMLElement>('[class*="TitleArea"]') ?? header;
-  return { place: 'header', put: (root) => row.append(root), placed: (root) => row.lastElementChild === root };
+  return { place: 'header', near: row, put: (root) => row.append(root), placed: (root) => row.lastElementChild === root };
 }
 
 /**
@@ -481,7 +620,7 @@ function stickyPlace(state: Mounted): { readonly place: Place; readonly put: (ro
  * compact header shows on that very flip, so the move is never seen.
  */
 function watchSticky(state: Mounted): void {
-  const toolbar = document.querySelector(STICKY_REVIEW_CONTROL)?.closest(STICKY_TOOLBAR) ?? null;
+  const toolbar = document.querySelector(STICKY_REVIEW_CONTROL)?.closest(STICKY_TOOLBAR) ?? (isOverviewPage() ? document.querySelector(OVERVIEW_MINI_HEADER) : null);
   const header = document.querySelector(STICKY_PR_HEADER);
   if (toolbar === state.toolbar && header === state.header) return;
   const newToolbar = toolbar !== state.toolbar;
@@ -509,14 +648,19 @@ function followToolbar(state: Mounted): void {
 
 /** In a stuck header, so it is always to hand while reviewing; otherwise before the tab bar's counts. */
 function place(state: Mounted): void {
-  // Nothing to stand beside (GitHub hides the counts on narrow screens): GitHub's own button is the one shown.
-  if (state.anchor === null) return;
+  // Nothing to stand beside (GitHub hides the counts on narrow screens, and no bar holds the group): GitHub's own button is the one shown.
+  if (state.anchor === null && persistentBarActions() === null) return;
   const sticky = stickyPlace(state);
+  // Beside a node React has yet to hydrate, the group would make React throw the page's markup away (`react-hydration.ts`).
+  if (!reactSettled(sticky?.near ?? state.anchor)) return;
   if (sticky !== null) {
     if (!sticky.placed(state.root)) sticky.put(state.root);
   } else if (state.anchor !== null && state.anchor.previousElementSibling !== state.root) {
     state.anchor.insertAdjacentElement('beforebegin', state.root);
   }
+  // A group left by another copy of Geld (one whose extension was reloaded or updated under the page, or a second
+  // build installed beside this one) stood beside this one as a second 💬; only one copy is ever live (`geld:takeover`).
+  for (const stray of document.querySelectorAll(`.${GROUP_CLASS}`)) if (stray !== state.root) stray.remove();
   const place = sticky?.place ?? null;
   if (state.root.getAttribute(ATTR_PLACE) !== place) {
     if (place === null) state.root.removeAttribute(ATTR_PLACE);
@@ -542,6 +686,8 @@ export function removeQuickReview(): void {
   removeStand();
   // Pills the hint put in place before the controls were made go too.
   removeStatusPills();
+  removeOverviewMerge();
+  earlyPillClick = null;
   if (mounted === null) return;
   closePanel();
   // Not settled: a placeholder menu's close would put back the pills this teardown has just removed.
@@ -627,6 +773,9 @@ function createControls(pullPath: string, context: QuickReviewContext): Mounted 
     opener: null,
     pills: [],
     statusOpener: null,
+    overviewMethod: null,
+    panelAnchor: null,
+    statusOpenerPlace: null,
     statusMenu: null,
     statusMenuKeys: null,
     tally,
@@ -637,7 +786,9 @@ function createControls(pullPath: string, context: QuickReviewContext): Mounted 
     mergeActions: null,
     mergeFor: null,
     mergeLoading: false,
+    mergeInFlight: null,
     mergeRead: 0,
+    mergeRetries: 0,
     stateWords: null,
     mergeTimer: 0,
     isAuthor: null,
@@ -648,6 +799,7 @@ function createControls(pullPath: string, context: QuickReviewContext): Mounted 
     panelRefresh: null,
     panelCleanup: null,
     sending: false,
+    mergedShown: null,
     submittedTimer: 0,
     pending: null,
     pendingFor: null,
@@ -775,6 +927,10 @@ function showAuthor(state: Mounted): void {
 }
 
 const MERGE_REFRESH_MS = 60_000;
+const MERGE_RETRY_MS = 1500;
+const MERGE_RETRIES = 3;
+/** How old a reading may be and still stand in for a pull request the reader comes back to, while it is read again. */
+const RECENT_ACTIONS_MS = 2 * 60_000;
 /** On ✓ or ✗ while it is the reader's standing verdict: drawn pressed in, still a button that leaves a new review. */
 const ATTR_CURRENT = 'data-current';
 
@@ -873,17 +1029,89 @@ async function loadMergeActions(state: Mounted): Promise<MergeActions | null> {
     showReviewers();
   });
   state.mergeLoading = true;
-  const actions = await readMergeActions(pullPath);
+  state.mergeInFlight = pullPath;
+  const repo = repoOf(pullPath);
+  const actions = await readMergeActions(pullPath, repo === null ? 'SQUASH' : methodHint(repo), (partial) => {
+    if (!current()) return;
+    // A refresh (each minute, on return, after the state label changed) already holds a complete reading of this pull
+    // request: the page's box alone, before the stack's other members are read, would take away the Overview's merge
+    // button and the menu's stack choices for the moment until they are, and put them back. Not when it says the stack
+    // or the pull request changed: the choices held would then name pull requests a stack merge no longer takes alone.
+    if (state.mergeActions !== null && state.mergeActions.partial !== true && partialMayWait(state.mergeActions, partial)) return;
+    state.mergeActions = partial;
+    showStatus(state);
+    refreshOpenMenu(state);
+  });
   if (!current()) return null;
-  state.mergeLoading = false;
-  if (actions !== null) state.mergeActions = actions;
+  state.mergeInFlight = null;
+  // GitHub answers 503 in waves: a failed read is tried again in seconds, the menu still loading meanwhile, rather than
+  // after the minute's refresh with "could not be read" in between.
+  const retrying = actions === null && state.mergeRetries < MERGE_RETRIES;
+  state.mergeRetries = actions === null ? state.mergeRetries + 1 : 0;
+  state.mergeLoading = retrying;
+  if (actions !== null) {
+    state.mergeActions = actions;
+    rememberActions(pullPath, actions);
+    const method = actions.box.methods[0] ?? actions.box.bypassMethods[0];
+    if (repo !== null && method !== undefined) rememberMethod(repo, method);
+  }
   showStatus(state);
-  refreshPlaceholderMenu(state);
+  refreshOpenMenu(state);
   showReviewers();
-  state.mergeTimer = window.setTimeout(() => {
-    if (mounted === state && !document.hidden) void loadMergeActions(state);
-  }, MERGE_REFRESH_MS);
+  state.mergeTimer = window.setTimeout(
+    () => {
+      if (mounted === state && !document.hidden) void loadMergeActions(state);
+    },
+    retrying ? MERGE_RETRY_MS * 2 ** (state.mergeRetries - 1) : MERGE_REFRESH_MS,
+  );
   return actions;
+}
+
+const PREFETCH_WAIT_MS = 5000;
+
+/**
+ * The page's merge box asked for as the content script starts, before the controls are mounted, which waits on GitHub
+ * drawing its header: the first read then takes that answer (`readMergeActions`). Only for a signed-in reader, which
+ * the head's `user-login` meta says as soon as it streams in (GitHub's `logged_in` cookie is HttpOnly).
+ */
+export function prefetchStatusOptions(path: string = window.location.pathname): void {
+  const pullPath = pullPathOf(path);
+  if (pullPath === null) return;
+  const settle = (): boolean => {
+    const login = document.querySelector<HTMLMetaElement>('meta[name="user-login"]');
+    if (login === null) return false;
+    const repo = repoOf(pullPath);
+    if (login.content !== '') prefetchMergeBox(pullPath, repo === null ? 'SQUASH' : methodHint(repo));
+    return true;
+  };
+  if (settle()) return;
+  const watch = new MutationObserver(() => {
+    if (settle()) watch.disconnect();
+  });
+  watch.observe(document, { childList: true, subtree: true });
+  window.setTimeout(() => watch.disconnect(), PREFETCH_WAIT_MS);
+}
+
+/** The last reading of each pull request's merge box this page made, so coming back to one shows its menu at once. */
+const readActions = new Map<string, { readonly actions: MergeActions; readonly at: number }>();
+
+const READ_ACTIONS_CAP = 20;
+
+/** Kept for `RECENT_ACTIONS_MS` and at most `READ_ACTIONS_CAP` pull requests: a long-lived tab holds no more. */
+function rememberActions(pullPath: string, actions: MergeActions): void {
+  const now = Date.now();
+  readActions.delete(pullPath);
+  for (const [path, read] of readActions) if (now - read.at >= RECENT_ACTIONS_MS) readActions.delete(path);
+  readActions.set(pullPath, { actions, at: now });
+  for (const path of readActions.keys()) {
+    if (readActions.size <= READ_ACTIONS_CAP) break;
+    readActions.delete(path);
+  }
+}
+
+function recentActions(pullPath: string): MergeActions | null {
+  const read = readActions.get(pullPath);
+  return read !== undefined && Date.now() - read.at < RECENT_ACTIONS_MS ? read.actions : null;
 }
 
 const TALLY_PARTS: ReadonlyArray<{ readonly key: keyof ReviewTally; readonly icon: string; readonly tone: string }> = [
@@ -1109,6 +1337,15 @@ let hashSince: { readonly hash: string; readonly at: number } | null = null;
  * while it is the reader's own standing verdict.
  */
 function showStatus(state: Mounted): void {
+  if (state.mergedShown !== null && state.mergedShown === state.pullPath) {
+    // Merged and waiting on the reload: a read saying merged (no options), or GitHub's header re-rendered from before
+    // the merge, would otherwise take the merged pill away and show the open label again.
+    closeStatusMenu(state, false);
+    state.pills = syncStatusPills(true, openFromPill);
+    showMergedPills(state.pills);
+    syncOverviewMerge(null, 'SQUASH', { onMerge: () => undefined, onMethod: () => undefined });
+    return;
+  }
   const actions = state.mergeActions;
   if (actions !== null) showVerdict(state, heldVerdict(state) ?? viewerVerdict(actions.box, viewerLogin()));
   const repo = repoOf(state.pullPath);
@@ -1123,21 +1360,52 @@ function showStatus(state: Mounted): void {
   // success dresses them as merged until the reload.
   state.pills = syncStatusPills(on || holding || (state.sending && state.pills.length > 0), openFromPill);
   showInstantMerge(state);
-  if (state.statusMenu !== null && (state.statusOpener === null || !state.pills.includes(state.statusOpener))) closeStatusMenu(state);
+  const overviewMerge = state.sending ? null : overviewMergeOf(actions);
+  syncOverviewMerge(overviewMerge, state.overviewMethod ?? overviewMerge?.methods[0] ?? 'SQUASH', {
+    onMerge: (method, anchor) => openMergeBox(state, null, overviewMerge?.kind === 'bypass', method, anchor),
+    onMethod: (method) => {
+      state.overviewMethod = method;
+      showStatus(state);
+    },
+  });
+  // The menu says what the merge button beside it says: a reading that changed it since it opened is shown at once.
+  if (state.statusMenu !== null && state.statusMenu.dataset.placeholder === undefined && state.statusOpener?.isConnected === true && state.statusMenu.dataset.options !== menuSignature(actions)) refreshOpenMenu(state);
+  if (state.statusMenu !== null && (state.statusOpener === null || !state.pills.includes(state.statusOpener))) {
+    // GitHub re-rendered its header (on the Overview about two seconds into a load, and the mini header as it scrolls)
+    // and the pill with it: the open menu goes to the pill that took its place, standing where the opener stood, rather
+    // than closing under the reader. Until GitHub has rendered that one, the menu stays where it is.
+    const opener = state.statusOpener;
+    const heir = state.pills.find((pill) => pillPlace(pill) === state.statusOpenerPlace) ?? null;
+    if (opener === null || opener.isConnected || state.pills.length === 0) closeStatusMenu(state);
+    else if (heir !== null) {
+      setStatusOpener(state, heir);
+      heir.setAttribute('aria-expanded', 'true');
+      positionStatusMenu(state);
+      // A reading that landed while the menu had no pill skipped it: the menu takes it now.
+      refreshOpenMenu(state);
+    }
+  }
 }
+
+/** A pill clicked before the controls were mounted, whose menu opens once they are. */
+let earlyPillClick: HTMLButtonElement | null = null;
 
 /** Every pill's click: a pill may be put in place before the controls are mounted (`reassertStatusPills`). */
 function openFromPill(pill: HTMLButtonElement, click: MouseEvent): void {
   if (!pill.hasAttribute('aria-haspopup')) return;
-  if (mounted === null) return;
+  // The controls mount on the pass after the pill was put in place: the menu opens then, rather than the click doing nothing.
+  if (mounted === null) {
+    earlyPillClick = pill;
+    return;
+  }
   if (instantMergeReady(mounted) && (MAC ? click.metaKey : click.ctrlKey)) void instantMerge(mounted, pill);
   else toggleStatusMenu(mounted, pill);
 }
 
 /**
- * Whether a held ⌘ (Ctrl) makes the pill a 1-click merge: GitHub would merge
- * it now, for this reader, with its default method, and nobody's request for
- * changes stands. GitHub's answer already holds the repository's rules as
+ * Whether a held ⌘ (Ctrl) makes the pill a 1-click merge: the reader turned
+ * that on (`holdToMerge`), GitHub would merge it now, for this reader, with
+ * its default method, and nobody's request for changes stands. GitHub's answer already holds the repository's rules as
  * they apply to the reader: where approvals are required it is not mergeable
  * without one, and for an admin the rules exempt (or a repository that asks
  * for none) it is mergeable as GitHub's own merge button is. A merge only
@@ -1145,6 +1413,7 @@ function openFromPill(pill: HTMLButtonElement, click: MouseEvent): void {
  * for GitHub's checkbox.
  */
 function instantMergeReady(state: Mounted): boolean {
+  if (state.context.holdToMerge !== true) return false;
   const actions = state.mergeActions;
   // A stacked pull request merges the stack below it too: that wants the merge box's sentence, not a 1-click merge.
   if (actions === null || actions.offer !== 'merge' || actions.box.stacked || state.sending) return false;
@@ -1174,7 +1443,7 @@ function showInstantMerge(state: Mounted): void {
 async function instantMerge(state: Mounted, pill: HTMLButtonElement): Promise<void> {
   closeStatusMenu(state);
   closePanel();
-  state.statusOpener = pill;
+  setStatusOpener(state, pill);
   const pullPath = state.pullPath;
   // What was read may be a minute old: an approval dismissed, a failing check or changes requested since must not merge in one click.
   for (const each of state.pills) each.setAttribute('aria-busy', 'true');
@@ -1201,6 +1470,7 @@ async function instantMerge(state: Mounted, pill: HTMLButtonElement): Promise<vo
  */
 function showMerged(state: Mounted, pullPath: string): void {
   if (mounted !== state || state.pullPath !== pullPath || pullPathOf(window.location.pathname) !== pullPath) return;
+  state.mergedShown = pullPath;
   state.pills = syncStatusPills(true, openFromPill);
   showMergedPills(state.pills);
 }
@@ -1210,13 +1480,17 @@ function showMerged(state: Mounted, pullPath: string): void {
  * (re)rendered gets Geld's pill in the same frame, so its label never shows
  * first and is then pushed aside by the caret. With the controls mounted the
  * merge box decides; before that (the tab bar's counts can render after the
- * header's label) the repository's hint does.
+ * header's label) the repository's hint does. Not before React has hydrated
+ * the header: GitHub's label shows until then (`react-hydration.ts`).
  */
 export function reassertStatusPills(): void {
   const pullPath = pullPathOf(window.location.pathname);
-  if (pullPath === null) return;
+  if (pullPath === null || !headerReactSettled()) return;
   if (mounted !== null && mounted.pullPath === pullPath) {
     showStatus(mounted);
+    // GitHub re-renders its bar (on load, between tabs): the group goes back in the same frame.
+    const bar = persistentBarActions();
+    if (bar !== null && bar.firstElementChild !== mounted.root) place(mounted);
     return;
   }
   const repo = repoOf(pullPath);
@@ -1227,19 +1501,26 @@ function repoOf(pullPath: string): string | null {
   return /^\/([^/]+\/[^/]+)\/pull\//.exec(pullPath)?.[1] ?? null;
 }
 
+/** The pill a menu or a 1-click merge belongs to, and where it stands, for the pill that takes its place. */
+function setStatusOpener(state: Mounted, pill: HTMLButtonElement): void {
+  state.statusOpener = pill;
+  state.statusOpenerPlace = pillPlace(pill);
+}
+
 function toggleStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
   const same = state.statusMenu !== null && state.statusOpener === pill;
   closeStatusMenu(state);
   if (same || state.sending) return;
   closePanel();
-  state.statusOpener = pill;
+  setStatusOpener(state, pill);
   if (state.mergeActions !== null) {
     openStatusMenu(state, pill);
     return;
   }
-  // Opened before the merge box answered (on the hint, or after a read that failed): the read starts first, so the menu
-  // says it is loading, and the options take its place when they land.
-  void loadMergeActions(state);
+  // Opened before the merge box answered (on the hint, or after a read that failed): a read starts unless one is under
+  // way, so the menu says it is loading, and the options take its place when they land. Starting another over the one
+  // under way threw that one's answer away and waited for a whole new read.
+  if (state.mergeInFlight !== state.pullPath) void loadMergeActions(state);
   openStatusMenu(state, pill);
 }
 
@@ -1272,7 +1553,7 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
   const actions = state.mergeActions;
   const groups = stackMenuOf(actions);
   const options = actions === null || groups !== null ? [] : flatStatusOptions(actions);
-  const menu = createElement('div', { class: 'geld-quick-review__menu geld-quick-review__status-menu', [OWN_UI_ATTRIBUTE]: '', role: 'menu', 'aria-label': 'Change status', tabindex: '-1' });
+  const menu = createElement('div', { class: 'geld-quick-review__menu geld-quick-review__status-menu', [OWN_UI_ATTRIBUTE]: '', role: 'menu', 'aria-label': 'Change status', tabindex: '-1', 'data-options': menuSignature(actions) });
   // Nothing to offer still opens, and says why, rather than a click that seems to do nothing.
   if (options.length === 0 && (groups === null || groups.length === 0)) {
     const words = actions !== null ? 'No options available' : state.mergeLoading || state.mergeFor === null ? 'Loading options…' : 'The options could not be read. Try again shortly.';
@@ -1307,9 +1588,14 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
   const openSubmenu = (item: HTMLButtonElement, group: StackGroup, focusFirst: boolean): void => {
     if (submenuFor !== item) {
       closeSubmenu(false);
-      const sub = createElement('div', { class: 'geld-quick-review__menu geld-quick-review__status-menu geld-quick-review__status-submenu', role: 'menu', 'aria-label': group.note });
+      const sub = createElement('div', { class: 'geld-quick-review__menu geld-quick-review__status-menu geld-quick-review__status-submenu', role: 'menu', 'aria-label': group.note, 'data-status': group.status });
       for (const choice of group.choices) {
-        const button = createElement('button', { type: 'button', class: 'geld-quick-review__menu-item', role: 'menuitem', 'data-scope': choice.scope }, [createElement('span', { class: 'geld-quick-review__menu-label' }, [choice.label])]);
+        const counter = choice.count === null ? [] : [createElement('span', { class: 'geld-quick-review__menu-counter', 'aria-hidden': 'true', ...(choice.count.length > 1 ? { 'data-wide': '' } : {}) }, [choice.count])];
+        const button = createElement(
+          'button',
+          { type: 'button', class: 'geld-quick-review__menu-item', role: 'menuitem', 'data-scope': choice.scope, ...(choice.count === null ? {} : { 'aria-label': `${choice.label}, ${choice.count} pull requests` }) },
+          [createElement('span', { class: 'geld-quick-review__menu-label' }, [choice.label]), ...counter],
+        );
         button.addEventListener('click', () => {
           closeStatusMenu(state);
           chooseStackChoice(state, group, choice);
@@ -1334,6 +1620,10 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
     item.addEventListener('pointerenter', () => openSubmenu(item, group, false));
     menu.append(item);
   }
+  // The page's own choices are in; a merge past the rules and the stack's choices that take other members are on their way.
+  if (actions?.partial === true) {
+    menu.append(createElement('div', { class: 'geld-quick-review__menu-item geld-quick-review__menu-empty', role: 'menuitem', 'aria-disabled': 'true', 'data-more-loading': '' }, [createElement('span', { class: 'geld-quick-review__menu-label' }, [groups !== null ? 'Loading stack choices…' : 'Loading more options…'])]));
+  }
   const keys = new AbortController();
   state.statusMenu = menu;
   state.statusMenuKeys = keys;
@@ -1355,9 +1645,10 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
         closeSubmenu(true);
       } else if (event.key === 'Escape') {
         event.preventDefault();
-        const label = pill.previousElementSibling;
+        const opener = state.statusOpener ?? pill;
+        const label = labelBehind(opener);
         closeStatusMenu(state);
-        returnStatusFocus(state, pill, label);
+        returnStatusFocus(state, opener, label);
       } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
         const list = inSubmenu && submenu !== null ? [...submenu.querySelectorAll<HTMLButtonElement>('.geld-quick-review__menu-item')] : items();
@@ -1379,7 +1670,7 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
     'pointerdown',
     (event) => {
       const target = event.target;
-      if (target instanceof Node && (menu.contains(target) || pill.contains(target))) return;
+      if (target instanceof Node && (menu.contains(target) || (state.statusOpener ?? pill).contains(target))) return;
       closeStatusMenu(state);
     },
     { capture: true, signal: keys.signal },
@@ -1389,7 +1680,7 @@ function openStatusMenu(state: Mounted, pill: HTMLButtonElement): void {
     'focusout',
     (event) => {
       const next = event.relatedTarget;
-      if (next instanceof Node && (menu.contains(next) || pill.contains(next))) return;
+      if (next instanceof Node && (menu.contains(next) || (state.statusOpener ?? pill).contains(next))) return;
       closeStatusMenu(state);
     },
     { signal: keys.signal },
@@ -1433,17 +1724,30 @@ function placeSubmenu(item: HTMLElement, submenu: HTMLElement): void {
 function positionStatusMenu(state: Mounted): void {
   const menu = state.statusMenu;
   const pill = state.statusOpener;
-  if (menu === null || pill === null) return;
+  // A pill GitHub took away with its header: the menu waits where it is for the pill that takes its place.
+  if (menu === null || pill === null || !pill.isConnected) return;
   const rect = pill.getBoundingClientRect();
   const left = Math.max(8, Math.min(rect.left, document.documentElement.clientWidth - menu.offsetWidth - 8));
   menu.style.left = `${Math.round(left)}px`;
   menu.style.top = `${Math.round(rect.bottom + 4)}px`;
 }
 
-/** A menu on its placeholder line takes what the read that just finished says: the options, or why there are none. */
-function refreshPlaceholderMenu(state: Mounted): void {
+/** What a status menu offers, to tell whether a fresh read changed it. */
+function menuSignature(actions: MergeActions | null): string {
+  const groups = stackMenuOf(actions);
+  if (groups !== null) return JSON.stringify([actions?.partial === true, groups.map((group) => [group.action, group.note, group.choices.map((choice) => [choice.scope, choice.count, choice.targets.map((target) => target.number)])])]);
+  return JSON.stringify([actions?.partial === true, actions === null ? null : flatStatusOptions(actions).map((option) => [option.action, option.note, option.bypass === true])]);
+}
+
+/**
+ * An open menu takes what the read that just finished says: a placeholder line its options or why there are none, and
+ * a menu built from an earlier reading (one kept from a visit moments ago) the options as they are now, when they changed.
+ */
+function refreshOpenMenu(state: Mounted): void {
   const pill = state.statusOpener;
-  if (state.statusMenu?.dataset.placeholder === undefined || pill === null || !pill.isConnected) return;
+  const menu = state.statusMenu;
+  if (menu === null || pill === null || !pill.isConnected) return;
+  if (menu.dataset.placeholder === undefined && menu.dataset.options === menuSignature(state.mergeActions)) return;
   closeStatusMenu(state, false);
   openStatusMenu(state, pill);
 }
@@ -1548,7 +1852,7 @@ async function runStackChoice(state: Mounted, action: StackAction, choice: Stack
     const request = STACK_REQUEST[action];
     steps = choice.targets.map((member) => ({ number: member.number, request: request(member.path, nonce) }));
   }
-  const done = action === 'merge' ? () => (here() ? showMergedPills(state.pills) : undefined) : undefined;
+  const done = action === 'merge' ? () => showMerged(state, pullPath) : undefined;
   let left = steps;
   const send = async (): Promise<string | null> => {
     if (!here()) return null;
@@ -1603,7 +1907,9 @@ async function runStatus(state: Mounted, action: Exclude<StatusAction, 'merge'>)
 }
 
 function buttonFor(state: Mounted, opener: Opener): HTMLElement | null {
-  return isReviewEvent(opener) ? state.segments[opener] : state.statusOpener;
+  if (isReviewEvent(opener)) return state.segments[opener];
+  // A box opened from the Overview's merge button belongs to that button, for its pressed look and for focus when it closes.
+  return state.panelAnchor?.querySelector<HTMLElement>('.geld-overview-merge__main') ?? state.statusOpener;
 }
 
 function closePanel(restoreFocus = false): void {
@@ -1616,6 +1922,7 @@ function closePanel(restoreFocus = false): void {
   mounted.panelRefresh = null;
   const opener = mounted.opener === null ? null : buttonFor(mounted, mounted.opener);
   mounted.opener = null;
+  mounted.panelAnchor = null;
   opener?.setAttribute('aria-expanded', 'false');
   document.removeEventListener('pointerdown', onOutsidePointer, true);
   window.removeEventListener('resize', positionPanel);
@@ -1628,7 +1935,7 @@ function closePanel(restoreFocus = false): void {
 function onOutsidePointer(event: PointerEvent): void {
   if (mounted === null || mounted.panel === null) return;
   const target = event.target;
-  if (target instanceof Node && (mounted.panel.contains(target) || mounted.root.contains(target) || mounted.pills.some((pill) => pill.contains(target)))) return;
+  if (target instanceof Node && (mounted.panel.contains(target) || mounted.root.contains(target) || mounted.pills.some((pill) => pill.contains(target)) || mounted.panelAnchor?.contains(target) === true)) return;
   closePanel();
 }
 
@@ -1640,10 +1947,12 @@ function onOutsidePointer(event: PointerEvent): void {
 function positionPanel(): void {
   if (mounted === null || mounted.panel === null) return;
   // A box chosen from the status pill hangs under the pill, its left edge on the pill's; the review boxes under the group.
-  const pill = mounted.opener !== null && !isReviewEvent(mounted.opener) && mounted.statusOpener?.isConnected === true ? mounted.statusOpener : null;
-  const anchor = pill ?? mounted.root;
+  // One from the Overview's merge button hangs under that button, its right edge on the button's.
+  const button = mounted.panelAnchor?.isConnected === true ? mounted.panelAnchor : null;
+  const pill = button === null && mounted.opener !== null && !isReviewEvent(mounted.opener) && mounted.statusOpener?.isConnected === true ? mounted.statusOpener : null;
+  const anchor = button ?? pill ?? mounted.root;
   if (!anchor.isConnected) return;
-  const fixed = pill === null ? mounted.root.hasAttribute(ATTR_PLACE) : pill.closest(STICKY_HEADERS) !== null;
+  const fixed = button !== null ? false : pill === null ? mounted.root.hasAttribute(ATTR_PLACE) : pill.closest(STICKY_HEADERS) !== null;
   const rect = anchor.getBoundingClientRect();
   const width = mounted.panel.offsetWidth;
   const left = Math.max(16, Math.min(pill === null ? rect.right - width : rect.left, document.documentElement.clientWidth - width - 16));
@@ -1694,11 +2003,12 @@ function fitField(panel: HTMLElement, room: number): void {
 /** Placed again as the box changes size (the writer arriving, a reason shown, pending comments opening): one over its anchor grows upward. */
 let panelResize: ResizeObserver | null = null;
 
-function showPanel(state: Mounted, panel: HTMLElement, opener: Opener): void {
+function showPanel(state: Mounted, panel: HTMLElement, opener: Opener, anchor: HTMLElement | null = null): void {
   closePanel();
   closeStatusMenu(state);
   state.panel = panel;
   state.opener = opener;
+  state.panelAnchor = anchor;
   buttonFor(state, opener)?.setAttribute('aria-expanded', 'true');
   document.body.append(panel);
   panelResize = new ResizeObserver(() => positionPanel());
@@ -1820,12 +2130,12 @@ async function sendReview(state: Mounted, event: ReviewEvent, body: string): Pro
   }
 }
 
-/** Run what follows an accepted write; its failure is logged, since GitHub already took the write. */
-function afterSent(what: string, update: () => void): void {
+/** Run what follows an accepted write; its failure is reported, since GitHub already took the write. */
+function afterSent(what: 'review' | 'comment', update: () => void): void {
   try {
     update();
   } catch (error) {
-    console.warn(`[geld] GitHub took the ${what}, but updating the page afterwards failed`, error);
+    reportError(`quick-review:after-${what}`, error);
   }
 }
 
@@ -2291,7 +2601,12 @@ async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Ste
           const response = await pageFetch(step.request.url, step.request.init);
           const payload: unknown = await response.json().catch(() => null);
           const refused = typeof payload === 'object' && payload !== null && Reflect.get(payload, 'status') === 'failed';
-          return !response.ok || refused ? actionErrorText(kind, response.status, payload) : null;
+          if (!response.ok || refused) return actionErrorText(kind, response.status, payload);
+          const stackPath = isStackRequest(step.request.url) ? pullPathOf(step.request.url) : null;
+          // A stack merge can be answered while GitHub is still merging it, the page's own pull request last when merged
+          // from the top: reloaded then, the page came back open and the pill turned back from merged.
+          const settled = stackPath === null ? null : await settleStackMerge(stackPath, payload, here);
+          return settled === null ? null : actionErrorText(kind, settled.status, settled.payload);
         } catch {
           return actionErrorText(kind, 0, null);
         }
@@ -2309,7 +2624,8 @@ async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Ste
     if (!here()) return null;
     done();
     if (inPlace === undefined) {
-      window.location.reload();
+      if (kind === 'merge' && steps.some((step) => isStackRequest(step.request.url))) await awaitMergedState(state.pullPath, here);
+      if (here()) window.location.reload();
       return null;
     }
     showDone(state, inPlace.done);
@@ -2336,22 +2652,23 @@ async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Ste
  * take it, GitHub's own checkbox, which the confirmation waits on. Read
  * afresh as it opens, since checks and reviews land meanwhile.
  */
-function openMergeBox(state: Mounted, failure: string | null = null, pastRules = false): void {
+function openMergeBox(state: Mounted, failure: string | null = null, pastRules = false, initial: MergeMethod | null = null, anchor: HTMLElement | null = null): void {
   const pullPath = state.pullPath;
   const known = state.mergeActions;
   if (known === null || known.offer === null) return;
   const bypass = pastRules || known.offer === 'bypass';
   // Past the rules a queue's repository may allow no direct method otherwise: the box read past them lists them.
   const methods = bypass && known.bypassMethods.length > 0 ? known.bypassMethods : known.box.methods;
-  let method: MergeMethod = methods[0] ?? 'SQUASH';
+  let method: MergeMethod = initial !== null && methods.includes(initial) ? initial : (methods[0] ?? 'SQUASH');
   let box: MergeBox = known.box;
   // The method `box`'s commit was written for: until the chosen method's has come, the confirmation waits.
-  let boxFor: MergeMethod = known.box.methods[0] ?? 'SQUASH';
+  let boxFor: MergeMethod = known.box.methods[0] ?? known.box.bypassMethods[0] ?? 'SQUASH';
   // False after a failed read: `box` then holds another method's commit, which must not fill the fields.
   let commitFresh = true;
   let edited = false;
 
   const select = createElement('select', { class: 'form-select select-sm geld-quick-review__method', 'aria-label': 'Merge method' }, methods.map((name) => createElement('option', { value: name }, [METHOD_LABEL[name]])));
+  select.value = method;
   select.hidden = methods.length < 2;
   const title = createElement('input', { type: 'text', class: 'form-control input-sm width-full geld-quick-review__commit-title', 'aria-label': 'Commit message' });
   const message = createElement('textarea', { class: 'form-control width-full geld-quick-review__body geld-quick-review__commit-body', 'aria-label': 'Extended description', rows: '4' });
@@ -2440,7 +2757,7 @@ function openMergeBox(state: Mounted, failure: string | null = null, pastRules =
   cancel.addEventListener('click', () => closePanel(true));
   submit.addEventListener('click', () => void send());
 
-  showPanel(state, panel, 'merge');
+  showPanel(state, panel, 'merge', anchor);
   state.panelRefresh = refresh;
   fill();
   refresh();
