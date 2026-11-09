@@ -5,7 +5,6 @@ import { defineBackground } from 'wxt/utils/define-background';
 import { parseUnifiedDiff } from '@geld/core';
 import { completeChat, decisionModelsPath, evaluateDecision, listModels, servesDecisions, TYPESAFE_API } from '@geld/review';
 import { handleAccountMessage, startAccountSync } from '../src/lib/account-service';
-import { actionIconPaths } from '../src/lib/action-icon';
 import { checkCatalog, startCatalogUpdates } from '../src/lib/catalog';
 import { syncEnterpriseHosts } from '../src/lib/enterprise';
 import { hasGatewayPermission } from '../src/lib/ai-gateway';
@@ -22,7 +21,6 @@ import {
   isAiEvaluateRequest,
   isAiModelsRequest,
   isCatalogCheckMessage,
-  isColorSchemeMessage,
   isEnsureContentMessage,
   isErrorReportMessage,
   isFetchDiffRequest,
@@ -451,42 +449,6 @@ async function readWithLimit(response: Response, limit: number): Promise<string>
 }
 
 /**
- * Toolbar icon theming. Chrome/Edge MV3 service workers have no `matchMedia`,
- * so an offscreen document (reason MATCH_MEDIA) watches the colour scheme and
- * reports back; we then swap between the black and white marks. Firefox uses
- * `theme_icons` from the manifest and Safari tints template icons itself, so
- * neither needs this.
- */
-const USES_OFFSCREEN_THEME_PROBE = import.meta.env.MANIFEST_VERSION === 3 && (import.meta.env.CHROME || import.meta.env.EDGE);
-
-let offscreenCreation: Promise<void> | null = null;
-
-async function ensureThemeProbe(): Promise<void> {
-  if (!USES_OFFSCREEN_THEME_PROBE) return;
-  if (offscreenCreation !== null) return offscreenCreation;
-  offscreenCreation = (async () => {
-    try {
-      const contexts = await browser.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
-      if (contexts.length > 0) return;
-      await browser.offscreen.createDocument({
-        url: browser.runtime.getURL('/offscreen.html'),
-        reasons: ['MATCH_MEDIA'],
-        justification: 'Detect the light/dark colour scheme to pick a legible toolbar icon.',
-      });
-    } catch {
-      // Already exists or unsupported; the manifest's default icon stays in place.
-    } finally {
-      offscreenCreation = null;
-    }
-  })();
-  return offscreenCreation;
-}
-
-function applyToolbarIcon(dark: boolean): void {
-  void browser.action.setIcon({ path: actionIconPaths(dark ? 'white' : 'black') }).catch(() => undefined);
-}
-
-/**
  * The digest's gear: the toolbar popup over the tab that asked, else the options page. Chrome and Edge open the popup
  * from here; Firefox opens it only from the extension's own user actions (and its MV2 build has no `action`), and
  * Safari may not offer it, so a refusal falls back.
@@ -573,10 +535,6 @@ export default defineBackground(() => {
     if(isTrackerStatusRequest(message)){void readTrackerStatuses(message,sender.url??sender.tab?.url).then(sendResponse);return true;}
     if (isErrorReportMessage(message)) {
       void queueErrorReports(message.errors).catch(() => undefined);
-      return undefined;
-    }
-    if (isColorSchemeMessage(message)) {
-      applyToolbarIcon(message.dark);
       return undefined;
     }
     if (isClearDiffCacheMessage(message)) {
@@ -706,12 +664,6 @@ export default defineBackground(() => {
   // daily so patterns can improve without a store release.
   startCatalogUpdates();
 
-  // Store builds compile this away: only `--mode nightly` ships the updater (see wxt.config.ts).
+  // Store builds compile this away: only a self-updating nightly build ships the updater (see wxt.config.ts).
   if (__GELD_NIGHTLY__) startNightly();
-
-  if (USES_OFFSCREEN_THEME_PROBE) {
-    browser.runtime.onInstalled.addListener(() => void ensureThemeProbe());
-    browser.runtime.onStartup.addListener(() => void ensureThemeProbe());
-    void ensureThemeProbe();
-  }
 });

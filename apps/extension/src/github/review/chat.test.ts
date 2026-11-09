@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
-import { botCommentControls, dressArrivals, hideAgentRerunControls, messagesIn, parkChats, releaseParkedChats, renderChatView, takeAgentViewLink, threadLinesOf } from './chat';
+import { botCommentControls, chatNeedsRedress, dressArrivals, hideAgentRerunControls, messagesIn, parkChats, releaseParkedChats, renderChatView, renderCommentChat, takeAgentViewLink, threadLinesOf } from './chat';
 
 /**
  * Two shapes carry the `minimized-comment` class. A review's own body card
@@ -215,6 +215,109 @@ describe('dressArrivals', () => {
     expect(reply.querySelector('[data-geld-part="bubble"]')).not.toBeNull();
     // Nothing left to dress: the pass that follows has no reason to rebuild the chat.
     expect(dressArrivals(document)).toBe(false);
+  });
+});
+
+/**
+ * An Overview thread comment as GitHub's bundle builds it (Nov 2026): the header in its inner container, then the
+ * wrapper (the bubble) holding the body's container while the comment is shown and the editor while it is edited.
+ * The body's container holds the words and, beside them, the reactions toolbar with the picker's button.
+ */
+const OVERVIEW_VIEW = `<div class="BodyHTMLContainer__vHY_bu"><div><div class="markdown-body"><p>A note.</p></div></div><div class="d-flex flex-direction-column gap-2"><div class="d-flex flex-direction-column mt-2"><div role="toolbar" aria-label="Reactions for octocat's comment"><button type="button" aria-label="👍 1 reaction">👍 1</button><button type="button" class="ReactionViewerAnchorButton__BIXMSn" aria-label="Add reaction">☺</button></div></div></div></div>`;
+const OVERVIEW_THREAD = `<article><div class="header__x"><div><h2><a href="/o/r/pull/1/changes#r42">\u200esrc/a.ts</a></h2></div></div><div data-testid="review-thread"><div id="discussion_r42" class="ReviewThreadContainer__zrJcUC"><div class="ReviewThreadInnerContainer__cag4y4"><div data-testid="comment-header"><a data-testid="author-link" href="/octocat">octocat</a><button type="button" aria-label="More actions for octocat's comment, 2 days ago">⋯</button></div></div><div class="ReviewThreadWrapper__vspFQB" id="wrapper">${OVERVIEW_VIEW}</div></div></div></article>`;
+
+describe("a comment's controls after GitHub redraws it", () => {
+  const handlers = { pathOf: () => 'src/a.ts', onCopy: () => undefined, sourceOf: () => null, sourceOpen: () => false, onToggleSource: () => undefined, onOpenAnchor: () => undefined };
+  const render = (html: string): { slot: HTMLElement; message: HTMLElement } => {
+    document.body.innerHTML = `<div id="home">${html}</div><section class="geld-review"><div id="slot"></div></section>`;
+    const thread = document.querySelector('#home > *');
+    const slot = document.getElementById('slot');
+    if (!(thread instanceof HTMLElement) || slot === null) throw new Error('fixture');
+    renderChatView(slot, [thread], handlers);
+    const message = slot.querySelector<HTMLElement>('[data-geld-message]');
+    if (message === null) throw new Error('fixture has no message');
+    return { slot, message };
+  };
+  const sideOf = (message: HTMLElement): readonly string[] =>
+    [...(message.querySelector(':scope > .geld-review__msg-side')?.children ?? [])].map((slot) => slot.querySelector('button')?.getAttribute('aria-label') ?? '');
+  const bubbleOf = (message: HTMLElement): HTMLElement => {
+    const bubble = message.querySelector<HTMLElement>(':scope > [data-geld-part="bubble"]');
+    if (bubble === null) throw new Error('message has no bubble');
+    return bubble;
+  };
+
+  it('puts the Overview\'s reaction button back on the side when its editor closes', () => {
+    const { slot, message } = render(OVERVIEW_THREAD);
+    expect(sideOf(message)).toEqual(['Add reaction', "More actions for octocat's comment, 2 days ago"]);
+    expect(message.querySelector(':scope > .geld-review__msg-reactions [role="toolbar"]')).not.toBeNull();
+    const wrapper = bubbleOf(message);
+    // Edit: React drops the body's container from the wrapper, placeholders and all, and mounts the editor.
+    wrapper.replaceChildren(parse('<div class="flex-1"><textarea aria-label="Update comment"></textarea><button type="button">Cancel</button></div>'));
+    expect(dressArrivals(document)).toBe(true);
+    // The discarded copies leave with their home: no pills under the editor, no dead reaction button beside it.
+    expect(message.querySelector('.geld-review__msg-reactions')).toBeNull();
+    expect(sideOf(message)).toEqual(["More actions for octocat's comment, 2 days ago"]);
+    expect(document.querySelectorAll('button[class*="ReactionViewerAnchorButton"]')).toHaveLength(0);
+    // Cancel: a fresh body's container, its reaction button inside the bubble again.
+    wrapper.replaceChildren(parse(OVERVIEW_VIEW));
+    expect(chatNeedsRedress(slot.querySelector<HTMLElement>('.geld-review__chat') ?? message)).toBe(true);
+    expect(dressArrivals(document)).toBe(true);
+    expect(sideOf(message)).toEqual(['Add reaction', "More actions for octocat's comment, 2 days ago"]);
+    expect(wrapper.querySelector('button[class*="ReactionViewerAnchorButton"]')).toBeNull();
+    expect(document.querySelectorAll('button[class*="ReactionViewerAnchorButton"]')).toHaveLength(1);
+    expect(message.querySelectorAll(':scope > .geld-review__msg-reactions')).toHaveLength(1);
+    expect(message.querySelector(':scope > .geld-review__msg-reactions [role="toolbar"]')).not.toBeNull();
+    // Settled: the pass that follows finds nothing to redress, and nothing more to dress.
+    expect(chatNeedsRedress(slot.querySelector<HTMLElement>('.geld-review__chat') ?? message)).toBe(false);
+    expect(dressArrivals(document)).toBe(false);
+    releaseParkedChats();
+  });
+
+  it('puts back a reaction button React made anew inside the toolbar that stands under the bubble', () => {
+    const { message } = render(OVERVIEW_THREAD);
+    const toolbar = message.querySelector<HTMLElement>('.geld-review__msg-reactions [role="toolbar"]');
+    const old = message.querySelector<HTMLElement>('.geld-review__msg-side button[class*="ReactionViewerAnchorButton"]');
+    if (toolbar === null || old === null) throw new Error('fixture');
+    // What the portal's guard does for React: the loaned button goes, the new one lands in its parent.
+    old.remove();
+    toolbar.append(parse('<button type="button" class="ReactionViewerAnchorButton__BIXMSn" aria-label="Add reaction">☺</button>'));
+    expect(dressArrivals(document)).toBe(true);
+    expect(sideOf(message)).toEqual(['Add reaction', "More actions for octocat's comment, 2 days ago"]);
+    expect(toolbar.querySelector('button[class*="ReactionViewerAnchorButton"]')).toBeNull();
+    releaseParkedChats();
+  });
+
+  it('leaves a one-bubble comment\'s controls where they are when GitHub draws it again', () => {
+    document.body.innerHTML = `<div id="home"><article id="issuecomment-7"><div data-testid="comment-header"><a data-testid="avatar-link" href="/octocat">octocat</a><button type="button" aria-label="More actions for octocat's comment, 2 days ago">⋯</button></div><div class="body" id="body">${OVERVIEW_VIEW}</div></article></div><section class="geld-review"><div id="slot"></div></section>`;
+    const slot = document.getElementById('slot');
+    const comment = document.getElementById('issuecomment-7');
+    const body = document.getElementById('body');
+    if (slot === null || comment === null || body === null) throw new Error('fixture');
+    // The row above wears its ⋯ and the reactions stay in the bubble: nothing moves, before or after a redraw.
+    renderCommentChat(slot, comment);
+    body.replaceChildren(parse(OVERVIEW_VIEW));
+    expect(dressArrivals(document)).toBe(false);
+    expect(comment.querySelector('.geld-review__msg-side')).toBeNull();
+    expect(body.querySelector('button[class*="ReactionViewerAnchorButton"]')).not.toBeNull();
+    expect(chatNeedsRedress(slot.querySelector<HTMLElement>('.geld-review__chat') ?? comment)).toBe(false);
+    releaseParkedChats();
+  });
+
+  it('leaves a classic comment\'s controls on the side through Edit, Cancel and Update', () => {
+    const { message } = render(`<div class="js-resolvable-timeline-thread-container"><div id="discussion_r42" class="review-comment js-comment"><div class="timeline-comment-header"><a class="author" href="/octocat">octocat</a><div class="timeline-comment-actions"><details class="details-overlay"><summary aria-label="Show options">⋯</summary><details-menu class="dropdown-menu"><button type="button" class="js-comment-edit-button">Edit</button></details-menu></details></div></div><div class="edit-comment-hide"><task-lists><div class="comment-body markdown-body js-comment-body"><p>A note.</p></div></task-lists></div><div class="comment-reactions js-reactions-container"><reactions-menu><details class="js-add-reaction"><summary id="react-42" aria-label="Add reaction">☺</summary></details></reactions-menu></div><div class="js-comment-update-fragment"></div></div></div>`);
+    const placed = (): readonly string[] => [...(message.querySelector(':scope > .geld-review__msg-side')?.children ?? [])].map((slot) => slot.querySelector('summary')?.getAttribute('aria-label') ?? '');
+    expect(placed()).toEqual(['Add reaction', 'Show options']);
+    // GitHub's Edit and Cancel toggle a class, its deferred edit form lands once, and Update rewrites the body's HTML.
+    message.classList.add('is-comment-editing');
+    message.querySelector('.js-comment-update-fragment')?.replaceWith(parse('<form class="js-comment-update"><textarea></textarea><button type="button" class="js-comment-cancel-button">Cancel</button></form>'));
+    expect(dressArrivals(document)).toBe(false);
+    message.classList.remove('is-comment-editing');
+    const body = message.querySelector('.js-comment-body');
+    if (body !== null) body.innerHTML = '<p>A better note.</p>';
+    expect(dressArrivals(document)).toBe(false);
+    expect(placed()).toEqual(['Add reaction', 'Show options']);
+    expect(message.querySelector('[data-geld-part="bubble"] summary')).toBeNull();
+    releaseParkedChats();
   });
 });
 

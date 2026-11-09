@@ -23,6 +23,8 @@ import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, comm
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
+import type { CommentMention } from './crawler';
+import { byMentionTime } from './references';
 import { crawlConversation } from './crawler';
 import type { Deployment, DeploymentEntry } from './deployments';
 import { deploymentEntries, deploymentOf, deploymentsOfPreview, environmentLabel, pinnedToBuild, previewLinks } from './deployments';
@@ -53,7 +55,7 @@ import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiv
 import type { BotRequestClick } from './bot-requests';
 import { awaitingReaction, botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
 import { pollTriggerReactions, resetTriggerReactions, withFetchedReactions } from './trigger-reactions';
-import { AGENT_NOTES_KEY, ATTR_CHECK_RUNS, ATTR_CTL_SLOT, ATTR_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, descriptionCard, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, reseatPanelNow, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderCheckRunsList, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel, renderDeploymentsList, renderPreviewsList, DEPLOYMENTS_KEY, whoAttributes } from './panel';
+import { AGENT_NOTES_KEY, ATTR_CHECK_RUNS, ATTR_CTL_SLOT, ATTR_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, descriptionCard, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, reseatPanelNow, openRowGroup, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderCheckRunsList, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel, renderDeploymentsList, renderPreviewsList, DEPLOYMENTS_KEY, whoAttributes } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setNoteProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -160,12 +162,21 @@ interface VisitState {
   /** Items marked done here when neither GitHub's Resolve nor a summary checkbox could take it. */
   manualDone: Set<string>;
   /**
-   * A thread on loan to the panel just changed state (Resolve was pressed in
-   * it): the item row that was open, and until when to wait for the crawl to
-   * see the change, so the settled item - and its round, once nothing in it
-   * is open - can be closed for the reader.
+   * The open round's anchors and commit rows, read while its key is found: a round's identity can shift while the
+   * timeline streams in (an earlier commit row or comment arrives), and the round that shares them takes the key.
    */
-  settling: { readonly itemKey: string | null; readonly until: number; readonly wasOpen: boolean } | null;
+  openRoundMarks: { readonly key: string; readonly anchors: ReadonlySet<string>; readonly commits: ReadonlySet<HTMLElement> } | null;
+  /**
+   * The open row and the group it was listed under at the last render. A row the page moved into another group (a
+   * push made its round a past one, its last thread was resolved) opens that group, so it never folds away under
+   * the reader; a group the reader folds over their own open row stays folded.
+   */
+  openSeat: { readonly key: string; readonly group: GroupId | null } | null;
+  /**
+   * A thread on loan to the panel just changed state (Resolve pressed in it, or anyone resolving it): the item that
+   * was open, and until when to keep reading so the row shows the new state. Nothing closes for it.
+   */
+  settling: { readonly itemKey: string | null; readonly until: number } | null;
   /**
    * The open comment line's words, as they read when it opened. Its node is on
    * loan to the panel while open, and some of what the crawl reads from it -
@@ -210,6 +221,8 @@ const visit: VisitState = {
   flash: null,
   openSubMissingSince: null,
   openItemAnchors: null,
+  openRoundMarks: null,
+  openSeat: null,
   knownRequired: null,
   lastReviews: null,
   checksExpanded: false,
@@ -381,11 +394,8 @@ function watchLoans(root: Element): void {
     // for some other reason sent the loan home (mint#12367).
     const swapped = adoptReplacements(records);
     if (!swapped && !records.some(touchesThreadState)) return;
-    // Only a thread that was open a moment ago can settle: opening an already-resolved thread also mutates its
-    // loaned node (GitHub finishes rendering it), and that must not close the row the reader just opened.
     const key = visit.openSubKey?.startsWith('item:') === true ? visit.openSubKey : visit.openKey?.startsWith('item:') === true ? visit.openKey : null;
-    const row = key === null ? null : document.querySelector(`.geld-review__row[data-geld-item="${CSS.escape(key.slice('item:'.length))}"]`);
-    visit.settling = { itemKey: key, until: Date.now() + 15_000, wasOpen: row !== null && row.getAttribute('data-state') !== 'done' };
+    visit.settling = { itemKey: key, until: Date.now() + 15_000 };
     reapplySoon();
   });
   loanWatcher.observe(root, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['data-resolved', 'aria-pressed', 'aria-label', 'hidden'] });
@@ -403,8 +413,8 @@ function unwatchLoans(): void {
  * few times over the next seconds; each pass is cheap and settles once the
  * crawl sees the new state.
  */
-function reapplyAfterResolve(itemKeyHint: string | null, resolving: boolean): void {
-  visit.settling = { itemKey: itemKeyHint, until: Date.now() + 15_000, wasOpen: resolving };
+function reapplyAfterResolve(itemKeyHint: string | null): void {
+  visit.settling = { itemKey: itemKeyHint, until: Date.now() + 15_000 };
   for (const delay of [300, 900, 2000, 4000]) {
     window.setTimeout(() => {
       if (visit.settling !== null) reapplyNow();
@@ -427,7 +437,7 @@ function reseatOpenLine(batches: readonly Batch[]): void {
   const current = batches.find((batch) => batch.key === visit.openKey);
   if (current !== undefined && holds(current)) return;
   const home = batches.find(holds);
-  if (home !== undefined) visit.openKey = home.key;
+  if (home !== undefined && visit.openKey !== null) renameOpenRound(visit.openKey, home.key);
 }
 
 /**
@@ -464,10 +474,13 @@ function reseatOpenItem(meta: GeldPrMeta): void {
   if (remembered === null || remembered.key !== key) return;
   const successor = meta.items.find((item) => item.sources.some((source) => remembered.anchors.has(source.anchor)));
   if (successor === undefined) return;
-  visit[field] = itemKey(successor.id);
-  visit.openItemAnchors = { key: visit[field], anchors: new Set(successor.sources.map((source) => source.anchor)) };
+  const next = itemKey(successor.id);
+  moveOpenSeat(key, () => {
+    visit[field] = next;
+  });
+  visit.openItemAnchors = { key: next, anchors: new Set(successor.sources.map((source) => source.anchor)) };
   // A settle armed for the old key (the reply mutated the loaned node) is about this same conversation.
-  if (visit.settling !== null && visit.settling.itemKey === key) visit.settling = { ...visit.settling, itemKey: visit[field] };
+  if (visit.settling !== null && visit.settling.itemKey === key) visit.settling = { ...visit.settling, itemKey: next };
 }
 
 /**
@@ -498,27 +511,89 @@ function openLineStillMissing(): boolean {
   return true;
 }
 
-/** After a thread changed state under the reader: close the item once it is done, and its round once nothing in it is open. */
-function settleAfterResolve(meta: GeldPrMeta, batches: readonly Batch[]): void {
+/**
+ * After a thread changed state under the reader: the re-reads stop once the crawl sees it. The thread and its round
+ * stay open, whoever resolved it; by push a thread that leaves Needs attention opens inside its push instead.
+ */
+function settleAfterResolve(meta: GeldPrMeta, batches: readonly Batch[], grouping: GeldSettings['reviewGrouping']): void {
   const settling = visit.settling;
   if (settling === null) return;
-  if (Date.now() > settling.until || settling.itemKey === null || !settling.wasOpen) {
+  if (Date.now() > settling.until || settling.itemKey === null) {
     visit.settling = null;
     return;
   }
   const item = meta.items.find((entry) => itemKey(entry.id) === settling.itemKey);
   if (item === undefined || isOpenStatus(item.status)) return;
   visit.settling = null;
-  const batch = batches.find((entry) => entry.items.includes(item));
-  if (batch === undefined || batch.items.every((entry) => !isOpenStatus(entry.status))) {
-    // The round is settled: it closes, and by type it joins the settled rounds.
-    visit.openKey = null;
-    visit.openSubKey = null;
-  } else if (visit.openSubKey === settling.itemKey) {
-    visit.openSubKey = null;
-  } else if (visit.openKey === settling.itemKey) {
-    visit.openKey = null;
+  if (grouping !== 'batch' || visit.openKey !== settling.itemKey) return;
+  const push = batches.find((entry) => entry.items.includes(item));
+  if (push !== undefined) moveOpenSeat(settling.itemKey, () => openRow(push.key, batches, grouping, settling.itemKey));
+}
+
+/** Reseat the open key without it reading as the reader's choice: the row keeps following its group (`followOpenRow`). */
+function moveOpenSeat(from: string, reseat: () => void): void {
+  reseat();
+  const seat = visit.openSeat;
+  if (seat !== null && seat.key === from && visit.openKey !== null) visit.openSeat = { ...seat, key: visit.openKey };
+}
+
+/** The open round under its new key, with what was unfolded inside it (its commits, its previews) and its seat. */
+function renameOpenRound(from: string, to: string): void {
+  moveOpenSeat(from, () => {
+    visit.openKey = to;
+  });
+  for (const unfolded of [visit.openCommits, visit.openPreviews]) {
+    if (unfolded.delete(from)) unfolded.add(to);
   }
+}
+
+function roundMarks(batch: Batch): { readonly anchors: ReadonlySet<string>; readonly commits: ReadonlySet<HTMLElement> } {
+  const anchors = new Set<string>([...batch.items.flatMap((item) => item.sources.map((source) => source.anchor)), ...batch.comments.map((entry) => entry.anchor), ...batch.reviews.map((entry) => entry.anchor)]);
+  if (batch.firstAnchor !== null) anchors.add(batch.firstAnchor);
+  return { anchors, commits: new Set(batch.commits) };
+}
+
+/**
+ * The open round follows its content. Its key comes from its first commit row or comment, and while the timeline
+ * streams in (a "Load more", deferred fragments, a rewritten commit seated earlier) that first entry can change,
+ * so the key the reader opened matched nothing and the round closed under them. While the key is found its commit
+ * rows and anchors are remembered under it; when it is not, the round that shares its commit rows, else the most of
+ * its anchors, is the same round and takes the key.
+ */
+function reseatOpenRound(batches: readonly Batch[]): void {
+  const key = visit.openKey;
+  if (key === null || !key.startsWith('batch:')) {
+    visit.openRoundMarks = null;
+    return;
+  }
+  const found = batches.find((batch) => batch.key === key);
+  if (found !== undefined) {
+    visit.openRoundMarks = { key, ...roundMarks(found) };
+    return;
+  }
+  const remembered = visit.openRoundMarks;
+  if (remembered === null || remembered.key !== key) return;
+  const shared = (batch: Batch): number => [...roundMarks(batch).anchors].filter((anchor) => remembered.anchors.has(anchor)).length;
+  const successor =
+    batches.find((batch) => batch.commits.some((row) => remembered.commits.has(row))) ??
+    batches.reduce<Batch | undefined>((best, batch) => (shared(batch) > (best === undefined ? 0 : shared(best)) ? batch : best), undefined);
+  if (successor === undefined) return;
+  renameOpenRound(key, successor.key);
+  visit.openRoundMarks = { key: successor.key, ...roundMarks(successor) };
+}
+
+/**
+ * The open row's group, kept unfolded when the page moved the row into it: by type a round that a new push made a
+ * past one, or whose last thread was resolved, joins the settled rounds, folded by default, and the reader's open
+ * round (and the thread open in it) went with it. Only a move counts: a group the reader folds over their open row
+ * stays folded, and a row they open is unfolded by `openRow`.
+ */
+function followOpenRow(model: PanelModel): void {
+  const key = visit.openKey;
+  const group = key === null ? null : openRowGroup(model);
+  const seat = visit.openSeat;
+  if (key !== null && seat !== null && seat.key === key && group !== null && group !== seat.group) visit.collapsedGroups.delete(group);
+  visit.openSeat = key === null ? null : { key, group };
 }
 
 function hideSummary(root: HTMLElement | null): void {
@@ -883,6 +958,35 @@ function withoutHidden(meta: GeldPrMeta, hidden: HiddenPeople, authorOfAnchor: (
 function withManualDone(meta: GeldPrMeta): GeldPrMeta {
   if (visit.manualDone.size === 0) return meta;
   return { ...meta, items: meta.items.map((item) => (visit.manualDone.has(item.id) && isOpenStatus(item.status) ? { ...item, status: 'done-manual' } : item)) };
+}
+
+/** What the comments link to, read each pass in timeline order: the description's own links are `descriptionMentions`'. */
+let commentMentions: readonly CommentMention[] = [];
+
+/**
+ * What this pull request mentions: the description's references, then each one its comments add (people's and bots'
+ * alike), oldest first, once each at its first mention, with who made it and when on its line when `withAuthor`.
+ */
+function conversationMentions(withAuthor = false): readonly MentionLine[] {
+  const self = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(location.pathname);
+  const selfRef = self === null ? null : `${self[1]}/${self[2]}#${self[3]}`.toLowerCase();
+  const fromDescription = descriptionMentions(withAuthor);
+  const seen = new Set(fromDescription.map((line) => line.ref.toLowerCase()));
+  const lines = [...fromDescription];
+  for (const mention of commentMentions) {
+    const key = mention.ref.toLowerCase();
+    if (key === selfRef || seen.has(key)) continue;
+    seen.add(key);
+    const { login, bot } = mention.author;
+    const avatar =
+      !withAuthor || mention.avatarSrc === null
+        ? null
+        : createElement('a', { class: 'geld-review__mention-who', href: bot ? `/apps/${login.replace(/\[bot\]$/, '')}` : `/${login}`, ...whoAttributes(login, bot) }, [
+            createElement('img', { class: 'geld-review__avatar', 'data-kind': bot ? 'bot' : 'user', src: mention.avatarSrc, alt: `@${login}`, width: '20', height: '20' }),
+          ]);
+    lines.push({ href: mention.href, ref: mention.ref, title: mention.title, state: mention.discussion ? 'discussion' : 'unknown', avatar, time: '', ...(mention.at === '' ? {} : { at: mention.at }) });
+  }
+  return lines;
 }
 
 /** What the description mentions, with its author's picture on each line when `withAuthor` (only the open view shows it). */
@@ -3214,6 +3318,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     visit.flash = null;
     visit.openSubMissingSince = null;
     visit.openItemAnchors = null;
+    visit.openRoundMarks = null;
+    visit.openSeat = null;
     visit.knownRequired = null;
     resetRefs();
     resetWholePaths();
@@ -3265,6 +3371,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       return false;
     }),
   };
+  // By each mention's own author: a thread is kept or dropped by who opened it, and its replies may be anyone's.
+  commentMentions = byMentionTime(crawledAll.comments.flatMap((entry) => entry.mentions).filter((mention) => !hidden.hides(mention.author.login, mention.author.bot, mention.avatarSrc)));
   const rawComments: readonly RawComment[] = crawledDom.comments.map((entry) => entry.comment);
   sourceFacts = new Map(
     crawledDom.comments
@@ -3273,7 +3381,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         const botId = entry.author.bot ? resolveBotId(entry.author.login, settings.reviewBots) : null;
         // What `verdictsFrom` counts as a bot's report: not a status line or a trigger, and from a coding agent that
         // also chats (Replicas) only a review-shaped comment.
-        const parsed = botId === null ? null : parseBotBody(entry.comment.body, botId.startsWith('custom:') ? '' : botId);
+        const parsed = botId === null ? null : parseBotBody(entry.comment.body, botId.startsWith('custom:') ? '' : botId, entry.comment.anchor);
         const reviewShaped = parsed === null || botById(botId ?? '')?.conversational !== true || isReviewShaped(parsed);
         // A refusal ("Skipping Bugbot: …") is review-shaped but not a report — `verdictsFrom` keeps the bot's earlier
         // real review as its last run, so a refusal must not count as a summary, or `botSummaryFor` would offer it as
@@ -3463,8 +3571,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const claimed = new Set<HTMLElement>(foldTargets.flatMap((group) => [...group.nodes]));
   const leftoverList = phase('leftovers', () => crawlLeftovers(claimed, threadCommentsComing));
   if (hidingTimeline) {
-    // With the description's mentions, the Overview's incoming ones read from its timeline data: neither has a row of the page's.
-    const leftovers = groupLeftovers(leftoverList, [...descriptionMentions(), ...incomingReadMentions()].map((line) => `${line.href} ${line.title} ${line.state}`));
+    // With what the description and comments mention, the Overview's incoming ones read from its timeline data: none has a row of the page's.
+    const leftovers = groupLeftovers(leftoverList, [...conversationMentions(), ...incomingReadMentions()].map((line) => `${line.href} ${line.title} ${line.state}`));
     groups.push(...leftovers);
     foldTargets.push(...leftovers);
   }
@@ -3478,7 +3586,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       return pinnedComments === batch.comments ? batch : { ...batch, comments: pinnedComments };
     }),
   );
-  settleAfterResolve(meta, batches);
+  reseatOpenRound(batches);
+  settleAfterResolve(meta, batches, settings.reviewGrouping);
   reseatOpenItem(meta);
   seatOpenThread(batches, settings.reviewGrouping);
   reseatOpenLine(batches);
@@ -3684,7 +3793,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       // as a last resort this visit's own memory so the row still answers.
       const thread = item.sources.find((source) => source.kind === 'thread');
       if (thread !== undefined && clickResolve(thread.anchor)) {
-        reapplyAfterResolve(itemKey(item.id), done);
+        reapplyAfterResolve(itemKey(item.id));
         return;
       }
       if (found !== null && tickSummaryCheckbox(found.root, item.sources.map((source) => source.anchor), done)) return;
@@ -3868,10 +3977,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         reapply();
       });
     },
-    onResolveAnchor: (anchor, done) => {
+    onResolveAnchor: (anchor) => {
       if (!clickResolve(anchor)) return;
       const owner = meta.items.find((item) => item.sources.some((source) => source.anchor === anchor));
-      reapplyAfterResolve(owner === undefined ? null : itemKey(owner.id), done);
+      reapplyAfterResolve(owner === undefined ? null : itemKey(owner.id));
     },
     onApproveWorkflows: () => {
       const button = approveWorkflowsButton();
@@ -3981,6 +4090,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     },
   };
   phaseSince('model', modelStart);
+  followOpenRow(model);
   const mounted = phase('panel', () => mountPanel(model, panelHandlers, { holdRebuild: fragmentRenderTimer !== null, parkChats }));
   scheduleTimeRefresh();
   if (mounted !== null) {
@@ -3997,8 +4107,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const slotsStart = performance.now();
   if (mounted?.slot !== null && mounted?.slot !== undefined && visit.openKey !== null) {
     const nodes = quickViewFor(visit.openKey, meta, groups);
-    // The description's own mentions have no timeline row, so the Mentions row can stand with no nodes to show.
-    const onlyOutgoing = visit.openKey === foldKey('mentions') && (descriptionMentions().length > 0 || incomingReadMentions().length > 0);
+    // What the description and comments mention has no timeline row, so the Mentions row can stand with no nodes to show.
+    const onlyOutgoing = visit.openKey === foldKey('mentions') && (conversationMentions().length > 0 || incomingReadMentions().length > 0);
     if (nodes.length === 0 && !onlyOutgoing) {
       // An open thread row (by push) whose thread is momentarily out of the crawl keeps its row through the grace.
       if (!visit.openKey.startsWith('item:') || openLineStillMissing()) {
@@ -4098,7 +4208,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           renderQuickView(mounted.slot, nodes);
         }
       } else if (visit.openKey === foldKey('mentions')) {
-        renderMentionsView(mounted.slot, nodes, descriptionMentions(true), (href) => refDetails(href, reapplySoon), incomingReadMentions());
+        renderMentionsView(mounted.slot, nodes, conversationMentions(true), (href) => refDetails(href, reapplySoon), incomingReadMentions());
       } else if (visit.openKey.startsWith('item:')) {
         // Each review thread as its chat: the path, the hunk, the comment it came from pinned, every message.
         const item = meta.items.find((entry) => itemKey(entry.id) === visit.openKey);

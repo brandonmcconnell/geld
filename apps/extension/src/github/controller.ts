@@ -52,7 +52,9 @@ import { expireHeadChecks } from './review/check-source';
 import { markCrawlDirty, resetCrawlCache } from './review/crawler';
 import type { RepoBotsHint } from './review/panel-model';
 import { LIVE_CATCH_UP_EVENT, liveCatchUpDue } from './review/live-regions';
+import { REACT_HYDRATED_EVENT } from './react-hydration';
 import { catchUpTimeline } from './review/timeline-catchup';
+import { panelSignature } from './review/panel';
 import { applyReviewOverview, dressOverviewNow, foldDescriptionNow, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
 import { setFlowSource } from './review/flow';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
@@ -91,8 +93,18 @@ const INLINE_ICON_CLASS = 'geld-tree-inline-icon';
 const ATTR_SWAPPED_ICON = 'data-geld-swapped-icon';
 const ATTR_TOC = 'data-geld-toc-hidden';
 const ATTR_FLASH = 'data-geld-flash';
+/** On `<html>` while Geld dresses this page, for styles of GitHub's own UI outside Geld's (its portaled reaction picker). */
+const ATTR_DRESSED = 'data-geld-on';
 
 const APPLY_DEBOUNCE_MS = 60;
+/**
+ * While GitHub is still rendering a page (its first `LOADING_MS`, after a load or a move within the app), passes wait
+ * longer for its changes to settle once the digest stands (`passMayWait`): at 60 ms a pass, and often a rebuild of the
+ * digest, ran between nearly every two of GitHub's renders, and GitHub's own header counts drew about a second late.
+ * Pre-paint work does not wait, nor does the digest's first appearance.
+ */
+const LOADING_DEBOUNCE_MS = 250;
+const LOADING_MS = 4000;
 /** How many progressive-load rounds we nudge before giving up on a reveal. */
 const MAX_REVEAL_ATTEMPTS = 40;
 
@@ -446,6 +458,8 @@ export class GeldController {
     window.addEventListener('hashchange', this.onHashChange);
     // Find-in-page reaching into a folded timeline item (`hidden="until-found"`).
     document.addEventListener('beforematch', this.onBeforeMatch, true);
+    // What waited for React to hydrate the page (the header's controls, the Overview's digest) goes in now.
+    document.addEventListener(REACT_HYDRATED_EVENT, this.onReactHydrated);
     // A copy that starts on a page already open a while (an update or reload of the extension retired the one before,
     // and this one was injected) cannot know what GitHub's quiet socket missed meanwhile, so the page's age counts as
     // time away: caught up now when the tab is in view, on the first return when it is not.
@@ -524,6 +538,7 @@ export class GeldController {
     document.removeEventListener('keydown', this.onUserKey, true);
     window.removeEventListener('hashchange', this.onHashChange);
     document.removeEventListener('beforematch', this.onBeforeMatch, true);
+    document.removeEventListener(REACT_HYDRATED_EVENT, this.onReactHydrated);
     this.observer?.disconnect();
     this.observer = null;
     if (this.timer !== null) clearTimeout(this.timer);
@@ -993,11 +1008,49 @@ export class GeldController {
   /** A pass after the debounce. Every caller but the observer asks for the whole page; the observer has said which regions changed. */
   private schedule(full = true): void {
     if (full) this.pendingScope.add('unknown');
-    if (this.stopped || this.timer !== null || this.deferWhileHidden()) return;
-    this.timer = setTimeout(() => {
-      this.timer = null;
-      this.applyScoped();
-    }, APPLY_DEBOUNCE_MS);
+    if (this.stopped || this.deferWhileHidden()) return;
+    const wait = this.passMayWait();
+    if (this.timer !== null) {
+      // The digest gone while a pass waited (a move to Files changed): the pass is due at the short debounce.
+      if (!this.timerWaits || wait) return;
+      clearTimeout(this.timer);
+    }
+    this.timerWaits = wait;
+    this.timer = setTimeout(
+      () => {
+        this.timer = null;
+        this.applyScoped();
+      },
+      wait ? LOADING_DEBOUNCE_MS : APPLY_DEBOUNCE_MS,
+    );
+  }
+
+  /** Whether the pending pass was set to `LOADING_DEBOUNCE_MS`. */
+  private timerWaits = false;
+
+  /**
+   * Whether the pending pass may wait for a loading page to settle: only once the digest stands. Until it does, every
+   * pass is at 60 ms, so the digest appears as soon as it can; a page without one (Files changed, a list) never waits,
+   * since its passes are what dress GitHub's UI. Once it stands, new timeline items stay out of sight until a pass
+   * reads them, and the header, the description and the status pill are dressed before paint.
+   */
+  private passMayWait(): boolean {
+    return this.pageLoading() && panelSignature() !== '';
+  }
+
+  /** The page (path and query; a hash is no new page) the last scheduled pass was asked on, and since when, for `pageLoading`. */
+  private loadingPath = location.pathname + location.search;
+  private loadingSince = 0;
+
+  /** Whether GitHub is still rendering the page: the document's first seconds, or those after a move within the app. */
+  private pageLoading(): boolean {
+    const now = performance.now();
+    const path = location.pathname + location.search;
+    if (path !== this.loadingPath) {
+      this.loadingPath = path;
+      this.loadingSince = now;
+    }
+    return now - this.loadingSince < LOADING_MS;
   }
 
   /** The debounced pass: scoped to the regions the batches touched, the whole page when any was unknown. */
@@ -1082,6 +1135,7 @@ export class GeldController {
       return;
     }
 
+    if (!document.documentElement.hasAttribute(ATTR_DRESSED)) document.documentElement.setAttribute(ATTR_DRESSED, '');
     applyAttachmentLightbox(this.settings.attachmentLightbox);
 
     // Another page state (a navigation) is always the whole page, whatever the batches said.
@@ -1956,6 +2010,8 @@ export class GeldController {
     if (this.settings.testOutline) this.schedule();
   };
 
+  private readonly onReactHydrated = (): void => this.schedule();
+
   private readonly onBeforeMatch = (event: Event): void => {
     onReviewBeforeMatch(event, this.settings);
   };
@@ -1969,6 +2025,7 @@ export class GeldController {
 
   /** `rebuild`: the page is dressed again right after, so the digest keeps what the reader opened and unfolded. */
   private teardown(rebuild = false): void {
+    document.documentElement.removeAttribute(ATTR_DRESSED);
     removeAttachmentLightbox();
     this.settledHeader = null;
     this.headerGroups = [];

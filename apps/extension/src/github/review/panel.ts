@@ -18,6 +18,7 @@ import { deploymentHref, deploymentMark, environmentLabel } from './deployments'
 import { noteTone } from './note-tone';
 import { botTitle, isOpenStatus, itemThreads, resolveBotId, threadCounts } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
+import { reactSettled } from '../react-hydration';
 import type { RevisionMarker } from './crawler';
 import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_EXCLAMATION_CIRCLE_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER, ICON_EYE_CLOSED, ICON_BLOCKED } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checkStateOfRun, checksHealth, checksRowTone, checksSummary, checksTotal, pushRowTone, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
@@ -36,7 +37,7 @@ import type { ReviewerCandidate } from './reviewers';
 import type { HiddenPerson } from './hidden-people';
 import type { BlockedBy } from '../blocked-list';
 import { shapeMark } from './mark-shape';
-import { brandMark, syncBrandSelection, watchBrandSelection } from './brand';
+import { brandMark, syncNewBrandMarks, watchBrandSelection } from './brand';
 import { inlineText } from './inline-text';
 import { relativeTimeElement } from './time';
 import { DIGEST_VIEW_OPTIONS, digestViewLabel, viewChoice, viewLabel } from './digest-view';
@@ -579,15 +580,31 @@ function icon(markup: string): SVGElement {
  * back. Pinning every spin animation's start to the document timeline's
  * origin puts each mount at the phase one continuous spinner would be at,
  * whenever the browser gets to its first frame.
+ *
+ * `getAnimations` brings style and layout up to date, so it is asked in the
+ * next animation frame, before the frame's own style and layout, which then
+ * have nothing left to do. Asked on the apply path, it forced a whole-page
+ * layout on every pass while GitHub was still rendering the page.
  */
 export function syncSpinners(root: Element): void {
-  // GitHub's own spinners in the check rows on loan too: a Primer spinner starts at a fixed negative delay, so one
-  // remounted on every status poll showed the same frame each time and read as frozen. Pinned to the document
-  // timeline, a remount continues the turn where the last one left off.
-  for (const spinner of root.querySelectorAll(`.octicon-in-progress, .${PANEL_CLASS}__icon--spin .octicon, [class*="Spinner-SpinnerAnimation"]`)) {
-    for (const animation of spinner.getAnimations()) animation.startTime = 0;
-  }
+  spinnerRoots.add(root);
+  if (spinnerFrame !== 0) return;
+  spinnerFrame = requestAnimationFrame(() => {
+    spinnerFrame = 0;
+    const roots = [...spinnerRoots];
+    spinnerRoots.clear();
+    // GitHub's own spinners in the check rows on loan too: a Primer spinner starts at a fixed negative delay, so one
+    // remounted on every status poll showed the same frame each time and read as frozen. Pinned to the document
+    // timeline, a remount continues the turn where the last one left off.
+    for (const spinner of roots.flatMap((each) => (each.isConnected ? [...each.querySelectorAll(SPINNERS)] : []))) {
+      for (const animation of spinner.getAnimations()) animation.startTime = 0;
+    }
+  });
 }
+
+const SPINNERS = `.octicon-in-progress, .${PANEL_CLASS}__icon--spin .octicon, [class*="Spinner-SpinnerAnimation"]`;
+const spinnerRoots = new Set<Element>();
+let spinnerFrame = 0;
 
 function iconButton(markup: string, label: string, extra: Readonly<Record<string, string>> = {}): HTMLButtonElement {
   return createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon`, 'aria-label': label, title: label, ...extra }, [icon(markup)]);
@@ -1419,7 +1436,7 @@ function roundGroups(model: PanelModel): { readonly current: Batch | null; reado
 }
 
 /** The group the open row is listed under, or null when nothing is open or the open row (a status row) is in no group. */
-function openRowGroup(model: PanelModel): GroupId | null {
+export function openRowGroup(model: PanelModel): GroupId | null {
   const key = model.openKey;
   if (key === null) return null;
   if (model.grouping === 'batch') {
@@ -3227,6 +3244,39 @@ function movePreservingState(node: HTMLElement, target: HTMLElement): void {
 /** On the panel root: what was open when it was built, so a held rebuild can tell a click from late content. */
 const ATTR_OPEN = 'data-geld-review-open';
 
+interface CardGeometry {
+  /** The gap the Overview's column leaves between its boxes, which the panel takes back; null on the conversation. */
+  readonly columnGap: string | null;
+  /** The description card may hang past the timeline rail (`ml-n3`); the panel shares its horizontal geometry. */
+  readonly cardMargins: { readonly left: string; readonly right: string };
+}
+
+let cardGeometries = new WeakMap<Element, CardGeometry>();
+let forgettingGeometry = false;
+
+/**
+ * The description card's geometry, read once per card until the window resizes or the page's stylesheets have all
+ * loaded (the first panel is built while they may still be arriving). The panel is rebuilt many times while a page
+ * loads, and each read forced a whole-page layout while GitHub was still rendering it.
+ */
+function cardGeometry(card: HTMLElement): CardGeometry {
+  const known = cardGeometries.get(card);
+  if (known !== undefined) return known;
+  if (!forgettingGeometry) {
+    forgettingGeometry = true;
+    const forget = (): void => {
+      cardGeometries = new WeakMap();
+    };
+    window.addEventListener('resize', forget);
+    if (document.readyState !== 'complete') window.addEventListener('load', forget, { once: true });
+  }
+  const columnGap = overviewColumnGap(card);
+  const style = getComputedStyle(card);
+  const geometry = { columnGap, cardMargins: { left: style.marginLeft, right: style.marginRight } };
+  cardGeometries.set(card, geometry);
+  return geometry;
+}
+
 export interface MountOptions {
   /**
    * Content is still landing in bursts (deferred threads, four fetches at a
@@ -3312,7 +3362,8 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     if (existing.querySelector(`.${PANEL_CLASS}__edited-wrap[open]`) !== null) return { root: existing, slot };
   }
   const card = descriptionCard();
-  if (card === null) return null;
+  // On the Overview the panel stands among React's nodes: not before React has hydrated them (`react-hydration.ts`).
+  if (card === null || !reactSettled(card)) return null;
   const focusKey = focusKeyOf(existing);
   // The open CI checks slot holds GitHub's own live section: a scroll box with spinners in it, always current on
   // its own. Sending it home and taking it back on every rebuild (the counts tick every few seconds on a busy
@@ -3334,15 +3385,12 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     if (stale !== card) stale.removeAttribute(ATTR_ATTACHED);
   }
   card.setAttribute(ATTR_ATTACHED, '');
-  const columnGap = overviewColumnGap(card);
-  // The stylesheet joins the top card's status row to the description by taking back this same gap.
-  if (columnGap !== null && document.documentElement.style.getPropertyValue('--geld-overview-gap') !== columnGap) document.documentElement.style.setProperty('--geld-overview-gap', columnGap);
   // Read before anything moves: this forces a layout, and a layout with the old panel gone and the new one not
   // yet in makes the browser's scroll anchoring shift the page up by the panel's height — and it does not shift
   // it back when the new panel lands. The old panel is replaced in one mutation below, never removed first.
-  // The description card may hang past the timeline rail (`ml-n3`); share its horizontal geometry.
-  const cardStyle = getComputedStyle(card);
-  const cardMargins = { left: cardStyle.marginLeft, right: cardStyle.marginRight };
+  const { columnGap, cardMargins } = cardGeometry(card);
+  // The stylesheet joins the top card's status row to the description by taking back this same gap.
+  if (columnGap !== null && document.documentElement.style.getPropertyValue('--geld-overview-gap') !== columnGap) document.documentElement.style.setProperty('--geld-overview-gap', columnGap);
 
   const { open, done } = splitItems(model.meta.items);
   const threads = threadCounts(model.meta.items);
@@ -3508,7 +3556,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   seatOverviewPanel(panel);
   syncSpinners(panel);
   watchBrandSelection();
-  syncBrandSelection();
+  syncNewBrandMarks();
   // A card open over the old panel points at a host that just left the document.
   rehostHoverCard();
   // Below the box, not in it: a quiet, persistent pointer to the Action while this repository lacks it.

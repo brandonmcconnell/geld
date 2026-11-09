@@ -7,9 +7,9 @@
  * stay), and only when even that does not fit, its detail too (mark and
  * light alone). The decision is per row — the bots row may be at the first
  * step while the reports row, with one pill, keeps everything — and is made
- * again whenever the panel's width changes (a `ResizeObserver` on the
- * panel), not at a fixed breakpoint: how much fits depends on how many pills
- * there are and how long their words run.
+ * when a panel is built and again whenever its width changes (a
+ * `ResizeObserver` on the panel), not at a fixed breakpoint: how much fits
+ * depends on how many pills there are and how long their words run.
  *
  * The Geld row at the top of the digest is fitted the same way, in one step:
  * when its summary and its buttons would wrap, every button drops its words
@@ -18,8 +18,10 @@
  *
  * The measurement: the children's widths plus the gaps between them against
  * the row's content width, read with the row set to each step in turn; the
- * stylesheet does the hiding. Three layouts at most per row per pass, on a
- * handful of elements.
+ * stylesheet does the hiding. Three layouts at most per row, on a handful of
+ * elements. It runs in the observer's callback, after the browser's own
+ * layout and before paint, never on the apply path: there, every pass forced
+ * a layout of the whole page while GitHub was still rendering it.
  */
 
 import { ATTR_FIT, ATTR_FIT_TOOLS } from './panel';
@@ -60,20 +62,23 @@ let observed: HTMLElement | null = null;
 let lastWidth = -1;
 
 /**
- * Fit every pill row under `root` now, and again whenever `root` changes
- * width. One root is watched at a time (the panel is rebuilt as one
- * element); a rebuild hands the watch to the new one.
+ * Fit every pill row under `root` once it is laid out, and again whenever
+ * `root` changes width. One root is watched at a time (the panel is rebuilt
+ * as one element, and its rows only change with it); a rebuild hands the
+ * watch to the new one.
  */
 export function fitChips(root: HTMLElement): void {
-  fitAll(root);
   if (observed === root) return;
   observer?.disconnect();
   observed = root;
-  lastWidth = root.getBoundingClientRect().width;
-  if (typeof ResizeObserver === 'undefined') return;
+  lastWidth = -1;
+  if (typeof ResizeObserver === 'undefined') {
+    fitAll(root);
+    return;
+  }
   observer ??= new ResizeObserver((entries) => {
     const entry = entries[entries.length - 1];
-    if (entry === undefined || observed === null) return;
+    if (entry === undefined || observed === null || entry.target !== observed) return;
     const width = entry.contentRect.width;
     // Only a change of width means a change of room; a height change (a row opening) does not.
     if (Math.abs(width - lastWidth) < 0.5) return;
