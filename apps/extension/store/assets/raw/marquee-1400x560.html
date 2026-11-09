@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- The marquee promo tile. Render at 2800x1120 in headless Chrome (deviceScaleFactor 1), Lanczos-downscale to 1400x560, save as PNG and JPEG for Chrome/Edge. Fonts resolve from apps/site/node_modules after pnpm install. digest-dark.png is shared with marquee-16x10.html. -->
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  @font-face { font-family: Geist; src: url('../../../../site/node_modules/geist/dist/fonts/geist-sans/Geist-Variable.woff2') format('woff2'); font-weight: 100 900; }
+  html, body { margin: 0; }
+  body { width: 2800px; height: 1120px; background: #0b0d12; color: #f0f2f5; font-family: Geist, sans-serif; position: relative; overflow: hidden; -webkit-font-smoothing: antialiased; }
+  .left { position: absolute; left: 140px; top: 0; height: 1120px; width: 1560px; display: flex; flex-direction: column; justify-content: center; }
+  .logo { display: block; height: 96px; width: fit-content; margin-bottom: 64px; }
+  h1 { margin: 0; font-size: 112px; line-height: 1.06; font-weight: 600; letter-spacing: -0.035em; white-space: nowrap; }
+  .sub { margin: 44px 0 0; font-size: 50px; line-height: 1.35; color: #a1a7b0; font-weight: 400; }
+  .btn { margin-top: 64px; display: inline-flex; align-items: center; width: fit-content; height: 112px; padding: 0 52px; background: #f0f2f5; color: #16181d; font-size: 40px; font-weight: 500; border-radius: 22px; corner-shape: bevel square; }
+  .digest { position: absolute; right: 140px; top: 50%; width: 900px; transform: translateY(-50%); border-radius: 27px; box-shadow: 0 48px 128px rgb(0 0 0 / 0.55); }
+</style>
+</head>
+<body>
+  <div class="left">
+    <img class="logo" src="../../../../../assets/brand/geld-logo-white.svg" alt="Geld" />
+    <h1>Code review is broken.<br/>Geld fixes it.</h1>
+    <p class="sub">Less noise. More shipping.</p>
+    <div class="btn">Add to browser</div>
+  </div>
+  <img class="digest" src="digest-dark.png" alt="" />
+</body>
+</html>
