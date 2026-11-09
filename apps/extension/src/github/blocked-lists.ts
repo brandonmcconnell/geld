@@ -4,6 +4,7 @@ import { blockedWords } from './review/panel';
 import { createElement, OWN_UI_ATTRIBUTE } from './dom';
 import type { ListSurface } from './list-surfaces';
 import { ATTR_AUTHOR } from './pr-authors';
+import { loginOfLink } from './review/login';
 
 /**
  * Lists leave out what a blocked person opened: pull requests, issues and
@@ -30,7 +31,23 @@ interface BlockedRow {
   readonly row: HTMLElement;
   readonly kind: Kind;
   readonly author: string;
-  readonly surface: ListSurface;
+}
+
+interface FoundRow {
+  readonly row: HTMLElement;
+  readonly kind: Kind;
+  readonly author: string | null;
+  /** Where the author is named, for the Blocked label beside it. */
+  readonly authorElement: Element | null;
+  readonly owner: string;
+}
+
+/** A discussions list row (`li.Box-row` in the list, never the spotlight above it), whose first user link is its author. */
+function discussionRow(link: HTMLAnchorElement, owner: string): FoundRow | null {
+  const row = link.closest<HTMLElement>('.js-navigation-container > li.Box-row');
+  if (row === null) return null;
+  const person = row.querySelector('a[data-hovercard-url^="/users/"]');
+  return { row, kind: 'discussions', owner, author: person === null ? null : loginOfLink(person), authorElement: person };
 }
 
 const NOUNS: Readonly<Record<Kind, readonly [string, string]>> = {
@@ -40,8 +57,8 @@ const NOUNS: Readonly<Record<Kind, readonly [string, string]>> = {
 };
 
 /** Each list row a title link names, on the surfaces that read an author, with its author and what kind of item it is. */
-function rowsWithAuthors(surfaces: readonly ListSurface[]): readonly { readonly row: HTMLElement; readonly kind: Kind; readonly author: string | null; readonly owner: string; readonly surface: ListSurface }[] {
-  const found = new Map<HTMLElement, { readonly row: HTMLElement; readonly kind: Kind; readonly author: string | null; readonly owner: string; readonly surface: ListSurface }>();
+function rowsWithAuthors(surfaces: readonly ListSurface[]): readonly FoundRow[] {
+  const found = new Map<HTMLElement, FoundRow>();
   for (const link of document.querySelectorAll<HTMLAnchorElement>('a[href*="/pull/"], a[href*="/issues/"], a[href*="/discussions/"]')) {
     if (link.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null || link.matches('.issue-link, .js-issue-link') || (link.textContent ?? '').trim() === '') continue;
     let url: URL;
@@ -52,21 +69,27 @@ function rowsWithAuthors(surfaces: readonly ListSurface[]): readonly { readonly 
     }
     const kind = url.origin === location.origin ? ITEM_PATH.exec(url.pathname)?.[1] : undefined;
     if (kind !== 'pull' && kind !== 'issues' && kind !== 'discussions') continue;
+    const owner = url.pathname.split('/')[1] ?? '';
+    let matched = false;
     for (const surface of surfaces) {
       if (surface.spec.authors.length === 0) continue;
       const row = surface.rowOf(link);
-      if (row === null || found.has(row)) continue;
-      found.set(row, { row, kind, author: surface.authorOf(row), owner: url.pathname.split('/')[1] ?? '', surface });
+      if (row === null) continue;
+      matched = true;
+      // The issues list writes its author as a button (`author-filter-link`) with the login only in its hovercard URL.
+      const button = row.querySelector('[data-testid="author-filter-link"][data-hovercard-url^="/users/"]');
+      const author = surface.authorOf(row);
+      if (!found.has(row)) found.set(row, { row, kind, owner, author: author ?? (button === null ? null : loginOfLink(button)), authorElement: author === null ? button : surface.authorElementOf(row) });
       break;
     }
+    const discussion = !matched && kind === 'discussions' ? discussionRow(link, owner) : null;
+    if (discussion !== null && !found.has(discussion.row)) found.set(discussion.row, discussion);
   }
   return [...found.values()];
 }
 
-function labelAuthor(row: HTMLElement, surface: ListSurface, by: BlockedBy): void {
-  if (row.querySelector(`[${ATTR_LABEL}]`) !== null) return;
-  const link = surface.authorElementOf(row);
-  if (link === null) return;
+function labelAuthor(row: HTMLElement, link: Element | null, by: BlockedBy): void {
+  if (row.querySelector(`[${ATTR_LABEL}]`) !== null || link === null) return;
   link.after(createElement('span', { class: 'Label Label--secondary geld-blocked-label', [OWN_UI_ATTRIBUTE]: '', [ATTR_LABEL]: '', title: blockedWords(by) }, ['Blocked']));
 }
 
@@ -114,7 +137,7 @@ function syncNote(list: HTMLElement, rows: readonly BlockedRow[]): void {
 export function applyBlockedListHiding(blockedIn: (owner: string) => ReadonlyMap<string, BlockedBy>, surfaces: readonly ListSurface[]): void {
   const byList = new Map<HTMLElement, BlockedRow[]>();
   const seen = new Set<HTMLElement>();
-  for (const { row, kind, author, owner, surface } of rowsWithAuthors(surfaces)) {
+  for (const { row, kind, author, authorElement, owner } of rowsWithAuthors(surfaces)) {
     const list = row.parentElement;
     if (list === null) continue;
     seen.add(list);
@@ -125,8 +148,8 @@ export function applyBlockedListHiding(blockedIn: (owner: string) => ReadonlyMap
       row.querySelector(`[${ATTR_LABEL}]`)?.remove();
       continue;
     }
-    labelAuthor(row, surface, scope);
-    byList.set(list, [...(byList.get(list) ?? []), { row, kind, author, surface }]);
+    labelAuthor(row, authorElement, scope);
+    byList.set(list, [...(byList.get(list) ?? []), { row, kind, author }]);
   }
   for (const list of document.querySelectorAll<HTMLElement>(`[${ATTR_LIST}]`)) seen.add(list);
   for (const list of seen) {

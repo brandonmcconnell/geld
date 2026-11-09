@@ -35,8 +35,10 @@ const ATTR_LABEL = 'data-geld-blocked-label';
 const ATTR_NOTICE = 'data-geld-blocked-notice';
 
 /** A comment's card: a thread's comment, an issue comment or a review's own words, on the conversation and the Overview. */
-const COMMENTS = '.review-comment, .timeline-comment, article[id^="issuecomment-"], article[id^="pullrequestreview-"], [id^="discussion_r"]:not(a)';
-const AUTHOR = 'a.author, a[data-testid="avatar-link"], [data-testid="comment-header"] a[data-hovercard-url^="/users/"], a[href^="/apps/"].author';
+const COMMENTS = '.review-comment, .timeline-comment, article[id^="issuecomment-"], article[id^="pullrequestreview-"], [id^="discussion_r"]:not(a), [data-testid^="comment-viewer-outer-box-"]';
+/** Cards that stand inside another card and are still their own: a thread's comments, a discussion's replies. */
+const NESTED = '.review-comment, [id^="discussion_r"], .nested-discussion-timeline-comment';
+const AUTHOR = 'a.author, a[data-testid="avatar-link"], [data-testid="comment-header"] a[data-hovercard-url^="/users/"], a[href^="/apps/"].author, .timeline-comment-header a[data-hovercard-url^="/users/"]';
 const NAME_LINKS = 'a[data-hovercard-url^="/users/"]:not(.user-mention), a.author:not(.user-mention)';
 
 /** Why a person's comments fold: hidden the way GitHub hid them (blocked or not), or by the reader's list in Geld. */
@@ -51,7 +53,10 @@ function isOwn(node: Element): boolean {
 
 /** The page's description, never folded: the pull request itself, not a comment on it. */
 function isDescription(node: Element): boolean {
-  if (node.closest('section[aria-label="Description"]') !== null) return true;
+  if (node.closest('section[aria-label="Description"], [data-testid="issue-body"]') !== null) return true;
+  // A discussion's opening post (`#discussion-<id>`), not one of its comments (`#discussioncomment-<id>`).
+  const post = node.closest('[id^="discussion-"]');
+  if (post !== null && /^discussion-\d+$/.test(post.id) && node.closest('[id^="discussioncomment-"]') === null) return true;
   const card = descriptionCard();
   return card !== null && (card === node || card.contains(node) || node.contains(card));
 }
@@ -62,7 +67,8 @@ function authorOfComment(card: Element): string | null {
 }
 
 function idOf(card: Element): string {
-  return card.id !== '' ? card.id : (card.closest('[id^="issuecomment-"], [id^="pullrequestreview-"], [id^="discussion_r"]')?.id ?? '');
+  if (card.id !== '') return card.id;
+  return card.closest('[id^="issuecomment-"], [id^="pullrequestreview-"], [id^="discussion_r"], [id^="discussioncomment-"]')?.id ?? card.querySelector('[id^="issuecomment-"]')?.id ?? '';
 }
 
 function foldWords(standing: Standing): string {
@@ -151,7 +157,7 @@ function syncFolds(standingOf: (login: string) => Standing | null): void {
     if (isOwn(card) && card.closest('[data-geld-teleported]') === null) continue;
     // A card inside another card is that card's (a review's threads stand inside the review on the Overview).
     const outer = card.parentElement?.closest(COMMENTS) ?? null;
-    if (outer !== null && !card.matches('.review-comment, [id^="discussion_r"]')) continue;
+    if (outer !== null && !card.matches(NESTED)) continue;
     const login = authorOfComment(card);
     // Whose it is first: the description and minimized checks walk the page, and most cards are nobody's to fold.
     const candidate = login === null ? null : standingOf(login);
@@ -188,12 +194,14 @@ function syncLabels(blocked: ReadonlyMap<string, BlockedBy>): void {
 
 /** The person who opened the page's pull request (or issue, or discussion), from its header. */
 function pageAuthor(): string | null {
-  const header = document.querySelector('.gh-header-meta a.author, [data-testid="issue-metadata-author"] a, [data-component="PageHeader"] a[data-hovercard-type="user"], [data-component="PageHeader"] a[data-hovercard-url^="/users/"], .gh-header-meta a[data-hovercard-type="user"]');
+  const header = document.querySelector(
+    '.gh-header-meta a.author, [data-testid="issue-metadata-author"] a, [data-component="PageHeader"] a[data-hovercard-type="user"], [data-component="PageHeader"] a[data-hovercard-url^="/users/"], .gh-header-meta a[data-hovercard-type="user"], [data-testid="issue-body"] a[data-hovercard-url^="/users/"], #partial-discussion-header a.text-bold[href^="/"]',
+  );
   return header === null ? null : loginOfLink(header);
 }
 
 function noticeHost(): Element | null {
-  return document.querySelector('section[aria-label="Description"]') ?? document.querySelector('.js-discussion') ?? document.querySelector('[data-testid="issue-viewer-issue-container"]');
+  return document.querySelector('section[aria-label="Description"]') ?? document.querySelector('.js-discussion') ?? document.querySelector('[data-testid="issue-body"]');
 }
 
 function syncNotice(blocked: ReadonlyMap<string, BlockedBy>, noun: string): void {
@@ -254,7 +262,7 @@ function unhideFor(login: string, contents: readonly MarkedContent[]): (() => vo
 }
 
 export interface PresenceOptions {
-  /** Whether the page is a conversation Geld dresses (a pull request, for now). */
+  /** Whether the page is a conversation Geld dresses: a pull request, an issue or a discussion. */
   readonly enabled: boolean;
   /** "pull request", "issue" or "discussion", for the notice. */
   readonly noun: string;

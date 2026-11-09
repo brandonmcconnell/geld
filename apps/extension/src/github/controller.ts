@@ -1155,7 +1155,9 @@ export class GeldController {
       guard('content:related-links', () => applyRelatedLinks(this.settings.relatedLinks && page.kind === 'pull-conversation', () => this.schedule()));
       this.updateFlowSource(page, url, matcher);
       applyReviewOverview(this.settings, this.pageDiffPaths(), this.repoBotsHint(page, repo));
-      guard('content:people', () => applyPeoplePresence({ enabled: page.kind === 'pull-conversation', noun: 'pull request', hiddenAuthors: this.settings.hiddenAuthors, schedule: () => this.schedule() }));
+      const conversation = page.kind === 'pull-conversation' ? 'pull' : /^\/[^/]+\/[^/]+\/(issues|discussions)\/\d+\/?$/.exec(location.pathname)?.[1];
+      const noun = conversation === 'issues' ? 'issue' : conversation === 'discussions' ? 'discussion' : 'pull request';
+      guard('content:people', () => applyPeoplePresence({ enabled: conversation !== undefined, noun, hiddenAuthors: this.settings.hiddenAuthors, schedule: () => this.schedule() }));
     }
 
     const effectiveHidden = headerHidden ?? hidden;

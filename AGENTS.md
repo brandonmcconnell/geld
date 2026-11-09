@@ -1847,7 +1847,12 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   the React issue page and the Overview render no Hide forms, so there the action is not offered.
   Someone whose comments GitHub hid gets Unhide, through the same Unhide forms the digest uses.
   GitHub's Reviewers and Participants are cleaned here (`syncSidebarPeople`), so the sidebar follows the same people with the digest off.
+  An issue's comments are `comment-viewer-outer-box-…` cards and its Participants a `sidebar-participants-section` of pictures with no count, the section gone when nobody is left;
+  its description (`issue-body`) never folds.
+  A discussion's opening post is `#discussion-<id>`, never folded, and its comments and nested replies (`.nested-discussion-timeline-comment`, folded on their own) are `#discussioncomment-<id>`;
+  its Participants heading states GitHub's total ("1,483 participants") over only some of the pictures, so the recount starts from that number (`statedCount`).
 - **Items opened by blocked people leave lists** (`blocked-lists.ts`, `applyBlockedListHiding`, after the author hiding in the chips phase): pull requests, issues and discussions on any list surface that reads an author, in every state.
+  A discussions list row is `li.Box-row` in `.js-navigation-container`, read without a surface (its first user link is its author), and the issues list writes its author as a `button[data-testid="author-filter-link"]`, read from its hovercard URL, which the catalog's link-only selectors miss.
   The list becomes a flex column (`data-geld-blocked-list`), their rows are hidden, and one quiet row of Geld's at the foot (`order: 1`) says "2 pull requests by blocked users hidden" with Show, which lays them out under it (`order: 2`) with a Blocked label beside each author, and Hide;
   GitHub's rows are never moved, and shown lasts for the visit.
   The Blocked label goes after the element the surface read the author from (`ListSurface.authorElementOf`), so the catalog decides where it stands.
