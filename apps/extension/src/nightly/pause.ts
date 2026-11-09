@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import { grantedHosts, syncEnterpriseHosts } from '../lib/enterprise';
+import { reportError } from '../lib/error-capture';
 import { ensureContentScript, tabsOnHosts } from '../lib/inject';
 import { settingsItem } from '../lib/storage';
 import { CONTENT_SCRIPTS_FILE, conflictFor, parseDeclaredScripts, sameConflict } from './conflicts';
@@ -79,14 +80,16 @@ async function evaluate(): Promise<void> {
   if (!sameConflict(await nightlyConflictItem.getValue(), conflict)) await nightlyConflictItem.setValue(conflict);
   const now = await registered();
   if (conflict !== null) {
-    await syncEnterprise();
     if (now.run.length > 0) {
+      // Unregistered before anything else can fail, so Geld never stays registered beside Geld Stable.
       await browser.scripting.unregisterContentScripts({ ids: now.run });
+      await syncEnterprise().catch((error: unknown) => reportError('background:nightly-pause', error));
       // The copies already running in open tabs retire when their extension reloads (`ctx.onInvalidated`), and with
       // the scripts unregistered first the reloaded worker finds none and does not reload again.
       browser.runtime.reload();
       return;
     }
+    await syncEnterprise();
     if (!now.conflict) await showConflict();
     return;
   }
@@ -99,15 +102,21 @@ async function evaluate(): Promise<void> {
 }
 
 let queue: Promise<void> | null = null;
+const RETRY_MS = 5_000;
+const RETRIES = 3;
 
-function reevaluate(): void {
-  queue = (queue ?? Promise.resolve()).then(evaluate).catch(() => undefined);
+/** A failed evaluation is reported and tried again, so a conflict never waits for the next extension event. */
+function reevaluate(attempt = 0): void {
+  queue = (queue ?? Promise.resolve()).then(evaluate).catch((error: unknown) => {
+    reportError('background:nightly-pause', error);
+    if (attempt < RETRIES) setTimeout(() => reevaluate(attempt + 1), RETRY_MS);
+  });
 }
 
 export function startPauseWatch(): void {
-  browser.management.onEnabled.addListener(reevaluate);
-  browser.management.onDisabled.addListener(reevaluate);
-  browser.management.onInstalled.addListener(reevaluate);
-  browser.management.onUninstalled.addListener(reevaluate);
+  browser.management.onEnabled.addListener(() => reevaluate());
+  browser.management.onDisabled.addListener(() => reevaluate());
+  browser.management.onInstalled.addListener(() => reevaluate());
+  browser.management.onUninstalled.addListener(() => reevaluate());
   reevaluate();
 }
