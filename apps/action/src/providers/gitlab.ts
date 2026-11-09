@@ -65,10 +65,13 @@ export class GitLabCiAdapter implements ProviderCiAdapter {
     });
     const threads: ProviderReviewThread[] = [];
     const seen = new Set<string>();
+    const seenDiscussions = new Set<string>();
     for (const value of discussions) {
       const discussion = object(value);
       const discussionId = text(discussion.id);
       if (!/^[a-f0-9]{8,64}$/i.test(discussionId) || !Array.isArray(discussion.notes)) throw new ProviderCiError('GitLab returned an invalid discussion.');
+      if (seenDiscussions.has(discussionId)) throw new ProviderCiError('GitLab repeated a discussion.');
+      seenDiscussions.add(discussionId);
       const rawThread = discussion.notes.map(object).filter((entry) => entry.system !== true);
       if (rawThread.length === 0) continue;
       const comments = rawThread.map((entry) => note(entry, this.reviewUrl));
@@ -78,15 +81,22 @@ export class GitLabCiAdapter implements ProviderCiAdapter {
       }
       const first = comments[0];
       const firstRaw = rawThread[0];
-      if (first === undefined || firstRaw === undefined || firstRaw.resolvable !== true) continue;
+      if (first === undefined || firstRaw === undefined) continue;
+      const resolvable = rawThread.filter((entry) => entry.resolvable === true);
+      if (resolvable.length === 0) continue;
       const position = isRecord(firstRaw.position) ? firstRaw.position : null;
       const path = position?.new_path ?? position?.old_path;
       const line = position?.new_line ?? position?.old_line;
       if (path !== undefined && typeof path !== 'string') throw new ProviderCiError('GitLab returned an invalid discussion path.');
       if (line !== undefined && line !== null && (typeof line !== 'number' || !Number.isSafeInteger(line) || line <= 0)) throw new ProviderCiError('GitLab returned an invalid discussion line.');
+      const resolutionKnown = typeof discussion.resolved === 'boolean' || resolvable.every((entry) => typeof entry.resolved === 'boolean');
+      const resolved = typeof discussion.resolved === 'boolean' ? discussion.resolved : resolvable.every((entry) => entry.resolved === true);
+      const active = typeof discussion.active === 'boolean' ? discussion.active : typeof firstRaw.active === 'boolean' ? firstRaw.active : null;
+      const outdated = active !== null ? !active : typeof firstRaw.outdated === 'boolean' ? firstRaw.outdated : null;
+      const nonDiff = position === null && (discussion.diff_discussion === false || firstRaw.type === 'DiscussionNote');
       threads.push({
-        id: discussionId, anchor: first.anchor, url: first.url, comments,
-        resolved: firstRaw.resolved === true, outdated: firstRaw.outdated === true,
+        id: discussionId, anchor: `discussion_${discussionId}`, url: first.url, comments,
+        resolved, outdated: outdated === true, stateKnown: resolutionKnown && (outdated !== null || nonDiff),
         ...(typeof path === 'string' && path !== '' ? { path } : {}),
         ...(typeof line === 'number' ? { line } : {}),
       });
@@ -139,7 +149,9 @@ export class GitLabCiAdapter implements ProviderCiAdapter {
     if (await this.head() !== headSha) throw new ProviderCiError('GitLab changed the merge request while the summary was loading.');
     const notes: string[] = [];
     if (typeof approvals.approvals_required === 'number' && Number.isSafeInteger(approvals.approvals_required) && approvals.approvals_required >= 0) notes.push(`Required approvals: ${approvals.approvals_required}`);
-    return { input, comments: owned, notes };
+    const unknownThreadState = threads.some((thread) => thread.stateKnown !== true);
+    if (unknownThreadState) notes.push('Native resolution or outdated state is unavailable for some review discussions.');
+    return { input, comments: owned, sourceCoverage: { comments: 'complete', threads: unknownThreadState ? 'partial' : 'complete' }, notes };
   }
 
   async upsert(commentId: string | null, body: string): Promise<void> {

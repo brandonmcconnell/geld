@@ -101,10 +101,11 @@ export function normalizeBitbucketComments(source: readonly BitbucketComment[], 
       comments.push(first);
       continue;
     }
-    if (root?.resolved === null || root === undefined) unavailable.push({ area: 'thread state', reason: `Bitbucket did not supply the native resolution state of thread ${rootId}.` });
+    const stateKnown = root !== undefined && root.resolved !== null && root.outdated !== null;
+    if (!stateKnown) unavailable.push({ area: 'thread state', reason: `Bitbucket did not supply the native resolution or outdated state of thread ${rootId}.` });
     threads.push({
       id: String(rootId), anchor: first.anchor, url: first.url, comments: normalized,
-      resolved: root?.resolved === true, outdated: root?.outdated === true,
+      resolved: root?.resolved === true, outdated: root?.outdated === true, stateKnown,
       ...(location?.path === null || location?.path === undefined ? {} : { path: location.path }),
       ...(location?.line === null || location?.line === undefined || location.line <= 0 ? {} : { line: location.line }),
     });
@@ -218,5 +219,7 @@ export async function fetchBitbucketReview(page: ProviderReviewPage, signal: Abo
     threads: normalized.threads, reviewers: normalizeReviewers(before), checks, bots: [], complete,
     closed: after.state === 'DECLINED' || after.state === 'MERGED' || after.state === 'SUPERSEDED',
   };
-  return { input, comments: normalized.comments, events, tasks, complete, unavailable, approvalsRequired: null, approvalsLeft: null, actions: [] };
+  const commentsCoverage = commentResult.status === 'rejected' ? 'unavailable' : normalized.unavailable.some((source) => source.area === 'comments') ? 'partial' : 'complete';
+  const threadsCoverage = commentsCoverage !== 'complete' ? commentsCoverage : normalized.unavailable.some((source) => source.area === 'thread state') ? 'partial' : 'complete';
+  return { input, comments: normalized.comments, sourceCoverage: { comments: commentsCoverage, threads: threadsCoverage }, events, tasks, complete, unavailable, approvalsRequired: null, approvalsLeft: null, actions: [] };
 }

@@ -1,5 +1,5 @@
 import type { FileStats, RepositoryIdentity } from '@geld/core';
-import type { ProviderReviewComment, ProviderReviewInput } from '@geld/review';
+import type { ProviderReviewComment, ProviderReviewInput, ProviderSourceCoverage } from '@geld/review';
 import type { ProviderReviewAuthorPresentation, ProviderReviewPanelEvent, ProviderReviewRequirement, ProviderReviewSourceAction } from './review-panel';
 import type { ProviderConfigFetcher } from './repo-config';
 
@@ -128,6 +128,7 @@ export interface ProviderReviewAction {
 }
 
 export interface ProviderReviewSnapshot {
+  readonly sourceCoverage?: ProviderSourceCoverage;
   readonly sourceActions?: (comment: ProviderReviewComment) => readonly ProviderReviewSourceAction[];
   readonly renderComment?: (comment: ProviderReviewComment, host: HTMLElement) => boolean;
   readonly authorPresentation?: (comment: ProviderReviewComment) => ProviderReviewAuthorPresentation | null;

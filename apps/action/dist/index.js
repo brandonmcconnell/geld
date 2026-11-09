@@ -2863,6 +2863,99 @@ var init_review_accounts = __esm({
   }
 });
 
+// ../../packages/core/src/publisher-accounts.ts
+function read2(line) {
+  if (/[\r\n\u0000-\u0008\u000b-\u001f\u007f]/.test(line)) return { binding: null, problem: "Keep each summary publisher on one line without control characters." };
+  const text = line.trim();
+  if (text === "" || text.startsWith("#")) return { binding: null, problem: null };
+  const parts = text.split(/\s+/);
+  if (parts.length !== 2) return { binding: null, problem: "Use one exact repository path and native account id, separated by a space." };
+  const [scope, account] = parts;
+  if (scope === void 0 || account === void 0) return { binding: null, problem: "A summary publisher needs a repository and native account id." };
+  const segments = scope.split("/");
+  const host = segments.shift()?.toLowerCase();
+  const provider = host === "gitlab.com" ? "gitlab" : host === "bitbucket.org" ? "bitbucket" : null;
+  if (provider === null || segments.length < 2 || provider === "bitbucket" && segments.length !== 2 || segments.some((segment) => segment === "." || segment === ".." || !/^[\p{L}\p{N}_.-]+$/u.test(segment))) {
+    return { binding: null, problem: "Use an exact gitlab.com/group/project or bitbucket.org/workspace/repo path. Wildcards are not trusted." };
+  }
+  const authorId = normalizeReviewAccountId(provider, account);
+  if (authorId === null) return { binding: null, problem: provider === "gitlab" ? "Use the numeric GitLab account id, not its username." : "Use the Bitbucket account UUID, not its nickname or a token." };
+  return { binding: { repository: { provider, origin: `https://${host}`, path: segments.join("/") }, authorId }, problem: null };
+}
+function parseTrustedSummaryPublisher(line) {
+  return read2(line).binding;
+}
+function trustedSummaryPublisherProblem(line) {
+  return read2(line).problem;
+}
+function bindingKey2(binding) {
+  return JSON.stringify([repositoryKey(binding.repository), binding.authorId]);
+}
+function serialize2(binding) {
+  return `${providerRepositoryScope(binding.repository)} ${binding.authorId}`;
+}
+function trustedSummaryPublishersProblem(lines2) {
+  for (let index = 0; index < lines2.length; index += 1) {
+    const problem = trustedSummaryPublisherProblem(lines2[index] ?? "");
+    if (problem !== null) return `Line ${index + 1}: ${problem}`;
+  }
+  return null;
+}
+function normalizeTrustedSummaryPublishers(value) {
+  const isList = (candidate) => Array.isArray(candidate);
+  if (!isList(value)) return [];
+  const bindings = /* @__PURE__ */ new Map();
+  for (const line of value) {
+    const binding = typeof line === "string" ? parseTrustedSummaryPublisher(line) : null;
+    if (binding !== null) bindings.set(bindingKey2(binding), binding);
+  }
+  return Array.from(bindings.values(), serialize2);
+}
+function trustedSummaryPublishersFor(lines2, repository) {
+  if ((repository.provider !== "gitlab" || repository.origin !== "https://gitlab.com") && (repository.provider !== "bitbucket" || repository.origin !== "https://bitbucket.org")) return [];
+  const key = repositoryKey(repository);
+  return normalizeTrustedSummaryPublishers(lines2).flatMap((line) => {
+    const binding = parseTrustedSummaryPublisher(line);
+    return binding !== null && repositoryKey(binding.repository) === key ? [binding] : [];
+  });
+}
+function trustedSummaryPublisherIdsFor(lines2, repository) {
+  return trustedSummaryPublishersFor(lines2, repository).map((binding) => binding.authorId);
+}
+function withTrustedSummaryPublisher(lines2, repository, nativeAuthorId) {
+  const candidate = read2(`${providerRepositoryScope(repository)} ${nativeAuthorId}`);
+  if (candidate.binding === null || candidate.problem !== null || candidate.binding.repository.origin !== repository.origin || repositoryKey(candidate.binding.repository) !== repositoryKey(repository)) throw new TypeError(candidate.problem ?? "Unsupported trusted summary repository.");
+  const key = bindingKey2(candidate.binding);
+  const kept = normalizeTrustedSummaryPublishers(lines2).filter((line) => {
+    const binding = parseTrustedSummaryPublisher(line);
+    return binding === null || bindingKey2(binding) !== key;
+  });
+  return [...kept, serialize2(candidate.binding)];
+}
+function mergeTrustedSummaryPublishers(base, edited, latest) {
+  const bindings = (lines2) => {
+    const result = /* @__PURE__ */ new Map();
+    for (const line of normalizeTrustedSummaryPublishers(lines2)) {
+      const binding = parseTrustedSummaryPublisher(line);
+      if (binding !== null) result.set(bindingKey2(binding), binding);
+    }
+    return result;
+  };
+  const before = bindings(base);
+  const changes = bindings(edited);
+  const current = bindings(latest);
+  for (const key of before.keys()) if (!changes.has(key)) current.delete(key);
+  for (const [key, binding] of changes) if (!before.has(key)) current.set(key, binding);
+  return Array.from(current.values(), serialize2);
+}
+var init_publisher_accounts = __esm({
+  "../../packages/core/src/publisher-accounts.ts"() {
+    "use strict";
+    init_providers();
+    init_review_accounts();
+  }
+});
+
 // ../../packages/core/src/settings.ts
 function isSuggestedFixMode(value) {
   return typeof value === "string" && SUGGESTED_FIX_MODES.some((mode) => mode === value);
@@ -3064,6 +3157,7 @@ function normalizeSettings(value) {
     holdToMerge: bool(record4, "holdToMerge", DEFAULT_SETTINGS.holdToMerge),
     reviewBots: isStringArray(record4.reviewBots) ? record4.reviewBots : DEFAULT_SETTINGS.reviewBots,
     trustedReviewAccounts: normalizeTrustedReviewAccounts(record4.trustedReviewAccounts),
+    trustedSummaryPublishers: normalizeTrustedSummaryPublishers(record4.trustedSummaryPublishers),
     aiEnabled: bool(record4, "aiEnabled", DEFAULT_SETTINGS.aiEnabled),
     aiBaseUrl: typeof record4.aiBaseUrl === "string" ? normalizeAiBaseUrl(record4.aiBaseUrl) : DEFAULT_SETTINGS.aiBaseUrl,
     issueTracker: parseIssueTracker(record4.issueTracker),
@@ -3136,6 +3230,7 @@ var init_settings = __esm({
     init_category_icons();
     init_test_patterns();
     init_review_accounts();
+    init_publisher_accounts();
     SUGGESTED_FIX_MODES = ["all", "bots", "ai", "off"];
     REPO_CONFIG_MODES = ["always", "ask", "never"];
     REVIEW_GROUPINGS = ["type", "batch"];
@@ -3176,6 +3271,7 @@ var init_settings = __esm({
       holdToMerge: false,
       reviewBots: [],
       trustedReviewAccounts: [],
+      trustedSummaryPublishers: [],
       aiEnabled: false,
       aiBaseUrl: "",
       aiModel: "",
@@ -3403,6 +3499,7 @@ function collectSettingsIssues(value, path = "settings", catalog = BUNDLED_CATAL
   checkStringList(issues, `${path}.hiddenAuthors`, value.hiddenAuthors, authorRuleProblem);
   checkStringList(issues, `${path}.testSyntaxes`, value.testSyntaxes, testSyntaxProblem);
   checkStringList(issues, `${path}.reviewBots`, value.reviewBots, authorRuleProblem);
+  checkStringList(issues, `${path}.trustedSummaryPublishers`, value.trustedSummaryPublishers, trustedSummaryPublisherProblem);
   checkStringList(issues, `${path}.trustedReviewAccounts`, value.trustedReviewAccounts, trustedReviewAccountProblem);
   if (Array.isArray(value.trustedReviewAccounts)) {
     for (const conflict of trustedReviewAccountConflicts(value.trustedReviewAccounts)) issues.push({ path: `${path}.trustedReviewAccounts[${conflict.index}]`, message: conflict.message });
@@ -3584,6 +3681,7 @@ var init_settings_validate = __esm({
     init_test_patterns();
     init_test_outline();
     init_review_accounts();
+    init_publisher_accounts();
     CORRUPTED_SETTINGS_COPY = {
       title: "Error",
       body: "Your settings appear to have been corrupted on GitHub Gist. Please correct these errors or reset to default settings to continue.",
@@ -3694,9 +3792,9 @@ async function readRemoteContent(token, gistId) {
   return content === null ? null : { summary, content };
 }
 async function readRemoteValidated(token, gistId, catalog = BUNDLED_CATALOG) {
-  const read2 = await readRemoteContent(token, gistId);
-  if (read2 === null) return { kind: "missing" };
-  const { summary, content } = read2;
+  const read3 = await readRemoteContent(token, gistId);
+  if (read3 === null) return { kind: "missing" };
+  const { summary, content } = read3;
   const validation = validateSettingsDocument(content, catalog);
   if (!validation.ok) {
     return { kind: "invalid", gistId: summary.id, updatedAt: summary.updatedAt, htmlUrl: summary.htmlUrl, issues: validation.issues };
@@ -3704,11 +3802,11 @@ async function readRemoteValidated(token, gistId, catalog = BUNDLED_CATALOG) {
   return { kind: "valid", remote: { gistId: summary.id, settings: validation.settings, updatedAt: summary.updatedAt, htmlUrl: summary.htmlUrl } };
 }
 async function readRemote(token, gistId) {
-  const read2 = await readRemoteContent(token, gistId);
-  if (read2 === null) return null;
-  const settings = parseSettingsPayload(read2.content);
+  const read3 = await readRemoteContent(token, gistId);
+  if (read3 === null) return null;
+  const settings = parseSettingsPayload(read3.content);
   if (settings === null) return null;
-  const { summary } = read2;
+  const { summary } = read3;
   return { gistId: summary.id, settings, updatedAt: summary.updatedAt, htmlUrl: summary.htmlUrl };
 }
 async function writeRemote(token, gistId, settings) {
@@ -11381,6 +11479,7 @@ var init_repo_config = __esm({
       "repoRules",
       "hiddenAuthors",
       "trustedReviewAccounts",
+      "trustedSummaryPublishers",
       "groupHidden",
       "expandedByDefault",
       "hideCommentLines",
@@ -11874,6 +11973,21 @@ var init_settings_schema = __esm({
             saveLabel: "Save trusted accounts"
           },
           {
+            kind: "list",
+            key: "trustedSummaryPublishers",
+            label: "Trusted summary publishers",
+            description: "Trust an actual GitLab or Bitbucket account to publish Geld summaries in one exact repository. This is separate from review bot identity and does not attest that a CI job ran.",
+            popup: false,
+            rows: 4,
+            placeholder: "gitlab.com/group/project 12345\nbitbucket.org/workspace/repo {12345678-1234-1234-1234-123456789abc}",
+            syntax: [
+              "One exact repository and native account id per line, separated by a space. No wildcards or credentials.",
+              "GitLab uses a numeric user id. Bitbucket uses an account UUID. A personal token account can publish summaries too.",
+              "Only your explicit choice grants trust. Remove a line to withdraw it. Repository configuration cannot grant trust."
+            ],
+            saveLabel: "Save trusted publishers"
+          },
+          {
             kind: "choice",
             key: "suggestedFixes",
             label: "Suggested fixes",
@@ -12228,6 +12342,7 @@ __export(src_exports, {
   mergeCustomCategoryEdit: () => mergeCustomCategoryEdit,
   mergeErrorReports: () => mergeErrorReports,
   mergeTrustedReviewAccounts: () => mergeTrustedReviewAccounts,
+  mergeTrustedSummaryPublishers: () => mergeTrustedSummaryPublishers,
   newCommentScanState: () => newCommentScanState,
   normalizeAiBaseUrl: () => normalizeAiBaseUrl,
   normalizeAuthorRule: () => normalizeAuthorRule,
@@ -12235,6 +12350,7 @@ __export(src_exports, {
   normalizeReviewAccountId: () => normalizeReviewAccountId,
   normalizeSettings: () => normalizeSettings,
   normalizeTrustedReviewAccounts: () => normalizeTrustedReviewAccounts,
+  normalizeTrustedSummaryPublishers: () => normalizeTrustedSummaryPublishers,
   outlineTestFolds: () => outlineTestFolds,
   ownerProbe: () => ownerProbe,
   parseCatalog: () => parseCatalog,
@@ -12252,6 +12368,7 @@ __export(src_exports, {
   parseSettingsPayload: () => parseSettingsPayload,
   parseTestSyntax: () => parseTestSyntax,
   parseTrustedReviewAccount: () => parseTrustedReviewAccount,
+  parseTrustedSummaryPublisher: () => parseTrustedSummaryPublisher,
   parseUnifiedDiff: () => parseUnifiedDiff,
   parseUnifiedDiffHunks: () => parseUnifiedDiffHunks,
   pathFromGitHeader: () => pathFromGitHeader,
@@ -12287,6 +12404,10 @@ __export(src_exports, {
   trustedReviewAccountProblem: () => trustedReviewAccountProblem,
   trustedReviewAccountsFor: () => trustedReviewAccountsFor,
   trustedReviewAccountsProblem: () => trustedReviewAccountsProblem,
+  trustedSummaryPublisherIdsFor: () => trustedSummaryPublisherIdsFor,
+  trustedSummaryPublisherProblem: () => trustedSummaryPublisherProblem,
+  trustedSummaryPublishersFor: () => trustedSummaryPublishersFor,
+  trustedSummaryPublishersProblem: () => trustedSummaryPublishersProblem,
   validateSettingsDocument: () => validateSettingsDocument,
   validateSettingsValue: () => validateSettingsValue,
   verifyCatalogSignature: () => verifyCatalogSignature,
@@ -12295,6 +12416,7 @@ __export(src_exports, {
   withCustomCategory: () => withCustomCategory,
   withRepoRule: () => withRepoRule,
   withTrustedReviewAccount: () => withTrustedReviewAccount,
+  withTrustedSummaryPublisher: () => withTrustedSummaryPublisher,
   withoutCode: () => withoutCode,
   withoutCustomCategory: () => withoutCustomCategory,
   writeRemote: () => writeRemote
@@ -12319,6 +12441,7 @@ var init_src = __esm({
     init_matcher();
     init_pr_authors();
     init_providers();
+    init_publisher_accounts();
     init_repo_config();
     init_repo_rules();
     init_review_accounts();
@@ -31812,6 +31935,45 @@ var previewRecordSchema = external_exports.object({
   updatedAt: isoDate.optional(),
   reason: external_exports.string().min(1).max(200).optional()
 });
+var nativePublicationSchema = external_exports.object({
+  v: external_exports.literal(1),
+  subject: external_exports.object({
+    provider: external_exports.enum(["gitlab", "bitbucket"]),
+    origin: external_exports.string().max(500).refine((value) => httpOrigin(value) === value),
+    repository: external_exports.string().min(3).max(500).refine((value) => {
+      const parts = value.split("/");
+      return parts.length >= 2 && parts.every((part) => /^[\p{L}\p{N}_.-]+$/u.test(part) && part !== "." && part !== "..");
+    }),
+    id: external_exports.string().regex(/^[1-9]\d{0,19}$/),
+    headSha: external_exports.string().regex(/^[0-9a-f]{40}$/)
+  }),
+  items: external_exports.array(external_exports.object({
+    itemId: external_exports.string().min(1).max(100),
+    fingerprint: external_exports.string().regex(/^[0-9a-f]{64}$/),
+    sources: external_exports.array(external_exports.object({
+      id: external_exports.string().regex(/^[1-9]\d{0,19}$/),
+      anchor: sourceAnchorSchema,
+      authorId: external_exports.string().min(1).max(100),
+      fingerprint: external_exports.string().regex(/^[0-9a-f]{64}$/)
+    })).min(1).max(2e4)
+  })).max(5e3)
+}).superRefine((publication, context) => {
+  const items = /* @__PURE__ */ new Set();
+  const anchors = /* @__PURE__ */ new Set();
+  const sourceIds = /* @__PURE__ */ new Set();
+  publication.items.forEach((item, index) => {
+    if (items.has(item.itemId)) context.addIssue({ code: "custom", path: ["items", index, "itemId"], message: "Duplicate publication item." });
+    items.add(item.itemId);
+    item.sources.forEach((source, position) => {
+      const native = publication.subject.provider === "gitlab" ? source.anchor === `note_${source.id}` : source.anchor === `comment-${source.id}` || source.anchor === `comment_${source.id}`;
+      const account = publication.subject.provider === "gitlab" ? /^[1-9]\d{0,19}$/.test(source.authorId) : /^\{?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}?$/i.test(source.authorId) && source.authorId.startsWith("{") === source.authorId.endsWith("}");
+      if (!native || anchors.has(source.anchor) || sourceIds.has(source.id)) context.addIssue({ code: "custom", path: ["items", index, "sources", position, "anchor"], message: "Expected a unique native comment anchor." });
+      if (!account) context.addIssue({ code: "custom", path: ["items", index, "sources", position, "authorId"], message: "Expected a durable native account id." });
+      anchors.add(source.anchor);
+      sourceIds.add(source.id);
+    });
+  });
+});
 var geldPrMetaSchema = external_exports.object({
   v: external_exports.literal(META_VERSION),
   generatedAt: isoDate,
@@ -31823,7 +31985,29 @@ var geldPrMetaSchema = external_exports.object({
   fold: foldSchema,
   truncated: external_exports.boolean().optional(),
   summary: reviewSummarySchema.optional(),
-  previews: external_exports.array(previewRecordSchema).optional()
+  previews: external_exports.array(previewRecordSchema).optional(),
+  nativePublication: nativePublicationSchema.optional()
+}).superRefine((meta3, context) => {
+  const publication = meta3.nativePublication;
+  if (publication === void 0) return;
+  if (publication.subject.headSha !== meta3.headSha) context.addIssue({ code: "custom", path: ["nativePublication", "subject", "headSha"], message: "Publication and summary heads differ." });
+  const itemIds = /* @__PURE__ */ new Set();
+  const anchors = /* @__PURE__ */ new Set();
+  for (const item of meta3.items) {
+    if (itemIds.has(item.id)) context.addIssue({ code: "custom", path: ["items"], message: "Native publication item ids must be unique." });
+    itemIds.add(item.id);
+    for (const source of item.sources) {
+      if (anchors.has(source.anchor) || source.provider !== publication.subject.provider || source.origin !== publication.subject.origin) context.addIssue({ code: "custom", path: ["items"], message: "Native publication sources must be unique and share its provider origin." });
+      anchors.add(source.anchor);
+    }
+  }
+  for (const entry2 of publication.items) {
+    const item = meta3.items.find((candidate) => candidate.id === entry2.itemId);
+    if (item === void 0 || item.sources.length !== entry2.sources.length || item.sources.some((source, index) => {
+      const published = entry2.sources[index];
+      return published === void 0 || published.id !== source.sourceId || published.anchor !== source.anchor || published.authorId !== source.authorId;
+    })) context.addIssue({ code: "custom", path: ["nativePublication", "items"], message: "Publication sources must match retained summary items." });
+  }
 });
 var deeplinkSchema = external_exports.object({
   v: external_exports.literal(META_VERSION),
@@ -31896,7 +32080,8 @@ function metaFrom(value) {
     reviewers: value.reviewers.map((reviewer) => ({ login: reviewer.login, state: reviewer.state })),
     fold: { comments: value.fold.comments, events: value.fold.events }
   };
-  const flagged = value.truncated === void 0 ? meta3 : { ...meta3, truncated: value.truncated };
+  const published = value.nativePublication === void 0 ? meta3 : { ...meta3, nativePublication: value.nativePublication };
+  const flagged = value.truncated === void 0 ? published : { ...published, truncated: value.truncated };
   const summarised = value.summary === void 0 ? flagged : { ...flagged, summary: { tldr: value.summary.tldr, updatedAt: value.summary.updatedAt, forItems: value.summary.forItems } };
   return value.previews === void 0 ? summarised : {
     ...summarised,
@@ -31955,15 +32140,20 @@ function encodedPayloadLength(meta3) {
   return json2.length + extra;
 }
 function truncateMeta(meta3, budget = PAYLOAD_BUDGET) {
-  if (encodedPayloadLength(meta3) <= budget) return meta3;
+  const retained = (items2, truncated) => {
+    const ids = new Set(items2.map((item) => item.id));
+    return { ...meta3, items: items2, ...truncated ? { truncated: true } : {}, ...meta3.nativePublication === void 0 ? {} : { nativePublication: { ...meta3.nativePublication, items: meta3.nativePublication.items.filter((item) => ids.has(item.itemId)) } } };
+  };
+  const initial = meta3.nativePublication === void 0 ? meta3 : retained(meta3.items, false);
+  if (encodedPayloadLength(initial) <= budget) return initial;
   const ranked = [...meta3.items].sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status]);
   let items = ranked;
   while (items.length > 0) {
-    const candidate = { ...meta3, items, truncated: true };
+    const candidate = retained(items, true);
     if (encodedPayloadLength(candidate) <= budget) return candidate;
     items = items.slice(0, -1);
   }
-  return { ...meta3, items: [], truncated: true };
+  return retained([], true);
 }
 function deeplinkFrom(meta3) {
   const threads = threadCounts(meta3.items);
@@ -32423,8 +32613,8 @@ function findingSeverity(body) {
     new RegExp(`(?:^|\\*\\*|__)\\s*(${LEVEL})\\s+severity\\s*(?:\\*\\*|__|\xB7|$)`, "im").exec(opening) ?? new RegExp(`^\\W{0,3}severity:?\\W{0,3}(${LEVEL})\\b`, "im").exec(opening) ?? // A colour mark with its level anywhere on the line ("… — 🟡 Minor · Correctness", "K1 · 🟢 `[nit]` ·", Claude).
     new RegExp(`(?:\u{1F534}|\u{1F7E0}|\u{1F7E1}|\u{1F7E2}|\u26AA)\\s*\`?\\[?(${LEVEL}|important)\\]?\`?(?![A-Za-z0-9-])`, "iu").exec(opening)
   );
-  const read2 = words?.[1] === void 0 ? null : level(words[1]);
-  if (read2 !== null) return read2;
+  const read3 = words?.[1] === void 0 ? null : level(words[1]);
+  if (read3 !== null) return read3;
   const mark = /^[*_\s]*(🔴|🟠|🟡|🟢|🛑|:stop_sign:)/u.exec(opening)?.[1];
   if (mark === void 0) return null;
   return mark === "\u{1F534}" || mark === "\u{1F7E0}" || mark === "\u{1F6D1}" || mark === ":stop_sign:" ? "high" : mark === "\u{1F7E1}" ? "medium" : "low";
@@ -33650,7 +33840,7 @@ function hasPublishedSummaryPrefix(body) {
   const [marker, heading] = body.split(/\r?\n/, 3);
   return marker === SUMMARY_MARKER && heading === `### ${SUMMARY_HEADING}`;
 }
-function publishedPayloadText(body) {
+function publishedFrame(body) {
   const lines2 = body.split(/\r?\n/);
   if (!hasPublishedSummaryPrefix(body)) return null;
   if (lines2.at(-1) === "") lines2.pop();
@@ -33678,9 +33868,12 @@ function publishedPayloadText(body) {
     if (href === void 0 || label === void 0 || carried === void 0 || footer[3] !== howItWorksUrl() || !publishedLink(href, label)) return null;
     const json2 = payloadFromAttribute(decodeEntities(carried));
     if (json2 === null || line !== publishedSummaryFooter(json2, href, label)) return null;
-    payload = json2;
+    payload = { json: json2, href, label };
   }
   return fence === null ? payload : null;
+}
+function publishedPayloadText(body) {
+  return publishedFrame(body)?.json ?? null;
 }
 function parsePayload(text) {
   let parsed;
@@ -34716,14 +34909,14 @@ var CHECK_REPORTERS = [
     project: afterSlash(/^cypress(?: cloud)?\s*[/:-]\s*/i),
     // "Failed: 2 • Passed: 41 • Pending: 0 • Skipped: 1" → "✗ 2 ✓ 41" (a pending count with a dot; zeros and skips left out).
     short: (words) => {
-      const read2 = (key) => {
+      const read3 = (key) => {
         const match = new RegExp(`${key}:?\\s*(\\d+)`, "i").exec(words);
         return match === null ? null : Number(match[1]);
       };
       const parts = [];
-      const failed = read2("failed");
-      const passed = read2("passed");
-      const pending = read2("pending");
+      const failed = read3("failed");
+      const passed = read3("passed");
+      const pending = read3("pending");
       if (failed !== null && failed > 0) parts.push({ text: String(failed), glyph: "x", tone: "bad" });
       if (passed !== null && passed > 0) parts.push({ text: String(passed), glyph: "check", tone: "good" });
       if (pending !== null && pending > 0) parts.push({ text: String(pending), glyph: "dot", tone: "warn" });
