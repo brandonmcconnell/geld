@@ -7,11 +7,11 @@ import { isNightlyCheckMessage, isNightlyInstallMessage, isNightlyManageMessage,
 import { manageUrl } from './conflicts';
 import type { NightlyInstallResult } from './messages';
 import type { NightlyBrowser } from './release';
-import { compareVersions, LATEST_RELEASE_PAGE, LATEST_RELEASE_URL, parseRelease, tagFromReleaseUrl } from './release';
-import { BACKGROUND_CHECK_MINUTES, navigationDue, needsDetails } from './schedule';
+import { buildOf, compareVersions, LATEST_RELEASE_PAGE, LATEST_RELEASE_URL, parseRelease, tagFromReleaseUrl } from './release';
+import { BACKGROUND_CHECK_MINUTES, limitedUntil, navigationDue, needsDetails } from './schedule';
 import { startPauseWatch } from './pause';
 import { nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyStatusItem, nightlyTabCountsItem } from './state';
-import type { NightlyFailure, NightlyStatus, UpdateMode } from './state';
+import type { NightlyFailure, NightlyStatus, NightlyWrite, UpdateMode } from './state';
 import { unzip } from './unzip';
 import type { ZipEntry } from './unzip';
 import { copyRunningBuild, downloadsReach, downloadsTarget, folderIsOurs, folderPermission, folderTarget } from './writers';
@@ -63,7 +63,7 @@ type Mark = '' | '↑' | '!' | 'OFF';
 let mark: Mark = '';
 
 function markOf(status: NightlyStatus, paused: boolean): Mark {
-  return paused ? 'OFF' : status.failure?.broken === true ? '!' : isNewer(status) ? '↑' : '';
+  return paused ? 'OFF' : status.failure?.broken === true || status.writing !== null ? '!' : isNewer(status) ? '↑' : '';
 }
 
 /**
@@ -126,8 +126,11 @@ async function releaseDetails(before: NightlyStatus, checkedAt: string, tag: str
     const headers: Record<string, string> = { Accept: 'application/vnd.github+json' };
     if (before.etag !== null && before.latest !== null) headers['If-None-Match'] = before.etag;
     const response = await fetch(LATEST_RELEASE_URL, { headers, cache: 'no-store' });
-    if (response.status === 304) return await patchStatus({ ...asked, checkedAt, checkError: null });
-    if (response.status === 403 || response.status === 429) return await patchStatus({ ...asked, checkedAt, checkError: 'GitHub is limiting requests. Geld checks again later.' });
+    if (response.status === 304) return await patchStatus({ ...asked, checkedAt, checkError: null, limitedUntil: null });
+    if (response.status === 403 || response.status === 429) {
+      const until = limitedUntil(response.headers.get('retry-after'), response.headers.get('x-ratelimit-reset'), Date.now());
+      return await patchStatus({ ...asked, checkedAt, limitedUntil: new Date(until).toISOString(), checkError: 'GitHub is limiting requests. Geld checks again later.' });
+    }
     if (!response.ok) return await patchStatus({ ...asked, checkedAt, checkError: `GitHub answered ${response.status}.` });
     const latest = parseRelease(await response.json(), nightlyBrowser());
     return await patchStatus({
@@ -135,6 +138,7 @@ async function releaseDetails(before: NightlyStatus, checkedAt: string, tag: str
       checkedAt,
       latest,
       etag: response.headers.get('etag'),
+      limitedUntil: null,
       checkError: latest === null ? 'The latest release has no nightly build.' : null,
     });
   } catch (error) {
@@ -146,9 +150,9 @@ async function look(): Promise<NightlyStatus> {
   const checkedAt = new Date().toISOString();
   const tag = await latestTag();
   const before = await nightlyStatusItem.getValue();
-  const status = tag !== null && !needsDetails(before, tag, Date.now())
-    ? await patchStatus({ checkedAt, checkError: null })
-    : await releaseDetails(before, checkedAt, tag);
+  const status = needsDetails(before, tag, Date.now())
+    ? await releaseDetails(before, checkedAt, tag)
+    : await patchStatus({ checkedAt, checkError: tag === null || before.limitedUntil !== null ? (before.checkError ?? 'Could not reach GitHub. Geld checks again later.') : null });
   await showBadge(status);
   if ((await mode()) === 'automatic' && installsOnItsOwn(status)) void installLatest(false);
   return status;
@@ -200,7 +204,11 @@ async function findTarget(): Promise<BuildTarget | Failed> {
   return { ok: false, reason: 'Geld needs your OK to write to its folder.', need: 'permission' };
 }
 
-async function fail(failure: NightlyFailure): Promise<Failed> {
+/** While a write is unfinished (`writing`), every failure is a broken folder that only the saved copy repairs. */
+async function fail(reported: NightlyFailure): Promise<Failed> {
+  const writing = (await nightlyStatusItem.getValue()).writing;
+  const { restored: _restored, ...unrestored } = reported;
+  const failure: NightlyFailure = writing === null ? reported : { ...unrestored, stillOn: writing.whole, broken: true };
   await patchStatus({ installing: null, failure });
   await showBadge(await nightlyStatusItem.getValue());
   const stage = failure.broken === true ? 'broken' : failure.restored === true ? 'restored' : 'before writing';
@@ -219,19 +227,27 @@ async function downloadBuild(url: string, version: string): Promise<ZipEntry[]> 
 
 /**
  * Writes `next` over the running build. A write that breaks off writes `previous` back; a write of
- * `previous` that breaks off too leaves both half there, which the backup in IndexedDB can still repair.
+ * `previous` that breaks off too leaves both half there, which the backup in IndexedDB (`whole`) can still repair.
+ * `owned` names the files already in the folder that are Geld's. The write is recorded before it begins and
+ * cleared only once the folder holds one whole build, so a worker stopped midway leaves the record behind.
  */
-async function replace(target: BuildTarget, next: readonly ZipEntry[], previous: BuildBackup, version: string): Promise<NightlyFailure | null> {
+async function replace(target: BuildTarget, next: readonly ZipEntry[], previous: BuildBackup, whole: string, owned: readonly string[], version: string): Promise<NightlyFailure | null> {
+  const nextPaths = next.map((entry) => entry.path);
+  const paths = [...new Set([...owned, ...nextPaths, ...previous.files.map((file) => file.path)])].sort();
+  const writing: NightlyWrite = { version, whole, paths };
+  await patchStatus({ writing });
   try {
-    await target.write(next, previous.files.map((file) => file.path));
+    await target.write(next, owned);
+    await patchStatus({ writing: null });
     return null;
   } catch (error) {
     const failure = { version, stillOn: previous.version, reason: message(error), at: new Date().toISOString() };
     try {
-      await target.write(previous.files, next.map((entry) => entry.path));
+      await target.write(previous.files, [...new Set([...owned, ...nextPaths])]);
+      await patchStatus({ writing: null });
       return { ...failure, restored: true };
     } catch {
-      return { ...failure, broken: true };
+      return { ...failure, stillOn: whole, broken: true };
     }
   }
 }
@@ -277,14 +293,16 @@ async function install(explicit: boolean): Promise<NightlyInstallResult> {
   let previous: BuildBackup;
   try {
     entries = await downloadBuild(latest.assetUrl, latest.version);
-    // After a write that could not be undone the folder is half one build, half the other: the backup is the whole old one.
-    const kept = status.failure?.broken === true ? await loadBackup() : null;
+    // After a write that did not end whole the folder is half one build, half the other: the backup is the whole old one.
+    const kept = status.writing === null ? null : await loadBackup();
+    if (status.writing !== null && kept === null) throw new Error(`The saved copy of build ${status.writing.whole} is missing. Unzip the latest nightly build over the folder by hand.`);
     previous = kept ?? (await copyRunningBuild(current));
     if (kept === null) await saveBackup(previous);
   } catch (error) {
     return fail({ version: latest.version, stillOn: current, reason: message(error), at: new Date().toISOString() });
   }
-  const failure = await replace(target, entries, previous, latest.version);
+  const owned = status.writing?.paths ?? previous.files.map((file) => file.path);
+  const failure = await replace(target, entries, previous, previous.version, owned, latest.version);
   if (failure !== null) return fail(failure);
   await patchStatus({
     installing: null,
@@ -304,11 +322,12 @@ async function restorePrevious(): Promise<NightlyInstallResult> {
   const target = await installTarget();
   if ('ok' in target) return target;
   const current = installedVersion();
-  const repairing = status.failure?.broken === true;
+  const repairing = status.writing !== null;
   await patchStatus({ installing: backup.version });
   // Repairing, the folder's own files are half written, so there is nothing whole to fall back on.
   const undo = repairing ? backup : await copyRunningBuild(current).catch(() => backup);
-  const failure = await replace(target, backup.files, undo, backup.version);
+  const owned = status.writing?.paths ?? undo.files.map((file) => file.path);
+  const failure = await replace(target, backup.files, undo, backup.version, owned, backup.version);
   if (failure !== null) return fail(failure);
   await patchStatus({
     installing: null,
@@ -319,6 +338,16 @@ async function restorePrevious(): Promise<NightlyInstallResult> {
   });
   reloadSoon();
   return { ok: true, version: backup.version };
+}
+
+/** A write left unfinished by a worker Chrome stopped is a broken folder, offered for repair from the saved copy. */
+async function settleInterrupted(): Promise<NightlyStatus> {
+  const status = await nightlyStatusItem.getValue();
+  const writing = status.writing;
+  if (writing === null || status.failure?.broken === true) return patchStatus({ installing: null });
+  const failure: NightlyFailure = { version: writing.version, stillOn: writing.whole, reason: `Geld stopped while it was writing build ${buildOf(writing.version) ?? writing.version}.`, at: new Date().toISOString(), broken: true };
+  reportError('background:nightly-update', new Error(`Update to ${writing.version} failed (interrupted)`));
+  return patchStatus({ installing: null, failure });
 }
 
 /** Every GitHub page load and in-page navigation looks, in the background, so the page never waits on it. */
@@ -378,7 +407,7 @@ export function startNightly(): void {
   browser.runtime.onInstalled.addListener(() => void checkForUpdate());
   nightlyPrefsItem.watch(() => void checkForUpdate());
   // This worker has only just started, so no install of its own is under way: one marked is left from a worker Chrome stopped mid-install.
-  void patchStatus({ installing: null }).then(showBadge);
+  void settleInterrupted().then(showBadge);
   void scheduleChecks();
   startPauseWatch();
   nightlyConflictItem.watch(() => void nightlyStatusItem.getValue().then(showBadge));

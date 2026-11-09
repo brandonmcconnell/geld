@@ -33,9 +33,13 @@ export function buildProblem(entries: readonly ZipEntry[], expectedVersion: stri
  * Files in the folder that the new build does not have. Hidden files and
  * Chrome's own `_metadata` are not the build's and stay.
  */
-export function stalePaths(existing: readonly string[], incoming: readonly string[]): string[] {
+/**
+ * The files to delete after a build is written: those Geld wrote before (`owned`, from the build lists) that the
+ * new build lacks. Anything else in the folder is the reader's and is never touched.
+ */
+export function stalePaths(owned: readonly string[], incoming: readonly string[]): string[] {
   const keep = new Set(incoming);
-  return existing.filter((path) => {
+  return [...new Set(owned)].filter((path) => {
     if (keep.has(path)) return false;
     const parts = path.split('/');
     return !parts.some((part) => part.startsWith('.')) && parts[0] !== '_metadata';
