@@ -63,6 +63,9 @@ import { allResolved, isSevere, checkCountsFrom, checkCountsOfRuns, checksSummar
 import { exactRulesFor, HiddenPeople, markedOnGitHub, lookUpUnhideForms, refreshUnhidden, sendUnhide } from './hidden-people';
 import { blockedFor } from '../blocked-users';
 import { blockedUsersUrl } from '../blocked-list';
+import { clearSidebarPeople, syncSidebarPeople } from './sidebar-people';
+import { exactRulesFor, HiddenPeople, lookUpUnhideForms, markedOnGitHub, refreshUnhidden, sendUnhide } from './hidden-people';
+import { allResolved, checkCountsFrom, checkCountsOfRuns, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, standingReviewers } from './panel-model';
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
@@ -3345,7 +3348,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   }
   // In compact mode the review threads live in their rows and GitHub's checks section in the CI row:
   // both fold out of the page, so nothing below is left to reveal or scroll to.
-  const reviews = phase('reviews', crawlReviews).filter((review) => {
+  const reviewsAll = phase('reviews', crawlReviews);
+  const reviews = reviewsAll.filter((review) => {
     if (!hidden.hides(review.author.login, review.author.bot, review.avatarSrc)) return true;
     hiddenRoots.push(review.root);
     return false;
@@ -3359,6 +3363,17 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const sidebarAll = phase('sidebar', crawlSidebarReviewers);
   const sidebar = sidebarAll.filter((reviewer) => !hidden.hides(reviewer.login, reviewer.bot, reviewer.avatarSrc));
   // The merge box says "Changes requested" without saying whose: when only a hidden person asked, the words are theirs.
+  // What each hidden person's review said, GitHub's latest-per-reviewer first, for the menu that lists them.
+  const sidebarSaid = new Set<string>();
+  for (const reviewer of sidebarAll) {
+    if (!hidden.isHidden(reviewer.login) || (reviewer.state !== 'approved' && reviewer.state !== 'changes_requested' && reviewer.state !== 'commented')) continue;
+    hidden.noteVerdict(reviewer.login, reviewer.state);
+    sidebarSaid.add(reviewer.login.toLowerCase());
+  }
+  for (const review of reviewsAll) {
+    if (hidden.isHidden(review.author.login) && !sidebarSaid.has(review.author.login.toLowerCase()) && review.state !== 'dismissed') hidden.noteVerdict(review.author.login, review.state);
+  }
+  syncSidebarPeople((login) => hidden.hides(login, login.endsWith('[bot]')));
   const hiddenAskedChanges = sidebarAll.some((reviewer) => reviewer.state === 'changes_requested' && !sidebar.includes(reviewer)) && !sidebar.some((reviewer) => reviewer.state === 'changes_requested');
   const awaiting = phase('awaiting', () => awaitingReviewers(sidebar));
   // A comment left with a close or reopen belongs to that row, not to the Reviews list or a round.
@@ -4230,6 +4245,7 @@ export function teardownReviewOverview(why: 'stop' | 'leave' | 'rebuild' = 'stop
   // and every later callback finds the overview unmounted (`lastSettings`).
   lastSettings = null;
   overviewChecksInDigest = false;
+  clearSidebarPeople();
   closeFlow();
   setAutoLoading(false);
   deferredWhileHidden = false;

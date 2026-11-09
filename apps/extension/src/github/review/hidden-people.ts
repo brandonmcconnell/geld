@@ -126,12 +126,16 @@ export type HiddenWhy =
   | { readonly by: 'github'; readonly reason: GitHubHideReason; readonly anchors: readonly string[]; readonly unhide: boolean }
   | { readonly by: 'list'; readonly rule: string };
 
+/** What a hidden person's review said, as GitHub still counts it: the menu shows it in place of their pill. */
+export type HiddenVerdict = 'approved' | 'changes_requested' | 'commented';
+
 /** Someone the digest leaves out, for the hidden people menu. */
 export interface HiddenPerson {
   readonly login: string;
   readonly bot: boolean;
   readonly avatarSrc: string | null;
   readonly why: HiddenWhy;
+  readonly verdict: HiddenVerdict | null;
   /** The reader is peeking: their content is in the digest for this visit. */
   readonly peeking: boolean;
 }
@@ -141,6 +145,7 @@ interface Entry {
   bot: boolean;
   avatarSrc: string | null;
   why: HiddenWhy;
+  verdict: HiddenVerdict | null;
 }
 
 /**
@@ -171,6 +176,7 @@ export class HiddenPeople {
         login: first.login,
         bot: first.bot,
         avatarSrc: contents.find((content) => content.avatarSrc !== null)?.avatarSrc ?? null,
+        verdict: null,
         why: blocked.has(key) ? { by: 'blocked', scope: blocked.get(key) ?? 'personal' } : { by: 'github', reason: first.reason, anchors: contents.flatMap((content) => (content.anchor === null ? [] : [content.anchor])), unhide: contents.some((content) => unhideFormOf(content) !== null) },
       });
     }
@@ -185,12 +191,19 @@ export class HiddenPeople {
       const scope = this.blocked.get(key);
       const rule = scope === undefined ? this.rules.explain(login) : null;
       if (scope === undefined && rule === null) return false;
-      entry = { login, bot, avatarSrc, why: scope !== undefined ? { by: 'blocked', scope } : { by: 'list', rule: rule ?? login } };
+      entry = { login, bot, avatarSrc, verdict: null, why: scope !== undefined ? { by: 'blocked', scope } : { by: 'list', rule: rule ?? login } };
       this.entries.set(key, entry);
     } else if (entry.avatarSrc === null && avatarSrc !== null) {
       entry.avatarSrc = avatarSrc;
     }
     return !this.peeking.has(key);
+  }
+
+  /** Records a hidden person's review verdict; an approval or a request for changes outranks a comment. */
+  noteVerdict(login: string, verdict: HiddenVerdict): void {
+    const entry = this.entries.get(login.toLowerCase());
+    if (entry === undefined || (verdict === 'commented' && entry.verdict !== null)) return;
+    entry.verdict = verdict;
   }
 
   /** Whether anyone with that login is hidden, peeked at or not. */
@@ -222,7 +235,7 @@ export class HiddenPeople {
 
   people(): readonly HiddenPerson[] {
     return [...this.entries.values()]
-      .map((entry) => ({ login: entry.login, bot: entry.bot, avatarSrc: entry.avatarSrc, why: entry.why, peeking: this.peeking.has(entry.login.toLowerCase()) }))
+      .map((entry) => ({ login: entry.login, bot: entry.bot, avatarSrc: entry.avatarSrc, why: entry.why, verdict: entry.verdict, peeking: this.peeking.has(entry.login.toLowerCase()) }))
       .sort((a, b) => a.login.localeCompare(b.login));
   }
 }

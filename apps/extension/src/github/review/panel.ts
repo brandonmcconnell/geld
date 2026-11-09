@@ -1785,6 +1785,13 @@ function hiddenMenu(model: PanelModel, handlers: PanelHandlers, scope: 'people' 
       createElement('div', { class: `${PANEL_CLASS}__hidden-item`, 'data-login': person.login, ...(person.peeking ? { 'data-peeking': '' } : {}) }, [
         picture,
         createElement('span', { class: `${PANEL_CLASS}__menu-text` }, [person.login, createElement('span', { class: `${PANEL_CLASS}__menu-hint` }, [hiddenWhyText(person)])]),
+        ...(person.verdict === null
+          ? []
+          : [
+              createElement('span', { class: `${PANEL_CLASS}__request-state ${PANEL_CLASS}__hidden-verdict`, 'data-health': REVIEWER_HEALTH[person.verdict], role: 'img', 'aria-label': REVIEWER_GROUP_WORD[person.verdict], title: REVIEWER_GROUP_WORD[person.verdict] }, [
+                createElement('span', { class: `${PANEL_CLASS}__health`, 'data-health': REVIEWER_HEALTH[person.verdict], 'aria-hidden': 'true' }, [icon(ENTRY_GLYPH[person.verdict])]),
+              ]),
+            ]),
         createElement('span', { class: `${PANEL_CLASS}__hidden-actions` }, actions),
       ]),
     );
@@ -3121,7 +3128,7 @@ function signatureOf(model: PanelModel): string {
     comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}:${entry.parent ?? ''}:${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('|')}`),
     reviewerGroups: model.reviewerGroups.map((group) => `${group.state}:${group.reviewers.map((reviewer) => `${reviewer.login}${reviewer.src}`).join(',')}`),
     reviewerStatuses: model.reviewerStatuses.map((status) => `${status.login}:${status.verdict ?? ''}:${status.awaiting ? 'a' : ''}:${status.anchor ?? ''}`),
-    hiddenPeople: model.hiddenPeople.map((person) => `${person.login}:${person.peeking ? 'p' : ''}:${person.why.by === 'list' ? person.why.rule : person.why.by === 'blocked' ? `blocked:${person.why.scope}` : `${person.why.reason}:${person.why.unhide ? 'u' : ''}`}:${person.avatarSrc ?? ''}`),
+    hiddenPeople: model.hiddenPeople.map((person) => `${person.login}:${person.peeking ? 'p' : ''}:${person.verdict ?? ''}:${person.why.by === 'list' ? person.why.rule : person.why.by === 'blocked' ? `blocked:${person.why.scope}` : `${person.why.reason}:${person.why.unhide ? 'u' : ''}`}:${person.avatarSrc ?? ''}`),
     canRequestReviewers: model.canRequestReviewers,
     canDismissReviews: model.canDismissReviews,
     ingesting: model.ingesting,

@@ -3456,6 +3456,11 @@ svg.geld-lucide {
   gap: 4px;
 }
 
+/* GitHub's own sidebar rows for hidden people (sidebar-people.ts). */
+[data-geld-sidebar-hidden] {
+  display: none !important;
+}
+
 /* The rest of the registry, behind a disclosure in the menu's own type. */
 .geld-review__request-more > summary {
   display: flex;
