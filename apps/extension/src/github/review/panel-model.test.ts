@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReviewItem } from '@geld/review';
-import { authorLabels, botHealth, checkCountsFrom, checksHealth, checksSummary, checksTotal, digestMarkdown, EMPTY_CHECKS, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, sortItems, splitItems, standingReviewers, verdictLabel, verdictTone } from './panel-model';
+import { authorLabels, botHealth, checkCountsFrom, checkCountsOfRuns, checksHealth, checksRowTone, checksSummary, checksTone, checksTotal, digestMarkdown, EMPTY_CHECKS, isCurrent, itemMarkdown, newerSummaryAnchor, pushRowTone, requiredReviewsFrom, sortItems, splitItems, standingReviewers, verdictLabel, verdictTone } from './panel-model';
 
 function item(id: string, status: ReviewItem['status']): ReviewItem {
   return { id, title: id, rewritten: false, severity: 'suggestion', status, sources: [{ anchor: 'discussion_r1', kind: 'thread', author: 'alice' }] };
@@ -113,6 +113,29 @@ describe('status rows', () => {
     expect(checkCountsFrom('All checks have passed\n3 successful checks\n3 successful checks')).toEqual({ success: 3, failure: 0, queued: 0, pending: 0, skipped: 0, neutral: 0 });
   });
 
+  it('tints the CI row red only for a failing check GitHub marks required', () => {
+    const failing = { ...EMPTY_CHECKS, success: 5, failure: 1 };
+    expect(checksTone(failing, true)).toBe('bad');
+    expect(checksTone(failing, false)).toBe('warn');
+    // The list marks nothing required: an unknown failure is not counted as a required one.
+    expect(checksTone(failing, null)).toBe('warn');
+    expect(checksRowTone(failing, true)).toBe('bad');
+    expect(checksRowTone(failing, false)).toBeNull();
+    expect(checksRowTone(failing, null)).toBeNull();
+    // Passing or still running never tints the row, whatever the list says.
+    expect(checksRowTone({ ...EMPTY_CHECKS, success: 6 }, null)).toBeNull();
+    expect(checksRowTone({ ...EMPTY_CHECKS, pending: 2, failure: 1 }, true)).toBe('bad');
+  });
+
+  it('tints a push amber for an unresolved thread and never for its CI', () => {
+    expect(pushRowTone(true, 'failure', false)).toBe('warn');
+    expect(pushRowTone(true, 'success', false)).toBe('warn');
+    expect(pushRowTone(false, 'failure', true)).toBe('good');
+    expect(pushRowTone(false, 'failure', false)).toBeNull();
+    expect(pushRowTone(false, 'success', false)).toBe('good');
+    expect(pushRowTone(false, 'pending', false)).toBeNull();
+  });
+
   it('keeps pending (not started) apart from in progress, as GitHub counts them', () => {
     // The screenshot case: the section sentence and both group headings, one bucket each.
     const counts = checkCountsFrom("Some checks haven't completed yet\n4 pending, 8 in progress, 7 skipped, 52 successful checks\n4 pending checks\nVercel – dashboard\nWaiting for status to be reported\n8 in progress checks\n7 skipped checks\n52 successful checks");
@@ -192,12 +215,23 @@ describe('status rows', () => {
   it('grades bots', () => {
     const base = { id: 'greptile', login: 'greptile-apps[bot]', reviewedSha: 'aaa' } as const;
     expect(botHealth({ ...base, verdict: 'findings', score: 5 })).toBe('good');
+    // A 5/5 run with a finding still open (geld#367) is amber, and green once every thread is resolved.
+    expect(botHealth({ ...base, verdict: 'findings', score: 5, count: 1 })).toBe('warn');
+    expect(botHealth({ ...base, verdict: 'findings', score: 5, count: 0 })).toBe('good');
+    // Findings are amber, the exclamation while one marked severe (a high grade, a score under 3/5) is open, green once
+    // every one is resolved: the red cross is a run that broke.
+    expect(botHealth({ ...base, verdict: 'findings', score: 2, count: 1 })).toBe('severe');
+    expect(botHealth({ ...base, verdict: 'findings', score: 2, count: 0 })).toBe('good');
     expect(botHealth({ ...base, verdict: 'findings', score: 4 })).toBe('warn');
-    expect(botHealth({ ...base, verdict: 'findings', score: 2 })).toBe('bad');
-    expect(botHealth({ ...base, id: 'bugbot', verdict: 'findings', count: 1, severity: 'high' })).toBe('bad');
+    expect(botHealth({ ...base, verdict: 'findings', score: 3, count: 2 })).toBe('warn');
+    expect(botHealth({ ...base, verdict: 'findings', score: 2 })).toBe('severe');
+    expect(botHealth({ ...base, id: 'macroscope', verdict: 'findings', count: 8, severity: 'high' })).toBe('severe');
+    expect(botHealth({ ...base, id: 'macroscope', verdict: 'findings', count: 0, severity: 'high' })).toBe('good');
+    expect(botHealth({ ...base, id: 'macroscope', verdict: 'findings', count: 2, severity: 'medium' })).toBe('warn');
+    expect(verdictLabel({ ...base, id: 'macroscope', login: 'macroscopeapp[bot]', verdict: 'findings', count: 8, severity: 'high' })).toBe('Macroscope 8 issues, high severity');
     expect(botHealth({ ...base, id: 'bugbot', verdict: 'clean' })).toBe('good');
-    // A low score is a failure (red X); a run the bot refused is a warning (amber triangle); a run that broke is a failure.
-    expect(botHealth({ ...base, verdict: 'findings', score: 1 })).toBe('bad');
+    // A run the bot refused is a warning (amber triangle); a run that broke is a failure.
+    expect(botHealth({ ...base, verdict: 'findings', score: 1 })).toBe('severe');
     expect(botHealth({ ...base, id: 'bugbot', verdict: 'failed', reason: 'Bugbot is disabled for this repository' })).toBe('warn');
     expect(botHealth({ ...base, id: 'bugbot', verdict: 'failed' })).toBe('bad');
     // Findings whose threads are all resolved: nothing outstanding.
@@ -287,5 +321,22 @@ describe('reviewer groups', () => {
       ['approved', ['Ana|https://avatars.githubusercontent.com/u/1?s=80&v=4']],
       ['changes_requested', ['max|']],
     ]);
+  });
+});
+
+describe('checkCountsOfRuns', () => {
+  it('counts the head check runs by state, as the merge box headings would', () => {
+    expect(
+      checkCountsOfRuns([
+        { status: 'completed', conclusion: 'success' },
+        { status: 'completed', conclusion: 'failure' },
+        { status: 'completed', conclusion: 'cancelled' },
+        { status: 'in_progress', conclusion: null },
+        { status: 'queued', conclusion: null },
+        { status: 'completed', conclusion: 'skipped' },
+        { status: 'completed', conclusion: 'neutral' },
+      ]),
+    ).toEqual({ success: 1, failure: 2, pending: 1, queued: 1, skipped: 1, neutral: 1 });
+    expect(checkCountsOfRuns([])).toBeNull();
   });
 });
