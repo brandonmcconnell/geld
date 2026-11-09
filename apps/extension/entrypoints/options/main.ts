@@ -25,6 +25,9 @@ import {
   normalizeAiBaseUrl,
   normalizeHost,
   parsePatternList,
+  presetBlank,
+  presetGroups,
+  presetMatches,
   actionsFor,
   allHosts,
   authorRuleProblem,
@@ -41,11 +44,11 @@ import {
   withCustomCategory,
   withoutCustomCategory,
 } from '@geld/core';
-import type { ActionsField, ListField, MaintenanceActionId, SettingsSectionId, TextField, ToggleField } from '@geld/core';
+import type { ActionsField, ListField, MaintenanceActionId, SettingsSectionId, TextField, TextPreset, ToggleField } from '@geld/core';
 import { catalogFromCache, catalogItem, catalogStatusItem, describeCatalog, describeCatalogOutcome } from '../../src/lib/catalog';
 import type { CachedCatalog, CatalogStatus } from '../../src/lib/catalog';
 import { grantedHosts, originPattern } from '../../src/lib/enterprise';
-import { hasGatewayPermission, requestGatewayPermission } from '../../src/lib/ai-gateway';
+import { gatewayOriginPattern, hasGatewayPermission, requestGatewayPermission } from '../../src/lib/ai-gateway';
 import type { AiModelsRequest } from '../../src/lib/messages';
 import { isAiModelsResponse } from '../../src/lib/messages';
 import type { CatalogCheckMessage, ClearDiffCacheMessage } from '../../src/lib/messages';
@@ -56,7 +59,7 @@ import { settingsItem } from '../../src/lib/storage';
 import type { JevSource } from '../../src/lib/local-state';
 import { aiGatewayItem, aiKeyItem, jevKeyItem, jevSourceItem } from '../../src/lib/local-state';
 import type { ModelInfo } from '@geld/review';
-import { isEvaluationModel, jevModelFor, TYPESAFE_API } from '@geld/review';
+import { decisionModelsIn, defaultDecisionModel, isEvaluationModel, jevModelFor, knownDecisionModels, TYPESAFE_API } from '@geld/review';
 import { issueTrackerEditor } from '../../src/ui/issue-tracker-editor';
 import { modelCombobox } from '../../src/ui/model-combobox';
 import { accountItem, appClientIdItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, syncStateItem } from '../../src/lib/account';
@@ -67,6 +70,9 @@ import { wireFeedbackLink } from '../../src/ui/feedback-link';
 import { mountAccountWidget } from '../../src/ui/account-widget';
 import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
+import { installErrorCapture } from '../../src/lib/error-capture';
+
+installErrorCapture('options');
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -197,7 +203,9 @@ async function main(): Promise<void> {
     const section = sections.find((candidate) => candidate.id === sectionId);
     const host = requireElement(hostId, HTMLDivElement);
     const saved = statusReporter(el('span'));
-    toggleFields(section?.fields ?? []).forEach((field, index) => {
+    // Firefox wants its own data-collection permission before an add-on sends error reports; until Geld asks for it, its builds keep errors local.
+    const shown = toggleFields(section?.fields ?? []).filter((field) => !(import.meta.env.FIREFOX && field.key === 'errorReports'));
+    shown.forEach((field, index) => {
       if (index > 0) host.append(el('hr', 'options__divider'));
       const label = el('span', 'geld-label', [field.label]);
       label.id = `${field.key}-label`;
@@ -738,7 +746,7 @@ async function main(): Promise<void> {
     requireElement('test-syntaxes', HTMLDivElement).replaceChildren(el('div', 'options__editor', [label, help, area, syntax, el('div', 'geld-row options__actions', [statusNode, save])]));
   }
 
-  /* Pull request lists: authors to hide */
+  /* Hidden people: logins left out of PR lists and the digest */
   applySchemaCopy('lists');
   const authorsStatus = statusReporter(requireElement('authors-status', HTMLSpanElement));
   const authorsArea = requireElement('hidden-authors', HTMLTextAreaElement);
@@ -755,10 +763,10 @@ async function main(): Promise<void> {
     }
     settings = await settingsItem.patch({ hiddenAuthors });
     authorsArea.value = hiddenAuthors.join('\n');
-    authorsStatus(`Saved ${pluralize(hiddenAuthors.length, 'author', 'authors')}`, 'success');
+    authorsStatus(`Saved ${pluralize(hiddenAuthors.length, 'login', 'logins')}`, 'success');
   });
 
-  /* Experiments — the pull request conversation digest: panel, timeline, extra bots, and the AI that can write for it. */
+  /* Experiments: the digest's fine-tuning (timeline, grouping, extra bots) and the AI that can write for it. */
   applySchemaCopy('experiments');
   const reviewSection = sections.find((candidate) => candidate.id === 'experiments');
   const reviewStack = requireElement('review-stack', HTMLDivElement);
@@ -788,7 +796,7 @@ async function main(): Promise<void> {
     return block([el('div', 'geld-row options__field-row', [head, button]), ...extra]);
   };
   const reviewListEditors = new Map<'reviewBots' | 'trustedReviewAccounts', { readonly area: HTMLTextAreaElement; base: readonly string[] }>();
-  const aiFieldKeys = new Set<string>(['aiEnabled', 'aiBaseUrl', 'aiModel', 'aiJev']);
+  const aiFieldKeys = new Set<string>(['aiEnabled', 'aiBaseUrl', 'aiModel', 'aiJev', 'aiDecisionModel']);
   let aiRendered = false;
   for (const field of reviewSection?.fields ?? []) {
     if ('key' in field && aiFieldKeys.has(field.key)) {
@@ -882,7 +890,8 @@ async function main(): Promise<void> {
     const urlField = fields.find((field): field is TextField => field.kind === 'text' && field.key === 'aiBaseUrl');
     const modelField = fields.find((field): field is TextField => field.kind === 'text' && field.key === 'aiModel');
     const jevField = fields.find((field): field is ToggleField => field.kind === 'toggle' && field.key === 'aiJev');
-    if (enabledField === undefined || urlField === undefined || modelField === undefined || jevField === undefined) return;
+    const decisionField = fields.find((field): field is TextField => field.kind === 'text' && field.key === 'aiDecisionModel');
+    if (enabledField === undefined || urlField === undefined || modelField === undefined || jevField === undefined || decisionField === undefined) return;
 
     toggleBlock(enabledField);
 
@@ -900,9 +909,19 @@ async function main(): Promise<void> {
     const urlSave = el('button', 'geld-button geld-button--primary geld-button--small', ['Save']);
     urlSave.type = 'button';
     const presets = el('div', 'options__presets');
+    presets.setAttribute('role', 'group');
     presets.setAttribute('aria-label', 'Gateway presets');
+    const presetNote = el('p', 'options__preset-note');
+    presetNote.hidden = true;
     const saveUrl = async (raw: string): Promise<boolean> => {
       const value = normalizeAiBaseUrl(raw);
+      const blank = presetBlank(value);
+      if (blank !== null) {
+        urlStatus(`Fill in ${value.slice(blank.start, blank.end)} first.`, 'error');
+        urlInput.focus();
+        urlInput.setSelectionRange(blank.start, blank.end);
+        return false;
+      }
       if (value !== '') {
         const denied = await requestGatewayPermission(value);
         if (denied !== null) {
@@ -910,23 +929,58 @@ async function main(): Promise<void> {
           return false;
         }
       }
-      settings = await settingsItem.patch({ aiBaseUrl: value });
+      // A decision model is picked from one gateway's list; another gateway may not serve it, so the pick goes back to automatic.
+      const gatewayChanged = value !== settings.aiBaseUrl && settings.aiDecisionModel !== '';
+      settings = await settingsItem.patch(gatewayChanged ? { aiBaseUrl: value, aiDecisionModel: '' } : { aiBaseUrl: value });
+      if (gatewayChanged) decisionCombo.setValue('');
       urlInput.value = settings.aiBaseUrl;
       urlStatus(value === '' ? 'Cleared' : 'Saved', 'success');
       markPreset();
       void refreshModels();
       return true;
     };
+    const presetButtons: { readonly button: HTMLButtonElement; readonly preset: TextPreset }[] = [];
     const markPreset = (): void => {
-      for (const button of presets.querySelectorAll<HTMLButtonElement>('button')) button.setAttribute('aria-pressed', String(button.dataset.value === settings.aiBaseUrl));
+      let note: string | undefined;
+      for (const { button, preset } of presetButtons) {
+        const pressed = presetMatches(preset, settings.aiBaseUrl);
+        button.setAttribute('aria-pressed', String(pressed));
+        if (pressed) note = preset.note;
+      }
+      presetNote.replaceChildren(...(note === undefined ? [] : richText(note)));
+      presetNote.hidden = note === undefined;
     };
-    for (const preset of urlField.presets ?? []) {
-      const button = el('button', 'options__preset', [preset.label]);
-      button.type = 'button';
-      button.dataset.value = preset.value;
-      button.title = preset.value;
-      button.addEventListener('click', () => void saveUrl(preset.value));
-      presets.append(button);
+    const choosePreset = (preset: TextPreset): void => {
+      const blank = presetBlank(preset.value);
+      if (blank === null) {
+        void saveUrl(preset.value);
+        return;
+      }
+      // A preset with a blank is put in the field with the blank selected, to be typed over; the input's own pause saves it.
+      urlInput.value = preset.value;
+      urlInput.focus();
+      urlInput.setSelectionRange(blank.start, blank.end);
+      presetNote.replaceChildren(...(preset.note === undefined ? [] : richText(preset.note)));
+      presetNote.hidden = preset.note === undefined;
+    };
+    for (const { group, presets: members } of presetGroups(urlField.presets ?? [])) {
+      const links = el('div', 'options__preset-links');
+      for (const preset of members) {
+        const button = el('button', 'options__preset', [preset.label]);
+        button.type = 'button';
+        button.title = preset.value;
+        button.addEventListener('click', () => choosePreset(preset));
+        presetButtons.push({ button, preset });
+        links.append(button);
+      }
+      if (group === null) presets.append(links);
+      else {
+        const label = el('span', 'options__preset-group', [group]);
+        label.id = `ai-presets-${group.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+        links.setAttribute('role', 'group');
+        links.setAttribute('aria-labelledby', label.id);
+        presets.append(label, links);
+      }
     }
     markPreset();
     urlSave.addEventListener('click', () => void saveUrl(urlInput.value));
@@ -935,10 +989,10 @@ async function main(): Promise<void> {
       // A pasted URL is saved by itself once it is a URL and typing has paused; no need to reach for Save.
       if (urlTimer !== null) clearTimeout(urlTimer);
       const value = normalizeAiBaseUrl(urlInput.value);
-      if (value === settings.aiBaseUrl || (value !== '' && !/^https:\/\/[^\s/]+/i.test(value))) return;
+      if (value === settings.aiBaseUrl || presetBlank(value) !== null || (value !== '' && gatewayOriginPattern(value) === null)) return;
       urlTimer = setTimeout(() => void saveUrl(urlInput.value), 900);
     });
-    block([urlHead.head, urlInput, presets, el('div', 'geld-row options__actions', [urlStatusEl, urlSave])]);
+    block([urlHead.head, urlInput, presets, presetNote, el('div', 'geld-row options__actions', [urlStatusEl, urlSave])]);
 
     /* Gateway key: local only; saving it loads the models. */
     const keyLabel = el('label', 'geld-label', ['AI gateway key']);
@@ -1001,7 +1055,21 @@ async function main(): Promise<void> {
     });
     block([modelHead.head, modelGate, modelControls]);
 
-    /* Jev: through the gateway when it offers it, else (or on request) with a TypeSafe key of the user's own. Nothing of this shows while Jev is off. */
+    /* Decisions: a model the gateway serves (picked, or automatic), else (or on request) Jev with a TypeSafe key of the user's own. Nothing of this shows while the switch is off. */
+    const decisionHead = fieldHead(decisionField);
+    const decisionStatusEl = el('span', 'geld-status');
+    decisionStatusEl.setAttribute('aria-live', 'polite');
+    const decisionStatus = statusReporter(decisionStatusEl);
+    const decisionSave = el('button', 'geld-button geld-button--primary geld-button--small', ['Save']);
+    decisionSave.type = 'button';
+    const decisionCombo = modelCombobox({ id: 'aiDecisionModel', labelledBy: decisionHead.label.id, placeholder: decisionField.placeholder, initial: settings.aiDecisionModel });
+    const decisionBlock = el('div', 'options__jev-key', [decisionHead.head, decisionCombo.root, el('div', 'geld-row options__actions', [decisionStatusEl, decisionSave])]);
+    decisionSave.addEventListener('click', async () => {
+      const value = decisionCombo.value();
+      settings = await settingsItem.patch({ aiDecisionModel: value });
+      decisionStatus(value === '' ? `Saved. Automatic uses ${gatewayDecision ?? 'Jev'}.` : decisionCombo.has(value) ? 'Saved' : 'Saved (not in the gateway’s list; requests will say if it does not exist)', 'success');
+      renderJevState();
+    });
     const jevNote = el('p', 'options__jev-note');
     jevNote.setAttribute('role', 'status');
     const jevKeyLabel = el('label', 'geld-label', ['TypeSafe API key']);
@@ -1033,10 +1101,10 @@ async function main(): Promise<void> {
       // A key saved on purpose is a key meant to be used; clearing it hands Jev back to the gateway.
       jevSource = value === '' ? 'gateway' : 'own';
       await jevSourceItem.setValue(jevSource);
-      jevStatus(value === '' ? 'Cleared; Jev goes through the gateway.' : 'Saved on this device; Jev uses your key.', 'success');
+      jevStatus(value === '' ? 'Cleared. Decisions go through the gateway.' : 'Saved on this device. Jev uses your key.', 'success');
       renderJevState();
     });
-    const useGateway = el('button', 'geld-button geld-button--small', ['Use the gateway’s Jev']);
+    const useGateway = el('button', 'geld-button geld-button--small', ['Use the gateway’s models']);
     useGateway.type = 'button';
     useGateway.addEventListener('click', async () => {
       jevSource = 'gateway';
@@ -1052,8 +1120,14 @@ async function main(): Promise<void> {
       renderJevState();
       jevKeyInput.focus({ preventScroll: true });
     });
-    /** What the gateway offers is only known once its models loaded; until then the note only explains. */
-    let gatewayJev: string | null | undefined;
+    /** What the gateway serves is only known once its models loaded; until then the note only explains. */
+    let gatewayDecision: string | null | undefined;
+    const fillDecisionModels = (baseUrl: string, models: readonly ModelInfo[]): void => {
+      const listed = decisionModelsIn(models);
+      const known = knownDecisionModels(baseUrl).filter((id) => !listed.some((model) => model.id === id));
+      decisionCombo.setOptions([...listed, ...known.map((id) => ({ id }))]);
+      gatewayDecision = defaultDecisionModel(baseUrl, models);
+    };
     const renderJevState = (): void => {
       const on = settings.aiJev;
       jevNote.replaceChildren();
@@ -1061,28 +1135,31 @@ async function main(): Promise<void> {
       // Off: nothing about routes or keys; the switch's description is all there is to read.
       jevNote.hidden = !on;
       jevKeyBlock.hidden = true;
+      decisionBlock.hidden = true;
       if (!on) return;
-      if (gatewayJev === undefined) {
-        jevNote.append('Whether your gateway offers Jev is checked when its models load.');
+      if (gatewayDecision === undefined) {
+        jevNote.append('Whether your gateway serves decision models is checked when its models load.');
         return;
       }
-      if (gatewayJev !== null) {
+      if (gatewayDecision !== null) {
         if (jevSource === 'own') {
-          jevNote.append(`Jev uses your TypeSafe key rather than your gateway’s ${gatewayJev}.`);
+          jevNote.append('Decisions use Jev with your TypeSafe key rather than your gateway’s models.');
           jevKeyBlock.hidden = false;
           useGateway.hidden = false;
         } else {
-          jevNote.append(`Jev is offered by your AI gateway (${gatewayJev}); no TypeSafe key is needed. `, useOwnKey);
+          const model = settings.aiDecisionModel === '' ? `automatic: ${gatewayDecision}` : settings.aiDecisionModel;
+          jevNote.append(`Decisions go through your AI gateway (${model}), no TypeSafe key needed. `, useOwnKey);
+          decisionBlock.hidden = false;
         }
         return;
       }
-      // The gateway lacks Jev: the key is the only route, so the field is open and the way back does not apply.
-      jevNote.append('Your AI gateway does not offer Jev. Add a TypeSafe API key to use it directly.');
+      // The gateway serves no decision model: the key is the only route, so the field is open and the way back does not apply.
+      jevNote.append('Your AI gateway serves no decision model. Add a TypeSafe API key to use Jev directly.');
       if (jevKeyInput.value.trim() === '') jevNote.dataset.tone = 'error';
       jevKeyBlock.hidden = false;
       useGateway.hidden = true;
     };
-    toggleBlock(jevField, [jevNote, jevKeyBlock]);
+    toggleBlock(jevField, [jevNote, decisionBlock, jevKeyBlock]);
     reviewSwitches.push({ field: jevField, set: () => renderJevState() });
 
     /** Fetch the gateway's models when URL and key are both there; gate the model field otherwise. */
@@ -1093,7 +1170,7 @@ async function main(): Promise<void> {
       const apiKey = (await aiKeyItem.getValue()).trim();
       if (baseUrl === '' || apiKey === '') {
         setModelsEnabled(false, baseUrl === '' ? 'Save a gateway URL and key first; the models it offers are listed here.' : 'Save the gateway key; the models it offers are listed here.');
-        gatewayJev = undefined;
+        gatewayDecision = undefined;
         renderJevState();
         return;
       }
@@ -1122,13 +1199,13 @@ async function main(): Promise<void> {
       if (run !== modelsRun) return;
       if (!isAiModelsResponse(response) || !response.ok) {
         setModelsEnabled(false, !isAiModelsResponse(response) || response.ok ? 'The gateway did not list its models.' : `The gateway did not list its models: ${response.reason}`);
-        gatewayJev = undefined;
+        gatewayDecision = undefined;
         renderJevState();
         return;
       }
       const ids = response.models.map((model) => model.id);
-      gatewayJev = jevModelFor(baseUrl, response.models);
-      await aiGatewayItem.setValue({ baseUrl, models: ids, details: Object.fromEntries(response.models.map((model) => [model.id, model])), jevModel: gatewayJev, checkedAt: new Date().toISOString() });
+      fillDecisionModels(baseUrl, response.models);
+      await aiGatewayItem.setValue({ baseUrl, models: ids, details: Object.fromEntries(response.models.map((model) => [model.id, model])), jevModel: jevModelFor(baseUrl, response.models), checkedAt: new Date().toISOString() });
       fillModels(response.models);
       setModelsEnabled(true, '');
       modelStatus(`${response.models.filter((model) => !isEvaluationModel(model.id, model.type) && !isEvaluationModel(model.id)).length} models`, 'success');
@@ -1136,8 +1213,9 @@ async function main(): Promise<void> {
     };
     const cached = await aiGatewayItem.getValue();
     if (cached !== null && cached.baseUrl === settings.aiBaseUrl && settings.aiBaseUrl !== '') {
-      gatewayJev = cached.jevModel ?? jevModelFor(settings.aiBaseUrl);
-      fillModels(cached.models.map((id) => cached.details?.[id] ?? { id }));
+      const cachedModels = cached.models.map((id) => cached.details?.[id] ?? { id });
+      fillDecisionModels(settings.aiBaseUrl, cachedModels);
+      fillModels(cachedModels);
       setModelsEnabled(true, '');
     } else {
       fillModels([]);

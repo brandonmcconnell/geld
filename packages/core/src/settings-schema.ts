@@ -23,7 +23,7 @@ export type ListSettingKey = {
 export type ChoiceSettingKey = 'repoConfigs' | 'compactTimeline' | 'reviewGrouping' | 'suggestedFixes';
 
 /** Freeform string settings (URLs, model ids). Distinct from {@link ChoiceSettingKey}. */
-export type TextSettingKey = 'aiBaseUrl' | 'aiModel';
+export type TextSettingKey = 'aiBaseUrl' | 'aiModel' | 'aiDecisionModel';
 
 export type SettingsSurface = 'extension' | 'site';
 
@@ -82,8 +82,11 @@ export interface CategoriesField extends FieldBase {
     readonly groupsDescription: string;
   };
   readonly extraPatterns: PatternEditorCopy;
-  /** The per-category "mark hidden files as viewed" checkbox, also shown in each custom category's editor. */
-  readonly autoViewed: { readonly label: string; readonly description: string };
+  /**
+   * The per-category "mark hidden files as viewed" checkbox, also shown in each custom category's editor. The popup
+   * has one switch for every category at once, with its own copy.
+   */
+  readonly autoViewed: { readonly label: string; readonly description: string; readonly popupLabel: string; readonly popupDescription: string };
 }
 
 /** Editor for user-defined categories: title, icon and patterns. */
@@ -123,7 +126,43 @@ export interface TextField extends FieldBase {
 
 export interface TextPreset {
   readonly label: string;
+  /** May hold `{blanks}` the reader fills in (a region, a resource name) before it is saved. */
   readonly value: string;
+  /** Presets sharing a group are listed on one labelled line, in schema order. */
+  readonly group?: string;
+  /** Shown under the presets while this one is the saved value. Copy may use `backticks`. */
+  readonly note?: string;
+}
+
+const PRESET_BLANK = /\{[a-z]+\}/i;
+
+/** Where the first `{blank}` sits in a preset value, so a click can select it for typing over. */
+export function presetBlank(value: string): { readonly start: number; readonly end: number } | null {
+  const match = PRESET_BLANK.exec(value);
+  return match === null ? null : { start: match.index, end: match.index + match[0].length };
+}
+
+/** Whether a saved value is this preset, with its blanks filled in by anything that stays inside one URL segment. */
+export function presetMatches(preset: TextPreset, value: string): boolean {
+  if (value === '') return false;
+  if (presetBlank(preset.value) === null) return value === preset.value;
+  const pattern = preset.value
+    .split(/(\{[a-z]+\})/i)
+    .map((part) => (PRESET_BLANK.test(part) ? '[^/.{}\\s]+' : part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    .join('');
+  return new RegExp(`^${pattern}$`, 'i').test(value);
+}
+
+/** Presets grouped for display: one entry per group in first-seen order, ungrouped presets under `null`. */
+export function presetGroups(presets: readonly TextPreset[]): readonly { readonly group: string | null; readonly presets: readonly TextPreset[] }[] {
+  const groups = new Map<string | null, TextPreset[]>();
+  for (const preset of presets) {
+    const key = preset.group ?? null;
+    const list = groups.get(key);
+    if (list === undefined) groups.set(key, [preset]);
+    else list.push(preset);
+  }
+  return [...groups].map(([group, list]) => ({ group, presets: list }));
 }
 
 export type MaintenanceActionId = 'export' | 'import' | 'clear-cache' | 'copy-diagnostics' | 'report-diagnostics' | 'reset';
@@ -187,12 +226,45 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       },
       {
         kind: 'toggle',
+        key: 'prOverview',
+        label: 'Pull request digest',
+        description:
+          'A panel under the description on the conversation tab: reviews, what each review bot concluded, CI, reports and previews, then the open threads round by round, so what needs you is clear at a glance.',
+        popup: true,
+        popupDescription: 'Reviews, bots, CI and open threads at a glance.',
+      },
+      {
+        kind: 'toggle',
         key: 'groupHidden',
         label: 'Group hidden files',
         description:
           'On: hidden files move to a collapsible section at the bottom of the diff and get their own panels in the file tree. Off: they stay where they are, collapsed and faded, with their category’s icon in the tree.',
         popup: true,
         popupDescription: 'Off: keep them in place, collapsed and faded.',
+      },
+      {
+        kind: 'toggle',
+        key: 'collapseDescription',
+        label: 'Shorten the description',
+        description: 'Fold each section of the pull request description under its heading. A description still taller than 500px is cut there with a control to show the rest.',
+        popup: true,
+        popupDescription: 'Fold its sections under their headings.',
+      },
+      {
+        kind: 'toggle',
+        key: 'relatedLinks',
+        label: 'Related links',
+        description:
+          'Two sections under Reviewers in the pull request sidebar. Related links lists the tickets, Slack threads, agent sessions, reviews and docs its description links to, such as a Linear issue or the Replicas workspace that opened it. Related work shows the stack it is in and the GitHub issues and pull requests its description links to.',
+        popup: false,
+      },
+      {
+        kind: 'toggle',
+        key: 'attachmentLightbox',
+        label: 'Attachment lightbox',
+        description: 'Preview image attachments in issues and pull requests with zoom and pan.',
+        popup: false,
+        surfaces: ['extension'],
       },
       {
         kind: 'toggle',
@@ -260,6 +332,15 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         popup: false,
         surfaces: ['extension'],
       },
+      {
+        kind: 'toggle',
+        key: 'errorReports',
+        label: 'Send error reports',
+        description:
+          'When part of Geld breaks, send the error and where in Geld’s code it happened to `geld.sh`, with the version and browser. Addresses, repository and file names, people and page text are removed first. Off: errors stay on this device, in Copy diagnostics.',
+        popup: false,
+        surfaces: ['extension'],
+      },
     ],
   },
   {
@@ -292,6 +373,8 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         },
         autoViewed: {
           label: 'Mark as viewed automatically',
+          popupLabel: 'Mark hidden files viewed',
+          popupDescription: 'Tick GitHub’s Viewed box for every hidden file on a pull request. Set it per category in Settings.',
           description:
             'On pull requests, tick GitHub’s Viewed box for this category’s hidden files, so “N of M files viewed” only waits on what is left to review. Untick one by hand and it stays unticked until the next push.',
         },
@@ -428,15 +511,15 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
   },
   {
     id: 'lists',
-    title: 'Pull request lists',
+    title: 'Hidden people',
     intro:
-      'Pull requests opened by these authors are hidden in PR lists and stacks, behind a row that says how many and shows them on click. One login per line; `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).',
+      'People and bots you never want to see. Their pull requests are hidden in PR lists and stacks, behind a row that says how many and shows them on click. Their reviews and comments are left out of the pull request digest, where a closed eye on the Reviews or Review bots row lists them with Peek and Unhide. Anyone GitHub shows with a comment hidden as spam or abuse is left out of the digest too. A reply of theirs in someone else’s review thread is folded there. One login per line. `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).',
     fields: [
       {
         kind: 'list',
         key: 'hiddenAuthors',
-        label: 'Hidden authors',
-        description: 'Pull request authors whose PRs are hidden in lists.',
+        label: 'Hidden people',
+        description: 'Logins whose pull requests, reviews and comments Geld hides.',
         popup: false,
         rows: 4,
         placeholder: '*[bot]\nrenovate*',
@@ -445,7 +528,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
           '`*` matches any run of characters: `*[bot]` is every GitHub App, `renovate*` every Renovate account.',
           'Matching ignores case. Lines starting with `#` are comments.',
         ],
-        saveLabel: 'Save authors',
+        saveLabel: 'Save hidden people',
       },
     ],
   },
@@ -453,16 +536,8 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
     id: 'experiments',
     title: 'Experiments',
     intro:
-      'Features still taking shape: off until you turn them on here, and liable to change. The one running now is the review digest for pull request conversations — a panel pinned at the top of the conversation tab that gathers open findings and bot verdicts and folds bot comments out of the timeline. The Geld GitHub Action writes the digest as one comment; without it the extension builds the same panel from the page.',
+      'Features still taking shape, and liable to change. Most of them fine-tune the pull request digest: how much of the timeline it folds, how it groups, which bots it reads, and the AI that can write for it. The Geld GitHub Action writes the digest as one comment. Without it the extension builds the same panel from the page.',
     fields: [
-      {
-        kind: 'toggle',
-        key: 'prOverview',
-        label: 'Review digest on pull requests',
-        description: 'Show a review panel on the conversation tab: open findings, bot verdicts, and (when compacting) a quieter timeline.',
-        // The one experiment in the popup, under its own "Experiments" heading, so it can be switched while testing.
-        popup: true,
-      },
       {
         kind: 'choice',
         key: 'compactTimeline',
@@ -489,16 +564,16 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       },
       {
         kind: 'toggle',
-        key: 'collapseDescription',
-        label: 'Collapse the description',
-        description: 'In Minimal mode, show the first paragraph of the pull request body and a control to expand the rest.',
+        key: 'quickReview',
+        label: 'Submit review from any tab',
+        description: 'Put the Submit review button in the pull request’s tab bar, beside the line counts, on every tab. The Files changed tab’s own button gives way to it.',
         popup: false,
       },
       {
         kind: 'toggle',
-        key: 'quickReview',
-        label: 'Submit review from any tab',
-        description: 'Put the Submit review button in the pull request’s tab bar, beside the line counts, on every tab. The Files changed tab’s own button gives way to it.',
+        key: 'holdToMerge',
+        label: 'Hold ⌘ to merge from the status pill',
+        description: 'While ⌘ (Ctrl on Windows and Linux) is held, the pull request’s status pill becomes a Merge button whenever GitHub would merge it now. Off, the pill only opens its menu of statuses.',
         popup: false,
       },
       {
@@ -557,15 +632,41 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         key: 'aiBaseUrl',
         label: 'AI gateway URL',
         description:
-          'An OpenAI-compatible base URL: Vercel AI Gateway, OpenRouter, OpenAI, or your own. Paste it with or without the `/v1`; requests add their own path. The key stays on this device (`storage.local`, never the gist).',
+          'Any OpenAI-compatible base URL: a gateway, a provider, a model on this computer, or your own. Paste it with or without the `/v1`, requests add their own path. The key stays on this device (`storage.local`, never the gist).',
         popup: false,
         placeholder: 'https://ai-gateway.vercel.sh',
         autocomplete: 'off',
         surfaces: ['extension'],
         presets: [
-          { label: 'Vercel AI Gateway', value: 'https://ai-gateway.vercel.sh' },
-          { label: 'OpenRouter', value: 'https://openrouter.ai/api' },
-          { label: 'OpenAI', value: 'https://api.openai.com' },
+          { group: 'Gateways', label: 'Vercel AI Gateway', value: 'https://ai-gateway.vercel.sh' },
+          { group: 'Gateways', label: 'OpenRouter', value: 'https://openrouter.ai/api' },
+          {
+            group: 'Gateways',
+            label: 'Cloudflare AI Gateway',
+            value: 'https://api.cloudflare.com/client/v4/accounts/{account}/ai',
+            note: 'Fill in your Cloudflare account ID. The key is a Cloudflare API token, and models are named like `openai/gpt-4.1`.',
+          },
+          { group: 'Providers', label: 'OpenAI', value: 'https://api.openai.com' },
+          {
+            group: 'Providers',
+            label: 'Amazon Bedrock',
+            value: 'https://bedrock-mantle.{region}.api.aws',
+            note: 'Fill in your AWS region, such as `us-east-1`. The key is an Amazon Bedrock API key.',
+          },
+          {
+            group: 'Providers',
+            label: 'Azure OpenAI',
+            value: 'https://{resource}.openai.azure.com/openai',
+            note: 'Fill in your Azure OpenAI resource name. Models are your deployment names.',
+          },
+          { group: 'Providers', label: 'Google Gemini', value: 'https://generativelanguage.googleapis.com/v1beta/openai' },
+          { group: 'Providers', label: 'Groq', value: 'https://api.groq.com/openai' },
+          {
+            group: 'On this computer',
+            label: 'Ollama',
+            value: 'http://localhost:11434',
+            note: 'Ollama ignores the key, so any text will do. Start it with `OLLAMA_ORIGINS=chrome-extension://*,moz-extension://*` so it answers browser extensions.',
+          },
         ],
       },
       {
@@ -581,10 +682,20 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       {
         kind: 'toggle',
         key: 'aiJev',
-        label: 'Use Jev for decisions',
+        label: 'Use a decision model',
         description:
-          'TypeSafe’s Jev answers typed questions with calibrated probabilities instead of prose, in milliseconds and for a fraction of the cost. With it on, Geld asks Jev which findings report the same problem before the AI model rewrites them; off, the AI model decides that itself.',
+          'A decision model answers typed questions with calibrated probabilities instead of prose, in milliseconds and for a fraction of the cost. With it on, Geld asks it which findings report the same problem before the AI model rewrites them, and what each folded comment is. Off, the AI model decides that itself.',
         popup: false,
+        surfaces: ['extension'],
+      },
+      {
+        kind: 'text',
+        key: 'aiDecisionModel',
+        label: 'Decision model',
+        description: 'Listed from the gateway when it serves decision models (Vercel AI Gateway, OpenRouter, OpenAI). Leave it on automatic for TypeSafe’s Jev where the gateway offers it, the gateway’s own decision model otherwise, or Jev with a TypeSafe key of your own.',
+        popup: false,
+        placeholder: 'Automatic',
+        autocomplete: 'off',
         surfaces: ['extension'],
       },
     ],
