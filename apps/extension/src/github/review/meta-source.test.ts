@@ -163,6 +163,16 @@ describe('withLiveRuns', () => {
     // not as a new count under the earlier run's score and severity.
     const rerun: GeldPrMeta['bots'][number] = { id: 'greptile', login: 'greptile-apps[bot]', verdict: 'findings', reviewedSha: sha, count: 1, score: 5, sourceId: 'issuecomment-9' };
     expect(withLiveRuns([{ ...summarised, severity: 'high' }], [rerun], true)).toEqual([rerun]);
+    // The same run with its high-graded thread resolved: the page's grade of what is still open replaces the saved one,
+    // and the score stays.
+    const severe: GeldPrMeta['bots'][number] = { ...greptile, count: 2, severity: 'high', sourceId: 'discussion_r1' };
+    // The chip opens the thread still open, not the one just resolved.
+    expect(withLiveRuns([severe], [{ ...greptile, count: 1, severity: 'medium', sourceId: 'discussion_r2' }], true)).toEqual([{ ...greptile, count: 1, severity: 'medium', sourceId: 'discussion_r2' }]);
+    expect(withLiveRuns([severe], [{ ...greptile, count: 1, sourceId: 'discussion_r2' }], true)).toEqual([{ ...greptile, count: 1, sourceId: 'discussion_r2' }]);
+    // As many open as the Action counted, graded otherwise: the high one resolved and a medium one posted since.
+    expect(withLiveRuns([severe], [{ ...greptile, count: 2, severity: 'medium', sourceId: 'discussion_r3' }], true)).toEqual([{ ...greptile, count: 2, severity: 'medium', sourceId: 'discussion_r3' }]);
+    // The same grade and count leave the Action's verdict as it is.
+    expect(withLiveRuns([severe], [{ ...greptile, count: 2, severity: 'high', sourceId: 'discussion_r3' }], true)).toEqual([severe]);
     // Not while the timeline is still being read (a thread not loaded yet would count as resolved), and never
     // upward: a count the page has more of than the Action is a run the Action has not written yet.
     expect(withLiveRuns(payload, live)).toEqual(payload);
