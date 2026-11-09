@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest';
-import type { MergeSubmission } from './merge-actions';
-import { actionErrorText, autoMergeRequest, bypassBeside, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict } from './merge-actions';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { MergeActions, MergeSubmission } from './merge-actions';
+import { actionErrorText, partialMayWait, autoMergeRequest, awaitMergedState, bypassBeside, isStackRequest, mergeRequestStatusUrl, settleStackMerge, stackMergeId, stackMergeState, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict, embeddedStack, methodHint, prefetchMergeBox, readMergeActions, rememberMethod } from './merge-actions';
 
 /** A `page_data/merge_box` answer as GitHub gave it on brandonmcconnell/geld#74 (Oct 2026), trimmed. */
-function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean; readonly email?: string; readonly emails?: readonly string[] | null } = {}): unknown {
+function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean; readonly email?: string; readonly emails?: readonly string[] | null; readonly conflict?: boolean; readonly methodStatus?: string } = {}): unknown {
   return {
     pullRequest: {
       state: 'OPEN',
@@ -25,8 +25,8 @@ function payload(overrides: { readonly state?: string; readonly draft?: boolean;
           allowableStatus: overrides.direct ?? 'ALLOWED',
           name: 'DIRECT_MERGE',
           mergeMethods: [
-            { allowableStatus: 'ALLOWED', isDefault: false, name: 'MERGE' },
-            { allowableStatus: 'ALLOWED', isDefault: true, name: 'SQUASH' },
+            { allowableStatus: overrides.methodStatus ?? 'ALLOWED', isDefault: false, name: 'MERGE' },
+            { allowableStatus: overrides.methodStatus ?? 'ALLOWED', isDefault: true, name: 'SQUASH' },
             { allowableStatus: 'BLOCKED', isDefault: false, name: 'REBASE' },
           ],
         },
@@ -34,7 +34,10 @@ function payload(overrides: { readonly state?: string; readonly draft?: boolean;
     },
     mergeRequirements: {
       state: overrides.state ?? 'MERGEABLE',
-      conditions: [{ type: 'STACK', result: 'PASSED', isStacked: overrides.stacked ?? false }],
+      conditions: [
+        { type: 'STACK', result: 'PASSED', isStacked: overrides.stacked ?? false },
+        ...(overrides.conflict === true ? [{ type: 'PULL_REQUEST_MERGE_CONFLICT_STATE', result: 'FAILED' }] : []),
+      ],
       defaultCommitAuthorEmail: overrides.email ?? 'brandon@dreamthinkbuild.com',
       ...(overrides.emails === null ? {} : { possibleCommitAuthorEmails: overrides.emails ?? ['brandon@dreamthinkbuild.com', 'brandonmcconnell@users.noreply.github.com'] }),
       commitMessageHeadline: 'Submit review from any pull request tab (#74)',
@@ -59,7 +62,9 @@ describe('parseMergeBox', () => {
       ],
       mergeable: true,
       canBypass: false,
+      unbypassable: false,
       methods: ['SQUASH', 'MERGE'],
+      bypassMethods: ['SQUASH', 'MERGE'],
       commitTitle: 'Submit review from any pull request tab (#74)',
       commitMessage: '* Submit review from any pull request tab',
       authorEmail: 'brandon@dreamthinkbuild.com',
@@ -100,7 +105,9 @@ describe('mergeableNow', () => {
     // mintlify/mint#13535 (Oct 2026): GitHub's merge box offered Squash and merge.
     expect(mergeableNow('MERGEABLE_IF_STATUSES_PASS', 'CLEAN')).toBe(true);
     expect(mergeableNow('MERGEABLE_IF_STATUSES_PASS', 'HAS_HOOKS')).toBe(true);
-    for (const status of ['BEHIND', 'BLOCKED', 'UNSTABLE', 'DIRTY', 'UNKNOWN', undefined]) expect(mergeableNow('MERGEABLE_IF_STATUSES_PASS', status)).toBe(false);
+    // geld#486 (Nov 2026): a check that is not required still running, and GitHub's merge box offered Squash and merge.
+    expect(mergeableNow('MERGEABLE_IF_STATUSES_PASS', 'UNSTABLE')).toBe(true);
+    for (const status of ['BEHIND', 'BLOCKED', 'DIRTY', 'UNKNOWN', undefined]) expect(mergeableNow('MERGEABLE_IF_STATUSES_PASS', status)).toBe(false);
     expect(mergeableNow('BLOCKED', 'CLEAN')).toBe(false);
   });
 });
@@ -114,7 +121,13 @@ describe('mergeOffer', () => {
   it('offers a merge GitHub would take now, a bypass only past the rules, and nothing otherwise', () => {
     expect(mergeOffer(read({}), null)).toBe('merge');
     expect(mergeOffer(read({ state: 'UNMERGEABLE', canBypass: true }), read({ canBypass: true }))).toBe('bypass');
-    expect(mergeOffer(read({ state: 'UNMERGEABLE', canBypass: true }), read({ state: 'UNMERGEABLE', canBypass: true }))).toBeNull();
+    // A failing required check: read past the rules it still is not mergeable, yet GitHub's merge box offers the bypass.
+    expect(mergeOffer(read({ state: 'MERGEABLE_IF_STATUSES_PASS', canBypass: true }), read({ state: 'MERGEABLE_IF_STATUSES_PASS', canBypass: true }))).toBe('bypass');
+    expect(mergeOffer(read({ state: 'UNMERGEABLE', canBypass: true }), read({ state: 'UNMERGEABLE', canBypass: true }))).toBe('bypass');
+    expect(mergeOffer(read({ state: 'UNMERGEABLE', canBypass: true }), null)).toBe('bypass');
+    // No bypass lifts a merge conflict, nor stands in for the methods the repository allows.
+    expect(mergeOffer(read({ state: 'UNMERGEABLE', canBypass: true, conflict: true }), read({ state: 'UNMERGEABLE', canBypass: true, conflict: true }))).toBeNull();
+    expect(mergeOffer(read({ state: 'UNMERGEABLE', canBypass: true, direct: 'BLOCKED' }), read({ state: 'UNMERGEABLE', canBypass: true, direct: 'BLOCKED' }))).toBeNull();
     expect(mergeOffer(read({ state: 'UNMERGEABLE' }), null)).toBeNull();
     expect(mergeOffer(read({ draft: true }), null)).toBeNull();
     // A repository that only merges through its queue allows no direct merge: its queue is offered instead, once.
@@ -132,10 +145,27 @@ describe('mergeOffer', () => {
     expect(mergeOffer(read({ queue: 'ALLOWED' }), null)).toBe('queue');
   });
 
+  it('offers an admin the methods GitHub allows only with the bypass', () => {
+    // geld#454: blocked on its review rules, GitHub lists the admin's methods as ALLOWED_WITH_BYPASS and its merge box offers them.
+    const blocked = parseMergeBox(payload({ state: 'UNMERGEABLE', canBypass: true, methodStatus: 'ALLOWED_WITH_BYPASS' }));
+    if (blocked === null) throw new Error('unreadable');
+    expect(blocked.methods).toEqual([]);
+    expect(blocked.bypassMethods).toEqual(['SQUASH', 'MERGE']);
+    expect(mergeOffer(blocked, blocked)).toBe('bypass');
+    expect(mergeOffer(blocked, null)).toBe('bypass');
+    const wholly = parseMergeBox(payload({ state: 'UNMERGEABLE', canBypass: true, direct: 'ALLOWED_WITH_BYPASS', methodStatus: 'ALLOWED_WITH_BYPASS' }));
+    expect(wholly?.bypassMethods).toEqual(['SQUASH', 'MERGE']);
+    expect(wholly === null ? null : mergeOffer(wholly, null)).toBe('bypass');
+    // Without the admin's bypass, those methods are not the reader's to use.
+    const reader = parseMergeBox(payload({ state: 'UNMERGEABLE', methodStatus: 'ALLOWED_WITH_BYPASS' }));
+    if (reader === null) throw new Error('unreadable');
+    expect(mergeOffer(reader, null)).toBeNull();
+  });
+
   it('puts an admin’s bypass beside the queue or auto-merge, never beside a merge GitHub would take now', () => {
     const queued = read({ queue: 'ALLOWED', canBypass: true });
     expect(bypassBeside(queued, read({ canBypass: true }), mergeOffer(queued, null))).toBe(true);
-    expect(bypassBeside(queued, read({ state: 'UNMERGEABLE', canBypass: true }), 'queue')).toBe(false);
+    expect(bypassBeside(queued, read({ state: 'UNMERGEABLE', canBypass: true, conflict: true }), 'queue')).toBe(false);
     expect(bypassBeside(read({ queue: 'ALLOWED' }), read({}), 'queue')).toBe(false);
     const waiting = read({ state: 'BLOCKED', auto: true, canBypass: true });
     expect(mergeOffer(waiting, read({ canBypass: true }))).toBe('auto');
@@ -233,5 +263,252 @@ describe('parseStack', () => {
     const request = stackQueueRequest('/o/r/pull/7', 'n');
     expect(request.url).toBe('/o/r/pull/7/page_data/enqueue_stack');
     expect(request.init.body).toBe('{"mergeAction":"MERGE_QUEUE"}');
+  });
+});
+
+describe('the stack the page embeds', () => {
+  const script = (layout: unknown): string => `<script type="application/json" data-target="react-app.embeddedData">${JSON.stringify({ payload: { pullRequestsLayoutRoute: layout } })}</script>`;
+  const pulls = [
+    { number: 478, title: 'Top', state: 'OPEN', url: '/o/r/pull/478' },
+    { number: 477, title: 'Bottom', state: 'OPEN', url: '/o/r/pull/477' },
+  ];
+
+  it('lists the members top first with no request, when the payload is this pull request’s', () => {
+    const root = document.createElement('div');
+    root.innerHTML = script({ pullRequest: { number: 478 }, stack: { repositoryOwnerLogin: 'o', repositoryName: 'r', pulls } });
+    expect(embeddedStack('/o/r/pull/478', root)).toEqual([
+      { number: 478, path: '/o/r/pull/478', title: 'Top', current: true },
+      { number: 477, path: '/o/r/pull/477', title: 'Bottom', current: false },
+    ]);
+  });
+
+  it('is not taken from another repository’s pull request of the same number', () => {
+    const root = document.createElement('div');
+    root.innerHTML = script({ pullRequest: { number: 478 }, stack: { repositoryOwnerLogin: 'other', repositoryName: 'repo', pulls: pulls.map((pull) => ({ ...pull, url: pull.url.replace('/o/r/', '/other/repo/') })) } });
+    expect(embeddedStack('/o/r/pull/478', root)).toBeNull();
+    root.innerHTML = script({ pullRequest: { number: 478 }, stack: { repositoryOwnerLogin: 'o', repositoryName: 'r', pulls: [pulls[0], { ...pulls[1], url: '/other/repo/pull/477' }] } });
+    expect(embeddedStack('/o/r/pull/478', root)).toBeNull();
+  });
+
+  it('says none for a pull request in no stack, and nothing for another pull request’s payload', () => {
+    const root = document.createElement('div');
+    root.innerHTML = script({ pullRequest: { number: 470 }, stack: null });
+    expect(embeddedStack('/o/r/pull/470', root)).toBe('none');
+    expect(embeddedStack('/o/r/pull/478', root)).toBeNull();
+  });
+});
+
+describe('the remembered merge method', () => {
+  it('is squash until a read says otherwise, per repository', () => {
+    window.localStorage.clear();
+    expect(methodHint('o/r')).toBe('SQUASH');
+    rememberMethod('o/r', 'MERGE');
+    expect(methodHint('o/r')).toBe('MERGE');
+    expect(methodHint('o/other')).toBe('SQUASH');
+  });
+});
+
+describe('reading a stack', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+  });
+
+  it('takes the page’s embedded stack for the first read only, then asks GitHub, so a member merged since drops out', async () => {
+    document.body.innerHTML = `<script type="application/json" data-target="react-app.embeddedData">${JSON.stringify({
+      payload: { pullRequestsLayoutRoute: { pullRequest: { number: 9 }, stack: { repositoryOwnerLogin: 'o', repositoryName: 'r', pulls: [{ number: 9, title: 'Top', state: 'OPEN', url: '/o/r/pull/9' }, { number: 8, title: 'Bottom', state: 'OPEN', url: '/o/r/pull/8' }] } } },
+    })}</script>`;
+    const asked: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        asked.push(new URL(url, 'https://github.com').pathname);
+        if (url.includes('/page_data/stacks')) return new Response(JSON.stringify({ stack: { pulls: [{ number: 9, title: 'Top', state: 'OPEN', url: '/o/r/pull/9' }, { number: 8, title: 'Bottom', state: 'MERGED', url: '/o/r/pull/8' }] } }));
+        return new Response(JSON.stringify(payload({ stacked: true })));
+      }),
+    );
+    const first = await readMergeActions('/o/r/pull/9', 'SQUASH');
+    expect(first?.stack?.members.map((member) => member.number)).toEqual([9, 8]);
+    expect(asked.some((path) => path.endsWith('/page_data/stacks'))).toBe(false);
+    const second = await readMergeActions('/o/r/pull/9', 'SQUASH');
+    expect(asked.filter((path) => path.endsWith('/page_data/stacks'))).toHaveLength(1);
+    expect(second?.stack?.members.map((member) => member.number)).toEqual([9]);
+  });
+});
+
+describe('the prefetched merge box', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('is asked for again once a prefetch no read took has gone stale', () => {
+    vi.useFakeTimers();
+    const asked = vi.fn(async () => new Response(JSON.stringify(payload())));
+    vi.stubGlobal('fetch', asked);
+    prefetchMergeBox('/o/r/pull/3', 'SQUASH');
+    prefetchMergeBox('/o/r/pull/3', 'SQUASH');
+    expect(asked).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(11_000);
+    prefetchMergeBox('/o/r/pull/3', 'SQUASH');
+    expect(asked).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('a stack merge GitHub is still running', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('reads enqueue_stack’s answer as GitHub’s merge box does', () => {
+    expect(isStackRequest('/o/r/pull/9/page_data/enqueue_stack')).toBe(true);
+    expect(isStackRequest('/o/r/pull/9/page_data/merge')).toBe(false);
+    expect(stackMergeState({ status: 'merged' })).toEqual({ kind: 'settled' });
+    expect(stackMergeState({ status: 'enqueued' })).toEqual({ kind: 'settled' });
+    expect(stackMergeState({ status: 'failed', error: 'Out of date' }).kind).toBe('failed');
+    expect(stackMergeState({ status: 'pending', uuid: 'a-b' })).toEqual({ kind: 'running' });
+    expect(stackMergeId({ status: 'pending', uuid: 'a-b' })).toBe('a-b');
+    expect(stackMergeId({ status: 'merged', uuid: 'a-b' })).toBeNull();
+    // Nothing to ask about: GitHub took the request, as before.
+    expect(stackMergeId({ status: 'pending' })).toBeNull();
+    expect(mergeRequestStatusUrl('/o/r/pull/9', 'a/b')).toBe('/o/r/pull/9/page_data/merge_request_status/a%2Fb');
+  });
+
+  it('waits on merge_request_status until the stack is merged', async () => {
+    vi.useFakeTimers();
+    const answers = [{ status: 'running' }, { status: 'running' }, { status: 'merged' }];
+    const asked = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toContain('/o/r/pull/9/page_data/merge_request_status/u1');
+      return new Response(JSON.stringify(answers.shift()));
+    });
+    vi.stubGlobal('fetch', asked);
+    let settled: unknown = 'waiting';
+    void settleStackMerge('/o/r/pull/9', { status: 'pending', uuid: 'u1' }, () => true).then((result) => {
+      settled = result;
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(settled).toBe('waiting');
+    await vi.advanceTimersByTimeAsync(1500 + 2250);
+    expect(asked).toHaveBeenCalledTimes(3);
+    expect(settled).toBeNull();
+  });
+
+  it('comes back with GitHub’s words when the stack merge fails', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ status: 'failed', error: 'Base branch was modified' }))),
+    );
+    const settling = settleStackMerge('/o/r/pull/9', { status: 'pending', uuid: 'u1' }, () => true);
+    await vi.advanceTimersByTimeAsync(1000);
+    const failed = await settling;
+    expect(failed).not.toBeNull();
+    expect(actionErrorText('merge', failed?.status ?? 0, failed?.payload)).toBe('GitHub could not merge the pull request: Base branch was modified');
+  });
+
+  it('asks nothing for an answer that is already settled, and stops once the reader has left', async () => {
+    vi.useFakeTimers();
+    const asked = vi.fn(async () => new Response(JSON.stringify({ status: 'running' })));
+    vi.stubGlobal('fetch', asked);
+    expect(await settleStackMerge('/o/r/pull/9', { status: 'merged' }, () => true)).toBeNull();
+    let here = true;
+    const settling = settleStackMerge('/o/r/pull/9', { status: 'pending', uuid: 'u1' }, () => here);
+    await vi.advanceTimersByTimeAsync(1000);
+    here = false;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await settling).toBeNull();
+    expect(asked).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives a stalled status read a deadline, and stops waiting on it the moment the reader leaves', async () => {
+    vi.useFakeTimers();
+    const asked = vi.fn(() => new Promise<Response>(() => undefined));
+    vi.stubGlobal('fetch', asked);
+    let settled: unknown = 'waiting';
+    void settleStackMerge('/o/r/pull/9', { status: 'pending', uuid: 'u1' }, () => true).then((result) => {
+      settled = result;
+    });
+    await vi.advanceTimersByTimeAsync(1000 + 15_000);
+    expect(asked).toHaveBeenCalledTimes(1);
+    // A second read is asked for once the first gives up; five stalled reads in a row and the merge is taken as done.
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(asked).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(settled).toBeNull();
+    expect(asked).toHaveBeenCalledTimes(5);
+
+    let here = true;
+    const leaving = settleStackMerge('/o/r/pull/9', { status: 'pending', uuid: 'u2' }, () => here);
+    await vi.advanceTimersByTimeAsync(1000);
+    here = false;
+    await vi.advanceTimersByTimeAsync(300);
+    expect(await leaving).toBeNull();
+  });
+
+  it('stops waiting between polls within a quarter second of the reader leaving, however long the gap has grown', async () => {
+    vi.useFakeTimers();
+    const asked = vi.fn(async () => new Response(JSON.stringify({ status: 'running' })));
+    vi.stubGlobal('fetch', asked);
+    let here = true;
+    let settled: unknown = 'waiting';
+    void settleStackMerge('/o/r/pull/9', { status: 'pending', uuid: 'u1' }, () => here).then((result) => {
+      settled = result;
+    });
+    // Reads at 1 s, 2.5 s, 4.75 s, 8.125 s: the next gap is 5.06 s.
+    await vi.advanceTimersByTimeAsync(8_200);
+    expect(asked).toHaveBeenCalledTimes(4);
+    here = false;
+    await vi.advanceTimersByTimeAsync(260);
+    expect(settled).toBeNull();
+    expect(asked).toHaveBeenCalledTimes(4);
+  });
+
+  it('waits ten seconds at most for the merged state, however long a read stalls', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
+    let merged: unknown = 'waiting';
+    void awaitMergedState('/o/r/pull/9', () => true).then((result) => {
+      merged = result;
+    });
+    await vi.advanceTimersByTimeAsync(9_900);
+    expect(merged).toBe('waiting');
+    await vi.advanceTimersByTimeAsync(200);
+    expect(merged).toBe(false);
+  });
+
+  it('waits until the page’s own pull request reads merged before it is reloaded', async () => {
+    vi.useFakeTimers();
+    const states = ['OPEN', 'OPEN', 'MERGED'];
+    // The pull request's own `state` is the first in the answer.
+    const asked = vi.fn(async () => new Response(JSON.stringify(payload()).replace('"state":"OPEN"', `"state":"${states.shift() ?? 'MERGED'}"`)));
+    vi.stubGlobal('fetch', asked);
+    const merged = awaitMergedState('/o/r/pull/9', () => true);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(await merged).toBe(true);
+    expect(asked).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('partialMayWait', () => {
+  const box = parseMergeBox(payload({ state: 'MERGEABLE', stacked: true }));
+  const member = (number: number, current = false) => ({ number, path: `/o/r/pull/${number}`, title: `PR ${number}`, current });
+  const reading = (numbers: readonly number[], over: Partial<MergeActions> = {}): MergeActions => {
+    if (box === null) throw new Error('fixture');
+    return { box, offer: 'merge', bypass: false, bypassMethods: [], stack: { members: numbers.map((number, at) => member(number, at === 0)), boxes: new Map() }, ...over };
+  };
+
+  it('lets a refresh’s partial reading wait while the pull request and its stack stand as they did', () => {
+    expect(partialMayWait(reading([3, 2, 1]), reading([3, 2, 1], { partial: true }))).toBe(true);
+  });
+
+  it('puts the partial reading in place when the stack’s members or the pull request’s standing changed', () => {
+    expect(partialMayWait(reading([3, 2, 1]), reading([3, 4, 2, 1], { partial: true }))).toBe(false);
+    expect(partialMayWait(reading([3, 2, 1]), reading([3, 1], { partial: true }))).toBe(false);
+    expect(partialMayWait(reading([3, 2, 1]), reading([3, 2, 1], { offer: null, partial: true }))).toBe(false);
   });
 });
