@@ -1,4 +1,8 @@
 import type { ProviderReviewComment } from '@geld/review';
+import { providerReviewUrl } from '@geld/review';
+import type { GitLabRenderedNote } from './review';
+import { describeGitLabPage } from './page';
+import { isProviderReviewPage } from '../providers/types';
 
 const ELEMENTS = new Set([
   'a', 'abbr', 'b', 'bdi', 'bdo', 'blockquote', 'br', 'code', 'dd', 'del', 'details', 'div', 'dl', 'dt', 'em',
@@ -19,11 +23,38 @@ function safeUrl(value: string | null, base: string): string | null {
   }
 }
 
-function nativeBody(comment: ProviderReviewComment, doc: Document): HTMLElement | null {
-  if (!/^[1-9]\d*$/.test(comment.id) || comment.anchor !== `note_${comment.id}`) return null;
-  const source = doc.getElementById(comment.anchor);
-  if (!(source instanceof HTMLElement) || !source.matches('[data-testid="noteable-note-container"]') || source.closest('[data-geld-ui]') !== null) return null;
-  return source.querySelector<HTMLElement>('.note-body .note-text');
+function nativeBody(comment: ProviderReviewComment, doc: Document): { readonly kind: 'absent' | 'invalid' } | { readonly kind: 'native'; readonly body: HTMLElement } {
+  if (!/^[1-9]\d*$/.test(comment.id) || comment.anchor !== `note_${comment.id}`) return { kind: 'invalid' };
+  const roots = doc.querySelectorAll(`[id="${comment.anchor}"]`);
+  if (roots.length === 0) return { kind: 'absent' };
+  const source = roots[0];
+  if (roots.length !== 1 || !(source instanceof HTMLElement) || !source.matches('[data-testid="noteable-note-container"]')
+    || source.closest('[data-geld-ui], .note-body, [data-testid="description-content"]') !== null) return { kind: 'invalid' };
+  const authors = source.querySelectorAll<HTMLAnchorElement>(':scope > .timeline-entry-inner > .timeline-content > .note-header > .note-header-info > a.author-name-link[data-user-id][data-username]');
+  const bodies = source.querySelectorAll<HTMLElement>('.note-body .note-text');
+  const body = bodies[0];
+  return authors.length === 1 && authors[0]?.dataset.userId === comment.author.id && authors[0].dataset.username === comment.author.login
+    && bodies.length === 1 && body !== undefined ? { kind: 'native', body } : { kind: 'invalid' };
+}
+
+function renderedBody(comment: ProviderReviewComment, evidence: GitLabRenderedNote | undefined, doc: Document): HTMLElement | null {
+  if (evidence === undefined || evidence.subject.provider !== 'gitlab' || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(evidence.subject.headSha)
+    || !/^[1-9]\d*$/.test(evidence.projectId) || !/^[1-9]\d*$/.test(evidence.noteableId)
+    || evidence.html.trim() === '' || evidence.html.length > 256 * 1024) return null;
+  const previous = evidence.comment;
+  const keys = ['id', 'anchor', 'url', 'body', 'createdAt', 'updatedAt'] as const;
+  if (keys.some((key) => previous[key] !== comment[key])
+    || previous.author.id !== comment.author.id || previous.author.login !== comment.author.login || previous.author.automated !== comment.author.automated) return null;
+  try {
+    const page = describeGitLabPage(new URL(doc.URL), doc);
+    if (page === null || !isProviderReviewPage(page) || page.url !== providerReviewUrl(evidence.subject)
+      || comment.url !== `${page.url}#${comment.anchor}` || page.headSha !== null && page.headSha !== evidence.subject.headSha) return null;
+  } catch { return null; }
+  // Template content is inert; no API fragment is inserted or hydrated as native markup.
+  const template = doc.createElement('template');
+  try { template.innerHTML = evidence.html; } catch { return null; }
+  const source = doc.createElement('div');source.className = 'note-text md';source.append(template.content);
+  return source;
 }
 
 function nativeSortableHeader(button: Element, source: HTMLElement): Element | null {
@@ -87,12 +118,18 @@ function nativeTableHeightWrapper(wrapper: Element, source: HTMLElement): boolea
     || child.nodeType === Node.TEXT_NODE && !child.textContent?.trim());
 }
 
-export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLElement, doc: Document = document): boolean {
-  const source = nativeBody(comment, doc);
+export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLElement, doc: Document = document, evidence?: GitLabRenderedNote): boolean {
+  const native = nativeBody(comment, doc);
   const commentUrl = safeUrl(comment.url, doc.URL);
-  if (source === null || commentUrl === null) return false;
+  if (native.kind === 'invalid' || commentUrl === null) return false;
   const documentUrl = new URL(doc.URL);
   if (['https:', 'http:'].includes(documentUrl.protocol) && documentUrl.origin !== new URL(commentUrl).origin) return false;
+  const url = new URL(commentUrl);
+  const page = describeGitLabPage(documentUrl, doc);
+  if (page === null || !isProviderReviewPage(page) || page.url !== `${url.origin}${url.pathname}` || url.search !== '' || url.hash !== `#${comment.anchor}`) return false;
+  const source = native.kind === 'native' ? native.body : renderedBody(comment, evidence, doc);
+  if (source === null) return false;
+  const api = native.kind === 'absent';
   let remaining = MAX_NODES;
   let exceeded = false;
 
@@ -103,9 +140,9 @@ export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLEl
     if (!(node instanceof Element)) return null;
     const tag = node.localName.toLowerCase();
     // Its live button is already dropped; omit only the verified generated wrapper as well.
-    if (tag === 'div' && nativeTableHeightWrapper(node, source)) return null;
+    if (!api && tag === 'div' && nativeTableHeightWrapper(node, source)) return null;
     // GitLab wraps Markdown TH labels in generated sort buttons; keep their typography without the live control.
-    const headerLabel = tag === 'button' && !node.hasAttribute('contenteditable') ? nativeSortableHeader(node, source) : null;
+    const headerLabel = !api && tag === 'button' && !node.hasAttribute('contenteditable') ? nativeSortableHeader(node, source) : null;
     if (headerLabel !== null) {
       const fragment = doc.createDocumentFragment();
       for (const child of node.childNodes) {
@@ -139,7 +176,9 @@ export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLEl
       const value = node.getAttribute(attribute);
       if (value !== null) element.setAttribute(attribute, value);
     }
-    const classes = [...node.classList].filter((name) => !name.startsWith('js-')).join(' ');
+    const classes = [...node.classList].filter((name) => api
+      ? ['note-text', 'md', 'code', 'highlight', 'line', 'markdown-code-block'].includes(name) || /^language-[a-z0-9][\w.+-]{0,40}$/i.test(name)
+      : !name.startsWith('js-')).join(' ');
     if (classes !== '') element.className = classes;
     for (const attribute of ['data-lang', 'data-language']) {
       const value = node.getAttribute(attribute);
@@ -154,6 +193,7 @@ export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLEl
       }
     }
     if (tag === 'img') {
+      if (api) return doc.createTextNode(node.getAttribute('alt') ?? '');
       const src = safeUrl(node.getAttribute('src'), commentUrl);
       if (src === null) return doc.createTextNode(node.getAttribute('alt') ?? '');
       element.setAttribute('src', src);
@@ -182,14 +222,14 @@ export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLEl
       const cloned = copy(child, depth + 1);
       if (cloned !== null) element.append(cloned);
     }
-    if (tag === 'th' && node.matches('.md [data-sticky-header] > table:not(.code) > thead:first-of-type > tr:first-child > th')
+    if (!api && tag === 'th' && node.matches('.md [data-sticky-header] > table:not(.code) > thead:first-of-type > tr:first-child > th')
       && source.contains(node.closest('[data-sticky-header]'))
       && element.querySelector(':scope > div > span[data-geld-native-table-header-label]') !== null) element.dataset.geldNativeStickyHeaderCell = '';
     return element;
   };
   const rendered = copy(source, 0);
-  if (rendered === null || exceeded) return false;
-  if (rendered instanceof HTMLElement) rendered.dataset.geldUi = '';
+  if (rendered === null || exceeded || api && !rendered.textContent?.trim()) return false;
+  if (rendered instanceof HTMLElement) { rendered.dataset.geldUi = '';if (api) rendered.dataset.geldRenderedSource = 'api'; }
   host.replaceChildren(rendered);
   host.style.whiteSpace = '';
   return true;
