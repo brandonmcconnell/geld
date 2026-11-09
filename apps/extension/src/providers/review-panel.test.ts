@@ -120,7 +120,7 @@ describe('provider conversation digest', () => {
     await vi.waitFor(() => expect(write).toHaveBeenCalledOnce());
     const text = write.mock.calls[0]?.[0];
     expect(text).toContain(`${reviewUrl}#note_1`);expect(text).toContain(`${reviewUrl}#note_2`);
-    expect(text).toContain('`shared.ts:5`');expect(text).not.toContain('CI checks:');
+    expect(text).toContain('`shared.ts:5`');expect(text).not.toContain('CI checks:');expect(text).not.toContain(`${reviewUrl}#note_3`);
     await vi.waitFor(() => expect(button.disabled).toBe(false));
     expect(button.parentElement?.querySelector('[role="status"]')?.textContent).toBe('Item copied as Markdown.');
     expect(document.activeElement).toBe(button);
