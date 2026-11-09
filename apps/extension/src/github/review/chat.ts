@@ -1097,7 +1097,7 @@ function placeControls(message: HTMLElement): void {
 }
 
 /** The Overview's comment ⋯ (a Primer ActionMenu button) and its reactions toolbar, with the button that opens the picker. */
-const OVERVIEW_MENU = 'button[data-testid="comment-header-hamburger"]';
+const OVERVIEW_MENU = 'button:is([data-testid="comment-header-hamburger"], [aria-label^="More actions for" i])';
 const OVERVIEW_REACTIONS = '[role="toolbar"][aria-label^="Reactions for"]';
 const OVERVIEW_REACT = 'button[class*="ReactionViewerAnchorButton"]';
 

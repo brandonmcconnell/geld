@@ -2630,6 +2630,9 @@ const COMMENT_MENUS = [
   'details.js-comment-header-actions-menu',
   '.timeline-comment-actions details:not(.js-add-reaction):not(.js-reaction-popover-container)',
   '[data-testid="comment-header"] button[aria-label="Show options" i]',
+  // The Overview's ⋯ ("More actions for X's comment, 3:56 PM on February 18, 2025"), once `comment-header-hamburger`.
+  '[data-testid="comment-header"] button[aria-label^="More actions for" i]',
+  'button[data-testid="comment-header-hamburger"]',
   'button[aria-label="Comment actions" i]',
   'button[aria-label="Show options" i]',
 ];
