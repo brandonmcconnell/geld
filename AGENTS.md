@@ -2330,6 +2330,9 @@ The full launch recipe, with a service-worker sanity check, is in `.claude/skill
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
+Bitbucket pull request activity accepts a maximum pagelen of50 while other runner collections use100.
+The trusted summary runner keeps this endpoint-specific limit through pagination so an activity400 cannot prevent publishing.
+
 Provider configuration caching is best-effort when local storage fails, but aborted or cleared generations still reject before applying fetched rules.
 **The Overview tab can be rendered from a signed-out session**: its route code is in the page's public bundles and every `page_data/*` endpoint it reads (`conversation_comments`, `threads`, `timeline`, `description`, `tab_counts`) answers signed out.
 Intercept the pull request's document, set `appPayload.enabled_features.prs_overview_as_index_route` to true and `payload.pullRequestsLayoutRoute.featureStates.overview` to `ENABLED` in its `react-app.embeddedData`, rename the payload's `pullRequestsConversationsRoute` to `pullRequestsOverviewIndexRoute`, set `data-ssr="false"` and empty the react root, and do the same to the `?overview=true` JSON the route asks for;

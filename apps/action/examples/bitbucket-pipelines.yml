@@ -1,0 +1,19 @@
+# This custom pipeline must run on the trusted default branch.
+# Restrict the Geld summary deployment environment to that branch in Bitbucket.
+# Its protected variables supply GELD_TOKEN and an immutable GELD_TRUSTED_IMAGE.
+# A trusted trigger supplies GELD_REPOSITORY and GELD_REVIEW_NUMBER.
+pipelines:
+  custom:
+    geld-summary:
+      - step:
+          name: Geld summary
+          image:
+            name: $GELD_TRUSTED_IMAGE
+          clone:
+            enabled: false
+          deployment: Geld summary
+          concurrency-group: geld-summary
+          script:
+            - test "$BITBUCKET_BRANCH" = "$GELD_TRUSTED_BRANCH"
+            - export GELD_PROVIDER=bitbucket
+            - node /geld/provider.cjs
