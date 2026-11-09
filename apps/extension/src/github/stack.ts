@@ -70,6 +70,9 @@ interface Read {
   readonly pull: string;
   pending: boolean;
   stack: PageStack | null;
+  /** Reads that failed (no answer, or one that could not be read), and when the last did. */
+  failures: number;
+  failedAt: number;
 }
 
 let read: Read | null = null;
@@ -77,9 +80,46 @@ let read: Read | null = null;
 /** What shows a pull request is stacked without the layout route: the header's "11/14" badge, the timeline's "added this pull request to stack #193". */
 const STACK_SIGNS = '[class*="stackBadge"], a[href*="/stack/"]';
 
+/** A failed read is asked again after this, doubling each time, at most `STACK_READ_TRIES` times in all. */
+const STACK_RETRY_MS = 15_000;
+const STACK_READ_TRIES = 4;
+
+type Answer = { readonly settled: true; readonly stack: PageStack | null } | { readonly settled: false };
+
+/** `page_data/stacks`'s answer: a stack, settled as none (`stack: null`), or a failure worth asking again. Exported for its test. */
+export function stackAnswer(payload: unknown, pullPath: string): Answer {
+  if (!isRecord(payload) || !('stack' in payload)) return { settled: false };
+  if (payload.stack === null) return { settled: true, stack: null };
+  const stack = parsePageStack(payload.stack, pullPath);
+  return stack === null ? { settled: false } : { settled: true, stack };
+}
+
+/** Whether a read that failed `failures` times, last at `failedAt`, is due again at `now`. Exported for its test. */
+export function stackRetryDue(failures: number, failedAt: number, now: number): boolean {
+  return failures > 0 && failures < STACK_READ_TRIES && now - failedAt >= STACK_RETRY_MS * 2 ** (failures - 1);
+}
+
+function ask(asked: Read, onChange: () => void): void {
+  asked.pending = true;
+  void fetchStackPayload(asked.pull).then((payload) => {
+    asked.pending = false;
+    const answer = stackAnswer(payload, asked.pull);
+    if (!answer.settled) {
+      asked.failures += 1;
+      asked.failedAt = Date.now();
+      // Nothing else may make a pass on a quiet page, so the retry asks for one when it is due.
+      if (read === asked && asked.failures < STACK_READ_TRIES) window.setTimeout(() => read === asked && onChange(), STACK_RETRY_MS * 2 ** (asked.failures - 1));
+      return;
+    }
+    asked.failures = 0;
+    asked.stack = answer.stack;
+    if (read === asked && asked.stack !== null) onChange();
+  });
+}
+
 /**
  * The page's stack: from what the page embeds, else, where the page shows one, asked of `page_data/stacks` once per
- * pull request, `onChange` asking for a pass when the answer lands.
+ * pull request, again after a failure with a growing wait, `onChange` asking for a pass when the answer lands.
  */
 export function pageStack(onChange: () => void): PageStack | null {
   const pull = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(location.pathname)?.[0] ?? null;
@@ -89,13 +129,10 @@ export function pageStack(onChange: () => void): PageStack | null {
   if (embedded !== null) return parsePageStack(embedded, pull);
   if (read?.pull !== pull && document.querySelector(STACK_SIGNS) === null) return null;
   if (read?.pull !== pull) {
-    const asked: Read = { pull, pending: true, stack: null };
-    read = asked;
-    void fetchStackPayload(pull).then((payload) => {
-      asked.pending = false;
-      asked.stack = isRecord(payload) ? parsePageStack(payload.stack, pull) : null;
-      if (read === asked && asked.stack !== null) onChange();
-    });
+    read = { pull, pending: false, stack: null, failures: 0, failedAt: 0 };
+    ask(read, onChange);
+  } else if (!read.pending && stackRetryDue(read.failures, read.failedAt, Date.now())) {
+    ask(read, onChange);
   }
   return read.stack;
 }

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { parsePageStack } from './stack';
+import { parsePageStack, stackAnswer, stackRetryDue } from './stack';
 
 const pull = (number: number, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ number, title: `Step ${number}`, state: 'OPEN', url: `/acme/web/pull/${number}`, headBranch: `step/${number}`, ...extra });
 
@@ -25,5 +25,19 @@ describe('parsePageStack', () => {
     expect(parsePageStack({ number: 1, pulls: [pull(7), { number: 8 }] }, '/acme/web/pull/7')).toBeNull();
     expect(parsePageStack({ pulls: [pull(7)] }, '/acme/web/pull/7')).toBeNull();
     expect(parsePageStack({ number: 1, pulls: [pull(7)] }, '/acme/web/pull/7')?.path).toBe('/acme/web/stack/1');
+  });
+
+  it('asks page_data/stacks again only after a failure, waiting longer each time, and never once it answered', () => {
+    const stacked = { stack: { number: 1, pulls: [pull(7)] } };
+    expect(stackAnswer(stacked, '/acme/web/pull/7')).toMatchObject({ settled: true, stack: { number: 1 } });
+    expect(stackAnswer({ stack: null }, '/acme/web/pull/7')).toEqual({ settled: true, stack: null });
+    expect(stackAnswer(null, '/acme/web/pull/7')).toEqual({ settled: false });
+    expect(stackAnswer({ stack: { number: 1, pulls: [pull(8)] } }, '/acme/web/pull/7')).toEqual({ settled: false });
+    expect(stackRetryDue(0, 0, 1_000_000)).toBe(false);
+    expect(stackRetryDue(1, 0, 14_999)).toBe(false);
+    expect(stackRetryDue(1, 0, 15_000)).toBe(true);
+    expect(stackRetryDue(2, 0, 29_999)).toBe(false);
+    expect(stackRetryDue(3, 0, 60_000)).toBe(true);
+    expect(stackRetryDue(4, 0, 1_000_000)).toBe(false);
   });
 });

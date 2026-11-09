@@ -51,6 +51,7 @@ const reactSidebar =
   '<section class="section__a"><div><h3 class="heading__b">Assignees</h3><p>No one</p></div></section><section class="section__a"><div><h3 class="heading__b">Labels</h3></div></section></aside>';
 
 afterEach(() => {
+  vi.useRealTimers();
   removeRelatedLinks();
   document.body.innerHTML = '';
   fetches.paths = [];
@@ -393,7 +394,6 @@ describe('related links in the sidebar', () => {
     stackLink?.dispatchEvent(new MouseEvent('mouseleave'));
     vi.advanceTimersByTime(300);
     expect(document.querySelector('.geld-stack-card')).toBeNull();
-    vi.useRealTimers();
   });
 
   it('opens the digest’s Mentions row from See all mentions', () => {
