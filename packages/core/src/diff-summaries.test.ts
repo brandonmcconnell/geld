@@ -20,11 +20,11 @@ describe('parseDiffSummaries', () => {
       },
     };
     expect(parseDiffSummaries(document)).toEqual([
-      { path: 'docs/.vitepress/loaders/cli.data.ts', additions: 4, deletions: 3, status: 'modified' },
-      { path: 'src/new.ts', additions: 12, deletions: 0, status: 'added' },
-      { path: 'src/old.ts', additions: 0, deletions: 9, status: 'deleted', kinds: ['deleted'] },
-      { path: 'src/moved.ts', additions: 0, deletions: 0, status: 'renamed', kinds: ['renames'] },
-      { path: 'src/moved-edited.ts', additions: 2, deletions: 1, status: 'renamed' },
+      { path: 'docs/.vitepress/loaders/cli.data.ts', additions: 4, deletions: 3, status: 'modified', summaryOnly: true },
+      { path: 'src/new.ts', additions: 12, deletions: 0, status: 'added', summaryOnly: true },
+      { path: 'src/old.ts', additions: 0, deletions: 9, status: 'deleted', kinds: ['deleted'], summaryOnly: true },
+      { path: 'src/moved.ts', additions: 0, deletions: 0, status: 'renamed', kinds: ['renames'], summaryOnly: true },
+      { path: 'src/moved-edited.ts', additions: 2, deletions: 1, status: 'renamed', summaryOnly: true },
     ]);
   });
 
