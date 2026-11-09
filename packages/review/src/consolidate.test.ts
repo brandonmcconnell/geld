@@ -43,7 +43,10 @@ describe('planConsolidation', () => {
     expect(unchanged.pending).toEqual([]);
     expect(unchanged.carried.get(firstItems[0]?.id ?? '')?.title).toBe('Guard parseDiff against null');
 
-    const grownComments = [...first, bot('discussion_r2', 'cursor[bot]', 'parseDiff(null) throws; add a guard.', 44)];
+    // A second bot answering in the same thread: the item gains a source.
+    const reply = { anchor: 'discussion_r2', kind: 'thread' as const, author: 'cursor[bot]', body: 'parseDiff(null) throws; add a guard.' };
+    const opener = bot('discussion_r1', 'greptile-apps[bot]', 'Null check missing in parseDiff.', 42);
+    const grownComments: RawComment[] = [{ ...opener, threadAnchors: [{ anchor: opener.anchor, kind: 'thread', author: opener.author, body: opener.body }, reply] }];
     const grownItems = clusterComments(grownComments);
     expect(grownItems).toHaveLength(1);
     const grown = planConsolidation(previous, grownItems, { comments: grownComments, wantFix: true });
