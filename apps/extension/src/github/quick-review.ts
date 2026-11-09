@@ -274,14 +274,39 @@ function authorLogin(): string | null {
   return login === '' ? null : login;
 }
 
+let shownElements = new WeakMap<Element, boolean>();
+let forgettingShown = false;
+
+/**
+ * Whether `element` is rendered, asked once per element until the window resizes or the page's stylesheets have all
+ * loaded. GitHub hides the tab bar's counts with a container query, so the answer needs a layout, and asked on every
+ * pass it forced a whole-page layout each time while GitHub was still rendering the page; a container's width only
+ * moves with the window's.
+ */
+function isShown(element: Element): boolean {
+  const known = shownElements.get(element);
+  if (known !== undefined) return known;
+  if (!forgettingShown) {
+    forgettingShown = true;
+    const forget = (): void => {
+      shownElements = new WeakMap();
+    };
+    window.addEventListener('resize', forget);
+    if (document.readyState !== 'complete') window.addEventListener('load', forget, { once: true });
+  }
+  const visible = element.checkVisibility();
+  shownElements.set(element, visible);
+  return visible;
+}
+
 /** The tab bar's line counts: the group in the pull request header (not a diff's, not Geld's narrow mirror). */
 function anchorOf(groups: readonly HeaderStatGroup[]): HTMLElement | null {
   for (const group of groups) {
     const host = group.host;
     if (!host.isConnected || host.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null) continue;
     // GitHub hides the header's counts on narrow screens: placed there, the button would be hidden with them while
-    // GitHub's own was hidden for it, leaving no way to review. A style read, not a layout one.
-    if (!host.checkVisibility()) continue;
+    // GitHub's own was hidden for it, leaving no way to review.
+    if (!isShown(host)) continue;
     // The Overview writes the counts beside the branches, under the title: the group still belongs at the tab bar's end.
     if (host.closest('[data-component="PageHeader.Description"]') !== null) continue;
     if (host.id === 'diffstat' || host.closest('[data-component="PageHeader"], .gh-header, #partial-discussion-header') !== null) return host;
@@ -317,7 +342,7 @@ function standAnchor(): HTMLElement | null {
   const skeleton = countsSkeletonStandIn();
   if (skeleton !== null && row.contains(skeleton)) {
     document.querySelector(`.${MARK_CLASS}`)?.remove();
-    return skeleton.checkVisibility() ? skeleton : null;
+    return isShown(skeleton) ? skeleton : null;
   }
   if (home === null) {
     home = row.querySelector<HTMLElement>(`:scope > .${STAND_CLASS}`) ?? createElement('div', { class: STAND_CLASS, [OWN_UI_ATTRIBUTE]: '' });
@@ -331,7 +356,7 @@ function standAnchor(): HTMLElement | null {
     mark = createElement('span', { class: MARK_CLASS, [OWN_UI_ATTRIBUTE]: '' });
     home.append(mark);
   }
-  return home.checkVisibility() ? mark : null;
+  return isShown(home) ? mark : null;
 }
 
 /**
@@ -476,9 +501,11 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
   if (!headerReactSettled()) return;
   // The controls' state lives on the pull request page whether or not the review group has somewhere to stand: the
   // status pill in the header needs it, and on narrow screens (GitHub hides the counts) the group stands aside alone.
-  const counted = anchorOf(context.groups);
-  if (counted !== null) removeStand();
-  const anchor = counted ?? standAnchor();
+  // GitHub's always-shown bar holds the group whatever the tab bar shows, so it needs no anchor there, nor a stand of Geld's.
+  const inBar = persistentBarActions() !== null;
+  const counted = inBar ? null : anchorOf(context.groups);
+  if (counted !== null || inBar) removeStand();
+  const anchor = inBar ? null : (counted ?? standAnchor());
   if (mounted === null) mounted = createControls(pullPath, context);
   if (mounted.pullPath !== pullPath) {
     closePanel();

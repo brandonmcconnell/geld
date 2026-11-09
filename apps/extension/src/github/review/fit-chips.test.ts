@@ -1,7 +1,22 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { fitChips, stopFittingChips } from './fit-chips';
 import { ATTR_FIT_TOOLS } from './panel';
+
+/** A browser reports an observed element's size in the first frame after `observe`; this one reports it at once. */
+class ReportingObserver {
+  constructor(private readonly callback: ResizeObserverCallback) {}
+  observe(target: Element): void {
+    const entry = { target, contentRect: new DOMRect(0, 0, 600, 100), borderBoxSize: [], contentBoxSize: [], devicePixelContentBoxSize: [] };
+    this.callback([entry], this);
+  }
+  unobserve(): void {}
+  disconnect(): void {}
+}
+
+beforeAll(() => {
+  vi.stubGlobal('ResizeObserver', ReportingObserver);
+});
 
 /** A Geld row whose summary and tools are `summary` and `tools` (words) or `toolsIcons` (marks alone) wide. */
 function geldRow(roomWidth: number, summary: number, tools: number, toolsIcons: number): HTMLElement {

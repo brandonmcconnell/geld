@@ -491,7 +491,7 @@ const MIRROR_CLASS = 'geld-header-mirror';
  * `hideWhenVeryNarrowContainer`), and the tab bar has no room for it. A copy
  * of the counts then goes beside the state label ("Open"), after the stack
  * button when there is one, and is shown exactly while the original is not
- * (checked on every apply; the controller re-applies on resize).
+ * (`hostShown`, followed by a ResizeObserver).
  */
 function syncNarrowMirror(group: HeaderStatGroup, label: string, hasTests: boolean, visible: ChangeTotals, provider: (() => StatsBreakdown) | null): void {
   const header = group.host.closest<HTMLElement>('[data-component="PageHeader"]');
@@ -519,9 +519,51 @@ function syncNarrowMirror(group: HeaderStatGroup, label: string, hasTests: boole
   const delText = `\u2212${formatCount(visible.deletions)}`;
   if (add instanceof HTMLElement && add.textContent !== addText) add.textContent = addText;
   if (del instanceof HTMLElement && del.textContent !== delText) del.textContent = delText;
-  mirror.hidden = group.host.getClientRects().length > 0;
+  mirror.hidden = hostShown(group.host) !== false;
   if (provider === null) detachBreakdownTooltip(mirror);
   else attachBreakdownTooltip(mirror, tests instanceof HTMLElement ? tests : mirror, provider, { align: 'end' });
+}
+
+const shownHosts = new WeakMap<Element, boolean>();
+const unreportedHosts = new Set<Element>();
+let shownObserver: ResizeObserver | null = null;
+
+function setHostShown(host: Element, shown: boolean): void {
+  if (shownHosts.get(host) === shown) return;
+  shownHosts.set(host, shown);
+  const header = host.closest('[data-component="PageHeader"]');
+  for (const mirror of header?.querySelectorAll<HTMLElement>(`.${MIRROR_CLASS}`) ?? []) mirror.hidden = shown;
+}
+
+/**
+ * Whether GitHub shows the header's counts, as a ResizeObserver last reported (hidden, their box is 0 × 0), and null
+ * until it first has: asking the layout itself here forced a whole-page layout on every apply while the page loaded.
+ * The answer lands before the frame paints and the mirror follows it there. A host that is not rendered (a page opened
+ * narrow) gets no first report at all, so the body, always rendered, is observed beside each new host: a delivery that
+ * holds the body's report and not the host's says the host is hidden.
+ */
+function hostShown(host: HTMLElement): boolean | null {
+  if (typeof ResizeObserver === 'undefined') return host.getClientRects().length > 0;
+  shownObserver ??= new ResizeObserver((entries, observer) => {
+    const reported = new Set<Element>();
+    for (const entry of entries) {
+      if (entry.target === document.body) continue;
+      reported.add(entry.target);
+      setHostShown(entry.target, entry.contentRect.width > 0 || entry.contentRect.height > 0);
+    }
+    if (!entries.some((entry) => entry.target === document.body)) return;
+    for (const pending of unreportedHosts) if (!reported.has(pending)) setHostShown(pending, false);
+    unreportedHosts.clear();
+    observer.unobserve(document.body);
+  });
+  if (!shownHosts.has(host) && !unreportedHosts.has(host)) {
+    unreportedHosts.add(host);
+    shownObserver.observe(host);
+    // Observed afresh, so the body reports again in the same delivery as the host would.
+    shownObserver.unobserve(document.body);
+    shownObserver.observe(document.body);
+  }
+  return shownHosts.get(host) ?? null;
 }
 
 function removeNarrowMirror(group: HeaderStatGroup): void {

@@ -32,11 +32,22 @@ export function syncBrandSelection(): void {
   if (selection !== null && !selection.isCollapsed) {
     for (let index = 0; index < selection.rangeCount; index += 1) ranges.push(selection.getRangeAt(index));
   }
+  selecting = ranges.length > 0;
   for (const mark of document.querySelectorAll(BRAND_SELECTOR)) {
     mark.toggleAttribute(ATTR_BRAND_SELECTED, ranges.some((range) => range.intersectsNode(mark)));
   }
 }
 
+/**
+ * The same for emblems just mounted, asked only while a selection is held: reading the selection brings layout up to
+ * date, and a panel mounted while GitHub renders the page forced a whole-page layout each time.
+ */
+export function syncNewBrandMarks(): void {
+  if (selecting) syncBrandSelection();
+}
+
+/** Whether the selection last read was not collapsed; nothing is selected when a page opens. */
+let selecting = false;
 let watching = false;
 
 export function watchBrandSelection(): void {
@@ -48,6 +59,7 @@ export function watchBrandSelection(): void {
 export function stopWatchingBrandSelection(): void {
   if (!watching) return;
   watching = false;
+  selecting = false;
   document.removeEventListener('selectionchange', syncBrandSelection);
   for (const mark of document.querySelectorAll(BRAND_SELECTOR)) mark.removeAttribute(ATTR_BRAND_SELECTED);
 }
