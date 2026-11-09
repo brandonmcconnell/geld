@@ -2519,6 +2519,50 @@ tr[data-geld-test-fold='hidden'] {
   text-decoration: underline;
 }
 
+/* Items opened by blocked users, out of lists (blocked-lists.ts) ----------- */
+
+[data-geld-blocked-list] {
+  display: flex !important;
+  flex-direction: column;
+}
+
+[data-geld-blocked-row='hidden'] {
+  display: none !important;
+}
+
+[data-geld-blocked-note] {
+  order: 1;
+  list-style: none;
+}
+
+[data-geld-blocked-row='shown'] {
+  order: 2;
+}
+
+.geld-blocked-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-top: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.geld-blocked-note__toggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fgColor-accent, var(--color-accent-fg));
+  font: inherit;
+  cursor: pointer;
+}
+
+.geld-blocked-note__toggle:hover {
+  text-decoration: underline;
+}
+
 /* ------------------------------------------------------------------------ */
 /* PR conversation: review digest, hidden activity, quick view              */
 /* ------------------------------------------------------------------------ */
@@ -3518,6 +3562,68 @@ svg.geld-lucide {
 .geld-review__blocked-badge > .octicon {
   width: 11px;
   height: 11px;
+}
+
+/* A blocked or hidden person's comment, folded behind a line shaped like GitHub's own hidden comments (people-presence.ts). */
+/* Doubled to outrank the chat's `.geld-review__chat [data-geld-message] { display: flex !important }`, which comes later. */
+html [data-geld-person-fold][data-geld-person-fold]:not([data-geld-person-fold-open], [data-geld-person-fold-own]),
+html [data-geld-person-fold-part][data-geld-person-fold-part] {
+  display: none !important;
+}
+
+.geld-person-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--borderColor-default, var(--color-border-default));
+  border-radius: 6px;
+  background: var(--bgColor-muted, var(--color-canvas-subtle));
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.geld-person-line__toggle {
+  flex: 0 0 auto;
+}
+
+/* A blocked or hidden person's hovercard (person-hovercard.ts): why, and what GitHub lets the reader do. */
+.geld-person-card {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  font-size: 12px;
+}
+
+.geld-person-card__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fgColor-danger, var(--color-danger-fg));
+  font-weight: 600;
+}
+
+.geld-person-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.geld-person-card__picker {
+  display: contents;
+}
+
+.geld-blocked-label {
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.geld-blocked-notice {
+  margin-bottom: 16px;
 }
 
 /* GitHub's own sidebar rows for hidden people (sidebar-people.ts). */

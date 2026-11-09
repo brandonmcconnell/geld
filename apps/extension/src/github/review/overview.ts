@@ -64,7 +64,6 @@ import { exactRulesFor, HiddenPeople, markedOnGitHub, lookUpUnhideForms, refresh
 import { blockedFor } from '../blocked-users';
 import type { BlockedBy } from '../blocked-list';
 import { blockedUsersUrl } from '../blocked-list';
-import { clearSidebarPeople, syncSidebarPeople } from './sidebar-people';
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
@@ -3398,8 +3397,6 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   for (const review of reviewsAll) {
     if (hidden.isHidden(review.author.login) && !sidebarSaid.has(review.author.login.toLowerCase()) && review.state !== 'dismissed') hidden.noteVerdict(review.author.login, review.state);
   }
-  // Blocked people leave GitHub's sidebar whether or not anything of theirs is hidden; the pull request's state stays GitHub's.
-  syncSidebarPeople((login) => hidden.hides(login, login.endsWith('[bot]')) || blockedNow(login).org || blockedNow(login).personal);
   // A reading kept from before someone was hidden (GitHub's hidden content loading late) must not stand in for one without them.
   const hiddenKey = hidden
     .people()
@@ -4297,7 +4294,6 @@ export function teardownReviewOverview(why: 'stop' | 'leave' | 'rebuild' = 'stop
   // and every later callback finds the overview unmounted (`lastSettings`).
   lastSettings = null;
   overviewChecksInDigest = false;
-  clearSidebarPeople();
   closeFlow();
   setAutoLoading(false);
   deferredWhileHidden = false;
