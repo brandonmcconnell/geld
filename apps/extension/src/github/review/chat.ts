@@ -152,6 +152,13 @@ export function dressArrivals(root: ParentNode = document): boolean {
       if (!(thread instanceof HTMLElement) || !isTeleported(thread)) continue;
       const messages = messagesIn(thread, true);
       const fresh = messages.filter((message) => !message.hasAttribute(ATTR_MESSAGE));
+      // The Overview draws its collapsed reply row afresh when its editor closes: its Unresolve goes back in.
+      if (thread.querySelector(OVERVIEW_COMPOSER) !== null && thread.querySelector('.geld-review__composer-unresolve') === null) {
+        const owner = body.closest(`.${CHATS_CLASS}`);
+        if (owner === null) dressOverviewUnresolve(thread);
+        else ownedBy(owner, () => dressOverviewUnresolve(thread));
+        dressed = true;
+      }
       if (fresh.length === 0) continue;
       const dress = (): void => {
         annotateMessages(messages, viewer, false);
@@ -218,7 +225,7 @@ function dressThreads(list: HTMLElement, threads: readonly HTMLElement[], handle
   for (const thread of threads) {
     const chat = createElement('section', { class: 'geld-review__chat', 'data-geld-chat': 'thread', 'aria-label': 'Conversation' });
     const path = handlers.pathOf(thread);
-    // The head stands whenever it has anything to offer: a resolved classic thread unresolves only from here.
+    const body = createElement('div', { class: 'geld-review__chat-body' });
     const actions = createElement('span', { class: 'geld-review__chat-head-actions' });
     const where = createElement('span', { class: 'geld-review__chat-where' });
     if (path !== '') {
@@ -231,7 +238,7 @@ function dressThreads(list: HTMLElement, threads: readonly HTMLElement[], handle
     }
     const jump = jumpHrefOf(thread);
     if (jump !== null) actions.append(createElement('a', { class: 'geld-review__icon geld-review__chat-jump', href: jump, 'aria-label': 'Jump to the comment in the diff', title: 'Jump to the comment in the diff' }, [icon(ICON_FILE_SYMLINK_FILE)]));
-    const resolve = headResolveControl(thread);
+    const resolve = headResolveControl(thread, body);
     if (resolve !== null) actions.append(resolve);
     const lines = threadLinesOf(thread);
     if (lines !== null) {
@@ -241,7 +248,6 @@ function dressThreads(list: HTMLElement, threads: readonly HTMLElement[], handle
     if (where.childElementCount > 0 || actions.childElementCount > 0) chat.append(createElement('div', { class: 'geld-review__chat-head' }, [where, actions]));
     const source = sources.get(thread) ?? null;
     if (source !== null) chat.append(pinnedContext(thread, source, handlers, viewer));
-    const body = createElement('div', { class: 'geld-review__chat-body' });
     chat.append(body);
     teleportInto(body, [thread]);
     liftCollapsedBody(thread);
@@ -784,21 +790,23 @@ const ATTR_SPOKEN_FOR = 'data-geld-spoken-for';
  * wording it "Resolve conversation". Here it is moved to the end of the
  * reply area (a loan like any other, home on restore), so the field and the
  * form share one line collapsed and the form sits on the editor's action row
- * open, as the Overview draws its own reply row; the button says "Resolve".
- * A resolved thread's form is out of sight there, as the Overview shows no
- * Unresolve in its row: the head's control unresolves. GitHub's own words
- * stay in the node, hidden by an attribute, and it is GitHub's button that
- * is pressed. The Overview's row is GitHub's and is left as it draws it.
+ * open, as the Overview draws its own reply row; the button says "Resolve",
+ * or "Unresolve" once resolved. GitHub's own words stay in the node, hidden
+ * by an attribute, and it is GitHub's button that is pressed. The Overview's
+ * row is GitHub's, with only an Unresolve added while resolved.
  */
 function dressComposer(thread: HTMLElement): void {
-  if (isOverviewThread(thread)) return;
+  if (isOverviewThread(thread)) {
+    dressOverviewUnresolve(thread);
+    return;
+  }
   const area = thread.querySelector<HTMLElement>('.review-thread-reply') ?? thread.querySelector<HTMLElement>(REPLY_AREA);
   const form = thread.querySelector<HTMLElement>(RESOLVE_FORM);
   if (area === null || form === null || form.closest('.geld-review__composer-side') !== null) return;
   const side = createElement('div', { class: 'geld-review__composer-side' });
   area.append(side);
   teleportInto(side, [form]);
-  labelComposer(thread, form, side);
+  labelComposer(thread, form);
   onRestore(() => {
     // The form goes home through the loan; the side it stood in is Geld's.
     side.remove();
@@ -812,6 +820,36 @@ const OVERVIEW_RESOLVE = 'button[aria-label^="Resolve conversation" i], button[a
 /** The Overview's thread: an `article`, its reply row GitHub's own. */
 function isOverviewThread(thread: HTMLElement): boolean {
   return thread.matches('article') || thread.querySelector(OVERVIEW_COMPOSER) !== null;
+}
+
+/**
+ * The Overview's reply row has GitHub's Resolve while the thread is open and nothing once it is resolved: Geld's
+ * Unresolve stands in that place then, in GitHub's button look, pressing the header's control (hidden in the chat).
+ * GitHub draws the row afresh when its editor closes, and `dressArrivals` adds it again.
+ */
+function dressOverviewUnresolve(thread: HTMLElement): void {
+  const row = thread.querySelector<HTMLElement>(OVERVIEW_COMPOSER)?.parentElement ?? null;
+  if (row === null || row.querySelector(':scope > .geld-review__composer-unresolve') !== null) return;
+  const button = createElement('button', { type: 'button', class: 'btn geld-review__composer-unresolve', [OWN_UI_ATTRIBUTE]: '', title: 'Unresolve conversation' }, ['Unresolve']);
+  button.addEventListener('click', () => resolveStateOf(thread)?.button.click());
+  row.append(button);
+  let shown: boolean | null = null;
+  const sync = (): void => {
+    const resolved = resolveStateOf(thread)?.resolved === true;
+    // Written only when it changed: the write is a mutation the watcher below would hear.
+    if (resolved === shown) return;
+    shown = resolved;
+    button.hidden = !resolved;
+  };
+  sync();
+  const watch = new MutationObserver((records) => {
+    if (records.some((record) => !button.contains(record.target))) sync();
+  });
+  watch.observe(thread, { subtree: true, attributes: true, attributeFilter: ['aria-label'], childList: true });
+  onRestore(() => {
+    watch.disconnect();
+    button.remove();
+  });
 }
 
 /**
@@ -867,15 +905,19 @@ function resolverOf(thread: HTMLElement): string {
 /**
  * The head's Resolve, as the Overview's header has it: a check that resolves, filled once resolved and then
  * unresolving. It presses GitHub's own control (hidden in the chat), and follows its state as GitHub re-renders
- * the thread. Null when the reader may not resolve.
+ * the thread. GitHub answers a classic Resolve with a fresh thread in the old one's place (the loan adopts it), so
+ * the thread is read from the chat's body each time and the body, which outlives the swap, is what is watched.
+ * Null when the reader may not resolve.
  */
-function headResolveControl(thread: HTMLElement): HTMLElement | null {
+function headResolveControl(thread: HTMLElement, body: HTMLElement): HTMLElement | null {
   if (resolveStateOf(thread) === null) return null;
+  const current = (): HTMLElement => [...body.children].find((child): child is HTMLElement => child instanceof HTMLElement && isTeleported(child)) ?? thread;
   const button = createElement('button', { type: 'button', class: 'geld-review__icon geld-review__chat-resolve' });
   let shown = '';
   const sync = (): void => {
-    const state = resolveStateOf(thread);
-    const by = state?.resolved === true ? resolverOf(thread) : '';
+    const live = current();
+    const state = resolveStateOf(live);
+    const by = state?.resolved === true ? resolverOf(live) : '';
     // Written only when it changed: a write in the thread would be heard by the watcher below.
     const key = `${state === null}|${state?.resolved === true}|${by}`;
     if (key === shown) return;
@@ -887,10 +929,10 @@ function headResolveControl(thread: HTMLElement): HTMLElement | null {
     button.setAttribute('data-state', state?.resolved === true ? 'resolved' : 'open');
     button.replaceChildren(icon(state?.resolved === true ? ICON_CHECK_CIRCLE_FILL : ICON_CHECK_CIRCLE));
   };
-  button.addEventListener('click', () => resolveStateOf(thread)?.button.click());
+  button.addEventListener('click', () => resolveStateOf(current())?.button.click());
   sync();
   const watch = new MutationObserver(sync);
-  watch.observe(thread, { subtree: true, attributes: true, attributeFilter: ['aria-label', 'action', 'data-resolved'], childList: true });
+  watch.observe(body, { subtree: true, attributes: true, attributeFilter: ['aria-label', 'action', 'data-resolved'], childList: true });
   onRestore(() => watch.disconnect());
   return button;
 }
@@ -906,8 +948,8 @@ export function redressComposer(form: HTMLElement): void {
   const thread = form.closest<HTMLElement>('.js-resolvable-timeline-thread-container, [data-testid="review-thread"], .review-thread-component');
   if (side === null || thread === null) return;
   const owner = form.closest(`.${CHATS_CLASS}`);
-  if (owner === null) labelComposer(thread, form, side);
-  else ownedBy(owner, () => labelComposer(thread, form, side));
+  if (owner === null) labelComposer(thread, form);
+  else ownedBy(owner, () => labelComposer(thread, form));
 }
 
 /**
@@ -924,8 +966,8 @@ function isResolvedThread(thread: HTMLElement, form: HTMLElement, button: HTMLEl
   return /\bmarked (?:this )?(?:conversation )?as resolved\b/i.test((form.textContent ?? '').replace(/\s+/g, ' '));
 }
 
-/** The chat's words on GitHub's form: Resolve or Unresolve on the button; a resolved form out of sight. */
-function labelComposer(thread: HTMLElement, form: HTMLElement, side: HTMLElement): void {
+/** The chat's words on GitHub's form: Resolve or Unresolve on the button, GitHub's sentence out of sight. */
+function labelComposer(thread: HTMLElement, form: HTMLElement): void {
   const button = form.querySelector<HTMLElement>('button[type="submit"], button');
   if (button === null) return;
   // A form dressed on an earlier pass and not undressed (GitHub swapped the thread under it) is dressed afresh.
@@ -954,8 +996,9 @@ function labelComposer(thread: HTMLElement, form: HTMLElement, side: HTMLElement
   }
   const hadTitle = button.getAttribute('title');
   button.setAttribute('title', resolved ? 'Unresolve conversation' : 'Resolve conversation');
-  // Resolved, the row is the field alone, as the Overview's; the head's control unresolves.
-  side.toggleAttribute('data-resolved', resolved);
+  // "<name> marked this conversation as resolved.": the head's check names the resolver, the row keeps the button alone.
+  const name = [...form.querySelectorAll<HTMLElement>('strong, a.author, a[data-hovercard-type="user"]')].find((node) => !button.contains(node)) ?? null;
+  if (name !== null) speakFor(name.parentElement !== null && name.parentElement !== form ? name.parentElement : name);
   onRestore(() => {
     for (const element of spokenFor) element.removeAttribute(ATTR_SPOKEN_FOR);
     for (const element of added) element.remove();

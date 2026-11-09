@@ -6578,8 +6578,17 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   left: 8px;
 }
 
-/* Resolved, the row is the field alone, as the Overview's; the head's check unresolves. */
-.geld-review__composer-side[data-resolved] {
+/* The Overview's row once resolved: Geld's Unresolve where GitHub's Resolve stood, the same medium default button. */
+.geld-review__composer-unresolve.btn {
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.geld-review__composer-unresolve[hidden] {
   display: none !important;
 }
 

@@ -319,16 +319,34 @@ describe('a thread chat\'s head and composer', () => {
     });
     resolve?.click();
     expect(pressed).toBe(1);
-    expect(slot.querySelector('.geld-review__composer-side')?.hasAttribute('data-resolved')).toBe(false);
     releaseParkedChats();
   });
 
-  it('leaves a resolved classic thread\'s row to the field, the head unresolving and naming who resolved it', () => {
+  it('offers Unresolve on a resolved classic thread, in the row and the head, which names who resolved it', () => {
     const { slot } = render(classic(true));
     const resolve = slot.querySelector('.geld-review__chat-resolve');
     expect(resolve?.getAttribute('aria-label')).toBe('Unresolve conversation');
     expect(resolve?.getAttribute('title')).toBe('Unresolve conversation \u00b7 resolved by octocat');
-    expect(slot.querySelector('.geld-review__composer-side')?.hasAttribute('data-resolved')).toBe(true);
+    expect(slot.querySelector('.geld-review__composer-side .geld-review__composer-label')?.textContent).toBe('Unresolve');
+    expect(slot.querySelector('.geld-review__composer-side strong')?.hasAttribute('data-geld-spoken-for')).toBe(true);
+    releaseParkedChats();
+  });
+
+  it('follows the thread GitHub swaps in after a classic Resolve', async () => {
+    const { slot, thread } = render(classic(false));
+    const fresh = parse(classic(true));
+    fresh.setAttribute('data-geld-teleported', thread.getAttribute('data-geld-teleported') ?? '');
+    thread.replaceWith(fresh);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const resolve = slot.querySelector<HTMLButtonElement>('.geld-review__chat-resolve');
+    expect(resolve?.getAttribute('aria-label')).toBe('Unresolve conversation');
+    let pressed = 0;
+    fresh.querySelector('form button')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      pressed += 1;
+    });
+    resolve?.click();
+    expect(pressed).toBe(1);
     releaseParkedChats();
   });
 
@@ -350,6 +368,20 @@ describe('a thread chat\'s head and composer', () => {
     expect(slot.querySelector('.geld-review__chat-jump')?.getAttribute('href')).toBe('/o/r/pull/1/changes#r42');
     expect(slot.querySelector('.geld-review__composer-side')).toBeNull();
     expect(slot.querySelector('.geld-review__chat-resolve')?.getAttribute('aria-label')).toBe('Resolve conversation');
+    expect(slot.querySelector<HTMLElement>('.geld-review__composer-unresolve')?.hidden).toBe(true);
+    releaseParkedChats();
+  });
+
+  it('adds Unresolve to the Overview\'s row once resolved, where GitHub draws none', () => {
+    const { slot } = render('<article><div class="header__x"><div><h2><a href="/o/r/pull/1/changes#r42">\u200esrc/a.ts</a><span class="f6">Line 3</span></h2><button type="button" aria-label="Unresolve conversation in src/a.ts, line 3"></button></div></div><div id="discussion_r42"><div data-testid="comment-header"><a data-testid="author-link" href="/octocat">octocat</a></div><div class="markdown-body"><p>A note.</p></div></div><div class="p-2"><div class="d-flex"><button type="button" class="CompactCommentInputContainer__x">Write a reply</button></div></div></article>');
+    const unresolve = slot.querySelector<HTMLButtonElement>('.geld-review__composer-unresolve');
+    expect(unresolve?.hidden).toBe(false);
+    let pressed = 0;
+    slot.querySelector('.geld-review__chat-body button[aria-label^="Unresolve conversation in"]')?.addEventListener('click', () => {
+      pressed += 1;
+    });
+    unresolve?.click();
+    expect(pressed).toBe(1);
     releaseParkedChats();
   });
 });
