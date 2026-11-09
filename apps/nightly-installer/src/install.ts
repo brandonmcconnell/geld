@@ -27,7 +27,9 @@ export async function inspectTarget(dir: string): Promise<TargetState> {
   const names = (await readdir(dir)).filter((name) => !name.startsWith('.'));
   if (names.length === 0) return 'empty';
   const manifest = await readText(path.join(dir, 'manifest.json'));
-  return manifest !== null && isNightlyManifest(manifest) ? 'nightly' : 'other';
+  if (manifest !== null && isNightlyManifest(manifest)) return 'nightly';
+  // The installer writes its record before anything else, so a folder it was interrupted in is still its own.
+  return (await folderRecord(dir)) !== null ? 'nightly' : 'other';
 }
 
 async function listFiles(dir: string, prefix = ''): Promise<string[]> {
@@ -60,6 +62,18 @@ function folderLock(dir: string): LockIo {
   };
 }
 
+/** A file is written beside its place and renamed over it, so an interrupted run never leaves half of one. */
+async function writeWhole(file: string, data: string | Uint8Array): Promise<void> {
+  await mkdir(path.dirname(file), { recursive: true });
+  const partial = path.join(path.dirname(file), `.${path.basename(file)}.${randomUUID()}.partial`);
+  await writeFile(partial, data);
+  await rename(partial, file);
+}
+
+/**
+ * Writes the record first and every file whole, the manifest last: a run stopped at any point leaves a folder
+ * the next run recognises (`inspectTarget`) and repairs, never one it refuses as someone else's.
+ */
 export async function writeBuild(dir: string, entries: readonly ZipEntry[], record: InstallRecord): Promise<void> {
   const state = await inspectTarget(dir);
   if (state === 'other') throw new Error(`${dir} already holds something that is not Geld Nightly. Geld never writes over it. Pick another folder with --dir.`);
@@ -70,15 +84,12 @@ export async function writeBuild(dir: string, entries: readonly ZipEntry[], reco
   try {
     const current = await listFiles(dir);
     const owned = parseFileList((await readText(path.join(dir, FILE_LIST))) ?? '') ?? [];
-    for (const entry of writeOrder(entries, current)) {
-      const file = path.join(dir, ...entry.path.split('/'));
-      await mkdir(path.dirname(file), { recursive: true });
-      await writeFile(file, entry.data);
-    }
+    const recordText = `${JSON.stringify(record, null, 2)}\n`;
+    await writeWhole(path.join(dir, INSTALL_FILE), recordText);
+    for (const entry of writeOrder(entries, current)) await writeWhole(path.join(dir, ...entry.path.split('/')), entry.data);
     for (const stale of stalePaths(owned, entries.map((entry) => entry.path))) {
       await rm(path.join(dir, ...stale.split('/')), { force: true });
     }
-    await writeFile(path.join(dir, INSTALL_FILE), `${JSON.stringify(record, null, 2)}\n`);
   } finally {
     await releaseLock(lock, token);
   }

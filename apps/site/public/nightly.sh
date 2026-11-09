@@ -33,7 +33,9 @@ if [ "$expected" != "$actual" ]; then
 fi
 
 # Piped into sh, standard input is this script: the installer's questions read the terminal instead.
-if [ -t 0 ] || [ ! -r /dev/tty ]; then
+# A session with no controlling terminal (CI, ssh without -t) can still list a readable /dev/tty that fails to
+# open, so the terminal is tried, not just tested, and without one the installer runs on its own defaults.
+if [ -t 0 ] || ! (exec </dev/tty) 2>/dev/null; then
   node "$dir/geld-nightly.mjs" "$@"
 else
   node "$dir/geld-nightly.mjs" "$@" < /dev/tty

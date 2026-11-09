@@ -1312,6 +1312,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Downloads is offered only with `--downloads`: each profile's folder then goes under that profile's own download folder (`Downloads/Geld Nightly/<profile>`), and needs no picker, as the extension's downloads route writes there by its path inside Downloads.
   Folder names come from every profile found, not only those picked, and a profile installed before keeps the folder `~/.geld/nightly.json` records for it, so repairing one profile never lands in another's folder.
   A folder whose `nightly-install.json` (or the installer's state) names another profile is refused.
+  Locations are checked as written and with their links resolved (`resolvedPath`), since a link can hide a synced or temporary destination.
+  Every write is whole (beside its place, then renamed over it) and the install record goes first, so a run stopped anywhere leaves a folder the next run recognises as its own (`inspectTarget`) and repairs.
+  `nightly.sh` reads answers from the terminal only when `/dev/tty` actually opens: a session with no controlling terminal (CI, `ssh` without `-t`) lists a readable `/dev/tty` that fails to open.
   A target that exists is updated in place only when it holds a Geld Nightly build (`inspectTarget`), and anything else is never written over.
   In place, it deletes only the files the old build's `nightly-files.json` names and the new one lacks, as the updater does, so anything the reader keeps there stays.
   It writes `nightly-install.json` into the folder (`InstallRecord`: folder, time, version, browser, profile, and the path inside Downloads when there), which the extension reads through its own URL: the nightly page and popup name the folder to pick, and a folder in Downloads is connected with no picker at all (`adoptInstallerFolder`).

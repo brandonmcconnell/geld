@@ -1,4 +1,4 @@
-import { readFile, rm, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, realpath, rm, mkdir, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -86,6 +86,19 @@ async function readText(file: string): Promise<string | null> {
 interface Found extends Profile {
   readonly info: BrowserInfo;
   readonly downloads: string;
+}
+
+/** The path with every link in its existing part resolved; the part that does not exist yet is kept as written. */
+export async function resolvedPath(dir: string): Promise<string> {
+  const tail: string[] = [];
+  for (let at = path.resolve(dir); ; at = path.dirname(at)) {
+    try {
+      return path.join(await realpath(at), ...tail.reverse());
+    } catch {
+      if (path.dirname(at) === at) return path.resolve(dir);
+      tail.push(path.basename(at));
+    }
+  }
 }
 
 async function findProfiles(environment: Environment, browsers: readonly string[]): Promise<Found[]> {
@@ -208,7 +221,12 @@ export async function main(argv: readonly string[]): Promise<number> {
       console.error(`${dir} holds the Geld Nightly build of another profile (${holder.profile.name}). Pick another folder with --dir.`);
       return 1;
     }
-    const problems = locationProblems(dir, { ...environment, tmp: os.tmpdir(), downloads: chosen.map((profile) => profile.downloads) });
+    const context = { ...environment, tmp: os.tmpdir(), downloads: chosen.map((profile) => profile.downloads) };
+    // A link can hide where the files really go (a synced or temporary folder), so both paths are checked.
+    const real = await resolvedPath(dir);
+    const problems = [...locationProblems(dir, context), ...(real === dir ? [] : locationProblems(real, context))].filter(
+      (problem, index, all) => all.findIndex((other) => other.reason === problem.reason) === index,
+    );
     const refused = problems.filter((problem) => problem.level === 'refuse');
     if (refused.length > 0) {
       console.error(`Geld will not install into ${dir}.`);

@@ -1,9 +1,9 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { InstallRecord } from '@geld/core/nightly';
 import { folderRecord, inspectTarget, readInstalls, recordInstall, sameProfile, writeBuild } from './install';
-import { parseArgs } from './cli';
+import { parseArgs, resolvedPath } from './cli';
 import { parseChoice } from './prompt';
 
 let root = '';
@@ -49,6 +49,17 @@ describe('writeBuild', () => {
     await writeBuild(dir, build('0.1.2.2', ['chunks/new.js']), record(dir));
     expect(await readFile(path.join(dir, 'notes.txt'), 'utf8')).toBe('mine');
     expect(await readdir(path.join(dir, 'chunks'))).toEqual(['new.js']);
+  });
+
+  it('repairs a folder its own run was interrupted in, before the manifest was written', async () => {
+    const dir = path.join(root, 'Work');
+    await mkdir(dir);
+    await writeFile(path.join(dir, 'nightly-install.json'), JSON.stringify(record(dir)));
+    await writeFile(path.join(dir, 'background.js'), 'half');
+    expect(await inspectTarget(dir)).toBe('nightly');
+    await writeBuild(dir, build('0.1.2.1'), record(dir));
+    expect(JSON.parse(await readFile(path.join(dir, 'manifest.json'), 'utf8')).version).toBe('0.1.2.1');
+    expect((await readdir(dir)).some((name) => name.endsWith('.partial'))).toBe(false);
   });
 
   it('never writes over a folder that is not a nightly build', async () => {
@@ -122,5 +133,14 @@ describe('arguments and choices', () => {
     expect(parseChoice('all', 2)).toEqual([0, 1]);
     expect(parseChoice('4', 3)).toBeNull();
     expect(parseChoice('x', 3)).toBeNull();
+  });
+});
+
+describe('resolvedPath', () => {
+  it('follows a link in the part of the path that exists and keeps the rest as written', async () => {
+    const real = path.join(root, 'Dropbox');
+    await mkdir(real);
+    await symlink(real, path.join(root, 'link'));
+    expect(await resolvedPath(path.join(root, 'link', 'Geld Nightly', 'Work'))).toBe(path.join(await realpath(real), 'Geld Nightly', 'Work'));
   });
 });
