@@ -212,10 +212,10 @@ describe('attachment image viewer', () => {
   });
 
   it('keeps an off-centre point stationary when zooming a letterboxed image', () => {
-    vi.spyOn(viewer.stage, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, 960, 700));
-    sizeStage(960, 700);
-    image.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 900, clientY: 300 }));
-    expect(image.style.transform).toBe('translate(-320px, 150px) scale(2)');
+    vi.spyOn(viewer.stage, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, 960, 600));
+    sizeStage(960, 600);
+    image.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 860, clientY: 300 }));
+    expect(image.style.transform).toBe('translate(-280px, 100px) scale(2)');
   });
 
   it('shows the error message and disables zoom when the image fails', () => {
