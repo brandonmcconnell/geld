@@ -3438,3 +3438,7 @@ The public author-style acceptance visits all three real view controls before co
 Provider AI triage uses the shared open-item status predicate before reading a gateway key, checking gateway permission or sending a request.
 Empty and fully resolved conversations expose a disabled Nothing to triage control.
 Outdated unresolved threads remain open work, matching the shared digest counts, even when semantic reply classification skips them.
+
+GitHub, GitLab and Bitbucket choose the gateway decision model through the same `gatewayDecisionModel` helper.
+A saved model choice applies only when the current gateway advertises or inherently supports decision models, so another gateway's cached model list cannot authorize a stale choice.
+Provider addressed-state caches include the selected decision setting and are reconsidered when that choice changes, while native resolved and outdated states remain authoritative.

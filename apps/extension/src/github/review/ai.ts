@@ -27,7 +27,6 @@ import {
   isEvaluationModel,
   JEV_DIRECT_MODEL,
   answersComplete,
-  defaultDecisionModel,
   isJevModel,
   parseConsolidateOutput,
   PREVIEW_STATUSES,
@@ -47,6 +46,7 @@ import {
 } from '@geld/review';
 import type { Carried } from '@geld/review';
 import { browser } from 'wxt/browser';
+import { gatewayDecisionModel } from '../../lib/decision-model';
 import type { AiRunRecord, JevDecision } from '../../lib/local-state';
 import { aiGatewayItem, aiKeyItem, aiRunsItem, jevDecisionsItem, jevKeyItem, jevSourceItem } from '../../lib/local-state';
 import type { AiCompleteRequest, AiEvaluateRequest } from '../../lib/messages';
@@ -188,10 +188,7 @@ async function jevRoute(settings: GeldSettings): Promise<{ readonly baseUrl: str
   // made from the first decision model of any maker), else from what is known about the host, so a gateway checked
   // before this was known still routes.
   const gateway = await aiGatewayItem.getValue();
-  const listed = gateway !== null && gateway.baseUrl === settings.aiBaseUrl ? gateway.models.map((id) => gateway.details?.[id] ?? { id }) : [];
-  const automatic = defaultDecisionModel(settings.aiBaseUrl, listed);
-  // A pick made for another gateway is not sent to one that serves no decision model.
-  const gatewayModel = automatic !== null && settings.aiDecisionModel !== '' ? settings.aiDecisionModel : automatic;
+  const gatewayModel = gatewayDecisionModel(settings, gateway);
   const jevKey = (await jevKeyItem.getValue()).trim();
   const own = { baseUrl: TYPESAFE_API, apiKey: jevKey, model: JEV_DIRECT_MODEL };
   // The user's own key wins only when they chose it ("Use one anyway"); the gateway is the default whenever it serves a decision model.
