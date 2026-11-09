@@ -5,6 +5,7 @@ import type { ProviderReviewComment, ProviderReviewInput, ReviewItem } from '@ge
 import { ProviderAiTriage } from './ai';
 import { ProviderPublishedReview } from './publication';
 import type { ProviderAiDependencies } from './ai';
+import type { ProviderReviewReference } from './references';
 import { element } from './dom';
 import { renderProviderReviewPanel } from './review-panel';
 import type { ProviderReviewPanel, ProviderSourceActionContext } from './review-panel';
@@ -161,7 +162,35 @@ export class ProviderConversation {
       const actionKey = this.key;
       const actionHead = input.subject.headSha;
       this.status?.remove(); this.status = null;
+      const references = this.adapter.readReferences?.(page, document, snapshot.events) ?? [];
       const options = {
+        references,
+        ...(this.adapter.referenceAnchor === undefined ? {} : { onRevealReference: (reference: ProviderReviewReference): boolean => {
+          const current = (): ProviderReviewPage | null => {
+            if (this.generation !== actionGeneration || this.key !== actionKey || this.snapshot !== snapshot || snapshot.input.subject.headSha !== actionHead) return null;
+            const active = this.adapter.describe(new URL(window.location.href), document);
+            return active !== null && isProviderReviewPage(active) && active.number === input.subject.id && repositoryKey(active.repository) === repositoryKey(repository)
+              && active.kind === page.kind && active.diffPageUrl === page.diffPageUrl && active.version === page.version
+              && (active.headSha === null || active.headSha === actionHead) ? active : null;
+          };
+          const active = current();
+          if (active === null) return false;
+          const target = this.adapter.referenceAnchor?.(reference, active, document, snapshot.events);
+          if (target === undefined || target === null || target.closest('[data-geld-ui]') !== null) return false;
+          if (reference.source.anchor !== null) this.revealOriginal(reference.source.anchor);
+          else if (this.description?.host.contains(target)) { this.descriptionShown = true; this.updateDescription(); }
+          if (current() === null || !target.isConnected || target.closest('[hidden], [inert], [aria-hidden="true"]') !== null) return false;
+          for (let node: HTMLElement | null = target; node !== null; node = node.parentElement) {
+            const style = getComputedStyle(node);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || style.contentVisibility === 'hidden') return false;
+          }
+          const bounds = target.getBoundingClientRect();
+          if (bounds.width <= 0 || bounds.height <= 0) return false;
+          target.scrollIntoView({ block: 'center', behavior: 'auto' });
+          if (current() === null || !target.isConnected) return false;
+          target.focus({ preventScroll: true });
+          return document.activeElement === target;
+        } }),
         updating: this.abort !== null,
         version: this.snapshotVersion,
         ...(snapshot.sourceActions === undefined ? {} : { actionsForSource: (comment: ProviderReviewComment) => snapshot.sourceActions?.(comment).map((action) => ({ ...action, activate: async (context?: ProviderSourceActionContext): Promise<boolean> => {
