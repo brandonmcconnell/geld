@@ -205,7 +205,7 @@ jobs:
         if: needs.select-public-verification.outputs.focus == 'provider-access-evidence'
         run: node scripts/provider-access-evidence.mjs
       - if: needs.select-public-verification.outputs.focus != 'provider-evidence' && needs.select-public-verification.outputs.focus != 'provider-access-evidence'
-        run: pnpm install --frozen-lockfile
+        run: pnpm --filter @geld/extension... install --frozen-lockfile
       - if: needs.select-public-verification.outputs.focus != 'provider-evidence' && needs.select-public-verification.outputs.focus != 'provider-access-evidence'
         run: pnpm --filter @geld/extension build:chrome
       - name: Install native browser dialog accessibility
@@ -251,7 +251,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @geld/extension... install --frozen-lockfile
       - name: Read fixed public PR loader dependencies as source
         run: node apps/extension/scripts/bitbucket-whitespace-source-research.mjs --pr-dependencies
       - name: Save bounded static source evidence
