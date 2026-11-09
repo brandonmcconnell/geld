@@ -1493,6 +1493,60 @@ function assertGitLabBotSources(value, baseline) {
   if (baseline !== undefined) assert.deepEqual(value.checks, baseline.checks, 'Reviewer identity changed native CI facts');
 }
 
+async function gitLabBotBodyEvidence(page, item) {
+  const anchor = 'note_3381334808';
+  const selector = `article.geld-provider-review__source[data-geld-source="${anchor}"]`;
+  const sourceGets = [];
+  const progress = { status: 'running', anchor, sourceGets, beforeCapture: null, afterCapture: null, beforeCaptureSamples: [], scope: 'Presented DOM/style comparison on the selected native theme, including offscreen nodes. No simultaneous viewport painting assertion. Closed Mermaid code and findings without mounted native note DOM remain uncovered.' };
+  item.richBody = progress;
+  const request = (value) => {
+    const url = new URL(value.url());
+    if (value.method() === 'GET' && url.origin === 'https://gitlab.com' && (url.pathname.startsWith('/api/') || url.pathname.startsWith('/whitebox-aero/whitebox/-/merge_requests/272/') && url.pathname.endsWith('.json')) && sourceGets.length < 12) sourceGets.push(safeUrl(url.href));
+  };
+  page.on('request', request);
+  try {
+    progress.openedSummaries = await openReviewAncestors(page, selector);
+    const handle = await page.evaluateHandle((selector) => [...document.querySelectorAll(`${selector} > .geld-provider-review__byline > a[href]`)].find((link) => link.textContent.trim() === 'View original') ?? null, selector);
+    const original = handle.asElement();assert.ok(original !== null, 'Mounted native bot summary must retain its original-source control');
+    try {
+      assert.equal(await original.evaluate((link) => link.href), `${GL_BOT}#${anchor}`);
+      const url = page.url();
+      await original.evaluate((link) => link.scrollIntoView({ block: 'center', inline: 'nearest' }));await original.click();
+      assert.equal(page.url(), url, 'Revealing the already mounted native summary must not navigate');
+      progress.originalClick = { label: 'View original', input: 'Real Puppeteer pointer click reveals the existing native note without navigation' };
+    } finally { await discardHandle(handle); }
+    const read = async (stage) => {
+      const body = await page.evaluate(commentBodyPresentationProbe, 'gitlab', anchor);
+      const value = { ...body, ...compareCommentBodyPresentation(body) };
+      progress[stage] = value;
+      if (stage === 'beforeCapture') {
+        progress.beforeCaptureSamples.push(value);
+        if (progress.beforeCaptureSamples.length > 4) progress.beforeCaptureSamples.shift();
+      }
+      return value;
+    };
+    const categories = ['root', 'heading', 'paragraph', 'inline code', 'list', 'list item', 'table', 'table section', 'table row', 'table cell', 'table header label'];
+    const sampled = (body, category) => body.samples.some((pair) => pair.category === category && pair.native.presented && pair.owned?.presented);
+    const labelSampled = (body, label) => body.samples.some((pair) => pair.category === 'table header label' && pair.native.text === label && pair.owned?.text === label);
+    const aligned = (body) => body.nativeRootPresent && body.ownedRootPresent && body.rootAligned && body.mismatches.length === 0 && categories.every((category) => sampled(body, category)) && ['Filename', 'Overview'].every((label) => labelSampled(body, label));
+    const assertRich = (body) => {
+      assert.equal(body.nativeRootPresent, true);assert.equal(body.ownedRootPresent, true);assert.equal(body.rootAligned, true);
+      assert.deepEqual(body.mismatches, [], 'Mounted native/owned Greptile rich comment body differs');
+      for (const category of categories) assert.ok(sampled(body, category), `Actual Greptile ${category} must be positively compared`);
+      for (const label of ['Filename', 'Overview']) assert.ok(labelSampled(body, label), `Native table header ${label} must survive inert cloning with its typography`);
+    };
+    progress.beforeCapture = await pollStable(() => read('beforeCapture'), aligned, 'Required native and owned Greptile rich source formats settle in the presented DOM', 8000, (body) => JSON.stringify(body));
+    assertRich(progress.beforeCapture);
+    progress.artifacts = await capture(page, 'gitlab-bot-trusted');
+    assertRich(await read('afterCapture'));
+    assert.deepEqual(sourceGets, [], 'Rich body comparison must reuse mounted notes without another API or review JSON GET');
+    progress.status = 'passed';
+    return progress;
+  } catch (error) {
+    progress.status = 'failed';progress.error = errorText(error);throw error;
+  } finally { page.off('request', request); }
+}
+
 async function verifyGitLabBot(page, item) {
   const captured = await poll(() => item.nativeBotFixture, (value) => value.metadata.length >= 1 && value.discussions.some((page) => page.discussionCount === 36 && page.noteCount === 40 && page.selected.length === 4 && page.nextCursor === null), 'Actual native current MR metadata and complete bot discussion sources');
   for (const metadata of captured.metadata) {
@@ -1537,7 +1591,8 @@ async function verifyGitLabBot(page, item) {
   assert.equal(findings.length, 2, 'Three historical resolved finding comments must remain two clustered items');
   assert.deepEqual(findings.map((item) => [...item.sources].sort()).sort(), [['note_3381334872', 'note_3381334884'], ['note_3384406925']]);
   for (const finding of findings) { assert.equal(finding.state, 'resolved');assert.ok(finding.metadata?.includes(finding.sources.includes('note_3384406925') ? 'backend/poetry.lock:3739' : 'backend/pyproject.toml:56')); }
-  item.trusted = trusted;item.identityInteraction = { openedSummaries, observedIdentity, serviceClick, confirmation, trustClick };item.trustedArtifacts = await capture(page, 'gitlab-bot-trusted');
+  item.trusted = trusted;item.identityInteraction = { openedSummaries, observedIdentity, serviceClick, confirmation, trustClick };
+  await gitLabBotBodyEvidence(page, item);item.trustedArtifacts = item.richBody.artifacts;
   await options.bringToFront();
   await poll(() => options.$eval('#trusted-review-accounts', (area) => area.value), (value) => value.trim() === binding, 'Actual options editor observes the new explicit binding');
   await options.click('#trusted-review-accounts');await options.keyboard.down('Control');await options.keyboard.press('KeyA');await options.keyboard.up('Control');await options.keyboard.press('Backspace');

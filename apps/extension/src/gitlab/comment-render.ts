@@ -26,6 +26,29 @@ function nativeBody(comment: ProviderReviewComment, doc: Document): HTMLElement 
   return source.querySelector<HTMLElement>('.note-body .note-text');
 }
 
+function nativeSortableHeader(button: Element, source: HTMLElement): Element | null {
+  const identity = /^markdown-table-[1-9]\d*-col_(0|[1-9]\d*)-sort$/.exec(button.id);
+  const wrapper = button.parentElement;
+  const cell = wrapper?.parentElement;
+  const row = cell?.parentElement;
+  if (identity === null || button.namespaceURI !== 'http://www.w3.org/1999/xhtml' || button.getAttribute('type') !== 'button'
+    || [...button.attributes].some((attribute) => !['id', 'type', 'class'].includes(attribute.name))
+    || !button.classList.contains('gl-text-inherit') || !button.classList.contains('gl-font-bold')
+    || wrapper?.localName !== 'div' || !wrapper.classList.contains('gl-flex') || wrapper.querySelectorAll('button').length !== 1
+    || cell?.localName !== 'th' || cell.getAttribute('scope') !== 'col' || !cell.classList.contains('gl-group/markdown-table-header')
+    || !['none', 'ascending', 'descending'].includes(cell.getAttribute('aria-sort') ?? '')
+    || row?.localName !== 'tr' || row.parentElement?.localName !== 'thead' || row.parentElement.parentElement?.localName !== 'table'
+    || [...row.children].indexOf(cell) !== Number(identity[1]) || !source.contains(row.parentElement.parentElement)
+    || source.querySelectorAll(`[id="${button.id}"]`).length !== 1) return null;
+  const labels = [...button.children].filter((child) => child.localName === 'span' && !child.hasAttribute('aria-hidden'));
+  const label = labels[0];
+  if (labels.length !== 1 || label === undefined || label.attributes.length !== 0 || !label.textContent?.trim()
+    || [...label.childNodes].some((child) => child.nodeType !== Node.TEXT_NODE)) return null;
+  return [...button.childNodes].every((child) => child.nodeType === Node.TEXT_NODE ? !child.textContent?.trim()
+    : child === label || child instanceof Element && (child.matches('span[aria-hidden="true"]:empty')
+      || child.matches('svg[data-sort-icon][aria-hidden="true"]') && !child.textContent?.trim())) ? label : null;
+}
+
 export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLElement, doc: Document = document): boolean {
   const source = nativeBody(comment, doc);
   const commentUrl = safeUrl(comment.url, doc.URL);
@@ -41,6 +64,22 @@ export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLEl
     if (node.nodeType === Node.TEXT_NODE) return doc.createTextNode(node.textContent ?? '');
     if (!(node instanceof Element)) return null;
     const tag = node.localName.toLowerCase();
+    // GitLab wraps Markdown TH labels in generated sort buttons; keep their typography without the live control.
+    const headerLabel = tag === 'button' && !node.hasAttribute('contenteditable') ? nativeSortableHeader(node, source) : null;
+    if (headerLabel !== null) {
+      const fragment = doc.createDocumentFragment();
+      for (const child of node.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) fragment.append(doc.createTextNode(child.textContent ?? ''));
+        else if (child === headerLabel) {
+          const label = doc.createElement('span');
+          label.className = 'gl-font-bold gl-text-inherit';
+          label.dataset.geldNativeTableHeaderLabel = '';
+          label.textContent = child.textContent;
+          fragment.append(label);
+        }
+      }
+      return fragment;
+    }
     if (node.hasAttribute('contenteditable') || DROP.has(tag)) {
       return tag === 'input' && node.getAttribute('type') === 'checkbox' && node.hasAttribute('disabled')
         ? doc.createTextNode(node.hasAttribute('checked') ? '☑ ' : '☐ ')
@@ -94,6 +133,10 @@ export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLEl
     if (tag === 'td' || tag === 'th') {
       const align = node.getAttribute('align');
       if (align !== null && ['left', 'center', 'right'].includes(align)) element.setAttribute('align', align);
+    }
+    if (tag === 'th') {
+      const scope = node.getAttribute('scope');
+      if (scope !== null && ['col', 'row', 'colgroup', 'rowgroup'].includes(scope)) element.setAttribute('scope', scope);
     }
     for (const child of node.childNodes) {
       const cloned = copy(child, depth + 1);
