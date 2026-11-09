@@ -109,16 +109,24 @@ export function splitSentences(text: string): string {
     .join('\n');
 }
 
-const check = process.argv.includes('--check');
+const args = process.argv.slice(2);
+const check = args.includes('--check');
+const named = args.filter((arg) => !arg.startsWith('--'));
 const root = new URL('../', import.meta.url);
 const stale: string[] = [];
-for (const file of FILES) {
-  const path = fileURLToPath(new URL(file, root));
-  const text = readFileSync(path, 'utf8');
-  const split = splitSentences(text);
-  if (split === text) continue;
-  if (check) stale.push(file);
-  else writeFileSync(path, split);
+if (args.includes('--stdin')) {
+  // Checks the text piped in, so the pre-commit hook can check what is staged (`git show :AGENTS.md`), not the working copy.
+  const text = readFileSync(0, 'utf8');
+  if (splitSentences(text) !== text) stale.push(named[0] ?? 'stdin');
+} else {
+  for (const file of named.length > 0 ? FILES.filter((file) => named.includes(file)) : FILES) {
+    const path = fileURLToPath(new URL(file, root));
+    const text = readFileSync(path, 'utf8');
+    const split = splitSentences(text);
+    if (split === text) continue;
+    if (check) stale.push(file);
+    else writeFileSync(path, split);
+  }
 }
 if (stale.length > 0) {
   console.error(`One sentence per line: ${stale.join(', ')} has sentences sharing a line. Run \`pnpm docs:lines\`.`);
