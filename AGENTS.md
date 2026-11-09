@@ -3525,3 +3525,7 @@ These are attributed comment reports, not independently fetched provider deploym
 The installed-provider browser workflow installs only the extension and its workspace dependencies, so an unrelated website font package cannot prevent public extension verification.
 The three-view author/theme harness restores the exact saved settings and measures native and owned bodies only after the combined view is visible.
 Offline helper extraction stops at the next top-level function declaration so newly inserted provider probes cannot become part of a preceding function expression.
+
+GitLab and Bitbucket install the shared content-script error capture after retiring an earlier injected copy and dispose it with their provider runtime.
+Only extension-owned errors enter that capture, and the background's existing reporting preference governs remote submission.
+Shared Related links settings describe issues and pull or merge requests without promising GitHub-only sidebar placement or a stack on providers that do not expose one.

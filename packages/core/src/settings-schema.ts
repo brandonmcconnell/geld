@@ -255,7 +255,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         key: 'relatedLinks',
         label: 'Related links',
         description:
-          'Two sections under Reviewers in the pull request sidebar. Related links lists the tickets, Slack threads, agent sessions, reviews and docs its description links to, such as a Linear issue or the Replicas workspace that opened it. Related work shows the stack it is in and the GitHub issues and pull requests its description links to.',
+          'Related links lists tickets, conversations, agent sessions, reviews and documents linked in the description. Related work shows linked issues and pull or merge requests, plus a native stack when the provider supplies one.',
         popup: false,
       },
       {
