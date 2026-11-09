@@ -705,3 +705,17 @@ it('calls the optional provider syntax lifecycle through its adapter across view
   controller.stop();
   expect(clear.mock.calls.length).toBeGreaterThan(beforeStop);
 });
+
+it('resolves optional list-author identities with stats off while suppressing diff demand, scope exclusions and malformed-rule reads', async () => {
+  const { adapter, fetchDiff } = fixture('bitbucket', FILES);const current = page('bitbucket', '1');
+  document.body.innerHTML = `<section id="native-list"><article id="native-row"><a href="${current.url}">Native title</a><span id="metadata"></span></article></section>`;
+  const root = node('#native-row');const host = node('#metadata');const key = 'bitbucket.org/uuid/7177c565-3bb4-44d3-b17b-e791dfb8fed8';
+  const read = vi.fn<NonNullable<ProviderAdapter['fetchListAuthors']>>().mockResolvedValue([{ url: current.url, author: key, authorName: 'Albert Sundjaja' }]);
+  const updated: ProviderAdapter = { ...adapter, describe: (url) => url.pathname === '/reviews/1' ? null : current, readDiff: () => null, headerTargets: () => [], listRows: () => [{ root, host, url: current.url, author: null }], fetchListAuthors: read };
+  const { controller } = start(updated, { ...DEFAULT_SETTINGS, showListStats: false, hiddenAuthors: ['Albert Sundjaja'] });await settle();expect(read).not.toHaveBeenCalled();
+  controller.updateSettings({ ...DEFAULT_SETTINGS, showListStats: false, hiddenAuthors: [key], repoRules: ['bitbucket.org/acme/widgets'] });await settle();expect(read).not.toHaveBeenCalled();
+  controller.updateSettings({ ...DEFAULT_SETTINGS, showListStats: false, hiddenAuthors: [key] });await settle();
+  expect(read).toHaveBeenCalledTimes(1);expect(root.hasAttribute('data-geld-provider-author-hidden')).toBe(true);expect(fetchDiff).not.toHaveBeenCalled();
+  expect(document.querySelector('[data-geld-provider-author-note]')?.textContent).toContain('Albert Sundjaja');
+  controller.updateSettings({ ...DEFAULT_SETTINGS, showListStats: false, hiddenAuthors: [] });await settle();expect(root.hasAttribute('data-geld-provider-author-hidden')).toBe(false);expect(read.mock.calls[0]?.[2].aborted).toBe(true);
+});

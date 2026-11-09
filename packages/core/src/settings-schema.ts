@@ -513,7 +513,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
     id: 'lists',
     title: 'Hidden people',
     intro:
-      'People and bots you never want to see. Their pull requests are hidden in PR lists and stacks, behind a row that says how many and shows them on click. Their reviews and comments are left out of the pull request digest, where a closed eye on the Reviews or Review bots row lists them with Peek and Unhide. Anyone GitHub shows with a comment hidden as spam or abuse is left out of the digest too. A reply of theirs in someone else’s review thread is folded there. One login per line. `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).',
+      'People and bots you never want to see. Their pull requests are hidden in PR lists and stacks, behind a row that says how many and shows them on click. Their reviews and comments are left out of the pull request digest, where a closed eye on the Reviews or Review bots row lists them with Peek and Unhide. Anyone GitHub shows with a comment hidden as spam or abuse is left out of the digest too. A reply of theirs in someone else’s review thread is folded there. One login or provider-qualified identity per line. `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).',
     fields: [
       {
         kind: 'list',
@@ -525,6 +525,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         placeholder: '*[bot]\nrenovate*',
         syntax: [
           'A login as GitHub shows it: `dependabot[bot]`, `octocat`; a leading `@` is fine.',
+          'GitLab uses its native username. Bitbucket Cloud uses `bitbucket.org/uuid/<UUID>` with the canonical account UUID without braces. Names and nicknames are not logins. Authors that cannot be resolved remain visible.',
           '`*` matches any run of characters: `*[bot]` is every GitHub App, `renovate*` every Renovate account.',
           'Matching ignores case. Lines starting with `#` are comments.',
         ],

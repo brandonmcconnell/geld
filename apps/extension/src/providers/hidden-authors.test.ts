@@ -187,3 +187,22 @@ it('rejects old notice callbacks after context changes and cleans detached rows 
   expect(parent.querySelector(NOTE)).toBeNull();
   expect(hiding.update([native], settings, 'new').size).toBe(0);
 });
+
+it('counts visible responsive native cells once per notice/context and refreshes the same notice across viewport changes', () => {
+  const parent = list('tbody');
+  // Reduced observed Bitbucket dual-title cell structure; CSS toggles are a responsive protocol fixture.
+  const root = document.createElement('tr');root.innerHTML = '<td class="desktop" colspan="14"><a href="https://bitbucket.org/a/b/pull-requests/27">Native desktop title</a></td><td class="mobile" colspan="23"><a href="https://bitbucket.org/a/b/pull-requests/27">Native mobile title</a></td>';parent.append(root);
+  const host = root.querySelector<HTMLElement>('td');if (host === null) throw new Error('Missing cell');
+  const style = document.createElement('style');style.textContent = '.mobile{display:none}.desktop{display:table-cell}';document.head.append(style);
+  const width = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1440);const computed = vi.spyOn(window, 'getComputedStyle');
+  const entry = { root, host, author: 'bot-a', url: 'https://bitbucket.org/a/b/pull-requests/27' };
+  hiding = new ProviderHiddenAuthors('bitbucket');hiding.update([entry], settings, 'visit');
+  const notice = parent.querySelector(`${NOTE} td`);expect(notice?.getAttribute('colspan')).toBe('14');expect(computed).toHaveBeenCalledTimes(2);
+  for (let index = 0; index < 200; index += 1) hiding.update([entry], settings, 'visit');
+  expect(computed).toHaveBeenCalledTimes(2);
+  style.textContent = '.mobile{display:table-cell}.desktop{display:none}';width.mockReturnValue(500);window.dispatchEvent(new Event('resize'));
+  expect(parent.querySelector(`${NOTE} td`)).toBe(notice);expect(notice?.getAttribute('colspan')).toBe('23');expect(computed).toHaveBeenCalledTimes(4);
+  hiding.update([entry], settings, 'visit');expect(computed).toHaveBeenCalledTimes(4);
+  hiding.clear();width.mockReturnValue(400);window.dispatchEvent(new Event('resize'));expect(computed).toHaveBeenCalledTimes(4);
+  style.remove();vi.restoreAllMocks();
+});
