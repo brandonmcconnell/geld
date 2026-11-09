@@ -19,7 +19,7 @@ import { noteTone } from './note-tone';
 import { botTitle, isOpenStatus, itemThreads, resolveBotId, threadCounts } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
-import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_EXCLAMATION_CIRCLE_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_EXCLAMATION_CIRCLE_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER, ICON_EYE_CLOSED } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checkStateOfRun, checksHealth, checksRowTone, checksSummary, checksTotal, pushRowTone, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
 import type { CheckCounts, CheckState, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -33,6 +33,7 @@ import { ATTR_TELEPORTED, reclaimOrphans, restoreAll, teleportedNodes } from './
 import { overviewColumnGap, overviewDescription } from './overview-page';
 import { ATTR_NOTE, ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import type { ReviewerCandidate } from './reviewers';
+import type { HiddenPerson } from './hidden-people';
 import { shapeMark } from './mark-shape';
 import { brandMark, syncBrandSelection, watchBrandSelection } from './brand';
 import { inlineText } from './inline-text';
@@ -465,6 +466,8 @@ export interface PanelModel {
   readonly editedFor: (anchor: string) => { readonly editedAt: string; readonly postedAt: string | null; readonly log: string } | null;
   /** Whether GitHub offers Resolve for this item's thread (else the ⋯ menu says "Mark done"). */
   readonly resolvable: (item: ReviewItem) => boolean;
+  /** People and bots left out of the digest (hidden on GitHub, or on the reader's list), for the hidden people menu. */
+  readonly hiddenPeople: readonly HiddenPerson[];
 }
 
 export interface PanelHandlers {
@@ -495,6 +498,10 @@ export interface PanelHandlers {
   readonly onOpenAnchor: (anchor: string) => void;
   /** Leave compact view for the full timeline and jump to `anchor` there. */
   readonly onShowInTimeline: (anchor: string) => void;
+  /** Show or hide again a hidden person's content in the digest, for this visit. */
+  readonly onPeek: (login: string) => void;
+  /** Undo the hide itself, after the reader confirms: GitHub's own Unhide, or the line on the reader's list. */
+  readonly onUnhide: (login: string) => void;
   /** Open or close a comment inside the Reviews row's list. */
   readonly onToggleSub: (anchor: string) => void;
   /** Show every way an agent's note in the description has read (`id` is the tool's). */
@@ -1712,6 +1719,70 @@ function statusWords(status: ReviewerStatus): { readonly glyphs: readonly string
  * keys, Enter to tick and Escape to close. Request posts GitHub's own form
  * once with everyone ticked; Cancel, Escape or a click outside closes.
  */
+/** Which hidden people menu stays open across a rebuild (Peek rebuilds the panel). */
+let hiddenMenuOpen: 'people' | 'bots' | null = null;
+
+function hiddenWhyText(person: HiddenPerson): string {
+  const why = person.why.by === 'github' ? `Marked as ${person.why.reason} on GitHub` : person.why.rule.toLowerCase() === person.login.toLowerCase() ? 'On your hidden people list' : `Matches ${person.why.rule} on your hidden people list`;
+  return person.peeking ? `${why} · Peeking` : why;
+}
+
+/**
+ * The closed eye at the right of the Reviews row (people) or the Review bots
+ * row (bots), with how many are hidden: who the digest leaves out, each with
+ * Peek (their content in the digest for this visit) and Unhide (the hide
+ * itself undone, after a confirmation), or Show in timeline where GitHub's
+ * own Unhide is the only way and Geld cannot reach it.
+ */
+function hiddenMenu(model: PanelModel, handlers: PanelHandlers, scope: 'people' | 'bots'): HTMLElement | null {
+  const people = model.hiddenPeople.filter((person) => person.bot === (scope === 'bots'));
+  if (people.length === 0) return null;
+  installMenuDismissal();
+  const peeking = people.filter((person) => person.peeking).length;
+  const noun = scope === 'bots' ? plural(people.length, 'hidden bot') : people.length === 1 ? '1 hidden person' : `${people.length} hidden people`;
+  const details = createElement('details', { class: `${PANEL_CLASS}__menu ${PANEL_CLASS}__hidden` });
+  if (hiddenMenuOpen === scope) details.setAttribute('open', '');
+  details.addEventListener('toggle', () => {
+    if (details.open) hiddenMenuOpen = scope;
+    else if (hiddenMenuOpen === scope) hiddenMenuOpen = null;
+  });
+  const summary = createElement('summary', { class: `${PANEL_CLASS}__hidden-btn`, role: 'button', 'aria-label': `${noun}${peeking > 0 ? `, peeking at ${peeking}` : ''}. Show who`, title: `${noun} on this pull request`, [ATTR_FOCUS]: `hidden:${scope}` }, [
+    icon(peeking > 0 ? ICON_EYE : ICON_EYE_CLOSED),
+    createElement('span', { class: `${PANEL_CLASS}__hidden-count` }, [String(people.length)]),
+  ]);
+  summary.addEventListener('click', (event) => event.stopPropagation());
+  const list = createElement('div', { class: `${PANEL_CLASS}__menu-list ${PANEL_CLASS}__hidden-list`, role: 'menu' }, [createElement('div', { class: `${PANEL_CLASS}__menu-title` }, ['Hidden on this pull request'])]);
+  for (const person of people) {
+    const picture = person.avatarSrc !== null ? createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: person.avatarSrc, alt: '', width: '16', height: '16', ...whoAttributes(person.login, person.bot) }) : createElement('span', { class: `${PANEL_CLASS}__bot-icon ${PANEL_CLASS}__bot-icon--blank`, 'aria-hidden': 'true' });
+    const peek = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__hidden-action`, role: 'menuitem', 'aria-pressed': String(person.peeking), 'aria-label': `${person.peeking ? 'Hide' : 'Peek at'} ${person.login}`, [ATTR_FOCUS]: `hidden:${person.login}:peek` }, [person.peeking ? 'Hide' : 'Peek']);
+    peek.addEventListener('click', (event) => {
+      event.stopPropagation();
+      handlers.onPeek(person.login);
+    });
+    const actions: Node[] = [peek];
+    const exact = person.why.by === 'list' && person.why.rule.toLowerCase() === person.login.toLowerCase();
+    const label = person.why.by === 'github' ? (person.why.unhide ? 'Unhide' : person.why.anchors.length > 0 ? 'Show in timeline' : null) : exact ? 'Unhide' : null;
+    if (label !== null) {
+      const unhide = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__hidden-action`, role: 'menuitem', 'aria-label': `${label} ${person.login}`, [ATTR_FOCUS]: `hidden:${person.login}:unhide` }, [label]);
+      unhide.addEventListener('click', (event) => {
+        event.stopPropagation();
+        details.removeAttribute('open');
+        handlers.onUnhide(person.login);
+      });
+      actions.push(unhide);
+    }
+    list.append(
+      createElement('div', { class: `${PANEL_CLASS}__hidden-item`, 'data-login': person.login, ...(person.peeking ? { 'data-peeking': '' } : {}) }, [
+        picture,
+        createElement('span', { class: `${PANEL_CLASS}__menu-text` }, [person.login, createElement('span', { class: `${PANEL_CLASS}__menu-hint` }, [hiddenWhyText(person)])]),
+        createElement('span', { class: `${PANEL_CLASS}__hidden-actions` }, actions),
+      ]),
+    );
+  }
+  details.append(summary, list);
+  return details;
+}
+
 function reviewersMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
   if (!model.canRequestReviewers) return null;
   installMenuDismissal();
@@ -2002,7 +2073,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
   // The row stands wherever there is something to say about reviews — or someone to ask: on a pull request with no
   // review, no pending reviewer and no required count, GitHub still offers its reviewer form, and the Request a
   // review menu lives on this row, so without it the first reviewer could not be asked from Geld.
-  if (model.reviews !== null || model.comments.length > 0 || model.reviewerGroups.length > 0 || model.ingesting || model.canRequestReviewers) {
+  if (model.reviews !== null || model.comments.length > 0 || model.reviewerGroups.length > 0 || model.ingesting || model.canRequestReviewers || model.hiddenPeople.some((person) => !person.bot)) {
     const health: Health = model.reviews === null ? 'pending' : reviewsHealth(model.reviews);
     const content: Node[] = [];
     // The words carry only what the reviewer groups cannot: how many approvals the repository asks for. Without
@@ -2032,6 +2103,8 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     ]);
     mainClickToggles(main, () => handlers.onToggle(REVIEWS_KEY));
     const right: Node[] = [];
+    const hiddenPeople = hiddenMenu(model, handlers, 'people');
+    if (hiddenPeople !== null) right.push(hiddenPeople);
     if (model.reviews !== null) right.push(healthGlyph(health, reviewsLabel(model.reviews)));
     const people = reviewersMenu(model, handlers);
     if (people !== null) right.push(people);
@@ -2062,7 +2135,8 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
       ? createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${BOTS_KEY}`, 'aria-label': plural(model.botLines.length, 'review bot') }, [createElement('span', { class: `${PANEL_CLASS}__status-content`, ...(chips.length > 0 ? { [ATTR_FIT]: '' } : {}) }, content)])
       : createElement('span', { class: `${PANEL_CLASS}__status-content`, ...(chips.length > 0 ? { [ATTR_FIT]: '' } : {}) }, content);
     if (opens) mainClickToggles(main, toggle);
-    const right: Node[] = menu === null ? [] : [menu];
+    const hiddenBots = hiddenMenu(model, handlers, 'bots');
+    const right: Node[] = [...(hiddenBots === null ? [] : [hiddenBots]), ...(menu === null ? [] : [menu])];
     if (opens) right.push(chevron(open, toggle));
     const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health }, [
       createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(HEALTH_ICON[health])]),
@@ -3037,6 +3111,7 @@ function signatureOf(model: PanelModel): string {
     comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}:${entry.parent ?? ''}:${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('|')}`),
     reviewerGroups: model.reviewerGroups.map((group) => `${group.state}:${group.reviewers.map((reviewer) => `${reviewer.login}${reviewer.src}`).join(',')}`),
     reviewerStatuses: model.reviewerStatuses.map((status) => `${status.login}:${status.verdict ?? ''}:${status.awaiting ? 'a' : ''}:${status.anchor ?? ''}`),
+    hiddenPeople: model.hiddenPeople.map((person) => `${person.login}:${person.peeking ? 'p' : ''}:${person.why.by === 'list' ? person.why.rule : `${person.why.reason}:${person.why.unhide ? 'u' : ''}`}:${person.avatarSrc ?? ''}`),
     canRequestReviewers: model.canRequestReviewers,
     canDismissReviews: model.canDismissReviews,
     ingesting: model.ingesting,

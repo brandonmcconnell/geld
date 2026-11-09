@@ -1795,6 +1795,17 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `author:app/<name>` hrefs → `<name>[bot]`);
   matching rows get `data-geld-author="hidden"` and each list gets one note (`.geld-author-note`, a `li` wrapper inside `ul` lists) with a Show that flips the list to `data-geld-authors-shown` for the visit.
   Stack-popover items carry no author and are skipped.
+  The settings section is titled "Hidden people" (its id stays `lists`, the key stays `hiddenAuthors`), since the same list also hides people in the digest.
+- **Hidden people are left out of the digest** (`review/hidden-people.ts`, `HiddenPeople`, `hiddenMenu` in panel.ts), asked for by Theo on pingdotgg/t3code#32945 in Nov 2026.
+  There a person's one review, requesting changes, was hidden as spam, and the Reviews row still showed his red pill, read from the sidebar's "Wladefant requested changes".
+  Hidden means GitHub shows any of their comments or reviews "marked as spam" or "marked as abuse" (`markedOnGitHub`, read from the hidden comment's header), or their login matches the reader's `hiddenAuthors` list, people and bots alike.
+  GitHub hides one comment at a time and keeps counting the rest, so the digest hides the person: spam and abuse say something about the author, while outdated, duplicate, resolved and off-topic say something about the comment and leave its author in.
+  The pass filters once, right after the crawl: their comments, threads they started, reviews, sidebar verdicts, the Action payload's items, reviewers and bot verdicts (`withoutHidden`), and timeline events that name them ("deleted a comment from X", `namesHidden`), and folds all of their timeline nodes silently (`hidden-people`).
+  The merge box's "Changes requested" sentence names nobody, so it is set aside when only a hidden person requested changes (`hiddenAskedChanges`).
+  A closed eye with a count stands at the right of the Reviews row for people and of the Review bots row for bots, and opens to who is hidden and why, each with Peek (`visit.peeking`, this visit only, the menu kept open across the rebuild) and Unhide after a `window.confirm`.
+  Unhide removes an exact line from the reader's list (a wildcard line offers none), or presses GitHub's own Unhide on their hidden comments when the page holds it (an `unminimize` form or a control reading "Unhide").
+  Without one (signed out, or GitHub keeping it in a lazy ⋯ menu, not yet verified signed in) the action reads "Show in timeline" and leads to the comment, where GitHub's own control is.
+  A reply a hidden person left in someone else's thread still shows: a thread is read as one entry, by whoever started it.
 - **Repositories can configure Geld for everyone reviewing them** (`@geld/core/repo-config.ts`, `src/github/repo-config-source.ts`).
   A committed `.github/geld.yml` (and an org's defaults in `owner/.github`, `geld.yml` at the root or under `.github/`) uses the settings vocabulary — `categories`, `groups`, `categoryPatterns`, `customCategories` — and is checked by the same strict validator plus `collectRepoConfigIssues` (personal keys such as `enabled`/`repoRules` are rejected, unknown keys ignored).
   `.gitattributes` `linguist-generated` lines feed the Generated category via `generatedConfigFrom`.

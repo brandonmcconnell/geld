@@ -3391,6 +3391,71 @@ svg.geld-lucide {
   height: 12px;
 }
 
+/* ---- Hidden people: the closed eye and its count, then who is hidden with Peek and Unhide ---- */
+
+.geld-review__hidden-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 6px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  list-style: none;
+  cursor: pointer;
+}
+
+.geld-review__hidden-btn::-webkit-details-marker {
+  display: none;
+}
+
+.geld-review__hidden-btn:hover,
+.geld-review__hidden[open] > .geld-review__hidden-btn {
+  background: var(--geld-review-hover);
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-review__menu-list.geld-review__hidden-list {
+  min-width: 320px;
+}
+
+.geld-review__hidden-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  line-height: 20px;
+}
+
+.geld-review__hidden-item > .geld-review__bot-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
+.geld-review__hidden-item > .geld-review__menu-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-review__hidden-item > .geld-review__menu-text > .geld-review__menu-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.geld-review__hidden-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
 /* The rest of the registry, behind a disclosure in the menu's own type. */
 .geld-review__request-more > summary {
   display: flex;

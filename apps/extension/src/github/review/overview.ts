@@ -8,7 +8,7 @@
 import { browser } from 'wxt/browser';
 import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
 import type { GeldSettings } from '@geld/core';
-import { digestViewOf, repoFromPathname } from '@geld/core';
+import { compileAuthorRules, digestViewOf, repoFromPathname } from '@geld/core';
 import type { BotComment, BotVerdictRecord, CommentLane, GeldPrMeta, RawCheckRun, ReviewItem, ReviewerState } from '@geld/review';
 import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, commandReply, firstSentence, isOpenStatus, isReviewShaped, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, mergeCheckRuns, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
@@ -60,6 +60,7 @@ import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
 import { knownMarkShape } from './mark-shape';
 import { loginOfLink, showLogins } from './login';
 import { allResolved, isSevere, checkCountsFrom, checkCountsOfRuns, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, standingReviewers } from './panel-model';
+import { exactRulesFor, HiddenPeople, markedOnGitHub } from './hidden-people';
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
@@ -115,6 +116,8 @@ interface VisitState {
   openSubKey: string | null;
   /** Threads (by first-comment anchor) showing the review comment they came from. */
   sourcesShown: Set<string>;
+  /** Hidden people (lowercased logins) the reader is peeking at: their content is in the digest for this visit. */
+  peeking: Set<string>;
   archivedPreviewsOpen: boolean;
   /** Rounds whose commit rows are unfolded (batch grouping). */
   openCommits: Set<string>;
@@ -194,6 +197,7 @@ const visit: VisitState = {
   landedSettled: false,
   openSubKey: null,
   sourcesShown: new Set<string>(),
+  peeking: new Set<string>(),
   archivedPreviewsOpen: false,
   openCommits: new Set<string>(),
   openPreviews: new Set<string>(),
@@ -833,6 +837,19 @@ function isTrigger(entry: CrawledComment, settings: GeldSettings): boolean {
 /** Bot comments that say only that a run started or ended: nothing to read, so they fold without a row. */
 function isStatusLine(entry: CrawledComment): boolean {
   return entry.author.bot && jevNow.lanes.get(entry.comment.anchor) === 'status';
+}
+
+/** The Action's payload without hidden people: their items' sources, their recorded reviews and their bots' verdicts. */
+function withoutHidden(meta: GeldPrMeta, hidden: HiddenPeople): GeldPrMeta {
+  const items = meta.items.flatMap((item) => {
+    const sources = item.sources.filter((source) => !hidden.hides(source.author, source.author.endsWith('[bot]')));
+    if (sources.length === item.sources.length) return [item];
+    return sources.length === 0 ? [] : [{ ...item, sources }];
+  });
+  const reviewers = meta.reviewers.filter((reviewer) => !hidden.hides(reviewer.login, reviewer.login.endsWith('[bot]')));
+  const bots = meta.bots.filter((bot) => !hidden.hides(bot.login, true));
+  if (items.length === meta.items.length && reviewers.length === meta.reviewers.length && bots.length === meta.bots.length && items.every((item, index) => item === meta.items[index])) return meta;
+  return { ...meta, items, reviewers, bots };
 }
 
 function withManualDone(meta: GeldPrMeta): GeldPrMeta {
@@ -3159,6 +3176,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     visit.landedSettled = false;
     visit.openSubKey = null;
     visit.sourcesShown = new Set<string>();
+    visit.peeking = new Set<string>();
     visit.archivedPreviewsOpen = false;
     visit.openCommits = new Set<string>();
     visit.openPreviews = new Set<string>();
@@ -3193,7 +3211,23 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // crawl, the slots and the fragment loader all see the fresh item at home instead (see `dropOrphanedLoans`).
   const standing = document.querySelector('.geld-review');
   if (standing !== null) dropOrphanedLoans(standing);
-  const crawledDom = phase('crawl', crawlConversation);
+  const crawledAll = phase('crawl', crawlConversation);
+  // People GitHub shows hidden as spam or abuse, and those on the reader's hidden list, are left out of everything below.
+  const hidden = phase('hidden', () => new HiddenPeople(markedOnGitHub(document), compileAuthorRules(settings.hiddenAuthors), visit.peeking));
+  const hiddenRoots: HTMLElement[] = [...hidden.markedRoots()];
+  const crawledDom = {
+    ...crawledAll,
+    comments: crawledAll.comments.filter((entry) => {
+      if (!hidden.hides(entry.author.login, entry.author.bot, entry.avatarSrc)) return true;
+      hiddenRoots.push(entry.root);
+      return false;
+    }),
+    events: crawledAll.events.filter((event) => {
+      if (!hidden.namesHidden(event.root)) return true;
+      hiddenRoots.push(event.root);
+      return false;
+    }),
+  };
   const rawComments: readonly RawComment[] = crawledDom.comments.map((entry) => entry.comment);
   sourceFacts = new Map(
     crawledDom.comments
@@ -3253,7 +3287,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       .map((entry) => ({ preview: entry, text: docText.get(entry.anchor) ?? '' })),
   );
   jevNow = phase('jev', () => jevDecisionsFor(settings, topLevel, threads, reapplySoon, unknownPreviews));
-  const meta = phase('paths', () => withWholePaths(withManualDone(withJevDone({ ...composed.meta, bots: withBotRequests(composed.meta.bots, botRequests, headSha) }, jevNow.done))));
+  const meta = phase('paths', () => withWholePaths(withManualDone(withJevDone(withoutHidden({ ...composed.meta, bots: withBotRequests(composed.meta.bots, botRequests, headSha) }, hidden), jevNow.done))));
   // A review's or run summary's threads as chips under its opened bubble, by file, each leading to its row.
   const threadLinks = (threads: readonly ReviewThreadRef[]): ChatThreadLink[] =>
     threads.map((thread) => {
@@ -3301,14 +3335,21 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   }
   // In compact mode the review threads live in their rows and GitHub's checks section in the CI row:
   // both fold out of the page, so nothing below is left to reveal or scroll to.
-  const reviews = phase('reviews', crawlReviews);
+  const reviews = phase('reviews', crawlReviews).filter((review) => {
+    if (!hidden.hides(review.author.login, review.author.bot, review.avatarSrc)) return true;
+    hiddenRoots.push(review.root);
+    return false;
+  });
   entryNodes = new Map(reviews.filter((review) => review.comment !== null).map((review) => [review.anchor, review.comment ?? review.root]));
   // Each bot's latest run summary, as the Review bots row's lines; their anchors seat there, not in a round.
   const botLines = phase('bot-lines', () => buildBotLines(meta));
   botLineAnchors = new Set(botLines.flatMap((line) => (line.anchor === null ? [] : [line.anchor])));
   // The sidebar's Reviewers block: every reviewer's latest verdict from the first paint, while the timeline's
   // reviews are still being fetched from its end (see `timelineIngesting`).
-  const sidebar = phase('sidebar', crawlSidebarReviewers);
+  const sidebarAll = phase('sidebar', crawlSidebarReviewers);
+  const sidebar = sidebarAll.filter((reviewer) => !hidden.hides(reviewer.login, reviewer.bot, reviewer.avatarSrc));
+  // The merge box says "Changes requested" without saying whose: when only a hidden person asked, the words are theirs.
+  const hiddenAskedChanges = sidebarAll.some((reviewer) => reviewer.state === 'changes_requested' && !sidebar.includes(reviewer)) && !sidebar.some((reviewer) => reviewer.state === 'changes_requested');
   const awaiting = phase('awaiting', () => awaitingReviewers(sidebar));
   // A comment left with a close or reopen belongs to that row, not to the Reviews list or a round.
   const timelineEntries = phase('entries', () => reviewEntries(crawledDom, reviews, meta, settings).filter((entry) => !closures.paired.has(entry.anchor)));
@@ -3355,6 +3396,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     const commentsSection = overviewCommentsSection();
     const controls = commentsSection === null ? null : overviewCommentsControls(commentsSection);
     if (controls !== null) foldTargets.push({ key: 'overview-controls', label: '', author: null, nodes: [controls], silent: true });
+    const hiddenNodes = unique(hiddenRoots.filter((node) => node.isConnected));
+    if (hiddenNodes.length > 0) foldTargets.push({ key: 'hidden-people', label: '', author: null, nodes: hiddenNodes, silent: true });
   }
   // Whatever is left in the timeline — commits, mentions, bots' bare "reviewed" lines — folds too, so nothing
   // stands under the panel but the merge box; commits and mentions get rows in the activity section.
@@ -3520,7 +3563,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     editsVersion: editsVersion(),
     running: meta.bots.some((bot) => bot.verdict === 'running'),
     botRequests,
-    reviews: (visit.lastReviews = requiredReviewsFrom(boxText, reviewers, { knownRequired: visit.knownRequired }) ?? visit.lastReviews),
+    reviews: (visit.lastReviews = requiredReviewsFrom(hiddenAskedChanges ? boxText.replace(/\bchanges requested\b/gi, '') : boxText, reviewers, { knownRequired: visit.knownRequired }) ?? visit.lastReviews),
     myReactionFor: (anchor) => myReactionOn(anchor),
     timeFor: (anchor) => timeTextOf(document.getElementById(anchor), anchor),
     editedFor: (anchor) => editTimesOf(anchor, reapplySoon),
@@ -3530,6 +3573,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     sinceLastVisit: hidingTimeline ? revisionMarker(leftoverList) : null,
     aiPending: aiPending(),
     fixFor,
+    hiddenPeople: hidden.people(),
   };
   // Asynchronous answers (the AI run's progress and end) re-apply through the mounted check, never past a teardown.
   const reapply = (): void => reapplyNow();
@@ -3792,6 +3836,35 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       openRowLocal(seat.key, seat.sub);
       reapply();
       openReactions(anchor);
+    },
+    onPeek: (login) => {
+      const key = login.toLowerCase();
+      if (visit.peeking.has(key)) visit.peeking.delete(key);
+      else visit.peeking.add(key);
+      // A reading taken while peeking would otherwise stand in for one the merge box blanks.
+      visit.lastReviews = null;
+      reapply();
+    },
+    onUnhide: (login) => {
+      const person = hidden.people().find((entry) => entry.login.toLowerCase() === login.toLowerCase());
+      if (person === undefined) return;
+      if (person.why.by === 'list') {
+        const rules = exactRulesFor(settings.hiddenAuthors, person.login);
+        if (rules.length === 0) return;
+        if (!window.confirm(`Unhide ${person.login}?\n\nTheir reviews and comments will show in your digest again, and their pull requests in your lists. This removes them from your hidden people.`)) return;
+        persist(settingsItem.patch({ hiddenAuthors: settings.hiddenAuthors.filter((line) => !rules.includes(line)) }));
+        return;
+      }
+      const controls = hidden.unhideControls(person.login);
+      if (controls.length === 0) {
+        const anchor = person.why.anchors[0];
+        if (anchor !== undefined) panelHandlers.onShowInTimeline(anchor);
+        return;
+      }
+      const what = controls.length === 1 ? 'their hidden comment' : `their ${controls.length} hidden comments`;
+      if (!window.confirm(`Unhide ${person.login} on GitHub?\n\nThis unhides ${what} for everyone on this pull request, and their reviews and comments will count in the digest again.`)) return;
+      for (const control of controls) control.click();
+      reapplySoon();
     },
     onShowInTimeline: (anchor) => {
       visit.fullTimeline = true;
