@@ -332,6 +332,18 @@ describe('a thread chat\'s head and composer', () => {
     releaseParkedChats();
   });
 
+  it('keeps the head\'s Unresolve when the thread\'s path cannot be read', () => {
+    document.body.innerHTML = `<div id="home">${classic(true)}</div><section class="geld-review"><div id="slot"></div></section>`;
+    const thread = document.querySelector('#home > *');
+    const slot = document.getElementById('slot');
+    if (!(thread instanceof HTMLElement) || slot === null) throw new Error('fixture');
+    renderChatView(slot, [thread], { ...handlers, pathOf: () => '' });
+    expect(slot.querySelector('.geld-review__chat-path')).toBeNull();
+    expect(slot.querySelector('.geld-review__chat-lines')?.textContent).toBe('12-14');
+    expect(slot.querySelector('.geld-review__chat-resolve')?.getAttribute('aria-label')).toBe('Unresolve conversation');
+    releaseParkedChats();
+  });
+
   it('leaves the Overview\'s reply row as GitHub draws it', () => {
     const { slot } = render('<article><div class="header__x"><div><h2><a href="/o/r/pull/1/changes#r42">\u200esrc/a.ts</a><span class="f6">Line 3</span></h2><a aria-label="Jump to the comment in the diff for src/a.ts" href="/o/r/pull/1/changes#r42"></a><button type="button" aria-label="Resolve conversation in src/a.ts, line 3"></button></div></div><div id="discussion_r42"><div data-testid="comment-header"><a data-testid="author-link" href="/octocat">octocat</a></div><div class="markdown-body"><p>A note.</p></div></div><div class="p-2"><div class="d-flex"><button type="button" class="CompactCommentInputContainer__x">Write a reply</button><button type="button">Resolve</button></div></div></article>');
     expect(slot.querySelector('.geld-review__chat-lines')?.textContent).toBe('3');

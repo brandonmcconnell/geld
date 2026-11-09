@@ -218,25 +218,27 @@ function dressThreads(list: HTMLElement, threads: readonly HTMLElement[], handle
   for (const thread of threads) {
     const chat = createElement('section', { class: 'geld-review__chat', 'data-geld-chat': 'thread', 'aria-label': 'Conversation' });
     const path = handlers.pathOf(thread);
+    // The head stands whenever it has anything to offer: a resolved classic thread unresolves only from here.
+    const actions = createElement('span', { class: 'geld-review__chat-head-actions' });
+    const where = createElement('span', { class: 'geld-review__chat-where' });
     if (path !== '') {
-      const actions = createElement('span', { class: 'geld-review__chat-head-actions' });
       const copy = createElement('button', { type: 'button', class: 'geld-review__icon geld-review__chat-copy', 'aria-label': 'Copy path', title: 'Copy path' }, [icon(ICON_COPY)]);
       copy.addEventListener('click', () => handlers.onCopy(path));
       actions.append(copy);
-      const jump = jumpHrefOf(thread);
-      if (jump !== null) actions.append(createElement('a', { class: 'geld-review__icon geld-review__chat-jump', href: jump, 'aria-label': 'Jump to the comment in the diff', title: 'Jump to the comment in the diff' }, [icon(ICON_FILE_SYMLINK_FILE)]));
-      const resolve = headResolveControl(thread);
-      if (resolve !== null) actions.append(resolve);
       const pathEl = createElement('code', { class: 'geld-review__chat-path' });
-      const where = createElement('span', { class: 'geld-review__chat-where' }, [pathEl]);
-      const lines = threadLinesOf(thread);
-      if (lines !== null) {
-        const single = lines.start === lines.end;
-        where.append(createElement('span', { class: 'geld-review__chat-lines', title: single ? `Line ${lines.start}` : `Lines ${lines.start} to ${lines.end}` }, [single ? String(lines.start) : `${lines.start}-${lines.end}`]));
-      }
-      chat.append(createElement('div', { class: 'geld-review__chat-head' }, [where, actions]));
+      where.append(pathEl);
       pathEls.push([pathEl, path, where]);
     }
+    const jump = jumpHrefOf(thread);
+    if (jump !== null) actions.append(createElement('a', { class: 'geld-review__icon geld-review__chat-jump', href: jump, 'aria-label': 'Jump to the comment in the diff', title: 'Jump to the comment in the diff' }, [icon(ICON_FILE_SYMLINK_FILE)]));
+    const resolve = headResolveControl(thread);
+    if (resolve !== null) actions.append(resolve);
+    const lines = threadLinesOf(thread);
+    if (lines !== null) {
+      const single = lines.start === lines.end;
+      where.append(createElement('span', { class: 'geld-review__chat-lines', title: single ? `Line ${lines.start}` : `Lines ${lines.start} to ${lines.end}` }, [single ? String(lines.start) : `${lines.start}-${lines.end}`]));
+    }
+    if (where.childElementCount > 0 || actions.childElementCount > 0) chat.append(createElement('div', { class: 'geld-review__chat-head' }, [where, actions]));
     const source = sources.get(thread) ?? null;
     if (source !== null) chat.append(pinnedContext(thread, source, handlers, viewer));
     const body = createElement('div', { class: 'geld-review__chat-body' });
