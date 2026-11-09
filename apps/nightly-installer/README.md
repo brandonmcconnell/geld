@@ -21,11 +21,11 @@ Node.js 20 or newer. Works with Chrome, Chrome Beta, Edge and Brave on macOS, Wi
 ## What it does
 
 1. Lists your browser profiles by name and lets you pick one or more.
-2. Downloads the latest nightly build from [GitHub Releases](https://github.com/brandonmcconnell/geld/releases/latest) and checks it before anything is written: the release must come from Geld's own CI, the zip must match its published SHA-256, and the manifest must be Geld Nightly at the release's version.
-3. Unzips it into `~/Geld Nightly/<profile>` (on Windows, `Geld Nightly` in your user folder), one folder per profile, and deletes the zip.
+2. Downloads the latest nightly build from [GitHub Releases](https://github.com/brandonmcconnell/geld/releases/latest) into `~/.geld/downloads` and checks it there before anything goes into a build folder: the release must come from Geld's own CI, the zip must match its published SHA-256, and the manifest must be Geld Nightly at the release's version.
+3. Unzips it into `~/Geld Nightly/<profile>` (on Windows, `Geld Nightly` in your user folder), one folder per profile, and deletes the zip, checked or not.
 4. For each profile, copies the folder's path to the clipboard, opens the browser in that profile and prints the steps: go to `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and paste the path.
 
-Then click the Geld Nightly toolbar icon and **Connect folder**, and pick the same folder. When Chrome asks, choose **Allow on every visit**. A folder installed with `--downloads` needs neither step. From then on Geld Nightly installs new builds into its folder by itself, on every push to Geld's `main` branch, and can roll back to the build before.
+Then click the Geld Nightly toolbar icon and **Connect folder**, and pick the same folder. Chrome first asks to let Geld edit it: choose **Allow**. That lasts only while Chrome is open, so a later install asks again, and this time Chrome offers **Allow on every visit**. Choose it, and from then on Geld Nightly installs new builds into its folder by itself, even after Chrome restarts. Until then each install waits for that one click: the toolbar icon shows the build is ready, and **Install** in its popup asks. A folder installed with `--downloads` needs none of this. New builds come with every push to Geld's `main` branch, and Geld Nightly can roll back to the build before.
 
 Do not move or rename the folder once it is loaded: the browser ties the extension to its path. Run `npx geld-nightly` again at any time to repair a folder.
 
@@ -46,7 +46,7 @@ Do not move or rename the folder once it is loaded: the browser ties the extensi
 
 ## Where it installs, and where it will not
 
-The installer never writes over a folder that is not Geld Nightly, and never into another profile's folder. It refuses temporary folders and folders the browser's folder picker will not open (`~/Library`, `Application Support`, `AppData`, `Program Files`, `~/.config`, system folders), and asks first before a synced folder (iCloud, OneDrive, Dropbox, Google Drive) or Downloads. It keeps its own state in `~/.geld`, never in the build folder.
+The installer never writes over a folder that is not Geld Nightly, and never into another profile's folder. It refuses temporary folders and folders the browser's folder picker will not open (`~/Library`, `Application Support`, `AppData`, `Program Files`, `~/.config`, system folders), and asks first before a synced folder (iCloud, OneDrive, Dropbox, Google Drive) or Downloads. It keeps its own state in `~/.geld`. The one file it adds to a build folder is `nightly-install.json`, which the extension reads to name the folder to connect: the folder's path, the install time and version, and the browser and profile it belongs to (the profile's name and folder, no email). It travels with the folder, so a synced folder syncs it too.
 
 ## Good to know
 

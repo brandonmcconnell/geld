@@ -23,7 +23,10 @@ export function terminalOf(stream: NodeJS.WriteStream, env: NodeJS.ProcessEnv, p
   const modernWindows = env['WT_SESSION'] !== undefined || env['TERM_PROGRAM'] !== undefined;
   return {
     isTTY,
-    columns: stream.columns ?? 80,
+    // Read on every frame, so a terminal resized mid-step still gets lines that fit.
+    get columns() {
+      return stream.columns ?? 80;
+    },
     color: isTTY && env['NO_COLOR'] === undefined && (stream.hasColors?.() ?? false),
     frames: platform === 'win32' && !modernWindows ? PLAIN_FRAMES : FRAMES,
     write: (text) => void stream.write(text),
@@ -32,14 +35,25 @@ export function terminalOf(stream: NodeJS.WriteStream, env: NodeJS.ProcessEnv, p
 
 const paint = (on: boolean, code: number, text: string): string => (on ? `\u001b[${code}m${text}\u001b[39m` : text);
 
-/** Runs `run` with `label` beside a spinner, then leaves "✓ label" or "✗ label" in its place. */
+/**
+ * The animated line cut to one row: each frame clears only the row it is on, so a line that wrapped would leave
+ * a fragment behind every frame. The frame, its space and the trailing ellipsis take three columns.
+ */
+export function fitted(label: string, columns: number): string {
+  const room = Math.max(1, columns - 3);
+  const characters = [...label];
+  return characters.length <= room ? label : `${characters.slice(0, Math.max(0, room - 1)).join('')}…`;
+}
+
+/** Runs `run` with `label` beside a spinner, then leaves "✓ label" or "✗ label" in its place, written once and whole. */
 export async function step<T>(terminal: Terminal, label: string, run: () => Promise<T>): Promise<T> {
   if (!terminal.isTTY) {
     terminal.write(`${label}…\n`);
     return run();
   }
   let frame = 0;
-  const draw = (): void => terminal.write(`\r\u001b[2K${paint(terminal.color, 36, terminal.frames[frame % terminal.frames.length] ?? '')} ${label}…`);
+  const draw = (): void =>
+    terminal.write(`\r\u001b[2K${paint(terminal.color, 36, terminal.frames[frame % terminal.frames.length] ?? '')} ${fitted(label, terminal.columns)}…`);
   terminal.write('\u001b[?25l');
   const restore = (): void => terminal.write('\u001b[?25h');
   // Ctrl+C ends the process without an exit event, which would leave the cursor hidden.
