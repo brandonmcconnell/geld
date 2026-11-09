@@ -153,7 +153,9 @@ function syncFolds(standingOf: (login: string) => Standing | null): void {
     const outer = card.parentElement?.closest(COMMENTS) ?? null;
     if (outer !== null && !card.matches('.review-comment, [id^="discussion_r"]')) continue;
     const login = authorOfComment(card);
-    const standing = login === null || isDescription(card) || insideMinimized(card) ? null : standingOf(login);
+    // Whose it is first: the description and minimized checks walk the page, and most cards are nobody's to fold.
+    const candidate = login === null ? null : standingOf(login);
+    const standing = candidate === null || isDescription(card) || insideMinimized(card) ? null : candidate;
     if (standing === null) {
       if (card.hasAttribute(ATTR_FOLD)) unfold(card);
       continue;
@@ -222,7 +224,7 @@ function hideFormsFor(login: string): readonly HTMLFormElement[] {
   const key = login.toLowerCase();
   for (const card of document.querySelectorAll(COMMENTS)) {
     if (isOwn(card) && card.closest('[data-geld-teleported]') === null) continue;
-    if (insideMinimized(card) || isDescription(card) || authorOfComment(card)?.toLowerCase() !== key) continue;
+    if (authorOfComment(card)?.toLowerCase() !== key || insideMinimized(card) || isDescription(card)) continue;
     const home = card.closest('.review-comment, [id^="pullrequestreview-"], .js-comment-container, .timeline-comment-group') ?? card;
     const form = home.querySelector<HTMLFormElement>('form.js-timeline-comment-minimize, form[action$="/minimize"], form[action*="/minimize-comment"]');
     if (form !== null && !forms.includes(form)) forms.push(form);

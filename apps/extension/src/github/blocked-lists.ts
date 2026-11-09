@@ -63,14 +63,10 @@ function rowsWithAuthors(surfaces: readonly ListSurface[]): readonly { readonly 
   return [...found.values()];
 }
 
-function labelAuthor(row: HTMLElement, author: string, by: BlockedBy): void {
+function labelAuthor(row: HTMLElement, surface: ListSurface, by: BlockedBy): void {
   if (row.querySelector(`[${ATTR_LABEL}]`) !== null) return;
-  const lower = author.toLowerCase();
-  const link = [...row.querySelectorAll('a')].find((candidate) => {
-    const words = `${candidate.getAttribute('title') ?? ''} ${candidate.getAttribute('aria-label') ?? ''} ${candidate.getAttribute('data-hovercard-url') ?? ''} ${candidate.textContent ?? ''}`.toLowerCase();
-    return words.includes(`opened by ${lower}`) || words.includes(`author ${lower}`) || words.includes(`/users/${lower}/`) || (candidate.textContent ?? '').trim().toLowerCase() === lower;
-  });
-  if (link === undefined) return;
+  const link = surface.authorElementOf(row);
+  if (link === null) return;
   link.after(createElement('span', { class: 'Label Label--secondary geld-blocked-label', [OWN_UI_ATTRIBUTE]: '', [ATTR_LABEL]: '', title: blockedWords(by) }, ['Blocked']));
 }
 
@@ -129,7 +125,7 @@ export function applyBlockedListHiding(blockedIn: (owner: string) => ReadonlyMap
       row.querySelector(`[${ATTR_LABEL}]`)?.remove();
       continue;
     }
-    labelAuthor(row, author, scope);
+    labelAuthor(row, surface, scope);
     byList.set(list, [...(byList.get(list) ?? []), { row, kind, author, surface }]);
   }
   for (const list of document.querySelectorAll<HTMLElement>(`[${ATTR_LIST}]`)) seen.add(list);

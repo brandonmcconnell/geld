@@ -1834,9 +1834,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   pull requests for now).
   GitHub decides what is hidden: someone with a comment GitHub marked as spam or abuse, or on the reader's hidden list in Geld, has their other comments fold;
   a block alone folds nothing, since GitHub still shows a blocked person's comments, and earns the label, the notice and the hovercard's actions instead.
-  only a block earns the label and the notice.
   Each comment card of theirs (a thread's comment, an issue comment, a review's words, on the conversation and the Overview;
-  never the description) gets `data-geld-person-fold` and folds behind a line of Geld's just before it, shaped like GitHub's own hidden comments: "This comment was posted by a blocked user." (or "…by someone you have hidden."), Show comment and Hide comment, the choice kept per comment id for the page's life.
+  never the description) gets `data-geld-person-fold` and folds behind a line of Geld's just before it, shaped like GitHub's own hidden comments, with Show comment and Hide comment, the choice kept per comment id for the page's life.
+  The line says why (`foldWords`): "This comment was posted by a blocked user.", "This comment was posted by someone with hidden comments here." or "This comment was posted by someone on your hidden list in Geld."
+  A card that holds other people's threads (an Overview review `article`, a discussion comment with replies) folds only its own parts (`data-geld-person-fold-part`), so their findings stay in view under their own authors' checks.
   The fold rule is doubled in specificity, since the digest's chat sets its messages to `display: flex !important` later in the sheet;
   a reply in someone else's thread folds inside the chat too.
   A Blocked label (Primer `Label`) stands after every link that names a blocked person by login, the header's included, and a quiet `flash` heads a pull request a blocked person opened ("This pull request was opened by X, who you have blocked.").
@@ -1849,7 +1850,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
 - **Items opened by blocked people leave lists** (`blocked-lists.ts`, `applyBlockedListHiding`, after the author hiding in the chips phase): pull requests, issues and discussions on any list surface that reads an author, in every state.
   The list becomes a flex column (`data-geld-blocked-list`), their rows are hidden, and one quiet row of Geld's at the foot (`order: 1`) says "2 pull requests by blocked users hidden" with Show, which lays them out under it (`order: 2`) with a Blocked label beside each author, and Hide;
   GitHub's rows are never moved, and shown lasts for the visit.
-  A reply a hidden person left in someone else's thread still shows: a thread is read as one entry, by whoever started it.
+  The Blocked label goes after the element the surface read the author from (`ListSurface.authorElementOf`), so the catalog decides where it stands.
 - **Repositories can configure Geld for everyone reviewing them** (`@geld/core/repo-config.ts`, `src/github/repo-config-source.ts`).
   A committed `.github/geld.yml` (and an org's defaults in `owner/.github`, `geld.yml` at the root or under `.github/`) uses the settings vocabulary — `categories`, `groups`, `categoryPatterns`, `customCategories` — and is checked by the same strict validator plus `collectRepoConfigIssues` (personal keys such as `enabled`/`repoRules` are rejected, unknown keys ignored).
   `.gitattributes` `linguist-generated` lines feed the Generated category via `generatedConfigFrom`.
