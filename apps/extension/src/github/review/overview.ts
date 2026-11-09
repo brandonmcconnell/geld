@@ -24,6 +24,7 @@ import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
 import type { CommentMention } from './crawler';
+import { byMentionTime } from './references';
 import { crawlConversation } from './crawler';
 import type { Deployment, DeploymentEntry } from './deployments';
 import { deploymentEntries, deploymentOf, deploymentsOfPreview, environmentLabel, pinnedToBuild, previewLinks } from './deployments';
@@ -845,7 +846,7 @@ let commentMentions: readonly CommentMention[] = [];
 
 /**
  * What this pull request mentions: the description's references, then each one its comments add (people's and bots'
- * alike), once each, at its first mention, with who made it and when on its line when `withAuthor`.
+ * alike), oldest first, once each at its first mention, with who made it and when on its line when `withAuthor`.
  */
 function conversationMentions(withAuthor = false): readonly MentionLine[] {
   const self = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(location.pathname);
@@ -3217,7 +3218,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const standing = document.querySelector('.geld-review');
   if (standing !== null) dropOrphanedLoans(standing);
   const crawledDom = phase('crawl', crawlConversation);
-  commentMentions = crawledDom.comments.flatMap((entry) => entry.mentions);
+  commentMentions = byMentionTime(crawledDom.comments.flatMap((entry) => entry.mentions));
   const rawComments: readonly RawComment[] = crawledDom.comments.map((entry) => entry.comment);
   sourceFacts = new Map(
     crawledDom.comments

@@ -28,3 +28,18 @@ export function referenceLinksIn(body: Element | null): readonly ReferenceLink[]
   }
   return links;
 }
+
+/**
+ * Oldest mention first: the crawl lists a review thread where its first comment stands, so a reply there would come
+ * before a top-level comment written earlier. A mention with no time keeps its place after the dated ones.
+ */
+export function byMentionTime<T extends { readonly at: string }>(mentions: readonly T[]): readonly T[] {
+  const time = (mention: T): number => {
+    const at = Date.parse(mention.at);
+    return Number.isNaN(at) ? Number.POSITIVE_INFINITY : at;
+  };
+  return mentions
+    .map((mention, index) => ({ mention, index, at: time(mention) }))
+    .sort((a, b) => (a.at === b.at ? a.index - b.index : a.at - b.at))
+    .map(({ mention }) => mention);
+}

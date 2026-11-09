@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { referenceLinksIn } from './references';
+import { byMentionTime, referenceLinksIn } from './references';
 import { parseHovercard, refKeyOf } from './refs';
 
 const body = (html: string): Element => {
@@ -24,6 +24,19 @@ describe('referenceLinksIn', () => {
       { href: 'https://github.com/o/r/discussions/42', ref: 'o/r#42', title: '', discussion: true },
     ]);
     expect(referenceLinksIn(null)).toEqual([]);
+  });
+});
+
+describe('byMentionTime', () => {
+  it('puts a later reply in an earlier thread after a comment written before it, and undated ones last, in place', () => {
+    const mentions = [
+      { id: 'thread-opened', at: '2026-11-07T06:00:00Z' },
+      { id: 'thread-reply', at: '2026-11-07T08:00:00Z' },
+      { id: 'undated', at: '' },
+      { id: 'comment', at: '2026-11-07T07:00:00Z' },
+      { id: 'same-time', at: '2026-11-07T07:00:00Z' },
+    ];
+    expect(byMentionTime(mentions).map((mention) => mention.id)).toEqual(['thread-opened', 'comment', 'same-time', 'thread-reply', 'undated']);
   });
 });
 
