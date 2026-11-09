@@ -8,10 +8,11 @@
 
 import { createElement, svgFromString } from '../dom';
 import type { RefDetails, RefState } from './refs';
-import { ICON_CHECK, ICON_GIT_COMPARE, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_LINK, ICON_X } from '../ui/icons';
+import { ICON_CHECK, ICON_COMMENT_DISCUSSION, ICON_GIT_COMPARE, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_LINK, ICON_SKIP, ICON_X } from '../ui/icons';
 import { openMinimized } from './chat';
 import { commitDate } from './commit-dates';
 import { compareHome, onRestore, teleportInto } from './teleport';
+import { referenceLinksIn } from './references';
 import { relativeTimeElement } from './time';
 
 /**
@@ -334,6 +335,7 @@ function refStateOf(href: string, badgeText: string): RefState {
   const pull = href.includes('/pull/');
   if (/merged/.test(text)) return 'merged';
   if (/draft/.test(text)) return 'draft';
+  if (/not planned/.test(text) && !pull) return 'issue-not-planned';
   if (/closed|not planned|done|completed/.test(text)) return pull ? 'closed' : 'issue-closed';
   if (/open/.test(text)) return pull ? 'open' : 'issue-open';
   return 'unknown';
@@ -346,6 +348,8 @@ const REF_ICON: Readonly<Record<RefState, string>> = {
   draft: ICON_GIT_PULL_REQUEST_DRAFT,
   'issue-open': ICON_ISSUE_OPENED,
   'issue-closed': ICON_ISSUE_CLOSED,
+  'issue-not-planned': ICON_SKIP,
+  discussion: ICON_COMMENT_DISCUSSION,
   unknown: ICON_LINK,
 };
 
@@ -357,6 +361,8 @@ export interface MentionLine {
   /** The mentioner's avatar link (GitHub's, cloned: its hovercard attributes work anywhere). */
   readonly avatar: HTMLElement | null;
   readonly time: string;
+  /** The mention's moment, for GitHub's live relative time in place of `time` (lines read from the timeline's data). */
+  readonly at?: string;
 }
 
 /** One line per reference in a cross-reference row ("This was referenced" rows hold several). */
@@ -403,6 +409,8 @@ const STATE_LABEL: Readonly<Record<RefState, string>> = {
   draft: 'Draft pull request',
   'issue-open': 'Open issue',
   'issue-closed': 'Closed issue',
+  'issue-not-planned': 'Closed as not planned',
+  discussion: 'Discussion',
   unknown: 'Issue or pull request',
 };
 
@@ -413,19 +421,18 @@ function completeLine(line: MentionLine, lookup: RefLookup): MentionLine {
   return { ...line, title: found.title, state: line.state === 'unknown' || found.state !== 'unknown' ? found.state : line.state };
 }
 
-/** On the commits list's grid: state glyph, avatar (or its space), `owner/repo#N` and the title as one link, time. */
+/** Who mentioned it first (their avatar, or its space), then one link of state glyph, `owner/repo#N` and title, then the time. */
 function mentionRow(line: MentionLine): HTMLElement {
+  const discussion = line.state === 'discussion' || line.href.includes('/discussions/');
   const isPull = line.state === 'unknown' ? line.href.includes('/pull/') : !line.state.startsWith('issue');
-  const anchor = createElement('a', { class: 'geld-review__mention-link', href: line.href, 'data-hovercard-type': isPull ? 'pull_request' : 'issue', 'data-hovercard-url': `${line.href.replace(/[#?].*$/, '')}/hovercard` }, [
+  const anchor = createElement('a', { class: 'geld-review__mention-link', href: line.href, 'data-hovercard-type': discussion ? 'discussion' : isPull ? 'pull_request' : 'issue', 'data-hovercard-url': `${line.href.replace(/[#?].*$/, '')}/hovercard` }, [
+    createElement('span', { class: 'geld-review__mention-state', role: 'img', 'aria-label': STATE_LABEL[line.state], title: STATE_LABEL[line.state] }, [svgFromString(REF_ICON[line.state])]),
     ...(line.ref === '' ? [] : [createElement('span', { class: 'geld-review__mention-ref' }, [line.ref])]),
     createElement('span', { class: 'geld-review__mention-title' }, [line.title]),
   ]);
-  const row = createElement('li', { class: 'geld-review__mention', 'data-state': line.state }, [
-    createElement('span', { class: 'geld-review__mention-state', role: 'img', 'aria-label': STATE_LABEL[line.state], title: STATE_LABEL[line.state] }, [svgFromString(REF_ICON[line.state])]),
-    line.avatar ?? createElement('span', { class: 'geld-review__mention-who', 'aria-hidden': 'true' }),
-    anchor,
-  ]);
-  if (line.time !== '') row.append(createElement('span', { class: 'geld-review__time' }, [line.time]));
+  const row = createElement('li', { class: 'geld-review__mention', 'data-state': line.state }, [line.avatar ?? createElement('span', { class: 'geld-review__mention-who', 'aria-hidden': 'true' }), anchor]);
+  if (line.at !== undefined && line.at !== '') row.append(relativeTimeElement(line.at, 'geld-review__time'));
+  else if (line.time !== '') row.append(createElement('span', { class: 'geld-review__time' }, [line.time]));
   return row;
 }
 
@@ -438,8 +445,8 @@ export type RefLookup = (href: string) => RefDetails | null;
  * description mentions. Rendered from the rows rather than moving them: a
  * mention row is all chrome.
  */
-export function renderMentionsView(slot: HTMLElement, nodes: readonly HTMLElement[], outgoing: readonly MentionLine[] = [], lookup: RefLookup = () => null): void {
-  const incoming = nodes.flatMap((node) => mentionLinesOf(node));
+export function renderMentionsView(slot: HTMLElement, nodes: readonly HTMLElement[], outgoing: readonly MentionLine[] = [], lookup: RefLookup = () => null, incomingRead: readonly MentionLine[] = []): void {
+  const incoming = [...nodes.flatMap((node) => mentionLinesOf(node)), ...incomingRead];
   const wrap = createElement('div', { class: 'geld-review__mentions-wrap' });
   const section = (label: string, lines: readonly MentionLine[]): void => {
     if (lines.length === 0) return;
@@ -468,7 +475,6 @@ export interface MentionAuthor {
  */
 export function outgoingMentions(description: Element | null, author: MentionAuthor | null = null): readonly MentionLine[] {
   if (description === null) return [];
-  const seen = new Set<string>();
   const lines: MentionLine[] = [];
   const who = (): HTMLElement | null =>
     author === null
@@ -476,13 +482,8 @@ export function outgoingMentions(description: Element | null, author: MentionAut
       : createElement('a', { class: 'geld-review__mention-who', href: `/${author.login}`, 'data-hovercard-type': 'user', 'data-hovercard-url': `/users/${encodeURIComponent(author.login)}/hovercard` }, [
           createElement('img', { class: 'geld-review__avatar', 'data-kind': 'user', src: author.avatarSrc, alt: `@${author.login}`, width: '20', height: '20' }),
         ]);
-  for (const link of description.querySelectorAll<HTMLAnchorElement>('a.issue-link[href], a[data-hovercard-type="pull_request"][href], a[data-hovercard-type="issue"][href]')) {
-    const href = link.getAttribute('href') ?? '';
-    const match = /\/([^/]+)\/([^/]+)\/(pull|issues)\/(\d+)/.exec(href);
-    if (match === null || seen.has(href)) continue;
-    seen.add(href);
-    const title = (link.getAttribute('title') ?? link.getAttribute('aria-label') ?? link.textContent ?? '').replace(/\s+/g, ' ').trim();
-    lines.push({ href, ref: `${match[1]}/${match[2]}#${match[4]}`, title: title === '' || /^#?\d+$/.test(title) ? '' : title, state: 'unknown', avatar: who(), time: '' });
+  for (const link of referenceLinksIn(description)) {
+    lines.push({ href: link.href, ref: link.ref, title: link.title, state: link.discussion ? 'discussion' : 'unknown', avatar: who(), time: '' });
   }
   return lines;
 }
