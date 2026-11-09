@@ -32,6 +32,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        env:
+          FONTAWESOME_PACKAGE_TOKEN: ${{ secrets.FONTAWESOME_PACKAGE_TOKEN }}
       # The script reads the add-on id from a built manifest.
       - run: pnpm --filter @geld/extension build:firefox
       - env:
