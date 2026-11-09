@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import { compileAuthorRules } from '@geld/core';
-import { exactRulesFor, HiddenPeople, hideReasonOf, markedOnGitHub } from './hidden-people';
+import { exactRulesFor, HiddenPeople, hideReasonOf, markedOnGitHub, unhideFormIn, unhideFormOf } from './hidden-people';
 
 /**
  * Markup reduced from a public pull request signed out (Nov 2026), with the
@@ -38,15 +38,31 @@ const RESOLVED_COMMENT = `
   </div>
 </div>`;
 
-const UNHIDE = `
-<div class="js-timeline-item">
-  <div class="TimelineItem js-comment-container" id="issuecomment-2">
-    <a class="TimelineItem-avatar" href="/apps/spammy"><img src="https://example.test/s.png" alt="" /></a>
-    <details><summary><h3 class="timeline-comment-header-text">This comment was marked as abuse.</h3></summary>
-      <form action="/acme/repo/issues/comments/2/unminimize" method="post"><button type="submit">Unhide</button></form>
-    </details>
+/** A hidden comment as the signed-in page has it: its menu (with Unhide) behind a lazy fragment. */
+const HIDDEN_COMMENT = `
+<div class="js-timeline-item" data-gid="IC_test">
+  <div class="TimelineItem js-comment-container" data-url="/acme/widgets/comments/IC_test/partials/timeline_issue_comment">
+    <div class="avatar-parent-child TimelineItem-avatar"><a href="/apps/spammy"><img src="https://example.test/s.png" alt="" /></a></div>
+    <div class="timeline-comment-group" id="issuecomment-2">
+      <div class="minimized-comment position-relative js-comment">
+        <details><summary><h3 class="timeline-comment-header-text">This comment was marked as abuse.</h3></summary>
+          <div class="review-comment"><div class="timeline-comment-actions"><details><summary></summary>
+            <details-menu src="/acme/widgets/issue_comments/2/comment_actions_menu?href=issuecomment-2-minimized&amp;gid=IC_test&amp;minimized=1"></details-menu>
+          </details></div></div>
+        </details>
+      </div>
+    </div>
   </div>
 </div>`;
+
+/** GitHub's Unhide as the menu fragment serves it to someone who may use it (fields reduced from github.com, Nov 2026). */
+const UNHIDE_MENU = `
+<button type="button" class="dropdown-item btn-link js-comment-edit-button">Edit</button>
+<form class="inline-form js-comment-unminimize width-full" action="/acme/widgets/community/unminimize-comment" method="post">
+  <input type="hidden" name="_method" value="put" /><input type="hidden" name="authenticity_token" value="token" />
+  <input type="hidden" name="comment_id" value="IC_test" />
+  <button type="submit" class="dropdown-item btn-link">Unhide</button>
+</form>`;
 
 function page(html: string): HTMLElement {
   const holder = document.createElement('div');
@@ -67,7 +83,7 @@ describe('markedOnGitHub', () => {
   it('finds a review hidden as spam and whose it is, not the sign-in link beside it', () => {
     const found = markedOnGitHub(page(SPAM_REVIEW));
     expect(found).toHaveLength(1);
-    expect(found[0]).toMatchObject({ login: 'Spam-User', bot: false, reason: 'spam', anchor: 'pullrequestreview-1000001', unhide: null });
+    expect(found[0]).toMatchObject({ login: 'Spam-User', bot: false, reason: 'spam', anchor: 'pullrequestreview-1000001', gid: 'PRR_test', menuSource: { kind: 'content', url: '/acme/widgets/pull/7/reviews/1000001' } });
     expect(found[0]?.root.classList.contains('js-timeline-item')).toBe(true);
   });
 
@@ -75,10 +91,29 @@ describe('markedOnGitHub', () => {
     expect(markedOnGitHub(page(RESOLVED_COMMENT))).toEqual([]);
   });
 
-  it('keeps GitHub’s own Unhide when the page offers it, and reads an App as a bot', () => {
-    const [content] = markedOnGitHub(page(UNHIDE));
-    expect(content).toMatchObject({ login: 'spammy[bot]', bot: true, reason: 'abuse' });
-    expect(content?.unhide?.textContent).toBe('Unhide');
+  it('finds where GitHub keeps a hidden comment’s menu, and reads an App as a bot', () => {
+    const [content] = markedOnGitHub(page(HIDDEN_COMMENT));
+    expect(content).toMatchObject({ login: 'spammy[bot]', bot: true, reason: 'abuse', anchor: 'issuecomment-2', gid: 'IC_test' });
+    expect(content?.menuSource).toEqual({ kind: 'menu', url: '/acme/widgets/issue_comments/2/comment_actions_menu?href=issuecomment-2-minimized&gid=IC_test&minimized=1' });
+    expect(content === undefined ? null : unhideFormOf(content)).toBeNull();
+  });
+});
+
+describe('unhideFormIn', () => {
+  it('reads GitHub’s Unhide form as its action and fields', () => {
+    expect(unhideFormIn(page(UNHIDE_MENU))).toEqual({
+      action: '/acme/widgets/community/unminimize-comment',
+      fields: [
+        ['_method', 'put'],
+        ['authenticity_token', 'token'],
+        ['comment_id', 'IC_test'],
+      ],
+    });
+  });
+
+  it('reads a review’s form too, and nothing from a menu without one', () => {
+    expect(unhideFormIn(page('<form class="inline-form js-timeline-comment-unminimize" action="/acme/widgets/pull/7/reviews/1/unminimize"><input type="hidden" name="comment_id" value="PRR_test" /></form>'))?.action).toBe('/acme/widgets/pull/7/reviews/1/unminimize');
+    expect(unhideFormIn(page('<button class="dropdown-item">Copy link</button>'))).toBeNull();
   });
 });
 

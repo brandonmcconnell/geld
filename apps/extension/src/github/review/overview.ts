@@ -60,7 +60,7 @@ import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
 import { knownMarkShape } from './mark-shape';
 import { loginOfLink, showLogins } from './login';
 import { allResolved, isSevere, checkCountsFrom, checkCountsOfRuns, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, standingReviewers } from './panel-model';
-import { exactRulesFor, HiddenPeople, markedOnGitHub } from './hidden-people';
+import { exactRulesFor, HiddenPeople, markedOnGitHub, lookUpUnhideForms, refreshUnhidden, sendUnhide } from './hidden-people';
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
@@ -3216,7 +3216,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   if (standing !== null) dropOrphanedLoans(standing);
   const crawledAll = phase('crawl', crawlConversation);
   // People GitHub shows hidden as spam or abuse, and those on the reader's hidden list, are left out of everything below.
-  const hidden = phase('hidden', () => new HiddenPeople(markedOnGitHub(document), compileAuthorRules(settings.hiddenAuthors), visit.peeking));
+  const marked = phase('hidden', () => markedOnGitHub(document));
+  lookUpUnhideForms(marked, reapplySoon);
+  const hidden = new HiddenPeople(marked, compileAuthorRules(settings.hiddenAuthors), visit.peeking);
   const hiddenRoots: HTMLElement[] = [...hidden.markedRoots()];
   const crawledDom = {
     ...crawledAll,
@@ -3858,16 +3860,27 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         persist(settingsItem.patch({ hiddenAuthors: settings.hiddenAuthors.filter((line) => !rules.includes(line)) }));
         return;
       }
-      const controls = hidden.unhideControls(person.login);
-      if (controls.length === 0) {
+      const targets = hidden.unhideTargets(person.login);
+      if (targets.length === 0) {
         const anchor = person.why.anchors[0];
         if (anchor !== undefined) panelHandlers.onShowInTimeline(anchor);
         return;
       }
-      const what = controls.length === 1 ? 'their hidden comment' : `their ${controls.length} hidden comments`;
-      if (!window.confirm(`Unhide ${person.login} on GitHub?\n\nThis unhides ${what} for everyone on this pull request, and their reviews and comments will count in the digest again.`)) return;
-      for (const control of controls) control.click();
-      reapplySoon();
+      const what = targets.length === 1 ? 'their hidden comment' : `their ${targets.length} hidden comments`;
+      if (!window.confirm(`Unhide ${person.login} on GitHub?\n\nThis unhides ${what} for everyone, and their reviews and comments will count in the digest again.`)) return;
+      void (async () => {
+        let refreshed = true;
+        for (const { content, form } of targets) {
+          if (!(await sendUnhide(form))) {
+            window.alert(`GitHub did not unhide ${person.login}'s comment. Try GitHub's own Unhide on it.`);
+            reapplySoon();
+            return;
+          }
+          if (!(await refreshUnhidden(content))) refreshed = false;
+        }
+        if (refreshed) reapplySoon();
+        else location.reload();
+      })();
     },
     onShowInTimeline: (anchor) => {
       visit.fullTimeline = true;

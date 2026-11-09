@@ -1,5 +1,7 @@
 import type { AuthorRules } from '@geld/core';
 import { OWN_UI_ATTRIBUTE } from '../dom';
+import { pageFetch } from '../page-fetch';
+import { fragmentHeaders } from './deeplink';
 import { loginOfLink } from './login';
 
 /**
@@ -39,8 +41,16 @@ export interface MarkedContent {
   readonly anchor: string | null;
   /** The timeline node to fold with the person. */
   readonly root: HTMLElement;
-  /** GitHub's own Unhide on it, when the page offers it to the reader. */
-  readonly unhide: HTMLElement | null;
+  /** The node id GitHub's Unhide names (`IC_…`, `PRR_…`), which keys the form looked up for it. */
+  readonly gid: string | null;
+  /** Where GitHub keeps the hidden comment's menu, which holds Unhide for those who may use it. */
+  readonly menuSource: { readonly kind: 'menu' | 'content'; readonly url: string } | null;
+}
+
+/** GitHub's Unhide form: its action and fields (`_method=put`, the token, `comment_id`). */
+export interface UnhideForm {
+  readonly action: string;
+  readonly fields: readonly (readonly [string, string])[];
 }
 
 const HEADERS = 'summary, h3.timeline-comment-header-text, .minimized-comment-header, [data-testid="minimized-comment-header"]';
@@ -53,14 +63,28 @@ function isOwn(node: Element): boolean {
   return node.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null;
 }
 
-/** GitHub's own Unhide inside a hidden comment: its unminimize form's button, or a control that says Unhide. */
-function unhideControlIn(container: Element): HTMLElement | null {
-  const form = container.querySelector<HTMLFormElement>('form[action*="unminimize" i], form.js-comment-unminimize, form[class*="unminimize" i]');
-  const submit = form?.querySelector<HTMLElement>('button[type="submit"], button:not([type]), input[type="submit"]');
-  if (submit !== null && submit !== undefined) return submit;
-  for (const control of container.querySelectorAll<HTMLElement>('button, [role="menuitem"]')) {
-    if ((control.textContent ?? '').trim().toLowerCase() === 'unhide') return control;
-  }
+const UNHIDE_FORM = 'form[class*="unminimize" i], form[action*="unminimize" i]';
+
+/** GitHub's Unhide form in `root`, as fields to send: an issue comment's `js-comment-unminimize`, a review's `js-timeline-comment-unminimize`. */
+export function unhideFormIn(root: ParentNode): UnhideForm | null {
+  const form = root.querySelector(UNHIDE_FORM);
+  const action = form?.getAttribute('action') ?? '';
+  if (form === null || action === '') return null;
+  const fields: (readonly [string, string])[] = [];
+  for (const input of form.querySelectorAll('input[name]')) fields.push([input.getAttribute('name') ?? '', input.getAttribute('value') ?? '']);
+  return { action, fields };
+}
+
+/**
+ * Where a hidden comment's Unhide lives. GitHub renders the menu of a hidden comment lazily
+ * (`comment_actions_menu?…&minimized=1`), and a hidden review's whole content, menu included, behind
+ * one more fragment (`/pull/N/reviews/<id>`), and serves the form only to someone who may unhide.
+ */
+function menuSourceIn(container: Element): MarkedContent['menuSource'] {
+  const menu = (container.querySelector('details-menu[src*="minimized" i]') ?? container.querySelector('.minimized-comment details-menu[src]'))?.getAttribute('src');
+  if (menu !== null && menu !== undefined && menu !== '') return { kind: 'menu', url: menu };
+  const content = container.querySelector('.minimized-comment include-fragment[src]')?.getAttribute('src');
+  if (content !== null && content !== undefined && content !== '') return { kind: 'content', url: content };
   return null;
 }
 
@@ -89,7 +113,8 @@ export function markedOnGitHub(root: ParentNode = document): readonly MarkedCont
       reason,
       anchor: anchored?.id ?? null,
       root: rootNode,
-      unhide: unhideControlIn(container),
+      gid: header.closest('[data-gid]')?.getAttribute('data-gid') ?? container.closest('[data-gid]')?.getAttribute('data-gid') ?? null,
+      menuSource: menuSourceIn(container),
     });
   }
   return found;
@@ -143,7 +168,7 @@ export class HiddenPeople {
         login: first.login,
         bot: first.bot,
         avatarSrc: contents.find((content) => content.avatarSrc !== null)?.avatarSrc ?? null,
-        why: { by: 'github', reason: first.reason, anchors: contents.flatMap((content) => (content.anchor === null ? [] : [content.anchor])), unhide: contents.some((content) => content.unhide !== null) },
+        why: { by: 'github', reason: first.reason, anchors: contents.flatMap((content) => (content.anchor === null ? [] : [content.anchor])), unhide: contents.some((content) => unhideFormOf(content) !== null) },
       });
     }
   }
@@ -183,9 +208,12 @@ export class HiddenPeople {
     return [...this.marked].filter(([key]) => !this.peeking.has(key)).flatMap(([, contents]) => contents.map((content) => content.root));
   }
 
-  /** GitHub's own Unhide controls on `login`'s hidden content. */
-  unhideControls(login: string): readonly HTMLElement[] {
-    return (this.marked.get(login.toLowerCase()) ?? []).flatMap((content) => (content.unhide === null ? [] : [content.unhide]));
+  /** `login`'s hidden content GitHub lets the reader unhide, with the form for each. */
+  unhideTargets(login: string): readonly { readonly content: MarkedContent; readonly form: UnhideForm }[] {
+    return (this.marked.get(login.toLowerCase()) ?? []).flatMap((content) => {
+      const form = unhideFormOf(content);
+      return form === null ? [] : [{ content, form }];
+    });
   }
 
   people(): readonly HiddenPerson[] {
@@ -199,4 +227,78 @@ export class HiddenPeople {
 export function exactRulesFor(lines: readonly string[], login: string): readonly string[] {
   const wanted = login.toLowerCase();
   return lines.filter((line) => line.trim().replace(/^@/, '').toLowerCase() === wanted);
+}
+
+const forms = new Map<string, UnhideForm | null>();
+const looking = new Set<string>();
+
+function keyOf(content: MarkedContent): string {
+  return content.gid ?? content.anchor ?? content.menuSource?.url ?? '';
+}
+
+/** The Unhide form for `content`: in the page, or read from its menu (`lookUpUnhideForms`); null when GitHub offers none. */
+export function unhideFormOf(content: MarkedContent): UnhideForm | null {
+  return unhideFormIn(content.root) ?? forms.get(keyOf(content)) ?? null;
+}
+
+async function fetchDocument(url: string): Promise<Document | null> {
+  const response = await pageFetch(url, { headers: fragmentHeaders(), credentials: 'same-origin', cache: 'no-store' });
+  if (!response.ok) return null;
+  return new DOMParser().parseFromString(await response.text(), 'text/html');
+}
+
+/** Reads each hidden comment's menu once per page, so Unhide is offered exactly when GitHub would offer it; `onLanded` when one is found. */
+export function lookUpUnhideForms(contents: readonly MarkedContent[], onLanded: () => void): void {
+  for (const content of contents) {
+    const key = keyOf(content);
+    const source = content.menuSource;
+    if (key === '' || source === null || forms.has(key) || looking.has(key) || unhideFormIn(content.root) !== null) continue;
+    looking.add(key);
+    void (async () => {
+      let menuUrl: string | null = source.kind === 'menu' ? source.url : null;
+      if (source.kind === 'content') {
+        const doc = await fetchDocument(source.url);
+        const inline = doc === null ? null : unhideFormIn(doc);
+        if (inline !== null) return inline;
+        menuUrl = doc?.querySelector('details-menu[src]')?.getAttribute('src') ?? null;
+      }
+      if (menuUrl === null) return null;
+      const menu = await fetchDocument(menuUrl);
+      return menu === null ? null : unhideFormIn(menu);
+    })()
+      .catch((): UnhideForm | null => null)
+      .then((form) => {
+        looking.delete(key);
+        forms.set(key, form);
+        if (form !== null) onLanded();
+      });
+  }
+}
+
+/** Sends GitHub's own Unhide form; true when GitHub took it. */
+export async function sendUnhide(form: UnhideForm): Promise<boolean> {
+  const body = new URLSearchParams();
+  for (const [name, value] of form.fields) body.append(name, value);
+  try {
+    const response = await pageFetch(form.action, { method: 'POST', body, credentials: 'same-origin', headers: { Accept: 'text/html', 'X-Requested-With': 'XMLHttpRequest' } });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Replaces the unhidden comment with GitHub's own partial for it, as its live update would; false when the page has none to read. */
+export async function refreshUnhidden(content: MarkedContent): Promise<boolean> {
+  const region = content.root.matches('[data-url*="/partials/"]') ? content.root : content.root.querySelector('[data-url*="/partials/"]');
+  const url = region?.getAttribute('data-url');
+  if (region === null || url === null || url === undefined) return false;
+  const response = await pageFetch(url, { headers: fragmentHeaders(), credentials: 'same-origin', cache: 'no-store' }).catch(() => null);
+  if (response === null || !response.ok) return false;
+  const template = document.createElement('template');
+  template.innerHTML = await response.text();
+  const fresh = template.content.firstElementChild;
+  if (fresh === null) return false;
+  forms.delete(keyOf(content));
+  region.replaceWith(fresh);
+  return true;
 }
