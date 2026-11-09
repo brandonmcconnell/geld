@@ -7,7 +7,7 @@ import { renderSummary } from './summary-render';
 import { PAYLOAD_BUDGET, parseGeldPrMeta } from './model';
 import { botByTrigger, botsTriggeredBy, botTitle, commandReply, geldRunAnswer, geldRunBots, geldRunCommand, isTriggerComment, workflowApiTriggerBots, UNKNOWN_SHA, isReviewShaped, isStatusLineComment, looksLikeBotLogin, mergeCheckRuns, parseBotBody, refusalReason, REPORT_GRACE_MS, resolveBotId, verdictsFrom } from './bots';
 import type { BotComment, DerivedBotVerdict, RawCheckRun, VerdictOptions } from './bots';
-import { parseConsolidateOutput } from './prompts';
+import { ADDRESSED_JSON_SCHEMA, CONSOLIDATE_JSON_SCHEMA, SUMMARY_JSON_SCHEMA, parseConsolidateOutput } from './prompts';
 
 const PRODUCER = { kind: 'action' as const, version: '0.1.0', ai: false };
 
@@ -1025,6 +1025,30 @@ describe('bots + prompts', () => {
 
   it('rejects non-JSON model output', () => {
     expect(parseConsolidateOutput('not json', new Set(['a'])).ok).toBe(false);
+  });
+
+  it('reads null optional fields as absent', () => {
+    const parsed = parseConsolidateOutput(
+      JSON.stringify({ items: [{ id: 'keep', title: 'Hello', severity: null, context: null, fix: null }] }),
+      new Set(['keep']),
+    );
+    expect(parsed).toEqual({ ok: true, value: [{ id: 'keep', title: 'Hello' }] });
+  });
+
+  it('sends schemas that strict structured outputs accept, every key required', () => {
+    const missing = (schema: unknown, path: string): readonly string[] => {
+      if (typeof schema !== 'object' || schema === null) return [];
+      const found: string[] = [];
+      if ('properties' in schema && typeof schema.properties === 'object' && schema.properties !== null) {
+        const required: readonly unknown[] = 'required' in schema && Array.isArray(schema.required) ? schema.required : [];
+        for (const key of Object.keys(schema.properties)) if (!required.includes(key)) found.push(`${path}.${key}`);
+        if (!('additionalProperties' in schema) || schema.additionalProperties !== false) found.push(`${path} allows extra keys`);
+      }
+      const entries: readonly (readonly [string, unknown])[] = Object.entries(schema);
+      for (const [key, value] of entries) found.push(...missing(value, `${path}.${key}`));
+      return found;
+    };
+    for (const [name, schema] of Object.entries({ CONSOLIDATE_JSON_SCHEMA, SUMMARY_JSON_SCHEMA, ADDRESSED_JSON_SCHEMA })) expect(missing(schema, name)).toEqual([]);
   });
 });
 
