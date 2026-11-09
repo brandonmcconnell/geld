@@ -32089,11 +32089,14 @@ function findingSeverity(body) {
   const LEVEL = "critical|high|major|medium|minor|low|trivial|nit|nitpick";
   const asks = /(?:alt="|!\[)(action required|remediation recommended)["\]]/i.exec(opening)?.[1]?.toLowerCase();
   if (asks !== void 0) return asks === "action required" ? "high" : "medium";
-  const words = new RegExp(`\\b(${LEVEL})\\s+severity\\b`, "i").exec(opening) ?? new RegExp(`^\\W{0,3}severity:?\\W{0,3}(${LEVEL})\\b`, "im").exec(opening) ?? // A level in a badge: an image's alt or a shields.io label ("![high](…)", "badge/High-634FD1", alt="P1").
-  new RegExp(`(?:!\\[|alt="|/badge/)(${LEVEL}|p[0-4])(?:[\\]"\\s-]|\\s+badge)`, "i").exec(opening) ?? // A bold level alone, or before "·", leading its line, with a colour mark or a CodeRabbit icon before it.
-  new RegExp(`^[\\s>]*(?:\\p{Extended_Pictographic}\\uFE0F?\\s*)?(?:\\*\\*|__)\\s*(?:<[^>]+>\\s*)*(?:\\p{Extended_Pictographic}\\uFE0F?\\s*)?(${LEVEL})\\s*(?:\\*\\*|__|\xB7)`, "imu").exec(opening) ?? // A priority leading the finding ("P1: …", cubic).
-  /^\W{0,3}(p[0-4])\s*:/im.exec(opening) ?? // A colour mark with its level anywhere on the line ("… — 🟡 Minor · Correctness", "K1 · 🟢 `[nit]` ·", Claude).
-  new RegExp(`(?:\u{1F534}|\u{1F7E0}|\u{1F7E1}|\u{1F7E2}|\u26AA)\\s*\`?\\[?(${LEVEL}|important)\\]?\`?(?![A-Za-z0-9-])`, "iu").exec(opening);
+  const words = (
+    // A level in a badge: an image's alt or a shields.io label ("![high](…)", "badge/High-634FD1", alt="P1").
+    new RegExp(`(?:!\\[|alt="|/badge/)(${LEVEL}|p[0-4])(?:[\\]"\\s-]|\\s+badge)`, "i").exec(opening) ?? // A bold level alone, or before "·", leading its line, with a colour mark or a CodeRabbit icon before it.
+    new RegExp(`^[\\s>]*(?:\\p{Extended_Pictographic}\\uFE0F?\\s*)?(?:\\*\\*|__)\\s*(?:<[^>]+>\\s*)*(?:\\p{Extended_Pictographic}\\uFE0F?\\s*)?(${LEVEL})\\s*(?:\\*\\*|__|\xB7)`, "imu").exec(opening) ?? // A priority leading the finding ("P1: …", cubic).
+    /^\W{0,3}(p[0-4])\s*:/im.exec(opening) ?? // "**High Severity**" (Bugbot), "**Medium Severity · Investigate**" (Capy), "Severity: HIGH" (Cursor's security review).
+    new RegExp(`(?:^|\\*\\*|__)\\s*(${LEVEL})\\s+severity\\s*(?:\\*\\*|__|\xB7|$)`, "im").exec(opening) ?? new RegExp(`^\\W{0,3}severity:?\\W{0,3}(${LEVEL})\\b`, "im").exec(opening) ?? // A colour mark with its level anywhere on the line ("… — 🟡 Minor · Correctness", "K1 · 🟢 `[nit]` ·", Claude).
+    new RegExp(`(?:\u{1F534}|\u{1F7E0}|\u{1F7E1}|\u{1F7E2}|\u26AA)\\s*\`?\\[?(${LEVEL}|important)\\]?\`?(?![A-Za-z0-9-])`, "iu").exec(opening)
+  );
   const read = words?.[1] === void 0 ? null : level(words[1]);
   if (read !== null) return read;
   const mark = /^[*_\s]*(🔴|🟠|🟡|🟢|🛑|:stop_sign:)/u.exec(opening)?.[1];

@@ -49,6 +49,9 @@ describe('findingSeverity', () => {
     ['plain title', '**Critical section not released on error**\n\nThe lock is held…', null],
     ['prose', 'The retry loop never exits. Later on, high load makes it worse.', null],
     ['a later line', 'The guard is fine.\n\nIt reads the config.\n\n**High Severity**', null],
+    // An explicit grade wins over prose that mentions a severity.
+    ['Greptile over prose', '![P2](x)\nThis can hide high severity findings.', 'medium'],
+    ['prose about severity', 'The retry loop never exits.\nThis is a high severity issue in practice.', null],
   ];
   for (const [bot, body, expected] of cases) {
     it(`${bot}: ${expected ?? 'none'}`, () => expect(findingSeverity(body)).toBe(expected));

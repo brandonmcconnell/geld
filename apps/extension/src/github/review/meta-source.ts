@@ -120,7 +120,9 @@ export function withLiveRuns(payload: readonly GeldPrMeta['bots'][number][], cra
     if (bot.verdict === 'running' && now.runJudged === true && now.verdict !== 'running' && now.verdict !== 'loading') return now;
     if (complete && bot.verdict === 'findings' && now.verdict === 'findings' && now.count !== undefined && (bot.count === undefined || now.count < bot.count)) {
       const onThread = now.sourceId?.startsWith('discussion_r') === true;
-      return onThread || now.sourceId === bot.sourceId ? { ...bot, count: now.count } : now;
+      // The same run with fewer open: its threads' grade is the page's too (the high one may be the one resolved).
+      const { severity: _saved, ...rest } = bot;
+      return onThread || now.sourceId === bot.sourceId ? { ...rest, count: now.count, ...(now.severity === undefined ? {} : { severity: now.severity }) } : now;
     }
     return bot;
   });

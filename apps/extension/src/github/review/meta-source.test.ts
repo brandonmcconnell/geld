@@ -163,6 +163,11 @@ describe('withLiveRuns', () => {
     // not as a new count under the earlier run's score and severity.
     const rerun: GeldPrMeta['bots'][number] = { id: 'greptile', login: 'greptile-apps[bot]', verdict: 'findings', reviewedSha: sha, count: 1, score: 5, sourceId: 'issuecomment-9' };
     expect(withLiveRuns([{ ...summarised, severity: 'high' }], [rerun], true)).toEqual([rerun]);
+    // The same run with its high-graded thread resolved: the page's grade of what is still open replaces the saved one,
+    // and the score stays.
+    const severe: GeldPrMeta['bots'][number] = { ...greptile, count: 2, severity: 'high', sourceId: 'discussion_r1' };
+    expect(withLiveRuns([severe], [{ ...greptile, count: 1, severity: 'medium', sourceId: 'discussion_r2' }], true)).toEqual([{ ...greptile, count: 1, severity: 'medium', sourceId: 'discussion_r1' }]);
+    expect(withLiveRuns([severe], [{ ...greptile, count: 1, sourceId: 'discussion_r2' }], true)).toEqual([{ ...greptile, count: 1, sourceId: 'discussion_r1' }]);
     // Not while the timeline is still being read (a thread not loaded yet would count as resolved), and never
     // upward: a count the page has more of than the Action is a run the Action has not written yet.
     expect(withLiveRuns(payload, live)).toEqual(payload);
