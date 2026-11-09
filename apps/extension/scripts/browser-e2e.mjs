@@ -14,6 +14,7 @@ import { verifyBitbucketHiddenAuthors } from './bitbucket-hidden-authors.mjs';
 import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-shell-acceptance.mjs';
 import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommitFixture, prepareBitbucketParentCommit } from './bitbucket-commit-oracle.mjs';
 import { gitLabCopyFixOf, verifyGitLabItemCopies } from './item-copy-acceptance.mjs';
+import { BITBUCKET_COMMIT_LIST, commitLinkSettingsScope, verifyBitbucketCommitLinks } from './bitbucket-commit-links.mjs';
 import { verifyGitLabRoundAttention } from './round-attention-acceptance.mjs';
 import { SHARED_SETTINGS_NATIVE_ORACLES, assertPatternOnlySettings, restoreCategoryPatterns, settingsRequestEvidence, sharedSettingsSourceIdentity, sharedSettingsSampleValid } from './three-provider-settings.mjs';
 import { BITBUCKET_NATIVE_BASH, discoverNativeBash, observeNativeBashSources } from './bitbucket-native-bash.mjs';
@@ -33,6 +34,7 @@ const FOCUSED_CASES = {
   'bitbucket-native-bash': ['bitbucket-native-bash-style'],
   'bitbucket-comment': ['bitbucket-comment-digest'],
   'bitbucket-commit': ['bitbucket-commit-counts'],
+  'bitbucket-commit-links': ['bitbucket-commit-links'],
   'bitbucket-list-commit': ['bitbucket-list-counts', 'bitbucket-commit-counts'],
   'gitlab-lists': ['gitlab-project-mr-list', 'gitlab-group-mr-list'],
   'gitlab-diff': ['gitlab-mixed', 'gitlab-all-tests'],
@@ -307,8 +309,14 @@ async function runCase(name, url, body, discovery = false) {
   let page;
   let listSettings;
   let nativeSettings;
+  let commitLinkSettings;
   const abort = new AbortController();
   try {
+    if (name === 'bitbucket-commit-links' && focus !== 'bitbucket-commit-links') {
+      item.status = 'not_selected';
+      item.reason = 'Repository commit-link verification requires its explicit literal focus, including exclusion from all. No navigation or feature pass.';
+      return;
+    }
     if (name === 'bitbucket-native-bash-style' && focus !== 'bitbucket-native-bash') {
       item.status = 'not_selected';
       item.reason = 'Native Bash discovery requires its explicit literal focus, including exclusion from all. No navigation or feature pass.';
@@ -334,6 +342,15 @@ async function runCase(name, url, body, discovery = false) {
       throw new Error(`Provider rate limited until ${item.rateLimitedUntil}; no navigation attempted`);
     }
     currentCaseAbort = abort;
+    if (name === 'bitbucket-commit-links') {
+      item.commitLinkSettings = {};
+      commitLinkSettings = commitLinkSettingsScope({
+        readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY),
+        writeSettings: (value) => options.evaluate(async (key, saved) => { await chrome.storage.sync.set({ [key]: saved }); }, SETTINGS_KEY, value),
+        progress: item.commitLinkSettings,
+      });
+      await commitLinkSettings.prepare();
+    }
     if (name === 'bitbucket-list-counts' || name === 'bitbucket-list-authors') {
       listSettings = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
       await patchSettings({ showListStats: false });
@@ -380,6 +397,7 @@ async function runCase(name, url, body, discovery = false) {
     if (name === 'gitlab-bot-digest') observeGitLabBotFixture(page, item);
     if (name === 'bitbucket-diff') observeBitbucketShellFixture(page, item, { safeUrl, extensionId });
     if (name === 'bitbucket-commit-counts') commitSources.set(page, observeBitbucketCommitFixture(page, item));
+    if (name === 'bitbucket-commit-links') commitSources.set(page, observeBitbucketCommitFixture(page, item));
     if (name === 'bitbucket-native-bash-style') nativeBashSources.set(page, observeNativeBashSources(page, item, { safeUrl, extensionId }));
     const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     abort.signal.throwIfAborted();
@@ -408,6 +426,13 @@ async function runCase(name, url, body, discovery = false) {
       catch (error) {
         item.cleanupObservation = errorText(error);
         if (!closedTarget(error)) { item.status = 'failed';item.cleanupError = errorText(error); }
+      }
+    }
+    if (commitLinkSettings !== undefined) {
+      try { await commitLinkSettings.restore(page === undefined || page.isClosed()); }
+      catch (error) {
+        item.status = 'failed';item.cleanupError = errorText(error);
+        report.infrastructureErrors.push(`Commit-link settings restoration failed: ${item.cleanupError}`);
       }
     }
     if (nativeSettings !== undefined) {
@@ -2701,6 +2726,17 @@ try {
   await runCase('bitbucket-native-bash-style', BITBUCKET_NATIVE_BASH.url, async (page, item) => discoverNativeBash(page, item, {
     poll, tabState, source: nativeBashSources.get(page), capture: (target, name) => capture(target, name, { fullPage: false }),
   }), true);
+
+  await runCase('bitbucket-commit-links', BITBUCKET_COMMIT_LIST, async (page, item) => verifyBitbucketCommitLinks(page, item, {
+    oracle: commitSources.get(page), poll, installedHover,
+    guardBudget: () => {
+      currentCaseAbort?.signal.throwIfAborted();
+      assert.ok((cooldowns.get('bitbucket') ?? 0) <= Date.now(), 'Commit-link intent suppressed by carried Bitbucket cooldown');
+      const active = bitbucketRequestTimes.filter((at) => at > Date.now() - 60 * 60 * 1000).length;
+      const remaining = report.quotaPolicy.conservativeObservedRequestBudget - active;
+      return { available: remaining >= 8, remaining, minimumReserve: 8, basis: 'Observed rolling budget buffer only. Native list-page and source costs are unknown; global request/429 aborts remain authoritative.' };
+    },
+  }));
 
   await runCase('gitlab-binary-counts', GL_BINARY, async (page, item) => gitLabBinaryCounts(page, item));
 
