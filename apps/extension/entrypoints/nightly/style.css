@@ -1,0 +1,77 @@
+body {
+  padding: 40px 20px 64px;
+}
+
+.nightly {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.nightly__header {
+  padding: 0 0 12px;
+}
+
+.nightly__brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nightly__card {
+  padding: 20px 24px;
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+
+.nightly__title {
+  margin-bottom: 8px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.nightly__intro {
+  max-width: 62ch;
+  margin-bottom: 12px;
+  font-size: 13.5px;
+}
+
+.nightly__version,
+.nightly__folder {
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+
+.nightly__note {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.nightly__error {
+  margin-top: 8px;
+  color: var(--destructive);
+  font-size: 13px;
+}
+
+.nightly__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.nightly__row {
+  padding: 12px 0;
+}
+
+.nightly__row + .nightly__row {
+  border-top: 1px solid var(--border);
+}
+
+.nightly__select {
+  width: auto;
+}

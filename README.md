@@ -66,6 +66,16 @@ Geld never calls the GitHub API. Counts come from the page when it renders per-f
    - **Safari** (16.4+): unzip `geld-<version>-safari.zip`, then on macOS run `xcrun safari-web-extension-converter <unzipped-folder>` and build/run the generated Xcode project. Enable _Allow unsigned extensions_ from Safari's _Develop_ menu while testing.
 3. Open any pull request, for example <https://github.com/wxt-dev/wxt/pull/2544/files>.
 
+### Nightly builds (Chrome, Edge and other Chromium browsers)
+
+Every release also carries `geld-<version>-chrome-nightly.zip`, a build called _Geld Nightly_ that keeps itself up to date with every push to `main`. The store builds contain none of its updater.
+
+1. Download the nightly zip from the [latest release](https://github.com/brandonmcconnell/geld/releases/latest), unzip it into a folder you keep, and load that folder with _Load unpacked_ (Developer mode on).
+2. Click the toolbar icon, then _Updates_, and _Connect folder_: pick the same folder. Geld checks that it is the folder it runs from.
+3. The first install asks once to let Geld edit the folder. On the next one Chrome offers _Allow on every visit_: choose it, and every later build installs in the background, even after Chrome restarts. A folder kept directly in your Downloads folder needs no grant at all.
+
+Geld checks every hour by default (every 5 minutes at the fastest), installs a newer build, reloads itself and puts itself back into open GitHub tabs. Turn off _Install updates automatically_ to get a ↑ on the toolbar icon and an _Install_ button instead. It reads public releases, so no GitHub token is needed.
+
 ## Development
 
 ```sh
@@ -77,7 +87,8 @@ pnpm dev:site         # geld.sh website (Next.js) on http://localhost:3000
 pnpm build            # production build for Chrome into apps/extension/.output/chrome-mv3
 pnpm build:firefox    # one other browser: build:firefox, build:edge, build:safari (build:chrome is pnpm build; zip:<browser> likewise)
 pnpm build:all        # production builds for Chrome, Firefox, Edge and Safari
-pnpm zip:all          # zips for all four browsers into apps/extension/.output/
+pnpm build:nightly    # the self-updating Chrome build into apps/extension/.output/chrome-mv3-nightly
+pnpm zip:all          # zips for all four browsers plus the Chrome nightly build into apps/extension/.output/
 ```
 
 Output archives:

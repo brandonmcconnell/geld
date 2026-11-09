@@ -56,11 +56,12 @@ Credentials and listing assets: `apps/extension/store/PUBLISHING.md`.
 \n\n
 Releases: every push to `main` that touches the extension (apps/extension, apps/action, packages/core, packages/review, assets/brand, the lockfile, or the workflow) publishes a GitHub Release from CI, tagged `v{version}-build.{run}` with one zip per browser plus `-sources.zip` for Firefox review, auto-generated notes (editable afterwards) and marked latest;
 the site's install buttons read `/releases/latest`.
+Each release also carries `-chrome-nightly.zip`, the self-updating nightly build (below), which the store jobs and the site's `-chrome.zip` patterns never pick up.
 Bump `apps/extension/package.json` `version` for a new version number;
 the build number keeps tags unique.
 `workflow_dispatch` forces a release.
 \n\n
-Commands (root): `pnpm check` (typecheck + tests for core and the extension, lint + production build of the site, and `catalog:check`), `pnpm test`, `pnpm build` (Chrome, WXT's default browser, the same build `build:chrome` names outright), `pnpm build:firefox`, `build:edge` and `build:safari` for the other browsers, `pnpm zip:all` (zips for all four browsers into `apps/extension/.output/`, or `zip:<browser>` for one), `pnpm dev` (extension;
+Commands (root): `pnpm check` (typecheck + tests for core and the extension, lint + production build of the site, and `catalog:check`), `pnpm test`, `pnpm build` (Chrome, WXT's default browser, the same build `build:chrome` names outright), `pnpm build:firefox`, `build:edge` and `build:safari` for the other browsers, `pnpm zip:all` (zips for all four browsers and the Chrome nightly build into `apps/extension/.output/`, or `zip:<browser>` / `zip:nightly` for one), `pnpm dev` (extension;
 it does **not** launch a browser — load `apps/extension/.output/chrome-mv3-dev` once with "Load unpacked" in your own Chrome, or `firefox-mv2-dev` via about:debugging, and WXT rebuilds and reloads it on change;
 a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings the launcher back per developer), `pnpm dev:site`.
 
@@ -1168,6 +1169,25 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   once retired it answers `get-tab-state`/`toggle`/`reveal` with `IDLE_STATE` after `RETIRED_ANSWER_MS` (a live copy in the same world answers synchronously and wins;
   with two Geld builds installed — store plus unpacked — the loser's idle answer is what keeps its background from re-injecting it over the winner, which would retire the winner, whose background would then do the same…), and sends one idle `geld:tab-state` so its badge clears.
   `ensureTab` (background) also skips tabs whose `status` is `loading`: the declared script arrives with the document, and an injection on top would only create a second copy.
+- **Nightly builds update themselves from GitHub Releases** (`src/nightly/`, `entrypoints/nightly/`, `wxt build -b chrome --mode nightly`).
+  Store builds cannot do this and must not try: a listed extension may not load code from outside its package, so the store zips compile all of it away (`import.meta.env.MODE === 'nightly'` guards the two call sites, the module-level calls are `@__PURE__`, and the `entrypoints:resolved` hook in `wxt.config.ts` drops the nightly page).
+  A store build with any `nightly` string in it is a bug: grep `.output/chrome-mv3` after touching this.
+  The nightly build is named "Geld Nightly" (`NIGHTLY_NAME`, mirrored in `build-check.ts`) and adds `downloads`, `downloads.ui` and the two hosts GitHub redirects a release asset to (`release-assets.githubusercontent.com`, `objects.githubusercontent.com`).
+  It is meant to be loaded unpacked from the unzipped release asset, and it replaces its own files and calls `runtime.reload()`, which re-reads an unpacked extension from disk.
+  The background reads `api.github.com/repos/…/releases/latest` (unauthenticated, with `If-None-Match`, so a 304 costs nothing against the 60-an-hour limit) on start, on install and on an alarm every `intervalMinutes` (5 to 180, 60 by default), and takes only a non-draft, non-prerelease release whose `geld-{version}.{run}-chrome-nightly.zip` was uploaded by `github-actions[bot]` from this repository's download path (`parseRelease`).
+  The zip is read by `unzip.ts` (stored and deflated entries, CRC checked, no path may leave the folder) and refused unless its manifest is Geld Nightly at the release's version with `nightly.html` beside it (`buildProblem`).
+  Actions artifacts were not used: downloading one needs a token even on a public repository.
+  **Two ways to write into the folder**, both verified in Chrome 156 in Nov 2026 with real dialogs on the VM's display.
+  File System Access: the nightly page asks for the folder once (`showDirectoryPicker`, handle kept in IndexedDB, `handle-store.ts`), and `folderIsOurs` writes a random token there and must read it back through Geld's own URL, so only the folder Geld runs from is ever written.
+  The service worker can write through the stored handle whenever it is granted.
+  A plain grant ("Allow", or "Allow this time") lasts only while a Geld page is open in a tab: it was gone within 5 s of the last one closing, and whenever Geld reloads, and an offscreen document does not keep it, so each install then asks once.
+  Re-asking on a stored handle shows Chrome's three-way prompt, and "Allow on every visit" keeps the grant with no Geld page open, across reloads and browser restarts, after which every install runs in the background.
+  The downloads API needs no grant but writes only under the download folder, so a folder loaded from directly inside Downloads (`<download folder>/<name>`) is written with `downloads.download` of a data URL per file (`conflictAction: 'overwrite'`, the download bubble off through `setUiOptions`, each entry erased from the history), checked the same way (`downloadsReach`).
+  That check writes `<download folder>/<name>/nightly-probe.txt` and so leaves an empty folder there when the folder is elsewhere, which is why it runs only when an install has no grant, once per connection (`NightlyFolder.downloads` null until then).
+  Folder access is used whenever it is granted, since it also deletes the files a build dropped (`stalePaths`, hidden files and `_metadata` kept), which the downloads API cannot.
+  Data URLs of 8 MB downloaded fine, and `github.js` is about 1.2 MB.
+  With "Install updates automatically" on (`local:nightlyPrefs`), a newer build is installed when found if a grant or the downloads route allows it, and otherwise the toolbar badge shows ↑ (global, so a GitHub tab's per-tab count still wins there) and the popup offers Install, which opens the nightly page when it needs a click.
+  The reload fires `onInstalled`, which puts Geld back into open GitHub tabs as after any update.
 - Settings live in `storage.sync` (`src/lib/storage.ts`, writes serialised).
   Categories are opt-in except tests (and the user's own categories, which default on).
   Every built-in category has `groups` (off-switches per pattern group, keyed `category/group`) and `categoryPatterns` (extra lines incl.

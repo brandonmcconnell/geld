@@ -37,6 +37,7 @@ import { ensureContentScript, hostOf, tabsOnHosts } from '../src/lib/inject';
 import { grantedHosts } from '../src/lib/enterprise';
 import { looksLikeHtml } from '../src/lib/http';
 import { retireDashboardSession } from '../src/lib/dashboard-session';
+import { startNightly } from '../src/nightly/updater';
 
 /** Refuse to parse diffs larger than this; GitHub's UI is unusable there anyway. */
 const MAX_DIFF_BYTES = 20 * 1024 * 1024;
@@ -698,6 +699,9 @@ export default defineBackground(() => {
   // Pattern catalog: fetch the signed catalog/patterns.json from the repository
   // daily so patterns can improve without a store release.
   startCatalogUpdates();
+
+  // Store builds compile this away: only `--mode nightly` ships the updater (see wxt.config.ts).
+  if (import.meta.env.MODE === 'nightly') startNightly();
 
   if (USES_OFFSCREEN_THEME_PROBE) {
     browser.runtime.onInstalled.addListener(() => void ensureThemeProbe());
