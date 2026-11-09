@@ -28,7 +28,7 @@ apps/action/         @geld/action — GitHub Action that upserts one review-summ
 apps/site/           @geld/site — Next.js site for geld.sh (see "Website" below).
 apps/dashboard/      @geld/dashboard — independent Next.js review workspace, Better Auth accounts
                      and Postgres team metadata. Provider authority and privacy are mandatory.
-apps/nightly-installer/ geld-nightly — `npx geld-nightly`, the optional installer for the nightly
+apps/nightly-installer/ geld-nightly — `npx geld-nightly@latest`, the optional installer for the nightly
                      build (see "Nightly builds"). `dist/` is built in CI and attached to releases.
 packages/domain/     @geld/domain — provider-neutral contracts, access and billing rules.
 packages/providers/  @geld/providers — provider clients behind token sources.
@@ -1313,7 +1313,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   only the download comes before it.
   A profile that finds the release's version already on disk (`versionOnDisk`: another profile wrote it) only reloads (`InstallMethod` `shared`).
   `stalePaths` never deletes the lock or `nightly-install.json`.
-- **The installer leaves a verified nightly build in a folder that stays put, one per profile** (`apps/nightly-installer`, `npx geld-nightly`, or `curl -fsSL https://www.geld.sh/nightly.sh | sh` and `nightly.ps1` from `apps/site/public/`, which download the release's `geld-nightly.mjs`, check its `.sha256` and run it with Node).
+- **The installer leaves a verified nightly build in a folder that stays put, one per profile** (`apps/nightly-installer`, `npx geld-nightly@latest`, or `curl -fsSL https://www.geld.sh/nightly.sh | sh` and `nightly.ps1` from `apps/site/public/`, which download the release's `geld-nightly.mjs`, check its `.sha256` and run it with Node).
+  The npm command is always written with `@latest`: without it npx may run a copy left in its cache by an earlier run.
   The manual zip and Load unpacked stay documented as the self-serve path, and both recommend `~/Geld Nightly`.
   It is one esbuild bundle with no runtime dependencies (`build.mjs`), so `npx` fetches one file, and it reads `@geld/core/nightly.ts` for every check the extension makes before an update (above).
   It lists the profiles of Chrome, Chrome Beta, Edge and Brave from each browser's `Local State` (`profile.info_cache`, `profiles.ts`) on macOS, Windows and Linux, by display name, and installs for the ones picked.

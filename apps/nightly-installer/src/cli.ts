@@ -20,7 +20,7 @@ declare const INSTALLER_VERSION: string;
 
 const HELP = `geld-nightly: installs Geld Nightly for the Chrome, Chrome Beta, Edge or Brave profiles you pick.
 
-Usage: npx geld-nightly [options]
+Usage: npx geld-nightly@latest [options]
 
   --profile <name>       A profile to install for, by name or folder (repeatable). Default: ask.
   --all                  Every profile found.
@@ -280,6 +280,6 @@ export async function main(argv: readonly string[]): Promise<number> {
     }
   }
   console.log('\nDo not move or rename these folders after loading them: Chrome ties the extension to its folder path.');
-  console.log('Run geld-nightly again any time to repair a folder. Updates after this install themselves.');
+  console.log('Run npx geld-nightly@latest again any time to repair a folder. Updates after this install themselves.');
   return 0;
 }

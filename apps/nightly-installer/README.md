@@ -3,7 +3,7 @@
 Installs **Geld Nightly**, the self-updating nightly build of [Geld](https://github.com/brandonmcconnell/geld), for the browser profiles you pick. Geld is a browser extension that hides test files and other review noise from GitHub diffs and adds a pull request digest.
 
 ```sh
-npx geld-nightly
+npx geld-nightly@latest
 ```
 
 Without npm, the same installer runs from Geld's site:
@@ -27,7 +27,7 @@ Node.js 20 or newer. Works with Chrome, Chrome Beta, Edge and Brave on macOS, Wi
 
 Then click the Geld Nightly toolbar icon and **Connect folder**, and pick the same folder. Chrome first asks to let Geld edit it: choose **Allow**. That lasts only while a Geld page stays open, and ends when Geld reloads, so a later install asks again, and this time Chrome offers **Allow on every visit**. Choose it, and from then on Geld Nightly installs new builds into its folder by itself, even after Chrome restarts. Until then each install waits for that one click: the toolbar icon shows the build is ready, and **Install** in its popup asks. A folder installed with `--downloads` needs none of this. New builds come with every push to Geld's `main` branch, and Geld Nightly can roll back to the build before.
 
-Do not move or rename the folder once it is loaded: the browser ties the extension to its path. Run `npx geld-nightly` again at any time to repair a folder.
+Do not move or rename the folder once it is loaded: the browser ties the extension to its path. Run `npx geld-nightly@latest` again at any time to repair a folder.
 
 ## Options
 
