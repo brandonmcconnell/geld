@@ -83,6 +83,10 @@ export default defineConfig({
   }),
   hooks: {
     'build:manifestGenerated': (wxt, manifest) => {
+      // Chrome and Edge cannot tell a light toolbar from a dark one, so they get the framed mark, which reads on both.
+      if ((wxt.config.browser === 'chrome' || wxt.config.browser === 'edge') && manifest.action !== undefined) {
+        manifest.action.default_icon = Object.fromEntries(ACTION_ICON_SIZES.map((size) => [String(size), actionIconPath('framed', size)]));
+      }
       if (wxt.config.browser !== 'firefox') return;
       // Firefox picks the icon by theme text colour: `dark` is the dark icon
       // (light themes), `light` is the light icon (dark themes).
