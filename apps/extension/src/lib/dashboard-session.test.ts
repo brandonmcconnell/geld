@@ -2,7 +2,7 @@ import { beforeEach,describe,expect,it,vi } from 'vitest';
 const state=vi.hoisted(()=>({values:new Map<string,unknown>(),allowed:true}));
 vi.mock('wxt/browser',()=>({browser:{permissions:{contains:async()=>state.allowed}}}));
 vi.mock('wxt/utils/storage',()=>({storage:{defineItem:(key:string,options:{fallback:unknown})=>({getValue:async()=>state.values.get(key)??options.fallback,setValue:async(value:unknown)=>{state.values.set(key,value);}})}}));
-import { refreshDashboardSession,selectDashboardTeam } from './dashboard-session';
+import { refreshDashboardSession,retireDashboardSession,selectDashboardTeam } from './dashboard-session';
 beforeEach(()=>{state.values.clear();state.allowed=true;vi.unstubAllGlobals();});
 const session={user:{id:'u',name:'User'},teams:[{id:'t',name:'Team'}]};
 const config={provider:'linear',keys:['ENG'],workspace:'acme'};
@@ -21,6 +21,19 @@ describe('dashboard tracker cache scope',()=>{
     const pending=refreshDashboardSession();await vi.waitFor(()=>expect(fetcher).toHaveBeenCalledTimes(2));
     await selectDashboardTeam('');finish(Response.json({config}));await pending;
     expect(state.values.get('local:dashboardTracker')).toBeNull();
+  });
+  it('forgets a saved session, its team and its tracker when the sign-in is retired',async()=>{
+    state.values.set('local:dashboardSession',session);state.values.set('local:dashboardTeam','t');state.values.set('local:dashboardTracker',{userId:'u',teamId:'t',config});
+    await retireDashboardSession();
+    expect(state.values.get('local:dashboardSession')).toEqual({user:null,teams:[]});expect(state.values.get('local:dashboardTeam')).toBe('');expect(state.values.get('local:dashboardTracker')).toBeNull();
+  });
+  it('drops a refresh still in flight when the sign-in is retired',async()=>{
+    state.values.set('local:dashboardTeam','t');
+    let finish:(value:Response)=>void=()=>undefined;
+    vi.stubGlobal('fetch',vi.fn().mockImplementationOnce(()=>new Promise<Response>(resolve=>{finish=resolve;})));
+    const pending=refreshDashboardSession();await vi.waitFor(()=>expect(fetch).toHaveBeenCalledTimes(1));
+    await retireDashboardSession();finish(Response.json(session));await pending;
+    expect(state.values.get('local:dashboardSession')).toEqual({user:null,teams:[]});
   });
   it('stores credentials-free configuration bound to the confirmed user and team',async()=>{
     state.values.set('local:dashboardTeam','t');vi.stubGlobal('fetch',vi.fn().mockResolvedValueOnce(Response.json(session)).mockResolvedValueOnce(Response.json({config})));

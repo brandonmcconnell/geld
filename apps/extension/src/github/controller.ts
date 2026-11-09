@@ -1,4 +1,6 @@
 import { applyTrackerLinks,removeTrackerLinks } from './tracker-links';
+import { applyAttachmentLightbox, removeAttachmentLightbox } from './attachment-lightbox';
+import { applyRelatedLinks, removeRelatedLinks } from './related-links';
 import type { Catalog, HiddenCategory } from '@geld/core';
 import { BUNDLED_CATALOG, CATEGORY_IDS, isAutoViewed, testSyntaxesFrom } from '@geld/core';
 import type { TestSyntax } from '@geld/core';
@@ -10,8 +12,10 @@ import type { RepoConfigDecision, TabRepoConfig, TabState } from '../lib/message
 import { REVEAL_HASH_PREFIX } from '../lib/messages';
 import type { RepoRule } from '@geld/core';
 import { applyRepoConfigs, compileAuthorRules, compileRepoRules, decideRepo, declaredReviewBots, describeRepoConfig, repoFromPathname } from '@geld/core';
+import { geldRunCommand } from '@geld/review';
 import type { AuthorRules } from '@geld/core';
 import { extensionAlive, persist } from '../lib/context';
+import { guard } from '../lib/error-capture';
 import { cancelIdle, whenIdle } from '../lib/idle';
 import { count as perfCount, mark, phase } from '../lib/perf';
 import type { RepoConfigChoices } from '../lib/local-state';
@@ -19,12 +23,12 @@ import { debugScopesItem, repoConfigChoicesItem, whitespaceOptOutsItem } from '.
 import type { FileStats, GeldSettings } from '@geld/core';
 import type { Classified, HiddenBreakdown } from './breakdown';
 import { breakdownFromFiles, buildBreakdown, EMPTY_BREAKDOWN } from './breakdown';
-import { DiffSource } from './diff-source';
+import { DiffSource, retriesLater } from './diff-source';
 import type { ResolvedRepoConfig } from './repo-config-source';
 import { RepoConfigSource, validConfigs } from './repo-config-source';
 import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManagedText, svgFromString, writeAttribute } from './dom';
 import { conversationHeadSha, detectHeadSha, fetchHeadSha, shaFromCommitUrl, watchFilesRefresh } from './head-sha';
-import { applyQuickReview, quickReviewStandBusy, reassertStatusPills, removeQuickReview } from './quick-review';
+import { applyQuickReview, quickReviewStandBusy, reassertStatusPills, rememberReviewGroup, removeQuickReview } from './quick-review';
 import type { HeaderStatGroup } from './header-stats';
 import { applyHeaderStats, findHeaderStatGroups, holdsHeaderStats, isCountsStandIn, isSrOnlyText, removeCountsStandIn, restoreHeaderStats, syncCountsStandIn } from './header-stats';
 import type { StandIn } from './header-stats';
@@ -40,13 +44,19 @@ import { applyDiffstatSurfaces } from './diffstat-surfaces';
 import type { ListSurface } from './list-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
+import { applyPeoplePresence, removePeoplePresence } from './people-presence';
+import { applyBlockedListHiding, removeBlockedListHiding } from './blocked-lists';
+import { blockedFor } from './blocked-users';
 import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
 import { expireHeadChecks } from './review/check-source';
 import { markCrawlDirty, resetCrawlCache } from './review/crawler';
 import type { RepoBotsHint } from './review/panel-model';
 import { LIVE_CATCH_UP_EVENT, liveCatchUpDue } from './review/live-regions';
+import { REACT_HYDRATED_EVENT } from './react-hydration';
 import { catchUpTimeline } from './review/timeline-catchup';
-import { applyReviewOverview, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
+import { panelSignature } from './review/panel';
+import { applyReviewOverview, dressOverviewNow, foldDescriptionNow, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
+import { setFlowSource } from './review/flow';
 import { applyCommentRows, clearCommentRows } from './ui/comment-rows';
 import { applyTestFolds, clearTestFolds, forgetLinkedFold, hasHiddenLines } from './ui/test-folds';
 import { wholeFile } from './whole-file';
@@ -55,8 +65,9 @@ import { applyVirtualHiddenStyles, ATTR_VIRTUAL, removeVirtualHiddenStyles } fro
 import { detachBreakdownTooltip, removeTooltipElement } from './ui/tooltip';
 import { categoryIconFor } from './ui/icons';
 import { expandLargeDiffs } from './large-diffs';
-import { applyWorkflowSyntax, removeWorkflowSyntax } from './workflow-syntax';
+import { applyDiffSyntax, removeDiffSyntax } from './diff-syntax';
 import type { TreeSectionFile } from './ui/tree-section';
+import { fileFilterQuery, panelForSearch } from './ui/tree-search';
 import {
   applySidebarLayout,
   CHANGES_SECTION_ID,
@@ -82,8 +93,18 @@ const INLINE_ICON_CLASS = 'geld-tree-inline-icon';
 const ATTR_SWAPPED_ICON = 'data-geld-swapped-icon';
 const ATTR_TOC = 'data-geld-toc-hidden';
 const ATTR_FLASH = 'data-geld-flash';
+/** On `<html>` while Geld dresses this page, for styles of GitHub's own UI outside Geld's (its portaled reaction picker). */
+const ATTR_DRESSED = 'data-geld-on';
 
 const APPLY_DEBOUNCE_MS = 60;
+/**
+ * While GitHub is still rendering a page (its first `LOADING_MS`, after a load or a move within the app), passes wait
+ * longer for its changes to settle once the digest stands (`passMayWait`): at 60 ms a pass, and often a rebuild of the
+ * digest, ran between nearly every two of GitHub's renders, and GitHub's own header counts drew about a second late.
+ * Pre-paint work does not wait, nor does the digest's first appearance.
+ */
+const LOADING_DEBOUNCE_MS = 250;
+const LOADING_MS = 4000;
 /** How many progressive-load rounds we nudge before giving up on a reveal. */
 const MAX_REVEAL_ATTEMPTS = 40;
 
@@ -286,8 +307,12 @@ export class GeldController {
   private observer: MutationObserver | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly diffExpanded = new Map<string, boolean>();
-  /** Which sidebar accordion panel is open per page ("changes" or a category id). */
+  /** The sidebar accordion panel the reader chose per page ("changes" or a category id). */
   private readonly activePanel = new Map<string, string>();
+  /** The panel actually shown per page: the chosen one, or the one a search in GitHub's file filter opened instead. */
+  private readonly shownPanel = new Map<string, string>();
+  /** A panel the file filter opened over the reader's choice, kept as theirs once they click a file or a diff in it. */
+  private searchPanel: { readonly stateKey: string; readonly panel: string } | null = null;
   /** Inline mode: hidden files the user has opened/closed by hand per page; we stop touching those. */
   private readonly inlineTouched = new Map<string, Set<string>>();
   private readonly diffSource = new DiffSource(() => {
@@ -392,65 +417,20 @@ export class GeldController {
     this.repoRules = compileRepoRules(settings.repoRules);
     this.authorRules = compileAuthorRules(settings.hiddenAuthors);
     this.repoConfigs = new RepoConfigSource(() => this.onRepoConfigChange(), catalog);
-    void whitespaceOptOutsItem.getValue().then((optOuts) => this.whitespace.setOptOuts(optOuts));
-    void repoConfigChoicesItem.getValue().then((choices) => this.updateRepoChoices(choices));
-    void debugScopesItem.getValue().then((on) => {
-      this.debugScopes = on;
-    });
+    // A read rejects only in a copy whose extension was reloaded meanwhile (`chrome.storage` gone); it has nothing to apply.
+    void whitespaceOptOutsItem.getValue().then((optOuts) => this.whitespace.setOptOuts(optOuts), () => undefined);
+    void repoConfigChoicesItem.getValue().then((choices) => this.updateRepoChoices(choices), () => undefined);
+    void debugScopesItem.getValue().then(
+      (on) => {
+        this.debugScopes = on;
+      },
+      () => undefined,
+    );
   }
 
   start(): void {
     this.stopped = false;
-    this.observer = new MutationObserver((records) => {
-      if (isIgnorableMutation(records)) return;
-      perfCount('batches');
-      // Nobody is looking: no DOM reads either; the catch-up pass on return reads everything once.
-      if (document.hidden) {
-        this.hiddenDirty = true;
-        perfCount('hidden-deferred');
-        // No look at the records either: the catch-up pass reads every comment afresh.
-        resetCrawlCache();
-        return;
-      }
-      if (isClockTick(records)) {
-        perfCount('clock-ticks');
-        phase('clocks', refreshReviewTimes);
-        return;
-      }
-      const regions = regionsOf(records);
-      // The document head, the global navigation, the footer, a tooltip: nothing Geld reads.
-      if (scopeWithin(regions, ['chrome'])) {
-        perfCount('chrome-skipped');
-        return;
-      }
-      for (const region of regions) this.pendingScope.add(region);
-      markCrawlDirty(records);
-      // Header first, synchronously: this callback runs before the browser
-      // paints, so a (re-)rendered header never shows GitHub's number when the
-      // filtered one is already known or cached.
-      const headerAdded = headerNodesAdded(records);
-      if (headerAdded) this.headerDirty = true;
-      // GitHub's own counts arriving (a push brought line changes), or its header remounted without them: the stand-in
-      // steps aside, or comes back, in the same frame.
-      if ((headerAdded || this.countsStandInWanted !== null) && syncCountsStandIn(this.countsStandInWanted)) {
-        this.onCountsStandInChanged();
-        // The stand-in changed before paint (GitHub's skeleton gone, or its counts arrived): the header is rewritten now.
-        this.applyHeaderNow();
-      }
-      if (this.settledHeader === null) {
-        if (this.headerDirty) this.applyHeaderNow();
-      } else {
-        this.reassertHeader();
-      }
-      // Likewise before paint: chips whose row GitHub just re-rendered come
-      // straight back from the in-memory diff states, so no frame lacks them.
-      if (chipRemoved(records)) this.applyListChips();
-      // The status pill too: a header GitHub (re)rendered shows Geld's pill in its first frame.
-      if (this.settings.quickReview && this.mayDressPage()) reassertStatusPills();
-      // GitHub's skeleton back in the counts wrapper the group stands in by its fallback: out before this frame paints.
-      if (this.settings.quickReview && this.currentPage !== null && quickReviewStandBusy()) this.placeQuickReview(this.currentPage, new URL(window.location.href));
-      this.schedule(false);
-    });
+    this.observer = new MutationObserver((records) => guard('content:observer', () => this.onMutations(records)));
     this.observer.observe(document.documentElement, {
       childList: true,
       subtree: true,
@@ -478,6 +458,8 @@ export class GeldController {
     window.addEventListener('hashchange', this.onHashChange);
     // Find-in-page reaching into a folded timeline item (`hidden="until-found"`).
     document.addEventListener('beforematch', this.onBeforeMatch, true);
+    // What waited for React to hydrate the page (the header's controls, the Overview's digest) goes in now.
+    document.addEventListener(REACT_HYDRATED_EVENT, this.onReactHydrated);
     // A copy that starts on a page already open a while (an update or reload of the extension retired the one before,
     // and this one was injected) cannot know what GitHub's quiet socket missed meanwhile, so the page's age counts as
     // time away: caught up now when the tab is in view, on the first return when it is not.
@@ -486,6 +468,62 @@ export class GeldController {
     document.addEventListener('visibilitychange', this.onVisibilityChange);
     this.apply();
     if (!document.hidden) this.catchUp(age);
+  }
+
+  private onMutations(records: MutationRecord[]): void {
+    if (isIgnorableMutation(records)) return;
+    perfCount('batches');
+    // Nobody is looking: no DOM reads either; the catch-up pass on return reads everything once.
+    if (document.hidden) {
+      this.hiddenDirty = true;
+      perfCount('hidden-deferred');
+      // No look at the records either: the catch-up pass reads every comment afresh.
+      resetCrawlCache();
+      return;
+    }
+    if (isClockTick(records)) {
+      perfCount('clock-ticks');
+      phase('clocks', refreshReviewTimes);
+      return;
+    }
+    const regions = regionsOf(records);
+    // The document head, the global navigation, the footer, a tooltip: nothing Geld reads.
+    if (scopeWithin(regions, ['chrome'])) {
+      perfCount('chrome-skipped');
+      return;
+    }
+    for (const region of regions) this.pendingScope.add(region);
+    markCrawlDirty(records);
+    // Header first, synchronously: this callback runs before the browser
+    // paints, so a (re-)rendered header never shows GitHub's number when the
+    // filtered one is already known or cached.
+    const headerAdded = headerNodesAdded(records);
+    if (headerAdded) this.headerDirty = true;
+    // GitHub's own counts arriving (a push brought line changes), or its header remounted without them: the stand-in
+    // steps aside, or comes back, in the same frame.
+    if ((headerAdded || this.countsStandInWanted !== null) && syncCountsStandIn(this.countsStandInWanted)) {
+      this.onCountsStandInChanged();
+      // The stand-in changed before paint (GitHub's skeleton gone, or its counts arrived): the header is rewritten now.
+      this.applyHeaderNow();
+    }
+    if (this.settledHeader === null) {
+      if (this.headerDirty) this.applyHeaderNow();
+    } else {
+      this.reassertHeader();
+    }
+    // Likewise before paint: chips whose row GitHub just re-rendered come
+    // straight back from the in-memory diff states, so no frame lacks them.
+    if (chipRemoved(records)) this.applyListChips();
+    // The status pill too: a header GitHub (re)rendered shows Geld's pill in its first frame.
+    if (this.settings.quickReview && this.mayDressPage()) reassertStatusPills();
+    // The description GitHub just rendered (a switch back to the conversation tab) is folded in its first frame.
+    if (this.mayDressPage()) foldDescriptionNow(this.settings);
+    // The Overview's top card, which GitHub draws and re-renders between passes, dressed in its first frame, and the
+    // digest back after a re-render of the column took it.
+    dressOverviewNow(this.settings, this.mayDressPage());
+    // GitHub's skeleton back in the counts wrapper the group stands in by its fallback: out before this frame paints.
+    if (this.settings.quickReview && this.currentPage !== null && quickReviewStandBusy()) this.placeQuickReview(this.currentPage, new URL(window.location.href));
+    this.schedule(false);
   }
 
   stop(): void {
@@ -500,6 +538,7 @@ export class GeldController {
     document.removeEventListener('keydown', this.onUserKey, true);
     window.removeEventListener('hashchange', this.onHashChange);
     document.removeEventListener('beforematch', this.onBeforeMatch, true);
+    document.removeEventListener(REACT_HYDRATED_EVENT, this.onReactHydrated);
     this.observer?.disconnect();
     this.observer = null;
     if (this.timer !== null) clearTimeout(this.timer);
@@ -612,7 +651,7 @@ export class GeldController {
       this.hiddenTeardown = true;
       return;
     }
-    this.teardown();
+    this.teardown(true);
     this.apply();
   }
 
@@ -628,9 +667,11 @@ export class GeldController {
   };
 
   private onUserActivate(event: Event): void {
-    if (!event.isTrusted || this.settings.groupHidden || this.currentPage === null) return;
+    if (!event.isTrusted || this.currentPage === null) return;
     const target = event.target instanceof Element ? event.target : null;
     if (target === null) return;
+    if (this.searchPanel !== null) this.keepSearchPanel(target, this.currentPage.stateKey);
+    if (this.settings.groupHidden) return;
     // Read the page afresh: React re-renders tree rows, so a view captured on
     // the last pass may hold stale elements that no longer match the click.
     const view = legacyAdapter.read() ?? reactAdapter.read();
@@ -652,6 +693,22 @@ export class GeldController {
     // like a click in one of Geld's own panels: expand, scroll to it, flash.
     this.markTouched(key, file.path);
     this.reveal(file.path, key);
+  }
+
+  /** A click on a file (in a Geld panel or GitHub's tree) or inside a diff makes the panel a search opened the reader's. */
+  private keepSearchPanel(target: Element, stateKey: string): void {
+    const opened = this.searchPanel;
+    if (opened === null || opened.stateKey !== stateKey) return;
+    let onFile = target.closest('.geld-tree__row[data-path]') !== null;
+    if (!onFile) {
+      // Read the page afresh: a tree row React re-rendered or a diff mounted since the last pass is not in the last view.
+      const view = legacyAdapter.read() ?? reactAdapter.read();
+      if (view === null) return;
+      onFile = view.treeFiles.some((file) => file.element.contains(target));
+      if (!onFile && (isOwnElement(target) || !view.entries.some((entry) => entry.root.contains(target)))) return;
+    }
+    this.activePanel.set(stateKey, opened.panel);
+    this.searchPanel = null;
   }
 
   private markTouched(stateKey: string, path: string): void {
@@ -692,7 +749,7 @@ export class GeldController {
     this.timer = null;
     if (this.hiddenTeardown) {
       this.hiddenTeardown = false;
-      this.teardown();
+      this.teardown(true);
     }
     this.apply();
   };
@@ -880,6 +937,28 @@ export class GeldController {
     return state.status === 'ready' ? state.files.map((file) => file.path) : null;
   }
 
+  /** Hand the digest's Flow diagram the changed files (each with the hidden category the reader's settings give it), or why the diff is not here. */
+  private updateFlowSource(page: PageInfo, url: URL, matcher: PathMatcher): void {
+    if (page.kind !== 'pull-conversation' || page.diffUrl === null || !this.settings.prOverview) return setFlowSource(null);
+    const pull = /^\/([^/]+\/[^/]+)\/pull\/\d+/.exec(url.pathname);
+    if (pull?.[1] === undefined) return setFlowSource(null);
+    const sha = this.diffShaFor(page, url);
+    const state = this.diffSource.request(page.diffUrl, sha, 'page');
+    if (state.status === 'failed') return setFlowSource(null, { origin: url.origin, pullPath: pull[0], reason: state.reason, retrying: retriesLater(state) });
+    if (state.status !== 'ready') return setFlowSource(null);
+    // Summaries know no removed lines. Kept as `ready` from disk, they stand for a diff that was too large to fetch.
+    const failed = state.provisional === true ? this.diffSource.diffFailure(page.diffUrl, sha) : { reason: 'too-large', attempts: 0 };
+    const removed = !state.files.some((file) => file.summaryOnly === true) ? 'known' : failed === null || retriesLater(failed) ? 'pending' : failed.reason === 'too-large' ? 'too-large' : 'unavailable';
+    setFlowSource({
+      origin: url.origin,
+      repo: pull[1],
+      pullPath: pull[0],
+      headSha: sha,
+      removed,
+      files: state.files.map((file) => ({ path: file.path, status: file.status ?? 'modified', additions: file.additions, deletions: file.deletions, hiddenAs: matcher.categorizeFile(file)?.title ?? null, removedImports: file.removedImports ?? [] })),
+    });
+  }
+
   /**
    * What the repository says about its review bots, for the Request a review
    * menu on the conversation tab: the ids its config declares (only once the
@@ -893,7 +972,17 @@ export class GeldController {
     if (page.kind !== 'pull-conversation' || repo === null || !this.settings.prOverview) return undefined;
     const resolved = this.resolvedConfig(repo);
     const declared = resolved !== null && !resolved.loading && this.repoDecision(repo) === 'use' ? declaredReviewBots(validConfigs(resolved)) : null;
-    return { declared, configured: this.repoConfigs.botConfigs(window.location.origin, repo).found };
+    return { declared, configured: this.repoConfigs.botConfigs(window.location.origin, repo).found, apiTriggers: this.apiTriggers(repo) };
+  }
+
+  /**
+   * The bots this repository's Geld workflow can start by API (it names the
+   * secret holding the bot's key), each with its `/geld run` command: the
+   * repository decides, so it can differ from one repository to the next.
+   */
+  private apiTriggers(repo: string): ReadonlyMap<string, string> {
+    const workflow = this.repoConfigs.workflowTriggers(window.location.origin, repo);
+    return new Map([...workflow.bots].map((id) => [id, geldRunCommand([id])]));
   }
 
   /** Refresh {@link diffFacts} for this page (requesting the diff if it is not here yet; the source re-runs apply when it lands). */
@@ -919,11 +1008,49 @@ export class GeldController {
   /** A pass after the debounce. Every caller but the observer asks for the whole page; the observer has said which regions changed. */
   private schedule(full = true): void {
     if (full) this.pendingScope.add('unknown');
-    if (this.stopped || this.timer !== null || this.deferWhileHidden()) return;
-    this.timer = setTimeout(() => {
-      this.timer = null;
-      this.applyScoped();
-    }, APPLY_DEBOUNCE_MS);
+    if (this.stopped || this.deferWhileHidden()) return;
+    const wait = this.passMayWait();
+    if (this.timer !== null) {
+      // The digest gone while a pass waited (a move to Files changed): the pass is due at the short debounce.
+      if (!this.timerWaits || wait) return;
+      clearTimeout(this.timer);
+    }
+    this.timerWaits = wait;
+    this.timer = setTimeout(
+      () => {
+        this.timer = null;
+        this.applyScoped();
+      },
+      wait ? LOADING_DEBOUNCE_MS : APPLY_DEBOUNCE_MS,
+    );
+  }
+
+  /** Whether the pending pass was set to `LOADING_DEBOUNCE_MS`. */
+  private timerWaits = false;
+
+  /**
+   * Whether the pending pass may wait for a loading page to settle: only once the digest stands. Until it does, every
+   * pass is at 60 ms, so the digest appears as soon as it can; a page without one (Files changed, a list) never waits,
+   * since its passes are what dress GitHub's UI. Once it stands, new timeline items stay out of sight until a pass
+   * reads them, and the header, the description and the status pill are dressed before paint.
+   */
+  private passMayWait(): boolean {
+    return this.pageLoading() && panelSignature() !== '';
+  }
+
+  /** The page (path and query; a hash is no new page) the last scheduled pass was asked on, and since when, for `pageLoading`. */
+  private loadingPath = location.pathname + location.search;
+  private loadingSince = 0;
+
+  /** Whether GitHub is still rendering the page: the document's first seconds, or those after a move within the app. */
+  private pageLoading(): boolean {
+    const now = performance.now();
+    const path = location.pathname + location.search;
+    if (path !== this.loadingPath) {
+      this.loadingPath = path;
+      this.loadingSince = now;
+    }
+    return now - this.loadingSince < LOADING_MS;
   }
 
   /** The debounced pass: scoped to the regions the batches touched, the whole page when any was unknown. */
@@ -969,6 +1096,10 @@ export class GeldController {
   }
 
   private runPass(scope: ReadonlySet<Region> | null): void {
+    guard('content:pass', () => this.pass(scope));
+  }
+
+  private pass(scope: ReadonlySet<Region> | null): void {
     // The extension was reloaded, updated or removed while this tab was open:
     // this copy is orphaned (a newer one takes over, or nothing should run).
     if (!extensionAlive()) {
@@ -976,6 +1107,7 @@ export class GeldController {
       return;
     }
     if (!this.settings.enabled) {
+      rememberReviewGroup(repoFromPathname(window.location.pathname), false);
       this.teardown();
       this.publish({ ...IDLE_STATE, allowed: false });
       return;
@@ -996,10 +1128,15 @@ export class GeldController {
     const decision = repo === null ? { allowed: true, rule: null } : decideRepo(this.repoRules, repo);
 
     if (!decision.allowed) {
+      // A repository left out: GitHub's review button shows there from the next load's first frame too.
+      rememberReviewGroup(repo, false);
       this.teardown();
       this.publish({ ...IDLE_STATE, repo, allowed: false, rule: decision.rule?.raw ?? null });
       return;
     }
+
+    if (!document.documentElement.hasAttribute(ATTR_DRESSED)) document.documentElement.setAttribute(ATTR_DRESSED, '');
+    applyAttachmentLightbox(this.settings.attachmentLightbox);
 
     // Another page state (a navigation) is always the whole page, whatever the batches said.
     const full = scope === null || this.lastPassKey !== page.stateKey;
@@ -1019,7 +1156,7 @@ export class GeldController {
       const view = phase('read', () => legacyAdapter.read() ?? reactAdapter.read());
       this.currentView = view;
       if (view !== null) {
-        applyWorkflowSyntax(view.entries);
+        applyDiffSyntax(view.entries);
         const result = phase('files', () => this.applyView(view, page.stateKey, matcher));
         this.autoMarkViewed(view, page.stateKey, matcher);
         this.lastFiles = { view, breakdown: result.breakdown, expanded: result.expanded, renderedEntryCount: view.entries.length };
@@ -1051,6 +1188,10 @@ export class GeldController {
       phase('chips', () => {
         this.applyListChips(surfaces);
         applyAuthorHiding(this.authorRules, surfaces);
+        guard('content:blocked-lists', () => {
+          const viewer = document.querySelector('meta[name="user-login"]')?.getAttribute('content') ?? '';
+          applyBlockedListHiding((owner) => blockedFor(owner, viewer, () => this.schedule()), surfaces);
+        });
       });
       // Nothing on screen waits for these: the commit tooltip re-arms on the next hover, and a hovercard's
       // diffstat is rewritten before anyone reads it. A newer pass replaces a request still waiting.
@@ -1063,7 +1204,15 @@ export class GeldController {
     }
     const trackerConfig=repo!==null&&this.repoDecision(repo)==='use'?this.resolvedConfig(repo):null;
     applyTrackerLinks(this.settings,trackerConfig?validConfigs(trackerConfig):[]);
-    if (!skipReview) applyReviewOverview(this.settings, this.pageDiffPaths(), this.repoBotsHint(page, repo));
+    if (!skipReview) {
+      // Its own step, so a sidebar GitHub changed under it can cost the section but never the digest.
+      guard('content:related-links', () => applyRelatedLinks(this.settings.relatedLinks && page.kind === 'pull-conversation', () => this.schedule()));
+      this.updateFlowSource(page, url, matcher);
+      applyReviewOverview(this.settings, this.pageDiffPaths(), this.repoBotsHint(page, repo));
+      const conversation = page.kind === 'pull-conversation' ? 'pull' : /^\/[^/]+\/[^/]+\/(issues|discussions)\/\d+\/?$/.exec(location.pathname)?.[1];
+      const noun = conversation === 'issues' ? 'issue' : conversation === 'discussions' ? 'discussion' : 'pull request';
+      guard('content:people', () => applyPeoplePresence({ enabled: conversation !== undefined, noun, hiddenAuthors: this.settings.hiddenAuthors, schedule: () => this.schedule() }));
+    }
 
     const effectiveHidden = headerHidden ?? hidden;
     this.publish({
@@ -1355,21 +1504,43 @@ export class GeldController {
     markHiddenDirectories(view.treeDirectories);
 
     const host = view.treeRoot.parentElement ?? document;
+    const searching = fileFilterQuery(view.treeRoot) !== '';
+    // While the reader types in the filter, a panel left without a match stays, at 0, so the accordion does not come
+    // and go with every keystroke.
+    if (searching) {
+      for (const { file, filtered } of tree) {
+        if (filtered !== true) continue;
+        const category = this.classify(matcher, file.path, null);
+        if (category !== null && !byCategory.has(category)) byCategory.set(category, []);
+      }
+    }
     const present = new Set<string>(Array.from(byCategory.keys(), (category) => category.id));
     if (present.size === 0) {
       // Nothing hidden: GitHub's sidebar stays exactly as it was.
+      this.searchPanel = null;
       removeTreeSection(host);
       removeSidebarLayout(host);
       return;
     }
 
-    // One panel open at a time; fall back to GitHub's tree if the remembered
-    // panel's category has nothing on this page.
-    let active = this.activePanel.get(stateKey) ?? CHANGES_SECTION_ID;
+    // One panel open at a time. While the reader types in GitHub's file filter, a panel left without a match gives way
+    // to the first that has one, and comes back as soon as it matches again. Fall back to GitHub's tree if the panel's
+    // category has nothing on this page.
+    const home = this.activePanel.get(stateKey) ?? CHANGES_SECTION_ID;
+    let active = home;
+    if (searching) {
+      const matches = new Map<string, number>([[CHANGES_SECTION_ID, visibleFiles]]);
+      for (const [category, files] of byCategory) matches.set(category.id, files.length);
+      active = panelForSearch(home, [CHANGES_SECTION_ID, ...this.catalog.categories.map((category) => category.id)], matches);
+    }
     if (active !== CHANGES_SECTION_ID && !present.has(active)) active = CHANGES_SECTION_ID;
+    this.searchPanel = searching && active !== home ? { stateKey, panel: active } : null;
+    this.shownPanel.set(stateKey, active);
+    // Headers are bound once, so they read the panel shown now rather than the one shown when they were built.
     const activate = (panel: string): void => {
-      const current = this.activePanel.get(stateKey) ?? CHANGES_SECTION_ID;
+      const current = this.shownPanel.get(stateKey) ?? this.activePanel.get(stateKey) ?? CHANGES_SECTION_ID;
       this.activePanel.set(stateKey, current === panel ? CHANGES_SECTION_ID : panel);
+      this.searchPanel = null;
       this.apply();
     };
 
@@ -1800,7 +1971,7 @@ export class GeldController {
 
   /** The tab bar's "Submit review", before the line counts on every pull request tab (quick-review.ts). */
   private placeQuickReview(page: PageInfo, url: URL): void {
-    applyQuickReview(this.settings.quickReview, { page, groups: this.headerGroupsFor(page), headSha: () => this.headShaFor(page, url), digest: this.settings.prOverview });
+    applyQuickReview(this.settings.quickReview, { page, groups: this.headerGroupsFor(page), headSha: () => this.headShaFor(page, url), digest: this.settings.prOverview, holdToMerge: this.settings.holdToMerge });
   }
 
   private publish(state: TabState): void {
@@ -1812,7 +1983,7 @@ export class GeldController {
   }
 
   private teardownView(): void {
-    removeWorkflowSyntax();
+    removeDiffSyntax();
     for (const element of queryAll(`[${ATTR_CONTAINER}]`)) {
       element.removeAttribute(ATTR_CONTAINER);
       element.removeAttribute(ATTR_EXPANDED);
@@ -1839,6 +2010,8 @@ export class GeldController {
     if (this.settings.testOutline) this.schedule();
   };
 
+  private readonly onReactHydrated = (): void => this.schedule();
+
   private readonly onBeforeMatch = (event: Event): void => {
     onReviewBeforeMatch(event, this.settings);
   };
@@ -1850,18 +2023,24 @@ export class GeldController {
     return repo === null || decideRepo(this.repoRules, repo).allowed;
   }
 
-  private teardown(): void {
+  /** `rebuild`: the page is dressed again right after, so the digest keeps what the reader opened and unfolded. */
+  private teardown(rebuild = false): void {
+    document.documentElement.removeAttribute(ATTR_DRESSED);
+    removeAttachmentLightbox();
     this.settledHeader = null;
     this.headerGroups = [];
     this.headerScan = null;
     this.headerDirty = true;
     this.teardownView();
-    teardownReviewOverview();
+    teardownReviewOverview(rebuild ? 'rebuild' : 'stop');
     removeTrackerLinks();
+    removeRelatedLinks();
     removeQuickReview();
     removePrListStats();
     removeCommitHover();
     removeAuthorHiding();
+    removePeoplePresence();
+    removeBlockedListHiding();
     removeSurfaceStyles();
     for (const group of findHeaderStatGroups()) restoreHeaderStats(group);
     // Cleared first: the stand-in is not Geld's UI, so its removal is a mutation, and the observer would put it back.
