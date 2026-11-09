@@ -2784,11 +2784,23 @@ function compareAuthorPresentation(value) {
 }
 
 async function authorThemeEvidence(page, provider, anchor) {
-  const selector = '.geld-provider-review button[data-geld-original-conversation]';
-  const originallyShown = await page.$eval(selector, button => button.getAttribute('aria-pressed') === 'true');
-  if (!originallyShown) await clickReviewButton(page, selector, 'Show original conversation');
-  const evidence = { baseline: null, darkPreferenceProbe: null, nativeMeasurement: 'Retained native originals explicitly shown through their real control before comparing rendered styles.' };
+  const selector = '.geld-provider-view button[data-geld-digest-view]';
+  const saved = await options.evaluate(async key => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+  const name = provider === 'gitlab' ? 'GitLab' : 'Bitbucket';
+  const evidence = { baseline: null, darkPreferenceProbe: null, views: [], nativeMeasurement: 'Retained native originals explicitly shown through the persistent view selector before comparing rendered styles.' };
+  const readView = () => page.evaluate(anchor => {
+    const panel = document.querySelector('.geld-provider-review');
+    const source = document.getElementById(anchor);
+    const visible = node => node !== null && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden';
+    return { selected: document.querySelector('.geld-provider-view [aria-pressed="true"]')?.getAttribute('data-geld-digest-view') ?? null, digestVisible: visible(panel), nativeVisible: visible(source), choices: document.querySelectorAll('.geld-provider-view button[data-geld-digest-view]').length };
+  }, anchor);
   try {
+    await clickReviewButton(page, selector, name);
+    evidence.views.push(await poll(readView, value => value.selected === 'github' && !value.digestVisible && value.nativeVisible && value.choices === 3, 'Provider-only view restores the native conversation and keeps re-entry visible'));
+    await clickReviewButton(page, selector, 'Geld');
+    evidence.views.push(await poll(readView, value => value.selected === 'digest' && value.digestVisible && value.choices === 3, 'Geld digest can be enabled again from the provider-only view'));
+    await clickReviewButton(page, selector, `Geld + ${name}`);
+    evidence.views.push(await poll(readView, value => value.selected === 'digest-timeline' && value.digestVisible && value.nativeVisible && value.choices === 3, 'Combined view renders both the digest and native conversation'));
     await poll(() => page.evaluate(anchor => { const node = document.getElementById(anchor);return node !== null && node.closest('[hidden]') === null && node.getBoundingClientRect().height > 0; }, anchor), Boolean, 'Retained original author is rendered before style comparison');
     const baseline = await authorPresentationProbe(page, provider, anchor);
     evidence.baseline = baseline;
@@ -2806,7 +2818,13 @@ async function authorThemeEvidence(page, provider, anchor) {
     if (changed) evidence.darkPreferenceProbe.artifacts = await capture(page, `${provider}-author-os-dark`);
   } finally {
     await page.emulateMediaFeatures([]);
-    if (!originallyShown && !page.isClosed()) await clickReviewButton(page, selector, 'Hide original conversation');
+    await options.evaluate(async (key, saved) => {
+      if (saved === undefined) await chrome.storage.sync.remove(key);
+      else await chrome.storage.sync.set({ [key]: saved });
+    }, SETTINGS_KEY, saved);
+    const expected = saved?.prOverview === false ? 'github' : saved?.compactTimeline === 'off' ? 'digest-timeline' : 'digest';
+    if (!page.isClosed()) await poll(readView, value => value.selected === expected, 'The original conversation view is restored');
+    assert.deepEqual(await options.evaluate(async key => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY), saved, 'The exact original shared settings are restored after the view and theme probes');
   }
   return evidence;
 }
