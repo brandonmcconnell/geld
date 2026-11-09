@@ -3544,3 +3544,8 @@ GitLab retains the Overview description in a display-none pane while Changes is 
 Flow uses the verified native diff toolbar or provider action toolbar on diff pages, falling back to the active diff container, and uses the description host only on the overview page.
 The control moves between those hosts on tab changes and never depends on an expanded file sidebar.
 Logged-out GitLab can omit the review-drawer action host entirely, so its Flow adapter qualifies the actual Rapid Diffs header toolbar instead of requiring review permissions.
+
+GitLab reviewer sidebar rows expose native account IDs, usernames and profile URLs that can be matched against the current fetched reviewer identities.
+Only those verified rows participate in local Hidden people folding and visit peeks, using the same reversible display rules as comments.
+Reviewer assignments, approval controls and the provider's assigned-reviewer total remain native and unchanged.
+Display names or initials alone are never enough, so Bitbucket widgets without durable identities remain untouched.

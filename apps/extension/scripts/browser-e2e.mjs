@@ -2949,6 +2949,32 @@ async function gitLabHiddenPersonEvidence(page, anchor) {
   }
 }
 
+async function gitLabSidebarPeopleEvidence(page) {
+  const saved = await options.evaluate(async key => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+  const read = () => page.evaluate(() => {
+    const rows = [...document.querySelectorAll('aside[data-testid="issuable-sidebar"][data-issuable-type="merge_request"] [data-testid="reviewers-block-container"] [data-testid="reviewer"]')];
+    const row = rows[0], author = row?.querySelector('a.js-user-link[data-user-id][data-username][href]');
+    if (!row || !author) return null;
+    const id = author.getAttribute('data-user-id'), login = author.getAttribute('data-username');
+    if (!/^[1-9]\d*$/.test(id ?? '') || !/^[a-z\d_.-]+$/i.test(login ?? '')) return null;
+    return { id, login, profile: author.href, text: row.textContent.trim(), hidden: row.hasAttribute('data-geld-provider-person-hidden'), visible: getComputedStyle(row).display !== 'none', digestPresent: document.querySelector(`[data-geld-reviewer="${id}"]`) !== null };
+  });
+  const before = await poll(read, value => value !== null && value.digestPresent && !value.hidden && value.visible, 'Native reviewer identity is represented before local hiding');
+  const rule = `gitlab:${before.login}`;
+  try {
+    await patchSettings({ hiddenAuthors: [...(saved?.hiddenAuthors ?? []), rule] });
+    const hidden = await poll(read, value => value?.id === before.id && value.hidden && !value.visible && !value.digestPresent, 'Local hiding folds the same native reviewer and digest identity');
+    assert.equal(hidden.text, before.text);assert.equal(hidden.profile, before.profile);
+    await clickReviewButton(page, `.geld-provider-hidden-person:has(+ [data-testid="reviewer"] a[data-user-id="${before.id}"]) button`, 'Show for this visit');
+    const shown = await poll(read, value => value?.id === before.id && !value.hidden && value.visible && value.digestPresent, 'Visit peek restores the native reviewer and digest identity');
+    assert.equal(shown.text, before.text);assert.equal(shown.profile, before.profile);
+    return { before, hidden, shown, scope: 'Local display only. Native reviewer assignment and approval controls are not changed.' };
+  } finally {
+    await options.evaluate(async (key, saved) => { if (saved === undefined) await chrome.storage.sync.remove(key);else await chrome.storage.sync.set({ [key]: saved }); }, SETTINGS_KEY, saved);
+    await poll(read, value => value?.id === before.id && !value.hidden && value.visible && value.digestPresent, 'Exact original settings restore the native reviewer');
+  }
+}
+
 async function authorThemeEvidence(page, provider, anchor) {
   const selector = '.geld-provider-view button[data-geld-digest-view]';
   const saved = await options.evaluate(async key => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
@@ -2970,7 +2996,10 @@ async function authorThemeEvidence(page, provider, anchor) {
     await poll(() => page.evaluate(anchor => { const node = document.getElementById(anchor);return node !== null && node.closest('[hidden]') === null && node.getBoundingClientRect().height > 0; }, anchor), Boolean, 'Retained original author is rendered before style comparison');
     const baseline = await authorPresentationProbe(page, provider, anchor);
     evidence.baseline = baseline;
-    if (provider === 'gitlab') evidence.hiddenPerson = await gitLabHiddenPersonEvidence(page, anchor);
+    if (provider === 'gitlab') {
+      evidence.hiddenPerson = await gitLabHiddenPersonEvidence(page, anchor);
+      evidence.sidebarPeople = await gitLabSidebarPeopleEvidence(page);
+    }
     await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
     await pause(300);
     const dark = await authorPresentationProbe(page, provider, anchor);
