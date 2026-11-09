@@ -33,6 +33,16 @@ function loginOf(node: Element): string | null {
   return link === null ? null : loginOfLink(link);
 }
 
+/** A reviewer row on the Overview: its name links to the profile (an App's to `/apps/<slug>`), with no hovercard attribute. */
+function overviewLoginOf(row: Element): string | null {
+  const link = row.querySelector('a[href]:has([class*="reviewerName"])');
+  const name = (row.querySelector('[class*="reviewerName"]')?.textContent ?? '').trim();
+  const app = /^\/apps\/([^/?#]+)/.exec(link?.getAttribute('href') ?? '')?.[1];
+  if (app !== undefined) return /\[bot\]$/i.test(name) ? name : `${app}[bot]`;
+  if (link !== null) return loginOfLink(link) ?? (name === '' ? null : name);
+  return loginOf(row);
+}
+
 /** Geld's stand-in beside GitHub's node (an empty state, a recounted heading), written only when its words change. */
 function standIn(anchor: Element, key: string, make: () => HTMLElement, text: string | null): void {
   const existing = anchor.parentElement?.querySelector(`:scope > [${ATTR_OWN}="${key}"]`) ?? null;
@@ -101,10 +111,10 @@ function classicParticipants(hides: (login: string) => boolean): void {
 function overviewReviewers(hides: (login: string) => boolean): void {
   const section = document.querySelector(OVERVIEW_REVIEWERS);
   if (section === null) return;
-  const rows = [...section.querySelectorAll('li')].filter((row) => row.querySelector(PERSON) !== null);
+  const rows = [...section.querySelectorAll('li')].filter((row) => row.matches('[class*="reviewerRow"]') || row.querySelector(PERSON) !== null);
   let shown = 0;
   for (const row of rows) {
-    const login = loginOf(row);
+    const login = overviewLoginOf(row);
     const hidden = login !== null && hides(login);
     setHidden(row, hidden);
     if (!hidden) shown += 1;
