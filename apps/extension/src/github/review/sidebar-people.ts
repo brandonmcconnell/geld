@@ -29,7 +29,7 @@ function setHidden(node: Element, hidden: boolean): void {
 function loginOf(node: Element): string | null {
   const assignee = node.getAttribute('data-assignee-name') ?? node.querySelector('[data-assignee-name]')?.getAttribute('data-assignee-name');
   if (assignee !== null && assignee !== undefined && assignee !== '') return assignee;
-  const link = node.matches(PERSON) ? node : node.querySelector(PERSON);
+  const link = node.matches(PERSON) ? node : (node.querySelector(PERSON) ?? (node.matches('a[href]') ? node : null));
   return link === null ? null : loginOfLink(link);
 }
 
@@ -59,6 +59,13 @@ function standIn(anchor: Element, key: string, make: () => HTMLElement, text: st
   node.setAttribute(OWN_UI_ATTRIBUTE, '');
   node.textContent = text;
   anchor.after(node);
+}
+
+/** The count GitHub's heading states ("1,483 participants"): GitHub shows only some of the pictures. */
+function statedCount(heading: Element, pictures: number): number {
+  const digits = /([\d,]+)\s+participants?/i.exec(heading.textContent ?? '')?.[1]?.replace(/,/g, '');
+  const stated = digits === undefined ? Number.NaN : Number.parseInt(digits, 10);
+  return Number.isNaN(stated) ? pictures : Math.max(stated, pictures);
 }
 
 function participantsHeading(count: number): string {
@@ -102,10 +109,11 @@ function classicParticipants(hides: (login: string) => boolean): void {
     setHidden(avatar, hidden);
     if (hidden) hiddenCount += 1;
   }
-  const left = avatars.length - hiddenCount;
-  setHidden(item, avatars.length > 0 && left === 0);
+  const left = statedCount(heading, avatars.length) - hiddenCount;
+  setHidden(item, avatars.length > 0 && left <= 0);
   setHidden(heading, hiddenCount > 0);
-  standIn(heading, 'participants', () => createElement('h3', { class: heading.getAttribute('class') ?? 'discussion-sidebar-heading text-bold' }), hiddenCount > 0 && left > 0 ? participantsHeading(left) : null);
+  const tag = heading.tagName === 'DIV' ? 'div' : 'h3';
+  standIn(heading, 'participants', () => createElement(tag, { class: heading.getAttribute('class') ?? 'discussion-sidebar-heading text-bold' }), hiddenCount > 0 && left > 0 ? participantsHeading(left) : null);
 }
 
 function overviewReviewers(hides: (login: string) => boolean): void {
@@ -142,18 +150,35 @@ function overviewParticipants(hides: (login: string) => boolean): void {
     setHidden(avatar, hidden);
     if (hidden) hiddenCount += 1;
   }
-  const left = avatars.length - hiddenCount;
-  setHidden(section, avatars.length > 0 && left === 0);
+  const left = statedCount(heading, avatars.length) - hiddenCount;
+  setHidden(section, avatars.length > 0 && left <= 0);
   setHidden(heading, hiddenCount > 0);
   standIn(heading, 'participants', () => createElement('h4', { class: heading.getAttribute('class') ?? '' }), hiddenCount > 0 && left > 0 ? participantsHeading(left) : null);
 }
 
-/** Hides `hides`'s people in GitHub's Reviewers and Participants, on the conversation and the Overview. */
+/** An issue's Participants (`sidebar-participants-section`): pictures with no count, the section gone when nobody is left. */
+function issueParticipants(hides: (login: string) => boolean): void {
+  const list = document.querySelector('[data-testid="sidebar-participants-section"]');
+  if (list === null) return;
+  const avatars = [...list.querySelectorAll(PERSON)];
+  let left = 0;
+  for (const avatar of avatars) {
+    const login = loginOf(avatar);
+    const hidden = login !== null && hides(login);
+    setHidden(avatar, hidden);
+    if (!hidden) left += 1;
+  }
+  const section = list.closest('[data-testid="sidebar-section"]') ?? list;
+  setHidden(section, avatars.length > 0 && left === 0);
+}
+
+/** Hides `hides`'s people in GitHub's Reviewers and Participants: pull requests (the conversation and the Overview), issues and discussions. */
 export function syncSidebarPeople(hides: (login: string) => boolean): void {
   classicReviewers(hides);
   classicParticipants(hides);
   overviewReviewers(hides);
   overviewParticipants(hides);
+  issueParticipants(hides);
 }
 
 /** Puts GitHub's sidebar back as it was. */
