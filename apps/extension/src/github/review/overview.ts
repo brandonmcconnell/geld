@@ -65,8 +65,6 @@ import { blockedFor } from '../blocked-users';
 import type { BlockedBy } from '../blocked-list';
 import { blockedUsersUrl } from '../blocked-list';
 import { clearSidebarPeople, syncSidebarPeople } from './sidebar-people';
-import { exactRulesFor, HiddenPeople, lookUpUnhideForms, markedOnGitHub, refreshUnhidden, sendUnhide } from './hidden-people';
-import { allResolved, checkCountsFrom, checkCountsOfRuns, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, standingReviewers } from './panel-model';
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
