@@ -5,7 +5,7 @@
 
 import type { BotVerdictRecord, GeldPrMeta, RawComment, ReviewItem, ReviewItemStatus, ReviewerRecord, ReviewerState } from '@geld/review';
 import { normalizeAvatarSrc } from './crawler';
-import { botAppAvatar, botByAppSlug, botByCheckName, botById, botByTrigger, botTitle, doneItemCount, isOpenStatus, rerunTriggerFor, REVIEW_BOTS } from '@geld/review';
+import { botAppAvatar, botByAppSlug, botByCheckName, botById, botByTrigger, botTitle, isOpenStatus, rerunTriggerFor, REVIEW_BOTS, threadCounts } from '@geld/review';
 
 /**
  * How Geld knows a bot is available on this pull request, best first:
@@ -29,9 +29,20 @@ export interface InstalledBot {
 export interface RepoBotsHint {
   readonly declared: readonly string[] | null;
   readonly configured: ReadonlyMap<string, string>;
+  /**
+   * Bot id → the comment that starts it through the Geld workflow instead
+   * of its tag comment (`/geld run greptile`), for each bot the repository's
+   * Geld workflow names a secret for.
+   */
+  readonly apiTriggers: ReadonlyMap<string, string>;
 }
 
-export const NO_REPO_BOTS: RepoBotsHint = { declared: null, configured: new Map() };
+export const NO_REPO_BOTS: RepoBotsHint = { declared: null, configured: new Map(), apiTriggers: new Map() };
+
+/** The comment that asks bot `id` to run here: the Geld workflow's command where it applies, else the bot's own trigger. */
+export function triggerFor(id: string, hint: RepoBotsHint): string | null {
+  return hint.apiTriggers.get(id) ?? rerunTriggerFor(id);
+}
 
 /**
  * The picture's URL when it is an App's mark. GitHub serves App avatars
@@ -65,7 +76,7 @@ function appAvatarSrc(img: HTMLImageElement | null | undefined): string | null {
 export function requestableBots(meta: GeldPrMeta, doc: ParentNode, comments: readonly RawComment[] = [], hint: RepoBotsHint = NO_REPO_BOTS): readonly InstalledBot[] {
   const found = new Map<string, InstalledBot>();
   const add = (id: string, login: string, iconSrc: string | null): void => {
-    const trigger = rerunTriggerFor(id);
+    const trigger = triggerFor(id, hint);
     if (trigger === null) return;
     const existing = found.get(id);
     if (existing !== undefined) {
@@ -100,7 +111,7 @@ export function requestableBots(meta: GeldPrMeta, doc: ParentNode, comments: rea
   }
   for (const bot of REVIEW_BOTS) {
     if (found.has(bot.id)) continue;
-    const trigger = rerunTriggerFor(bot.id);
+    const trigger = triggerFor(bot.id, hint);
     if (trigger === null) continue;
     const login = bot.logins[0] ?? `${bot.id}[bot]`;
     const configFile = hint.configured.get(bot.id);
@@ -171,7 +182,7 @@ export function verdictLabel(bot: BotVerdictRecord): string {
   if (bot.verdict === 'loading') return `${title}: still reading the timeline`;
   if (bot.verdict === 'unknown') return `${title}: no word on this pull request`;
   if (bot.verdict === 'failed') return bot.reason === undefined ? `${title} failed` : `${title} skipped: ${bot.reason}`;
-  return `${title} ${botDetail(bot)}`;
+  return `${title} ${botDetail(bot)}${isSevere(bot) && bot.severity === 'high' ? ', high severity' : ''}`;
 }
 
 /** What the staleness check needs to know of a top-level comment: whether it is a bot's report, and when it was posted. */
@@ -239,7 +250,7 @@ export interface DigestExtras {
   readonly excerptFor: (anchor: string) => string | null;
 }
 
-const HEALTH_MARK: Readonly<Record<Health, string>> = { good: '✅', warn: '🟡', bad: '❌', pending: '⏳' };
+const HEALTH_MARK: Readonly<Record<Health, string>> = { good: '✅', warn: '🟡', severe: '❗', bad: '❌', pending: '⏳' };
 
 /**
  * The whole digest as Markdown for an agent or a teammate: TL;DR, status,
@@ -254,7 +265,8 @@ export function digestMarkdown(meta: GeldPrMeta, subject: MarkdownSubject | null
   const lines = [`## ${title}`];
   if (meta.summary !== undefined) lines.push('', meta.summary.tldr);
   const status = [...(extras?.status ?? [])];
-  if (meta.items.length > 0) status.unshift(`${doneItemCount(meta.items)} of ${meta.items.length} review items done`);
+  const threads = threadCounts(meta.items);
+  if (threads.total > 0) status.unshift(`${threads.total - threads.open} of ${threads.total} review threads resolved`);
   if (status.length > 0) lines.push('', ...status.map((line) => `- ${line}`));
   if (meta.bots.length > 0) {
     lines.push('', '### Review bots', '');
@@ -287,7 +299,8 @@ export function authorLabels(item: ReviewItem): readonly string[] {
 /* ---- status rows: bots, CI checks, required reviews ---------------------- */
 
 /** Traffic light for a bot's verdict: green check, yellow dot, red X, or gray while running. */
-export type Health = 'good' | 'warn' | 'bad' | 'pending';
+/** `severe`: findings still open that the bot marks severe (a high grade, a score under 3/5), the exclamation; `bad` is a run that broke. */
+export type Health = 'good' | 'warn' | 'severe' | 'bad' | 'pending';
 
 export function botHealth(bot: BotVerdictRecord): Health {
   // No word either way (asked on a pull request since merged or closed, no comment, the checks gone): grey, like a run
@@ -297,9 +310,20 @@ export function botHealth(bot: BotVerdictRecord): Health {
   // pull request, the bot's setup is. A run that broke with no word is a failure.
   if (bot.verdict === 'failed') return bot.reason === undefined ? 'bad' : 'warn';
   if (bot.verdict === 'clean' || allResolved(bot)) return 'good';
-  if (bot.severity === 'high') return 'bad';
-  if (bot.score !== undefined) return bot.score >= 5 ? 'good' : bot.score >= 3 ? 'warn' : 'bad';
+  // Findings are amber until they are resolved, and the exclamation while one the bot marks severe (a high grade, or a
+  // score under 3/5) is still open: the red cross is only for a run that broke. The request menu still ticks a bot
+  // whose findings came before the latest push, so a rerun is a click away.
+  if (isSevere(bot)) return 'severe';
+  // A 5/5 with a finding still open is amber too, as `botDetail`'s "5/5 · 1 issue" says.
+  const open = bot.verdict === 'findings' && bot.count !== undefined && bot.count > 0;
+  if (bot.score !== undefined && bot.score >= 5 && !open) return 'good';
   return 'warn';
+}
+
+/** Findings still open that the bot marks severe: a high grade on one of them, or a score under 3/5. */
+export function isSevere(bot: BotVerdictRecord): boolean {
+  if (bot.verdict !== 'findings' || allResolved(bot)) return false;
+  return bot.severity === 'high' || (bot.score !== undefined && bot.score < 3);
 }
 
 /** Short text beside the glyph: "4/5", "2 issues", "clean", "resolved", "running", "loading". */
@@ -316,7 +340,7 @@ export function botDetail(bot: BotVerdictRecord): string {
   if (bot.score !== undefined) return issues === null ? `${bot.score}/5` : `${bot.score}/5 · ${issues}`;
   if (bot.verdict === 'clean') return 'clean';
   if (allResolved(bot)) return 'resolved';
-  return issues ?? 'findings';
+  return issues ?? (bot.needsHuman === true ? 'needs human' : 'findings');
 }
 
 export type CheckState = 'success' | 'failure' | 'queued' | 'pending' | 'skipped' | 'neutral';
@@ -353,6 +377,26 @@ const CHECK_WORDS: ReadonlyArray<readonly [RegExp, CheckState]> = [
 function stateOfWord(word: string): CheckState | null {
   const trimmed = word.trim();
   return CHECK_WORDS.find(([pattern]) => pattern.test(trimmed))?.[1] ?? null;
+}
+
+/**
+ * Check counts from check runs read elsewhere than the merge box (the head commit's status partial): the Overview
+ * tab shows no checks section, only a "Checks" card that opens a panel of its own.
+ */
+export function checkCountsOfRuns(runs: readonly { readonly status: string; readonly conclusion: string | null }[]): CheckCounts | null {
+  if (runs.length === 0) return null;
+  const counts = { ...EMPTY_CHECKS };
+  for (const run of runs) counts[checkStateOfRun(run)] += 1;
+  return counts;
+}
+
+export function checkStateOfRun(run: { readonly status: string; readonly conclusion: string | null }): CheckState {
+  if (run.status === 'queued' || run.status === 'pending' || run.status === 'waiting' || run.status === 'requested') return 'queued';
+  if (run.status !== 'completed') return 'pending';
+  if (run.conclusion === 'success') return 'success';
+  if (run.conclusion === 'skipped') return 'skipped';
+  if (run.conclusion === 'neutral' || run.conclusion === 'stale') return 'neutral';
+  return 'failure';
 }
 
 /**
@@ -393,20 +437,37 @@ export function checksHealth(counts: CheckCounts): Health {
 export type Tone = 'good' | 'warn' | 'bad';
 
 export function toneOf(health: Health): Tone | null {
-  return health === 'pending' ? null : health;
+  if (health === 'pending') return null;
+  return health === 'severe' ? 'warn' : health;
 }
 
 /**
- * The CI row's tint: red when a required check failed, amber when only
- * optional ones did (`requiredFailing` is null when the list does not say
- * which are required — then every failure counts), none while anything is
- * still running, green once everything passed.
+ * The CI row's tint: red only when a check GitHub marks required failed, amber
+ * for any other failure (`requiredFailing` is null when the list does not say
+ * which are required, and an unknown failure is not counted as required), none
+ * while anything is still running, green once everything passed.
  */
 export function checksTone(counts: CheckCounts, requiredFailing: boolean | null): Tone | null {
-  if (counts.failure > 0) return requiredFailing === false ? 'warn' : 'bad';
+  if (counts.failure > 0) return requiredFailing === true ? 'bad' : 'warn';
   if (counts.pending > 0 || counts.queued > 0) return null;
   if (counts.success > 0) return 'good';
   return null;
+}
+
+/** The CI status row's tint: only the red of a failing required check, since the glyph already says the rest. */
+export function checksRowTone(counts: CheckCounts, requiredFailing: boolean | null): Tone | null {
+  return checksTone(counts, requiredFailing) === 'bad' ? 'bad' : null;
+}
+
+/**
+ * A push's row by push: amber while a thread is unresolved (red is kept for a
+ * failing required check), green once its threads are settled or its CI
+ * passed. A failing CI is the push's glyph alone, since the last commit's
+ * summary does not say whether the failing check is required.
+ */
+export function pushRowTone(openThreads: boolean, ci: 'success' | 'failure' | 'pending' | null, allDone: boolean): Tone | null {
+  if (openThreads) return 'warn';
+  return allDone || ci === 'success' ? 'good' : null;
 }
 
 export function checksSummary(counts: CheckCounts): string {

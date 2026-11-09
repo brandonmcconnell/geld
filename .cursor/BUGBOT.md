@@ -22,6 +22,10 @@ this file lists what a reviewer must check.
   A new
   loan goes through `teleportInto`/`onRestore`;
   an ad-hoc `append` of a GitHub node is the problem.
+- A node of Geld's put among the children of GitHub's server-rendered React before React has hydrated them.
+  React then fails hydration and renders the boundary again, and on a pull request that is the whole content container, digest and folded timeline included.
+  New controls in React's header, sidebar or Overview column check `reactSettled` (`src/github/react-hydration.ts`) at the point they insert;
+  inside a `<rails-partial>` they may go in at once.
 - The content script fetching `.diff` files or `api.github.com` itself.
   Those go through the
   background worker (`entrypoints/background.ts`), which paces them under the diff host's burst limit
@@ -35,7 +39,7 @@ this file lists what a reviewer must check.
 - Mutable GitLab MR and Bitbucket PR identity snapshots, and symbolic or abbreviated commit resolution, explicitly revalidate with `cache: 'no-cache'`.
   Keep conditional validator/body handling, immutable payload caches, request scheduling and quota cooldowns intact;
   do not require two wire-level HTTP 200 responses or add guard reads.
-- Workflow syntax highlighting must leave diff nodes intact, tokenize old and new sides separately and clear its own CSS highlights on teardown.
+- Diff syntax highlighting must leave diff nodes intact, give GitHub's own syntax styles precedence, tokenize old and new sides separately and clear its own CSS highlights on teardown.
   Use fixed `StaticRange` endpoints so a temporary DOM detach cannot collapse the colors.
 - New or widened manifest permissions / host permissions.
   These disable the extension on update
@@ -68,6 +72,10 @@ this file lists what a reviewer must check.
 - Work done on the `apply()` path that forces layout (`getBoundingClientRect`, `offsetHeight`) — it
   runs on every DOM mutation while large diffs stream in.
   Measurements belong in observers.
+- A reading of the pull request page that knows only one of its shapes: the conversation (classic timeline, or the
+  conversation inside the React layout) and the Overview tab (`review/overview-page.ts`: the description in its own box,
+  the Comments section's `[data-testid="timeline-item"]` entries listed newest first).
+  Readers land on either, so a selector or a placement added for one needs the other's too.
 - Styles that do not follow GitHub's theme tokens (`--fgColor-*`, `--bgColor-*`, `--borderColor-*`)
   or ignore dark/high-contrast/colorblind themes.
 - UI copy that is vague;

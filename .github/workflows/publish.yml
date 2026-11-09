@@ -277,6 +277,8 @@ jobs:
           cache: pnpm
       - if: steps.creds.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
         run: pnpm install --frozen-lockfile
+        env:
+          FONTAWESOME_PACKAGE_TOKEN: ${{ secrets.FONTAWESOME_PACKAGE_TOKEN }}
       # Rebuild the Safari flavour at the release's version and refresh the Xcode
       # wrapper (safari:sync copies the build in and stamps MARKETING_VERSION and
       # the build number). The release tag is vX.Y.Z-build.N → build number N.
