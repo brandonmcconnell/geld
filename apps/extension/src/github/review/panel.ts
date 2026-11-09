@@ -1386,7 +1386,7 @@ function roundGroups(model: PanelModel): { readonly current: Batch | null; reado
 }
 
 /** The group the open row is listed under, or null when nothing is open or the open row (a status row) is in no group. */
-function openRowGroup(model: PanelModel): GroupId | null {
+export function openRowGroup(model: PanelModel): GroupId | null {
   const key = model.openKey;
   if (key === null) return null;
   if (model.grouping === 'batch') {
