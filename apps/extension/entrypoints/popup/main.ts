@@ -21,6 +21,7 @@ import type { PageKind } from '../../src/github/page';
 import { ICON_BEAKER, ICON_EYE_CLOSED, ICON_INFO } from '../../src/github/ui/icons';
 import { wireFeedbackLink } from '../../src/ui/feedback-link';
 import { installErrorCapture } from '../../src/lib/error-capture';
+import { mountNightlyPopup } from '../../src/nightly/popup';
 
 installErrorCapture('popup');
 
@@ -699,4 +700,5 @@ if (popupBody !== null) {
   requestAnimationFrame(updateScrollState);
 }
 polyfillCornerShape();
+if (__GELD_NIGHTLY__ && popupBody !== null) mountNightlyPopup(popupBody);
 void main();

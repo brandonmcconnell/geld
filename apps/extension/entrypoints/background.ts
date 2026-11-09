@@ -35,6 +35,8 @@ import { ensureContentScript, hostOf, tabsOnHosts } from '../src/lib/inject';
 import { grantedHosts } from '../src/lib/enterprise';
 import { looksLikeHtml } from '../src/lib/http';
 import { retireDashboardSession } from '../src/lib/dashboard-session';
+import { showTabBadge, startNightly } from '../src/nightly/updater';
+import { isNightlyPaused } from '../src/nightly/state';
 
 /** Refuse to parse diffs larger than this; GitHub's UI is unusable there anyway. */
 const MAX_DIFF_BYTES = 20 * 1024 * 1024;
@@ -484,6 +486,10 @@ function swallow(result: Promise<void> | void): void {
 
 /** Show the hidden-file count for a tab on the toolbar icon. */
 function updateBadge(tabId: number, state: TabState): void {
+  if (__GELD_NIGHTLY__) {
+    showTabBadge(tabId, state.hiddenCount);
+    return;
+  }
   const api = badgeApi();
   if (api === undefined) return;
   const text = state.hiddenCount > 0 ? String(state.hiddenCount) : '';
@@ -496,6 +502,7 @@ function updateBadge(tabId: number, state: TabState): void {
 
 /** Hosts the content script may run on: github.com plus granted Enterprise hosts. */
 async function contentHosts(): Promise<Set<string>> {
+  if (__GELD_NIGHTLY__ && (await isNightlyPaused())) return new Set();
   const settings = await settingsItem.getValue();
   return new Set(['github.com', ...(await grantedHosts(settings.enterpriseHosts))]);
 }
@@ -656,4 +663,7 @@ export default defineBackground(() => {
   // Pattern catalog: fetch the signed catalog/patterns.json from the repository
   // daily so patterns can improve without a store release.
   startCatalogUpdates();
+
+  // Store builds compile this away: only a self-updating nightly build ships the updater (see wxt.config.ts).
+  if (__GELD_NIGHTLY__) startNightly();
 });

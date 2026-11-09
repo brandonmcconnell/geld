@@ -66,6 +66,22 @@ Geld never calls the GitHub API. Counts come from the page when it renders per-f
    - **Safari** (16.4+): unzip `geld-<version>-safari.zip`, then on macOS run `xcrun safari-web-extension-converter <unzipped-folder>` and build/run the generated Xcode project. Enable _Allow unsigned extensions_ from Safari's _Develop_ menu while testing.
 3. Open any pull request, for example <https://github.com/wxt-dev/wxt/pull/2544/files>.
 
+### Nightly builds
+
+Every release also carries a nightly build for each browser, `geld-<version>-<browser>-nightly.zip`, called _Geld Nightly_. It is the same production build as the store's. The Chrome and Edge builds (and other Chromium browsers, with the Chrome zip) keep themselves up to date with every push to `main`. The Firefox and Safari builds are updated by hand for now: Firefox only installs builds Mozilla has signed, and Safari extensions ship inside an app. The store builds contain none of the updater.
+
+Geld Nightly does not run while Geld from a store is on in the same profile. It pauses, marks Geld's bar on GitHub with the conflict and a button to turn Geld off, and starts on its own once Geld is off or removed.
+
+For Chrome and Edge:
+
+1. Download the nightly zip from the [latest release](https://github.com/brandonmcconnell/geld/releases/latest), unzip it into a folder you keep, and load that folder with _Load unpacked_ (Developer mode on).
+2. Click the toolbar icon. The top of the popup shows the build, a _Manual / Automatic_ toggle and the update status. Click _Connect folder_ and pick the same folder. Geld checks that it is the folder it runs from.
+3. The first install asks once to let Geld edit the folder. On the next one Chrome offers _Allow on every visit_: choose it, and later builds install in the background, even after Chrome restarts. A folder kept directly in your Downloads folder needs no grant at all.
+
+Geld looks for a new build on every GitHub page load and in-page navigation, in the background, and on a 30-minute timer when GitHub isn't open. _Automatic_ (the default) installs it and reloads Geld, which puts itself back into open GitHub tabs. _Manual_ shows a ↑ on the toolbar icon, GitHub tabs included, and _Install_ in the popup. Any number of tabs finding the same build lead to one download and one install.
+
+Before writing a build, Geld keeps a copy of the one it is replacing. If the install fails partway, the copy goes back and the popup says _Update to build N failed · Still on build M_ with _Try again_. For a day after an update, _Roll back_ returns to the previous build, and Automatic skips the build you left until a newer one is out. Updates read public releases, so no GitHub token is needed. The nightly build has its own extension id, so its settings are separate from a store install's unless you sign in to sync them.
+
 ## Development
 
 ```sh
@@ -77,7 +93,8 @@ pnpm dev:site         # geld.sh website (Next.js) on http://localhost:3000
 pnpm build            # production build for Chrome into apps/extension/.output/chrome-mv3
 pnpm build:firefox    # one other browser: build:firefox, build:edge, build:safari (build:chrome is pnpm build; zip:<browser> likewise)
 pnpm build:all        # production builds for Chrome, Firefox, Edge and Safari
-pnpm zip:all          # zips for all four browsers into apps/extension/.output/
+pnpm build:nightly    # the self-updating Chrome build into apps/extension/.output/chrome-mv3-nightly
+pnpm zip:all          # zips for all four browsers plus the Chrome nightly build into apps/extension/.output/
 ```
 
 Output archives:
