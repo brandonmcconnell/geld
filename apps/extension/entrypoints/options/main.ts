@@ -743,7 +743,7 @@ async function main(): Promise<void> {
     requireElement('test-syntaxes', HTMLDivElement).replaceChildren(el('div', 'options__editor', [label, help, area, syntax, el('div', 'geld-row options__actions', [statusNode, save])]));
   }
 
-  /* Pull request lists: authors to hide */
+  /* Hidden people: logins left out of PR lists and the digest */
   applySchemaCopy('lists');
   const authorsStatus = statusReporter(requireElement('authors-status', HTMLSpanElement));
   const authorsArea = requireElement('hidden-authors', HTMLTextAreaElement);
@@ -760,7 +760,7 @@ async function main(): Promise<void> {
     }
     settings = await settingsItem.patch({ hiddenAuthors });
     authorsArea.value = hiddenAuthors.join('\n');
-    authorsStatus(`Saved ${pluralize(hiddenAuthors.length, 'author', 'authors')}`, 'success');
+    authorsStatus(`Saved ${pluralize(hiddenAuthors.length, 'login', 'logins')}`, 'success');
   });
 
   /* Experiments: the digest's fine-tuning (timeline, grouping, extra bots) and the AI that can write for it. */

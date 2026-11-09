@@ -22,6 +22,10 @@ this file lists what a reviewer must check.
   A new
   loan goes through `teleportInto`/`onRestore`;
   an ad-hoc `append` of a GitHub node is the problem.
+- A node of Geld's put among the children of GitHub's server-rendered React before React has hydrated them.
+  React then fails hydration and renders the boundary again, and on a pull request that is the whole content container, digest and folded timeline included.
+  New controls in React's header, sidebar or Overview column check `reactSettled` (`src/github/react-hydration.ts`) at the point they insert;
+  inside a `<rails-partial>` they may go in at once.
 - The content script fetching `.diff` files or `api.github.com` itself.
   Those go through the
   background worker (`entrypoints/background.ts`), which paces them under the diff host's burst limit

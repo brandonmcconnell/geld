@@ -5,7 +5,7 @@
 
 import type { BotVerdictRecord, GeldPrMeta, RawComment, ReviewItem, ReviewItemStatus, ReviewerRecord, ReviewerState } from '@geld/review';
 import { normalizeAvatarSrc } from './crawler';
-import { botAppAvatar, botByAppSlug, botByCheckName, botById, botByTrigger, botTitle, doneItemCount, isOpenStatus, rerunTriggerFor, REVIEW_BOTS } from '@geld/review';
+import { botAppAvatar, botByAppSlug, botByCheckName, botById, botByTrigger, botTitle, isOpenStatus, rerunTriggerFor, REVIEW_BOTS, threadCounts } from '@geld/review';
 
 /**
  * How Geld knows a bot is available on this pull request, best first:
@@ -182,7 +182,7 @@ export function verdictLabel(bot: BotVerdictRecord): string {
   if (bot.verdict === 'loading') return `${title}: still reading the timeline`;
   if (bot.verdict === 'unknown') return `${title}: no word on this pull request`;
   if (bot.verdict === 'failed') return bot.reason === undefined ? `${title} failed` : `${title} skipped: ${bot.reason}`;
-  return `${title} ${botDetail(bot)}`;
+  return `${title} ${botDetail(bot)}${isSevere(bot) && bot.severity === 'high' ? ', high severity' : ''}`;
 }
 
 /** What the staleness check needs to know of a top-level comment: whether it is a bot's report, and when it was posted. */
@@ -250,7 +250,7 @@ export interface DigestExtras {
   readonly excerptFor: (anchor: string) => string | null;
 }
 
-const HEALTH_MARK: Readonly<Record<Health, string>> = { good: '✅', warn: '🟡', bad: '❌', pending: '⏳' };
+const HEALTH_MARK: Readonly<Record<Health, string>> = { good: '✅', warn: '🟡', severe: '❗', bad: '❌', pending: '⏳' };
 
 /**
  * The whole digest as Markdown for an agent or a teammate: TL;DR, status,
@@ -265,7 +265,8 @@ export function digestMarkdown(meta: GeldPrMeta, subject: MarkdownSubject | null
   const lines = [`## ${title}`];
   if (meta.summary !== undefined) lines.push('', meta.summary.tldr);
   const status = [...(extras?.status ?? [])];
-  if (meta.items.length > 0) status.unshift(`${doneItemCount(meta.items)} of ${meta.items.length} review items done`);
+  const threads = threadCounts(meta.items);
+  if (threads.total > 0) status.unshift(`${threads.total - threads.open} of ${threads.total} review threads resolved`);
   if (status.length > 0) lines.push('', ...status.map((line) => `- ${line}`));
   if (meta.bots.length > 0) {
     lines.push('', '### Review bots', '');
@@ -298,7 +299,8 @@ export function authorLabels(item: ReviewItem): readonly string[] {
 /* ---- status rows: bots, CI checks, required reviews ---------------------- */
 
 /** Traffic light for a bot's verdict: green check, yellow dot, red X, or gray while running. */
-export type Health = 'good' | 'warn' | 'bad' | 'pending';
+/** `severe`: findings still open that the bot marks severe (a high grade, a score under 3/5), the exclamation; `bad` is a run that broke. */
+export type Health = 'good' | 'warn' | 'severe' | 'bad' | 'pending';
 
 export function botHealth(bot: BotVerdictRecord): Health {
   // No word either way (asked on a pull request since merged or closed, no comment, the checks gone): grey, like a run
@@ -308,11 +310,20 @@ export function botHealth(bot: BotVerdictRecord): Health {
   // pull request, the bot's setup is. A run that broke with no word is a failure.
   if (bot.verdict === 'failed') return bot.reason === undefined ? 'bad' : 'warn';
   if (bot.verdict === 'clean' || allResolved(bot)) return 'good';
-  if (bot.severity === 'high') return 'bad';
-  // A 5/5 with a finding still open is amber until its threads are resolved, as `botDetail`'s "5/5 · 1 issue" says.
+  // Findings are amber until they are resolved, and the exclamation while one the bot marks severe (a high grade, or a
+  // score under 3/5) is still open: the red cross is only for a run that broke. The request menu still ticks a bot
+  // whose findings came before the latest push, so a rerun is a click away.
+  if (isSevere(bot)) return 'severe';
+  // A 5/5 with a finding still open is amber too, as `botDetail`'s "5/5 · 1 issue" says.
   const open = bot.verdict === 'findings' && bot.count !== undefined && bot.count > 0;
-  if (bot.score !== undefined) return bot.score < 3 ? 'bad' : bot.score >= 5 && !open ? 'good' : 'warn';
+  if (bot.score !== undefined && bot.score >= 5 && !open) return 'good';
   return 'warn';
+}
+
+/** Findings still open that the bot marks severe: a high grade on one of them, or a score under 3/5. */
+export function isSevere(bot: BotVerdictRecord): boolean {
+  if (bot.verdict !== 'findings' || allResolved(bot)) return false;
+  return bot.severity === 'high' || (bot.score !== undefined && bot.score < 3);
 }
 
 /** Short text beside the glyph: "4/5", "2 issues", "clean", "resolved", "running", "loading". */
@@ -329,7 +340,7 @@ export function botDetail(bot: BotVerdictRecord): string {
   if (bot.score !== undefined) return issues === null ? `${bot.score}/5` : `${bot.score}/5 · ${issues}`;
   if (bot.verdict === 'clean') return 'clean';
   if (allResolved(bot)) return 'resolved';
-  return issues ?? 'findings';
+  return issues ?? (bot.needsHuman === true ? 'needs human' : 'findings');
 }
 
 export type CheckState = 'success' | 'failure' | 'queued' | 'pending' | 'skipped' | 'neutral';
@@ -426,7 +437,8 @@ export function checksHealth(counts: CheckCounts): Health {
 export type Tone = 'good' | 'warn' | 'bad';
 
 export function toneOf(health: Health): Tone | null {
-  return health === 'pending' ? null : health;
+  if (health === 'pending') return null;
+  return health === 'severe' ? 'warn' : health;
 }
 
 /**

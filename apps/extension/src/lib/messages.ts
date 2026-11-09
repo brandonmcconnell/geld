@@ -40,6 +40,18 @@ export type FetchFileResponse =
   | { readonly ok: true; readonly text: string | null }
   | { readonly ok: false; readonly reason: string };
 
+/**
+ * Content script → background: the logins a GitHub "Blocked users" settings page
+ * lists (the reader's own, or an organisation's). Read by the background so the 404
+ * a non-moderator gets for an organisation's page stays out of the page's console.
+ */
+export interface BlockedUsersRequest {
+  readonly type: 'geld:blocked-users';
+  readonly url: string;
+}
+
+export type BlockedUsersResponse = { readonly ok: true; readonly logins: readonly string[] } | { readonly ok: false; readonly reason: string };
+
 /** Sent by the offscreen document whenever the OS/browser colour scheme changes. */
 export interface ColorSchemeMessage {
   readonly type: 'geld:color-scheme';
@@ -54,6 +66,8 @@ export interface ClearDiffCacheMessage {
 /** Content script → background: the digest's gear asks for Geld's settings (the toolbar popup, else the options page). */
 export interface OpenSettingsMessage {
   readonly type: 'geld:open-settings';
+  /** A settings section to open the options page at (its `data-section`), rather than the popup. */
+  readonly section?: string;
 }
 
 /** Any context → background: Geld's own errors, already scrubbed (`error-capture.ts`). */
@@ -217,6 +231,16 @@ export function isFetchFileRequest(value: unknown): value is FetchFileRequest {
 export function isFetchFileResponse(value: unknown): value is FetchFileResponse {
   if (!isRecord(value)) return false;
   if (value.ok === true) return value.text === null || typeof value.text === 'string';
+  return value.ok === false && typeof value.reason === 'string';
+}
+
+export function isBlockedUsersRequest(value: unknown): value is BlockedUsersRequest {
+  return isRecord(value) && value.type === 'geld:blocked-users' && typeof value.url === 'string';
+}
+
+export function isBlockedUsersResponse(value: unknown): value is BlockedUsersResponse {
+  if (!isRecord(value)) return false;
+  if (value.ok === true) return Array.isArray(value.logins) && value.logins.every((login) => typeof login === 'string');
   return value.ok === false && typeof value.reason === 'string';
 }
 

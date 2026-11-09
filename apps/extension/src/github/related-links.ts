@@ -3,6 +3,7 @@ import { isDependencyUpdate, relatedLinksFrom } from '@geld/review/related-links
 import type { LinkCandidate, RelatedKind, RelatedLink } from '@geld/review/related-links';
 import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { pageFetch } from './page-fetch';
+import { reactSettled } from './react-hydration';
 import { descriptionBody } from './review/description';
 import { appLoginOf } from './review/login';
 import { refDetails } from './review/refs';
@@ -542,7 +543,8 @@ let requestPass: () => void = () => undefined;
  */
 export function applyRelatedLinks(active: boolean, onChange: () => void = () => undefined): void {
   requestPass = onChange;
-  const afters = active ? assigneesSections() : [];
+  // The Overview's sidebar is React's: no section of Geld's among its nodes before React has hydrated them.
+  const afters = active ? assigneesSections().filter((after) => reactSettled(placeFor(after))) : [];
   const all = afters.length === 0 ? [] : relatedLinksOnPage(onChange);
   const stack = afters.length === 0 ? null : pageStack(onChange);
   const inStack = new Set((stack?.pulls ?? []).map((pull) => stackMemberKey(location.hostname, pull.path)));

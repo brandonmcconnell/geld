@@ -15,12 +15,12 @@
  */
 
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { authorOf, avatarSrcForLogin } from './crawler';
+import { authorOf } from './crawler';
 import { fitPathInto } from './path-fit';
-import { ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
+import { ICON_CHECK_CIRCLE, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_FILE_SYMLINK_FILE, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
 import { ATTR_EDITED_FOR, ATTR_TIME_FOR } from './panel';
-import { isTeleported, onRestore, ownedBy, restoreAll, teleportedNodes, teleportInto } from './teleport';
+import { dropOrphanedLoans, isTeleported, moveNode, onRestore, ownedBy, restoreAll, teleportedNodes, teleportInto } from './teleport';
 import { inlineText } from './inline-text';
 import { armViaHovercard } from './via';
 import type { ViaBot } from './via';
@@ -111,24 +111,36 @@ export function sourceFocusKey(thread: HTMLElement): string {
  * stylesheet lays the chat out from, so the comment showed as GitHub's raw
  * card inside the chat (its own header, its own ⋯) until something else
  * happened to rebuild the panel. True when any message in a chat view is
- * unmarked, or a message's reactions row stands outside every marked part
+ * unmarked, a message's reactions row stands outside every marked part
  * (a row still inside the bubble needs nothing: it is laid out by the
- * bubble).
+ * bubble), or controls GitHub drew again wait to be placed (`controlsAstray`).
  */
 export function chatNeedsRedress(chat: HTMLElement): boolean {
-  const thread = chat.getAttribute('data-geld-chat') === 'thread';
-  for (const view of chat.querySelectorAll<HTMLElement>('.geld-review__chat-body, .geld-review__chat-context-body')) {
-    const inThread = thread && view.matches('.geld-review__chat-body');
-    for (const node of view.children) {
-      if (!(node instanceof HTMLElement) || !isTeleported(node)) continue;
-      for (const message of messagesIn(node, inThread)) {
-        if (!message.hasAttribute(ATTR_MESSAGE)) return true;
-        const row = message.querySelector<HTMLElement>(REACTIONS_SELECTOR);
-        if (row !== null && row.closest(`[${ATTR_PART}]`) === null) return true;
-      }
+  for (const { messages } of chatMessages(chat)) {
+    for (const message of messages) {
+      if (!message.hasAttribute(ATTR_MESSAGE)) return true;
+      const row = message.querySelector<HTMLElement>(REACTIONS_SELECTOR);
+      if (row !== null && row.closest(`[${ATTR_PART}]`) === null) return true;
+      if (controlsAstray(message)) return true;
     }
   }
   return false;
+}
+
+/** The messages of each comment on loan to the chats in `root` (or to the chat `root` is), read as they were dressed. */
+function chatMessages(root: ParentNode): readonly { readonly messages: readonly HTMLElement[]; readonly pinned: boolean }[] {
+  const chats = root instanceof HTMLElement && root.matches('.geld-review__chat') ? [root] : [...root.querySelectorAll<HTMLElement>('.geld-review__chat')];
+  const groups: { readonly messages: readonly HTMLElement[]; readonly pinned: boolean }[] = [];
+  for (const chat of chats) {
+    const thread = chat.getAttribute('data-geld-chat') === 'thread';
+    for (const view of chat.querySelectorAll<HTMLElement>('.geld-review__chat-body, .geld-review__chat-context-body')) {
+      const inThread = thread && view.matches('.geld-review__chat-body');
+      for (const node of view.children) {
+        if (node instanceof HTMLElement && isTeleported(node)) groups.push({ messages: messagesIn(node, inThread), pinned: !inThread });
+      }
+    }
+  }
+  return groups;
 }
 
 /**
@@ -152,11 +164,11 @@ export function dressArrivals(root: ParentNode = document): boolean {
       if (!(thread instanceof HTMLElement) || !isTeleported(thread)) continue;
       const messages = messagesIn(thread, true);
       const fresh = messages.filter((message) => !message.hasAttribute(ATTR_MESSAGE));
-      // The Overview draws its collapsed reply field afresh when its editor closes: dressed again where it stands.
-      if (thread.querySelector(`${OVERVIEW_COMPOSER}`) !== null && thread.querySelector('.geld-review__composer-side') === null) {
+      // The Overview draws its collapsed reply row afresh when its editor closes: its Unresolve goes back in.
+      if (thread.querySelector(OVERVIEW_COMPOSER) !== null && thread.querySelector('.geld-review__composer-unresolve') === null) {
         const owner = body.closest(`.${CHATS_CLASS}`);
-        if (owner === null) dressOverviewComposer(thread);
-        else ownedBy(owner, () => dressOverviewComposer(thread));
+        if (owner === null) dressOverviewUnresolve(thread);
+        else ownedBy(owner, () => dressOverviewUnresolve(thread));
         dressed = true;
       }
       if (fresh.length === 0) continue;
@@ -170,6 +182,28 @@ export function dressArrivals(root: ParentNode = document): boolean {
       else ownedBy(owner, dress);
       dressed = true;
     }
+  }
+  // An Overview comment's editor opening throws its body away, pills and all, and closing it mounts a fresh body with
+  // the reaction button back inside the bubble: the discarded copies leave the side slot, the new ones go to it.
+  // A message being edited has no body, so it is no message to `messagesIn` and is read by its mark.
+  const asOwner = (message: HTMLElement, dress: () => void): void => {
+    const owner = message.closest(`.${CHATS_CLASS}`);
+    if (owner === null) dress();
+    else ownedBy(owner, dress);
+    dressed = true;
+  };
+  for (const message of root.querySelectorAll<HTMLElement>(`.geld-review__chat [${ATTR_MESSAGE}]`)) {
+    if (dropOrphanedLoans(message) > 0) asOwner(message, () => settleSlots(message));
+  }
+  for (const { messages, pinned } of chatMessages(root)) {
+    const astray = messages.filter((message) => message.hasAttribute(ATTR_MESSAGE) && controlsAstray(message));
+    const first = astray[0];
+    if (first === undefined) continue;
+    // Read again first: the fresh toolbar is a part of the message the way the first one was.
+    asOwner(first, () => {
+      annotateMessages(messages, viewer, pinned);
+      for (const message of astray) placeControls(message);
+    });
   }
   return dressed;
 }
@@ -206,7 +240,7 @@ export function renderChatView(slot: HTMLElement, threads: readonly HTMLElement[
     const chats = parked;
     parked = null;
     slot.replaceChildren();
-    moveInto(slot, chats);
+    moveNode(slot, chats);
     parking?.remove();
     parking = null;
     return;
@@ -221,25 +255,33 @@ export function renderChatView(slot: HTMLElement, threads: readonly HTMLElement[
 
 function dressThreads(list: HTMLElement, threads: readonly HTMLElement[], handlers: ChatHandlers, sources: ReadonlyMap<HTMLElement, ChatSource | null>): void {
   const viewer = viewerLogin();
-  const pathEls: [HTMLElement, string][] = [];
+  const pathEls: [HTMLElement, string, HTMLElement][] = [];
   for (const thread of threads) {
     const chat = createElement('section', { class: 'geld-review__chat', 'data-geld-chat': 'thread', 'aria-label': 'Conversation' });
     const path = handlers.pathOf(thread);
+    const body = createElement('div', { class: 'geld-review__chat-body' });
+    const actions = createElement('span', { class: 'geld-review__chat-head-actions' });
+    const where = createElement('span', { class: 'geld-review__chat-where' });
     if (path !== '') {
-      const actions = createElement('span', { class: 'geld-review__chat-head-actions' });
       const copy = createElement('button', { type: 'button', class: 'geld-review__icon geld-review__chat-copy', 'aria-label': 'Copy path', title: 'Copy path' }, [icon(ICON_COPY)]);
       copy.addEventListener('click', () => handlers.onCopy(path));
       actions.append(copy);
-      // GitHub's own file link goes to the diff in Files changed; the path text here stays text.
-      const fileHref = thread.querySelector<HTMLAnchorElement>('.file-header a[href], review-thread-collapsible a[href*="/files"], a[href*="/files#diff-"], a[href*="/files/"][href*="#diff"]')?.getAttribute('href') ?? null;
-      if (fileHref !== null) actions.append(createElement('a', { class: 'geld-review__icon geld-review__chat-open', href: fileHref, 'aria-label': 'Open in Files changed', title: 'Open in Files changed' }, [icon(ICON_LINK_EXTERNAL)]));
       const pathEl = createElement('code', { class: 'geld-review__chat-path' });
-      chat.append(createElement('div', { class: 'geld-review__chat-head' }, [pathEl, actions]));
-      pathEls.push([pathEl, path]);
+      where.append(pathEl);
+      pathEls.push([pathEl, path, where]);
     }
+    const jump = jumpHrefOf(thread);
+    if (jump !== null) actions.append(createElement('a', { class: 'geld-review__icon geld-review__chat-jump', href: jump, 'aria-label': 'Jump to the comment in the diff', title: 'Jump to the comment in the diff' }, [icon(ICON_FILE_SYMLINK_FILE)]));
+    const resolve = headResolveControl(thread, body);
+    if (resolve !== null) actions.append(resolve);
+    const lines = threadLinesOf(thread);
+    if (lines !== null) {
+      const single = lines.start === lines.end;
+      where.append(createElement('span', { class: 'geld-review__chat-lines', title: single ? `Line ${lines.start}` : `Lines ${lines.start} to ${lines.end}` }, [single ? String(lines.start) : `${lines.start}-${lines.end}`]));
+    }
+    if (where.childElementCount > 0 || actions.childElementCount > 0) chat.append(createElement('div', { class: 'geld-review__chat-head' }, [where, actions]));
     const source = sources.get(thread) ?? null;
     if (source !== null) chat.append(pinnedContext(thread, source, handlers, viewer));
-    const body = createElement('div', { class: 'geld-review__chat-body' });
     chat.append(body);
     teleportInto(body, [thread]);
     liftCollapsedBody(thread);
@@ -252,7 +294,7 @@ function dressThreads(list: HTMLElement, threads: readonly HTMLElement[], handle
   }
   if (list.childElementCount === 0) list.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
   // Fitted once the chats have their width: file name whole, the start first, "…" for what does not fit.
-  for (const [element, path] of pathEls) fitPathInto(element, path);
+  for (const [element, path, space] of pathEls) fitPathInto(element, path, space);
 }
 
 const CHATS_CLASS = 'geld-review__chats';
@@ -264,18 +306,6 @@ let parked: HTMLElement | null = null;
 let parking: HTMLElement | null = null;
 
 /** A move that keeps a node's state (focus, an iframe, a running animation) where the browser can (`moveBefore`). */
-function moveInto(parent: HTMLElement, node: HTMLElement): void {
-  const mover: unknown = Reflect.get(parent, 'moveBefore');
-  if (typeof mover === 'function') {
-    try {
-      Reflect.apply(mover, parent, [node, null]);
-      return;
-    } catch {
-      // A plain move below.
-    }
-  }
-  parent.append(node);
-}
 
 /**
  * A panel rebuilt for anything (a bot's summary edited, checks ticking) sent every loan home and lent it again, so
@@ -289,7 +319,7 @@ export function parkChats(panel: Element): HTMLElement | null {
   if (chats === null) return null;
   parking = createElement('div', { hidden: '', [OWN_UI_ATTRIBUTE]: '' });
   document.body.append(parking);
-  moveInto(parking, chats);
+  moveNode(parking, chats);
   parked = chats;
   return chats;
 }
@@ -777,26 +807,28 @@ const RESOLVE_FORM = 'form.js-resolvable-timeline-thread-form, form[action*="/re
 const ATTR_SPOKEN_FOR = 'data-geld-spoken-for';
 
 /**
- * The composer's right hand: GitHub's Resolve form, which it renders (for a
- * reader who may resolve) somewhere inside the reply area, wording it
- * "Resolve conversation" and, once resolved, "<name> marked this
- * conversation as resolved." Here it is moved to the end of the reply area
- * (a loan like any other, home on restore), so the field and the form share
- * one line collapsed and the form sits on the editor's action row open, and
- * it speaks the chat's way: the button says "Resolve" or "Unresolve", the
- * sentence is the resolver's picture and "marked resolved". GitHub's own
- * words stay in the node, hidden by an attribute, and it is GitHub's button
- * that is pressed.
+ * The composer's right hand on the classic page: GitHub's Resolve form, which
+ * it renders (for a reader who may resolve) somewhere inside the reply area,
+ * wording it "Resolve conversation". Here it is moved to the end of the
+ * reply area (a loan like any other, home on restore), so the field and the
+ * form share one line collapsed and the form sits on the editor's action row
+ * open, as the Overview draws its own reply row; the button says "Resolve",
+ * or "Unresolve" once resolved. GitHub's own words stay in the node, hidden
+ * by an attribute, and it is GitHub's button that is pressed. The Overview's
+ * row is GitHub's, with only an Unresolve added while resolved.
  */
 function dressComposer(thread: HTMLElement): void {
-  if (dressOverviewComposer(thread)) return;
+  if (isOverviewThread(thread)) {
+    dressOverviewUnresolve(thread);
+    return;
+  }
   const area = thread.querySelector<HTMLElement>('.review-thread-reply') ?? thread.querySelector<HTMLElement>(REPLY_AREA);
   const form = thread.querySelector<HTMLElement>(RESOLVE_FORM);
   if (area === null || form === null || form.closest('.geld-review__composer-side') !== null) return;
   const side = createElement('div', { class: 'geld-review__composer-side' });
   area.append(side);
   teleportInto(side, [form]);
-  labelComposer(thread, form, side);
+  labelComposer(thread, form);
   onRestore(() => {
     // The form goes home through the loan; the side it stood in is Geld's.
     side.remove();
@@ -807,64 +839,129 @@ function dressComposer(thread: HTMLElement): void {
 const OVERVIEW_COMPOSER = 'button[class*="CompactCommentInputContainer"]';
 const OVERVIEW_RESOLVE = 'button[aria-label^="Resolve conversation" i], button[aria-label^="Unresolve conversation" i]';
 
+/** The Overview's thread: an `article`, its reply row GitHub's own. */
+function isOverviewThread(thread: HTMLElement): boolean {
+  return thread.matches('article') || thread.querySelector(OVERVIEW_COMPOSER) !== null;
+}
+
 /**
- * The Overview's composer as the conversation's: the reader's picture, GitHub's "Write a reply" drawn as the chat's
- * round field, and on its right Resolve or Unresolve, which presses the Resolve control in GitHub's thread header
- * (hidden in the chat; it is GitHub's own action) and, once resolved, the resolver's picture and "marked resolved".
- * Pressed, the field becomes GitHub's full editor with its own buttons, left as GitHub draws it; collapsed again,
- * GitHub draws the field afresh and `dressArrivals` dresses it again. False when the thread is not the Overview's.
+ * The Overview's reply row has GitHub's Resolve while the thread is open and nothing once it is resolved: Geld's
+ * Unresolve stands in that place then, in GitHub's button look, pressing the header's control (hidden in the chat).
+ * GitHub draws the row afresh when its editor closes, and `dressArrivals` adds it again.
  */
-function dressOverviewComposer(thread: HTMLElement): boolean {
-  const field = thread.querySelector<HTMLElement>(OVERVIEW_COMPOSER);
-  if (field === null) return thread.querySelector(OVERVIEW_RESOLVE) !== null && thread.matches('article');
-  const row = field.parentElement;
-  if (row === null || row.querySelector(':scope > .geld-review__composer-side') !== null) return true;
-  const viewer = viewerLogin();
-  const added: Element[] = [];
-  if (viewer !== '') {
-    const avatar = createElement('img', { class: 'geld-review__avatar geld-review__composer-avatar', [OWN_UI_ATTRIBUTE]: '', src: avatarSrcForLogin(viewer) ?? `https://avatars.githubusercontent.com/${encodeURIComponent(viewer)}?s=40`, alt: '', width: '20', height: '20' });
-    field.before(avatar);
-    added.push(avatar);
-  }
-  const side = createElement('span', { class: 'geld-review__composer-side', [OWN_UI_ATTRIBUTE]: '' });
-  const button = createElement('button', { type: 'button', class: 'btn btn-sm geld-review__composer-resolve' });
-  side.append(button);
-  row.append(side);
-  added.push(side);
-  let shown = '';
+function dressOverviewUnresolve(thread: HTMLElement): void {
+  const row = thread.querySelector<HTMLElement>(OVERVIEW_COMPOSER)?.parentElement ?? null;
+  if (row === null || row.querySelector(':scope > .geld-review__composer-unresolve') !== null) return;
+  const button = createElement('button', { type: 'button', class: 'btn geld-review__composer-unresolve', [OWN_UI_ATTRIBUTE]: '', title: 'Unresolve conversation' }, ['Unresolve']);
+  button.addEventListener('click', () => resolveStateOf(thread)?.button.click());
+  row.append(button);
+  let shown: boolean | null = null;
   const sync = (): void => {
-    const control = thread.querySelector<HTMLElement>(OVERVIEW_RESOLVE);
-    const resolved = /^unresolve/i.test(control?.getAttribute('aria-label') ?? '');
-    const name = resolved ? [...thread.querySelectorAll<HTMLElement>('b, strong')].find((node) => !side.contains(node) && /marked (?:this )?conversation as resolved/i.test(node.parentElement?.textContent ?? '')) : undefined;
-    const login = (name?.textContent ?? '').replace(/^@/, '').trim();
-    // Written only when it changed: every write is a mutation the watcher below would hear.
-    const state = `${control === null}|${resolved}|${login}`;
-    if (state === shown) return;
-    shown = state;
-    side.hidden = control === null;
-    button.textContent = resolved ? 'Unresolve' : 'Resolve';
-    button.title = resolved ? 'Unresolve conversation' : 'Resolve conversation';
-    side.querySelector('.geld-review__composer-resolved')?.remove();
-    if (login === '') return;
-    const who = createElement('span', { class: 'geld-review__composer-resolved', title: `${login} marked this conversation as resolved` });
-    const picture = avatarSrcForLogin(login);
-    if (picture !== null) who.append(createElement('img', { class: 'geld-review__avatar', 'data-kind': 'user', src: picture, alt: login, width: '20', height: '20' }));
-    else who.append(createElement('span', { class: 'geld-review__composer-resolved-name' }, [login.replace(/\[bot\]$/, '')]));
-    who.append(createElement('span', {}, ['marked resolved']));
-    side.append(who);
+    const resolved = resolveStateOf(thread)?.resolved === true;
+    // Written only when it changed: the write is a mutation the watcher below would hear.
+    if (resolved === shown) return;
+    shown = resolved;
+    button.hidden = !resolved;
   };
-  button.addEventListener('click', () => thread.querySelector<HTMLElement>(OVERVIEW_RESOLVE)?.click());
   sync();
-  // GitHub answers a Resolve by re-rendering the header: the words follow its control.
   const watch = new MutationObserver((records) => {
-    if (records.some((record) => !side.contains(record.target))) sync();
+    // GitHub redrew the row without it: the redrawn row gets a button and a watcher of its own.
+    if (!row.contains(button) || !row.isConnected) {
+      watch.disconnect();
+      return;
+    }
+    if (records.some((record) => !button.contains(record.target))) sync();
   });
   watch.observe(thread, { subtree: true, attributes: true, attributeFilter: ['aria-label'], childList: true });
   onRestore(() => {
     watch.disconnect();
-    for (const element of added) element.remove();
+    button.remove();
   });
-  return true;
+}
+
+/**
+ * The lines a thread is on, as GitHub names them: the Overview's heading ("Line 8230", "Lines 845 - 853"), the
+ * classic snippet's "Comment on lines +3331 to +3335", or for a single classic line the last numbered row of the
+ * snippet (the line the comment is on). Exported for its test only.
+ */
+export function threadLinesOf(thread: HTMLElement): { readonly start: number; readonly end: number } | null {
+  const of = (start: string | undefined, end: string | undefined): { readonly start: number; readonly end: number } | null => {
+    const a = Number.parseInt(start ?? '', 10);
+    const b = end === undefined ? a : Number.parseInt(end, 10);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    return { start: Math.min(a, b), end: Math.max(a, b) };
+  };
+  for (const span of thread.querySelectorAll(':scope > [class*="header"] h2 > span')) {
+    const match = /^Lines?\s+(\d+)(?:\s*(?:-|\u2013|to)\s*(\d+))?$/i.exec((span.textContent ?? '').trim());
+    if (match !== null) return of(match[1], match[2]);
+  }
+  const first = /\d+/.exec(thread.querySelector('.js-multi-line-preview-start')?.textContent ?? '');
+  const last = /\d+/.exec(thread.querySelector('.js-multi-line-preview-end')?.textContent ?? '');
+  if (first !== null && last !== null) return of(first[0], last[0]);
+  const snippet = [...thread.querySelectorAll('.blob-wrapper table')].find((table) => table.closest(BODY_SELECTOR) === null);
+  const rows = [...(snippet?.querySelectorAll('tr') ?? [])].filter((row) => row.querySelector('td[data-line-number]') !== null);
+  const cells = rows.at(-1)?.querySelectorAll('td[data-line-number]');
+  return of(cells?.[cells.length - 1]?.getAttribute('data-line-number') ?? undefined, undefined);
+}
+
+/** Where the thread's comment stands in the diff: the Overview's own link, else the comment's anchor on Files changed. */
+function jumpHrefOf(thread: HTMLElement): string | null {
+  const own = thread.querySelector('a[aria-label^="Jump to the comment in the diff" i]')?.getAttribute('href');
+  if (own !== undefined && own !== null && own !== '') return own;
+  const id = /^discussion_r(\d+)$/.exec(thread.querySelector('[id^="discussion_r"]')?.id ?? '')?.[1];
+  const pull = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(location.pathname)?.[0];
+  return id === undefined || pull === undefined ? null : `${pull}/files#r${id}`;
+}
+
+/** GitHub's own Resolve or Unresolve for the thread (the Overview's header button, the classic form's), and its state. */
+function resolveStateOf(thread: HTMLElement): { readonly button: HTMLElement; readonly resolved: boolean } | null {
+  const overview = thread.querySelector<HTMLElement>(OVERVIEW_RESOLVE);
+  if (overview !== null) return { button: overview, resolved: /^unresolve/i.test(overview.getAttribute('aria-label') ?? '') };
+  const form = thread.querySelector<HTMLElement>(RESOLVE_FORM);
+  const button = form?.querySelector<HTMLElement>('button[type="submit"], button') ?? null;
+  if (form === null || form === undefined || button === null) return null;
+  return { button, resolved: isResolvedThread(thread, form, button) };
+}
+
+/** Who resolved the thread, from GitHub's "<name> marked this conversation as resolved", or empty. */
+function resolverOf(thread: HTMLElement): string {
+  const name = [...thread.querySelectorAll<HTMLElement>('b, strong')].find((node) => node.closest(BODY_SELECTOR) === null && /marked (?:this )?(?:conversation )?as resolved/i.test(node.parentElement?.textContent ?? ''));
+  return (name?.textContent ?? '').replace(/^@/, '').trim();
+}
+
+/**
+ * The head's Resolve, as the Overview's header has it: a check that resolves, filled once resolved and then
+ * unresolving. It presses GitHub's own control (hidden in the chat), and follows its state as GitHub re-renders
+ * the thread. GitHub answers a classic Resolve with a fresh thread in the old one's place (the loan adopts it), so
+ * the thread is read from the chat's body each time and the body, which outlives the swap, is what is watched.
+ * Null when the reader may not resolve.
+ */
+function headResolveControl(thread: HTMLElement, body: HTMLElement): HTMLElement | null {
+  if (resolveStateOf(thread) === null) return null;
+  const current = (): HTMLElement => [...body.children].find((child): child is HTMLElement => child instanceof HTMLElement && isTeleported(child)) ?? thread;
+  const button = createElement('button', { type: 'button', class: 'geld-review__icon geld-review__chat-resolve' });
+  let shown = '';
+  const sync = (): void => {
+    const live = current();
+    const state = resolveStateOf(live);
+    const by = state?.resolved === true ? resolverOf(live) : '';
+    // Written only when it changed: a write in the thread would be heard by the watcher below.
+    const key = `${state === null}|${state?.resolved === true}|${by}`;
+    if (key === shown) return;
+    shown = key;
+    button.hidden = state === null;
+    const label = state?.resolved === true ? 'Unresolve conversation' : 'Resolve conversation';
+    button.setAttribute('aria-label', label);
+    button.title = by === '' ? label : `${label} \u00b7 resolved by ${by.replace(/\[bot\]$/i, '')}`;
+    button.setAttribute('data-state', state?.resolved === true ? 'resolved' : 'open');
+    button.replaceChildren(icon(state?.resolved === true ? ICON_CHECK_CIRCLE_FILL : ICON_CHECK_CIRCLE));
+  };
+  button.addEventListener('click', () => resolveStateOf(current())?.button.click());
+  sync();
+  const watch = new MutationObserver(sync);
+  watch.observe(body, { subtree: true, attributes: true, attributeFilter: ['aria-label', 'action', 'data-resolved'], childList: true });
+  onRestore(() => watch.disconnect());
+  return button;
 }
 
 /**
@@ -877,10 +974,9 @@ export function redressComposer(form: HTMLElement): void {
   const side = form.closest<HTMLElement>('.geld-review__composer-side');
   const thread = form.closest<HTMLElement>('.js-resolvable-timeline-thread-container, [data-testid="review-thread"], .review-thread-component');
   if (side === null || thread === null) return;
-  for (const stale of side.querySelectorAll('.geld-review__composer-resolved')) stale.remove();
   const owner = form.closest(`.${CHATS_CLASS}`);
-  if (owner === null) labelComposer(thread, form, side);
-  else ownedBy(owner, () => labelComposer(thread, form, side));
+  if (owner === null) labelComposer(thread, form);
+  else ownedBy(owner, () => labelComposer(thread, form));
 }
 
 /**
@@ -897,8 +993,8 @@ function isResolvedThread(thread: HTMLElement, form: HTMLElement, button: HTMLEl
   return /\bmarked (?:this )?(?:conversation )?as resolved\b/i.test((form.textContent ?? '').replace(/\s+/g, ' '));
 }
 
-/** The chat's words on GitHub's form: Resolve or Unresolve on the button, the resolver's picture and "marked resolved" for the sentence. */
-function labelComposer(thread: HTMLElement, form: HTMLElement, side: HTMLElement): void {
+/** The chat's words on GitHub's form: Resolve or Unresolve on the button, GitHub's sentence out of sight. */
+function labelComposer(thread: HTMLElement, form: HTMLElement): void {
   const button = form.querySelector<HTMLElement>('button[type="submit"], button');
   if (button === null) return;
   // A form dressed on an earlier pass and not undressed (GitHub swapped the thread under it) is dressed afresh.
@@ -927,20 +1023,9 @@ function labelComposer(thread: HTMLElement, form: HTMLElement, side: HTMLElement
   }
   const hadTitle = button.getAttribute('title');
   button.setAttribute('title', resolved ? 'Unresolve conversation' : 'Resolve conversation');
-  // "<name> marked this conversation as resolved.": the name is the one element in it, the rest is text.
+  // "<name> marked this conversation as resolved.": the head's check names the resolver, the row keeps the button alone.
   const name = [...form.querySelectorAll<HTMLElement>('strong, a.author, a[data-hovercard-type="user"]')].find((node) => !button.contains(node)) ?? null;
-  if (name !== null) {
-    const login = (name.textContent ?? '').replace(/^@/, '').trim();
-    const sentence = name.parentElement !== null && name.parentElement !== form ? name.parentElement : name;
-    speakFor(sentence);
-    const avatar = avatarSrcForLogin(login);
-    const who = createElement('span', { class: 'geld-review__composer-resolved', title: `${login} marked this conversation as resolved` });
-    if (avatar !== null) who.append(createElement('img', { class: 'geld-review__avatar', 'data-kind': 'user', src: avatar, alt: login, width: '20', height: '20', 'data-hovercard-type': 'user', 'data-hovercard-url': `/users/${encodeURIComponent(login)}/hovercard` }));
-    else who.append(createElement('span', { class: 'geld-review__composer-resolved-name' }, [login]));
-    who.append(createElement('span', {}, ['marked resolved']));
-    side.append(who);
-    added.push(who);
-  }
+  if (name !== null) speakFor(name.parentElement !== null && name.parentElement !== form ? name.parentElement : name);
   onRestore(() => {
     for (const element of spokenFor) element.removeAttribute(ATTR_SPOKEN_FOR);
     for (const element of added) element.remove();
@@ -975,7 +1060,9 @@ const REACTION_PICKER = ':scope > reactions-menu, :scope > details.js-add-reacti
  *   it wraps.
  *
  * A ⋯ already worn by a panel row (a single comment's line wears its own) is
- * left there: `teleportInto` skips a node on loan.
+ * left there: `teleportInto` skips a node on loan. Placing again (see
+ * `controlsAstray`) moves only what is not on loan yet, into the slots that
+ * stand.
  */
 function placeControls(message: HTMLElement): void {
   if (placeOverviewControls(message)) return;
@@ -983,16 +1070,15 @@ function placeControls(message: HTMLElement): void {
   const reactions = message.querySelector<HTMLElement>(`[${ATTR_PART}='reactions']`);
   if (meta === null || reactions === null) return;
   const row = reactions.matches(REACTIONS_ROW) ? reactions : reactions.querySelector<HTMLElement>(REACTIONS_ROW);
-  if (row !== null && row === reactions) {
-    const box = createElement('span', { class: 'geld-review__msg-reactions', [OWN_UI_ATTRIBUTE]: '' });
+  if (row !== null && row === reactions && !isTeleported(row)) {
+    const box = createElement('span', { class: REACTIONS_BOX, [OWN_UI_ATTRIBUTE]: '' });
     const bubble = message.querySelector(`:scope > [${ATTR_PART}='bubble']`);
     if (bubble !== null) bubble.after(box);
     else message.append(box);
     teleportInto(box, [row]);
     onRestore(() => box.remove());
   }
-  const side = createElement('span', { class: 'geld-review__msg-side', [OWN_UI_ATTRIBUTE]: '' });
-  message.append(side);
+  const side = sideOf(message);
   const picker = row?.querySelector<HTMLElement>(REACTION_PICKER) ?? null;
   if (picker !== null && !isTeleported(picker)) {
     teleportInto(side, [picker]);
@@ -1015,28 +1101,80 @@ function placeControls(message: HTMLElement): void {
   const menu = meta.querySelector<HTMLElement>(COMMENT_MENU);
   if (menu !== null && !isTeleported(menu)) {
     // The ⋯ opens a menu of its own; a slot of its own keeps that menu anchored to the round button.
-    const actions = createElement('span', { class: 'geld-review__msg-actions', [OWN_UI_ATTRIBUTE]: '' });
-    side.append(actions);
+    const actions = menuSlot(side);
     teleportInto(actions, [menu]);
-    if (actions.childElementCount === 0) actions.remove();
-    else {
+    if (actions.childElementCount > 0) {
       installMenuFlip();
       // A menu still open when its chat is rebuilt goes home open; its watcher and mark go with the slot.
       if (menu instanceof HTMLDetailsElement) onRestore(() => unwatchMenu(menu));
     }
   }
-  // Nothing moved (a ⋯ worn by a row, no picker when signed out): no slot, which would still take the hover.
+  settleSlots(message);
+}
+
+const SIDE = 'geld-review__msg-side';
+const REACTIONS_BOX = 'geld-review__msg-reactions';
+const ACTIONS = 'geld-review__msg-actions';
+/** On the side slot's box holding the ⋯, which stands last whatever is placed beside it later. */
+const ATTR_MENU_SLOT = 'data-geld-menu-slot';
+
+/** The message's side slot: the one an earlier placing made, else a new one at its end. */
+function sideOf(message: HTMLElement): HTMLElement {
+  const standing = message.querySelector<HTMLElement>(`:scope > .${SIDE}`);
+  if (standing !== null) return standing;
+  const side = createElement('span', { class: SIDE, [OWN_UI_ATTRIBUTE]: '' });
+  message.append(side);
+  onRestore(() => side.remove());
+  return side;
+}
+
+function menuSlot(side: HTMLElement): HTMLElement {
+  const slot = createElement('span', { class: ACTIONS, [ATTR_MENU_SLOT]: '', [OWN_UI_ATTRIBUTE]: '' });
+  side.append(slot);
+  return slot;
+}
+
+/**
+ * Slots left empty go (nothing moved into them, or what was in them went with GitHub's discarded copy of its home),
+ * since an empty side slot still takes the hover, and the ⋯ stands after a reaction button placed beside it later.
+ */
+function settleSlots(message: HTMLElement): void {
+  for (const slot of message.querySelectorAll<HTMLElement>(`:scope > .${REACTIONS_BOX}, :scope > .${SIDE} > .${ACTIONS}`)) {
+    if (slot.childElementCount === 0) slot.remove();
+  }
+  const side = message.querySelector<HTMLElement>(`:scope > .${SIDE}`);
+  if (side === null) return;
   if (side.childElementCount === 0) {
     side.remove();
     return;
   }
-  onRestore(() => side.remove());
+  const menu = side.querySelector<HTMLElement>(`:scope > [${ATTR_MENU_SLOT}]`);
+  if (menu !== null && menu !== side.lastElementChild) moveNode(side, menu);
 }
 
 /** The Overview's comment ⋯ (a Primer ActionMenu button) and its reactions toolbar, with the button that opens the picker. */
-const OVERVIEW_MENU = 'button[data-testid="comment-header-hamburger"]';
+const OVERVIEW_MENU = 'button:is([data-testid="comment-header-hamburger"], [aria-label^="More actions for" i])';
 const OVERVIEW_REACTIONS = '[role="toolbar"][aria-label^="Reactions for"]';
 const OVERVIEW_REACT = 'button[class*="ReactionViewerAnchorButton"]';
+/** What holds another comment inside an Overview message: a review's thread boxes, under its own words. */
+const NESTED_COMMENT = 'article, [data-testid="review-thread"]';
+
+/** The first match that is the message's own, not a comment nested in it. */
+function ownMatch(message: HTMLElement, selector: string): HTMLElement | null {
+  for (const node of message.querySelectorAll<HTMLElement>(selector)) {
+    const nest = node.parentElement?.closest(NESTED_COMMENT) ?? null;
+    if (nest === null || nest === message || !message.contains(nest)) return node;
+  }
+  return null;
+}
+
+function overviewControlsOf(message: HTMLElement): { readonly toolbar: HTMLElement | null; readonly menu: HTMLElement | null; readonly bubble: HTMLElement | null } {
+  return {
+    toolbar: ownMatch(message, OVERVIEW_REACTIONS),
+    menu: ownMatch(message, `:scope > [${ATTR_PART}='meta'] ${OVERVIEW_MENU}`),
+    bubble: message.querySelector<HTMLElement>(`:scope > [${ATTR_PART}='bubble']`),
+  };
+}
 
 /**
  * The Overview's comments, laid out as the conversation's: the reactions toolbar (inside the bubble there) moves
@@ -1045,35 +1183,56 @@ const OVERVIEW_REACT = 'button[class*="ReactionViewerAnchorButton"]';
  * the message is not the Overview's.
  */
 function placeOverviewControls(message: HTMLElement): boolean {
-  const toolbar = message.querySelector<HTMLElement>(OVERVIEW_REACTIONS);
-  const menu = message.querySelector<HTMLElement>(`:scope > [${ATTR_PART}='meta'] ${OVERVIEW_MENU}`);
+  const { toolbar, menu, bubble } = overviewControlsOf(message);
   if (toolbar === null && menu === null) return false;
-  const bubble = message.querySelector<HTMLElement>(`:scope > [${ATTR_PART}='bubble']`);
-  const side = createElement('span', { class: 'geld-review__msg-side', [OWN_UI_ATTRIBUTE]: '' });
-  message.append(side);
+  const side = sideOf(message);
   if (toolbar !== null && bubble !== null) {
-    // The toolbar's wrapper, the body's sibling inside the bubble: under the bubble it is the pills' row.
-    let holder: HTMLElement = toolbar;
-    while (holder.parentElement !== null && holder.parentElement !== bubble && holder.parentElement.querySelector(BODY_SELECTOR) === null) holder = holder.parentElement;
     const react = toolbar.querySelector<HTMLElement>(OVERVIEW_REACT);
     if (react !== null && !isTeleported(react)) {
-      const slot = createElement('span', { class: 'geld-review__msg-actions', [OWN_UI_ATTRIBUTE]: '' });
-      side.append(slot);
+      const slot = createElement('span', { class: ACTIONS, [OWN_UI_ATTRIBUTE]: '' });
+      side.prepend(slot);
       teleportInto(slot, [react]);
     }
-    const box = createElement('span', { class: 'geld-review__msg-reactions', [OWN_UI_ATTRIBUTE]: '' });
-    bubble.after(box);
-    teleportInto(box, [holder]);
-    onRestore(() => box.remove());
+    if (toolbar.closest(`.${REACTIONS_BOX}`) === null) {
+      // The toolbar's wrapper, the body's sibling inside the bubble: under the bubble it is the pills' row.
+      let holder: HTMLElement = toolbar;
+      while (holder.parentElement !== null && holder.parentElement !== bubble && holder.parentElement.querySelector(BODY_SELECTOR) === null) holder = holder.parentElement;
+      const box = createElement('span', { class: `${REACTIONS_BOX} ${REACTIONS_BOX}--overview`, [OWN_UI_ATTRIBUTE]: '' });
+      bubble.after(box);
+      teleportInto(box, [holder]);
+      onRestore(() => box.remove());
+    }
   }
-  if (menu !== null && !isTeleported(menu)) {
-    const slot = createElement('span', { class: 'geld-review__msg-actions', [OWN_UI_ATTRIBUTE]: '' });
-    side.append(slot);
-    teleportInto(slot, [menu]);
-  }
-  if (side.childElementCount === 0) side.remove();
-  else onRestore(() => side.remove());
+  if (menu !== null && !isTeleported(menu)) teleportInto(menuSlot(side), [menu]);
+  settleSlots(message);
   return true;
+}
+
+/**
+ * Controls GitHub drew again inside a message whose controls were placed: React mounts an Overview comment's body
+ * afresh when its editor closes (Cancel or Update), toolbar and reaction button with it, inside the bubble. True
+ * exactly when `placeControls` would move something, so placing again settles it.
+ */
+function controlsAstray(message: HTMLElement): boolean {
+  // A one-bubble chat leaves its comment's controls where they are: the row above wears the ⋯ (`wearControls`).
+  if (message.closest('.geld-review__chat')?.getAttribute('data-geld-chat') === 'comment') return false;
+  const { toolbar, menu, bubble } = overviewControlsOf(message);
+  if (toolbar !== null || menu !== null) {
+    if (menu !== null && !isTeleported(menu)) return true;
+    if (toolbar === null || bubble === null) return false;
+    if (toolbar.closest(`.${REACTIONS_BOX}`) === null) return true;
+    const react = toolbar.querySelector<HTMLElement>(OVERVIEW_REACT);
+    return react !== null && !isTeleported(react);
+  }
+  const meta = message.querySelector<HTMLElement>(`:scope > [${ATTR_PART}='meta']`);
+  const reactions = message.querySelector<HTMLElement>(`[${ATTR_PART}='reactions']`);
+  if (meta === null || reactions === null) return false;
+  const row = reactions.matches(REACTIONS_ROW) ? reactions : reactions.querySelector<HTMLElement>(REACTIONS_ROW);
+  if (row !== null && row === reactions && !isTeleported(row)) return true;
+  const picker = row?.querySelector<HTMLElement>(REACTION_PICKER) ?? null;
+  if (picker !== null && !isTeleported(picker)) return true;
+  const commentMenu = meta.querySelector<HTMLElement>(COMMENT_MENU);
+  return commentMenu !== null && !isTeleported(commentMenu);
 }
 
 /** On a ⋯ `details` beside a bubble whose menu opens upward (see `installMenuFlip`). */

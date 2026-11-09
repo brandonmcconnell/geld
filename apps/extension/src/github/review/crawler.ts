@@ -7,7 +7,7 @@
  */
 
 import type { CommentReaction, PreviewDoc, RawCheckRun, RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
-import { appAvatarForLogin, looksLikeSummaryBody } from '@geld/review';
+import { appAvatarForLogin, findingSeverity, looksLikeSummaryBody } from '@geld/review';
 import { loginOfLink } from './login';
 import { OVERVIEW_ITEM, OVERVIEW_THREAD_FRAME, overviewCommentsSection } from './overview-page';
 import type { ReferenceLink } from './references';
@@ -131,7 +131,7 @@ const INLINE_MARK: Readonly<Record<string, string>> = { CODE: '`', STRONG: '**',
  * emphasis come back as Markdown marks (`inline-markdown.ts` reads them),
  * except inside `<pre>`, whose text is a block of its own.
  */
-export function blockText(root: Element): string {
+export function blockText(root: Element, images = false): string {
   const parts: string[] = [];
   const walk = (node: Node, inPre: boolean): void => {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -139,6 +139,11 @@ export function blockText(root: Element): string {
       return;
     }
     if (!(node instanceof Element)) return;
+    if (images && node.tagName === 'IMG') {
+      const alt = (node.getAttribute('alt') ?? '').trim();
+      if (alt !== '') parts.push(`![${alt}]`);
+      return;
+    }
     const block = BLOCK.test(node.tagName);
     if (block) parts.push('\n');
     const mark = inPre ? undefined : INLINE_MARK[node.tagName];
@@ -267,16 +272,33 @@ export function avatarSrcFor(anchor: string): string | null {
 }
 
 /** Any avatar the page shows for `login` — the reviewers sidebar, another comment, a hovercard link. */
-export function avatarSrcForLogin(login: string): string | null {
+export function avatarSrcForLogin(login: string, now = Date.now()): string | null {
+  const known = avatarsByLogin.get(login);
+  if (known !== undefined) return known;
+  if (now - (avatarMisses.get(login) ?? Number.NEGATIVE_INFINITY) < AVATAR_MISS_MS) return null;
   const bare = login.replace(/\[bot\]$/i, '');
   const selectors = [`img[alt="@${bare}"]`, `a[href="/${bare}"] img`, `a[href$="/${bare}"][data-hovercard-type] img`, `img[alt="${bare}"]`, `a[href="/apps/${bare}"] img`];
   for (const selector of selectors) {
     const img = document.querySelector(selector);
     const src = (img instanceof HTMLImageElement ? img.currentSrc : '') || img?.getAttribute('src') || '';
-    if (src !== '') return normalizeAvatarSrc(src);
+    if (src !== '') {
+      const normalized = normalizeAvatarSrc(src);
+      avatarsByLogin.set(login, normalized);
+      return normalized;
+    }
   }
+  avatarMisses.set(login, now);
   return null;
 }
+
+/**
+ * Pictures found for a login, kept for the page, and when one was last looked for in vain. Every registry bot is asked
+ * for on every build of the panel, and five whole-document queries for each bot the page does not show were most of
+ * a build while GitHub was still rendering the page. A miss is asked again after `AVATAR_MISS_MS`, as the page fills in.
+ */
+const avatarsByLogin = new Map<string, string>();
+const avatarMisses = new Map<string, number>();
+const AVATAR_MISS_MS = 1000;
 
 function pathLineOf(root: Element): { readonly path?: string; readonly line?: number } {
   // The Overview names a thread's file in its heading, linked into the Changes tab and wrapped in direction marks.
@@ -538,6 +560,9 @@ function readThread(container: Element): ThreadReading {
   const author = authorOf(first);
   const lead = peers[0];
   if (author === null || lead === undefined) return { ids, crawled: null };
+  // The finding's grade from its markup: a badge is an image whose alt the words alone lose ("P1", "![high]").
+  const leadBody = bodyElementOf(first);
+  const grade = leadBody === null ? null : findingSeverity(blockText(leadBody, true));
   const base: RawComment = {
     anchor: first.id,
     kind: 'thread',
@@ -547,6 +572,7 @@ function readThread(container: Element): ThreadReading {
     isResolved: isResolvedThread(container),
     isOutdated: isOutdatedThread(container),
     threadAnchors: peers,
+    ...(grade === null ? {} : { grade }),
   };
   const timelineNode = closestAtHome(container, TIMELINE_ROW) ?? container;
   const read: ThreadReading = {
@@ -863,7 +889,8 @@ export interface CrawledReview {
 const REVIEW_COMMENT = '.timeline-comment, .js-comment-container, [data-testid="comment-container"]';
 
 function reviewStateOf(text: string): CrawledReviewState {
-  if (/\bapproved\b/i.test(text)) return 'approved';
+  // The Overview words a review by someone without write access as a recommendation ("recommended approval").
+  if (/\bapproved\b|\brecommended approval\b/i.test(text)) return 'approved';
   if (/\brequested changes\b/i.test(text)) return 'changes_requested';
   if (/\bdismissed\b/i.test(text)) return 'dismissed';
   return 'commented';
