@@ -8,6 +8,7 @@ import { element } from './dom';
 import { renderProviderReviewPanel } from './review-panel';
 import type { ProviderReviewPanel } from './review-panel';
 import type { ProviderAdapter, ProviderReviewPage, ProviderReviewSnapshot } from './types';
+import { isProviderReviewPage } from './types';
 import './conversation-compact.css';
 
 const ACTION_NAMES = { approve: 'Approve', 'request-changes': 'Request changes', comment: 'Comment' };
@@ -179,9 +180,16 @@ export class ProviderConversation {
           save: (comment: ProviderReviewComment, botId: string): Promise<void> => saveTrustedBot(input, comment, botId),
         } }),
         onOpenSource: (url: string, anchor: string, event: MouseEvent): void => {
+          if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.defaultPrevented) return;
           const target = document.getElementById(anchor);
-          if (target === null || new URL(url).pathname !== window.location.pathname) return;
+          if (target === null || target.closest('[data-geld-ui]') !== null) return;
+          const destination = new URL(url);
+          const current = this.adapter.describe(new URL(window.location.href), document);
+          const source = this.adapter.describe(destination, document);
+          if (destination.origin !== window.location.origin || current === null || source === null || !isProviderReviewPage(current) || !isProviderReviewPage(source)
+            || current.number !== source.number || repositoryKey(current.repository) !== repositoryKey(source.repository)) return;
           this.revealOriginal(anchor);
+          if (target.getClientRects().length === 0) return;
           event.preventDefault();
           target.scrollIntoView({ block: 'center', behavior: 'smooth' });
           const originalTabIndex = target.getAttribute('tabindex');
