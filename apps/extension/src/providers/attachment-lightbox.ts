@@ -32,7 +32,7 @@ export class ProviderAttachmentLightbox {
     const candidates = new Set<HTMLImageElement>();
     const body = this.adapter.descriptionHost?.(document);
     const roots = [...(body === null || body === undefined ? [] : [body]), ...(this.adapter.personRoots?.(document) ?? []).map((entry) => entry.root),
-      ...document.querySelectorAll<HTMLElement>('.geld-provider-review__source .geld-provider-review__body')];
+      ...document.querySelectorAll<HTMLElement>('.geld-provider-review__source .geld-provider-review__body, .geld-provider-review [data-geld-agent-note]')];
     for (const root of roots) for (const image of root.querySelectorAll<HTMLImageElement>('img')) {
       if (image.closest('pre,code,form,button,[contenteditable],dialog,[role="dialog"]') !== null) continue;
       if (this.adapter.attachmentLink(image, page) !== null) candidates.add(image);

@@ -3508,3 +3508,10 @@ Source-renderer state is keyed by review identity and native comment identity ra
 An opened thread moving into a previously untouched resolved group opens that group, but an explicitly folded group stays folded.
 Push-round choices follow a shared native event when another event joins the same boundary.
 Provider aggregate and group counts use shared native-thread totals, including older published items that combined several threads.
+
+GitLab and Bitbucket detect current tool-written description sections with the shared rendered-block classifier and seat them in Agent notes in the digest.
+These are current description summaries, not proof of a bot account or fetched edit history, and expose no inferred moderation or rerun action.
+The owned body removes scripts, controls, event handlers and source IDs, while retaining readable native markup and safe HTTPS links.
+Original tool blocks stay in their native positions and are hidden only after the digest renders the corresponding note, independently of the description-shortening preference.
+Native-only mode restores those blocks, and View in description reveals and focuses the existing native source.
+When tool notes remain inline, the overall height cap stays off so it cannot clip a tool summary together with author text.

@@ -1,3 +1,5 @@
+import { renderProviderAgentNote } from './agent-notes';
+import type { ProviderAgentNote } from './agent-notes';
 import type { ProviderCommentRenderContext } from './comment-render';
 import { botHealth, botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, newestProviderBotSummary, parseInlineMarkdown, previewDocFromMarkdown, previewHostById, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, renderProviderItemMarkdown, sourceLink, threadCounts } from '@geld/review';
 import type { BotVerdictRecord, ProviderPublicationRead, ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, RawCheckRun, ReviewItem, ReviewItemStatus, ReviewerState } from '@geld/review';
@@ -59,6 +61,8 @@ export interface ProviderReviewRequirement {
 
 export interface ProviderReviewPanelOptions {
   readonly sourceInput?: ProviderReviewInput;
+  readonly agentNotes?: readonly ProviderAgentNote[];
+  readonly onRevealAgentNote?: (note: ProviderAgentNote) => void;
   readonly onOpenSettings?: () => Promise<void>;
   readonly originalConversation?: { readonly shown: boolean; readonly toggle: () => void };
 
@@ -1196,7 +1200,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       if (sourceLink({ anchor: comment.anchor, kind: 'comment', author: comment.author.login, url: comment.url }, input.subject) === null) return null;
       try { return [comment.anchor, options.commentSignature?.(comment)]; } catch { return [comment.anchor, null]; }
     });
-    const signature = JSON.stringify([input, options.sourceInput, options.reviewerControls?.available, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature, commentSignatures]);
+    const signature = JSON.stringify([(options.agentNotes ?? []).map(note => [note.id, note.signature]), input, options.sourceInput, options.reviewerControls?.available, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature, commentSignatures]);
     if (signature === lastSignature) {
       refreshComments();
       for (const time of panel.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
@@ -1326,6 +1330,21 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     if (requirements !== null) children.push(requirements);
     const botSection = botsSection();
     if (botSection !== null) children.push(botSection);
+    if (options.agentNotes !== undefined && options.agentNotes.length > 0) {
+      const notes = disclosure('agent-notes', `Agent notes · ${options.agentNotes.length}`, false);
+      for (const note of options.agentNotes) {
+        const section = disclosure(`agent-note:${note.id}`, note.name, false);
+        if (note.preview !== '') section.append(node('p', note.preview, 'geld-provider-review__muted'));
+        const body = node('div', '', `geld-provider-review__body ${input.subject.provider === 'gitlab' ? 'md' : 'ak-renderer-document'}`);
+        body.dataset.geldAgentNote = note.id;renderProviderAgentNote(note, body);section.append(body);
+        if (options.onRevealAgentNote !== undefined) {
+          const original = node('button', 'View in description', 'geld-provider-toggle');original.type = 'button';
+          original.addEventListener('click', () => { if (!destroyed && !panel.inert && original.isConnected) options.onRevealAgentNote?.(note); });section.append(original);
+        }
+        notes.append(section);
+      }
+      children.push(notes);
+    }
     const reports = reportsSection();
     if (reports !== null) children.push(reports);
     const previews = previewsSection();

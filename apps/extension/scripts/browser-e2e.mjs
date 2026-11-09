@@ -2216,6 +2216,35 @@ async function gitLabBotBodyEvidence(page, item) {
   } finally { page.off('request', request); }
 }
 
+async function verifyProviderAgentNotes(page, item) {
+  const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key] ?? {}, SETTINGS_KEY);
+  const progress = { status: 'running', source: 'Current public CodeRabbit description. No description history was requested.' };item.agentNotes = progress;
+  try {
+    await patchSettings({ prOverview: true, collapseDescription: false });
+    const selector = '[data-geld-agent-note="coderabbit"]';
+    await poll(() => page.evaluate(selector => document.querySelector(selector) !== null, selector), Boolean, 'Current description note is seated in the digest');
+    await openReviewAncestors(page, selector);
+    progress.digest = await page.evaluate(selector => {
+      const body = document.querySelector('.issuable-discussion [data-testid="description-content"] > .md');
+      const heading = [...body.querySelectorAll('h1,h2,h3,h4')].find(node => node.textContent.trim() === 'Summary by CodeRabbit');
+      const content = heading?.nextElementSibling;
+      const owned = document.querySelector(selector);
+      const clean = text => (text ?? '').replace(/\s+/g, ' ').trim();
+      return { native: clean(content?.textContent), owned: clean(owned?.textContent), originalHidden: content?.closest('[hidden]') !== null, copyVisible: owned?.getBoundingClientRect().height > 0, ownedControls: owned?.querySelector('form,input,textarea,script,[onclick]') !== null };
+    }, selector);
+    assert.ok(progress.digest.native.length > 0);assert.equal(progress.digest.owned, progress.digest.native);assert.equal(progress.digest.originalHidden, true);assert.equal(progress.digest.copyVisible, true);assert.equal(progress.digest.ownedControls, false);
+    progress.artifacts = await capture(page, 'gitlab-current-agent-note');
+    await patchSettings({ prOverview: false, quickReview: false });
+    await poll(() => page.evaluate(() => {
+      const body = document.querySelector('.issuable-discussion [data-testid="description-content"] > .md');
+      const heading = [...body.querySelectorAll('h1,h2,h3,h4')].find(node => node.textContent.trim() === 'Summary by CodeRabbit');
+      return heading?.nextElementSibling?.closest('[hidden]') === null && heading?.nextElementSibling?.getBoundingClientRect().height > 0;
+    }), Boolean, 'Native view restores the original CodeRabbit description note');
+    progress.status = 'passed';
+  } catch (error) { progress.status = 'failed';progress.error = errorText(error);throw error; }
+  finally { await options.evaluate((key, settings) => chrome.storage.sync.set({ [key]: settings }), SETTINGS_KEY, original); }
+}
+
 async function verifyProviderFlow(page, item) {
   const progress = { status: 'running', scope: 'Public card counts, category inclusion and focus restoration. Dependency parsing and immutable fork selection have separate unit coverage.' };item.fileFlow = progress;
   const before = await tabState(page);
@@ -3439,7 +3468,7 @@ try {
     return { verified: 'Live actionable retained human source: local mark, exact native source/head, real reload, Undo, and zero provider mutations.' };
   });
   await runCase('gitlab-bot-digest', GL_BOT, verifyGitLabBot);
-  await runCase('gitlab-coderabbit-digest', CODERABBIT_FIXTURE.url, async (page, item) => verifyCodeRabbitCommands(page, item, {
+  await runCase('gitlab-coderabbit-digest', CODERABBIT_FIXTURE.url, async (page, item) => { const result = await verifyCodeRabbitCommands(page, item, {
     fixture: codeRabbitSources.get(page), context: browser.defaultBrowserContext(), poll, openReviewAncestors, clickReviewButton, capture, tableHeights: (page, proof, values) => verifyGitLabTableHeights(page, proof, { ...values, extensionId }),
     readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key] ?? {}, SETTINGS_KEY),
     withdrawTrust: async (binding) => {
@@ -3455,7 +3484,7 @@ try {
       if (Object.hasOwn(before, 'trustedReviewAccounts')) current.trustedReviewAccounts = before.trustedReviewAccounts;else delete current.trustedReviewAccounts;
       await chrome.storage.sync.set({ [key]: current });
     }, SETTINGS_KEY, original),
-  }));
+  });await verifyProviderAgentNotes(page, item);return result; });
   await runCase('cross-provider-settings', GL_MIXED, verifyCrossProviderSettings);
   await runCase('github-regression', GH_FILES, async (page, item) => {
     item.state = await poll(() => tabState(page), (state) => state.hasDiff === true && state.all !== null && state.visible !== null && state.hiddenCount > 0 && state.categories.some((category) => category.id === 'tests' && category.count > 0), 'Installed GitHub public fixture classification');
