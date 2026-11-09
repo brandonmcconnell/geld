@@ -14,6 +14,7 @@
 
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { ICON_REPLY } from '../ui/icons';
+import { shapeMark } from './mark-shape';
 
 export const HOVER_DELAY_MS = 300;
 /** Leaving the host toward the card: the card waits this long for the pointer to arrive. */
@@ -26,6 +27,8 @@ const CARD_OFFSET = 14;
 export const ATTR_WHO = 'data-geld-who';
 /** On a report pill; the value is the report's anchor (its comment's id, or `check:<name>`). */
 export const ATTR_REPORT = 'data-geld-report-card';
+/** On an Agent notes pill: the note's tool id, whose card previews the note (`setNoteProvider`) and hangs from the pill. */
+export const ATTR_NOTE = 'data-geld-note-card';
 let leaveTimer: number | null = null;
 const CARD_CLASS = 'geld-review-hovercard';
 
@@ -43,6 +46,8 @@ export interface HoverPreview {
   readonly onOpen: () => void;
   /** The open button's words, when not the default ("See full comment" / "See full thread"): a review says "See full review". */
   readonly openLabel?: string;
+  /** A review bot's comment: Geld's View and Rerun (or See latest), standing for the bot's own badges in `body`. */
+  readonly controls?: readonly HTMLElement[];
 }
 
 /** Who a bot is: what its (missing) GitHub hovercard would say. */
@@ -149,6 +154,15 @@ export function setReportProvider(next: ReportProvider | null): void {
   install();
 }
 
+/** A note's card: the same preview a row's card shows, from the note's tool id. */
+export type NoteProvider = (id: string, host: HTMLElement) => HoverPreview | null;
+let noteProvider: NoteProvider | null = null;
+
+export function setNoteProvider(next: NoteProvider | null): void {
+  noteProvider = next;
+  install();
+}
+
 function rowKey(row: Element): string | null {
   return row.getAttribute('data-geld-item') ?? row.getAttribute('data-geld-fold') ?? row.getAttribute('data-geld-sub');
 }
@@ -164,7 +178,7 @@ function rowOf(target: EventTarget | null): HTMLElement | null {
 /** What the pointer is resting on: an identity host first (it sits inside rows), else a collapsed row. */
 function hostOf(target: EventTarget | null): HTMLElement | null {
   if (!(target instanceof Element)) return null;
-  const who = target.closest<HTMLElement>(`[${ATTR_WHO}], [${ATTR_REPORT}]`);
+  const who = target.closest<HTMLElement>(`[${ATTR_WHO}], [${ATTR_REPORT}], [${ATTR_NOTE}]`);
   if (who !== null) return who;
   // A person's avatar shows GitHub's card; no row preview under it.
   if (target.closest('[data-hovercard-url]') !== null && rowOf(target) !== null) return null;
@@ -174,6 +188,11 @@ function hostOf(target: EventTarget | null): HTMLElement | null {
 function hide(): void {
   if (timer !== null) window.clearTimeout(timer);
   timer = null;
+  dismiss();
+}
+
+/** Remove the open card, leaving a show already pending for the host the pointer has moved on to. */
+function dismiss(): void {
   if (leaveTimer !== null) window.clearTimeout(leaveTimer);
   leaveTimer = null;
   clearTriangle();
@@ -183,10 +202,13 @@ function hide(): void {
   card = null;
 }
 
-/** Hide after a grace period unless the pointer reaches the card (or comes back to the host) first. */
+/**
+ * Hide after a grace period unless the pointer reaches the card (or comes back to the host) first. It ends in
+ * `dismiss`, not `hide`: the show pending for the pill the pointer crossed to must survive it.
+ */
 function hideSoon(): void {
   if (leaveTimer !== null) window.clearTimeout(leaveTimer);
-  leaveTimer = window.setTimeout(hide, LEAVE_GRACE_MS);
+  leaveTimer = window.setTimeout(dismiss, LEAVE_GRACE_MS);
 }
 
 function stay(): void {
@@ -197,15 +219,17 @@ function stay(): void {
 
 /** Hosts whose card hangs under them (a chip, a pill), as opposed to a row, whose card sits beside the pointer. */
 function hangsCard(host: HTMLElement): boolean {
-  return host.hasAttribute(ATTR_WHO) || host.hasAttribute(ATTR_REPORT);
+  return host.hasAttribute(ATTR_WHO) || host.hasAttribute(ATTR_REPORT) || host.hasAttribute(ATTR_NOTE);
 }
 
 function show(host: HTMLElement): void {
   const login = host.getAttribute(ATTR_WHO);
   const report = host.getAttribute(ATTR_REPORT);
+  const note = host.getAttribute(ATTR_NOTE);
   if (login !== null) showWho(host, login);
   else if (report !== null) showReport(host, report);
-  else showRow(host);
+  else if (note !== null) showPreview(host, noteProvider?.(note, host) ?? null);
+  else showPreview(host, provider?.(host) ?? null);
 }
 
 function mount(host: HTMLElement, node: HTMLElement, width: number): void {
@@ -217,6 +241,13 @@ function mount(host: HTMLElement, node: HTMLElement, width: number): void {
   place(host, node, width);
 }
 
+/** A card's picture: a bot's mark takes the shape of its picture (`shapeMark`), a person's stays GitHub's. */
+function cardAvatar(src: string, bot: boolean, round: boolean): HTMLElement {
+  const img = createElement('img', { class: `${CARD_CLASS}__avatar`, 'data-kind': bot ? 'bot' : 'user', src, alt: '', width: '20', height: '20' });
+  if (bot) shapeMark(img, src, round);
+  return img;
+}
+
 function showWho(host: HTMLElement, login: string): void {
   const who = whoProvider?.(login, host) ?? null;
   if (who === null) return;
@@ -224,7 +255,7 @@ function showWho(host: HTMLElement, login: string): void {
   current = host;
   const head = createElement('div', { class: `${CARD_CLASS}__head` });
   if (who.avatarSrc !== null) {
-    head.append(createElement('img', { class: `${CARD_CLASS}__avatar`, 'data-kind': who.bot ? 'bot' : 'user', src: who.avatarSrc, alt: '', width: '20', height: '20' }));
+    head.append(cardAvatar(who.avatarSrc, who.bot, false));
   }
   head.append(createElement('span', { class: `${CARD_CLASS}__name` }, [who.name]));
   if (who.bot) head.append(createElement('span', { class: `${CARD_CLASS}__bot` }, ['bot']));
@@ -248,7 +279,7 @@ function showReport(host: HTMLElement, anchor: string): void {
   current = host;
   const head = createElement('div', { class: `${CARD_CLASS}__head` });
   if (report.avatarSrc !== null) {
-    head.append(createElement('img', { class: `${CARD_CLASS}__avatar`, 'data-kind': 'bot', ...(report.round ? { 'data-shape': 'round' } : {}), src: report.avatarSrc, alt: '', width: '20', height: '20' }));
+    head.append(cardAvatar(report.avatarSrc, true, report.round));
   }
   head.append(createElement('span', { class: `${CARD_CLASS}__name` }, [report.name]), createElement('span', { class: `${CARD_CLASS}__bot` }, ['bot']));
   if (report.time !== '') head.append(createElement('span', { class: `${CARD_CLASS}__time` }, [report.time]));
@@ -282,18 +313,19 @@ function showReport(host: HTMLElement, anchor: string): void {
   if (body !== null && body.scrollHeight > body.clientHeight + 1) body.setAttribute('data-clipped', '');
 }
 
-function showRow(row: HTMLElement): void {
-  const preview = provider?.(row) ?? null;
+/** A comment's or a note's preview, beside the pointer for a row and hanging from a pill. */
+function showPreview(host: HTMLElement, preview: HoverPreview | null): void {
   if (preview === null) return;
   hide();
-  current = row;
+  current = host;
   const head = createElement('div', { class: `${CARD_CLASS}__head` });
   if (preview.avatarSrc !== null) {
-    head.append(createElement('img', { class: `${CARD_CLASS}__avatar`, 'data-kind': preview.bot ? 'bot' : 'user', src: preview.avatarSrc, alt: '', width: '20', height: '20' }));
+    head.append(cardAvatar(preview.avatarSrc, preview.bot, false));
   }
   head.append(createElement('span', { class: `${CARD_CLASS}__name` }, [preview.name]));
   if (preview.bot) head.append(createElement('span', { class: `${CARD_CLASS}__bot` }, ['bot']));
   if (preview.time !== '') head.append(createElement('span', { class: `${CARD_CLASS}__time` }, [preview.time]));
+  if (preview.controls !== undefined && preview.controls.length > 0) head.append(createElement('span', { class: `${CARD_CLASS}__controls` }, [...preview.controls]));
   // Capped and faded rather than line-clamped: tables and code blocks ignore line clamps.
   const body = createElement('div', { class: `${CARD_CLASS}__body` });
   if (preview.body !== null) body.append(preview.body);
@@ -315,8 +347,8 @@ function showRow(row: HTMLElement): void {
     foot.append(reply);
   }
   card = createElement('div', { class: CARD_CLASS, [OWN_UI_ATTRIBUTE]: '', role: 'tooltip' }, [head, body, foot]);
-  const rect = row.getBoundingClientRect();
-  mount(row, card, Math.min(440, Math.max(280, rect.width - 80)));
+  const rect = host.getBoundingClientRect();
+  mount(host, card, hangsCard(host) ? 380 : Math.min(440, Math.max(280, rect.width - 80)));
   // Fade only what is actually cut off.
   if (body.scrollHeight > body.clientHeight + 1) body.setAttribute('data-clipped', '');
 }
@@ -337,7 +369,9 @@ export function rehostHoverCard(): void {
       ? under.getAttribute(ATTR_WHO) === current.getAttribute(ATTR_WHO)
       : current.hasAttribute(ATTR_REPORT)
         ? under.getAttribute(ATTR_REPORT) === current.getAttribute(ATTR_REPORT)
-        : rowKey(under) === rowKey(current));
+        : current.hasAttribute(ATTR_NOTE)
+          ? under.getAttribute(ATTR_NOTE) === current.getAttribute(ATTR_NOTE)
+          : rowKey(under) === rowKey(current));
   if (!same || under === null) {
     hide();
     return;

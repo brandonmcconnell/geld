@@ -67,9 +67,13 @@ const BOOLEAN_KEYS = [
   'shortcutEnabled',
   'showBadge',
   'autoUpdatePatterns',
+  'errorReports',
   'prOverview',
   'quickReview',
+  'holdToMerge',
   'collapseDescription',
+  'attachmentLightbox',
+  'relatedLinks',
   'aiEnabled',
   'aiJev',
 ] as const;
@@ -261,6 +265,9 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   if (value.compactTimeline !== undefined && !isCompactTimelineMode(value.compactTimeline)) {
     issues.push({ path: `${path}.compactTimeline`, message: `Expected one of ${list(COMPACT_TIMELINE_MODES)}, got ${describeValue(value.compactTimeline)}.` });
   }
+  if (value.digestViewChosenAt !== undefined && typeof value.digestViewChosenAt !== 'string') {
+    issues.push({ path: `${path}.digestViewChosenAt`, message: `Expected a string, got ${describeValue(value.digestViewChosenAt)}.` });
+  }
   if (value.reviewGrouping !== undefined && !isReviewGrouping(value.reviewGrouping)) {
     issues.push({ path: `${path}.reviewGrouping`, message: `Expected one of ${list(REVIEW_GROUPINGS)}, got ${describeValue(value.reviewGrouping)}.` });
   }
@@ -273,6 +280,9 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   if (value.issueTracker !== undefined && value.issueTracker !== null && !parseIssueTracker(value.issueTracker)) issues.push({path:`${path}.issueTracker`,message:'Invalid issue tracker configuration.'});
   if (value.aiModel !== undefined && typeof value.aiModel !== 'string') {
     issues.push({ path: `${path}.aiModel`, message: `Expected a string, got ${describeValue(value.aiModel)}.` });
+  }
+  if (value.aiDecisionModel !== undefined && typeof value.aiDecisionModel !== 'string') {
+    issues.push({ path: `${path}.aiDecisionModel`, message: `Expected a string, got ${describeValue(value.aiDecisionModel)}.` });
   }
   // Custom ids are accepted here regardless of whether the category still exists: a stale flag is harmless.
   checkBooleanMap(issues, `${path}.categories`, value.categories, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key) || isWellFormedId(key), 'category');
