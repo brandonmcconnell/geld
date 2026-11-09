@@ -43,6 +43,19 @@ test('a valid literal focus change selects that slice', () => {
   assert.deepEqual(select({ body: marker('bitbucket-list'), from: marker('gitlab-review') }), { focus: 'bitbucket-list', run: 'true', failures: [] });
 });
 
+test('the literal Bitbucket list+commit slice selects exactly two cases and preserves cold-list demand', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];
+  assert.ok(literal);
+  const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
+  assert.deepEqual(Array.from(cases['bitbucket-list-commit']), ['bitbucket-list-counts', 'bitbucket-commit-counts']);
+  assert.deepEqual(select({ body: marker('bitbucket-list-commit'), from: marker('github') }), { focus: 'bitbucket-list-commit', run: 'true', failures: [] });
+  assert.match(harness, /const coldBitbucketList = \['bitbucket-list', 'bitbucket-list-commit'\]\.includes\(focus\)/);
+  assert.match(harness, /coldRequired: coldBitbucketList/);
+  assert.match(harness, /conservativeObservedRequestBudget: 40/);
+  assert.match(harness, /name === 'bitbucket-commit-counts'\) commitSources\.set\(page, observeBitbucketCommitFixture\(page, item\)\)/);
+  assert.match(harness, /const all = source\.totals/);
+});
+
 test('cross-provider settings selects one bounded case and does not broaden the default or Bitbucket slices', () => {
   const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];
   assert.ok(literal, 'Missing static harness focus map');
