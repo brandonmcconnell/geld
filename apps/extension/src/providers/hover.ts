@@ -13,6 +13,7 @@ export interface ProviderHoverOptions {
 
 export interface ProviderHoverBindingOptions {
   readonly keyboard?: boolean;
+  readonly anchor?: () => HTMLElement | null;
   readonly onIntent?: () => void;
   readonly status?: () => { readonly status: 'loading' | 'unavailable' | 'provisional' | 'ready'; readonly reason?: string };
 }
@@ -29,6 +30,8 @@ interface ActiveHover {
   readonly visit: string;
   ready: boolean;
   pointerY: number | null;
+  positionedAnchor: HTMLElement | null;
+  positionedLine: number | null;
 }
 
 interface HeldTitle { readonly element: HTMLElement; original: string }
@@ -248,12 +251,13 @@ export class ProviderHover {
     if (!this.started || this.doc.hidden || !this.settings().enabled || host === this.dismissed || this.nativeOverlay(host)) return;
     if (this.active?.host === host) {
       this.active.pointerY = pointerY;
-      if (this.active.ready) this.position();
+      if (this.active.ready) this.position(true);
       return;
     }
     this.close();
-    const active: ActiveHover = { host, page, visit: this.visit(), ready: false, pointerY };
+    const active: ActiveHover = { host, page, visit: this.visit(), ready: false, pointerY, positionedAnchor: null, positionedLine: null };
     this.active = active;
+    host.addEventListener('mousemove', this.onMouseMove);
     this.holdTitles(host);
     this.timer = setTimeout(() => {
       this.timer = null;
@@ -291,7 +295,10 @@ export class ProviderHover {
     this.timer = null;
     this.observer?.disconnect();
     this.observer = null;
-    if (this.active !== null) this.describe(this.active.host, false);
+    if (this.active !== null) {
+      this.active.host.removeEventListener('mousemove', this.onMouseMove);
+      this.describe(this.active.host, false);
+    }
     this.active = null;
     if (this.tooltip !== null) this.tooltip.hidden = true;
     this.signature = '';
@@ -427,16 +434,32 @@ export class ProviderHover {
     return { left: 0, right: width };
   }
 
-  private position(): void {
+  private position(onlyLineChange = false): void {
     const active = this.active;
     const box = this.tooltip;
     const view = this.doc.defaultView;
     if (active === null || box === null || box.hidden || view === null) return;
+    const requested = this.bindings.get(active.host)?.options.anchor?.();
+    let anchor = requested?.isConnected === true && requested.ownerDocument === this.doc ? requested : active.host;
+    const readRects = (node: HTMLElement) => mergeLineRects([...node.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0));
+    let rects = readRects(anchor);
+    let anchorBox: DOMRect | null = null;
+    if (anchor !== active.host && rects.length === 0) {
+      anchorBox = anchor.getBoundingClientRect();
+      if (anchorBox.width <= 0 || anchorBox.height <= 0) {
+        anchor = active.host;
+        rects = readRects(anchor);
+        anchorBox = null;
+      }
+    }
+    const index = lineIndex(rects, active.pointerY);
+    if (onlyLineChange && active.positionedAnchor === anchor && active.positionedLine === index) return;
+    active.positionedAnchor = anchor;
+    active.positionedLine = index;
     const width = this.doc.documentElement.clientWidth || view.innerWidth;
     const height = this.doc.documentElement.clientHeight || view.innerHeight;
-    const rects = mergeLineRects([...active.host.getClientRects()]);
-    const rect = rects[lineIndex(rects, active.pointerY)] ?? active.host.getBoundingClientRect();
-    const column = this.column(active.host, width);
+    const rect = rects[index] ?? anchorBox ?? anchor.getBoundingClientRect();
+    const column = this.column(anchor, width);
     const available = Math.max(0, Math.min(width - MARGIN, column.right - MARGIN) - Math.max(MARGIN, column.left + MARGIN));
     if (available < 48 || rect.bottom < 0 || rect.top > height) { this.close(); return; }
     const measuredWidth = Math.min(MAX_WIDTH, available);
@@ -458,6 +481,14 @@ export class ProviderHover {
     const candidate = this.candidate(event.target);
     this.pointerHost = candidate?.host ?? null;
     if (candidate !== null) this.begin(candidate.host, candidate.page, event.clientY);
+  };
+
+  private readonly onMouseMove = (event: MouseEvent): void => {
+    const active = this.active;
+    const target = elementOf(event.target);
+    if (!event.isTrusted || active === null || target === null || !active.host.contains(target)) return;
+    active.pointerY = event.clientY;
+    if (active.ready) this.position(true);
   };
 
   private readonly onMouseOut = (event: MouseEvent): void => {

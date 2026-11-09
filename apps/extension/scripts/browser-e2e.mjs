@@ -354,8 +354,7 @@ async function waitTotals(page, all, visible, hiddenCount) {
   const equal = (actual, expected) => actual != null && ['files', 'additions', 'deletions'].every((key) => actual[key] === expected[key]);
   return poll(() => tabState(page), (state) => state.hasDiff === true && equal(state.all, all) && equal(state.visible, visible) && state.hiddenCount === hiddenCount, 'Installed extension exact complete tab-state totals');
 }
-async function trustedHiddenToggle(page, expectedLabel) {
-  const selector = '.geld-provider-toggle';
+async function trustedHiddenToggle(page, expectedLabel, selector = '.geld-provider-toggle') {
   const before = await page.$eval(selector, (node) => ({ label: node.textContent.trim(), expanded: node.getAttribute('aria-expanded') }));
   assert.match(before.label, expectedLabel);
   const [event] = await Promise.all([
@@ -389,7 +388,7 @@ async function countA11y(page) {
     ownedDescriptions: document.querySelectorAll('[aria-describedby~="geld-provider-count-tooltip"]').length,
   }));
 }
-async function installedHover(page, selector, interaction, artifactName) {
+async function installedHover(page, selector, interaction, artifactName, anchorSelector) {
   await page.keyboard.press('Escape');
   await page.mouse.move(1, 1);
   if (interaction === 'keyboard') {
@@ -411,22 +410,61 @@ async function installedHover(page, selector, interaction, artifactName) {
     await control.hover();
     await discardHandle(handle);
   }
-  const snapshot = await poll(() => page.evaluate((target) => {
+  const snapshot = await poll(() => page.evaluate((target, anchorSelector) => {
     const host = [...document.querySelectorAll(target)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
     const tip = document.querySelector('#geld-provider-count-tooltip[role="tooltip"]');
     if (tip === null || tip.hidden || getComputedStyle(tip).display === 'none') return null;
     const style = getComputedStyle(tip);
     const bounds = tip.getBoundingClientRect();
+    const anchor = anchorSelector === undefined ? null : [...document.querySelectorAll(anchorSelector)].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0);
+    const anchorRect = anchor?.getBoundingClientRect();
     return { text: tip.textContent.replace(/\s+/g, ' ').trim(), fontFamily: style.fontFamily, fontSize: style.fontSize, lineHeight: style.lineHeight, color: style.color, background: style.backgroundColor, filter: style.filter,
+      anchor: anchorRect === undefined ? null : { left: anchorRect.left, right: anchorRect.right, top: anchorRect.top, bottom: anchorRect.bottom }, caret: Number.parseFloat(style.getPropertyValue('--geld-provider-hover-caret')), placement: tip.getAttribute('data-placement'),
       rows: [...tip.querySelectorAll('.geld-provider-hover__row')].map((row) => ({ label: row.querySelector('.geld-provider-hover__label')?.textContent, files: row.querySelector('.geld-provider-hover__files')?.textContent, additions: row.querySelector('.geld-provider-hover__add')?.textContent, deletions: row.querySelector('.geld-provider-hover__del')?.textContent })),
       described: [...document.querySelectorAll('[aria-describedby~="geld-provider-count-tooltip"]')].some((owner) => owner === host || host?.contains(owner)),
       bounds: { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom }, viewport: { width: innerWidth, height: innerHeight } };
-  }, selector), (value) => value !== null && value.described && /Essential/.test(value.text) && /Tests/.test(value.text) && /Total/.test(value.text), 'Installed native count hover breakdown and accessible owner', 12_000);
+  }, selector, anchorSelector), (value) => value !== null && value.described && /Essential/.test(value.text) && /Tests/.test(value.text) && /Total/.test(value.text), 'Installed native count hover breakdown and accessible owner', 12_000);
   assert.ok(snapshot.bounds.left >= 0 && snapshot.bounds.right <= snapshot.viewport.width + 1 && snapshot.bounds.top >= 0 && snapshot.bounds.bottom <= snapshot.viewport.height + 1, 'Count tooltip escapes the tested viewport');
+  if (anchorSelector !== undefined) {
+    assert.ok(snapshot.anchor !== null && Number.isFinite(snapshot.caret), 'Header group hover must expose its real owned hint anchor and caret');
+    const center = (snapshot.anchor.left + snapshot.anchor.right) / 2;
+    const reachable = Math.max(snapshot.bounds.left + 12, Math.min(center, snapshot.bounds.right - 12));
+    assert.ok(Math.abs(snapshot.bounds.left + snapshot.caret - reachable) <= 1, 'Native group tooltip caret does not point at its owned category hint');
+    const gap = snapshot.placement === 'below' ? snapshot.bounds.top - snapshot.anchor.bottom : snapshot.anchor.top - snapshot.bounds.bottom;
+    assert.ok(Math.abs(gap - 8) <= 1, 'Header tooltip is positioned against its category hint rather than the native group');
+  }
   await page.screenshot({ path: resolve(artifacts, `${artifactName}.png`) });
   await page.keyboard.press('Escape');
   await poll(() => page.evaluate(() => { const tip = document.querySelector('#geld-provider-count-tooltip'); return tip === null || tip.hidden || getComputedStyle(tip).display === 'none'; }), (value) => value, 'Escape dismisses installed hover', 5000);
   return { ...snapshot, interaction, screenshot: `${artifactName}.png`, escapeDismissed: true };
+}
+
+async function headerHintsEvidence(page, expectedLabel, groupSelector, name, interactions = true) {
+  const hintSelector = '.geld-provider-header-hidden-count';
+  const read = () => page.evaluate((selector) => {
+    const hints = [...document.querySelectorAll(selector)].filter((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
+    return { hints: hints.map((node) => {
+      let nativeKeyboard = null;
+      for (let parent = node.parentElement; parent !== null; parent = parent.parentElement) if (parent.hasAttribute('data-geld-hover-bound') && parent.tabIndex >= 0 && parent.closest('[data-geld-ui]') === null) { nativeKeyboard = parent;break; }
+      const style = getComputedStyle(node);const parent = getComputedStyle(node.parentElement);
+      return { text: node.textContent.trim(), role: node.getAttribute('role'), aria: node.getAttribute('aria-label'), tabIndex: node.tabIndex, nativeKeyboardAncestor: nativeKeyboard !== null,
+        forbiddenAncestor: node.closest('[aria-hidden="true"],[hidden],[inert],.badge,.gl-badge,[data-component="Label"],[role="tab"],[role="tablist"]') !== null,
+        font: { family: style.fontFamily, size: style.fontSize, lineHeight: style.lineHeight }, nativeParentFont: { family: parent.fontFamily, size: parent.fontSize, lineHeight: parent.lineHeight } };
+    }), nativeIds: [...document.querySelectorAll('[data-testid="diffs-tab"],#file-tree,#pull-request-tabs-1,[role="region"][aria-label="Diff"] > div > div[id^="chg-"]')].filter((node) => node.closest('[data-geld-ui]') === null).map((node) => ({ id: node.id, testid: node.getAttribute('data-testid'), href: node.getAttribute('href') })) };
+  }, hintSelector);
+  const measurement = await poll(read, (value) => value.hints.length > 0 && value.hints.every((hint) => hint.text === expectedLabel), 'Visible category-aware header hint agrees with actual classification');
+  for (const hint of measurement.hints) {
+    assert.equal(hint.forbiddenAncestor, false, 'Category hint is hidden from accessibility or nested inside native badge/tab content');
+    assert.equal(hint.role, 'note');assert.equal(hint.aria, `${expectedLabel} hidden`);
+    assert.equal(hint.tabIndex, hint.nativeKeyboardAncestor ? -1 : 0, 'Hint must add a keyboard stop only when its native group has none');
+    assert.deepEqual(hint.font, hint.nativeParentFont, 'Header hint does not inherit the native header typography');
+  }
+  if (!interactions) return measurement;
+  const pointer = await installedHover(page, groupSelector, 'pointer', `${name}-group-pointer`, hintSelector);
+  const keyboardSelector = measurement.hints[0].nativeKeyboardAncestor ? groupSelector : hintSelector;
+  const keyboard = await installedHover(page, keyboardSelector, 'keyboard', `${name}-hint-keyboard`, hintSelector);
+  assert.equal(pointer.text, keyboard.text, 'Native group and correctly selected keyboard hint/group totals disagree');
+  return { ...measurement, pointer, keyboard, keyboardSelector };
 }
 
 async function browserZoom(page, factor) {
@@ -581,6 +619,8 @@ async function bitbucketFiltering(page, item) {
   const all = { files: 5, additions: 46, deletions: 29 };
   item.baseline = await waitTotals(page, all, all, 0);
   item.baselineDom = await poll(() => bitbucketDom(page), (value) => value.files === all.files && value.additions === all.additions && value.deletions === all.deletions && value.hidden.length === 0, 'Actual native Bitbucket baseline counts');
+  const summarySelector = '#file-tree :has(> .geld-provider-accessible-counts)';
+  item.baselineHeaderHints = await headerHintsEvidence(page, '0 tests', summarySelector, 'bitbucket-baseline', false);
   const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
   try {
     await patchSettings({ categoryPatterns: { ...original.categoryPatterns, tests: ['pipe/pipe.py'] } });
@@ -589,9 +629,10 @@ async function bitbucketFiltering(page, item) {
     item.derivedHidden = { path: 'pipe/pipe.py', files: all.files - visible.files, additions: all.additions - visible.additions, deletions: all.deletions - visible.deletions, basis: 'Actual complete adapter result minus actual visible totals, not a guessed fixture count' };
     assert.ok(item.derivedHidden.additions + item.derivedHidden.deletions > 0, 'The selected file did not remove any changed lines');
     item.filteredDom = await poll(() => bitbucketDom(page), (value) => value.files === visible.files && value.additions === visible.additions && value.deletions === visible.deletions && value.hidden.some((file) => file.path === 'pipe/pipe.py' && file.mode === 'closed' && file.display === 'none'), 'Native Bitbucket file count/line totals and actual hidden file wrapper');
+    item.filteredHeaderHints = await headerHintsEvidence(page, '1 test', summarySelector, 'bitbucket-filtered');
+    assert.deepEqual(item.filteredHeaderHints.nativeIds, item.baselineHeaderHints.nativeIds, 'Category hint update changed native header/file anchor IDs');
     item.filteredArtifacts = await capture(page, 'bitbucket-pattern-filtered');
     item.categoryInteraction = await categoryInteraction(page, 'pipe/pipe.py', 'bitbucket', 'bitbucket-category', true);
-    const summarySelector = '#file-tree :has(> .geld-provider-accessible-counts)';
     item.spokenFiltered = await poll(() => page.$eval(`${summarySelector} > .geld-provider-accessible-counts`, (node) => node.textContent), (text) => text.includes(`${visible.files} files changed`) && text.includes(`Added ${visible.additions} lines`) && text.includes(`Removed ${visible.deletions} lines`), 'Native Bitbucket screen reader totals follow actual filtering');
     item.keyboardStatsHover = await installedHover(page, summarySelector, 'keyboard', 'bitbucket-stats-keyboard-hover');
     item.zoom200 = await responsiveHover(page, summarySelector, 'bitbucket-zoom200', item.keyboardStatsHover.text);
@@ -611,6 +652,8 @@ async function bitbucketFiltering(page, item) {
   }
   item.restored = await waitTotals(page, all, all, 0);
   item.restoredDom = await poll(() => bitbucketDom(page), (value) => value.files === all.files && value.additions === all.additions && value.deletions === all.deletions && value.hidden.length === 0, 'Native Bitbucket counts and hiding attributes restored after pattern removal');
+  item.restoredHeaderHints = await headerHintsEvidence(page, '0 tests', summarySelector, 'bitbucket-restored', false);
+  assert.deepEqual(item.restoredHeaderHints.nativeIds, item.baselineHeaderHints.nativeIds);
 }
 
 async function categoryInteraction(page, path, provider, name, reveal) {
@@ -875,10 +918,17 @@ function assertReviewedStorage(value, itemId, reviewKey, headSha) {
   return selected;
 }
 
-async function localReviewedFlag(page) {
+async function localReviewedFlag(page, recordFragment) {
   const initial = await poll(() => page.evaluate(() => {
-    const button = document.querySelector('.geld-provider-review [data-geld-local-reviewed]');
-    return button === null ? null : { id: button.getAttribute('data-geld-local-reviewed'), pressed: button.getAttribute('aria-pressed'), disabled: button.disabled };
+    for (const button of document.querySelectorAll('.geld-provider-review [data-geld-local-reviewed]')) {
+      const source = [...button.closest('[data-geld-item]')?.querySelectorAll('[data-geld-source]') ?? []].find((source) => {
+        const byline = source.querySelector(':scope > .geld-provider-review__byline');
+        const native = document.getElementById(source.getAttribute('data-geld-source'));
+        return byline !== null && ![...byline.children].some((node) => node.textContent.trim() === 'Automated account') && native?.querySelector('.note-header a.author-name-link[data-user-id]') !== null && native != null;
+      });
+      if (source !== undefined) return { id: button.getAttribute('data-geld-local-reviewed'), humanAnchor: source.getAttribute('data-geld-source'), pressed: button.getAttribute('aria-pressed'), disabled: button.disabled };
+    }
+    return null;
   }), (value) => value !== null && value.id !== '' && value.pressed === 'false' && !value.disabled, 'First installed local-review control becomes available');
   const itemId = initial.id;
   const selector = `.geld-provider-review [data-geld-local-reviewed=${JSON.stringify(itemId)}]`;
@@ -943,6 +993,7 @@ async function localReviewedFlag(page) {
     const stored = await localReviewedStorage();
     assert.ok(assertReviewedStorage(stored, itemId, reviewKey, original.headSha) !== null, 'Actual chrome.storage.local did not persist the current mark');
     const markedArtifacts = await capture(page, 'gitlab-local-reviewed-marked');
+    const nativeFragment = await nativeFragmentEvidence(page, initial.humanAnchor, () => observe().then(unchanged), recordFragment);
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
     const reloaded = await poll(observe, (value) => value !== null && value.pressed === 'true' && !value.disabled && value.group === 'done', 'Actual page reload rehydrates the exact item/head mark through the installed storage service');
     unchanged(reloaded);
@@ -952,8 +1003,74 @@ async function localReviewedFlag(page) {
     unchanged(undone);
     const afterStorage = await poll(localReviewedStorage, (value) => assertReviewedStorage(value, itemId, reviewKey, original.headSha) === null, 'Actual local storage removes the undone flag');
     assert.deepEqual(mutations, [], 'Local reviewed flag attempted a native provider mutation');
-    return { itemId, reviewKey, sourceHead: original.headSha, openedSummaries, original, marked, stored, markedArtifacts, reloaded, reopenedSummaries, undone, afterStorage, providerMutations: mutations, undoneArtifacts: await capture(page, 'gitlab-local-reviewed-undone'), storageScope: 'Actual chrome.storage.local metadata and SHA256 fingerprints only, absent from chrome.storage.sync' };
+    return { itemId, reviewKey, sourceHead: original.headSha, openedSummaries, original, marked, stored, markedArtifacts, nativeFragment, reloaded, reopenedSummaries, undone, afterStorage, providerMutations: mutations, undoneArtifacts: await capture(page, 'gitlab-local-reviewed-undone'), storageScope: 'Actual chrome.storage.local metadata and SHA256 fingerprints only, absent from chrome.storage.sync' };
   } finally { page.off('request', request); }
+}
+
+async function nativeFragmentEvidence(page, anchor, assertSourcesUnchanged, record = () => undefined) {
+  assert.match(anchor, /^note_[1-9]\d*$/, 'Fragment evidence requires an actual native human source anchor');
+  const previousUrl = page.url();
+  const settings = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+  const controlSelector = `.geld-provider-original:has(+ [id="${anchor}"]) button`;
+  const read = () => page.evaluate((anchor) => {
+    const root = document.getElementById(anchor);
+    if (root === null) return null;
+    const button = root.previousElementSibling?.matches('.geld-provider-original') ? root.previousElementSibling.querySelector('button') : null;
+    const rect = root.getBoundingClientRect();const style = getComputedStyle(root);
+    return { nativeId: root.id, name: root.querySelector('[data-testid="author-name"]')?.textContent.trim() ?? null, body: root.querySelector('.note-body .note-text')?.textContent.trim() ?? null,
+      nativePermalinks: [...root.querySelectorAll('a[href]')].filter((node) => node.getAttribute('href') === `#${anchor}`).map((node) => node.getAttribute('href')),
+      hidden: root.getAttribute('hidden'), owner: root.getAttribute('data-geld-provider-native-find'), oldHiddenFlag: root.hasAttribute('data-geld-provider-compact-hidden'),
+      box: { height: rect.height, display: style.display, contentVisibility: style.contentVisibility, marginTop: style.marginTop, marginBottom: style.marginBottom, paddingTop: style.paddingTop, paddingBottom: style.paddingBottom, borderTop: style.borderTopWidth, borderBottom: style.borderBottomWidth },
+      control: button === null ? null : { label: button.textContent.trim(), expanded: button.getAttribute('aria-expanded') }, hash: location.hash };
+  }, anchor);
+  const evidence = { kind: 'Actual same-page fragment navigation; browser Ctrl+F is not exercised', capability: null, before: await read() };
+  record(evidence);
+  assert.ok(evidence.before !== null, 'Actual human original must be present before native-fragment verification');
+  const preserved = (value) => {
+    assert.equal(value.nativeId, evidence.before.nativeId);
+    assert.equal(value.body, evidence.before.body, 'Fragment/compaction changed native source text');
+    assert.equal(value.name, evidence.before.name);
+    assert.deepEqual(value.nativePermalinks, evidence.before.nativePermalinks);
+  };
+  try {
+    evidence.capability = await page.evaluate((anchor) => {
+      const probe = document.createElement('div');probe.setAttribute('hidden', 'until-found');
+      const events = [];
+      const capture = (event) => { const target = event.target instanceof Element ? event.target : null;events.push({ type: event.type, trusted: event.isTrusted, target: target?.id ?? null, targetContainsAnchor: target?.contains(document.getElementById(anchor)) ?? false, url: location.href }); };
+      document.addEventListener('beforematch', capture, true);window.addEventListener('hashchange', capture, true);
+      globalThis.__geldNativeFragmentEvidence = { events, cleanup: () => { document.removeEventListener('beforematch', capture, true);window.removeEventListener('hashchange', capture, true); } };
+      return { untilFoundIDL: Reflect.get(probe, 'hidden'), beforematchProperty: 'onbeforematch' in probe };
+    }, anchor);
+    assert.equal(evidence.capability.untilFoundIDL, 'until-found');assert.equal(evidence.capability.beforematchProperty, true);
+    await patchSettings({ compactTimeline: 'minimal' });
+    evidence.folded = await poll(read, (value) => value !== null && value.hidden === 'until-found' && value.owner === 'folded' && value.control?.label === 'Show original conversation entry' && value.control.expanded === 'false', 'Reviewed human native original folds with real until-found and truthful Show control');
+    preserved(evidence.folded);assert.equal(evidence.folded.oldHiddenFlag, false);
+    assert.ok(evidence.folded.box.height <= 0.5 && evidence.folded.box.display !== 'none' && evidence.folded.box.contentVisibility === 'hidden', 'Folded original must retain browser-searchable display with a zero CSS box');
+    for (const key of ['marginTop', 'marginBottom', 'paddingTop', 'paddingBottom', 'borderTop', 'borderBottom']) assert.equal(evidence.folded.box[key], '0px');
+    await assertSourcesUnchanged();
+    evidence.foldedArtifacts = await capture(page, 'gitlab-native-original-folded');
+    await page.evaluate((anchor) => { location.hash = anchor; }, anchor);
+    evidence.revealed = await poll(read, (value) => value !== null && value.hidden === null && value.owner === null && value.box.height > 0 && value.control?.label === 'Hide original conversation entry' && value.control.expanded === 'true' && decodeURIComponent(value.hash.slice(1)) === anchor, 'Actual browser fragment navigation reveals the native original and updates Hide control');
+    preserved(evidence.revealed);await assertSourcesUnchanged();
+    evidence.events = await page.evaluate(() => globalThis.__geldNativeFragmentEvidence.events);
+    evidence.trustedBeforematch = evidence.events.some((event) => event.type === 'beforematch' && event.trusted && (event.target === anchor || event.targetContainsAnchor));
+    assert.ok(evidence.events.some((event) => event.type === 'hashchange' && event.trusted), 'Actual browser fragment navigation must emit its native hashchange event');
+    evidence.revealMechanism = evidence.trustedBeforematch ? 'Browser-generated trusted beforematch during actual fragment navigation; Ctrl+F remains untested' : 'Actual browser fragment/hashchange fallback; no trusted beforematch or Ctrl+F claim';
+    evidence.revealedArtifacts = await capture(page, 'gitlab-native-original-fragment-revealed');
+    evidence.hideClick = await trustedHiddenToggle(page, /^Hide original conversation entry$/, controlSelector);
+    evidence.manuallyFolded = await poll(read, (value) => value !== null && value.hidden === 'until-found' && value.owner === 'folded' && value.control?.label === 'Show original conversation entry', 'Trusted Hide keeps the original folded despite its unchanged current fragment');
+    await options.bringToFront();await poll(() => page.evaluate(() => document.hidden), Boolean, 'Actual native-original review tab becomes hidden');
+    await page.bringToFront();await poll(() => page.evaluate(() => document.hidden), (value) => value === false, 'Actual native-original review tab returns visible');
+    evidence.reapplied = await poll(read, (value) => value !== null && value.hidden === 'until-found' && value.owner === 'folded' && value.control?.expanded === 'false' && value.hash === evidence.manuallyFolded.hash, 'Explicit original Hide survives real visibility reapply with unchanged fragment');
+    preserved(evidence.reapplied);await assertSourcesUnchanged();
+    return evidence;
+  } finally {
+    await patchSettings({ compactTimeline: settings.compactTimeline ?? 'compact' });
+    if (!page.isClosed()) await page.evaluate((url) => {
+      globalThis.__geldNativeFragmentEvidence?.cleanup();delete globalThis.__geldNativeFragmentEvidence;
+      history.replaceState(history.state, '', url);
+    }, previousUrl);
+  }
 }
 
 async function bitbucketListCounts(page) {
@@ -1151,6 +1268,8 @@ async function bitbucketCommitCounts(page) {
   const all = { files: 1, additions: 2, deletions: 0 };
   const baseline = await waitTotals(page, all, all, 0);
   const native = await poll(read, (value) => value.heading === '1 file' && value.badge === '1' && value.file?.path === 'pipe/pipe.py', 'Actual standalone commit heading and sidebar Files badge');
+  const headerGroup = '[role="region"][aria-label="Diff"] > div > div > h2';
+  const baselineHeaderHints = await headerHintsEvidence(page, '0 tests', headerGroup, 'bitbucket-commit-baseline', false);
   const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
   let filtered;
   let hidden;
@@ -1158,10 +1277,13 @@ async function bitbucketCommitCounts(page) {
   let autoOpened;
   let hideClick;
   let showClick;
+  let filteredHeaderHints;
   try {
     await patchSettings({ categoryPatterns: { ...original.categoryPatterns, tests: ['pipe/pipe.py'] } });
     filtered = await waitTotals(page, all, { files: 0, additions: 0, deletions: 0 }, 1);
     assert.equal(filtered.expanded, true, 'A commit categorized entirely as hidden must auto-expand its real source file');
+    filteredHeaderHints = await headerHintsEvidence(page, '1 test', headerGroup, 'bitbucket-commit-filtered');
+    assert.deepEqual(filteredHeaderHints.nativeIds, baselineHeaderHints.nativeIds);
     autoOpened = await poll(read, (value) => value.heading === '0 files' && value.badge === '0' && value.file?.display !== 'none' && value.file?.hidden === 'open', 'Actual all-categorized commit keeps zero essential counts while opening its sole file');
     hideClick = await trustedHiddenToggle(page, /^Hide/);
     await poll(() => tabState(page), (value) => value.expanded === false && value.visible?.files === 0 && value.hiddenCount === 1, 'Trusted Hide collapses the all-categorized commit with matching real tab state');
@@ -1175,7 +1297,9 @@ async function bitbucketCommitCounts(page) {
   const restoredState = await waitTotals(page, all, all, 0);
   const restored = await poll(read, (value) => value.heading === '1 file' && value.badge === '1' && value.file?.display !== 'none' && value.file?.hidden === null, 'Actual commit file counts and sole-file visibility restore');
   assert.equal(restored.file.id, native.file.id);assert.deepEqual(restored.nativeLinks, native.nativeLinks);
-  return { baseline, native, filtered, autoOpened, hideClick, hidden, hiddenArtifacts, showClick, restoredState, restored, nativeFingerprint: createHash('sha256').update(JSON.stringify({ id: native.file.id, path: native.file.path, links: native.nativeLinks })).digest('hex'), nativeLineTotals: 'No native added/deleted header summary is present. Only actual runtime totals and native file-count surfaces are asserted.' };
+  const restoredHeaderHints = await headerHintsEvidence(page, '0 tests', headerGroup, 'bitbucket-commit-restored', false);
+  assert.deepEqual(restoredHeaderHints.nativeIds, baselineHeaderHints.nativeIds);
+  return { baseline, native, baselineHeaderHints, filtered, filteredHeaderHints, autoOpened, hideClick, hidden, hiddenArtifacts, showClick, restoredState, restored, restoredHeaderHints, nativeFingerprint: createHash('sha256').update(JSON.stringify({ id: native.file.id, path: native.file.path, links: native.nativeLinks })).digest('hex'), nativeLineTotals: 'No native added/deleted header summary is present. Only actual runtime totals and native file-count surfaces are asserted.' };
 }
 
 await mkdir(artifacts, { recursive: true });
@@ -1207,6 +1331,7 @@ try {
     item.enabledState = await waitTotals(page, { files: 3, additions: 36, deletions: 0 }, { files: 2, additions: 4, deletions: 0 }, 1);
     const enabled = await poll(() => gitLabDom(page), (value) => value.headers.some((row) => row.files === 2 && row.additions === 4 && row.deletions === 0) && value.hidden.some((row) => row.value === 'closed' && row.display === 'none'), 'Actual native header rewrite and hidden file DOM');
     item.enabledDom = enabled;
+    item.headerHints = await headerHintsEvidence(page, '1 test', '[data-testid="js-file-addition-line"]', 'gitlab-mixed-header');
     const categorizedPath = item.enabledState.categories.find((category) => category.id === 'tests')?.paths[0];
     assert.ok(typeof categorizedPath === 'string', 'Mixed GitLab fixture needs a real categorized path');
     item.categoryInteraction = await categoryInteraction(page, categorizedPath, 'gitlab', 'gitlab-category', false);
@@ -1281,7 +1406,7 @@ try {
     assert.equal(item.state.onDiffPage, false);
     item.authorPresentation = await authorThemeEvidence(page, 'gitlab', 'note_4118584957');
     assertAuthorThemeEvidence(item.authorPresentation);
-    item.localReviewed = await localReviewedFlag(page);
+    item.localReviewed = await localReviewedFlag(page, (evidence) => { item.nativeFragment = evidence; });
     return {};
   });
   await runCase('github-regression', GH_FILES, async (page, item) => {

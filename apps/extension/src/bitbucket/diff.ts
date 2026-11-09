@@ -1,4 +1,5 @@
 import type { ProviderDiffEntry, ProviderDiffLine, ProviderDiffView, ProviderHeaderTarget, ProviderTreeEntry } from '../providers/types';
+import { describeBitbucketPage, describeBitbucketProviderPage } from './page';
 
 function native<T extends Element>(nodes: Iterable<T>): T[] {
   return [...nodes].filter((node) => node.closest('[data-geld-ui]') === null);
@@ -109,19 +110,34 @@ export function readBitbucketDiff(doc: Document): ProviderDiffView | null {
 }
 
 export function bitbucketHeaderTargets(doc: Document): readonly ProviderHeaderTarget[] {
+  const page = describeBitbucketProviderPage(new URL(doc.URL));
+  if (page === null) return [];
   const targets: ProviderHeaderTarget[] = [];
   const tab = native(doc.querySelectorAll<HTMLElement>('a#pull-request-tabs-1[role="tab"]'))[0];
   const files = tab?.querySelector<HTMLElement>(':scope > div > span > span');
-  if (files !== null && files !== undefined && count(files.textContent) !== null) targets.push({ files, additions: null, deletions: null, hoverHosts: tab === undefined ? [] : [tab] });
+  let linked: ReturnType<typeof describeBitbucketPage> = null;
+  if (tab !== undefined) { try { linked = describeBitbucketPage(new URL(tab.getAttribute('href') ?? '', doc.URL)); } catch { linked = null; } }
+  if (files !== null && files !== undefined && count(files.textContent) !== null && linked?.kind === 'diff' && linked.url === page.url) targets.push({ files, additions: null, deletions: null, hoverHosts: tab === undefined ? [] : [tab] });
   const heading = native(doc.querySelectorAll<HTMLElement>('#file-tree h5')).find((node) => node.textContent?.trim() === 'Lines updated');
   const stats = heading?.parentElement?.parentElement;
   if (stats !== null && stats !== undefined) {
     const { additions, deletions } = signedLeaves(stats);
-    if (additions !== null || deletions !== null) targets.push({ files: null, additions, deletions, keyboardHoverHosts: [stats], accessibleSummaryHost: stats });
+    const visual = (additions ?? deletions)?.parentElement;
+    const group = visual?.parentElement;
+    const hint = page.kind === 'diff' && visual?.getAttribute('aria-hidden') === 'true' && group?.tagName === 'DIV' && group.parentElement === stats
+      && group.closest('[data-geld-ui], [hidden], [aria-hidden="true"], a, button, [role="tab"], [role="tablist"]') === null ? { hintHost: group, hintBefore: visual } : {};
+    if (additions !== null || deletions !== null) targets.push({ files: null, additions, deletions, keyboardHoverHosts: [stats], accessibleSummaryHost: stats, ...hint });
   }
-  if (doc.querySelector('h1[data-qa="page-header"]') !== null && doc.querySelector('button[data-testid="commit-more-button--trigger"]') !== null) {
+  const headingText = doc.querySelector('h1[data-qa="page-header"]')?.textContent?.trim();
+  if (page.kind === 'commit' && headingText !== undefined && /^[a-f0-9]{7,64}$/i.test(headingText) && page.ref.startsWith(headingText.toLowerCase()) && doc.querySelector('button[data-testid="commit-more-button--trigger"]') !== null) {
     for (const files of native(doc.querySelectorAll<HTMLElement>('[role="region"][aria-label="Diff"] > div > div > h2'))) {
-      if (/^[\d,]+ files?$/.test(files.textContent?.trim() ?? '')) targets.push({ files, additions: null, deletions: null, keyboardHoverHosts: [files] });
+      if (!/^[\d,]+ files?$/.test(files.textContent?.trim() ?? '')) continue;
+      const row = files.parentElement?.parentElement;
+      const slot = row?.children[1];
+      const hint = row?.children.length === 2 && row.children[0] === files.parentElement && slot instanceof HTMLElement && slot.tagName === 'DIV'
+        && slot.closest('[data-geld-ui], [hidden], [aria-hidden="true"], a, button, [role="tab"], [role="tablist"]') === null
+        && [...slot.childNodes].every((node) => node instanceof Element ? node.hasAttribute('data-geld-ui') : (node.textContent?.trim() ?? '') === '') ? { hintHost: slot, hintBefore: null } : {};
+      targets.push({ files, additions: null, deletions: null, keyboardHoverHosts: [files], ...hint });
     }
     const fileTab = native(doc.querySelectorAll<HTMLElement>('[data-testid="sidebar-tab-files"][role="tab"]'))[0];
     const badge = fileTab?.querySelector<HTMLElement>(':scope > span > div > span > span');

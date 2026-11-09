@@ -1,6 +1,7 @@
 import type { ProviderDiffEntry, ProviderDiffLine, ProviderDiffView, ProviderHeaderTarget, ProviderTreeEntry } from '../providers/types';
-import { jsonAttribute } from './page';
+import { describeGitLabPage, jsonAttribute } from './page';
 import { gitLabPathNavigator } from './navigation';
+import { isProviderReviewPage } from '../providers/types';
 
 export { gitLabListRows } from './list-surfaces';
 
@@ -134,14 +135,38 @@ function countLabels(root: HTMLElement): NonNullable<ProviderHeaderTarget['label
 }
 
 export function gitLabHeaderTargets(doc: Document): readonly ProviderHeaderTarget[] {
-  const counts = [...doc.querySelectorAll<HTMLElement>('.diff-stats.inline-parallel-buttons .diff-stats-contents')].map((root) => ({
-    additions: root.querySelector<HTMLElement>('[data-testid="js-file-addition-line"]'),
-    deletions: root.querySelector<HTMLElement>('[data-testid="js-file-deletion-line"]'),
-    files: root.querySelector<HTMLElement>(':scope > .diff-stats-group > span'),
-    labels: countLabels(root),
-  }));
-  return [...counts, ...[...doc.querySelectorAll<HTMLElement>('[data-testid="diffs-tab"] .js-changes-tab-count')].map((files) => {
+  const current = new URL(doc.URL);
+  if (current.username !== '' || current.password !== '') return [];
+  const page = describeGitLabPage(current, doc);
+  if (page === null) return [];
+  const neutral = (node: HTMLElement): boolean => node.closest('[data-geld-ui], [hidden], [aria-hidden="true"], a, button, [role="tab"], [role="tablist"]') === null;
+  const counts = [...doc.querySelectorAll<HTMLElement>('.diff-stats.inline-parallel-buttons .diff-stats-contents')].filter((root) => root.closest('[data-geld-ui]') === null).map((root) => {
+    const additions = root.querySelector<HTMLElement>('[data-testid="js-file-addition-line"]');
+    const deletions = root.querySelector<HTMLElement>('[data-testid="js-file-deletion-line"]');
+    const files = root.querySelector<HTMLElement>(':scope > .diff-stats-group > span');
+    let before = (additions ?? deletions)?.parentElement ?? null;
+    while (before !== null && before.parentElement !== root) before = before.parentElement;
+    if (before === null) before = root.querySelector<HTMLElement>(':scope > .diff-stats-group');
+    return { additions, deletions, files, labels: countLabels(root),
+      ...(neutral(root) && (additions !== null || deletions !== null || files !== null) ? { hintHost: root, hintBefore: before } : {}),
+    };
+  });
+  if (!isProviderReviewPage(page)) return counts;
+  const actions = [...doc.querySelectorAll<HTMLElement>('.merge-request-tabs-container > .merge-request-tabs-actions')].find((root) => neutral(root)
+    && root.querySelector(':scope > #discussionCounter [data-testid="discussions-counter-text"]') !== null);
+  let fallback = page.kind === 'overview' && !counts.some((target) => target.hintHost !== undefined) && actions !== undefined;
+  const tabs = [...doc.querySelectorAll<HTMLElement>('[data-testid="diffs-tab"] .js-changes-tab-count')].flatMap((files) => {
+    if (files.closest('[data-geld-ui]') !== null) return [];
     const tab = files.closest<HTMLAnchorElement>('a[data-action="diffs"][data-toggle="tabvue"]');
-    return { files, additions: null, deletions: null, hoverHosts: tab === null ? [] : [tab] };
-  })];
+    if (tab === null) return [];
+    let target: URL;
+    try { target = new URL(tab.getAttribute('href') ?? '', doc.URL); } catch { return []; }
+    if (target.origin !== current.origin || target.username !== '' || target.password !== '') return [];
+    const linked = describeGitLabPage(target, doc);
+    if (linked === null || !isProviderReviewPage(linked) || linked.url !== page.url || linked.kind !== 'diff') return [];
+    const hint = fallback && actions !== undefined ? { hintHost: actions, hintBefore: actions.querySelector<HTMLElement>(':scope > #discussionCounter') } : {};
+    fallback = false;
+    return [{ files, additions: null, deletions: null, hoverHosts: [tab], ...hint }];
+  });
+  return [...counts, ...tabs];
 }

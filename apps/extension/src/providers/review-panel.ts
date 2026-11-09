@@ -516,7 +516,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     interface HistoryEntry { readonly at: number; readonly key: string; readonly render: () => HTMLElement }
     const entries: HistoryEntry[] = [
       ...items.map((item) => ({ at: Math.min(...item.sources.map((source) => Date.parse(comments.get(source.anchor)?.createdAt ?? '')).filter(Number.isFinite)), key: `item:${item.id}`, render: () => itemSection(item, comments) })),
-      ...ordinary.map((comment) => ({ at: Date.parse(comment.updatedAt ?? comment.createdAt), key: `comment:${comment.id}`, render: () => sourceComment(comment) })),
+      ...ordinary.map((comment) => ({ at: Date.parse(comment.author.automated === true ? comment.updatedAt ?? comment.createdAt : comment.createdAt), key: `comment:${comment.id}`, render: () => sourceComment(comment) })),
       ...events.filter((event) => !pushes.includes(event)).map((event) => ({ at: Date.parse(event.createdAt), key: `event:${event.id}`, render: () => eventRow(event) })),
     ];
     entries.sort((a, b) => a.at - b.at || a.key.localeCompare(b.key));
