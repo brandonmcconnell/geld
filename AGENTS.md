@@ -3446,3 +3446,7 @@ Provider addressed-state caches include the selected decision setting and are re
 Provider native count rewrites use the shared count grammar and preserve the native grouping separator in visible text and accessibility labels.
 GitLab's combined Added and Removed label is identified with the same grammar, so dotted, apostrophe and no-break-space grouping cannot split one count into several or leave stale totals.
 Count restoration continues to retain the original text nodes, icons and latest native wording.
+
+Native permission verification normalizes semantic AT-SPI role constants before using role-name fallbacks, including web-document roles that must remain excluded.
+A role-name-only scan can find Geld's native permission alert without identifying its Allow or Cancel controls.
+The bounded native-role census and recognized-label diagnostics distinguish that case without recording arbitrary page or dialog text, and cannot authorize an unknown control.
