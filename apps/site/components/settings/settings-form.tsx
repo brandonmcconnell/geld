@@ -1,6 +1,6 @@
 'use client';
 
-import type { AnyCategoryId, CategoryId, CustomCategory, GeldSettings, ListSettingKey, SettingsSection } from '@geld/core';
+import type { AnyCategoryId, CategoriesField, CategoryId, CustomCategory, GeldSettings, ListSettingKey, SettingsSection } from '@geld/core';
 import { IssueTrackerEditor } from '@geld/ui/issue-tracker-editor';
 import { categoryPatternLines } from '@geld/core';
 import { useRouter } from 'next/navigation';
@@ -88,6 +88,10 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
   const onCategory = (id: AnyCategoryId, value: boolean): void => {
     void submit({ kind: 'category', id, value });
   };
+  const onAutoViewed = (id: AnyCategoryId, value: boolean): void => {
+    void submit({ kind: 'auto-viewed', id, value });
+  };
+  const autoViewedCopy = sections.flatMap((section) => section.fields).find((field): field is CategoriesField => field.kind === 'categories')?.autoViewed ?? null;
   const onGroup = (categoryId: CategoryId, groupId: string, value: boolean): void => {
     void submit({ kind: 'group', categoryId, groupId, value });
   };
@@ -184,6 +188,7 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
                         settings={settings}
                         disabled={signedOut || remoteInvalid}
                         onCategory={onCategory}
+                        onAutoViewed={onAutoViewed}
                         onGroup={onGroup}
                         onPatterns={onPatterns}
                       />
@@ -193,9 +198,11 @@ export function SettingsForm({ sections, initialSettings, initialGistId, updated
                       <CustomCategoriesRows
                         key="custom-categories"
                         field={field}
+                        autoViewedCopy={autoViewedCopy}
                         settings={settings}
                         disabled={signedOut || remoteInvalid}
                         onCategory={onCategory}
+                        onAutoViewed={onAutoViewed}
                         onSave={onCustomSave}
                         onRemove={onCustomRemove}
                       />
