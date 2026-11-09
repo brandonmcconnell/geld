@@ -105,22 +105,25 @@ test('requires exact original native input, list, root and checkbox identities o
 });
 
 function protocol(options = {}) {
-  let query = '';let selected = false;let collapsed = false;let active = false;let focused = false;let shift = false;let proof = false;let nativeSelected = false;let cleaned = false;
-  const calls = [];const events = [];
-  const read = () => ({
+  let query = options.initialQuery ?? '';let selected = false;let collapsed = false;let active = false;let focused = false;let shift = false;let proof = false;let nativeSelected = false;let cleaned = false;
+  const calls = [];const events = [];let filterReads = 0;
+  const polls = [];
+  const read = () => {
+    if (query) filterReads += 1;
+    return ({
     app: options.targetChanged && nativeSelected ? nativeApp(true) : { ...nativeApp(), ...(options.targetMetadataChanged && nativeSelected ? { targetVersions: [{ ...nativeApp().targetVersions[0], is_base: false }] } : {}), ...(options.sourceMetadataChanged && nativeSelected ? { sourceVersions: [{ ...nativeApp().sourceVersions[0], version_index: 3 }] } : {}) },
-    url: fixture.url + (selected ? `${nativeSelected ? '&file_path=' + encodeURIComponent(fixture.path) : ''}#${fixture.anchor}` : ''),
+    url: (options.filterNavigation && query ? fixture.url.replace('/266334/', '/266335/') : fixture.url) + (selected ? `${nativeSelected ? '&file_path=' + encodeURIComponent(fixture.path) : ''}#${fixture.anchor}` : ''),
     unique: { host: 1, input: 1, nav: 1, roots: 1 },
     search: { value: query, label: 'Search (e.g. *.vue) (F)', visible: true, focused },
-    native: { paths: options.unfilteredResults ? [fixture.path, 'app/another.rb'] : [fixture.path], resultCount: 1, visible: Boolean(query), listMarker: query ? null : 'native', anchor: fixture.anchor },
+    native: { paths: options.unfilteredResults || query && filterReads <= (options.pendingReads ?? 0) ? [fixture.path, 'app/another.rb'] : [fixture.path], resultCount: 1, visible: Boolean(query), listMarker: query ? null : 'native', anchor: fixture.anchor },
     owned: { count: query ? 0 : 1, active: active ? 'true' : 'false', current: selected && !(options.currentLost && nativeSelected && !query) ? 'true' : null, folder: { label: fixture.path.slice(0, fixture.path.lastIndexOf('/')), expanded: collapsed && !(options.collapseReset && nativeSelected && !query) ? 'false' : 'true' }, headers: [{ text: 'Essential (2 files)', expanded: active ? 'false' : 'true' }, { text: 'Tests (1 test)', expanded: active ? 'true' : 'false' }] },
     source: { id: fixture.anchor, path: fixture.path, head: fixture.head, review: '019271d5e9aaae129d85f3585c16c1acf7a767cd', raw: options.changedSource && nativeSelected ? 'changed payload' : 'original payload', boxes: [{ id: 'viewed', checked: false }], visible: active, open: active, codeVisible: active, codeInViewport: active },
-    identity: proof ? { input: !options.replacedInput || !query, host: true, nav: true, root: true, boxes: true } : null,
+    identity: proof ? { input: (!options.replacedInput || !query) && !(options.pendingIdentityChanged && query && filterReads === 2), host: true, nav: true, root: true, boxes: true } : null,
     events: [...events],
-  });
+  }); };
   const page = {
     isClosed: () => false,
-    evaluate: async (fn) => { if (fn === gitLabFileSearchSnapshot) return read();if (String(fn).includes('delete globalThis.__geldFileSearchProof')) { cleaned = true;return; }proof = true; },
+    evaluate: async (fn) => { if (fn === gitLabFileSearchSnapshot) return read();if (String(fn).includes('delete globalThis.__geldFileSearchProof')) { if (options.listenerRemovalFails) throw new Error('Listener cleanup failed');cleaned = true;return { hadProof: proof, removedTypes: proof ? ['click', 'focusin', 'focusout', 'input', 'keydown'] : [], proofAbsent: true }; }proof = true; },
     $eval: async (_selector, fn) => String(fn).includes('unobstructed') ? { unique: 1, unobstructed: !options.obstructed } : undefined,
     click: async (selector) => {
       calls.push(selector);
@@ -133,12 +136,12 @@ function protocol(options = {}) {
       down: async (key) => { if (key === 'Shift') shift = true; },
       up: async (key) => { if (key === 'Shift') shift = false; },
       type: async (text) => { calls.push(`type:${text}`);query = text;events.push({ type: 'input', input: true, trusted: !options.untrustedInput }); },
-      press: async (key) => { calls.push(key);if (key === 'Enter') active = true;if (key === 'Tab') focused = shift;if (key === 'Backspace') query = ''; },
+      press: async (key) => { calls.push(key);if (key === 'Enter') active = true;if (key === 'Tab') focused = shift;if (key === 'Backspace') { if (!options.noClearKey) events.push({ type: 'keydown', trusted: true, input: true, key: 'Backspace', value: query });if (!options.noClear) query = '';if (!options.noClearInput) events.push({ type: 'input', trusted: true, input: true, key: null, value: query }); } },
     },
   };
   const progress = {};
-  const dependencies = { progress, poll: async (get, accepts, label) => { const value = await get();assert.ok(accepts(value), label);return value; }, capture: async (_page, name) => ({ name }), totals: async () => ({ all: { files: 3, additions: 36, deletions: 0 }, visible: { files: 2, additions: 4, deletions: 0 } }) };
-  return { page, dependencies, progress, calls, cleaned: () => cleaned, query: () => query };
+  const dependencies = { progress, poll: async (get, accepts, label) => { for (let index = 0; index < 6; index += 1) { const value = await get();polls.push({ label, paths: value.native.paths });if (accepts(value)) return value; }throw new Error(`Protocol deadline: ${label}`); }, capture: async (_page, name) => { if (options.captureThrows) throw new Error('Capture failed');return { name }; }, totals: async () => ({ all: { files: 3, additions: 36, deletions: 0 }, visible: { files: 2, additions: 4, deletions: 0 } }) };
+  return { page, dependencies, progress, calls, polls, cleaned: () => cleaned, query: () => query };
 }
 
 test('protocol uses real input paths and demands collapsed/current recovery with source identity, then removes instrumentation', async () => {
@@ -162,5 +165,62 @@ for (const [name, options] of [
   ['native source metadata changed at the same head', { sourceMetadataChanged: true }],
 ]) test(`protocol rejects ${name} and performs cleanup`, async () => {
   const p = protocol(options);await assert.rejects(verifyGitLabFileSearch(p.page, p.dependencies));
-  assert.equal(p.cleaned(), true);assert.equal(p.query(), '');
+  assert.equal(p.cleaned(), true);
+  const unsafe = options.changedSource || options.replacedInput || options.targetChanged || options.targetMetadataChanged || options.sourceMetadataChanged;
+  assert.equal(p.query(), unsafe ? fixture.query : '');
+});
+
+
+test('protocol waits through pending unrelated rows to the exact native result before activating it', async () => {
+  const p = protocol({ pendingReads: 3 });await verifyGitLabFileSearch(p.page, p.dependencies);
+  assert.deepEqual(p.progress.searchPending.native.paths, [fixture.path, 'app/another.rb']);
+  assert.deepEqual(p.progress.search.native.paths, [fixture.path]);
+  assert.ok(p.polls.filter((poll) => poll.label.includes('settles to') && poll.paths.length > 1).length >= 3);
+  assert.equal(p.progress.clear.status, 'verified');assert.equal(p.progress.cleanup.status, 'verified');
+  assert.equal(p.progress.cleanup.after.owned.folder.expanded, 'false');
+  assert.equal(p.progress.cleanup.after.owned.current, 'true');
+  assert.equal(p.progress.cleanup.listeners.proofAbsent, true);
+  assert.ok(p.progress.clear.events.some((event) => event.type === 'input' && event.trusted && event.value === ''));
+});
+
+test('permanently unrelated rows fail the deadline, preserve the last observation and record real finally cleanup', async () => {
+  const p = protocol({ unfilteredResults: true });await assert.rejects(verifyGitLabFileSearch(p.page, p.dependencies), /Protocol deadline/);
+  assert.deepEqual(p.progress.searchLatest.native.paths, [fixture.path, 'app/another.rb']);
+  assert.equal(p.progress.search, undefined);assert.equal(p.progress.activated, undefined);
+  assert.equal(p.progress.cleanupClear.status, 'verified');assert.equal(p.progress.cleanup.status, 'verified');
+  assert.equal(p.progress.cleanup.after.search.value, '');assert.equal(p.progress.cleanup.after.owned.folder.expanded, 'false');
+  assert.ok(p.progress.cleanupClear.events.some((event) => event.type === 'keydown' && event.trusted && event.key === 'Backspace'));
+  assert.equal(p.cleaned(), true);
+});
+
+test('pending observations enforce original ownership before a later matching result can pass', async () => {
+  const p = protocol({ pendingReads: 3, pendingIdentityChanged: true });await assert.rejects(verifyGitLabFileSearch(p.page, p.dependencies));
+  assert.equal(p.progress.searchLatest.identity.input, false);assert.equal(p.progress.search, undefined);assert.equal(p.cleaned(), true);
+});
+
+test('changed subject during pending search never clears a different native input', async () => {
+  const p = protocol({ filterNavigation: true });await assert.rejects(verifyGitLabFileSearch(p.page, p.dependencies));
+  assert.equal(p.progress.cleanup.status, 'skipped_changed_scope');assert.equal(p.calls.includes('Backspace'), false);assert.equal(p.cleaned(), true);
+});
+
+test('a preexisting native query stays untouched when preparation refuses the fixture', async () => {
+  const p = protocol({ initialQuery: 'original reader search' });await assert.rejects(verifyGitLabFileSearch(p.page, p.dependencies), /must start empty/);
+  assert.equal(p.progress.cleanup.status, 'skipped_unowned_query');assert.equal(p.calls.includes('Backspace'), false);assert.equal(p.query(), 'original reader search');
+});
+
+for (const [name, options] of [
+  ['missing trusted clear input', { noClearInput: true }],
+  ['missing trusted Backspace', { noClearKey: true }],
+  ['query refuses to clear', { noClear: true }],
+  ['listener removal fails', { listenerRemovalFails: true }],
+]) test(`cleanup does not conceal ${name}`, async () => {
+  const p = protocol(options);await assert.rejects(verifyGitLabFileSearch(p.page, p.dependencies));
+  if (options.noClear || options.listenerRemovalFails) assert.equal(p.progress.cleanup.status, 'failed');
+  else assert.equal(p.progress.clear.status, 'pending');
+  if (!options.listenerRemovalFails) assert.equal(p.cleaned(), true);
+});
+
+test('an unrelated original failure is retained while finally clears the actual native query', async () => {
+  const p = protocol({ captureThrows: true });await assert.rejects(verifyGitLabFileSearch(p.page, p.dependencies), /Capture failed/);
+  assert.equal(p.progress.cleanupClear.status, 'verified');assert.equal(p.progress.cleanup.status, 'verified');assert.equal(p.query(), '');assert.equal(p.cleaned(), true);
 });
