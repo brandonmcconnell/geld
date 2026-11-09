@@ -11317,7 +11317,7 @@ var init_settings_schema = __esm({
             kind: "toggle",
             key: "relatedLinks",
             label: "Related links",
-            description: "Two sections under Reviewers in the pull request sidebar. Related links lists the tickets, Slack threads, agent sessions, reviews and docs its description links to, such as a Linear issue or the Replicas workspace that opened it. Mentions lists the GitHub issues and pull requests it references.",
+            description: "Two sections under Reviewers in the pull request sidebar. Related links lists the tickets, Slack threads, agent sessions, reviews and docs its description links to, such as a Linear issue or the Replicas workspace that opened it. Related work shows the stack it is in and the GitHub issues and pull requests its description links to.",
             popup: false
           },
           {
@@ -31939,8 +31939,7 @@ var REVIEW_BOTS = [
     triggers: ["@macroscope-app review", "@macroscopeapp review", "@macroscope-app"],
     configFiles: [".macroscope/"],
     conversational: true,
-    resolvesThreads: true,
-    threadSeverity: "badge"
+    resolvesThreads: true
   },
   {
     // Korbit (korbit.ai, `korbit-ai[bot]`): a review headed "### Review by Korbit AI" with a table of issues and
@@ -32078,11 +32077,28 @@ function macroscopeApprovability(text) {
 function isMacroscopeAgentComment(body) {
   return /\bPosted via Macroscope\s*[\u2014\u2013-]/i.test(body.replace(/<[^>]+>/g, ""));
 }
-function badgeSeverity(body) {
-  const first = body.replace(/<!--[\s\S]*?-->/g, "").trim().split("\n")[0] ?? "";
-  const match = /^\s*\p{Extended_Pictographic}?\uFE0F?\s*\*\*(critical|high|medium|low)\*\*/iu.exec(first);
-  const level = match?.[1]?.toLowerCase();
-  return level === void 0 ? null : level === "critical" || level === "high" ? "high" : level === "medium" ? "medium" : "low";
+function findingSeverity(body) {
+  const opening = body.replace(/<!--[\s\S]*?-->/g, "").split("\n").map((line) => line.trim()).filter((line) => line !== "").slice(0, 2).join("\n");
+  const level = (word) => {
+    const lower = word.toLowerCase();
+    if (/^(?:critical|high|major|important|p0|p1)$/.test(lower)) return "high";
+    if (/^(?:medium|minor|p2)$/.test(lower)) return "medium";
+    if (/^(?:low|trivial|nit|nitpick|p3|p4)$/.test(lower)) return "low";
+    return null;
+  };
+  const LEVEL = "critical|high|major|medium|minor|low|trivial|nit|nitpick";
+  const asks = /(?:alt="|!\[)(action required|remediation recommended)["\]]/i.exec(opening)?.[1]?.toLowerCase();
+  if (asks !== void 0) return asks === "action required" ? "high" : "medium";
+  const words = new RegExp(`\\b(${LEVEL})\\s+severity\\b`, "i").exec(opening) ?? new RegExp(`^\\W{0,3}severity:?\\W{0,3}(${LEVEL})\\b`, "im").exec(opening) ?? // A level in a badge: an image's alt or a shields.io label ("![high](…)", "badge/High-634FD1", alt="P1").
+  new RegExp(`(?:!\\[|alt="|/badge/)(${LEVEL}|p[0-4])(?:[\\]"\\s-]|\\s+badge)`, "i").exec(opening) ?? // A bold level alone, or before "·", leading its line, with a colour mark or a CodeRabbit icon before it.
+  new RegExp(`^[\\s>]*(?:\\p{Extended_Pictographic}\\uFE0F?\\s*)?(?:\\*\\*|__)\\s*(?:<[^>]+>\\s*)*(?:\\p{Extended_Pictographic}\\uFE0F?\\s*)?(${LEVEL})\\s*(?:\\*\\*|__|\xB7)`, "imu").exec(opening) ?? // A priority leading the finding ("P1: …", cubic).
+  /^\W{0,3}(p[0-4])\s*:/im.exec(opening) ?? // A colour mark with its level anywhere on the line ("… — 🟡 Minor · Correctness", "K1 · 🟢 `[nit]` ·", Claude).
+  new RegExp(`(?:\u{1F534}|\u{1F7E0}|\u{1F7E1}|\u{1F7E2}|\u26AA)\\s*\`?\\[?(${LEVEL}|important)\\]?\`?(?![A-Za-z0-9-])`, "iu").exec(opening);
+  const read = words?.[1] === void 0 ? null : level(words[1]);
+  if (read !== null) return read;
+  const mark = /^[*_\s]*(🔴|🟠|🟡|🟢|🛑|:stop_sign:)/u.exec(opening)?.[1];
+  if (mark === void 0) return null;
+  return mark === "\u{1F534}" || mark === "\u{1F7E0}" || mark === "\u{1F6D1}" || mark === ":stop_sign:" ? "high" : mark === "\u{1F7E1}" ? "medium" : "low";
 }
 var SEVERITY_RANK = { high: 3, medium: 2, low: 1 };
 function parseBotBody(body, botId) {
@@ -32562,7 +32578,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
       const lastAt = Number.isNaN(at) ? run2?.lastAt ?? null : Math.max(at, run2?.lastAt ?? Number.NEGATIVE_INFINITY);
       const unthreaded = run2 === void 0 ? unthreadedBy.get(id) : run2.unthreaded;
-      const badge = !comment.resolved && botById(id)?.threadSeverity === "badge" ? badgeSeverity(comment.body) : null;
+      const badge = comment.resolved ? null : comment.grade ?? findingSeverity(comment.body);
       const severity = badge === null || run2?.severity !== void 0 && SEVERITY_RANK[run2.severity] >= SEVERITY_RANK[badge] ? run2?.severity : badge;
       threadRuns.set(id, { login: comment.author, open: open2, openAnchor, lastAnchor: comment.anchor, lastAt, ...unthreaded === void 0 ? {} : { unthreaded }, ...severity === void 0 ? {} : { severity } });
       continue;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { badgeSeverity, botByCheckName, botsTriggeredBy, isMacroscopeAgentComment, isReviewShaped, isStatusLineComment, parseBotBody, refusalReason, UNKNOWN_SHA, verdictsFrom } from './bots';
+import { findingSeverity, botByCheckName, botsTriggeredBy, isMacroscopeAgentComment, isReviewShaped, isStatusLineComment, parseBotBody, refusalReason, UNKNOWN_SHA, verdictsFrom } from './bots';
 import type { BotComment, RawCheckRun } from './bots';
 import { clusterComments, firstSentence, guessSeverity } from './cluster';
 import { parseGeldPrMeta } from './model';
@@ -190,13 +190,13 @@ describe('Macroscope', () => {
       ['🟢 **Low**', 'low', 'suggestion'],
     ] as const) {
       const body = finding(level, 'src/findings.ts:117', 'A finding with an unknown `repo` is verified against every clone. Distinguish the two cases.');
-      expect(badgeSeverity(body), level).toBe(severity);
+      expect(findingSeverity(body), level).toBe(severity);
       expect(guessSeverity(body, true, false), level).toBe(item);
       expect(firstSentence(body), level).toBe('A finding with an unknown `repo` is verified against every clone.');
     }
     // As the page reads the thread: the badge's emoji, bold and code kept.
     expect(firstSentence('🟠 **High** `src/explorer.ts:234`\n\nWhen the child exits nonzero this marks the answer complete.\n\n🚀 Reply "fix it for me" or copy this AI Prompt for your agent:')).toBe('When the child exits nonzero this marks the answer complete.');
-    expect(badgeSeverity('Plain words, **High** risk later.')).toBeNull();
+    expect(findingSeverity('Plain words, **High** risk later.')).toBeNull();
     expect(firstSentence(approvabilityOnPage('Needs Human Approval'))).toBe('**Verdict:** Needs Human Approval');
     const [item] = clusterComments([{ anchor: 'discussion_r1', kind: 'thread', author: BOT, body: finding('🟠 **High**', 'src/findings.ts:117', 'Claims are attributed to the wrong clone.'), createdAt: at(1), path: 'src/findings.ts', line: 117 }]);
     expect(item).toMatchObject({ title: 'Claims are attributed to the wrong clone.', severity: 'bug' });

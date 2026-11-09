@@ -7,7 +7,7 @@
  */
 
 import type { CommentReaction, PreviewDoc, RawCheckRun, RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
-import { appAvatarForLogin, looksLikeSummaryBody } from '@geld/review';
+import { appAvatarForLogin, findingSeverity, looksLikeSummaryBody } from '@geld/review';
 import { loginOfLink } from './login';
 import { OVERVIEW_ITEM, OVERVIEW_THREAD_FRAME, overviewCommentsSection } from './overview-page';
 import { closestAtHome, compareHome, homeOf, wornPiecesOf } from './teleport';
@@ -129,7 +129,7 @@ const INLINE_MARK: Readonly<Record<string, string>> = { CODE: '`', STRONG: '**',
  * emphasis come back as Markdown marks (`inline-markdown.ts` reads them),
  * except inside `<pre>`, whose text is a block of its own.
  */
-export function blockText(root: Element): string {
+export function blockText(root: Element, images = false): string {
   const parts: string[] = [];
   const walk = (node: Node, inPre: boolean): void => {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -137,6 +137,11 @@ export function blockText(root: Element): string {
       return;
     }
     if (!(node instanceof Element)) return;
+    if (images && node.tagName === 'IMG') {
+      const alt = (node.getAttribute('alt') ?? '').trim();
+      if (alt !== '') parts.push(`![${alt}]`);
+      return;
+    }
     const block = BLOCK.test(node.tagName);
     if (block) parts.push('\n');
     const mark = inPre ? undefined : INLINE_MARK[node.tagName];
@@ -518,6 +523,9 @@ function readThread(container: Element): ThreadReading {
   const author = authorOf(first);
   const lead = peers[0];
   if (author === null || lead === undefined) return { ids, crawled: null };
+  // The finding's grade from its markup: a badge is an image whose alt the words alone lose ("P1", "![high]").
+  const leadBody = bodyElementOf(first);
+  const grade = leadBody === null ? null : findingSeverity(blockText(leadBody, true));
   const base: RawComment = {
     anchor: first.id,
     kind: 'thread',
@@ -527,6 +535,7 @@ function readThread(container: Element): ThreadReading {
     isResolved: isResolvedThread(container),
     isOutdated: isOutdatedThread(container),
     threadAnchors: peers,
+    ...(grade === null ? {} : { grade }),
   };
   const timelineNode = closestAtHome(container, TIMELINE_ROW) ?? container;
   const read: ThreadReading = {
