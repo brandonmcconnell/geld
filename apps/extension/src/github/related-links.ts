@@ -9,7 +9,7 @@ import { refDetails } from './review/refs';
 import type { RefState } from './review/refs';
 import { forgetPageStack, pageStack } from './stack';
 import type { PageStack } from './stack';
-import { attachStackCard, hideStackCard } from './ui/stack-card';
+import { attachStackCard, hideStackCard, syncStackCard } from './ui/stack-card';
 import {
   ICON_ALERT,
   ICON_COMMENT_DISCUSSION,
@@ -539,15 +539,14 @@ function orderSidebars(afters: readonly HTMLElement[]): void {
   }
 }
 
-/** A reference's place as a stack member's, `host/owner/repo/pull/N`: a link to an issue of that number is not the pull request. */
-function stackKeyOf(link: RelatedLink): string {
-  try {
-    const url = new URL(link.href);
-    const pull = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(url.pathname)?.[0];
-    return pull === undefined ? '' : `${url.hostname}${pull}`.toLowerCase();
-  } catch {
-    return '';
-  }
+/**
+ * A stack member's key as the registry keys GitHub's references (`readGitHub`): an issue and a pull request of one
+ * number are one thing, so a description linking a member through `/issues/N` is that member too.
+ */
+function stackMemberKey(host: string, path: string): string {
+  const pull = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(path);
+  const where = host.toLowerCase() === 'github.com' ? '' : `${host.toLowerCase()}/`;
+  return pull === null ? '' : `github:${where}${`${pull[1] ?? ''}/${pull[2] ?? ''}#${pull[3] ?? ''}`.toLowerCase()}`;
 }
 
 /** The controller's pass, for rows "Show N more" reveals to look their details up. */
@@ -563,14 +562,15 @@ export function applyRelatedLinks(active: boolean, onChange: () => void = () => 
   const all = afters.length === 0 ? [] : relatedLinksOnPage(onChange);
   const stack = afters.length === 0 ? null : pageStack(onChange);
   currentStack = stack;
-  const inStack = new Set((stack?.pulls ?? []).map((pull) => `${location.hostname}${pull.path}`.toLowerCase()));
-  const work = all.filter((link) => link.kind === 'github' && !inStack.has(stackKeyOf(link)));
+  const inStack = new Set((stack?.pulls ?? []).map((pull) => stackMemberKey(location.hostname, pull.path)));
+  const work = all.filter((link) => link.kind === 'github' && !inStack.has(link.key));
   const groups = ([
     ['related', rowsOf(all.filter((link) => link.kind !== 'github'), 'related', onChange), null],
     ['work', rowsOf(work, 'work', onChange), stack],
   ] as const).filter(([, rows, lead]) => rows.length > 0 || lead !== null);
   if (groups.length === 0) {
     if (mounted.size > 0 || document.querySelector(`.${SECTION_CLASS}[${OWN_UI_ATTRIBUTE}]`) !== null) removeSections();
+    syncStackCard();
     orderSidebars(afters);
     return;
   }
@@ -594,5 +594,6 @@ export function applyRelatedLinks(active: boolean, onChange: () => void = () => 
   const ours = new Set([...next.values()].flatMap(({ sections }) => sections));
   for (const stray of document.querySelectorAll(`.${SECTION_CLASS}[${OWN_UI_ATTRIBUTE}]`)) if (!(stray instanceof HTMLElement) || !ours.has(stray)) stray.remove();
   mounted = next;
+  syncStackCard();
   orderSidebars(afters);
 }

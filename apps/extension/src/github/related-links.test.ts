@@ -369,7 +369,7 @@ describe('related links in the sidebar', () => {
     const embedded = `<script type="application/json" data-target="react-app.embeddedData">{"payload":{"pullRequestsLayoutRoute":{"pullRequest":{"number":7},"stack":${stack}}}}</script>`;
     document.body.innerHTML =
       embedded +
-      '<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>After <a class="issue-link js-issue-link" href="https://github.com/acme/web/pull/6">#6</a>, see <a class="issue-link js-issue-link" href="https://github.com/acme/web/issues/12">#12</a>.</p></div></div>' +
+      '<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>After <a class="issue-link js-issue-link" href="https://github.com/acme/web/pull/6">#6</a>, before <a class="issue-link js-issue-link" href="https://github.com/acme/web/issues/8">#8</a>, see <a class="issue-link js-issue-link" href="https://github.com/acme/web/issues/12">#12</a>.</p></div></div>' +
       railsSidebar();
     applyRelatedLinks(true);
     const work = document.querySelector('[data-geld-section="work"]');
@@ -391,9 +391,30 @@ describe('related links in the sidebar', () => {
       ['/acme/web/pull/6', 'Step 6#6 · step/1', null],
     ]);
     expect(card?.querySelector('[data-state="merged"]')).not.toBeNull();
+    card?.querySelector('.geld-stack-card__list')?.dispatchEvent(new Event('scroll'));
+    expect(document.querySelector('.geld-stack-card')).toBe(card);
     stackLink?.dispatchEvent(new MouseEvent('mouseleave'));
     vi.advanceTimersByTime(300);
     expect(document.querySelector('.geld-stack-card')).toBeNull();
+
+    // From the keyboard: Down moves into the card, to this pull request; Escape closes it and leaves focus on the row.
+    stackLink?.focus();
+    expect(document.querySelector('.geld-stack-card')).not.toBeNull();
+    stackLink?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    expect(document.activeElement?.getAttribute('href')).toBe('/acme/web/pull/7');
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    expect(document.activeElement?.getAttribute('href')).toBe('/acme/web/pull/6');
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(document.querySelector('.geld-stack-card')).toBeNull();
+    expect(document.activeElement).toBe(stackLink);
+
+    // A redrawn sidebar takes the opener away, and its card with it.
+    stackLink?.dispatchEvent(new MouseEvent('mouseenter'));
+    vi.advanceTimersByTime(400);
+    expect(document.querySelector('.geld-stack-card')).not.toBeNull();
+    stackLink?.closest('.geld-related')?.remove();
+    applyRelatedLinks(true);
+    expect(document.querySelectorAll('.geld-stack-card')).toHaveLength(0);
   });
 
   it('opens the digest’s Mentions row from See all mentions', () => {

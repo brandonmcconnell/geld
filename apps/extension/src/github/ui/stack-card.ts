@@ -85,6 +85,37 @@ function place(card: HTMLElement, host: HTMLElement): void {
   card.style.top = `${Math.round(Math.max(MARGIN, top))}px`;
 }
 
+/** The card's links, in order: its title, then one per pull request. */
+const linksOf = (card: HTMLElement): HTMLAnchorElement[] => [...card.querySelectorAll<HTMLAnchorElement>('a[href]')];
+
+/** Focus back on the opener, which must not open the card again for it. */
+let returning = false;
+
+function returnFocus(host: HTMLElement): void {
+  returning = true;
+  host.focus();
+  returning = false;
+}
+
+/**
+ * Keys inside the card: arrows move between its links, the first one's Up returns to the opener, and Escape or Tab
+ * closes the card with focus back on the opener (the card is appended to the body, so Tab would leave the page).
+ */
+function cardKeys(event: KeyboardEvent, card: HTMLElement, host: HTMLElement): void {
+  const links = linksOf(card);
+  const index = links.findIndex((link) => link === document.activeElement);
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    const next = index + (event.key === 'ArrowDown' ? 1 : -1);
+    if (next < 0) returnFocus(host);
+    else links[Math.min(next, links.length - 1)]?.focus();
+  } else if (event.key === 'Escape' || event.key === 'Tab') {
+    event.preventDefault();
+    hideStackCard();
+    returnFocus(host);
+  }
+}
+
 function show(host: HTMLElement, stack: () => PageStack | null): void {
   clearTimers();
   if (shown?.host === host) return;
@@ -94,7 +125,10 @@ function show(host: HTMLElement, stack: () => PageStack | null): void {
   const card = stackCard(current);
   document.body.append(card);
   place(card, host);
-  card.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest' });
+  // Within the list only: `scrollIntoView` would scroll the page too, and that scroll would close the card.
+  const list = card.querySelector<HTMLElement>(`.${CARD_CLASS}__list`);
+  const mark = card.querySelector<HTMLElement>('[aria-current="page"]');
+  if (list !== null && mark !== null) list.scrollTop = Math.max(0, mark.offsetTop - list.offsetTop - (list.clientHeight - mark.offsetHeight) / 2);
   host.setAttribute('aria-expanded', 'true');
   const abort = new AbortController();
   card.addEventListener('mouseenter', clearTimers, { signal: abort.signal });
@@ -102,14 +136,20 @@ function show(host: HTMLElement, stack: () => PageStack | null): void {
   card.addEventListener('focusout', (event) => {
     if (!(event.relatedTarget instanceof Node) || (!card.contains(event.relatedTarget) && !host.contains(event.relatedTarget))) hideSoon();
   }, { signal: abort.signal });
+  card.addEventListener('keydown', (event) => cardKeys(event, card, host), { signal: abort.signal });
   document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    const inside = card.contains(document.activeElement);
-    hideStackCard();
-    if (inside) host.focus();
+    if (event.key === 'Escape' && !card.contains(document.activeElement)) hideStackCard();
   }, { signal: abort.signal });
-  window.addEventListener('scroll', () => hideStackCard(), { signal: abort.signal, passive: true, capture: true });
+  // The page scrolling moves the opener away; the card's own list scrolling does not.
+  window.addEventListener('scroll', (event) => {
+    if (!(event.target instanceof Node) || !card.contains(event.target)) hideStackCard();
+  }, { signal: abort.signal, passive: true, capture: true });
   shown = { host, card, abort };
+}
+
+/** Closes a card whose opener has left the page: the sidebar redrawn, or replaced by GitHub. */
+export function syncStackCard(): void {
+  if (shown !== null && !shown.host.isConnected) hideStackCard();
 }
 
 function hideSoon(): void {
@@ -119,9 +159,13 @@ function hideSoon(): void {
   hideTimer = window.setTimeout(hideStackCard, HIDE_DELAY_MS);
 }
 
-/** Hover or focus on `host` opens the card, read from `stack` at that moment; leaving both closes it. */
+/**
+ * Hover or focus on `host` opens the card, read from `stack` at that moment; leaving both closes it. From the opener,
+ * Down moves focus into the card, to the page's own pull request.
+ */
 export function attachStackCard(host: HTMLElement, stack: () => PageStack | null): void {
   host.setAttribute('aria-haspopup', 'dialog');
+  host.setAttribute('aria-keyshortcuts', 'ArrowDown');
   host.addEventListener('mouseenter', () => {
     if (hideTimer !== null) window.clearTimeout(hideTimer);
     hideTimer = null;
@@ -130,8 +174,18 @@ export function attachStackCard(host: HTMLElement, stack: () => PageStack | null
     showTimer = window.setTimeout(() => show(host, stack), SHOW_DELAY_MS);
   });
   host.addEventListener('mouseleave', () => hideSoon());
-  host.addEventListener('focus', () => show(host, stack));
+  host.addEventListener('focus', () => {
+    if (!returning) show(host, stack);
+  });
   host.addEventListener('blur', (event) => {
     if (!(event.relatedTarget instanceof Node) || !shown?.card.contains(event.relatedTarget)) hideSoon();
+  });
+  host.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowDown') return;
+    event.preventDefault();
+    show(host, stack);
+    if (shown?.host !== host) return;
+    const card = shown.card;
+    (card.querySelector<HTMLAnchorElement>('[aria-current="page"]') ?? linksOf(card)[0])?.focus();
   });
 }
