@@ -1,9 +1,13 @@
 import {
   DEFAULT_SETTINGS,
+  DIGEST_VIEWS,
   allCategories,
+  digestViewOf,
+  digestViewPatch,
   describeAdvancedSettings,
   hasAdvancedSettings,
   isAutoViewed,
+  isAutoViewedForAll,
   mergeCustomCategoryEdit,
   isCategoryEnabled,
   isGroupEnabled,
@@ -13,6 +17,7 @@ import {
   normalizeSettings,
   parsePatternList,
   withCustomCategory,
+  withAutoViewedForAll,
   withoutCustomCategory,
 } from './settings';
 import type { CustomCategory } from './categories';
@@ -28,9 +33,28 @@ describe('autoViewed', () => {
     expect(isAutoViewed(settings, 'custom:agent')).toBe(true);
     expect(withoutCustomCategory(settings, 'custom:agent').autoViewed).toEqual({ tests: true });
   });
+
+  it('reads and sets every category at once for the popup switch, judged by the categories that are on', () => {
+    const ids = ['tests', 'docs', 'generated'] as const;
+    expect(isAutoViewedForAll(DEFAULT_SETTINGS, ids)).toBe(false);
+    const all = withAutoViewedForAll(DEFAULT_SETTINGS, ids, true);
+    expect(all.autoViewed).toEqual({ tests: true, docs: true, generated: true });
+    expect(isAutoViewedForAll(all, ids)).toBe(true);
+    // Only tests is on by default, so a category that is off does not hold the switch back.
+    expect(isAutoViewedForAll({ ...DEFAULT_SETTINGS, autoViewed: { tests: true } }, ids)).toBe(true);
+    expect(isAutoViewedForAll({ ...all, categories: { ...all.categories, tests: false } }, ids)).toBe(false);
+    expect(withAutoViewedForAll(all, ids, false).autoViewed).toEqual({ tests: false, docs: false, generated: false });
+  });
 });
 
 describe('normalizeSettings', () => {
+  it('enables the attachment lightbox for existing settings and preserves an explicit opt-out', () => {
+    expect(DEFAULT_SETTINGS.attachmentLightbox).toBe(true);
+    expect(normalizeSettings({}).attachmentLightbox).toBe(true);
+    expect(normalizeSettings({ attachmentLightbox: 'false' }).attachmentLightbox).toBe(true);
+    expect(normalizeSettings({ attachmentLightbox: false }).attachmentLightbox).toBe(false);
+  });
+
   it('returns defaults for garbage', () => {
     expect(normalizeSettings(null)).toEqual(DEFAULT_SETTINGS);
     expect(normalizeSettings('nope')).toEqual(DEFAULT_SETTINGS);
@@ -126,6 +150,38 @@ describe('normalizeSettings', () => {
       reviewBots: ['acme[bot]'],
     });
   });
+
+  it('keeps when the digest view was chosen, empty until then', () => {
+    expect(DEFAULT_SETTINGS.digestViewChosenAt).toBe('');
+    expect(normalizeSettings({ digestViewChosenAt: '2026-11-06T20:00:00.000Z' }).digestViewChosenAt).toBe('2026-11-06T20:00:00.000Z');
+    expect(normalizeSettings({ digestViewChosenAt: 7 }).digestViewChosenAt).toBe('');
+  });
+});
+
+describe('digest views', () => {
+  const at = '2026-11-06T20:00:00.000Z';
+
+  it('reads the view from the digest switch and the timeline folding', () => {
+    expect(digestViewOf(DEFAULT_SETTINGS)).toBe('digest');
+    expect(digestViewOf({ prOverview: true, compactTimeline: 'minimal' })).toBe('digest');
+    expect(digestViewOf({ prOverview: true, compactTimeline: 'off' })).toBe('digest-timeline');
+    expect(digestViewOf({ prOverview: false, compactTimeline: 'off' })).toBe('github');
+  });
+
+  it('makes each view and records when it was chosen', () => {
+    for (const view of DIGEST_VIEWS) {
+      const patch = digestViewPatch(DEFAULT_SETTINGS, view, at);
+      expect(digestViewOf({ ...DEFAULT_SETTINGS, ...patch })).toBe(view);
+      expect(patch.digestViewChosenAt).toBe(at);
+    }
+  });
+
+  it('keeps the timeline folding the reader had when turning the digest off or folding again', () => {
+    expect(digestViewPatch({ compactTimeline: 'minimal' }, 'github', at).compactTimeline).toBe('minimal');
+    expect(digestViewPatch({ compactTimeline: 'minimal' }, 'digest', at).compactTimeline).toBe('minimal');
+    expect(digestViewPatch({ compactTimeline: 'off' }, 'digest', at).compactTimeline).toBe('compact');
+    expect(digestViewPatch({ compactTimeline: 'off' }, 'github', at).compactTimeline).toBe('off');
+  });
 });
 
 describe('normalizeAiBaseUrl', () => {
@@ -135,6 +191,10 @@ describe('normalizeAiBaseUrl', () => {
     expect(normalizeAiBaseUrl('https://ai-gateway.vercel.sh/typesafe')).toBe('https://ai-gateway.vercel.sh');
     expect(normalizeAiBaseUrl('  https://api.openai.com  ')).toBe('https://api.openai.com');
     expect(normalizeAiBaseUrl('https://gw.example.com/v2beta')).toBe('https://gw.example.com/v2beta');
+    expect(normalizeAiBaseUrl('api.openai.com')).toBe('https://api.openai.com');
+    expect(normalizeAiBaseUrl('openrouter.ai/api/v1/')).toBe('https://openrouter.ai/api');
+    expect(normalizeAiBaseUrl('http://localhost:11434')).toBe('http://localhost:11434');
+    expect(normalizeAiBaseUrl('  ')).toBe('');
   });
 
   it('is what normalizeSettings applies to aiBaseUrl', () => {
