@@ -184,9 +184,10 @@ function syncNotice(blocked: ReadonlyMap<string, BlockedBy>, noun: string): void
 /** GitHub's Hide forms for `login`'s comments the page still shows, which GitHub renders only for someone who may hide them. */
 function hideFormsFor(login: string): readonly HTMLFormElement[] {
   const forms: HTMLFormElement[] = [];
+  const key = login.toLowerCase();
   for (const card of document.querySelectorAll(COMMENTS)) {
     if (isOwn(card) && card.closest('[data-geld-teleported]') === null) continue;
-    if (insideMinimized(card) || isDescription(card) || authorOfComment(card)?.toLowerCase() !== login) continue;
+    if (insideMinimized(card) || isDescription(card) || authorOfComment(card)?.toLowerCase() !== key) continue;
     const home = card.closest('.review-comment, [id^="pullrequestreview-"], .js-comment-container, .timeline-comment-group') ?? card;
     const form = home.querySelector<HTMLFormElement>('form.js-timeline-comment-minimize, form[action$="/minimize"], form[action*="/minimize-comment"]');
     if (form !== null && !forms.includes(form)) forms.push(form);
