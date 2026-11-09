@@ -1,5 +1,5 @@
 import type { Catalog, ChangeTotals, FileStats, GeldSettings } from '@geld/core';
-import { allCategories, BUNDLED_CATALOG, compileRepoRules, createMatcher, decideRepo, formatCount, isAutoViewed, isCategoryEnabled, pluralize, providerRepositoryScope, repositoryKey, subtractTotals } from '@geld/core';
+import { allCategories, BUNDLED_CATALOG, compileRepoRules, createMatcher, decideRepo, formatCount, isAutoViewed, isCategoryEnabled, pluralize, providerRepositoryScope, repositoryKey, settingsEqual, subtractTotals } from '@geld/core';
 import { breakdownFromFiles, hiddenLabel, hiddenNounPlural, statsBreakdown } from '../github/breakdown';
 import type { HiddenBreakdown, StatsBreakdown } from '../github/breakdown';
 import type { TabState } from '../lib/messages';
@@ -218,7 +218,8 @@ export class ProviderController {
     if (settings.enabled !== this.settings.enabled || JSON.stringify([settings.hiddenAuthors, settings.repoRules]) !== JSON.stringify([this.settings.hiddenAuthors, this.settings.repoRules])) this.listAuthors.clear();
     const layoutChanged = settings.groupHidden !== this.settings.groupHidden;
     const defaultChanged = settings.expandedByDefault !== this.settings.expandedByDefault;
-    if (settings !== this.settings) { this.expansionChoices.clear(); this.inlineTouched.clear(); }
+    const expansionSettingsChanged = !settingsEqual({ ...this.settings, testOutline: settings.testOutline }, settings);
+    if (expansionSettingsChanged) { this.expansionChoices.clear(); this.inlineTouched.clear(); }
     this.settings = settings;
     if (defaultChanged) this.setExpanded(settings.expandedByDefault, false);
     if (layoutChanged) this.restorePage();

@@ -2490,6 +2490,8 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   The eight-request reserve before hover intent is a buffer rather than a claim about native page or source cost, and the shared rolling budget and HTTP429 stop guards remain authoritative.
   Global settings verification disables repository overrides and AI before navigation, closes the provider page before exact settings restoration, and treats restoration or observed count mismatches as failures rather than optional coverage.
   Rebuilding a known unchanged review/revision also retains its selected file and folder choices, while a different subject, explicit teardown or a path leaving the complete source inventory clears the corresponding selection.
+  Provider settings refreshes preserve explicit category expansion and inline file ownership when only testOutline changes or the full settings values are structurally identical, including reordered object keys.
+  Every other settings change keeps the existing expansion invalidation, including classification, layout, defaults and master toggles, so outline presentation cannot silently replace a selected Tests category with Essential.
   Automatic large-diff loading requires an adapter capability that verifies the current native size-only loader, and GitLab Rapid and Bitbucket do not advertise that capability until their native size-placeholder behavior is verified.
 - **CI presentation preserves provider source facts.**
   Queued and pending checks remain separate from running checks, while native GitLab manual or scheduled jobs and Bitbucket stopped builds keep their own labels without changing bot-check voting semantics.
