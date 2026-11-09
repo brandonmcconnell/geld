@@ -207,6 +207,41 @@ it('retains category navigation in genuine file-by-file mode while reveal preser
   expect(document.querySelector('.geld-provider-categories')).not.toBeNull();
 });
 
+it('keeps the selected category and body ownership aligned through native tree-child and host remounts', async () => {
+  const controller = start();
+  await settle();
+  const states = (): (string | null)[] => [...document.querySelectorAll('.geld-provider-category-header')].map((button) => button.getAttribute('aria-expanded'));
+  const selected = document.querySelector<HTMLButtonElement>('.geld-provider-category .geld-provider-category-header');
+  if (selected === null) throw new Error('Missing native category projection.');
+  selected.click();
+  expect(states()).toEqual(['false', 'true']);
+  expect(node('#native-image-0').getAttribute('data-geld-provider-hidden')).toBe('open');
+
+  // Vue can replace children it owns, retiring Geld's appended projection between observer passes.
+  for (const owned of document.querySelectorAll('.geld-provider-category-header, .geld-provider-essential-content, .geld-provider-categories')) owned.remove();
+  controller.requestRefresh(); await settle();
+  controller.requestRefresh(); await settle();
+  expect(states()).toEqual(['false', 'true']);
+  expect(controller.getTabState().expanded).toBe(true);
+  expect(node('#native-image-0').getAttribute('data-geld-provider-hidden')).toBe('open');
+
+  const oldHost = node('[data-testid="file-tree-container"]');
+  const oldTree = node('nav.mr-tree-list');
+  const replacement = document.createElement('section'); replacement.dataset.testid = 'file-tree-container';
+  const nativeTree = oldTree.cloneNode(true);
+  if (!(nativeTree instanceof HTMLElement)) throw new Error('Missing replacement native tree.');
+  nativeTree.removeAttribute('data-geld-provider-category-body');
+  replacement.append(nativeTree); oldHost.replaceWith(replacement);
+  controller.requestRefresh(); await settle();
+  controller.requestRefresh(); await settle();
+  expect(states()).toEqual(['false', 'true']);
+  expect(oldTree.hasAttribute('data-geld-provider-category-body')).toBe(false);
+  expect(node('#native-image-0').getAttribute('data-geld-provider-hidden')).toBe('open');
+  document.querySelector<HTMLButtonElement>('.geld-provider-category-header')?.click();
+  expect(states()).toEqual(['true', 'false']);
+  expect(node('#native-image-0').getAttribute('data-geld-provider-hidden')).toBe('closed');
+});
+
 it('refuses flattening when an equally sized mounted inventory has a duplicate or unknown source path', async () => {
   const controller = start();
   node('#native-image-10').setAttribute('data-file-data', JSON.stringify({ new_path: PATHS[0], viewer: 'image' }));
