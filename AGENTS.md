@@ -2483,7 +2483,13 @@ Provider-specific surfaces translate settings and sources into shared review and
   Passive GitLab CI glyphs retain the raw native state class so GitLab's own light and dark fill rules apply, while Bitbucket's verified success glyph consumes its icon token and unsupported or allowed-failure mappings remain text-only.
   An allowed-to-fail job remains a native job fact rather than evidence of a required-check rule or overall pipeline success.
 - **Digest bylines and native merge rules remain source facts.**
-  Native author names, aliases, avatars and role badges are read only from the verified native header belonging to the exact source, and provider classes retain live theme behavior rather than freezing computed colors.
+  Native author names, aliases, avatars and role badges normally come from the verified native header belonging to the exact source, and provider classes retain live theme behavior rather than freezing computed colors.
+  An entirely absent GitLab note may reuse account presentation from one independently valid mounted note in the same immutable review snapshot, with exact durable user ID and username matching.
+  Borrowing requires a scoped native selected-latest version with the same full snapshot head, and it declines unknown heads, historical selections, ambiguous donors and any present but invalid or duplicate target.
+  The immutable source index includes ordinary notes and thread replies, while donor discovery looks up current mounted native roots rather than querying every unmounted same-account source for each finding.
+  This performs no metadata requests and introduces no separate observer or cross-review account cache.
+  Borrowed presentation omits all note-specific badges and service labels, while a later valid target header immediately takes precedence and retains its own badges.
+  The donor supplies only its actual native name, profile, alias and independently measured avatar through the existing geometry cache and live provider theme.
   Avatar geometry is measured once per unchanged native image and refreshed through bounded resize and removal observers, without repeated layout reads on every apply.
   Bitbucket author names use the native body font, medium weight and default text token independently of its smaller subdued timestamps.
   Copied Atlassian avatar classes can fill the containing box through logical sizing even when the image has measured physical dimensions, so each verified avatar lives in its own measured, non-growing relative slot rather than directly in the full-width byline.
