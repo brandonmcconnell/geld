@@ -16,6 +16,7 @@ import { gitLabConversationRoots, gitLabDescriptionHost } from './conversation';
 import { createGitLabAuthorPresentationReader } from './author-presentation';
 import { gitLabReferenceAnchor, readGitLabReferences } from './references';
 import { readGitLabBotRequests } from './bot-request';
+import { readGitLabReviewerControls } from './reviewer-controls';
 
 export const gitlabAdapter: ProviderAdapter = {
   id: 'gitlab',
@@ -43,6 +44,7 @@ export const gitlabAdapter: ProviderAdapter = {
       ...snapshot,
       botRequests: (input, comments, current) => readGitLabBotRequests(doc, input, comments, snapshot.capabilities.signedIn, current),
       get input() { return syncGitLabNativeReviewState(snapshot.input, doc); },
+      get reviewerControls() { return readGitLabReviewerControls(doc, snapshot.reviewerScope, { ...actionVisit, url: doc.URL.split('#')[0] ?? doc.URL }, snapshot.complete); },
       get actions() { return readGitLabActions(doc, snapshot.capabilities, { ...actionVisit, url: doc.URL.split('#')[0] ?? doc.URL, headSha: snapshot.input.subject.headSha, reviewUrl: page.url }); },
       renderComment: (comment: ProviderReviewComment, host: HTMLElement) => renderGitLabComment(comment, host, doc, snapshot.renderedNotes.get(comment.id)),
       authorPresentation,

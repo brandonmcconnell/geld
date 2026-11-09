@@ -55,6 +55,7 @@ export interface ProviderReviewRequirement {
 }
 
 export interface ProviderReviewPanelOptions {
+  readonly reviewerControls?: ProviderReviewSourceAction;
   readonly botRequests?: readonly ProviderBotRequest[];
   readonly updating?: boolean;
   readonly version?: number;
@@ -428,6 +429,28 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const reviewers = input.reviewers;
     const summary = reviewStandingSummary();
     const section = disclosure('reviewers', summary.label, false);
+    if (options.reviewerControls?.available === true) {
+      const controls = node('div', '', 'geld-provider-review__source-actions');
+      const button = node('button', 'Reviewer controls');
+      button.type = 'button';
+      button.dataset.geldReviewerControls = '';
+      button.title = 'Focus GitLab’s native reviewer controls.';
+      const subject = providerReviewKey(input.subject);
+      const head = input.subject.headSha;
+      const current = (): boolean => !destroyed && button.isConnected && panel.contains(button) && providerReviewKey(input.subject) === subject
+        && input.subject.headSha === head && options.reviewerControls?.available === true;
+      button.addEventListener('click', () => {
+        const action = options.reviewerControls;
+        if (!current() || action === undefined) return;
+        button.disabled = true;
+        void Promise.resolve().then(() => current() ? action.activate({ current }) : false).then((focused) => {
+          if (current() && !focused) button.title = 'The native reviewer controls are unavailable.';
+        }).catch(() => { if (current()) button.title = 'The native reviewer controls are unavailable.'; })
+          .finally(() => { if (current()) button.disabled = false; });
+      });
+      controls.append(button);
+      section.append(controls);
+    }
     if (summary.coverage !== 'complete') section.append(node('p', summary.coverage === 'unavailable' ? 'Review standings could not be read.' : 'Some review standings could not be read.'));
     if (reviewers === undefined || reviewers.length === 0) {
       if (summary.coverage === 'complete') section.append(node('p', 'No reviewer standings.'));
@@ -978,7 +1001,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const publicationSignature = publication === undefined ? null : [publication.status, publication.candidate?.comment, publication.candidate?.generatedAt, publication.issues, [...publication.matchedItemIds], options.publication?.save !== undefined];
     for (const request of options.botRequests ?? []) botRequests.get(request.key)?.update(request);
     const requestSignature = options.botRequests?.map((request) => [request.key, request.current(), request.comment.available, request.comment.reason]);
-    const signature = JSON.stringify([input, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature]);
+    const signature = JSON.stringify([input, options.reviewerControls?.available, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature]);
     if (signature === lastSignature) {
       for (const time of panel.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
         const native = nativeTimes.get(Date.parse(time.dateTime));

@@ -30,6 +30,43 @@ function host(): HTMLElement {
 beforeEach(() => { document.body.replaceChildren();window.location.href = reviewUrl; });
 
 describe('provider conversation digest', () => {
+  it('offers an available focus-only reviewer handoff in the existing review action styling, including a known empty reviewer list', async () => {
+    const native = document.createElement('button');native.type = 'button';native.textContent = 'Edit';document.body.append(native);
+    const activate = vi.fn(async (context?: ProviderSourceActionContext) => { if (context?.current?.() !== true) return false;native.focus();return true; });
+    const panel = renderProviderReviewPanel(host(), input(), { reviewerControls: { kind: 'reviewer-controls', label: 'Reviewer controls', available: true, activate } });
+    const button = panel.element.querySelector<HTMLButtonElement>('[data-geld-reviewer-controls]');
+    expect(button?.textContent).toBe('Reviewer controls');expect(button?.type).toBe('button');
+    expect(button?.title).toBe('Focus GitLab’s native reviewer controls.');
+    expect(button?.parentElement?.className).toBe('geld-provider-review__source-actions');expect(button?.closest('[data-geld-review-key]')?.getAttribute('data-geld-review-key')).toBe('reviewers');
+    button?.click();await vi.waitFor(() => expect(activate).toHaveBeenCalledOnce());
+    expect(document.activeElement).toBe(native);expect(native.hasAttribute('role')).toBe(false);expect(native.hasAttribute('tabindex')).toBe(false);
+    panel.update(input(), { reviewerControls: { kind: 'reviewer-controls', label: 'Reviewer controls', available: false, activate } });
+    expect(panel.element.querySelector('[data-geld-reviewer-controls]')).toBeNull();
+    panel.update(input(), { reviewerControls: { kind: 'reviewer-controls', label: 'Reviewer controls', available: true, activate } });
+    expect(panel.element.querySelector('[data-geld-reviewer-controls]')).not.toBeNull();
+  });
+
+  it.each(['head', 'destroy', 'unavailable'] as const)('does not focus native reviewer controls after a queued handoff becomes %s', async (change) => {
+    const activate = vi.fn(async () => true);
+    const action = { kind: 'reviewer-controls', label: 'Reviewer controls', available: true, activate };
+    const panel = renderProviderReviewPanel(host(), input(), { reviewerControls: action });
+    panel.element.querySelector<HTMLButtonElement>('[data-geld-reviewer-controls]')?.click();
+    if (change === 'destroy') panel.destroy();
+    else if (change === 'head') panel.update({ ...input(), subject: { ...subject, headSha: 'b'.repeat(40) } }, { reviewerControls: action });
+    else panel.update(input(), { reviewerControls: { ...action, available: false } });
+    await new Promise<void>((resolve) => queueMicrotask(resolve));expect(activate).not.toHaveBeenCalled();
+  });
+
+  it('keeps a failed native reviewer handoff retryable without reporting a request or saving a review', async () => {
+    const activate = vi.fn<(_: ProviderSourceActionContext | undefined) => Promise<boolean>>().mockRejectedValueOnce(new Error('Native control replaced')).mockResolvedValueOnce(false);
+    const panel = renderProviderReviewPanel(host(), input(), { reviewerControls: { kind: 'reviewer-controls', label: 'Reviewer controls', available: true, activate } });
+    const button = panel.element.querySelector<HTMLButtonElement>('[data-geld-reviewer-controls]');
+    button?.click();await vi.waitFor(() => expect(button?.disabled).toBe(false));
+    expect(button?.title).toBe('The native reviewer controls are unavailable.');expect(button?.textContent).toBe('Reviewer controls');
+    button?.click();await vi.waitFor(() => expect(activate).toHaveBeenCalledTimes(2));
+    expect(panel.element.textContent).not.toMatch(/Requested review|Saved/);
+  });
+
   it('captures a quote excerpt before pointer focus clears selection and invalidates it after remount', async () => {
     let context: ProviderSourceActionContext | undefined;
     const activate = vi.fn(async (value?: ProviderSourceActionContext) => { context = value; return true; });
