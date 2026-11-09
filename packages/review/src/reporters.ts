@@ -260,6 +260,8 @@ export interface CheckReporter {
    * "2 new alerts" when none reaches the failure threshold, and a reviewer still wants to see them.
    */
   readonly state?: (description: string, fromConclusion: ReportState) => ReportState;
+  /** What a `neutral` conclusion reports, for a service whose neutral flags something; unset, a neutral run stood aside. */
+  readonly neutral?: ReportState;
 }
 
 /**
@@ -494,6 +496,21 @@ export const CHECK_REPORTERS: readonly CheckReporter[] = [
     short: (words) => counted(words, 'vulnerability', /(\d+) (?:new )?vulnerabilit(?:y|ies)\b/i),
   },
   {
+    // Macroscope's Check Run Agents: a repository's own checks, one Markdown file each under `.macroscope/check-run-agents/`,
+    // named "Macroscope - <title>" ("Macroscope - Visible change evidence — Visible change: Mac evidence missing"). An agent
+    // concludes neutral when it flags something (the default ceiling, `failure` only when configured), success when it
+    // does not, skipped when it did not run ("Prerequisite check(s) not found"). Macroscope's own review (Correctness) is
+    // the Review bots row's and its Approvability gate a CI check, neither a report. Mirrors the registry's `checkNames`.
+    id: 'macroscope',
+    title: 'Macroscope',
+    appId: 900172,
+    hosts: [],
+    checkNames: /^Macroscope - (?!(?:Correctness|Approvability) Check$)\S/i,
+    project: (name) => /^Macroscope - (.+)$/i.exec(name)?.[1]?.trim() ?? null,
+    neutral: 'failed',
+    short: () => [],
+  },
+  {
     // GitHub's own code scanning ("CodeQL", or any uploaded tool's name): its row links to GitHub's own checks tab and
     // its Details is a plain `github.com/…/runs/N`, so the words identify it — "No new alerts in code changed by this pull request" / "2 new alerts including 1
     // high severity security vulnerability". The tool's name is the project. The check passes unless an alert reaches
@@ -570,10 +587,11 @@ export function readCheckReport(check: CheckForReport): Report | null {
   const reporter = checkReporterFor(check.detailsUrl, check.name, rawWords);
   if (reporter === null || reporter.ignore?.(check.name, rawWords) === true) return null;
   const conclusion = (check.conclusion ?? '').toLowerCase();
-  // A skipped or cancelled run reported nothing; a neutral one is the service standing aside.
-  if (/^(?:skipped|cancelled|neutral|stale)$/.test(conclusion)) return null;
+  // A skipped or cancelled run reported nothing; a neutral one is the service standing aside, unless its neutral flags.
+  if (/^(?:skipped|cancelled|stale)$/.test(conclusion) || (conclusion === 'neutral' && reporter.neutral === undefined)) return null;
   const words = reporter.rephrase === undefined ? rawWords : reporter.rephrase(rawWords);
-  const fromConclusion: ReportState = check.status !== 'completed' ? 'info' : /^(?:failure|action_required|timed_out|error)$/.test(conclusion) ? 'failed' : conclusion === 'success' ? 'passed' : 'info';
+  const fromConclusion: ReportState =
+    check.status !== 'completed' ? 'info' : /^(?:failure|action_required|timed_out|error)$/.test(conclusion) ? 'failed' : conclusion === 'success' ? 'passed' : conclusion === 'neutral' ? (reporter.neutral ?? 'info') : 'info';
   const state = reporter.state === undefined ? fromConclusion : reporter.state(words, fromConclusion);
   const project = reporter.project(check.name);
   const headline = headlineOf(words, state);
