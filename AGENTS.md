@@ -1041,8 +1041,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   So nothing on the apply path asks the layout: pills are fitted in a ResizeObserver callback (`fitChips`), the narrow-screen counts copy follows one (`hostShown`), spinners are pinned in the next animation frame (`syncSpinners`), the emblem's selection is read only while a selection is held (`syncNewBrandMarks`), and the description card's margins, the Overview's column gap and the review group's visibility checks are read once per element until the window resizes (`cardGeometry`, `isShown`).
   The review group needs no anchor while GitHub's persistent bar holds it, so it reads nothing in the tab row then.
   Avatar lookups by login are cached (`avatarSrcForLogin`: a hit for the page, a miss for 1 s), since every registry bot was asked for with five whole-document queries on every build of the panel.
-  While a page loads (its first `LOADING_MS`, 4 s, or those after a move within the app), the debounced pass waits `LOADING_DEBOUNCE_MS` (250 ms) instead of 60 ms;
-  pre-paint work does not wait, and 500 ms gained nothing more.
+  While a page loads (its first `LOADING_MS`, 4 s, or those after a move within the app), the debounced pass waits `LOADING_DEBOUNCE_MS` (250 ms) instead of 60 ms, but only once the digest stands (`passMayWait`), and 500 ms gained nothing more.
+  Until then every pass is at 60 ms, so the digest appears as early as before, and a page with no digest (Files changed, a list) never waits, since its passes are what dress GitHub's UI there;
+  once the digest stands, new timeline items stay out of sight until a pass reads them, and the header, the description and the status pill are dressed before paint.
+  Gating the wait on the batch's regions instead does not work: nearly every pass is scheduled as `unknown`.
   Prefetching GitHub's own `page_data` requests and handing GitHub the early answers (tried by wrapping `window.fetch` in the page) made its counts no faster: once its app asks, GitHub is busy rendering, not waiting on the network.
   The content script's own evaluation (about 120 ms at `document_start`, mostly parsing and compiling the bundle) barely moved GitHub's counts with Geld disabled.
   **Idle work** (`lib/idle.ts`, `whenIdle(key, fn)`, keyed so a newer pass replaces a request still waiting, 500 ms ceiling): Jev's batch submission, the diffstat surfaces and re-arming the commit-link tooltip.
