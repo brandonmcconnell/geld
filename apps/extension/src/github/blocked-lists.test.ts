@@ -26,7 +26,13 @@ describe('applyBlockedListHiding', () => {
   it('hides a blocked person’s discussion behind a row at the foot of the list, and shows it under that row', () => {
     const root = discussionsList();
     const blocked = new Map<string, BlockedBy>([['blocked-one', { org: false, personal: true }]]);
-    applyBlockedListHiding(blocked, []);
+    const owners: string[] = [];
+    applyBlockedListHiding((owner) => {
+      owners.push(owner);
+      return owner === 'acme' ? blocked : new Map();
+    }, []);
+    // Blocks are read for each row's own repository owner, as a list across organizations needs.
+    expect(new Set(owners)).toEqual(new Set(['acme']));
     const rows = [...root.querySelectorAll('li.Box-row')];
     expect(rows.map((row) => row.getAttribute('data-geld-blocked-row'))).toEqual([null, 'hidden']);
     const note = root.querySelector('[data-geld-blocked-note]');
@@ -42,8 +48,8 @@ describe('applyBlockedListHiding', () => {
 
   it('puts the list back when nobody on it is blocked', () => {
     const root = discussionsList();
-    applyBlockedListHiding(new Map<string, BlockedBy>([['blocked-one', { org: true, personal: false }]]), []);
-    applyBlockedListHiding(new Map(), []);
+    applyBlockedListHiding(() => new Map<string, BlockedBy>([['blocked-one', { org: true, personal: false }]]), []);
+    applyBlockedListHiding(() => new Map(), []);
     expect(root.querySelector('[data-geld-blocked-note]')).toBeNull();
     expect(root.querySelector('[data-geld-blocked-row]')).toBeNull();
     expect(root.querySelector('[data-geld-blocked-list]')).toBeNull();
