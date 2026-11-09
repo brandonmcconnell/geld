@@ -7,7 +7,7 @@ const REVIEW = 'https://gitlab.com/whitebox-aero/whitebox/-/merge_requests/272';
 function protocol(options = {}) {
   const page = new EventEmitter();let clipboard = '';let event;let kind;let snapshots = 0;let permissionsCleared = 0;
   const item = {};
-  const state = () => ({ state: 'resolved', sources: ['note_3381334872', 'note_3381334884'].map((anchor) => ({ anchor, body: 'Retained source body', links: [`${REVIEW}#${anchor}`] })), nativeSummary: '<p>Native summary</p>', sameNative: !options.replaced || ++snapshots === 1 });
+  const state = () => ({ state: 'resolved', sources: (options.mergedThread ? ['note_3381334872', 'note_3381334884'] : ['note_3381334872']).map((anchor) => ({ anchor, body: 'Retained source body', links: [`${REVIEW}#${anchor}`] })), nativeSummary: '<p>Native summary</p>', sameNative: !options.replaced || ++snapshots === 1 });
   page.url = () => REVIEW;page.isClosed = () => false;
   page.evaluate = async (fn, ...args) => {
     const source = fn.toString();
@@ -48,6 +48,13 @@ test('synthetic protocol checks require trusted input, exact two readbacks, unch
   assert.deepEqual(result.actions.map((action) => action.input), ['pointer', 'keyboard']);
   assert.equal(result.actions[0].copied, GITLAB_COPY_FIX);assert.equal(result.actions[1].copied, GITLAB_COPY_MARKDOWN);
   assert.equal(f.cleared(), 1);assert.equal(result.permissionsRestored, true);
+});
+
+test('single-thread copy rejects a neighboring native thread before clipboard permission is requested', async () => {
+  const f = protocol({ mergedThread: true });
+  await assert.rejects(f.run());
+  assert.equal(f.item.itemCopies.status, 'failed');
+  assert.equal(f.cleared(), 0);
 });
 
 for (const [name, options] of [['untrusted click', { untrusted: true }], ['wrong clipboard bytes', { wrongClipboard: true }], ['replaced native node', { replaced: true }], ['unexpected source GET', { sourceGet: true }], ['permission denial', { denied: true }]]) test(`synthetic acceptance rejects ${name} and restores permission overrides`, async () => {

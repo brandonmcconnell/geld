@@ -2126,7 +2126,7 @@ async function gitLabBotDigest(page) {
       return { id, anchor, exists: source !== null, links: [...source?.querySelectorAll(':scope > .geld-provider-review__byline > a[href]') ?? []].map((link) => link.href), body: format(source?.querySelector(':scope > .geld-provider-review__body') ?? null),
         native: native === null ? null : { id: native.id, authorId: header?.getAttribute('data-user-id') ?? null, username: header?.getAttribute('data-username') ?? null, body: format(native.querySelector('.note-body .note-text')) } };
     });
-    const items = [...panel.querySelectorAll('[data-geld-item]')].map((item) => ({ id: item.getAttribute('data-geld-item'), state: item.getAttribute('data-state'), metadata: item.querySelector(':scope > summary')?.textContent.replace(/\s+/g, ' ').trim(), sources: [...item.querySelectorAll('[data-geld-source]')].map((source) => source.getAttribute('data-geld-source')).filter((anchor) => ids.some((id) => anchor === `note_${id}`)) })).filter((item) => item.sources.length > 0);
+    const items = [...panel.querySelectorAll('[data-geld-item]')].map((item) => ({ id: item.getAttribute('data-geld-item'), state: item.getAttribute('data-state'), metadata: item.querySelector(':scope > [data-geld-review-toggle]')?.textContent.replace(/\s+/g, ' ').trim(), sources: [...item.querySelectorAll('[data-geld-source]')].map((source) => source.getAttribute('data-geld-source')).filter((anchor) => ids.some((id) => anchor === `note_${id}`)) })).filter((item) => item.sources.length > 0);
     const bots = [...panel.querySelectorAll('[data-geld-review-bot]')].map((bot) => {
       const verdict = bot.cloneNode(true);for (const request of verdict.querySelectorAll('details[data-geld-bot-request]')) request.remove();
       return { id: bot.getAttribute('data-geld-review-bot'), state: bot.getAttribute('data-state'), text: verdict.textContent.replace(/\s+/g, ' ').trim(), links: [...verdict.querySelectorAll('a[href]')].map((link) => link.href) };
@@ -2363,8 +2363,8 @@ async function verifyGitLabBot(page, item) {
   assertGitLabBotSources(trusted, before);
   assert.equal(trusted.bots.length, 1);assert.ok(trusted.bots[0].text.includes(GL_BOT_LOGIN) && trusted.bots[0].text.includes('No findings'));assert.ok(trusted.bots[0].links.includes(`${GL_BOT}#note_3381334808`));
   const findings = trusted.items.filter((item) => item.sources.some((anchor) => anchor !== 'note_3381334808'));
-  assert.equal(findings.length, 2, 'Three historical resolved finding comments must remain two clustered items');
-  assert.deepEqual(findings.map((item) => [...item.sources].sort()).sort(), [['note_3381334872', 'note_3381334884'], ['note_3384406925']]);
+  assert.equal(findings.length, 3, 'Three historical native finding threads remain three separate digest items');
+  assert.deepEqual(findings.map((item) => [...item.sources].sort()).sort(), [['note_3381334872'], ['note_3381334884'], ['note_3384406925']]);
   for (const finding of findings) { assert.equal(finding.state, 'resolved');assert.ok(finding.metadata?.includes(finding.sources.includes('note_3384406925') ? 'backend/poetry.lock:3739' : 'backend/pyproject.toml:56')); }
   item.trusted = trusted;item.identityInteraction = { openedSummaries, observedIdentity, serviceClick, confirmation, trustClick };
   await gitLabBotBodyEvidence(page, item);item.trustedArtifacts = item.richBody.artifacts;
