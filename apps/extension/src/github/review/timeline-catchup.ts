@@ -1,5 +1,6 @@
 import { fragmentHeaders } from './deeplink';
 import { pageFetch } from '../page-fetch';
+import { isOverviewPage } from './overview-page';
 
 /**
  * The classic conversation's live marker: GitHub's socket handler replaces it
@@ -56,7 +57,8 @@ const AFTER_POST_RETRY_MS = [300, 700, 1500] as const;
  * yet. Null when the page has no marker to read (the React conversation).
  */
 export async function catchUpAfterPost(): Promise<boolean | null> {
-  if (document.querySelector(MARKER) === null) return null;
+  // The Overview's Comments section follows its own live channel: what Geld posted arrives there as anyone's comment does.
+  if (document.querySelector(MARKER) === null) return isOverviewPage() ? false : null;
   if (inFlight !== null) await inFlight.promise;
   if (await catchUpTimeline()) return true;
   for (const wait of AFTER_POST_RETRY_MS) {
