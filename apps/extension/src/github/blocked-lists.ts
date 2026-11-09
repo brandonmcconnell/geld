@@ -3,6 +3,7 @@ import type { BlockedBy } from './blocked-list';
 import { blockedWords } from './review/panel';
 import { createElement, OWN_UI_ATTRIBUTE } from './dom';
 import type { ListSurface } from './list-surfaces';
+import { ATTR_AUTHOR } from './pr-authors';
 
 /**
  * Lists leave out what a blocked person opened: pull requests, issues and
@@ -120,7 +121,8 @@ export function applyBlockedListHiding(blocked: ReadonlyMap<string, BlockedBy>, 
     const list = row.parentElement;
     if (list === null) continue;
     seen.add(list);
-    const scope = author === null ? undefined : blocked.get(author.toLowerCase());
+    // A row the hidden-people list already hides is that list's note's to show, so it gets no second hiding here.
+    const scope = author === null || row.getAttribute(ATTR_AUTHOR) === 'hidden' ? undefined : blocked.get(author.toLowerCase());
     if (author === null || scope === undefined) {
       if (row.hasAttribute(ATTR_ROW)) row.removeAttribute(ATTR_ROW);
       row.querySelector(`[${ATTR_LABEL}]`)?.remove();

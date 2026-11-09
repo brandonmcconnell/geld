@@ -2,6 +2,7 @@ import { compileAuthorRules } from '@geld/core';
 import type { BlockedBy } from './blocked-list';
 import { blockedFor } from './blocked-users';
 import { createElement, OWN_UI_ATTRIBUTE } from './dom';
+import { isMinimizedWrapper } from './review/edit-times';
 import { lookUpUnhideForms, markedOnGitHub, sendUnhide, unhideFormOf } from './review/hidden-people';
 import type { MarkedContent } from './review/hidden-people';
 import type { PersonCard } from './person-hovercard';
@@ -96,6 +97,14 @@ function lineFor(card: Element, standing: Standing): HTMLElement {
   return line;
 }
 
+/** Inside a comment GitHub minimized: every review card carries `minimized-comment` too, so the class alone is no sign. */
+function insideMinimized(card: Element): boolean {
+  for (let node = card.closest('.minimized-comment, .js-minimized-comment'); node !== null; node = node.parentElement?.closest('.minimized-comment, .js-minimized-comment') ?? null) {
+    if (isMinimizedWrapper(node)) return true;
+  }
+  return false;
+}
+
 function unfold(card: Element): void {
   card.removeAttribute(ATTR_FOLD);
   card.removeAttribute(ATTR_FOLD_OPEN);
@@ -110,7 +119,7 @@ function syncFolds(standingOf: (login: string) => Standing | null): void {
     const outer = card.parentElement?.closest(COMMENTS) ?? null;
     if (outer !== null && !card.matches('.review-comment, [id^="discussion_r"]')) continue;
     const login = authorOfComment(card);
-    const standing = login === null || isDescription(card) || card.closest('.minimized-comment') !== null ? null : standingOf(login);
+    const standing = login === null || isDescription(card) || insideMinimized(card) ? null : standingOf(login);
     if (standing === null) {
       if (card.hasAttribute(ATTR_FOLD)) unfold(card);
       continue;
@@ -177,7 +186,7 @@ function hideFormsFor(login: string): readonly HTMLFormElement[] {
   const forms: HTMLFormElement[] = [];
   for (const card of document.querySelectorAll(COMMENTS)) {
     if (isOwn(card) && card.closest('[data-geld-teleported]') === null) continue;
-    if (card.closest('.minimized-comment') !== null || isDescription(card) || authorOfComment(card)?.toLowerCase() !== login) continue;
+    if (insideMinimized(card) || isDescription(card) || authorOfComment(card)?.toLowerCase() !== login) continue;
     const home = card.closest('.review-comment, [id^="pullrequestreview-"], .js-comment-container, .timeline-comment-group') ?? card;
     const form = home.querySelector<HTMLFormElement>('form.js-timeline-comment-minimize, form[action$="/minimize"], form[action*="/minimize-comment"]');
     if (form !== null && !forms.includes(form)) forms.push(form);
