@@ -1,6 +1,5 @@
 import { defineConfig } from 'wxt';
-import type { ThemeIcon } from 'wxt';
-import { ACTION_ICON_SIZES, actionIconPath } from './src/lib/action-icon';
+import { actionIconPaths } from './src/lib/action-icon';
 import { version as baseVersion } from './package.json';
 
 /**
@@ -12,11 +11,6 @@ import { version as baseVersion } from './package.json';
  */
 const buildNumber = process.env.GELD_BUILD_NUMBER?.trim() ?? '';
 const manifestVersion = /^\d+$/.test(buildNumber) ? `${baseVersion}.${buildNumber}` : baseVersion;
-
-/** `theme_icons` is Firefox-only and missing from the generic manifest typings. */
-interface ThemeAwareAction {
-  theme_icons?: ThemeIcon[];
-}
 
 export default defineConfig({
   srcDir: '.',
@@ -45,9 +39,6 @@ export default defineConfig({
       'storage',
       // Daily check for a newer signed pattern catalog (no install warning).
       'alarms',
-      // Chrome/Edge: an offscreen document watches prefers-color-scheme so the
-      // toolbar icon can switch between the black and white marks.
-      ...(mv === 3 && (browser === 'chrome' || browser === 'edge') ? ['offscreen'] : []),
       // MV3: registers the content script on GitHub Enterprise hosts the user adds.
       ...(mv === 3 ? ['scripting'] : []),
     ],
@@ -83,16 +74,9 @@ export default defineConfig({
   }),
   hooks: {
     'build:manifestGenerated': (wxt, manifest) => {
-      if (wxt.config.browser !== 'firefox') return;
-      // Firefox picks the icon by theme text colour: `dark` is the dark icon
-      // (light themes), `light` is the light icon (dark themes).
-      const action: ThemeAwareAction | undefined = manifest.browser_action ?? manifest.action;
-      if (action === undefined) return;
-      action.theme_icons = ACTION_ICON_SIZES.map((size) => ({
-        dark: actionIconPath('black', size),
-        light: actionIconPath('white', size),
-        size,
-      }));
+      // Safari draws toolbar icons as templates from their alpha alone, which would fill the framed mark's plate solid.
+      if (wxt.config.browser !== 'safari' || manifest.action === undefined) return;
+      manifest.action.default_icon = actionIconPaths('template');
     },
   },
   zip: {

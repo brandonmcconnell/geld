@@ -97,9 +97,8 @@ packages/core/             @geld/core: framework-free logic shared by the extens
                            (unit tested; consumed as TypeScript source)
 apps/extension/            @geld/extension (WXT)
   entrypoints/
-    background.ts          fetches raw .diff files, swaps the toolbar icon for dark mode,
-                           registers Enterprise hosts, handles the keyboard shortcut and badge
-    offscreen/             Chrome/Edge only: watches prefers-color-scheme for the background
+    background.ts          fetches raw .diff files, registers Enterprise hosts,
+                           handles the keyboard shortcut and badge
     github.content/        content script + stylesheet injected on GitHub
     popup/                 contextual toolbar popup
     options/               categories (groups, extra patterns), custom categories, repo rules, Enterprise hosts, tester, backup
@@ -121,7 +120,7 @@ See `AGENTS.md` for conventions and the reasoning behind the architecture.
 
 ### Toolbar icon and dark mode
 
-The toolbar mark is pure black on light toolbars and pure white on dark ones. Chrome and Edge (MV3) cannot call `matchMedia` from the service worker, so a tiny offscreen document (`reasons: ["MATCH_MEDIA"]`) reports the colour scheme and the background calls `action.setIcon`. Firefox switches natively via `theme_icons`, and Safari tints toolbar icons as template images on its own.
+The toolbar icon is the black mark on a white plate cut to the mark's own shape, so one icon reads on light and dark toolbars alike, whatever theme the browser wears. Safari tints toolbar icons as template images on its own, so its build keeps the bare black mark.
 
 ### How the hiding works
 

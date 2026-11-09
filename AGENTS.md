@@ -1769,7 +1769,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `src/lib/diagnostics.ts` keeps a ring of ~300 events in `session:diagnostics` (worker starts, per-fetch outcome/timing/budget by `owner/repo#N`, rate-limit strikes, cache clears — no URLs, bodies or tokens);
   the options page's "Copy diagnostics" (`copy-diagnostics`, extension-only) puts them on the clipboard.
 - **Geld's errors never reach chrome://extensions' Errors card in a store build, and are never lost** (`src/lib/error-capture.ts`, `src/lib/error-uplink.ts`, `@geld/core/error-report.ts`).
-  Chrome lists every `console.warn`/`console.error`, uncaught error and unhandled rejection of an extension context there (Developer mode only), so Geld logs nothing to the console for expected conditions (a skipped catalog surface, a foreign summary author, missing anchors are trail marks and counts in Copy diagnostics, the first instance of each named) and every context installs a capture (`installErrorCapture`: background, popup, options, offscreen, content script;
+  Chrome lists every `console.warn`/`console.error`, uncaught error and unhandled rejection of an extension context there (Developer mode only), so Geld logs nothing to the console for expected conditions (a skipped catalog surface, a foreign summary author, missing anchors are trail marks and counts in Copy diagnostics, the first instance of each named) and every context installs a capture (`installErrorCapture`: background, popup, options, content script;
   the content script's takes only errors whose stack or file is the extension's, since it shares the window with GitHub's code, and a retired copy removes its listeners).
   The observer callback and each pass run inside `guard('content:observer' | 'content:pass', …)`.
   A caught error becomes a scrubbed `ErrorReport` (message without URLs, paths, emails, @mentions or quoted page text;
@@ -1918,13 +1918,14 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   App Store Connect takes at most 4,000 characters of App Review notes, so the renderer refuses longer notes once the placeholders are filled;
   keep the template near 3,000.
   Mac screenshots must be physical Safari captures listed in `store/assets/safari/README.md`, never title art.
-- Toolbar icon dark mode: Chrome/Edge use an offscreen `MATCH_MEDIA` document;
-  Firefox uses `theme_icons`;
-  Safari tints template icons.
+- **The toolbar icon is one framed icon for light and dark toolbars** (`icon/action/{16,32,48}.png`): the grid mark at 1, 2 and 3px per unit on a white plate of its own outline grown one unit all round, its 45° cuts kept concentric, filling the box.
+  It replaced a black and a white mark swapped by `prefers-color-scheme` (an offscreen document on Chrome and Edge, `theme_icons` on Firefox), which follows the system, not the browser's theme, so a dark Chrome theme on a light system drew the black mark on a dark toolbar;
+  the bare mark also filled only 75% of the box at 2x and looked smaller than other extensions.
+  Safari draws toolbar icons as templates from their alpha, which would fill the plate solid, so its build keeps the bare black mark (`black-*.png`, set in `wxt.config.ts`).
   The logomark is drawn on a 24 × 25 grid (bands 4 units, gaps 3, every cut at 45°), so at 32px it lands on whole pixels at 1px per unit.
   The full logo (`geld-logo.svg`, 95 × 25) puts the wordmark on the same grid: letters 14 units tall (y 6 to 20), strokes 2 units, corner cuts 2 units outside and 1 inside at 45°, G at x 32 and 6 units between letters, so at 25px tall every edge of the logo lands on a whole pixel.
   Light on dark reads bolder, so every white brand file (`geld-logo-white.svg`, `geld-logomark-white.svg`) is a lighter cut of the black one: the same shape with every edge 0.2 units in, emblem and letters alike (the emblem's bands 3.6, gaps 3.4, the letters' strokes 1.6), in the same box, so swapping light for dark moves nothing.
-  Whatever shows the logo on a dark background takes the white file: the site's dark mode, the SVG favicons (both shapes, picked by colour scheme), the extension's popup and options page (`<picture>`), the dashboard's `dark:` variant, the white toolbar icons and the store tiles.
+  Whatever shows the logo on a dark background takes the white file: the site's dark mode, the SVG favicons (both shapes, picked by colour scheme), the extension's popup and options page (`<picture>`), the dashboard's `dark:` variant, and the store tiles.
   `pnpm brand:icons` (`scripts/brand-icons.mjs`) draws every extension and Safari app icon from `assets/brand/`: from 128px up the logomark on the white tile, at 32px the logomark at 1px per unit, and at 16px, where a unit is under a pixel, `geld-logomark-grid.svg`, the same mark on a 14-unit grid where every band, gap and block is 2 units.
   The Mac icons keep the tile Xcode's converter drew and replace the extension's icon in its middle 60%.
   The site's 32px favicon draws the logomark at 1px per unit too.
