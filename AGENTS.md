@@ -3521,3 +3521,7 @@ The rows preserve project, reported status, failure reason, deployment time and 
 A failed latest report can link to the same account and project's most recent earlier successful preview, ordered by deployment time rather than the source comment's edit time.
 Unsafe preview destinations are excluded while a separate valid service inspector can remain available.
 These are attributed comment reports, not independently fetched provider deployment records.
+
+The installed-provider browser workflow installs only the extension and its workspace dependencies, so an unrelated website font package cannot prevent public extension verification.
+The three-view author/theme harness restores the exact saved settings and measures native and owned bodies only after the combined view is visible.
+Offline helper extraction stops at the next top-level function declaration so newly inserted provider probes cannot become part of a preceding function expression.
