@@ -179,7 +179,7 @@ export class ProviderConversation {
     const snapshot = this.snapshot;
     if (snapshot !== null) {
       const people = projectProviderPeople(snapshot.input, snapshot.comments, snapshot.events, settings.hiddenAuthors, this.shownPeople);
-      this.hiddenPeople.update(viewHost, people, this.adapter.personRoots?.(document, snapshot) ?? []);
+      this.hiddenPeople.update(viewHost, people, this.adapter.personRoots?.(document, snapshot) ?? [], this.adapter.sidebarPeople?.(document, snapshot) ?? []);
     } else this.hiddenPeople.clear();
     if (host !== null && snapshot !== null) {
       const native = providerReviewWithTrustedAccounts(snapshot.input, snapshot.comments, settings, snapshot.complete);

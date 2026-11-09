@@ -11,7 +11,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
-import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, GITLAB_LOCAL_REVIEW, providerHeaderHintTarget, openProviderReviewAncestors, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
+import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, GITLAB_LOCAL_REVIEW, providerHeaderHintTarget, providerHoverTargetPoint, openProviderReviewAncestors, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
 import { commentBodyPresentationProbe, compareCommentBodyPresentation } from './comment-body-branding.mjs';
 import { BITBUCKET_LOCAL_REVIEW, localReviewStorageScope, observeLocalReview, verifyBitbucketLocalReview } from './bitbucket-local-reviewed.mjs';
 import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-list-row.mjs';
@@ -1224,6 +1224,7 @@ async function installedHover(page, selector, interaction, artifactName, anchorS
     await page.mouse.move(1, 1);
   }
   let keyboardNavigation;
+  let pointerProof;
   if (interaction === 'keyboard') {
     const previous = await page.evaluate((target) => {
       const anchor = [...(typeof target === 'string' ? document.querySelectorAll(target) : [target])].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
@@ -1263,8 +1264,20 @@ async function installedHover(page, selector, interaction, artifactName, anchorS
     const handle = await page.evaluateHandle((target) => [...(typeof target === 'string' ? document.querySelectorAll(target) : [target])].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden') ?? null, selector);
     const control = handle.asElement();
     assert.ok(control !== null, 'Visible count hover host is missing');
-    await control.hover();
-    await discardHandle(handle);
+    await control.evaluate(node => node.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' }));
+    const point = await pollStable(() => control.evaluate(providerHoverTargetPoint), value => value.ready, 'Count hover target settles after native scrolling', 8000, value => JSON.stringify(value));
+    await control.evaluate(node => {
+      const listener = event => { globalThis.__geldHoverInput.receipt = { trusted: event.isTrusted, inside: node.contains(event.target), fromInside: event.relatedTarget instanceof Node && node.contains(event.relatedTarget) }; };
+      globalThis.__geldHoverInput = { node, listener, receipt: null };node.addEventListener('mouseover', listener, true);
+    });
+    try {
+      await page.mouse.move(point.x, point.y);
+      pointerProof = { settled: point, observed: await control.evaluate(node => ({ receipt: globalThis.__geldHoverInput.receipt, connected: node.isConnected, hovered: node.matches(':hover'), documentHidden: document.hidden, bound: node.hasAttribute('data-geld-hover-bound'), box: { x: node.getBoundingClientRect().x, y: node.getBoundingClientRect().y, width: node.getBoundingClientRect().width, height: node.getBoundingClientRect().height } })) };
+      if (!preserveNativeCard) assert.ok(pointerProof.observed.receipt?.trusted && pointerProof.observed.receipt.inside && pointerProof.observed.hovered, `The settled count owner must receive real pointer input: ${JSON.stringify(pointerProof)}`);
+    } finally {
+      await control.evaluate(node => { node.removeEventListener('mouseover', globalThis.__geldHoverInput.listener, true);delete globalThis.__geldHoverInput; });
+      await discardHandle(handle);
+    }
   }
   const snapshot = await poll(() => page.evaluate((target, anchorSelector) => {
     const host = [...(typeof target === 'string' ? document.querySelectorAll(target) : [target])].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
@@ -1279,7 +1292,14 @@ async function installedHover(page, selector, interaction, artifactName, anchorS
       rows: [...tip.querySelectorAll('.geld-provider-hover__row')].map((row) => ({ label: row.querySelector('.geld-provider-hover__label')?.textContent, files: row.querySelector('.geld-provider-hover__files')?.textContent, additions: row.querySelector('.geld-provider-hover__add')?.textContent, deletions: row.querySelector('.geld-provider-hover__del')?.textContent })),
       described: [...document.querySelectorAll('[aria-describedby~="geld-provider-count-tooltip"]')].some((owner) => owner === host || host?.contains(owner)),
       bounds: { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom }, viewport: { width: innerWidth, height: innerHeight } };
-  }, selector, anchorSelector), (value) => value !== null && value.described && /Essential/.test(value.text) && /Tests/.test(value.text) && /Total/.test(value.text) && (expectedRows === undefined || isDeepStrictEqual(value.rows, expectedRows)), 'Installed native count hover breakdown and accessible owner', 12_000);
+  }, selector, anchorSelector), (value) => value !== null && value.described && /Essential/.test(value.text) && /Tests/.test(value.text) && /Total/.test(value.text) && (expectedRows === undefined || isDeepStrictEqual(value.rows, expectedRows)), 'Installed native count hover breakdown and accessible owner', 12_000).catch(async error => {
+    const current = await page.evaluate(target => {
+      const node = [...(typeof target === 'string' ? document.querySelectorAll(target) : [target])].find(node => node?.getBoundingClientRect().width > 0);
+      const tip = document.querySelector('#geld-provider-count-tooltip');
+      return { documentHidden: document.hidden, hovered: node?.matches(':hover') ?? false, bound: node?.hasAttribute('data-geld-hover-bound') ?? false, described: node?.getAttribute('aria-describedby') ?? null, tooltipHidden: tip?.hidden ?? null, focusIsOwner: document.activeElement === node };
+    }, selector);
+    throw new Error(`${errorText(error)} Pointer input: ${JSON.stringify(pointerProof ?? null)}. Current ownership: ${JSON.stringify(current)}`);
+  });
   assert.ok(snapshot.bounds.left >= 0 && snapshot.bounds.right <= snapshot.viewport.width + 1 && snapshot.bounds.top >= 0 && snapshot.bounds.bottom <= snapshot.viewport.height + 1, 'Count tooltip escapes the tested viewport');
   snapshot.compactUi = await page.evaluate(providerUiProbe, providerOf(page.url()));
   assertCompactProviderPopover(snapshot.compactUi);
@@ -2258,7 +2278,13 @@ async function verifyProviderFlow(page, item) {
   await poll(() => page.evaluate(() => document.querySelectorAll('.geld-provider-flow [data-geld-flow-path]').length), value => value === before.all.files, 'Flow includes categorized files on demand');
   progress.artifacts = await capture(page, 'gitlab-file-flow');
   await page.keyboard.press('Escape');
-  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('geld-provider-flow-button')), true);
+  progress.closed = await poll(() => page.evaluate(() => ({
+    dialogCount: document.querySelectorAll('dialog.geld-provider-flow').length,
+    focused: document.activeElement?.classList.contains('geld-provider-flow-button') === true,
+    activeTag: document.activeElement?.tagName ?? null,
+    activeClass: document.activeElement?.getAttribute('class') ?? null,
+    buttonCount: document.querySelectorAll('.geld-provider-flow-button').length,
+  })), value => value.dialogCount === 0 && value.focused, 'Escape closes Flow and restores its current trigger focus', 8000);
   assert.deepEqual((await tabState(page)).visible, before.visible, 'Flow toggles do not change diff filtering');
   progress.status = 'passed';
 }
@@ -2614,14 +2640,17 @@ async function nativeFragmentEvidence(page, anchor, assertSourcesUnchanged, reco
   assert.match(anchor, /^note_[1-9]\d*$/, 'Fragment evidence requires an actual native human source anchor');
   const previousUrl = page.url();
   const settings = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
-  const controlSelector = `.geld-provider-original:has(+ [id="${anchor}"]) button`;
+  const controlSelector = `.geld-provider-original:has(+ [id="${anchor}"]) button, .geld-provider-original:has(+ li.note-discussion [id="${anchor}"]) button`;
   const read = () => page.evaluate((anchor) => {
-    const root = document.getElementById(anchor);
-    if (root === null) return null;
+    const source = document.getElementById(anchor);
+    if (source === null) return null;
+    // GitLab folds the native discussion when it contains represented replies.
+    // The permalink remains on its child note; measure the actual folded box.
+    const root = source.closest('li.note-discussion') ?? source;
     const button = root.previousElementSibling?.matches('.geld-provider-original') ? root.previousElementSibling.querySelector('button') : null;
     const rect = root.getBoundingClientRect();const style = getComputedStyle(root);
-    return { nativeId: root.id, name: root.querySelector('[data-testid="author-name"]')?.textContent.trim() ?? null, body: root.querySelector('.note-body .note-text')?.textContent.trim() ?? null,
-      nativePermalinks: [...root.querySelectorAll('a[href]')].filter((node) => node.getAttribute('href') === `#${anchor}`).map((node) => node.getAttribute('href')),
+    return { nativeId: source.id, foldedRoot: root === source ? 'note' : 'discussion', name: source.querySelector('[data-testid="author-name"]')?.textContent.trim() ?? null, body: source.querySelector('.note-body .note-text')?.textContent.trim() ?? null,
+      nativePermalinks: [...source.querySelectorAll('a[href]')].filter((node) => node.getAttribute('href') === `#${anchor}`).map((node) => node.getAttribute('href')),
       hidden: root.getAttribute('hidden'), owner: root.getAttribute('data-geld-provider-native-find'), oldHiddenFlag: root.hasAttribute('data-geld-provider-compact-hidden'),
       box: { height: rect.height, display: style.display, contentVisibility: style.contentVisibility, marginTop: style.marginTop, marginBottom: style.marginBottom, paddingTop: style.paddingTop, paddingBottom: style.paddingBottom, borderTop: style.borderTopWidth, borderBottom: style.borderBottomWidth },
       control: button === null ? null : { label: button.textContent.trim(), expanded: button.getAttribute('aria-expanded') }, hash: location.hash };
@@ -2929,6 +2958,32 @@ async function gitLabHiddenPersonEvidence(page, anchor) {
   }
 }
 
+async function gitLabSidebarPeopleEvidence(page) {
+  const saved = await options.evaluate(async key => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+  const read = () => page.evaluate(() => {
+    const rows = [...document.querySelectorAll('aside[data-testid="issuable-sidebar"][data-issuable-type="merge_request"] [data-testid="reviewers-block-container"] [data-testid="reviewer"]')];
+    const row = rows[0], author = row?.querySelector('a.js-user-link[data-user-id][data-username][href]');
+    if (!row || !author) return null;
+    const id = author.getAttribute('data-user-id'), login = author.getAttribute('data-username');
+    if (!/^[1-9]\d*$/.test(id ?? '') || !/^[a-z\d_.-]+$/i.test(login ?? '')) return null;
+    return { id, login, profile: author.href, text: row.textContent.trim(), hidden: row.hasAttribute('data-geld-provider-person-hidden'), visible: getComputedStyle(row).display !== 'none', digestPresent: document.querySelector(`[data-geld-reviewer="${id}"]`) !== null };
+  });
+  const before = await poll(read, value => value !== null && value.digestPresent && !value.hidden && value.visible, 'Native reviewer identity is represented before local hiding');
+  const rule = `gitlab:${before.login}`;
+  try {
+    await patchSettings({ hiddenAuthors: [...(saved?.hiddenAuthors ?? []), rule] });
+    const hidden = await poll(read, value => value?.id === before.id && value.hidden && !value.visible && !value.digestPresent, 'Local hiding folds the same native reviewer and digest identity');
+    assert.equal(hidden.text, before.text);assert.equal(hidden.profile, before.profile);
+    await clickReviewButton(page, `.geld-provider-hidden-person:has(+ [data-testid="reviewer"] a[data-user-id="${before.id}"]) button`, 'Show for this visit');
+    const shown = await poll(read, value => value?.id === before.id && !value.hidden && value.visible && value.digestPresent, 'Visit peek restores the native reviewer and digest identity');
+    assert.equal(shown.text, before.text);assert.equal(shown.profile, before.profile);
+    return { before, hidden, shown, scope: 'Local display only. Native reviewer assignment and approval controls are not changed.' };
+  } finally {
+    await options.evaluate(async (key, saved) => { if (saved === undefined) await chrome.storage.sync.remove(key);else await chrome.storage.sync.set({ [key]: saved }); }, SETTINGS_KEY, saved);
+    await poll(read, value => value?.id === before.id && !value.hidden && value.visible && value.digestPresent, 'Exact original settings restore the native reviewer');
+  }
+}
+
 async function authorThemeEvidence(page, provider, anchor) {
   const selector = '.geld-provider-view button[data-geld-digest-view]';
   const saved = await options.evaluate(async key => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
@@ -2950,7 +3005,10 @@ async function authorThemeEvidence(page, provider, anchor) {
     await poll(() => page.evaluate(anchor => { const node = document.getElementById(anchor);return node !== null && node.closest('[hidden]') === null && node.getBoundingClientRect().height > 0; }, anchor), Boolean, 'Retained original author is rendered before style comparison');
     const baseline = await authorPresentationProbe(page, provider, anchor);
     evidence.baseline = baseline;
-    if (provider === 'gitlab') evidence.hiddenPerson = await gitLabHiddenPersonEvidence(page, anchor);
+    if (provider === 'gitlab') {
+      evidence.hiddenPerson = await gitLabHiddenPersonEvidence(page, anchor);
+      evidence.sidebarPeople = await gitLabSidebarPeopleEvidence(page);
+    }
     await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
     await pause(300);
     const dark = await authorPresentationProbe(page, provider, anchor);

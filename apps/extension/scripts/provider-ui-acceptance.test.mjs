@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
 import { Window } from 'happy-dom';
-import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertProviderDashboard, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, GITLAB_LOCAL_REVIEW, providerHeaderHintTarget, openProviderReviewAncestors, providerDashboardProbe, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
+import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertProviderDashboard, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, GITLAB_LOCAL_REVIEW, providerHeaderHintTarget, providerHoverTargetPoint, openProviderReviewAncestors, providerDashboardProbe, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
 
 let window;
 let saved;
@@ -314,7 +314,7 @@ for (const failure of [false, true]) test(`native sidebar fallback ${failure ? '
 });
 
 
-for (const scenario of ['success', 'callback-failure', 'layout-shift', 'reordered-sections', 'missed-click', 'replaced-control', 'invalid-expanded']) test(`dashboard pointer lifecycle: ${scenario}`, async () => {
+for (const views of [false, true]) for (const scenario of ['success', 'callback-failure', 'layout-shift', 'reordered-sections', 'missed-click', 'replaced-control', 'invalid-expanded']) test(`dashboard pointer lifecycle: ${scenario}, three views=${views}`, async () => {
   dashboard();
   const original = document.querySelector('#note_1');
   const order = [];
@@ -333,7 +333,19 @@ for (const scenario of ['success', 'callback-failure', 'layout-shift', 'reordere
       reviews.before(document.querySelector('[data-geld-review-key="checks"]'));
     }
   });
-  document.querySelector('[data-geld-original-conversation]').addEventListener('click', () => {
+  if (views) {
+    document.querySelector('[data-geld-original-conversation]').remove();
+    const navigation = document.createElement('nav');navigation.className = 'geld-provider-view';
+    for (const value of ['digest', 'digest-timeline', 'github']) {
+      const button = document.createElement('button');button.dataset.geldDigestView = value;button.setAttribute('aria-pressed', String(value === 'digest'));navigation.append(button);
+      button.addEventListener('click', () => {
+        const shown = value === 'digest-timeline';order.push(shown ? 'show' : 'hide');
+        if (shown) original.removeAttribute('hidden');else original.setAttribute('hidden', 'until-found');
+        for (const control of navigation.children) control.setAttribute('aria-pressed', String(control === button));
+      });
+    }
+    document.body.prepend(navigation);
+  } else document.querySelector('[data-geld-original-conversation]').addEventListener('click', () => {
     const shown = original.hasAttribute('hidden');order.push(shown ? 'show' : 'hide');
     if (shown) original.removeAttribute('hidden');else original.setAttribute('hidden', 'until-found');
   });
@@ -382,4 +394,24 @@ for (const scenario of ['success', 'callback-failure', 'layout-shift', 'reordere
     assert.equal(first.receipt.microtask.current, 'true');
   }
   assert.equal(globalThis.__geldDashboardPointerReceipt, undefined);
+});
+
+
+test('hover target input uses the original visible node center and accepts its own descendants', () => {
+  const node = document.createElement('span');node.innerHTML = '<b>4</b>';document.body.append(node);
+  document.elementFromPoint = () => node.firstElementChild;
+  assert.deepEqual(providerHoverTargetPoint(node), { x: 70, y: 30, width: 100, height: 20, ready: true });
+  node.setAttribute('data-top', '100');
+  assert.equal(providerHoverTargetPoint(node).y, 110);
+  assert.equal(providerHoverTargetPoint(node).ready, true);
+});
+
+test('hover target input refuses an obscured, offscreen, empty or detached original', () => {
+  const node = document.createElement('span');document.body.append(node);
+  document.elementFromPoint = () => document.body;
+  assert.equal(providerHoverTargetPoint(node).ready, false);
+  document.elementFromPoint = () => node;
+  node.setAttribute('data-top', '1001');assert.equal(providerHoverTargetPoint(node).ready, false);
+  node.setAttribute('data-top', '20');node.setAttribute('data-width', '0');assert.equal(providerHoverTargetPoint(node).ready, false);
+  node.setAttribute('data-width', '100');node.remove();assert.equal(providerHoverTargetPoint(node).ready, false);
 });

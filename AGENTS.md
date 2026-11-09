@@ -3533,3 +3533,23 @@ Shared Related links settings describe issues and pull or merge requests without
 Provider CI status colors are confined to the observed status text and native glyph, rather than tinting the whole check row.
 A failed check or allow_failure=false does not independently prove that the check is a required merge gate.
 Earlier-head checks keep neutral status text, while the provider's separate verified merge requirements remain authoritative.
+
+Installed dashboard acceptance follows the persistent three-way view selector when present, with the legacy original-conversation toggle retained only for older source revisions.
+It verifies that every view control is visible, that the selected view agrees with native conversation visibility and that all original nodes and bodies survive the transition.
+Count-hover failure evidence includes the actual pointer receipt, visible target geometry, document visibility and current tooltip ownership rather than treating a missing tooltip as a proven parser failure.
+A successful trusted mouseover can still lose its tooltip when native sticky-header geometry shifts away from the pointer after scrolling.
+The public hover probe waits for two matching unobscured target positions and then moves the real pointer to that settled point, without asking Puppeteer to scroll again during hover.
+
+GitLab retains the Overview description in a display-none pane while Changes is active, so the existence of reviewHost does not make it a valid Flow mount on the diff page.
+Flow uses the verified native diff toolbar or provider action toolbar on diff pages, falling back to the active diff container, and uses the description host only on the overview page.
+The control moves between those hosts on tab changes and never depends on an expanded file sidebar.
+Logged-out GitLab can omit the review-drawer action host entirely, so its Flow adapter qualifies the actual Rapid Diffs header toolbar instead of requiring review permissions.
+
+GitLab reviewer sidebar rows expose native account IDs, usernames and profile URLs that can be matched against the current fetched reviewer identities.
+Only those verified rows participate in local Hidden people folding and visit peeks, using the same reversible display rules as comments.
+Reviewer assignments, approval controls and the provider's assigned-reviewer total remain native and unchanged.
+Display names or initials alone are never enough, so Bitbucket widgets without durable identities remain untouched.
+
+GitLab can prevent native dialog cancellation through page shortcuts, so provider Flow handles Escape inside its own dialog, stops propagation and restores the current trigger without relying only on the browser cancel event.
+Installed fragment acceptance measures GitLab's native discussion container when it wraps the source note;
+the child keeps its own permalink and may have no hidden attribute while its parent is correctly folded.

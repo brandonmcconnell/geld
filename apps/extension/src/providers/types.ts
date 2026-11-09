@@ -188,6 +188,11 @@ export interface ProviderReviewSnapshot {
   readonly actions: readonly ProviderReviewAction[];
 }
 
+export interface ProviderSidebarPerson {
+  readonly root: HTMLElement;
+  readonly authorId: string;
+}
+
 export interface ProviderConversationRoot {
   readonly root: HTMLElement;
   readonly anchors: readonly string[];
@@ -228,8 +233,10 @@ export interface ProviderAdapter {
   referenceAnchor?(reference: ProviderReviewReference, page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[], comments?: readonly ProviderReviewComment[]): HTMLAnchorElement | null;
   conversationRoots?(doc: Document, snapshot?: ProviderReviewSnapshot): readonly ProviderConversationRoot[];
   personRoots?(doc: Document, snapshot?: ProviderReviewSnapshot): readonly ProviderConversationRoot[];
+  sidebarPeople?(doc: Document, snapshot: ProviderReviewSnapshot): readonly ProviderSidebarPerson[];
   descriptionHost?(doc: Document): HTMLElement | null;
   attachmentLink?(image: HTMLImageElement, page: ProviderReviewPage): HTMLAnchorElement | null;
   actionHost?(doc: Document): HTMLElement | null;
+  diffFlowHost?(doc: Document): HTMLElement | null;
   fetchReview?(page: ProviderReviewPage, signal: AbortSignal, doc: Document): Promise<ProviderReviewSnapshot>;
 }

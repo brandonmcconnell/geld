@@ -980,3 +980,28 @@ describe('presentation-only settings preserve provider expansion choices', () =>
   });
 
 });
+
+
+it.each(PROVIDERS)('keeps %s Flow out of the inactive conversation pane on the diff tab', async provider => {
+  const { adapter, view } = fixture(provider, FILES);
+  const conversation = document.createElement('section');conversation.style.display = 'none';document.body.append(conversation);
+  const actions = document.querySelector('header');if (actions === null) throw new Error('Missing actions');
+  let kind: 'overview' | 'diff' = 'diff';
+  const { controller } = start({ ...adapter, describe: () => ({ ...page(provider, '1'), kind }), reviewHost: () => conversation, actionHost: () => actions });
+  await settle();
+  expect(actions.querySelector('.geld-provider-flow-button')).not.toBeNull();
+  expect(conversation.querySelector('.geld-provider-flow-button')).toBeNull();
+  view.container.style.display = 'none';conversation.style.display = '';kind = 'overview';
+  controller.requestRefresh();await settle();
+  expect(actions.querySelector('.geld-provider-flow-button')).toBeNull();
+  expect(conversation.querySelector('.geld-provider-flow-button')).not.toBeNull();
+  expect(document.querySelectorAll('.geld-provider-flow-button')).toHaveLength(1);
+});
+
+it('keeps Flow in the diff container when the provider has no action host', async () => {
+  const { adapter, view } = fixture('gitlab', FILES);
+  const conversation = document.createElement('section');conversation.hidden = true;document.body.append(conversation);
+  start({ ...adapter, reviewHost: () => conversation });await settle();
+  expect(view.container.querySelector('.geld-provider-flow-button')).not.toBeNull();
+  expect(conversation.querySelector('.geld-provider-flow-button')).toBeNull();
+});
