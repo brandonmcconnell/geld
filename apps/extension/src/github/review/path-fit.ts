@@ -48,14 +48,29 @@ export function fitPath(path: string, maxWidth: number, measure: (text: string) 
   return best;
 }
 
+/** The width a flex row `space` leaves `element` beside its other children and the gaps between them. */
+function roomIn(space: HTMLElement, element: HTMLElement): number {
+  const style = getComputedStyle(space);
+  const gap = Number.parseFloat(style.columnGap) || 0;
+  let room = space.clientWidth - (Number.parseFloat(style.paddingLeft) || 0) - (Number.parseFloat(style.paddingRight) || 0);
+  let shown = 0;
+  for (const child of space.children) {
+    if (!(child instanceof HTMLElement) || child.hidden) continue;
+    shown += 1;
+    if (child !== element) room -= child.getBoundingClientRect().width;
+  }
+  return Math.max(0, Math.floor(room - gap * Math.max(0, shown - 1)));
+}
+
 /**
  * Keep `element`'s text fitted to its own width: full path now, refitted
- * whenever the element is resized. The full path stays in `title`.
+ * whenever `space` is resized. The full path stays in `title`. An element
+ * sized to its text is fitted to the room `space` leaves it instead.
  */
-export function fitPathInto(element: HTMLElement, path: string): void {
+export function fitPathInto(element: HTMLElement, path: string, space: HTMLElement = element): void {
   element.title = path;
   const apply = (): void => {
-    const width = element.clientWidth;
+    const width = space === element ? element.clientWidth : roomIn(space, element);
     if (width === 0) return;
     const font = fontOf(element);
     const fitted = fitPath(path, width, (text) => textWidth(text, font));
@@ -74,5 +89,5 @@ export function fitPathInto(element: HTMLElement, path: string): void {
     element.textContent = path;
     apply();
   });
-  observer.observe(element);
+  observer.observe(space);
 }
