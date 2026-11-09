@@ -76,9 +76,20 @@ async function paintTab(tabId: number, count: number): Promise<void> {
   await browser.action.setBadgeTextColor({ tabId, color: '#ffffff' }).catch(() => undefined);
 }
 
+let countWrites: Promise<unknown> | null = null;
+
+/** Tabs update their counts together (a browser start restores many), so each change reads and writes in turn. */
+function patchTabCounts(change: (counts: Readonly<Record<string, number>>) => Readonly<Record<string, number>> | null): void {
+  const run = (countWrites ?? Promise.resolve()).then(async () => {
+    const next = change(await nightlyTabCountsItem.getValue());
+    if (next !== null) await nightlyTabCountsItem.setValue(next);
+  });
+  countWrites = run.catch(() => undefined);
+}
+
 export function showTabBadge(tabId: number, count: number): void {
   void paintTab(tabId, count);
-  void nightlyTabCountsItem.getValue().then((counts) => (counts[String(tabId)] === count ? undefined : nightlyTabCountsItem.setValue({ ...counts, [String(tabId)]: count })));
+  patchTabCounts((counts) => (counts[String(tabId)] === count ? null : { ...counts, [String(tabId)]: count }));
 }
 
 async function showBadge(status: NightlyStatus): Promise<void> {
@@ -371,7 +382,8 @@ async function restorePrevious(): Promise<NightlyInstallResult> {
     await patchStatus({
       installing: null,
       failure: null,
-      skipped: repairing ? status.skipped : current,
+      // A repair leaves the build whose write broke the folder alone, as a failure that was undone would.
+      skipped: repairing ? (status.writing?.version ?? status.skipped) : current,
       backup: null,
       lastInstall: { from: current, to: backup.version, at: new Date().toISOString(), method: target.method, rollback: true },
     });
@@ -430,10 +442,10 @@ export function startNightly(): void {
     if ((change.status === 'complete' || change.url !== undefined) && isGitHub(change.url ?? tab.url)) onGitHubNavigation();
   });
   browser.tabs.onRemoved.addListener((tabId) => {
-    void nightlyTabCountsItem.getValue().then((counts) => {
-      if (!(String(tabId) in counts)) return undefined;
+    patchTabCounts((counts) => {
+      if (!(String(tabId) in counts)) return null;
       const { [String(tabId)]: _closed, ...rest } = counts;
-      return nightlyTabCountsItem.setValue(rest);
+      return rest;
     });
   });
   browser.runtime.onMessage.addListener((request: unknown, _sender, sendResponse) => {
