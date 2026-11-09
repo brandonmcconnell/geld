@@ -6,8 +6,8 @@ import { count as perfCount, markOnce } from './perf';
 
 /**
  * Geld's own errors, caught before Chrome files them on the extension's
- * Errors card. Every context (content script, background, popup, options,
- * offscreen document) installs this once: an uncaught error or rejection
+ * Errors card. Every context (content script, background, popup, options)
+ * installs this once: an uncaught error or rejection
  * from Geld's code is recorded on this context's trail (`error:<where>` in
  * Copy diagnostics) and handed to the background worker, which keeps it in
  * the session log and, when the reader opted in to error reports, sends it
@@ -108,7 +108,7 @@ function onRejection(event: PromiseRejectionEvent): void {
  * script copy that retires (a newer one took the page) removes its listeners,
  * or both copies would report the live one's errors.
  */
-export function installErrorCapture(context: 'content' | 'background' | 'popup' | 'options' | 'offscreen', deliver?: Sink): () => void {
+export function installErrorCapture(context: 'content' | 'background' | 'popup' | 'options', deliver?: Sink): () => void {
   if (!installed) {
     installed = true;
     where = context;

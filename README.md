@@ -97,9 +97,8 @@ packages/core/             @geld/core: framework-free logic shared by the extens
                            (unit tested; consumed as TypeScript source)
 apps/extension/            @geld/extension (WXT)
   entrypoints/
-    background.ts          fetches raw .diff files, swaps the toolbar icon for dark mode,
-                           registers Enterprise hosts, handles the keyboard shortcut and badge
-    offscreen/             Chrome/Edge only: watches prefers-color-scheme for the background
+    background.ts          fetches raw .diff files, registers Enterprise hosts,
+                           handles the keyboard shortcut and badge
     github.content/        content script + stylesheet injected on GitHub
     popup/                 contextual toolbar popup
     options/               categories (groups, extra patterns), custom categories, repo rules, Enterprise hosts, tester, backup
