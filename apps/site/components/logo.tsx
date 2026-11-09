@@ -11,15 +11,15 @@ const WORDMARK = {
   light: new URL('../../../assets/brand/geld-logo.svg', import.meta.url),
   dark: new URL('../../../assets/brand/geld-logo-white.svg', import.meta.url),
   // viewBox of the SVG, for the intrinsic aspect ratio.
-  width: 141.91,
-  height: 36.31,
+  width: 95,
+  height: 25,
 };
 
 const LOGOMARK = {
   light: new URL('../../../assets/brand/geld-logomark.svg', import.meta.url),
   dark: new URL('../../../assets/brand/geld-logomark-white.svg', import.meta.url),
-  width: 134.41,
-  height: 157.21,
+  width: 24,
+  height: 25,
 };
 
 interface BrandImageProps {
@@ -49,7 +49,7 @@ function BrandPicture({ asset, height, alt, className, priority }: BrandImagePro
   // Static SVGs: nothing for next/image to optimise, and both files are ~1 KB.
   /* eslint-disable @next/next/no-img-element */
   return (
-    <span className={cn('inline-block leading-none', className)}>
+    <span data-brand-logo="" className={cn('inline-block leading-none', className)}>
       <img src={asset.light.pathname} alt={text} className="dark:hidden" {...shared} />
       <img src={asset.dark.pathname} alt={text} className="hidden dark:block" {...shared} />
     </span>

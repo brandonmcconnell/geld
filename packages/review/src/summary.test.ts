@@ -1,10 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { buildMeta } from './build';
 import type { RawPullRequest } from './build';
 import { encodePayloadAttribute, extractPayloadText, looksLikeSummaryBody, parseSummaryBody, parseSummaryElement } from './summary-parse';
 import { renderSummary } from './summary-render';
 import { PAYLOAD_BUDGET, parseGeldPrMeta } from './model';
-import { botByTrigger, botsTriggeredBy, botTitle, commandReply, UNKNOWN_SHA, isReviewShaped, isStatusLineComment, looksLikeBotLogin, mergeCheckRuns, parseBotBody, refusalReason, REPORT_GRACE_MS, resolveBotId, verdictsFrom } from './bots';
+import { botByTrigger, botsTriggeredBy, botTitle, commandReply, geldRunAnswer, geldRunBots, geldRunCommand, isTriggerComment, workflowApiTriggerBots, UNKNOWN_SHA, isReviewShaped, isStatusLineComment, looksLikeBotLogin, mergeCheckRuns, parseBotBody, refusalReason, REPORT_GRACE_MS, resolveBotId, verdictsFrom } from './bots';
 import type { BotComment, DerivedBotVerdict, RawCheckRun, VerdictOptions } from './bots';
 import { parseConsolidateOutput } from './prompts';
 
@@ -403,6 +404,15 @@ describe('bots + prompts', () => {
     expect(parseBotBody('Found 2 issues, see #9377 issues for the earlier ones.', 'bugbot').count).toBe(2);
     expect(parseBotBody('Fixes GH-123 issues: found 1 bug.', 'bugbot').count).toBe(1);
   });
+  it('does not join a number to a noun on the next line', () => {
+    // A Claude review whose short SHA was all digits, as the page reads it: "Reported 6151140 issues" (X, Nov 2026).
+    const page = '**Commit Hash**: 6151140\n\nCritical Issues:\n\n- [ ] Runtime gates still use an account-ID-only context';
+    expect(parseBotBody(page, 'claude').count).toBeNull();
+    expect(parseBotBody(page.replace(/\n/g, '\r'), 'claude').count).toBeNull();
+    expect(parseBotBody('Review complete\n3\nP1, 2\nP2', 'claude').count).toBeNull();
+    expect(parseBotBody('Commit 1234567\nnew issues found below', 'cubic').count).toBeNull();
+    expect(parseBotBody('Found 2 potential issues.', 'claude').count).toBe(2);
+  });
   it("reads Copilot's overview: open findings counted, none open is clean", () => {
     // Copilot code review's overview (`ccr-overview-v2`, Oct 2026): a verdict heading, then "**1 open finding**" /
     // "**0 open findings**" / "**No open issues** 🎉", edited as the findings are resolved.
@@ -571,7 +581,8 @@ describe('bots + prompts', () => {
     expect(parseBotBody('#### Approvability\n**Verdict:** Approved at `2a60be7`\n\nMacroscope\'s review found this PR approvable — a narrowly scoped fix.', 'macroscope').clean).toBe(true);
     expect(parseBotBody('#### Approvability\n**Verdict:** Would Approve\n\nMacroscope\'s review found this PR approvable.', 'macroscope').clean).toBe(true);
     expect(parseBotBody('#### Approvability\n**Verdict:** Needs Human Approval\n\nMacroscope\'s review found this PR requires human approval — an unresolved finding.', 'macroscope').clean).toBe(false);
-    expect(refusalReason('**Macroscope skipped reviewing this pull request.** Per-review cost limit exceeded (workspace setting). This review would cost an estimated $25.00, which exceeds your per-review limit of $10.00. An admin can raise the limit in workspace settings, or comment `@macroscope-app review` to run it anyway at the estimated cost shown above, which is billed to the workspace.')).toBe('Macroscope skipped reviewing this pull request');
+    expect(refusalReason('**Macroscope skipped reviewing this pull request.** Per-review cost limit exceeded (workspace setting). This review would cost an estimated $25.00, which exceeds your per-review limit of $10.00. An admin can raise the limit in workspace settings, or comment `@macroscope-app review` to run it anyway at the estimated cost shown above, which is billed to the workspace.')).toBe('Per-review cost limit exceeded (workspace setting)');
+    expect(refusalReason('**Macroscope skipped reviewing this pull request.**')).toBe('Macroscope skipped reviewing this pull request');
     const korbit = '### Review by Korbit AI\n###### Korbit automatically attempts to detect when you fix issues in new commits.\n| Category | Issue | Status |\n|---|---|---|\n| <sub>![Security](https://img.shields.io/badge/Security-e11d48)</sub> | Overly broad exception handler ▹ [view](https://github.com/o/r/pull/1#discussion_r1) | ✅ Fix detected |\n| <sub>![Functionality](https://img.shields.io/badge/Functionality-0284c7)</sub> | Downgrade fails with duplicate tag names ▹ [view](https://github.com/o/r/pull/1#discussion_r2) ||';
     expect(parseBotBody(korbit, 'korbit')).toMatchObject({ clean: false, count: 1 });
     // ...and as the page reads the table (a row per line, the cells' words run together, the badge image silent).
@@ -797,6 +808,52 @@ describe('bots + prompts', () => {
     expect(byId(verdictsFrom([], agentRun, 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'clean', score: 5, sourceId: 'issuecomment-1' });
   });
 
+  it('starts a run when the Geld workflow takes a /geld run command', () => {
+    const now = Date.UTC(2026, 10, 3, 8, 0);
+    const at = (minutesAgo: number): string => new Date(now - minutesAgo * 60_000).toISOString();
+    const byId = (list: readonly DerivedBotVerdict[], id: string): DerivedBotVerdict | undefined => list.find((bot) => bot.id === id);
+    expect(geldRunCommand(['greptile'])).toBe('/geld run greptile');
+    expect(geldRunBots('/geld run greptile')).toEqual(['greptile']);
+    expect(geldRunBots('/Geld run greptile, bugbot devin')).toEqual(['greptile', 'bugbot', 'devin']);
+    // The workflow reads the whole comment as the command: anything else in it, or a bot it cannot start, is not one.
+    expect(geldRunBots('/geld run coderabbit')).toEqual([]);
+    expect(geldRunBots('/geld run greptile please')).toEqual([]);
+    expect(geldRunBots('Use /geld run greptile next time')).toEqual([]);
+    // One line: the workflow refuses a command split over lines, so it starts no run here either.
+    expect(geldRunBots('/geld run greptile\nbugbot')).toEqual([]);
+    expect(isTriggerComment('/geld run greptile bugbot')).toBe(true);
+    expect(botByTrigger('/geld run devin')?.id).toBe('devin');
+    expect(botsTriggeredBy('/geld run greptile bugbot').map((bot) => `${bot.id}:${bot.login}`)).toEqual(['greptile:greptile-apps[bot]', 'bugbot:cursor[bot]']);
+    // Only an App's reaction is the workflow's answer, and a 👎 wins over a 🚀 (one of several bots was not queued).
+    expect(geldRunAnswer({ reactions: [{ login: 'github-actions[bot]', emoji: 'rocket' }] })).toBe('queued');
+    expect(geldRunAnswer({ reactions: [{ login: 'github-actions[bot]', emoji: 'rocket' }, { login: 'github-actions[bot]', emoji: 'thumbs down' }] })).toBe('failed');
+    expect(geldRunAnswer({ reactions: [{ login: 'brandonmcconnell', emoji: 'rocket' }] })).toBeNull();
+    // A workflow offers a bot only when it names the secret holding the bot's key; the copied file names none.
+    const workflow = (greptile: string, bugbot: string): string =>
+      `env:\n  GELD_GREPTILE_SECRET_NAME: ${greptile}\n  GELD_BUGBOT_SECRET_NAME: ${bugbot}\n  GELD_DEVIN_SECRET_NAME: ''\njobs:\n  trigger:\n    if: startsWith(github.event.comment.body, '/geld run')\n`;
+    expect([...workflowApiTriggerBots(workflow("''", "''"))]).toEqual([]);
+    expect([...workflowApiTriggerBots(workflow('GREPTILE_API_KEY', "'CURSOR_KEY' # team key"))]).toEqual(['greptile', 'bugbot']);
+    // A key pasted where the name goes is not a name: the workflow refuses it, so the bot is not offered.
+    expect([...workflowApiTriggerBots(workflow('cog_abc123', "'key_9f8e7d'"))]).toEqual([]);
+    expect([...workflowApiTriggerBots(workflow('GREPTILE_API_KEY', "''").replace("'/geld run'", "'/other'"))]).toEqual([]);
+    // The workflow teams copy names no secret, so it offers no bot until they name one.
+    const shipped = readFileSync(new URL('../../../apps/action/examples/geld.yml', import.meta.url), 'utf8');
+    expect([...workflowApiTriggerBots(shipped)]).toEqual([]);
+    expect([...workflowApiTriggerBots(shipped.replace("GELD_GREPTILE_SECRET_NAME: ''", 'GELD_GREPTILE_SECRET_NAME: GREPTILE_API_KEY'))]).toEqual(['greptile']);
+    const summary = { author: 'greptile-apps[bot]', body: 'Confidence Score: 5/5\nNo issues found.', anchor: 'issuecomment-1', createdAt: at(60) };
+    const command = { author: 'brandonmcconnell', body: '/geld run greptile', anchor: 'issuecomment-3', createdAt: at(5) };
+    const queued = { ...command, reactions: [{ login: 'github-actions[bot]', emoji: 'rocket' }] };
+    // Greptile never reacts to the command (the workflow asked it by API): the workflow's 🚀 is its acknowledgement.
+    expect(byId(verdictsFrom([], [summary, queued], 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'running', sourceId: 'issuecomment-3' });
+    expect(byId(verdictsFrom([], [summary, { ...command, createdAt: at(1) }], 'aaa', [], now), 'greptile')?.verdict).toBe('running');
+    // No answer after the grace (no workflow, or no key for the bot) and a 👎 are no run: the earlier verdict stands.
+    expect(byId(verdictsFrom([], [summary, command], 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'clean', sourceId: 'issuecomment-1' });
+    expect(byId(verdictsFrom([], [summary, { ...command, createdAt: at(1), reactions: [{ login: 'github-actions[bot]', emoji: 'thumbs down' }] }], 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'clean', sourceId: 'issuecomment-1' });
+    // The bot's report ends the run, as for its own tag comment.
+    const rewritten = { ...summary, body: 'Confidence Score: 4/5\nFound 1 issue.\nReviews (2)', editedAt: at(1) };
+    expect(byId(verdictsFrom([], [rewritten, queued], 'aaa', [], now), 'greptile')).toMatchObject({ verdict: 'findings', score: 4, sourceId: 'issuecomment-1' });
+  });
+
   it('weighs the earlier run\u2019s threads again when a request for the bot went unanswered', () => {
     const now = Date.UTC(2026, 9, 13, 19, 0);
     const at = (minutesAgo: number): string => new Date(now - minutesAgo * 60_000).toISOString();
@@ -900,6 +957,19 @@ describe('bots + prompts', () => {
     expect(verdictsFrom([], later, 'aaa')[0]).toMatchObject({ verdict: 'clean', sourceId: 'issuecomment-9' });
     const rerun = [...later, { author: 'greptile-apps[bot]', body: 'Escaped schema refs fail', anchor: 'discussion_r3', resolved: false }];
     expect(verdictsFrom([], rerun, 'aaa')[0]).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'discussion_r3' });
+  });
+
+  it('keeps a thread run standing over a later comment with nothing to count', () => {
+    // geld#352: Greptile's summary counts one finding, its one thread is resolved, and seconds later it posts the
+    // findings it could not place inline as a top-level comment with no count, score or verdict of its own.
+    const summary = { author: 'greptile-apps[bot]', body: 'Confidence Score: 4/5\n\nFindings\n\n1. **Info buttons omit spoken help** ▶\n\nSummary\n\nThe popup uses compact switches.', anchor: 'issuecomment-1', createdAt: '2026-11-03T09:10:24Z' };
+    const thread = { author: 'greptile-apps[bot]', body: 'Info buttons omit spoken help', anchor: 'discussion_r1', resolved: true, createdAt: '2026-11-03T09:10:36Z' };
+    const outside = { author: 'greptile-apps[bot]', body: 'Comments Outside Diff\n\nThese findings could not be posted inline.\n\n**Old team settings stay active** `apps/extension/src/ui/account-widget.ts:320` ▶', anchor: 'issuecomment-2', createdAt: '2026-11-03T09:10:39Z' };
+    expect(verdictsFrom([], [summary, thread, outside], 'aaa')[0]).toMatchObject({ verdict: 'findings', count: 0, score: 4, sourceId: 'discussion_r1' });
+    // The thread still open: that is the outstanding finding, and where the chip points.
+    expect(verdictsFrom([], [summary, { ...thread, resolved: false }, outside], 'aaa')[0]).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'discussion_r1' });
+    // With no thread before it, the comment is still the bot's word, as before.
+    expect(verdictsFrom([], [summary, outside], 'aaa')[0]).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'issuecomment-2' });
   });
 
   it('reads a summary rewritten well after a resolved thread run as the latest word', () => {

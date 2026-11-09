@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { filesChangedBetween, findSummaryComment, loadPullRequest, parseActionEvent, shouldSkipSelfEdit } from './github';
+import { verdictsFrom } from '@geld/review';
 
 const BASE = {
   repository: { full_name: 'acme/widgets' },
@@ -152,6 +153,47 @@ describe('loadPullRequest', () => {
     expect(pr.threads).toHaveLength(1);
     expect(pr.threads[0]?.comments.map((entry) => entry.author)).toEqual(['cursor', 'alice', 'bob']);
     expect(calls).toHaveLength(3);
+  });
+
+  it('reads the Geld workflow\u2019s reaction to a /geld run command, so the run it queued stays running', async () => {
+    const fetchImpl: typeof fetch = async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                number: 7,
+                headRefOid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                reviewThreads: { pageInfo: page, nodes: [] },
+                comments: {
+                  pageInfo: page,
+                  nodes: [
+                    {
+                      ...comment(1),
+                      body: '/geld run greptile',
+                      reactionGroups: [
+                        { content: 'ROCKET', reactors: { nodes: [{ __typename: 'Bot', login: 'github-actions' }] } },
+                        { content: 'THUMBS_UP', reactors: { nodes: [{ __typename: 'User', login: 'bob' }, { __typename: 'Organization' }] } },
+                      ],
+                    },
+                  ],
+                },
+                reviews: { pageInfo: page, nodes: [] },
+                commits: { nodes: [{ commit: { oid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', statusCheckRollup: null } }] },
+              },
+            },
+          },
+        }),
+      );
+    const pr = await loadPullRequest({ token: 't', fetch: fetchImpl }, 'acme', 'widgets', 7);
+    expect(pr.comments[0]?.reactions).toEqual([
+      { login: 'github-actions[bot]', emoji: 'rocket' },
+      { login: 'bob', emoji: 'thumbs up' },
+    ]);
+    // Ten minutes on, past the grace for an unanswered command: the workflow's 🚀 keeps Greptile running.
+    const later = Date.parse('2026-09-18T10:10:00.000Z');
+    const comments = pr.comments.map((entry) => ({ author: entry.author, body: entry.body, anchor: `issuecomment-${entry.databaseId}`, createdAt: entry.createdAt, ...(entry.reactions === undefined ? {} : { reactions: entry.reactions }) }));
+    expect(verdictsFrom([], comments, pr.headSha, [], later).find((bot) => bot.id === 'greptile')?.verdict).toBe('running');
   });
 
   it('reads the head commit\u2019s check contexts past the first page', async () => {
