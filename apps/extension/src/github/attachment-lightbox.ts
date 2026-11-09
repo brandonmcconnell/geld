@@ -37,7 +37,14 @@ function titleFor(image: HTMLImageElement): string {
   return alt === '' || /^image$/i.test(alt) ? 'Image' : alt;
 }
 
-function show(viewer: ReturnType<typeof createAttachmentViewer>, title: string, href: string, trigger: HTMLElement): void {
+interface LightboxViewer {
+  readonly stage: HTMLElement;
+  readonly controls?: HTMLElement;
+  readonly mount?: () => void;
+  readonly dispose: () => void;
+}
+
+function show(viewer: LightboxViewer, title: string, href: string, trigger: HTMLElement): void {
   closeDialog?.();
   const titleId = `geld-lightbox-title-${Date.now()}`;
   const dialog = createElement('dialog', {
@@ -54,11 +61,14 @@ function show(viewer: ReturnType<typeof createAttachmentViewer>, title: string, 
   dialog.append(
     createElement('header', { class: 'geld-lightbox__header' }, [
       createElement('h1', { class: 'geld-lightbox__title', id: titleId }, [title]),
+      ...(viewer.controls === undefined ? [original] : []),
       close,
     ]),
     createElement('div', { class: 'geld-lightbox__body' }, [viewer.stage]),
-    createElement('footer', { class: 'geld-lightbox__footer' }, [viewer.controls, original]),
   );
+  if (viewer.controls) {
+    dialog.append(createElement('footer', { class: 'geld-lightbox__footer' }, [viewer.controls, original]));
+  }
   const dismiss = (): void => {
     if (closeDialog !== dismiss) return;
     closeDialog = null;
@@ -79,6 +89,7 @@ function show(viewer: ReturnType<typeof createAttachmentViewer>, title: string, 
   document.body.append(dialog);
   closeDialog = dismiss;
   dialog.showModal();
+  viewer.mount?.();
   close.focus();
 }
 

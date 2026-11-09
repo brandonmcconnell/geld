@@ -9925,20 +9925,65 @@ button.geld-lightbox-trigger {
   touch-action: auto;
 }
 
-.geld-lightbox__video {
+.geld-lightbox__stage--video .video-js {
   position: absolute;
   inset: 0;
-  display: block;
   width: 100%;
   height: 100%;
-  background: #000;
+  font-size: 13px;
+}
+
+.geld-lightbox__stage--video .vjs-tech {
   object-fit: contain;
 }
 
-.geld-lightbox__video-tools {
+.geld-lightbox__stage--video .video-js .vjs-control-bar {
+  height: 3.25em;
+  background: #161b22;
+}
+
+.geld-lightbox__stage--video .video-js .vjs-progress-control {
+  position: absolute;
+  inset: -.65em .8em auto;
+  width: auto;
+  height: 1.3em;
+}
+
+.geld-lightbox__stage--video .video-js .vjs-time-control {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  align-items: center;
+  min-width: 0;
+  padding-inline: .3em;
+}
+
+.geld-lightbox__stage--video .video-js .vjs-playback-rate {
+  margin-inline-start: auto;
+}
+
+.geld-lightbox__stage--video .vjs-big-play-centered .vjs-big-play-button {
+  width: 1.8em;
+  height: 1.8em;
+  margin: -.9em 0 0 -.9em;
+  border-radius: 50%;
+}
+
+.geld-lightbox__stage--video :is(.vjs-layout-x-small, .vjs-layout-small) button.vjs-control {
+  width: 3em;
+}
+
+.geld-lightbox__stage--video :is(.vjs-layout-x-small, .vjs-layout-small) .vjs-picture-in-picture-control {
+  display: none;
+}
+
+.geld-lightbox__stage--video .video-js:not(.vjs-has-started, .vjs-error) .vjs-control-bar {
+  display: flex;
+  visibility: visible;
+  opacity: 1;
+}
+
+.geld-lightbox__stage--video .video-js .vjs-play-progress,
+.geld-lightbox__stage--video .video-js .vjs-volume-level {
+  background: #58a6ff;
 }
 
 /* The Overview's recommended action: GitHub's "View merge status" as an info button, and Geld's merge beside it. */
