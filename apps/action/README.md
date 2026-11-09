@@ -31,4 +31,32 @@ No request is made unless `ai-key` and `model` are both set. `ai-base-url` defau
 
 With AI on, the Action consolidates **bot-only** findings (people's comments keep their words): one title per concern, merged context when several bots report the same thing, an optional fix (`suggested-fixes`: `all`, `bots` — the default, only a bot's own ```suggestion block —, `ai`, `off`), and a TL;DR at the top of the comment. Work is incremental: items whose sources did not change since the last comment keep their wording, an item that gained a source is re-asked with the previous wording as baseline, and the TL;DR is rewritten only when the set of open items changed.
 
+## Start review bots by API
+
+The example workflow has a second job, `trigger`, that starts review bots through their own APIs when someone with write access comments `/geld run greptile` (or `bugbot`, `devin`, several separated by spaces). It helps when a bot is not picking up its own tag comment, since the bot never has to read the comment.
+
+No bot is started by API until you set it up: until then it keeps its usual tag comment. Store the bot's key as a repository secret (Settings > Secrets and variables > Actions), then put that secret's **name** in the workflow's `env` block:
+
+| Bot | Workflow setting | Where the key comes from |
+|---|---|---|
+| `greptile` | `GELD_GREPTILE_SECRET_NAME` | Greptile, Settings > Organization > API Keys. Calls `trigger_code_review` on `api.greptile.com/mcp`. |
+| `bugbot` | `GELD_BUGBOT_SECRET_NAME` | Cursor Dashboard > API Keys, admin scope (Cursor Enterprise). Calls `POST api.cursor.com/bugbot/review`. |
+| `devin` | `GELD_DEVIN_SECRET_NAME` (and `GELD_DEVIN_ORG_ID` for an enterprise-wide key) | A Devin service user with `UseReviewManual`. Its organization is read from the key (`GET /v3/self`); an enterprise-wide key spans several, so name the organization id (not a secret). Calls `POST api.devin.ai/v3/organizations/{org}/pr-reviews`. |
+
+```yaml
+env:
+  GELD_GREPTILE_SECRET_NAME: GREPTILE_API_KEY # the name of your secret, never the key
+```
+
+- **Names only:** a value that isn't shaped like a secret's name as GitHub lists it (capital letters, digits, underscores) is refused with a 👎, without being repeated anywhere: it is most likely a key pasted into a committed file. Remove it from the workflow and rotate that key.
+
+- **Who can trigger:** secrets are available to every comment's run, so the job checks the commenter's permission first and refuses anyone without write access, and comments from bot accounts.
+- **Whose key it is:** every bot acts for the organization or team the key belongs to, not for the person who commented: none of the three APIs takes a requester. Who asked is on GitHub, in the comment and in the run's log (`review queued for <login>`). Use an organization's key, not a personal one: a Devin personal access token acts as the person who made it, and a Cursor API key belongs to the team.
+- **GitHub Enterprise Server:** Greptile is sent the server's address (`remoteUrl`) so it finds the repository there. Bugbot and Devin take the pull request's own link.
+- **Parallel:** the `trigger` job has no concurrency group, so every command runs, alongside the others and the summary. The `summary` job keeps its own group, which cancels older summary runs so only the newest rewrites the comment.
+- **Result:** a 🚀 reaction on the comment when every bot was queued, 👎 otherwise, with the reason in the run's log. A queued review still runs on the bot's side and posts as usual.
+- **From the extension:** on a repository whose Geld workflow names a secret for a bot, Rerun and Request a review post `/geld run <bot>` for that bot instead of its tag comment, with no setting to turn on: the workflow file is the switch, per repository. Bots with no secret named keep their usual tag comment. The extension reads the workflow file for the names, never the keys. The digest reads the workflow's 🚀 as the bot taking the run and its 👎 as no run.
+
+Repositories that copied an earlier version of `examples/geld.yml` need to copy it again to get this job: `uses: …@main` updates the Action's code, not the workflow file.
+
 `dist/index.js` is a committed esbuild bundle (GitHub Actions require built JavaScript). Rebuild with `pnpm --filter @geld/action build`.

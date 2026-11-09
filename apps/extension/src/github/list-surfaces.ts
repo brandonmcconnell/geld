@@ -1,4 +1,5 @@
 import type { Catalog, ChipPlacement, ListSurfaceSpec } from '@geld/core';
+import { mark } from '../lib/perf';
 import { cleanText, OWN_UI_ATTRIBUTE } from './dom';
 
 /**
@@ -28,6 +29,8 @@ export interface ListSurface {
   chipAnchor(row: HTMLElement, number: string): ChipAnchor | null;
   /** The author's login as GitHub shows it (`dependabot[bot]`), or `null` when the surface does not name one. */
   authorOf(row: HTMLElement): string | null;
+  /** The element `authorOf` read the login from, for a label beside the author's name. */
+  authorElementOf(row: HTMLElement): HTMLElement | null;
 }
 
 /** Read `…opened by <login>` / `Filter by author <login>` labels. */
@@ -66,10 +69,19 @@ function compileSurface(spec: ListSurfaceSpec): ListSurface | null {
   ];
   const broken = selectors.find((selector) => !selectorIsValid(selector));
   if (broken !== undefined) {
-    console.warn(`Geld: list surface "${spec.id}" has an invalid selector and is skipped: ${broken}`);
+    mark(`surface-skipped:${spec.id}:${broken.slice(0, 120)}`);
     return null;
   }
   const { inside, notInside } = spec;
+  const authorIn = (row: HTMLElement): { readonly login: string; readonly element: HTMLElement } | null => {
+    for (const source of spec.authors) {
+      for (const element of row.querySelectorAll<HTMLElement>(source.selector)) {
+        const login = readAuthor(element, source.from);
+        if (login !== null) return { login, element };
+      }
+    }
+    return null;
+  };
   return {
     id: spec.id,
     spec,
@@ -88,13 +100,10 @@ function compileSurface(spec: ListSurfaceSpec): ListSurface | null {
       return metaByNumber(row, number);
     },
     authorOf(row) {
-      for (const source of spec.authors) {
-        for (const element of row.querySelectorAll<HTMLElement>(source.selector)) {
-          const login = readAuthor(element, source.from);
-          if (login !== null) return login;
-        }
-      }
-      return null;
+      return authorIn(row)?.login ?? null;
+    },
+    authorElementOf(row) {
+      return authorIn(row)?.element ?? null;
     },
   };
 }
