@@ -3196,7 +3196,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         const botId = entry.author.bot ? resolveBotId(entry.author.login, settings.reviewBots) : null;
         // What `verdictsFrom` counts as a bot's report: not a status line or a trigger, and from a coding agent that
         // also chats (Replicas) only a review-shaped comment.
-        const parsed = botId === null ? null : parseBotBody(entry.comment.body, botId.startsWith('custom:') ? '' : botId);
+        const parsed = botId === null ? null : parseBotBody(entry.comment.body, botId.startsWith('custom:') ? '' : botId, entry.comment.anchor);
         const reviewShaped = parsed === null || botById(botId ?? '')?.conversational !== true || isReviewShaped(parsed);
         // A refusal ("Skipping Bugbot: …") is review-shaped but not a report — `verdictsFrom` keeps the bot's earlier
         // real review as its last run, so a refusal must not count as a summary, or `botSummaryFor` would offer it as

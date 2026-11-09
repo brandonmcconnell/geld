@@ -71,5 +71,16 @@ describe('CodeRabbit reviews', () => {
     const verdict = verdictsFrom([], [counted, thread, reply], head)[0];
     expect(verdict).toMatchObject({ verdict: 'findings', count: 1 });
     expect(verdict?.sourceId).not.toBe('issuecomment-3');
+    // The page reads the reply with its quote markers and fences gone (`blockText`), so the heading stands on a line
+    // of its own; only a review body is where CodeRabbit puts it.
+    const rendered = ['The Prompt to fix all issues block is from the earlier run.', '', '🤖 Prompt to fix all issues', 'Failed pre-merge checks:', '- Docstring Coverage:', '', 'Nitpick comments: 2'].join('\n');
+    for (const anchor of ['issuecomment-4', 'discussion_r4']) {
+      expect(isReviewShaped(parseBotBody(rendered, 'coderabbit', anchor))).toBe(false);
+      expect(parseBotBody(rendered, 'coderabbit', anchor)).toMatchObject({ count: null });
+    }
+    const onPageReply: BotComment = { ...reply, body: rendered, anchor: 'issuecomment-4' };
+    expect(verdictsFrom([], [counted, thread, onPageReply], head)[0]).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'discussion_r3' });
+    // The same words as a review body are its review.
+    expect(parseBotBody(onPage('', '', DOCSTRINGS), 'coderabbit', 'pullrequestreview-5')).toMatchObject({ count: 1, unthreaded: 1 });
   });
 });

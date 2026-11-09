@@ -476,7 +476,7 @@ function hasHeading(text: string, heading: RegExp): boolean {
   return false;
 }
 
-function countShapedBy(botId: string, text: string): number | null {
+function countShapedBy(botId: string, text: string, reviewBody: boolean): number | null {
   switch (botId) {
     case 'claude': {
       const match = /(\d+)[^\S\n]*P1,[^\S\n]*(\d+)[^\S\n]*P2/i.exec(text);
@@ -529,8 +529,8 @@ function countShapedBy(botId: string, text: string): number | null {
     }
     case 'coderabbit': {
       const actionable = /\bactionable comments posted:[^\S\n]*(\d+)/i.exec(text);
-      const unthreaded = outsideDiffCount(text) + failedPreMergeCount(text);
-      if (actionable === null && unthreaded === 0 && !isCodeRabbitReview(text)) return null;
+      const unthreaded = outsideDiffCount(text) + (reviewBody ? failedPreMergeCount(text) : 0);
+      if (actionable === null && unthreaded === 0 && !(reviewBody && isCodeRabbitReview(text))) return null;
       return (actionable?.[1] === undefined ? 0 : Number.parseInt(actionable[1], 10)) + unthreaded;
     }
     default:
@@ -584,9 +584,11 @@ export function badgeSeverity(body: string): FindingSeverity | null {
 
 const SEVERITY_RANK: Readonly<Record<FindingSeverity, number>> = { high: 3, medium: 2, low: 1 };
 
-export function parseBotBody(body: string, botId: string): ParsedBotBody {
+export function parseBotBody(body: string, botId: string, anchor?: string): ParsedBotBody {
   // HTML comments are the bots' own markers (Cursor's automation ids, Greptile's score), never words to weigh.
   const text = body.replace(/\r\n?/g, '\n').replace(/<!--[\s\S]*?-->/g, '').trim();
+  // A review body, where CodeRabbit puts its review's headings; a chat reply quoting them is a comment or a thread reply.
+  const reviewBody = anchor === undefined || anchor.startsWith('pullrequestreview-');
   if (botId === 'macroscope') {
     if (isMacroscopeAgentComment(text)) return { count: null, score: null, clean: false, severity: null };
     const gate = macroscopeApprovability(text);
@@ -607,7 +609,7 @@ export function parseBotBody(body: string, botId: string): ParsedBotBody {
         // (server#9385, where the Bugbot chip read "9377 issues" until its threads settled).
         /(?<![#\w-])(\d+)[^\S\n]+(?:(?:potential|possible|new|actionable|likely|minor|major|critical|significant|remaining|open|existing)[^\S\n]+){0,2}(?:issue|finding|bug|problem)s?\b/i.exec(text));
   let count = countMatch?.[1] !== undefined ? Number.parseInt(countMatch[1], 10) : null;
-  const shaped = countShapedBy(botId, text);
+  const shaped = countShapedBy(botId, text, reviewBody);
   // CodeRabbit counts only in its review's shape: "0 issues remain" in a chat reply is no count of its.
   if (botId === 'coderabbit') count = shaped;
   else if (shaped !== null) count = shaped;
@@ -683,7 +685,7 @@ export function parseBotBody(body: string, botId: string): ParsedBotBody {
   // CodeRabbit scores nothing and states no verdict in words: a "5/5" or "Verdict: …" from it is chat.
   const coderabbit = botId === 'coderabbit';
   const verdict = coderabbit ? {} : needsHuman ? ({ verdict: 'needs-human' } as const) : changesRequested ? ({ verdict: 'changes-requested' } as const) : {};
-  const unthreaded = coderabbit ? outsideDiffCount(text) + failedPreMergeCount(text) : 0;
+  const unthreaded = coderabbit ? outsideDiffCount(text) + (reviewBody ? failedPreMergeCount(text) : 0) : 0;
   return { count: Number.isFinite(count) ? count : null, score: !coderabbit && Number.isFinite(score) ? score : null, clean, severity, ...verdict, ...(unthreaded > 0 ? { unthreaded } : {}) };
 }
 
@@ -1510,7 +1512,7 @@ export function verdictsFrom(
       statusOnly.delete(id);
       continue;
     }
-    const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id);
+    const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id, comment.anchor);
     // A coding agent's reply to a person or to another bot is not its review; only a review-shaped comment votes.
     if (botById(id)?.conversational === true && !isReviewShaped(parsed)) continue;
     // A word with nothing to count, after the run's threads, is more of that run, not a new one: Greptile posts
