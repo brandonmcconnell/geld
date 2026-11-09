@@ -94,6 +94,21 @@ describe('the Overview tab', () => {
     ]);
   });
 
+  it('reads what each comment and each thread reply links to, with who and when', () => {
+    mount();
+    const reply = document.querySelector('#discussion_r300 .markdown-body p');
+    const top = document.querySelector('#issuecomment-30 .markdown-body');
+    if (reply === null || top === null) throw new Error('fixture');
+    reply.insertAdjacentHTML('beforeend', ' see <a class="issue-link" href="https://github.com/o/r/pull/1">#1</a>');
+    top.insertAdjacentHTML('beforeend', '<p>Related: <a href="https://github.com/o/r/discussions/5" data-hovercard-type="discussion">#5</a></p>');
+    resetCrawlCache();
+    const mentions = crawlConversation().comments.flatMap((entry) => entry.mentions.map((mention) => [mention.ref, mention.anchor, mention.author.login, mention.discussion, mention.at]));
+    expect(mentions).toEqual([
+      ['o/r#1', 'discussion_r300', 'coderabbitai[bot]', false, '2026-11-07T06:13:29.000Z'],
+      ['o/r#5', 'issuecomment-30', 'greptile-apps[bot]', true, '2026-11-07T06:20:00.000Z'],
+    ]);
+  });
+
   it("reads a thread's file, line and state from its box's heading, never from the words of its comments", () => {
     mount();
     const threads = crawlConversation().comments.filter((entry) => entry.comment.kind === 'thread');

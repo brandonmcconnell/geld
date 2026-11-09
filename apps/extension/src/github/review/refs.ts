@@ -10,7 +10,7 @@
 import { fragmentHeaders } from './deeplink';
 import { pageFetch } from '../page-fetch';
 
-export type RefState = 'open' | 'closed' | 'merged' | 'draft' | 'issue-open' | 'issue-closed' | 'issue-not-planned' | 'unknown';
+export type RefState = 'open' | 'closed' | 'merged' | 'draft' | 'issue-open' | 'issue-closed' | 'issue-not-planned' | 'discussion' | 'unknown';
 
 export interface RefDetails {
   readonly title: string;
@@ -27,10 +27,12 @@ export function refsVersion(): number {
   return version;
 }
 
-/** `/owner/repo/pull/N` for any issue or pull request URL on this host, else null. */
+/** `/owner/repo/pull/N` for any issue or pull request URL on this host, `/owner/repo/discussions/N` for a discussion, else null. */
 export function refKeyOf(href: string): string | null {
-  const match = /\/([^/]+)\/([^/]+)\/(?:pull|issues)\/(\d+)/.exec(href);
-  return match === null ? null : `/${match[1]}/${match[2]}/pull/${match[3]}`;
+  const match = /\/([^/]+)\/([^/]+)\/(pull|issues|discussions)\/(\d+)/.exec(href);
+  if (match === null) return null;
+  // A discussion's hovercard is its own; GitHub answers an issue's at the pull path too.
+  return `/${match[1]}/${match[2]}/${match[3] === 'discussions' ? 'discussions' : 'pull'}/${match[4]}`;
 }
 
 /**
@@ -79,6 +81,7 @@ export function parseHovercard(doc: Document, key: string): RefDetails | null {
     .replace(new RegExp(`\\s*#${number}$`), '')
     .trim();
   if (title === '') return null;
+  if (key.includes('/discussions/')) return { title, state: 'discussion' };
   const badge = doc.querySelector('.State');
   const glyph = [...(badge ?? doc).querySelectorAll('svg.octicon')].map(glyphState).find((state) => state !== null) ?? null;
   if (glyph !== null) return { title, state: glyph };

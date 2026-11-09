@@ -245,6 +245,7 @@ const STATE_GLYPHS: Readonly<Record<RefState, { readonly icon: string; readonly 
   'issue-open': { icon: ICON_ISSUE_OPENED, tone: 'open', word: 'Open' },
   'issue-closed': { icon: ICON_ISSUE_CLOSED, tone: 'done', word: 'Closed' },
   'issue-not-planned': { icon: ICON_SKIP, tone: 'muted', word: 'Closed as not planned' },
+  discussion: { icon: ICON_COMMENT_DISCUSSION, tone: 'muted', word: '' },
   unknown: { icon: ICON_ISSUE_OPENED, tone: 'unknown', word: '' },
 };
 
