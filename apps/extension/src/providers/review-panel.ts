@@ -1,4 +1,4 @@
-import { botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, parseInlineMarkdown, previewDocFromMarkdown, previewHostById, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, renderProviderItemMarkdown, sourceLink } from '@geld/review';
+import { botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, newestProviderBotSummary, parseInlineMarkdown, previewDocFromMarkdown, previewHostById, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, renderProviderItemMarkdown, sourceLink } from '@geld/review';
 import type { BotVerdictRecord, ProviderPublicationRead, ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, RawCheckRun, ReviewItem, ReviewItemStatus, ReviewerState } from '@geld/review';
 import type { RepositoryIdentity } from '@geld/core';
 import type { ProviderAiState } from './ai';
@@ -544,9 +544,11 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       if (verdict?.score !== undefined) row.append(node('p', `Confidence score: ${verdict.score}/5`));
       if (verdict?.reason !== undefined) row.append(node('p', verdict.reason));
       if (verdict?.reviewedSha !== undefined && verdict.reviewedSha !== input.subject.headSha) row.append(node('p', 'Review is for an earlier commit.', 'geld-provider-review__muted'));
-      if (verdict?.sourceId !== undefined) {
-        const comment = comments.find((candidate) => candidate.anchor === verdict.sourceId);
-        if (comment !== undefined) {
+      if (verdict !== undefined) {
+        const comment = verdict.verdict === 'running' || verdict.verdict === 'loading'
+          ? newestProviderBotSummary(input, options.comments ?? [], id)
+          : comments.find((candidate) => candidate.anchor === verdict.sourceId);
+        if (comment !== undefined && comment !== null) {
           const url = sourceLink({ anchor: comment.anchor, kind: 'comment', author: comment.author.login, url: comment.url }, input.subject);
           if (url !== null) row.append(link('View review', url, comment.anchor));
         }
