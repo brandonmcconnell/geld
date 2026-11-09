@@ -14,6 +14,8 @@
  * with a shared token.
  */
 
+import { OVERVIEW_ITEM, overviewNewestFirst } from './overview-page';
+
 export const ATTR_TELEPORTED = 'data-geld-teleported';
 const PLACEHOLDER_PREFIX = 'geld:quick-view:';
 let nextToken = 0;
@@ -135,6 +137,24 @@ function reactRootOf(node: Element): Element | null {
   return outer instanceof HTMLElement ? (moved.get(outer)?.root ?? null) : null;
 }
 
+/**
+ * Put `node` in `parent` before `before` (at the end for null) as one move, where the browser can (`moveBefore`):
+ * a removal and an insertion drop focus, a caret, an open popover and a playing video, which a move keeps. Both
+ * ends must stand in the document; a detached slot or a cross-root move takes the plain insertion.
+ */
+export function moveNode(parent: Node, node: Node, before: Node | null = null): void {
+  const mover: unknown = Reflect.get(parent, 'moveBefore');
+  if (typeof mover === 'function' && parent.isConnected && node.isConnected) {
+    try {
+      Reflect.apply(mover, parent, [node, before]);
+      return;
+    } catch {
+      // A plain insertion below.
+    }
+  }
+  parent.insertBefore(node, before);
+}
+
 /** Show `nodes` inside `slot`; each keeps its live controls. */
 export function teleportInto(slot: HTMLElement, nodes: readonly HTMLElement[]): void {
   for (const node of nodes) {
@@ -147,25 +167,40 @@ export function teleportInto(slot: HTMLElement, nodes: readonly HTMLElement[]): 
     const token = String(nextToken);
     const placeholder = document.createComment(PLACEHOLDER_PREFIX + token);
     const root = reactRootOf(node);
-    node.replaceWith(placeholder);
+    parent.insertBefore(placeholder, node);
     moved.set(node, { node, placeholder, parent, root, hadFolded: node.getAttribute('data-geld-folded'), hadHidden: node.getAttribute('hidden'), mark: null });
     if (root !== null) tell(parent, 'geld:portal-lend');
     node.removeAttribute('data-geld-folded');
     // A folded row carries hidden="until-found"; away from the timeline it must render.
     node.removeAttribute('hidden');
     node.setAttribute(ATTR_TELEPORTED, token);
-    slot.append(node);
+    moveNode(slot, node);
   }
   installInteractionMarks();
   // A menu moved while open (a chat rebuilt under it) is busy from the start.
   syncInteractionMarks();
 }
 
-const restoreHooks: (() => void)[] = [];
+const restoreHooks: { readonly hook: () => void; readonly owner: Element | null }[] = [];
+let restoreOwner: Element | null = null;
 
 /** Run `hook` the next time everything goes home (state a quick view changed on GitHub's nodes). */
 export function onRestore(hook: () => void): void {
-  restoreHooks.push(hook);
+  restoreHooks.push({ hook, owner: restoreOwner });
+}
+
+/**
+ * Register the hooks `dress` adds as `owner`'s, so a view carried whole into a rebuilt panel (an open chat, see
+ * chat.ts `parkChats`) keeps its dressing while everything else goes home and is undressed.
+ */
+export function ownedBy<T>(owner: Element, dress: () => T): T {
+  const before = restoreOwner;
+  restoreOwner = owner;
+  try {
+    return dress();
+  } finally {
+    restoreOwner = before;
+  }
 }
 
 /** Stop tracking a loaned node React has already discarded (its parent re-rendered without it). */
@@ -204,14 +239,21 @@ export function forgetLoan(node: HTMLElement): void {
  */
 export function dropOrphanedLoans(panel: Element): number {
   let dropped = 0;
-  for (const [key, entry] of [...moved]) {
-    if (entry.placeholder.isConnected || !panel.contains(entry.node)) continue;
-    moved.delete(key);
-    entry.mark?.remove();
-    entry.node.remove();
-    if (entry.root !== null) tell(entry.parent, 'geld:portal-return');
-    dropped += 1;
-  }
+  // Again until none: a loan moved out of a dropped one (an Overview comment's reaction button, out of the toolbar
+  // React threw away with its body) still stands in the panel, its home gone with that loan.
+  let round: number;
+  do {
+    round = 0;
+    for (const [key, entry] of [...moved]) {
+      if (entry.placeholder.isConnected || !panel.contains(entry.node)) continue;
+      moved.delete(key);
+      entry.mark?.remove();
+      entry.node.remove();
+      if (entry.root !== null) tell(entry.parent, 'geld:portal-return');
+      round += 1;
+    }
+    dropped += round;
+  } while (round > 0);
   if (dropped === 0) return 0;
   // Nested loans went out with their outer node: their placeholders and the nodes themselves are detached now.
   for (const [key, entry] of [...moved]) {
@@ -249,8 +291,15 @@ export function adoptReplacement(oldNode: HTMLElement, newNode: HTMLElement): bo
  * they are (a slot carried whole into the next panel), and so do the restore
  * hooks, since a hook cannot be told apart by loan.
  */
-export function restoreAll(keep?: (node: HTMLElement) => boolean): void {
-  if (keep === undefined) for (const hook of restoreHooks.splice(0)) hook();
+export function restoreAll(keep?: (node: HTMLElement) => boolean, keepOwner?: (owner: Element | null) => boolean): void {
+  if (keep === undefined) for (const { hook } of restoreHooks.splice(0)) hook();
+  else if (keepOwner !== undefined) {
+    // Only the hooks of what goes home run; a kept view's stay registered for the time it goes home itself.
+    const staying = restoreHooks.filter(({ owner }) => keepOwner(owner));
+    const leaving = restoreHooks.filter(({ owner }) => !keepOwner(owner));
+    restoreHooks.splice(0, restoreHooks.length, ...staying);
+    for (const { hook } of leaving) hook();
+  }
   for (const [key, entry] of [...moved]) {
     if (keep?.(entry.node) === true) continue;
     // A placeholder that is gone means another party already sent the node home (a newer Geld
@@ -260,7 +309,8 @@ export function restoreAll(keep?: (node: HTMLElement) => boolean): void {
       entry.node.removeAttribute(ATTR_TELEPORTED);
       if (entry.hadFolded !== null) entry.node.setAttribute('data-geld-folded', entry.hadFolded);
       if (entry.hadHidden !== null) entry.node.setAttribute('hidden', entry.hadHidden);
-      entry.placeholder.replaceWith(entry.node);
+      moveNode(entry.placeholder.parentNode, entry.node, entry.placeholder);
+      entry.placeholder.remove();
     }
     if (entry.root !== null) tell(entry.parent, 'geld:portal-return');
     moved.delete(key);
@@ -356,7 +406,28 @@ export function compareHome(a: Node, b: Node): number {
   // at home, so compare them where they are. A comparator that answered 0 here let the sort put them either
   // way round, and the last bot comment - the verdict's source - changed with every pass.
   if (x === y) return a === b ? 0 : (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1;
-  return (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1;
+  const order = (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 ? -1 : 1;
+  return newestFirstEntries(a, b, x, y) ? -order : order;
+}
+
+/** The Overview entry `node` belongs to: around it where it stands (a whole entry on loan is its own), else around its home. */
+function entryOf(node: Node, home: Node): Element | null {
+  const around = (at: Node): Element | null => (at instanceof Element ? at : at.parentElement)?.closest(OVERVIEW_ITEM) ?? null;
+  return around(node) ?? around(home);
+}
+
+/**
+ * Two nodes in different entries of an Overview Comments section listed newest first: the page's order is the
+ * timeline's backwards. The section is found from where each entry lives at home, since a whole entry on loan to the
+ * digest leaves only its placeholder in the section, and that placeholder is in no entry.
+ */
+function newestFirstEntries(a: Node, b: Node, x: Node, y: Node): boolean {
+  const one = entryOf(a, x);
+  const two = entryOf(b, y);
+  if (one === null || two === null || one === two) return false;
+  const home = homeOf(one);
+  const section = (home instanceof Element ? home : home.parentElement)?.closest('section') ?? null;
+  return section !== null && section.contains(homeOf(two)) && overviewNewestFirst(section);
 }
 
 export function teleportedNodes(): readonly HTMLElement[] {
