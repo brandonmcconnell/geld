@@ -9,7 +9,7 @@ import { buildOf, buildProblem, compareVersions, LATEST_RELEASE_PAGE, LATEST_REL
 import type { NightlyBrowser, NightlyRelease, ZipEntry } from '@geld/core/nightly';
 import { BACKGROUND_CHECK_MINUTES, limitedUntil, navigationDue, needsDetails } from './schedule';
 import { startPauseWatch } from './pause';
-import { nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyProfileTokenItem, nightlyStatusItem, nightlyTabCountsItem } from './state';
+import { nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyProfileTokenItem, nightlyStatusItem, readNightlyStatus, nightlyTabCountsItem } from './state';
 import type { NightlyFailure, NightlyStatus, NightlyWrite, UpdateMode } from './state';
 import { decode, sha256Hex, unzip } from './unzip';
 import { acquireLock, readInstallRecord, copyRunningBuild, downloadsReach, downloadsTarget, folderIsOurs, folderPermission, folderTarget, versionOnDisk } from './writers';
@@ -49,7 +49,7 @@ let writes: Promise<unknown> | null = null;
 /** Writes one after another: a look and an install finishing together must not each write back what the other replaced. */
 function patchStatus(patch: Partial<NightlyStatus>): Promise<NightlyStatus> {
   const run = (writes ?? Promise.resolve()).then(async () => {
-    const next = { ...(await nightlyStatusItem.getValue()), ...patch };
+    const next = { ...(await readNightlyStatus()), ...patch };
     await nightlyStatusItem.setValue(next);
     return next;
   });
@@ -147,7 +147,7 @@ async function releaseDetails(before: NightlyStatus, checkedAt: string, tag: str
 async function look(): Promise<NightlyStatus> {
   const checkedAt = new Date().toISOString();
   const tag = await latestTag();
-  const before = await nightlyStatusItem.getValue();
+  const before = await readNightlyStatus();
   const status = needsDetails(before, tag, Date.now())
     ? await releaseDetails(before, checkedAt, tag)
     : await patchStatus({ checkedAt, checkError: tag === null || before.limitedUntil !== null ? (before.checkError ?? 'Could not reach GitHub. Geld checks again later.') : null });
@@ -204,11 +204,11 @@ async function findTarget(): Promise<BuildTarget | Failed> {
 
 /** While a write is unfinished (`writing`), every failure is a broken folder that only the saved copy repairs. */
 async function fail(reported: NightlyFailure): Promise<Failed> {
-  const writing = (await nightlyStatusItem.getValue()).writing;
+  const writing = (await readNightlyStatus()).writing;
   const { restored: _restored, ...unrestored } = reported;
   const failure: NightlyFailure = writing === null ? reported : { ...unrestored, stillOn: writing.whole, broken: true };
   await patchStatus({ installing: null, failure });
-  await showBadge(await nightlyStatusItem.getValue());
+  await showBadge(await readNightlyStatus());
   const stage = failure.broken === true ? 'broken' : failure.restored === true ? 'restored' : 'before writing';
   reportError('background:nightly-update', new Error(`Update to ${failure.version} failed (${stage}): ${failure.reason}`));
   return { ok: false, reason: failure.reason };
@@ -292,7 +292,7 @@ export function rollBack(): Promise<NightlyInstallResult> {
 }
 
 async function install(explicit: boolean): Promise<NightlyInstallResult> {
-  const status = await nightlyStatusItem.getValue();
+  const status = await readNightlyStatus();
   const latest = status.latest;
   const current = installedVersion();
   if (latest === null || !isNewer(status)) return { ok: false, reason: 'Geld is up to date.' };
@@ -333,7 +333,7 @@ async function install(explicit: boolean): Promise<NightlyInstallResult> {
 }
 
 async function restorePrevious(): Promise<NightlyInstallResult> {
-  const status = await nightlyStatusItem.getValue();
+  const status = await readNightlyStatus();
   const backup = await loadBackup();
   if (backup === null) return { ok: false, reason: 'There is no earlier build to go back to.' };
   const target = await installTarget();
@@ -359,7 +359,7 @@ async function restorePrevious(): Promise<NightlyInstallResult> {
 
 /** A write left unfinished by a worker Chrome stopped is a broken folder, offered for repair from the saved copy. */
 async function settleInterrupted(): Promise<NightlyStatus> {
-  const status = await nightlyStatusItem.getValue();
+  const status = await readNightlyStatus();
   const writing = status.writing;
   if (writing === null || status.failure?.broken === true) return patchStatus({ installing: null });
   const failure: NightlyFailure = { version: writing.version, stillOn: writing.whole, reason: `Geld stopped while it was writing build ${buildOf(writing.version) ?? writing.version}.`, at: new Date().toISOString(), broken: true };
@@ -440,5 +440,5 @@ export function startNightly(): void {
   void adoptInstallerFolder();
   void scheduleChecks();
   startPauseWatch();
-  nightlyConflictItem.watch(() => void nightlyStatusItem.getValue().then(showBadge));
+  nightlyConflictItem.watch(() => void readNightlyStatus().then(showBadge));
 }

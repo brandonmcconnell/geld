@@ -102,6 +102,11 @@ export const EMPTY_STATUS: NightlyStatus = {
 
 export const nightlyStatusItem = /* @__PURE__ */ storage.defineItem<NightlyStatus>('local:nightlyStatus', { fallback: EMPTY_STATUS });
 
+/** A status an earlier nightly build stored lacks the fields added since, which read as their defaults. */
+export async function readNightlyStatus(): Promise<NightlyStatus> {
+  return { ...EMPTY_STATUS, ...(await nightlyStatusItem.getValue()) };
+}
+
 /** Each GitHub tab's hidden-file count, kept for the worker's next start so a tab's badge can take the ↑ too. */
 export const nightlyTabCountsItem = /* @__PURE__ */ storage.defineItem<Readonly<Record<string, number>>>('session:nightlyTabCounts', { fallback: {} });
 
