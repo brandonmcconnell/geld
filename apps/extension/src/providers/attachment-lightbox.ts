@@ -80,6 +80,10 @@ export class ProviderAttachmentLightbox {
     this.dispose = viewer.dispose;
     close.addEventListener('click', () => this.close());
     dialog.addEventListener('cancel', (event) => { event.preventDefault();this.close(); });
+    dialog.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || this.dialog !== dialog) return;
+      event.preventDefault();event.stopPropagation();this.close();
+    }, { capture: true });
     dialog.addEventListener('click', (event) => { if (event.target === dialog) this.close(); });
     dialog.addEventListener('close', () => {
       viewer.dispose();dialog.remove();

@@ -43,6 +43,18 @@ it('restores annotations and closes the viewer on disable or navigation', () => 
   source.click();expect(document.querySelector('dialog')).toBeNull();
 });
 
+it('closes Escape and restores the original link before provider shortcuts prevent cancellation', () => {
+  const source = image();manager.update(page, true);source.click();
+  const shortcut = vi.fn((event: KeyboardEvent) => event.preventDefault());
+  document.addEventListener('keydown', shortcut);
+  try {
+    document.querySelector('dialog button')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(shortcut).not.toHaveBeenCalled();
+    expect(document.querySelector('dialog')).toBeNull();
+    expect(document.activeElement).toBe(source.closest('a'));
+  } finally { document.removeEventListener('keydown', shortcut); }
+});
+
 it('does not intercept downloads, unrelated pages or image links with a different destination', () => {
   const source = image();const anchor = source.closest('a')!;
   anchor.download = 'image.png';expect(gitLabAttachmentLink(source, page)).toBeNull();
