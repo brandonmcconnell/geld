@@ -6032,6 +6032,19 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   margin: 0 !important;
 }
 
+/* The Overview edits a comment inside its bubble, and its editor has no width of its own (a message is as wide as
+ * its bubble, so the editor shrank to a sliver): while it is open the message takes the row and the bubble its tint. */
+.geld-review__chat [data-geld-message]:has(> [data-geld-part='bubble'] textarea),
+.geld-review__chat [data-geld-message] > [data-geld-part='bubble']:has(textarea) {
+  align-self: stretch;
+}
+
+.geld-review__chat [data-geld-message] > [data-geld-part='bubble']:has(textarea) {
+  padding: 0 !important;
+  border-color: transparent;
+  background: none;
+}
+
 /*
  * Reactions and controls. The reaction pills (GitHub's buttons) sit under
  * the bubble, in flow, from the bubble's outer edge inward, wrapping when
