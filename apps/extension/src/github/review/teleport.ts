@@ -137,6 +137,24 @@ function reactRootOf(node: Element): Element | null {
   return outer instanceof HTMLElement ? (moved.get(outer)?.root ?? null) : null;
 }
 
+/**
+ * Put `node` in `parent` before `before` (at the end for null) as one move, where the browser can (`moveBefore`):
+ * a removal and an insertion drop focus, a caret, an open popover and a playing video, which a move keeps. Both
+ * ends must stand in the document; a detached slot or a cross-root move takes the plain insertion.
+ */
+export function moveNode(parent: Node, node: Node, before: Node | null = null): void {
+  const mover: unknown = Reflect.get(parent, 'moveBefore');
+  if (typeof mover === 'function' && parent.isConnected && node.isConnected) {
+    try {
+      Reflect.apply(mover, parent, [node, before]);
+      return;
+    } catch {
+      // A plain insertion below.
+    }
+  }
+  parent.insertBefore(node, before);
+}
+
 /** Show `nodes` inside `slot`; each keeps its live controls. */
 export function teleportInto(slot: HTMLElement, nodes: readonly HTMLElement[]): void {
   for (const node of nodes) {
@@ -149,14 +167,14 @@ export function teleportInto(slot: HTMLElement, nodes: readonly HTMLElement[]): 
     const token = String(nextToken);
     const placeholder = document.createComment(PLACEHOLDER_PREFIX + token);
     const root = reactRootOf(node);
-    node.replaceWith(placeholder);
+    parent.insertBefore(placeholder, node);
     moved.set(node, { node, placeholder, parent, root, hadFolded: node.getAttribute('data-geld-folded'), hadHidden: node.getAttribute('hidden'), mark: null });
     if (root !== null) tell(parent, 'geld:portal-lend');
     node.removeAttribute('data-geld-folded');
     // A folded row carries hidden="until-found"; away from the timeline it must render.
     node.removeAttribute('hidden');
     node.setAttribute(ATTR_TELEPORTED, token);
-    slot.append(node);
+    moveNode(slot, node);
   }
   installInteractionMarks();
   // A menu moved while open (a chat rebuilt under it) is busy from the start.
@@ -291,7 +309,8 @@ export function restoreAll(keep?: (node: HTMLElement) => boolean, keepOwner?: (o
       entry.node.removeAttribute(ATTR_TELEPORTED);
       if (entry.hadFolded !== null) entry.node.setAttribute('data-geld-folded', entry.hadFolded);
       if (entry.hadHidden !== null) entry.node.setAttribute('hidden', entry.hadHidden);
-      entry.placeholder.replaceWith(entry.node);
+      moveNode(entry.placeholder.parentNode, entry.node, entry.placeholder);
+      entry.placeholder.remove();
     }
     if (entry.root !== null) tell(entry.parent, 'geld:portal-return');
     moved.delete(key);
