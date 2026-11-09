@@ -6,6 +6,7 @@ import { hidesAnything } from './breakdown';
 import type { StatsBreakdown } from './breakdown';
 import { hiddenLabel, hiddenNounPlural, statsBreakdown } from './breakdown';
 import { createElement, OWN_UI_ATTRIBUTE, originalText, parseLineStats, queryAll, restoreManagedText, setManagedText } from './dom';
+import { headerReactSettled, reactSettled } from './react-hydration';
 import { attachBreakdownTooltip, detachBreakdownTooltip } from './ui/tooltip';
 
 /** A "+93 −53" pair somewhere in the page header, plus the element to hang a tooltip on. */
@@ -280,7 +281,9 @@ export function countsSkeletonStandIn(): HTMLElement | null {
  * the stand-in goes, and they are rewritten to the same numbers before paint. Not marked as Geld's UI, which the header
  * scan skips (`isInsideDiffEntry`). True when the page changed.
  */
-export function syncCountsStandIn(want: StandIn | null): boolean {
+export function syncCountsStandIn(asked: StandIn | null): boolean {
+  // Not among React's header nodes before React has hydrated them (`react-hydration.ts`).
+  const want = headerReactSettled() ? asked : null;
   const existing = document.querySelector<HTMLElement>(`[${ATTR_COUNTS_STAND_IN}]`);
   // On the Overview GitHub's counts stand beside the branch names, so the stand-in does too: never in the tab row.
   const branches = overviewBranchGroup();
@@ -493,7 +496,7 @@ function syncNarrowMirror(group: HeaderStatGroup, label: string, hasTests: boole
   const stateLabel = header?.querySelector<HTMLElement>('[data-component="StateLabel"]') ?? null;
   // On the Overview the label sits in GitHub's own status button, which Geld's pill replaces and hides whole.
   const stateRow = (stateLabel?.closest<HTMLElement>('button[aria-haspopup]') ?? stateLabel)?.parentElement ?? null;
-  if (stateRow === null || stateRow.contains(group.host)) return;
+  if (stateRow === null || stateRow.contains(group.host) || !reactSettled(stateRow)) return;
   let mirror = stateRow.querySelector<HTMLElement>(`.${MIRROR_CLASS}`);
   if (mirror === null) {
     mirror = createElement('span', { class: MIRROR_CLASS, [OWN_UI_ATTRIBUTE]: '' }, [

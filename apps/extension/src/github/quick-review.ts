@@ -11,6 +11,7 @@ import type { MergeActions, MergeBox, MergeMethod, StatusAction } from './merge-
 import { actionErrorText, autoMergeRequest, awaitMergedState, closeRequest, draftRequest, fetchMergeBox, isStackRequest, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, methodHint, partialMayWait, prefetchMergeBox, readMergeActions, queueRequest, readyRequest, rememberMethod, reopenRequest, settleStackMerge, stackQueueRequest, viewerVerdict } from './merge-actions';
 import type { PageInfo } from './page';
 import { pullRequestStateWords } from './page';
+import { headerReactSettled, reactSettled } from './react-hydration';
 import type { PendingComment } from './pending-review';
 import { discardPendingReview, fetchPendingComments, linkOnFilesTab, pendingCountOnPage } from './pending-review';
 import { inlineText } from './review/inline-text';
@@ -471,6 +472,8 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
     removeQuickReview();
     return;
   }
+  // A node of Geld's in React's header before React has hydrated it makes React throw the page's markup away and render it again.
+  if (!headerReactSettled()) return;
   // The controls' state lives on the pull request page whether or not the review group has somewhere to stand: the
   // status pill in the header needs it, and on narrow screens (GitHub hides the counts) the group stands aside alone.
   const counted = anchorOf(context.groups);
@@ -619,7 +622,9 @@ function followToolbar(state: Mounted): void {
 /** In a stuck header, so it is always to hand while reviewing; otherwise before the tab bar's counts. */
 function place(state: Mounted): void {
   // Nothing to stand beside (GitHub hides the counts on narrow screens, and no bar holds the group): GitHub's own button is the one shown.
-  if (state.anchor === null && persistentBarActions() === null) return;
+  const bar = persistentBarActions();
+  if (state.anchor === null && bar === null) return;
+  if (!reactSettled(bar ?? state.anchor)) return;
   const sticky = stickyPlace(state);
   if (sticky !== null) {
     if (!sticky.placed(state.root)) sticky.put(state.root);
@@ -1448,11 +1453,12 @@ function showMerged(state: Mounted, pullPath: string): void {
  * (re)rendered gets Geld's pill in the same frame, so its label never shows
  * first and is then pushed aside by the caret. With the controls mounted the
  * merge box decides; before that (the tab bar's counts can render after the
- * header's label) the repository's hint does.
+ * header's label) the repository's hint does. Not before React has hydrated
+ * the header: GitHub's label shows until then (`react-hydration.ts`).
  */
 export function reassertStatusPills(): void {
   const pullPath = pullPathOf(window.location.pathname);
-  if (pullPath === null) return;
+  if (pullPath === null || !headerReactSettled()) return;
   if (mounted !== null && mounted.pullPath === pullPath) {
     showStatus(mounted);
     // GitHub re-renders its bar (on load, between tabs): the group goes back in the same frame.
