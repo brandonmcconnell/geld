@@ -198,7 +198,9 @@ test('bounds scan count, per-kind sampling and report text without claiming abse
 const harness = readFileSync(new URL('./browser-e2e.mjs', import.meta.url), 'utf8');
 function harnessFunction(name, next, environment) {
   const begin = harness.indexOf(`async function ${name}(`) >= 0 ? harness.indexOf(`async function ${name}(`) : harness.indexOf(`function ${name}(`);
-  const end = harness.indexOf(`\n${next}`, begin);
+  const expectedEnd = harness.indexOf(`\n${next}`, begin);
+  const followingDeclaration = /\n(?:async )?function /.exec(harness.slice(begin));
+  const end = followingDeclaration === null ? expectedEnd : Math.min(expectedEnd, begin + followingDeclaration.index);
   assert.ok(begin >= 0 && end > begin);
   return new vm.Script(`(({${Object.keys(environment).join(',')}}) => (${harness.slice(begin, end)}))`).runInThisContext()(environment);
 }
@@ -373,34 +375,53 @@ test('combined harness retains author assertions while adding matched comment bo
   assert.throws(() => assertion({ baseline: result, darkPreferenceProbe: { nativeThemeChanged: false } }), /author or comment body/);
 });
 
-test('OS dark evidence changes only for comparable native colors and never claims unselected Bitbucket dark', async () => {
-  const f = fixture('<p>Original</p>', 'bitbucket');
-  const body = f.read();
-  const author = { name: { native: { style: { color: 'black' } } }, aliasPair: { native: null }, avatar: { native: null }, badges: [] };
-  const baseline = { ...author, body };
-  for (const nativeChanges of [false, true]) for (const originallyShown of [false, true]) {
+test('OS dark evidence preserves all three original views and never claims unselected Bitbucket dark', async () => {
+  for (const nativeChanges of [false, true]) for (const originalView of ['digest', 'digest-timeline', 'github']) {
+    const f = fixture('<p>Original</p>', 'bitbucket');
+    const body = f.read();
+    const author = { name: { native: { style: { color: 'black' } } }, aliasPair: { native: null }, avatar: { native: null }, badges: [] };
+    const baseline = { ...author, body };
     const darkBody = structuredClone(body);
     if (nativeChanges) darkBody.samples[0].native.style.color = 'white';
     else darkBody.samples = darkBody.samples.slice(0, 1);
     const measurements = [baseline, { ...author, body: darkBody }];
     const media = [];
-    let shown = originallyShown;
     const clicks = [];
-    f.native.hidden = !shown;
+    const selector = document.createElement('nav');selector.className = 'geld-provider-view';
+    for (const view of ['digest', 'digest-timeline', 'github']) {
+      const button = document.createElement('button');button.dataset.geldDigestView = view;selector.append(button);
+    }
+    document.body.prepend(selector);
+    let settings;
+    const setView = view => {
+      settings = { unrelated: 'preserved', prOverview: view !== 'github', compactTimeline: view === 'digest-timeline' ? 'off' : 'all' };
+      for (const button of selector.children) button.setAttribute('aria-pressed', String(button.dataset.geldDigestView === view));
+      f.native.hidden = view === 'digest';document.querySelector('.geld-provider-review').hidden = view === 'github';
+    };
+    setView(originalView);const originalSettings = structuredClone(settings);
+    const storage = { get: async key => ({ [key]: settings }), set: async value => {
+      const valueSettings = value.settings;
+      const view = valueSettings.prOverview === false ? 'github' : valueSettings.compactTimeline === 'off' ? 'digest-timeline' : 'digest';
+      setView(view);settings = valueSettings;
+    } };
     const theme = harnessFunction('authorThemeEvidence', 'function assertAuthorThemeEvidence', {
+      assert, SETTINGS_KEY: 'settings', document, getComputedStyle,
+      chrome: { storage: { sync: storage } }, options: { evaluate: async (read, ...args) => read(...args) },
       authorPresentationProbe: async () => { assert.equal(f.native.hidden, false);return measurements.shift(); },
       pause: async () => {}, capture: async () => ({ kind: 'offline test only' }),
       poll: async (read, accepts) => { const value = await read();assert.equal(accepts(value), true);return value; },
-      clickReviewButton: async (_page, _selector, label) => { clicks.push(label);shown = label === 'Show original conversation';f.native.hidden = !shown; },
+      clickReviewButton: async (_page, actual, label) => {
+        assert.equal(actual, '.geld-provider-view button[data-geld-digest-view]');clicks.push(label);
+        setView({ Bitbucket: 'github', Geld: 'digest', 'Geld + Bitbucket': 'digest-timeline' }[label]);
+      },
     });
     const result = await theme({
-      $eval: async (_selector, read) => read({ getAttribute: () => String(shown) }),
-      evaluate: async (read, ...args) => read(...args),
-      isClosed: () => false,
-      emulateMediaFeatures: async (value) => media.push(value),
+      evaluate: async (read, ...args) => read(...args), isClosed: () => false,
+      emulateMediaFeatures: async value => media.push(value),
     }, 'bitbucket', f.anchor);
-    assert.equal(shown, originallyShown);
-    assert.deepEqual(clicks, originallyShown ? [] : ['Show original conversation', 'Hide original conversation']);
+    assert.deepEqual(settings, originalSettings);
+    assert.deepEqual(clicks, ['Bitbucket', 'Geld', 'Geld + Bitbucket']);
+    assert.equal(result.views.length, 3);
     assert.equal(result.darkPreferenceProbe.nativeThemeChanged, nativeChanges);
     assert.equal(result.darkPreferenceProbe.bodyNativeThemeChanged, nativeChanges);
     assert.equal(result.darkPreferenceProbe.status, nativeChanges ? 'native_scheme_observed' : 'site_did_not_select_dark_theme');
