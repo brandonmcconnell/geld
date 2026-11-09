@@ -90,6 +90,13 @@ const ATTR_TOC = 'data-geld-toc-hidden';
 const ATTR_FLASH = 'data-geld-flash';
 
 const APPLY_DEBOUNCE_MS = 60;
+/**
+ * While GitHub is still rendering a page (its first `LOADING_MS`, after a load or a move within the app), passes wait
+ * longer for its mutations to settle: at 60 ms a pass, and often a rebuild of the digest, ran between nearly every two
+ * of GitHub's renders, and GitHub's own header counts drew about a second late. Pre-paint work does not wait.
+ */
+const LOADING_DEBOUNCE_MS = 250;
+const LOADING_MS = 4000;
 /** How many progressive-load rounds we nudge before giving up on a reveal. */
 const MAX_REVEAL_ATTEMPTS = 40;
 
@@ -991,10 +998,28 @@ export class GeldController {
   private schedule(full = true): void {
     if (full) this.pendingScope.add('unknown');
     if (this.stopped || this.timer !== null || this.deferWhileHidden()) return;
-    this.timer = setTimeout(() => {
-      this.timer = null;
-      this.applyScoped();
-    }, APPLY_DEBOUNCE_MS);
+    this.timer = setTimeout(
+      () => {
+        this.timer = null;
+        this.applyScoped();
+      },
+      this.pageLoading() ? LOADING_DEBOUNCE_MS : APPLY_DEBOUNCE_MS,
+    );
+  }
+
+  /** The page (path and query; a hash is no new page) the last scheduled pass was asked on, and since when, for `pageLoading`. */
+  private loadingPath = location.pathname + location.search;
+  private loadingSince = 0;
+
+  /** Whether GitHub is still rendering the page: the document's first seconds, or those after a move within the app. */
+  private pageLoading(): boolean {
+    const now = performance.now();
+    const path = location.pathname + location.search;
+    if (path !== this.loadingPath) {
+      this.loadingPath = path;
+      this.loadingSince = now;
+    }
+    return now - this.loadingSince < LOADING_MS;
   }
 
   /** The debounced pass: scoped to the regions the batches touched, the whole page when any was unknown. */
