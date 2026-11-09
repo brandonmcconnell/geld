@@ -13,7 +13,9 @@
  *   `[Preview](url)` (or "Visit Preview"). A `[vc]: #sig:base64` reference
  *   definition carries the same as JSON (`projects[].name/previewUrl/
  *   inspectorUrl/nextCommitStatus`) — present in markdown, dropped by the
- *   renderer, so it is a bonus, not the path.
+ *   renderer, so it is a bonus, not the path. A deployment that never ran
+ *   gets a comment of its own: "Deployment failed for project *name* with the
+ *   following error:" over the error (the rate limit's "Too many requests").
  * - Netlify (`netlify[bot]`): "Deploy Preview for *name* ready!", rows
  *   "Latest deploy log" and "Deploy Preview | https://deploy-preview-N--name.netlify.app".
  * - Cloudflare (`cloudflare-workers-and-pages[bot]`, older `cloudflare-pages[bot]`):
@@ -161,9 +163,28 @@ function vercelStatus(word: string): PreviewStatus {
   return statusFromText(word);
 }
 
-/** The table row (as `| a | b | c |` text) naming `project`, when the comment has one. */
+/** The table row (as `| a | b | c |` text) with a cell that is `project`, when the comment has one. */
 function tableRowFor(doc: PreviewDoc, project: string): string | null {
-  return lines(doc).find((line) => line.startsWith('|') && line.includes(`| ${project} |`)) ?? null;
+  return lines(doc).find((line) => line.startsWith('|') && line.split('|').some((cell) => cell.trim() === project)) ?? null;
+}
+
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+/** A Vercel row's Updated cell as ISO, the project's last deployment, which the page shows nowhere else for a comment edited in place: its `relative-time`'s exact `datetime`, which both readers put in the row, else its words ("Nov 4, 2026 12:26am UTC"), which drop the seconds. */
+function vercelRowTime(row: string): string | undefined {
+  const exact = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z\b/.exec(row);
+  if (exact !== null && !Number.isNaN(Date.parse(exact[0]))) return new Date(exact[0]).toISOString();
+  const match = /\b([A-Z][a-z]{2}) (\d{1,2}), (\d{4}) (\d{1,2}):(\d{2})(am|pm) UTC\b/.exec(row);
+  if (match === null) return undefined;
+  const [, monthName = '', day = '', year = '', hour = '', minute = '', half = ''] = match;
+  const month = MONTHS.indexOf(monthName.toLowerCase());
+  if (month === -1) return undefined;
+  return new Date(Date.UTC(Number(year), month, Number(day), (Number(hour) % 12) + (half === 'pm' ? 12 : 0), Number(minute))).toISOString();
+}
+
+function withRowTime(entry: Preview, row: string | null): Preview {
+  const time = row === null ? undefined : vercelRowTime(row);
+  return time === undefined ? entry : { ...entry, updatedAt: time };
 }
 
 /** Vercel's own pages under vercel.com that are not `<team>/<project>`: account, team and docs paths. */
@@ -172,7 +193,17 @@ const VERCEL_NOT_A_PROJECT = /^https:\/\/vercel\.com\/(?:account|teams|docs|logi
 function parseVercel(doc: PreviewDoc): readonly Preview[] {
   const header = vercelHeader(doc.text);
   if (header !== null && header.length > 0) {
-    return header.map((project) => preview('vercel', doc, project.name, vercelStatus(project.nextCommitStatus), project.previewUrl === '' ? null : project.previewUrl, project.inspectorUrl === '' ? null : project.inspectorUrl));
+    return header.map((project) =>
+      withRowTime(preview('vercel', doc, project.name, vercelStatus(project.nextCommitStatus), project.previewUrl === '' ? null : project.previewUrl, project.inspectorUrl === '' ? null : project.inspectorUrl), tableRowFor(doc, project.name)),
+    );
+  }
+  // "Deployment failed for project geld-site with the following error:" over the error (Vercel's rate limit, a broken
+  // configuration): a comment of its own, posted beside the table, about one deployment that never ran.
+  const notice = /Deployment failed for project ([\w.-]+) with the following error:?\s*(?:[~`]{3,}\s*)?([^\n]+)/i.exec(doc.text);
+  if (notice?.[1] !== undefined && notice[2] !== undefined) {
+    const project = doc.links.find((link) => link.text.trim() === notice[1] && /^https:\/\/vercel\.com\//.test(link.href));
+    const reason = /too many requests/i.test(notice[2]) ? 'Vercel rate limited this deployment' : notice[2].trim().slice(0, 200);
+    return [{ ...preview('vercel', doc, notice[1], 'failed', null, project?.href ?? null), reason }];
   }
   // "@someone must be a member of the Acme team on Vercel to deploy." No deployment was made for this push: the
   // committer is not on the team. A failed preview for the team, with the comment's own fix (add them) as the link.
@@ -199,13 +230,13 @@ function parseVercel(doc: PreviewDoc): readonly Preview[] {
       const image = doc.images.find((candidate) => /vercel\.com\/static\/status\//.test(candidate.src) && candidate.alt.trim() !== '');
       if (image !== undefined && projectLinks.length === 1) status = vercelStatus(image.alt);
     }
-    if (status === 'unknown' && row !== null) status = statusFromText(row.replace(`| ${name} |`, '|'));
+    if (status === 'unknown' && row !== null) status = statusFromText(row.split('|').filter((cell) => cell.trim() !== name).join('|'));
     // The preview link follows the project's row; the nearest "Preview"/"Visit Preview" after the inspector in link order.
     const at = inspector === undefined ? doc.links.indexOf(link) : doc.links.indexOf(inspector);
     const visit = doc.links.slice(at + 1).find((candidate) => /^(visit )?preview$/i.test(candidate.text.trim()) && isExternal(candidate.href));
     // A row that offers a preview to visit but states no status is a deployment that is up.
     if (status === 'unknown' && visit !== undefined) status = 'ready';
-    const entry = preview('vercel', doc, name, status, visit?.href ?? null, inspector?.href ?? null);
+    const entry = withRowTime(preview('vercel', doc, name, status, visit?.href ?? null, inspector?.href ?? null), row);
     // "Ignored" is Vercel's Ignored Build Step: nothing changed for this project, so no build ran, and the Preview
     // link it still offers is the branch's last deployment. "Skipped" offers no link. Both are `skipped` here; the
     // reason says why one is still worth opening.
@@ -415,10 +446,21 @@ export function previewKey(entry: Preview): string {
  */
 export function latestPreviews(all: readonly Preview[]): { readonly latest: readonly Preview[]; readonly archived: readonly Preview[] } {
   const latestByKey = new Map<string, Preview>();
-  for (const entry of all) latestByKey.set(previewKey(entry), entry);
+  for (const entry of all) {
+    const key = previewKey(entry);
+    const kept = latestByKey.get(key);
+    if (kept === undefined || !isOlder(entry, kept)) latestByKey.set(key, entry);
+  }
   const latest = [...latestByKey.values()];
   const archived = all.filter((entry) => latestByKey.get(previewKey(entry)) !== entry).reverse();
   return { latest, archived };
+}
+
+/** Later in the timeline is newer, unless both carry a time and this one's is earlier: a host that edits one comment in place (Vercel) deploys after a notice posted below it. */
+function isOlder(entry: Preview, than: Preview): boolean {
+  const at = Date.parse(entry.updatedAt ?? '');
+  const other = Date.parse(than.updatedAt ?? '');
+  return !Number.isNaN(at) && !Number.isNaN(other) && at < other;
 }
 
 /** Build a `PreviewDoc` from a comment's markdown source (the Action's side). */
@@ -431,10 +473,11 @@ export function previewDocFromMarkdown(author: string, anchor: string, markdown:
   }
   for (const match of markdown.matchAll(/(?<!!)\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g)) links.push({ text: match[1]?.replace(/<[^>]+>/g, '').trim() ?? '', href: match[2] ?? '' });
   for (const match of markdown.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) links.push({ href: match[1] ?? '', text: (match[2] ?? '').replace(/<[^>]+>/g, '').trim() });
-  // A <br> inside a markdown table cell stays on the row's line; anywhere else it is a line break.
+  // A <br> inside a markdown table cell stays on the row's line; anywhere else it is a line break. A time in a row is
+  // its `datetime`, as the page's reader writes it (`textWithTableRows`), since its words drop the seconds.
   const text = markdown
     .split(/\r?\n/)
-    .map((line) => (line.trimStart().startsWith('|') ? line.replace(/<br\s*\/?>/gi, ' ') : line))
+    .map((line) => (line.trimStart().startsWith('|') ? line.replace(/<br\s*\/?>/gi, ' ').replace(/<relative-time\b[^>]*\bdatetime=["']([^"']+)["'][^>]*>[\s\S]*?<\/relative-time>/gi, '$1') : line))
     .join('\n')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(tr|p|li|h[1-6]|div|details|summary)>/gi, '\n')
