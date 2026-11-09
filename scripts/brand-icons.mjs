@@ -4,14 +4,17 @@
  * `assets/brand/`: `pnpm brand:icons` after a mark changes.
  *
  * `geld-logomark.svg` is drawn on a 24 × 25 grid, so at 32px it is drawn at
- * 1px per unit and every straight edge lands on a pixel. At 16px a unit is
- * under a pixel, so the 16px icons draw `geld-logomark-grid.svg`, the same
- * mark on a 14-unit grid where every band, gap and block is 2 units, at 1px
- * per unit. Keep the marks in step.
+ * 1px per unit and every straight edge lands on a pixel. Light on dark reads
+ * bolder, so the white toolbar icons draw `geld-logomark-white.svg`, its
+ * dark-mode cut (every edge 0.2 units in). At 16px a unit is under a pixel, so
+ * both colours draw `geld-logomark-grid.svg`, the same mark on a 14-unit grid
+ * where every band, gap and block is 2 units, at 1px per unit. Keep the marks
+ * in step.
  *
- * The toolbar icon is the grid mark on a white plate of its own shape, one
- * unit wider all round, at 1, 2 and 3px per unit: it reads on light and dark
- * toolbars alike, whatever theme the browser wears, and fills its box.
+ * Chrome and Edge cannot tell a light toolbar from a dark one, so they get the
+ * framed toolbar icon: the black mark on a white plate of its own outline, one
+ * grid unit wider all round, filling its box. The extension's own icons wear
+ * the same plate.
  *
  * The Mac icons keep the tile Xcode's converter drew around the extension's
  * icon and replace only the icon, which fills the middle 60% of it.
@@ -27,12 +30,17 @@ const EXTENSION_ICONS = path.join(ROOT, 'apps/extension/public/icon');
 const SAFARI_APP = path.join(ROOT, 'apps/extension/safari/Geld/Shared (App)');
 const APP_ICONSET = path.join(SAFARI_APP, 'Assets.xcassets/AppIcon.appiconset');
 
-/** The tile the extension's icons sit on: white, its corners rounded by a fifth of its side. */
+/** The Safari app's tile: white, its corners rounded by a fifth of its side. */
 const TILE_RADIUS = 0.2;
 /** The mark's height on that tile from 128px up, as a share of the tile's side. */
 const MARK_ON_TILE = 0.62;
-/** The corner cuts of `geld-logomark-grid.svg`, in its units: mirror the mark. */
+/** The mark's height in the 48px toolbar icon, which has no whole-pixel scale that fits. */
+const MARK_AT_48 = 44;
+/** The corner cuts of `geld-logomark.svg` and `geld-logomark-grid.svg`, in their units: mirror the marks. */
+const MARK_CUT = 6;
 const GRID_CUT = 3;
+/** The plate's margin around the mark: one unit of the grid mark, as a share of the mark's width. */
+const PLATE_MARGIN = 1 / 14;
 /** The mark's height on the iOS icon's plain white square, which iOS rounds itself. */
 const MARK_ON_SQUARE = 0.5;
 /** The extension's icon inside Xcode's Mac tile: centred, at this share of its side. */
@@ -65,16 +73,20 @@ function icon(size, mark, { scale, fill = '#000000', tile = false, background, s
 }
 
 /**
- * A `size` px toolbar icon: the grid mark at `scale` px per unit on a white plate that is the mark's own outline
- * grown by one unit all round. Growing a 45° cut by `d` lengthens its legs by `d(2 − √2)`, so the plate's cuts stay
- * concentric with the mark's.
+ * A `size` px icon: `mark` on a white plate that is its outline grown by `PLATE_MARGIN` all round, as large as fits,
+ * centred. Growing a 45° cut by `d` lengthens its legs by `d(2 − √2)`, so the plate's cuts stay concentric with the mark's.
  */
-function framed(size, mark, scale) {
-  const side = mark.width + 2;
-  const cut = GRID_CUT + 2 - Math.SQRT2;
-  const plate = `M${cut} 0H${side}V${side - cut}L${side - cut} ${side}H0V${cut}Z`;
-  const body = mark.paths.map((d) => `<path d="${d}"/>`).join('');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><g transform="scale(${scale})"><path d="${plate}" fill="#ffffff"/><g transform="translate(1 1)" fill="#000000">${body}</g></g></svg>`;
+function framed(size, mark, cut) {
+  const d = PLATE_MARGIN * mark.width;
+  const width = mark.width + 2 * d;
+  const height = mark.height + 2 * d;
+  const scale = size / Math.max(width, height);
+  const leg = cut + d * (2 - Math.SQRT2);
+  const plate = `M${leg} 0H${width}V${height - leg}L${width - leg} ${height}H0V${leg}Z`;
+  const x = (size - width * scale) / 2;
+  const y = (size - height * scale) / 2;
+  const body = mark.paths.map((path) => `<path d="${path}"/>`).join('');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><g transform="translate(${x} ${y}) scale(${scale})"><path d="${plate}" fill="#ffffff"/><g transform="translate(${d} ${d})" fill="#000000">${body}</g></g></svg>`;
   return sharp(Buffer.from(svg), { density: 72 }).png({ compressionLevel: 9 }).toBuffer();
 }
 
@@ -84,27 +96,27 @@ async function write(file, buffer) {
 }
 
 const light = await readMark('geld-logomark.svg');
+const dark = await readMark('geld-logomark-white.svg');
 const grid = await readMark('geld-logomark-grid.svg');
 
-// Toolbar: the framed grid mark, one icon for light and dark toolbars alike, filling its box.
-if (grid.width !== grid.height) throw new Error('geld-logomark-grid.svg must be square');
-for (const size of [16, 32, 48]) {
-  await write(path.join(EXTENSION_ICONS, 'action', `${size}.png`), await framed(size, grid, size / (grid.width + 2)));
+// Toolbar: the bare mark, black for light toolbars, white (the dark-mode cut) for dark ones.
+for (const [color, fill, mark] of [['black', '#000000', light], ['white', '#ffffff', dark]]) {
+  await write(path.join(EXTENSION_ICONS, 'action', `${color}-16.png`), await icon(16, grid, { scale: 1, fill, snap: true }));
+  await write(path.join(EXTENSION_ICONS, 'action', `${color}-32.png`), await icon(32, mark, { scale: 1, fill, snap: true }));
+  await write(path.join(EXTENSION_ICONS, 'action', `${color}-48.png`), await icon(48, mark, { scale: MARK_AT_48 / mark.height, fill }));
 }
 
-// Safari tints toolbar icons as templates from their alpha alone, so it keeps the bare black mark.
-await write(path.join(EXTENSION_ICONS, 'action', 'black-16.png'), await icon(16, grid, { scale: 1, snap: true }));
-await write(path.join(EXTENSION_ICONS, 'action', 'black-32.png'), await icon(32, light, { scale: 1, snap: true }));
-await write(path.join(EXTENSION_ICONS, 'action', 'black-48.png'), await icon(48, light, { scale: 44 / light.height }));
+// Chrome and Edge's toolbar, and the extension's own icons: the framed mark, the grid mark at 1, 2 and 3px per unit.
+for (const size of [16, 32, 48]) {
+  const buffer = await framed(size, grid, GRID_CUT);
+  await write(path.join(EXTENSION_ICONS, 'action', `framed-${size}.png`), buffer);
+  if (size !== 48) await write(path.join(EXTENSION_ICONS, `${size}.png`), buffer);
+}
+for (const size of [128, 256, 512]) await write(path.join(EXTENSION_ICONS, `${size}.png`), await framed(size, light, MARK_CUT));
 
-// The extension's icons: the mark on its white tile.
+// The Safari app keeps the mark on its rounded white tile, on its page, its launch screen and inside Xcode's Mac tile.
 const tiles = new Map();
-tiles.set(16, await icon(16, grid, { scale: 1, tile: true, snap: true }));
-tiles.set(32, await icon(32, light, { scale: 1, tile: true, snap: true }));
-for (const size of [128, 256, 512]) tiles.set(size, await icon(size, light, { scale: (MARK_ON_TILE * size) / light.height, tile: true }));
-for (const [size, buffer] of tiles) await write(path.join(EXTENSION_ICONS, `${size}.png`), buffer);
-
-// The Safari app shows the extension's icon on its page and its launch screen.
+for (const size of [256, 512]) tiles.set(size, await icon(size, light, { scale: (MARK_ON_TILE * size) / light.height, tile: true }));
 await write(path.join(SAFARI_APP, 'Resources/Icon.png'), tiles.get(512));
 await write(path.join(SAFARI_APP, 'Assets.xcassets/LargeIcon.imageset/256.png'), tiles.get(256));
 

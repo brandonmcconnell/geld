@@ -52,6 +52,12 @@ export interface BlockedUsersRequest {
 
 export type BlockedUsersResponse = { readonly ok: true; readonly logins: readonly string[] } | { readonly ok: false; readonly reason: string };
 
+/** Sent by the offscreen document whenever the OS/browser colour scheme changes. */
+export interface ColorSchemeMessage {
+  readonly type: 'geld:color-scheme';
+  readonly dark: boolean;
+}
+
 /** Options page → background: forget the diffs held in memory (the on-disk cache is cleared by the sender). */
 export interface ClearDiffCacheMessage {
   readonly type: 'geld:clear-diff-cache';
@@ -195,6 +201,7 @@ export interface CatalogCheckMessage {
 export type GeldRequest =
   | FetchDiffRequest
   | FetchFileRequest
+  | ColorSchemeMessage
   | ToggleHiddenMessage
   | GetTabStateMessage
   | RevealFileMessage
@@ -235,6 +242,10 @@ export function isBlockedUsersResponse(value: unknown): value is BlockedUsersRes
   if (!isRecord(value)) return false;
   if (value.ok === true) return Array.isArray(value.logins) && value.logins.every((login) => typeof login === 'string');
   return value.ok === false && typeof value.reason === 'string';
+}
+
+export function isColorSchemeMessage(value: unknown): value is ColorSchemeMessage {
+  return isRecord(value) && value.type === 'geld:color-scheme' && typeof value.dark === 'boolean';
 }
 
 export function isClearDiffCacheMessage(value: unknown): value is ClearDiffCacheMessage {
