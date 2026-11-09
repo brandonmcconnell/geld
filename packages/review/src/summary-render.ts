@@ -124,6 +124,7 @@ function botPhrase(bot: BotVerdictRecord, headSha: string): string {
   if (bot.verdict === 'clean') return `${title} clean (${tag})`;
   if (bot.score !== undefined) return `${title} ${bot.score}/5 (${tag})`;
   if (bot.count !== undefined) return `${title} ${bot.count} issue${bot.count === 1 ? '' : 's'} (${tag})`;
+  if (bot.needsHuman === true) return `${title} needs a human review (${tag})`;
   return `${title} findings (${tag})`;
 }
 

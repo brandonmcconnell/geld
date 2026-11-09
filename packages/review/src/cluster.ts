@@ -57,12 +57,20 @@ export function ruleIdOf(body: string): string | null {
  * inline marks (`code`, **bold**, *italic*, ~~struck~~) stay, so a title
  * renders the identifier or emphasis its author wrote (`inline-markdown.ts`).
  */
+/**
+ * A line that is only a finding's severity badge and where it is — "🟠 **High** `src/findings.ts:117`" (Macroscope) —
+ * over the finding itself: never its title.
+ */
+const BADGE_LINE = /^\p{Extended_Pictographic}?\uFE0F?\s*\*\*(critical|high|medium|low)\*\*(?:\s+`[^`\n]*`)?$/iu;
+/** Macroscope's "#### Approvability" heading as the page reads it (a bare line): the "**Verdict:** …" under it says more. */
+const GATE_HEADING = /^approvability$/i;
+
 export function firstSentence(body: string): string {
   const withoutCode = body.replace(/```[\s\S]*?```/g, ' ');
   const line = withoutCode
     .split('\n')
     .map((entry) => entry.trim())
-    .filter((entry) => entry !== '' && !entry.startsWith('<') && !/^#{1,6}\s/.test(entry) && !/^[-*]\s*$/.test(entry))
+    .filter((entry) => entry !== '' && !entry.startsWith('<') && !/^#{1,6}\s/.test(entry) && !/^[-*]\s*$/.test(entry) && !BADGE_LINE.test(entry) && !GATE_HEADING.test(entry))
     .map((entry) => entry.replace(/^\s*[-*]\s+/, ''))
     .find((entry) => entry !== '') ?? '';
   const cleaned = line.replace(/\s+/g, ' ').trim();
@@ -106,6 +114,9 @@ function sentenceOf(text: string, limit: number): string {
 }
 
 export function guessSeverity(body: string, bot: boolean, humanQuestion: boolean): ReviewSeverity {
+  // A bot that grades its own finding says how bad it is better than its words do.
+  const badge = BADGE_LINE.exec(body.replace(/<!--[\s\S]*?-->/g, '').trim().split('\n')[0]?.trim() ?? '')?.[1]?.toLowerCase();
+  if (badge !== undefined) return badge === 'critical' ? 'blocking' : badge === 'low' ? 'suggestion' : 'bug';
   const text = body.toLowerCase();
   if (/\b(security|critical|blocker|must fix|p0)\b/.test(text)) return 'blocking';
   if (humanQuestion || /^(why|what|how|who|where)\b/.test(text.trim()) || text.includes('?')) return 'question';

@@ -329,7 +329,7 @@ export function botDetail(bot: BotVerdictRecord): string {
   if (bot.score !== undefined) return issues === null ? `${bot.score}/5` : `${bot.score}/5 · ${issues}`;
   if (bot.verdict === 'clean') return 'clean';
   if (allResolved(bot)) return 'resolved';
-  return issues ?? 'findings';
+  return issues ?? (bot.needsHuman === true ? 'needs human' : 'findings');
 }
 
 export type CheckState = 'success' | 'failure' | 'queued' | 'pending' | 'skipped' | 'neutral';

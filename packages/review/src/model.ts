@@ -142,6 +142,8 @@ export interface BotVerdictRecord {
   readonly reason?: string;
   /** The verdict was judged against the bot's check run's known start (`DerivedBotVerdict.runJudged`). */
   readonly runJudged?: true;
+  /** A `findings` verdict that is the bot asking for a person's review rather than a count of findings (`DerivedBotVerdict.needsHuman`). */
+  readonly needsHuman?: true;
 }
 
 export interface ReviewerRecord {
@@ -250,6 +252,7 @@ export const botVerdictSchema = z.object({
   sourceId: z.string().min(1).optional(),
   reason: z.string().min(1).optional(),
   runJudged: z.literal(true).optional(),
+  needsHuman: z.literal(true).optional(),
 });
 
 export const reviewerSchema = z.object({
@@ -347,7 +350,8 @@ function botVerdictFrom(value: z.infer<typeof botVerdictSchema>): BotVerdictReco
   const named = value.checkName === undefined ? graded : { ...graded, checkName: value.checkName };
   const sourced = value.sourceId === undefined ? named : { ...named, sourceId: value.sourceId };
   const reasoned = value.reason === undefined ? sourced : { ...sourced, reason: value.reason };
-  return value.runJudged === undefined ? reasoned : { ...reasoned, runJudged: true };
+  const judged = value.runJudged === undefined ? reasoned : { ...reasoned, runJudged: true as const };
+  return value.needsHuman === undefined ? judged : { ...judged, needsHuman: true };
 }
 
 function metaFrom(value: z.infer<typeof geldPrMetaSchema>): GeldPrMeta {
