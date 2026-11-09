@@ -45,6 +45,8 @@ import type { ListSurface } from './list-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
 import { applyPeoplePresence, removePeoplePresence } from './people-presence';
+import { applyBlockedListHiding, removeBlockedListHiding } from './blocked-lists';
+import { blockedFor } from './blocked-users';
 import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
 import { expireHeadChecks } from './review/check-source';
 import { markCrawlDirty, resetCrawlCache } from './review/crawler';
@@ -1132,6 +1134,8 @@ export class GeldController {
       phase('chips', () => {
         this.applyListChips(surfaces);
         applyAuthorHiding(this.authorRules, surfaces);
+        const viewer = document.querySelector('meta[name="user-login"]')?.getAttribute('content') ?? '';
+        applyBlockedListHiding(blockedFor(location.pathname.split('/')[1] ?? '', viewer, () => this.schedule()), surfaces);
       });
       // Nothing on screen waits for these: the commit tooltip re-arms on the next hover, and a hovercard's
       // diffstat is rewritten before anyone reads it. A newer pass replaces a request still waiting.
@@ -1975,6 +1979,7 @@ export class GeldController {
     removeCommitHover();
     removeAuthorHiding();
     removePeoplePresence();
+    removeBlockedListHiding();
     removeSurfaceStyles();
     for (const group of findHeaderStatGroups()) restoreHeaderStats(group);
     // Cleared first: the stand-in is not Geld's UI, so its removal is a mutation, and the observer would put it back.

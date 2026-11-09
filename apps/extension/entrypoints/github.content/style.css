@@ -2519,6 +2519,50 @@ tr[data-geld-test-fold='hidden'] {
   text-decoration: underline;
 }
 
+/* Items opened by blocked users, out of lists (blocked-lists.ts) ----------- */
+
+[data-geld-blocked-list] {
+  display: flex !important;
+  flex-direction: column;
+}
+
+[data-geld-blocked-row='hidden'] {
+  display: none !important;
+}
+
+[data-geld-blocked-note] {
+  order: 1;
+  list-style: none;
+}
+
+[data-geld-blocked-row='shown'] {
+  order: 2;
+}
+
+.geld-blocked-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-top: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.geld-blocked-note__toggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fgColor-accent, var(--color-accent-fg));
+  font: inherit;
+  cursor: pointer;
+}
+
+.geld-blocked-note__toggle:hover {
+  text-decoration: underline;
+}
+
 /* ------------------------------------------------------------------------ */
 /* PR conversation: review digest, hidden activity, quick view              */
 /* ------------------------------------------------------------------------ */
