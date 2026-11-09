@@ -3,18 +3,31 @@ body {
   overflow: hidden;
 }
 
+/* Header and footer hold their place; only the body between them scrolls. */
 .popup {
   display: flex;
   flex-direction: column;
   max-height: var(--geld-popup-max-height, 600px);
 }
 
-.popup[data-scrollable] {
+.popup__body {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
+/* Scrolled, the last section's rule would scroll away from the footer: the footer draws its own instead. */
+.popup__body[data-scrollable] + .popup__footer {
+  border-top: 1px solid var(--border);
+}
+
+.popup__body[data-scrollable] #popup-settings > :last-child {
+  border-bottom-color: transparent;
+}
+
 .popup__header {
+  flex: none;
   padding: 10px 16px;
   border-bottom: 1px solid var(--border);
 }
@@ -288,6 +301,111 @@ body {
   margin-top: 10px;
 }
 
+/* Switches: one line each, the description behind an info icon ------------------ */
+
+.popup__switches {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.popup__switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 24px;
+}
+
+.popup__switch-label {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.popup__info {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted-foreground);
+  cursor: help;
+}
+
+.popup__info:hover,
+.popup__info:focus-visible {
+  color: var(--foreground);
+}
+
+.popup__info > svg {
+  width: 12px;
+  height: 12px;
+}
+
+.popup__switch > .geld-switch {
+  margin-left: auto;
+}
+
+.popup__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.popup__tip {
+  position: fixed;
+  z-index: 10;
+  max-width: 264px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  background: var(--popover);
+  box-shadow: 0 4px 12px oklch(0 0 0 / 12%);
+  color: var(--foreground);
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.popup__tip[hidden] {
+  display: none;
+}
+
+/* The caret: a bordered square turned 45°, half of it outside the box, pointing at the icon. */
+.popup__tip::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--caret-x, 50%) - 4px);
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--border);
+  background: var(--popover);
+  transform: rotate(45deg);
+}
+
+.popup__tip[data-side='bottom']::before {
+  top: -5px;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.popup__tip[data-side='top']::before {
+  bottom: -5px;
+  border-top: 0;
+  border-left: 0;
+}
+
 /* Categories ----------------------------------------------------------------- */
 
 .popup__categories-title {
@@ -371,6 +489,7 @@ body {
 
 .popup__footer {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
