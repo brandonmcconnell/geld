@@ -122,3 +122,11 @@ html[data-geld-provider="bitbucket"] tr[data-qa="pull-request-row"] div:has(> di
 html[data-geld-provider="bitbucket"] .geld-provider-line-fold {
   position: relative;
 }
+
+::highlight(geld-bitbucket-script-keyword), ::highlight(geld-bitbucket-script-meta) { color: var(--ds-text-code-keywords); }
+::highlight(geld-bitbucket-script-built_in), ::highlight(geld-bitbucket-script-title) { color: var(--ds-text-code-functions); }
+::highlight(geld-bitbucket-script-number), ::highlight(geld-bitbucket-script-literal) { color: var(--ds-text-code-numbers); }
+::highlight(geld-bitbucket-script-string) { color: var(--ds-text-code-strings); }
+::highlight(geld-bitbucket-script-comment) { color: var(--ds-text-code-comments); }
+::highlight(geld-bitbucket-script-variable) { color: var(--ds-text-code-accent-1); }
+::highlight(geld-bitbucket-script-attr) { color: var(--ds-text-code-tags); }

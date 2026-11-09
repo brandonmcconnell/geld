@@ -3496,3 +3496,9 @@ Source reads reuse the provider admission and cooldown rules, run serially and a
 Partial inventories and unavailable import sources remain explicit, while removed links come only from the diff's removedImports and a known surviving source or deleted file.
 Category inclusion is local to Flow and never changes the native diff filter, and each card exposes its dependencies as accessible text.
 The GitLab UI public probe checks Flow card counts, category inclusion and focus restoration without treating zero observed edges as proof that every dependency was read.
+
+Provider diff syntax fallback includes plain JavaScript and TypeScript when native token spans have not arrived.
+Old and new sides are tokenized independently in contiguous visible runs, and an unrendered gap resets tokenizer context.
+The fallback uses CSS Highlight ranges over original text nodes, skips files with native token spans and retains Bitbucket's verified enabled-only syntax preference gate.
+GitLab colors come from its active qualified syntax stylesheet, while Bitbucket script tokens use ADS code-role variables separately from the specialized Bash palette.
+Script source is bounded to 100,000 visible characters per file, and no extra source request is made for highlighting.

@@ -561,3 +561,29 @@ next: true`);
     expect(safe.root.innerHTML).toBe(before);
   });
 });
+
+it('highlights missing script tokens only with native syntax enabled', () => {
+  vi.stubGlobal('fetch', vi.fn());
+  const entry = fixture([[1, 1, 'export const answer = 42;', ' ']], 'src/answer.ts');
+  applyWithCapability([entry], 'disabled');expect(registry.size).toBe(0);
+  applyWithCapability([entry], 'enabled');
+  expect([...registry.keys()].some(key => key.endsWith('-keyword'))).toBe(true);
+  const text = entry.root.textContent;
+  expect(fetch).not.toHaveBeenCalled();expect(entry.root.textContent).toBe(text);
+});
+it('keeps native script tokens authoritative and removes fallback ranges when they arrive', () => {
+  const entry = fixture([[1, 1, 'export const answer = 42;', ' ']], 'src/answer.js');
+  applyWithCapability([entry], 'enabled');expect(registry.size).toBeGreaterThan(0);
+  const content = entry.root.querySelector('[data-line-type]');if (content === null) throw new Error('Missing native line');
+  const token = document.createElement('span');token.className = 'token keyword';token.textContent = content.textContent;content.replaceChildren(token);
+  applyWithCapability([entry], 'enabled');expect(registry.size).toBe(0);
+});
+
+it('resets JavaScript token context across a missing source range', () => {
+  const entry = fixture([[1, 1, '/* incomplete comment', ' '], [4, 4, 'export const value = 1;', ' ']], 'src/value.js');
+  applyWithCapability([entry], 'enabled');
+  const values = [...registry.get('geld-bitbucket-script-keyword') ?? []].map(range => {
+    const text = range.startContainer.textContent ?? '';return text.slice(range.startOffset, range.endOffset);
+  });
+  expect(values).toContain('export');
+});
