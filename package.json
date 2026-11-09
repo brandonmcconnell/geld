@@ -7,23 +7,27 @@
     "node": ">=20"
   },
   "scripts": {
+    "prepare": "node scripts/install-git-hooks.mjs",
     "dev": "pnpm --filter @geld/extension dev",
     "build": "pnpm --filter @geld/extension build",
     "build:chrome": "pnpm --filter @geld/extension build:chrome",
     "build:firefox": "pnpm --filter @geld/extension build:firefox",
     "build:edge": "pnpm --filter @geld/extension build:edge",
     "build:safari": "pnpm --filter @geld/extension build:safari",
+    "build:nightly": "pnpm --filter @geld/extension build:nightly",
     "build:all": "pnpm --filter @geld/extension build:all",
     "zip:chrome": "pnpm --filter @geld/extension zip:chrome",
     "zip:firefox": "pnpm --filter @geld/extension zip:firefox",
     "zip:edge": "pnpm --filter @geld/extension zip:edge",
     "zip:safari": "pnpm --filter @geld/extension zip:safari",
+    "zip:nightly": "pnpm --filter @geld/extension zip:nightly",
     "zip:all": "pnpm --filter @geld/extension zip:all",
     "safari:project": "pnpm --filter @geld/extension safari:project",
     "safari:sync": "pnpm --filter @geld/extension safari:sync",
     "safari:open": "pnpm --filter @geld/extension safari:open",
     "dev:site": "pnpm --filter @geld/site dev",
     "build:site": "pnpm --filter @geld/site build",
+    "brand:icons": "node scripts/brand-icons.mjs",
     "catalog:build": "tsx scripts/catalog-build.ts",
     "catalog:check": "tsx scripts/catalog-build.ts --check",
     "catalog:sign": "node scripts/catalog-sign.mjs",
@@ -40,6 +44,7 @@
   },
   "devDependencies": {
     "@geld/core": "workspace:*",
+    "sharp": "0.35.4",
     "tsx": "^4.23.13"
   }
 }
