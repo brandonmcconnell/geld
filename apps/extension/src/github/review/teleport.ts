@@ -239,14 +239,21 @@ export function forgetLoan(node: HTMLElement): void {
  */
 export function dropOrphanedLoans(panel: Element): number {
   let dropped = 0;
-  for (const [key, entry] of [...moved]) {
-    if (entry.placeholder.isConnected || !panel.contains(entry.node)) continue;
-    moved.delete(key);
-    entry.mark?.remove();
-    entry.node.remove();
-    if (entry.root !== null) tell(entry.parent, 'geld:portal-return');
-    dropped += 1;
-  }
+  // Again until none: a loan moved out of a dropped one (an Overview comment's reaction button, out of the toolbar
+  // React threw away with its body) still stands in the panel, its home gone with that loan.
+  let round: number;
+  do {
+    round = 0;
+    for (const [key, entry] of [...moved]) {
+      if (entry.placeholder.isConnected || !panel.contains(entry.node)) continue;
+      moved.delete(key);
+      entry.mark?.remove();
+      entry.node.remove();
+      if (entry.root !== null) tell(entry.parent, 'geld:portal-return');
+      round += 1;
+    }
+    dropped += round;
+  } while (round > 0);
   if (dropped === 0) return 0;
   // Nested loans went out with their outer node: their placeholders and the nodes themselves are detached now.
   for (const [key, entry] of [...moved]) {
