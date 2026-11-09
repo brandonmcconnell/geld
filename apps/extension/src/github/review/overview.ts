@@ -425,11 +425,7 @@ function reseatOpenLine(batches: readonly Batch[]): void {
   const current = batches.find((batch) => batch.key === visit.openKey);
   if (current !== undefined && holds(current)) return;
   const home = batches.find(holds);
-  if (home !== undefined && visit.openKey !== null) {
-    moveOpenSeat(visit.openKey, () => {
-      visit.openKey = home.key;
-    });
-  }
+  if (home !== undefined && visit.openKey !== null) renameOpenRound(visit.openKey, home.key);
 }
 
 /**
@@ -529,6 +525,16 @@ function moveOpenSeat(from: string, reseat: () => void): void {
   if (seat !== null && seat.key === from && visit.openKey !== null) visit.openSeat = { ...seat, key: visit.openKey };
 }
 
+/** The open round under its new key, with what was unfolded inside it (its commits, its previews) and its seat. */
+function renameOpenRound(from: string, to: string): void {
+  moveOpenSeat(from, () => {
+    visit.openKey = to;
+  });
+  for (const unfolded of [visit.openCommits, visit.openPreviews]) {
+    if (unfolded.delete(from)) unfolded.add(to);
+  }
+}
+
 function roundMarks(batch: Batch): { readonly anchors: ReadonlySet<string>; readonly commits: ReadonlySet<HTMLElement> } {
   const anchors = new Set<string>([...batch.items.flatMap((item) => item.sources.map((source) => source.anchor)), ...batch.comments.map((entry) => entry.anchor), ...batch.reviews.map((entry) => entry.anchor)]);
   if (batch.firstAnchor !== null) anchors.add(batch.firstAnchor);
@@ -560,9 +566,7 @@ function reseatOpenRound(batches: readonly Batch[]): void {
     batches.find((batch) => batch.commits.some((row) => remembered.commits.has(row))) ??
     batches.reduce<Batch | undefined>((best, batch) => (shared(batch) > (best === undefined ? 0 : shared(best)) ? batch : best), undefined);
   if (successor === undefined) return;
-  moveOpenSeat(key, () => {
-    visit.openKey = successor.key;
-  });
+  renameOpenRound(key, successor.key);
   visit.openRoundMarks = { key: successor.key, ...roundMarks(successor) };
 }
 
