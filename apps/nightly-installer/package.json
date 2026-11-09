@@ -1,6 +1,6 @@
 {
   "name": "geld-nightly",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Installs Geld Nightly, the self-updating nightly build of the Geld browser extension, for the Chrome, Edge or Brave profiles you pick.",
   "type": "module",
   "license": "AGPL-3.0-only",
