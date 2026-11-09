@@ -23,6 +23,8 @@ import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, comm
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
+import type { CommentMention } from './crawler';
+import { byMentionTime } from './references';
 import { crawlConversation } from './crawler';
 import type { Deployment, DeploymentEntry } from './deployments';
 import { deploymentEntries, deploymentOf, deploymentsOfPreview, environmentLabel, pinnedToBuild, previewLinks } from './deployments';
@@ -956,6 +958,35 @@ function withoutHidden(meta: GeldPrMeta, hidden: HiddenPeople, authorOfAnchor: (
 function withManualDone(meta: GeldPrMeta): GeldPrMeta {
   if (visit.manualDone.size === 0) return meta;
   return { ...meta, items: meta.items.map((item) => (visit.manualDone.has(item.id) && isOpenStatus(item.status) ? { ...item, status: 'done-manual' } : item)) };
+}
+
+/** What the comments link to, read each pass in timeline order: the description's own links are `descriptionMentions`'. */
+let commentMentions: readonly CommentMention[] = [];
+
+/**
+ * What this pull request mentions: the description's references, then each one its comments add (people's and bots'
+ * alike), oldest first, once each at its first mention, with who made it and when on its line when `withAuthor`.
+ */
+function conversationMentions(withAuthor = false): readonly MentionLine[] {
+  const self = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(location.pathname);
+  const selfRef = self === null ? null : `${self[1]}/${self[2]}#${self[3]}`.toLowerCase();
+  const fromDescription = descriptionMentions(withAuthor);
+  const seen = new Set(fromDescription.map((line) => line.ref.toLowerCase()));
+  const lines = [...fromDescription];
+  for (const mention of commentMentions) {
+    const key = mention.ref.toLowerCase();
+    if (key === selfRef || seen.has(key)) continue;
+    seen.add(key);
+    const { login, bot } = mention.author;
+    const avatar =
+      !withAuthor || mention.avatarSrc === null
+        ? null
+        : createElement('a', { class: 'geld-review__mention-who', href: bot ? `/apps/${login.replace(/\[bot\]$/, '')}` : `/${login}`, ...whoAttributes(login, bot) }, [
+            createElement('img', { class: 'geld-review__avatar', 'data-kind': bot ? 'bot' : 'user', src: mention.avatarSrc, alt: `@${login}`, width: '20', height: '20' }),
+          ]);
+    lines.push({ href: mention.href, ref: mention.ref, title: mention.title, state: mention.discussion ? 'discussion' : 'unknown', avatar, time: '', ...(mention.at === '' ? {} : { at: mention.at }) });
+  }
+  return lines;
 }
 
 /** What the description mentions, with its author's picture on each line when `withAuthor` (only the open view shows it). */
@@ -3340,6 +3371,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       return false;
     }),
   };
+  // By each mention's own author: a thread is kept or dropped by who opened it, and its replies may be anyone's.
+  commentMentions = byMentionTime(crawledAll.comments.flatMap((entry) => entry.mentions).filter((mention) => !hidden.hides(mention.author.login, mention.author.bot, mention.avatarSrc)));
   const rawComments: readonly RawComment[] = crawledDom.comments.map((entry) => entry.comment);
   sourceFacts = new Map(
     crawledDom.comments
@@ -3538,8 +3571,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const claimed = new Set<HTMLElement>(foldTargets.flatMap((group) => [...group.nodes]));
   const leftoverList = phase('leftovers', () => crawlLeftovers(claimed, threadCommentsComing));
   if (hidingTimeline) {
-    // With the description's mentions, the Overview's incoming ones read from its timeline data: neither has a row of the page's.
-    const leftovers = groupLeftovers(leftoverList, [...descriptionMentions(), ...incomingReadMentions()].map((line) => `${line.href} ${line.title} ${line.state}`));
+    // With what the description and comments mention, the Overview's incoming ones read from its timeline data: none has a row of the page's.
+    const leftovers = groupLeftovers(leftoverList, [...conversationMentions(), ...incomingReadMentions()].map((line) => `${line.href} ${line.title} ${line.state}`));
     groups.push(...leftovers);
     foldTargets.push(...leftovers);
   }
@@ -4074,8 +4107,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const slotsStart = performance.now();
   if (mounted?.slot !== null && mounted?.slot !== undefined && visit.openKey !== null) {
     const nodes = quickViewFor(visit.openKey, meta, groups);
-    // The description's own mentions have no timeline row, so the Mentions row can stand with no nodes to show.
-    const onlyOutgoing = visit.openKey === foldKey('mentions') && (descriptionMentions().length > 0 || incomingReadMentions().length > 0);
+    // What the description and comments mention has no timeline row, so the Mentions row can stand with no nodes to show.
+    const onlyOutgoing = visit.openKey === foldKey('mentions') && (conversationMentions().length > 0 || incomingReadMentions().length > 0);
     if (nodes.length === 0 && !onlyOutgoing) {
       // An open thread row (by push) whose thread is momentarily out of the crawl keeps its row through the grace.
       if (!visit.openKey.startsWith('item:') || openLineStillMissing()) {
@@ -4175,7 +4208,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           renderQuickView(mounted.slot, nodes);
         }
       } else if (visit.openKey === foldKey('mentions')) {
-        renderMentionsView(mounted.slot, nodes, descriptionMentions(true), (href) => refDetails(href, reapplySoon), incomingReadMentions());
+        renderMentionsView(mounted.slot, nodes, conversationMentions(true), (href) => refDetails(href, reapplySoon), incomingReadMentions());
       } else if (visit.openKey.startsWith('item:')) {
         // Each review thread as its chat: the path, the hunk, the comment it came from pinned, every message.
         const item = meta.items.find((entry) => itemKey(entry.id) === visit.openKey);
