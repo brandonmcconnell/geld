@@ -701,7 +701,7 @@ export default defineBackground(() => {
   startCatalogUpdates();
 
   // Store builds compile this away: only `--mode nightly` ships the updater (see wxt.config.ts).
-  if (import.meta.env.MODE === 'nightly') startNightly();
+  if (__GELD_NIGHTLY__) startNightly();
 
   if (USES_OFFSCREEN_THEME_PROBE) {
     browser.runtime.onInstalled.addListener(() => void ensureThemeProbe());

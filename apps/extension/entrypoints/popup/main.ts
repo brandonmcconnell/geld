@@ -700,5 +700,5 @@ if (popupBody !== null) {
   requestAnimationFrame(updateScrollState);
 }
 polyfillCornerShape();
-if (import.meta.env.MODE === 'nightly' && popupBody !== null) mountNightlyPopup(popupBody);
+if (__GELD_NIGHTLY__ && popupBody !== null) mountNightlyPopup(popupBody);
 void main();

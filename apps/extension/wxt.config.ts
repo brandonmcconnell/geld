@@ -1,3 +1,5 @@
+import { readdirSync, writeFileSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
 import { defineConfig } from 'wxt';
 import type { ThemeIcon } from 'wxt';
 import { ACTION_ICON_SIZES, actionIconPath } from './src/lib/action-icon';
@@ -14,14 +16,26 @@ const buildNumber = process.env.GELD_BUILD_NUMBER?.trim() ?? '';
 const manifestVersion = /^\d+$/.test(buildNumber) ? `${baseVersion}.${buildNumber}` : baseVersion;
 
 /**
- * `--mode nightly` builds the self-updating Chromium build CI attaches to
- * every release beside the store zips (src/nightly/). Loaded unpacked, it
- * checks GitHub for a newer release and writes it into its own folder. The
- * store builds compile all of that away and leave out the nightly page.
+ * `GELD_CHANNEL=nightly` (scripts/nightly.mjs) builds the self-updating
+ * Chromium build CI attaches to every release beside the store zips
+ * (src/nightly/). Loaded unpacked, it checks GitHub for a newer release and
+ * writes it into its own folder. It is a production build like the store
+ * ones: a WXT `--mode` would also set NODE_ENV and `import.meta.env.DEV`,
+ * which change how WXT, Geld's error capture and dependencies run. The store
+ * builds compile all of the updater away and leave out the nightly page.
  */
-const NIGHTLY_MODE = 'nightly';
+const nightly = process.env.GELD_CHANNEL === 'nightly';
 /** Mirrors NIGHTLY_NAME in src/nightly/build-check.ts, which refuses any other build as an update. */
 const NIGHTLY_NAME = 'Geld Nightly';
+/** Mirrors FILE_LIST in src/nightly/build-check.ts: the files a nightly build copies before it is replaced. */
+const NIGHTLY_FILE_LIST = 'nightly-files.json';
+
+function filesIn(dir: string): string[] {
+  return readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => relative(dir, join(entry.parentPath, entry.name)).split(sep).join('/'))
+    .sort();
+}
 
 /** `theme_icons` is Firefox-only and missing from the generic manifest typings. */
 interface ThemeAwareAction {
@@ -37,8 +51,9 @@ export default defineConfig({
   // rebuilds and reloads it on every change. To get the launcher back for
   // yourself, create the git-ignored `web-ext.config.ts` with `disabled: false`.
   webExt: { disabled: true },
-  manifest: ({ browser, manifestVersion: mv, mode }) => {
-    const nightly = mode === NIGHTLY_MODE;
+  ...(nightly ? { outDirTemplate: '{{browser}}-mv{{manifestVersion}}-nightly' } : {}),
+  vite: () => ({ define: { __GELD_NIGHTLY__: JSON.stringify(nightly) } }),
+  manifest: ({ browser, manifestVersion: mv }) => {
     const channel = nightly ? 'nightly' : 'build';
     return {
       name: nightly ? NIGHTLY_NAME : 'Geld',
@@ -104,8 +119,13 @@ export default defineConfig({
     };
   },
   hooks: {
-    'entrypoints:resolved': (wxt, entrypoints) => {
-      if (wxt.config.mode === NIGHTLY_MODE) return;
+    'build:done': (wxt) => {
+      if (!nightly) return;
+      const files = [...new Set([...filesIn(wxt.config.outDir), NIGHTLY_FILE_LIST])].sort();
+      writeFileSync(join(wxt.config.outDir, NIGHTLY_FILE_LIST), `${JSON.stringify({ files }, null, 2)}\n`);
+    },
+    'entrypoints:resolved': (_wxt, entrypoints) => {
+      if (nightly) return;
       const at = entrypoints.findIndex((entrypoint) => entrypoint.name === 'nightly');
       if (at !== -1) entrypoints.splice(at, 1);
     },
@@ -124,7 +144,7 @@ export default defineConfig({
   },
   zip: {
     name: 'geld',
-    artifactTemplate: '{{name}}-{{version}}-{{browser}}{{modeSuffix}}.zip',
+    artifactTemplate: `{{name}}-{{version}}-{{browser}}${nightly ? '-nightly' : ''}.zip`,
     sourcesTemplate: '{{name}}-{{version}}-sources.zip',
   },
 });
