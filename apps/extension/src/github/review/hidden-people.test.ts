@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import { compileAuthorRules } from '@geld/core';
+import type { BlockScope } from '../blocked-list';
 import { exactRulesFor, HiddenPeople, hideReasonOf, markedOnGitHub, unhideFormIn, unhideFormOf } from './hidden-people';
 
 /**
@@ -141,6 +142,22 @@ describe('HiddenPeople', () => {
     expect(hidden.people().map((person) => [person.login, person.why.by === 'list' ? person.why.rule : ''])).toEqual([
       ['renovate[bot]', '*[bot]'],
       ['Spammer', 'spammer'],
+    ]);
+  });
+});
+
+describe('blocked people', () => {
+  it('hides a blocked person with nothing marked, and the block outranks a spam mark', () => {
+    const blocked = new Map<string, BlockScope>([
+      ['spam-user', 'org'],
+      ['quiet-one', 'personal'],
+    ]);
+    const hidden = new HiddenPeople(markedOnGitHub(page(SPAM_REVIEW)), compileAuthorRules([]), new Set(), blocked);
+    expect(hidden.hides('Quiet-One', false)).toBe(true);
+    expect(hidden.hides('someone', false)).toBe(false);
+    expect(hidden.people().map((person) => [person.login, person.why])).toEqual([
+      ['Quiet-One', { by: 'blocked', scope: 'personal' }],
+      ['Spam-User', { by: 'blocked', scope: 'org' }],
     ]);
   });
 });

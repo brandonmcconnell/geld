@@ -1,6 +1,7 @@
 import type { AuthorRules } from '@geld/core';
 import { OWN_UI_ATTRIBUTE } from '../dom';
 import { pageFetch } from '../page-fetch';
+import type { BlockScope } from '../blocked-list';
 import { fragmentHeaders } from './deeplink';
 import { loginOfLink } from './login';
 
@@ -121,6 +122,7 @@ export function markedOnGitHub(root: ParentNode = document): readonly MarkedCont
 }
 
 export type HiddenWhy =
+  | { readonly by: 'blocked'; readonly scope: BlockScope }
   | { readonly by: 'github'; readonly reason: GitHubHideReason; readonly anchors: readonly string[]; readonly unhide: boolean }
   | { readonly by: 'list'; readonly rule: string };
 
@@ -154,6 +156,7 @@ export class HiddenPeople {
     marked: readonly MarkedContent[],
     private readonly rules: AuthorRules,
     private readonly peeking: ReadonlySet<string>,
+    private readonly blocked: ReadonlyMap<string, BlockScope> = new Map(),
   ) {
     const byLogin = new Map<string, MarkedContent[]>();
     for (const content of marked) {
@@ -168,7 +171,7 @@ export class HiddenPeople {
         login: first.login,
         bot: first.bot,
         avatarSrc: contents.find((content) => content.avatarSrc !== null)?.avatarSrc ?? null,
-        why: { by: 'github', reason: first.reason, anchors: contents.flatMap((content) => (content.anchor === null ? [] : [content.anchor])), unhide: contents.some((content) => unhideFormOf(content) !== null) },
+        why: blocked.has(key) ? { by: 'blocked', scope: blocked.get(key) ?? 'personal' } : { by: 'github', reason: first.reason, anchors: contents.flatMap((content) => (content.anchor === null ? [] : [content.anchor])), unhide: contents.some((content) => unhideFormOf(content) !== null) },
       });
     }
   }
@@ -179,9 +182,10 @@ export class HiddenPeople {
     const key = login.toLowerCase();
     let entry = this.entries.get(key);
     if (entry === undefined) {
-      const rule = this.rules.explain(login);
-      if (rule === null) return false;
-      entry = { login, bot, avatarSrc, why: { by: 'list', rule } };
+      const scope = this.blocked.get(key);
+      const rule = scope === undefined ? this.rules.explain(login) : null;
+      if (scope === undefined && rule === null) return false;
+      entry = { login, bot, avatarSrc, why: scope !== undefined ? { by: 'blocked', scope } : { by: 'list', rule: rule ?? login } };
       this.entries.set(key, entry);
     } else if (entry.avatarSrc === null && avatarSrc !== null) {
       entry.avatarSrc = avatarSrc;

@@ -13,7 +13,8 @@ import { settingsItem } from '../src/lib/storage';
 import { diagnosticSubject, recordDiagnostic } from '../src/lib/diagnostics';
 import { installErrorCapture } from '../src/lib/error-capture';
 import { queueErrorReports, startErrorReports } from '../src/lib/error-uplink';
-import type { FetchDiffResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
+import type { BlockedUsersResponse, FetchDiffResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
+import { blockedLoginsIn } from '../src/github/blocked-list';
 import type { EnsureContentResponse } from '../src/lib/messages';
 import {
   isAccountActionMessage,
@@ -25,6 +26,7 @@ import {
   isEnsureContentMessage,
   isErrorReportMessage,
   isFetchDiffRequest,
+  isBlockedUsersRequest,
   isFetchFileRequest,
   isClearDiffCacheMessage,
   isOpenSettingsMessage,
@@ -411,6 +413,22 @@ async function fetchFile(url: string): Promise<FetchFileResponse> {
   }
 }
 
+const BLOCKED_USERS_PAGE = /^https:\/\/github\.com\/(?:settings|organizations\/[A-Za-z0-9-]+\/settings)\/blocked_users$/;
+
+/** The logins on a GitHub "Blocked users" page; none when the reader may not see it (404) or is signed out. */
+async function fetchBlockedUsers(url: string): Promise<BlockedUsersResponse> {
+  if (!BLOCKED_USERS_PAGE.test(url)) return { ok: false, reason: 'disallowed-url' };
+  try {
+    const response = await fetch(url, { credentials: 'include', cache: 'no-store', redirect: 'follow' });
+    if (response.status === 404) return { ok: true, logins: [] };
+    if (!response.ok) return { ok: false, reason: `http-${response.status}` };
+    if (new URL(response.url).pathname !== new URL(url).pathname) return { ok: false, reason: 'signed-out' };
+    return { ok: true, logins: blockedLoginsIn(await response.text()) };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : 'fetch-failed' };
+  }
+}
+
 async function readWithLimit(response: Response, limit: number): Promise<string> {
   if (response.body === null) return response.text();
   const reader = response.body.getReader();
@@ -582,6 +600,10 @@ export default defineBackground(() => {
     }
     if (isFetchFileRequest(message)) {
       void fetchFile(message.url).then(sendResponse);
+      return true;
+    }
+    if (isBlockedUsersRequest(message)) {
+      void fetchBlockedUsers(message.url).then(sendResponse);
       return true;
     }
     if (isAiModelsRequest(message)) {

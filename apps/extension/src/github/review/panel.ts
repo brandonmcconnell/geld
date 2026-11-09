@@ -1723,7 +1723,16 @@ function statusWords(status: ReviewerStatus): { readonly glyphs: readonly string
 let hiddenMenuOpen: 'people' | 'bots' | null = null;
 
 function hiddenWhyText(person: HiddenPerson): string {
-  const why = person.why.by === 'github' ? `Marked as ${person.why.reason} on GitHub` : person.why.rule.toLowerCase() === person.login.toLowerCase() ? 'On your hidden people list' : `Matches ${person.why.rule} on your hidden people list`;
+  const why =
+    person.why.by === 'blocked'
+      ? person.why.scope === 'org'
+        ? 'Blocked from this organization'
+        : 'Blocked by you'
+      : person.why.by === 'github'
+        ? `Marked as ${person.why.reason} on GitHub`
+        : person.why.rule.toLowerCase() === person.login.toLowerCase()
+          ? 'On your hidden people list'
+          : `Matches ${person.why.rule} on your hidden people list`;
   return person.peeking ? `${why} · Peeking` : why;
 }
 
@@ -1731,8 +1740,9 @@ function hiddenWhyText(person: HiddenPerson): string {
  * The closed eye at the right of the Reviews row (people) or the Review bots
  * row (bots), with how many are hidden: who the digest leaves out, each with
  * Peek (their content in the digest for this visit) and Unhide (the hide
- * itself undone, after a confirmation), or Show in timeline where GitHub's
- * own Unhide is the only way and Geld cannot reach it.
+ * itself undone, after a confirmation), or Show in timeline where GitHub
+ * offers the reader no Unhide. A blocked person's action is Manage blocks,
+ * GitHub's own Blocked users page.
  */
 function hiddenMenu(model: PanelModel, handlers: PanelHandlers, scope: 'people' | 'bots'): HTMLElement | null {
   const people = model.hiddenPeople.filter((person) => person.bot === (scope === 'bots'));
@@ -1761,7 +1771,7 @@ function hiddenMenu(model: PanelModel, handlers: PanelHandlers, scope: 'people' 
     });
     const actions: Node[] = [peek];
     const exact = person.why.by === 'list' && person.why.rule.toLowerCase() === person.login.toLowerCase();
-    const label = person.why.by === 'github' ? (person.why.unhide ? 'Unhide' : person.why.anchors.length > 0 ? 'Show in timeline' : null) : exact ? 'Unhide' : null;
+    const label = person.why.by === 'blocked' ? 'Manage blocks' : person.why.by === 'github' ? (person.why.unhide ? 'Unhide' : person.why.anchors.length > 0 ? 'Show in timeline' : null) : exact ? 'Unhide' : null;
     if (label !== null) {
       const unhide = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__hidden-action`, role: 'menuitem', 'aria-label': `${label} ${person.login}`, [ATTR_FOCUS]: `hidden:${person.login}:unhide` }, [label]);
       unhide.addEventListener('click', (event) => {
@@ -3111,7 +3121,7 @@ function signatureOf(model: PanelModel): string {
     comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}:${entry.parent ?? ''}:${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('|')}`),
     reviewerGroups: model.reviewerGroups.map((group) => `${group.state}:${group.reviewers.map((reviewer) => `${reviewer.login}${reviewer.src}`).join(',')}`),
     reviewerStatuses: model.reviewerStatuses.map((status) => `${status.login}:${status.verdict ?? ''}:${status.awaiting ? 'a' : ''}:${status.anchor ?? ''}`),
-    hiddenPeople: model.hiddenPeople.map((person) => `${person.login}:${person.peeking ? 'p' : ''}:${person.why.by === 'list' ? person.why.rule : `${person.why.reason}:${person.why.unhide ? 'u' : ''}`}:${person.avatarSrc ?? ''}`),
+    hiddenPeople: model.hiddenPeople.map((person) => `${person.login}:${person.peeking ? 'p' : ''}:${person.why.by === 'list' ? person.why.rule : person.why.by === 'blocked' ? `blocked:${person.why.scope}` : `${person.why.reason}:${person.why.unhide ? 'u' : ''}`}:${person.avatarSrc ?? ''}`),
     canRequestReviewers: model.canRequestReviewers,
     canDismissReviews: model.canDismissReviews,
     ingesting: model.ingesting,

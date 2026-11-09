@@ -61,6 +61,8 @@ import { knownMarkShape } from './mark-shape';
 import { loginOfLink, showLogins } from './login';
 import { allResolved, isSevere, checkCountsFrom, checkCountsOfRuns, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, standingReviewers } from './panel-model';
 import { exactRulesFor, HiddenPeople, markedOnGitHub, lookUpUnhideForms, refreshUnhidden, sendUnhide } from './hidden-people';
+import { blockedFor } from '../blocked-users';
+import { blockedUsersUrl } from '../blocked-list';
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
@@ -3218,7 +3220,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // People GitHub shows hidden as spam or abuse, and those on the reader's hidden list, are left out of everything below.
   const marked = phase('hidden', () => markedOnGitHub(document));
   lookUpUnhideForms(marked, reapplySoon);
-  const hidden = new HiddenPeople(marked, compileAuthorRules(settings.hiddenAuthors), visit.peeking);
+  const owner = location.pathname.split('/')[1] ?? '';
+  const viewer = document.querySelector('meta[name="user-login"]')?.getAttribute('content') ?? '';
+  const blockedLogins = blockedFor(owner, viewer, reapplySoon);
+  const hidden = new HiddenPeople(marked, compileAuthorRules(settings.hiddenAuthors), visit.peeking, blockedLogins);
   const hiddenRoots: HTMLElement[] = [...hidden.markedRoots()];
   const crawledDom = {
     ...crawledAll,
@@ -3853,6 +3858,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     onUnhide: (login) => {
       const person = hidden.people().find((entry) => entry.login.toLowerCase() === login.toLowerCase());
       if (person === undefined) return;
+      if (person.why.by === 'blocked') {
+        window.open(blockedUsersUrl(person.why.scope, owner), '_blank', 'noopener');
+        return;
+      }
       if (person.why.by === 'list') {
         const rules = exactRulesFor(settings.hiddenAuthors, person.login);
         if (rules.length === 0) return;
