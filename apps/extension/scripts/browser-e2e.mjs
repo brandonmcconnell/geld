@@ -2278,7 +2278,13 @@ async function verifyProviderFlow(page, item) {
   await poll(() => page.evaluate(() => document.querySelectorAll('.geld-provider-flow [data-geld-flow-path]').length), value => value === before.all.files, 'Flow includes categorized files on demand');
   progress.artifacts = await capture(page, 'gitlab-file-flow');
   await page.keyboard.press('Escape');
-  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('geld-provider-flow-button')), true);
+  progress.closed = await poll(() => page.evaluate(() => ({
+    dialogCount: document.querySelectorAll('dialog.geld-provider-flow').length,
+    focused: document.activeElement?.classList.contains('geld-provider-flow-button') === true,
+    activeTag: document.activeElement?.tagName ?? null,
+    activeClass: document.activeElement?.getAttribute('class') ?? null,
+    buttonCount: document.querySelectorAll('.geld-provider-flow-button').length,
+  })), value => value.dialogCount === 0 && value.focused, 'Escape closes Flow and restores its current trigger focus', 8000);
   assert.deepEqual((await tabState(page)).visible, before.visible, 'Flow toggles do not change diff filtering');
   progress.status = 'passed';
 }
