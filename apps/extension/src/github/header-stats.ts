@@ -486,7 +486,7 @@ const MIRROR_CLASS = 'geld-header-mirror';
  * `hideWhenVeryNarrowContainer`), and the tab bar has no room for it. A copy
  * of the counts then goes beside the state label ("Open"), after the stack
  * button when there is one, and is shown exactly while the original is not
- * (checked on every apply; the controller re-applies on resize).
+ * (`hostShown`, followed by a ResizeObserver).
  */
 function syncNarrowMirror(group: HeaderStatGroup, label: string, hasTests: boolean, visible: ChangeTotals, provider: (() => StatsBreakdown) | null): void {
   const header = group.host.closest<HTMLElement>('[data-component="PageHeader"]');
@@ -514,9 +514,32 @@ function syncNarrowMirror(group: HeaderStatGroup, label: string, hasTests: boole
   const delText = `\u2212${formatCount(visible.deletions)}`;
   if (add instanceof HTMLElement && add.textContent !== addText) add.textContent = addText;
   if (del instanceof HTMLElement && del.textContent !== delText) del.textContent = delText;
-  mirror.hidden = group.host.getClientRects().length > 0;
+  mirror.hidden = hostShown(group.host) !== false;
   if (provider === null) detachBreakdownTooltip(mirror);
   else attachBreakdownTooltip(mirror, tests instanceof HTMLElement ? tests : mirror, provider, { align: 'end' });
+}
+
+const shownHosts = new WeakMap<Element, boolean>();
+let shownObserver: ResizeObserver | null = null;
+
+/**
+ * Whether GitHub shows the header's counts, as a ResizeObserver last reported (hidden, their box is 0 × 0), and null
+ * until it first has: asking the layout itself here forced a whole-page layout on every apply while the page loaded.
+ * The observer's answer lands before the frame paints, and the mirror follows it there.
+ */
+function hostShown(host: HTMLElement): boolean | null {
+  if (typeof ResizeObserver === 'undefined') return host.getClientRects().length > 0;
+  shownObserver ??= new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      const shown = entry.contentRect.width > 0 || entry.contentRect.height > 0;
+      if (shownHosts.get(entry.target) === shown) continue;
+      shownHosts.set(entry.target, shown);
+      const header = entry.target.closest('[data-component="PageHeader"]');
+      for (const mirror of header?.querySelectorAll<HTMLElement>(`.${MIRROR_CLASS}`) ?? []) mirror.hidden = shown;
+    }
+  });
+  if (!shownHosts.has(host)) shownObserver.observe(host);
+  return shownHosts.get(host) ?? null;
 }
 
 function removeNarrowMirror(group: HeaderStatGroup): void {
