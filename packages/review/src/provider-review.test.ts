@@ -40,14 +40,16 @@ function input(threads: readonly ProviderReviewThread[]): ProviderReviewInput {
 }
 
 describe('provider review normalization', () => {
-  it('clusters mixed authors with native provenance and keeps the human concern', () => {
+  it('keeps independent native threads and their provenance separate', () => {
     const first = thread([comment('1', { author: { id: 'bot-1', login: 'review-agent', automated: true }, body: 'Null response can crash the worker.' })], { resolved: true });
     const second = thread([comment('2', { body: 'Please check for null before reading this field.' }), comment('3', { author: { id: 'user-2', login: 'bob' }, body: 'This is still needed after the retry.' })], { id: 'e'.repeat(40), anchor: `discussion_${'e'.repeat(40)}`, line: 22, outdated: true });
     const items = buildProviderReviewItems({ ...input([first, second]), bots: [{ id: 'verified-reviewer', authorId: 'bot-1' }] });
-    expect(items).toHaveLength(1);
-    expect(items[0]?.title).toBe('Please check for null before reading this field.');
-    expect(items[0]?.status).toBe('outdated');
-    expect(items[0]?.sources.map((source) => [source.anchor, source.sourceId, source.authorId, source.bot])).toEqual([
+    expect(items).toHaveLength(2);
+    expect(items[0]?.title).toBe('Null response can crash the worker.');
+    expect(items[0]?.status).toBe('resolved');
+    expect(items[1]?.title).toBe('Please check for null before reading this field.');
+    expect(items[1]?.status).toBe('outdated');
+    expect(items.flatMap((item) => item.sources).map((source) => [source.anchor, source.sourceId, source.authorId, source.bot])).toEqual([
       ['note_1', '1', 'bot-1', 'verified-reviewer'],
       ['note_2', '2', 'user-1', undefined],
       ['note_3', '3', 'user-2', undefined],
@@ -55,15 +57,15 @@ describe('provider review normalization', () => {
     const source = items[0]?.sources[0];
     expect(source).toMatchObject({ provider: 'gitlab', origin: 'https://gitlab.com', url: first.comments[0]?.url });
     expect(source === undefined ? null : sourceLink(source, subject)).toBe(first.comments[0]?.url);
-    expect(items.some(isBotOnly)).toBe(false);
+    expect(items.map(isBotOnly)).toEqual([true, false]);
   });
 
-  it('does not turn outdated into resolved and requires every merged concern resolved', () => {
+  it('keeps resolved, outdated and open states independent across native threads', () => {
     const resolved = thread([comment('1')], { resolved: true, outdated: true });
     expect(buildProviderReviewItems(input([resolved]))[0]?.status).toBe('resolved');
     expect(buildProviderReviewItems(input([thread([comment('1')], { outdated: true })]))[0]?.status).toBe('outdated');
     const open = thread([comment('2')], { id: 'e'.repeat(40), anchor: `discussion_${'e'.repeat(40)}` });
-    expect(buildProviderReviewItems(input([resolved, open]))[0]?.status).toBe('outdated');
+    expect(buildProviderReviewItems(input([resolved, open])).map((item) => item.status)).toEqual(['resolved', 'open']);
   });
 
   it('binds bots to verified native account ids without inheriting GitHub login aliases', () => {

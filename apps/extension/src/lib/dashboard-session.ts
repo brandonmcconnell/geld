@@ -12,6 +12,14 @@ export const dashboardTrackerItem=storage.defineItem<DashboardTracker|null>('loc
 function record(value:unknown):value is Record<string,unknown>{return value!==null&&typeof value==='object'&&!Array.isArray(value);}
 let refreshRevision=0;
 export async function connectDashboard():Promise<void>{const allowed=await browser.permissions.request({origins:[`${DASHBOARD_ORIGIN}/*`]});if(!allowed)return;await browser.tabs.create({url:`${DASHBOARD_ORIGIN}/sign-in`});}
+/**
+ * Forget a Geld session saved before the sign-in was taken out ahead of the dashboard's launch: with no control to
+ * refresh or disconnect it, its team's tracker would outrank repository and personal settings indefinitely.
+ */
+export async function retireDashboardSession():Promise<void>{
+  refreshRevision+=1;
+  await Promise.all([dashboardSessionItem.setValue({user:null,teams:[]}),dashboardTeamItem.setValue(''),dashboardTrackerItem.setValue(null)]);
+}
 export async function selectDashboardTeam(teamId:string):Promise<void>{refreshRevision+=1;await dashboardTrackerItem.setValue(null);await dashboardTeamItem.setValue(teamId);}
 export async function refreshDashboardSession():Promise<void>{
   const revision=++refreshRevision;
