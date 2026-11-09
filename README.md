@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/brand/geld-logo-white.svg" />
-    <img src="assets/brand/geld-logo.svg" alt="Geld" width="292" height="75" />
+    <img src="assets/brand/geld-logo.svg" alt="Geld" width="285" height="75" />
   </picture>
 </p>
 
@@ -66,6 +66,34 @@ Geld never calls the GitHub API. Counts come from the page when it renders per-f
    - **Safari** (16.4+): unzip `geld-<version>-safari.zip`, then on macOS run `xcrun safari-web-extension-converter <unzipped-folder>` and build/run the generated Xcode project. Enable _Allow unsigned extensions_ from Safari's _Develop_ menu while testing.
 3. Open any pull request, for example <https://github.com/wxt-dev/wxt/pull/2544/files>.
 
+### Nightly builds
+
+Every release also carries a nightly build for each browser, `geld-<version>-<browser>-nightly.zip`, called _Geld Nightly_. It is the same production build as the store's. The Chrome and Edge builds (and other Chromium browsers, with the Chrome zip) keep themselves up to date with every push to `main`. The Firefox and Safari builds are updated by hand for now: Firefox only installs builds Mozilla has signed, and Safari extensions ship inside an app. The store builds contain none of the updater.
+
+Geld Nightly does not run while Geld from a store is on in the same profile. It pauses, marks Geld's bar on GitHub with the conflict and a button to turn Geld off, and starts on its own once Geld is off or removed.
+
+For Chrome and Edge (and Brave, with the Chrome zip), the installer is the easy way in:
+
+```sh
+npx geld-nightly@latest
+# or, without npm
+curl -fsSL https://www.geld.sh/nightly.sh | sh
+# on Windows, in PowerShell
+irm https://www.geld.sh/nightly.ps1 | iex
+```
+
+It lists your browser profiles by name and lets you pick one or more. It downloads the latest nightly zip, checks its SHA-256 checksum and its manifest, and unzips it into `~/Geld Nightly/<profile>` (on Windows, `Geld Nightly` in your user folder), one folder per profile, then deletes the zip. For each profile it copies the folder's path to the clipboard, opens the browser in that profile and prints the steps: go to `chrome://extensions`, turn on Developer mode, click _Load unpacked_ and paste the path. Run it again any time to repair a folder. It never writes over a folder that is not Geld Nightly, refuses folders the browser's picker will not open or the system empties, and asks before using a synced folder (iCloud, OneDrive, Dropbox, Google Drive). Its own state is kept in `~/.geld`.
+
+To do the same by hand:
+
+1. Download the nightly zip from the [latest release](https://github.com/brandonmcconnell/geld/releases/latest), check it against the `.sha256` file beside it, unzip it into `~/Geld Nightly`, and load that folder with _Load unpacked_ (Developer mode on). Keep it out of synced folders, temporary folders and `Library` or `AppData`, and give each profile its own folder.
+2. Click the toolbar icon. The top of the popup shows the build, a _Manual / Automatic_ toggle and the update status. Click _Connect folder_ and pick the same folder. Geld checks that it is the folder it runs from. After the installer the popup names the folder to pick.
+3. The first install asks once to let Geld edit the folder. On the next one Chrome offers _Allow on every visit_: choose it, and later builds install in the background, even after Chrome restarts. A folder kept directly in your Downloads folder needs no grant at all, but cleanup tools and Storage Sense empty Downloads, so the installer puts it there only when you ask with `--downloads`, and warns first.
+
+Geld looks for a new build on every GitHub page load and in-page navigation, in the background, and on a 30-minute timer when GitHub isn't open. _Automatic_ (the default) installs it and reloads Geld, which puts itself back into open GitHub tabs. _Manual_ shows a ↑ on the toolbar icon, GitHub tabs included, and _Install_ in the popup. Any number of tabs finding the same build lead to one download and one install.
+
+Before writing a build, Geld keeps a copy of the one it is replacing. If the install fails partway, the copy goes back and the popup says _Update to build N failed · Still on build M_ with _Try again_. For a day after an update, _Roll back_ returns to the previous build, and Automatic skips the build you left until a newer one is out. Updates read public releases, so no GitHub token is needed, and each build is checked against its published SHA-256 before anything is written. Do not move or rename the folder once it is loaded: the browser ties the extension to its path. The nightly build has its own extension id, so its settings are separate from a store install's unless you sign in to sync them.
+
 ## Development
 
 ```sh
@@ -77,7 +105,8 @@ pnpm dev:site         # geld.sh website (Next.js) on http://localhost:3000
 pnpm build            # production build for Chrome into apps/extension/.output/chrome-mv3
 pnpm build:firefox    # one other browser: build:firefox, build:edge, build:safari (build:chrome is pnpm build; zip:<browser> likewise)
 pnpm build:all        # production builds for Chrome, Firefox, Edge and Safari
-pnpm zip:all          # zips for all four browsers into apps/extension/.output/
+pnpm build:nightly    # the self-updating Chrome build into apps/extension/.output/chrome-mv3-nightly
+pnpm zip:all          # zips for all four browsers, store and nightly, into apps/extension/.output/
 ```
 
 Output archives:
@@ -97,9 +126,8 @@ packages/core/             @geld/core: framework-free logic shared by the extens
                            (unit tested; consumed as TypeScript source)
 apps/extension/            @geld/extension (WXT)
   entrypoints/
-    background.ts          fetches raw .diff files, swaps the toolbar icon for dark mode,
-                           registers Enterprise hosts, handles the keyboard shortcut and badge
-    offscreen/             Chrome/Edge only: watches prefers-color-scheme for the background
+    background.ts          fetches raw .diff files, registers Enterprise hosts,
+                           handles the keyboard shortcut and badge
     github.content/        content script + stylesheet injected on GitHub
     popup/                 contextual toolbar popup
     options/               categories (groups, extra patterns), custom categories, repo rules, Enterprise hosts, tester, backup
@@ -114,14 +142,14 @@ apps/extension/            @geld/extension (WXT)
     ui/                    hidden-files row, sidebar accordion sections, tooltip
 apps/site/                 geld.sh (Next.js on Vercel): home with a live path tester, how it works,
                            patterns rendered from @geld/core, FAQ, privacy policy
-assets/brand/              logo + logomark SVGs (black and white variants)
+assets/brand/              logo + logomark SVGs (black, and a lighter white cut for dark backgrounds), grid logomark for 16px icons
 ```
 
 See `AGENTS.md` for conventions and the reasoning behind the architecture.
 
 ### Toolbar icon and dark mode
 
-The toolbar mark is pure black on light toolbars and pure white on dark ones. Chrome and Edge (MV3) cannot call `matchMedia` from the service worker, so a tiny offscreen document (`reasons: ["MATCH_MEDIA"]`) reports the colour scheme and the background calls `action.setIcon`. Firefox switches natively via `theme_icons`, and Safari tints toolbar icons as template images on its own.
+Firefox switches between a pure black and a pure white mark via `theme_icons`, and Safari tints toolbar icons as template images on its own. Chrome and Edge cannot tell a dark toolbar from a light one, so they show the black mark on a white plate cut to its own shape, which reads on both.
 
 ### How the hiding works
 

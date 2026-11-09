@@ -1,6 +1,7 @@
 import type { MergeBox, MergeOffer, Stack, StackMember, StatusAction } from './merge-actions';
 import { METHOD_LABEL } from './merge-actions';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
+import { reactSettled } from './react-hydration';
 import { ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_TRIANGLE_DOWN } from './ui/icons';
 
 /**
@@ -9,7 +10,7 @@ import { ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_P
  * GitHub's label is React's (or the classic page's) and is never touched
  * beyond being hidden: a button of Geld's, dressed in the label's own
  * classes and `data-status`/`data-size` (Primer's StateLabel keys its look on
- * them), stands right after it, its caret in its glyph's place while hovered.
+ * them), stands right after it, its caret after its words.
  * Both the header's pill and the sticky header's are swapped.
  */
 
@@ -80,6 +81,8 @@ export type StackScope = 'this' | 'below' | 'stack';
 export interface StackChoice {
   readonly scope: StackScope;
   readonly label: string;
+  /** How many it changes, drawn as a counter after the label: "4", or "2 of 4" where the rest are already there. */
+  readonly count: string | null;
   /** Top first: every pull request the choice changes. */
   readonly targets: readonly StackMember[];
   /** How many pull requests the scope holds: more than `targets` where some are already where the choice leads. */
@@ -154,11 +157,12 @@ export function stackGroups(stack: Stack, method: MergeBox['methods'][number]): 
     ...(at > 0 && below.length > 1 ? [{ scope: 'below' as const, targets: below }] : []),
     { scope: 'stack', targets: members },
   ];
-  const label = (scope: StackScope, moving: number): string => {
-    if (scope === 'this') return 'This pull request';
+  const label = (scope: StackScope): string => (scope === 'this' ? 'This pull request' : scope === 'below' ? `This and ${below.length - 1} below` : 'Entire stack');
+  const count = (scope: StackScope, moving: number): string | null => {
+    if (scope === 'this') return null;
     const size = scope === 'below' ? below.length : members.length;
-    if (scope === 'below') return moving < size ? `This and ${below.length - 1} below (${moving} of ${size})` : `This and ${below.length - 1} below`;
-    return `Entire stack (${moving < size ? `${moving} of ${size}` : size})`;
+    if (moving < size) return `${moving} of ${size}`;
+    return scope === 'stack' ? String(size) : null;
   };
   const merging: StackAction = boxes.get(current.number)?.canQueue === true ? 'queue' : 'merge';
   const actions: readonly StackAction[] = ['ready', 'reopen', merging, 'draft', 'close'];
@@ -166,7 +170,8 @@ export function stackGroups(stack: Stack, method: MergeBox['methods'][number]): 
   const groups = actions.flatMap((action): StackGroup[] => {
     const seen = new Set<string>();
     const choices = scopes
-      // GitHub merges a stacked pull request with every one below it: alone only at the foot.
+      // GitHub merges a stacked pull request with every one below it, and refuses a direct merge above the foot
+      // ("This pull request is out of date", geld#478 in Nov 2026): alone only at the foot.
       .filter(({ scope }) => !((action === 'merge' || action === 'queue') && scope === 'this' && below.length > 1))
       .flatMap(({ scope, targets: all }): StackChoice[] => {
         const targets = movers(action, all);
@@ -174,7 +179,7 @@ export function stackGroups(stack: Stack, method: MergeBox['methods'][number]): 
         const key = targets?.map((member) => member.number).join(',') ?? '';
         if (targets === null || seen.has(key)) return [];
         seen.add(key);
-        return [{ scope, label: label(scope, targets.length), targets, of: all.length, via: targets[0] ?? current }];
+        return [{ scope, label: label(scope), count: count(scope, targets.length), targets, of: all.length, via: targets[0] ?? current }];
       });
     return choices.length === 0 ? [] : [{ status: STACK_STATUS[action], action, note: notes[action], choices }];
   });
@@ -203,12 +208,16 @@ export function stackConfirmWords(action: StackAction, choice: StackChoice): str
   return `${verb[action]} (${list})?`;
 }
 
-const GITHUB_PILLS = '[data-component="PageHeader"] [data-component="StateLabel"], .gh-header-meta .State, .gh-header-sticky .State';
+// The Overview's mini header (stuck to the top once the page header scrolls away) carries a status menu of its own.
+const GITHUB_PILLS =
+  '[data-component="PageHeader"] [data-component="StateLabel"], [data-testid="diff-comparison-viewer-sticky-header-slot"] [data-component="StateLabel"], .gh-header-meta .State, .gh-header-sticky .State';
 const ATTR_HIDDEN = 'data-geld-status-hidden';
 const ATTR_PILL = 'data-geld-status-pill';
 
 /** The words a pill was last dressed from, so a pass rewrites it only when GitHub's label changed. */
 const dressedFrom = new WeakMap<HTMLElement, string>();
+/** The label each pill was last dressed merged from (`showMergedPills`). */
+const mergedFrom = new WeakMap<HTMLElement, string>();
 
 function labelKey(label: Element): string {
   return [label.className, label.getAttribute('data-status'), label.getAttribute('data-size'), label.getAttribute('title'), label.textContent].join('|');
@@ -226,12 +235,9 @@ function dress(pill: HTMLButtonElement, label: Element): void {
   }
   const glyph = label.querySelector('svg');
   pill.replaceChildren(
-    // The caret takes the status glyph's place while the pill is hovered, focused or open, so the pill never widens.
-    createElement('span', { class: 'geld-status-pill__lead' }, [
-      ...(glyph === null ? [] : [glyph.cloneNode(true)]),
-      createElement('span', { class: 'geld-status-pill__caret', 'aria-hidden': 'true' }, [svgFromString(ICON_TRIANGLE_DOWN)]),
-    ]),
+    createElement('span', { class: 'geld-status-pill__lead' }, glyph === null ? [] : [glyph.cloneNode(true)]),
     createElement('span', { class: 'geld-status-pill__label' }, [(label.textContent ?? '').trim()]),
+    createElement('span', { class: 'geld-status-pill__caret', 'aria-hidden': 'true' }, [svgFromString(ICON_TRIANGLE_DOWN)]),
     // The 1-click merge's face, laid over the pill while the instant key is held, so the pill keeps its width.
     createElement('span', { class: 'geld-status-pill__merge', 'aria-hidden': 'true' }, [svgFromString(ICON_GIT_MERGE), 'Merge']),
   );
@@ -250,15 +256,19 @@ export const ATTR_INSTANT_MERGE = 'data-geld-instant-merge';
  */
 export function showMergedPills(pills: readonly HTMLButtonElement[]): void {
   for (const pill of pills) {
+    const label = labelBehind(pill);
+    // Already merged from GitHub's label as it stands. A label GitHub changed in place since has had the pill dressed from
+    // it again (`syncStatusPills`), still open, so it is dressed merged again.
+    if (label !== null && mergedFrom.get(pill) === labelKey(label)) continue;
     pill.removeAttribute(ATTR_INSTANT_MERGE);
     // The held key's "Merge now: …", which would otherwise outlast the merge as the pill's name.
     pill.removeAttribute('aria-label');
     pill.removeAttribute('aria-haspopup');
     pill.removeAttribute('aria-expanded');
-    const label = pill.previousElementSibling;
     if (label === null) continue;
     dress(pill, mergedCopy(label));
     dressedFrom.set(pill, labelKey(label));
+    mergedFrom.set(pill, labelKey(label));
   }
 }
 
@@ -282,6 +292,29 @@ function mergedCopy(label: Element): Element {
 }
 
 /**
+ * What stands for GitHub's label in the header: the label itself, or on the Overview GitHub's own status menu, a
+ * button around the label ("Convert to draft", "Close pull request"), hidden whole with Geld's pill after it, since a
+ * pill inside that button passed every click to GitHub's menu.
+ */
+function hostOf(label: HTMLElement): HTMLElement {
+  return label.closest<HTMLElement>('button[aria-haspopup]') ?? label;
+}
+
+export type PillPlace = 'mini' | 'header';
+
+/** Where a pill stands: the Overview's mini header, or the page header (the classic page's sticky header counts as that). */
+export function pillPlace(pill: Element): PillPlace {
+  return pill.closest('[data-testid="diff-comparison-viewer-sticky-header-slot"]') !== null ? 'mini' : 'header';
+}
+
+/** GitHub's label behind a pill: the element before it, or the label inside GitHub's status button there. */
+export function labelBehind(pill: Element): Element | null {
+  const before = pill.previousElementSibling;
+  if (before === null || before.matches('[data-component="StateLabel"], .State')) return before;
+  return before.querySelector('[data-component="StateLabel"]') ?? before;
+}
+
+/**
  * Put Geld's pill in place of each of GitHub's header pills (or put GitHub's
  * back, with `on` false), and return Geld's. `onOpen` runs on a click with
  * the pill clicked.
@@ -290,19 +323,24 @@ export function syncStatusPills(on: boolean, onOpen: (pill: HTMLButtonElement, c
   const pills: HTMLButtonElement[] = [];
   for (const label of document.querySelectorAll<HTMLElement>(GITHUB_PILLS)) {
     if (label.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null) continue;
-    const next = label.nextElementSibling;
+    const host = hostOf(label);
+    const next = host.nextElementSibling;
     const existing = next instanceof HTMLButtonElement && next.hasAttribute(ATTR_PILL) ? next : null;
-    if (!on) {
+    // Beside a label React has yet to hydrate, the pill would make React throw the page's markup away (`react-hydration.ts`).
+    if (!on || !reactSettled(host)) {
       existing?.remove();
-      label.removeAttribute(ATTR_HIDDEN);
+      host.removeAttribute(ATTR_HIDDEN);
       continue;
     }
     const pill = existing ?? createPill(onOpen);
     dress(pill, label);
-    if (existing === null) label.after(pill);
-    if (!label.hasAttribute(ATTR_HIDDEN)) label.setAttribute(ATTR_HIDDEN, '');
+    if (existing === null) host.after(pill);
+    if (!host.hasAttribute(ATTR_HIDDEN)) host.setAttribute(ATTR_HIDDEN, '');
     pills.push(pill);
   }
+  // A pill no longer after any of GitHub's labels: GitHub replaced the label in place (a merge on the Overview swaps its
+  // status button for a plain merged label, rendered after the pill), and the old pill stood on beside it, still open.
+  for (const stale of document.querySelectorAll<HTMLButtonElement>(`button[${ATTR_PILL}]`)) if (!pills.includes(stale)) stale.remove();
   return pills;
 }
 
