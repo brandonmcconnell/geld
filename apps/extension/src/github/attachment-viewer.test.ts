@@ -211,6 +211,13 @@ describe('attachment image viewer', () => {
     expect(image.style.transform).toBe('translate(0px, 24px) scale(1.5)');
   });
 
+  it('keeps an off-centre point stationary when zooming a letterboxed image', () => {
+    vi.spyOn(viewer.stage, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, 960, 700));
+    sizeStage(960, 700);
+    image.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 900, clientY: 300 }));
+    expect(image.style.transform).toBe('translate(-320px, 150px) scale(2)');
+  });
+
   it('shows the error message and disables zoom when the image fails', () => {
     image.dispatchEvent(new Event('error'));
     expect(image.hidden).toBe(true);
