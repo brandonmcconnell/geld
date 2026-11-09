@@ -84,9 +84,11 @@ function lineFor(card: Element, standing: Standing): HTMLElement {
   toggle.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
-    const id = idOf(card);
-    const nowOpen = !card.hasAttribute(ATTR_FOLD_OPEN);
-    card.toggleAttribute(ATTR_FOLD_OPEN, nowOpen);
+    // The card the line stands before, not the one it was made for: GitHub replaces cards while the line stays.
+    const current = line.nextElementSibling?.hasAttribute(ATTR_FOLD) === true ? line.nextElementSibling : card;
+    const id = idOf(current);
+    const nowOpen = !current.hasAttribute(ATTR_FOLD_OPEN);
+    current.toggleAttribute(ATTR_FOLD_OPEN, nowOpen);
     if (id !== '') {
       if (nowOpen) opened.add(id);
       else opened.delete(id);
