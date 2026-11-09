@@ -188,3 +188,12 @@ test('native GitLab file search selects one explicit immutable MR case without b
   assert.match(harness, /runCase\('gitlab-file-search', GITLAB_FILE_SEARCH.url/);
   assert.deepEqual(select({ body: marker('gitlab-file-search'), from: marker('github') }), { focus: 'gitlab-file-search', run: 'true', failures: [] });
 });
+
+test('pipeline focus selects only its explicit case and never broadens regression', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);
+  const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
+  assert.deepEqual(Array.from(cases['bitbucket-pipeline-shell']), ['bitbucket-pipeline-shell']);assert.equal(cases.regression.includes('bitbucket-pipeline-shell'), false);
+  assert.deepEqual(select({ body: marker('bitbucket-pipeline-shell'), from: marker('github') }), { focus: 'bitbucket-pipeline-shell', run: 'true', failures: [] });
+  assert.equal(select({ body: `${marker('bitbucket-pipeline-shell')}\nNew prose`, from: `${marker('bitbucket-pipeline-shell')}\nOld prose` }).run, 'false');
+  assert.equal(select({ body: marker('bitbucket-pipeline-shell'), fork: true, action: 'edited', from: marker('github') }).run, 'false');
+});

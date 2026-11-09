@@ -13,6 +13,7 @@ import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-li
 import { bitbucketColdChipVisibilityProbe, bitbucketCountIntentRequests } from './bitbucket-cold-chip.mjs';
 import { verifyBitbucketHiddenAuthors } from './bitbucket-hidden-authors.mjs';
 import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-shell-acceptance.mjs';
+import { bitbucketPipelineAssetMetadata, pipelineBudgetPreflight, pipelineSettingsScope } from './bitbucket-pipeline-visit.mjs';
 import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommitFixture, prepareBitbucketParentCommit } from './bitbucket-commit-oracle.mjs';
 import { gitLabCopyFixOf, verifyGitLabItemCopies } from './item-copy-acceptance.mjs';
 import { observeGreptileCommandRequest, verifyGreptileCommand } from './greptile-command-acceptance.mjs';
@@ -35,6 +36,7 @@ const BITBUCKET_ANONYMOUS_COOLDOWN_MS = 62 * 60 * 1000; // Documented rolling-ho
 const FOCUSED_CASES = {
   regression: ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'github-regression', 'bitbucket-diff'],
   'bitbucket-diff': ['bitbucket-diff'],
+  'bitbucket-pipeline-shell': ['bitbucket-pipeline-shell'],
   'bitbucket-list': ['bitbucket-list-counts'],
   'bitbucket-authors': ['bitbucket-list-authors'],
   'bitbucket-native-bash': ['bitbucket-native-bash-style'],
@@ -319,8 +321,12 @@ async function runCase(name, url, body, discovery = false) {
   let listSettings;
   let nativeSettings;
   let commitLinkSettings;
+  let pipelineSettings;
   const abort = new AbortController();
   try {
+    if (name === 'bitbucket-pipeline-shell' && focus !== 'bitbucket-pipeline-shell') {
+      item.status = 'not_selected';item.reason = 'Pipeline-only acceptance requires its explicit literal focus, excluding all/default. No navigation or feature pass.';return;
+    }
     if (name === 'bitbucket-commit-links' && focus !== 'bitbucket-commit-links') {
       item.status = 'not_selected';
       item.reason = 'Repository commit-link verification requires its explicit literal focus, including exclusion from all. No navigation or feature pass.';
@@ -357,6 +363,18 @@ async function runCase(name, url, body, discovery = false) {
       throw new Error(`Provider rate limited until ${item.rateLimitedUntil}; no navigation attempted`);
     }
     currentCaseAbort = abort;
+    if (name === 'bitbucket-pipeline-shell') {
+      const active = bitbucketRequestTimes.filter((at) => at > Date.now() - 60 * 60 * 1000).length;
+      item.pipelinePreflight = pipelineBudgetPreflight(active, report.quotaPolicy.conservativeObservedRequestBudget);
+      if (!item.pipelinePreflight.available) { item.navigationSuppressedByBudget = true;throw new Error('Pipeline budget hold:26 observed acquisition allowance plus five free are required before any navigation. No cheaper cost is presumed.'); }
+      item.pipelineSettings = {};
+      pipelineSettings = pipelineSettingsScope({
+        readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY),
+        writeSettings: (value) => options.evaluate(async (key, saved) => { if (saved === undefined) await chrome.storage.sync.remove(key);else await chrome.storage.sync.set({ [key]: saved }); }, SETTINGS_KEY, value),
+        progress: item.pipelineSettings,
+      });
+      await pipelineSettings.prepare();
+    }
     if (name === 'bitbucket-commit-links') {
       item.commitLinkSettings = {};
       commitLinkSettings = commitLinkSettingsScope({
@@ -411,7 +429,7 @@ async function runCase(name, url, body, discovery = false) {
     });
     if (name === 'gitlab-bot-digest') observeGitLabBotFixture(page, item);
     if (name === 'gitlab-coderabbit-digest') codeRabbitSources.set(page, observeCodeRabbitFixture(page, item, extensionId));
-    if (name === 'bitbucket-diff') observeBitbucketShellFixture(page, item, { safeUrl, extensionId });
+    if (['bitbucket-diff', 'bitbucket-pipeline-shell'].includes(name)) observeBitbucketShellFixture(page, item, { safeUrl, extensionId });
     if (name === 'bitbucket-commit-counts') commitSources.set(page, observeBitbucketCommitFixture(page, item));
     if (name === 'bitbucket-commit-links') commitSources.set(page, observeBitbucketCommitFixture(page, item));
     if (name === 'bitbucket-native-bash-style') nativeBashSources.set(page, observeNativeBashSources(page, item, { safeUrl, extensionId }));
@@ -422,7 +440,7 @@ async function runCase(name, url, body, discovery = false) {
     const result = await body(page, item);
     Object.assign(item, result);
     item.auth = await authObservation(page, provider);
-    item.artifacts = name === 'bitbucket-native-bash-style' ? item.nativeBashStyle.artifacts : await capture(page, name);
+    item.artifacts = name === 'bitbucket-native-bash-style' ? item.nativeBashStyle.artifacts : await capture(page, name, { fullPage: name !== 'bitbucket-pipeline-shell' });
     item.status = result?.status ?? (discovery ? 'discovery' : 'passed');
   } catch (error) {
     item.status = discovery ? item.rateLimitedUntil === undefined ? 'unavailable' : 'rate_limited' : 'failed';
@@ -432,7 +450,7 @@ async function runCase(name, url, body, discovery = false) {
       item.error = `${item.holdReason === 'conservative_anonymous_api_budget' ? 'Conservative anonymous API budget hold' : item.navigationSuppressedByCooldown ? 'Inherited provider cooldown' : 'Provider HTTP429 cooldown'} until ${item.rateLimitedUntil}. Native demand stopped and no retry was attempted.`;
     }
     if (page !== undefined && !page.isClosed()) {
-      try { item.artifacts = await capture(page, `${name}-failed`, { fullPage: name !== 'bitbucket-native-bash-style' }); } catch (captureError) { item.captureError = errorText(captureError); }
+      try { item.artifacts = await capture(page, `${name}-failed`, { fullPage: !['bitbucket-native-bash-style', 'bitbucket-pipeline-shell'].includes(name) }); } catch (captureError) { item.captureError = errorText(captureError); }
     }
   } finally {
     currentCaseAbort = undefined;
@@ -443,6 +461,10 @@ async function runCase(name, url, body, discovery = false) {
         item.cleanupObservation = errorText(error);
         if (!closedTarget(error)) { item.status = 'failed';item.cleanupError = errorText(error); }
       }
+    }
+    if (pipelineSettings !== undefined) {
+      try { await pipelineSettings.restore(page === undefined || page.isClosed()); }
+      catch (error) { item.status = 'failed';item.cleanupError = errorText(error);report.infrastructureErrors.push(`Pipeline settings restoration failed: ${item.cleanupError}`); }
     }
     if (commitLinkSettings !== undefined) {
       try { await commitLinkSettings.restore(page === undefined || page.isClosed()); }
@@ -981,6 +1003,15 @@ async function bitbucketDom(page) {
       nativeFiles: document.querySelectorAll('[role="region"][aria-label="Diff"] > div > div[id^="chg-"]').length,
       renderedFiles: document.querySelectorAll('article[data-qa="branch-diff-file"]').length, placeholders: document.querySelectorAll('pre[data-testid="pr-diff-placeholder-wrapper"]').length };
   });
+}
+
+function guardBitbucketShellBudget() {
+  currentCaseAbort?.signal.throwIfAborted();
+  assert.ok((cooldowns.get('bitbucket') ?? 0) <= Date.now(), 'Native context expansion suppressed by carried Bitbucket cooldown');
+  const active = bitbucketRequestTimes.filter((at) => at > Date.now() - 60 * 60 * 1000).length;
+  const budget = report.quotaPolicy.conservativeObservedRequestBudget;
+  assert.ok(active + 4 < budget, 'Insufficient carried rolling request buffer for bounded native context input');
+  return { observedWithinRollingHour: active, budget, buffer: 4, basis: 'A conservative buffer, not a claim about native expansion request cost. Existing global request/429 aborts remain authoritative.' };
 }
 
 async function bitbucketFiltering(page, item) {
@@ -2723,14 +2754,7 @@ try {
       if (name === 'bitbucket-diff') {
         await bitbucketFiltering(page, item);
         assert.equal(item.restored.hasDiff, true, 'Bitbucket diff adapter did not activate');
-        await verifyBitbucketShell(page, item, { poll, pause, tabState, bitbucketDom, capture, guardBudget: () => {
-          currentCaseAbort?.signal.throwIfAborted();
-          assert.ok((cooldowns.get('bitbucket') ?? 0) <= Date.now(), 'Native context expansion suppressed by carried Bitbucket cooldown');
-          const active = bitbucketRequestTimes.filter((at) => at > Date.now() - 60 * 60 * 1000).length;
-          const budget = report.quotaPolicy.conservativeObservedRequestBudget;
-          assert.ok(active + 4 < budget, 'Insufficient carried rolling request buffer for bounded native context input');
-          return { observedWithinRollingHour: active, budget, buffer: 4, basis: 'A conservative buffer, not a claim about native expansion request cost. Existing global request/429 aborts remain authoritative.' };
-        } });
+        await verifyBitbucketShell(page, item, { poll, pause, tabState, bitbucketDom, capture, guardBudget: guardBitbucketShellBudget });
       } else {
         item.digest = await poll(() => page.evaluate(() => {
           const panel = document.querySelector('.geld-provider-review');
@@ -2759,6 +2783,17 @@ try {
         : 'Installed digest exposes real public activity in ready/partial state. This fixture does not verify comment threads or authenticated actions.' };
     });
   }
+
+  await runCase('bitbucket-pipeline-shell', `${BB_PR}/diff`, async (page, item) => {
+    item.state = await waitTotals(page, { files: 5, additions: 46, deletions: 29 }, { files: 5, additions: 46, deletions: 29 }, 0);
+    item.baselineDom = await poll(() => bitbucketDom(page), (value) => value.files === 5 && value.additions === 46 && value.deletions === 29, 'Focused actual native complete pipeline comparison counts');
+    item.nativeStaticAssetMetadata = await page.evaluate(bitbucketPipelineAssetMetadata);
+    await verifyBitbucketShell(page, item, { poll, pause, tabState, bitbucketDom, capture: (target, name) => capture(target, name, { fullPage: false }), guardBudget: guardBitbucketShellBudget });
+    item.featureParity = 'partial';
+    return { status: 'passed', verified: item.shellSyntax?.status === 'native_disabled'
+      ? 'Focused native Settings observation and genuine context mechanics with no owned colors while native syntax is disabled. No positive syntax or palette acceptance.'
+      : `Focused native Pipeline selection, context, original-source ranges/selection and complete counts. Native preference: ${item.shellSyntax?.nativeSettings?.status ?? 'unavailable'}. Native Bash palette equivalence and unselected themes remain unverified.` };
+  });
 
   await runCase('bitbucket-list-counts', BB_PR_LIST, async (page, item) => {
     item.listCounts = await bitbucketListCounts(page, item);

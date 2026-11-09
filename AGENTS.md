@@ -2333,6 +2333,14 @@ Provider-specific surfaces translate settings and sources into shared review and
   Its original Syntax highlighting checkbox is read as a freshly presented native preference, separately from server persistence, completed native highlighting and Bash palette equivalence.
   Missing or ambiguous native settings remain diagnostic unavailability, while dialog cleanup, original source/Viewed/URL/node drift, unexpected input/submission and changed counts remain failures.
   Observed native-disabled settings cannot earn a syntax pass when Geld-owned colors appear after genuine native context expansion, and that contradiction retains its actual source/ranges and screenshot.
+  Pipeline acceptance follows the original native file-tree link and pins its actual fragment-bearing URL through Settings, context, source and selection checks instead of rewriting native file selection.
+  The explicit `bitbucket-pipeline-shell` focus is excluded from default and all-provider visits and keeps complete immutable source/count oracles while omitting separately tested filtering, zoom and overview work.
+  It disables both overview and quick-review acquisition before page creation, retains every other raw setting and restores original flag presence only after the native page closes.
+  Its preflight retains the observed 26-request acquisition allowance plus five free rather than presuming a cheaper cost, with the existing 40-request cap, cooldown carryover and strict context reserve unchanged.
+  Focused Pipeline captures remain viewport-only, including final and failure artifacts, to avoid unrelated full-page lazy rendering.
+  Before HTML sanitization, the planned Pipeline visit retains bounded script URL metadata from original script elements and already-issued script ResourceTiming entries on the observed first-party asset origins.
+  This omits query-bearing, credentialed and non-asset URLs, performs no source fetch or execution and does not establish native module or preference behavior.
+
   Dialog reads share the parent visit and existing `active + 4 < 40` rolling-request guard, which requires at least five free slots and makes no assumption that native actions generate zero requests.
   Public anonymous fixtures can verify preview, copy and unavailable composer behavior but do not establish authenticated writer persistence or an actual bot run.
   Running or loading provider bot rows open that bot's newest eligible top-level native summary by creation time, following GitHub PRs #20 and #22, and have no View review link when no report qualifies.
