@@ -88,9 +88,15 @@ export function firstSentence(body: string): string {
  * `_` opening nothing.
  */
 function endsWord(text: string, index: number): boolean {
+  const next = closedThrough(text, index);
+  return next >= text.length || /[\s<]/.test(text[next] ?? '');
+}
+
+/** Past the terminator at `index`, the closing punctuation and emphasis that are the sentence's own (`.**`, `.)`). */
+function closedThrough(text: string, index: number): number {
   let next = index + 1;
   while (next < text.length && /[)\]"'’”*_~]/.test(text[next] ?? '')) next += 1;
-  return next >= text.length || /[\s<]/.test(text[next] ?? '');
+  return next;
 }
 
 /** Words whose period is an abbreviation's, never a sentence's end: "Use e.g. Node 20" goes on past it. */
@@ -109,7 +115,7 @@ function sentenceOf(text: string, limit: number): string {
   for (let index = 0; index < text.length && index < limit; index += 1) {
     const char = text[index];
     if (char === '`') inCode = !inCode;
-    else if (!inCode && (char === '.' || char === '!' || char === '?') && endsWord(text, index) && !(char === '.' && abbreviationGoesOn(text, index))) return text.slice(0, index + 1);
+    else if (!inCode && (char === '.' || char === '!' || char === '?') && endsWord(text, index) && !(char === '.' && abbreviationGoesOn(text, index))) return text.slice(0, closedThrough(text, index));
   }
   return text.slice(0, limit);
 }

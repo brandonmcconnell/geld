@@ -32897,9 +32897,13 @@ function firstSentence(body) {
   return sentence.trim();
 }
 function endsWord(text, index) {
+  const next = closedThrough(text, index);
+  return next >= text.length || /[\s<]/.test(text[next] ?? "");
+}
+function closedThrough(text, index) {
   let next = index + 1;
   while (next < text.length && /[)\]"'’”*_~]/.test(text[next] ?? "")) next += 1;
-  return next >= text.length || /[\s<]/.test(text[next] ?? "");
+  return next;
 }
 var ABBREVIATION = /(?:^|[\s(])(?:e\.g|i\.e|vs|cf|viz|approx|incl|esp)$/i;
 var ETC = /(?:^|[\s(])etc$/i;
@@ -32913,7 +32917,7 @@ function sentenceOf(text, limit) {
   for (let index = 0; index < text.length && index < limit; index += 1) {
     const char = text[index];
     if (char === "`") inCode = !inCode;
-    else if (!inCode && (char === "." || char === "!" || char === "?") && endsWord(text, index) && !(char === "." && abbreviationGoesOn(text, index))) return text.slice(0, index + 1);
+    else if (!inCode && (char === "." || char === "!" || char === "?") && endsWord(text, index) && !(char === "." && abbreviationGoesOn(text, index))) return text.slice(0, closedThrough(text, index));
   }
   return text.slice(0, limit);
 }

@@ -76,3 +76,10 @@ describe('thread counts', () => {
     expect(firstSentence('Use `Map<string, number>` here. Then.')).toBe('Use `Map<string, number>` here.');
   });
 });
+
+describe('firstSentence', () => {
+  it('keeps the emphasis that closes the sentence', () => {
+    expect(firstSentence('**Macroscope skipped reviewing this pull request.** Per-review cost limit exceeded (workspace setting).')).toBe('**Macroscope skipped reviewing this pull request.**');
+    expect(firstSentence('It fails (see the log.) Then retry.')).toBe('It fails (see the log.)');
+  });
+});
