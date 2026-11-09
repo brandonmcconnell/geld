@@ -69,7 +69,7 @@ const release = {
 
 describe('parseRelease', () => {
   it('reads the nightly asset of a CI release', () => {
-    expect(parseRelease(release)).toEqual({
+    expect(parseRelease(release, 'chrome')).toEqual({
       tag: 'v0.1.2-build.3270',
       version: '0.1.2.3270',
       build: 3270,
@@ -81,25 +81,31 @@ describe('parseRelease', () => {
     });
   });
 
+  it('takes the build for its own browser', () => {
+    const edge = { ...release.assets[1], name: 'geld-0.1.2.3270-edge-nightly.zip', browser_download_url: 'https://github.com/brandonmcconnell/geld/releases/download/v0.1.2-build.3270/geld-0.1.2.3270-edge-nightly.zip' };
+    expect(parseRelease({ ...release, assets: [...release.assets, edge] }, 'edge')?.assetName).toBe('geld-0.1.2.3270-edge-nightly.zip');
+    expect(parseRelease(release, 'edge')).toBeNull();
+  });
+
   it('ignores releases from before nightly builds were published', () => {
-    expect(parseRelease({ ...release, assets: release.assets.slice(0, 1) })).toBeNull();
+    expect(parseRelease({ ...release, assets: release.assets.slice(0, 1) }, 'chrome')).toBeNull();
   });
 
   it('refuses an asset CI did not upload', () => {
     const assets = release.assets.map((asset) => ({ ...asset, uploader: { login: 'someone' } }));
-    expect(parseRelease({ ...release, assets })).toBeNull();
+    expect(parseRelease({ ...release, assets }, 'chrome')).toBeNull();
   });
 
   it('refuses a download from anywhere but this repository', () => {
     const assets = release.assets.map((asset) => ({ ...asset, browser_download_url: 'https://example.com/geld.zip' }));
-    expect(parseRelease({ ...release, assets })).toBeNull();
+    expect(parseRelease({ ...release, assets }, 'chrome')).toBeNull();
   });
 
   it('ignores drafts, prereleases and other tags', () => {
-    expect(parseRelease({ ...release, draft: true })).toBeNull();
-    expect(parseRelease({ ...release, prerelease: true })).toBeNull();
-    expect(parseRelease({ ...release, tag_name: 'v0.1.2' })).toBeNull();
-    expect(parseRelease(null)).toBeNull();
+    expect(parseRelease({ ...release, draft: true }, 'chrome')).toBeNull();
+    expect(parseRelease({ ...release, prerelease: true }, 'chrome')).toBeNull();
+    expect(parseRelease({ ...release, tag_name: 'v0.1.2' }, 'chrome')).toBeNull();
+    expect(parseRelease(null, 'chrome')).toBeNull();
   });
 });
 

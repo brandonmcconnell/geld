@@ -8,6 +8,15 @@ export interface NightlyInstallMessage {
   readonly type: 'geld:nightly-install';
 }
 
+/** From the conflict note on a GitHub page: opens the extensions page on the Geld in the way. */
+export interface NightlyManageMessage {
+  readonly type: 'geld:nightly-manage';
+}
+
+export function isNightlyManageMessage(message: unknown): message is NightlyManageMessage {
+  return hasType(message, 'geld:nightly-manage');
+}
+
 /** Puts back the build that ran before the last install (or before an install that broke off). */
 export interface NightlyRollbackMessage {
   readonly type: 'geld:nightly-rollback';

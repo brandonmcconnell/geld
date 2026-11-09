@@ -1,10 +1,11 @@
 import { buildOf, compareVersions } from './release';
+import type { Conflict } from './conflicts';
 import type { NightlyFolder, NightlyStatus } from './state';
 
 /** What the nightly panel says, worked out from the stored state alone, the same in the popup and on the page. */
 
-export type NightlyAction = 'install' | 'retry' | 'restore' | 'rollback' | 'check' | 'connect';
-export type NightlyTone = 'ok' | 'ready' | 'busy' | 'error';
+export type NightlyAction = 'install' | 'retry' | 'restore' | 'rollback' | 'check' | 'connect' | 'manage';
+export type NightlyTone = 'ok' | 'ready' | 'busy' | 'error' | 'paused';
 
 export interface NightlyView {
   readonly headline: string;
@@ -31,7 +32,24 @@ export function ago(iso: string, now: number): string {
 /** A change the reader may want to undo is offered for a day. */
 const RECENT_MS = 24 * 60 * 60 * 1000;
 
-export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null, version: string, now: number): NightlyView {
+export function pausedView(conflict: Conflict): NightlyView {
+  return conflict.kind === 'stable'
+    ? {
+        headline: 'Geld Nightly is paused',
+        detail: 'Geld is also on in this profile, and only one can run at a time. Turn off or remove Geld and Geld Nightly starts on its own.',
+        tone: 'paused',
+        action: { kind: 'manage', label: 'Turn off Geld' },
+      }
+    : {
+        headline: 'Geld Nightly is paused',
+        detail: 'Another copy of Geld Nightly is on in this profile, and only one can run at a time. Turn off or remove one of them.',
+        tone: 'paused',
+        action: { kind: 'manage', label: 'Open the other copy' },
+      };
+}
+
+export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null, version: string, now: number, conflict: Conflict | null = null): NightlyView {
+  if (conflict !== null) return pausedView(conflict);
   const latest = status.latest;
   const newer = latest !== null && compareVersions(latest.version, version) > 0 ? latest : null;
   if (status.installing !== null) {

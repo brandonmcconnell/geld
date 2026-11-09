@@ -38,6 +38,7 @@ import { grantedHosts } from '../src/lib/enterprise';
 import { looksLikeHtml } from '../src/lib/http';
 import { retireDashboardSession } from '../src/lib/dashboard-session';
 import { showTabBadge, startNightly } from '../src/nightly/updater';
+import { isNightlyPaused } from '../src/nightly/state';
 
 /** Refuse to parse diffs larger than this; GitHub's UI is unusable there anyway. */
 const MAX_DIFF_BYTES = 20 * 1024 * 1024;
@@ -539,6 +540,7 @@ function updateBadge(tabId: number, state: TabState): void {
 
 /** Hosts the content script may run on: github.com plus granted Enterprise hosts. */
 async function contentHosts(): Promise<Set<string>> {
+  if (__GELD_NIGHTLY__ && (await isNightlyPaused())) return new Set();
   const settings = await settingsItem.getValue();
   return new Set(['github.com', ...(await grantedHosts(settings.enterpriseHosts))]);
 }

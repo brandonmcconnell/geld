@@ -1,8 +1,8 @@
 /**
  * The latest GitHub Release, read as a nightly build. CI publishes a release
  * for every push to `main` that touches the extension, tagged
- * `v{version}-build.{run}` with the nightly build as
- * `geld-{version}.{run}-chrome-nightly.zip` beside the store zips.
+ * `v{version}-build.{run}` with each browser's nightly build as
+ * `geld-{version}.{run}-{browser}-nightly.zip` beside the store zips.
  */
 
 /** Plain strings, not templates on NIGHTLY_REPO: a module-level template survives tree-shaking into the store builds. */
@@ -29,8 +29,11 @@ export interface NightlyRelease {
   readonly htmlUrl: string;
 }
 
-export function nightlyAssetName(version: string): string {
-  return `geld-${version}-chrome-nightly.zip`;
+/** The browsers whose nightly build updates itself (wxt.config.ts `selfUpdating`). */
+export type NightlyBrowser = 'chrome' | 'edge';
+
+export function nightlyAssetName(version: string, browser: NightlyBrowser): string {
+  return `geld-${version}-${browser}-nightly.zip`;
 }
 
 const TAG = /^v(\d+\.\d+\.\d+)-build\.(\d+)$/;
@@ -45,7 +48,7 @@ function stringField(record: Readonly<Record<string, unknown>>, key: string): st
 }
 
 /** The release's nightly build, or null when the release is not one CI published or carries none. */
-export function parseRelease(json: unknown): NightlyRelease | null {
+export function parseRelease(json: unknown, browser: NightlyBrowser): NightlyRelease | null {
   if (!isRecord(json) || json['draft'] === true || json['prerelease'] === true) return null;
   const tag = stringField(json, 'tag_name');
   const match = tag === null ? null : TAG.exec(tag);
@@ -55,7 +58,7 @@ export function parseRelease(json: unknown): NightlyRelease | null {
   const listed: unknown = json['assets'];
   if (!Array.isArray(listed)) return null;
   const assets: readonly unknown[] = listed;
-  const name = nightlyAssetName(version);
+  const name = nightlyAssetName(version, browser);
   for (const asset of assets) {
     if (!isRecord(asset) || stringField(asset, 'name') !== name) continue;
     const uploader = asset['uploader'];

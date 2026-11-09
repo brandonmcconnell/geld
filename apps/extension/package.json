@@ -21,16 +21,17 @@
     "zip:firefox": "wxt zip -b firefox",
     "zip:edge": "wxt zip -b edge",
     "zip:safari": "wxt zip -b safari --mv3",
-    "zip:nightly": "node scripts/nightly.mjs zip",
-    "typecheck": "wxt prepare && tsc --noEmit",
+    "zip:nightly": "node scripts/nightly.mjs zip -b chrome && node scripts/nightly.mjs zip -b edge && node scripts/nightly.mjs zip -b firefox && node scripts/nightly.mjs zip -b safari --mv3",
+    "typecheck": "node scripts/nightly.mjs prepare && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "pnpm run typecheck && pnpm run test",
-    "postinstall": "wxt prepare",
+    "postinstall": "node scripts/nightly.mjs prepare",
     "zip:all": "pnpm run zip:chrome && pnpm run zip:firefox && pnpm run zip:edge && pnpm run zip:safari && pnpm run zip:nightly",
     "safari:project": "pnpm run build:safari && xcrun safari-web-extension-converter .output/safari-mv3 --project-location safari --app-name Geld --bundle-identifier sh.geld.safari --no-open --copy-resources",
     "safari:sync": "bash scripts/safari-sync.sh",
-    "safari:open": "open safari/Geld/Geld.xcodeproj"
+    "safari:open": "open safari/Geld/Geld.xcodeproj",
+    "zip:nightly:chrome": "node scripts/nightly.mjs zip -b chrome"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",

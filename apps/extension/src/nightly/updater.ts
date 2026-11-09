@@ -3,11 +3,14 @@ import { reportError } from '../lib/error-capture';
 import { buildProblem } from './build-check';
 import { loadBackup, loadFolderHandle, saveBackup } from './handle-store';
 import type { BuildBackup } from './handle-store';
-import { isNightlyCheckMessage, isNightlyInstallMessage, isNightlyRollbackMessage } from './messages';
+import { isNightlyCheckMessage, isNightlyInstallMessage, isNightlyManageMessage, isNightlyRollbackMessage } from './messages';
+import { manageUrl } from './conflicts';
 import type { NightlyInstallResult } from './messages';
+import type { NightlyBrowser } from './release';
 import { compareVersions, LATEST_RELEASE_PAGE, LATEST_RELEASE_URL, parseRelease, tagFromReleaseUrl } from './release';
 import { BACKGROUND_CHECK_MINUTES, navigationDue, needsDetails } from './schedule';
-import { nightlyFolderItem, nightlyPrefsItem, nightlyStatusItem, nightlyTabCountsItem } from './state';
+import { startPauseWatch } from './pause';
+import { nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyStatusItem, nightlyTabCountsItem } from './state';
 import type { NightlyFailure, NightlyStatus, UpdateMode } from './state';
 import { unzip } from './unzip';
 import type { ZipEntry } from './unzip';
@@ -25,6 +28,11 @@ const COUNT_COLOR = '#59636e';
 const RELOAD_DELAY_MS = 300;
 
 type Failed = Extract<NightlyInstallResult, { ok: false }>;
+
+/** The build's own browser, fixed when it was built: Edge's nightly updates from the Edge zip. */
+function nightlyBrowser(): NightlyBrowser {
+  return import.meta.env.BROWSER === 'edge' ? 'edge' : 'chrome';
+}
 
 export function installedVersion(): string {
   return browser.runtime.getManifest().version;
@@ -51,11 +59,11 @@ function patchStatus(patch: Partial<NightlyStatus>): Promise<NightlyStatus> {
   return run;
 }
 
-type Mark = '' | '↑' | '!';
+type Mark = '' | '↑' | '!' | 'OFF';
 let mark: Mark = '';
 
-function markOf(status: NightlyStatus): Mark {
-  return status.failure?.broken === true ? '!' : isNewer(status) ? '↑' : '';
+function markOf(status: NightlyStatus, paused: boolean): Mark {
+  return paused ? 'OFF' : status.failure?.broken === true ? '!' : isNewer(status) ? '↑' : '';
 }
 
 /**
@@ -63,10 +71,10 @@ function markOf(status: NightlyStatus): Mark {
  * mark rides on the count: "3↑". The count's colour stays unless there is a mark.
  */
 async function paintTab(tabId: number, count: number): Promise<void> {
-  const text = `${count > 0 ? count : ''}${mark}`;
+  const text = mark === 'OFF' ? mark : `${count > 0 ? count : ''}${mark}`;
   await browser.action.setBadgeText({ tabId, text }).catch(() => undefined);
   if (text === '') return;
-  await browser.action.setBadgeBackgroundColor({ tabId, color: mark === '' ? COUNT_COLOR : mark === '!' ? FAILED_COLOR : BADGE_COLOR }).catch(() => undefined);
+  await browser.action.setBadgeBackgroundColor({ tabId, color: mark === '' ? COUNT_COLOR : mark === '↑' ? BADGE_COLOR : FAILED_COLOR }).catch(() => undefined);
   await browser.action.setBadgeTextColor({ tabId, color: '#ffffff' }).catch(() => undefined);
 }
 
@@ -77,12 +85,14 @@ export function showTabBadge(tabId: number, count: number): void {
 
 async function showBadge(status: NightlyStatus): Promise<void> {
   const ready = isNewer(status) ? status.latest : null;
-  const next = markOf(status);
+  const paused = (await nightlyConflictItem.getValue()) !== null;
+  const next = markOf(status, paused);
   const changed = next !== mark;
   mark = next;
   await browser.action.setBadgeText({ text: mark }).catch(() => undefined);
-  if (mark !== '') await browser.action.setBadgeBackgroundColor({ color: mark === '!' ? FAILED_COLOR : BADGE_COLOR }).catch(() => undefined);
-  const title = mark === '!' ? 'Geld Nightly · an update failed' : ready === null ? 'Geld Nightly' : `Geld Nightly · build ${ready.build} is ready`;
+  if (mark !== '') await browser.action.setBadgeBackgroundColor({ color: mark === '↑' ? BADGE_COLOR : FAILED_COLOR }).catch(() => undefined);
+  const title =
+    mark === 'OFF' ? 'Geld Nightly · paused while another Geld is on' : mark === '!' ? 'Geld Nightly · an update failed' : ready === null ? 'Geld Nightly' : `Geld Nightly · build ${ready.build} is ready`;
   await browser.action.setTitle({ title }).catch(() => undefined);
   if (!changed) return;
   for (const [tabId, count] of Object.entries(await nightlyTabCountsItem.getValue())) void paintTab(Number(tabId), count);
@@ -119,7 +129,7 @@ async function releaseDetails(before: NightlyStatus, checkedAt: string, tag: str
     if (response.status === 304) return await patchStatus({ ...asked, checkedAt, checkError: null });
     if (response.status === 403 || response.status === 429) return await patchStatus({ ...asked, checkedAt, checkError: 'GitHub is limiting requests. Geld checks again later.' });
     if (!response.ok) return await patchStatus({ ...asked, checkedAt, checkError: `GitHub answered ${response.status}.` });
-    const latest = parseRelease(await response.json());
+    const latest = parseRelease(await response.json(), nightlyBrowser());
     return await patchStatus({
       ...asked,
       checkedAt,
@@ -340,6 +350,10 @@ export function startNightly(): void {
       void installLatest(true).then(sendResponse);
       return true;
     }
+    if (isNightlyManageMessage(request)) {
+      void nightlyConflictItem.getValue().then((conflict) => (conflict === null ? undefined : browser.tabs.create({ url: manageUrl(conflict.id) })));
+      return undefined;
+    }
     if (isNightlyRollbackMessage(request)) {
       void rollBack().then(sendResponse);
       return true;
@@ -352,4 +366,6 @@ export function startNightly(): void {
   // This worker has only just started, so no install of its own is under way: one marked is left from a worker Chrome stopped mid-install.
   void patchStatus({ installing: null }).then(showBadge);
   void scheduleChecks();
+  startPauseWatch();
+  nightlyConflictItem.watch(() => void nightlyStatusItem.getValue().then(showBadge));
 }

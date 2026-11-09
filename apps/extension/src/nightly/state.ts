@@ -1,4 +1,5 @@
 import { storage } from 'wxt/utils/storage';
+import type { Conflict } from './conflicts';
 import type { NightlyRelease } from './release';
 
 /**
@@ -88,3 +89,10 @@ export const nightlyStatusItem = /* @__PURE__ */ storage.defineItem<NightlyStatu
 
 /** Each GitHub tab's hidden-file count, kept for the worker's next start so a tab's badge can take the ↑ too. */
 export const nightlyTabCountsItem = /* @__PURE__ */ storage.defineItem<Readonly<Record<string, number>>>('session:nightlyTabCounts', { fallback: {} });
+
+/** The other Geld that keeps this build from running (conflicts.ts), null while it may run. */
+export const nightlyConflictItem = /* @__PURE__ */ storage.defineItem<Conflict | null>('local:nightlyConflict', { fallback: null });
+
+export async function isNightlyPaused(): Promise<boolean> {
+  return (await nightlyConflictItem.getValue()) !== null;
+}

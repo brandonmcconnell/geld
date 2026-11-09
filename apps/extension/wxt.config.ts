@@ -25,10 +25,19 @@ const manifestVersion = /^\d+$/.test(buildNumber) ? `${baseVersion}.${buildNumbe
  * builds compile all of the updater away and leave out the nightly page.
  */
 const nightly = process.env.GELD_CHANNEL === 'nightly';
+/**
+ * Every browser gets a nightly build, but only Chromium's (Chrome, Edge) can replace their own files and so
+ * update themselves: Firefox installs only builds Mozilla signed, through its own updater, and Safari's ship
+ * inside an app. Theirs are the store code under the nightly name, updated by hand.
+ */
+const selfUpdating = (browser: string): boolean => nightly && (browser === 'chrome' || browser === 'edge');
 /** Mirrors NIGHTLY_NAME in src/nightly/build-check.ts, which refuses any other build as an update. */
 const NIGHTLY_NAME = 'Geld Nightly';
 /** Mirrors FILE_LIST in src/nightly/build-check.ts: the files a nightly build copies before it is replaced. */
 const NIGHTLY_FILE_LIST = 'nightly-files.json';
+/** Mirrors CONTENT_SCRIPTS_FILE in src/nightly/conflicts.ts: the manifest's content scripts, which a nightly build registers itself. */
+const NIGHTLY_CONTENT_SCRIPTS = 'nightly-content-scripts.json';
+let nightlyContentScripts: unknown = null;
 
 function filesIn(dir: string): string[] {
   return readdirSync(dir, { recursive: true, withFileTypes: true })
@@ -52,8 +61,9 @@ export default defineConfig({
   // yourself, create the git-ignored `web-ext.config.ts` with `disabled: false`.
   webExt: { disabled: true },
   ...(nightly ? { outDirTemplate: '{{browser}}-mv{{manifestVersion}}-nightly' } : {}),
-  vite: () => ({ define: { __GELD_NIGHTLY__: JSON.stringify(nightly) } }),
+  vite: ({ browser }) => ({ define: { __GELD_NIGHTLY__: JSON.stringify(selfUpdating(browser)) } }),
   manifest: ({ browser, manifestVersion: mv }) => {
+    const updater = selfUpdating(browser);
     const channel = nightly ? 'nightly' : 'build';
     return {
       name: nightly ? NIGHTLY_NAME : 'Geld',
@@ -78,8 +88,9 @@ export default defineConfig({
         ...(mv === 3 && (browser === 'chrome' || browser === 'edge') ? ['offscreen'] : []),
         // MV3: registers the content script on GitHub Enterprise hosts the user adds.
         ...(mv === 3 ? ['scripting'] : []),
-        // Nightly: writes an update into the unpacked folder when that folder sits in Downloads.
-        ...(nightly ? ['downloads', 'downloads.ui'] : []),
+        // Nightly: writes an update into the unpacked folder when that folder sits in Downloads,
+        // and sees whether Geld Stable is on in the profile, in which case it stays out of GitHub's pages.
+        ...(updater ? ['downloads', 'downloads.ui', 'management'] : []),
       ],
       // patch-diff.githubusercontent.com serves the raw `.diff` that github.com
       // redirects to; it is fetched from the background script only.
@@ -91,7 +102,7 @@ export default defineConfig({
         'https://patch-diff.githubusercontent.com/*',
         'https://api.github.com/*',
         // Nightly: github.com redirects a release asset's download to these hosts.
-        ...(nightly ? ['https://release-assets.githubusercontent.com/*', 'https://objects.githubusercontent.com/*'] : []),
+        ...(updater ? ['https://release-assets.githubusercontent.com/*', 'https://objects.githubusercontent.com/*'] : []),
       ],
       // GitHub Enterprise Server and AI gateways: the user grants specific hosts from the options page.
       // Loopback http is for a model served on this computer (mirrors LOOPBACK_HOSTS in src/lib/ai-gateway.ts).
@@ -108,7 +119,8 @@ export default defineConfig({
         ? {
             browser_specific_settings: {
               gecko: {
-                id: 'geld@brandonmcconnell.com',
+                // Its own id, so a nightly build installs beside Geld Stable rather than over it.
+                id: nightly ? 'geld-nightly@brandonmcconnell.com' : 'geld@brandonmcconnell.com',
                 strict_min_version: '128.0',
                 // Dashboard sign-in and tracker status are optional and need separate host permission.
                 data_collection_permissions: { required: ['none'], optional: ['authenticationInfo','personallyIdentifyingInfo','websiteContent'] },
@@ -120,16 +132,24 @@ export default defineConfig({
   },
   hooks: {
     'build:done': (wxt) => {
-      if (!nightly) return;
+      if (!selfUpdating(wxt.config.browser)) return;
+      writeFileSync(join(wxt.config.outDir, NIGHTLY_CONTENT_SCRIPTS), `${JSON.stringify(nightlyContentScripts, null, 2)}\n`);
       const files = [...new Set([...filesIn(wxt.config.outDir), NIGHTLY_FILE_LIST])].sort();
       writeFileSync(join(wxt.config.outDir, NIGHTLY_FILE_LIST), `${JSON.stringify({ files }, null, 2)}\n`);
     },
-    'entrypoints:resolved': (_wxt, entrypoints) => {
-      if (nightly) return;
-      const at = entrypoints.findIndex((entrypoint) => entrypoint.name === 'nightly');
-      if (at !== -1) entrypoints.splice(at, 1);
+    'entrypoints:resolved': (wxt, entrypoints) => {
+      if (selfUpdating(wxt.config.browser)) return;
+      for (const name of ['nightly', 'conflict']) {
+        const at = entrypoints.findIndex((entrypoint) => entrypoint.name === name);
+        if (at !== -1) entrypoints.splice(at, 1);
+      }
     },
     'build:manifestGenerated': (wxt, manifest) => {
+      if (selfUpdating(wxt.config.browser)) {
+        // src/nightly/pause.ts registers these only while no Geld Stable is on: declared, they would start beside it.
+        nightlyContentScripts = manifest.content_scripts ?? [];
+        delete manifest.content_scripts;
+      }
       if (wxt.config.browser !== 'firefox') return;
       // Firefox picks the icon by theme text colour: `dark` is the dark icon
       // (light themes), `light` is the light icon (dark themes).
@@ -145,6 +165,8 @@ export default defineConfig({
   zip: {
     name: 'geld',
     artifactTemplate: `{{name}}-{{version}}-{{browser}}${nightly ? '-nightly' : ''}.zip`,
+    // AMO's review wants the sources of the store build only, and publish.yml uploads the one `*-sources.zip`.
+    ...(nightly ? { zipSources: false } : {}),
     sourcesTemplate: '{{name}}-{{version}}-sources.zip',
   },
 });

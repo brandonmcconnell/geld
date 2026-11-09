@@ -1,7 +1,8 @@
 import { browser } from 'wxt/browser';
 import { buildLabel, nightlyView } from './view';
 import type { NightlyAction } from './view';
-import { nightlyFolderItem, nightlyPrefsItem, nightlyStatusItem } from './state';
+import { manageUrl } from './conflicts';
+import { nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyStatusItem } from './state';
 import type { UpdateMode } from './state';
 
 /**
@@ -23,6 +24,8 @@ const CSS = `
 .geld-nightly__detail { margin-top: 2px; color: var(--muted-foreground); font-size: 12px; overflow-wrap: anywhere; }
 .geld-nightly__status[data-tone='error'] .geld-nightly__headline { color: var(--destructive); }
 .geld-nightly__status[data-tone='busy'] .geld-nightly__headline { color: var(--muted-foreground); }
+.geld-nightly__status[data-tone='paused'] { align-items: flex-start; flex-direction: column; padding: 10px 12px; border: 1px solid var(--destructive); }
+.geld-nightly__status[data-tone='paused'] .geld-nightly__headline { color: var(--destructive); font-weight: 600; }
 .geld-nightly__status .geld-button { flex-shrink: 0; }
 `;
 
@@ -79,14 +82,16 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
   let localError: string | null = null;
   let busy = false;
   let current: NightlyAction | null = null;
+  let blocker: string | null = null;
 
   const render = async (): Promise<void> => {
-    const [state, folder, prefs] = await Promise.all([nightlyStatusItem.getValue(), nightlyFolderItem.getValue(), nightlyPrefsItem.getValue()]);
+    const [state, folder, prefs, conflict] = await Promise.all([nightlyStatusItem.getValue(), nightlyFolderItem.getValue(), nightlyPrefsItem.getValue(), nightlyConflictItem.getValue()]);
+    blocker = conflict?.id ?? null;
     for (const { mode, button } of modeButtons) {
       button.setAttribute('aria-checked', String(prefs.mode === mode));
       button.setAttribute('aria-pressed', String(prefs.mode === mode));
     }
-    const view = nightlyView(state, folder, version, Date.now());
+    const view = nightlyView(state, folder, version, Date.now(), conflict);
     headline.textContent = view.headline;
     detail.textContent = localError ?? view.detail ?? '';
     detail.hidden = detail.textContent === '';
@@ -100,6 +105,10 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
 
   action.addEventListener('click', () => {
     if (current === null || busy) return;
+    if (current === 'manage' && blocker !== null) {
+      void browser.tabs.create({ url: manageUrl(blocker) });
+      return;
+    }
     const kind = current;
     busy = true;
     localError = null;
@@ -124,6 +133,7 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
   nightlyStatusItem.watch(rerender);
   nightlyFolderItem.watch(rerender);
   nightlyPrefsItem.watch(rerender);
+  nightlyConflictItem.watch(rerender);
   setInterval(() => void render(), 30_000);
   void render();
 }
