@@ -11,6 +11,13 @@ function issuesOf(content: string): readonly string[] {
 }
 
 describe('validateSettingsDocument', () => {
+  it('validates the attachment lightbox switch and preserves false', () => {
+    expect(issuesOf('{"attachmentLightbox": "false"}')).toEqual(['$.attachmentLightbox: Expected true or false, got "false".']);
+    expect(validateSettingsDocument('{"attachmentLightbox": false}')).toEqual({
+      ok: true, settings: { ...DEFAULT_SETTINGS, attachmentLightbox: false },
+    });
+  });
+
   it('accepts what Geld writes', () => {
     const result = validateSettingsDocument(serializeSettingsPayload(DEFAULT_SETTINGS));
     expect(result.ok).toBe(true);
