@@ -4,11 +4,22 @@
  * fetches the chosen one.
  */
 
+/** Who wrote a revision, as the edit log names them: their login (an App's without `[bot]`), and an App's id. */
+export interface RevisionEditor {
+  readonly name: string;
+  /** The log marks an App's edits "Bot". */
+  readonly bot: boolean;
+  /** An App's id, from its avatar (`avatars.githubusercontent.com/in/<id>`); null for a person. */
+  readonly appId: number | null;
+}
+
 export interface Revision {
   /** When this revision was written (the comment's creation for the first). */
   readonly at: string;
   /** The revision's view, `/user_content_edits/UCE_…`. */
   readonly url: string;
+  /** Who wrote it, when the log says. */
+  readonly by?: RevisionEditor;
 }
 
 /**
@@ -25,4 +36,31 @@ export function revisionIndexAt(revisions: readonly Revision[], at: number, sett
     if (revision !== undefined && Date.parse(revision.at) <= at + settleMs) index = cursor;
   }
   return index === -1 ? 0 : index;
+}
+
+/** A comment that may head a thread from the same run: its anchor and every time it was written (posted, then each rewrite). */
+export interface SameRunCandidate {
+  readonly anchor: string;
+  readonly times: readonly string[];
+}
+
+/**
+ * Which of `candidates` was written in the same run as a thread at `at`:
+ * one posted or rewritten from `beforeMs` before the thread to `afterMs`
+ * after it, the nearest in time when several were. Bots rewrite one summary
+ * run after run, so a rewrite at the thread's time counts as much as the
+ * post. Null when none was, or with no time to go by.
+ */
+export function sameRunAnchor(candidates: readonly SameRunCandidate[], at: number, beforeMs: number, afterMs: number): string | null {
+  if (Number.isNaN(at)) return null;
+  let best: { readonly anchor: string; readonly gap: number } | null = null;
+  for (const candidate of candidates) {
+    for (const time of candidate.times) {
+      const written = Date.parse(time);
+      if (Number.isNaN(written) || written < at - beforeMs || written > at + afterMs) continue;
+      const gap = Math.abs(written - at);
+      if (best === null || gap < best.gap) best = { anchor: candidate.anchor, gap };
+    }
+  }
+  return best?.anchor ?? null;
 }
