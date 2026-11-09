@@ -1,11 +1,12 @@
 import type { HiddenCategory } from '@geld/core';
 import type { ChangeTotals } from '@geld/core';
-import { formatCount, parseCount } from '@geld/core';
+import { COUNT_PATTERN, formatCount, formatCountLike, parseCount } from '@geld/core';
 import type { HiddenBreakdown } from './breakdown';
 import { hidesAnything } from './breakdown';
 import type { StatsBreakdown } from './breakdown';
 import { hiddenLabel, hiddenNounPlural, statsBreakdown } from './breakdown';
 import { createElement, OWN_UI_ATTRIBUTE, originalText, parseLineStats, queryAll, restoreManagedText, setManagedText } from './dom';
+import { headerReactSettled, reactSettled, subtreeSettled } from './react-hydration';
 import { attachBreakdownTooltip, detachBreakdownTooltip } from './ui/tooltip';
 
 /** A "+93 −53" pair somewhere in the page header, plus the element to hang a tooltip on. */
@@ -21,7 +22,10 @@ export interface HeaderStatGroup {
   readonly sentence: boolean;
 }
 
-const FILE_COUNT_TEXT = /^\s*\(?\d[\d,]*\)?\s*$|\bfiles?\b/i;
+const FILE_COUNT_TEXT = new RegExp(String.raw`^\s*\(?${COUNT_PATTERN}\)?\s*$|\bfiles?\b`, 'i');
+const FILES_CHANGED_TEXT = new RegExp(String.raw`${COUNT_PATTERN}\s+files?\s+changed`, 'i');
+const FIRST_COUNT = new RegExp(COUNT_PATTERN);
+const BARE_COUNT = new RegExp(String.raw`^\s*[+\-\u2212]?\s*${COUNT_PATTERN}\s*$`);
 
 const HEADER_HOST_SELECTOR = '#diffstat, .toc-diff-stats';
 const SR_ONLY_SELECTOR = 'span.sr-only, span[class*="VisuallyHidden"]';
@@ -170,7 +174,7 @@ function findReactFileCounts(host: HTMLElement): HTMLElement[] {
   if (commitContainer !== null) {
     for (const element of queryAll<HTMLElement>('p, span, h2, h3', commitContainer)) {
       if (element.contains(host) || host.contains(element)) continue;
-      if (/\d[\d,]*\s+files?\s+changed/i.test(originalText(element))) counts.push(element);
+      if (FILES_CHANGED_TEXT.test(originalText(element))) counts.push(element);
     }
   }
   // PR header: the "Files changed" tab counter and its visually hidden twin.
@@ -199,6 +203,19 @@ const COUNTS_STAND_CLASS = 'geld-counts-stand';
 
 export function isCountsStandIn(element: Element): boolean {
   return element.hasAttribute(ATTR_COUNTS_STAND_IN);
+}
+
+/**
+ * The Overview's header line beside the branch names (Nov 2026): GitHub draws its line counts there, after the branch
+ * names (its skeleton while they load, then `diffStat`), and never in the tab row, whose counts wrapper stays empty.
+ */
+function overviewBranchGroup(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-component="PageHeader"] [class*="branchGroup"]:has(> [class*="branches"])');
+}
+
+/** Whether GitHub's counts slot beside the branch names holds anything of GitHub's (its skeleton or its counts). */
+function branchGroupBusy(group: Element): boolean {
+  return [...group.children].some((child) => !/\bbranches/.test(child.className.toString()) && !child.hasAttribute(OWN_UI_ATTRIBUTE) && !child.hasAttribute(ATTR_COUNTS_STAND_IN));
 }
 
 /** The pull request header's tab row, where GitHub floats its line counts. */
@@ -264,8 +281,13 @@ export function countsSkeletonStandIn(): HTMLElement | null {
  * the stand-in goes, and they are rewritten to the same numbers before paint. Not marked as Geld's UI, which the header
  * scan skips (`isInsideDiffEntry`). True when the page changed.
  */
-export function syncCountsStandIn(want: StandIn | null): boolean {
+export function syncCountsStandIn(asked: StandIn | null): boolean {
+  // Not among React's header nodes before React has hydrated them (`react-hydration.ts`).
+  const want = headerReactSettled() ? asked : null;
   const existing = document.querySelector<HTMLElement>(`[${ATTR_COUNTS_STAND_IN}]`);
+  // On the Overview GitHub's counts stand beside the branch names, so the stand-in does too: never in the tab row.
+  const branches = overviewBranchGroup();
+  if (branches !== null) return syncStandInBeside(branches, existing, want);
   const row = pullTabRow();
   const real = row !== null && queryAll<HTMLElement>(SR_ONLY_SELECTOR, row).some((span) => LINES_CHANGED.test(originalText(span)) && span.closest(`[${ATTR_COUNTS_STAND_IN}]`) === null);
   const wrapper = row?.querySelector(':scope > [class*="rightContentWrapper"]') ?? null;
@@ -294,6 +316,28 @@ export function syncCountsStandIn(want: StandIn | null): boolean {
   return true;
 }
 
+/** The Overview's stand-in: after the branch names, where GitHub puts its skeleton and its counts, while that slot is empty. */
+function syncStandInBeside(group: HTMLElement, existing: HTMLElement | null, want: StandIn | null): boolean {
+  noteGithubSkeleton(group);
+  const real = queryAll<HTMLElement>(SR_ONLY_SELECTOR, group).some((span) => LINES_CHANGED.test(originalText(span)) && span.closest(`[${ATTR_COUNTS_STAND_IN}]`) === null);
+  if (want === null || real || branchGroupBusy(group)) {
+    if (existing === null) return false;
+    removeCountsStandIn();
+    return true;
+  }
+  const key = want === SKELETON ? SKELETON : standInKey(want);
+  if (existing !== null && group.contains(existing) && existing.getAttribute(ATTR_COUNTS_STAND_IN) === key) return false;
+  const next = standInElement(want);
+  if (existing !== null && group.contains(existing)) {
+    detachBreakdownTooltip(existing);
+    existing.replaceWith(next);
+    return true;
+  }
+  removeCountsStandIn();
+  group.append(next);
+  return true;
+}
+
 export function removeCountsStandIn(): void {
   for (const host of queryAll<HTMLElement>(`[${ATTR_COUNTS_STAND_IN}]`)) {
     detachBreakdownTooltip(host);
@@ -314,7 +358,7 @@ const COUNT_NOUNS = /\b(files?|additions?|deletions?|changes?|lines?)\b/i;
  * noun that follows it ("1 file changed", "2 additions", ...).
  */
 export function replaceCount(text: string, count: number): string {
-  const replaced = text.replace(/\d[\d,]*/, formatCount(count));
+  const replaced = text.replace(FIRST_COUNT, formatCountLike(text, count));
   return replaced.replace(COUNT_NOUNS, (word) => {
     const singular = word.endsWith('s') ? word.slice(0, -1) : word;
     return count === 1 ? singular : `${singular}s`;
@@ -332,8 +376,8 @@ function signPrefix(text: string): string {
  * "18 files changed") keep their words.
  */
 function rewriteNumber(original: string, value: number, fallbackSign: string): string {
-  if (/^\s*[+\-\u2212]?\s*\d[\d,]*\s*$/.test(original)) {
-    return `${signPrefix(original) || fallbackSign}${formatCount(value)}`;
+  if (BARE_COUNT.test(original)) {
+    return `${signPrefix(original) || fallbackSign}${formatCountLike(original, value)}`;
   }
   return replaceCount(original, value);
 }
@@ -387,6 +431,8 @@ export function applyHeaderStats(
   /** The diff's file count, when the header's own numbers carry none (a pull request header: lines only). */
   files = 0,
 ): void {
+  // GitHub's server-rendered counts: rewritten before React hydrated them, they made React render the page again.
+  if (!subtreeSettled(group.host)) return;
   // Nothing that could be hidden: GitHub's own numbers are right, so leave the header alone (no "0 hidden").
   if (group.original === null || activeCategories.length === 0) {
     restoreHeaderStats(group);
@@ -445,12 +491,14 @@ const MIRROR_CLASS = 'geld-header-mirror';
  * `hideWhenVeryNarrowContainer`), and the tab bar has no room for it. A copy
  * of the counts then goes beside the state label ("Open"), after the stack
  * button when there is one, and is shown exactly while the original is not
- * (checked on every apply; the controller re-applies on resize).
+ * (`hostShown`, followed by a ResizeObserver).
  */
 function syncNarrowMirror(group: HeaderStatGroup, label: string, hasTests: boolean, visible: ChangeTotals, provider: (() => StatsBreakdown) | null): void {
   const header = group.host.closest<HTMLElement>('[data-component="PageHeader"]');
-  const stateRow = header?.querySelector<HTMLElement>('[data-component="StateLabel"]')?.parentElement ?? null;
-  if (stateRow === null || stateRow.contains(group.host)) return;
+  const stateLabel = header?.querySelector<HTMLElement>('[data-component="StateLabel"]') ?? null;
+  // On the Overview the label sits in GitHub's own status button, which Geld's pill replaces and hides whole.
+  const stateRow = (stateLabel?.closest<HTMLElement>('button[aria-haspopup]') ?? stateLabel)?.parentElement ?? null;
+  if (stateRow === null || stateRow.contains(group.host) || !reactSettled(stateRow)) return;
   let mirror = stateRow.querySelector<HTMLElement>(`.${MIRROR_CLASS}`);
   if (mirror === null) {
     mirror = createElement('span', { class: MIRROR_CLASS, [OWN_UI_ATTRIBUTE]: '' }, [
@@ -471,9 +519,51 @@ function syncNarrowMirror(group: HeaderStatGroup, label: string, hasTests: boole
   const delText = `\u2212${formatCount(visible.deletions)}`;
   if (add instanceof HTMLElement && add.textContent !== addText) add.textContent = addText;
   if (del instanceof HTMLElement && del.textContent !== delText) del.textContent = delText;
-  mirror.hidden = group.host.getClientRects().length > 0;
+  mirror.hidden = hostShown(group.host) !== false;
   if (provider === null) detachBreakdownTooltip(mirror);
   else attachBreakdownTooltip(mirror, tests instanceof HTMLElement ? tests : mirror, provider, { align: 'end' });
+}
+
+const shownHosts = new WeakMap<Element, boolean>();
+const unreportedHosts = new Set<Element>();
+let shownObserver: ResizeObserver | null = null;
+
+function setHostShown(host: Element, shown: boolean): void {
+  if (shownHosts.get(host) === shown) return;
+  shownHosts.set(host, shown);
+  const header = host.closest('[data-component="PageHeader"]');
+  for (const mirror of header?.querySelectorAll<HTMLElement>(`.${MIRROR_CLASS}`) ?? []) mirror.hidden = shown;
+}
+
+/**
+ * Whether GitHub shows the header's counts, as a ResizeObserver last reported (hidden, their box is 0 × 0), and null
+ * until it first has: asking the layout itself here forced a whole-page layout on every apply while the page loaded.
+ * The answer lands before the frame paints and the mirror follows it there. A host that is not rendered (a page opened
+ * narrow) gets no first report at all, so the body, always rendered, is observed beside each new host: a delivery that
+ * holds the body's report and not the host's says the host is hidden.
+ */
+function hostShown(host: HTMLElement): boolean | null {
+  if (typeof ResizeObserver === 'undefined') return host.getClientRects().length > 0;
+  shownObserver ??= new ResizeObserver((entries, observer) => {
+    const reported = new Set<Element>();
+    for (const entry of entries) {
+      if (entry.target === document.body) continue;
+      reported.add(entry.target);
+      setHostShown(entry.target, entry.contentRect.width > 0 || entry.contentRect.height > 0);
+    }
+    if (!entries.some((entry) => entry.target === document.body)) return;
+    for (const pending of unreportedHosts) if (!reported.has(pending)) setHostShown(pending, false);
+    unreportedHosts.clear();
+    observer.unobserve(document.body);
+  });
+  if (!shownHosts.has(host) && !unreportedHosts.has(host)) {
+    unreportedHosts.add(host);
+    shownObserver.observe(host);
+    // Observed afresh, so the body reports again in the same delivery as the host would.
+    shownObserver.unobserve(document.body);
+    shownObserver.observe(document.body);
+  }
+  return shownHosts.get(host) ?? null;
 }
 
 function removeNarrowMirror(group: HeaderStatGroup): void {
