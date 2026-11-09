@@ -398,19 +398,35 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return article;
   }
 
-  function reviewStandings(): HTMLElement {
+  function reviewStandingSummary(): { readonly coverage: 'complete' | 'partial' | 'unavailable'; readonly label: string } {
     const reviewers = input.reviewers;
     const approvals = reviewers?.filter((reviewer) => reviewer.state === 'approved').length ?? 0;
     const changes = reviewers?.filter((reviewer) => reviewer.state === 'changes_requested').length ?? 0;
     const pending = reviewers?.filter(reviewerRequested).length ?? 0;
     const required = options.approvalsRequired;
     const left = options.approvalsLeft;
-    const tally = typeof required === 'number' && typeof left === 'number' && Number.isSafeInteger(required) && Number.isSafeInteger(left) && required > 0 && left >= 0 && left <= required
+    const requiredTally = typeof required === 'number' && typeof left === 'number' && Number.isSafeInteger(required) && Number.isSafeInteger(left) && required > 0 && left >= 0 && left <= required
       ? `${required - left}/${required} required approvals`
-      : countLabel(approvals, 'approval');
-    const section = disclosure('reviewers', `Reviews · ${reviewers === undefined ? 'Unavailable' : `${tally}${changes === 0 ? '' : ` · ${countLabel(changes, 'change request')}`}${pending === 0 ? '' : ` · ${countLabel(pending, 'pending review')}`}`}`, false);
+      : null;
+    const coverage = reviewers === undefined ? requiredTally === null ? 'unavailable' : 'partial'
+      : options.unavailable?.some((source) => source.area === 'reviews') === true ? 'partial' : 'complete';
+    if (coverage === 'unavailable') return { coverage, label: 'Reviews · Unavailable' };
+    const observed = coverage === 'partial' ? 'observed ' : '';
+    const tallies = [
+      requiredTally ?? (coverage === 'complete' || approvals > 0 ? countLabel(approvals, `${observed}approval`) : null),
+      changes === 0 ? null : countLabel(changes, `${observed}change request`),
+      pending === 0 ? null : countLabel(pending, `${observed}pending review`),
+    ].filter((value) => value !== null);
+    return { coverage, label: ['Reviews', ...(coverage === 'partial' ? ['Partial'] : []), ...tallies].join(' · ') };
+  }
+
+  function reviewStandings(): HTMLElement {
+    const reviewers = input.reviewers;
+    const summary = reviewStandingSummary();
+    const section = disclosure('reviewers', summary.label, false);
+    if (summary.coverage !== 'complete') section.append(node('p', summary.coverage === 'unavailable' ? 'Review standings could not be read.' : 'Some review standings could not be read.'));
     if (reviewers === undefined || reviewers.length === 0) {
-      section.append(node('p', reviewers === undefined ? 'Review standings could not be read.' : 'No reviewer standings.'));
+      if (summary.coverage === 'complete') section.append(node('p', 'No reviewer standings.'));
       return section;
     }
     const list = node('ul');
@@ -868,6 +884,11 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         const url = sourceLink({ anchor: comment.anchor, kind: 'comment', author: comment.author.login, url: comment.url }, input.subject);
         if (url !== null) lines.push(`Publisher: ${comment.author.login} · ${url}`);
       }
+    }
+    const reviews = reviewStandingSummary();
+    if (reviews.coverage !== 'complete') {
+      lines.push(reviews.label);
+      for (const source of options.unavailable ?? []) if (source.area === 'reviews') lines.push(`Reviews source unavailable: ${source.reason}`);
     }
     for (const reviewer of input.reviewers ?? []) lines.push(`- ${reviewer.author.login}: ${reviewerLabel(reviewer)}`);
     const summary = options.ai?.enabled === true && options.ai.state.key === identity ? options.ai.state.summary : undefined;
