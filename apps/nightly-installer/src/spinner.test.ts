@@ -1,29 +1,10 @@
-import { FRAMES, step, trianglesFor } from './spinner';
+import { FRAMES, step } from './spinner';
 import type { Terminal } from './spinner';
 
 function fake(isTTY: boolean): Terminal & { readonly output: () => string } {
   let text = '';
-  return { isTTY, columns: 80, color: false, frames: FRAMES, triangles: 'geometric', write: (chunk) => void (text += chunk), output: () => text };
+  return { isTTY, columns: 80, color: false, frames: FRAMES, write: (chunk) => void (text += chunk), output: () => text };
 }
-
-describe('trianglesFor', () => {
-  it('uses the triangles each terminal draws to the cell itself, and none where it cannot tell', () => {
-    expect(trianglesFor({ TERM_PROGRAM: 'vscode' })).toBe('powerline');
-    expect(trianglesFor({ TERM_PROGRAM: 'ghostty' })).toBe('powerline');
-    expect(trianglesFor({ TERM: 'xterm-kitty' })).toBe('powerline');
-    expect(trianglesFor({ TERM_PROGRAM: 'WezTerm' })).toBe('powerline');
-    expect(trianglesFor({ VTE_VERSION: '7600' })).toBe('geometric');
-    expect(trianglesFor({ TERM_PROGRAM: 'Apple_Terminal' })).toBeNull();
-    expect(trianglesFor({ TERM_PROGRAM: 'iTerm.app' })).toBeNull();
-    expect(trianglesFor({ WT_SESSION: 'x' })).toBeNull();
-  });
-
-  it('takes GELD_LOGO over what the terminal says, and ignores a value it does not know', () => {
-    expect(trianglesFor({ TERM_PROGRAM: 'iTerm.app', GELD_LOGO: 'powerline' })).toBe('powerline');
-    expect(trianglesFor({ TERM_PROGRAM: 'vscode', GELD_LOGO: 'blocks' })).toBeNull();
-    expect(trianglesFor({ TERM_PROGRAM: 'vscode', GELD_LOGO: 'toString' })).toBe('powerline');
-  });
-});
 
 describe('step', () => {
   afterEach(() => vi.useRealTimers());

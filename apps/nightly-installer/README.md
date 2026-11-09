@@ -44,8 +44,6 @@ Do not move or rename the folder once it is loaded: the browser ties the extensi
 --help, --version
 ```
 
-In a terminal it opens with Geld's logo. Its cut corners are drawn with the triangles your terminal draws itself, and with plain blocks where it draws none. Set `GELD_LOGO=powerline`, `geometric` or `blocks` to choose, for example `powerline` in iTerm2 with its built-in Powerline glyphs turned on.
-
 ## Where it installs, and where it will not
 
 The installer never writes over a folder that is not Geld Nightly, and never into another profile's folder. It refuses temporary folders and folders the browser's folder picker will not open (`~/Library`, `Application Support`, `AppData`, `Program Files`, `~/.config`, system folders), and asks first before a synced folder (iCloud, OneDrive, Dropbox, Google Drive) or Downloads. It keeps its own state in `~/.geld`, never in the build folder.
