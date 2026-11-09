@@ -20,7 +20,7 @@ import { fitPathInto } from './path-fit';
 import { ICON_CHECK_CIRCLE, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_FILE_SYMLINK_FILE, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
 import { ATTR_EDITED_FOR, ATTR_TIME_FOR } from './panel';
-import { isTeleported, onRestore, ownedBy, restoreAll, teleportedNodes, teleportInto } from './teleport';
+import { isTeleported, moveNode, onRestore, ownedBy, restoreAll, teleportedNodes, teleportInto } from './teleport';
 import { inlineText } from './inline-text';
 import { armViaHovercard } from './via';
 import type { ViaBot } from './via';
@@ -206,7 +206,7 @@ export function renderChatView(slot: HTMLElement, threads: readonly HTMLElement[
     const chats = parked;
     parked = null;
     slot.replaceChildren();
-    moveInto(slot, chats);
+    moveNode(slot, chats);
     parking?.remove();
     parking = null;
     return;
@@ -272,18 +272,6 @@ let parked: HTMLElement | null = null;
 let parking: HTMLElement | null = null;
 
 /** A move that keeps a node's state (focus, an iframe, a running animation) where the browser can (`moveBefore`). */
-function moveInto(parent: HTMLElement, node: HTMLElement): void {
-  const mover: unknown = Reflect.get(parent, 'moveBefore');
-  if (typeof mover === 'function') {
-    try {
-      Reflect.apply(mover, parent, [node, null]);
-      return;
-    } catch {
-      // A plain move below.
-    }
-  }
-  parent.append(node);
-}
 
 /**
  * A panel rebuilt for anything (a bot's summary edited, checks ticking) sent every loan home and lent it again, so
@@ -297,7 +285,7 @@ export function parkChats(panel: Element): HTMLElement | null {
   if (chats === null) return null;
   parking = createElement('div', { hidden: '', [OWN_UI_ATTRIBUTE]: '' });
   document.body.append(parking);
-  moveInto(parking, chats);
+  moveNode(parking, chats);
   parked = chats;
   return chats;
 }
