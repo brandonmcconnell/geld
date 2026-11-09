@@ -45,8 +45,10 @@ export function gitLabAuthorReuseProbe(records) {
     } catch { selected.push(null); }
   }
   const held = globalThis.__geldAuthorReuseNative;
+  const themeHeld = globalThis.__geldAuthorReuseThemesNative;
   const native = { rootCount: roots.length, valid: nativeValid, tuple, name: sample(author?.querySelector('[data-testid="author-name"]')), alias: sample(alias?.querySelector('.note-headline-light') ?? alias), aliasHref: alias?.href,
-    avatar: avatar === null ? null : { ...sample(avatar), src: avatar.src, className: avatar.className }, sameNode: held === undefined ? null : root === held.root && root?.parentElement === held.parent };
+    avatar: avatar === null ? null : { ...sample(avatar), src: avatar.src, className: avatar.className }, sameNode: held === undefined ? null : root === held.root && root?.parentElement === held.parent,
+    sameThemeNode: themeHeld === undefined ? null : root === themeHeld.root && root?.parentElement === themeHeld.parent };
   const panel = document.querySelectorAll('.geld-provider-review');
   const findings = records.map((record) => {
     const anchor = `note_${record.id}`;
@@ -70,7 +72,8 @@ export function gitLabAuthorReuseProbe(records) {
       profile: byline?.querySelector('[data-geld-author-profile]')?.href ?? null, badges: [...byline?.querySelectorAll('[data-geld-author-badge]') ?? []].map((node) => node.textContent.trim()),
       avatar: ownAvatar === null ? null : { ...sample(ownAvatar), src: ownAvatar.src, className: ownAvatar.className }, slot: sample(slot) };
   });
-  return { url: location.href.split('#')[0], panelCount: panel.length, selected, native, findings };
+  return { url: location.href.split('#')[0], panelCount: panel.length, selected, native, findings,
+    theme: { system: document.documentElement.classList.contains('gl-system'), dark: document.documentElement.classList.contains('gl-dark'), osDark: window.matchMedia('(prefers-color-scheme: dark)').matches } };
 }
 
 export function beginGitLabAuthorReuseProbe() {
@@ -173,5 +176,104 @@ export async function verifyGitLabAuthorReuse(page, item, { fixture, head, exten
     } catch (error) { proof.status = 'failed';proof.cleanupError = error instanceof Error ? error.message : String(error);throw error; }
     finally { page.off('request', request);proof.listenerDisposed = true; }
   }
+  return proof;
+}
+
+function beginAuthorThemeLifetime() {
+  if (globalThis.__geldAuthorReuseThemesNative !== undefined) throw new Error('Author theme lifetime was already retained.');
+  const root = document.getElementById('note_3381334808');
+  globalThis.__geldAuthorReuseThemesNative = { root, parent: root?.parentElement, url: location.href.split('#')[0] };
+}
+
+function endAuthorThemeLifetime() {
+  const held = globalThis.__geldAuthorReuseThemesNative;delete globalThis.__geldAuthorReuseThemesNative;
+  if (held === undefined || location.href.split('#')[0] !== held.url || !held.root?.isConnected
+    || document.getElementById('note_3381334808') !== held.root || held.root.parentElement !== held.parent) throw new Error('Native donor lifetime changed during author theme comparison.');
+  return { stateRemoved: globalThis.__geldAuthorReuseThemesNative === undefined, sameNative: true };
+}
+
+function themeSignature(value) {
+  const { tuple, name, alias, aliasHref, avatar } = value.native;
+  return { url: value.url, panelCount: value.panelCount, theme: value.theme, selected: value.selected,
+    native: { tuple, name, alias, aliasHref, avatar }, findings: value.findings };
+}
+
+/** The same independent phase runs three times. The outer listener also covers media-transition gaps. */
+export async function verifyGitLabAuthorReuseThemes(page, item, options) {
+  const proof = { status: 'running', scope: 'Same-visit native system-theme light, OS-dark preference and restored author-donor comparisons. No class/style injection, native finding hydration or absent-header pixel claim.',
+    phases: {}, sourceGets: [], otherGets: [], transitionSamples: { dark: [], restored: [] }, mediaRestored: false };
+  item.authorReuseThemes = proof;
+  const errors = [];let retained = false;let lightPassed = false;
+  const records = options.fixture.discussions.find((value) => value.discussionCount === 36 && value.noteCount === 40 && value.nextCursor === null)?.selected.filter((record) => F.ids.includes(record.id)) ?? [];
+  const request = (value) => { const observed = observeGreptileCommandRequest(value, options.extensionId);if (observed === null) return;const list = observed.acquisition ? proof.sourceGets : proof.otherGets;if (list.length < 40) list.push(observed);else proof.requestOverflow = true; };
+  const read = async (stage) => {
+    const value = await page.evaluate(gitLabAuthorReuseProbe, records);
+    if (stage !== undefined) { proof.transitionSamples[stage].push(value);if (proof.transitionSamples[stage].length > 4) proof.transitionSamples[stage].shift(); }
+    return value;
+  };
+  const phase = async (name) => {
+    const target = name === 'light' ? item : {};
+    try {
+      const result = await verifyGitLabAuthorReuse(page, target, options);
+      if (name !== 'light' && proof.phases.light?.status === 'passed') {
+        assert.deepEqual(result.settings, proof.phases.light.settings, 'Author theme comparison changed the original settings');
+        assert.deepEqual(result.beforeDigest, proof.phases.light.beforeDigest, 'Author theme comparison changed the original source/item/verdict digest');
+        assert.equal(result.sourceSignature, proof.phases.light.sourceSignature, 'Author theme comparison changed the original fetched source fingerprint');
+        assert.deepEqual(result.records, proof.phases.light.records);
+      }
+      if (result.status === 'passed') assert.equal(result.comparison.native.sameThemeNode, true);
+      return result;
+    }
+    finally { proof.phases[name] = target.authorReuse; }
+  };
+  const colors = (value) => [value.native.name?.typography.color, value.native.alias?.typography.color];
+  const palette = (value) => ({ theme: value.theme, nativeName: value.native.name?.typography, nativeAlias: value.native.alias?.typography,
+    findings: value.findings.map((finding) => ({ id: finding.id, name: finding.name?.typography, alias: finding.alias?.typography })) });
+  page.on('request', request);
+  try {
+    await page.evaluate(beginAuthorThemeLifetime);retained = true;
+    proof.original = await read();proof.originalSignature = themeSignature(proof.original);
+    const light = await phase('light');lightPassed = light.status === 'passed';
+    if (lightPassed) {
+      assert.equal(proof.original.native.sameThemeNode, true);
+      await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
+      await options.pause(300);
+      await options.poll(() => read('dark'), (value) => value.theme.osDark && value.native.sameThemeNode === true, 'OS dark preference is observed on the original native donor', 8000);
+      const dark = await phase('dark');
+      proof.nativeThemeChanged = dark.status === 'passed' && proof.original.theme.system && !proof.original.theme.dark && !proof.original.theme.osDark
+        && dark.comparison.theme.system && dark.comparison.theme.dark && dark.comparison.theme.osDark
+        && JSON.stringify(colors(proof.original)) !== JSON.stringify(colors(dark.comparison));
+      if (dark.status === 'passed') proof.validatedDarkSignature = palette(dark.comparison);
+      proof.darkMeasurement = await read('dark');
+      assert.equal(proof.darkMeasurement.native.sameThemeNode, true);
+      if (proof.validatedDarkSignature !== undefined) assert.deepEqual(palette(proof.darkMeasurement), proof.validatedDarkSignature, 'Later theme evidence differs from the independently validated author comparison');
+      proof.darkAcceptance = dark.status === 'passed' && proof.nativeThemeChanged ? 'native_scheme_observed' : 'unavailable';
+      if (proof.darkAcceptance === 'unavailable') proof.reason = 'The native system theme did not visibly change, or the finding fixture changed; dark author reuse was not accepted from OS preference alone.';
+    } else proof.reason = 'The original author phase is unavailable; no cross-theme reuse was accepted.';
+  } catch (error) { errors.push(error);proof.error = error instanceof Error ? error.message : String(error); }
+  finally {
+    try {
+      await page.emulateMediaFeatures([]);
+      proof.mediaCleared = true;
+      await options.pause(300);
+      if (proof.originalSignature !== undefined) {
+        proof.restoredMeasurement = await options.poll(() => read('restored'), (value) => value.native.sameThemeNode === true
+          && JSON.stringify(themeSignature(value)) === JSON.stringify(proof.originalSignature), 'Full original native author/theme/source signature is restored', 8000);
+        if (lightPassed) {
+          const restored = await phase('restored');assert.equal(restored.status, 'passed', 'Restored author comparison did not pass independently');
+          proof.afterRestored = await read('restored');assert.deepEqual(themeSignature(proof.afterRestored), proof.originalSignature);assert.equal(proof.afterRestored.native.sameThemeNode, true);
+        }
+      }
+      proof.mediaRestored = proof.originalSignature !== undefined;
+    } catch (error) { errors.push(error);proof.restorationError = error instanceof Error ? error.message : String(error); }
+    try {
+      if (retained) proof.cleanup = await page.evaluate(endAuthorThemeLifetime);
+      assert.equal(proof.requestOverflow ?? false, false);assert.deepEqual(proof.sourceGets, [], 'Author theme phases or transitions caused source acquisition');
+      assert.deepEqual(options.fixture.errors, []);assert.deepEqual(options.fixture.providerMutations, []);assert.deepEqual(options.fixture.aiRequests, []);
+    } catch (error) { errors.push(error);proof.cleanupError = error instanceof Error ? error.message : String(error); }
+    finally { page.off('request', request);proof.listenerDisposed = true; }
+  }
+  if (errors.length > 0) { proof.status = 'failed';throw errors.length === 1 ? errors[0] : new AggregateError(errors, 'Author theme comparison or restoration failed'); }
+  proof.status = lightPassed && proof.darkAcceptance === 'native_scheme_observed' ? 'passed' : 'unavailable';
   return proof;
 }
