@@ -20,7 +20,7 @@ declare const INSTALLER_VERSION: string;
 
 const HELP = `geld-nightly: installs Geld Nightly for the Chrome, Chrome Beta, Edge or Brave profiles you pick.
 
-Usage: npx geld-nightly [options]
+Usage: npx geld-nightly@latest [options]
 
   --profile <name>       A profile to install for, by name or folder (repeatable). Default: ask.
   --all                  Every profile found.

@@ -75,7 +75,7 @@ Geld Nightly does not run while Geld from a store is on in the same profile. It 
 For Chrome and Edge (and Brave, with the Chrome zip), the installer is the easy way in:
 
 ```sh
-npx geld-nightly
+npx geld-nightly@latest
 # or, without npm
 curl -fsSL https://www.geld.sh/nightly.sh | sh
 # on Windows, in PowerShell
