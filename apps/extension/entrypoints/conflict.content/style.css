@@ -1,0 +1,45 @@
+/* Geld Stable's bar, taken over while this nightly build is paused: only the conflict shows. */
+html[data-geld-nightly-paused] .geld-review > :not(.geld-review__head),
+html[data-geld-nightly-paused] .geld-review__tools,
+html[data-geld-nightly-paused] .geld-review__summary > :not(.geld-review__brand, .geld-review__brand-name, .geld-nightly-conflict),
+html[data-geld-nightly-paused] .geld-digest-off > :not(.geld-digest-off__brand, .geld-nightly-conflict) {
+  display: none !important;
+}
+
+html[data-geld-nightly-paused] .geld-review__head,
+html[data-geld-nightly-paused] .geld-digest-off {
+  border-color: var(--borderColor-danger-emphasis, #cf222e) !important;
+  background: var(--bgColor-danger-muted, #ffebe9) !important;
+  color: var(--fgColor-danger, #d1242f);
+}
+
+html[data-geld-nightly-paused] .geld-review__summary {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.geld-nightly-conflict {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+  margin-left: 4px;
+  font-size: 13px;
+}
+
+.geld-nightly-conflict > .octicon {
+  flex-shrink: 0;
+  color: var(--fgColor-danger, #d1242f);
+}
+
+.geld-nightly-conflict__text {
+  flex: 1 1 240px;
+  min-width: 0;
+  color: var(--fgColor-default, #1f2328);
+}
+
+.geld-nightly-conflict__button {
+  flex-shrink: 0;
+}

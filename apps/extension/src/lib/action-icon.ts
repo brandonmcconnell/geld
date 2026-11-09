@@ -1,8 +1,8 @@
-/** Toolbar icon variants: a black mark for light toolbars, a white mark for dark ones. */
+/** Toolbar icon variants: a black mark for light toolbars, a white mark for dark ones, and the black mark framed on white for toolbars of either. */
 
 export const ACTION_ICON_SIZES = [16, 32, 48] as const;
 
-export type ActionIconColor = 'black' | 'white';
+export type ActionIconColor = 'black' | 'white' | 'framed';
 
 export function actionIconPath(color: ActionIconColor, size: number): string {
   return `icon/action/${color}-${size}.png`;
