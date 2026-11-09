@@ -33,6 +33,7 @@ export type SettingsPatch =
   | { readonly kind: 'choice'; readonly key: ChoiceSettingKey; readonly value: GeldSettings[ChoiceSettingKey] }
   | { readonly kind: 'issue-tracker'; readonly value: IssueTrackerConfig | null }
   | { readonly kind: 'category'; readonly id: AnyCategoryId; readonly value: boolean }
+  | { readonly kind: 'auto-viewed'; readonly id: AnyCategoryId; readonly value: boolean }
   | { readonly kind: 'group'; readonly categoryId: CategoryId; readonly groupId: string; readonly value: boolean }
   | { readonly kind: 'category-patterns'; readonly categoryId: CategoryId; readonly lines: readonly string[] }
   | { readonly kind: 'custom-category'; readonly category: CustomCategory }
@@ -99,6 +100,8 @@ export function isSettingsPatch(value: unknown): value is SettingsPatch {
     case 'issue-tracker':
       return SITE_FIELDS.some(field=>field.kind==='issue-tracker') && (value.value===null || parseIssueTracker(value.value)!==null);
     case 'category':
+      return isAnyCategoryId(value.id) && typeof value.value === 'boolean';
+    case 'auto-viewed':
       return isAnyCategoryId(value.id) && typeof value.value === 'boolean';
     case 'group':
       return isCategoryId(value.categoryId) && typeof value.groupId === 'string' && isGroupKey(`${value.categoryId}/${value.groupId}`) && typeof value.value === 'boolean';
@@ -221,6 +224,8 @@ export function applyPatch(base: GeldSettings, patch: SettingsPatch): PatchResul
     }
     case 'category':
       return { ok: true, settings: withCategoryEnabled(base,patch.id,patch.value) };
+    case 'auto-viewed':
+      return { ok: true, settings: { ...base, autoViewed: { ...base.autoViewed, [patch.id]: patch.value } } };
     case 'group':
       return { ok: true, settings: { ...base, groups: { ...base.groups, [groupKey(patch.categoryId, patch.groupId)]: patch.value } } };
     case 'category-patterns': {
