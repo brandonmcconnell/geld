@@ -1,7 +1,8 @@
 /**
- * The clock beside an edited comment's time, in a chat's byline and in a
- * row alike: the time beside it is the edit's (the comment as it reads now),
- * and the clock says when the comment was first posted. With the comment's
+ * The clock beside an edited comment's time in an opened comment's byline
+ * (a row's time is the edit's too, without the clock): the time beside it is
+ * the edit's (the comment as it reads now), and the clock says when the
+ * comment was first posted. With the comment's
  * edit-history log known, the clock is GitHub's own "edited" dropdown: a
  * `details-menu.js-comment-edit-history-menu` loading that log, as GitHub's
  * header has it, so the page's elements list the revisions and GitHub's
@@ -69,6 +70,7 @@ export function editedMark(editedAt: string, postedAt: string | null, log: strin
     [svgFromString(ICON_HISTORY)],
   );
   const details = createElement('details', { class: 'details-overlay details-reset d-inline-block dropdown geld-review__edited-wrap' }, [summary, historyMenu(log)]);
-  if (tip !== null) details.append(tip);
-  return details;
+  if (tip === null) return details;
+  // A closed `details` renders nothing but its summary, so the tooltip stands beside it, never inside.
+  return createElement('span', { class: 'geld-review__edited-pair' }, [details, tip]);
 }
