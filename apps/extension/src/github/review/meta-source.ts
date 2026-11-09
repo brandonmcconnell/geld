@@ -119,14 +119,17 @@ export function withLiveRuns(payload: readonly GeldPrMeta['bots'][number][], cra
     if (now.verdict === 'running' && bot.verdict !== 'running') return now;
     if (bot.verdict === 'running' && now.runJudged === true && now.verdict !== 'running' && now.verdict !== 'loading') return now;
     if (complete && bot.verdict === 'findings' && now.verdict === 'findings' && now.count !== undefined) {
-      const sameRun = now.sourceId?.startsWith('discussion_r') === true || now.sourceId === bot.sourceId;
+      const onThread = now.sourceId?.startsWith('discussion_r') === true;
+      const sameRun = onThread || now.sourceId === bot.sourceId;
       // The same run with fewer open, or as many open graded otherwise (the high one resolved, a medium one since): its
       // threads' grade is the page's too. A count the page has more of is a run the Action has not written yet.
       const fewer = bot.count === undefined || now.count < bot.count;
       const regraded = now.count === bot.count && now.severity !== bot.severity && sameRun;
       if (fewer || regraded) {
         const { severity: _saved, ...rest } = bot;
-        return sameRun ? { ...rest, count: now.count, ...(now.severity === undefined ? {} : { severity: now.severity }) } : now;
+        // The page's thread anchor is the finding still open (the saved one may be the thread just resolved).
+        const anchored = onThread && now.sourceId !== undefined ? { sourceId: now.sourceId } : {};
+        return sameRun ? { ...rest, count: now.count, ...(now.severity === undefined ? {} : { severity: now.severity }), ...anchored } : now;
       }
     }
     return bot;
