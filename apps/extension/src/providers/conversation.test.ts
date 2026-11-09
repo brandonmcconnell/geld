@@ -48,6 +48,27 @@ const unitNativeFind = { supported: true, display: (root: HTMLElement): string =
 const cleanup: (() => void)[] = [];
 afterEach(() => { for (const stop of cleanup.splice(0)) stop(); document.body.replaceChildren(); });
 
+describe('native bot command binding lifetime', () => {
+  it('revalidates explicit account trust independently of the fetched snapshot', async () => {
+    let retained: (() => boolean) | undefined;
+    const source: ProviderReviewSnapshot = { ...snapshot([comment()]), botRequests: (_input, _comments, current) => { retained = current;return []; } };
+    const trustedReviewAccounts = withTrustedReviewAccount([], repository, 'coderabbit', comment().author.id);
+    const f = fixture(source, {}, { aiEnabled: false, trustedReviewAccounts });
+    await vi.waitFor(() => expect(retained).toBeDefined());
+    const old = retained!;expect(old()).toBe(true);
+    f.apply(page, { ...DEFAULT_SETTINGS, prOverview: true, trustedReviewAccounts: [] });
+    expect(old()).toBe(false);
+  });
+
+  it('invalidates retained preparation on lifecycle disposal', async () => {
+    let retained: (() => boolean) | undefined;
+    const source: ProviderReviewSnapshot = { ...snapshot([comment()]), botRequests: (_input, _comments, current) => { retained = current;return []; } };
+    const f = fixture(source, {}, { aiEnabled: false });
+    await vi.waitFor(() => expect(retained).toBeDefined());
+    const old = retained!;expect(old()).toBe(true);f.conversation.clear();expect(old()).toBe(false);
+  });
+});
+
 function fixture(source = snapshot(), services: ProviderConversationServices = {}, overrides: Partial<GeldSettings> = {}, adapterOverrides: Partial<ProviderAdapter> = {}, initialPage: ProviderReviewPage = page) {
   const host = document.createElement('main');
   document.body.append(host);
