@@ -80,3 +80,40 @@ it('does not return a branch comparison whose refs moved during loading', async 
   vi.stubGlobal('fetch', fetcher);
   await expect(fetchGitLabStandaloneDiff({ ...compare, from: 'main' }, new AbortController().signal)).rejects.toThrow('refs changed');
 });
+
+it('revalidates a short commit identity without bypassing pinned payload caching', async () => {
+  const pinned = responses();
+  const prefix = HEAD.slice(0, 8);
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input, init) => String(input).includes(`/repository/commits/${prefix}`)
+    ? new Response(JSON.stringify({ id: init?.cache === 'no-cache' ? HEAD : prefix + 'f'.repeat(32) }))
+    : pinned(input, init));
+  vi.stubGlobal('fetch', fetcher);
+  expect((await fetchGitLabStandaloneDiff({ ...commit, ref: prefix }, new AbortController().signal)).complete).toBe(true);
+  const identity = fetcher.mock.calls.filter(([url]) => String(url).includes('/repository/commits/'));
+  expect(identity).toHaveLength(1);
+  expect(identity[0]?.[1]?.cache).toBe('no-cache');
+  expect(pinned).toHaveBeenCalledTimes(3);
+  expect(pinned.mock.calls.every(([, init]) => init?.cache === undefined)).toBe(true);
+  expect(fetcher).toHaveBeenCalledTimes(4);
+});
+
+it('revalidates moving comparison refs even when the first response remains cache-fresh', async () => {
+  const pinned = responses();
+  let origin = BASE;
+  let cached: string | null = null;
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+    if (!String(input).includes('/repository/commits/main')) return pinned(input, init);
+    const id = init?.cache === 'no-cache' || cached === null ? origin : cached;
+    cached = id;
+    origin = 'f'.repeat(40);
+    return new Response(JSON.stringify({ id }));
+  });
+  vi.stubGlobal('fetch', fetcher);
+  await expect(fetchGitLabStandaloneDiff({ ...compare, from: 'main' }, new AbortController().signal)).rejects.toThrow('refs changed');
+  const identity = fetcher.mock.calls.filter(([url]) => String(url).includes('/repository/commits/main'));
+  expect(identity).toHaveLength(2);
+  expect(identity.every(([, init]) => init?.cache === 'no-cache')).toBe(true);
+  expect(pinned).toHaveBeenCalledTimes(3);
+  expect(pinned.mock.calls.every(([, init]) => init?.cache === undefined)).toBe(true);
+  expect(fetcher).toHaveBeenCalledTimes(5);
+});
