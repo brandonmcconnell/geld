@@ -2,7 +2,7 @@ import { gitLabAttachmentLink } from './attachment';
 import type { ProviderCommentRenderContext } from '../providers/comment-render';
 import { isProviderReviewPage } from '../providers/types';
 import type { ProviderAdapter } from '../providers/types';
-import { gitLabHeaderTargets, readGitLabDiff } from './diff';
+import { gitLabFlowHost, gitLabHeaderTargets, readGitLabDiff } from './diff';
 import { gitLabListRows } from './list-surfaces';
 import { describeGitLabPage } from './page';
 import { fetchGitLabDiff } from './source';
@@ -33,6 +33,7 @@ export const gitlabAdapter: ProviderAdapter = {
   describe: describeGitLabPage,
   readDiff: readGitLabDiff,
   headerTargets: gitLabHeaderTargets,
+  diffFlowHost: gitLabFlowHost,
   listRows: gitLabListRows,
   readReferences: readGitLabReferences,
   referenceAnchor: gitLabReferenceAnchor,

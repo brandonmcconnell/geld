@@ -3539,3 +3539,8 @@ It verifies that every view control is visible, that the selected view agrees wi
 Count-hover failure evidence includes the actual pointer receipt, visible target geometry, document visibility and current tooltip ownership rather than treating a missing tooltip as a proven parser failure.
 A successful trusted mouseover can still lose its tooltip when native sticky-header geometry shifts away from the pointer after scrolling.
 The public hover probe waits for two matching unobscured target positions and then moves the real pointer to that settled point, without asking Puppeteer to scroll again during hover.
+
+GitLab retains the Overview description in a display-none pane while Changes is active, so the existence of reviewHost does not make it a valid Flow mount on the diff page.
+Flow uses the verified native diff toolbar or provider action toolbar on diff pages, falling back to the active diff container, and uses the description host only on the overview page.
+The control moves between those hosts on tab changes and never depends on an expanded file sidebar.
+Logged-out GitLab can omit the review-drawer action host entirely, so its Flow adapter qualifies the actual Rapid Diffs header toolbar instead of requiring review permissions.

@@ -1,4 +1,4 @@
-.geld-provider-flow-button { margin-block: var(--geld-provider-space-3); }
+.geld-provider-flow-button { margin: 0; }
 dialog.geld-provider-flow {
   position: fixed;
   inset: 0;

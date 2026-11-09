@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describeGitLabPage } from './page';
-import { gitLabHeaderTargets, gitLabListRows, readGitLabDiff } from './diff';
+import { gitLabFlowHost, gitLabHeaderTargets, gitLabListRows, readGitLabDiff } from './diff';
 
 const HEAD = 'd7614ded66e446a388a52625ca13bcb19d43465c';
 const BASE = 'b7c44b3b2a113a284afdc1d8c7ecedd3cc3bb2cf';
@@ -323,4 +323,17 @@ it.each(['.', '’', '\u202f'])('recognizes a combined native count label groupe
   document.body.innerHTML = `<div class="diff-stats inline-parallel-buttons"><div class="diff-stats-contents"><div aria-label="Added 12${separator}345 lines. Removed 6${separator}789 lines."><span data-testid="js-file-addition-line">12${separator}345</span><span data-testid="js-file-deletion-line">6${separator}789</span></div></div></div>`;
   const wrapper = document.querySelector<HTMLElement>('[aria-label]');
   expect(gitLabHeaderTargets(document)[0]?.labels).toEqual([{ host: wrapper, attribute: 'aria-label', count: 'lines' }]);
+});
+
+
+it('locates one native Rapid Diffs toolbar for Flow without using an inactive description', () => {
+  document.body.innerHTML = '<div class="detail-page-description" hidden></div><article data-rapid-diffs data-app-data="{}"><header><div class="rd-app-settings"><div class="diff-stats inline-parallel-buttons"><div class="diff-stats-contents"></div></div></div></header></article>';
+  expect(gitLabFlowHost(document)).toBe(document.querySelector('.rd-app-settings'));
+  document.querySelector('.rd-app-settings')?.setAttribute('data-geld-ui', '');
+  expect(gitLabFlowHost(document)).toBeNull();
+  document.querySelector('.rd-app-settings')?.removeAttribute('data-geld-ui');
+  const toolbar = document.querySelector('.rd-app-settings');if (toolbar === null) throw new Error('Missing toolbar');
+  const shell = toolbar.closest('article');if (shell === null) throw new Error('Missing native diff shell');
+  document.body.append(shell.cloneNode(true));
+  expect(gitLabFlowHost(document)).toBeNull();
 });

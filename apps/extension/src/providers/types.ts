@@ -231,5 +231,6 @@ export interface ProviderAdapter {
   descriptionHost?(doc: Document): HTMLElement | null;
   attachmentLink?(image: HTMLImageElement, page: ProviderReviewPage): HTMLAnchorElement | null;
   actionHost?(doc: Document): HTMLElement | null;
+  diffFlowHost?(doc: Document): HTMLElement | null;
   fetchReview?(page: ProviderReviewPage, signal: AbortSignal, doc: Document): Promise<ProviderReviewSnapshot>;
 }
