@@ -11317,7 +11317,7 @@ var init_settings_schema = __esm({
             kind: "toggle",
             key: "relatedLinks",
             label: "Related links",
-            description: "A section under Assignees in the pull request sidebar with the tickets, Slack threads, agent sessions, reviews and docs its description links to, such as a Linear issue or the Replicas workspace that opened it.",
+            description: "Two sections under Reviewers in the pull request sidebar. Related links lists the tickets, Slack threads, agent sessions, reviews and docs its description links to, such as a Linear issue or the Replicas workspace that opened it. Mentions lists the GitHub issues and pull requests it references.",
             popup: false
           },
           {
@@ -31476,7 +31476,8 @@ var reviewItemSchema = external_exports.object({
   sources: external_exports.array(reviewSourceSchema).min(1),
   addressed: addressedSchema.optional(),
   context: external_exports.string().min(1).optional(),
-  fix: suggestedFixSchema.optional()
+  fix: suggestedFixSchema.optional(),
+  threads: external_exports.object({ total: external_exports.number().int().min(2), open: external_exports.number().int().nonnegative() }).optional()
 });
 var reviewSummarySchema = external_exports.object({
   tldr: external_exports.string().min(1),
@@ -31494,7 +31495,8 @@ var botVerdictSchema = external_exports.object({
   checkName: external_exports.string().min(1).optional(),
   sourceId: external_exports.string().min(1).optional(),
   reason: external_exports.string().min(1).optional(),
-  runJudged: external_exports.literal(true).optional()
+  runJudged: external_exports.literal(true).optional(),
+  needsHuman: external_exports.literal(true).optional()
 });
 var reviewerSchema = external_exports.object({
   login: external_exports.string().min(1),
@@ -31561,7 +31563,8 @@ function reviewItemFrom(value) {
   const numbered = value.line === void 0 ? located : { ...located, line: value.line };
   const judged = value.addressed === void 0 ? numbered : { ...numbered, addressed: { verdict: value.addressed.verdict, evidence: value.addressed.evidence } };
   const explained = value.context === void 0 ? judged : { ...judged, context: value.context };
-  return value.fix === void 0 ? explained : { ...explained, fix: { text: value.fix.text, source: value.fix.source } };
+  const fixed = value.fix === void 0 ? explained : { ...explained, fix: { text: value.fix.text, source: value.fix.source } };
+  return value.threads === void 0 ? fixed : { ...fixed, threads: { total: value.threads.total, open: Math.min(value.threads.open, value.threads.total) } };
 }
 function botVerdictFrom(value) {
   const record4 = {
@@ -31576,7 +31579,8 @@ function botVerdictFrom(value) {
   const named = value.checkName === void 0 ? graded : { ...graded, checkName: value.checkName };
   const sourced = value.sourceId === void 0 ? named : { ...named, sourceId: value.sourceId };
   const reasoned = value.reason === void 0 ? sourced : { ...sourced, reason: value.reason };
-  return value.runJudged === void 0 ? reasoned : { ...reasoned, runJudged: true };
+  const judged = value.runJudged === void 0 ? reasoned : { ...reasoned, runJudged: true };
+  return value.needsHuman === void 0 ? judged : { ...judged, needsHuman: true };
 }
 function metaFrom(value) {
   const meta3 = {
@@ -31622,11 +31626,20 @@ var OPEN_STATUSES = /* @__PURE__ */ new Set(["open", "needs-reply", "addressed",
 function isOpenStatus(status) {
   return OPEN_STATUSES.has(status);
 }
-function openItemCount(items) {
-  return items.filter((item) => isOpenStatus(item.status)).length;
+function itemThreads(item) {
+  const total = item.threads?.total ?? 1;
+  if (!isOpenStatus(item.status)) return { total, open: 0 };
+  return { total, open: Math.max(1, Math.min(item.threads?.open ?? 1, total)) };
 }
-function doneItemCount(items) {
-  return items.length - openItemCount(items);
+function threadCounts(items) {
+  let total = 0;
+  let open2 = 0;
+  for (const item of items) {
+    const threads = itemThreads(item);
+    total += threads.total;
+    open2 += threads.open;
+  }
+  return { total, open: open2 };
 }
 function encodedPayloadLength(meta3) {
   const json2 = JSON.stringify(meta3);
@@ -31650,12 +31663,13 @@ function truncateMeta(meta3, budget = PAYLOAD_BUDGET) {
   return { ...meta3, items: [], truncated: true };
 }
 function deeplinkFrom(meta3) {
+  const threads = threadCounts(meta3.items);
   return {
     v: META_VERSION,
     headSha: meta3.headSha,
     generatedAt: meta3.generatedAt,
-    open: openItemCount(meta3.items),
-    total: meta3.items.length
+    open: threads.open,
+    total: threads.total
   };
 }
 var BASE64_TABLE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -31908,18 +31922,25 @@ var REVIEW_BOTS = [
     configFiles: [".ellipsis/code-review.yaml", "ellipsis.yaml"]
   },
   {
-    // Macroscope (macroscope.com, `macroscopeapp[bot]`): findings as comments, then an "#### Approvability" comment
-    // with "**Verdict:** Approved at `sha`" / "Would Approve" / "Needs Human Approval"; "Macroscope skipped reviewing
-    // this pull request. Per-review cost limit exceeded" when it will not run. `@macroscope-app review` starts one.
-    // Docs read Oct 2026 (docs.macroscope.com).
+    // Macroscope (macroscope.com, `macroscopeapp[bot]`), surveyed on ~110 public pull requests and its docs in Nov 2026
+    // (docs.macroscope.com). Its review is the "Macroscope - Correctness Check" (`neutral` with "N issues identified",
+    // `success` with "No issues identified"), each finding an inline thread headed by a severity badge, resolved by
+    // Macroscope when a push fixes it. "Macroscope - Approvability Check" and its "#### Approvability" comment ("**Verdict:**
+    // Approved at `sha`" / "Would Approve" / "Needs Human Approval", rewritten in place on every push) are a merge gate
+    // over those threads, not a count; every other "Macroscope - <title>" check is a repository's own Check Run Agent,
+    // shown as a report (`CHECK_REPORTERS`), its comments signed "Posted via Macroscope — <title>". Mentioning
+    // `@macroscope-app` starts a run, answered by "Review started…" and "Manual reviews triggered for commit…".
     id: "macroscope",
     title: "Macroscope",
     appId: 900172,
     logins: ["macroscopeapp[bot]", "macroscope-app[bot]"],
-    checkNames: ["Macroscope"],
-    triggers: ["@macroscope-app review", "@macroscopeapp review"],
-    configFiles: [],
-    conversational: true
+    checkNames: ["Macroscope - Correctness Check"],
+    neutralConclusion: "findings",
+    triggers: ["@macroscope-app review", "@macroscopeapp review", "@macroscope-app"],
+    configFiles: [".macroscope/"],
+    conversational: true,
+    resolvesThreads: true,
+    threadSeverity: "badge"
   },
   {
     // Korbit (korbit.ai, `korbit-ai[bot]`): a review headed "### Review by Korbit AI" with a table of issues and
@@ -32041,8 +32062,36 @@ function countShapedBy(botId, text) {
       return null;
   }
 }
+function isMacroscopeGate(body) {
+  return macroscopeApprovability(body.replace(/\r\n?/g, "\n").replace(/<!--[\s\S]*?-->/g, "").trim()) !== null;
+}
+function macroscopeApprovability(text) {
+  if (!/^\s*(?:#{1,6}\s*)?Approvability\s*$/im.test(text)) return null;
+  const verdict = /\bVerdict:?\**\s*:?\s*([^\n]*)/i.exec(text)?.[1]?.replace(/[*_`]/g, "").trim() ?? "";
+  const empty = { count: null, score: null, severity: null };
+  if (/^needs human approval\b/i.test(verdict)) return { ...empty, clean: false, verdict: "needs-human" };
+  const blockers = /\bneeds human approval because\b([\s\S]*)/i.exec(text)?.[1] ?? "";
+  if (/\b(?:limit exceeded|limit reached|relies on correctness review|could not report|skipped for prerequisites)\b/i.test(blockers)) return { ...empty, clean: false };
+  if (/^(?:approved|would approve)\b/i.test(verdict)) return { ...empty, clean: true };
+  return { ...empty, clean: false };
+}
+function isMacroscopeAgentComment(body) {
+  return /\bPosted via Macroscope\s*[\u2014\u2013-]/i.test(body.replace(/<[^>]+>/g, ""));
+}
+function badgeSeverity(body) {
+  const first = body.replace(/<!--[\s\S]*?-->/g, "").trim().split("\n")[0] ?? "";
+  const match = /^\s*\p{Extended_Pictographic}?\uFE0F?\s*\*\*(critical|high|medium|low)\*\*/iu.exec(first);
+  const level = match?.[1]?.toLowerCase();
+  return level === void 0 ? null : level === "critical" || level === "high" ? "high" : level === "medium" ? "medium" : "low";
+}
+var SEVERITY_RANK = { high: 3, medium: 2, low: 1 };
 function parseBotBody(body, botId) {
   const text = body.replace(/\r\n?/g, "\n").replace(/<!--[\s\S]*?-->/g, "").trim();
+  if (botId === "macroscope") {
+    if (isMacroscopeAgentComment(text)) return { count: null, score: null, clean: false, severity: null };
+    const gate = macroscopeApprovability(text);
+    if (gate !== null) return gate;
+  }
   const scoreMatch = botId === "qodo" ? null : (botId === "entelligence" ? /merge confidence\W+(?:[\u25cf\u25cb\s]*)\**(\d+(?:\.\d+)?)\s*\/\s*5\b/i.exec(text) : null) ?? /(\d+(?:\.\d+)?)\s*\/\s*5\b/.exec(text);
   const score = scoreMatch?.[1] !== void 0 ? Number.parseFloat(scoreMatch[1]) : null;
   const countMatch = botId === "greptile" ? /(?:found|reported)[^\S\n]+(\d+)[^\S\n]+(?:issue|finding|comment)/i.exec(text) : /\bactionable comments posted:[^\S\n]*(\d+)/i.exec(text) ?? // Not a number that is a reference ("#9377", "GH-123"): "both #9377 findings are fixed" names a pull request, not 9,377 findings
@@ -32096,8 +32145,9 @@ function refusalReason(body) {
   if (heading !== void 0 && /^[A-Z][\w.-]*(?:\[bot\])?\s+(?:skipped reviewing\b|encountered an error\b)/.test(heading)) {
     const lower = heading.toLowerCase();
     if (REVIEW_BOTS.some((bot) => lower.startsWith(bot.title.toLowerCase()) || bot.logins.some((login) => lower.startsWith(login.replace(/\[bot\]$/, "").toLowerCase())))) {
-      const first2 = heading.replace(/\s*[\u2014\u2013-]{2,}.*$/, "").split(/(?<=[.!?])\s+/)[0] ?? heading;
-      return first2.replace(/[.!?]\s*$/, "");
+      const [first2 = heading, why] = heading.replace(/\s*[\u2014\u2013-]{2,}.*$/, "").split(/(?<=[.!?])\s+/);
+      const reason = /\bskipped reviewing\b/i.test(first2) && why !== void 0 && why.trim() !== "" ? why : first2;
+      return reason.replace(/[.!?]\s*$/, "");
     }
   }
   if (heading !== void 0 && heading.length <= 120 && /\b(?:couldn.t run|could not run|cannot run|can.t run|needs? [^.]{0,60}\benabled|usage limits? (?:(?:has|have|was|were) been )?reached|quota (?:limit )?reached|out of credits)\b/i.test(heading)) {
@@ -32337,8 +32387,11 @@ function botNamedIn(text) {
 }
 var REFUSAL_MONEY = /\b(?:credits?|quota|billing|seats?)\b/i;
 function withOptionalCount(base, parsed) {
+  const { needsHuman: _earlier, ...rest } = base;
+  const counted2 = parsed.count !== null || base.verdict === "findings" && base.count !== void 0;
   return {
-    ...base,
+    ...rest,
+    ...base.verdict === "findings" && parsed.verdict === "needs-human" && !counted2 ? { needsHuman: true } : {},
     ...parsed.count !== null ? { count: parsed.count } : {},
     ...parsed.score !== null ? { score: parsed.score } : {},
     ...parsed.severity !== null ? { severity: parsed.severity } : {}
@@ -32359,6 +32412,7 @@ function isStatusLineComment(body) {
   const untagged = body.replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]+>/g, " ");
   const firstLine = untagged.split("\n").find((line) => line.trim() !== "") ?? "";
   if (/^\s*reviewing (?:pr|pull request) #?\d+\s*$/i.test(firstLine.replace(/[`*_>~#]/g, " ").replace(/\s+/g, " "))) return true;
+  if (/^\s*manual reviews? triggered for commit\b/i.test(firstLine.replace(/[`*_>~#]/g, " "))) return true;
   const text = untagged.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[`*_>~#]/g, "").replace(/\s+/g, " ").trim();
   if (text === "") return false;
   const sentences = text.split(/(?<=[.!…])\s+/).filter((part) => part !== "");
@@ -32374,12 +32428,22 @@ var STATUS_LINE_STALE_MS = 45 * 60 * 1e3;
 var RERUN_EDIT_GAP_MS = 5 * 60 * 1e3;
 function checkRefusal(check2) {
   if (check2.status !== "completed") return null;
-  if (check2.conclusion === "skipped") return "Check skipped";
+  const words = checkWords(check2);
+  if (check2.conclusion === "skipped") return words === "" || /^(?:skipped|completed|cancelled|neutral)\b(?:\s+(?:in|after)\s+\S+)?[.!]?$/i.test(words) ? "Check skipped" : words.replace(/[.!]$/, "");
   if (check2.conclusion !== "neutral" && check2.conclusion !== "success") return null;
-  const words = (check2.description ?? "").replace(/^.*?\s[\u2014\u2013-]\s+/, "").trim();
   if (words === "") return null;
   if (/^(?:reviews?\s+)?(?:(?:was|were|is|are)\s+)?(?:rate[- ]limited|skipped|paused)[.!]?$/i.test(words)) return words.replace(/[.!]$/, "");
   return refusalReason(words);
+}
+function checkWords(check2) {
+  return (check2.description ?? "").replace(/^.*?\s[\u2014\u2013-]\s+/, "").trim();
+}
+function checkFoundNothingNew(check2) {
+  return check2.status === "completed" && /\b(?:already (?:been )?reviewed|diff unchanged|no code objects were reviewed|prior analysis still applies)\b/i.test(checkWords(check2));
+}
+function checkFindingCount(check2) {
+  const match = /\b(\d+)\s+(?:new\s+)?(?:issues?|findings?|bugs?)\s+(?:identified|found)\b/i.exec(checkWords(check2));
+  return match?.[1] === void 0 ? null : Number.parseInt(match[1], 10);
 }
 function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.now(), options = {}) {
   const byId = /* @__PURE__ */ new Map();
@@ -32388,20 +32452,31 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   const checkFinishedAt = /* @__PURE__ */ new Map();
   const postedThreads = /* @__PURE__ */ new Set();
   const checkSkipped = /* @__PURE__ */ new Map();
-  const shaOver = (existing) => existing.verdict === "failed" && existing.reason !== void 0 && checkSkipped.get(existing.id) === existing.reason ? UNKNOWN_SHA : existing.reviewedSha;
+  const checkCurrent = /* @__PURE__ */ new Set();
+  const checkCounts = /* @__PURE__ */ new Map();
+  const checkBelowBar = /* @__PURE__ */ new Set();
+  const shaOver = (existing) => existing.verdict === "failed" && existing.reason !== void 0 && checkSkipped.get(existing.id) === existing.reason && !checkCurrent.has(existing.id) ? UNKNOWN_SHA : existing.reviewedSha;
   for (const check2 of checks) {
     const bot = botByCheckName(check2.name);
     if (bot === null) continue;
     const login = bot.logins[0] ?? bot.id;
     const running = check2.status !== "completed";
-    const failed = check2.conclusion === "failure" || check2.conclusion === "timed_out" || check2.conclusion === "cancelled" || check2.conclusion === "action_required" || check2.conclusion === "stale";
+    const belowBar = check2.conclusion === "failure" && /\bbelow (?:your|the) required\b/i.test(checkWords(check2));
+    const failed = !belowBar && (check2.conclusion === "failure" || check2.conclusion === "timed_out" || check2.conclusion === "cancelled" || check2.conclusion === "action_required" || check2.conclusion === "stale");
     const refused = running ? null : checkRefusal(check2);
     const skipped = refused !== null;
     const neutralFindings = check2.conclusion === "neutral" && bot.neutralConclusion === "findings";
-    const verdict = running ? "running" : failed || skipped ? "failed" : neutralFindings ? "findings" : "clean";
+    const verdict = running ? "running" : failed || skipped ? "failed" : neutralFindings || belowBar ? "findings" : "clean";
     checkVerdict.set(bot.id, verdict);
+    if (belowBar) checkBelowBar.add(bot.id);
+    else checkBelowBar.delete(bot.id);
     if (refused !== null) checkSkipped.set(bot.id, refused);
     else checkSkipped.delete(bot.id);
+    if (!running && checkFoundNothingNew(check2)) checkCurrent.add(bot.id);
+    else checkCurrent.delete(bot.id);
+    const counted2 = neutralFindings ? checkFindingCount(check2) : null;
+    if (counted2 !== null && counted2 > 0) checkCounts.set(bot.id, counted2);
+    else checkCounts.delete(bot.id);
     const started = check2.startedAt === void 0 ? NaN : Date.parse(check2.startedAt);
     if (Number.isNaN(started)) checkStartedAt.delete(bot.id);
     else checkStartedAt.set(bot.id, started);
@@ -32412,6 +32487,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       id: bot.id,
       login,
       verdict,
+      ...counted2 !== null && counted2 > 0 ? { count: counted2 } : {},
       reviewedSha: check2.sha || headSha,
       checkName: check2.name,
       ...refused === null ? {} : { reason: refused }
@@ -32462,16 +32538,19 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
         if (asked.id === id) continue;
         if (viaWorkflow && (workflow === "failed" || workflow === null && !Number.isNaN(at) && now - at > ACK_GRACE_MS)) continue;
         if (!viaWorkflow && !Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === "reaction" && !reactedBy(comment, asked.id)) continue;
-        const prior = threadRuns.get(asked.id);
-        if (prior !== void 0) runsBeforeAsk.set(asked.id, prior);
-        threadRuns.delete(asked.id);
-        unthreadedBy.delete(asked.id);
+        if (botById(asked.id)?.resolvesThreads !== true) {
+          const prior = threadRuns.get(asked.id);
+          if (prior !== void 0) runsBeforeAsk.set(asked.id, prior);
+          threadRuns.delete(asked.id);
+          unthreadedBy.delete(asked.id);
+        }
         const acknowledged = viaWorkflow ? workflow === "queued" : botById(asked.id)?.acknowledges === "reaction" && reactedBy(comment, asked.id);
         statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged, askedAt: Number.isNaN(at) ? null : at });
       }
       continue;
     }
     if (id === null) continue;
+    if (id === "macroscope" && comment.resolved === void 0 && isMacroscopeAgentComment(comment.body)) continue;
     if (comment.resolved !== void 0) {
       postedThreads.add(id);
       reported(id, comment);
@@ -32483,7 +32562,9 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
       const lastAt = Number.isNaN(at) ? run2?.lastAt ?? null : Math.max(at, run2?.lastAt ?? Number.NEGATIVE_INFINITY);
       const unthreaded = run2 === void 0 ? unthreadedBy.get(id) : run2.unthreaded;
-      threadRuns.set(id, { login: comment.author, open: open2, openAnchor, lastAnchor: comment.anchor, lastAt, ...unthreaded === void 0 ? {} : { unthreaded } });
+      const badge = !comment.resolved && botById(id)?.threadSeverity === "badge" ? badgeSeverity(comment.body) : null;
+      const severity = badge === null || run2?.severity !== void 0 && SEVERITY_RANK[run2.severity] >= SEVERITY_RANK[badge] ? run2?.severity : badge;
+      threadRuns.set(id, { login: comment.author, open: open2, openAnchor, lastAnchor: comment.anchor, lastAt, ...unthreaded === void 0 ? {} : { unthreaded }, ...severity === void 0 ? {} : { severity } });
       continue;
     }
     if (commandReply(comment.body) === "done") {
@@ -32514,14 +32595,21 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       continue;
     }
     if (isStatusLineComment(comment.body)) {
-      const prior = threadRuns.get(id);
-      if (prior !== void 0) runsBeforeAsk.set(id, prior);
-      threadRuns.delete(id);
-      unthreadedBy.delete(id);
+      if (botById(id)?.resolvesThreads !== true) {
+        const prior = threadRuns.get(id);
+        if (prior !== void 0) runsBeforeAsk.set(id, prior);
+        threadRuns.delete(id);
+        unthreadedBy.delete(id);
+      }
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
       const triggered = commandReply(comment.body) === "started" || statusOnly.get(id)?.triggered === true;
       const pending = statusOnly.get(id);
       statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false, triggered, askedAt: pending === void 0 ? Number.isNaN(at) ? null : at : pending.askedAt ?? pending.at });
+      continue;
+    }
+    if (id === "macroscope" && checkSkipped.has(id) && !checkCurrent.has(id) && !threadRuns.has(id) && isMacroscopeGate(comment.body)) {
+      reported(id, comment);
+      statusOnly.delete(id);
       continue;
     }
     const parsed = parseBotBody(comment.body, id.startsWith("custom:") ? "" : id);
@@ -32536,13 +32624,13 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     if (parsed.count !== null) countedSummaries.add(comment.anchor);
     if (parsed.unthreaded !== void 0) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor });
     else unthreadedBy.delete(id);
-    threadRuns.delete(id);
+    if (botById(id)?.resolvesThreads !== true) threadRuns.delete(id);
     statusOnly.delete(id);
     runsBeforeAsk.delete(id);
     const existing = byId.get(id);
     const login = comment.author;
     if (existing !== void 0) {
-      const verdict2 = parsed.clean && existing.verdict === "failed" && !checkSkipped.has(id) ? "findings" : parsed.clean ? "clean" : parsed.count === 0 ? "clean" : "findings";
+      const verdict2 = parsed.clean && (existing.verdict === "failed" && !checkSkipped.has(id) || checkCounts.has(id)) ? "findings" : parsed.clean ? "clean" : parsed.count === 0 ? "clean" : "findings";
       const { reason: _skipped, ...reviewed } = existing;
       const reviewedSha = shaOver(existing);
       const base = verdict2 === "clean" ? { id: existing.id, login, verdict: verdict2, reviewedSha, ...existing.checkName === void 0 ? {} : { checkName: existing.checkName } } : { ...reviewed, reviewedSha };
@@ -32554,7 +32642,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   }
   if (options.complete === true) {
     for (const [id, verdict] of checkVerdict) {
-      if (verdict !== "findings" || postedThreads.has(id)) continue;
+      if (verdict !== "findings" || postedThreads.has(id) || checkCounts.has(id) || checkBelowBar.has(id)) continue;
       checkVerdict.set(id, "clean");
       const record4 = byId.get(id);
       if (record4 !== void 0 && record4.sourceId === void 0) byId.set(id, { ...record4, verdict: "clean" });
@@ -32617,13 +32705,14 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   }
   for (const [id, run2] of threadRuns) {
     const existing = byId.get(id);
+    if (botById(id)?.resolvesThreads === true && (existing?.verdict === "running" || existing?.verdict === "loading")) continue;
     const reviewedSha = existing === void 0 ? headSha : shaOver(existing);
     const checkName = existing?.checkName;
     const named = checkName === void 0 ? {} : { checkName };
     const scored = existing?.verdict === "findings" && existing.score !== void 0 ? { score: existing.score } : {};
     const unthreaded = run2.unthreaded?.count ?? 0;
     if (run2.open + unthreaded > 0) {
-      const severity = existing?.verdict === "findings" && existing.severity !== void 0 ? { severity: existing.severity } : {};
+      const severity = run2.severity !== void 0 ? { severity: run2.severity } : existing?.verdict === "findings" && existing.severity !== void 0 ? { severity: existing.severity } : {};
       byId.set(id, { id, login: run2.login, verdict: "findings", count: run2.open + unthreaded, ...scored, ...severity, reviewedSha, ...named, sourceId: run2.openAnchor ?? run2.unthreaded?.anchor ?? run2.lastAnchor });
       continue;
     }
@@ -32674,10 +32763,17 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     }
     const finished = check2.completedAt === void 0 ? NaN : Date.parse(check2.completedAt);
     const awaiting = !Number.isNaN(finished) && now - finished < REPORT_GRACE_MS;
+    if (!awaiting && bot.resolvesThreads === true && existing.verdict === "findings" && (threadRuns.get(bot.id)?.open ?? 0) > 0) {
+      byId.set(bot.id, { ...existing, runJudged: true });
+      continue;
+    }
+    const verdict = awaiting ? "running" : checkVerdict.get(bot.id) ?? "clean";
+    const counted2 = verdict === "findings" ? checkCounts.get(bot.id) : void 0;
     byId.set(bot.id, {
       id: bot.id,
       login: existing.login,
-      verdict: awaiting ? "running" : checkVerdict.get(bot.id) ?? "clean",
+      verdict,
+      ...counted2 === void 0 ? {} : { count: counted2 },
       reviewedSha: existing.reviewedSha,
       checkName: check2.name,
       ...existing.sourceId === void 0 ? {} : { sourceId: existing.sourceId },
@@ -32800,18 +32896,27 @@ function ruleIdOf(body) {
   const match = RULE_ID.exec(body);
   return match?.[1]?.toLowerCase() ?? null;
 }
+var BADGE_LINE = /^\p{Extended_Pictographic}?\uFE0F?\s*\*\*(critical|high|medium|low)\*\*(?:\s+`[^`\n]*`)?$/iu;
+var GATE_HEADING = /^approvability$/i;
+function outsideCodeSpans(line, change) {
+  return line.split(/(`+[^`]*`+)/).map((part, index) => index % 2 === 1 ? part : change(part)).join("");
+}
 function firstSentence(body) {
   const withoutCode2 = body.replace(/```[\s\S]*?```/g, " ");
-  const line = withoutCode2.split("\n").map((entry2) => entry2.trim()).filter((entry2) => entry2 !== "" && !entry2.startsWith("<") && !/^#{1,6}\s/.test(entry2) && !/^[-*]\s*$/.test(entry2)).map((entry2) => entry2.replace(/^\s*[-*]\s+/, "")).find((entry2) => entry2 !== "") ?? "";
+  const line = withoutCode2.split("\n").map((entry2) => outsideCodeSpans(entry2, (text) => text.replace(/<br\s*\/?>/gi, " ").replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/<\/?(?:sub|sup|picture|source|img|span|a|p|div)\b[^>]*>/gi, "")).replace(/^(\*\*|__)\s+/, "$1").trim()).filter((entry2) => entry2 !== "" && !entry2.startsWith("<") && !/^#{1,6}\s/.test(entry2) && !/^[-*]\s*$/.test(entry2) && !BADGE_LINE.test(entry2) && !GATE_HEADING.test(entry2)).map((entry2) => entry2.replace(/^\s*[-*]\s+/, "")).find((entry2) => entry2 !== "") ?? "";
   const cleaned = line.replace(/\s+/g, " ").trim();
   if (cleaned === "") return "Comment";
   const sentence = sentenceOf(cleaned, 160);
   return sentence.trim();
 }
 function endsWord(text, index) {
+  const next = closedThrough(text, index);
+  return next >= text.length || /[\s<]/.test(text[next] ?? "");
+}
+function closedThrough(text, index) {
   let next = index + 1;
   while (next < text.length && /[)\]"'’”*_~]/.test(text[next] ?? "")) next += 1;
-  return next >= text.length || /[\s<]/.test(text[next] ?? "");
+  return next;
 }
 var ABBREVIATION = /(?:^|[\s(])(?:e\.g|i\.e|vs|cf|viz|approx|incl|esp)$/i;
 var ETC = /(?:^|[\s(])etc$/i;
@@ -32825,11 +32930,13 @@ function sentenceOf(text, limit) {
   for (let index = 0; index < text.length && index < limit; index += 1) {
     const char = text[index];
     if (char === "`") inCode = !inCode;
-    else if (!inCode && (char === "." || char === "!" || char === "?") && endsWord(text, index) && !(char === "." && abbreviationGoesOn(text, index))) return text.slice(0, index + 1);
+    else if (!inCode && (char === "." || char === "!" || char === "?") && endsWord(text, index) && !(char === "." && abbreviationGoesOn(text, index))) return text.slice(0, closedThrough(text, index));
   }
   return text.slice(0, limit);
 }
 function guessSeverity(body, bot, humanQuestion) {
+  const badge = BADGE_LINE.exec(body.replace(/<!--[\s\S]*?-->/g, "").trim().split("\n")[0]?.trim() ?? "")?.[1]?.toLowerCase();
+  if (badge !== void 0) return badge === "critical" ? "blocking" : badge === "low" ? "suggestion" : "bug";
   const text = body.toLowerCase();
   if (/\b(security|critical|blocker|must fix|p0)\b/.test(text)) return "blocking";
   if (humanQuestion || /^(why|what|how|who|where)\b/.test(text.trim()) || text.includes("?")) return "question";
@@ -32871,7 +32978,9 @@ function atomFrom(comment, extraLogins) {
     botIds,
     humanAuthors,
     resolved: comment.isResolved === true,
-    outdated: comment.isOutdated === true
+    outdated: comment.isOutdated === true,
+    threads: 1,
+    openThreads: comment.isResolved === true ? 0 : 1
   };
 }
 function shouldMerge(a, b) {
@@ -32907,7 +33016,9 @@ function mergeAtom(a, b) {
     botIds,
     humanAuthors: [...a.humanAuthors, ...b.humanAuthors.filter((login) => !a.humanAuthors.includes(login))],
     resolved: a.resolved && b.resolved,
-    outdated: a.outdated || b.outdated
+    outdated: a.outdated || b.outdated,
+    threads: a.threads + b.threads,
+    openThreads: a.openThreads + b.openThreads
   };
 }
 function severityOf(atom) {
@@ -32936,7 +33047,8 @@ function itemFromAtom(atom) {
     // Resolved is the conversation's state and wins; outdated is a badge on an open one.
     status: atom.resolved ? "resolved" : atom.outdated ? "outdated" : "open",
     sources: atom.sources,
-    ...atom.suggestion !== null && atom.suggestionBy !== null ? { fix: { text: atom.suggestion, source: atom.suggestionBy } } : {}
+    ...atom.suggestion !== null && atom.suggestionBy !== null ? { fix: { text: atom.suggestion, source: atom.suggestionBy } } : {},
+    ...atom.threads > 1 ? { threads: { total: atom.threads, open: atom.openThreads } } : {}
   };
   if (atom.path !== void 0 && atom.line !== void 0) return { ...item, path: atom.path, line: atom.line };
   if (atom.path !== void 0) return { ...item, path: atom.path };
@@ -33335,6 +33447,7 @@ function botPhrase(bot, headSha) {
   if (bot.verdict === "clean") return `${title} clean (${tag})`;
   if (bot.score !== void 0) return `${title} ${bot.score}/5 (${tag})`;
   if (bot.count !== void 0) return `${title} ${bot.count} issue${bot.count === 1 ? "" : "s"} (${tag})`;
+  if (bot.needsHuman === true) return `${title} needs a human review (${tag})`;
   return `${title} findings (${tag})`;
 }
 function reviewerPhrase(reviewer) {
@@ -33344,10 +33457,10 @@ function reviewerPhrase(reviewer) {
   return `@${reviewer.login} commented`;
 }
 function headerLine(meta3) {
-  const open2 = openItemCount(meta3.items);
-  const done = doneItemCount(meta3.items);
-  const total = meta3.items.length;
-  const parts = [`**${done} of ${total} done**`];
+  const threads = threadCounts(meta3.items);
+  const open2 = threads.open;
+  const total = threads.total;
+  const parts = [`**${total - open2} of ${total} done**`];
   for (const bot of meta3.bots) parts.push(botPhrase(bot, meta3.headSha));
   if (open2 > 0 && total > 0) {
   }
@@ -34367,6 +34480,21 @@ var CHECK_REPORTERS = [
     checkNames: /^Gecko Security\b/i,
     project: () => null,
     short: (words) => counted(words, "vulnerability", /(\d+) (?:new )?vulnerabilit(?:y|ies)\b/i)
+  },
+  {
+    // Macroscope's Check Run Agents: a repository's own checks, one Markdown file each under `.macroscope/check-run-agents/`,
+    // named "Macroscope - <title>" ("Macroscope - Visible change evidence — Visible change: Mac evidence missing"). An agent
+    // concludes neutral when it flags something (the default ceiling, `failure` only when configured), success when it
+    // does not, skipped when it did not run ("Prerequisite check(s) not found"). Macroscope's own review (Correctness) is
+    // the Review bots row's and its Approvability gate a CI check, neither a report. Mirrors the registry's `checkNames`.
+    id: "macroscope",
+    title: "Macroscope",
+    appId: 900172,
+    hosts: [],
+    checkNames: /^Macroscope - (?!(?:Correctness|Approvability) Check$)\S/i,
+    project: (name) => /^Macroscope - (.+)$/i.exec(name)?.[1]?.trim() ?? null,
+    neutral: "failed",
+    short: () => []
   },
   {
     // GitHub's own code scanning ("CodeQL", or any uploaded tool's name): its row links to GitHub's own checks tab and

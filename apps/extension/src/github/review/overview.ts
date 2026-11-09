@@ -1982,6 +1982,7 @@ function botCardLine(record: BotVerdictRecord): string {
   const issues = record.count === undefined ? null : `${record.count} issue${record.count === 1 ? '' : 's'}`;
   if (scored !== '') return issues === null ? scored : `${scored}, ${issues} still open`;
   if (issues !== null) return `Reported ${issues} on this pull request`;
+  if (record.needsHuman === true) return 'Found nothing to count but recommends a person review this pull request';
   return 'Reported findings on this pull request';
 }
 

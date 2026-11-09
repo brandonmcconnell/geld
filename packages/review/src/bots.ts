@@ -59,6 +59,14 @@ export interface ReviewBot {
    * bots that start silently: their trigger counts until it ages.
    */
   readonly acknowledges?: 'reaction';
+  /**
+   * The bot resolves its own threads once a later push fixes them (Macroscope edits in "No longer relevant as of
+   * <sha>" and resolves), and its docs count a thread outstanding until then: an open thread is a current finding
+   * whatever run posted it, so neither a new run, nor a summary, nor a reply sets the open threads aside.
+   */
+  readonly resolvesThreads?: true;
+  /** Each thread opens with the bot's severity badge (`🟠 **High** \`path:line\``), read by `badgeSeverity`. */
+  readonly threadSeverity?: 'badge';
 }
 
 /** A bot that acknowledges triggers with a reaction has this long to do so; past it an unreacted trigger is not a run. */
@@ -263,18 +271,25 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     configFiles: ['.ellipsis/code-review.yaml', 'ellipsis.yaml'],
   },
   {
-    // Macroscope (macroscope.com, `macroscopeapp[bot]`): findings as comments, then an "#### Approvability" comment
-    // with "**Verdict:** Approved at `sha`" / "Would Approve" / "Needs Human Approval"; "Macroscope skipped reviewing
-    // this pull request. Per-review cost limit exceeded" when it will not run. `@macroscope-app review` starts one.
-    // Docs read Oct 2026 (docs.macroscope.com).
+    // Macroscope (macroscope.com, `macroscopeapp[bot]`), surveyed on ~110 public pull requests and its docs in Nov 2026
+    // (docs.macroscope.com). Its review is the "Macroscope - Correctness Check" (`neutral` with "N issues identified",
+    // `success` with "No issues identified"), each finding an inline thread headed by a severity badge, resolved by
+    // Macroscope when a push fixes it. "Macroscope - Approvability Check" and its "#### Approvability" comment ("**Verdict:**
+    // Approved at `sha`" / "Would Approve" / "Needs Human Approval", rewritten in place on every push) are a merge gate
+    // over those threads, not a count; every other "Macroscope - <title>" check is a repository's own Check Run Agent,
+    // shown as a report (`CHECK_REPORTERS`), its comments signed "Posted via Macroscope — <title>". Mentioning
+    // `@macroscope-app` starts a run, answered by "Review started…" and "Manual reviews triggered for commit…".
     id: 'macroscope',
     title: 'Macroscope',
     appId: 900172,
     logins: ['macroscopeapp[bot]', 'macroscope-app[bot]'],
-    checkNames: ['Macroscope'],
-    triggers: ['@macroscope-app review', '@macroscopeapp review'],
-    configFiles: [],
+    checkNames: ['Macroscope - Correctness Check'],
+    neutralConclusion: 'findings',
+    triggers: ['@macroscope-app review', '@macroscopeapp review', '@macroscope-app'],
+    configFiles: ['.macroscope/'],
     conversational: true,
+    resolvesThreads: true,
+    threadSeverity: 'badge',
   },
   {
     // Korbit (korbit.ai, `korbit-ai[bot]`): a review headed "### Review by Korbit AI" with a table of issues and
@@ -480,9 +495,60 @@ function countShapedBy(botId: string, text: string): number | null {
   }
 }
 
+/**
+ * Macroscope's Approvability comment: an "Approvability" heading (`####` raw, a bare line as the page reads it) over
+ * "**Verdict:** …". The verdict is the gate's, read from that line alone: the explanation under it talks about
+ * findings ("The unresolved finding reports…") that its threads already count.
+ */
+/** Macroscope's Approvability comment, in either form. */
+export function isMacroscopeGate(body: string): boolean {
+  return macroscopeApprovability(body.replace(/\r\n?/g, '\n').replace(/<!--[\s\S]*?-->/g, '').trim()) !== null;
+}
+
+function macroscopeApprovability(text: string): ParsedBotBody | null {
+  if (!/^\s*(?:#{1,6}\s*)?Approvability\s*$/im.test(text)) return null;
+  const verdict = /\bVerdict:?\**\s*:?\s*([^\n]*)/i.exec(text)?.[1]?.replace(/[*_`]/g, '').trim() ?? '';
+  const empty = { count: null, score: null, severity: null } as const;
+  if (/^needs human approval\b/i.test(verdict)) return { ...empty, clean: false, verdict: 'needs-human' };
+  // "Would Approve" is eligible, held back by what it lists under "**Needs human approval because:**": Preview Mode
+  // (it "would have approved this PR outside preview mode") or an unresolved finding, which its thread counts. A
+  // review that did not run ("Per-review cost limit exceeded … Approvability relies on correctness review") leaves
+  // the gate saying nothing about the code; the skipped check says why.
+  const blockers = /\bneeds human approval because\b([\s\S]*)/i.exec(text)?.[1] ?? '';
+  if (/\b(?:limit exceeded|limit reached|relies on correctness review|could not report|skipped for prerequisites)\b/i.test(blockers)) return { ...empty, clean: false };
+  if (/^(?:approved|would approve)\b/i.test(verdict)) return { ...empty, clean: true };
+  return { ...empty, clean: false };
+}
+
+/**
+ * A Macroscope Check Run Agent's comment, signed "Posted via Macroscope — <a>Visible change evidence</a>": the
+ * repository's own check reporting, never the review's verdict (its check is a report, `CHECK_REPORTERS`).
+ */
+export function isMacroscopeAgentComment(body: string): boolean {
+  return /\bPosted via Macroscope\s*[\u2014\u2013-]/i.test(body.replace(/<[^>]+>/g, ''));
+}
+
+/**
+ * The severity badge a finding opens with — "🔴 **Critical**", "🟠 **High**", "🟡 **Medium**", "🟢 **Low**" before the
+ * finding's `path:line` (Macroscope) — as Geld's three levels; null for a comment with none.
+ */
+export function badgeSeverity(body: string): FindingSeverity | null {
+  const first = body.replace(/<!--[\s\S]*?-->/g, '').trim().split('\n')[0] ?? '';
+  const match = /^\s*\p{Extended_Pictographic}?\uFE0F?\s*\*\*(critical|high|medium|low)\*\*/iu.exec(first);
+  const level = match?.[1]?.toLowerCase();
+  return level === undefined ? null : level === 'critical' || level === 'high' ? 'high' : level === 'medium' ? 'medium' : 'low';
+}
+
+const SEVERITY_RANK: Readonly<Record<FindingSeverity, number>> = { high: 3, medium: 2, low: 1 };
+
 export function parseBotBody(body: string, botId: string): ParsedBotBody {
   // HTML comments are the bots' own markers (Cursor's automation ids, Greptile's score), never words to weigh.
   const text = body.replace(/\r\n?/g, '\n').replace(/<!--[\s\S]*?-->/g, '').trim();
+  if (botId === 'macroscope') {
+    if (isMacroscopeAgentComment(text)) return { count: null, score: null, clean: false, severity: null };
+    const gate = macroscopeApprovability(text);
+    if (gate !== null) return gate;
+  }
   // Entelligence's scorecard has two N/5 rows; "Merge Confidence" is the verdict (Code Quality feeds it). Qodo's
   // summaries carry no score out of five, whatever fraction appears in them.
   const scoreMatch = botId === 'qodo' ? null : (botId === 'entelligence' ? /merge confidence\W+(?:[\u25cf\u25cb\s]*)\**(\d+(?:\.\d+)?)\s*\/\s*5\b/i.exec(text) : null) ?? /(\d+(?:\.\d+)?)\s*\/\s*5\b/.exec(text);
@@ -622,6 +688,11 @@ export interface DerivedBotVerdict {
    * refusal ended a check left under way (its own words judged the run).
    */
   readonly runJudged?: true;
+  /**
+   * A `findings` verdict with no count that is the bot asking for a person, in so many words ("Needs Human Approval",
+   * "Needs a human reviewer."): nothing was found to count, so the chip says that rather than "findings".
+   */
+  readonly needsHuman?: true;
 }
 
 /**
@@ -678,8 +749,11 @@ export function refusalReason(body: string): string | null {
   if (heading !== undefined && /^[A-Z][\w.-]*(?:\[bot\])?\s+(?:skipped reviewing\b|encountered an error\b)/.test(heading)) {
     const lower = heading.toLowerCase();
     if (REVIEW_BOTS.some((bot) => lower.startsWith(bot.title.toLowerCase()) || bot.logins.some((login) => lower.startsWith(login.replace(/\[bot\]$/, '').toLowerCase())))) {
-      const first = heading.replace(/\s*[\u2014\u2013-]{2,}.*$/, '').split(/(?<=[.!?])\s+/)[0] ?? heading;
-      return first.replace(/[.!?]\s*$/, '');
+      const [first = heading, why] = heading.replace(/\s*[\u2014\u2013-]{2,}.*$/, '').split(/(?<=[.!?])\s+/);
+      // "Macroscope skipped reviewing this pull request. Per-review cost limit exceeded (workspace setting).": the
+      // second sentence is why, and the chip already says it was skipped.
+      const reason = /\bskipped reviewing\b/i.test(first) && why !== undefined && why.trim() !== '' ? why : first;
+      return reason.replace(/[.!?]\s*$/, '');
     }
   }
   if (heading !== undefined && heading.length <= 120 && /\b(?:couldn.t run|could not run|cannot run|can.t run|needs? [^.]{0,60}\benabled|usage limits? (?:(?:has|have|was|were) been )?reached|quota (?:limit )?reached|out of credits)\b/i.test(heading)) {
@@ -914,8 +988,11 @@ function botNamedIn(text: string): boolean {
 const REFUSAL_MONEY = /\b(?:credits?|quota|billing|seats?)\b/i;
 
 function withOptionalCount(base: DerivedBotVerdict, parsed: ParsedBotBody): DerivedBotVerdict {
+  const { needsHuman: _earlier, ...rest } = base;
+  const counted = parsed.count !== null || (base.verdict === 'findings' && base.count !== undefined);
   return {
-    ...base,
+    ...rest,
+    ...(base.verdict === 'findings' && parsed.verdict === 'needs-human' && !counted ? { needsHuman: true } : {}),
     ...(parsed.count !== null ? { count: parsed.count } : {}),
     ...(parsed.score !== null ? { score: parsed.score } : {}),
     ...(parsed.severity !== null ? { severity: parsed.severity } : {}),
@@ -964,6 +1041,8 @@ export function isStatusLineComment(body: string): boolean {
   // task list (`blockText` keeps no checkbox). The first line alone says it, whatever the length of the list below.
   const firstLine = untagged.split('\n').find((line) => line.trim() !== '') ?? '';
   if (/^\s*reviewing (?:pr|pull request) #?\d+\s*$/i.test(firstLine.replace(/[`*_>~#]/g, ' ').replace(/\s+/g, ' '))) return true;
+  // Macroscope's answer to a mention, over a link per check it started (edited in place as more are triggered).
+  if (/^\s*manual reviews? triggered for commit\b/i.test(firstLine.replace(/[`*_>~#]/g, ' '))) return true;
   const text = untagged
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/[`*_>~#]/g, '')
@@ -1041,6 +1120,8 @@ interface ThreadRun {
   readonly lastAt: number | null;
   /** Findings the run's summary holds with no thread to resolve (`ParsedBotBody.unthreaded`), and that summary. */
   readonly unthreaded?: { readonly count: number; readonly anchor: string };
+  /** The worst badge among the open threads, for a bot whose threads wear one (`ReviewBot.threadSeverity`). */
+  readonly severity?: FindingSeverity;
 }
 
 /**
@@ -1060,12 +1141,33 @@ export const RERUN_EDIT_GAP_MS = 5 * 60 * 1000;
  */
 function checkRefusal(check: RawCheckRun): string | null {
   if (check.status !== 'completed') return null;
-  if (check.conclusion === 'skipped') return 'Check skipped';
+  const words = checkWords(check);
+  // A skip in its own words ("Per-review cost limit exceeded (workspace setting)."), else the bare fact.
+  if (check.conclusion === 'skipped') return words === '' || /^(?:skipped|completed|cancelled|neutral)\b(?:\s+(?:in|after)\s+\S+)?[.!]?$/i.test(words) ? 'Check skipped' : words.replace(/[.!]$/, '');
   if (check.conclusion !== 'neutral' && check.conclusion !== 'success') return null;
-  const words = (check.description ?? '').replace(/^.*?\s[\u2014\u2013-]\s+/, '').trim();
   if (words === '') return null;
   if (/^(?:reviews?\s+)?(?:(?:was|were|is|are)\s+)?(?:rate[- ]limited|skipped|paused)[.!]?$/i.test(words)) return words.replace(/[.!]$/, '');
   return refusalReason(words);
+}
+
+/** A check's own words, without the merge box's timing before them ("Completed in 3m — 8 issues identified"). */
+function checkWords(check: RawCheckRun): string {
+  return (check.description ?? '').replace(/^.*?\s[\u2014\u2013-]\s+/, '').trim();
+}
+
+/**
+ * A check that ran on this head with nothing new to review — Macroscope's "All code in this push has already been
+ * reviewed.", "Diff unchanged", "No code objects were reviewed.": the review before it stands, and for this head, so
+ * it does not read as behind the way a refused run's does.
+ */
+function checkFoundNothingNew(check: RawCheckRun): boolean {
+  return check.status === 'completed' && /\b(?:already (?:been )?reviewed|diff unchanged|no code objects were reviewed|prior analysis still applies)\b/i.test(checkWords(check));
+}
+
+/** The count a check's words give ("8 issues identified (10 code objects reviewed)."), or null. */
+function checkFindingCount(check: RawCheckRun): number | null {
+  const match = /\b(\d+)\s+(?:new\s+)?(?:issues?|findings?|bugs?)\s+(?:identified|found)\b/i.exec(checkWords(check));
+  return match?.[1] === undefined ? null : Number.parseInt(match[1], 10);
 }
 
 /**
@@ -1135,23 +1237,40 @@ export function verdictsFrom(
    * The commit an earlier review stands for when it takes over a record: not the skipped check's, which is a commit the
    * bot did not review; the comments do not say which it is, so it reads as behind (`UNKNOWN_SHA`).
    */
-  const shaOver = (existing: DerivedBotVerdict): string => (existing.verdict === 'failed' && existing.reason !== undefined && checkSkipped.get(existing.id) === existing.reason ? UNKNOWN_SHA : existing.reviewedSha);
+  /** Bots whose check ran on this head with nothing new to review (`checkFoundNothingNew`): the review before it is current. */
+  const checkCurrent = new Set<string>();
+  /** What a check whose neutral means findings counted in its own words ("8 issues identified"), until threads say. */
+  const checkCounts = new Map<string, number>();
+  /** Bots whose check failed on a score under the repository's bar: findings in the bot's words, whatever its threads. */
+  const checkBelowBar = new Set<string>();
+  const shaOver = (existing: DerivedBotVerdict): string =>
+    existing.verdict === 'failed' && existing.reason !== undefined && checkSkipped.get(existing.id) === existing.reason && !checkCurrent.has(existing.id) ? UNKNOWN_SHA : existing.reviewedSha;
 
   for (const check of checks) {
     const bot = botByCheckName(check.name);
     if (bot === null) continue;
     const login = bot.logins[0] ?? bot.id;
     const running = check.status !== 'completed';
-    const failed = check.conclusion === 'failure' || check.conclusion === 'timed_out' || check.conclusion === 'cancelled' || check.conclusion === 'action_required' || check.conclusion === 'stale';
+    // Greptile fails its check on a score under the repository's bar ("Base review: Confidence 3/5 — below your required
+    // 5/5"): that is the review's word on the code, findings, not a run that broke.
+    const belowBar = check.conclusion === 'failure' && /\bbelow (?:your|the) required\b/i.test(checkWords(check));
+    const failed = !belowBar && (check.conclusion === 'failure' || check.conclusion === 'timed_out' || check.conclusion === 'cancelled' || check.conclusion === 'action_required' || check.conclusion === 'stale');
     // A skipped check is a run the bot did not make; its row is the word on that, as a "Review skipped" comment is.
     const refused = running ? null : checkRefusal(check);
     const skipped = refused !== null;
     // `neutral` is the bot's own word: findings for one whose docs say so (Bugbot), else a run with nothing to say.
     const neutralFindings = check.conclusion === 'neutral' && bot.neutralConclusion === 'findings';
-    const verdict = running ? 'running' : failed || skipped ? 'failed' : neutralFindings ? 'findings' : 'clean';
+    const verdict = running ? 'running' : failed || skipped ? 'failed' : neutralFindings || belowBar ? 'findings' : 'clean';
     checkVerdict.set(bot.id, verdict);
+    if (belowBar) checkBelowBar.add(bot.id);
+    else checkBelowBar.delete(bot.id);
     if (refused !== null) checkSkipped.set(bot.id, refused);
     else checkSkipped.delete(bot.id);
+    if (!running && checkFoundNothingNew(check)) checkCurrent.add(bot.id);
+    else checkCurrent.delete(bot.id);
+    const counted = neutralFindings ? checkFindingCount(check) : null;
+    if (counted !== null && counted > 0) checkCounts.set(bot.id, counted);
+    else checkCounts.delete(bot.id);
     // The start goes with the verdict: a later check for the same bot with no start of its own must not keep
     // the earlier one's, or its verdict would be read as the earlier run's below.
     const started = check.startedAt === undefined ? NaN : Date.parse(check.startedAt);
@@ -1164,6 +1283,7 @@ export function verdictsFrom(
       id: bot.id,
       login,
       verdict,
+      ...(counted !== null && counted > 0 ? { count: counted } : {}),
       reviewedSha: check.sha || headSha,
       checkName: check.name,
       ...(refused === null ? {} : { reason: refused }),
@@ -1261,10 +1381,12 @@ export function verdictsFrom(
         // The threads set aside here are what a refusal brings back. Only a report from the bot clears the
         // stash (below): a second request, or the bot's own "Starting", before any report leaves it the last
         // real run.
-        const prior = threadRuns.get(asked.id);
-        if (prior !== undefined) runsBeforeAsk.set(asked.id, prior);
-        threadRuns.delete(asked.id);
-        unthreadedBy.delete(asked.id);
+        if (botById(asked.id)?.resolvesThreads !== true) {
+          const prior = threadRuns.get(asked.id);
+          if (prior !== undefined) runsBeforeAsk.set(asked.id, prior);
+          threadRuns.delete(asked.id);
+          unthreadedBy.delete(asked.id);
+        }
         // A request, even a retry, asks for a new run: it is when this run was asked for.
         const acknowledged = viaWorkflow ? workflow === 'queued' : botById(asked.id)?.acknowledges === 'reaction' && reactedBy(comment, asked.id);
         statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged, askedAt: Number.isNaN(at) ? null : at });
@@ -1272,6 +1394,8 @@ export function verdictsFrom(
       continue;
     }
     if (id === null) continue;
+    // A Macroscope Check Run Agent's report says nothing about the review, whatever it looks like (a refusal, a status line).
+    if (id === 'macroscope' && comment.resolved === undefined && isMacroscopeAgentComment(comment.body)) continue;
     if (comment.resolved !== undefined) {
       // The run the bot announced has reported: its findings are these threads.
       postedThreads.add(id);
@@ -1284,7 +1408,9 @@ export function verdictsFrom(
       const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
       const lastAt = Number.isNaN(at) ? (run?.lastAt ?? null) : Math.max(at, run?.lastAt ?? Number.NEGATIVE_INFINITY);
       const unthreaded = run === undefined ? unthreadedBy.get(id) : run.unthreaded;
-      threadRuns.set(id, { login: comment.author, open, openAnchor, lastAnchor: comment.anchor, lastAt, ...(unthreaded === undefined ? {} : { unthreaded }) });
+      const badge = !comment.resolved && botById(id)?.threadSeverity === 'badge' ? badgeSeverity(comment.body) : null;
+      const severity = badge === null || (run?.severity !== undefined && SEVERITY_RANK[run.severity] >= SEVERITY_RANK[badge]) ? run?.severity : badge;
+      threadRuns.set(id, { login: comment.author, open, openAnchor, lastAnchor: comment.anchor, lastAt, ...(unthreaded === undefined ? {} : { unthreaded }), ...(severity === undefined ? {} : { severity }) });
       continue;
     }
     if (commandReply(comment.body) === 'done') {
@@ -1321,16 +1447,24 @@ export function verdictsFrom(
     if (isStatusLineComment(comment.body)) {
       // A new run began: the threads so far belong to the run before it — and are what a refusal of this run
       // brings back, as with a request.
-      const prior = threadRuns.get(id);
-      if (prior !== undefined) runsBeforeAsk.set(id, prior);
-      threadRuns.delete(id);
-      unthreadedBy.delete(id);
+      if (botById(id)?.resolvesThreads !== true) {
+        const prior = threadRuns.get(id);
+        if (prior !== undefined) runsBeforeAsk.set(id, prior);
+        threadRuns.delete(id);
+        unthreadedBy.delete(id);
+      }
       const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
       // "Review triggered" marks the run, whatever status line follows it before the bot reports.
       const triggered = commandReply(comment.body) === 'started' || statusOnly.get(id)?.triggered === true;
       // When the run was first asked for (the request, or this line when there was none) places a skipped check by it.
       const pending = statusOnly.get(id);
       statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false, triggered, askedAt: pending === undefined ? (Number.isNaN(at) ? null : at) : (pending.askedAt ?? pending.at) });
+      continue;
+    }
+    // The gate judged a head whose review was refused (a spend limit): it says nothing about the code, the skip does.
+    if (id === 'macroscope' && checkSkipped.has(id) && !checkCurrent.has(id) && !threadRuns.has(id) && isMacroscopeGate(comment.body)) {
+      reported(id, comment);
+      statusOnly.delete(id);
       continue;
     }
     const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id);
@@ -1349,7 +1483,8 @@ export function verdictsFrom(
     if (parsed.count !== null) countedSummaries.add(comment.anchor);
     if (parsed.unthreaded !== undefined) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor });
     else unthreadedBy.delete(id);
-    threadRuns.delete(id);
+    // Macroscope's Approvability verdict follows its threads by seconds: a gate over them, not a count that replaces them.
+    if (botById(id)?.resolvesThreads !== true) threadRuns.delete(id);
     statusOnly.delete(id);
     // The bot reported: whatever a request set aside is an older run now, not what a later refusal brings back.
     runsBeforeAsk.delete(id);
@@ -1357,7 +1492,9 @@ export function verdictsFrom(
     const login = comment.author;
     if (existing !== undefined) {
       // A clean word over a failed check is findings; over a skipped one it is clean (the skip is a run not made).
-      const verdict = parsed.clean && existing.verdict === 'failed' && !checkSkipped.has(id) ? 'findings' : parsed.clean ? 'clean' : parsed.count === 0 ? 'clean' : 'findings';
+      // ...and over a check that counted findings it is findings still: Macroscope approves with findings open (its
+      // blocking severity off), and the count stands until the threads say.
+      const verdict = parsed.clean && ((existing.verdict === 'failed' && !checkSkipped.has(id)) || checkCounts.has(id)) ? 'findings' : parsed.clean ? 'clean' : parsed.count === 0 ? 'clean' : 'findings';
       // A clean run says nothing about counts: the earlier run's number and severity belong to that run, not this one.
       // A skipped check's reason is about a run not made; the comment is a review, so it does not carry over.
       const { reason: _skipped, ...reviewed } = existing;
@@ -1379,7 +1516,8 @@ export function verdictsFrom(
   // (a finished run with no report since) does not bring "findings" back over an earlier clean summary.
   if (options.complete === true) {
     for (const [id, verdict] of checkVerdict) {
-      if (verdict !== 'findings' || postedThreads.has(id)) continue;
+      // A check that counted its findings in so many words ("8 issues identified") found them, threads or not.
+      if (verdict !== 'findings' || postedThreads.has(id) || checkCounts.has(id) || checkBelowBar.has(id)) continue;
       checkVerdict.set(id, 'clean');
       const record = byId.get(id);
       if (record !== undefined && record.sourceId === undefined) byId.set(id, { ...record, verdict: 'clean' });
@@ -1483,6 +1621,8 @@ export function verdictsFrom(
   // every one resolved nothing is outstanding, and the check (when there is one) says how that run ended.
   for (const [id, run] of threadRuns) {
     const existing = byId.get(id);
+    // A bot whose open threads stand through a new run (`resolvesThreads`) reads running while that run is under way.
+    if (botById(id)?.resolvesThreads === true && (existing?.verdict === 'running' || existing?.verdict === 'loading')) continue;
     const reviewedSha = existing === undefined ? headSha : shaOver(existing);
     const checkName = existing?.checkName;
     const named = checkName === undefined ? {} : { checkName };
@@ -1491,7 +1631,7 @@ export function verdictsFrom(
     // Findings the summary holds with no thread (CodeRabbit's outside the diff) stand whatever becomes of its threads.
     const unthreaded = run.unthreaded?.count ?? 0;
     if (run.open + unthreaded > 0) {
-      const severity = existing?.verdict === 'findings' && existing.severity !== undefined ? { severity: existing.severity } : {};
+      const severity = run.severity !== undefined ? { severity: run.severity } : existing?.verdict === 'findings' && existing.severity !== undefined ? { severity: existing.severity } : {};
       byId.set(id, { id, login: run.login, verdict: 'findings', count: run.open + unthreaded, ...scored, ...severity, reviewedSha, ...named, sourceId: run.openAnchor ?? run.unthreaded?.anchor ?? run.lastAnchor });
       continue;
     }
@@ -1568,10 +1708,19 @@ export function verdictsFrom(
     }
     const finished = check.completedAt === undefined ? NaN : Date.parse(check.completedAt);
     const awaiting = !Number.isNaN(finished) && now - finished < REPORT_GRACE_MS;
+    // Open threads of a bot that resolves its own stand whatever a later run's check says: an incremental review that
+    // found nothing new in the files it read did not withdraw them.
+    if (!awaiting && bot.resolvesThreads === true && existing.verdict === 'findings' && (threadRuns.get(bot.id)?.open ?? 0) > 0) {
+      byId.set(bot.id, { ...existing, runJudged: true });
+      continue;
+    }
+    const verdict = awaiting ? 'running' : (checkVerdict.get(bot.id) ?? 'clean');
+    const counted = verdict === 'findings' ? checkCounts.get(bot.id) : undefined;
     byId.set(bot.id, {
       id: bot.id,
       login: existing.login,
-      verdict: awaiting ? 'running' : (checkVerdict.get(bot.id) ?? 'clean'),
+      verdict,
+      ...(counted === undefined ? {} : { count: counted }),
       reviewedSha: existing.reviewedSha,
       checkName: check.name,
       ...(existing.sourceId === undefined ? {} : { sourceId: existing.sourceId }),

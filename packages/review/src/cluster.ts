@@ -57,12 +57,29 @@ export function ruleIdOf(body: string): string | null {
  * inline marks (`code`, **bold**, *italic*, ~~struck~~) stay, so a title
  * renders the identifier or emphasis its author wrote (`inline-markdown.ts`).
  */
+/**
+ * A line that is only a finding's severity badge and where it is — "🟠 **High** `src/findings.ts:117`" (Macroscope) —
+ * over the finding itself: never its title.
+ */
+const BADGE_LINE = /^\p{Extended_Pictographic}?\uFE0F?\s*\*\*(critical|high|medium|low)\*\*(?:\s+`[^`\n]*`)?$/iu;
+/** Macroscope's "#### Approvability" heading as the page reads it (a bare line): the "**Verdict:** …" under it says more. */
+const GATE_HEADING = /^approvability$/i;
+
+/** `change` applied to the text outside code spans: "Escape `<div>` before rendering." keeps its tag. */
+function outsideCodeSpans(line: string, change: (text: string) => string): string {
+  return line
+    .split(/(`+[^`]*`+)/)
+    .map((part, index) => (index % 2 === 1 ? part : change(part)))
+    .join('');
+}
+
 export function firstSentence(body: string): string {
   const withoutCode = body.replace(/```[\s\S]*?```/g, ' ');
   const line = withoutCode
     .split('\n')
-    .map((entry) => entry.trim())
-    .filter((entry) => entry !== '' && !entry.startsWith('<') && !/^#{1,6}\s/.test(entry) && !/^[-*]\s*$/.test(entry))
+    // Codex's raw "**<sub><sub>![P2 Badge](…)</sub></sub>  Resolve reference paths…**": the badge is no words, as on the page.
+    .map((entry) => outsideCodeSpans(entry, (text) => text.replace(/<br\s*\/?>/gi, ' ').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/<\/?(?:sub|sup|picture|source|img|span|a|p|div)\b[^>]*>/gi, '')).replace(/^(\*\*|__)\s+/, '$1').trim())
+    .filter((entry) => entry !== '' && !entry.startsWith('<') && !/^#{1,6}\s/.test(entry) && !/^[-*]\s*$/.test(entry) && !BADGE_LINE.test(entry) && !GATE_HEADING.test(entry))
     .map((entry) => entry.replace(/^\s*[-*]\s+/, ''))
     .find((entry) => entry !== '') ?? '';
   const cleaned = line.replace(/\s+/g, ' ').trim();
@@ -79,9 +96,15 @@ export function firstSentence(body: string): string {
  * `_` opening nothing.
  */
 function endsWord(text: string, index: number): boolean {
+  const next = closedThrough(text, index);
+  return next >= text.length || /[\s<]/.test(text[next] ?? '');
+}
+
+/** Past the terminator at `index`, the closing punctuation and emphasis that are the sentence's own (`.**`, `.)`). */
+function closedThrough(text: string, index: number): number {
   let next = index + 1;
   while (next < text.length && /[)\]"'’”*_~]/.test(text[next] ?? '')) next += 1;
-  return next >= text.length || /[\s<]/.test(text[next] ?? '');
+  return next;
 }
 
 /** Words whose period is an abbreviation's, never a sentence's end: "Use e.g. Node 20" goes on past it. */
@@ -100,12 +123,15 @@ function sentenceOf(text: string, limit: number): string {
   for (let index = 0; index < text.length && index < limit; index += 1) {
     const char = text[index];
     if (char === '`') inCode = !inCode;
-    else if (!inCode && (char === '.' || char === '!' || char === '?') && endsWord(text, index) && !(char === '.' && abbreviationGoesOn(text, index))) return text.slice(0, index + 1);
+    else if (!inCode && (char === '.' || char === '!' || char === '?') && endsWord(text, index) && !(char === '.' && abbreviationGoesOn(text, index))) return text.slice(0, closedThrough(text, index));
   }
   return text.slice(0, limit);
 }
 
 export function guessSeverity(body: string, bot: boolean, humanQuestion: boolean): ReviewSeverity {
+  // A bot that grades its own finding says how bad it is better than its words do.
+  const badge = BADGE_LINE.exec(body.replace(/<!--[\s\S]*?-->/g, '').trim().split('\n')[0]?.trim() ?? '')?.[1]?.toLowerCase();
+  if (badge !== undefined) return badge === 'critical' ? 'blocking' : badge === 'low' ? 'suggestion' : 'bug';
   const text = body.toLowerCase();
   if (/\b(security|critical|blocker|must fix|p0)\b/.test(text)) return 'blocking';
   if (humanQuestion || /^(why|what|how|who|where)\b/.test(text.trim()) || text.includes('?')) return 'question';
@@ -130,6 +156,9 @@ interface Atom {
   readonly humanAuthors: string[];
   readonly resolved: boolean;
   readonly outdated: boolean;
+  /** The review threads merged into this atom, and how many of them are unresolved. */
+  readonly threads: number;
+  readonly openThreads: number;
 }
 
 function sourceOf(comment: RawComment | ThreadPeer, extraLogins: readonly string[]): ReviewSource {
@@ -167,6 +196,8 @@ function atomFrom(comment: RawComment, extraLogins: readonly string[]): Atom {
     humanAuthors,
     resolved: comment.isResolved === true,
     outdated: comment.isOutdated === true,
+    threads: 1,
+    openThreads: comment.isResolved === true ? 0 : 1,
   };
 }
 
@@ -206,6 +237,8 @@ function mergeAtom(a: Atom, b: Atom): Atom {
     humanAuthors: [...a.humanAuthors, ...b.humanAuthors.filter((login) => !a.humanAuthors.includes(login))],
     resolved: a.resolved && b.resolved,
     outdated: a.outdated || b.outdated,
+    threads: a.threads + b.threads,
+    openThreads: a.openThreads + b.openThreads,
   };
 }
 
@@ -237,6 +270,7 @@ function itemFromAtom(atom: Atom): ReviewItem {
     status: atom.resolved ? 'resolved' : atom.outdated ? 'outdated' : 'open',
     sources: atom.sources,
     ...(atom.suggestion !== null && atom.suggestionBy !== null ? { fix: { text: atom.suggestion, source: atom.suggestionBy } } : {}),
+    ...(atom.threads > 1 ? { threads: { total: atom.threads, open: atom.openThreads } } : {}),
   };
   if (atom.path !== undefined && atom.line !== undefined) return { ...item, path: atom.path, line: atom.line };
   if (atom.path !== undefined) return { ...item, path: atom.path };

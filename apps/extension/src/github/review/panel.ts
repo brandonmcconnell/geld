@@ -16,7 +16,7 @@ import type { AgentNote } from './agent-notes';
 import type { Deployment, DeploymentEntry, DeploymentState, PreviewLinks } from './deployments';
 import { deploymentHref, deploymentMark, environmentLabel } from './deployments';
 import { noteTone } from './note-tone';
-import { botTitle, doneItemCount, isOpenStatus, resolveBotId } from '@geld/review';
+import { botTitle, isOpenStatus, itemThreads, resolveBotId, threadCounts } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
 import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER } from '../ui/icons';
@@ -797,6 +797,9 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers, n
   const detailBits: string[] = [];
   if (item.path !== undefined) detailBits.push(item.line === undefined ? item.path : `${item.path}:${item.line}`);
   detailBits.push(authorLabels(item).join(', '));
+  const threads = itemThreads(item);
+  // A row merging threads on the same lines (two bots, or one bot twice) counts each, as the bots' chips do.
+  if (threads.total > 1) detailBits.push(threads.open > 0 && threads.open < threads.total ? `${threads.total - threads.open} of ${threads.total} threads resolved` : `${threads.total} threads`);
   if (item.sources.length > 1) detailBits.push(`${item.sources.length} comments`);
   const pending = model.aiPending.has(item.id);
   // A pointer row's focus key differs from the canonical row's, so a reveal or a focus restore lands on the latter.
@@ -930,7 +933,8 @@ function pushContents(batch: Batch): string {
 const CI_WORDS: Readonly<Record<'success' | 'failure' | 'pending', string>> = { success: 'checks passed', failure: 'checks failed', pending: 'checks running' };
 
 function batchProgress(batch: Batch): { readonly done: number; readonly total: number } {
-  return { done: batch.items.filter((item) => !isOpenStatus(item.status)).length, total: batch.items.length };
+  const threads = threadCounts(batch.items);
+  return { done: threads.total - threads.open, total: threads.total };
 }
 
 /** The meter from the Geld row — a bar that fills as threads resolve, then "d/t resolved" — shown only once there is something to measure. */
@@ -1118,8 +1122,8 @@ export function renderBatchView(slot: HTMLElement, batch: Batch, model: PanelMod
   }
   const unresolved = batch.items.filter((item) => isOpenStatus(item.status));
   const resolved = batch.items.filter((item) => !isOpenStatus(item.status));
-  section(plural(unresolved.length, 'unresolved thread'), unresolved);
-  section(plural(resolved.length, 'resolved thread'), resolved);
+  section(plural(threadCounts(unresolved).open, 'unresolved thread'), unresolved);
+  section(plural(threadCounts(resolved).total, 'resolved thread'), resolved);
   if (byPush && batch.commits.length > 0) {
     // The push itself, last: its commit rows unfold under a heading like the bot comments do.
     const open = model.openCommits.has(batch.key);
@@ -1569,7 +1573,7 @@ export function botRunState(botId: string, model: Pick<PanelModel, 'ranSincePush
   // green check once they are). It is ticked only when the bot has not reported since the latest push: then it has
   // not seen the fixes, while a bot that already reviewed this commit would say the same again.
   const findings = record.verdict === 'findings';
-  const word = record.verdict === 'failed' ? 'Failed' : findings || health === 'warn' || health === 'bad' ? 'Findings' : 'Passed';
+  const word = record.verdict === 'failed' ? 'Failed' : record.needsHuman === true && record.count === undefined ? 'Needs human' : findings || health === 'warn' || health === 'bad' ? 'Findings' : 'Passed';
   const reviewedThisCommit = model.ranSincePush?.has(botId) ?? true;
   return { health, word, preselect: record.verdict === 'failed' || (findings && !reviewedThisCommit) };
 }
@@ -3204,13 +3208,14 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   const cardMargins = { left: cardStyle.marginLeft, right: cardStyle.marginRight };
 
   const { open, done } = splitItems(model.meta.items);
-  const total = model.meta.items.length;
-  const doneCount = doneItemCount(model.meta.items);
+  const threads = threadCounts(model.meta.items);
+  const total = threads.total;
+  const doneCount = threads.total - threads.open;
   const waiting = model.meta.items.filter((item) => item.status === 'needs-reply').length;
 
   /* Summary strip, on the status rows' columns: the emblem as the glyph, "Geld" as the label, then the meter once there are threads to measure. */
   const summary = createElement('div', { class: `${PANEL_CLASS}__summary` }, [brandMark(`${PANEL_CLASS}__brand`), createElement('span', { class: `${PANEL_CLASS}__label ${PANEL_CLASS}__brand-name` }, ['Geld'])]);
-  if (total > 0) summary.append(progressMeter(doneCount, total, 'review item'));
+  if (total > 0) summary.append(progressMeter(doneCount, total, 'thread'));
   if (waiting > 0) summary.append(createElement('span', { class: `${PANEL_CLASS}__chip`, 'data-tone': 'attention' }, [`${waiting} need${waiting === 1 ? 's' : ''} a reply`]));
   // GitHub's revision marker, said here instead of as a timeline row: a button to that diff (the marker's own
   // "View changes" URL), the same small button the timeline's Compare and Details are; the count is its tooltip.
@@ -3275,7 +3280,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     // By push: the open threads first, wherever they landed, then every round newest first.
     const openItems = model.meta.items.filter((item) => isOpenStatus(item.status));
     if (openItems.length > 0) {
-      rows.append(groupHeading('open', `Needs attention · ${plural(openItems.length, 'open thread')}`, model, handlers));
+      rows.append(groupHeading('open', `Needs attention · ${plural(threadCounts(openItems).open, 'open thread')}`, model, handlers));
       inGroup('open', (slots) => {
         for (const item of openItems) {
           rows.append(itemRow(item, model, handlers));
@@ -3289,11 +3294,11 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   const { current, attention, settled } = roundGroups(model);
   if (attention.length > 0) {
     const toReview = attention.filter((batch) => batch !== current).length;
-    rows.append(groupHeading('open', toReview === 0 ? 'Current round' : `${plural(toReview, 'round')} to review · ${plural(open.length, 'open thread')}`, model, handlers));
+    rows.append(groupHeading('open', toReview === 0 ? 'Current round' : `${plural(toReview, 'round')} to review · ${plural(threadCounts(open).open, 'open thread')}`, model, handlers));
     inGroup('open', (slots) => appendBatches(attention, slots));
   }
   if (settled.length > 0) {
-    rows.append(groupHeading('done', done.length > 0 ? plural(done.length, 'resolved thread') : plural(settled.length, 'settled round'), model, handlers));
+    rows.append(groupHeading('done', done.length > 0 ? plural(threadCounts(done).total, 'resolved thread') : plural(settled.length, 'settled round'), model, handlers));
     inGroup('done', (slots) => appendBatches(settled, slots));
   }
   if (!model.fullTimeline && model.grouping !== 'batch') {
