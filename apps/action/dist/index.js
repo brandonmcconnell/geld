@@ -11317,7 +11317,7 @@ var init_settings_schema = __esm({
             kind: "toggle",
             key: "relatedLinks",
             label: "Related links",
-            description: "Two sections under Reviewers in the pull request sidebar. Related links lists the tickets, Slack threads, agent sessions, reviews and docs its description links to, such as a Linear issue or the Replicas workspace that opened it. Mentions lists the GitHub issues and pull requests it references.",
+            description: "Two sections under Reviewers in the pull request sidebar. Related links lists the tickets, Slack threads, agent sessions, reviews and docs its description links to, such as a Linear issue or the Replicas workspace that opened it. Related work shows the stack it is in and the GitHub issues and pull requests its description links to.",
             popup: false
           },
           {

@@ -204,6 +204,19 @@ export function isCountsStandIn(element: Element): boolean {
   return element.hasAttribute(ATTR_COUNTS_STAND_IN);
 }
 
+/**
+ * The Overview's header line beside the branch names (Nov 2026): GitHub draws its line counts there, after the branch
+ * names (its skeleton while they load, then `diffStat`), and never in the tab row, whose counts wrapper stays empty.
+ */
+function overviewBranchGroup(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-component="PageHeader"] [class*="branchGroup"]:has(> [class*="branches"])');
+}
+
+/** Whether GitHub's counts slot beside the branch names holds anything of GitHub's (its skeleton or its counts). */
+function branchGroupBusy(group: Element): boolean {
+  return [...group.children].some((child) => !/\bbranches/.test(child.className.toString()) && !child.hasAttribute(OWN_UI_ATTRIBUTE) && !child.hasAttribute(ATTR_COUNTS_STAND_IN));
+}
+
 /** The pull request header's tab row, where GitHub floats its line counts. */
 function pullTabRow(): HTMLElement | null {
   return queryAll<HTMLElement>('[data-component="PageHeader"] [class*="PageHeader-Navigation"]').find((row) => row.querySelector('#prs-files-anchor-tab') !== null) ?? null;
@@ -269,6 +282,9 @@ export function countsSkeletonStandIn(): HTMLElement | null {
  */
 export function syncCountsStandIn(want: StandIn | null): boolean {
   const existing = document.querySelector<HTMLElement>(`[${ATTR_COUNTS_STAND_IN}]`);
+  // On the Overview GitHub's counts stand beside the branch names, so the stand-in does too: never in the tab row.
+  const branches = overviewBranchGroup();
+  if (branches !== null) return syncStandInBeside(branches, existing, want);
   const row = pullTabRow();
   const real = row !== null && queryAll<HTMLElement>(SR_ONLY_SELECTOR, row).some((span) => LINES_CHANGED.test(originalText(span)) && span.closest(`[${ATTR_COUNTS_STAND_IN}]`) === null);
   const wrapper = row?.querySelector(':scope > [class*="rightContentWrapper"]') ?? null;
@@ -294,6 +310,28 @@ export function syncCountsStandIn(want: StandIn | null): boolean {
     row.prepend(home);
   }
   home.append(next);
+  return true;
+}
+
+/** The Overview's stand-in: after the branch names, where GitHub puts its skeleton and its counts, while that slot is empty. */
+function syncStandInBeside(group: HTMLElement, existing: HTMLElement | null, want: StandIn | null): boolean {
+  noteGithubSkeleton(group);
+  const real = queryAll<HTMLElement>(SR_ONLY_SELECTOR, group).some((span) => LINES_CHANGED.test(originalText(span)) && span.closest(`[${ATTR_COUNTS_STAND_IN}]`) === null);
+  if (want === null || real || branchGroupBusy(group)) {
+    if (existing === null) return false;
+    removeCountsStandIn();
+    return true;
+  }
+  const key = want === SKELETON ? SKELETON : standInKey(want);
+  if (existing !== null && group.contains(existing) && existing.getAttribute(ATTR_COUNTS_STAND_IN) === key) return false;
+  const next = standInElement(want);
+  if (existing !== null && group.contains(existing)) {
+    detachBreakdownTooltip(existing);
+    existing.replaceWith(next);
+    return true;
+  }
+  removeCountsStandIn();
+  group.append(next);
   return true;
 }
 
