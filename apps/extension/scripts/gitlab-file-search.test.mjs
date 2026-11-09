@@ -1,16 +1,17 @@
 import assert from 'node:assert/strict';
 import test, { beforeEach, afterEach } from 'node:test';
 import { Window } from 'happy-dom';
-import { GITLAB_FILE_SEARCH as fixture, gitLabFileSearchSnapshot, bindGitLabFileSearchProof, gitLabFileSearchSelection, assertGitLabFileSearchScope, verifyGitLabFileSearch } from './gitlab-file-search.mjs';
+import { GITLAB_FILE_SEARCH as fixture, gitLabFileSearchSnapshot, bindGitLabFileSearchProof, markGitLabFileSearchPhase, gitLabFileSearchSelection, assertGitLabFileSearchScope, verifyGitLabFileSearch } from './gitlab-file-search.mjs';
 
-const keys = ['document', 'location', 'getComputedStyle', 'innerWidth', 'innerHeight', 'Element', 'KeyboardEvent'];
+const keys = ['document', 'location', 'getComputedStyle', 'innerWidth', 'innerHeight', 'Element', 'KeyboardEvent', 'window'];
 const globals = new Map(keys.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 let window;
 beforeEach(() => {
   window = new Window({ url: fixture.url });
-  for (const [key, value] of Object.entries({ document: window.document, location: window.location, getComputedStyle: window.getComputedStyle.bind(window), innerWidth: 1440, innerHeight: 1000, Element: window.Element, KeyboardEvent: window.KeyboardEvent })) Object.defineProperty(globalThis, key, { configurable: true, value });
+  for (const [key, value] of Object.entries({ document: window.document, location: window.location, getComputedStyle: window.getComputedStyle.bind(window), innerWidth: 1440, innerHeight: 1000, Element: window.Element, KeyboardEvent: window.KeyboardEvent, window })) Object.defineProperty(globalThis, key, { configurable: true, value });
 });
 afterEach(() => {
+  globalThis.__geldFileSearchProof?.releaseDiagnostics?.();
   if (globalThis.__geldFileSearchProof?.listen !== undefined) for (const type of ['click', 'focusin', 'focusout', 'input', 'keydown']) document.removeEventListener(type, globalThis.__geldFileSearchProof.listen, true);
   delete globalThis.__geldFileSearchProof;
   for (const [key, descriptor] of globals) if (descriptor === undefined) delete globalThis[key];else Object.defineProperty(globalThis, key, descriptor);
@@ -20,10 +21,10 @@ afterEach(() => {
 function nativeApp(merge = false) {
   const source = { id: Number(fixture.version), head_sha: fixture.head, selected: true, href: new URL(fixture.url).pathname + '?diff_id=' + fixture.version, is_merge_head: false, version_index: 2 };
   const target = merge ? { ...source, id: 2158521027, head_sha: '13215ca460cd4f75d3765a882ef486aa2dacf549', href: new URL(fixture.url).pathname, is_merge_head: true, is_head: true, is_base: false } : { ...source, href: new URL(fixture.url).pathname, is_head: false, is_base: true };
-  return { path: '/gitlab-org/gitlab/-/merge_requests/266334', iid: 266334, sourceVersions: [source], targetVersions: [target] };
+  return { path: '/gitlab-org/gitlab/-/merge_requests/266334', iid: 266334, fileByFileMode: false, sourceVersions: [source], targetVersions: [target] };
 }
 function mountNativeApp(app = nativeApp()) {
-  const node = document.createElement('article');node.setAttribute('data-rapid-diffs', '');node.setAttribute('data-app-data', JSON.stringify({ mr_path: app.path, iid: app.iid, versions: { source_versions: app.sourceVersions, target_versions: app.targetVersions } }));document.body.prepend(node);
+  const node = document.createElement('article');node.setAttribute('data-rapid-diffs', '');node.setAttribute('data-app-data', JSON.stringify({ mr_path: app.path, iid: app.iid, file_by_file_mode: app.fileByFileMode, versions: { source_versions: app.sourceVersions, target_versions: app.targetVersions } }));document.body.prepend(node);
 }
 
 function nativeFixture() {
@@ -107,19 +108,19 @@ test('requires exact original native input, list, root and checkbox identities o
 
 function protocol(options = {}) {
   let query = options.initialQuery ?? '';let selected = false;let collapsed = false;let active = false;let focused = false;let shift = false;let proof = false;let nativeSelected = false;let cleaned = false;
-  const calls = [];const events = [];let filterReads = 0;
+  const calls = [];const events = [];let filterReads = 0;let remounted = false;
   const polls = [];
   const read = () => {
     if (query) filterReads += 1;
     return ({
-    app: options.targetChanged && nativeSelected ? nativeApp(true) : { ...nativeApp(), ...(options.targetMetadataChanged && nativeSelected ? { targetVersions: [{ ...nativeApp().targetVersions[0], is_base: false }] } : {}), ...(options.sourceMetadataChanged && nativeSelected ? { sourceVersions: [{ ...nativeApp().sourceVersions[0], version_index: 3 }] } : {}) },
-    url: (options.filterNavigation && query ? fixture.url.replace('/266334/', '/266335/') : fixture.url) + (selected ? `${nativeSelected ? '&file_path=' + encodeURIComponent(fixture.path) : ''}#${fixture.anchor}` : ''),
+    app: options.targetChanged && nativeSelected ? nativeApp(true) : { ...nativeApp(), ...(Object.hasOwn(options, 'mode') ? { fileByFileMode: options.mode } : {}), ...(options.modeChanges && nativeSelected ? { fileByFileMode: true } : {}), ...(options.targetMetadataChanged && nativeSelected ? { targetVersions: [{ ...nativeApp().targetVersions[0], is_base: false }] } : {}), ...(options.sourceMetadataChanged && nativeSelected ? { sourceVersions: [{ ...nativeApp().sourceVersions[0], version_index: 3 }] } : {}) },
+    url: (options.filterNavigation && query ? fixture.url.replace('/266334/', '/266335/') : fixture.url) + (selected ? `${nativeSelected && (options.presentFilePath || options.wrongFilePath || options.duplicateFilePath) ? '&file_path=' + encodeURIComponent(options.wrongFilePath ? 'other.rb' : fixture.path) + (options.duplicateFilePath ? '&file_path=' + encodeURIComponent(fixture.path) : '') : ''}#${fixture.anchor}` : ''),
     unique: { host: 1, input: 1, nav: 1, roots: 1 },
     search: { value: query, label: 'Search (e.g. *.vue) (F)', visible: true, focused },
-    native: { paths: options.unfilteredResults || query && filterReads <= (options.pendingReads ?? 0) ? [fixture.path, 'app/another.rb'] : [fixture.path], resultCount: 1, visible: Boolean(query), listMarker: query ? null : 'native', anchor: fixture.anchor, href: `${fixture.url}&file_path=${encodeURIComponent(fixture.path)}#${fixture.anchor}` },
+    native: { paths: options.unfilteredResults || query && filterReads <= (options.pendingReads ?? 0) ? [fixture.path, 'app/another.rb'] : [fixture.path], resultCount: 1, active: options.nativeAlreadyActive || nativeSelected && !options.missingNativeActive, visible: Boolean(query), listMarker: query ? null : 'native', anchor: fixture.anchor, href: `${fixture.url}&file_path=${encodeURIComponent(fixture.path)}#${fixture.anchor}` },
     owned: { count: query ? 0 : 1, active: active ? 'true' : 'false', current: selected && !(options.currentLost && nativeSelected && !query) ? 'true' : null, folder: { label: fixture.path.slice(0, fixture.path.lastIndexOf('/')), expanded: collapsed && !(options.collapseReset && nativeSelected && !query) ? 'false' : 'true' }, headers: [{ text: 'Essential (2 files)', expanded: active ? 'false' : 'true' }, { text: 'Tests (1 test)', expanded: active ? 'true' : 'false' }] },
     source: { id: fixture.anchor, path: fixture.path, head: fixture.head, review: '019271d5e9aaae129d85f3585c16c1acf7a767cd', raw: options.changedSource && nativeSelected ? 'changed payload' : 'original payload', boxes: [{ id: 'viewed', checked: false }], visible: active, open: active, codeVisible: active, codeInViewport: active },
-    identity: proof ? { input: (!options.replacedInput || !query) && !(options.pendingIdentityChanged && query && filterReads === 2), host: true, nav: true, root: true, boxes: true } : null,
+    identity: proof ? { input: !remounted && (!options.replacedInput || !query) && !(options.pendingIdentityChanged && query && filterReads === 2), host: !remounted, nav: !remounted, root: true, boxes: true } : null,
     events: [...events],
   }); };
   const nativeHref = `${fixture.url}&file_path=${encodeURIComponent(fixture.path)}#${fixture.anchor}`;
@@ -136,7 +137,7 @@ function protocol(options = {}) {
       };
     },
     isClosed: () => false,
-    evaluate: async (fn) => { if (fn === gitLabFileSearchSnapshot) return read();if (String(fn).includes('delete globalThis.__geldFileSearchProof')) { if (options.listenerRemovalFails) throw new Error('Listener cleanup failed');cleaned = true;return { hadProof: proof, removedTypes: proof ? ['click', 'focusin', 'focusout', 'input', 'keydown'] : [], proofAbsent: true }; }proof = true; },
+    evaluate: async (fn, label) => { if (fn === gitLabFileSearchSnapshot) return read();if (fn === markGitLabFileSearchPhase) { calls.push(`phase:${label}`);return; }if (String(fn).includes('delete globalThis.__geldFileSearchProof')) { if (options.listenerRemovalFails) throw new Error('Listener cleanup failed');cleaned = true;return { hadProof: proof, removedTypes: proof ? ['click', 'focusin', 'focusout', 'input', 'keydown'] : [], proofAbsent: true }; }proof = true; },
     $eval: async (_selector, fn) => String(fn).includes('unobstructed') ? { unique: 1, unobstructed: !options.obstructed } : undefined,
     click: async (selector) => {
       calls.push(selector);
@@ -153,7 +154,7 @@ function protocol(options = {}) {
     },
   };
   const progress = {};
-  const dependencies = { progress, poll: async (get, accepts, label) => { for (let index = 0; index < 6; index += 1) { const value = await get();polls.push({ label, paths: value.native.paths });if (accepts(value)) return value; }throw new Error(`Protocol deadline: ${label}`); }, capture: async (_page, name) => { if (options.captureThrows) throw new Error('Capture failed');return { name }; }, totals: async () => ({ all: { files: 3, additions: 36, deletions: 0 }, visible: { files: 2, additions: 4, deletions: 0 } }) };
+  const dependencies = { progress, poll: async (get, accepts, label) => { for (let index = 0; index < 6; index += 1) { const value = await get();polls.push({ label, paths: value.native.paths });if (accepts(value)) return value; }throw new Error(`Protocol deadline: ${label}`); }, capture: async (_page, name) => { if (options.captureThrows) throw new Error('Capture failed');if (options.remountDuringCapture) remounted = true;return { name }; }, totals: async () => ({ all: { files: 3, additions: 36, deletions: 0 }, visible: { files: 2, additions: 4, deletions: 0 } }) };
   return { page, dependencies, progress, calls, polls, handleDisposed: () => handleDisposed, cleaned: () => cleaned, query: () => query };
 }
 
@@ -179,7 +180,7 @@ for (const [name, options] of [
 ]) test(`protocol rejects ${name} and performs cleanup`, async () => {
   const p = protocol(options);await assert.rejects(verifyGitLabFileSearch(p.page, p.dependencies));
   assert.equal(p.cleaned(), true);
-  const unsafe = options.changedSource || options.replacedInput || options.targetChanged || options.targetMetadataChanged || options.sourceMetadataChanged;
+  const unsafe = options.changedSource || options.replacedInput || options.targetChanged || options.targetMetadataChanged || options.sourceMetadataChanged || options.modeChanges;
   assert.equal(p.query(), unsafe ? fixture.query : '');
 });
 
@@ -324,6 +325,89 @@ test('read-only event diagnostics capture default prevention after propagation w
   input.dispatchEvent(new window.Event('input', { bubbles: true, cancelable: true }));
   const observation = globalThis.__geldFileSearchProof.events.at(-1);
   assert.equal(observation.defaultPrevented, false);assert.notEqual(observation.trusted, true);assert.equal(observation.cancelable, true);
-  await Promise.resolve();
+  assert.equal(observation.defaultPreventedFinal, null);
+  await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(observation.defaultPreventedFinal, true);
+});
+
+
+for (const mode of [true, undefined, null, 'false', 0]) test(`rejects unverified native all-files mode ${String(mode)}`, () => {
+  nativeFixture();const snapshot = gitLabFileSearchSnapshot(fixture);snapshot.app.fileByFileMode = mode;
+  assert.throws(() => assertGitLabFileSearchScope(snapshot), /all-files mode/);
+});
+
+for (const [name, options] of [
+  ['hash-only native all-files location', {}],
+  ['matching present linked file query', { presentFilePath: true }],
+]) test(`accepts ${name} only with independent native active-file transition`, async () => {
+  const p = protocol(options);await verifyGitLabFileSearch(p.page, p.dependencies);
+  assert.equal(p.progress.nativeClick.before.native.active, false);assert.equal(p.progress.activated.native.active, true);
+  assert.equal(new URL(p.progress.activated.url).searchParams.get('file_path'), options.presentFilePath ? fixture.path : null);
+  assert.equal(p.progress.cleanup.status, 'verified');
+  assert.ok(p.calls.includes('phase:native-click:start'));assert.ok(p.calls.includes('phase:native-click:end'));
+  assert.ok(p.calls.includes('phase:capture:gitlab-file-search-native-results:start'));assert.ok(p.calls.includes('phase:capture:gitlab-file-search-native-results:end'));
+});
+
+for (const [name, options] of [
+  ['conflicting current file path', { wrongFilePath: true }],
+  ['ambiguous repeated file path', { duplicateFilePath: true }],
+  ['missing native active transition', { missingNativeActive: true }],
+  ['already active native fixture', { nativeAlreadyActive: true }],
+  ['mode changes during selection', { modeChanges: true }],
+  ['sidebar remount during actual capture', { remountDuringCapture: true }],
+]) test(`retains strict failure for ${name}`, async () => {
+  const p = protocol(options);await assert.rejects(verifyGitLabFileSearch(p.page, p.dependencies));
+  assert.ok(p.progress.failure.message);assert.equal(p.progress.proof, undefined);assert.equal(p.cleaned(), true);
+  if (options.remountDuringCapture) assert.equal(p.progress.cleanup.status, 'failed');
+});
+
+test('preserves original activation and cleanup failures independently', async () => {
+  const p = protocol({ missingNativeActive: true, noClear: true });await assert.rejects(verifyGitLabFileSearch(p.page, p.dependencies), AggregateError);
+  assert.match(p.progress.failure.message, /native all-files result/);assert.equal(p.progress.cleanup.status, 'failed');assert.ok(p.progress.cleanupError);
+});
+
+test('readonly native lifecycle logs replaced nodes without adopting them as originals', async () => {
+  nativeFixture();bindGitLabFileSearchProof(fixture);markGitLabFileSearchPhase('capture:unit:start');
+  const proof = globalThis.__geldFileSearchProof;const original = proof.host;
+  const replacement = original.cloneNode(true);for (const node of [replacement, ...replacement.querySelectorAll('*')]) node.getBoundingClientRect = original.getBoundingClientRect;original.replaceWith(replacement);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const trace = proof.trace.find((entry) => entry.reason === 'native-identity-change');
+  assert.ok(trace);assert.equal(trace.phase, 'capture:unit:start');assert.equal(trace.identity.host, false);assert.equal(trace.identity.root, true);
+  assert.equal(proof.host, original);assert.equal(proof.host.isConnected, false);
+  assert.throws(() => assertGitLabFileSearchScope(gitLabFileSearchSnapshot(fixture)), /Original native nodes/);
+  const released = proof.releaseDiagnostics();assert.equal(released.mutationObserverReleased, true);assert.equal(released.windowResizeReleased, true);assert.equal(released.timersReleased, true);
+});
+
+test('lifecycle sampling is bounded and does not mutate native nodes or infer breakpoint state', () => {
+  nativeFixture();bindGitLabFileSearchProof(fixture);const before = document.body.innerHTML;
+  for (let index = 0; index < 100; index += 1) markGitLabFileSearchPhase(`unit:${index}`);
+  const proof = globalThis.__geldFileSearchProof;assert.equal(proof.trace.length, 80);assert.equal(proof.traceTruncated, true);assert.equal(document.body.innerHTML, before);
+  assert.equal(proof.trace[0].mode, false);assert.equal(proof.trace[0].originalNodes, true);assert.equal(proof.trace[0].viewport.width, 1440);
+});
+
+
+test('native current-file presentation requires the original row and link active classes together', () => {
+  const f = pooledFixture();
+  assert.equal(gitLabFileSearchSnapshot(fixture).native.active, false);
+  f.anchors[1].classList.add('is-active');assert.equal(gitLabFileSearchSnapshot(fixture).native.active, false);
+  f.anchors[1].parentElement.classList.add('is-active');assert.equal(gitLabFileSearchSnapshot(fixture).native.active, true);
+});
+
+test('readonly panel-width chronology records measured changes and disposes observers', () => {
+  nativeFixture();
+  const parent = document.createElement('div');parent.className = 'js-static-panel-inner';const panel = document.createElement('main');panel.id = 'content-body';parent.append(panel);document.body.append(parent);
+  let width = 1000;Object.defineProperty(panel, 'clientWidth', { get: () => width });panel.getBoundingClientRect = () => ({ width, height: 800 });
+  let resizeCallback;let observed;let disconnected = false;
+  window.ResizeObserver = class {
+    constructor(callback) { resizeCallback = callback; }
+    observe(node) { observed = node; }
+    disconnect() { disconnected = true; }
+  };
+  bindGitLabFileSearchProof(fixture);const proof = globalThis.__geldFileSearchProof;const source = document.body.innerHTML;
+  assert.equal(observed, panel);markGitLabFileSearchPhase('capture:unit:start');width = 700;
+  resizeCallback([{ target: panel, contentRect: { width: 700 } }]);
+  const record = proof.trace.find((entry) => entry.reason === 'native-panel-width');
+  assert.equal(record.panel.clientWidth, 700);assert.equal(record.panel.observedContentWidth, 700);assert.equal(record.originalNodes, true);
+  assert.equal(record.phase, 'capture:unit:start');assert.equal(document.body.innerHTML, source);assert.equal(proof.host, document.querySelector('[data-testid="file-tree-container"]'));
+  assert.equal(proof.releaseDiagnostics().resizeObserverReleased, true);assert.equal(disconnected, true);
 });
