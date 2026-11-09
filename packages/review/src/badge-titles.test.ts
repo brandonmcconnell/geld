@@ -31,14 +31,19 @@ describe('observed decorative review badge titles', () => {
     badge('2'), `${badge('2')} ** **`, `${badge('2')} <details><summary>Boilerplate</summary></details>`,
     `${badge('1')} <table><tr><td>Boilerplate</td></tr></table>`, `${badge('2')} <script>alert('bad')</script>`,
     `<details><summary>${concern}</summary></details>`, `<table><tr><td>${concern}</td></tr></table>`, `<script>${concern}</script>`,
+  ])('leaves unknown HTML and control/markup-only lines excluded: %s', (line) => {
+    expect(firstSentence(line)).toBe('Comment');
+    expect(firstSentence(`${line}\n\nActual later concern.`)).toBe('Actual later concern.');
+  });
+
+  it.each([
     `${badge('2').replace('href="#"', 'href="https://example.com"')} ${concern}`,
     `${badge('2').replace('alt="P2"', 'alt="P1"')} ${concern}`,
     `${badge('2').replace('greptile-static-assets.s3.amazonaws.com', 'evil.example')} ${concern}`,
     `${badge('2').replace('<img ', '<img onerror="alert(1)" ')} ${concern}`,
     `<a href="#">Actual link text</a> ${concern}`,
-  ])('leaves unknown HTML and control/markup-only lines excluded: %s', (line) => {
-    expect(firstSentence(line)).toBe('Comment');
-    expect(firstSentence(`${line}\n\nActual later concern.`)).toBe('Actual later concern.');
+  ])('extracts visible words from inline HTML without granting badge trust: %s', (line) => {
+    expect(firstSentence(line)).toBe(line.includes('Actual link text') ? `Actual link text ${concern}` : concern);
   });
 
   it('preserves ordinary Markdown and skips fenced source suggestions rather than exposing markup', () => {
