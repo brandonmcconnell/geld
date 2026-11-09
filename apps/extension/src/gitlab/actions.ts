@@ -16,66 +16,102 @@ const OUTCOMES: Readonly<Record<GitLabReviewAction, string>> = {
 };
 
 function drawerButton(doc: Document): HTMLButtonElement | null {
-  return doc.querySelector<HTMLButtonElement>('button[data-testid="review-drawer-toggle"]');
+  return [...doc.querySelectorAll<HTMLButtonElement>('button[data-testid="review-drawer-toggle"]')].find(nativeControl) ?? null;
 }
 
-function composer(doc: Document): HTMLTextAreaElement | null {
-  const fields = doc.querySelectorAll<HTMLTextAreaElement>('textarea[data-testid="comment-textarea"], textarea#note-body');
-  return [...fields].find((field) => !field.disabled && !field.readOnly && field.closest('[hidden], [aria-hidden="true"]') === null) ?? null;
+function nativeControl(control: HTMLElement): boolean {
+  return control.isConnected && control.closest('[data-geld-ui], [hidden], [aria-hidden="true"], [inert]') === null;
+}
+
+function enabled(control: HTMLButtonElement | HTMLInputElement | HTMLTextAreaElement): boolean {
+  return nativeControl(control) && !control.disabled && control.closest('fieldset[disabled]') === null;
+}
+
+function editable(field: HTMLInputElement | HTMLTextAreaElement): boolean {
+  return enabled(field) && !field.readOnly;
+}
+
+function mainComposer(doc: Document): HTMLTextAreaElement | null {
+  return [...doc.querySelectorAll<HTMLTextAreaElement>('textarea#note-body')]
+    .find((field) => editable(field) && field.closest('form[data-testid="submit-gl-form"]') === null) ?? null;
+}
+
+function reviewComposer(form: HTMLFormElement): HTMLTextAreaElement | null {
+  return [...form.querySelectorAll<HTMLTextAreaElement>('textarea[data-testid="comment-textarea"]')]
+    .find((field) => editable(field) && field.closest('form') === form) ?? null;
 }
 
 function outcome(doc: Document, kind: GitLabReviewAction): HTMLInputElement | null {
-  return doc.querySelector<HTMLInputElement>(`[data-testid="reviewer_states"] input[type="radio"][value="${OUTCOMES[kind]}"]`);
+  const candidates = [...doc.querySelectorAll<HTMLInputElement>(`form[data-testid="submit-gl-form"] [data-testid="reviewer_states"] input[type="radio"][value="${OUTCOMES[kind]}"]`)].filter(nativeControl);
+  return candidates.length === 1 ? candidates[0] ?? null : null;
 }
 
 function permitted(kind: GitLabReviewAction, permissions: GitLabReviewCapabilities, doc: Document): boolean {
   if (!permissions.signedIn) return false;
   if (kind === 'approve' && !permissions.canApprove) return false;
   if (kind === 'request-changes' && permissions.requestChanges === 'unavailable') return false;
-  if (kind === 'comment' && permissions.canComment && composer(doc) !== null) return true;
-  const button = drawerButton(doc);
   const radio = outcome(doc, kind);
-  return permissions.canReview && ((button !== null && !button.disabled) || (radio !== null && !radio.disabled));
+  if (radio !== null) return permissions.canReview && enabled(radio);
+  if (kind === 'comment' && permissions.canComment && mainComposer(doc) !== null) return true;
+  const button = drawerButton(doc);
+  return permissions.canReview && button !== null && enabled(button);
 }
 
-function waitForOutcome(doc: Document, kind: GitLabReviewAction): Promise<HTMLInputElement | null> {
-  const present = outcome(doc, kind);
+function waitForNative<T extends HTMLElement>(doc: Document, find: () => T | null, current: () => boolean): Promise<T | null> {
+  if (!current()) return Promise.resolve(null);
+  const present = find();
   if (present !== null) return Promise.resolve(present);
   const view = doc.defaultView;
   if (view === null) return Promise.resolve(null);
   return new Promise((resolve) => {
     const observer = new view.MutationObserver(() => {
-      const radio = outcome(doc, kind);
-      if (radio !== null) finish(radio);
+      if (!current()) { finish(null); return; }
+      const control = find();
+      if (control !== null) finish(control);
     });
     const timer = view.setTimeout(() => finish(null), 3000);
-    const finish = (radio: HTMLInputElement | null): void => {
+    const navigation = (): void => { if (!current()) finish(null); };
+    const finish = (control: T | null): void => {
       observer.disconnect();
       view.clearTimeout(timer);
-      resolve(radio);
+      for (const event of ['popstate', 'hashchange', 'wxt:locationchange']) view.removeEventListener(event, navigation);
+      resolve(control);
     };
-    observer.observe(doc.documentElement, { childList: true, subtree: true });
+    observer.observe(doc.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'readonly', 'hidden', 'aria-hidden', 'inert'] });
+    for (const event of ['popstate', 'hashchange', 'wxt:locationchange']) view.addEventListener(event, navigation);
   });
 }
 
 export async function openGitLabReviewAction(kind: GitLabReviewAction, permissions: GitLabReviewCapabilities, doc: Document = document): Promise<boolean> {
   if (!permitted(kind, permissions, doc)) return false;
   const visit = doc.URL.split('#')[0];
+  const sameVisit = (): boolean => doc.URL.split('#')[0] === visit;
   if (kind === 'comment' && permissions.canComment && outcome(doc, kind) === null) {
-    const field = composer(doc);
+    const field = mainComposer(doc);
     if (field !== null) {
       field.focus();
-      return true;
+      return sameVisit() && editable(field) && doc.activeElement === field;
     }
   }
   const existing = outcome(doc, kind);
   if (existing === null) drawerButton(doc)?.click();
-  const radio = await waitForOutcome(doc, kind);
-  if (doc.URL.split('#')[0] !== visit || radio === null || radio.disabled || !radio.isConnected) return false;
+  const radio = await waitForNative(doc, () => outcome(doc, kind), sameVisit);
+  if (!sameVisit() || radio === null || !enabled(radio) || outcome(doc, kind) !== radio) return false;
+  const form = radio.closest<HTMLFormElement>('form[data-testid="submit-gl-form"]');
+  if (form === null) return false;
   radio.click();
-  const field = composer(doc);
-  field?.focus();
-  return radio.checked;
+  const current = (): boolean => sameVisit() && nativeControl(form) && outcome(doc, kind) === radio && enabled(radio) && radio.checked;
+  if (!current()) return false;
+  let field = reviewComposer(form);
+  if (field === null) {
+    const placeholder = form.querySelector<HTMLInputElement>('input[data-testid="placeholder-input-field"]');
+    if (placeholder === null || !editable(placeholder)) return false;
+    placeholder.focus();
+    field = await waitForNative(doc, () => reviewComposer(form), current);
+  }
+  if (!current() || field === null || !editable(field)) return false;
+  field.focus();
+  return current() && editable(field) && doc.activeElement === field;
 }
 
 export function readGitLabActions(doc: Document, permissions: GitLabReviewCapabilities): readonly GitLabActionDescriptor[] {

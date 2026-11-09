@@ -4,7 +4,7 @@ import { buildProviderReviewItems, providerReviewKey } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput, ProviderReviewThread } from '@geld/review';
 import type { ProviderAiState } from './ai';
 import { renderProviderReviewPanel } from './review-panel';
-import type { ProviderReviewPanelEvent } from './review-panel';
+import type { ProviderReviewAuthorPresentation, ProviderReviewPanelEvent } from './review-panel';
 
 const subject = { provider: 'gitlab', origin: 'https://gitlab.com', repository: 'group/subgroup/project', id: '42', headSha: 'a'.repeat(40) } as const;
 const reviewUrl = 'https://gitlab.com/group/subgroup/project/-/merge_requests/42';
@@ -300,5 +300,150 @@ describe('provider conversation digest', () => {
     expect(document.activeElement?.getAttribute('data-geld-local-reviewed')).toBe(item.id);
     expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-group="done"]')?.open).toBe(true);
     expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-item]')?.open).toBe(true);
+  });
+
+  it('retains a verified native avatar, name, profile and role classes without changing source navigation or controls', async () => {
+    const source = comment('1');
+    const presentation: ProviderReviewAuthorPresentation = {
+      authorId: source.author.id, displayName: 'Jorge Tomás', username: '@jotolo_gl', profileUrl: `${subject.origin}/jotolo_gl`,
+      avatar: { src: `${subject.origin}/uploads/-/system/user/avatar/33096491/avatar.png`, width: 32, height: 32, borderRadius: '50%', className: 'gl-avatar gl-avatar-circle gl-avatar-s32' },
+      badges: [{ label: 'Author', title: 'This user is the author of this merge request.', className: 'gl-badge badge badge-pill badge-neutral' }, { label: 'Developer', title: 'This user has the developer role in the GitLab project.', className: 'gl-badge badge badge-pill badge-neutral' }],
+    };
+    const opened = vi.fn((_url: string, _anchor: string, event: MouseEvent) => event.preventDefault());
+    const activate = vi.fn(async () => true);
+    const panel = renderProviderReviewPanel(host(), input([thread('a')]), { authorPresentation: () => presentation, onOpenSource: opened, actionsForSource: () => [{ kind: 'reply', label: 'Native reply', available: true, activate }] });
+    const avatar = panel.element.querySelector<HTMLImageElement>('[data-geld-author-avatar]');
+    expect(avatar?.src).toBe(presentation.avatar?.src);
+    expect(avatar?.style.width).toBe('32px');
+    expect(avatar?.style.height).toBe('32px');
+    expect(avatar?.style.borderRadius).toBe('50%');
+    expect(avatar?.classList.contains('gl-avatar-circle')).toBe(true);
+    expect(avatar?.getAttribute('aria-hidden')).toBe('true');
+    const profile = panel.element.querySelector<HTMLAnchorElement>('[data-geld-author-profile]');
+    expect(profile?.href).toBe(presentation.profileUrl);
+    expect(profile?.textContent).toBe('Jorge Tomás');
+    expect(panel.element.querySelector('.geld-provider-review__byline')?.textContent).toContain('@jotolo_gl');
+    const roles = [...panel.element.querySelectorAll<HTMLElement>('[data-geld-author-badge]')];
+    expect(roles.map((role) => role.textContent)).toEqual(['Author', 'Developer']);
+    expect(roles.every((role) => role.classList.contains('badge-neutral') && role.style.color === '' && role.style.backgroundColor === '')).toBe(true);
+    expect(panel.element.querySelector('time')?.dateTime).toBe(source.createdAt.replace('Z', '.000Z'));
+    [...panel.element.querySelectorAll<HTMLAnchorElement>('[data-geld-source="note_1"] a')].find((anchor) => anchor.textContent === 'View original')?.click();
+    expect(opened).toHaveBeenCalledWith(source.url, source.anchor, expect.any(MouseEvent));
+    [...panel.element.querySelectorAll<HTMLButtonElement>('[data-geld-source="note_1"] button')].find((button) => button.textContent === 'Native reply')?.click();
+    await vi.waitFor(() => expect(activate).toHaveBeenCalledTimes(1));
+    expect(panel.element.querySelector('.geld-provider-review__body')?.textContent).toBe(source.body);
+  });
+
+  it('falls back to the normalized author when native identity is mismatched, empty or unavailable', () => {
+    const forged: ProviderReviewAuthorPresentation = { authorId: 'different-account', displayName: 'Maintainer person', badges: [{ label: 'Owner' }], avatar: { src: 'https://avatars.example/person.png', width: 32, height: 32 } };
+    const panel = renderProviderReviewPanel(host(), input([thread('a')]), { authorPresentation: () => forged });
+    expect(panel.element.querySelector('.geld-provider-review__byline strong')?.textContent).toBe('alice');
+    expect(panel.element.querySelector('[data-geld-author-avatar],[data-geld-author-badge]')).toBeNull();
+    panel.update(input([thread('a')]), { authorPresentation: () => ({ ...forged, authorId: 'user-1', displayName: ' ' }) });
+    expect(panel.element.querySelector('.geld-provider-review__byline strong')?.textContent).toBe('alice');
+    panel.update(input([thread('a')]), { authorPresentation: () => { throw new Error('Native header was replaced.'); } });
+    expect(panel.element.dataset.state).toBe('ready');
+    expect(panel.element.querySelector('.geld-provider-review__byline strong')?.textContent).toBe('alice');
+    expect(panel.element.querySelector('[data-geld-source="note_1"] a')?.getAttribute('href')).toBe(comment('1').url);
+  });
+
+  it('rejects unsafe avatar/profile URLs and invalid dimensions while keeping verified names as text', () => {
+    const sources: readonly ProviderReviewAuthorPresentation[] = [
+      { authorId: 'user-1', displayName: 'Native name', profileUrl: 'https://evil.example/alice', avatar: { src: 'javascript:alert(1)', width: 32, height: 32 } },
+      { authorId: 'user-1', displayName: 'Native name', profileUrl: 'https://alice:secret@gitlab.com/alice', avatar: { src: 'data:image/svg+xml,<svg onload=alert(1)>', width: 32, height: 32 } },
+      { authorId: 'user-1', displayName: 'Native name', avatar: { src: 'https://avatars.example/alice.png', width: -1, height: 32 } },
+      { authorId: 'user-1', displayName: 'Native name', avatar: { src: 'https://avatars.example/alice.png', width: Infinity, height: 32 } },
+      { authorId: 'user-1', displayName: 'Native name', avatar: { src: 'http://avatars.example/alice.png', width: 32, height: 32 } },
+    ];
+    for (const presentation of sources) {
+      const panel = renderProviderReviewPanel(host(), input([thread('a')]), { authorPresentation: () => presentation });
+      expect(panel.element.querySelector('[data-geld-author-profile],[data-geld-author-avatar]')).toBeNull();
+      expect(panel.element.querySelector('.geld-provider-review__byline strong')?.textContent).toBe('Native name');
+      expect(panel.element.querySelector('.geld-provider-review__body')?.textContent).toBe(comment('1').body);
+    }
+  });
+
+  it('inserts names and roles as text without copying native handlers, ids or arbitrary HTML', () => {
+    const markup = '<img src=x onerror=alert(1)><script>alert(2)</script>';
+    const panel = renderProviderReviewPanel(host(), input([thread('a')]), { authorPresentation: () => ({ authorId: 'user-1', displayName: markup, avatar: { src: 'https://avatars.example/alice.png', width: 32, height: 32, className: 'gl-avatar geld-provider-hidden onclick="attack"' }, badges: [{ label: markup, title: markup, className: 'gl-badge badge-neutral id="forged" onclick="attack"' }] }) });
+    expect(panel.element.querySelector('.geld-provider-review__byline strong')?.textContent).toBe(markup);
+    const badge = panel.element.querySelector('[data-geld-author-badge]');
+    expect(badge?.textContent).toBe(markup);
+    expect(badge?.getAttribute('title')).toBe(markup);
+    expect(panel.element.querySelector('script,[onerror],[onclick],#forged')).toBeNull();
+    expect(panel.element.querySelectorAll('img')).toHaveLength(1);
+    expect(panel.element.querySelector('[data-geld-author-avatar]')?.classList.contains('geld-provider-hidden')).toBe(false);
+    expect(badge?.classList.contains('badge-neutral')).toBe(true);
+  });
+
+  it('refreshes native presentation independently of source text and keeps theme styling in native classes', () => {
+    let presentation: ProviderReviewAuthorPresentation = { authorId: 'user-1', displayName: 'First native name', badges: [{ label: 'Developer', className: 'gl-badge badge badge-neutral' }] };
+    const source = input([thread('a')]);
+    const options = { authorPresentation: () => presentation };
+    const panel = renderProviderReviewPanel(host(), source, options);
+    const details = panel.element.querySelector<HTMLDetailsElement>('[data-geld-item]');
+    if (details !== null) details.open = true;
+    presentation = { ...presentation, displayName: 'Updated native name', badges: [{ label: 'Maintainer', title: 'Verified native header changed.', className: 'gl-badge badge badge-neutral' }] };
+    panel.update(source, options);
+    expect(panel.element.querySelector('.geld-provider-review__byline strong')?.textContent).toBe('Updated native name');
+    expect(panel.element.querySelector('[data-geld-author-badge]')?.textContent).toBe('Maintainer');
+    expect(panel.element.querySelector<HTMLElement>('[data-geld-author-badge]')?.style.cssText).toBe('');
+    expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-item]')?.open).toBe(true);
+    expect(panel.element.querySelector('.geld-provider-review__body')?.textContent).toBe(comment('1').body);
+  });
+
+  it('does not attach native presentation to an ordinary comment with an invalid original source URL', () => {
+    const presentation = vi.fn(() => ({ authorId: 'user-1', displayName: 'Unverified role owner', badges: [{ label: 'Owner' }] }));
+    const panel = renderProviderReviewPanel(host(), input(), { comments: [{ ...comment('1'), url: 'https://evil.example/not-this-review' }], authorPresentation: presentation });
+    expect(presentation).not.toHaveBeenCalled();
+    expect(panel.element.querySelector('[data-geld-author-badge]')).toBeNull();
+    expect(panel.element.querySelector('.geld-provider-review__byline strong')?.textContent).toBe('alice');
+  });
+
+  it('does not reuse another account’s metadata when ordinary data repeats a native source anchor', () => {
+    const original = comment('1');
+    const duplicate = { ...original, author: { id: 'different-user', login: 'another-account' } };
+    const panel = renderProviderReviewPanel(host(), input([thread('a')]), { comments: [duplicate], authorPresentation: (source) => ({ authorId: source.author.id, displayName: source.author.id === original.author.id ? 'Actual native author' : 'Another native author', badges: [{ label: source.author.id === original.author.id ? 'Developer' : 'Maintainer' }] }) });
+    expect(panel.element.querySelector('[data-geld-source="note_1"] .geld-provider-review__byline strong')?.textContent).toBe('Actual native author');
+    expect(panel.element.querySelector('[data-geld-source="note_1"] [data-geld-author-badge]')?.textContent).toBe('Developer');
+  });
+
+  it('shows individual native merge rules without inferring approval counts, review votes or source completeness', () => {
+    const panel = renderProviderReviewPanel(host(), { subject, threads: [], reviewers: [{ author: { id: '1', login: 'alice' }, state: 'approved' }] }, {
+      complete: false, approvalsRequired: null, approvalsLeft: null,
+      unavailable: [{ area: 'CI checks', reason: 'Authentication is required.' }, { area: 'approval requirements', reason: 'The API did not supply approval requirements.' }],
+      requirements: [
+        { id: 'classicMergeCheckItem-minimum_approvals', label: '1+ approval', state: 'passed' },
+        { id: 'classicMergeCheckItem-minimum_default_reviewer_approvals', label: '1+ approval from default reviewers', state: 'passed' },
+      ],
+    });
+    const section = panel.element.querySelector('[data-geld-review-key="requirements"]');
+    expect(section?.querySelector('summary')?.textContent).toBe('Merge requirements · 2 shown');
+    expect(section?.querySelectorAll('[data-geld-native-requirement]')).toHaveLength(2);
+    expect(section?.textContent).toContain('1+ approval from default reviewers');
+    expect(panel.element.querySelector('[data-geld-review-key="reviewers"] > summary')?.textContent).toBe('Reviews · 1 approval');
+    expect(panel.element.textContent).not.toContain('/2 required approvals');
+    expect(panel.element.querySelector('[data-geld-review-key="checks"]')?.textContent).toContain('CI checks · Unavailable');
+    expect(panel.element.textContent).toContain('Authentication is required.');
+    expect(panel.element.textContent).toContain('The API did not supply approval requirements.');
+    expect(panel.element.dataset.state).toBe('partial');
+    expect(panel.element.querySelector('[data-geld-review-bot]')).toBeNull();
+  });
+
+  it('updates observed merge rule states, preserves disclosure, and copies source labels as text', async () => {
+    let copied = '';
+    const label = '<img src=x onerror=alert(1)> Native rule';
+    const options = { requirements: [{ id: 'native-rule', label, state: 'passed' }], copyText: (text: string) => { copied = text; } } satisfies Parameters<typeof renderProviderReviewPanel>[2];
+    const panel = renderProviderReviewPanel(host(), input(), options);
+    const section = panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-key="requirements"]');
+    if (section !== null) section.open = true;
+    panel.update(input(), { ...options, requirements: [{ id: 'native-rule', label, state: 'unknown' }] });
+    expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-key="requirements"]')?.open).toBe(true);
+    expect(panel.element.querySelector('[data-geld-native-requirement="native-rule"]')?.textContent).toContain(`${label}Unknown`);
+    expect(panel.element.querySelector('img,[onerror]')).toBeNull();
+    panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
+    await vi.waitFor(() => expect(copied).toContain(`Merge requirement: ${label}: Unknown`));
+    panel.update(input(), { requirements: null });
+    expect(panel.element.querySelector('[data-geld-review-key="requirements"]')).toBeNull();
   });
 });

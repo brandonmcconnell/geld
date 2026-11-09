@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BitbucketApiError, BitbucketClient, bitbucketCapabilities } from './api';
 import { describeBitbucketPage } from './page';
+import { createBitbucketTransport } from './transport';
 
 const ORIGIN = 'https://api.bitbucket.org';
 const ROOT = '/2.0/repositories/acme/widgets/pullrequests/42';
@@ -30,7 +31,8 @@ function setup(handler: (url: URL, init: RequestInit | undefined) => Response | 
     requests.push(url.href);
     return handler(url, init);
   };
-  return { client: new BitbucketClient(page, fetcher), requests };
+  const transport = createBitbucketTransport({ origin: () => null, now: () => 0, store: { read: async () => 0, write: async () => undefined } });
+  return { client: new BitbucketClient(page, fetcher, transport), requests };
 }
 
 const signal = (): AbortSignal => new AbortController().signal;
@@ -218,6 +220,49 @@ describe('Bitbucket diff acquisition from documented API shapes', () => {
 });
 
 describe('Bitbucket API trust and availability', () => {
+  it('reads session-authenticated native pagination while preserving canonical pinned-resource validation', async () => {
+    const page = describeBitbucketPage(new URL('https://bitbucket.org/acme/widgets/pull-requests/42'));
+    if (page === null) throw new Error('Invalid fixture page');
+    const native = `https://bitbucket.org/!api${ROOT}/comments`;
+    const transport = createBitbucketTransport({ origin: () => 'https://bitbucket.org', store: { read: async () => 0, write: async () => undefined } });
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+      const url = new URL(String(input));
+      expect(url.origin).toBe('https://bitbucket.org');
+      expect(init).toMatchObject({ credentials: 'same-origin', redirect: 'manual' });
+      const result = json(url.searchParams.has('page') ? { values: [], size: 0 } : { values: [], size: 0, next: `${native}?pagelen=100&page=2` });
+      Object.defineProperty(result, 'url', { value: url.href });
+      return result;
+    });
+    expect(await new BitbucketClient(page, fetcher, transport).comments(signal())).toEqual([]);
+    expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([`${native}?pagelen=100`, `${native}?pagelen=100&page=2`]);
+  });
+
+  it('rejects native pagination that leaves the exact review or resource selection', async () => {
+    const page = describeBitbucketPage(new URL('https://bitbucket.org/acme/widgets/pull-requests/42'));
+    if (page === null) throw new Error('Invalid fixture page');
+    for (const next of ['https://bitbucket.org/!api/2.0/repositories/attacker/widgets/pullrequests/42/comments?page=2', `https://bitbucket.org/!api${ROOT}/tasks?page=2`, `https://bitbucket.org/!api${ROOT}/comments?fields=values.id&page=2`]) {
+      const transport = createBitbucketTransport({ origin: () => 'https://bitbucket.org', store: { read: async () => 0, write: async () => undefined } });
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json({ values: [], next }));
+      await expect(new BitbucketClient(page, fetcher, transport).comments(signal())).rejects.toMatchObject({ reason: 'invalid-response' });
+      expect(fetcher).toHaveBeenCalledOnce();
+    }
+  });
+
+  it('validates native commit self links and status provenance through the fixed canonical mapping', async () => {
+    const page = describeBitbucketPage(new URL('https://bitbucket.org/acme/widgets/pull-requests/42'));
+    if (page === null) throw new Error('Invalid fixture page');
+    const transport = createBitbucketTransport({ origin: () => 'https://bitbucket.org', store: { read: async () => 0, write: async () => undefined } });
+    const fetcher: typeof fetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith('/pullrequests/42')) return json({ ...PR, source: { repository: { full_name: 'acme/widgets' }, commit: { hash: HEAD.slice(0, 12), links: { self: { href: `https://bitbucket.org/!api/2.0/repositories/acme/widgets/commit/${HEAD.slice(0, 12)}` } } } } });
+      if (url.pathname.includes('/commit/')) return json({ hash: HEAD });
+      return json({ values: [{ key: 'ci', name: 'Pipeline', state: 'SUCCESSFUL', created_on: DATE, updated_on: DATE, links: { self: { href: `https://bitbucket.org/!api/2.0/repositories/acme/widgets/commit/${HEAD}/statuses/build/ci` } } }] });
+    };
+    const client = new BitbucketClient(page, fetcher, transport);
+    expect((await client.pullRequest(signal())).headSha).toBe(HEAD);
+    expect((await client.statuses(signal()))[0]?.sha).toBe(HEAD);
+  });
+
   it('separates authorization and rate limiting from empty collections', async () => {
     for (const [status, reason] of [[401, 'authentication'], [403, 'forbidden'], [503, 'unavailable']] as const) {
       const { client } = setup(() => json({}, status));

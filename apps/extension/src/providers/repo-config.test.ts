@@ -70,6 +70,33 @@ it('performs no source lookup when repository configurations are disabled', () =
   expect(result.tab).toBeNull(); expect(fetchConfig).not.toHaveBeenCalled();
 });
 
+it('keeps passive list configuration reads local until a review is demanded', async () => {
+  const fetchConfig = vi.fn<ProviderConfigFetcher>(async (request) => snapshot(request));
+  const configs = source(fetchConfig);
+  const settings = { ...DEFAULT_SETTINGS, repoConfigs: 'always' as const };
+  expect(configs.get(page(), settings, {}, false).status).toBe('loading');
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(fetchConfig).not.toHaveBeenCalled();
+  configs.get(page(), settings);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(configs.get(page(), settings, {}, false).status).toBe('ready');
+  expect(fetchConfig).toHaveBeenCalledOnce();
+});
+
+it('does not retry repository configuration before a provider cooldown longer than fifteen minutes', async () => {
+  const fetchConfig = vi.fn<ProviderConfigFetcher>().mockRejectedValueOnce(Object.assign(new Error('Rate limited'), { retryAfterMs: 60 * 60_000 }))
+    .mockImplementation(async (request) => snapshot(request));
+  const configs = source(fetchConfig);
+  configs.get(page(), DEFAULT_SETTINGS);
+  await vi.advanceTimersByTimeAsync(30 * 60_000);
+  configs.get(page(), DEFAULT_SETTINGS);
+  expect(fetchConfig).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(30 * 60_000);
+  configs.get(page(), DEFAULT_SETTINGS);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(fetchConfig).toHaveBeenCalledTimes(2);
+});
+
 it('reports invalid repository keys and leaves personal settings unchanged', async () => {
   const configs = source(async (request) => snapshot(request, 'enabled: false\ncategories:\n  tests: false'));
   const settings: GeldSettings = { ...DEFAULT_SETTINGS, repoConfigs: 'always' };

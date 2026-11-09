@@ -16,11 +16,39 @@ export interface ProviderReviewPanelEvent {
   readonly lowSignal?: boolean;
 }
 
+export interface ProviderReviewAuthorPresentation {
+  readonly authorId: string;
+  readonly displayName: string;
+  readonly profileUrl?: string;
+  /** The alias actually shown by the native header, including any prefix. */
+  readonly username?: string;
+  readonly avatar?: {
+    readonly src: string;
+    readonly width: number;
+    readonly height: number;
+    readonly borderRadius?: string;
+    readonly className?: string;
+  };
+  /** First-party author-header badges; never badges read from comment content. */
+  readonly badges?: readonly {
+    readonly label: string;
+    readonly title?: string;
+    readonly className?: string;
+  }[];
+}
+
+export interface ProviderReviewRequirement {
+  readonly id: string;
+  readonly label: string;
+  readonly state: 'passed' | 'failed' | 'pending' | 'unknown';
+}
+
 export interface ProviderReviewPanelOptions {
   readonly updating?: boolean;
   readonly version?: number;
   readonly actionsForSource?: (comment: ProviderReviewComment) => readonly ProviderReviewSourceAction[];
   readonly renderComment?: (comment: ProviderReviewComment, host: HTMLElement) => boolean;
+  readonly authorPresentation?: (comment: ProviderReviewComment) => ProviderReviewAuthorPresentation | null;
   readonly onActionComplete?: () => void;
   readonly comments?: readonly ProviderReviewComment[];
   readonly events?: readonly ProviderReviewPanelEvent[];
@@ -28,6 +56,7 @@ export interface ProviderReviewPanelOptions {
   readonly unavailable?: readonly { readonly area: string; readonly reason: string }[];
   readonly approvalsRequired?: number | null;
   readonly approvalsLeft?: number | null;
+  readonly requirements?: readonly ProviderReviewRequirement[] | null;
   readonly onOpenSource?: (url: string, anchor: string, event: MouseEvent) => void;
   readonly copyText?: (text: string) => void | Promise<void>;
   readonly transformItems?: (items: readonly ReviewItem[]) => readonly ReviewItem[];
@@ -90,6 +119,8 @@ const GROUPS: readonly { readonly id: string; readonly label: string; readonly s
   { id: 'done', label: 'Reviewed on this device', statuses: ['done-manual'], open: false },
 ];
 
+const REQUIREMENT_STATE: Readonly<Record<ProviderReviewRequirement['state'], string>> = { passed: 'Passed', failed: 'Failed', pending: 'Pending', unknown: 'Unknown' };
+
 function safeUrl(value: string, origin?: string): string | null {
   try {
     const url = new URL(value);
@@ -119,6 +150,10 @@ function currentCheck(check: RawCheckRun, head: string): boolean {
   return check.sha === head || check.reviewHeadSha === head;
 }
 
+function authorPresentationKey(comment: ProviderReviewComment): string {
+  return JSON.stringify([comment.id, comment.anchor, comment.author.id, comment.url]);
+}
+
 export function renderProviderReviewPanel(host: HTMLElement, initialInput: ProviderReviewInput, initialOptions: ProviderReviewPanelOptions = {}): ProviderReviewPanel {
   const doc = host.ownerDocument;
   const expanded = new Map<string, boolean>();
@@ -129,6 +164,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   let destroyed = false;
   let items: readonly ReviewItem[] = [];
   let nativeItems: ReadonlyMap<string, ReviewItem> = new Map();
+  const authorPresentations = new Map<string, ProviderReviewAuthorPresentation>();
   let bots: readonly BotVerdictRecord[] = [];
   let identities: ReviewerIdentityControl[] = [];
   const nativeTimes = new Map<number, string>();
@@ -197,7 +233,47 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const article = node('article', '', 'geld-provider-review__source');
     article.dataset.geldSource = comment.anchor;
     const byline = node('div', '', 'geld-provider-review__byline');
-    byline.append(node('strong', comment.author.login));
+    const presentation = authorPresentations.get(authorPresentationKey(comment));
+    if (presentation === undefined) byline.append(node('strong', comment.author.login));
+    else {
+      const nativeClasses = (className: string | undefined): string => (className ?? '').split(/\s+/).filter((token) => /^[a-zA-Z0-9_!@:/.-]+$/.test(token) && !token.startsWith('geld-')).join(' ');
+      const avatar = presentation.avatar;
+      const avatarUrl = avatar === undefined ? null : safeUrl(avatar.src);
+      if (avatar !== undefined && avatarUrl !== null && new URL(avatarUrl).protocol === 'https:' && Number.isFinite(avatar.width) && Number.isFinite(avatar.height) && avatar.width > 0 && avatar.height > 0 && avatar.width <= 128 && avatar.height <= 128) {
+        const image = node('img');
+        image.dataset.geldAuthorAvatar = '';
+        image.src = avatarUrl;
+        image.alt = '';
+        image.setAttribute('aria-hidden', 'true');
+        image.referrerPolicy = 'no-referrer';
+        image.decoding = 'async';
+        image.loading = 'lazy';
+        image.className = nativeClasses(avatar.className);
+        image.style.width = `${avatar.width}px`;
+        image.style.height = `${avatar.height}px`;
+        image.style.alignSelf = 'center';
+        if (avatar.borderRadius !== undefined) image.style.borderRadius = avatar.borderRadius;
+        byline.append(image);
+      }
+      const name = node('strong', presentation.displayName);
+      const profileUrl = presentation.profileUrl === undefined ? null : safeUrl(presentation.profileUrl, input.subject.origin);
+      if (profileUrl === null) byline.append(name);
+      else {
+        const profile = node('a');
+        profile.dataset.geldAuthorProfile = '';
+        profile.href = profileUrl;
+        profile.append(name);
+        byline.append(profile);
+      }
+      if (presentation.username !== undefined && presentation.username.trim() !== '') byline.append(node('span', presentation.username, 'geld-provider-review__muted'));
+      for (const badge of presentation.badges ?? []) {
+        if (badge.label.trim() === '') continue;
+        const mark = node('span', badge.label, nativeClasses(badge.className));
+        mark.dataset.geldAuthorBadge = '';
+        if (badge.title !== undefined) mark.title = badge.title;
+        byline.append(mark);
+      }
+    }
     if (comment.author.automated === true) byline.append(node('span', 'Automated account', 'geld-provider-review__muted'));
     const time = timestamp(comment.createdAt);
     if (time !== null) byline.append(time);
@@ -297,6 +373,23 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       row.append(url === null ? node('span', check.name) : link(check.name, url, '', true));
       row.append(node('span', currentCheck(check, input.subject.headSha) ? state : `Earlier commit · ${state}`));
       if (check.description !== undefined && check.description !== '') row.append(node('span', check.description, 'geld-provider-review__muted'));
+      list.append(row);
+    }
+    section.append(list);
+    return section;
+  }
+
+  function requirementsSection(): HTMLElement | null {
+    const requirements = options.requirements;
+    if (requirements === undefined || requirements === null) return null;
+    const section = disclosure('requirements', `Merge requirements · ${requirements.length} shown`, false);
+    if (requirements.length === 0) section.append(node('p', 'No merge requirement details were supplied.'));
+    const list = node('ul');
+    for (const requirement of requirements) {
+      const row = node('li', '', 'geld-provider-review__check');
+      row.dataset.geldNativeRequirement = requirement.id;
+      row.dataset.state = requirement.state;
+      row.append(node('span', requirement.label), node('span', REQUIREMENT_STATE[requirement.state]));
       list.append(row);
     }
     section.append(list);
@@ -528,6 +621,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const summary = options.ai?.enabled === true && options.ai.state.key === identity ? options.ai.state.summary : undefined;
     if (summary !== undefined) lines.push('', `AI summary: ${summary.tldr}`, '');
     for (const bot of bots) lines.push(`- ${botById(bot.id)?.title ?? bot.id}: ${verdictLabel(bot)}`);
+    for (const requirement of options.requirements ?? []) lines.push(`- Merge requirement: ${requirement.label}: ${REQUIREMENT_STATE[requirement.state]}`);
     for (const check of input.checks ?? []) {
       const url = check.detailsUrl === undefined ? null : safeUrl(check.detailsUrl);
       lines.push(`- CI: ${check.name}: ${checkState(check)}${currentCheck(check, input.subject.headSha) ? '' : ' (earlier commit)'}${url === null ? '' : ` ${url}`}`);
@@ -564,7 +658,16 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       if (Number.isFinite(at) && time.textContent?.trim()) nativeTimes.set(at, time.textContent.trim());
     }
     const ai = options.ai;
-    const signature = JSON.stringify([input, options.comments, options.events, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size]);
+    authorPresentations.clear();
+    const readPresentation = options.authorPresentation;
+    if (readPresentation !== undefined) for (const comment of [...input.threads.flatMap((thread) => thread.comments), ...(options.comments ?? [])]) {
+      if (sourceLink({ anchor: comment.anchor, kind: 'comment', author: comment.author.login, url: comment.url }, input.subject) === null) continue;
+      try {
+        const presentation = readPresentation(comment);
+        if (presentation !== null && presentation.authorId === comment.author.id && presentation.displayName.trim() !== '') authorPresentations.set(authorPresentationKey(comment), presentation);
+      } catch { /* A replaced native header falls back to the normalized author. */ }
+    }
+    const signature = JSON.stringify([input, options.comments, options.events, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size]);
     if (signature === lastSignature) {
       for (const time of panel.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
         const native = nativeTimes.get(Date.parse(time.dateTime));
@@ -660,6 +763,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       children.push(unavailable);
     }
     children.push(reviewStandings(), checksSection());
+    const requirements = requirementsSection();
+    if (requirements !== null) children.push(requirements);
     const botSection = botsSection();
     if (botSection !== null) children.push(botSection);
     const reports = reportsSection();
@@ -726,6 +831,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       identities = [];
       expanded.clear();
       sourceDetails.clear();
+      authorPresentations.clear();
       panel.remove();
     },
   };

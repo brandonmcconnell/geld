@@ -1,14 +1,14 @@
 /* Semantic tokens observed on GitLab.com merge request pages in both themes.
  * Geometry follows the native diff header and medium default button. */
 html[data-geld-provider="gitlab"] {
-  --geld-provider-font-family: var(--gl-font-family-regular);
+  --geld-provider-font-family: var(--font-family-sans-serif);
   --geld-provider-font-size: var(--gl-font-size-base);
   --geld-provider-line-height: 1.5;
   --geld-provider-font-weight: var(--gl-font-weight-normal);
   --geld-provider-heading-weight: var(--gl-font-weight-bold);
-  --geld-provider-font: var(--gl-font-weight-normal) var(--gl-font-size-base)/1.5 var(--gl-font-family-regular);
-  --geld-provider-font-small: var(--gl-font-weight-normal) var(--gl-font-size-sm)/1.5 var(--gl-font-family-regular);
-  --geld-provider-byline-font: var(--geld-provider-font);
+  --geld-provider-font: var(--gl-font-weight-normal) var(--gl-font-size-base)/1.5 var(--geld-provider-font-family);
+  --geld-provider-font-small: var(--gl-font-weight-normal) var(--gl-font-size-sm)/1.5 var(--geld-provider-font-family);
+  --geld-provider-byline-font: var(--gl-font-weight-normal) var(--gl-font-size-base)/var(--gl-line-height-20) var(--geld-provider-font-family);
   --geld-provider-text: var(--gl-text-color-default);
   --geld-provider-text-subtle: var(--gl-text-color-subtle);
   --geld-provider-link: var(--gl-text-color-link);
@@ -62,6 +62,8 @@ html[data-geld-provider="gitlab"] {
   --geld-provider-space-5: var(--gl-spacing-scale-5);
   --geld-provider-space-6: var(--gl-spacing-scale-6);
 }
+
+html[data-geld-provider="gitlab"] .geld-provider-review [data-geld-author-profile] { color: var(--gl-text-color-default); }
 
 /* Rapid diff code-theme variables are inherited inside the file, not on html. */
 html[data-geld-provider="gitlab"] .geld-provider-line-fold {
