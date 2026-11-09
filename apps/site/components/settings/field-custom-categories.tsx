@@ -1,12 +1,13 @@
 'use client';
 
-import type { AnyCategoryId, CategoryIconName, CustomCategoriesField, CustomCategory, GeldSettings } from '@geld/core';
-import { CATEGORY_ICON_NAMES, categoryIconLabel, customCategoryId, isCategoryEnabled, parsePatternList } from '@geld/core';
+import type { AnyCategoryId, CategoriesField, CategoryIconName, CustomCategoriesField, CustomCategory, GeldSettings } from '@geld/core';
+import { CATEGORY_ICON_NAMES, categoryIconLabel, customCategoryId, isAutoViewed, isCategoryEnabled, parsePatternList } from '@geld/core';
 import { cn } from 'cn';
 import { ChevronRightIcon, PlusIcon } from 'lucide-react';
 import { useId, useState } from 'react';
 
 import { CategoryIcon } from '@/components/category-icon';
+import { AutoViewedRow } from '@/components/settings/field-categories';
 import { RichText } from '@/components/settings/rich-text';
 import type { Status } from '@/components/settings/save-status';
 import { NO_STATUS, SaveStatus } from '@/components/settings/save-status';
@@ -20,15 +21,18 @@ export type CustomSaveResult = { readonly ok: true } | { readonly ok: false; rea
 
 interface CustomCategoriesProps {
   readonly field: CustomCategoriesField;
+  /** The built-in categories' copy for the "Mark as viewed automatically" checkbox; `null` hides it. */
+  readonly autoViewedCopy: CategoriesField['autoViewed'] | null;
   readonly settings: GeldSettings;
   readonly disabled: boolean;
   readonly onCategory: (id: AnyCategoryId, value: boolean) => void;
+  readonly onAutoViewed: (id: AnyCategoryId, value: boolean) => void;
   readonly onSave: (category: CustomCategory) => Promise<CustomSaveResult>;
   readonly onRemove: (id: AnyCategoryId) => Promise<CustomSaveResult>;
 }
 
 /** The user's own categories, each with a switch and an editor, plus an "Add category" draft. */
-export function CustomCategoriesRows({ field, settings, disabled, onCategory, onSave, onRemove }: CustomCategoriesProps) {
+export function CustomCategoriesRows({ field, autoViewedCopy, settings, disabled, onCategory, onAutoViewed, onSave, onRemove }: CustomCategoriesProps) {
   const [drafting, setDrafting] = useState(false);
   const categories = settings.customCategories;
   return (
@@ -42,9 +46,12 @@ export function CustomCategoriesRows({ field, settings, disabled, onCategory, on
               field={field}
               category={category}
               enabled={isCategoryEnabled(settings, category.id)}
+              autoViewed={isAutoViewed(settings, category.id)}
+              autoViewedCopy={autoViewedCopy}
               taken={new Set(categories.map((existing) => existing.id))}
               disabled={disabled}
               onCategory={onCategory}
+              onAutoViewed={onAutoViewed}
               onSave={onSave}
               onRemove={onRemove}
             />
@@ -55,9 +62,12 @@ export function CustomCategoriesRows({ field, settings, disabled, onCategory, on
               field={field}
               category={null}
               enabled
+              autoViewed={false}
+              autoViewedCopy={autoViewedCopy}
               taken={new Set(categories.map((existing) => existing.id))}
               disabled={disabled}
               onCategory={onCategory}
+              onAutoViewed={onAutoViewed}
               onSave={async (category) => {
                 const result = await onSave(category);
                 if (result.ok) setDrafting(false);
@@ -86,14 +96,17 @@ interface RowProps {
   /** `null` for a draft that has not been saved yet. */
   readonly category: CustomCategory | null;
   readonly enabled: boolean;
+  readonly autoViewed: boolean;
+  readonly autoViewedCopy: CategoriesField['autoViewed'] | null;
   readonly taken: ReadonlySet<string>;
   readonly disabled: boolean;
   readonly onCategory: (id: AnyCategoryId, value: boolean) => void;
+  readonly onAutoViewed: (id: AnyCategoryId, value: boolean) => void;
   readonly onSave: (category: CustomCategory) => Promise<CustomSaveResult>;
   readonly onRemove: (id: AnyCategoryId) => Promise<CustomSaveResult>;
 }
 
-function CustomCategoryRow({ field, category, enabled, taken, disabled, onCategory, onSave, onRemove }: RowProps) {
+function CustomCategoryRow({ field, category, enabled, autoViewed, autoViewedCopy, taken, disabled, onCategory, onAutoViewed, onSave, onRemove }: RowProps) {
   const labelId = useId();
   const helpId = useId();
   const nameId = useId();
@@ -203,6 +216,9 @@ function CustomCategoryRow({ field, category, enabled, taken, disabled, onCatego
               <Input id={pluralId} value={nounPlural} placeholder="tokens" aria-label="Count label, plural" disabled={disabled} onChange={(event) => setNounPlural(event.target.value)} className="w-40" />
             </div>
           </div>
+          {category !== null && autoViewedCopy !== null ? (
+            <AutoViewedRow copy={autoViewedCopy} checked={autoViewed} disabled={disabled} onChange={(value) => onAutoViewed(category.id, value)} />
+          ) : null}
           <div className="flex flex-col gap-3">
             <div>
               <label htmlFor={patternsId} className="text-sm font-medium">

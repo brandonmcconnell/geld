@@ -28,6 +28,13 @@ describe('the request menu’s line for a bot', () => {
     expect(state({ verdict: 'failed', reason: 'Bugbot is disabled for this repository' }, new Set())).toMatchObject({ word: 'Skipped', preselect: false });
   });
 
+  it('says Needs human only while nothing is counted', () => {
+    expect(state({ verdict: 'findings', needsHuman: true, sourceId: 'issuecomment-1' }, new Set(['coderabbit']))).toMatchObject({ word: 'Needs human' });
+    // A count the page added over the payload's mark speaks instead, as the chip does.
+    expect(state({ verdict: 'findings', needsHuman: true, count: 0, sourceId: 'discussion_r1' }, new Set(['coderabbit']))).toMatchObject({ word: 'Findings' });
+    expect(state({ verdict: 'findings', needsHuman: true, count: 2, sourceId: 'discussion_r1' }, new Set(['coderabbit']))).toMatchObject({ word: 'Findings' });
+  });
+
   it('reads a page with no push to tell by as this commit', () => {
     expect(state({ verdict: 'findings', count: 1, sourceId: 'discussion_r1' }, null)).toMatchObject({ word: 'Findings', preselect: false });
   });

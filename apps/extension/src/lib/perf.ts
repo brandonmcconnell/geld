@@ -145,6 +145,15 @@ export function mark(event: string): void {
   if (trail.length > TRAIL_KEPT) trail.splice(TRAIL_KEPT / 2, 1);
 }
 
+const marked = new Set<string>();
+
+/** `mark`, once per event for the script's life: for things a pass notices again on every run. */
+export function markOnce(event: string): void {
+  if (marked.has(event) || marked.size >= TRAIL_KEPT) return;
+  marked.add(event);
+  mark(event);
+}
+
 export function snapshot(): PerfSnapshot {
   const now = performance.now();
   const cutoff = now - RECENT_MS;
