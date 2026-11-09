@@ -1,8 +1,7 @@
 import type { BlockedBy } from './blocked-list';
-import { createElement, OWN_UI_ATTRIBUTE } from './dom';
+import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { pageFetch } from './page-fetch';
 import { ICON_BLOCKED, ICON_EYE_CLOSED } from './ui/icons';
-import { svgFromString } from './dom';
 
 /**
  * GitHub's user hovercard for a blocked or hidden person says so, and offers

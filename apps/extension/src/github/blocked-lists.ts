@@ -40,8 +40,8 @@ const NOUNS: Readonly<Record<Kind, readonly [string, string]>> = {
 };
 
 /** Each list row a title link names, on the surfaces that read an author, with its author and what kind of item it is. */
-function rowsWithAuthors(surfaces: readonly ListSurface[]): readonly { readonly row: HTMLElement; readonly kind: Kind; readonly author: string | null; readonly surface: ListSurface }[] {
-  const found = new Map<HTMLElement, { readonly row: HTMLElement; readonly kind: Kind; readonly author: string | null; readonly surface: ListSurface }>();
+function rowsWithAuthors(surfaces: readonly ListSurface[]): readonly { readonly row: HTMLElement; readonly kind: Kind; readonly author: string | null; readonly owner: string; readonly surface: ListSurface }[] {
+  const found = new Map<HTMLElement, { readonly row: HTMLElement; readonly kind: Kind; readonly author: string | null; readonly owner: string; readonly surface: ListSurface }>();
   for (const link of document.querySelectorAll<HTMLAnchorElement>('a[href*="/pull/"], a[href*="/issues/"], a[href*="/discussions/"]')) {
     if (link.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null || link.matches('.issue-link, .js-issue-link') || (link.textContent ?? '').trim() === '') continue;
     let url: URL;
@@ -56,7 +56,7 @@ function rowsWithAuthors(surfaces: readonly ListSurface[]): readonly { readonly 
       if (surface.spec.authors.length === 0) continue;
       const row = surface.rowOf(link);
       if (row === null || found.has(row)) continue;
-      found.set(row, { row, kind, author: surface.authorOf(row), surface });
+      found.set(row, { row, kind, author: surface.authorOf(row), owner: url.pathname.split('/')[1] ?? '', surface });
       break;
     }
   }
@@ -114,15 +114,16 @@ function syncNote(list: HTMLElement, rows: readonly BlockedRow[]): void {
   }
 }
 
-export function applyBlockedListHiding(blocked: ReadonlyMap<string, BlockedBy>, surfaces: readonly ListSurface[]): void {
+/** `blockedIn(owner)` is who is blocked in that owner's repositories: a list across organizations (`/pulls`) holds several. */
+export function applyBlockedListHiding(blockedIn: (owner: string) => ReadonlyMap<string, BlockedBy>, surfaces: readonly ListSurface[]): void {
   const byList = new Map<HTMLElement, BlockedRow[]>();
   const seen = new Set<HTMLElement>();
-  for (const { row, kind, author, surface } of rowsWithAuthors(surfaces)) {
+  for (const { row, kind, author, owner, surface } of rowsWithAuthors(surfaces)) {
     const list = row.parentElement;
     if (list === null) continue;
     seen.add(list);
     // A row the hidden-people list already hides is that list's note's to show, so it gets no second hiding here.
-    const scope = author === null || row.getAttribute(ATTR_AUTHOR) === 'hidden' ? undefined : blocked.get(author.toLowerCase());
+    const scope = author === null || row.getAttribute(ATTR_AUTHOR) === 'hidden' ? undefined : blockedIn(owner).get(author.toLowerCase());
     if (author === null || scope === undefined) {
       if (row.hasAttribute(ATTR_ROW)) row.removeAttribute(ATTR_ROW);
       row.querySelector(`[${ATTR_LABEL}]`)?.remove();

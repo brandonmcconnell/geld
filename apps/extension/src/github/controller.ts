@@ -1136,7 +1136,7 @@ export class GeldController {
         applyAuthorHiding(this.authorRules, surfaces);
         guard('content:blocked-lists', () => {
           const viewer = document.querySelector('meta[name="user-login"]')?.getAttribute('content') ?? '';
-          applyBlockedListHiding(blockedFor(location.pathname.split('/')[1] ?? '', viewer, () => this.schedule()), surfaces);
+          applyBlockedListHiding((owner) => blockedFor(owner, viewer, () => this.schedule()), surfaces);
         });
       });
       // Nothing on screen waits for these: the commit tooltip re-arms on the next hover, and a hovercard's
