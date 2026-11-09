@@ -19,11 +19,18 @@ export function InstallButtonGroup({ links, size = 'default', className }: { rea
   const primary = links.find((link) => link.browser.id === current) ?? links[0];
   if (primary === undefined) return null;
   const others = links.filter((link) => link !== primary);
-  const iconSize = size === 'lg' ? 'icon-lg' : 'icon';
+  // Large only from 375px: below that the large row wraps, so it takes the default size the page's lower row already uses.
+  const large = size === 'lg';
+  const primaryClass = buttonVariants({ className: cn(large && 'min-[375px]:h-11 min-[375px]:px-5 min-[375px]:text-[0.95rem] min-[375px]:geld-cut-[10px] min-[375px]:[&_svg:not([class*="size-"])]:size-[18px]') });
+  const iconClass = buttonVariants({
+    variant: 'outline',
+    size: 'icon',
+    className: cn('text-muted-foreground hover:text-foreground', large && 'min-[375px]:size-11 min-[375px]:geld-cut-[10px] min-[375px]:[&_svg:not([class*="size-"])]:size-[18px]'),
+  });
 
   return (
     <div className={cn('flex flex-wrap items-center gap-2', className)} data-current-browser={current}>
-      <a href={primary.href} className={buttonVariants({ size })} target="_blank" rel="noopener noreferrer" data-source={primary.source}>
+      <a href={primary.href} className={primaryClass} target="_blank" rel="noopener noreferrer" data-source={primary.source}>
         <BrowserIcon browser={primary.browser.id} />
         {primary.label}
       </a>
@@ -33,7 +40,7 @@ export function InstallButtonGroup({ links, size = 'default', className }: { rea
             <Tooltip>
               <TooltipTrigger
                 render={<a href={link.href} target="_blank" rel="noopener noreferrer" aria-label={link.label} data-source={link.source} />}
-                className={buttonVariants({ variant: 'outline', size: iconSize, className: 'text-muted-foreground hover:text-foreground' })}
+                className={iconClass}
               >
                 <BrowserIcon browser={link.browser.id} />
               </TooltipTrigger>

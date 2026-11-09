@@ -5,26 +5,35 @@
  * remounts are handled by applying again. Never scrolls the page.
  */
 
+import { browser } from 'wxt/browser';
 import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
 import type { GeldSettings } from '@geld/core';
-import type { BotVerdictRecord, CommentLane, GeldPrMeta, RawCheckRun, ReviewItem, ReviewerState } from '@geld/review';
-import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, commandReply, firstSentence, isOpenStatus, isReviewShaped, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, mergeCheckRuns, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, rerunTriggerFor, resolveBotId, verdictsFrom } from '@geld/review';
+import { compileAuthorRules, digestViewOf, repoFromPathname } from '@geld/core';
+import type { BotComment, BotVerdictRecord, CommentLane, GeldPrMeta, RawCheckRun, ReviewItem, ReviewerState } from '@geld/review';
+import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, commandReply, firstSentence, isOpenStatus, isReviewShaped, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, mergeCheckRuns, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage, pullRequestStateWords } from '../page';
-import { count, phase, phaseSince } from '../../lib/perf';
+import { count, mark, phase, phaseSince } from '../../lib/perf';
 import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
+import type { OpenSettingsMessage } from '../../lib/messages';
 import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
-import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, reviewCommentOf, revisionMarker, THREAD_SELECTOR } from './crawler';
+import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, commitsInRow, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR, TIMELINE_ROW } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
+import type { CommentMention } from './crawler';
+import { byMentionTime } from './references';
 import { crawlConversation } from './crawler';
+import type { Deployment, DeploymentEntry } from './deployments';
+import { deploymentEntries, deploymentOf, deploymentsOfPreview, environmentLabel, pinnedToBuild, previewLinks } from './deployments';
 import { threadFragmentOf } from './thread-fragment';
-import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, sourceAnchorFromHash } from './deeplink';
+import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, loadMoreStanding, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
-import { editedAt, editsVersion, editTimesOf, refreshEditTimes, resetEditTimes, revisionAsOf } from './edit-times';
+import { editedAt, editsVersion, editTimesOf, refreshEditTimes, resetEditTimes, revisionAsOf, revisionTimesOf } from './edit-times';
+import type { SameRunCandidate } from './revisions';
+import { RUN_SETTLE_MS, threadHeadOf } from './thread-head';
 import { headChecks, nextCheckRefresh, resetHeadChecks } from './check-source';
 import { absoluteTimeText, relativeTimeText } from './time';
 import { stickyHeaderBottomAt } from './sticky';
@@ -33,32 +42,52 @@ import type { ReviewerCandidate } from './reviewers';
 import { nextRunGraceEnd, withRunTimes } from './run-starts';
 import { refDetails, refsVersion, resetRefs } from './refs';
 import { diffHashOf, isTrimmedPath, resetWholePaths, wholePath } from './whole-path';
-import { applyFolds, closureKindOf, collapseDescription, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
+import { descriptionUnshortened, releaseDescription, rememberDescriptionFold, shortenDescription } from './description';
+import { chooseDigestView, removeDigestOffBar, syncDigestOffBar } from './digest-off';
+import { forgetViewFocusElsewhere } from './view-focus';
+import { compactDescriptionByline } from './description-byline';
+import { type AgentNote, agentNotes, noteCopy, noteText, resetAgentNotes } from './agent-notes';
+import { botWrittenVersion } from './note-tone';
+import { openNoteHistory } from './note-history';
+import { applyFolds, closureKindOf, groupBotRuns, groupClosures, groupDoneHumans, groupLeftovers, groupTriggers, isFoldedNode, markSeen, setFullTimeline } from './fold';
 import type { FoldGroup } from './fold';
 import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiveRuns } from './meta-source';
-import { ATTR_CTL_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, PREVIEWS_KEY, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel } from './panel';
+import type { BotRequestClick } from './bot-requests';
+import { awaitingReaction, botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
+import { pollTriggerReactions, resetTriggerReactions, withFetchedReactions } from './trigger-reactions';
+import { AGENT_NOTES_KEY, ATTR_CHECK_RUNS, ATTR_CTL_SLOT, ATTR_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, descriptionCard, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, reseatPanelNow, openRowGroup, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderCheckRunsList, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel, renderDeploymentsList, renderPreviewsList, DEPLOYMENTS_KEY, whoAttributes } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
-import { hideHoverCard, setHoverProvider, setReportProvider, setWhoProvider } from './hovercard';
+import { hideHoverCard, setHoverProvider, setNoteProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
 import { knownMarkShape } from './mark-shape';
 import { loginOfLink, showLogins } from './login';
-import { allResolved, checkCountsFrom, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, standingReviewers } from './panel-model';
+import { allResolved, isSevere, checkCountsFrom, checkCountsOfRuns, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, standingReviewers } from './panel-model';
+import { exactRulesFor, HiddenPeople, markedOnGitHub, lookUpUnhideForms, refreshUnhidden, sendUnhide } from './hidden-people';
+import { blockedFor } from '../blocked-users';
+import type { BlockedBy } from '../blocked-list';
+import { blockedUsersUrl } from '../blocked-list';
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import type { RepoBotsHint } from './panel-model';
-import { NO_REPO_BOTS, requestableBots } from './panel-model';
+import { NO_REPO_BOTS, requestableBots, triggerFor } from './panel-model';
 import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
-import { chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf } from './chat';
-import type { ChatByline, ChatRerun, ChatThreadLink } from './chat';
+import { timelineMentionsFor } from './timeline-mentions';
+import type { MentionLine } from './quick-view';
+import { botCommentControls, chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf, parkChats, releaseParkedChats } from './chat';
+import type { ChatByline, ChatLink, ChatRerun, ChatThreadLink } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
 import { fitChips, stopFittingChips } from './fit-chips';
+import { stopWatchingBrandSelection } from './brand';
 import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrphanedLoans, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
+import { rememberTopCard, setTopCard } from './top-card';
+import { closeOverviewChecks, isOverviewPage, OVERVIEW_FOR_YOU, OVERVIEW_ITEM, openCollapsedThreads, openOverviewChecks, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, showAllOverviewComments } from './overview-page';
 import { pageFetch } from '../page-fetch';
+import { closeFlow, openFlowDialog } from './flow';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
@@ -92,6 +121,10 @@ interface VisitState {
   openSubKey: string | null;
   /** Threads (by first-comment anchor) showing the review comment they came from. */
   sourcesShown: Set<string>;
+  /** Hidden people (lowercased logins) the reader is peeking at: their content is in the digest for this visit. */
+  peeking: Set<string>;
+  /** Who was hidden when `lastReviews` was read: a reading from before someone was hidden is dropped. */
+  lastReviewsHiddenKey: string;
   archivedPreviewsOpen: boolean;
   /** Rounds whose commit rows are unfolded (batch grouping). */
   openCommits: Set<string>;
@@ -129,12 +162,21 @@ interface VisitState {
   /** Items marked done here when neither GitHub's Resolve nor a summary checkbox could take it. */
   manualDone: Set<string>;
   /**
-   * A thread on loan to the panel just changed state (Resolve was pressed in
-   * it): the item row that was open, and until when to wait for the crawl to
-   * see the change, so the settled item - and its round, once nothing in it
-   * is open - can be closed for the reader.
+   * The open round's anchors and commit rows, read while its key is found: a round's identity can shift while the
+   * timeline streams in (an earlier commit row or comment arrives), and the round that shares them takes the key.
    */
-  settling: { readonly itemKey: string | null; readonly until: number; readonly wasOpen: boolean } | null;
+  openRoundMarks: { readonly key: string; readonly anchors: ReadonlySet<string>; readonly commits: ReadonlySet<HTMLElement> } | null;
+  /**
+   * The open row and the group it was listed under at the last render. A row the page moved into another group (a
+   * push made its round a past one, its last thread was resolved) opens that group, so it never folds away under
+   * the reader; a group the reader folds over their own open row stays folded.
+   */
+  openSeat: { readonly key: string; readonly group: GroupId | null } | null;
+  /**
+   * A thread on loan to the panel just changed state (Resolve pressed in it, or anyone resolving it): the item that
+   * was open, and until when to keep reading so the row shows the new state. Nothing closes for it.
+   */
+  settling: { readonly itemKey: string | null; readonly until: number } | null;
   /**
    * The open comment line's words, as they read when it opened. Its node is on
    * loan to the panel while open, and some of what the crawl reads from it -
@@ -147,12 +189,16 @@ interface VisitState {
    */
   pinnedEntry: { readonly anchor: string; readonly preview: string; readonly time: string; readonly avatarSrc: string | null } | null;
   /**
-   * Bots asked to run again from a chat's Rerun button, with when: the
-   * button spins from the click, before the trigger comment is on the page
-   * and the crawl reads the bot as running (see `RERUN_PENDING_MS`).
+   * Bots asked for a review from Geld this visit (the request menu or a
+   * chat's Rerun), with when and whether the trigger posted: their pills
+   * spin from the click, before the trigger comment is on the page
+   * (`botRequestStates`).
    */
-  rerunPending: Map<string, number>;
+  requests: Map<string, BotRequestClick>;
 }
+
+/** Each bot's trigger comments as the last pass read them: what a request recorded at a click was already there. */
+let triggersOnPage: ReadonlyMap<string, ReadonlySet<string>> = new Map();
 
 const visit: VisitState = {
   fullTimeline: false,
@@ -167,12 +213,16 @@ const visit: VisitState = {
   landedSettled: false,
   openSubKey: null,
   sourcesShown: new Set<string>(),
+  peeking: new Set<string>(),
+  lastReviewsHiddenKey: '',
   archivedPreviewsOpen: false,
   openCommits: new Set<string>(),
   openPreviews: new Set<string>(),
   flash: null,
   openSubMissingSince: null,
   openItemAnchors: null,
+  openRoundMarks: null,
+  openSeat: null,
   knownRequired: null,
   lastReviews: null,
   checksExpanded: false,
@@ -181,11 +231,8 @@ const visit: VisitState = {
   manualDone: new Set(),
   settling: null,
   pinnedEntry: null,
-  rerunPending: new Map(),
+  requests: new Map(),
 };
-
-/** A Rerun click shows as running for this long on its own; by then the trigger comment is on the page or the post failed. */
-const RERUN_PENDING_MS = 30_000;
 
 /** The open comment line wears the words it opened with (see `VisitState.pinnedEntry`). */
 function pinOpenEntry(entries: readonly ReviewEntry[]): readonly ReviewEntry[] {
@@ -210,14 +257,17 @@ function pinOpenEntry(entries: readonly ReviewEntry[]): readonly ReviewEntry[] {
  * requested review from X" controls (the merge box only says "2 pending
  * reviews" behind a collapsed group). Lines with nothing to open. Read from
  * the sidebar block first; the bare controls are the fallback for a sidebar
- * whose rows the block read did not recognise.
+ * whose rows the block read did not recognise. People only: an App asked to
+ * review (Copilot) is the Review bots row's, and the fallback must not put
+ * back one the block read skipped.
  */
 function awaitingReviewers(sidebar: readonly SidebarReviewer[]): ReviewEntry[] {
-  const out: ReviewEntry[] = sidebar.filter((reviewer) => reviewer.state === 'awaiting').map((reviewer) => sidebarEntry(reviewer, 'awaiting'));
+  const out: ReviewEntry[] = sidebar.filter((reviewer) => reviewer.state === 'awaiting' && !reviewer.bot).map((reviewer) => sidebarEntry(reviewer, 'awaiting'));
   for (const control of document.querySelectorAll<HTMLElement>('[aria-label^="Awaiting requested review from" i]')) {
     const login = /from\s+(\S+)/i.exec(control.getAttribute('aria-label') ?? '')?.[1] ?? '';
-    if (login === '' || out.some((entry) => entry.author === login)) continue;
+    if (login === '' || /\[bot\]$/i.test(login) || out.some((entry) => entry.author === login) || sidebar.some((reviewer) => reviewer.bot && reviewer.login.replace(/\[bot\]$/i, '').toLowerCase() === login.toLowerCase())) continue;
     const item = control.closest('.d-flex, li, [data-testid]') ?? control.parentElement;
+    if (item !== null && item.querySelector('a[href^="/apps/"]') !== null) continue;
     const image = item?.querySelector<HTMLImageElement>('img.avatar, img[class*="avatar"]') ?? null;
     out.push({ anchor: `awaiting:${login}`, author: login, avatarSrc: image === null ? avatarSrcForLogin(login) : normalizeAvatarSrc(image.currentSrc || image.getAttribute('src') || ''), state: 'awaiting', preview: '', time: '', hasBody: false, done: false, replies: 0, myReaction: null });
   }
@@ -344,11 +394,8 @@ function watchLoans(root: Element): void {
     // for some other reason sent the loan home (mint#12367).
     const swapped = adoptReplacements(records);
     if (!swapped && !records.some(touchesThreadState)) return;
-    // Only a thread that was open a moment ago can settle: opening an already-resolved thread also mutates its
-    // loaned node (GitHub finishes rendering it), and that must not close the row the reader just opened.
     const key = visit.openSubKey?.startsWith('item:') === true ? visit.openSubKey : visit.openKey?.startsWith('item:') === true ? visit.openKey : null;
-    const row = key === null ? null : document.querySelector(`.geld-review__row[data-geld-item="${CSS.escape(key.slice('item:'.length))}"]`);
-    visit.settling = { itemKey: key, until: Date.now() + 15_000, wasOpen: row !== null && row.getAttribute('data-state') !== 'done' };
+    visit.settling = { itemKey: key, until: Date.now() + 15_000 };
     reapplySoon();
   });
   loanWatcher.observe(root, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['data-resolved', 'aria-pressed', 'aria-label', 'hidden'] });
@@ -366,8 +413,8 @@ function unwatchLoans(): void {
  * few times over the next seconds; each pass is cheap and settles once the
  * crawl sees the new state.
  */
-function reapplyAfterResolve(itemKeyHint: string | null, resolving: boolean): void {
-  visit.settling = { itemKey: itemKeyHint, until: Date.now() + 15_000, wasOpen: resolving };
+function reapplyAfterResolve(itemKeyHint: string | null): void {
+  visit.settling = { itemKey: itemKeyHint, until: Date.now() + 15_000 };
   for (const delay of [300, 900, 2000, 4000]) {
     window.setTimeout(() => {
       if (visit.settling !== null) reapplyNow();
@@ -390,7 +437,7 @@ function reseatOpenLine(batches: readonly Batch[]): void {
   const current = batches.find((batch) => batch.key === visit.openKey);
   if (current !== undefined && holds(current)) return;
   const home = batches.find(holds);
-  if (home !== undefined) visit.openKey = home.key;
+  if (home !== undefined && visit.openKey !== null) renameOpenRound(visit.openKey, home.key);
 }
 
 /**
@@ -427,10 +474,25 @@ function reseatOpenItem(meta: GeldPrMeta): void {
   if (remembered === null || remembered.key !== key) return;
   const successor = meta.items.find((item) => item.sources.some((source) => remembered.anchors.has(source.anchor)));
   if (successor === undefined) return;
-  visit[field] = itemKey(successor.id);
-  visit.openItemAnchors = { key: visit[field], anchors: new Set(successor.sources.map((source) => source.anchor)) };
+  const next = itemKey(successor.id);
+  moveOpenSeat(key, () => {
+    visit[field] = next;
+  });
+  visit.openItemAnchors = { key: next, anchors: new Set(successor.sources.map((source) => source.anchor)) };
   // A settle armed for the old key (the reply mutated the loaned node) is about this same conversation.
-  if (visit.settling !== null && visit.settling.itemKey === key) visit.settling = { ...visit.settling, itemKey: visit[field] };
+  if (visit.settling !== null && visit.settling.itemKey === key) visit.settling = { ...visit.settling, itemKey: next };
+}
+
+/**
+ * The open thread where the grouping shows it, after the grouping changed under it (a settings rebuild keeps the
+ * visit): by type it opens inside its round, by push an open thread is a row of its own under Needs attention.
+ */
+function seatOpenThread(batches: readonly Batch[], grouping: GeldSettings['reviewGrouping']): void {
+  const key = grouping === 'batch' ? visit.openSubKey : visit.openKey;
+  if (key === null || !key.startsWith('item:')) return;
+  // By push a resolved thread stays inside its push, already where it shows.
+  if (grouping === 'batch' && !batches.some((batch) => batch.items.some((item) => itemKey(item.id) === key && isOpenStatus(item.status)))) return;
+  openRow(key, batches, grouping);
 }
 
 /** How long an open line's conversation may be absent from the crawl before the line is given up. */
@@ -449,27 +511,89 @@ function openLineStillMissing(): boolean {
   return true;
 }
 
-/** After a thread changed state under the reader: close the item once it is done, and its round once nothing in it is open. */
-function settleAfterResolve(meta: GeldPrMeta, batches: readonly Batch[]): void {
+/**
+ * After a thread changed state under the reader: the re-reads stop once the crawl sees it. The thread and its round
+ * stay open, whoever resolved it; by push a thread that leaves Needs attention opens inside its push instead.
+ */
+function settleAfterResolve(meta: GeldPrMeta, batches: readonly Batch[], grouping: GeldSettings['reviewGrouping']): void {
   const settling = visit.settling;
   if (settling === null) return;
-  if (Date.now() > settling.until || settling.itemKey === null || !settling.wasOpen) {
+  if (Date.now() > settling.until || settling.itemKey === null) {
     visit.settling = null;
     return;
   }
   const item = meta.items.find((entry) => itemKey(entry.id) === settling.itemKey);
   if (item === undefined || isOpenStatus(item.status)) return;
   visit.settling = null;
-  const batch = batches.find((entry) => entry.items.includes(item));
-  if (batch === undefined || batch.items.every((entry) => !isOpenStatus(entry.status))) {
-    // The round is settled: it closes, and by type it joins the settled rounds.
-    visit.openKey = null;
-    visit.openSubKey = null;
-  } else if (visit.openSubKey === settling.itemKey) {
-    visit.openSubKey = null;
-  } else if (visit.openKey === settling.itemKey) {
-    visit.openKey = null;
+  if (grouping !== 'batch' || visit.openKey !== settling.itemKey) return;
+  const push = batches.find((entry) => entry.items.includes(item));
+  if (push !== undefined) moveOpenSeat(settling.itemKey, () => openRow(push.key, batches, grouping, settling.itemKey));
+}
+
+/** Reseat the open key without it reading as the reader's choice: the row keeps following its group (`followOpenRow`). */
+function moveOpenSeat(from: string, reseat: () => void): void {
+  reseat();
+  const seat = visit.openSeat;
+  if (seat !== null && seat.key === from && visit.openKey !== null) visit.openSeat = { ...seat, key: visit.openKey };
+}
+
+/** The open round under its new key, with what was unfolded inside it (its commits, its previews) and its seat. */
+function renameOpenRound(from: string, to: string): void {
+  moveOpenSeat(from, () => {
+    visit.openKey = to;
+  });
+  for (const unfolded of [visit.openCommits, visit.openPreviews]) {
+    if (unfolded.delete(from)) unfolded.add(to);
   }
+}
+
+function roundMarks(batch: Batch): { readonly anchors: ReadonlySet<string>; readonly commits: ReadonlySet<HTMLElement> } {
+  const anchors = new Set<string>([...batch.items.flatMap((item) => item.sources.map((source) => source.anchor)), ...batch.comments.map((entry) => entry.anchor), ...batch.reviews.map((entry) => entry.anchor)]);
+  if (batch.firstAnchor !== null) anchors.add(batch.firstAnchor);
+  return { anchors, commits: new Set(batch.commits) };
+}
+
+/**
+ * The open round follows its content. Its key comes from its first commit row or comment, and while the timeline
+ * streams in (a "Load more", deferred fragments, a rewritten commit seated earlier) that first entry can change,
+ * so the key the reader opened matched nothing and the round closed under them. While the key is found its commit
+ * rows and anchors are remembered under it; when it is not, the round that shares its commit rows, else the most of
+ * its anchors, is the same round and takes the key.
+ */
+function reseatOpenRound(batches: readonly Batch[]): void {
+  const key = visit.openKey;
+  if (key === null || !key.startsWith('batch:')) {
+    visit.openRoundMarks = null;
+    return;
+  }
+  const found = batches.find((batch) => batch.key === key);
+  if (found !== undefined) {
+    visit.openRoundMarks = { key, ...roundMarks(found) };
+    return;
+  }
+  const remembered = visit.openRoundMarks;
+  if (remembered === null || remembered.key !== key) return;
+  const shared = (batch: Batch): number => [...roundMarks(batch).anchors].filter((anchor) => remembered.anchors.has(anchor)).length;
+  const successor =
+    batches.find((batch) => batch.commits.some((row) => remembered.commits.has(row))) ??
+    batches.reduce<Batch | undefined>((best, batch) => (shared(batch) > (best === undefined ? 0 : shared(best)) ? batch : best), undefined);
+  if (successor === undefined) return;
+  renameOpenRound(key, successor.key);
+  visit.openRoundMarks = { key: successor.key, ...roundMarks(successor) };
+}
+
+/**
+ * The open row's group, kept unfolded when the page moved the row into it: by type a round that a new push made a
+ * past one, or whose last thread was resolved, joins the settled rounds, folded by default, and the reader's open
+ * round (and the thread open in it) went with it. Only a move counts: a group the reader folds over their open row
+ * stays folded, and a row they open is unfolded by `openRow`.
+ */
+function followOpenRow(model: PanelModel): void {
+  const key = visit.openKey;
+  const group = key === null ? null : openRowGroup(model);
+  const seat = visit.openSeat;
+  if (key !== null && seat !== null && seat.key === key && group !== null && group !== seat.group) visit.collapsedGroups.delete(group);
+  visit.openSeat = key === null ? null : { key, group };
 }
 
 function hideSummary(root: HTMLElement | null): void {
@@ -485,37 +609,127 @@ function unique<T>(values: readonly T[]): T[] {
 
 type Crawled = ReturnType<typeof crawlConversation>;
 
-function buildFromComments(crawled: Crawled, settings: GeldSettings, headSha: string, generatedAt: string, partial: boolean, threadsRead: boolean): GeldPrMeta {
-  const comments = crawled.comments.map((entry) => entry.comment);
-  const items = clusterComments(comments, settings.reviewBots);
-  // The head's check rows, as the Action would read them from the API: a bot whose run finished green and that
-  // flagged nothing is clean, whatever its opening comment said. A run's start (shown while it runs, kept after)
-  // is a run asked for as surely as a trigger comment, and a report is a word newer than that start. The page's
-  // merge box has the rows only when expanded (and not at all once the pull request is merged or closed), so the
-  // commit's status partial fills in what it does not show (`check-source.ts`).
+/**
+ * The head's check rows, as the Action would read them from the API: a bot whose run finished green and that flagged
+ * nothing is clean, whatever its opening comment said. A run's start (shown while it runs, kept after) is a run asked
+ * for as surely as a trigger comment, and a report is a word newer than that start. The page's merge box has the rows
+ * only when expanded (and not at all once the pull request is merged or closed), so the commit's status partial fills
+ * in what it does not show (`check-source.ts`).
+ */
+function botChecks(headSha: string): readonly RawCheckRun[] {
   const checks = withRunTimes(pageChecks(headSha), visit.pageKey, headSha, reapplySoon);
   // The grace a finished check's report is given ends on a clock, not on a page change: a pass is due then.
   const graceEnd = nextRunGraceEnd(checks, REPORT_GRACE_MS);
   if (graceEnd !== null) reapplyAt(graceEnd);
+  return checks;
+}
+
+/** The crawled comments as the bots' verdicts read them (`verdictsFrom`, `botRequestStates`). */
+function botCommentsOf(crawled: Crawled, settings: GeldSettings): readonly BotComment[] {
+  return crawled.comments.map(({ comment, author }) => {
+    const bot = author.bot ? resolveBotId(author.login, settings.reviewBots) : null;
+    // A review bot's summary: when it was last rewritten says whether a run asked for since has reported into it,
+    // or whether it is the bot's latest word over an older run's threads (`verdictsFrom`). `editedAt` asks the
+    // edit log only for a comment the page marks as edited, and the rounds ask it for the same comments anyway.
+    const node = comment.kind !== 'thread' && bot !== null ? document.getElementById(comment.anchor) : null;
+    const edited = node === null ? null : editedAt(node, reapplySoon);
+    const reactions = comment.kind === 'thread' ? comment.reactions : withFetchedReactions(comment.anchor, comment.reactions);
+    const reactedBy = reactions === comment.reactions ? comment.reactedBy : unique((reactions ?? []).map((reaction) => reaction.login));
+    return {
+      author: comment.author,
+      body: comment.body,
+      anchor: comment.anchor,
+      ...(comment.createdAt === '' ? {} : { createdAt: comment.createdAt }),
+      ...(reactedBy === undefined ? {} : { reactedBy }),
+      ...(reactions === undefined ? {} : { reactions }),
+      ...(edited === null ? {} : { editedAt: edited }),
+      ...(comment.kind === 'thread' && comment.isResolved !== undefined ? { resolved: comment.isResolved } : {}),
+      ...(comment.grade === undefined ? {} : { grade: comment.grade }),
+    };
+  });
+}
+
+/** The key a note stands under where the panel opens it (the Agent notes row's lines, a bot's line for its review). */
+const NOTE_ANCHOR_PREFIX = 'note:';
+
+/** The notes the current pass read, for the hover cards (which ask between passes). */
+let liveNotes: readonly AgentNote[] = [];
+
+/**
+ * A review bot's summary written into the description (`DESCRIPTION_REVIEWERS`: Greptile, set to review there) as a
+ * comment of the bot's, so `verdictsFrom` reads its score and findings for the Review bots row as it would a summary
+ * comment's, at the time the bot wrote it. Its anchor is the note's key: nothing on the page has it, and its line opens
+ * the note (`renderNoteBody`).
+ */
+function descriptionReviewComments(notes: readonly AgentNote[]): readonly BotComment[] {
+  return notes.flatMap((note) => {
+    const written = botWrittenVersion(note);
+    return written === null ? [] : [{ author: written.login, body: noteText(note), anchor: `${NOTE_ANCHOR_PREFIX}${note.id}`, createdAt: written.at }];
+  });
+}
+
+/** `extra` laid into `comments` (timeline order) by time, so a reader of the list in order meets each when it was said. */
+function inTimeOrder(comments: readonly BotComment[], extra: readonly BotComment[]): readonly BotComment[] {
+  const merged = [...comments];
+  for (const comment of extra) {
+    const at = Date.parse(comment.createdAt ?? '');
+    const index = merged.findIndex((entry) => Date.parse(entry.createdAt ?? '') > at);
+    merged.splice(index < 0 ? merged.length : index, 0, comment);
+  }
+  return merged;
+}
+
+/** When a comment was last written: its latest edit (a bot rewrites its summary in place), else when it was posted. */
+function lastWrittenAt(anchor: string, createdAt: string): number {
+  const node = document.getElementById(anchor);
+  const edited = node === null ? Number.NaN : Date.parse(editedAt(node, reapplySoon) ?? '');
+  const created = Date.parse(createdAt);
+  return Number.isNaN(edited) ? created : Math.max(edited, Number.isNaN(created) ? edited : created);
+}
+
+/** Bot `botId`'s review in the description, when its own App wrote the reading there now (`botWrittenVersion`). */
+function descriptionSummaryOf(botId: string): { readonly anchor: string; readonly at: string; readonly note: AgentNote } | null {
+  for (const note of liveNotes) {
+    if (note.bot !== botId) continue;
+    const written = botWrittenVersion(note);
+    if (written !== null) return { anchor: `${NOTE_ANCHOR_PREFIX}${note.id}`, at: written.at, note };
+  }
+  return null;
+}
+
+/** When the note under a `note:` anchor was last written, for what reads a report's time. */
+function noteWrittenAt(anchor: string): string | null {
+  const note = liveNotes.find((entry) => `${NOTE_ANCHOR_PREFIX}${entry.id}` === anchor);
+  return note === undefined ? null : (botWrittenVersion(note)?.at ?? null);
+}
+
+/** A note as the panel shows it open: GitHub's rendering, copied (the note itself stays in the description). */
+function renderNoteBody(slot: HTMLElement, note: AgentNote): void {
+  slot.replaceChildren(createElement('div', { class: `markdown-body ${PANEL_CLASS}__note-body` }, noteCopy(note.versions.at(-1)?.blocks ?? [])));
+}
+
+/** A note's hover card: its mark and name over a clamped copy, opening where the note opens. */
+function noteCard(note: AgentNote, onOpen: () => void): HoverPreview {
+  const bot = note.bot === null ? null : botById(note.bot);
+  return {
+    avatarSrc: bot === null ? null : botAppAvatar(bot, 40),
+    name: note.name,
+    bot: true,
+    time: '',
+    body: createElement('div', { class: 'markdown-body' }, noteCopy(note.versions.at(-1)?.blocks ?? [])),
+    more: 0,
+    onReply: null,
+    onOpen,
+    openLabel: 'See full note',
+  };
+}
+
+function buildFromComments(crawled: Crawled, botComments: readonly BotComment[], checks: readonly RawCheckRun[], settings: GeldSettings, headSha: string, generatedAt: string, partial: boolean, threadsRead: boolean): GeldPrMeta {
+  const comments = crawled.comments.map((entry) => entry.comment);
+  const items = clusterComments(comments, settings.reviewBots);
   const bots = verdictsFrom(
     checks,
-    crawled.comments.map(({ comment, author }) => {
-      const bot = author.bot ? resolveBotId(author.login, settings.reviewBots) : null;
-      // A review bot's summary: when it was last rewritten says whether a run asked for since has reported into it,
-      // or whether it is the bot's latest word over an older run's threads (`verdictsFrom`). `editedAt` asks the
-      // edit log only for a comment the page marks as edited, and the rounds ask it for the same comments anyway.
-      const node = comment.kind !== 'thread' && bot !== null ? document.getElementById(comment.anchor) : null;
-      const edited = node === null ? null : editedAt(node, reapplySoon);
-      return {
-        author: comment.author,
-        body: comment.body,
-        anchor: comment.anchor,
-        ...(comment.createdAt === '' ? {} : { createdAt: comment.createdAt }),
-        ...(comment.reactedBy === undefined ? {} : { reactedBy: comment.reactedBy }),
-        ...(edited === null ? {} : { editedAt: edited }),
-        ...(comment.kind === 'thread' && comment.isResolved !== undefined ? { resolved: comment.isResolved } : {}),
-      };
-    }),
+    botComments,
     headSha,
     settings.reviewBots,
     Date.now(),
@@ -548,7 +762,38 @@ function closureGroups(crawled: Crawled): { readonly groups: readonly FoldGroup[
   return groupClosures(events, comments);
 }
 
-function foldGroups(meta: GeldPrMeta, settings: GeldSettings, crawled: Crawled, paired: ReadonlySet<string>): readonly FoldGroup[] {
+/** "Last successful preview" on a preview's byline, while its latest deployment is not a success. */
+function lastSuccessLinks(href: string | null): readonly ChatLink[] {
+  return href === null ? [] : [{ label: 'Last successful preview', href, title: 'Open the last successful preview' }];
+}
+
+/**
+ * A deployment's byline: the build's own preview (GitHub's address for it, which stays with that build, unlike the
+ * comment's branch link), then the host's page for it. A failed build's address is the host's error page, so it has none.
+ */
+function deploymentLinks(entry: DeploymentEntry): readonly ChatLink[] {
+  const name = environmentLabel(entry.latest.environment);
+  const links: ChatLink[] = [];
+  const success = entry.latest.state === 'active' || entry.latest.state === 'inactive';
+  if (success && entry.latest.url !== null) links.push({ label: 'Preview', href: entry.latest.url, title: `Open this ${name} build` });
+  if (entry.page !== null) links.push({ label: 'Deployment', href: entry.page, title: `Open the ${name} deployment` });
+  return links;
+}
+
+/** Every deployment event on the page, in timeline order. */
+function deploymentsOn(crawled: Crawled): readonly Deployment[] {
+  return crawled.events.flatMap((event) => {
+    const node = event.root.id === event.anchor ? event.root : (event.root.querySelector(`[id="${event.anchor}"]`) ?? event.root);
+    const deployment = deploymentOf(node);
+    return deployment === null ? [] : [deployment];
+  });
+}
+
+/**
+ * GitHub's deployment events fold without a row: the Deployments row (or, for a host that also comments, the
+ * Previews row) lists them, so the timeline events row is left with what happened to the pull request itself.
+ */
+function foldGroups(meta: GeldPrMeta, settings: GeldSettings, crawled: Crawled, paired: ReadonlySet<string>, deployments: readonly Deployment[]): readonly FoldGroup[] {
   if (settings.compactTimeline === 'off' || visit.fullTimeline) return [];
   // Triggers and bots' run-status lines fold without a row; the rest of the bot comments get their rounds.
   const triggerAnchors = new Set(crawled.comments.filter((entry) => (!entry.author.bot && isTrigger(entry, settings)) || isStatusLine(entry)).map((entry) => entry.comment.anchor));
@@ -557,8 +802,11 @@ function foldGroups(meta: GeldPrMeta, settings: GeldSettings, crawled: Crawled, 
   const groups = [...groupBotRuns(commentRefs, botAnchors, [])];
   const triggers = groupTriggers(commentRefs, triggerAnchors);
   if (triggers !== null) groups.push(triggers);
-  const eventGroup = groupBotRuns([], new Set(), crawled.events.filter((event) => !paired.has(event.anchor)));
+  const deployed = new Set(deployments.map((deployment) => deployment.anchor));
+  const eventGroup = groupBotRuns([], new Set(), crawled.events.filter((event) => !paired.has(event.anchor) && !deployed.has(event.anchor)));
   groups.push(...eventGroup);
+  const deploymentRoots = unique(crawled.events.filter((event) => deployed.has(event.anchor)).map((event) => event.root));
+  if (deploymentRoots.length > 0) groups.push({ key: 'deployments', label: '', author: null, nodes: deploymentRoots, silent: true });
   if (settings.compactTimeline === 'minimal') {
     const doneAnchors = new Set(meta.items.filter((item) => !isOpenStatus(item.status)).flatMap((item) => item.sources.map((source) => source.anchor)));
     const humans = groupDoneHumans(commentRefs, doneAnchors);
@@ -591,6 +839,7 @@ function seatFor(anchor: string, meta: GeldPrMeta, groups: readonly FoldGroup[],
   // neither is in its round.
   if (botLineAnchors.has(anchor)) return { key: BOTS_KEY, sub: anchor };
   if (reportLineAnchors.has(anchor)) return { key: REPORTS_KEY, sub: anchor };
+  if (deploymentAnchors.has(anchor)) return { key: DEPLOYMENTS_KEY, sub: null };
   const batch = batches.find((entry) => [...entry.comments, ...entry.reviews].some((line) => line.anchor === anchor));
   if (batch !== undefined) return { key: batch.key, sub: anchor };
   const group = groupContaining(groups, anchor);
@@ -606,7 +855,7 @@ function itemNodes(item: ReviewItem): readonly HTMLElement[] {
   const roots: HTMLElement[] = [];
   for (const source of item.sources) {
     const thread = threadRootOf(source.anchor);
-    const row = (thread === null ? null : closestAtHome(thread, '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]')) ?? thread;
+    const row = (thread === null ? null : closestAtHome(thread, TIMELINE_ROW)) ?? thread;
     if (row instanceof HTMLElement && !roots.includes(row)) roots.push(row);
   }
   return roots;
@@ -671,9 +920,113 @@ function isStatusLine(entry: CrawledComment): boolean {
   return entry.author.bot && jevNow.lanes.get(entry.comment.anchor) === 'status';
 }
 
+/**
+ * The Action's payload without hidden people: a thread a hidden person started is theirs and goes whole (the crawl
+ * leaves it out the same way), an item they only joined keeps its other sources but loses the merged context and fix
+ * that may carry their words, their recorded reviews, bot verdicts and preview comments go, and the TL;DR, written
+ * over every item, goes once anything it summed up changed.
+ */
+function withoutHidden(meta: GeldPrMeta, hidden: HiddenPeople, authorOfAnchor: (anchor: string) => string | null): GeldPrMeta {
+  const hides = (login: string): boolean => login !== '' && hidden.hides(login, login.endsWith('[bot]'));
+  let itemsChanged = false;
+  const items = meta.items.flatMap((item) => {
+    const first = item.sources[0];
+    if (first !== undefined && hides(first.author)) {
+      itemsChanged = true;
+      return [];
+    }
+    const sources = item.sources.filter((source) => !hides(source.author));
+    if (sources.length === item.sources.length) return [item];
+    itemsChanged = true;
+    const { context, fix, ...rest } = item;
+    void context;
+    void fix;
+    return [{ ...rest, sources }];
+  });
+  const reviewers = meta.reviewers.filter((reviewer) => !hides(reviewer.login));
+  const bots = meta.bots.filter((bot) => !hidden.hides(bot.login, true));
+  const previews = meta.previews?.filter((preview) => {
+    const author = authorOfAnchor(preview.anchor);
+    return author === null || !hides(author);
+  });
+  const botsChanged = bots.length !== meta.bots.length;
+  if (!itemsChanged && !botsChanged && reviewers.length === meta.reviewers.length && previews?.length === meta.previews?.length) return meta;
+  const { summary, ...base } = meta;
+  return { ...base, items, reviewers, bots, ...(previews === undefined ? {} : { previews }), ...(summary === undefined || itemsChanged || botsChanged ? {} : { summary }) };
+}
+
 function withManualDone(meta: GeldPrMeta): GeldPrMeta {
   if (visit.manualDone.size === 0) return meta;
   return { ...meta, items: meta.items.map((item) => (visit.manualDone.has(item.id) && isOpenStatus(item.status) ? { ...item, status: 'done-manual' } : item)) };
+}
+
+/** What the comments link to, read each pass in timeline order: the description's own links are `descriptionMentions`'. */
+let commentMentions: readonly CommentMention[] = [];
+
+/**
+ * What this pull request mentions: the description's references, then each one its comments add (people's and bots'
+ * alike), oldest first, once each at its first mention, with who made it and when on its line when `withAuthor`.
+ */
+function conversationMentions(withAuthor = false): readonly MentionLine[] {
+  const self = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(location.pathname);
+  const selfRef = self === null ? null : `${self[1]}/${self[2]}#${self[3]}`.toLowerCase();
+  const fromDescription = descriptionMentions(withAuthor);
+  const seen = new Set(fromDescription.map((line) => line.ref.toLowerCase()));
+  const lines = [...fromDescription];
+  for (const mention of commentMentions) {
+    const key = mention.ref.toLowerCase();
+    if (key === selfRef || seen.has(key)) continue;
+    seen.add(key);
+    const { login, bot } = mention.author;
+    const avatar =
+      !withAuthor || mention.avatarSrc === null
+        ? null
+        : createElement('a', { class: 'geld-review__mention-who', href: bot ? `/apps/${login.replace(/\[bot\]$/, '')}` : `/${login}`, ...whoAttributes(login, bot) }, [
+            createElement('img', { class: 'geld-review__avatar', 'data-kind': bot ? 'bot' : 'user', src: mention.avatarSrc, alt: `@${login}`, width: '20', height: '20' }),
+          ]);
+    lines.push({ href: mention.href, ref: mention.ref, title: mention.title, state: mention.discussion ? 'discussion' : 'unknown', avatar, time: '', ...(mention.at === '' ? {} : { at: mention.at }) });
+  }
+  return lines;
+}
+
+/** What the description mentions, with its author's picture on each line when `withAuthor` (only the open view shows it). */
+function descriptionMentions(withAuthor = false): readonly MentionLine[] {
+  const card = descriptionCard();
+  const body = card?.querySelector('.comment-body, .markdown-body, [data-testid="markdown-body"]') ?? null;
+  const self = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(location.pathname)?.[0];
+  // A description that links to its own pull request ("#493 itself showed…") is not mentioning another.
+  const others = (lines: readonly MentionLine[]): readonly MentionLine[] => lines.filter((line) => self === undefined || line.href.replace(/^https:\/\/[^/]+/, '').replace(/[#?].*$/, '') !== self);
+  if (!withAuthor || card === null) return others(outgoingMentions(body));
+  // The Overview's description box shows no author, so a link or picture in it is someone the description mentions: the
+  // header names the author there, and GitHub serves a person's picture by login.
+  const overview = isOverviewPage();
+  const login = overview ? prAuthorLogin() : (authorOf(card)?.login ?? prAuthorLogin());
+  const avatar = overview ? (login === null ? null : `https://avatars.githubusercontent.com/${encodeURIComponent(login)}?s=40`) : (avatarSrcOf(card) ?? (login === null ? null : `https://avatars.githubusercontent.com/${encodeURIComponent(login)}?s=40`));
+  return others(outgoingMentions(body, login === null || avatar === null ? null : { login, avatarSrc: avatar }));
+}
+
+/**
+ * On the Overview, what mentions this pull request: its page holds no cross-reference rows (they live in its activity
+ * panel, outside the page until opened), so they are read from the timeline data that panel reads.
+ */
+function incomingReadMentions(): readonly MentionLine[] {
+  if (!isOverviewPage()) return [];
+  const pullPath = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(location.pathname)?.[0];
+  if (pullPath === undefined) return [];
+  return (timelineMentionsFor(pullPath, reapplySoon) ?? []).map((mention) => ({
+    href: mention.href,
+    ref: mention.ref,
+    title: mention.title,
+    state: mention.state,
+    avatar:
+      mention.login === ''
+        ? null
+        : createElement('a', { class: 'geld-review__mention-who', href: mention.bot ? `/apps/${mention.login.replace(/\[bot\]$/, '')}` : `/${mention.login}`, ...whoAttributes(mention.login, mention.bot) }, [
+            createElement('img', { class: 'geld-review__avatar', 'data-kind': mention.bot ? 'bot' : 'user', src: mention.avatarUrl, alt: `@${mention.login}`, width: '20', height: '20' }),
+          ]),
+    time: '',
+    at: mention.at,
+  }));
 }
 
 function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
@@ -693,6 +1046,7 @@ function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
       timeAnchor: headlineNode === null ? firstAnchor : headlineNode.id,
       ...(group.closure === undefined ? {} : { closure: group.closure }),
       ...(group.headline === undefined ? {} : { headline: group.headline }),
+      ...(group.refs === undefined ? {} : { refs: group.refs }),
     };
   });
 }
@@ -761,6 +1115,8 @@ function mergeBox(): HTMLElement | null {
 let checksSectionEl: HTMLElement | null = null;
 /** Where that section came from — the merge box — so its text can be read while the section is away. */
 let mergeHomeEl: HTMLElement | null = null;
+/** The digest folds the Overview's top card this pass, so the checks list under it is the CI row's to show. */
+let overviewChecksInDigest = false;
 /**
  * The pass in which the search last came up empty. A merged pull request
  * has no checks heading at all, and the search by headings reads the text
@@ -779,8 +1135,22 @@ let reviewPass = 0;
  * merge box itself.
  */
 function checksSection(): HTMLElement | null {
+  // The Overview's list is the CI row's only while the digest folds the top card it hangs from; with the card shown it is GitHub's.
+  if (!overviewChecksInDigest && isOverviewPage()) return null;
   if (checksSectionEl !== null && checksSectionEl.isConnected) return checksSectionEl;
   if (checksMissedInPass === reviewPass) return null;
+  // The Overview's list exists only while its Checks mini status is open, and the mini status's progress bar carries
+  // the same "9 successful checks" words: the heading search below took the bar for the section.
+  if (isOverviewPage()) {
+    const list = overviewChecksList();
+    if (list === null) {
+      checksMissedInPass = reviewPass;
+      return null;
+    }
+    checksSectionEl = list;
+    mergeHomeEl = list.parentElement;
+    return list;
+  }
   // The React merge box labels its sections; nothing else on the page carries this label.
   const labelled = document.querySelector('section[aria-label="Checks"]');
   if (labelled instanceof HTMLElement && labelled.closest('.geld-review') === null) {
@@ -812,6 +1182,41 @@ function checksSection(): HTMLElement | null {
   checksSectionEl = section === box ? null : section;
   if (checksSectionEl !== null) mergeHomeEl = box ?? checksSectionEl.parentElement;
   return checksSectionEl;
+}
+
+// "Approve workflows to run" today, "Approve and run" in older markup: any approve-and-run wording counts.
+const APPROVE_WORKFLOWS = /^approve\b.*\brun\b/i;
+const AWAITING_APPROVAL = /\b(\d+) workflows? awaiting approval/i;
+
+/**
+ * GitHub's own "Approve workflows to run", shown to someone who may approve
+ * whenever the repository's approval policy holds a contributor's workflows
+ * (first-time contributors by default, every outside contributor on every
+ * pull request under the strictest policy). The button itself is the test,
+ * never who the contributor is. Looked for in the merge box and in the
+ * checks section wherever quick view has put it.
+ */
+function approveWorkflowsButton(): HTMLButtonElement | HTMLInputElement | null {
+  const section = checksSection();
+  const scopes = [mergeBox() ?? mergeHomeEl, document.querySelector<HTMLElement>(OVERVIEW_FOR_YOU), section, ...(section === null ? [] : wornPiecesOf(section))];
+  for (const scope of scopes) {
+    if (scope === null) continue;
+    for (const control of scope.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button, input[type="submit"], input[type="button"]')) {
+      const words = control instanceof HTMLInputElement ? control.value : control.textContent ?? '';
+      if (!control.disabled && APPROVE_WORKFLOWS.test(words.replace(/\s+/g, ' ').trim())) return control;
+    }
+  }
+  return null;
+}
+
+/** The heading GitHub puts over that button ("1 workflow awaiting approval"), for the Run control's tooltip. */
+function workflowApprovalLabel(button: HTMLElement): string {
+  let node: HTMLElement | null = button.parentElement;
+  for (let depth = 0; node !== null && depth < 8; depth += 1, node = node.parentElement) {
+    const found = AWAITING_APPROVAL.exec((node.textContent ?? '').replace(/\s+/g, ' '));
+    if (found !== null) return `${found[1]} ${found[1] === '1' ? 'workflow' : 'workflows'} awaiting approval`;
+  }
+  return 'Workflows awaiting approval';
 }
 
 /** Merge box text plus the checks section's, wherever quick view has put it. */
@@ -1017,6 +1422,15 @@ function loadMinimizedReviews(): void {
   }
 }
 
+/** Whether a deferred thread's comments are on their way: being fetched, or still to be asked for this visit. */
+function threadCommentsComing(thread: Element): boolean {
+  const src = thread.getAttribute('data-deferred-content-url');
+  if (src === null) return false;
+  if (fragmentsInFlight.has(src)) return true;
+  const fragment = threadFragmentOf(thread);
+  return fragment !== null && eagerFragments < MAX_EAGER_FRAGMENTS && fragmentWanted(fragment, src);
+}
+
 /** The timeline's lazy fragments that hold conversation (threads' comments, minimized reviews and comments), in timeline order. */
 function deferredFragments(): readonly { readonly fragment: Element; readonly src: string }[] {
   const pending: { readonly fragment: Element; readonly src: string }[] = [];
@@ -1077,6 +1491,8 @@ function ingestProgress(): number {
 function timelineIngesting(hidingTimeline: boolean): boolean {
   if (fragmentsInFlight.size > 0) return true;
   if (!hidingTimeline) return false;
+  // A page on its way: the Overview's button reads as no "Load more" while it loads.
+  if (loadMorePending() && !loadMoreStalled()) return true;
   if (visit.autoLoads < MAX_AUTO_LOADS && hasLoadMore() && !loadMoreStalled()) return true;
   if (eagerFragments >= MAX_EAGER_FRAGMENTS) return false;
   return deferredFragments().some(({ fragment, src }) => fragmentWanted(fragment, src));
@@ -1275,7 +1691,7 @@ function openRow(key: string, batches: readonly Batch[], grouping: GeldSettings[
     visit.openSubKey = sub;
   }
   // A line in the Review bots or Reports list opens inside its row the same way.
-  if (key === BOTS_KEY || key === REPORTS_KEY) visit.openSubKey = sub;
+  if (key === BOTS_KEY || key === REPORTS_KEY || key === AGENT_NOTES_KEY || key === PREVIEWS_KEY || key === DEPLOYMENTS_KEY) visit.openSubKey = sub;
   visit.openKey = key;
 }
 
@@ -1570,6 +1986,15 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
           row: lastPush.commits[0] ?? null,
           at: startOf(lastPush),
         };
+  // Each thread's head is read once per pass: every comment line of a round asks about every thread in it.
+  const heads = new Map<string, string | null>();
+  const headOf = (source: ReviewItem['sources'][number]): string | null => {
+    const known = heads.get(source.anchor);
+    if (known !== undefined) return known;
+    const head = threadHeadAnchorOf(source.anchor, source.bot ?? resolveBotId(source.author));
+    heads.set(source.anchor, head);
+    return head;
+  };
   return rounds.map((round, position) => {
     const avatars: Avatar[] = [];
     const names: string[] = [];
@@ -1599,12 +2024,11 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
     const firstNode = first === null ? null : document.getElementById(first);
     // CI is read from the last commit row; a force-push event carries none.
     const lastCommit = [...round.commits].reverse().find((row) => !pushRoots.has(row)) ?? null;
-    // The round's threads by the bot that wrote the comment: a run summary leads to its findings as a person's
-    // review leads to its threads (same count on the line, same chips under the opened bubble).
-    const sameBot = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase() || (resolveBotId(a) !== null && resolveBotId(a) === resolveBotId(b));
-    const threadsBy = (author: string): ReviewThreadRef[] =>
+    // A line's threads are the ones posted under it (`threadHeadOf`), as a person's review leads to its own
+    // threads (same count on the line, same chips under the opened bubble), never every thread of its author's.
+    const threadsUnder = (anchor: string): ReviewThreadRef[] =>
       round.items.flatMap((item) => {
-        const source = item.sources.find((candidate) => candidate.kind === 'thread' && sameBot(candidate.author, author)) ?? item.sources.find((candidate) => sameBot(candidate.author, author));
+        const source = item.sources.find((candidate) => candidate.kind === 'thread' && headOf(candidate) === anchor);
         return source === undefined ? [] : [{ anchor: source.anchor, done: !isOpenStatus(item.status) }];
       });
     return {
@@ -1617,7 +2041,7 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
       comments: [...round.comments]
         .sort((a, b) => Number(b.lane === 'finding') - Number(a.lane === 'finding'))
         .map((comment) => {
-          const threads = threadsBy(comment.author);
+          const threads = threadsUnder(comment.anchor);
           return {
             anchor: comment.anchor,
             author: comment.author,
@@ -1635,7 +2059,8 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
         }),
       reviews: round.reviews,
       commits: round.commits,
-      commitCount: round.commits.filter((row) => !pushRoots.has(row)).length,
+      commitCount: round.commits.filter((row) => !pushRoots.has(row)).reduce((sum, row) => sum + commitsInRow(row), 0),
+      forcePushes: round.commits.filter((row) => pushRoots.has(row)).length,
       ciGlyph: lastCommit === null ? null : commitCiGlyph(lastCommit),
       committers: committersOf(round.commits),
       previews: previewsAll.filter((entry) => previewAnchorsHere.has(entry.anchor)),
@@ -1653,11 +2078,13 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
 function committersOf(commits: readonly HTMLElement[]): readonly Avatar[] {
   const out: Avatar[] = [];
   for (const row of commits) {
-    for (const image of [row, ...wornPiecesOf(row)].flatMap((node) => [...node.querySelectorAll<HTMLImageElement>('img.avatar, img.avatar-user, img[class*="avatar"]')])) {
+    for (const image of [row, ...wornPiecesOf(row)].flatMap((node) => [...node.querySelectorAll<HTMLImageElement>('img.avatar, img.avatar-user, img[class*="avatar"], img[data-testid="commit-stack-avatar"]')])) {
       const login = image.alt.replace(/^@/, '');
       const src = normalizeAvatarSrc(image.currentSrc || image.getAttribute('src') || '');
       if (src === '' || out.some((entry) => (login !== '' ? entry.login.toLowerCase() === login.toLowerCase() : entry.src === src))) continue;
-      out.push({ src, login, bot: !image.classList.contains('avatar-user') && !(image.closest('a')?.classList.contains('avatar-user') ?? false) });
+      // The Overview's commit avatars carry no `avatar-user`: a person's says so in its hovercard type.
+      const person = image.classList.contains('avatar-user') || (image.closest('a')?.classList.contains('avatar-user') ?? false) || image.getAttribute('data-hovercard-type') === 'user';
+      out.push({ src, login, bot: !person });
     }
   }
   return out;
@@ -1705,8 +2132,10 @@ function botCardLine(record: BotVerdictRecord): string {
   if (record.verdict === 'clean') return scored === '' ? 'Found nothing on this pull request' : `${scored} and found nothing`;
   if (allResolved(record)) return scored === '' ? 'Everything it found on this pull request is resolved' : `${scored}, everything it found is resolved`;
   const issues = record.count === undefined ? null : `${record.count} issue${record.count === 1 ? '' : 's'}`;
-  if (scored !== '') return issues === null ? scored : `${scored}, ${issues} still open`;
-  if (issues !== null) return `Reported ${issues} on this pull request`;
+  const severe = isSevere(record) && record.severity === 'high' ? ', at least one marked high severity' : '';
+  if (scored !== '') return issues === null ? `${scored}${severe}` : `${scored}, ${issues} still open${severe}`;
+  if (issues !== null) return `Reported ${issues} on this pull request${severe}`;
+  if (record.needsHuman === true) return 'Found nothing to count but recommends a person review this pull request';
   return 'Reported findings on this pull request';
 }
 
@@ -1718,7 +2147,8 @@ function botCardLine(record: BotVerdictRecord): string {
 function whoCardFor(login: string, meta: GeldPrMeta, model: PanelModel): WhoCard | null {
   const record = meta.bots.find((bot) => bot.login.toLowerCase() === login.toLowerCase()) ?? null;
   const slug = login.replace(/\[bot\]$/i, '');
-  const detail = record === null ? 'GitHub App' : `${botCardLine(record)}${isCurrent(record, meta.headSha) ? '' : ' (an earlier commit)'}`;
+  const request = record === null ? undefined : model.botRequests.get(record.id);
+  const detail = record === null ? 'GitHub App' : request !== undefined ? requestSentence(request) : `${botCardLine(record)}${isCurrent(record, meta.headSha) ? '' : ' (an earlier commit)'}`;
   return {
     avatarSrc: (record === null ? null : model.botIconFor(record.id)) ?? avatarSrcForLogin(login),
     name: record === null ? botTitleFor(login) : botTitle(record.id, record.login),
@@ -1732,7 +2162,7 @@ function whoCardFor(login: string, meta: GeldPrMeta, model: PanelModel): WhoCard
 /**
  * Whether a failing check in GitHub's list is one it marks "Required"; null
  * when the list is not rendered or marks nothing (this repository may simply
- * have no required checks, in which case every failure is red anyway).
+ * have no required checks), and the CI row then tints no failure red.
  */
 function requiredFailingIn(section: HTMLElement | null): boolean | null {
   if (section === null) return null;
@@ -1813,6 +2243,8 @@ let sourceFacts = new Map<string, SourceFacts>();
 let botLineAnchors = new Set<string>();
 /** The anchors of the Reports row's lines (each reporter's latest report comment), seated there the same way. */
 let reportLineAnchors = new Set<string>();
+/** The deployment events the Deployments row lists, every one of each environment it shows, seated there. */
+let deploymentAnchors = new Set<string>();
 /** What landed after the latest push (the anchors in its round) and when that push was, as the rounds last read; null with no push on the page. */
 let latestPush: { readonly anchors: ReadonlySet<string>; readonly row: HTMLElement | null; readonly at: number | null } | null = null;
 
@@ -1823,15 +2255,11 @@ let latestPush: { readonly anchors: ReadonlySet<string>; readonly row: HTMLEleme
  * run's.
  */
 const SUMMARY_LAG_MS = 10 * 60 * 1000;
-/** A bot finishes writing its summary in the moments after it posts the run's threads; edits this soon after count as the run's reading. */
-const RUN_SETTLE_MS = 5 * 60 * 1000;
 
 /**
- * The bot's run summary a thread came from: the bot's latest summary written
- * by the thread's time (give or take the lag above). Bots rewrite that one
- * comment run after run, so a thread from an earlier run has a summary that
- * may since say something else — `revisionAsOf` reads it as it was. With
- * `threadAt` NaN there is no cutoff: the bot's newest summary.
+ * The bot's latest summary written by `threadAt` (give or take the lag
+ * above). With `threadAt` NaN there is no cutoff: the bot's newest summary.
+ * Not a thread's head: that is `threadHeadOf`.
  */
 function botSummaryFor(botId: string, threadAt: number): { readonly anchor: string; readonly facts: SourceFacts } | null {
   let best: { readonly anchor: string; readonly facts: SourceFacts } | null = null;
@@ -1842,6 +2270,28 @@ function botSummaryFor(botId: string, threadAt: number): { readonly anchor: stri
     if (best === null || at > Date.parse(best.facts.createdAt)) best = { anchor, facts };
   }
   return best;
+}
+
+/** A thread's opening comment, from the anchor of any comment in it. */
+function threadOpenerOf(anchor: string): HTMLElement | null {
+  return threadRootOf(anchor)?.querySelector<HTMLElement>('[id^="discussion_r"], [data-testid="review-thread-comment"]') ?? document.getElementById(anchor);
+}
+
+/** The bot's summaries with every time each was written, for `threadHeadOf`; null for no bot. */
+function summariesOf(botId: string | null | undefined): SameRunCandidate[] | null {
+  if (botId === null || botId === undefined) return null;
+  const candidates: SameRunCandidate[] = [];
+  for (const [anchor, facts] of sourceFacts) {
+    if (facts.botId !== botId || !facts.summary) continue;
+    candidates.push({ anchor, times: [facts.createdAt, ...(revisionTimesOf(anchor, reapplySoon) ?? [])] });
+  }
+  return candidates;
+}
+
+/** The anchor heading the thread `anchor` belongs to (`threadHeadOf`, read from the thread's opening comment). */
+function threadHeadAnchorOf(anchor: string, botId: string | null | undefined): string | null {
+  const opener = threadOpenerOf(anchor);
+  return opener === null ? null : (threadHeadOf(opener, Date.parse(createdAtOf(opener)), summariesOf(botId))?.anchor ?? null);
 }
 
 /**
@@ -1856,6 +2306,12 @@ function botSummaryFor(botId: string, threadAt: number): { readonly anchor: stri
 function buildBotLines(meta: GeldPrMeta): readonly BotLine[] {
   return meta.bots.map((bot) => {
     const computed = botSummaryFor(bot.id, NaN);
+    // A review the bot wrote into the description (`descriptionReviewComments`) is its summary when no summary comment
+    // is newer, whatever the verdict hangs on (a thread posted after it, say): the line opens the note.
+    const inDescription = descriptionSummaryOf(bot.id);
+    if (inDescription !== null && (computed === null || lastWrittenAt(computed.anchor, computed.facts.createdAt) <= Date.parse(inDescription.at))) {
+      return { bot, anchor: inDescription.anchor, author: bot.login, avatarSrc: null, preview: inDescription.note.preview, time: '', threads: [] };
+    }
     // A summary on loan to the panel (its line open, or pinned in a thread's chat) is read bodiless at home, so
     // this pass does not count it as a summary and the bot's "latest" falls back to the run before — the line
     // changed anchor under the reader and its open key was dropped. A bot's latest word only ever gets newer
@@ -1892,10 +2348,7 @@ function buildBotLines(meta: GeldPrMeta): readonly BotLine[] {
             const openedBy = opener === null ? null : authorOf(opener)?.login;
             if (openedBy !== undefined && openedBy !== null && resolveBotId(openedBy) !== bot.id && openedBy.toLowerCase() !== bot.login.toLowerCase()) continue;
           } else if (threads.some((ref) => ref.anchor === source.anchor)) continue;
-          const threadEl = document.getElementById(source.anchor);
-          const review = threadEl === null ? null : closestAtHome(threadEl, '[id^="pullrequestreview-"]');
-          const at = threadEl === null ? NaN : Date.parse(createdAtOf(threadEl));
-          const owner = review !== null && sourceFacts.get(review.id)?.summary === true ? review.id : (botSummaryFor(bot.id, at)?.anchor ?? null);
+          const owner = threadHeadAnchorOf(source.anchor, bot.id);
           // With no summary at all every thread of the bot's is the line's way in.
           if (anchor === null ? computed === null : owner === anchor) threads.push({ anchor: source.anchor, done: !isOpenStatus(item.status) });
         }
@@ -1929,6 +2382,16 @@ const botLineMemo = new Map<string, { readonly anchor: string; readonly at: numb
  * (`ChatSource.revision`): bots edit their summaries between runs, and the
  * page's node may by now report a later run.
  */
+/**
+ * A summary comment's card, as a thread's pinned strip lends it: the classic comment card, or on the Overview the
+ * `article` the comment's id is on (its header, its words and its reactions), which none of the classic classes name.
+ */
+function summaryCardOf(summary: HTMLElement): HTMLElement | null {
+  const card = summary.closest<HTMLElement>('.timeline-comment, .js-comment-container, [data-testid="comment-container"]');
+  if (card !== null) return card;
+  return summary.tagName === 'ARTICLE' && closestAtHome(summary, OVERVIEW_ITEM) !== null ? summary : null;
+}
+
 function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta: GeldPrMeta, reapply: () => void): ChatSource | null {
   // An item can merge two bots' findings (cluster.ts unions their ids), so the source read is this thread's own,
   // not the item's first: that one may be the other bot's, and its name, summary and Rerun would be the wrong bot's.
@@ -1947,12 +2410,8 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
     const isBot = facts?.bot ?? ownBot !== undefined;
     const revision = isBot && !Number.isNaN(threadAt) ? revisionAsOf(node, anchor, threadAt, RUN_SETTLE_MS, reapplySoon) : null;
     // The strip says when, where the time tells something: a live summary rewritten since it was posted wears the
-    // rewrite's time (the reading shown is that one's); a summary from well before the thread is an earlier run's
-    // (this run posted none) and wears its own. A past revision wears its own time in chat.ts.
-    const rewritten = isBot && revision?.state !== 'revision' ? editedAt(node, reapplySoon) : null;
-    const summaryAt = facts === undefined ? NaN : Date.parse(facts.createdAt);
-    const earlier = isBot && !Number.isNaN(threadAt) && !Number.isNaN(summaryAt) && threadAt - summaryAt > SUMMARY_LAG_MS && facts !== undefined ? facts.createdAt : null;
-    const at = rewritten ?? earlier;
+    // rewrite's time (the reading shown is that one's). A past revision wears its own time in chat.ts.
+    const at = isBot && revision?.state !== 'revision' ? editedAt(node, reapplySoon) : null;
     // The open strip's control (chat.ts `sourceControl`): the bot's newer summary to lead to, else its Rerun.
     const latestAnchor = ownBot === undefined ? null : newerSummaryOf(ownBot, anchor);
     const rerun = ownBot === undefined || latestAnchor !== null ? null : rerunFor(ownBot, ownAuthor, meta, reapply);
@@ -1971,24 +2430,16 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
       ...(rerun === null ? {} : { rerun }),
     };
   };
-  // GitHub repeats the review's id on nested wrappers (a minimized review, its permalink); climb to the outermost
-  // copy at home and read the comment from the DOM there, not from a map keyed by that id.
-  let review = closestAtHome(thread, '[id^="pullrequestreview-"]');
-  while (review !== null && review.parentElement !== null) {
-    const outer = closestAtHome(review.parentElement, '[id^="pullrequestreview-"]');
-    if (outer === null || outer.id !== review.id) break;
-    review = outer;
-  }
-  const reviewNode = review === null ? null : reviewCommentOf(review);
-  if (review !== null && reviewNode !== null && !reviewNode.contains(thread)) return describe(reviewNode, review.id, (who) => `${who}'s review`);
-  if (bot === undefined) return null;
-  // The bot's summary as of the thread (by time), else the bot's latest word when it is not itself a thread: a bot
-  // that writes no review body has a thread comment for its "summary", and that is a thread, not a source.
-  const summaryAnchor = botSummaryFor(bot, threadAt)?.anchor ?? meta.bots.find((record) => record.id === bot)?.sourceId ?? null;
-  const summaryEl = summaryAnchor === null ? null : document.getElementById(summaryAnchor);
+  // Read from the DOM, not a map keyed by the review's id: GitHub repeats that id, and such a map flips as nodes move.
+  const head = threadHeadOf(thread, threadAt, summariesOf(bot));
+  if (head === null) return null;
+  if (head.review !== null) return describe(head.review, head.anchor, (who) => `${who}'s review`);
+  // The bot's summary from the same run. A bot that writes no review body may have a thread comment for its
+  // "summary", and that is a thread, not a source.
+  const summaryEl = document.getElementById(head.anchor);
   if (summaryEl !== null && closestAtHome(summaryEl, THREAD_SELECTOR) !== null) return null;
-  const summary = summaryAnchor === null ? null : (entryNodes.get(summaryAnchor) ?? summaryEl?.closest<HTMLElement>('.timeline-comment, .js-comment-container, [data-testid="comment-container"]') ?? null);
-  if (summaryAnchor !== null && summary !== null && !summary.contains(thread)) return describe(summary, summaryAnchor, (who) => `${who}'s run summary`);
+  const summary = entryNodes.get(head.anchor) ?? (summaryEl === null ? null : summaryCardOf(summaryEl));
+  if (summary !== null && !summary.contains(thread)) return describe(summary, head.anchor, (who) => `${who}'s run summary`);
   return null;
 }
 
@@ -2057,10 +2508,11 @@ function botAvatarByLogin(botId: string): string | null {
 
 /** The pull request's author, from the page header (the description card when the header is not there). */
 function prAuthorLogin(): string | null {
-  const header = document.querySelector('.gh-header-meta a.author, [data-testid="issue-metadata-author"] a, .gh-header-meta a[data-hovercard-type="user"]');
+  const header = document.querySelector('.gh-header-meta a.author, [data-testid="issue-metadata-author"] a, .gh-header-meta a[data-hovercard-type="user"], [data-component="PageHeader"] a[data-hovercard-type="user"]');
   const login = header === null ? null : loginOfLink(header);
   if (login !== null && login !== '') return login;
-  const card = document.querySelector('[data-geld-attached]');
+  // The Overview's description box names no author: a link in it would be someone the description mentions.
+  const card = isOverviewPage() ? null : document.querySelector('[data-geld-attached]');
   return card === null ? null : (authorOf(card)?.login ?? null);
 }
 
@@ -2083,17 +2535,37 @@ function withRerun(byline: ChatByline, author: string, anchor: string, meta: Gel
 }
 
 /** Geld's Rerun for a bot with a trigger phrase (none: the control cannot ask, so there is none). */
+/** The bots the latest panel shows running, kept for controls that outlive the panel they were drawn with. */
+let runningBots: ReadonlySet<string> = new Set();
+
+/**
+ * Whether bot `id` is running: by the latest panel's verdicts (a request still starting is among them, see
+ * `withBotRequests`), or a request a moment ago that no pass has drawn yet.
+ */
+function botRunningNow(id: string): boolean {
+  const request = visit.requests.get(id);
+  return runningBots.has(id) || (request !== undefined && request.posted !== false && Date.now() - request.at < REQUEST_ACK_MS);
+}
+
 function rerunFor(id: string, author: string, meta: GeldPrMeta, reapply: () => void): ChatRerun | null {
-  const trigger = rerunTriggerFor(id);
+  const trigger = triggerFor(id, repoBots);
   if (trigger === null) return null;
-  const pending = visit.rerunPending.get(id);
-  const running = meta.bots.some((bot) => bot.id === id && bot.verdict === 'running') || (pending !== undefined && Date.now() - pending < RERUN_PENDING_MS);
+  // A request still starting is laid over the verdicts as running (`withBotRequests`), so the click spins it too.
+  const running = meta.bots.some((bot) => bot.id === id && bot.verdict === 'running');
   return {
     bot: botTitle(id, author),
     running,
+    isRunning: () => botRunningNow(id),
     onRerun: () => {
-      visit.rerunPending.set(id, Date.now());
-      void postTopLevelComments([trigger]).then(() => reapplySoon());
+      const requests = visit.requests;
+      const at = Date.now();
+      requests.set(id, { at, posted: null, before: triggersOnPage.get(id) ?? new Set() });
+      // Read at the click: the repository's workflow may have been found since this control was drawn.
+      void postTopLevelComments([triggerFor(id, repoBots) ?? trigger]).then((posted) => {
+        const request = requests.get(id);
+        if (request?.at === at) requests.set(id, { ...request, posted: posted > 0 });
+        reapplySoon();
+      });
       reapply();
     },
   };
@@ -2157,7 +2629,11 @@ function threadHandlers(item: ReviewItem | undefined, meta: GeldPrMeta, reapply:
  * `data-path`/`title` (its visible text is already ellipsized by GitHub).
  */
 function threadPathOf(node: HTMLElement, item: ReviewItem | undefined, meta: GeldPrMeta): string {
-  const hash = diffHashOf(node) ?? diffHashOf(closestAtHome(node, '.TimelineItem, .js-timeline-item'));
+  const hash = diffHashOf(node) ?? diffHashOf(closestAtHome(node, TIMELINE_ROW));
+  // The thread's own file first: an item merging one finding from two files carries one path for all its threads.
+  const ownLink = node.querySelector(':scope > [class*="header"] h2 a, a.Link--primary[href*="#diff-"]');
+  const own = ownLink !== null && ownLink.closest('.comment-body, .markdown-body') === null ? (ownLink.textContent ?? '').replace(/[\u200e\u200f]/g, '').trim() : '';
+  if (own !== '' && !own.includes(' ')) return completePath(own, hash, meta);
   if (item?.path !== undefined) return completePath(item.path, hash, meta);
   const header = node.querySelector('.file-header, [data-testid="file-header"]') ?? closestAtHome(node, '.TimelineItem, .js-timeline-item')?.querySelector('.file-header, [data-testid="file-header"]') ?? null;
   const fromAttributes = header?.getAttribute('data-path') ?? header?.querySelector('a[title]')?.getAttribute('title') ?? header?.querySelector('[title]')?.getAttribute('title') ?? null;
@@ -2298,6 +2774,9 @@ const COMMENT_MENUS = [
   'details.js-comment-header-actions-menu',
   '.timeline-comment-actions details:not(.js-add-reaction):not(.js-reaction-popover-container)',
   '[data-testid="comment-header"] button[aria-label="Show options" i]',
+  // The Overview's ⋯ ("More actions for X's comment, 3:56 PM on February 18, 2025"), once `comment-header-hamburger`.
+  '[data-testid="comment-header"] button[aria-label^="More actions for" i]',
+  'button[data-testid="comment-header-hamburger"]',
   'button[aria-label="Comment actions" i]',
   'button[aria-label="Show options" i]',
 ];
@@ -2589,6 +3068,11 @@ function hoverPreviewFor(row: HTMLElement, meta: GeldPrMeta, groups: readonly Fo
   let more = 0;
   let onReply: (() => void) | null = null;
   let onOpen: (() => void) | null = null;
+  if (subAnchor?.startsWith(NOTE_ANCHOR_PREFIX) === true) {
+    // A note's line (Agent notes, or a bot's line for its review in the description): a preview of the note.
+    const note = liveNotes.find((entry) => `${NOTE_ANCHOR_PREFIX}${entry.id}` === subAnchor);
+    return note === undefined || !note.present ? null : noteCard(note, () => handlers.onToggleSub(subAnchor));
+  }
   if (subAnchor !== null) {
     // A comment line: a bot's run summary, a person's review or remark. Its card opens the line, or, for a line in
     // the Reviews index, goes where the line points; a bare verdict (nothing to open, the state name is the row's
@@ -2624,6 +3108,17 @@ function hoverPreviewFor(row: HTMLElement, meta: GeldPrMeta, groups: readonly Fo
     preview.removeAttribute('id');
     for (const child of preview.querySelectorAll('[id]')) child.removeAttribute('id');
   }
+  // A review bot's comment wears Geld's View and Rerun (or See latest) in the card as on its chat's byline, in place
+  // of the bot's own badges in the copy.
+  const settings = lastSettings;
+  const extras =
+    author?.bot === true && settings !== null
+      ? withRerun({ login: author.login, bot: true, avatarSrc: null, time: '' }, author.login, anchor, meta, settings, reapplySoon, (latest) => {
+          hideHoverCard();
+          handlers.onOpenAnchor(latest);
+        })
+      : null;
+  const controls = extras !== null && preview instanceof HTMLElement ? botCommentControls(preview, extras) : [];
   return {
     avatarSrc: avatarSrcOf(node),
     name: (author?.login ?? 'ghost').replace(/\[bot\]$/i, ''),
@@ -2636,6 +3131,7 @@ function hoverPreviewFor(row: HTMLElement, meta: GeldPrMeta, groups: readonly Fo
     // A review's card leads to the review, not a comment: its own body may be empty (a bare verdict) and its threads
     // live in the round, so "See full review" is the honest word.
     ...(/^pullrequestreview-/.test(anchor) ? { openLabel: 'See full review' } : {}),
+    ...(controls.length === 0 ? {} : { controls }),
   };
 }
 
@@ -2683,10 +3179,11 @@ function pageChecks(headSha: string): readonly RawCheckRun[] {
 /** What an open row shows in its slot: the item's thread(s), a fold's nodes, or the merge box's checks. */
 function quickViewFor(key: string, meta: GeldPrMeta, groups: readonly FoldGroup[]): readonly HTMLElement[] {
   // The Reviews and Previews rows render their own lists; the panel itself stands in for "something to show".
-  if (key === REVIEWS_KEY || key === PREVIEWS_KEY || key === REPORTS_KEY || key === BOTS_KEY || key.startsWith('batch:')) return [document.documentElement];
+  if (key === REVIEWS_KEY || key === PREVIEWS_KEY || key === DEPLOYMENTS_KEY || key === REPORTS_KEY || key === BOTS_KEY || key === AGENT_NOTES_KEY || key.startsWith('batch:')) return [document.documentElement];
   if (key === CHECKS_KEY) {
     const section = checksSection();
-    if (section === null) return [];
+    // The Overview has no checks section: the row lists the head's checks itself, as the list rows do.
+    if (section === null) return isOverviewPage() ? [document.documentElement] : [];
     // The React merge box: GitHub renders the check list only once expanded, and its section header repeats what
     // the row says, so the expandable content is shown alone. Matched on the bare name: GitHub's CSS-module classes
     // went from `MergeBoxExpandable-module__expandableWrapper--x` to `expandableWrapper__x` in Oct 2026, and with
@@ -2740,6 +3237,10 @@ function completePath(path: string, hash: string | null, meta: GeldPrMeta): stri
  */
 function slotNeedsRender(slot: HTMLElement): boolean {
   if (slot.childElementCount === 0) return true;
+  // GitHub's checks list is back (the Overview's overlay, reopened after Escape closed it): it takes the stand-in's place.
+  if (slot.querySelector(`[${ATTR_CHECK_RUNS}]`) !== null && checksSection() !== null) return true;
+  // And the other way: the Overview's top card shows again, so its list goes home and the stand-in takes over.
+  if (slot.parentElement?.getAttribute(ATTR_SLOT) === CHECKS_KEY && isOverviewPage() && checksSection() === null && slot.querySelector(`[${ATTR_CHECK_RUNS}]`) === null) return true;
   if ([...slot.querySelectorAll<HTMLElement>('.geld-review__qv, .geld-review__chat-body')].some((view) => view.childElementCount === 0)) return true;
   return [...slot.querySelectorAll<HTMLElement>('.geld-review__chat')].some(chatNeedsRedress);
 }
@@ -2766,6 +3267,7 @@ function readySlotForRender(slot: HTMLElement): boolean {
     active.addEventListener('focusout', () => reapplySoon(), { once: true });
     return false;
   }
+  pinPanelHost(slot);
   restoreAll();
   return true;
 }
@@ -2778,19 +3280,37 @@ export function applyReviewOverview(settings: GeldSettings, paths?: readonly str
   phase('review', () => applyReviewOverviewPass(settings, paths, bots));
 }
 
+/** The description was shortened by a pass that found the digest off, which no teardown will undo. */
+let shortenedWithDigestOff = false;
+
 function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string[] | null, bots?: RepoBotsHint): void {
   reviewPass += 1;
   if (paths !== undefined) diffPaths = paths;
   if (bots !== undefined) repoBots = bots;
   const page = describePage(new URL(window.location.href));
+  forgetViewFocusElsewhere();
   if (page.kind !== 'pull-conversation' || !settings.enabled || !settings.prOverview) {
     // Nothing mounted (a files page, a list): the page-wide cleanup queries have nothing to find.
-    if (visit.pageKey !== '') teardownReviewOverview();
+    if (visit.pageKey !== '') teardownReviewOverview(page.kind !== 'pull-conversation' && settings.enabled && settings.prOverview ? 'leave' : 'stop');
+    const digestOff = page.kind === 'pull-conversation' && settings.enabled && !settings.prOverview;
+    syncDigestOffBar(digestOff);
+    // Shortening the description is a setting of its own: with the digest off it folds there too, its Agent notes at its foot.
+    if (digestOff) {
+      shortenDescription(settings.collapseDescription);
+      shortenedWithDigestOff = settings.collapseDescription;
+    } else if (shortenedWithDigestOff) {
+      shortenedWithDigestOff = false;
+      // Off to another tab the folds go with the page GitHub replaces, as when the digest is on (see `teardownReviewOverview`).
+      if (page.kind !== 'pull-conversation' && settings.enabled) releaseDescription();
+      else shortenDescription(false);
+    }
     return;
   }
+  removeDigestOffBar();
   lastSettings = settings;
   if (visit.pageKey !== page.stateKey) {
     restoreAll();
+    resetTriggerReactions();
     visit.pageKey = page.stateKey;
     visit.generatedAt = new Date().toISOString();
     visit.openKey = null;
@@ -2803,12 +3323,15 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     visit.landedSettled = false;
     visit.openSubKey = null;
     visit.sourcesShown = new Set<string>();
+    visit.peeking = new Set<string>();
     visit.archivedPreviewsOpen = false;
     visit.openCommits = new Set<string>();
     visit.openPreviews = new Set<string>();
     visit.flash = null;
     visit.openSubMissingSince = null;
     visit.openItemAnchors = null;
+    visit.openRoundMarks = null;
+    visit.openSeat = null;
     visit.knownRequired = null;
     resetRefs();
     resetWholePaths();
@@ -2822,10 +3345,12 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     resetFragments();
     forgetThreads();
     resetEditTimes();
+    resetAgentNotes();
     resetHeadChecks();
     botLineMemo.clear();
     visit.manualDone = new Set();
-    visit.rerunPending = new Map();
+    visit.requests = new Map();
+    triggersOnPage = new Map();
     checksSectionEl = null;
     mergeHomeEl = null;
     // This device's AI run for the pull request, if any; the pass re-applies once it is read.
@@ -2835,7 +3360,31 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // crawl, the slots and the fragment loader all see the fresh item at home instead (see `dropOrphanedLoans`).
   const standing = document.querySelector('.geld-review');
   if (standing !== null) dropOrphanedLoans(standing);
-  const crawledDom = phase('crawl', crawlConversation);
+  const crawledAll = phase('crawl', crawlConversation);
+  // People GitHub shows hidden as spam or abuse, and those on the reader's hidden list, are left out of everything below.
+  const marked = phase('hidden', () => markedOnGitHub(document));
+  lookUpUnhideForms(marked, reapplySoon);
+  const owner = location.pathname.split('/')[1] ?? '';
+  const viewer = document.querySelector('meta[name="user-login"]')?.getAttribute('content') ?? '';
+  const blockedLogins = blockedFor(owner, viewer, reapplySoon);
+  const hidden = new HiddenPeople(marked, compileAuthorRules(settings.hiddenAuthors), visit.peeking, blockedLogins);
+  const blockedNow = (login: string): BlockedBy => hidden.blockedBy(login);
+  const hiddenRoots: HTMLElement[] = [...hidden.markedRoots()];
+  const crawledDom = {
+    ...crawledAll,
+    comments: crawledAll.comments.filter((entry) => {
+      if (!hidden.hides(entry.author.login, entry.author.bot, entry.avatarSrc)) return true;
+      hiddenRoots.push(entry.root);
+      return false;
+    }),
+    events: crawledAll.events.filter((event) => {
+      if (!hidden.namesHidden(event.root)) return true;
+      hiddenRoots.push(event.root);
+      return false;
+    }),
+  };
+  // By each mention's own author: a thread is kept or dropped by who opened it, and its replies may be anyone's.
+  commentMentions = byMentionTime(crawledAll.comments.flatMap((entry) => entry.mentions).filter((mention) => !hidden.hides(mention.author.login, mention.author.bot, mention.avatarSrc)));
   const rawComments: readonly RawComment[] = crawledDom.comments.map((entry) => entry.comment);
   sourceFacts = new Map(
     crawledDom.comments
@@ -2844,7 +3393,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         const botId = entry.author.bot ? resolveBotId(entry.author.login, settings.reviewBots) : null;
         // What `verdictsFrom` counts as a bot's report: not a status line or a trigger, and from a coding agent that
         // also chats (Replicas) only a review-shaped comment.
-        const parsed = botId === null ? null : parseBotBody(entry.comment.body, botId.startsWith('custom:') ? '' : botId);
+        const parsed = botId === null ? null : parseBotBody(entry.comment.body, botId.startsWith('custom:') ? '' : botId, entry.comment.anchor);
         const reviewShaped = parsed === null || botById(botId ?? '')?.conversational !== true || isReviewShaped(parsed);
         // A refusal ("Skipping Bugbot: …") is review-shaped but not a report — `verdictsFrom` keeps the bot's earlier
         // real review as its last run, so a refusal must not count as a summary, or `botSummaryFor` would offer it as
@@ -2863,12 +3412,23 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // Every thread is on the page: nothing on its way, and no "Load more" GitHub still folds older items behind (an
   // open thread is never deferred — GitHub minimizes only reviews whose threads are all resolved — so a thread the
   // crawl cannot see is a resolved one, or one past that fold).
-  const complete = !partial && !hasLoadMore();
+  const complete = !partial && !loadMoreStanding();
   // And every thread's comments too: a resolved thread's stay behind its fragment until fetched, which the full timeline,
   // the fetch limit or a failed fetch leave unread, so a bot's resolved thread may be there unseen. Coverage is what the
   // page holds (each fragment's fetched markup standing in it), not what is still worth asking for.
   const threadsRead = complete && deferredFragments().every(({ src }) => fragmentRead(src));
-  const composed = phase('cluster', () => composeMeta(found, buildFromComments(crawledDom, settings, headSha, visit.generatedAt, partial, threadsRead), complete));
+  const notes = agentNotes(reapplySoon);
+  liveNotes = notes.notes;
+  const botComments = inTimeOrder(botCommentsOf(crawledDom, settings), descriptionReviewComments(notes.notes));
+  const checks = botChecks(headSha);
+  const composed = phase('cluster', () => composeMeta(found, buildFromComments(crawledDom, botComments, checks, settings, headSha, visit.generatedAt, partial, threadsRead), complete));
+  // A review asked for and not yet answered: the pill spins from the click, and says so if the bot never shows a sign.
+  const botRequests = botRequestStates({ clicks: visit.requests, comments: botComments, checks, bots: composed.meta.bots, extraLogins: settings.reviewBots, now: Date.now() });
+  triggersOnPage = triggerAnchors(botComments, settings.reviewBots);
+  const requestDeadline = nextRequestDeadline(botRequests);
+  if (requestDeadline !== null) reapplyAt(requestDeadline);
+  const reactionPoll = pollTriggerReactions(awaitingReaction(botComments, settings.reviewBots), Date.now(), reapplySoon);
+  if (reactionPoll !== null) reapplyAt(reactionPoll);
   // Then the threads, now that items exist: whether the replies say a thread is done.
   const bodies = new Map(crawledDom.comments.map((entry) => [entry.comment.anchor, { author: entry.author.login, body: entry.comment.body }] as const));
   const threads: ThreadToClassify[] = composed.meta.items
@@ -2884,7 +3444,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       .map((entry) => ({ preview: entry, text: docText.get(entry.anchor) ?? '' })),
   );
   jevNow = phase('jev', () => jevDecisionsFor(settings, topLevel, threads, reapplySoon, unknownPreviews));
-  const meta = phase('paths', () => withWholePaths(withManualDone(withJevDone(composed.meta, jevNow.done))));
+  const meta = phase('paths', () => withWholePaths(withManualDone(withJevDone(withoutHidden({ ...composed.meta, bots: withBotRequests(composed.meta.bots, botRequests, headSha) }, hidden, (anchor) => crawledAll.comments.find((entry) => entry.comment.anchor === anchor)?.author.login ?? null), jevNow.done))));
   // A review's or run summary's threads as chips under its opened bubble, by file, each leading to its row.
   const threadLinks = (threads: readonly ReviewThreadRef[]): ChatThreadLink[] =>
     threads.map((thread) => {
@@ -2898,10 +3458,20 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     if (clickLoadMore()) visit.loadMoreTries += 1;
   }
   const compacting = settings.compactTimeline !== 'off';
-  const hidingTimeline = compacting && !visit.fullTimeline;
+  // The digest folds the Overview's view switch, so a narrower view (Unresolved, Mine) is turned back to All, the one with the composer.
+  // The timeline folds once All is showing, since the narrower list holds none of the entries the digest reads.
+  if (compacting && !visit.fullTimeline && showAllOverviewComments()) reapplySoon();
+  const hidingTimeline = compacting && !visit.fullTimeline && !overviewCommentsFiltered();
+  // The top card's Checks, Comments and Approvals fold into the digest with the timeline: the checks list GitHub draws
+  // once Checks is open is the CI row's, as the merge box's is on the classic page. Closed again when the card shows.
+  overviewChecksInDigest = hidingTimeline && isOverviewPage();
+  if (overviewChecksInDigest) {
+    if (openOverviewChecks()) reapplySoon();
+  } else closeOverviewChecks();
   // "X closed this" with the comment X left as they did: one row, the comment its content.
   const closures = phase('closures', () => (hidingTimeline ? closureGroups(crawledDom) : { groups: [], paired: new Set<string>() }));
-  const groups = phase('folds', () => [...foldGroups(meta, settings, crawledDom, closures.paired), ...closures.groups]);
+  const allDeployments = phase('deployments', () => deploymentsOn(crawledDom));
+  const groups = phase('folds', () => [...foldGroups(meta, settings, crawledDom, closures.paired, allDeployments), ...closures.groups]);
   // Compact mode folds everything, so everything must be on the page: keep pressing GitHub's "Load more", and
   // fetch the reviews GitHub minimized ("marked as resolved") — their threads are behind lazy fragments that
   // would only load when scrolled into view, which a folded row never is.
@@ -2914,20 +3484,53 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // While a press is on its way GitHub disables the button ("Loading…"), so that counts too, or the next page's bar flashed.
   setAutoLoading(hidingTimeline && !stalled && ((visit.autoLoads < MAX_AUTO_LOADS && hasLoadMore()) || loadMorePending()));
   // A load that fails leaves its form standing: a pass when the press stops counting gives the bar back to the reader.
+  // With the timeline shown too: a permalink's next press waits for this one, and nothing else may run a pass then.
   const pressUntil = loadMorePendingUntil();
-  if (hidingTimeline && pressUntil !== null) reapplyAt(pressUntil);
-  if (hidingTimeline) loadMinimizedReviews();
+  if (pressUntil !== null) reapplyAt(pressUntil);
+  if (hidingTimeline) {
+    loadMinimizedReviews();
+    if (openCollapsedThreads() > 0) reapplySoon();
+  }
   // In compact mode the review threads live in their rows and GitHub's checks section in the CI row:
   // both fold out of the page, so nothing below is left to reveal or scroll to.
-  const reviews = phase('reviews', crawlReviews);
+  const reviewsAll = phase('reviews', crawlReviews);
+  const reviews = reviewsAll.filter((review) => {
+    if (!hidden.hides(review.author.login, review.author.bot, review.avatarSrc)) return true;
+    hiddenRoots.push(review.root);
+    return false;
+  });
   entryNodes = new Map(reviews.filter((review) => review.comment !== null).map((review) => [review.anchor, review.comment ?? review.root]));
   // Each bot's latest run summary, as the Review bots row's lines; their anchors seat there, not in a round.
   const botLines = phase('bot-lines', () => buildBotLines(meta));
   botLineAnchors = new Set(botLines.flatMap((line) => (line.anchor === null ? [] : [line.anchor])));
   // The sidebar's Reviewers block: every reviewer's latest verdict from the first paint, while the timeline's
   // reviews are still being fetched from its end (see `timelineIngesting`).
-  const sidebar = phase('sidebar', crawlSidebarReviewers);
-  const awaiting = phase('awaiting', () => awaitingReviewers(sidebar));
+  const sidebarAll = phase('sidebar', crawlSidebarReviewers);
+  const sidebar = sidebarAll.filter((reviewer) => !hidden.hides(reviewer.login, reviewer.bot, reviewer.avatarSrc));
+  // The merge box says "Changes requested" without saying whose: when only a hidden person asked, the words are theirs.
+  // What each hidden person's review said, GitHub's latest-per-reviewer first, for the menu that lists them.
+  const sidebarSaid = new Set<string>();
+  for (const reviewer of sidebarAll) {
+    if (!hidden.isHidden(reviewer.login) || (reviewer.state !== 'approved' && reviewer.state !== 'changes_requested' && reviewer.state !== 'commented')) continue;
+    hidden.noteVerdict(reviewer.login, reviewer.state);
+    sidebarSaid.add(reviewer.login.toLowerCase());
+  }
+  for (const review of reviewsAll) {
+    if (hidden.isHidden(review.author.login) && !sidebarSaid.has(review.author.login.toLowerCase()) && review.state !== 'dismissed') hidden.noteVerdict(review.author.login, review.state);
+  }
+  // A reading kept from before someone was hidden (GitHub's hidden content loading late) must not stand in for one without them.
+  const hiddenKey = hidden
+    .people()
+    .filter((person) => !person.peeking)
+    .map((person) => person.login.toLowerCase())
+    .join(',');
+  if (visit.lastReviewsHiddenKey !== hiddenKey) {
+    visit.lastReviews = null;
+    visit.lastReviewsHiddenKey = hiddenKey;
+  }
+  const hiddenAskedChanges = sidebarAll.some((reviewer) => reviewer.state === 'changes_requested' && !sidebar.includes(reviewer)) && !sidebar.some((reviewer) => reviewer.state === 'changes_requested');
+  // The fallback reads GitHub's own "Awaiting requested review from X" controls, which the sidebar filter never saw.
+  const awaiting = phase('awaiting', () => awaitingReviewers(sidebar).filter((entry) => !hidden.hides(entry.author, false)));
   // A comment left with a close or reopen belongs to that row, not to the Reviews list or a round.
   const timelineEntries = phase('entries', () => reviewEntries(crawledDom, reviews, meta, settings).filter((entry) => !closures.paired.has(entry.anchor)));
   // The rounds are the timeline's; the sidebar's provisional lines (no row behind them yet) are the Reviews row's alone.
@@ -2938,6 +3541,14 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // it was truncated, when the page fills in what it left out.
   const progress = ingesting && (composed.freshness !== 'fresh' || found?.meta.truncated === true) ? ingestProgress() : null;
   const allPreviews = phase('previews', () => previewsOn(crawledDom, meta));
+  // An earlier push's preview opens its own build, which GitHub's deployment events name; the comment links the branch.
+  const splitPreviews = latestPreviews(allPreviews);
+  const pinned = new Map(splitPreviews.archived.map((entry) => [entry, pinnedToBuild(entry, deploymentsOfPreview(entry, splitPreviews.latest, allDeployments))] as const));
+  const previews = { latest: splitPreviews.latest, archived: splitPreviews.archived.map((entry) => pinned.get(entry) ?? entry) };
+  // The rounds show the same earlier previews, so they open the same builds.
+  const roundPreviews = allPreviews.map((entry) => pinned.get(entry) ?? entry);
+  const deployments = deploymentEntries(allDeployments, previews.latest);
+  deploymentAnchors = new Set(allDeployments.map((deployment) => deployment.anchor));
   // Reporter bots' reports (test failures on their runners, coverage), read from the page's comments in timeline order.
   // ...and the services that report through a check whose Details lead to their site (Chromatic), read from the merge box.
   const allReports = phase('reports', () => [
@@ -2961,13 +3572,20 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     if (commentRoots.length > 0) foldTargets.push({ key: `${REVIEWS_KEY}:comments`, label: 'Comments', author: null, nodes: unique(commentRoots), silent: true });
     const summaryRoot = found?.root ?? null;
     if (summaryRoot !== null) foldTargets.push({ key: 'summary', label: '', author: null, nodes: [timelineRootOf(summaryRoot.id) ?? summaryRoot], silent: true });
+    // The Overview's Comments heading, view switch and sort stand over nothing once its entries are in the digest.
+    const commentsSection = overviewCommentsSection();
+    const controls = commentsSection === null ? null : overviewCommentsControls(commentsSection);
+    if (controls !== null) foldTargets.push({ key: 'overview-controls', label: '', author: null, nodes: [controls], silent: true });
+    const hiddenNodes = unique(hiddenRoots.filter((node) => node.isConnected));
+    if (hiddenNodes.length > 0) foldTargets.push({ key: 'hidden-people', label: '', author: null, nodes: hiddenNodes, silent: true });
   }
   // Whatever is left in the timeline — commits, mentions, bots' bare "reviewed" lines — folds too, so nothing
   // stands under the panel but the merge box; commits and mentions get rows in the activity section.
   const claimed = new Set<HTMLElement>(foldTargets.flatMap((group) => [...group.nodes]));
-  const leftoverList = phase('leftovers', () => crawlLeftovers(claimed));
+  const leftoverList = phase('leftovers', () => crawlLeftovers(claimed, threadCommentsComing));
   if (hidingTimeline) {
-    const leftovers = groupLeftovers(leftoverList);
+    // With what the description and comments mention, the Overview's incoming ones read from its timeline data: none has a row of the page's.
+    const leftovers = groupLeftovers(leftoverList, [...conversationMentions(), ...incomingReadMentions()].map((line) => `${line.href} ${line.title} ${line.state}`));
     groups.push(...leftovers);
     foldTargets.push(...leftovers);
   }
@@ -2976,13 +3594,15 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const pushRoots = new Set(leftoverList.filter((entry) => entry.kind === 'push').map((entry) => entry.root));
   const commitRoots = leftoverList.filter((entry) => entry.kind === 'commit' || entry.kind === 'push').map((entry) => entry.root);
   const batches = phase('batches', () =>
-    buildBatches(meta, crawledDom, settings, commitRoots, pushRoots, roundEntries, allPreviews).map((batch) => {
+    buildBatches(meta, crawledDom, settings, commitRoots, pushRoots, roundEntries, roundPreviews).map((batch) => {
       const pinnedComments = pinOpenEntry(batch.comments);
       return pinnedComments === batch.comments ? batch : { ...batch, comments: pinnedComments };
     }),
   );
-  settleAfterResolve(meta, batches);
+  reseatOpenRound(batches);
+  settleAfterResolve(meta, batches, settings.reviewGrouping);
   reseatOpenItem(meta);
+  seatOpenThread(batches, settings.reviewGrouping);
   reseatOpenLine(batches);
   // A round's bot comment lines and its preview pills both stand for their comments: neither needs a fold row too.
   const batchedAnchors = new Set([...batches.flatMap((batch) => [...batch.comments.map((entry) => entry.anchor), ...batch.previews.map((entry) => entry.anchor)]), ...botLineAnchors, ...reportLineAnchors]);
@@ -3008,6 +3628,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const modelStart = performance.now();
   const subject = subjectOf();
   const boxText = mergeBoxText();
+  const approvalButton = approveWorkflowsButton();
   const ringSource = checksSection()?.querySelector('svg[viewBox="0 0 100 100"]') ?? null;
   const checksRing = ringSource instanceof SVGElement ? cloneRing(ringSource) : null;
   // The merge box states the requirement only while unmet; the sidebar's Reviewers block ("At least 1 approving
@@ -3025,7 +3646,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     sidebar: sidebar.filter((reviewer) => !reviewer.bot).map((reviewer) => ({ login: reviewer.login, verdict: sidebarVerdict(reviewer), awaiting: reviewer.state === 'awaiting' })),
     timeline: latestReviewers(reviews),
     onTimeline: reviews.filter((review) => !review.author.bot).map((review) => ({ login: review.author.login, latestAt: review.createdAt })),
-    timelineComplete: !hasLoadMore() && !ingesting,
+    timelineComplete: !loadMoreStanding() && !ingesting,
     payload: composed.freshness === 'local' ? [] : meta.reviewers,
     payloadAt: composed.freshness === 'local' ? null : meta.generatedAt,
     payloadCurrent: composed.freshness === 'fresh' || composed.freshness === 'partial',
@@ -3039,6 +3660,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const reportedSince = (anchor: string): boolean => {
     if (pushed === null) return false;
     if (pushed.anchors.has(anchor)) return true;
+    // A review in the description has no row of its own: when the bot wrote it says.
+    if (anchor.startsWith(NOTE_ANCHOR_PREFIX)) {
+      const written = Date.parse(noteWrittenAt(anchor) ?? '');
+      return pushed.at !== null && !Number.isNaN(written) && written >= pushed.at;
+    }
     const node = document.getElementById(anchor);
     if (node === null) return false;
     if (pushed.row !== null && pushed.row.isConnected && compareHome(pushed.row, node) < 0) return true;
@@ -3070,6 +3696,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     requestable,
     ranSincePush,
     botLines,
+    // A review bot's summary in the description, written by the bot, is that bot's line in Review bots, not a note.
+    agentNotes: notes.notes.filter((note) => !botLines.some((line) => line.anchor === `${NOTE_ANCHOR_PREFIX}${note.id}`)),
+    agentNotesReading: notes.reading,
     summaryAnchorFor: (botId) => meta.bots.find((bot) => bot.id === botId)?.sourceId ?? null,
     // A running/loading bot's sourceId is the "Starting"/trigger line — contentless, and the same line for every bot
     // one comment asked for at once, so looking a bot up by it opens the wrong bot. Open this bot's own latest
@@ -3083,15 +3712,22 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     // the App avatar nearest its `/apps/<slug>` link or check row (`requestableBots`), else GitHub's mark for the
     // App, by its id.
     botIconFor: (botId) => botAvatarByLogin(botId) ?? botSourceAvatar(botId, meta) ?? iconByBot.get(botId) ?? botAppAvatarFor(botId),
-    checks: checkCountsFrom(checksSectionText() ?? boxText),
+    // The Overview has no checks section; its open pull request's checks are the head's, as the merge box would list them.
+    checks: checkCountsFrom(checksSectionText() ?? boxText) ?? (isOverviewPage() && !pullRequestClosed() ? checkCountsOfRuns(pageChecks(headSha)) : null),
     requiredFailing: requiredFailingIn(checksSection()),
-    previews: latestPreviews(allPreviews),
+    workflowApproval: approvalButton === null ? null : workflowApprovalLabel(approvalButton),
+    previews,
+    previewLinks: (entry) => previewLinks(entry, previews, allDeployments),
     reports,
     grouping: settings.reviewGrouping,
+    view: digestViewOf(settings),
+    intro: settings.digestViewChosenAt === '',
     openCommits: visit.openCommits,
     openPreviews: visit.openPreviews,
     ai: aiStateFor(meta, rawComments, settings),
     archivedPreviewsOpen: visit.archivedPreviewsOpen,
+    deployments,
+    prAuthor: prAuthorLogin(),
     avatarForAnchor: (anchor) => crawledDom.comments.find((entry) => entry.comment.anchor === anchor)?.avatarSrc ?? avatarSrcFor(anchor),
     checkAvatarFor: (reporterId, name) => checkAvatarOf(reporterId, name),
     checksRing,
@@ -3107,7 +3743,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     refsVersion: refsVersion(),
     editsVersion: editsVersion(),
     running: meta.bots.some((bot) => bot.verdict === 'running'),
-    reviews: (visit.lastReviews = requiredReviewsFrom(boxText, reviewers, { knownRequired: visit.knownRequired }) ?? visit.lastReviews),
+    botRequests,
+    reviews: (visit.lastReviews = requiredReviewsFrom(hiddenAskedChanges ? boxText.replace(/\bchanges requested\b/gi, '') : boxText, reviewers, { knownRequired: visit.knownRequired }) ?? visit.lastReviews),
     myReactionFor: (anchor) => myReactionOn(anchor),
     timeFor: (anchor) => timeTextOf(document.getElementById(anchor), anchor),
     editedFor: (anchor) => editTimesOf(anchor, reapplySoon),
@@ -3117,6 +3754,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     sinceLastVisit: hidingTimeline ? revisionMarker(leftoverList) : null,
     aiPending: aiPending(),
     fixFor,
+    hiddenPeople: hidden.people(),
+    blockedBy: blockedNow,
+    blockedKey: [...blockedLogins.entries()].map(([login, by]) => `${login}:${by.org ? 'o' : ''}${by.personal ? 'y' : ''}`).sort().join(','),
   };
   // Asynchronous answers (the AI run's progress and end) re-apply through the mounted check, never past a teardown.
   const reapply = (): void => reapplyNow();
@@ -3166,7 +3806,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       // as a last resort this visit's own memory so the row still answers.
       const thread = item.sources.find((source) => source.kind === 'thread');
       if (thread !== undefined && clickResolve(thread.anchor)) {
-        reapplyAfterResolve(itemKey(item.id), done);
+        reapplyAfterResolve(itemKey(item.id));
         return;
       }
       if (found !== null && tickSummaryCheckbox(found.root, item.sources.map((source) => source.anchor), done)) return;
@@ -3223,15 +3863,19 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     },
     onRequest: (botIds) => {
       const requested = botIds.flatMap((id) => {
-        const trigger = rerunTriggerFor(id);
+        const trigger = triggerFor(id, repoBots);
         return trigger === null ? [] : [{ id, trigger }];
       });
       // This visit's map: a move to another pull request while the posts are out gives the new one a map of its own.
-      const rerunPending = visit.rerunPending;
-      for (const { id } of requested) rerunPending.set(id, Date.now());
+      const requests = visit.requests;
+      const at = Date.now();
+      for (const { id } of requested) requests.set(id, { at, posted: null, before: triggersOnPage.get(id) ?? new Set() });
       void postTopLevelComments(requested.map(({ trigger }) => trigger)).then((posted) => {
-        // The posts stop at the first refusal: the bots after it were never asked and do not read as running.
-        for (const { id } of requested.slice(posted)) rerunPending.delete(id);
+        // The posts stop at the first refusal: the bots after it were never asked, and their pills say so.
+        requested.forEach(({ id }, index) => {
+          const request = requests.get(id);
+          if (request?.at === at) requests.set(id, { ...request, posted: index < posted });
+        });
         reapplySoon();
       });
     },
@@ -3251,9 +3895,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     onDismissReview: (login) => {
       void pressReviewAction(login, 'Dismiss review')
         .then((pressed) => {
-          if (!pressed) console.warn('[geld] GitHub offers no way to dismiss that review here');
+          if (!pressed) mark('dismiss-review:not-offered');
         })
-        .catch(() => console.warn('[geld] Dismiss review did not open'));
+        .catch(() => mark('dismiss-review:failed'));
     },
     onReRequestReview: (login) => {
       // GitHub's own action when its merge box lists the verdict; else the request form with their id, the same post.
@@ -3265,20 +3909,26 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           }
           const found = await fetchReviewerCandidates().catch(() => null);
           if (found === null) {
-            console.warn('[geld] GitHub did not list the reviewers; nothing was re-requested');
+            mark('re-request:no-candidates');
             return;
           }
           const person = found.find((candidate) => !candidate.team && candidate.login.toLowerCase() === login.toLowerCase());
           if (person === undefined) {
-            console.warn('[geld] GitHub does not list that reviewer among those that can be asked here');
+            mark('re-request:not-listed');
             return;
           }
           const posted = await requestReviewers([person.id], [], found);
           candidatesCache = null;
           if (posted) window.setTimeout(reapplySoon, 800);
-          else console.warn('[geld] GitHub did not take the re-request');
+          else mark('re-request:refused');
         })
-        .catch(() => console.warn('[geld] Re-request review failed'));
+        .catch(() => mark('re-request:failed'));
+    },
+    onNoteHistory: (id) => {
+      openNoteHistory(() => {
+        const now = agentNotes(reapplySoon);
+        return { note: now.notes.find((note) => note.id === id), reading: now.reading };
+      });
     },
     onToggleSub: (anchor) => {
       keepInPlace(`main:sub:${anchor}`, () => {
@@ -3293,12 +3943,29 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       // Persisted like any setting; the controller's settings watch re-applies with the new value, in place.
       persist(settingsItem.patch({ reviewGrouping: grouping }));
     },
+    onView: (view) => chooseDigestView(view),
+    onFlow: () => openFlowDialog(),
+    onSettings: () => {
+      const message: OpenSettingsMessage = { type: 'geld:open-settings' };
+      void browser.runtime.sendMessage(message).catch(() => undefined);
+    },
     onToggleCommits: (batchKey) => {
       keepInPlace(`commits:${batchKey}`, () => {
         if (visit.openCommits.has(batchKey)) visit.openCommits.delete(batchKey);
         else visit.openCommits.add(batchKey);
         reapply();
       });
+    },
+    onOpenNote: (id) => {
+      const key = noteSubKey(id);
+      keepInPlace(`main:${AGENT_NOTES_KEY}`, () => {
+        // The pill of the note already open closes it; any other opens the row to that note.
+        const wasOpen = visit.openKey === AGENT_NOTES_KEY && visit.openSubKey === key;
+        visit.openKey = AGENT_NOTES_KEY;
+        visit.openSubKey = wasOpen ? null : key;
+        reapply();
+      });
+      revealRow(`main:sub:${key}`);
     },
     onOpenReport: (anchor) => {
       keepInPlace(`main:${REPORTS_KEY}`, () => {
@@ -3323,10 +3990,19 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         reapply();
       });
     },
-    onResolveAnchor: (anchor, done) => {
+    onResolveAnchor: (anchor) => {
       if (!clickResolve(anchor)) return;
       const owner = meta.items.find((item) => item.sources.some((source) => source.anchor === anchor));
-      reapplyAfterResolve(owner === undefined ? null : itemKey(owner.id), done);
+      reapplyAfterResolve(owner === undefined ? null : itemKey(owner.id));
+    },
+    onApproveWorkflows: () => {
+      const button = approveWorkflowsButton();
+      if (button === null) {
+        mark('approve-workflows:not-offered');
+        return;
+      }
+      button.click();
+      window.setTimeout(reapplySoon, 800);
     },
     onRunAi: () => {
       void runAi(meta, rawComments, settings, reapply).then((run) => {
@@ -3344,6 +4020,63 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       reapply();
       openReactions(anchor);
     },
+    onPeek: (login) => {
+      const key = login.toLowerCase();
+      if (visit.peeking.has(key)) visit.peeking.delete(key);
+      else visit.peeking.add(key);
+      // A reading taken while peeking would otherwise stand in for one the merge box blanks.
+      visit.lastReviews = null;
+      reapply();
+    },
+    onUnhide: (login, from) => {
+      const person = hidden.people().find((entry) => entry.login.toLowerCase() === login.toLowerCase());
+      if (person === undefined) return;
+      const targets = from === 'github' ? hidden.unhideTargets(person.login) : [];
+      if (targets.length > 0) {
+        const what = targets.length === 1 ? 'their hidden comment' : `their ${targets.length} hidden comments`;
+        const after = person.rule === null ? 'and their reviews and comments will count in the digest again.' : `but your digest keeps them hidden while "${person.rule}" is on your hidden list in Geld. Use Show to see them here.`;
+        if (!window.confirm(`Unhide ${person.login} on GitHub?\n\nThis unhides ${what} for everyone, ${after}`)) return;
+        // The reader may move on while GitHub answers: a reload, or a refresh of this page's nodes, is for this page only.
+        const page = location.pathname;
+        void (async () => {
+          let refreshed = true;
+          for (const { content, form } of targets) {
+            if (!(await sendUnhide(form))) {
+              window.alert(`GitHub did not unhide ${person.login}'s comment. Try GitHub's own Unhide on it.`);
+              reapplySoon();
+              return;
+            }
+            if (location.pathname !== page) return;
+            if (!(await refreshUnhidden(content))) refreshed = false;
+          }
+          if (location.pathname !== page) return;
+          if (refreshed) reapplySoon();
+          else location.reload();
+        })();
+        return;
+      }
+      if (from !== 'list') return;
+      const rules = exactRulesFor(settings.hiddenAuthors, person.login);
+      if (rules.length === 0) return;
+      const remaining = settings.hiddenAuthors.filter((line) => !rules.includes(line));
+      const still = compileAuthorRules(remaining).explain(person.login);
+      const result =
+        still !== null
+          ? `They stay hidden, since "${still}" on your hidden list in Geld matches them too.`
+          : person.github !== null
+            ? 'GitHub still hides some of their comments here, so the digest keeps them out until those are unhidden.'
+            : 'Their reviews and comments will show in your digest again, and their pull requests in your lists.';
+      if (!window.confirm(`Unhide ${person.login}?\n\nThis removes ${rules.length === 1 ? `"${rules[0] ?? person.login}"` : 'their lines'} from your hidden list in Geld. ${result}`)) return;
+      persist(settingsItem.patch({ hiddenAuthors: remaining }));
+    },
+    onManageHidden: (section) => {
+      if (section === 'list') {
+        const message: OpenSettingsMessage = { type: 'geld:open-settings', section: 'lists' };
+        void browser.runtime.sendMessage(message).catch(() => undefined);
+        return;
+      }
+      window.open(blockedUsersUrl(section, owner), '_blank', 'noopener');
+    },
     onShowInTimeline: (anchor) => {
       visit.fullTimeline = true;
       visit.openKey = null;
@@ -3357,7 +4090,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       const entry = comments.find((candidate) => candidate.anchor === anchor);
       const target = entry !== undefined && !entry.hasBody && isVerdict(entry) ? (entry.threads?.[0]?.anchor ?? anchor) : anchor;
       // Held by a row here? Open it and bring it into view. Otherwise let the browser take the reader to it in the timeline.
-      const seat = hidingTimeline ? seatFor(target, meta, groups, batches) : null;
+      // A review in the description is only ever its Review bots line, whatever the timeline shows.
+      const seat = hidingTimeline || target.startsWith(NOTE_ANCHOR_PREFIX) ? seatFor(target, meta, groups, batches) : null;
       if (seat === null) {
         // Only scroll to something the page actually holds; a folded, silently-dropped comment has no place to land.
         if (document.getElementById(target) !== null) location.hash = target;
@@ -3369,7 +4103,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     },
   };
   phaseSince('model', modelStart);
-  const mounted = phase('panel', () => mountPanel(model, panelHandlers, { holdRebuild: fragmentRenderTimer !== null }));
+  followOpenRow(model);
+  const mounted = phase('panel', () => mountPanel(model, panelHandlers, { holdRebuild: fragmentRenderTimer !== null, parkChats }));
   scheduleTimeRefresh();
   if (mounted !== null) {
     watchLoans(mounted.root);
@@ -3385,7 +4120,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const slotsStart = performance.now();
   if (mounted?.slot !== null && mounted?.slot !== undefined && visit.openKey !== null) {
     const nodes = quickViewFor(visit.openKey, meta, groups);
-    if (nodes.length === 0) {
+    // What the description and comments mention has no timeline row, so the Mentions row can stand with no nodes to show.
+    const onlyOutgoing = visit.openKey === foldKey('mentions') && (conversationMentions().length > 0 || incomingReadMentions().length > 0);
+    if (nodes.length === 0 && !onlyOutgoing) {
       // An open thread row (by push) whose thread is momentarily out of the crawl keeps its row through the grace.
       if (!visit.openKey.startsWith('item:') || openLineStillMissing()) {
         visit.openKey = null;
@@ -3400,12 +4137,34 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         // byline and the run's threads linked at its foot, each leading to its row in its round.
         const view = renderBotsList(mounted.slot, model, panelHandlers);
         const line = view.openLine;
-        const commentNode = line?.anchor === null || line === null ? null : (entryNodes.get(line.anchor) ?? timelineRootOf(line.anchor));
-        if (view.nested !== null && line !== null && line.anchor !== null && commentNode !== null) {
+        const lineNote = line?.anchor?.startsWith(NOTE_ANCHOR_PREFIX) === true ? liveNotes.find((note) => `${NOTE_ANCHOR_PREFIX}${note.id}` === line.anchor) : undefined;
+        const commentNode = line?.anchor === null || line === null || lineNote !== undefined ? null : (entryNodes.get(line.anchor) ?? timelineRootOf(line.anchor));
+        if (view.nested !== null && lineNote !== undefined) {
+          renderNoteBody(view.nested, lineNote);
+        } else if (view.nested !== null && line !== null && line.anchor !== null && commentNode !== null) {
           const byline = withRerun(dressByline({ login: line.author, bot: true, avatarSrc: line.avatarSrc, time: line.time }, line.anchor), line.author, line.anchor, meta, settings, reapply, panelHandlers.onOpenAnchor);
           renderCommentChat(view.nested, commentNode, byline, threadLinks(line.threads), panelHandlers.onOpenAnchor);
         } else if (visit.openSubKey !== null && (line !== null || !model.botLines.some((entry) => entry.anchor === visit.openSubKey))) {
           // A comment that left the page, or a summary no longer the bot's latest: nothing to keep open.
+          visit.openSubKey = null;
+        }
+      } else if (visit.openKey === AGENT_NOTES_KEY) {
+        // What agents and review bots wrote into the description, each tool's note opening in place.
+        renderAgentNotesList(mounted.slot, model, panelHandlers, (note) => noteCopy(note.versions.at(-1)?.blocks ?? []));
+        if (visit.openSubKey !== null && !model.agentNotes.some((note) => noteSubKey(note.id) === visit.openSubKey)) visit.openSubKey = null;
+      } else if (visit.openKey === PREVIEWS_KEY || visit.openKey === DEPLOYMENTS_KEY) {
+        // A preview's or a deployment's line opens to its host's comment; the byline leads to the last good build
+        // (a preview whose latest deployment is not one) or to the host's page for the deployment.
+        const view = visit.openKey === PREVIEWS_KEY ? renderPreviewsList(mounted.slot, model, panelHandlers) : renderDeploymentsList(mounted.slot, model, panelHandlers);
+        const anchor = view.open === null ? null : 'latest' in view.open ? view.open.comment : view.open.anchor;
+        const links = view.open === null ? [] : 'latest' in view.open ? deploymentLinks(view.open) : lastSuccessLinks(model.previewLinks(view.open).lastSuccess);
+        const comment = anchor === null ? undefined : crawledDom.comments.find((entry) => entry.comment.anchor === anchor);
+        const commentNode = anchor === null ? null : (entryNodes.get(anchor) ?? timelineRootOf(anchor));
+        if (view.nested !== null && anchor !== null && commentNode !== null) {
+          const byline = dressByline({ login: comment?.author.login ?? '', bot: true, avatarSrc: model.avatarForAnchor(anchor), time: model.timeFor(anchor) }, anchor);
+          renderCommentChat(view.nested, commentNode, links.length === 0 ? byline : { ...byline, links });
+        } else if (visit.openSubKey !== null && (view.open === null || commentNode === null)) {
+          // A line whose comment left the page (or that is gone itself): nothing to keep open.
           visit.openSubKey = null;
         }
       } else if (visit.openKey === REPORTS_KEY) {
@@ -3449,7 +4208,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           }
         }
       } else if (visit.openKey === CHECKS_KEY) {
-        renderQuickView(mounted.slot, nodes);
+        if (checksSection() === null) renderCheckRunsList(mounted.slot, pageChecks(meta.headSha));
+        else renderQuickView(mounted.slot, nodes);
       } else if (visit.openKey.startsWith(foldKey('closure:'))) {
         // The comment left with the change, as a one-comment chat without a byline: the row above is its header
         // (who, when, GitHub's ⋯), as with any other single comment; the event itself is that row.
@@ -3461,15 +4221,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           renderQuickView(mounted.slot, nodes);
         }
       } else if (visit.openKey === foldKey('mentions')) {
-        const card = document.querySelector('[data-geld-attached]');
-        const cardAuthor = card === null ? null : authorOf(card);
-        const cardAvatar = card === null ? null : avatarSrcOf(card);
-        renderMentionsView(
-          mounted.slot,
-          nodes,
-          outgoingMentions(document.querySelector('[data-geld-attached] .comment-body, [data-geld-attached] .markdown-body, [data-geld-attached] [data-testid="markdown-body"]'), cardAuthor === null || cardAvatar === null ? null : { login: cardAuthor.login, avatarSrc: cardAvatar }),
-          (href) => refDetails(href, reapplySoon),
-        );
+        renderMentionsView(mounted.slot, nodes, conversationMentions(true), (href) => refDetails(href, reapplySoon), incomingReadMentions());
       } else if (visit.openKey.startsWith('item:')) {
         // Each review thread as its chat: the path, the hunk, the comment it came from pinned, every message.
         const item = meta.items.find((entry) => itemKey(entry.id) === visit.openKey);
@@ -3482,6 +4234,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   } else {
     restoreAll();
   }
+  // A thread chat the rebuild parked that no view took back (another row opened, or none): home now.
+  releaseParkedChats();
+  releasePanelPin();
   phaseSince('slots', slotsStart);
   // After the slots render (an open chat's byline time cell is created there): give every time cell its hover title
   // (and freshest wording) now, so a freshly opened chat carries it from the first paint, not after the next tick.
@@ -3500,9 +4255,14 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       showLogins(mounted.root);
     });
   }
+  runningBots = new Set(meta.bots.filter((bot) => bot.verdict === 'running').map((bot) => bot.id));
   setHoverProvider((row) => hoverPreviewFor(row, meta, groups, panelHandlers));
   setWhoProvider((login) => whoCardFor(login, meta, model));
   setReportProvider((anchor) => reportCardFor(anchor, model, panelHandlers));
+  setNoteProvider((id) => {
+    const note = liveNotes.find((entry) => entry.id === id);
+    return note === undefined || !note.present ? null : noteCard(note, () => panelHandlers.onOpenNote(id));
+  });
   phase('apply-folds', () => applyFolds(foldTargets, new Set()));
   // The browser's fragment jump went to the original's (now empty) place in
   // the timeline; the one correction Geld makes is to land on the row that
@@ -3552,9 +4312,12 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     }
   }
   const tailStart = performance.now();
-  collapseDescription(settings.compactTimeline === 'minimal' && settings.collapseDescription && !visit.fullTimeline);
+  // What tools appended is the Agent notes row's: the description keeps the author's words.
+  shortenDescription(settings.collapseDescription && !visit.fullTimeline, { toolsAway: true });
+  compactDescriptionByline(true);
   setFullTimeline(visit.fullTimeline);
   if (hidingTimeline) document.documentElement.setAttribute('data-geld-timeline', 'compact');
+  setTopCard(isOverviewPage() ? (hidingTimeline ? 'folded' : 'digest') : null);
   // Everything on the page has been read: what GitHub inserts from here on waits for the next pass.
   markSeen();
   // The row the reader opened stays put under whatever this pass moved above it.
@@ -3602,10 +4365,59 @@ function alignRevealWithLanding(node: Element, anchor: string, focusKey: string)
   alignAnchorCarriers(anchor, focusKey);
 }
 
-export function teardownReviewOverview(): void {
+/** How long the folds a tab switch leaves on the conversation may stand before they are cleared anyway. */
+const LEAVE_GRACE_MS = 3000;
+let leftoverTimer: number | null = null;
+
+/** Fold the description in the frame GitHub renders it, as on a switch back to the conversation tab, rather than a pass later. */
+/**
+ * Before paint: the Overview's top card as the digest's view has it (set by the pass too, since GitHub draws the card,
+ * and re-renders it, between passes), and the digest back if React's re-render took it. `allowed` is the controller's
+ * say on dressing this page at all: a repository left out, or Geld off, takes back what the stored hint applied.
+ */
+export function dressOverviewNow(settings: GeldSettings, allowed: boolean): void {
+  // How the description folds here, for the next load's first frame (`applyDescriptionFoldHint`).
+  if (/^\/[^/]+\/[^/]+\/pull\/\d+\/?$/.test(location.pathname)) rememberDescriptionFold(repoFromPathname(location.pathname), allowed && settings.enabled && settings.collapseDescription ? { toolsAway: settings.prOverview } : false);
+  const on = allowed && settings.enabled && settings.prOverview;
+  rememberTopCard(on ? (settings.compactTimeline !== 'off' ? 'folded' : 'digest') : 'off');
+  if (!on) {
+    if (lastSettings === null) setTopCard(null);
+    return;
+  }
+  if (!isOverviewPage()) return;
+  const page = describePage(new URL(window.location.href));
+  if (page.kind !== 'pull-conversation') return;
+  const full = visit.pageKey === page.stateKey && visit.fullTimeline;
+  setTopCard(settings.compactTimeline !== 'off' && !full ? 'folded' : 'digest');
+  reseatPanelNow();
+}
+
+export function foldDescriptionNow(settings: GeldSettings): void {
+  if (!settings.enabled || !settings.collapseDescription) return;
+  const page = describePage(new URL(window.location.href));
+  if (page.kind !== 'pull-conversation') return;
+  // The full timeline shows the description whole, and that choice belongs to the visit that made it.
+  if (settings.prOverview && visit.pageKey === page.stateKey && visit.fullTimeline) return;
+  if (descriptionUnshortened()) shortenDescription(true, { toolsAway: settings.prOverview });
+}
+
+/**
+ * `leave`: the URL moved to another tab of the pull request (or another page), and GitHub keeps the conversation
+ * on screen until the next page replaces it. Unfolding the description and the timeline then showed them whole for
+ * a moment, so their folds (attributes on GitHub's nodes) stay and go with them. Anything still standing after
+ * {@link LEAVE_GRACE_MS} (GitHub never replaced the page) is cleared then. Loans still go home and the panel still
+ * goes: a moved node left in the panel would be lost to a page GitHub restores from its cache.
+ *
+ * `rebuild`: the digest is built again on this same page at once (a settings change, from any tab or device). The
+ * visit is kept, so the rows the reader opened and the groups they unfolded are still so in the new panel.
+ */
+export function teardownReviewOverview(why: 'stop' | 'leave' | 'rebuild' = 'stop'): void {
+  const leaving = why === 'leave';
   // First: nothing asked for earlier may run after this. Pending passes are dropped, fetches in flight cancelled,
   // and every later callback finds the overview unmounted (`lastSettings`).
   lastSettings = null;
+  overviewChecksInDigest = false;
+  closeFlow();
   setAutoLoading(false);
   deferredWhileHidden = false;
   window.removeEventListener('load', onDocumentLoaded);
@@ -3618,20 +4430,45 @@ export function teardownReviewOverview(): void {
   hideHoverCard();
   releaseHold();
   setHoverProvider(null);
+  runningBots = new Set();
   setWhoProvider(null);
   setReportProvider(null);
+  setNoteProvider(null);
   unwatchLoans();
   stopTimeRefresh();
   visit.settling = null;
   stopFittingChips();
+  stopWatchingBrandSelection();
   unmountPanel();
+  releaseParkedChats();
+  closeOverviewChecks();
+  removeDigestOffBar();
   hideSummary(null);
-  applyFolds([], new Set());
-  collapseDescription(false);
+  if (leftoverTimer !== null) window.clearTimeout(leftoverTimer);
+  leftoverTimer = null;
+  // The compact timeline's page-wide styles (tighter commit rows) would reach the next tab's own lists, so they go now.
   setFullTimeline(false);
+  if (leaving) {
+    releaseDescription();
+    leftoverTimer = window.setTimeout(() => {
+      leftoverTimer = null;
+      if (visit.pageKey !== '') return;
+      applyFolds([], new Set());
+      shortenDescription(false);
+      compactDescriptionByline(false);
+      setTopCard(null);
+    }, LEAVE_GRACE_MS);
+  } else {
+    applyFolds([], new Set());
+    shortenDescription(false);
+    compactDescriptionByline(false);
+    // A rebuild's own pass sets it again (or takes it away, the digest turned off): kept, the top card does not flash between.
+    if (why !== 'rebuild') setTopCard(null);
+  }
+  if (why === 'rebuild') return;
+  visit.pendingAnchor = null;
   visit.openKey = null;
   visit.pageKey = '';
-  visit.pendingAnchor = null;
 }
 
 export function onReviewHashChange(settings: GeldSettings): void {
