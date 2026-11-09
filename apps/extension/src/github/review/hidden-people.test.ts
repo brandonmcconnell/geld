@@ -88,6 +88,15 @@ describe('markedOnGitHub', () => {
     expect(found[0]?.root.classList.contains('js-timeline-item')).toBe(true);
   });
 
+  it('ignores the notice quoted inside someone’s comment text', () => {
+    const quoted = `
+      <div class="js-timeline-item"><div class="TimelineItem js-comment-container" id="issuecomment-2000002">
+        <a class="author" href="/quoter">quoter</a>
+        <div class="comment-body markdown-body"><details><summary>This comment was marked as spam.</summary><p>What GitHub showed</p></details></div>
+      </div></div>`;
+    expect(markedOnGitHub(page(quoted))).toEqual([]);
+  });
+
   it('leaves comments hidden for what they say (resolved, outdated) alone', () => {
     expect(markedOnGitHub(page(RESOLVED_COMMENT))).toEqual([]);
   });

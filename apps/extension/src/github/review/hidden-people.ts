@@ -59,6 +59,7 @@ export interface UnhideForm {
 const HEADERS = 'summary, h3.timeline-comment-header-text, .minimized-comment-header, [data-testid="minimized-comment-header"]';
 const CONTAINER = '.review-comment, .js-comment-container, [data-testid="comment-container"], .TimelineItem, .js-minimize-container, .js-timeline-item';
 const AUTHOR = 'a.TimelineItem-avatar, a.author, a[data-hovercard-type="user"], img[data-hovercard-url^="/users/"], a[data-testid="avatar-link"], a[href^="/apps/"]';
+const COMMENT_TEXT = '.comment-body, .markdown-body, .js-comment-body, [data-testid="markdown-body"], [class*="markdownBody"]';
 const ANCHOR = '[id^="pullrequestreview-"], [id^="issuecomment-"], [id^="discussion_r"]';
 const EVENT_PEOPLE = 'a[data-hovercard-type="user"], a.author, [data-hovercard-url^="/users/"]';
 
@@ -96,7 +97,8 @@ export function markedOnGitHub(root: ParentNode = document): readonly MarkedCont
   const found: MarkedContent[] = [];
   const seen = new Set<Element>();
   for (const header of root.querySelectorAll(HEADERS)) {
-    if (isOwn(header)) continue;
+    // GitHub's notice heads the comment; the same words quoted inside someone's comment text are theirs, not GitHub's.
+    if (isOwn(header) || header.closest(COMMENT_TEXT) !== null) continue;
     const reason = hideReasonOf(header.textContent ?? '');
     if (reason === null || !PERSON_REASONS.has(reason)) continue;
     const container = header.closest(CONTAINER);

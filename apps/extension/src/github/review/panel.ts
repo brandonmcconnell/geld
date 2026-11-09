@@ -506,7 +506,8 @@ export interface PanelHandlers {
   /** Show or hide again a hidden person's content in the digest, for this visit. */
   readonly onPeek: (login: string) => void;
   /** Undo the hide itself, after the reader confirms: GitHub's own Unhide, or the line on the reader's list. */
-  readonly onUnhide: (login: string) => void;
+  /** `from` is the menu section clicked: GitHub's own Unhide, or the line on the reader's hidden list in Geld. */
+  readonly onUnhide: (login: string, from: 'github' | 'list') => void;
   /** Open where a section of hidden people is managed: GitHub's Blocked users pages, or Geld's settings. */
   readonly onManageHidden: (section: 'org' | 'personal' | 'list') => void;
   /** Open or close a comment inside the Reviews row's list. */
@@ -1744,7 +1745,7 @@ const HIDDEN_SECTIONS: readonly { readonly id: HiddenSection; readonly title: st
   { id: 'pull', title: 'Hidden on this pull request', manage: null, has: (person) => person.github !== null && !person.blocked.org && !person.blocked.personal },
   { id: 'org', title: 'Blocked by this organization', manage: 'Manage organization blocks', has: (person) => person.github !== null && person.blocked.org },
   { id: 'personal', title: 'Blocked by you', manage: 'Manage your blocks', has: (person) => person.github !== null && person.blocked.personal },
-  { id: 'list', title: 'On your hidden list in Geld', manage: 'Manage your hidden list in Geld', has: (person) => person.github === null && person.rule !== null },
+  { id: 'list', title: 'On your hidden list in Geld', manage: 'Manage your hidden list in Geld', has: (person) => person.rule !== null },
 ];
 
 function hiddenRow(person: HiddenPerson, section: HiddenSection, details: HTMLDetailsElement, handlers: PanelHandlers): HTMLElement {
@@ -1760,13 +1761,14 @@ function hiddenRow(person: HiddenPerson, section: HiddenSection, details: HTMLDe
   });
   const actions: Node[] = [show];
   const exactRule = person.rule !== null && person.rule.replace(/^@/, '').toLowerCase() === person.login.toLowerCase();
-  const unhideTitle = person.github !== null ? (person.github.unhide ? 'Unhide their content for everyone on GitHub' : null) : exactRule ? 'Remove them from your hidden list in Geld' : null;
+  const from = section === 'list' ? 'list' : 'github';
+  const unhideTitle = from === 'list' ? (exactRule ? 'Remove them from your hidden list in Geld' : null) : person.github?.unhide === true ? 'Unhide their content for everyone on GitHub' : null;
   if (unhideTitle !== null) {
     const unhide = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__hidden-action`, role: 'menuitem', 'aria-label': `Unhide ${person.login}`, title: unhideTitle, [ATTR_FOCUS]: `hidden:${section}:${person.login}:unhide` }, ['Unhide']);
     unhide.addEventListener('click', (event) => {
       event.stopPropagation();
       details.removeAttribute('open');
-      handlers.onUnhide(person.login);
+      handlers.onUnhide(person.login, from);
     });
     actions.push(unhide);
   }

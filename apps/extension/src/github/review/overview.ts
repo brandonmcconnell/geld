@@ -3909,10 +3909,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       visit.lastReviews = null;
       reapply();
     },
-    onUnhide: (login) => {
+    onUnhide: (login, from) => {
       const person = hidden.people().find((entry) => entry.login.toLowerCase() === login.toLowerCase());
       if (person === undefined) return;
-      const targets = hidden.unhideTargets(person.login);
+      const targets = from === 'github' ? hidden.unhideTargets(person.login) : [];
       if (targets.length > 0) {
         const what = targets.length === 1 ? 'their hidden comment' : `their ${targets.length} hidden comments`;
         const after = person.rule === null ? 'and their reviews and comments will count in the digest again.' : `but your digest keeps them hidden while "${person.rule}" is on your hidden list in Geld. Use Show to see them here.`;
@@ -3936,11 +3936,17 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         })();
         return;
       }
-      const rules = person.github === null ? exactRulesFor(settings.hiddenAuthors, person.login) : [];
+      if (from !== 'list') return;
+      const rules = exactRulesFor(settings.hiddenAuthors, person.login);
       if (rules.length === 0) return;
       const remaining = settings.hiddenAuthors.filter((line) => !rules.includes(line));
       const still = compileAuthorRules(remaining).explain(person.login);
-      const result = still === null ? 'Their reviews and comments will show in your digest again, and their pull requests in your lists.' : `They stay hidden, since "${still}" on your hidden list in Geld matches them too.`;
+      const result =
+        still !== null
+          ? `They stay hidden, since "${still}" on your hidden list in Geld matches them too.`
+          : person.github !== null
+            ? 'GitHub still hides some of their comments here, so the digest keeps them out until those are unhidden.'
+            : 'Their reviews and comments will show in your digest again, and their pull requests in your lists.';
       if (!window.confirm(`Unhide ${person.login}?\n\nThis removes ${rules.length === 1 ? `"${rules[0] ?? person.login}"` : 'their lines'} from your hidden list in Geld. ${result}`)) return;
       persist(settingsItem.patch({ hiddenAuthors: remaining }));
     },

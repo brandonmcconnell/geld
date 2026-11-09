@@ -1807,9 +1807,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   A closed eye with a count stands at the right of the Reviews row for people and of the Review bots row for bots (`hiddenMenu`), and opens to who is hidden in four sections, from this pull request outward: "Hidden on this pull request" (content GitHub hid, from someone nobody blocked;
   no gear), "Blocked by this organization" and "Blocked by you" (content GitHub hid, from someone blocked;
   a gear to that Blocked users page), and "On your hidden list in Geld" (a gear to Geld's settings at `#lists`, `geld:open-settings` with a `section`).
-  Someone blocked both ways stands in both blocked sections, and each person has one line: picture, login, the verdict glyph their pill would have shown, Show (their content in the digest for this visit, `visit.peeking`, then Hide;
+  Someone blocked both ways stands in both blocked sections, someone with a line on the reader's list stands under it whatever GitHub hid, and each person has one line: picture, login, the verdict glyph their pill would have shown, Show (their content in the digest for this visit, `visit.peeking`, then Hide;
   the menu stays open across the rebuild) and Unhide after a `window.confirm`.
-  Unhide removes an exact line from the reader's list (a wildcard line offers none), or sends GitHub's own Unhide form for each of their hidden comments (`lookUpUnhideForms`, `sendUnhide`, `refreshUnhidden`).
+  Unhide does what its section is about: under the reader's list it removes an exact line (a wildcard line offers none), elsewhere it sends GitHub's own Unhide form for each of their hidden comments (`lookUpUnhideForms`, `sendUnhide`, `refreshUnhidden`).
+  A notice quoted inside someone's comment text ("This comment was marked as spam" in a `<details>`) is theirs, not GitHub's, and hides nobody.
   GitHub keeps that form out of the page: a hidden comment's menu is a lazy fragment (`comment_actions_menu?…&minimized=1`, holding `form.js-comment-unminimize`, which PUTs the comment's node id to `/<owner>/<repo>/community/unminimize-comment`), and a hidden review's content is one fragment further (`/pull/N/reviews/<id>`, whose menu holds `form.js-timeline-comment-unminimize`).
   Geld reads those fragments once per page, and GitHub serves the form only to someone who may unhide, so Unhide is offered exactly when GitHub would offer it;
   after the form goes through the comment is replaced from GitHub's own partial (its `data-url`), else the page reloads.
