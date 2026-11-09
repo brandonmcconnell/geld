@@ -37,7 +37,17 @@ function viewed(root: HTMLElement): HTMLInputElement | null {
 
 function lines(root: HTMLElement): readonly ProviderDiffLine[] {
   const result: ProviderDiffLine[] = [];
-  for (const row of native(root.querySelectorAll<HTMLElement>('[data-qa="code-line"]'))) {
+  for (const row of native(root.querySelectorAll<HTMLElement>('[data-qa="code-line"], .diff-chunk > .diff-chunk-inner > .chunk-heading-wrapper'))) {
+    if (row.classList.contains('chunk-heading-wrapper')) {
+      const control = row.querySelector('button[data-qa="pr-diff-show-more-lines-above"], button[data-qa="pr-diff-show-more-lines-below"]');
+      if (control?.closest('.chunk-heading-wrapper') === row
+        && control.closest('[data-geld-ui]') === null
+        && row.closest('article[data-qa="branch-diff-file"]') !== null
+        && row.querySelector('[data-qa="code-line"]') === null) {
+        result.push({ root: row, oldLine: null, newLine: null, oldText: null, newText: null, kind: 'hunk' });
+      }
+      continue;
+    }
     const numbers = row.querySelector('[data-key="code-line-number"]');
     const code = row.querySelector<HTMLElement>('[data-line-type]');
     const type = code?.getAttribute('data-line-type');

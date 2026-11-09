@@ -35,7 +35,15 @@ function markViewed(root: HTMLElement): boolean {
 
 function rapidLines(root: HTMLElement): readonly ProviderDiffLine[] {
   const lines: ProviderDiffLine[] = [];
-  for (const row of root.querySelectorAll<HTMLElement>('tr.rd-hunk-lines-inline, tr.rd-hunk-lines-parallel')) {
+  for (const row of root.querySelectorAll<HTMLElement>('tr.rd-hunk-lines-inline, tr.rd-hunk-lines-parallel, tr.rd-hunk-header')) {
+    if (row.closest('[data-geld-ui]') !== null) continue;
+    if (row.classList.contains('rd-hunk-header')) {
+      const control = row.querySelector('button[data-click="expandLines"][data-expand-direction="up"], button[data-click="expandLines"][data-expand-direction="down"], button[data-click="expandLines"][data-expand-direction="both"]');
+      if (control?.closest('tr') === row && control.closest('[data-geld-ui]') === null && row.querySelector('td.rd-line-content') === null) {
+        lines.push({ root: row, oldLine: null, newLine: null, oldText: null, newText: null, kind: 'hunk' });
+      }
+      continue;
+    }
     const parallel = row.classList.contains('rd-hunk-lines-parallel');
     const code = row.querySelector<HTMLElement>('td.rd-line-content');
     if (code === null) continue;
