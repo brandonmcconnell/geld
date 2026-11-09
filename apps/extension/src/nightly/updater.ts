@@ -5,14 +5,14 @@ import type { BuildBackup } from './handle-store';
 import { isNightlyCheckMessage, isNightlyInstallMessage, isNightlyManageMessage, isNightlyRollbackMessage } from './messages';
 import { manageUrl } from './conflicts';
 import type { NightlyInstallResult } from './messages';
-import { buildOf, buildProblem, compareVersions, LATEST_RELEASE_PAGE, LATEST_RELEASE_URL, manifestTextOf, parseChecksum, parseRelease, tagFromReleaseUrl } from '@geld/core/nightly';
+import { buildOf, buildProblem, claimLock, compareVersions, LATEST_RELEASE_PAGE, LATEST_RELEASE_URL, manifestTextOf, parseChecksum, parseRelease, releaseLock, tagFromReleaseUrl } from '@geld/core/nightly';
 import type { NightlyBrowser, NightlyRelease, ZipEntry } from '@geld/core/nightly';
 import { BACKGROUND_CHECK_MINUTES, limitedUntil, navigationDue, needsDetails } from './schedule';
 import { startPauseWatch } from './pause';
 import { nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyProfileTokenItem, nightlyStatusItem, readNightlyStatus, nightlyTabCountsItem } from './state';
 import type { NightlyFailure, NightlyStatus, NightlyWrite, UpdateMode } from './state';
 import { decode, sha256Hex, unzip } from './unzip';
-import { acquireLock, readInstallRecord, copyRunningBuild, downloadsReach, downloadsTarget, folderIsOurs, folderPermission, folderTarget, versionOnDisk } from './writers';
+import { BUSY, folderLock, readInstallRecord, copyRunningBuild, downloadsReach, downloadsTarget, folderIsOurs, folderPermission, folderTarget, versionOnDisk } from './writers';
 import type { BuildTarget } from './writers';
 
 /** Background side of nightly builds: looks for a newer release, marks the toolbar icon, installs and rolls back. */
@@ -185,9 +185,10 @@ async function installTarget(): Promise<BuildTarget | Failed> {
  */
 async function findTarget(): Promise<BuildTarget | Failed> {
   const folder = await nightlyFolderItem.getValue();
-  const handle = folder === null ? null : await loadFolderHandle().catch(() => null);
-  if (folder === null || handle === null) return { ok: false, reason: 'Connect the folder Geld runs from first.', need: 'folder' };
-  if ((await folderPermission(handle)) === 'granted') {
+  if (folder === null) return { ok: false, reason: 'Connect the folder Geld runs from first.', need: 'folder' };
+  // A folder the installer connected (adoptInstallerFolder) has no handle: the downloads route is its only way in.
+  const handle = await loadFolderHandle().catch(() => null);
+  if (handle !== null && (await folderPermission(handle)) === 'granted') {
     if (!(await folderIsOurs(handle))) return { ok: false, reason: 'The connected folder is not the one Geld runs from. Connect it again.', need: 'folder' };
     return folderTarget(handle);
   }
@@ -199,6 +200,7 @@ async function findTarget(): Promise<BuildTarget | Failed> {
     return { ok: false, reason: 'Geld can no longer reach its folder in Downloads. Connect it again.', need: 'folder' };
   }
   if (downloads) return downloadsTarget(folder.name);
+  if (handle === null) return { ok: false, reason: 'Connect the folder Geld runs from first.', need: 'folder' };
   return { ok: false, reason: 'Geld needs your OK to write to its folder.', need: 'permission' };
 }
 
@@ -236,11 +238,6 @@ async function downloadBuild(release: NightlyRelease): Promise<ZipEntry[]> {
  */
 async function replace(target: BuildTarget, next: readonly ZipEntry[], previous: BuildBackup, whole: string, owned: readonly string[], version: string): Promise<NightlyFailure | null> {
   const at = new Date().toISOString();
-  try {
-    await acquireLock(target, await nightlyProfileTokenItem.getValue());
-  } catch (error) {
-    return { version, stillOn: previous.version, reason: message(error), at };
-  }
   const nextPaths = next.map((entry) => entry.path);
   const paths = [...new Set([...owned, ...nextPaths, ...previous.files.map((file) => file.path)])].sort();
   const writing: NightlyWrite = { version, whole, paths };
@@ -258,9 +255,29 @@ async function replace(target: BuildTarget, next: readonly ZipEntry[], previous:
     } catch {
       return { ...failure, stillOn: whole, broken: true };
     }
-  } finally {
-    await target.writeLock(null).catch(() => undefined);
   }
+}
+
+/**
+ * Everything that reads or writes the folder, from the version on disk and the backup copy to the write and its
+ * undo, runs under the folder's lock, so another profile's update never lands in the middle of it.
+ */
+async function underLock(target: BuildTarget, refused: NightlyFailure, run: () => Promise<NightlyInstallResult>): Promise<NightlyInstallResult> {
+  const lock = folderLock(target);
+  const token = await nightlyProfileTokenItem.getValue();
+  if (!(await claimLock(lock, token))) return fail(refused);
+  try {
+    return await run();
+  } finally {
+    await releaseLock(lock, token).catch(() => undefined);
+  }
+}
+
+/** Another profile that loads the same folder may have written this build already: it needs only a reload. */
+async function sharedInstall(from: string, to: string): Promise<NightlyInstallResult> {
+  await patchStatus({ installing: null, failure: null, writing: null, lastInstall: { from, to, at: new Date().toISOString(), method: 'shared' } });
+  reloadSoon();
+  return { ok: true, version: to };
 }
 
 function reloadSoon(): void {
@@ -297,39 +314,43 @@ async function install(explicit: boolean): Promise<NightlyInstallResult> {
   const current = installedVersion();
   if (latest === null || !isNewer(status)) return { ok: false, reason: 'Geld is up to date.' };
   if (!explicit && !installsOnItsOwn(status)) return { ok: false, reason: 'Waiting for a newer build.' };
-  // Another profile that loads the same folder may have written this build already: it needs only a reload.
-  if ((await versionOnDisk()) === latest.version) {
-    await patchStatus({ installing: null, failure: null, writing: null, lastInstall: { from: current, to: latest.version, at: new Date().toISOString(), method: 'shared' } });
-    reloadSoon();
-    return { ok: true, version: latest.version };
-  }
+  // The manifest is written last, so a folder already naming this build holds all of it: no lock or target needed.
+  if ((await versionOnDisk()) === latest.version) return sharedInstall(current, latest.version);
   const target = await installTarget();
   if ('ok' in target) return target;
   await patchStatus({ installing: latest.version, failure: null });
+  const failed = (reason: string): NightlyFailure => ({ version: latest.version, stillOn: current, reason, at: new Date().toISOString() });
   let entries: ZipEntry[];
-  let previous: BuildBackup;
   try {
     entries = await downloadBuild(latest);
-    // After a write that did not end whole the folder is half one build, half the other: the backup is the whole old one.
-    const kept = status.writing === null ? null : await loadBackup();
-    if (status.writing !== null && kept === null) throw new Error(`The saved copy of build ${status.writing.whole} is missing. Unzip the latest nightly build over the folder by hand.`);
-    previous = kept ?? (await copyRunningBuild(current));
-    if (kept === null) await saveBackup(previous);
   } catch (error) {
-    return fail({ version: latest.version, stillOn: current, reason: message(error), at: new Date().toISOString() });
+    return fail(failed(message(error)));
   }
-  const owned = status.writing?.paths ?? previous.files.map((file) => file.path);
-  const failure = await replace(target, entries, previous, previous.version, owned, latest.version);
-  if (failure !== null) return fail(failure);
-  await patchStatus({
-    installing: null,
-    failure: null,
-    skipped: explicit ? null : status.skipped,
-    backup: previous.version,
-    lastInstall: { from: current, to: latest.version, at: new Date().toISOString(), method: target.method },
+  return underLock(target, failed(BUSY), async () => {
+    if ((await versionOnDisk()) === latest.version) return sharedInstall(current, latest.version);
+    let previous: BuildBackup;
+    try {
+      // After a write that did not end whole the folder is half one build, half the other: the backup is the whole old one.
+      const kept = status.writing === null ? null : await loadBackup();
+      if (status.writing !== null && kept === null) throw new Error(`The saved copy of build ${status.writing.whole} is missing. Unzip the latest nightly build over the folder by hand.`);
+      previous = kept ?? (await copyRunningBuild(current));
+      if (kept === null) await saveBackup(previous);
+    } catch (error) {
+      return fail(failed(message(error)));
+    }
+    const owned = status.writing?.paths ?? previous.files.map((file) => file.path);
+    const failure = await replace(target, entries, previous, previous.version, owned, latest.version);
+    if (failure !== null) return fail(failure);
+    await patchStatus({
+      installing: null,
+      failure: null,
+      skipped: explicit ? null : status.skipped,
+      backup: previous.version,
+      lastInstall: { from: current, to: latest.version, at: new Date().toISOString(), method: target.method },
+    });
+    reloadSoon();
+    return { ok: true, version: latest.version };
   });
-  reloadSoon();
-  return { ok: true, version: latest.version };
 }
 
 async function restorePrevious(): Promise<NightlyInstallResult> {
@@ -341,20 +362,22 @@ async function restorePrevious(): Promise<NightlyInstallResult> {
   const current = installedVersion();
   const repairing = status.writing !== null;
   await patchStatus({ installing: backup.version });
-  // Repairing, the folder's own files are half written, so there is nothing whole to fall back on.
-  const undo = repairing ? backup : await copyRunningBuild(current).catch(() => backup);
-  const owned = status.writing?.paths ?? undo.files.map((file) => file.path);
-  const failure = await replace(target, backup.files, undo, backup.version, owned, backup.version);
-  if (failure !== null) return fail(failure);
-  await patchStatus({
-    installing: null,
-    failure: null,
-    skipped: repairing ? status.skipped : current,
-    backup: null,
-    lastInstall: { from: current, to: backup.version, at: new Date().toISOString(), method: target.method, rollback: true },
+  return underLock(target, { version: backup.version, stillOn: current, reason: BUSY, at: new Date().toISOString() }, async () => {
+    // Repairing, the folder's own files are half written, so there is nothing whole to fall back on.
+    const undo = repairing ? backup : await copyRunningBuild(current).catch(() => backup);
+    const owned = status.writing?.paths ?? undo.files.map((file) => file.path);
+    const failure = await replace(target, backup.files, undo, backup.version, owned, backup.version);
+    if (failure !== null) return fail(failure);
+    await patchStatus({
+      installing: null,
+      failure: null,
+      skipped: repairing ? status.skipped : current,
+      backup: null,
+      lastInstall: { from: current, to: backup.version, at: new Date().toISOString(), method: target.method, rollback: true },
+    });
+    reloadSoon();
+    return { ok: true, version: backup.version };
   });
-  reloadSoon();
-  return { ok: true, version: backup.version };
 }
 
 /** A write left unfinished by a worker Chrome stopped is a broken folder, offered for repair from the saved copy. */

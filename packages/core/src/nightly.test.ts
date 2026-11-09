@@ -6,8 +6,12 @@ import {
   compareVersions,
   crc32,
   isSafePath,
+  claimLock,
   lockedOut,
+  LOCK_SETTLE_MS,
   LOCK_STALE_MS,
+  LOCK_WRITE_LIMIT_MS,
+  releaseLock,
   manifestTextOf,
   parseChecksum,
   parseFileList,
@@ -19,7 +23,7 @@ import {
   tagFromReleaseUrl,
   writeOrder,
 } from './nightly';
-import type { ZipEntry } from './nightly';
+import type { LockIo, ZipEntry } from './nightly';
 
 const codec = { inflate: (data: Uint8Array) => new Uint8Array(inflateRawSync(data)), decode: (bytes: Uint8Array) => new TextDecoder().decode(bytes) };
 const unzip = (bytes: Uint8Array): Promise<ZipEntry[]> => readZip(bytes, codec);
@@ -285,5 +289,61 @@ describe('update lock', () => {
   it('treats no lock or an unreadable one as free', () => {
     expect(lockedOut(parseLock(null), 'me', NOW)).toBe(false);
     expect(lockedOut(parseLock('garbage'), 'me', NOW)).toBe(false);
+  });
+});
+
+describe('claimLock', () => {
+  /** One shared file and a clock that only moves when a writer waits or a write is slow. */
+  function world() {
+    let file: string | null = null;
+    let clock = 1_000_000;
+    const writer = (writeTakes = 0): LockIo => ({
+      read: () => Promise.resolve(file),
+      write: (text) => {
+        clock += writeTakes;
+        file = text;
+        return Promise.resolve();
+      },
+      now: () => clock,
+      sleep: (ms) => {
+        clock += ms;
+        return Promise.resolve();
+      },
+    });
+    return { writer, file: () => file, setFile: (text: string | null) => void (file = text), advance: (ms: number) => void (clock += ms) };
+  }
+
+  it('takes a free lock and lets it go', async () => {
+    const w = world();
+    expect(await claimLock(w.writer(), 'a')).toBe(true);
+    expect(parseLock(w.file())?.token).toBe('a');
+    await releaseLock(w.writer(), 'a');
+    expect(w.file()).toBeNull();
+  });
+
+  it('stays out while someone else holds the lock, and takes it once that lock is stale', async () => {
+    const w = world();
+    expect(await claimLock(w.writer(), 'a')).toBe(true);
+    expect(await claimLock(w.writer(), 'b')).toBe(false);
+    w.advance(LOCK_STALE_MS);
+    expect(await claimLock(w.writer(), 'b')).toBe(true);
+  });
+
+  it('gives up when its claim landed later than the limit, and clears only its own claim', async () => {
+    const w = world();
+    expect(await claimLock(w.writer(LOCK_WRITE_LIMIT_MS + 1), 'slow')).toBe(false);
+    expect(w.file()).toBeNull();
+  });
+
+  it('lets only the last of two rivals who both read the lock free in', async () => {
+    const w = world();
+    const io = w.writer();
+    const a = claimLock({ ...io, sleep: async (ms) => { w.setFile(JSON.stringify({ token: 'b', at: io.now() })); await io.sleep(ms); } }, 'a');
+    expect(await a).toBe(false);
+    expect(parseLock(w.file())?.token).toBe('b');
+  });
+
+  it('waits longer than a claim may take to land', () => {
+    expect(LOCK_SETTLE_MS).toBeGreaterThan(LOCK_WRITE_LIMIT_MS);
   });
 });

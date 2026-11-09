@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import os from 'node:os';
 import path from 'node:path';
 import type { InstallRecord } from '@geld/core/nightly';
-import { inspectTarget, recordInstall, writeBuild } from './install';
+import { folderRecord, inspectTarget, readInstalls, recordInstall, sameProfile, writeBuild } from './install';
 import { parseArgs } from './cli';
 import { parseChoice } from './prompt';
 
@@ -67,16 +67,44 @@ describe('writeBuild', () => {
     await writeFile(path.join(dir, 'nightly-update.lock'), JSON.stringify({ token: 'profile-a', at: Date.now() }));
     await expect(writeBuild(dir, build('0.1.2.2'), record(dir))).rejects.toThrow('installing an update into this folder');
   });
+
+  it('lets only one of two installer runs write a folder at once', async () => {
+    const dir = path.join(root, 'Work');
+    await writeBuild(dir, build('0.1.2.1'), record(dir));
+    const runs = await Promise.allSettled([writeBuild(dir, build('0.1.2.2'), record(dir)), writeBuild(dir, build('0.1.2.3'), record(dir))]);
+    expect(runs.filter((run) => run.status === 'fulfilled')).toHaveLength(1);
+    expect((await readdir(dir)).some((name) => name.startsWith('nightly-update.lock'))).toBe(false);
+  }, 15_000);
 });
 
 describe('recordInstall', () => {
   it('keeps one entry per folder in ~/.geld, never in the build folder', async () => {
     const state = path.join(root, '.geld');
+    const other = (folder: string): InstallRecord => ({ ...record(folder), profile: { directory: 'Profile 1', name: 'Personal' } });
     await recordInstall(state, record('/a'));
-    await recordInstall(state, record('/b'));
+    await recordInstall(state, other('/b'));
     await recordInstall(state, { ...record('/a'), version: '0.1.2.2' });
     const saved = JSON.parse(await readFile(path.join(state, 'nightly.json'), 'utf8'));
     expect(saved.installs.map((install: InstallRecord) => [install.folder, install.version])).toEqual([['/b', '0.1.2.1'], ['/a', '0.1.2.2']]);
+    expect((await readInstalls(state)).map((install) => install.folder)).toEqual(['/b', '/a']);
+  });
+
+  it('keeps one entry per profile, so a profile moved to another folder is found there', async () => {
+    const state = path.join(root, '.geld');
+    await recordInstall(state, record('/a'));
+    await recordInstall(state, record('/c'));
+    expect((await readInstalls(state)).map((install) => install.folder)).toEqual(['/c']);
+  });
+});
+
+describe('folder ownership', () => {
+  it('reads which profile a build folder belongs to', async () => {
+    const dir = path.join(root, 'Work');
+    await writeBuild(dir, build('0.1.2.1'), record(dir));
+    const holder = await folderRecord(dir);
+    expect(holder !== null && sameProfile(holder, record(dir))).toBe(true);
+    expect(holder !== null && sameProfile(holder, { ...record(dir), profile: { directory: 'Profile 1', name: 'Work' } })).toBe(false);
+    expect(await folderRecord(path.join(root, 'nowhere'))).toBeNull();
   });
 });
 

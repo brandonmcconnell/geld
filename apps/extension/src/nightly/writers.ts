@@ -1,5 +1,6 @@
 import { browser, type Browser } from 'wxt/browser';
-import { FILE_LIST, INSTALL_FILE, LOCK_FILE, lockedOut, parseFileList, parseInstallRecord, parseLock, PROBE_FILE, stalePaths, writeOrder } from '@geld/core/nightly';
+import { FILE_LIST, INSTALL_FILE, LOCK_FILE, parseFileList, parseInstallRecord, PROBE_FILE, stalePaths, writeOrder } from '@geld/core/nightly';
+import type { LockIo } from '@geld/core/nightly';
 import type { InstallRecord } from '@geld/core/nightly';
 import type { BuildBackup } from './handle-store';
 import type { InstallMethod } from './state';
@@ -70,20 +71,20 @@ export async function versionOnDisk(): Promise<string | null> {
   }
 }
 
-/** Long enough for another profile's lock, written at the same moment, to land and be read back. */
-const LOCK_SETTLE_MS = 500;
-const BUSY = 'Another browser profile is installing a build into this folder. Geld tries again later.';
+export const BUSY = 'Another browser profile is installing a build into this folder. Geld tries again later.';
 
 /**
- * Profiles that load one folder are one extension id but different storage, so each holds its own token.
- * Neither folder writes nor downloads can create a file only if it is absent, so a lock is written, left to
- * settle, and read back: whoever's token is still there writes.
+ * The folder's lock (`claimLock`), read through Geld's own URL. Profiles that load one folder are one extension
+ * id but different storage, so each holds its own token. Neither folder writes nor downloads can create a file
+ * only if it is absent, which is why the lock is Fischer's protocol rather than an exclusive create.
  */
-export async function acquireLock(target: BuildTarget, token: string): Promise<void> {
-  if (lockedOut(parseLock(await readOwnFile(LOCK_FILE)), token, Date.now())) throw new Error(BUSY);
-  await target.writeLock(JSON.stringify({ token, at: Date.now() }));
-  await new Promise((resolve) => setTimeout(resolve, LOCK_SETTLE_MS));
-  if (parseLock(await readOwnFile(LOCK_FILE))?.token !== token) throw new Error(BUSY);
+export function folderLock(target: BuildTarget): LockIo {
+  return {
+    read: () => readOwnFile(LOCK_FILE),
+    write: (text) => target.writeLock(text),
+    now: () => Date.now(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  };
 }
 
 async function directoryFor(root: FileSystemDirectoryHandle, path: string): Promise<FileSystemDirectoryHandle> {

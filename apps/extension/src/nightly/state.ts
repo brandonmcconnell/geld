@@ -20,8 +20,9 @@ export const nightlyPrefsItem = /* @__PURE__ */ storage.defineItem<NightlyPrefs>
 export interface NightlyFolder {
   readonly name: string;
   /**
-   * The folder sits directly in the browser's download folder, so the downloads API can write to it with no
-   * grant. Null until an install first needs to know: the check writes into `<download folder>/<name>`.
+   * The folder is in the browser's download folder, so the downloads API can write to it with no
+   * grant. Null until an install first needs to know: the check writes into `<download folder>/<name>`, where
+   * `name` may be a path (`Geld Nightly/Work`) when the installer put the folder there.
    */
   readonly downloads: boolean | null;
   readonly connectedAt: string;
@@ -113,7 +114,7 @@ export const nightlyTabCountsItem = /* @__PURE__ */ storage.defineItem<Readonly<
 /** The other Geld that keeps this build from running (conflicts.ts), null while it may run. */
 export const nightlyConflictItem = /* @__PURE__ */ storage.defineItem<Conflict | null>('local:nightlyConflict', { fallback: null });
 
-/** This profile's token for the update lock (`acquireLock`): profiles loading one folder share an extension id, not storage. */
+/** This profile's token for the update lock (`claimLock`): profiles loading one folder share an extension id, not storage. */
 export const nightlyProfileTokenItem = /* @__PURE__ */ storage.defineItem<string>('local:nightlyProfileToken', { init: () => crypto.randomUUID() });
 
 export async function isNightlyPaused(): Promise<boolean> {

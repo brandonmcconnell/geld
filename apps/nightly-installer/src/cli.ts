@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { InstallRecord, NightlyBrowser, NightlyRelease, ZipEntry } from '@geld/core/nightly';
 import { BROWSERS, pathApi, userDataDir } from './browsers';
 import type { BrowserInfo, Environment, Platform } from './browsers';
-import { inspectTarget, recordInstall, writeBuild } from './install';
+import { folderRecord, inspectTarget, readInstalls, recordInstall, sameProfile, writeBuild } from './install';
 import { defaultRoot, folderNames, locationProblems, profileKey, ROOT_NAME } from './location';
 import { downloadDirectory, parseLocalState } from './profiles';
 import type { Profile } from './profiles';
@@ -191,12 +191,23 @@ export async function main(argv: readonly string[]): Promise<number> {
     return 1;
   }
   const chosen = await choose(found, options);
-  const root =
-    options.dir !== null ? api.resolve(options.dir) : options.downloads ? api.join(chosen[0]?.downloads ?? api.join(environment.home, 'Downloads'), ROOT_NAME) : defaultRoot(environment);
-  const names = folderNames(chosen);
-  const targets = chosen.map((profile) => ({ profile, dir: api.join(root, names.get(profileKey(profile)) ?? profile.directory) }));
+  const installs = await readInstalls(stateDir);
+  const owner = (profile: Found): Pick<InstallRecord, 'browser' | 'profile'> => ({ browser: profile.info.id, profile: { directory: profile.directory, name: profile.name } });
+  // Named from every profile found, not only the ones picked, so a profile's folder never depends on the selection.
+  const names = folderNames(found);
+  const rootFor = (profile: Found): string =>
+    options.dir !== null ? api.resolve(options.dir) : options.downloads ? api.join(profile.downloads, ROOT_NAME) : defaultRoot(environment);
+  const targets = chosen.map((profile) => {
+    const saved = options.dir === null && !options.downloads ? installs.find((known) => sameProfile(known, owner(profile))) : undefined;
+    return { profile, dir: saved?.folder ?? api.join(rootFor(profile), names.get(profileKey(profile)) ?? profile.directory) };
+  });
 
-  for (const { dir } of targets) {
+  for (const { profile, dir } of targets) {
+    const holder = (await folderRecord(dir)) ?? installs.find((known) => known.folder === dir) ?? null;
+    if (holder !== null && !sameProfile(holder, owner(profile))) {
+      console.error(`${dir} holds the Geld Nightly build of another profile (${holder.profile.name}). Pick another folder with --dir.`);
+      return 1;
+    }
     const problems = locationProblems(dir, { ...environment, tmp: os.tmpdir(), downloads: chosen.map((profile) => profile.downloads) });
     const refused = problems.filter((problem) => problem.level === 'refuse');
     if (refused.length > 0) {
@@ -217,14 +228,14 @@ export async function main(argv: readonly string[]): Promise<number> {
   for (const { profile, dir } of targets) {
     const ready = builds.get(profile.info.zip);
     if (ready === undefined) continue;
-    const parent = api.dirname(dir);
+    const inside = api.relative(profile.downloads, dir);
     const record: InstallRecord = {
       folder: dir,
       installedAt: new Date().toISOString(),
       version: ready.build.version,
       browser: profile.info.id,
       profile: { directory: profile.directory, name: profile.name },
-      downloadsName: api.relative(profile.downloads, parent) === '' ? api.basename(dir) : null,
+      downloadsName: inside !== '' && !inside.startsWith('..') && !api.isAbsolute(inside) ? inside.split(api.sep).join('/') : null,
     };
     if (record.downloadsName !== null) inDownloads.add(dir);
     await writeBuild(dir, ready.entries, record);
@@ -238,7 +249,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     for (const [index, { profile, dir }] of targets.entries()) {
       const copied = copyToClipboard(dir, platform);
       const launch = launchFor(profile.info, profile.directory, environment);
-      const opened = launch !== null && open(launch);
+      const opened = launch !== null && (await open(launch));
       const last = index === targets.length - 1;
       console.log(steps(profile, dir, copied, opened, platform, last, inDownloads.has(dir)).join('\n'));
       if (!last) await ask('Press Enter for the next profile. ', '');

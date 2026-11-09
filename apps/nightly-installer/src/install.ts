@@ -1,7 +1,8 @@
-import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { FILE_LIST, INSTALL_FILE, isNightlyManifest, LOCK_FILE, lockedOut, parseFileList, parseInstallRecord, parseLock, stalePaths, writeOrder } from '@geld/core/nightly';
-import type { InstallRecord, ZipEntry } from '@geld/core/nightly';
+import { claimLock, FILE_LIST, INSTALL_FILE, isNightlyManifest, LOCK_FILE, parseFileList, parseInstallRecord, releaseLock, stalePaths, writeOrder } from '@geld/core/nightly';
+import type { InstallRecord, LockIo, ZipEntry } from '@geld/core/nightly';
 
 /** Writes a verified build into its folder, and only ever into a folder that is empty or already a nightly build. */
 
@@ -39,28 +40,33 @@ async function listFiles(dir: string, prefix = ''): Promise<string[]> {
   return files;
 }
 
-/** Mirrors LOCK_SETTLE_MS in apps/extension/src/nightly/writers.ts, whose lock this one shares. */
-const LOCK_SETTLE_MS = 500;
-const INSTALLER_TOKEN = 'geld-nightly-installer';
-
 /**
- * The extension's updater may be writing into the same folder (an update found while the installer runs), so
- * the installer takes the same lock the extension does (@geld/core/nightly `LOCK_FILE`).
+ * The extension's updater may be writing into the same folder (an update found while the installer runs), and so
+ * may another installer run, so the installer takes the extension's lock (`claimLock`) under a token of its own
+ * per run. A claim is written beside the lock and renamed over it, so a reader never sees half of one.
  */
-async function lock(dir: string): Promise<void> {
+function folderLock(dir: string): LockIo {
   const file = path.join(dir, LOCK_FILE);
-  const busy = 'Geld Nightly is installing an update into this folder from the browser. Try again in a few minutes.';
-  if (lockedOut(parseLock(await readText(file)), INSTALLER_TOKEN, Date.now())) throw new Error(busy);
-  await writeFile(file, JSON.stringify({ token: INSTALLER_TOKEN, at: Date.now() }));
-  await new Promise((resolve) => setTimeout(resolve, LOCK_SETTLE_MS));
-  if (parseLock(await readText(file))?.token !== INSTALLER_TOKEN) throw new Error(busy);
+  return {
+    read: () => readText(file),
+    async write(text) {
+      if (text === null) return rm(file, { force: true });
+      const claim = `${file}.${randomUUID()}`;
+      await writeFile(claim, text);
+      await rename(claim, file);
+    },
+    now: () => Date.now(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  };
 }
 
 export async function writeBuild(dir: string, entries: readonly ZipEntry[], record: InstallRecord): Promise<void> {
   const state = await inspectTarget(dir);
   if (state === 'other') throw new Error(`${dir} already holds something that is not Geld Nightly. Geld never writes over it. Pick another folder with --dir.`);
   await mkdir(dir, { recursive: true });
-  await lock(dir);
+  const lock = folderLock(dir);
+  const token = `geld-nightly-installer-${randomUUID()}`;
+  if (!(await claimLock(lock, token))) throw new Error('Geld Nightly is installing an update into this folder. Try again in a few minutes.');
   try {
     const current = await listFiles(dir);
     const owned = parseFileList((await readText(path.join(dir, FILE_LIST))) ?? '') ?? [];
@@ -74,7 +80,7 @@ export async function writeBuild(dir: string, entries: readonly ZipEntry[], reco
     }
     await writeFile(path.join(dir, INSTALL_FILE), `${JSON.stringify(record, null, 2)}\n`);
   } finally {
-    await rm(path.join(dir, LOCK_FILE), { force: true });
+    await releaseLock(lock, token);
   }
 }
 
@@ -83,25 +89,36 @@ export interface InstallerState {
   readonly installs: readonly InstallRecord[];
 }
 
-export async function recordInstall(stateDir: string, record: InstallRecord): Promise<void> {
-  const file = path.join(stateDir, 'nightly.json');
-  let installs: InstallRecord[] = [];
-  const previous = await readText(file);
-  if (previous !== null) {
-    try {
-      const parsed: unknown = JSON.parse(previous);
-      if (typeof parsed === 'object' && parsed !== null && 'installs' in parsed && Array.isArray(parsed.installs)) {
-        const listed: readonly unknown[] = parsed.installs;
-        installs = listed.flatMap((entry) => {
-          const known = parseInstallRecord(JSON.stringify(entry));
-          return known === null || known.folder === record.folder ? [] : [known];
-        });
-      }
-    } catch {
-      installs = [];
-    }
+export async function readInstalls(stateDir: string): Promise<InstallRecord[]> {
+  const previous = await readText(path.join(stateDir, 'nightly.json'));
+  if (previous === null) return [];
+  try {
+    const parsed: unknown = JSON.parse(previous);
+    if (typeof parsed !== 'object' || parsed === null || !('installs' in parsed) || !Array.isArray(parsed.installs)) return [];
+    const listed: readonly unknown[] = parsed.installs;
+    return listed.flatMap((entry) => {
+      const known = parseInstallRecord(JSON.stringify(entry));
+      return known === null ? [] : [known];
+    });
+  } catch {
+    return [];
   }
+}
+
+/** The install record in a build folder (`INSTALL_FILE`): which browser profile the folder belongs to. */
+export async function folderRecord(dir: string): Promise<InstallRecord | null> {
+  const text = await readText(path.join(dir, INSTALL_FILE));
+  return text === null ? null : parseInstallRecord(text);
+}
+
+export function sameProfile(a: Pick<InstallRecord, 'browser' | 'profile'>, b: Pick<InstallRecord, 'browser' | 'profile'>): boolean {
+  return a.browser === b.browser && a.profile.directory === b.profile.directory;
+}
+
+/** One entry per profile and per folder: the latest install of either replaces the one before. */
+export async function recordInstall(stateDir: string, record: InstallRecord): Promise<void> {
+  const installs = (await readInstalls(stateDir)).filter((known) => known.folder !== record.folder && !sameProfile(known, record));
   await mkdir(stateDir, { recursive: true });
   const state: InstallerState = { installs: [...installs, record] };
-  await writeFile(file, `${JSON.stringify(state, null, 2)}\n`);
+  await writeFile(path.join(stateDir, 'nightly.json'), `${JSON.stringify(state, null, 2)}\n`);
 }

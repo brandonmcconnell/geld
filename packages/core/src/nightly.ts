@@ -216,7 +216,7 @@ export interface InstallRecord {
   readonly version: string;
   readonly browser: string;
   readonly profile: { readonly directory: string; readonly name: string };
-  /** The folder's name when it sits directly in the profile's download folder, so the downloads API can write to it with no picker. */
+  /** The folder's path inside the profile's download folder (`Geld Nightly/Work`), so the downloads API can write to it with no picker. */
   readonly downloadsName: string | null;
 }
 
@@ -254,6 +254,43 @@ export function parseLock(text: string | null): UpdateLock | null {
 /** Whether a lock someone else holds keeps `token` from writing now. */
 export function lockedOut(lock: UpdateLock | null, token: string, now: number): boolean {
   return lock !== null && lock.token !== token && now - lock.at < LOCK_STALE_MS;
+}
+
+/** A claim must be visible this soon after the lock was read free, or the writer gives up rather than enter. */
+export const LOCK_WRITE_LIMIT_MS = 1500;
+/** Longer than `LOCK_WRITE_LIMIT_MS`: a rival who read the lock free before this claim landed has landed too. */
+export const LOCK_SETTLE_MS = 2000;
+
+/** The lock file as one writer sees it. `write(null)` lets go. Each write is whole: a reader sees the old text or the new. */
+export interface LockIo {
+  read(): Promise<string | null>;
+  write(text: string | null): Promise<void>;
+  now(): number;
+  sleep(ms: number): Promise<void>;
+}
+
+/**
+ * Fischer's mutual exclusion over one file, shared by the updater in every profile and the installer: read the
+ * lock free, claim it, wait `LOCK_SETTLE_MS`, and hold it only if the claim is still there. That is exclusive
+ * only when every claim lands within `LOCK_WRITE_LIMIT_MS` of the read that found the lock free, so a writer
+ * whose claim took longer gives up instead of entering: a delayed claim can never make a second holder.
+ * `token` must be unique to the writer (a profile, an installer run), since a lock holding it reads as one's own.
+ */
+export async function claimLock(io: LockIo, token: string): Promise<boolean> {
+  const readAt = io.now();
+  if (lockedOut(parseLock(await io.read()), token, readAt)) return false;
+  await io.write(JSON.stringify({ token, at: io.now() }));
+  if (io.now() - readAt > LOCK_WRITE_LIMIT_MS) {
+    await releaseLock(io, token);
+    return false;
+  }
+  await io.sleep(LOCK_SETTLE_MS);
+  return parseLock(await io.read())?.token === token;
+}
+
+/** Lets go only of a lock `token` holds: clearing a rival's claim could let a third writer in beside it. */
+export async function releaseLock(io: LockIo, token: string): Promise<void> {
+  if (parseLock(await io.read())?.token === token) await io.write(null);
 }
 
 export interface ZipEntry {

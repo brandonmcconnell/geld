@@ -35,7 +35,10 @@ async function connectFolder(): Promise<FileSystemDirectoryHandle> {
 
 /** The click that asked is what lets Chrome show its prompt, so access is asked for here before the background writes. */
 async function ensureAccess(): Promise<void> {
-  const handle = (await nightlyFolderItem.getValue()) === null ? null : await loadFolderHandle();
+  const folder = await nightlyFolderItem.getValue();
+  const handle = folder === null ? null : await loadFolderHandle();
+  // A folder the installer connected in Downloads has no handle and needs none: the background writes it through the downloads API.
+  if (folder !== null && handle === null && folder.downloads !== false) return;
   if (handle === null) {
     await connectFolder();
     return;

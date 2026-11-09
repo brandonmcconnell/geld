@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { windowsExeCandidates } from './browsers';
@@ -31,6 +32,8 @@ function onPath(binary: string, env: Readonly<Record<string, string | undefined>
 export interface Launch {
   readonly command: string;
   readonly args: readonly string[];
+  /** macOS's `open` hands the launch to the system and exits, so its exit code says whether the browser started. */
+  readonly exits?: true;
 }
 
 /**
@@ -40,7 +43,7 @@ export interface Launch {
  */
 export function launchFor(browser: BrowserInfo, directory: string, environment: Environment): Launch | null {
   const args = [`--profile-directory=${directory}`];
-  if (environment.platform === 'darwin') return { command: 'open', args: ['-na', browser.macApp, '--args', ...args] };
+  if (environment.platform === 'darwin') return { command: 'open', args: ['-na', browser.macApp, '--args', ...args], exits: true };
   if (environment.platform === 'win32') {
     const exe = windowsExeCandidates(browser, environment).find((candidate) => existsSync(candidate));
     return exe === undefined ? null : { command: exe, args };
@@ -52,14 +55,19 @@ export function launchFor(browser: BrowserInfo, directory: string, environment: 
   return null;
 }
 
-/** Starts the browser detached, so it outlives the installer. */
-export function open(launch: Launch): boolean {
-  try {
-    const child = spawn(launch.command, [...launch.args], { detached: true, stdio: 'ignore' });
-    child.on('error', () => undefined);
+/** Starts the browser detached, so it outlives the installer, and says whether it started. */
+export function open(launch: Launch): Promise<boolean> {
+  return new Promise((resolve) => {
+    let child: ChildProcess;
+    try {
+      child = spawn(launch.command, [...launch.args], { detached: true, stdio: 'ignore' });
+    } catch {
+      resolve(false);
+      return;
+    }
+    child.once('error', () => resolve(false));
+    if (launch.exits === true) child.once('exit', (code) => resolve(code === 0));
+    else child.once('spawn', () => resolve(true));
     child.unref();
-    return true;
-  } catch {
-    return false;
-  }
+  });
 }
