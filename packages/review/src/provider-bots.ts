@@ -1,8 +1,8 @@
 import type { BotComment, RawCheckRun } from './bots';
 import { botById, commandReply, isReviewShaped, isStatusLineComment, parseBotBody, refusalReason, STATUS_LINE_STALE_MS, verdictsFrom } from './bots';
 import type { BotVerdictRecord, ReviewProvider } from './model';
-import type { ProviderReviewBot, ProviderReviewCheck, ProviderReviewComment, ProviderReviewInput } from './provider-review';
-import { providerReviewKey, sourceLink } from './provider-review';
+import type { ProviderReviewBot, ProviderReviewCheck, ProviderReviewComment, ProviderReviewInput, ProviderReviewSubject } from './provider-review';
+import { providerReviewKey, providerReviewUrl, sourceLink } from './provider-review';
 
 export interface ProviderBotCapability {
   readonly id: string;
@@ -98,9 +98,33 @@ function triggerFor(comment: ProviderReviewComment, commands: ReadonlySet<string
   return lines.length > 0 && lines.every((line) => commands.has(line));
 }
 
+/** Code links are evidence only within this native repository and review. */
+export function providerCodeSourceLink(href: string, subject: ProviderReviewSubject): boolean {
+  try {
+    const page = new URL(providerReviewUrl(subject));
+    const url = new URL(href, page);
+    if (url.origin !== subject.origin || url.username !== '' || url.password !== '' || !['http:', 'https:'].includes(url.protocol)) return false;
+    const repository = `/${subject.repository.split('/').map(encodeURIComponent).join('/')}`;
+    if (!url.pathname.startsWith(`${repository}/`)) return false;
+    const route = url.pathname.slice(repository.length).replace(/\/$/, '');
+    if (subject.provider === 'gitlab') {
+      if (route === `/-/merge_requests/${subject.id}/diffs`) return true;
+      if (/^\/-\/blob\/[^/]+\/.+/.test(route) || /^\/-\/tree\/[^/]+(?:\/.+)?$/.test(route)) return true;
+      if (/^\/-\/commit\/(?:[0-9a-f]{7,40}|[0-9a-f]{64})(?:\.diff)?$/i.test(route)) return true;
+      return /^\/-\/compare\/[^/]+\.\.\.[^/]+$/.test(route);
+    }
+    if (subject.provider === 'bitbucket') {
+      if (route === `/pull-requests/${subject.id}/diff` || route === `/pull-requests/${subject.id}/_/diff`) return true;
+      return /^\/src\/[^/]+(?:\/.+)?$/.test(route) || /^\/commits\/(?:[0-9a-f]{7,40}|[0-9a-f]{64})$/i.test(route);
+    }
+    return false;
+  } catch { return false; }
+}
+
 /** Binding authenticates an account; a body marker, username or GitHub App alias never does. */
 export function buildProviderBotVerdicts(input: ProviderReviewInput, ordinaryComments: readonly ProviderReviewComment[]): BotVerdictRecord[] {
   providerReviewKey(input.subject);
+  const refusalOptions = { isSourceLink: (href: string): boolean => providerCodeSourceLink(href, input.subject) };
   const bindings = new Map<string, ProviderReviewBot[]>();
   const owner = new Map<string, string>();
   const ambiguous = new Set<string>();
@@ -135,7 +159,7 @@ export function buildProviderBotVerdicts(input: ProviderReviewInput, ordinaryCom
       if (!ids.has(comment.author.id) || threadAnchors.has(comment.anchor) || !validComment(comment, input)) continue;
       const body = parserBody(comment, input);
       const status = isStatusLineComment(body);
-      const refused = refusalReason(body);
+      const refused = refusalReason(body, refusalOptions);
       const command = id === 'coderabbit' ? commandReply(body) : null;
       const parsed = parseBotBody(body, id);
       const summaryShape = id !== 'greptile' || /\bconfidence score\s*:\s*\d(?:\.\d+)?\s*\/\s*5\b/i.test(body);
@@ -153,7 +177,7 @@ export function buildProviderBotVerdicts(input: ProviderReviewInput, ordinaryCom
     const check = confirmedChecks(input, registered, support).at(-1);
     const decisive = check !== undefined && (check.status !== 'completed' || ['success', 'failure', 'timed_out', 'cancelled', 'action_required', 'stale', 'skipped'].includes(check.conclusion ?? ''));
     const checks: RawCheckRun[] = check === undefined || !decisive ? [] : [{ ...check, name: parser.checkNames[0] ?? parser.title, sha: check.reviewHeadSha ?? check.sha }];
-    const found = verdictsFrom(checks, comments, input.subject.headSha, [], Date.now(), { complete: input.complete === true, partial: input.complete !== true, closed: input.closed === true }).find((verdict) => verdict.id === id);
+    const found = verdictsFrom(checks, comments, input.subject.headSha, [], Date.now(), { ...refusalOptions, complete: input.complete === true, partial: input.complete !== true, closed: input.closed === true }).find((verdict) => verdict.id === id);
     const source = found?.sourceId === undefined ? undefined : native.get(found.sourceId);
     const account = source?.author ?? [...native.values()].at(-1)?.author;
     const binding = registered.find((candidate) => candidate.authorId === check?.authorId) ?? registered[0];

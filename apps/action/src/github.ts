@@ -4,7 +4,7 @@ import { createApiTransport } from '@geld/github';
  * pull request. Pagination is followed until the cursor is exhausted.
  */
 
-import { isAllowedSummaryAuthor, looksLikeSummaryBody, parseSummaryBody } from '@geld/review';
+import { isAllowedSummaryAuthor, looksLikeSummaryBody, parsePublishedSummaryBody } from '@geld/review';
 import type { GeldPrMeta } from '@geld/review';
 import type { RawCheckRun } from '@geld/review';
 import type { CommentReaction, RawIssueComment, RawPullRequest, RawReview, RawThread } from '@geld/review';
@@ -425,7 +425,7 @@ export function findSummaryComment(comments: readonly RawIssueComment[], ownLogi
   for (const comment of comments) {
     if (!isAllowedSummaryAuthor(comment.author, ownLogins)) continue;
     if (!looksLikeSummaryBody(comment.body)) continue;
-    const parsed = parseSummaryBody(comment.body);
+    const parsed = parsePublishedSummaryBody(comment.body);
     return { commentId: comment.databaseId, body: comment.body, meta: parsed.ok ? parsed.value : null };
   }
   return null;
