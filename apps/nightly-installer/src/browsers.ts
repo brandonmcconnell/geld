@@ -224,10 +224,16 @@ export function pathApi(platform: Platform): typeof path.posix {
   return platform === 'win32' ? path.win32 : path.posix;
 }
 
+/** An environment variable, with an empty value read as unset, as the system does. */
+function variable(env: Environment['env'], name: string): string | undefined {
+  const value = env[name];
+  return value === '' ? undefined : value;
+}
+
 /** Every place the browser may keep its user data on this platform, most likely first. */
 export function userDataDirs(browser: BrowserInfo, { platform, home, env }: Environment): string[] {
   const join = pathApi(platform).join;
-  const set = (name: string): string | undefined => (env[name] === '' ? undefined : env[name]);
+  const set = (name: string): string | undefined => variable(env, name);
   const root =
     platform === 'darwin'
       ? join(home, 'Library', 'Application Support')
@@ -241,6 +247,6 @@ export function userDataDirs(browser: BrowserInfo, { platform, home, env }: Envi
 
 export function windowsExeCandidates(browser: BrowserInfo, { home, env }: Environment): string[] {
   const join = path.win32.join;
-  const roots = [env['ProgramFiles'], env['ProgramFiles(x86)'], env['LOCALAPPDATA'] ?? join(home, 'AppData', 'Local')];
+  const roots = [variable(env, 'ProgramFiles'), variable(env, 'ProgramFiles(x86)'), variable(env, 'LOCALAPPDATA') ?? join(home, 'AppData', 'Local')];
   return roots.filter((root): root is string => root !== undefined).flatMap((root) => browser.windowsExe.map((exe) => join(root, ...exe.split('/'))));
 }

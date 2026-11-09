@@ -1,6 +1,7 @@
-import { BROWSERS, userDataDirs } from './browsers';
+import { BROWSERS, userDataDirs, windowsExeCandidates } from './browsers';
 import type { BrowserInfo } from './browsers';
-import { downloadDirectory, parseLocalState } from './profiles';
+import { browserProfiles, downloadDirectory, parseLocalState, profileFolder } from './profiles';
+import { launchFor } from './system';
 
 const chrome = BROWSERS.find((browser) => browser.id === 'chrome');
 const edge = BROWSERS.find((browser) => browser.id === 'edge');
@@ -59,6 +60,12 @@ describe('userDataDirs', () => {
     expect(userDataDirs(browser('edge-canary'), windows)).toEqual(['C:\\Users\\me\\AppData\\Local\\Microsoft\\Edge SxS\\User Data']);
   });
 
+  it('reads an empty variable as unset, for profiles and for the executable alike', () => {
+    const empty = { platform: 'win32', home: 'C:\\Users\\me', env: { LOCALAPPDATA: '', ProgramFiles: '' } } as const;
+    expect(userDataDirs(browser('helium'), empty)).toEqual(['C:\\Users\\me\\AppData\\Local\\imput\\Helium\\User Data']);
+    expect(windowsExeCandidates(browser('helium'), empty)).toEqual(['C:\\Users\\me\\AppData\\Local\\imput\\Helium\\Application\\chrome.exe']);
+  });
+
   it('has nowhere to look on a platform the browser is not made for', () => {
     expect(userDataDirs(browser('arc'), linux)).toEqual([]);
   });
@@ -69,6 +76,27 @@ describe('userDataDirs', () => {
       const dirs = BROWSERS.flatMap((info) => userDataDirs(info, environment));
       expect(new Set(dirs).size).toBe(dirs.length);
     }
+  });
+});
+
+describe('browserProfiles', () => {
+  const opera = BROWSERS.find((info) => info.id === 'opera');
+
+  it("offers Opera's one profile, kept in the user data folder itself, when Local State lists none", () => {
+    if (opera === undefined) throw new Error('no opera');
+    const [profile, ...rest] = browserProfiles(opera, '{"browser":{}}');
+    expect(rest).toEqual([]);
+    expect(profile).toEqual({ browser: 'opera', directory: 'Default', name: 'Default', email: null });
+    if (profile === undefined) throw new Error('no profile');
+    expect(profileFolder(opera, profile)).toEqual([]);
+    expect(launchFor(opera, profile.directory, { platform: 'darwin', home: '/Users/me', env: {} })).toEqual({ command: 'open', args: ['-na', 'Opera', '--args'], exits: true });
+  });
+
+  it('offers nothing for a browser with profile folders whose Local State lists none', () => {
+    if (chrome === undefined) throw new Error('no chrome');
+    expect(browserProfiles(chrome, '{"browser":{}}')).toEqual([]);
+    expect(profileFolder(chrome, { directory: 'Profile 1' })).toEqual(['Profile 1']);
+    expect(launchFor(chrome, 'Profile 1', { platform: 'darwin', home: '/Users/me', env: {} })?.args).toEqual(['-na', 'Google Chrome', '--args', '--profile-directory=Profile 1']);
   });
 });
 

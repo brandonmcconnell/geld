@@ -7,7 +7,7 @@ import { BROWSER_IDS, BROWSERS, pathApi, userDataDirs } from './browsers';
 import type { BrowserInfo, Environment, Platform } from './browsers';
 import { folderRecord, inspectTarget, readInstalls, recordInstall, sameProfile, writeBuild } from './install';
 import { defaultRoot, folderNames, locationProblems, profileKey, ROOT_NAME } from './location';
-import { downloadDirectory, parseLocalState } from './profiles';
+import { browserProfiles, downloadDirectory, profileFolder } from './profiles';
 import type { Profile } from './profiles';
 import { ask, confirm, interactive, parseChoice } from './prompt';
 import { download, latestRelease, pickBuild, verifiedEntries } from './release';
@@ -115,10 +115,8 @@ async function findProfiles(environment: Environment, browsers: readonly string[
     for (const root of userDataDirs(info, environment)) {
       const state = await readText(api.join(root, 'Local State'));
       if (state === null) continue;
-      const listed = parseLocalState(state, info.id);
-      const profiles = listed.length > 0 || info.rootProfile !== true ? listed : [{ browser: info.id, directory: 'Default', name: 'Default', email: null }];
-      for (const profile of profiles) {
-        const preferences = await readText(info.rootProfile === true ? api.join(root, 'Preferences') : api.join(root, profile.directory, 'Preferences'));
+      for (const profile of browserProfiles(info, state)) {
+        const preferences = await readText(api.join(root, ...profileFolder(info, profile), 'Preferences'));
         found.push({ ...profile, info, downloads: downloadDirectory(preferences, api.join(environment.home, 'Downloads')) });
       }
       break;
