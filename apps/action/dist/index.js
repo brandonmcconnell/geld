@@ -1879,6 +1879,230 @@ var init_test_outline = __esm({
   }
 });
 
+// ../../packages/core/src/file-flow.ts
+function extensionOf(path) {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  const dot = name.lastIndexOf(".");
+  return dot <= 0 ? "" : name.slice(dot).toLowerCase();
+}
+function languageOf(path) {
+  const extension = extensionOf(path);
+  if (SCRIPT_EXTENSIONS.includes(extension)) return "script";
+  if (STYLE_EXTENSIONS.includes(extension)) return "style";
+  if (extension === ".py") return "python";
+  if (extension === ".rs") return "rust";
+  return null;
+}
+function canReadImports(path) {
+  return languageOf(path) !== null;
+}
+function collect(text, patterns) {
+  const found = [];
+  for (const pattern of patterns) {
+    pattern.lastIndex = 0;
+    for (const match of text.matchAll(pattern)) {
+      const value = match[1];
+      if (value !== void 0 && value !== "") found.push(value);
+    }
+  }
+  return found;
+}
+function pythonNames(list2) {
+  return list2.replace(/[()]/g, " ").split(",").map((part) => part.trim().split(/\s+as\s+/)[0]?.trim() ?? "").filter((name) => name !== "" && name !== "*" && /^[\w.]+$/.test(name));
+}
+function importSpecifiers(path, text) {
+  const language = languageOf(path);
+  if (language === null) return [];
+  const code = scrub(language, text);
+  if (language === "script") return unique(collect(code, SCRIPT_PATTERNS));
+  if (language === "style") return unique(collect(code, STYLE_PATTERNS));
+  if (language === "rust") return unique(collect(code, RUST_PATTERNS).map((name) => `mod:${name}`));
+  const modules = [];
+  PYTHON_FROM.lastIndex = 0;
+  for (const match of code.matchAll(PYTHON_FROM)) {
+    const module2 = match[1] ?? "";
+    if (module2 === "") continue;
+    modules.push(module2);
+    for (const name of pythonNames(match[2] ?? "")) modules.push(/^\.+$/.test(module2) ? module2 + name : `${module2}.${name}`);
+  }
+  PYTHON_IMPORT.lastIndex = 0;
+  for (const match of code.matchAll(PYTHON_IMPORT)) modules.push(...pythonNames(match[1] ?? ""));
+  return unique(modules);
+}
+function blank(text) {
+  return text.replace(/[^\n]/g, " ");
+}
+function templateEnd(text, start) {
+  let index = start + 1;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === "\\") index += 2;
+    else if (char === "`") return index + 1;
+    else if (char === "$" && text[index + 1] === "{") index = expressionEnd(text, index + 2) + 1;
+    else index += 1;
+  }
+  return text.length;
+}
+function regexEnd(text, start) {
+  let index = start + 1;
+  let inClass = false;
+  while (index < text.length && text[index] !== "\n") {
+    const char = text[index];
+    if (char === "\\") index += 2;
+    else {
+      if (char === "[") inClass = true;
+      else if (char === "]") inClass = false;
+      else if (char === "/" && !inClass) {
+        index += 1;
+        while (index < text.length && /[a-z]/i.test(text[index] ?? "")) index += 1;
+        return index;
+      }
+      index += 1;
+    }
+  }
+  return index;
+}
+function expressionEnd(text, start) {
+  let depth = 0;
+  let index = start;
+  while (index < text.length) {
+    const char = text[index];
+    if (text.startsWith("//", index)) {
+      const end = text.indexOf("\n", index);
+      index = end < 0 ? text.length : end;
+      continue;
+    }
+    if (text.startsWith("/*", index)) {
+      const end = text.indexOf("*/", index + 2);
+      index = end < 0 ? text.length : end + 2;
+      continue;
+    }
+    if (char === "/" && REGEX_LEAD.test(text.slice(Math.max(start, index - 12), index))) {
+      index = regexEnd(text, index);
+      continue;
+    }
+    if (char === "`") {
+      index = templateEnd(text, index);
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      index += 1;
+      while (index < text.length && text[index] !== char && text[index] !== "\n") index += text[index] === "\\" ? 2 : 1;
+      index += 1;
+      continue;
+    }
+    if (char === "{") depth += 1;
+    else if (char === "}") {
+      if (depth === 0) return index;
+      depth -= 1;
+    }
+    index += 1;
+  }
+  return text.length;
+}
+function scrubTemplate(literal2) {
+  const out = ["`"];
+  let index = 1;
+  while (index < literal2.length) {
+    const char = literal2[index] ?? "";
+    if (char === "\\") {
+      out.push(blank(literal2.slice(index, index + 2)));
+      index += 2;
+    } else if (char === "`") {
+      out.push("`");
+      index += 1;
+    } else if (char === "$" && literal2[index + 1] === "{") {
+      const end = expressionEnd(literal2, index + 2);
+      out.push("${", scrub("script", literal2.slice(index + 2, end)), end < literal2.length ? "}" : "");
+      index = end + 1;
+    } else {
+      out.push(blank(char));
+      index += 1;
+    }
+  }
+  return out.join("");
+}
+function scrub(language, text) {
+  const out = [];
+  let tail = "";
+  const push = (chunk) => {
+    out.push(chunk);
+    tail = (tail + chunk).slice(-48);
+  };
+  const lineComment = language === "python" ? "#" : "//";
+  const blocks = language !== "python";
+  const strings = language === "script" || language === "python";
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index] ?? "";
+    const lineStart = language !== "style" || index === 0 || /\s/.test(text[index - 1] ?? "");
+    if (text.startsWith(lineComment, index) && lineStart) {
+      const end = text.indexOf("\n", index);
+      const stop = end < 0 ? text.length : end;
+      push(blank(text.slice(index, stop)));
+      index = stop;
+      continue;
+    }
+    if (blocks && text.startsWith("/*", index)) {
+      const end = text.indexOf("*/", index + 2);
+      const stop = end < 0 ? text.length : end + 2;
+      push(blank(text.slice(index, stop)));
+      index = stop;
+      continue;
+    }
+    if (language === "script" && char === "`") {
+      const end = templateEnd(text, index);
+      push(scrubTemplate(text.slice(index, end)));
+      index = end;
+      continue;
+    }
+    if (strings && (char === '"' || char === "'" || char === "`")) {
+      const triple = language === "python" && text.startsWith(char.repeat(3), index) ? char.repeat(3) : null;
+      const open2 = triple ?? char;
+      let cursor = index + open2.length;
+      while (cursor < text.length && !text.startsWith(open2, cursor)) {
+        if (text[cursor] === "\\") cursor += 1;
+        else if (triple === null && char !== "`" && text[cursor] === "\n") break;
+        cursor += 1;
+      }
+      const closed = text.startsWith(open2, cursor);
+      const stop = Math.min(text.length, closed ? cursor + open2.length : cursor);
+      const literal2 = text.slice(index, stop);
+      const keep = language === "script" && char !== "`" && SCRIPT_IMPORT_LEAD.test(tail);
+      push(keep ? literal2 : open2 + blank(literal2.slice(open2.length, closed ? literal2.length - open2.length : literal2.length)) + (closed ? open2 : ""));
+      index = stop;
+      continue;
+    }
+    push(char);
+    index += 1;
+  }
+  return out.join("");
+}
+function unique(values) {
+  return [...new Set(values)];
+}
+var SCRIPT_EXTENSIONS, STYLE_EXTENSIONS, RESOLVABLE_EXTENSIONS, SCRIPT_PATTERNS, STYLE_PATTERNS, PYTHON_FROM, PYTHON_IMPORT, RUST_PATTERNS, REGEX_LEAD, SCRIPT_IMPORT_LEAD;
+var init_file_flow = __esm({
+  "../../packages/core/src/file-flow.ts"() {
+    "use strict";
+    SCRIPT_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte", ".astro"];
+    STYLE_EXTENSIONS = [".css", ".scss", ".sass", ".less"];
+    RESOLVABLE_EXTENSIONS = [...SCRIPT_EXTENSIONS, ...STYLE_EXTENSIONS, ".json"];
+    SCRIPT_PATTERNS = [
+      /\bimport\s+(?:type\s+)?(?:[\w*{}\s,$]+?\s+from\s+)?['"]([^'"\n]+)['"]/g,
+      /\bexport\s+(?:type\s+)?(?:\*(?:\s+as\s+[\w$]+)?|\{[^}]*\})\s*from\s*['"]([^'"\n]+)['"]/g,
+      /\bimport\(\s*['"]([^'"\n]+)['"]\s*\)/g,
+      /\brequire\(\s*['"]([^'"\n]+)['"]\s*\)/g
+    ];
+    STYLE_PATTERNS = [/@(?:import|use|forward)\s+(?:url\()?\s*['"]?([^'")\s;]+)['"]?\s*\)?/g];
+    PYTHON_FROM = /^[ \t]*from[ \t]+(\.+[\w.]*|[\w.]+)[ \t]+import[ \t]+(\([^)]*\)|[^\n#;]+)/gm;
+    PYTHON_IMPORT = /^[ \t]*import[ \t]+([^\n#;]+)/gm;
+    RUST_PATTERNS = [/^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*;/gm];
+    REGEX_LEAD = /(?:^|[(,=:[!&|?{};+\-*%~^<>]|\b(?:return|typeof|case|do|else|in|of|void|yield|await))\s*$/;
+    SCRIPT_IMPORT_LEAD = /(?:\bfrom|\bimport|\brequire\s*\(|\bimport\s*\()\s*$/;
+  }
+});
+
 // ../../packages/core/src/diff-parse.ts
 function pathFromGitHeader(line, side = "new") {
   const rest = line.slice("diff --git ".length);
@@ -1934,6 +2158,13 @@ function parseUnifiedDiff(diffText) {
       let stats = { path: current.path, additions: current.additions, deletions: current.deletions, status };
       if (kinds.length > 0) stats = { ...stats, kinds };
       if (commentCount > 0 && commentCount <= MAX_COMMENT_LINES) stats = { ...stats, commentLines: { added: current.commentAdded, removed: current.commentRemoved } };
+      if (current.oldSide !== null && current.newSide !== null && current.deletions > 0) {
+        const path = current.path;
+        const named = (hunks) => hunks.flatMap((hunk) => importSpecifiers(path, hunk.join("\n")));
+        const kept = new Set(named(current.newSide));
+        const removedImports = [...new Set(named(current.oldSide))].filter((specifier) => !kept.has(specifier));
+        if (removedImports.length > 0) stats = { ...stats, removedImports };
+      }
       files.push(stats);
     }
     current = null;
@@ -1960,7 +2191,9 @@ function parseUnifiedDiff(diffText) {
         oldState: newCommentScanState(),
         newState: newCommentScanState(),
         commentAdded: [],
-        commentRemoved: []
+        commentRemoved: [],
+        oldSide: canReadImports(path) ? [] : null,
+        newSide: canReadImports(path) ? [] : null
       };
       inHunk = false;
       continue;
@@ -1969,6 +2202,8 @@ function parseUnifiedDiff(diffText) {
     if (line.startsWith("@@")) {
       inHunk = true;
       current.hunks += 1;
+      current.oldSide?.push([]);
+      current.newSide?.push([]);
       const header = HUNK_HEADER.exec(line);
       current.oldLine = Number(header?.[1] ?? 1);
       current.newLine = Number(header?.[2] ?? 1);
@@ -1992,16 +2227,20 @@ function parseUnifiedDiff(diffText) {
       current.additions += 1;
       const text = line.slice(1);
       current.added.push(text.replace(WHITESPACE, ""));
+      current.newSide?.at(-1)?.push(text);
       if (current.syntax !== null && isCommentOnlyLine(text, current.syntax, current.newState)) current.commentAdded.push(current.newLine);
       current.newLine += 1;
     } else if (line.startsWith("-")) {
       current.deletions += 1;
       const text = line.slice(1);
       current.removed.push(text.replace(WHITESPACE, ""));
+      current.oldSide?.at(-1)?.push(text);
       if (current.syntax !== null && isCommentOnlyLine(text, current.syntax, current.oldState)) current.commentRemoved.push(current.oldLine);
       current.oldLine += 1;
     } else if (line.startsWith(" ") || line === "") {
       const text = line.slice(1);
+      current.oldSide?.at(-1)?.push(text);
+      current.newSide?.at(-1)?.push(text);
       if (current.syntax !== null) {
         isCommentOnlyLine(text, current.syntax, current.oldState);
         isCommentOnlyLine(text, current.syntax, current.newState);
@@ -2018,6 +2257,7 @@ var init_diff_parse = __esm({
   "../../packages/core/src/diff-parse.ts"() {
     "use strict";
     init_comment_lines();
+    init_file_flow();
     MAX_COMMENT_LINES = 2e3;
     HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
     WHITESPACE = /\s+/g;
@@ -2047,7 +2287,7 @@ function parseDiffSummaries(document) {
     const deletions = typeof entry2.linesDeleted === "number" && Number.isFinite(entry2.linesDeleted) ? entry2.linesDeleted : 0;
     const status = typeof entry2.changeType === "string" ? STATUS_BY_CHANGE_TYPE[entry2.changeType] : void 0;
     const kinds = status === "deleted" ? ["deleted"] : status === "renamed" && additions + deletions === 0 ? ["renames"] : null;
-    files.push({ path: entry2.path, additions, deletions, ...status === void 0 ? {} : { status }, ...kinds === null ? {} : { kinds } });
+    files.push({ path: entry2.path, additions, deletions, ...status === void 0 ? {} : { status }, ...kinds === null ? {} : { kinds }, summaryOnly: true });
   }
   return files;
 }
@@ -2070,9 +2310,132 @@ var init_diff_summaries = __esm({
   }
 });
 
+// ../../packages/core/src/error-report.ts
+function scrubErrorText(text) {
+  const scrubbed = text.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, "<url>").replace(/\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/g, "<email>").replace(/(^|[\s(])@[\w-]+/g, "$1@<user>").replace(/[\w.-]+(?:\/[\w.-]+)+/g, "<path>").replace(/(["“”])([^"“”]*)["“”]/g, (whole, _open, inner) => inner.length > 40 || /\s/.test(inner) ? '"<text>"' : whole).replace(/\s+/g, " ").trim();
+  return scrubbed.length > MAX_ERROR_MESSAGE ? `${scrubbed.slice(0, MAX_ERROR_MESSAGE - 1)}\u2026` : scrubbed;
+}
+function scrubStack(stack, origin) {
+  const frames = [];
+  for (const line of stack.split("\n")) {
+    const at = line.indexOf(origin);
+    if (at === -1) continue;
+    const location = /^([^\s):]+:\d+(?::\d+)?)/.exec(line.slice(at + origin.length))?.[1];
+    if (location === void 0) continue;
+    const chrome = /^\s*at\s+(?:async\s+)?([^\s(]+)\s+\(/.exec(line)?.[1];
+    const other = /^([^@\s]+)@/.exec(line.trim())?.[1];
+    const name = chrome ?? other;
+    const frame = name === void 0 || name.includes("/") ? location : `${name} ${location}`;
+    frames.push(frame.slice(0, MAX_FRAME));
+    if (frames.length === MAX_STACK_FRAMES) break;
+  }
+  return frames;
+}
+function hasStack(value) {
+  return typeof value === "object" && value !== null && "stack" in value && typeof value.stack === "string";
+}
+function isOwnError(value, origin, filename = "") {
+  if (origin === "") return false;
+  if (filename.startsWith(origin)) return true;
+  return hasStack(value) && value.stack.includes(origin);
+}
+function messageOf(value) {
+  if (value instanceof Error) return value.name === "Error" ? value.message : `${value.name}: ${value.message}`;
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+function errorReportFrom(input3) {
+  return {
+    where: WHERE.test(input3.where) ? input3.where : "unknown",
+    kind: input3.kind,
+    message: scrubErrorText(messageOf(input3.error)) || "(no message)",
+    stack: hasStack(input3.error) ? scrubStack(input3.error.stack, input3.origin) : [],
+    count: 1,
+    firstAt: input3.at,
+    lastAt: input3.at
+  };
+}
+function reportKey(report) {
+  return `${report.where}\0${report.kind}\0${report.message}\0${report.stack[0] ?? ""}`;
+}
+function mergeErrorReports(existing, incoming, cap = MAX_ERRORS_PER_PAYLOAD) {
+  const merged = /* @__PURE__ */ new Map();
+  for (const report of [...existing, ...incoming]) {
+    const key = reportKey(report);
+    const prior = merged.get(key);
+    merged.delete(key);
+    merged.set(
+      key,
+      prior === void 0 ? report : { ...prior, count: prior.count + report.count, firstAt: Math.min(prior.firstAt, report.firstAt), lastAt: Math.max(prior.lastAt, report.lastAt) }
+    );
+  }
+  return [...merged.values()].slice(-cap);
+}
+function isRecord4(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isTime(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+function parseReport(value) {
+  if (!isRecord4(value)) return null;
+  const { where, kind, message, stack, count, firstAt, lastAt } = value;
+  if (typeof where !== "string" || !WHERE.test(where)) return null;
+  if (kind !== "error" && kind !== "rejection") return null;
+  if (typeof message !== "string" || !Array.isArray(stack) || !stack.every((frame) => typeof frame === "string")) return null;
+  if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || !isTime(firstAt) || !isTime(lastAt)) return null;
+  return {
+    where,
+    kind,
+    message: scrubErrorText(message),
+    stack: stack.slice(0, MAX_STACK_FRAMES).filter((frame) => frame.length <= MAX_FRAME && FRAME.test(frame)),
+    count: Math.min(count, 1e6),
+    firstAt,
+    lastAt
+  };
+}
+function parseErrorReports(value) {
+  if (!Array.isArray(value) || value.length > MAX_ERRORS_PER_PAYLOAD) return null;
+  const reports = value.map(parseReport);
+  return reports.every((report) => report !== null) ? reports : null;
+}
+function parseErrorPayload(value) {
+  if (!isRecord4(value) || value.v !== ERROR_PAYLOAD_VERSION) return null;
+  const { version: version2, browser, errors } = value;
+  if (typeof version2 !== "string" || !VERSION.test(version2)) return null;
+  const known = BROWSERS.find((candidate) => candidate === browser);
+  if (known === void 0) return null;
+  const reports = parseErrorReports(errors);
+  if (reports === null || reports.length === 0) return null;
+  return { v: ERROR_PAYLOAD_VERSION, version: version2, browser: known, errors: reports };
+}
+var ERROR_PAYLOAD_VERSION, MAX_ERRORS_PER_PAYLOAD, MAX_ERROR_MESSAGE, MAX_STACK_FRAMES, MAX_FRAME, WHERE, VERSION, BROWSERS, FRAME;
+var init_error_report = __esm({
+  "../../packages/core/src/error-report.ts"() {
+    "use strict";
+    ERROR_PAYLOAD_VERSION = 1;
+    MAX_ERRORS_PER_PAYLOAD = 25;
+    MAX_ERROR_MESSAGE = 300;
+    MAX_STACK_FRAMES = 12;
+    MAX_FRAME = 160;
+    WHERE = /^[a-z][a-z0-9:-]{0,40}$/;
+    VERSION = /^\d+(?:\.\d+){0,3}$/;
+    BROWSERS = ["chrome", "edge", "firefox", "safari", "other"];
+    FRAME = /^(?:[\w$.<>[\]]+ )?[\w.-]+(?:\/[\w.-]+)*:\d+(?::\d+)?$/;
+  }
+});
+
 // ../../packages/core/src/format.ts
 function formatCount(value) {
   return numberFormatter.format(Math.max(0, value));
+}
+function formatCountLike(original, value) {
+  const separator = GROUP_SEPARATOR.exec(original)?.[1];
+  return separator === void 0 ? formatCount(value) : formatCount(value).replace(/,/g, separator);
 }
 function parseCount(text) {
   if (text === null || text === void 0) return null;
@@ -2101,11 +2464,13 @@ function subtractTotals(a, b) {
 function formatDiffstat(totals) {
   return `+${formatCount(totals.additions)} \u2212${formatCount(totals.deletions)}`;
 }
-var numberFormatter, EMPTY_TOTALS;
+var numberFormatter, COUNT_PATTERN, GROUP_SEPARATOR, EMPTY_TOTALS;
 var init_format = __esm({
   "../../packages/core/src/format.ts"() {
     "use strict";
     numberFormatter = new Intl.NumberFormat("en-US");
+    COUNT_PATTERN = String.raw`\d+(?:[.,'’\u00a0\u202f]\d{2,3})*`;
+    GROUP_SEPARATOR = /\d([.,'’\u00a0\u202f])\d{2,3}(?!\d)/;
     EMPTY_TOTALS = { files: 0, additions: 0, deletions: 0 };
   }
 });
@@ -2604,8 +2969,19 @@ function isRepoConfigMode(value) {
 function isCompactTimelineMode(value) {
   return typeof value === "string" && COMPACT_TIMELINE_MODES.some((mode) => mode === value);
 }
+function digestViewOf(settings) {
+  if (!settings.prOverview) return "github";
+  return settings.compactTimeline === "off" ? "digest-timeline" : "digest";
+}
+function digestViewPatch(settings, view, at) {
+  const folded = settings.compactTimeline === "off" ? "compact" : settings.compactTimeline;
+  if (view === "github") return { prOverview: false, compactTimeline: settings.compactTimeline, digestViewChosenAt: at };
+  return { prOverview: true, compactTimeline: view === "digest" ? folded : "off", digestViewChosenAt: at };
+}
 function normalizeAiBaseUrl(value) {
-  return value.trim().replace(/\/+$/, "").replace(/\/(?:v\d+|typesafe)$/i, "").replace(/\/+$/, "");
+  const trimmed = value.trim();
+  const withScheme2 = trimmed === "" || /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  return withScheme2.replace(/\/+$/, "").replace(/\/(?:v\d+|typesafe)$/i, "").replace(/\/+$/, "");
 }
 function isStringArray(value) {
   return Array.isArray(value) && value.every((entry2) => typeof entry2 === "string");
@@ -2614,12 +2990,12 @@ function bool(record4, key, fallback) {
   const value = record4[key];
   return typeof value === "boolean" ? value : fallback;
 }
-function isRecord4(value) {
+function isRecord5(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function readCategories(value, legacyHideTests, customIds) {
   const result = {};
-  if (isRecord4(value)) {
+  if (isRecord5(value)) {
     for (const [key, enabled] of Object.entries(value)) {
       if (typeof enabled !== "boolean") continue;
       if (key === "large") continue;
@@ -2632,7 +3008,7 @@ function readCategories(value, legacyHideTests, customIds) {
 }
 function readAutoViewed(value, customIds) {
   const result = {};
-  if (!isRecord4(value)) return result;
+  if (!isRecord5(value)) return result;
   for (const [key, on] of Object.entries(value)) {
     if (typeof on === "boolean" && (isCategoryId(key) || isCustomCategoryId(key) && customIds.has(key))) result[key] = on;
   }
@@ -2640,13 +3016,13 @@ function readAutoViewed(value, customIds) {
 }
 function readGroups(value, legacyTestGroups) {
   const result = {};
-  if (isRecord4(value)) {
+  if (isRecord5(value)) {
     for (const [key, enabled] of Object.entries(value)) {
       if (key.startsWith("large/")) continue;
       if (isWellFormedGroupKey(key) && typeof enabled === "boolean") result[key] = enabled;
     }
   }
-  if (isRecord4(legacyTestGroups)) {
+  if (isRecord5(legacyTestGroups)) {
     for (const [key, enabled] of Object.entries(legacyTestGroups)) {
       if (isTestPatternGroupId(key) && typeof enabled === "boolean" && result[groupKey("tests", key)] === void 0) {
         result[groupKey("tests", key)] = enabled;
@@ -2657,7 +3033,7 @@ function readGroups(value, legacyTestGroups) {
 }
 function readCategoryPatterns(value, legacyCustomPatterns) {
   const result = {};
-  if (isRecord4(value)) {
+  if (isRecord5(value)) {
     for (const [key, lines2] of Object.entries(value)) {
       if (key !== "large" && isCategoryId(key) && isStringArray(lines2) && lines2.length > 0) result[key] = lines2;
     }
@@ -2668,7 +3044,7 @@ function readCategoryPatterns(value, legacyCustomPatterns) {
   return result;
 }
 function readCustomCategory(value, taken) {
-  if (!isRecord4(value)) return null;
+  if (!isRecord5(value)) return null;
   const { id, title, icon, patterns, noun, nounPlural } = value;
   if (!isCustomCategoryId(id) || taken.has(id)) return null;
   if (typeof title !== "string" || title.trim() === "") return null;
@@ -2707,6 +3083,15 @@ function isTestGroupEnabled(settings, id) {
 }
 function isAutoViewed(settings, id) {
   return settings.autoViewed[id] === true;
+}
+function isAutoViewedForAll(settings, ids) {
+  const on = ids.filter((id) => isCategoryEnabled(settings, id));
+  return on.length > 0 && on.every((id) => isAutoViewed(settings, id));
+}
+function withAutoViewedForAll(settings, ids, value) {
+  const autoViewed = { ...settings.autoViewed };
+  for (const id of ids) autoViewed[id] = value;
+  return { ...settings, autoViewed };
 }
 function categoryPatternLines(settings, categoryId) {
   return settings.categoryPatterns[categoryId] ?? [];
@@ -2758,13 +3143,18 @@ function normalizeSettings(value) {
     shortcutEnabled: bool(record4, "shortcutEnabled", DEFAULT_SETTINGS.shortcutEnabled),
     showBadge: bool(record4, "showBadge", DEFAULT_SETTINGS.showBadge),
     autoUpdatePatterns: bool(record4, "autoUpdatePatterns", DEFAULT_SETTINGS.autoUpdatePatterns),
+    errorReports: bool(record4, "errorReports", DEFAULT_SETTINGS.errorReports),
     enterpriseHosts: isStringArray(record4.enterpriseHosts) ? record4.enterpriseHosts.map(normalizeHost).filter((host) => host !== null) : DEFAULT_SETTINGS.enterpriseHosts,
     repoConfigs: isRepoConfigMode(record4.repoConfigs) ? record4.repoConfigs : DEFAULT_SETTINGS.repoConfigs,
     prOverview: bool(record4, "prOverview", DEFAULT_SETTINGS.prOverview),
     compactTimeline: isCompactTimelineMode(record4.compactTimeline) ? record4.compactTimeline : DEFAULT_SETTINGS.compactTimeline,
+    digestViewChosenAt: typeof record4.digestViewChosenAt === "string" ? record4.digestViewChosenAt : DEFAULT_SETTINGS.digestViewChosenAt,
     reviewGrouping: isReviewGrouping(record4.reviewGrouping) ? record4.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
     collapseDescription: bool(record4, "collapseDescription", DEFAULT_SETTINGS.collapseDescription),
+    attachmentLightbox: bool(record4, "attachmentLightbox", DEFAULT_SETTINGS.attachmentLightbox),
+    relatedLinks: bool(record4, "relatedLinks", DEFAULT_SETTINGS.relatedLinks),
     quickReview: bool(record4, "quickReview", DEFAULT_SETTINGS.quickReview),
+    holdToMerge: bool(record4, "holdToMerge", DEFAULT_SETTINGS.holdToMerge),
     reviewBots: isStringArray(record4.reviewBots) ? record4.reviewBots : DEFAULT_SETTINGS.reviewBots,
     trustedReviewAccounts: normalizeTrustedReviewAccounts(record4.trustedReviewAccounts),
     trustedSummaryPublishers: normalizeTrustedSummaryPublishers(record4.trustedSummaryPublishers),
@@ -2773,6 +3163,7 @@ function normalizeSettings(value) {
     issueTracker: parseIssueTracker(record4.issueTracker),
     aiModel: typeof record4.aiModel === "string" ? record4.aiModel.trim() : DEFAULT_SETTINGS.aiModel,
     aiJev: bool(record4, "aiJev", DEFAULT_SETTINGS.aiJev),
+    aiDecisionModel: typeof record4.aiDecisionModel === "string" ? record4.aiDecisionModel.trim() : DEFAULT_SETTINGS.aiDecisionModel,
     suggestedFixes: isSuggestedFixMode(record4.suggestedFixes) ? record4.suggestedFixes : DEFAULT_SETTINGS.suggestedFixes
   };
 }
@@ -2830,7 +3221,7 @@ function withCustomCategory(settings, custom2) {
 function withCategoryEnabled(settings, id, enabled) {
   return id === "large" ? { ...settings, hideLargeDiffs: enabled } : { ...settings, categories: { ...settings.categories, [id]: enabled } };
 }
-var SUGGESTED_FIX_MODES, REPO_CONFIG_MODES, REVIEW_GROUPINGS, COMPACT_TIMELINE_MODES, DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY, CATEGORY_ORDER;
+var SUGGESTED_FIX_MODES, REPO_CONFIG_MODES, REVIEW_GROUPINGS, COMPACT_TIMELINE_MODES, DIGEST_VIEWS, DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY, CATEGORY_ORDER;
 var init_settings = __esm({
   "../../packages/core/src/settings.ts"() {
     "use strict";
@@ -2844,6 +3235,7 @@ var init_settings = __esm({
     REPO_CONFIG_MODES = ["always", "ask", "never"];
     REVIEW_GROUPINGS = ["type", "batch"];
     COMPACT_TIMELINE_MODES = ["off", "compact", "minimal"];
+    DIGEST_VIEWS = ["digest", "digest-timeline", "github"];
     DEFAULT_SETTINGS = {
       enabled: true,
       categories: {},
@@ -2865,13 +3257,18 @@ var init_settings = __esm({
       shortcutEnabled: true,
       showBadge: true,
       autoUpdatePatterns: true,
+      errorReports: false,
       enterpriseHosts: [],
       repoConfigs: "ask",
       prOverview: true,
       compactTimeline: "compact",
+      digestViewChosenAt: "",
       reviewGrouping: "type",
-      collapseDescription: false,
+      collapseDescription: true,
+      attachmentLightbox: true,
+      relatedLinks: true,
       quickReview: true,
+      holdToMerge: false,
       reviewBots: [],
       trustedReviewAccounts: [],
       trustedSummaryPublishers: [],
@@ -2880,6 +3277,7 @@ var init_settings = __esm({
       aiModel: "",
       issueTracker: null,
       aiJev: false,
+      aiDecisionModel: "",
       suggestedFixes: "bots"
     };
     SETTINGS_STORAGE_KEY = "sync:settings";
@@ -2928,7 +3326,7 @@ function testSyntaxProblem(line) {
   const parsed = parseTestSyntax(line);
   return "problem" in parsed ? parsed.problem : null;
 }
-function isRecord5(value) {
+function isRecord6(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function describeValue(value) {
@@ -2944,7 +3342,7 @@ function list(values) {
 }
 function checkBooleanMap(issues, path, value, known, isAcceptable, noun) {
   if (value === void 0) return;
-  if (!isRecord5(value)) {
+  if (!isRecord6(value)) {
     issues.push({ path, message: `Expected an object mapping ${noun} ids to true/false, got ${describeValue(value)}.` });
     return;
   }
@@ -3001,7 +3399,7 @@ function hostProblem(line) {
 }
 function checkCategoryPatterns(issues, path, value) {
   if (value === void 0) return;
-  if (!isRecord5(value)) {
+  if (!isRecord6(value)) {
     issues.push({ path, message: `Expected an object mapping category ids to pattern lists, got ${describeValue(value)}.` });
     return;
   }
@@ -3023,7 +3421,7 @@ function checkCustomCategories(issues, path, value) {
   const seen = /* @__PURE__ */ new Set();
   value.forEach((entry2, index) => {
     const entryPath = `${path}[${index}]`;
-    if (!isRecord5(entry2)) {
+    if (!isRecord6(entry2)) {
       issues.push({ path: entryPath, message: `Expected a category object, got ${describeValue(entry2)}.` });
       return;
     }
@@ -3052,7 +3450,7 @@ function checkCustomCategories(issues, path, value) {
 }
 function collectSettingsIssues(value, path = "settings", catalog = BUNDLED_CATALOG) {
   const issues = [];
-  if (!isRecord5(value)) {
+  if (!isRecord6(value)) {
     issues.push({ path, message: `Expected an object of settings, got ${describeValue(value)}.` });
     return issues;
   }
@@ -3071,6 +3469,9 @@ function collectSettingsIssues(value, path = "settings", catalog = BUNDLED_CATAL
   if (value.compactTimeline !== void 0 && !isCompactTimelineMode(value.compactTimeline)) {
     issues.push({ path: `${path}.compactTimeline`, message: `Expected one of ${list(COMPACT_TIMELINE_MODES)}, got ${describeValue(value.compactTimeline)}.` });
   }
+  if (value.digestViewChosenAt !== void 0 && typeof value.digestViewChosenAt !== "string") {
+    issues.push({ path: `${path}.digestViewChosenAt`, message: `Expected a string, got ${describeValue(value.digestViewChosenAt)}.` });
+  }
   if (value.reviewGrouping !== void 0 && !isReviewGrouping(value.reviewGrouping)) {
     issues.push({ path: `${path}.reviewGrouping`, message: `Expected one of ${list(REVIEW_GROUPINGS)}, got ${describeValue(value.reviewGrouping)}.` });
   }
@@ -3083,6 +3484,9 @@ function collectSettingsIssues(value, path = "settings", catalog = BUNDLED_CATAL
   if (value.issueTracker !== void 0 && value.issueTracker !== null && !parseIssueTracker(value.issueTracker)) issues.push({ path: `${path}.issueTracker`, message: "Invalid issue tracker configuration." });
   if (value.aiModel !== void 0 && typeof value.aiModel !== "string") {
     issues.push({ path: `${path}.aiModel`, message: `Expected a string, got ${describeValue(value.aiModel)}.` });
+  }
+  if (value.aiDecisionModel !== void 0 && typeof value.aiDecisionModel !== "string") {
+    issues.push({ path: `${path}.aiDecisionModel`, message: `Expected a string, got ${describeValue(value.aiDecisionModel)}.` });
   }
   checkBooleanMap(issues, `${path}.categories`, value.categories, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key) || isWellFormedId(key), "category");
   checkBooleanMap(issues, `${path}.autoViewed`, value.autoViewed, CATEGORY_IDS, (key) => isCategoryId(key) || isCustomCategoryId(key) || isWellFormedId(key), "category");
@@ -3241,7 +3645,7 @@ function validateSettingsDocument(content, catalog = BUNDLED_CATALOG) {
   } catch (error61) {
     return { ok: false, issues: [jsonIssue(content, error61)] };
   }
-  if (!isRecord5(parsed)) {
+  if (!isRecord6(parsed)) {
     return { ok: false, issues: [{ path: "$", message: `Expected a JSON object at the top level, got ${describeValue(parsed)}.` }] };
   }
   const issues = [];
@@ -3258,7 +3662,7 @@ function validateSettingsDocument(content, catalog = BUNDLED_CATALOG) {
   return { ok: true, settings: normalizeSettings(body) };
 }
 function validateSettingsValue(value, catalog = BUNDLED_CATALOG) {
-  const wrapped = isRecord5(value) && "settings" in value;
+  const wrapped = isRecord6(value) && "settings" in value;
   const body = wrapped ? value.settings : value;
   const issues = collectSettingsIssues(body, wrapped ? "settings" : "$", catalog);
   if (issues.length > 0) return { ok: false, issues };
@@ -3298,9 +3702,13 @@ var init_settings_validate = __esm({
       "shortcutEnabled",
       "showBadge",
       "autoUpdatePatterns",
+      "errorReports",
       "prOverview",
       "quickReview",
+      "holdToMerge",
       "collapseDescription",
+      "attachmentLightbox",
+      "relatedLinks",
       "aiEnabled",
       "aiJev"
     ];
@@ -3308,7 +3716,7 @@ var init_settings_validate = __esm({
 });
 
 // ../../packages/core/src/gist-sync.ts
-function isRecord6(value) {
+function isRecord7(value) {
   return typeof value === "object" && value !== null;
 }
 function serializeSettingsPayload(settings, now = /* @__PURE__ */ new Date()) {
@@ -3319,7 +3727,7 @@ function serializeSettingsPayload(settings, now = /* @__PURE__ */ new Date()) {
 function parseSettingsPayload(content) {
   try {
     const parsed = JSON.parse(content);
-    if (!isRecord6(parsed)) return null;
+    if (!isRecord7(parsed)) return null;
     return normalizeSettings("settings" in parsed ? parsed.settings : parsed);
   } catch {
     return null;
@@ -3342,7 +3750,7 @@ async function api(token, path, init = {}) {
 }
 async function fetchGitHubProfile(token) {
   const body = await api(token, "/user");
-  if (!isRecord6(body)) throw new Error("Unexpected profile response.");
+  if (!isRecord7(body)) throw new Error("Unexpected profile response.");
   const login = body.login;
   const id = body.id;
   const avatarUrl = body.avatar_url;
@@ -3352,11 +3760,11 @@ async function fetchGitHubProfile(token) {
   return { login, id, avatarUrl };
 }
 function readGist(value) {
-  if (!isRecord6(value)) return null;
+  if (!isRecord7(value)) return null;
   const id = value.id;
   const updatedAt = value.updated_at;
   const files = value.files;
-  if (typeof id !== "string" || typeof updatedAt !== "string" || !isRecord6(files)) return null;
+  if (typeof id !== "string" || typeof updatedAt !== "string" || !isRecord7(files)) return null;
   const htmlUrl = typeof value.html_url === "string" ? value.html_url : `https://gist.github.com/${id}`;
   return { id, updatedAt, htmlUrl, hasFile: GIST_FILE in files };
 }
@@ -3373,9 +3781,9 @@ async function findSettingsGist(token) {
 async function readRemoteContent(token, gistId) {
   const gist = await api(token, `/gists/${gistId}`);
   const summary = readGist(gist);
-  if (summary === null || !isRecord6(gist) || !isRecord6(gist.files)) return null;
+  if (summary === null || !isRecord7(gist) || !isRecord7(gist.files)) return null;
   const file2 = gist.files[GIST_FILE];
-  if (!isRecord6(file2)) return null;
+  if (!isRecord7(file2)) return null;
   let content = typeof file2.content === "string" ? file2.content : null;
   if ((content === null || file2.truncated === true) && typeof file2.raw_url === "string") {
     const raw = await fetch(file2.raw_url, { headers: { Authorization: `Bearer ${token}` } });
@@ -3418,7 +3826,7 @@ function settingsEqual(a, b) {
 }
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (isRecord6(value)) {
+  if (isRecord7(value)) {
     return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
   }
   return JSON.stringify(value);
@@ -10917,7 +11325,7 @@ function checkReviewBots(issues, path, value, knownBots) {
 function collectRepoConfigIssues(value, catalog = BUNDLED_CATALOG, path = "$", knownBots = null) {
   const issues = [];
   if (value === null || value === void 0) return issues;
-  if (!isRecord5(value)) {
+  if (!isRecord6(value)) {
     issues.push({ path, message: `Expected a mapping of settings, got ${describeValue(value)}.` });
     return issues;
   }
@@ -10935,7 +11343,7 @@ function collectRepoConfigIssues(value, catalog = BUNDLED_CATALOG, path = "$", k
   checkCategoryPatterns(issues, at("categoryPatterns"), value.categoryPatterns);
   checkCustomCategories(issues, at("customCategories"), value.customCategories);
   checkReviewBots(issues, at("reviewBots"), value.reviewBots, knownBots);
-  if (value.review !== void 0 && (!isRecord5(value.review) || typeof value.review.ai !== "boolean")) issues.push({ path: at("review.ai"), message: "Expected a boolean AI policy." });
+  if (value.review !== void 0 && (!isRecord6(value.review) || typeof value.review.ai !== "boolean")) issues.push({ path: at("review.ai"), message: "Expected a boolean AI policy." });
   if (value.issueTracker !== void 0 && !parseIssueTracker(value.issueTracker)) issues.push({ path: at("issueTracker"), message: "Expected a supported tracker, allowed keys and an HTTPS origin." });
   return issues;
 }
@@ -10946,7 +11354,7 @@ function reviewBotsOf(value) {
   return ids;
 }
 function parseRepoConfig(text, catalog = BUNDLED_CATALOG, knownBots = null) {
-  const doc = (0, import_yaml.parseDocument)(text, { prettyErrors: true, uniqueKeys: true });
+  const doc = (0, import_yaml.parseDocument)(text, { prettyErrors: true, uniqueKeys: true, logLevel: "error" });
   if (doc.errors.length > 0) {
     return {
       ok: false,
@@ -10965,7 +11373,7 @@ function parseRepoConfig(text, catalog = BUNDLED_CATALOG, knownBots = null) {
   }
   const issues = collectRepoConfigIssues(value, catalog, "$", knownBots);
   if (issues.length > 0) return { ok: false, issues };
-  if (value === null || value === void 0 || !isRecord5(value)) return { ok: true, config: EMPTY_REPO_CONFIG };
+  if (value === null || value === void 0 || !isRecord6(value)) return { ok: true, config: EMPTY_REPO_CONFIG };
   const normalized = normalizeSettings(value);
   const issueTracker = parseIssueTracker(value.issueTracker);
   return {
@@ -10977,7 +11385,7 @@ function parseRepoConfig(text, catalog = BUNDLED_CATALOG, knownBots = null) {
       customCategories: normalized.customCategories,
       reviewBots: reviewBotsOf(value),
       ...issueTracker ? { issueTracker } : {},
-      ...isRecord5(value.review) && typeof value.review.ai === "boolean" ? { review: { ai: value.review.ai } } : {}
+      ...isRecord6(value.review) && typeof value.review.ai === "boolean" ? { review: { ai: value.review.ai } } : {}
     }
   };
 }
@@ -11081,6 +11489,7 @@ var init_repo_config = __esm({
       "shortcutEnabled",
       "showBadge",
       "autoUpdatePatterns",
+      "errorReports",
       "enterpriseHosts",
       "repoConfigs",
       "hideTests",
@@ -11088,20 +11497,44 @@ var init_repo_config = __esm({
       "customPatterns",
       "prOverview",
       "compactTimeline",
+      "digestViewChosenAt",
       "reviewGrouping",
       "collapseDescription",
       "aiBaseUrl",
       "aiModel",
+      "aiDecisionModel",
       "suggestedFixes",
       "autoViewed",
       "testOutline",
-      "testSyntaxes"
+      "testSyntaxes",
+      "attachmentLightbox",
+      "relatedLinks"
     ];
     SCOPE_RESET = "[*]";
   }
 });
 
 // ../../packages/core/src/settings-schema.ts
+function presetBlank(value) {
+  const match = PRESET_BLANK.exec(value);
+  return match === null ? null : { start: match.index, end: match.index + match[0].length };
+}
+function presetMatches(preset, value) {
+  if (value === "") return false;
+  if (presetBlank(preset.value) === null) return value === preset.value;
+  const pattern = preset.value.split(/(\{[a-z]+\})/i).map((part) => PRESET_BLANK.test(part) ? "[^/.{}\\s]+" : part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("");
+  return new RegExp(`^${pattern}$`, "i").test(value);
+}
+function presetGroups(presets) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const preset of presets) {
+    const key = preset.group ?? null;
+    const list2 = groups.get(key);
+    if (list2 === void 0) groups.set(key, [preset]);
+    else list2.push(preset);
+  }
+  return [...groups].map(([group, list2]) => ({ group, presets: list2 }));
+}
 function visibleOn(field, surface) {
   return field.surfaces === void 0 || field.surfaces.includes(surface);
 }
@@ -11155,10 +11588,11 @@ function splitInlineCode(copy) {
 function plainText(copy) {
   return splitInlineCode(copy).map((run2) => run2.text).join("");
 }
-var SETTINGS_SCHEMA;
+var PRESET_BLANK, SETTINGS_SCHEMA;
 var init_settings_schema = __esm({
   "../../packages/core/src/settings-schema.ts"() {
     "use strict";
+    PRESET_BLANK = /\{[a-z]+\}/i;
     SETTINGS_SCHEMA = [
       {
         id: "general",
@@ -11175,11 +11609,42 @@ var init_settings_schema = __esm({
           },
           {
             kind: "toggle",
+            key: "prOverview",
+            label: "Pull request digest",
+            description: "A panel under the description on the conversation tab: reviews, what each review bot concluded, CI, reports and previews, then the open threads round by round, so what needs you is clear at a glance.",
+            popup: true,
+            popupDescription: "Reviews, bots, CI and open threads at a glance."
+          },
+          {
+            kind: "toggle",
             key: "groupHidden",
             label: "Group hidden files",
             description: "On: hidden files move to a collapsible section at the bottom of the diff and get their own panels in the file tree. Off: they stay where they are, collapsed and faded, with their category\u2019s icon in the tree.",
             popup: true,
             popupDescription: "Off: keep them in place, collapsed and faded."
+          },
+          {
+            kind: "toggle",
+            key: "collapseDescription",
+            label: "Shorten the description",
+            description: "Fold each section of the pull request description under its heading. A description still taller than 500px is cut there with a control to show the rest.",
+            popup: true,
+            popupDescription: "Fold its sections under their headings."
+          },
+          {
+            kind: "toggle",
+            key: "relatedLinks",
+            label: "Related links",
+            description: "Two sections under Reviewers in the pull request sidebar. Related links lists the tickets, Slack threads, agent sessions, reviews and docs its description links to, such as a Linear issue or the Replicas workspace that opened it. Related work shows the stack it is in and the GitHub issues and pull requests its description links to.",
+            popup: false
+          },
+          {
+            kind: "toggle",
+            key: "attachmentLightbox",
+            label: "Attachment lightbox",
+            description: "Preview image attachments in issues and pull requests with zoom and pan.",
+            popup: false,
+            surfaces: ["extension"]
           },
           {
             kind: "toggle",
@@ -11240,6 +11705,14 @@ var init_settings_schema = __esm({
             description: "Once a day Geld fetches the built-in pattern catalog from its GitHub repository (`api.github.com`, no sign-in) and uses it if it is newer, so new conventions are recognised without waiting for a store release. The file is signed; anything that does not verify is ignored. Which categories are on, and your own patterns, never change this way.",
             popup: false,
             surfaces: ["extension"]
+          },
+          {
+            kind: "toggle",
+            key: "errorReports",
+            label: "Send error reports",
+            description: "When part of Geld breaks, send the error and where in Geld\u2019s code it happened to `geld.sh`, with the version and browser. Addresses, repository and file names, people and page text are removed first. Off: errors stay on this device, in Copy diagnostics.",
+            popup: false,
+            surfaces: ["extension"]
           }
         ]
       },
@@ -11272,6 +11745,8 @@ var init_settings_schema = __esm({
             },
             autoViewed: {
               label: "Mark as viewed automatically",
+              popupLabel: "Mark hidden files viewed",
+              popupDescription: "Tick GitHub\u2019s Viewed box for every hidden file on a pull request. Set it per category in Settings.",
               description: "On pull requests, tick GitHub\u2019s Viewed box for this category\u2019s hidden files, so \u201CN of M files viewed\u201D only waits on what is left to review. Untick one by hand and it stays unticked until the next push."
             }
           }
@@ -11406,14 +11881,14 @@ var init_settings_schema = __esm({
       },
       {
         id: "lists",
-        title: "Pull request lists",
-        intro: "Pull requests opened by these authors are hidden in PR lists and stacks, behind a row that says how many and shows them on click. One login or provider-qualified identity per line; `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).",
+        title: "Hidden people",
+        intro: "People and bots you never want to see. Their pull requests are hidden in PR lists and stacks, behind a row that says how many and shows them on click. Their reviews and comments are left out of the pull request digest, where a closed eye on the Reviews or Review bots row lists them with Peek and Unhide. Anyone GitHub shows with a comment hidden as spam or abuse is left out of the digest too. A reply of theirs in someone else\u2019s review thread is folded there. One login or provider-qualified identity per line. `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).",
         fields: [
           {
             kind: "list",
             key: "hiddenAuthors",
-            label: "Hidden authors",
-            description: "Pull request authors whose PRs are hidden in lists.",
+            label: "Hidden people",
+            description: "Logins whose pull requests, reviews and comments Geld hides.",
             popup: false,
             rows: 4,
             placeholder: "*[bot]\nrenovate*",
@@ -11423,23 +11898,15 @@ var init_settings_schema = __esm({
               "`*` matches any run of characters: `*[bot]` is every GitHub App, `renovate*` every Renovate account.",
               "Matching ignores case. Lines starting with `#` are comments."
             ],
-            saveLabel: "Save authors"
+            saveLabel: "Save hidden people"
           }
         ]
       },
       {
         id: "experiments",
         title: "Experiments",
-        intro: "Features still taking shape: off until you turn them on here, and liable to change. The one running now is the review digest for pull request conversations \u2014 a panel pinned at the top of the conversation tab that gathers open findings and bot verdicts and folds bot comments out of the timeline. The Geld GitHub Action writes the digest as one comment; without it the extension builds the same panel from the page.",
+        intro: "Features still taking shape, and liable to change. Most of them fine-tune the pull request digest: how much of the timeline it folds, how it groups, which bots it reads, and the AI that can write for it. The Geld GitHub Action writes the digest as one comment. Without it the extension builds the same panel from the page.",
         fields: [
-          {
-            kind: "toggle",
-            key: "prOverview",
-            label: "Review digest on pull requests",
-            description: "Show a review panel on the conversation tab: open findings, bot verdicts, and (when compacting) a quieter timeline.",
-            // The one experiment in the popup, under its own "Experiments" heading, so it can be switched while testing.
-            popup: true
-          },
           {
             kind: "choice",
             key: "compactTimeline",
@@ -11465,16 +11932,16 @@ var init_settings_schema = __esm({
           },
           {
             kind: "toggle",
-            key: "collapseDescription",
-            label: "Collapse the description",
-            description: "In Minimal mode, show the first paragraph of the pull request body and a control to expand the rest.",
+            key: "quickReview",
+            label: "Submit review from any tab",
+            description: "Put the Submit review button in the pull request\u2019s tab bar, beside the line counts, on every tab. The Files changed tab\u2019s own button gives way to it.",
             popup: false
           },
           {
             kind: "toggle",
-            key: "quickReview",
-            label: "Submit review from any tab",
-            description: "Put the Submit review button in the pull request\u2019s tab bar, beside the line counts, on every tab. The Files changed tab\u2019s own button gives way to it.",
+            key: "holdToMerge",
+            label: "Hold \u2318 to merge from the status pill",
+            description: "While \u2318 (Ctrl on Windows and Linux) is held, the pull request\u2019s status pill becomes a Merge button whenever GitHub would merge it now. Off, the pill only opens its menu of statuses.",
             popup: false
           },
           {
@@ -11546,15 +12013,41 @@ var init_settings_schema = __esm({
             kind: "text",
             key: "aiBaseUrl",
             label: "AI gateway URL",
-            description: "An OpenAI-compatible base URL: Vercel AI Gateway, OpenRouter, OpenAI, or your own. Paste it with or without the `/v1`; requests add their own path. The key stays on this device (`storage.local`, never the gist).",
+            description: "Any OpenAI-compatible base URL: a gateway, a provider, a model on this computer, or your own. Paste it with or without the `/v1`, requests add their own path. The key stays on this device (`storage.local`, never the gist).",
             popup: false,
             placeholder: "https://ai-gateway.vercel.sh",
             autocomplete: "off",
             surfaces: ["extension"],
             presets: [
-              { label: "Vercel AI Gateway", value: "https://ai-gateway.vercel.sh" },
-              { label: "OpenRouter", value: "https://openrouter.ai/api" },
-              { label: "OpenAI", value: "https://api.openai.com" }
+              { group: "Gateways", label: "Vercel AI Gateway", value: "https://ai-gateway.vercel.sh" },
+              { group: "Gateways", label: "OpenRouter", value: "https://openrouter.ai/api" },
+              {
+                group: "Gateways",
+                label: "Cloudflare AI Gateway",
+                value: "https://api.cloudflare.com/client/v4/accounts/{account}/ai",
+                note: "Fill in your Cloudflare account ID. The key is a Cloudflare API token, and models are named like `openai/gpt-4.1`."
+              },
+              { group: "Providers", label: "OpenAI", value: "https://api.openai.com" },
+              {
+                group: "Providers",
+                label: "Amazon Bedrock",
+                value: "https://bedrock-mantle.{region}.api.aws",
+                note: "Fill in your AWS region, such as `us-east-1`. The key is an Amazon Bedrock API key."
+              },
+              {
+                group: "Providers",
+                label: "Azure OpenAI",
+                value: "https://{resource}.openai.azure.com/openai",
+                note: "Fill in your Azure OpenAI resource name. Models are your deployment names."
+              },
+              { group: "Providers", label: "Google Gemini", value: "https://generativelanguage.googleapis.com/v1beta/openai" },
+              { group: "Providers", label: "Groq", value: "https://api.groq.com/openai" },
+              {
+                group: "On this computer",
+                label: "Ollama",
+                value: "http://localhost:11434",
+                note: "Ollama ignores the key, so any text will do. Start it with `OLLAMA_ORIGINS=chrome-extension://*,moz-extension://*` so it answers browser extensions."
+              }
             ]
           },
           {
@@ -11570,9 +12063,19 @@ var init_settings_schema = __esm({
           {
             kind: "toggle",
             key: "aiJev",
-            label: "Use Jev for decisions",
-            description: "TypeSafe\u2019s Jev answers typed questions with calibrated probabilities instead of prose, in milliseconds and for a fraction of the cost. With it on, Geld asks Jev which findings report the same problem before the AI model rewrites them; off, the AI model decides that itself.",
+            label: "Use a decision model",
+            description: "A decision model answers typed questions with calibrated probabilities instead of prose, in milliseconds and for a fraction of the cost. With it on, Geld asks it which findings report the same problem before the AI model rewrites them, and what each folded comment is. Off, the AI model decides that itself.",
             popup: false,
+            surfaces: ["extension"]
+          },
+          {
+            kind: "text",
+            key: "aiDecisionModel",
+            label: "Decision model",
+            description: "Listed from the gateway when it serves decision models (Vercel AI Gateway, OpenRouter, OpenAI). Leave it on automatic for TypeSafe\u2019s Jev where the gateway offers it, the gateway\u2019s own decision model otherwise, or Jev with a TypeSafe key of your own.",
+            popup: false,
+            placeholder: "Automatic",
+            autocomplete: "off",
             surfaces: ["extension"]
           }
         ]
@@ -11726,15 +12229,21 @@ __export(src_exports, {
   CLOUD_PROVIDER_HOSTS: () => CLOUD_PROVIDER_HOSTS,
   COMPACT_TIMELINE_MODES: () => COMPACT_TIMELINE_MODES,
   CORRUPTED_SETTINGS_COPY: () => CORRUPTED_SETTINGS_COPY,
+  COUNT_PATTERN: () => COUNT_PATTERN,
   CUSTOM_GROUP_ID: () => CUSTOM_GROUP_ID,
   DEFAULT_SETTINGS: () => DEFAULT_SETTINGS,
+  DIGEST_VIEWS: () => DIGEST_VIEWS,
   EMPTY_REPO_CONFIG: () => EMPTY_REPO_CONFIG,
   EMPTY_TOTALS: () => EMPTY_TOTALS,
+  ERROR_PAYLOAD_VERSION: () => ERROR_PAYLOAD_VERSION,
   GIST_DESCRIPTION: () => GIST_DESCRIPTION,
   GIST_FILE: () => GIST_FILE,
   ISSUE_TRACKERS: () => ISSUE_TRACKERS,
   LARGE_CHANGE_LINES: () => LARGE_CHANGE_LINES,
   ListSurfaceError: () => ListSurfaceError,
+  MAX_ERRORS_PER_PAYLOAD: () => MAX_ERRORS_PER_PAYLOAD,
+  MAX_ERROR_MESSAGE: () => MAX_ERROR_MESSAGE,
+  MAX_STACK_FRAMES: () => MAX_STACK_FRAMES,
   ORG_CONFIG_PATHS: () => ORG_CONFIG_PATHS,
   ORG_CONFIG_REPO: () => ORG_CONFIG_REPO,
   REPO_CONFIG_MODES: () => REPO_CONFIG_MODES,
@@ -11787,6 +12296,9 @@ __export(src_exports, {
   describeValue: () => describeValue,
   diffSummariesUrl: () => diffSummariesUrl,
   diffstatSurfaceJson: () => diffstatSurfaceJson,
+  digestViewOf: () => digestViewOf,
+  digestViewPatch: () => digestViewPatch,
+  errorReportFrom: () => errorReportFrom,
   expandBraces: () => expandBraces,
   fetchGitHubProfile: () => fetchGitHubProfile,
   fieldsFor: () => fieldsFor,
@@ -11795,6 +12307,7 @@ __export(src_exports, {
   findSettingsGist: () => findSettingsGist,
   formatCatalogVersion: () => formatCatalogVersion,
   formatCount: () => formatCount,
+  formatCountLike: () => formatCountLike,
   formatDiffstat: () => formatDiffstat,
   generatedConfigFrom: () => generatedConfigFrom,
   globToRegExp: () => globToRegExp,
@@ -11803,6 +12316,7 @@ __export(src_exports, {
   hiddenCategoryFromCustom: () => hiddenCategoryFromCustom,
   isAnyCategoryId: () => isAnyCategoryId,
   isAutoViewed: () => isAutoViewed,
+  isAutoViewedForAll: () => isAutoViewedForAll,
   isCategoryEnabled: () => isCategoryEnabled,
   isCategoryIconName: () => isCategoryIconName,
   isCategoryId: () => isCategoryId,
@@ -11814,7 +12328,8 @@ __export(src_exports, {
   isEmptyRepoConfig: () => isEmptyRepoConfig,
   isGroupEnabled: () => isGroupEnabled,
   isGroupKey: () => isGroupKey,
-  isRecord: () => isRecord5,
+  isOwnError: () => isOwnError,
+  isRecord: () => isRecord6,
   isRepoConfigMode: () => isRepoConfigMode,
   isReviewGrouping: () => isReviewGrouping,
   isSuggestedFixMode: () => isSuggestedFixMode,
@@ -11826,6 +12341,7 @@ __export(src_exports, {
   listFields: () => listFields,
   listSurfaceJson: () => listSurfaceJson,
   mergeCustomCategoryEdit: () => mergeCustomCategoryEdit,
+  mergeErrorReports: () => mergeErrorReports,
   mergeTrustedReviewAccounts: () => mergeTrustedReviewAccounts,
   mergeTrustedSummaryPublishers: () => mergeTrustedSummaryPublishers,
   newCommentScanState: () => newCommentScanState,
@@ -11843,6 +12359,8 @@ __export(src_exports, {
   parseCount: () => parseCount,
   parseDiffSummaries: () => parseDiffSummaries,
   parseDiffstatSurfaces: () => parseDiffstatSurfaces,
+  parseErrorPayload: () => parseErrorPayload,
+  parseErrorReports: () => parseErrorReports,
   parseGroupKey: () => parseGroupKey,
   parseIssueTracker: () => parseIssueTracker,
   parseListSurfaces: () => parseListSurfaces,
@@ -11857,6 +12375,9 @@ __export(src_exports, {
   pathFromGitHeader: () => pathFromGitHeader,
   plainText: () => plainText,
   pluralize: () => pluralize,
+  presetBlank: () => presetBlank,
+  presetGroups: () => presetGroups,
+  presetMatches: () => presetMatches,
   providerForHost: () => providerForHost,
   providerRepositoryScope: () => providerRepositoryScope,
   readRemote: () => readRemote,
@@ -11866,6 +12387,8 @@ __export(src_exports, {
   repositoryKey: () => repositoryKey,
   resolveCatalog: () => resolveCatalog,
   resolveCustomPatterns: () => resolveCustomPatterns,
+  scrubErrorText: () => scrubErrorText,
+  scrubStack: () => scrubStack,
   sectionsFor: () => sectionsFor,
   serializeCatalog: () => serializeCatalog,
   serializeSettingsPayload: () => serializeSettingsPayload,
@@ -11889,6 +12412,7 @@ __export(src_exports, {
   validateSettingsDocument: () => validateSettingsDocument,
   validateSettingsValue: () => validateSettingsValue,
   verifyCatalogSignature: () => verifyCatalogSignature,
+  withAutoViewedForAll: () => withAutoViewedForAll,
   withCategoryEnabled: () => withCategoryEnabled,
   withCustomCategory: () => withCustomCategory,
   withRepoRule: () => withRepoRule,
@@ -11910,6 +12434,7 @@ var init_src = __esm({
     init_category_icons();
     init_diff_parse();
     init_diff_summaries();
+    init_error_report();
     init_format();
     init_gist_sync();
     init_glob();
@@ -11934,7 +12459,7 @@ var init_src = __esm({
 function tokenKind(token) {
   return token.startsWith("ghu_") ? "app" : "oauth";
 }
-function isRecord8(value) {
+function isRecord9(value) {
   return typeof value === "object" && value !== null;
 }
 function str(record4, key) {
@@ -11946,7 +12471,7 @@ function num(record4, key) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 function parseTokenResponse(body, now) {
-  if (!isRecord8(body)) return null;
+  if (!isRecord9(body)) return null;
   const accessToken = str(body, "access_token");
   if (accessToken === null) return null;
   const expiresIn = num(body, "expires_in");
@@ -11966,7 +12491,7 @@ async function postForm(fetchImpl, url2, fields) {
     body: new URLSearchParams(fields).toString()
   });
   const body = await response.json().catch(() => null);
-  return { status: response.status, body: isRecord8(body) ? body : null };
+  return { status: response.status, body: isRecord9(body) ? body : null };
 }
 async function requestDeviceCode(clientId, options = {}) {
   const fetchImpl = options.fetch ?? defaultFetch;
@@ -16330,7 +16855,7 @@ function handleIntersectionResults(result, left, right) {
   const unrecKeys = /* @__PURE__ */ new Map();
   let unrecIssue;
   const keyIssues = /* @__PURE__ */ new Map();
-  const collect = (iss, side) => {
+  const collect2 = (iss, side) => {
     let keys;
     if (iss.code === "unrecognized_keys" && !iss.path?.length) {
       unrecIssue ?? (unrecIssue = iss);
@@ -16351,11 +16876,11 @@ function handleIntersectionResults(result, left, right) {
     return true;
   };
   for (const iss of left.issues) {
-    if (!collect(iss, "l"))
+    if (!collect2(iss, "l"))
       result.issues.push(iss);
   }
   for (const iss of right.issues) {
-    if (!collect(iss, "r"))
+    if (!collect2(iss, "r"))
       result.issues.push(iss);
   }
   const bothKeys = [...unrecKeys].filter(([, f]) => f.l && f.r).map(([k]) => k);
@@ -31365,7 +31890,8 @@ var reviewItemSchema = external_exports.object({
   sources: external_exports.array(reviewSourceSchema).min(1),
   addressed: addressedSchema.optional(),
   context: external_exports.string().min(1).optional(),
-  fix: suggestedFixSchema.optional()
+  fix: suggestedFixSchema.optional(),
+  threads: external_exports.object({ total: external_exports.number().int().min(2), open: external_exports.number().int().nonnegative() }).optional()
 });
 var reviewSummarySchema = external_exports.object({
   tldr: external_exports.string().min(1),
@@ -31384,7 +31910,8 @@ var botVerdictSchema = external_exports.object({
   checkSha: sha.optional(),
   sourceId: external_exports.string().min(1).optional(),
   reason: external_exports.string().min(1).optional(),
-  runJudged: external_exports.literal(true).optional()
+  runJudged: external_exports.literal(true).optional(),
+  needsHuman: external_exports.literal(true).optional()
 });
 var reviewerSchema = external_exports.object({
   login: external_exports.string().min(1),
@@ -31523,7 +32050,8 @@ function reviewItemFrom(value) {
   const numbered = value.line === void 0 ? located : { ...located, line: value.line };
   const judged = value.addressed === void 0 ? numbered : { ...numbered, addressed: { verdict: value.addressed.verdict, evidence: value.addressed.evidence } };
   const explained = value.context === void 0 ? judged : { ...judged, context: value.context };
-  return value.fix === void 0 ? explained : { ...explained, fix: { text: value.fix.text, source: value.fix.source } };
+  const fixed = value.fix === void 0 ? explained : { ...explained, fix: { text: value.fix.text, source: value.fix.source } };
+  return value.threads === void 0 ? fixed : { ...fixed, threads: { total: value.threads.total, open: Math.min(value.threads.open, value.threads.total) } };
 }
 function botVerdictFrom(value) {
   const record4 = {
@@ -31539,7 +32067,8 @@ function botVerdictFrom(value) {
   const checked = value.checkSha === void 0 ? named : { ...named, checkSha: value.checkSha };
   const sourced = value.sourceId === void 0 ? checked : { ...checked, sourceId: value.sourceId };
   const reasoned = value.reason === void 0 ? sourced : { ...sourced, reason: value.reason };
-  return value.runJudged === void 0 ? reasoned : { ...reasoned, runJudged: true };
+  const judged = value.runJudged === void 0 ? reasoned : { ...reasoned, runJudged: true };
+  return value.needsHuman === void 0 ? judged : { ...judged, needsHuman: true };
 }
 function metaFrom(value) {
   const meta3 = {
@@ -31586,11 +32115,20 @@ var OPEN_STATUSES = /* @__PURE__ */ new Set(["open", "needs-reply", "addressed",
 function isOpenStatus(status) {
   return OPEN_STATUSES.has(status);
 }
-function openItemCount(items) {
-  return items.filter((item) => isOpenStatus(item.status)).length;
+function itemThreads(item) {
+  const total = item.threads?.total ?? 1;
+  if (!isOpenStatus(item.status)) return { total, open: 0 };
+  return { total, open: Math.max(1, Math.min(item.threads?.open ?? 1, total)) };
 }
-function doneItemCount(items) {
-  return items.length - openItemCount(items);
+function threadCounts(items) {
+  let total = 0;
+  let open2 = 0;
+  for (const item of items) {
+    const threads = itemThreads(item);
+    total += threads.total;
+    open2 += threads.open;
+  }
+  return { total, open: open2 };
 }
 function encodedPayloadLength(meta3) {
   const json2 = JSON.stringify(meta3);
@@ -31619,12 +32157,13 @@ function truncateMeta(meta3, budget = PAYLOAD_BUDGET) {
   return retained([], true);
 }
 function deeplinkFrom(meta3) {
+  const threads = threadCounts(meta3.items);
   return {
     v: META_VERSION,
     headSha: meta3.headSha,
     generatedAt: meta3.generatedAt,
-    open: openItemCount(meta3.items),
-    total: meta3.items.length
+    open: threads.open,
+    total: threads.total
   };
 }
 var BASE64_TABLE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -31877,18 +32416,24 @@ var REVIEW_BOTS = [
     configFiles: [".ellipsis/code-review.yaml", "ellipsis.yaml"]
   },
   {
-    // Macroscope (macroscope.com, `macroscopeapp[bot]`): findings as comments, then an "#### Approvability" comment
-    // with "**Verdict:** Approved at `sha`" / "Would Approve" / "Needs Human Approval"; "Macroscope skipped reviewing
-    // this pull request. Per-review cost limit exceeded" when it will not run. `@macroscope-app review` starts one.
-    // Docs read Oct 2026 (docs.macroscope.com).
+    // Macroscope (macroscope.com, `macroscopeapp[bot]`), surveyed on ~110 public pull requests and its docs in Nov 2026
+    // (docs.macroscope.com). Its review is the "Macroscope - Correctness Check" (`neutral` with "N issues identified",
+    // `success` with "No issues identified"), each finding an inline thread headed by a severity badge, resolved by
+    // Macroscope when a push fixes it. "Macroscope - Approvability Check" and its "#### Approvability" comment ("**Verdict:**
+    // Approved at `sha`" / "Would Approve" / "Needs Human Approval", rewritten in place on every push) are a merge gate
+    // over those threads, not a count; every other "Macroscope - <title>" check is a repository's own Check Run Agent,
+    // shown as a report (`CHECK_REPORTERS`), its comments signed "Posted via Macroscope — <title>". Mentioning
+    // `@macroscope-app` starts a run, answered by "Review started…" and "Manual reviews triggered for commit…".
     id: "macroscope",
     title: "Macroscope",
     appId: 900172,
     logins: ["macroscopeapp[bot]", "macroscope-app[bot]"],
-    checkNames: ["Macroscope"],
-    triggers: ["@macroscope-app review", "@macroscopeapp review"],
-    configFiles: [],
-    conversational: true
+    checkNames: ["Macroscope - Correctness Check"],
+    neutralConclusion: "findings",
+    triggers: ["@macroscope-app review", "@macroscopeapp review", "@macroscope-app"],
+    configFiles: [".macroscope/"],
+    conversational: true,
+    resolvesThreads: true
   },
   {
     // Korbit (korbit.ai, `korbit-ai[bot]`): a review headed "### Review by Korbit AI" with a table of issues and
@@ -31955,15 +32500,38 @@ function outsideDiffCount(text) {
   const match = /\boutside diff range comments\s*\((\d+)\)/i.exec(text);
   return match?.[1] === void 0 ? 0 : Number.parseInt(match[1], 10);
 }
-function countShapedBy(botId, text) {
+function failedPreMergeCount(text) {
+  if (!hasHeading(text, FIX_ALL_HEADING)) return 0;
+  const block = /\bfailed pre-merge checks:[^\S\n]*\n([\s\S]*?)(?:\bafter applying the fix\b|```|$)/i.exec(text)?.[1] ?? "";
+  return block.split("\n").filter((line) => /^\s*-\s+[^:\n]{1,80}:\s*$/.test(line)).length;
+}
+function isCodeRabbitReview(text) {
+  return hasHeading(text, FIX_ALL_HEADING) || hasHeading(text, NOTES_HEADING);
+}
+var FIX_ALL_HEADING = /^prompt to fix all issues$/i;
+var NOTES_HEADING = /^(?:nitpick|additional) comments:?\s*\(?\d+\)?$/i;
+function hasHeading(text, heading) {
+  let fenced = false;
+  for (const line of text.split("\n")) {
+    if (/^\s*```/.test(line)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced || /^\s*>/.test(line)) continue;
+    const bare = line.replace(/<[^>]*>/g, "").replace(/[^\p{L}\p{N}():\s]/gu, "").trim();
+    if (heading.test(bare)) return true;
+  }
+  return false;
+}
+function countShapedBy(botId, text, reviewBody) {
   switch (botId) {
     case "claude": {
-      const match = /(\d+)\s*P1,\s*(\d+)\s*P2/i.exec(text);
+      const match = /(\d+)[^\S\n]*P1,[^\S\n]*(\d+)[^\S\n]*P2/i.exec(text);
       return match?.[1] !== void 0 && match[2] !== void 0 ? Number.parseInt(match[1], 10) + Number.parseInt(match[2], 10) : null;
     }
     case "cubic": {
-      const existing = /(\d+)\s+existing\s+issues?\s+remains?/i.exec(text);
-      const found = /(\d+)\s+(?:new\s+)?issues?\s+found/i.exec(text);
+      const existing = /(\d+)[^\S\n]+existing[^\S\n]+issues?[^\S\n]+remains?/i.exec(text);
+      const found = /(\d+)[^\S\n]+(?:new[^\S\n]+)?issues?[^\S\n]+found/i.exec(text);
       if (existing === null && found === null) return /\bno (?:new )?issues found\b|\ball reported issues were addressed\b/i.test(text) ? 0 : null;
       return (existing?.[1] === void 0 ? 0 : Number.parseInt(existing[1], 10)) + (found?.[1] === void 0 ? 0 : Number.parseInt(found[1], 10));
     }
@@ -32001,24 +32569,73 @@ function countShapedBy(botId, text) {
       return count;
     }
     case "coderabbit": {
-      const actionable = /\bactionable comments posted:\s*(\d+)/i.exec(text);
-      const outside = outsideDiffCount(text);
-      if (actionable === null && outside === 0) return null;
-      return (actionable?.[1] === void 0 ? 0 : Number.parseInt(actionable[1], 10)) + outside;
+      const actionable = /\bactionable comments posted:[^\S\n]*(\d+)/i.exec(text);
+      const unthreaded = outsideDiffCount(text) + (reviewBody ? failedPreMergeCount(text) : 0);
+      if (actionable === null && unthreaded === 0 && !(reviewBody && isCodeRabbitReview(text))) return null;
+      return (actionable?.[1] === void 0 ? 0 : Number.parseInt(actionable[1], 10)) + unthreaded;
     }
     default:
       return null;
   }
 }
-function parseBotBody(body, botId) {
-  const text = body.replace(/\r\n/g, "\n").replace(/<!--[\s\S]*?-->/g, "").trim();
+function isMacroscopeGate(body) {
+  return macroscopeApprovability(body.replace(/\r\n?/g, "\n").replace(/<!--[\s\S]*?-->/g, "").trim()) !== null;
+}
+function macroscopeApprovability(text) {
+  if (!/^\s*(?:#{1,6}\s*)?Approvability\s*$/im.test(text)) return null;
+  const verdict = /\bVerdict:?\**\s*:?\s*([^\n]*)/i.exec(text)?.[1]?.replace(/[*_`]/g, "").trim() ?? "";
+  const empty = { count: null, score: null, severity: null };
+  if (/^needs human approval\b/i.test(verdict)) return { ...empty, clean: false, verdict: "needs-human" };
+  const blockers = /\bneeds human approval because\b([\s\S]*)/i.exec(text)?.[1] ?? "";
+  if (/\b(?:limit exceeded|limit reached|relies on correctness review|could not report|skipped for prerequisites)\b/i.test(blockers)) return { ...empty, clean: false };
+  if (/^(?:approved|would approve)\b/i.test(verdict)) return { ...empty, clean: true };
+  return { ...empty, clean: false };
+}
+function isMacroscopeAgentComment(body) {
+  return /\bPosted via Macroscope\s*[\u2014\u2013-]/i.test(body.replace(/<[^>]+>/g, ""));
+}
+function findingSeverity(body) {
+  const opening = body.replace(/<!--[\s\S]*?-->/g, "").split("\n").map((line) => line.trim()).filter((line) => line !== "").slice(0, 2).join("\n");
+  const level = (word) => {
+    const lower = word.toLowerCase();
+    if (/^(?:critical|high|major|important|p0|p1)$/.test(lower)) return "high";
+    if (/^(?:medium|minor|p2)$/.test(lower)) return "medium";
+    if (/^(?:low|trivial|nit|nitpick|p3|p4)$/.test(lower)) return "low";
+    return null;
+  };
+  const LEVEL = "critical|high|major|medium|minor|low|trivial|nit|nitpick";
+  const asks = /(?:alt="|!\[)(action required|remediation recommended)["\]]/i.exec(opening)?.[1]?.toLowerCase();
+  if (asks !== void 0) return asks === "action required" ? "high" : "medium";
+  const words = (
+    // A level in a badge: an image's alt or a shields.io label ("![high](…)", "badge/High-634FD1", alt="P1").
+    new RegExp(`(?:!\\[|alt="|/badge/)(${LEVEL}|p[0-4])(?:[\\]"\\s-]|\\s+badge)`, "i").exec(opening) ?? // A bold level alone, or before "·", leading its line, with a colour mark or a CodeRabbit icon before it.
+    new RegExp(`^[\\s>]*(?:\\p{Extended_Pictographic}\\uFE0F?\\s*)?(?:\\*\\*|__)\\s*(?:<[^>]+>\\s*)*(?:\\p{Extended_Pictographic}\\uFE0F?\\s*)?(${LEVEL})\\s*(?:\\*\\*|__|\xB7)`, "imu").exec(opening) ?? // A priority leading the finding ("P1: …", cubic).
+    /^\W{0,3}(p[0-4])\s*:/im.exec(opening) ?? // "**High Severity**" (Bugbot), "**Medium Severity · Investigate**" (Capy), "Severity: HIGH" (Cursor's security review).
+    new RegExp(`(?:^|\\*\\*|__)\\s*(${LEVEL})\\s+severity\\s*(?:\\*\\*|__|\xB7|$)`, "im").exec(opening) ?? new RegExp(`^\\W{0,3}severity:?\\W{0,3}(${LEVEL})\\b`, "im").exec(opening) ?? // A colour mark with its level anywhere on the line ("… — 🟡 Minor · Correctness", "K1 · 🟢 `[nit]` ·", Claude).
+    new RegExp(`(?:\u{1F534}|\u{1F7E0}|\u{1F7E1}|\u{1F7E2}|\u26AA)\\s*\`?\\[?(${LEVEL}|important)\\]?\`?(?![A-Za-z0-9-])`, "iu").exec(opening)
+  );
+  const read3 = words?.[1] === void 0 ? null : level(words[1]);
+  if (read3 !== null) return read3;
+  const mark = /^[*_\s]*(🔴|🟠|🟡|🟢|🛑|:stop_sign:)/u.exec(opening)?.[1];
+  if (mark === void 0) return null;
+  return mark === "\u{1F534}" || mark === "\u{1F7E0}" || mark === "\u{1F6D1}" || mark === ":stop_sign:" ? "high" : mark === "\u{1F7E1}" ? "medium" : "low";
+}
+var SEVERITY_RANK = { high: 3, medium: 2, low: 1 };
+function parseBotBody(body, botId, anchor2) {
+  const text = body.replace(/\r\n?/g, "\n").replace(/<!--[\s\S]*?-->/g, "").trim();
+  const reviewBody = anchor2 === void 0 || anchor2.startsWith("pullrequestreview-");
+  if (botId === "macroscope") {
+    if (isMacroscopeAgentComment(text)) return { count: null, score: null, clean: false, severity: null };
+    const gate = macroscopeApprovability(text);
+    if (gate !== null) return gate;
+  }
   const scoreMatch = botId === "qodo" ? null : (botId === "entelligence" ? /merge confidence\W+(?:[\u25cf\u25cb\s]*)\**(\d+(?:\.\d+)?)\s*\/\s*5\b/i.exec(text) : null) ?? /(\d+(?:\.\d+)?)\s*\/\s*5\b/.exec(text);
   const score = scoreMatch?.[1] !== void 0 ? Number.parseFloat(scoreMatch[1]) : null;
-  const countMatch = botId === "greptile" ? /(?:found|reported)\s+(\d+)\s+(?:issue|finding|comment)/i.exec(text) : /\bactionable comments posted:\s*(\d+)/i.exec(text) ?? // Not a number that is a reference ("#9377", "GH-123"): "both #9377 findings are fixed" names a pull request, not 9,377 findings
+  const countMatch = botId === "greptile" ? /(?:found|reported)[^\S\n]+(\d+)[^\S\n]+(?:issue|finding|comment)/i.exec(text) : /\bactionable comments posted:[^\S\n]*(\d+)/i.exec(text) ?? // Not a number that is a reference ("#9377", "GH-123"): "both #9377 findings are fixed" names a pull request, not 9,377 findings
   // (server#9385, where the Bugbot chip read "9377 issues" until its threads settled).
-  /(?<![#\w-])(\d+)\s+(?:(?:potential|possible|new|actionable|likely|minor|major|critical|significant|remaining|open|existing)\s+){0,2}(?:issue|finding|bug|problem)s?\b/i.exec(text);
+  /(?<![#\w-])(\d+)[^\S\n]+(?:(?:potential|possible|new|actionable|likely|minor|major|critical|significant|remaining|open|existing)[^\S\n]+){0,2}(?:issue|finding|bug|problem)s?\b/i.exec(text);
   let count = countMatch?.[1] !== void 0 ? Number.parseInt(countMatch[1], 10) : null;
-  const shaped = countShapedBy(botId, text);
+  const shaped = countShapedBy(botId, text, reviewBody);
   if (botId === "coderabbit") count = shaped;
   else if (shaped !== null) count = shaped;
   if (botId === "greptile" && count === null && /\bconfidence score\b/i.test(text)) {
@@ -32040,7 +32657,7 @@ function parseBotBody(body, botId) {
   const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(text);
   const coderabbit = botId === "coderabbit";
   const verdict = coderabbit ? {} : needsHuman ? { verdict: "needs-human" } : changesRequested ? { verdict: "changes-requested" } : {};
-  const unthreaded = coderabbit ? outsideDiffCount(text) : 0;
+  const unthreaded = coderabbit ? outsideDiffCount(text) + (reviewBody ? failedPreMergeCount(text) : 0) : 0;
   return { count: Number.isFinite(count) ? count : null, score: !coderabbit && Number.isFinite(score) ? score : null, clean, severity, ...verdict, ...unthreaded > 0 ? { unthreaded } : {} };
 }
 function refusalReason(body, options = {}) {
@@ -32065,8 +32682,9 @@ function refusalReason(body, options = {}) {
   if (heading !== void 0 && /^[A-Z][\w.-]*(?:\[bot\])?\s+(?:skipped reviewing\b|encountered an error\b)/.test(heading)) {
     const lower = heading.toLowerCase();
     if (REVIEW_BOTS.some((bot) => lower.startsWith(bot.title.toLowerCase()) || bot.logins.some((login) => lower.startsWith(login.replace(/\[bot\]$/, "").toLowerCase())))) {
-      const first2 = heading.replace(/\s*[\u2014\u2013-]{2,}.*$/, "").split(/(?<=[.!?])\s+/)[0] ?? heading;
-      return first2.replace(/[.!?]\s*$/, "");
+      const [first2 = heading, why] = heading.replace(/\s*[\u2014\u2013-]{2,}.*$/, "").split(/(?<=[.!?])\s+/);
+      const reason = /\bskipped reviewing\b/i.test(first2) && why !== void 0 && why.trim() !== "" ? why : first2;
+      return reason.replace(/[.!?]\s*$/, "");
     }
   }
   if (heading !== void 0 && heading.length <= 120 && /\b(?:couldn.t run|could not run|cannot run|can.t run|needs? [^.]{0,60}\benabled|usage limits? (?:(?:has|have|was|were) been )?reached|quota (?:limit )?reached|out of credits)\b/i.test(heading)) {
@@ -32315,8 +32933,11 @@ function botNamedIn(text) {
 }
 var REFUSAL_MONEY = /\b(?:credits?|quota|billing|seats?)\b/i;
 function withOptionalCount(base, parsed) {
+  const { needsHuman: _earlier, ...rest } = base;
+  const counted2 = parsed.count !== null || base.verdict === "findings" && base.count !== void 0;
   return {
-    ...base,
+    ...rest,
+    ...base.verdict === "findings" && parsed.verdict === "needs-human" && !counted2 ? { needsHuman: true } : {},
     ...parsed.count !== null ? { count: parsed.count } : {},
     ...parsed.score !== null ? { score: parsed.score } : {},
     ...parsed.severity !== null ? { severity: parsed.severity } : {}
@@ -32337,6 +32958,7 @@ function isStatusLineComment(body) {
   const untagged = body.replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]+>/g, " ");
   const firstLine = untagged.split("\n").find((line) => line.trim() !== "") ?? "";
   if (/^\s*reviewing (?:pr|pull request) #?\d+\s*$/i.test(firstLine.replace(/[`*_>~#]/g, " ").replace(/\s+/g, " "))) return true;
+  if (/^\s*manual reviews? triggered for commit\b/i.test(firstLine.replace(/[`*_>~#]/g, " "))) return true;
   const text = untagged.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[`*_>~#]/g, "").replace(/\s+/g, " ").trim();
   if (text === "") return false;
   const sentences = text.split(/(?<=[.!…])\s+/).filter((part) => part !== "");
@@ -32352,12 +32974,22 @@ var STATUS_LINE_STALE_MS = 45 * 60 * 1e3;
 var RERUN_EDIT_GAP_MS = 5 * 60 * 1e3;
 function checkRefusal(check2) {
   if (check2.status !== "completed") return null;
-  if (check2.conclusion === "skipped") return "Check skipped";
+  const words = checkWords(check2);
+  if (check2.conclusion === "skipped") return words === "" || /^(?:skipped|completed|cancelled|neutral)\b(?:\s+(?:in|after)\s+\S+)?[.!]?$/i.test(words) ? "Check skipped" : words.replace(/[.!]$/, "");
   if (check2.conclusion !== "neutral" && check2.conclusion !== "success") return null;
-  const words = (check2.description ?? "").replace(/^.*?\s[\u2014\u2013-]\s+/, "").trim();
   if (words === "") return null;
   if (/^(?:reviews?\s+)?(?:(?:was|were|is|are)\s+)?(?:rate[- ]limited|skipped|paused)[.!]?$/i.test(words)) return words.replace(/[.!]$/, "");
   return refusalReason(words);
+}
+function checkWords(check2) {
+  return (check2.description ?? "").replace(/^(?:Completed|Successful) in \d+(?:\.\d+)?\s*(?:ms|s|m|h|d|milliseconds?|seconds?|minutes?|hours?|days?)(?:\s*\d+(?:\.\d+)?\s*(?:ms|s|m|h|d|milliseconds?|seconds?|minutes?|hours?|days?))*\s+[\u2014\u2013-]\s+/i, "").trim();
+}
+function checkFoundNothingNew(check2) {
+  return check2.status === "completed" && /\b(?:already (?:been )?reviewed|diff unchanged|no code objects were reviewed|prior analysis still applies)\b/i.test(checkWords(check2));
+}
+function checkFindingCount(check2) {
+  const match = /\b(\d+)\s+(?:new\s+)?(?:issues?|findings?|bugs?)\s+(?:identified|found)\b/i.exec(checkWords(check2));
+  return match?.[1] === void 0 ? null : Number.parseInt(match[1], 10);
 }
 function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.now(), options = {}) {
   const byId = /* @__PURE__ */ new Map();
@@ -32366,20 +32998,31 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   const checkFinishedAt = /* @__PURE__ */ new Map();
   const postedThreads = /* @__PURE__ */ new Set();
   const checkSkipped = /* @__PURE__ */ new Map();
-  const shaOver = (existing) => existing.verdict === "failed" && existing.reason !== void 0 && checkSkipped.get(existing.id) === existing.reason ? UNKNOWN_SHA : existing.reviewedSha;
+  const checkCurrent = /* @__PURE__ */ new Set();
+  const checkCounts = /* @__PURE__ */ new Map();
+  const checkBelowBar = /* @__PURE__ */ new Set();
+  const shaOver = (existing) => existing.verdict === "failed" && existing.reason !== void 0 && checkSkipped.get(existing.id) === existing.reason && !checkCurrent.has(existing.id) ? UNKNOWN_SHA : existing.reviewedSha;
   for (const check2 of checks) {
     const bot = botByCheckName(check2.name);
     if (bot === null) continue;
     const login = bot.logins[0] ?? bot.id;
     const running = check2.status !== "completed";
-    const failed = check2.conclusion === "failure" || check2.conclusion === "timed_out" || check2.conclusion === "cancelled" || check2.conclusion === "action_required" || check2.conclusion === "stale";
+    const belowBar = check2.conclusion === "failure" && /\bbelow (?:your|the) required\b/i.test(checkWords(check2));
+    const failed = !belowBar && (check2.conclusion === "failure" || check2.conclusion === "timed_out" || check2.conclusion === "cancelled" || check2.conclusion === "action_required" || check2.conclusion === "stale");
     const refused = running ? null : checkRefusal(check2);
     const skipped = refused !== null;
     const neutralFindings = check2.conclusion === "neutral" && bot.neutralConclusion === "findings";
-    const verdict = running ? "running" : failed || skipped ? "failed" : neutralFindings ? "findings" : "clean";
+    const verdict = running ? "running" : failed || skipped ? "failed" : neutralFindings || belowBar ? "findings" : "clean";
     checkVerdict.set(bot.id, verdict);
+    if (belowBar) checkBelowBar.add(bot.id);
+    else checkBelowBar.delete(bot.id);
     if (refused !== null) checkSkipped.set(bot.id, refused);
     else checkSkipped.delete(bot.id);
+    if (!running && checkFoundNothingNew(check2)) checkCurrent.add(bot.id);
+    else checkCurrent.delete(bot.id);
+    const counted2 = neutralFindings ? checkFindingCount(check2) : null;
+    if (counted2 !== null && counted2 > 0) checkCounts.set(bot.id, counted2);
+    else checkCounts.delete(bot.id);
     const started = check2.startedAt === void 0 ? NaN : Date.parse(check2.startedAt);
     if (Number.isNaN(started)) checkStartedAt.delete(bot.id);
     else checkStartedAt.set(bot.id, started);
@@ -32390,6 +33033,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       id: bot.id,
       login,
       verdict,
+      ...counted2 !== null && counted2 > 0 ? { count: counted2 } : {},
       reviewedSha: check2.sha || headSha,
       checkName: check2.name,
       ...refused === null ? {} : { reason: refused }
@@ -32434,18 +33078,25 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     }
     if (comment.resolved === void 0 && isTriggerComment(comment.body, extraLogins)) {
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
+      const viaWorkflow = geldRunBots(comment.body).length > 0;
+      const workflow = viaWorkflow ? geldRunAnswer(comment) : null;
       for (const asked of botsTriggeredBy(comment.body, extraLogins)) {
         if (asked.id === id) continue;
-        if (!Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === "reaction" && !reactedBy(comment, asked.id)) continue;
-        const prior = threadRuns.get(asked.id);
-        if (prior !== void 0) runsBeforeAsk.set(asked.id, prior);
-        threadRuns.delete(asked.id);
-        unthreadedBy.delete(asked.id);
-        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged: botById(asked.id)?.acknowledges === "reaction" && reactedBy(comment, asked.id), askedAt: Number.isNaN(at) ? null : at });
+        if (viaWorkflow && (workflow === "failed" || workflow === null && !Number.isNaN(at) && now - at > ACK_GRACE_MS)) continue;
+        if (!viaWorkflow && !Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === "reaction" && !reactedBy(comment, asked.id)) continue;
+        if (botById(asked.id)?.resolvesThreads !== true) {
+          const prior = threadRuns.get(asked.id);
+          if (prior !== void 0) runsBeforeAsk.set(asked.id, prior);
+          threadRuns.delete(asked.id);
+          unthreadedBy.delete(asked.id);
+        }
+        const acknowledged = viaWorkflow ? workflow === "queued" : botById(asked.id)?.acknowledges === "reaction" && reactedBy(comment, asked.id);
+        statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged, askedAt: Number.isNaN(at) ? null : at });
       }
       continue;
     }
     if (id === null) continue;
+    if (id === "macroscope" && comment.resolved === void 0 && isMacroscopeAgentComment(comment.body)) continue;
     if (comment.resolved !== void 0) {
       postedThreads.add(id);
       reported(id, comment);
@@ -32457,7 +33108,9 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
       const lastAt = Number.isNaN(at) ? run2?.lastAt ?? null : Math.max(at, run2?.lastAt ?? Number.NEGATIVE_INFINITY);
       const unthreaded = run2 === void 0 ? unthreadedBy.get(id) : run2.unthreaded;
-      threadRuns.set(id, { login: comment.author, open: open2, openAnchor, lastAnchor: comment.anchor, lastAt, ...unthreaded === void 0 ? {} : { unthreaded } });
+      const badge = comment.resolved ? null : comment.grade ?? findingSeverity(comment.body);
+      const severity = badge === null || run2?.severity !== void 0 && SEVERITY_RANK[run2.severity] >= SEVERITY_RANK[badge] ? run2?.severity : badge;
+      threadRuns.set(id, { login: comment.author, open: open2, openAnchor, lastAnchor: comment.anchor, lastAt, ...unthreaded === void 0 ? {} : { unthreaded }, ...severity === void 0 ? {} : { severity } });
       continue;
     }
     if (commandReply(comment.body) === "done") {
@@ -32488,29 +33141,42 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       continue;
     }
     if (isStatusLineComment(comment.body)) {
-      const prior = threadRuns.get(id);
-      if (prior !== void 0) runsBeforeAsk.set(id, prior);
-      threadRuns.delete(id);
-      unthreadedBy.delete(id);
+      if (botById(id)?.resolvesThreads !== true) {
+        const prior = threadRuns.get(id);
+        if (prior !== void 0) runsBeforeAsk.set(id, prior);
+        threadRuns.delete(id);
+        unthreadedBy.delete(id);
+      }
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
       const triggered = commandReply(comment.body) === "started" || statusOnly.get(id)?.triggered === true;
       const pending = statusOnly.get(id);
       statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false, triggered, askedAt: pending === void 0 ? Number.isNaN(at) ? null : at : pending.askedAt ?? pending.at });
       continue;
     }
-    const parsed = parseBotBody(comment.body, id.startsWith("custom:") ? "" : id);
+    if (id === "macroscope" && checkSkipped.has(id) && !checkCurrent.has(id) && !threadRuns.has(id) && isMacroscopeGate(comment.body)) {
+      reported(id, comment);
+      statusOnly.delete(id);
+      continue;
+    }
+    const parsed = parseBotBody(comment.body, id.startsWith("custom:") ? "" : id, comment.anchor);
     if (botById(id)?.conversational === true && !isReviewShaped(parsed)) continue;
+    if (!isReviewShaped(parsed) && threadRuns.has(id)) {
+      reported(id, comment);
+      statusOnly.delete(id);
+      runsBeforeAsk.delete(id);
+      continue;
+    }
     reported(id, comment);
     if (parsed.count !== null) countedSummaries.add(comment.anchor);
     if (parsed.unthreaded !== void 0) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor });
     else unthreadedBy.delete(id);
-    threadRuns.delete(id);
+    if (botById(id)?.resolvesThreads !== true) threadRuns.delete(id);
     statusOnly.delete(id);
     runsBeforeAsk.delete(id);
     const existing = byId.get(id);
     const login = comment.author;
     if (existing !== void 0) {
-      const verdict2 = parsed.clean && existing.verdict === "failed" && !checkSkipped.has(id) ? "findings" : parsed.clean ? "clean" : parsed.count === 0 ? "clean" : "findings";
+      const verdict2 = parsed.clean && (existing.verdict === "failed" && !checkSkipped.has(id) || checkCounts.has(id)) ? "findings" : parsed.clean ? "clean" : parsed.count === 0 ? "clean" : "findings";
       const { reason: _skipped, ...reviewed } = existing;
       const reviewedSha = shaOver(existing);
       const base = verdict2 === "clean" ? { id: existing.id, login, verdict: verdict2, reviewedSha, ...existing.checkName === void 0 ? {} : { checkName: existing.checkName } } : { ...reviewed, reviewedSha };
@@ -32522,7 +33188,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   }
   if (options.complete === true) {
     for (const [id, verdict] of checkVerdict) {
-      if (verdict !== "findings" || postedThreads.has(id)) continue;
+      if (verdict !== "findings" || postedThreads.has(id) || checkCounts.has(id) || checkBelowBar.has(id)) continue;
       checkVerdict.set(id, "clean");
       const record4 = byId.get(id);
       if (record4 !== void 0 && record4.sourceId === void 0) byId.set(id, { ...record4, verdict: "clean" });
@@ -32585,13 +33251,14 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   }
   for (const [id, run2] of threadRuns) {
     const existing = byId.get(id);
+    if (botById(id)?.resolvesThreads === true && (existing?.verdict === "running" || existing?.verdict === "loading")) continue;
     const reviewedSha = existing === void 0 ? headSha : shaOver(existing);
     const checkName = existing?.checkName;
     const named = checkName === void 0 ? {} : { checkName };
     const scored = existing?.verdict === "findings" && existing.score !== void 0 ? { score: existing.score } : {};
     const unthreaded = run2.unthreaded?.count ?? 0;
     if (run2.open + unthreaded > 0) {
-      const severity = existing?.verdict === "findings" && existing.severity !== void 0 ? { severity: existing.severity } : {};
+      const severity = run2.severity !== void 0 ? { severity: run2.severity } : existing?.verdict === "findings" && existing.severity !== void 0 ? { severity: existing.severity } : {};
       byId.set(id, { id, login: run2.login, verdict: "findings", count: run2.open + unthreaded, ...scored, ...severity, reviewedSha, ...named, sourceId: run2.openAnchor ?? run2.unthreaded?.anchor ?? run2.lastAnchor });
       continue;
     }
@@ -32642,10 +33309,17 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     }
     const finished = check2.completedAt === void 0 ? NaN : Date.parse(check2.completedAt);
     const awaiting = !Number.isNaN(finished) && now - finished < REPORT_GRACE_MS;
+    if (!awaiting && bot.resolvesThreads === true && existing.verdict === "findings" && (threadRuns.get(bot.id)?.open ?? 0) > 0) {
+      byId.set(bot.id, { ...existing, runJudged: true });
+      continue;
+    }
+    const verdict = awaiting ? "running" : checkVerdict.get(bot.id) ?? "clean";
+    const counted2 = verdict === "findings" ? checkCounts.get(bot.id) : void 0;
     byId.set(bot.id, {
       id: bot.id,
       login: existing.login,
-      verdict: awaiting ? "running" : checkVerdict.get(bot.id) ?? "clean",
+      verdict,
+      ...counted2 === void 0 ? {} : { count: counted2 },
       reviewedSha: existing.reviewedSha,
       checkName: check2.name,
       ...existing.sourceId === void 0 ? {} : { sourceId: existing.sourceId },
@@ -32679,6 +33353,13 @@ function plainTrigger(text) {
   return text.replace(/[`*>~]/g, "").replace(/(^|\s)_+(?=\S)/g, "$1").replace(/(?<=\S)_+(?=\s|$)/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 function botsTriggeredBy(body, extraLogins = []) {
+  const viaWorkflow = geldRunBots(body);
+  if (viaWorkflow.length > 0) {
+    return viaWorkflow.flatMap((id) => {
+      const bot = botById(id);
+      return bot === null ? [] : [{ id: bot.id, login: bot.logins[0] ?? bot.id }];
+    });
+  }
   const text = ` ${plainTrigger(body)} `;
   const out = [];
   for (const bot of REVIEW_BOTS) {
@@ -32692,8 +33373,23 @@ function botsTriggeredBy(body, extraLogins = []) {
   }
   return out;
 }
+var API_TRIGGER_BOT_IDS = ["greptile", "bugbot", "devin"];
+var GELD_RUN = /^\/geld[ \t]+run[ \t]+([a-z][a-z0-9-]*(?:[ \t,]+[a-z][a-z0-9-]*)*)[ \t]*$/i;
+function geldRunBots(body) {
+  const match = GELD_RUN.exec(body.trim());
+  if (match?.[1] === void 0) return [];
+  const ids = [...new Set(match[1].toLowerCase().split(/[ \t,]+/).filter((id) => id !== ""))];
+  return ids.every((id) => API_TRIGGER_BOT_IDS.includes(id)) ? ids : [];
+}
+function geldRunAnswer(comment) {
+  const fromApps = (comment.reactions ?? []).filter((reaction) => /\[bot\]$/i.test(reaction.login) || reaction.login.toLowerCase() === "github-actions");
+  if (fromApps.some((reaction) => reaction.emoji.toLowerCase() === "thumbs down")) return "failed";
+  if (fromApps.some((reaction) => reaction.emoji.toLowerCase() === "rocket")) return "queued";
+  return null;
+}
 var GENERIC_TRIGGER = /^(?:@[\w-]+(?:\[bot\])?|\/[\w-]+)(?:\s+(?:review|run|rerun|re-run|retrigger|full review|summary))?$/i;
 function isTriggerComment(body, extraLogins = []) {
+  if (geldRunBots(body).length > 0) return true;
   const lines2 = body.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "");
   if (lines2.length > 1) return lines2.length <= 6 && lines2.every((line) => isTriggerComment(line, extraLogins));
   if (isSingleTrigger(body, extraLogins)) return true;
@@ -32753,24 +33449,47 @@ function titleLine(line) {
   const text = line.slice(badge[0].length).trimStart();
   return text !== "" && !text.startsWith("<") && /[\p{L}\p{N}]/u.test(text) ? text : line;
 }
+var BADGE_LINE = /^\p{Extended_Pictographic}?\uFE0F?\s*\*\*(critical|high|medium|low)\*\*(?:\s+`[^`\n]*`)?$/iu;
+var GATE_HEADING = /^approvability$/i;
+function outsideCodeSpans(line, change) {
+  return line.split(/(`+[^`]*`+)/).map((part, index) => index % 2 === 1 ? part : change(part)).join("");
+}
 function firstSentence(body) {
   const withoutCode2 = body.replace(/```[\s\S]*?```/g, " ");
-  const line = withoutCode2.split("\n").map((entry2) => titleLine(entry2.trim())).filter((entry2) => entry2 !== "" && !entry2.startsWith("<") && !/^#{1,6}\s/.test(entry2) && !/^[-*]\s*$/.test(entry2)).map((entry2) => entry2.replace(/^\s*[-*]\s+/, "")).find((entry2) => entry2 !== "") ?? "";
+  const line = withoutCode2.split("\n").map((entry2) => outsideCodeSpans(titleLine(entry2.trim()), (text) => text.replace(/<br\s*\/?>/gi, " ").replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/<\/?(?:sub|sup|picture|source|img|span|a|p|div)\b[^>]*>/gi, "")).replace(/^(\*\*|__)\s+/, "$1").trim()).filter((entry2) => entry2 !== "" && /[\p{L}\p{N}]/u.test(entry2) && !entry2.startsWith("<") && !/^#{1,6}\s/.test(entry2) && !/^[-*]\s*$/.test(entry2) && !BADGE_LINE.test(entry2) && !GATE_HEADING.test(entry2)).map((entry2) => entry2.replace(/^\s*[-*]\s+/, "")).find((entry2) => entry2 !== "") ?? "";
   const cleaned = line.replace(/\s+/g, " ").trim();
   if (cleaned === "") return "Comment";
   const sentence = sentenceOf(cleaned, 160);
   return sentence.trim();
+}
+function endsWord(text, index) {
+  const next = closedThrough(text, index);
+  return next >= text.length || /[\s<]/.test(text[next] ?? "");
+}
+function closedThrough(text, index) {
+  let next = index + 1;
+  while (next < text.length && /[)\]"'’”*_~]/.test(text[next] ?? "")) next += 1;
+  return next;
+}
+var ABBREVIATION = /(?:^|[\s(])(?:e\.g|i\.e|vs|cf|viz|approx|incl|esp)$/i;
+var ETC = /(?:^|[\s(])etc$/i;
+function abbreviationGoesOn(text, index) {
+  const before = text.slice(0, index);
+  if (ABBREVIATION.test(before)) return true;
+  return ETC.test(before) && !/^\s+[A-Z]/.test(text.slice(index + 1));
 }
 function sentenceOf(text, limit) {
   let inCode = false;
   for (let index = 0; index < text.length && index < limit; index += 1) {
     const char = text[index];
     if (char === "`") inCode = !inCode;
-    else if (!inCode && (char === "." || char === "!" || char === "?")) return text.slice(0, index + 1);
+    else if (!inCode && (char === "." || char === "!" || char === "?") && endsWord(text, index) && !(char === "." && abbreviationGoesOn(text, index))) return text.slice(0, closedThrough(text, index));
   }
   return text.slice(0, limit);
 }
 function guessSeverity(body, bot, humanQuestion) {
+  const badge = BADGE_LINE.exec(body.replace(/<!--[\s\S]*?-->/g, "").trim().split("\n")[0]?.trim() ?? "")?.[1]?.toLowerCase();
+  if (badge !== void 0) return badge === "critical" ? "blocking" : badge === "low" ? "suggestion" : "bug";
   const text = body.toLowerCase();
   if (/\b(security|critical|blocker|must fix|p0)\b/.test(text)) return "blocking";
   if (humanQuestion || /^(why|what|how|who|where)\b/.test(text.trim()) || text.includes("?")) return "question";
@@ -32826,43 +33545,9 @@ function atomFrom(comment, extraLogins, options) {
     botIds,
     humanAuthors,
     resolved: comment.isResolved === true,
-    outdated: comment.isOutdated === true
-  };
-}
-function shouldMerge(a, b) {
-  if (a.path !== void 0 && a.path === b.path && a.line !== void 0 && b.line !== void 0 && Math.abs(a.line - b.line) <= 3) {
-    return true;
-  }
-  if (a.suggestion !== null && a.suggestion === b.suggestion) return true;
-  if (a.ruleId !== null && a.ruleId === b.ruleId && [...a.botIds].some((id) => b.botIds.has(id))) return true;
-  return false;
-}
-function mergeAtom(a, b) {
-  const botIds = new Set(a.botIds);
-  for (const id of b.botIds) botIds.add(id);
-  const seen = new Set(a.sources.map((source) => source.anchor));
-  const sources = [...a.sources];
-  for (const source of b.sources) {
-    if (!seen.has(source.anchor)) {
-      seen.add(source.anchor);
-      sources.push(source);
-    }
-  }
-  const humanLead = a.humanLead || b.humanLead;
-  return {
-    sources,
-    bodies: [...a.bodies, ...b.bodies],
-    title: a.humanLead || !b.humanLead ? a.title : b.title,
-    humanLead,
-    path: a.path ?? b.path,
-    line: a.line ?? b.line,
-    suggestion: a.suggestion ?? b.suggestion,
-    suggestionBy: a.suggestion !== null ? a.suggestionBy : b.suggestionBy,
-    ruleId: a.ruleId ?? b.ruleId,
-    botIds,
-    humanAuthors: [...a.humanAuthors, ...b.humanAuthors.filter((login) => !a.humanAuthors.includes(login))],
-    resolved: a.resolved && b.resolved,
-    outdated: a.outdated || b.outdated
+    outdated: comment.isOutdated === true,
+    threads: 1,
+    openThreads: comment.isResolved === true ? 0 : 1
   };
 }
 function severityOf(atom) {
@@ -32891,7 +33576,8 @@ function itemFromAtom(atom) {
     // Resolved is the conversation's state and wins; outdated is a badge on an open one.
     status: atom.resolved ? "resolved" : atom.outdated ? "outdated" : "open",
     sources: atom.sources,
-    ...atom.suggestion !== null && atom.suggestionBy !== null ? { fix: { text: atom.suggestion, source: atom.suggestionBy } } : {}
+    ...atom.suggestion !== null && atom.suggestionBy !== null ? { fix: { text: atom.suggestion, source: atom.suggestionBy } } : {},
+    ...atom.threads > 1 ? { threads: { total: atom.threads, open: atom.openThreads } } : {}
   };
   if (atom.path !== void 0 && atom.line !== void 0) return { ...item, path: atom.path, line: atom.line };
   if (atom.path !== void 0) return { ...item, path: atom.path };
@@ -32916,32 +33602,7 @@ function isReviewItemComment(comment, extraLogins = [], options = {}) {
   return comment.kind === "thread" && comment.body.trim() !== "" && !trigger;
 }
 function clusterComments(comments, extraLogins = [], options = {}) {
-  const atoms = comments.filter((comment) => isReviewItemComment(comment, extraLogins, options)).map((comment) => atomFrom(comment, extraLogins, options));
-  const parent = atoms.map((_, index) => index);
-  const find = (index) => {
-    const current = parent[index] ?? index;
-    if (current === index) return index;
-    const root = find(current);
-    parent[index] = root;
-    return root;
-  };
-  for (let i = 0; i < atoms.length; i += 1) {
-    for (let j = i + 1; j < atoms.length; j += 1) {
-      const left = atoms[i];
-      const right = atoms[j];
-      if (left === void 0 || right === void 0) continue;
-      if (shouldMerge(left, right) && find(i) !== find(j)) parent[find(j)] = find(i);
-    }
-  }
-  const groups = /* @__PURE__ */ new Map();
-  for (let index = 0; index < atoms.length; index += 1) {
-    const atom = atoms[index];
-    if (atom === void 0) continue;
-    const root = find(index);
-    const existing = groups.get(root);
-    groups.set(root, existing === void 0 ? atom : mergeAtom(existing, atom));
-  }
-  return [...groups.values()].map(itemFromAtom);
+  return comments.filter((comment) => isReviewItemComment(comment, extraLogins, options)).map((comment) => itemFromAtom(atomFrom(comment, extraLogins, options)));
 }
 function isBotOnly(item) {
   return item.sources.length > 0 && item.sources.every(automated);
@@ -33343,6 +34004,7 @@ function botPhrase(bot, headSha) {
   if (bot.verdict === "clean") return `${title} clean (${tag})`;
   if (bot.score !== void 0) return `${title} ${bot.score}/5 (${tag})`;
   if (bot.count !== void 0) return `${title} ${bot.count} issue${bot.count === 1 ? "" : "s"} (${tag})`;
+  if (bot.needsHuman === true) return `${title} needs a human review (${tag})`;
   return `${title} findings (${tag})`;
 }
 function reviewerPhrase(reviewer) {
@@ -33352,10 +34014,10 @@ function reviewerPhrase(reviewer) {
   return `@${reviewer.login} commented`;
 }
 function headerLine(meta3) {
-  const open2 = openItemCount(meta3.items);
-  const done = doneItemCount(meta3.items);
-  const total = meta3.items.length;
-  const parts = [`**${done} of ${total} done**`];
+  const threads = threadCounts(meta3.items);
+  const open2 = threads.open;
+  const total = threads.total;
+  const parts = [`**${total - open2} of ${total} done**`];
   for (const bot of meta3.bots) parts.push(botPhrase(bot, meta3.headSha));
   if (open2 > 0 && total > 0) {
   }
@@ -33553,11 +34215,13 @@ function parseAddressedOutput(text, allowedIds) {
 }
 
 // ../../packages/review/src/ai-client.ts
+var VERSIONED_BASE = /\/v\d+[a-z]*\w*(?:\/openai)?$/i;
 function joinUrl(base, path) {
   const origin = base.replace(/\/+$/, "").replace(/\/v1$/i, "");
-  return `${origin}/${path.replace(/^\/+/, "")}`;
+  const rest = path.replace(/^\/+/, "");
+  return `${origin}/${VERSIONED_BASE.test(origin) ? rest.replace(/^v1\//i, "") : rest}`;
 }
-function isRecord7(value) {
+function isRecord8(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function contentOf(value) {
@@ -33566,7 +34230,7 @@ function contentOf(value) {
   const parts = [];
   for (const part of value) {
     if (typeof part === "string") parts.push(part);
-    else if (isRecord7(part) && typeof part.text === "string") parts.push(part.text);
+    else if (isRecord8(part) && typeof part.text === "string") parts.push(part.text);
   }
   const joined = parts.join("");
   return joined === "" ? null : joined;
@@ -33592,7 +34256,8 @@ async function completeChat(options) {
   const timer = controller === null || options.timeoutMs === void 0 ? null : setTimeout(() => controller.abort(), options.timeoutMs);
   const signal = options.signal && controller ? AbortSignal.any([options.signal, controller.signal]) : options.signal ?? controller?.signal ?? null;
   try {
-    const response = await options.fetch(joinUrl(options.baseUrl, "/v1/chat/completions"), {
+    const fetchImpl = options.fetch;
+    const response = await fetchImpl(joinUrl(options.baseUrl, "/v1/chat/completions"), {
       method: "POST",
       headers: {
         authorization: `Bearer ${options.apiKey}`,
@@ -33604,10 +34269,10 @@ async function completeChat(options) {
     });
     if (!response.ok) return { ok: false, reason: `Completion failed (${response.status}).` };
     const payload = await response.json();
-    if (!isRecord7(payload) || !Array.isArray(payload.choices))
+    if (!isRecord8(payload) || !Array.isArray(payload.choices))
       return { ok: false, reason: "Completion response was empty." };
     const first = payload.choices[0];
-    const message = isRecord7(first) && isRecord7(first.message) ? first.message : null;
+    const message = isRecord8(first) && isRecord8(first.message) ? first.message : null;
     const text = message === null ? null : contentOf(message.content);
     if (text === null) return { ok: false, reason: "Completion response had no text." };
     const model = typeof payload.model === "string" ? payload.model : options.model;
@@ -33688,13 +34353,36 @@ function vercelStatus(word) {
   return statusFromText(word);
 }
 function tableRowFor(doc, project) {
-  return lines(doc).find((line) => line.startsWith("|") && line.includes(`| ${project} |`)) ?? null;
+  return lines(doc).find((line) => line.startsWith("|") && line.split("|").some((cell) => cell.trim() === project)) ?? null;
+}
+var MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+function vercelRowTime(row) {
+  const exact = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z\b/.exec(row);
+  if (exact !== null && !Number.isNaN(Date.parse(exact[0]))) return new Date(exact[0]).toISOString();
+  const match = /\b([A-Z][a-z]{2}) (\d{1,2}), (\d{4}) (\d{1,2}):(\d{2})(am|pm) UTC\b/.exec(row);
+  if (match === null) return void 0;
+  const [, monthName = "", day = "", year = "", hour = "", minute = "", half = ""] = match;
+  const month = MONTHS.indexOf(monthName.toLowerCase());
+  if (month === -1) return void 0;
+  return new Date(Date.UTC(Number(year), month, Number(day), Number(hour) % 12 + (half === "pm" ? 12 : 0), Number(minute))).toISOString();
+}
+function withRowTime(entry2, row) {
+  const time3 = row === null ? void 0 : vercelRowTime(row);
+  return time3 === void 0 ? entry2 : { ...entry2, updatedAt: time3 };
 }
 var VERCEL_NOT_A_PROJECT = /^https:\/\/vercel\.com\/(?:account|teams|docs|login|signup|new|dashboard|support|blog|changelog|guides|templates|help)(?:[/?#]|$)/i;
 function parseVercel(doc) {
   const header = vercelHeader(doc.text);
   if (header !== null && header.length > 0) {
-    return header.map((project) => preview("vercel", doc, project.name, vercelStatus(project.nextCommitStatus), project.previewUrl === "" ? null : project.previewUrl, project.inspectorUrl === "" ? null : project.inspectorUrl));
+    return header.map(
+      (project) => withRowTime(preview("vercel", doc, project.name, vercelStatus(project.nextCommitStatus), project.previewUrl === "" ? null : project.previewUrl, project.inspectorUrl === "" ? null : project.inspectorUrl), tableRowFor(doc, project.name))
+    );
+  }
+  const notice = /Deployment failed for project ([\w.-]+) with the following error:?\s*(?:[~`]{3,}\s*)?([^\n]+)/i.exec(doc.text);
+  if (notice?.[1] !== void 0 && notice[2] !== void 0) {
+    const project = doc.links.find((link) => link.text.trim() === notice[1] && /^https:\/\/vercel\.com\//.test(link.href));
+    const reason = /too many requests/i.test(notice[2]) ? "Vercel rate limited this deployment" : notice[2].trim().slice(0, 200);
+    return [{ ...preview("vercel", doc, notice[1], "failed", null, project?.href ?? null), reason }];
   }
   const member = /@?([\w-]+(?:\[bot\])?)\s+must be a member of the\s+\*{0,2}(.+?)\*{0,2}\s+team on Vercel to deploy/i.exec(doc.text);
   if (member?.[1] !== void 0 && member[2] !== void 0) {
@@ -33714,11 +34402,11 @@ function parseVercel(doc) {
       const image = doc.images.find((candidate) => /vercel\.com\/static\/status\//.test(candidate.src) && candidate.alt.trim() !== "");
       if (image !== void 0 && projectLinks.length === 1) status = vercelStatus(image.alt);
     }
-    if (status === "unknown" && row !== null) status = statusFromText(row.replace(`| ${name} |`, "|"));
+    if (status === "unknown" && row !== null) status = statusFromText(row.split("|").filter((cell) => cell.trim() !== name).join("|"));
     const at = inspector === void 0 ? doc.links.indexOf(link) : doc.links.indexOf(inspector);
     const visit2 = doc.links.slice(at + 1).find((candidate) => /^(visit )?preview$/i.test(candidate.text.trim()) && isExternal(candidate.href));
     if (status === "unknown" && visit2 !== void 0) status = "ready";
-    const entry2 = preview("vercel", doc, name, status, visit2?.href ?? null, inspector?.href ?? null);
+    const entry2 = withRowTime(preview("vercel", doc, name, status, visit2?.href ?? null, inspector?.href ?? null), row);
     out.push(inspector !== void 0 && /^ignored$/i.test(inspector.text.trim()) ? { ...entry2, reason: "Unchanged for this project, the previous preview still serves" } : entry2);
   }
   if (out.length === 0 && /attempting to deploy a commit/i.test(doc.text)) {
@@ -33877,7 +34565,7 @@ function previewDocFromMarkdown(author, anchor2, markdown, updatedAt) {
   }
   for (const match of markdown.matchAll(/(?<!!)\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g)) links.push({ text: match[1]?.replace(/<[^>]+>/g, "").trim() ?? "", href: match[2] ?? "" });
   for (const match of markdown.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) links.push({ href: match[1] ?? "", text: (match[2] ?? "").replace(/<[^>]+>/g, "").trim() });
-  const text = markdown.split(/\r?\n/).map((line) => line.trimStart().startsWith("|") ? line.replace(/<br\s*\/?>/gi, " ") : line).join("\n").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(tr|p|li|h[1-6]|div|details|summary)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+  const text = markdown.split(/\r?\n/).map((line) => line.trimStart().startsWith("|") ? line.replace(/<br\s*\/?>/gi, " ").replace(/<relative-time\b[^>]*\bdatetime=["']([^"']+)["'][^>]*>[\s\S]*?<\/relative-time>/gi, "$1") : line).join("\n").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(tr|p|li|h[1-6]|div|details|summary)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
   const doc = { author, anchor: anchor2, text, links, images };
   return updatedAt === void 0 ? doc : { ...doc, updatedAt };
 }
@@ -34035,7 +34723,7 @@ function buildMeta(pr, options) {
     return review === void 0 ? created : review.at;
   };
   const ordered = [
-    ...pr.comments.map((comment) => ({ comment: { author: comment.author, body: comment.body, anchor: `issuecomment-${comment.databaseId}`, createdAt: comment.createdAt, ...comment.editedAt === void 0 ? {} : { editedAt: comment.editedAt } }, at: Date.parse(comment.createdAt), rank: 0 })),
+    ...pr.comments.map((comment) => ({ comment: { author: comment.author, body: comment.body, anchor: `issuecomment-${comment.databaseId}`, createdAt: comment.createdAt, ...comment.editedAt === void 0 ? {} : { editedAt: comment.editedAt }, ...comment.reactions === void 0 ? {} : { reactions: comment.reactions } }, at: Date.parse(comment.createdAt), rank: 0 })),
     ...pr.reviews.map((review) => ({ comment: { author: review.author, body: review.body, anchor: `pullrequestreview-${review.databaseId}`, ...review.submittedAt === null ? {} : { createdAt: review.submittedAt } }, at: Date.parse(review.submittedAt ?? ""), rank: 0 })),
     ...pr.threads.flatMap((thread) => {
       const first = thread.comments[0];
@@ -34360,6 +35048,21 @@ var CHECK_REPORTERS = [
     short: (words) => counted(words, "vulnerability", /(\d+) (?:new )?vulnerabilit(?:y|ies)\b/i)
   },
   {
+    // Macroscope's Check Run Agents: a repository's own checks, one Markdown file each under `.macroscope/check-run-agents/`,
+    // named "Macroscope - <title>" ("Macroscope - Visible change evidence — Visible change: Mac evidence missing"). An agent
+    // concludes neutral when it flags something (the default ceiling, `failure` only when configured), success when it
+    // does not, skipped when it did not run ("Prerequisite check(s) not found"). Macroscope's own review (Correctness) is
+    // the Review bots row's and its Approvability gate a CI check, neither a report. Mirrors the registry's `checkNames`.
+    id: "macroscope",
+    title: "Macroscope",
+    appId: 900172,
+    hosts: [],
+    checkNames: /^Macroscope - (?!(?:Correctness|Approvability) Check$)\S/i,
+    project: (name) => /^Macroscope - (.+)$/i.exec(name)?.[1]?.trim() ?? null,
+    neutral: "failed",
+    short: () => []
+  },
+  {
     // GitHub's own code scanning ("CodeQL", or any uploaded tool's name): its row links to GitHub's own checks tab and
     // its Details is a plain `github.com/…/runs/N`, so the words identify it — "No new alerts in code changed by this pull request" / "2 new alerts including 1
     // high severity security vulnerability". The tool's name is the project. The check passes unless an alert reaches
@@ -34450,7 +35153,7 @@ var PROVIDER_BOT_CAPABILITIES = [
 init_src2();
 var API3 = "https://api.github.com";
 var GRAPHQL = `${API3}/graphql`;
-function isRecord9(value) {
+function isRecord10(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 async function githubJson(client, url2, init = {}) {
@@ -34467,12 +35170,12 @@ async function githubJson(client, url2, init = {}) {
 }
 async function graphql(client, query, variables) {
   const body = await githubJson(client, GRAPHQL, { method: "POST", body: JSON.stringify({ query, variables }) });
-  if (!isRecord9(body)) throw new Error("GitHub GraphQL returned a non-object.");
+  if (!isRecord10(body)) throw new Error("GitHub GraphQL returned a non-object.");
   if (body.errors !== void 0) throw new Error("GitHub GraphQL could not confirm the request");
   return body.data;
 }
 function assertPrQuery(value) {
-  if (!isRecord9(value) || !isRecord9(value.repository)) {
+  if (!isRecord10(value) || !isRecord10(value.repository)) {
     throw new Error("GitHub GraphQL returned an unexpected pull request payload.");
   }
 }
@@ -34501,7 +35204,10 @@ query GeldPr($owner: String!, $name: String!, $number: Int!, $threadCursor: Stri
       }
       comments(first: 50, after: $commentCursor) {
         pageInfo { hasNextPage endCursor }
-        nodes { databaseId author { login __typename } body createdAt lastEditedAt }
+        nodes {
+          databaseId author { login __typename } body createdAt lastEditedAt
+          reactionGroups { content reactors(first: 10) { nodes { __typename ... on Bot { login } ... on User { login } } } }
+        }
       }
       reviews(first: 50, after: $reviewCursor) {
         pageInfo { hasNextPage endCursor }
@@ -34541,7 +35247,7 @@ query GeldThreadComments($id: ID!, $cursor: String) {
 }
 `;
 function assertThreadCommentsQuery(value) {
-  if (!isRecord9(value) || !("node" in value)) throw new Error("GitHub GraphQL returned an unexpected shape for the thread comments.");
+  if (!isRecord10(value) || !("node" in value)) throw new Error("GitHub GraphQL returned an unexpected shape for the thread comments.");
 }
 async function remainingThreadComments(client, threadId, first) {
   const nodes = [...first.nodes];
@@ -34556,6 +35262,12 @@ async function remainingThreadComments(client, threadId, first) {
     cursor = data.node.comments.pageInfo.endCursor;
   }
   return nodes;
+}
+function reactionsOf(groups) {
+  return (groups ?? []).flatMap((group) => {
+    const emoji3 = group.content.toLowerCase().replace(/_/g, " ");
+    return group.reactors.nodes.flatMap((reactor) => typeof reactor.login === "string" ? [{ login: loginOf({ login: reactor.login, ...reactor.__typename === void 0 ? {} : { __typename: reactor.__typename } }), emoji: emoji3 }] : []);
+  });
 }
 var CHECK_CONTEXTS_QUERY = `
 query GeldCheckContexts($owner: String!, $name: String!, $oid: GitObjectID!, $cursor: String) {
@@ -34578,7 +35290,7 @@ query GeldCheckContexts($owner: String!, $name: String!, $oid: GitObjectID!, $cu
 }
 `;
 function assertCheckContextsQuery(value) {
-  if (!isRecord9(value) || !("repository" in value)) throw new Error("GitHub GraphQL returned an unexpected shape for the check contexts.");
+  if (!isRecord10(value) || !("repository" in value)) throw new Error("GitHub GraphQL returned an unexpected shape for the check contexts.");
 }
 async function remainingCheckContexts(client, owner, repo, oid, first) {
   const nodes = [...first.nodes];
@@ -34665,12 +35377,14 @@ async function loadPullRequest(client, owner, repo, number4) {
       });
     }
     for (const node2 of pr.comments.nodes) {
+      const reactions = reactionsOf(node2.reactionGroups);
       comments.push({
         databaseId: node2.databaseId,
         author: loginOf(node2.author),
         body: node2.body,
         createdAt: node2.createdAt,
-        ...typeof node2.lastEditedAt === "string" ? { editedAt: node2.lastEditedAt } : {}
+        ...typeof node2.lastEditedAt === "string" ? { editedAt: node2.lastEditedAt } : {},
+        ...reactions.length === 0 ? {} : { reactions }
       });
     }
     for (const node2 of pr.reviews.nodes) {
@@ -34710,7 +35424,7 @@ function findSummaryComment(comments, ownLogins = []) {
 async function tokenLogin(client) {
   try {
     const body = await githubJson(client, `${API3}/user`);
-    return isRecord9(body) && typeof body.login === "string" && body.login !== "" ? body.login : null;
+    return isRecord10(body) && typeof body.login === "string" && body.login !== "" ? body.login : null;
   } catch {
     return null;
   }
@@ -34721,10 +35435,10 @@ async function filesChangedBetween(client, owner, repo, fromSha, toSha) {
     client,
     `${API3}/repos/${owner}/${repo}/compare/${encodeURIComponent(fromSha)}...${encodeURIComponent(toSha)}`
   );
-  if (!isRecord9(body) || !Array.isArray(body.files)) return [];
+  if (!isRecord10(body) || !Array.isArray(body.files)) return [];
   const paths = [];
   for (const file2 of body.files) {
-    if (isRecord9(file2) && typeof file2.filename === "string" && file2.filename !== "") paths.push(file2.filename);
+    if (isRecord10(file2) && typeof file2.filename === "string" && file2.filename !== "") paths.push(file2.filename);
   }
   return paths;
 }
@@ -34734,11 +35448,11 @@ async function upsertIssueComment(client, owner, repo, number4, existingId, body
     return existingId;
   }
   const created = await githubJson(client, `${API3}/repos/${owner}/${repo}/issues/${number4}/comments`, { method: "POST", body: JSON.stringify({ body }) });
-  if (!isRecord9(created) || typeof created.id !== "number") throw new Error("GitHub did not return the new comment id.");
+  if (!isRecord10(created) || typeof created.id !== "number") throw new Error("GitHub did not return the new comment id.");
   return created.id;
 }
 function record3(value) {
-  return isRecord9(value) ? value : null;
+  return isRecord10(value) ? value : null;
 }
 function nested(value, key) {
   const parent = record3(value);
@@ -34802,7 +35516,7 @@ async function trackerStates(client, references) {
     if (index >= 20 || reference.provider !== "github_issues" || !reference.repository) return reference;
     const path = `repos/${reference.repository.split("/").map(encodeURIComponent).join("/")}/issues/${encodeURIComponent(reference.id)}`;
     const result = await api2.request(path);
-    return result.ok && isRecord9(result.value) && typeof result.value.state === "string" ? { ...reference, status: result.value.state } : reference;
+    return result.ok && isRecord10(result.value) && typeof result.value.state === "string" ? { ...reference, status: result.value.state } : reference;
   }));
 }
 

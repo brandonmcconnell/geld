@@ -10,6 +10,8 @@ vi.mock('wxt/browser', () => ({ browser: {
   scripting: { unregisterContentScripts: api.unregister, registerContentScripts: api.register },
 } }));
 
+vi.mock('../nightly/state', () => ({ isNightlyPaused: vi.fn(async () => false) }));
+
 import { syncEnterpriseHosts } from './enterprise';
 
 beforeEach(() => {
