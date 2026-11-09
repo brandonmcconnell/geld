@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { botCommentControls, dressArrivals, hideAgentRerunControls, messagesIn, parkChats, releaseParkedChats, renderChatView, takeAgentViewLink, threadLinesOf } from './chat';
 
 /**
@@ -369,6 +369,16 @@ describe('a thread chat\'s head and composer', () => {
     expect(slot.querySelector('.geld-review__composer-side')).toBeNull();
     expect(slot.querySelector('.geld-review__chat-resolve')?.getAttribute('aria-label')).toBe('Resolve conversation');
     expect(slot.querySelector<HTMLElement>('.geld-review__composer-unresolve')?.hidden).toBe(true);
+    releaseParkedChats();
+  });
+
+  it('lets go of the old row\'s watcher when GitHub redraws the Overview\'s reply row', async () => {
+    const { slot } = render('<article><div class="header__x"><div><h2><a href="/o/r/pull/1/changes#r42">\u200esrc/a.ts</a></h2><button type="button" aria-label="Unresolve conversation in src/a.ts, line 3"></button></div></div><div id="discussion_r42"><div data-testid="comment-header"><a data-testid="author-link" href="/octocat">octocat</a></div><div class="markdown-body"><p>A note.</p></div></div><div class="p-2" id="reply"><div class="d-flex"><button type="button" class="CompactCommentInputContainer__x">Write a reply</button></div></div></article>');
+    const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect');
+    slot.querySelector('#reply')?.replaceChildren(parse('<div class="d-flex"><button type="button" class="CompactCommentInputContainer__x">Write a reply</button></div>'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(disconnect).toHaveBeenCalled();
+    disconnect.mockRestore();
     releaseParkedChats();
   });
 

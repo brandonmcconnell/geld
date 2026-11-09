@@ -843,6 +843,11 @@ function dressOverviewUnresolve(thread: HTMLElement): void {
   };
   sync();
   const watch = new MutationObserver((records) => {
+    // GitHub redrew the row without it: the redrawn row gets a button and a watcher of its own.
+    if (!row.contains(button) || !row.isConnected) {
+      watch.disconnect();
+      return;
+    }
     if (records.some((record) => !button.contains(record.target))) sync();
   });
   watch.observe(thread, { subtree: true, attributes: true, attributeFilter: ['aria-label'], childList: true });
