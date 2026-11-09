@@ -73,14 +73,14 @@ describe('attachment image viewer', () => {
     viewer = createAttachmentViewer(source);
     const preview = viewer.stage.querySelector('img');
     sizeStage(960, 540);
-    expect(preview?.style.width).toBe('960px');
-    expect(preview?.style.height).toBe('540px');
+    expect(preview?.style.width).toBe('768px');
+    expect(preview?.style.height).toBe('432px');
     expect(viewer.stage.querySelector('[role="status"]')?.hasAttribute('hidden')).toBe(true);
     expect(preview?.hidden).toBe(false);
     button('Zoom in').click();
     expect(button('Reset zoom').textContent).toBe('150%');
     preview?.dispatchEvent(new Event('load'));
-    expect(preview?.style.height).toBe('540px');
+    expect(preview?.style.height).toBe('432px');
     expect(button('Reset zoom').textContent).toBe('150%');
   });
 
@@ -97,14 +97,14 @@ describe('attachment image viewer', () => {
     Object.defineProperties(preview, { naturalWidth: { value: 1600 }, naturalHeight: { value: 900 } });
     preview.dispatchEvent(new Event('load'));
     expect(preview.hidden).toBe(false);
-    expect(preview.style.width).toBe('960px');
-    expect(preview.style.height).toBe('540px');
+    expect(preview.style.width).toBe('768px');
+    expect(preview.style.height).toBe('432px');
     expect(viewer.stage.querySelector('[role="status"]')?.hasAttribute('hidden')).toBe(true);
   });
 
-  it('fits large images inside the canvas and enables zoom after loading', () => {
-    expect(image.style.width).toBe('960px');
-    expect(image.style.height).toBe('540px');
+  it('fits large images with room around them and enables zoom after loading', () => {
+    expect(image.style.width).toBe('768px');
+    expect(image.style.height).toBe('432px');
     expect(button('Zoom in').disabled).toBe(false);
     expect(button('Zoom out').disabled).toBe(true);
     expect(button('Reset zoom').textContent).toBe('Fit');
@@ -116,17 +116,17 @@ describe('attachment image viewer', () => {
     expect(button('Reset zoom').textContent).toBe('150%');
     expect(viewer.stage.hasAttribute('data-zoomed')).toBe(true);
     pointer('pointerdown', 500, 300);
-    pointer('pointermove', 600, 350);
-    pointer('pointerup', 600, 350);
-    expect(image.style.transform).toBe('translate(100px, 50px) scale(1.5)');
+    pointer('pointermove', 580, 350);
+    pointer('pointerup', 580, 350);
+    expect(image.style.transform).toBe('translate(80px, 50px) scale(1.5)');
     button('Reset zoom').click();
     expect(image.style.transform).toBe('translate(0px, 0px) scale(1)');
     expect(viewer.stage.hasAttribute('data-zoomed')).toBe(false);
   });
 
   it('keeps the clicked point stationary while zooming', () => {
-    image.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 900, clientY: 370 }));
-    expect(image.style.transform).toBe('translate(-320px, 0px) scale(2)');
+    image.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 860, clientY: 370 }));
+    expect(image.style.transform).toBe('translate(-280px, 0px) scale(2)');
     expect(dialog.isConnected).toBe(true);
   });
 
@@ -144,7 +144,7 @@ describe('attachment image viewer', () => {
     pointer('pointerdown', 500, 300);
     pointer('pointermove', 10000, -10000);
     pointer('pointerup', 10000, -10000);
-    expect(image.style.transform).toBe('translate(240px, -135px) scale(1.5)');
+    expect(image.style.transform).toBe('translate(96px, -54px) scale(1.5)');
     image.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(button('Reset zoom').textContent).toBe('150%');
     expect(viewer.stage.hasAttribute('data-dragging')).toBe(false);
@@ -180,13 +180,13 @@ describe('attachment image viewer', () => {
 
   it('refits on resize without stretching the image and cleans up its listeners', () => {
     button('Zoom in').click();
-    sizeStage(358, 540);
-    expect(image.style.width).toBe('358px');
-    expect(image.style.height).toBe('201.375px');
+    sizeStage(400, 540);
+    expect(image.style.width).toBe('320px');
+    expect(image.style.height).toBe('180px');
     expect(button('Reset zoom').textContent).toBe('Fit');
     viewer.dispose();
     sizeStage(960, 540);
-    expect(image.style.width).toBe('358px');
+    expect(image.style.width).toBe('320px');
     dialog.dispatchEvent(new KeyboardEvent('keydown', { key: '+', bubbles: true }));
     expect(button('Reset zoom').textContent).toBe('Fit');
   });
@@ -204,11 +204,11 @@ describe('attachment image viewer', () => {
   });
 
   it('lets a wide image expand into the letterboxed area on zoom', () => {
-    sizeStage(960, 700);
+    sizeStage(960, 600);
     button('Zoom in').click();
     pointer('pointerdown', 500, 300);
     pointer('pointermove', 500, 600);
-    expect(image.style.transform).toBe('translate(0px, 55px) scale(1.5)');
+    expect(image.style.transform).toBe('translate(0px, 24px) scale(1.5)');
   });
 
   it('shows the error message and disables zoom when the image fails', () => {

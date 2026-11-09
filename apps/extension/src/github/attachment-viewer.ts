@@ -7,6 +7,7 @@ interface Point {
 }
 
 const ZOOM_STEP = 1.5;
+const FIT_FRACTION = 0.8;
 
 export function createAttachmentViewer(source: HTMLImageElement): {
   readonly stage: HTMLElement;
@@ -69,7 +70,7 @@ export function createAttachmentViewer(source: HTMLImageElement): {
     const stageWidth = stage.clientWidth;
     const stageHeight = stage.clientHeight;
     if (!naturalWidth || !naturalHeight || !stageWidth || !stageHeight) return;
-    const ratio = Math.min(2, stageWidth / naturalWidth, stageHeight / naturalHeight);
+    const ratio = Math.min(2, stageWidth * FIT_FRACTION / naturalWidth, stageHeight * FIT_FRACTION / naturalHeight);
     const fittedWidth = naturalWidth * ratio;
     const fittedHeight = naturalHeight * ratio;
     if (fittedWidth === width && fittedHeight === height && stageWidth === availableWidth && stageHeight === availableHeight) return;
