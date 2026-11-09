@@ -18,7 +18,7 @@ vi.mock('./page-fetch', () => ({
   },
 }));
 
-import { applyRelatedLinks, assigneesSections, relatedLinksOnPage, relatedText, removeRelatedLinks } from './related-links';
+import { applyRelatedLinks, assigneesSections, currentHref, relatedLinksOnPage, relatedText, removeRelatedLinks } from './related-links';
 
 // mintlify/mint#14542's footer as GitHub renders it, after the author's own words.
 const DESCRIPTION =
@@ -384,6 +384,29 @@ describe('related links in the sidebar', () => {
     const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
     stackLink?.dispatchEvent(click);
     expect(click.defaultPrevented).toBe(false);
+  });
+
+  it('reads a reference written with its repository’s old name where GitHub says it lives now, so a stack member is still left out', () => {
+    history.replaceState(null, '', '/acme/web/pull/7');
+    // typed-css/typed.css#24 (Nov 2026): stacked on #23, linked in its description as brandonmcconnell/typed.css/pull/23,
+    // the repository's name before it moved; GitHub's rendered link names its hovercard at the current home.
+    const moved = '<a href="https://github.com/old-owner/web/pull/8" data-hovercard-type="pull_request" data-hovercard-url="/acme/web/pull/8/hovercard">#8</a>';
+    document.body.innerHTML = `${STACKED}<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>Stacked on ${moved}.</p></div></div>${railsSidebar()}`;
+    applyRelatedLinks(true);
+    expect([...document.querySelectorAll('[data-geld-section="work"] .geld-related__item')].map((row) => row.getAttribute('data-kind'))).toEqual(['stack']);
+    removeRelatedLinks();
+    document.body.innerHTML = `<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>See ${moved}.</p></div></div>${railsSidebar()}`;
+    expect(relatedLinksOnPage().map((link) => [link.key, link.ref, link.href])).toEqual([['github:acme/web#8', '#8', 'https://github.com/acme/web/pull/8']]);
+
+    const withCard = (type: string, card: string): Element => {
+      const element = document.createElement('a');
+      element.setAttribute('data-hovercard-type', type);
+      element.setAttribute('data-hovercard-url', card);
+      return element;
+    };
+    expect(currentHref(withCard('pull_request', '/acme/web/pull/8/hovercard'), 'https://github.com/old-owner/web/pull/8/files?w=1#diff-1')).toBe('https://github.com/acme/web/pull/8/files?w=1#diff-1');
+    expect(currentHref(withCard('user', '/users/acme/hovercard'), 'https://github.com/old-owner/web/pull/8')).toBe('https://github.com/old-owner/web/pull/8');
+    expect(currentHref(withCard('issue', '/acme/web/issues/8/hovercard'), 'https://gitlab.com/old-owner/web/-/issues/8')).toBe('https://gitlab.com/old-owner/web/-/issues/8');
   });
 
   it('opens GitHub’s own stack popover beside the row by lending the row its anchor name, and gives it back on close', () => {

@@ -53,12 +53,34 @@ const KIND_ICONS: Readonly<Record<RelatedKind, string>> = {
 
 const words = (element: Element): string => (element.textContent ?? '').replace(/\s+/g, ' ').trim();
 
+/**
+ * Where GitHub says an issue or pull request link leads now: its rendered link carries the hovercard of the reference's
+ * current home (`data-hovercard-url="/typed-css/typed.css/pull/23/hovercard"` on a link written with the repository's
+ * old name, `brandonmcconnell/typed.css/pull/23`), so a renamed or moved repository's reference is the same thing as
+ * one written with its new name. The rest of the link (a tab, the query, the hash) stays. Exported for its test.
+ */
+export function currentHref(link: Element, href: string): string {
+  const type = link.getAttribute('data-hovercard-type');
+  const card = /^(\/[^/]+\/[^/]+\/(?:pull|issues)\/\d+)\/hovercard$/.exec(link.getAttribute('data-hovercard-url') ?? '');
+  if ((type !== 'pull_request' && type !== 'issue') || card === null) return href;
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return href;
+  }
+  const reference = /^\/[^/]+\/[^/]+\/(?:pull|issues)\/\d+(?=\/|$)/;
+  if (url.hostname !== location.hostname || !reference.test(url.pathname)) return href;
+  url.pathname = url.pathname.replace(reference, card[1] ?? '');
+  return url.href;
+}
+
 /** A link's target and the words it shows, its pictures' alt text included (a badge is an image in a link). */
 function candidateOf(link: HTMLAnchorElement): LinkCandidate | null {
   const raw = link.getAttribute('href') ?? '';
   let href: string;
   try {
-    href = new URL(raw, location.href).href;
+    href = currentHref(link, new URL(raw, location.href).href);
   } catch {
     return null;
   }
