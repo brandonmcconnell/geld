@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest';
-import { botCommentControls, dressArrivals, hideAgentRerunControls, messagesIn, parkChats, releaseParkedChats, renderChatView, takeAgentViewLink } from './chat';
+import { describe, expect, it, vi } from 'vitest';
+import { botCommentControls, dressArrivals, hideAgentRerunControls, messagesIn, parkChats, releaseParkedChats, renderChatView, takeAgentViewLink, threadLinesOf } from './chat';
 
 /**
  * Two shapes carry the `minimized-comment` class. A review's own body card
@@ -266,6 +266,132 @@ describe('a thread chat parked over a panel rebuild', () => {
     renderChatView(slot, [fresh], handlers);
     expect(slot.querySelector('.geld-review__chats')).not.toBe(chats);
     expect(slot.contains(fresh)).toBe(true);
+    releaseParkedChats();
+  });
+});
+
+/** Thread headings and snippets reduced from brandonmcconnell/geld#516 and #509 (Nov 2026), classic and Overview. */
+describe('threadLinesOf', () => {
+  const overview = (words: string): HTMLElement => parse(`<article><div class="header__8DCKRC"><div><h2><a href="/o/r/pull/1/changes#r9">\u200eapps/a.ts</a><span role="tooltip">apps/a.ts</span><span class="f6 fgColor-muted">${words}</span></h2></div></div></article>`);
+  const classicRow = (left: string, right: string): string => `<tr><td class="blob-num" ${left === '' ? '' : `data-line-number="${left}"`}></td><td class="blob-num" ${right === '' ? '' : `data-line-number="${right}"`}></td><td class="blob-code"></td></tr>`;
+
+  it('reads the Overview heading, a range or one line', () => {
+    expect(threadLinesOf(overview('Lines 845 - 853'))).toEqual({ start: 845, end: 853 });
+    expect(threadLinesOf(overview('Line 8230'))).toEqual({ start: 8230, end: 8230 });
+  });
+
+  it('reads the classic "Comment on lines +3331 to +3335"', () => {
+    const thread = parse('<div class="js-resolvable-timeline-thread-container"><div class="f6 py-2 border-bottom"><div class="f6 color-fg-muted">Comment on lines <span class="js-multi-line-preview-start">+3331</span> to <span class="js-multi-line-preview-end">+3335</span></div></div></div>');
+    expect(threadLinesOf(thread)).toEqual({ start: 3331, end: 3335 });
+  });
+
+  it('takes a single classic line from the snippet\'s last numbered row, not from a table in a comment', () => {
+    const thread = parse(`<div class="js-resolvable-timeline-thread-container"><div class="blob-wrapper"><table>${classicRow('8227', '')}${classicRow('', '8230')}<tr><td></td></tr></table></div><div class="comment-body"><div class="blob-wrapper"><table>${classicRow('1', '2')}</table></div></div></div>`);
+    expect(threadLinesOf(thread)).toEqual({ start: 8230, end: 8230 });
+  });
+
+  it('says nothing when the thread names no line', () => {
+    expect(threadLinesOf(parse('<div class="js-resolvable-timeline-thread-container"><p>Hi</p></div>'))).toBeNull();
+  });
+});
+
+describe('a thread chat\'s head and composer', () => {
+  const handlers = { pathOf: () => 'src/a.ts', onCopy: () => undefined, sourceOf: () => null, sourceOpen: () => false, onToggleSource: () => undefined, onOpenAnchor: () => undefined };
+  const classic = (resolved: boolean): string => `<div class="js-resolvable-timeline-thread-container"${resolved ? ' data-resolved="true"' : ''}><div class="f6 py-2 border-bottom"><div class="f6 color-fg-muted">Comment on lines <span class="js-multi-line-preview-start">+12</span> to <span class="js-multi-line-preview-end">+14</span></div></div><div id="discussion_r42" class="review-comment js-comment"><div class="timeline-comment-header"><a class="author" href="/octocat">octocat</a></div><div class="comment-body markdown-body"><p>A note.</p></div></div><div class="review-thread-reply"><div class="js-inline-comment-form-container"><button type="button" class="review-thread-reply-button">Reply...</button></div><form class="js-resolvable-timeline-thread-form" action="/o/r/pull/1/threads/7/${resolved ? 'unresolve' : 'resolve'}">${resolved ? '<strong>octocat</strong> marked this conversation as resolved.' : ''}<button type="submit">${resolved ? 'Unresolve conversation' : 'Resolve conversation'}</button></form></div></div>`;
+  const render = (html: string): { slot: HTMLElement; thread: HTMLElement } => {
+    document.body.innerHTML = `<div id="home">${html}</div><section class="geld-review"><div id="slot"></div></section>`;
+    const thread = document.querySelector('#home > *');
+    const slot = document.getElementById('slot');
+    if (!(thread instanceof HTMLElement) || slot === null) throw new Error('fixture');
+    renderChatView(slot, [thread], handlers);
+    return { slot, thread };
+  };
+
+  it('names the lines after the path and resolves through GitHub\'s own button', () => {
+    const { slot } = render(classic(false));
+    expect(slot.querySelector('.geld-review__chat-lines')?.textContent).toBe('12-14');
+    const resolve = slot.querySelector<HTMLButtonElement>('.geld-review__chat-resolve');
+    expect(resolve?.getAttribute('aria-label')).toBe('Resolve conversation');
+    let pressed = 0;
+    slot.querySelector('form.js-resolvable-timeline-thread-form button')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      pressed += 1;
+    });
+    resolve?.click();
+    expect(pressed).toBe(1);
+    releaseParkedChats();
+  });
+
+  it('offers Unresolve on a resolved classic thread, in the row and the head, which names who resolved it', () => {
+    const { slot } = render(classic(true));
+    const resolve = slot.querySelector('.geld-review__chat-resolve');
+    expect(resolve?.getAttribute('aria-label')).toBe('Unresolve conversation');
+    expect(resolve?.getAttribute('title')).toBe('Unresolve conversation \u00b7 resolved by octocat');
+    expect(slot.querySelector('.geld-review__composer-side .geld-review__composer-label')?.textContent).toBe('Unresolve');
+    expect(slot.querySelector('.geld-review__composer-side strong')?.hasAttribute('data-geld-spoken-for')).toBe(true);
+    releaseParkedChats();
+  });
+
+  it('follows the thread GitHub swaps in after a classic Resolve', async () => {
+    const { slot, thread } = render(classic(false));
+    const fresh = parse(classic(true));
+    fresh.setAttribute('data-geld-teleported', thread.getAttribute('data-geld-teleported') ?? '');
+    thread.replaceWith(fresh);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const resolve = slot.querySelector<HTMLButtonElement>('.geld-review__chat-resolve');
+    expect(resolve?.getAttribute('aria-label')).toBe('Unresolve conversation');
+    let pressed = 0;
+    fresh.querySelector('form button')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      pressed += 1;
+    });
+    resolve?.click();
+    expect(pressed).toBe(1);
+    releaseParkedChats();
+  });
+
+  it('keeps the head\'s Unresolve when the thread\'s path cannot be read', () => {
+    document.body.innerHTML = `<div id="home">${classic(true)}</div><section class="geld-review"><div id="slot"></div></section>`;
+    const thread = document.querySelector('#home > *');
+    const slot = document.getElementById('slot');
+    if (!(thread instanceof HTMLElement) || slot === null) throw new Error('fixture');
+    renderChatView(slot, [thread], { ...handlers, pathOf: () => '' });
+    expect(slot.querySelector('.geld-review__chat-path')).toBeNull();
+    expect(slot.querySelector('.geld-review__chat-lines')?.textContent).toBe('12-14');
+    expect(slot.querySelector('.geld-review__chat-resolve')?.getAttribute('aria-label')).toBe('Unresolve conversation');
+    releaseParkedChats();
+  });
+
+  it('leaves the Overview\'s reply row as GitHub draws it', () => {
+    const { slot } = render('<article><div class="header__x"><div><h2><a href="/o/r/pull/1/changes#r42">\u200esrc/a.ts</a><span class="f6">Line 3</span></h2><a aria-label="Jump to the comment in the diff for src/a.ts" href="/o/r/pull/1/changes#r42"></a><button type="button" aria-label="Resolve conversation in src/a.ts, line 3"></button></div></div><div id="discussion_r42"><div data-testid="comment-header"><a data-testid="author-link" href="/octocat">octocat</a></div><div class="markdown-body"><p>A note.</p></div></div><div class="p-2"><div class="d-flex"><button type="button" class="CompactCommentInputContainer__x">Write a reply</button><button type="button">Resolve</button></div></div></article>');
+    expect(slot.querySelector('.geld-review__chat-lines')?.textContent).toBe('3');
+    expect(slot.querySelector('.geld-review__chat-jump')?.getAttribute('href')).toBe('/o/r/pull/1/changes#r42');
+    expect(slot.querySelector('.geld-review__composer-side')).toBeNull();
+    expect(slot.querySelector('.geld-review__chat-resolve')?.getAttribute('aria-label')).toBe('Resolve conversation');
+    expect(slot.querySelector<HTMLElement>('.geld-review__composer-unresolve')?.hidden).toBe(true);
+    releaseParkedChats();
+  });
+
+  it('lets go of the old row\'s watcher when GitHub redraws the Overview\'s reply row', async () => {
+    const { slot } = render('<article><div class="header__x"><div><h2><a href="/o/r/pull/1/changes#r42">\u200esrc/a.ts</a></h2><button type="button" aria-label="Unresolve conversation in src/a.ts, line 3"></button></div></div><div id="discussion_r42"><div data-testid="comment-header"><a data-testid="author-link" href="/octocat">octocat</a></div><div class="markdown-body"><p>A note.</p></div></div><div class="p-2" id="reply"><div class="d-flex"><button type="button" class="CompactCommentInputContainer__x">Write a reply</button></div></div></article>');
+    const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect');
+    slot.querySelector('#reply')?.replaceChildren(parse('<div class="d-flex"><button type="button" class="CompactCommentInputContainer__x">Write a reply</button></div>'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(disconnect).toHaveBeenCalled();
+    disconnect.mockRestore();
+    releaseParkedChats();
+  });
+
+  it('adds Unresolve to the Overview\'s row once resolved, where GitHub draws none', () => {
+    const { slot } = render('<article><div class="header__x"><div><h2><a href="/o/r/pull/1/changes#r42">\u200esrc/a.ts</a><span class="f6">Line 3</span></h2><button type="button" aria-label="Unresolve conversation in src/a.ts, line 3"></button></div></div><div id="discussion_r42"><div data-testid="comment-header"><a data-testid="author-link" href="/octocat">octocat</a></div><div class="markdown-body"><p>A note.</p></div></div><div class="p-2"><div class="d-flex"><button type="button" class="CompactCommentInputContainer__x">Write a reply</button></div></div></article>');
+    const unresolve = slot.querySelector<HTMLButtonElement>('.geld-review__composer-unresolve');
+    expect(unresolve?.hidden).toBe(false);
+    let pressed = 0;
+    slot.querySelector('.geld-review__chat-body button[aria-label^="Unresolve conversation in"]')?.addEventListener('click', () => {
+      pressed += 1;
+    });
+    unresolve?.click();
+    expect(pressed).toBe(1);
     releaseParkedChats();
   });
 });
