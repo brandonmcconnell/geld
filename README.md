@@ -72,15 +72,27 @@ Every release also carries a nightly build for each browser, `geld-<version>-<br
 
 Geld Nightly does not run while Geld from a store is on in the same profile. It pauses, marks Geld's bar on GitHub with the conflict and a button to turn Geld off, and starts on its own once Geld is off or removed.
 
-For Chrome and Edge:
+For Chrome and Edge (and Brave, with the Chrome zip), the installer is the easy way in:
 
-1. Download the nightly zip from the [latest release](https://github.com/brandonmcconnell/geld/releases/latest), unzip it into a folder you keep, and load that folder with _Load unpacked_ (Developer mode on).
-2. Click the toolbar icon. The top of the popup shows the build, a _Manual / Automatic_ toggle and the update status. Click _Connect folder_ and pick the same folder. Geld checks that it is the folder it runs from.
-3. The first install asks once to let Geld edit the folder. On the next one Chrome offers _Allow on every visit_: choose it, and later builds install in the background, even after Chrome restarts. A folder kept directly in your Downloads folder needs no grant at all.
+```sh
+npx geld-nightly
+# or, without npm
+curl -fsSL https://www.geld.sh/nightly.sh | sh
+# on Windows, in PowerShell
+irm https://www.geld.sh/nightly.ps1 | iex
+```
+
+It lists your browser profiles by name and lets you pick one or more. It downloads the latest nightly zip, checks its SHA-256 checksum and its manifest, and unzips it into `~/Geld Nightly/<profile>` (on Windows, `Geld Nightly` in your user folder), one folder per profile, then deletes the zip. For each profile it copies the folder's path to the clipboard, opens the browser in that profile and prints the steps: go to `chrome://extensions`, turn on Developer mode, click _Load unpacked_ and paste the path. Run it again any time to repair a folder. It never writes over a folder that is not Geld Nightly, refuses folders the browser's picker will not open or the system empties, and asks before using a synced folder (iCloud, OneDrive, Dropbox, Google Drive). Its own state is kept in `~/.geld`.
+
+To do the same by hand:
+
+1. Download the nightly zip from the [latest release](https://github.com/brandonmcconnell/geld/releases/latest), check it against the `.sha256` file beside it, unzip it into `~/Geld Nightly`, and load that folder with _Load unpacked_ (Developer mode on). Keep it out of synced folders, temporary folders and `Library` or `AppData`, and give each profile its own folder.
+2. Click the toolbar icon. The top of the popup shows the build, a _Manual / Automatic_ toggle and the update status. Click _Connect folder_ and pick the same folder. Geld checks that it is the folder it runs from. After the installer the popup names the folder to pick.
+3. The first install asks once to let Geld edit the folder. On the next one Chrome offers _Allow on every visit_: choose it, and later builds install in the background, even after Chrome restarts. A folder kept directly in your Downloads folder needs no grant at all, but cleanup tools and Storage Sense empty Downloads, so the installer puts it there only when you ask with `--downloads`, and warns first.
 
 Geld looks for a new build on every GitHub page load and in-page navigation, in the background, and on a 30-minute timer when GitHub isn't open. _Automatic_ (the default) installs it and reloads Geld, which puts itself back into open GitHub tabs. _Manual_ shows a ↑ on the toolbar icon, GitHub tabs included, and _Install_ in the popup. Any number of tabs finding the same build lead to one download and one install.
 
-Before writing a build, Geld keeps a copy of the one it is replacing. If the install fails partway, the copy goes back and the popup says _Update to build N failed · Still on build M_ with _Try again_. For a day after an update, _Roll back_ returns to the previous build, and Automatic skips the build you left until a newer one is out. Updates read public releases, so no GitHub token is needed. The nightly build has its own extension id, so its settings are separate from a store install's unless you sign in to sync them.
+Before writing a build, Geld keeps a copy of the one it is replacing. If the install fails partway, the copy goes back and the popup says _Update to build N failed · Still on build M_ with _Try again_. For a day after an update, _Roll back_ returns to the previous build, and Automatic skips the build you left until a newer one is out. Updates read public releases, so no GitHub token is needed, and each build is checked against its published SHA-256 before anything is written. Do not move or rename the folder once it is loaded: the browser ties the extension to its path. The nightly build has its own extension id, so its settings are separate from a store install's unless you sign in to sync them.
 
 ## Development
 
@@ -94,7 +106,7 @@ pnpm build            # production build for Chrome into apps/extension/.output/
 pnpm build:firefox    # one other browser: build:firefox, build:edge, build:safari (build:chrome is pnpm build; zip:<browser> likewise)
 pnpm build:all        # production builds for Chrome, Firefox, Edge and Safari
 pnpm build:nightly    # the self-updating Chrome build into apps/extension/.output/chrome-mv3-nightly
-pnpm zip:all          # zips for all four browsers plus the Chrome nightly build into apps/extension/.output/
+pnpm zip:all          # zips for all four browsers, store and nightly, into apps/extension/.output/
 ```
 
 Output archives:

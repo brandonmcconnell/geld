@@ -1,8 +1,10 @@
 import { browser, type Browser } from 'wxt/browser';
-import { FILE_LIST, parseFileList, PROBE_FILE, stalePaths, writeOrder } from './build-check';
+import { FILE_LIST, INSTALL_FILE, LOCK_FILE, parseFileList, parseInstallRecord, PROBE_FILE, stalePaths, writeOrder } from '@geld/core/nightly';
+import type { LockIo } from '@geld/core/nightly';
+import type { InstallRecord } from '@geld/core/nightly';
 import type { BuildBackup } from './handle-store';
 import type { InstallMethod } from './state';
-import type { ZipEntry } from './unzip';
+import type { ZipEntry } from '@geld/core/nightly';
 
 /**
  * Two ways for an unpacked build to replace its own files, both verified in
@@ -47,6 +49,42 @@ export async function copyRunningBuild(version: string): Promise<BuildBackup> {
 export interface BuildTarget {
   readonly method: InstallMethod;
   write(entries: readonly ZipEntry[], current: readonly string[]): Promise<void>;
+  /** Writes the update lock (`LOCK_FILE`), or with null lets it go. */
+  writeLock(text: string | null): Promise<void>;
+}
+
+/** What the installer (apps/nightly-installer) wrote into this folder, or null for a folder unzipped by hand. */
+export async function readInstallRecord(): Promise<InstallRecord | null> {
+  const text = await readOwnFile(INSTALL_FILE);
+  return text === null ? null : parseInstallRecord(text);
+}
+
+/** The version of the build on disk, which another profile loading the same folder may already have replaced. */
+export async function versionOnDisk(): Promise<string | null> {
+  const text = await readOwnFile('manifest.json');
+  if (text === null) return null;
+  try {
+    const manifest: unknown = JSON.parse(text);
+    return typeof manifest === 'object' && manifest !== null && 'version' in manifest && typeof manifest.version === 'string' ? manifest.version : null;
+  } catch {
+    return null;
+  }
+}
+
+export const BUSY = 'Another browser profile is installing a build into this folder. Geld tries again later.';
+
+/**
+ * The folder's lock (`claimLock`), read through Geld's own URL. Profiles that load one folder are one extension
+ * id but different storage, so each holds its own token. Neither folder writes nor downloads can create a file
+ * only if it is absent, which is why the lock is Fischer's protocol rather than an exclusive create.
+ */
+export function folderLock(target: BuildTarget): LockIo {
+  return {
+    read: () => readOwnFile(LOCK_FILE),
+    write: (text) => target.writeLock(text),
+    now: () => Date.now(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  };
 }
 
 async function directoryFor(root: FileSystemDirectoryHandle, path: string): Promise<FileSystemDirectoryHandle> {
@@ -96,6 +134,10 @@ export function folderTarget(handle: FileSystemDirectoryHandle): BuildTarget {
       for (const path of stalePaths(current, entries.map((entry) => entry.path))) {
         await removeFile(handle, path).catch(() => undefined);
       }
+    },
+    async writeLock(text) {
+      if (text === null) await handle.removeEntry(LOCK_FILE).catch(() => undefined);
+      else await writeFile(handle, LOCK_FILE, new TextEncoder().encode(text));
     },
   };
 }
@@ -217,5 +259,7 @@ export function downloadsTarget(folder: string): BuildTarget {
         await downloadAll(folder, ordered.filter((entry) => entry.path !== 'manifest.json'));
         await downloadAll(folder, manifest);
       }),
+    // The downloads API cannot delete a file it has forgotten, so letting go writes a lock nobody holds.
+    writeLock: (text) => quietDownloads(async () => void (await downloadFile(`${folder}/${LOCK_FILE}`, new TextEncoder().encode(text ?? '{"token":"","at":0}')))),
   };
 }

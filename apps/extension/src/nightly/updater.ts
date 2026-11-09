@@ -1,20 +1,18 @@
 import { browser } from 'wxt/browser';
 import { reportError } from '../lib/error-capture';
-import { buildProblem } from './build-check';
 import { loadBackup, loadFolderHandle, saveBackup } from './handle-store';
 import type { BuildBackup } from './handle-store';
 import { isNightlyCheckMessage, isNightlyInstallMessage, isNightlyManageMessage, isNightlyRollbackMessage } from './messages';
 import { manageUrl } from './conflicts';
 import type { NightlyInstallResult } from './messages';
-import type { NightlyBrowser } from './release';
-import { buildOf, compareVersions, LATEST_RELEASE_PAGE, LATEST_RELEASE_URL, parseRelease, tagFromReleaseUrl } from './release';
+import { buildOf, buildProblem, claimLock, compareVersions, LATEST_RELEASE_PAGE, LATEST_RELEASE_URL, manifestTextOf, parseChecksum, parseRelease, releaseLock, tagFromReleaseUrl } from '@geld/core/nightly';
+import type { NightlyBrowser, NightlyRelease, ZipEntry } from '@geld/core/nightly';
 import { BACKGROUND_CHECK_MINUTES, limitedUntil, navigationDue, needsDetails } from './schedule';
 import { startPauseWatch } from './pause';
-import { nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyStatusItem, readNightlyStatus, nightlyTabCountsItem } from './state';
+import { nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyProfileTokenItem, nightlyStatusItem, readNightlyStatus, nightlyTabCountsItem } from './state';
 import type { NightlyFailure, NightlyStatus, NightlyWrite, UpdateMode } from './state';
-import { unzip } from './unzip';
-import type { ZipEntry } from './unzip';
-import { copyRunningBuild, downloadsReach, downloadsTarget, folderIsOurs, folderPermission, folderTarget } from './writers';
+import { decode, sha256Hex, unzip } from './unzip';
+import { BUSY, folderLock, readInstallRecord, copyRunningBuild, downloadsReach, downloadsTarget, folderIsOurs, folderPermission, folderTarget, versionOnDisk } from './writers';
 import type { BuildTarget } from './writers';
 
 /** Background side of nightly builds: looks for a newer release, marks the toolbar icon, installs and rolls back. */
@@ -198,9 +196,10 @@ async function installTarget(): Promise<BuildTarget | Failed> {
  */
 async function findTarget(): Promise<BuildTarget | Failed> {
   const folder = await nightlyFolderItem.getValue();
-  const handle = folder === null ? null : await loadFolderHandle().catch(() => null);
-  if (folder === null || handle === null) return { ok: false, reason: 'Connect the folder Geld runs from first.', need: 'folder' };
-  if ((await folderPermission(handle)) === 'granted') {
+  if (folder === null) return { ok: false, reason: 'Connect the folder Geld runs from first.', need: 'folder' };
+  // A folder the installer connected (adoptInstallerFolder) has no handle: the downloads route is its only way in.
+  const handle = await loadFolderHandle().catch(() => null);
+  if (handle !== null && (await folderPermission(handle)) === 'granted') {
     if (!(await folderIsOurs(handle))) return { ok: false, reason: 'The connected folder is not the one Geld runs from. Connect it again.', need: 'folder' };
     return folderTarget(handle);
   }
@@ -212,6 +211,7 @@ async function findTarget(): Promise<BuildTarget | Failed> {
     return { ok: false, reason: 'Geld can no longer reach its folder in Downloads. Connect it again.', need: 'folder' };
   }
   if (downloads) return downloadsTarget(folder.name);
+  if (handle === null) return { ok: false, reason: 'Connect the folder Geld runs from first.', need: 'folder' };
   return { ok: false, reason: 'Geld needs your OK to write to its folder.', need: 'permission' };
 }
 
@@ -227,11 +227,16 @@ async function fail(reported: NightlyFailure): Promise<Failed> {
   return { ok: false, reason: failure.reason };
 }
 
-async function downloadBuild(url: string, version: string): Promise<ZipEntry[]> {
-  const response = await fetch(url, { cache: 'no-store' });
-  if (!response.ok) throw new Error(`The download failed (${response.status}).`);
-  const entries = await unzip(new Uint8Array(await response.arrayBuffer()));
-  const problem = buildProblem(entries, version);
+/** The zip is opened only once its SHA-256 matches the one CI published beside it. */
+async function downloadBuild(release: NightlyRelease): Promise<ZipEntry[]> {
+  const [zip, sums] = await Promise.all([fetch(release.assetUrl, { cache: 'no-store' }), fetch(release.checksumUrl, { cache: 'no-store' })]);
+  if (!zip.ok) throw new Error(`The download failed (${zip.status}).`);
+  const expected = sums.ok ? parseChecksum(await sums.text(), release.assetName) : null;
+  if (expected === null) throw new Error('The release has no checksum for this build.');
+  const bytes = new Uint8Array(await zip.arrayBuffer());
+  if ((await sha256Hex(bytes)) !== expected) throw new Error('The download does not match its checksum.');
+  const entries = await unzip(bytes);
+  const problem = buildProblem(entries.map((entry) => entry.path), manifestTextOf(entries, decode), release.version);
   if (problem !== null) throw new Error(problem);
   return entries;
 }
@@ -243,6 +248,7 @@ async function downloadBuild(url: string, version: string): Promise<ZipEntry[]> 
  * cleared only once the folder holds one whole build, so a worker stopped midway leaves the record behind.
  */
 async function replace(target: BuildTarget, next: readonly ZipEntry[], previous: BuildBackup, whole: string, owned: readonly string[], version: string): Promise<NightlyFailure | null> {
+  const at = new Date().toISOString();
   const nextPaths = next.map((entry) => entry.path);
   const paths = [...new Set([...owned, ...nextPaths, ...previous.files.map((file) => file.path)])].sort();
   const writing: NightlyWrite = { version, whole, paths };
@@ -252,7 +258,7 @@ async function replace(target: BuildTarget, next: readonly ZipEntry[], previous:
     await patchStatus({ writing: null });
     return null;
   } catch (error) {
-    const failure = { version, stillOn: previous.version, reason: message(error), at: new Date().toISOString() };
+    const failure = { version, stillOn: previous.version, reason: message(error), at };
     try {
       await target.write(previous.files, [...new Set([...owned, ...nextPaths])]);
       await patchStatus({ writing: null });
@@ -261,6 +267,28 @@ async function replace(target: BuildTarget, next: readonly ZipEntry[], previous:
       return { ...failure, stillOn: whole, broken: true };
     }
   }
+}
+
+/**
+ * Everything that reads or writes the folder, from the version on disk and the backup copy to the write and its
+ * undo, runs under the folder's lock, so another profile's update never lands in the middle of it.
+ */
+async function underLock(target: BuildTarget, refused: NightlyFailure, run: () => Promise<NightlyInstallResult>): Promise<NightlyInstallResult> {
+  const lock = folderLock(target);
+  const token = await nightlyProfileTokenItem.getValue();
+  if (!(await claimLock(lock, token))) return fail(refused);
+  try {
+    return await run();
+  } finally {
+    await releaseLock(lock, token).catch(() => undefined);
+  }
+}
+
+/** Another profile that loads the same folder may have written this build already: it needs only a reload. */
+async function sharedInstall(from: string, to: string): Promise<NightlyInstallResult> {
+  await patchStatus({ installing: null, failure: null, writing: null, lastInstall: { from, to, at: new Date().toISOString(), method: 'shared' } });
+  reloadSoon();
+  return { ok: true, version: to };
 }
 
 function reloadSoon(): void {
@@ -297,33 +325,43 @@ async function install(explicit: boolean): Promise<NightlyInstallResult> {
   const current = installedVersion();
   if (latest === null || !isNewer(status)) return { ok: false, reason: 'Geld is up to date.' };
   if (!explicit && !installsOnItsOwn(status)) return { ok: false, reason: 'Waiting for a newer build.' };
+  // The manifest is written last, so a folder already naming this build holds all of it: no lock or target needed.
+  if ((await versionOnDisk()) === latest.version) return sharedInstall(current, latest.version);
   const target = await installTarget();
   if ('ok' in target) return target;
   await patchStatus({ installing: latest.version, failure: null });
+  const failed = (reason: string): NightlyFailure => ({ version: latest.version, stillOn: current, reason, at: new Date().toISOString() });
   let entries: ZipEntry[];
-  let previous: BuildBackup;
   try {
-    entries = await downloadBuild(latest.assetUrl, latest.version);
-    // After a write that did not end whole the folder is half one build, half the other: the backup is the whole old one.
-    const kept = status.writing === null ? null : await loadBackup();
-    if (status.writing !== null && kept === null) throw new Error(`The saved copy of build ${status.writing.whole} is missing. Unzip the latest nightly build over the folder by hand.`);
-    previous = kept ?? (await copyRunningBuild(current));
-    if (kept === null) await saveBackup(previous);
+    entries = await downloadBuild(latest);
   } catch (error) {
-    return fail({ version: latest.version, stillOn: current, reason: message(error), at: new Date().toISOString() });
+    return fail(failed(message(error)));
   }
-  const owned = status.writing?.paths ?? previous.files.map((file) => file.path);
-  const failure = await replace(target, entries, previous, previous.version, owned, latest.version);
-  if (failure !== null) return fail(failure);
-  await patchStatus({
-    installing: null,
-    failure: null,
-    skipped: explicit ? null : status.skipped,
-    backup: previous.version,
-    lastInstall: { from: current, to: latest.version, at: new Date().toISOString(), method: target.method },
+  return underLock(target, failed(BUSY), async () => {
+    if ((await versionOnDisk()) === latest.version) return sharedInstall(current, latest.version);
+    let previous: BuildBackup;
+    try {
+      // After a write that did not end whole the folder is half one build, half the other: the backup is the whole old one.
+      const kept = status.writing === null ? null : await loadBackup();
+      if (status.writing !== null && kept === null) throw new Error(`The saved copy of build ${status.writing.whole} is missing. Unzip the latest nightly build over the folder by hand.`);
+      previous = kept ?? (await copyRunningBuild(current));
+      if (kept === null) await saveBackup(previous);
+    } catch (error) {
+      return fail(failed(message(error)));
+    }
+    const owned = status.writing?.paths ?? previous.files.map((file) => file.path);
+    const failure = await replace(target, entries, previous, previous.version, owned, latest.version);
+    if (failure !== null) return fail(failure);
+    await patchStatus({
+      installing: null,
+      failure: null,
+      skipped: explicit ? null : status.skipped,
+      backup: previous.version,
+      lastInstall: { from: current, to: latest.version, at: new Date().toISOString(), method: target.method },
+    });
+    reloadSoon();
+    return { ok: true, version: latest.version };
   });
-  reloadSoon();
-  return { ok: true, version: latest.version };
 }
 
 async function restorePrevious(): Promise<NightlyInstallResult> {
@@ -335,21 +373,23 @@ async function restorePrevious(): Promise<NightlyInstallResult> {
   const current = installedVersion();
   const repairing = status.writing !== null;
   await patchStatus({ installing: backup.version });
-  // Repairing, the folder's own files are half written, so there is nothing whole to fall back on.
-  const undo = repairing ? backup : await copyRunningBuild(current).catch(() => backup);
-  const owned = status.writing?.paths ?? undo.files.map((file) => file.path);
-  const failure = await replace(target, backup.files, undo, backup.version, owned, backup.version);
-  if (failure !== null) return fail(failure);
-  await patchStatus({
-    installing: null,
-    failure: null,
-    // A repair leaves the build whose write broke the folder alone, as a failure that was undone would.
-    skipped: repairing ? (status.writing?.version ?? status.skipped) : current,
-    backup: null,
-    lastInstall: { from: current, to: backup.version, at: new Date().toISOString(), method: target.method, rollback: true },
+  return underLock(target, { version: backup.version, stillOn: current, reason: BUSY, at: new Date().toISOString() }, async () => {
+    // Repairing, the folder's own files are half written, so there is nothing whole to fall back on.
+    const undo = repairing ? backup : await copyRunningBuild(current).catch(() => backup);
+    const owned = status.writing?.paths ?? undo.files.map((file) => file.path);
+    const failure = await replace(target, backup.files, undo, backup.version, owned, backup.version);
+    if (failure !== null) return fail(failure);
+    await patchStatus({
+      installing: null,
+      failure: null,
+      // A repair leaves the build whose write broke the folder alone, as a failure that was undone would.
+      skipped: repairing ? (status.writing?.version ?? status.skipped) : current,
+      backup: null,
+      lastInstall: { from: current, to: backup.version, at: new Date().toISOString(), method: target.method, rollback: true },
+    });
+    reloadSoon();
+    return { ok: true, version: backup.version };
   });
-  reloadSoon();
-  return { ok: true, version: backup.version };
 }
 
 /** A write left unfinished by a worker Chrome stopped is a broken folder, offered for repair from the saved copy. */
@@ -360,6 +400,18 @@ async function settleInterrupted(): Promise<NightlyStatus> {
   const failure: NightlyFailure = { version: writing.version, stillOn: writing.whole, reason: `Geld stopped while it was writing build ${buildOf(writing.version) ?? writing.version}.`, at: new Date().toISOString(), broken: true };
   reportError('background:nightly-update', new Error(`Update to ${writing.version} failed (interrupted)`));
   return patchStatus({ installing: null, failure });
+}
+
+/**
+ * A folder the installer put directly in the profile's download folder can be written through the downloads
+ * API, which needs no picker, so it is connected from the installer's record. Anywhere else Chrome's folder
+ * picker is the only way in, and the panel names the folder to pick.
+ */
+async function adoptInstallerFolder(): Promise<void> {
+  if ((await nightlyFolderItem.getValue()) !== null) return;
+  const record = await readInstallRecord();
+  if (record?.downloadsName === null || record?.downloadsName === undefined) return;
+  await nightlyFolderItem.setValue({ name: record.downloadsName, downloads: null, connectedAt: new Date().toISOString() });
 }
 
 /** Every GitHub page load and in-page navigation looks, in the background, so the page never waits on it. */
@@ -420,6 +472,7 @@ export function startNightly(): void {
   nightlyPrefsItem.watch(() => void checkForUpdate());
   // This worker has only just started, so no install of its own is under way: one marked is left from a worker Chrome stopped mid-install.
   void settleInterrupted().then(showBadge);
+  void adoptInstallerFolder();
   void scheduleChecks();
   startPauseWatch();
   nightlyConflictItem.watch(() => void readNightlyStatus().then(showBadge));

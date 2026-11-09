@@ -1,4 +1,4 @@
-import { buildOf, compareVersions } from './release';
+import { buildOf, compareVersions } from '@geld/core/nightly';
 import type { Conflict } from './conflicts';
 import type { NightlyFolder, NightlyStatus } from './state';
 
@@ -48,7 +48,8 @@ export function pausedView(conflict: Conflict): NightlyView {
       };
 }
 
-export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null, version: string, now: number, conflict: Conflict | null = null): NightlyView {
+/** `installedIn`: the folder the installer wrote, named so the reader knows what to pick when Chrome asks. */
+export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null, version: string, now: number, conflict: Conflict | null = null, installedIn: string | null = null): NightlyView {
   if (conflict !== null) return pausedView(conflict);
   const latest = status.latest;
   const newer = latest !== null && compareVersions(latest.version, version) > 0 ? latest : null;
@@ -76,7 +77,7 @@ export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null,
   if (folder === null) {
     return {
       headline: newer === null ? 'Up to date' : `${capital(buildLabel(newer.version))} is ready`,
-      detail: 'Connect the folder Geld runs from so it can install builds.',
+      detail: installedIn === null ? 'Connect the folder Geld runs from so it can install builds.' : `Connect ${installedIn} so Geld can install builds. Pick it when Chrome asks.`,
       tone: newer === null ? 'ok' : 'ready',
       action: { kind: 'connect', label: 'Connect folder' },
     };

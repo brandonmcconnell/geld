@@ -1,6 +1,6 @@
 import { storage } from 'wxt/utils/storage';
 import type { Conflict } from './conflicts';
-import type { NightlyRelease } from './release';
+import type { NightlyRelease } from '@geld/core/nightly';
 
 /**
  * Both look on every GitHub page load and navigation (schedule.ts). Automatic installs a newer build as soon
@@ -20,8 +20,9 @@ export const nightlyPrefsItem = /* @__PURE__ */ storage.defineItem<NightlyPrefs>
 export interface NightlyFolder {
   readonly name: string;
   /**
-   * The folder sits directly in the browser's download folder, so the downloads API can write to it with no
-   * grant. Null until an install first needs to know: the check writes into `<download folder>/<name>`.
+   * The folder is in the browser's download folder, so the downloads API can write to it with no
+   * grant. Null until an install first needs to know: the check writes into `<download folder>/<name>`, where
+   * `name` may be a path (`Geld Nightly/Work`) when the installer put the folder there.
    */
   readonly downloads: boolean | null;
   readonly connectedAt: string;
@@ -29,7 +30,8 @@ export interface NightlyFolder {
 
 export const nightlyFolderItem = /* @__PURE__ */ storage.defineItem<NightlyFolder | null>('local:nightlyFolder', { fallback: null });
 
-export type InstallMethod = 'folder' | 'downloads';
+/** `shared`: another profile loading the same folder had written the build, so this one only reloaded. */
+export type InstallMethod = 'folder' | 'downloads' | 'shared';
 
 export interface NightlyInstall {
   readonly from: string;
@@ -111,6 +113,9 @@ export const nightlyTabCountsItem = /* @__PURE__ */ storage.defineItem<Readonly<
 
 /** The other Geld that keeps this build from running (conflicts.ts), null while it may run. */
 export const nightlyConflictItem = /* @__PURE__ */ storage.defineItem<Conflict | null>('local:nightlyConflict', { fallback: null });
+
+/** This profile's token for the update lock (`claimLock`): profiles loading one folder share an extension id, not storage. */
+export const nightlyProfileTokenItem = /* @__PURE__ */ storage.defineItem<string>('local:nightlyProfileToken', { init: () => crypto.randomUUID() });
 
 export async function isNightlyPaused(): Promise<boolean> {
   return (await nightlyConflictItem.getValue()) !== null;

@@ -31,9 +31,9 @@ const nightly = process.env.GELD_CHANNEL === 'nightly';
  * inside an app. Theirs are the store code under the nightly name, updated by hand.
  */
 const selfUpdating = (browser: string): boolean => nightly && (browser === 'chrome' || browser === 'edge');
-/** Mirrors NIGHTLY_NAME in src/nightly/build-check.ts, which refuses any other build as an update. */
+/** Mirrors NIGHTLY_NAME in @geld/core/nightly.ts, which refuses any other build as an update. */
 const NIGHTLY_NAME = 'Geld Nightly';
-/** Mirrors FILE_LIST in src/nightly/build-check.ts: the files a nightly build copies before it is replaced. */
+/** Mirrors FILE_LIST in @geld/core/nightly.ts: the files a nightly build copies before it is replaced. */
 const NIGHTLY_FILE_LIST = 'nightly-files.json';
 /** Mirrors CONTENT_SCRIPTS_FILE in src/nightly/conflicts.ts: the manifest's content scripts, which a nightly build registers itself. */
 const NIGHTLY_CONTENT_SCRIPTS = 'nightly-content-scripts.json';

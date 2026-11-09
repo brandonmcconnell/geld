@@ -1,4 +1,4 @@
-import type { ZipEntry } from './unzip';
+import type { ZipEntry } from '@geld/core/nightly';
 
 /**
  * IndexedDB, for what extension storage cannot hold: the folder handle the nightly page connected, and a copy

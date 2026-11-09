@@ -10,6 +10,7 @@ const release = (build: number): NightlyStatus['latest'] => ({
   build,
   assetName: `geld-0.1.2.${build}-chrome-nightly.zip`,
   assetUrl: 'https://github.com/brandonmcconnell/geld/releases/download/x/y.zip',
+  checksumUrl: 'https://github.com/brandonmcconnell/geld/releases/download/x/y.zip.sha256',
   size: 1,
   publishedAt: minutesAgo(5),
   htmlUrl: 'https://github.com/brandonmcconnell/geld/releases',
@@ -47,9 +48,10 @@ describe('nightlyView', () => {
     expect(view.action).toEqual({ kind: 'install', label: 'Install' });
   });
 
-  it('asks for the folder before anything can install', () => {
+  it('asks for the folder before anything can install, naming the one the installer wrote', () => {
     const view = nightlyView(status({ latest: release(3305) }), null, '0.1.2.3301', NOW);
     expect(view.action?.kind).toBe('connect');
+    expect(nightlyView(status({}), null, '0.1.2.3301', NOW, null, '/Users/me/Geld Nightly/Work').detail).toBe('Connect /Users/me/Geld Nightly/Work so Geld can install builds. Pick it when Chrome asks.');
   });
 
   it('shows an install under way', () => {
