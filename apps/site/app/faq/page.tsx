@@ -48,9 +48,10 @@ const QUESTIONS: readonly Question[] = [
     question: 'What does Geld collect or send?',
     answer: (
       <p>
-        Nothing. There is no analytics, no error reporting and no server of ours. The only network requests Geld makes are to GitHub (
+        The only network requests Geld makes are to GitHub (
         {allHosts(DEFAULT_SETTINGS).join(', ')} plus any Enterprise hosts you add): to fetch diffs GitHub would serve you anyway and, if you opt into
-        sign-in, to read and write a secret gist on your own account. Settings live in your browser&apos;s sync storage. See the{' '}
+        sign-in, to read and write a secret gist on your own account. Settings live in your browser&apos;s sync storage. If you turn on error reports in the options, Geld&apos;s own errors also go to geld.sh,
+        with addresses, names and page text removed first. See the{' '}
         <Link href="/privacy">privacy policy</Link>.
       </p>
     ),
@@ -187,7 +188,7 @@ export default function FaqPage() {
         <div className="flex min-w-0 flex-col divide-y">
           {QUESTIONS.map((entry) => (
             <section key={entry.id} id={entry.id} aria-labelledby={`${entry.id}-heading`} className="scroll-mt-28 py-12 first:pt-0">
-              <h2 id={`${entry.id}-heading`} className="text-2xl font-semibold tracking-tight text-balance">
+              <h2 id={`${entry.id}-heading`} className="text-2xl font-semibold tracking-tight">
                 {entry.question}
               </h2>
               <Prose className="mt-3">{entry.answer}</Prose>

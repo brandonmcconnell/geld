@@ -34,6 +34,7 @@ export interface ModelCombobox {
   size(): number;
   setOptions(models: readonly ModelInfo[]): void;
   setDisabled(disabled: boolean): void;
+  setValue(value: string): void;
 }
 
 const MAX_SHOWN = 60;
@@ -252,6 +253,10 @@ export function modelCombobox(options: ModelComboboxOptions): ModelCombobox {
       input.disabled = disabled;
       toggle.disabled = disabled;
       if (disabled) close();
+    },
+    setValue: (value) => {
+      input.value = value;
+      if (!list.hidden) render(value);
     },
   };
 }
