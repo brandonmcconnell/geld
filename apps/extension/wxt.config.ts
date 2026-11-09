@@ -45,9 +45,6 @@ export default defineConfig({
       'storage',
       // Daily check for a newer signed pattern catalog (no install warning).
       'alarms',
-      // Chrome/Edge: an offscreen document watches prefers-color-scheme so the
-      // toolbar icon can switch between the black and white marks.
-      ...(mv === 3 && (browser === 'chrome' || browser === 'edge') ? ['offscreen'] : []),
       // MV3: registers the content script on GitHub Enterprise hosts the user adds.
       ...(mv === 3 ? ['scripting'] : []),
     ],
