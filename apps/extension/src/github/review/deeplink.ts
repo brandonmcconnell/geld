@@ -11,6 +11,39 @@ import { quietClick } from './quiet-click';
 const HIDDEN_ITEMS_TEXT = new RegExp(String.raw`(${COUNT_PATTERN})\s+(?:hidden|remaining)\s+items?\b`, 'i');
 const LOAD_MORE = 'button[data-testid="load-more-timeline"], .ajax-pagination-btn, button.js-ajax-pagination-btn';
 
+/**
+ * The Overview's own control for the older entries (Nov 2026): a Primer button "Load previous comments" in the Comments
+ * section with the count it hides in a counter label ("237"), `data-loading` while a page of about 25 entries comes, and
+ * no form. Marked once found (`ATTR_LOAD_PREVIOUS`), so the stylesheet can hide it while Geld presses it.
+ */
+export const ATTR_LOAD_PREVIOUS = 'data-geld-load-previous';
+const LOAD_PREVIOUS_LABEL = /^\s*Load (?:previous|older|more) comments\b/i;
+
+function overviewLoadPrevious(root: ParentNode): HTMLButtonElement | null {
+  const section = root.querySelector('h2#overview-comments')?.closest('section') ?? null;
+  if (section === null) return null;
+  for (const button of section.querySelectorAll<HTMLButtonElement>('button')) {
+    if (!LOAD_PREVIOUS_LABEL.test(button.querySelector('[data-component="text"]')?.textContent ?? button.textContent ?? '')) continue;
+    if (!button.hasAttribute(ATTR_LOAD_PREVIOUS)) button.setAttribute(ATTR_LOAD_PREVIOUS, '');
+    return button;
+  }
+  return null;
+}
+
+function overviewLoading(button: HTMLButtonElement): boolean {
+  return button.disabled || button.getAttribute('data-loading') === 'true' || button.getAttribute('aria-disabled') === 'true';
+}
+
+/** The Overview's button pressed and when: it stays in the page, so a press counts only until its page has come. */
+let pressedPrevious: { readonly button: HTMLButtonElement; readonly at: number } | null = null;
+/** How long a press counts before GitHub has marked its button loading: React flips it in the press's own render. */
+const PREVIOUS_GRACE_MS = 1000;
+
+function previousPending(now: number): boolean {
+  if (pressedPrevious === null || !pressedPrevious.button.isConnected) return false;
+  return now - pressedPrevious.at < PREVIOUS_GRACE_MS || (overviewLoading(pressedPrevious.button) && now - pressedPrevious.at < PRESS_TIMEOUT_MS);
+}
+
 export function sourceAnchorFromHash(hash: string): string | null {
   const id = hash.replace(/^#/, '');
   return /^(discussion_r\d+|issuecomment-\d+|pullrequestreview-\d+|event-\d+)$/.test(id) ? id : null;
@@ -59,13 +92,16 @@ export function loadMorePending(): boolean {
 }
 
 /** When the press on its way stops counting as one (a load that failed and left its form), or null with none. */
-export function loadMorePendingUntil(): number | null {
-  return pressed !== null && pressed.form.isConnected && Date.now() - pressed.at < PRESS_TIMEOUT_MS ? pressed.at + PRESS_TIMEOUT_MS : null;
+export function loadMorePendingUntil(now = Date.now()): number | null {
+  if (pressed !== null && pressed.form.isConnected && now - pressed.at < PRESS_TIMEOUT_MS) return pressed.at + PRESS_TIMEOUT_MS;
+  if (pressedPrevious !== null && previousPending(now)) return pressedPrevious.at + (overviewLoading(pressedPrevious.button) ? PRESS_TIMEOUT_MS : PREVIOUS_GRACE_MS);
+  return null;
 }
 
-/** A press that never landed: its form still stands after the press timed out (the load failed). */
-export function loadMoreStalled(): boolean {
-  return pressed !== null && pressed.form.isConnected && Date.now() - pressed.at >= PRESS_TIMEOUT_MS;
+/** A press that never landed: its form still stands after the press timed out (the load failed), or the Overview's button still loads. */
+export function loadMoreStalled(now = Date.now()): boolean {
+  if (pressed !== null && pressed.form.isConnected && now - pressed.at >= PRESS_TIMEOUT_MS) return true;
+  return pressedPrevious !== null && pressedPrevious.button.isConnected && overviewLoading(pressedPrevious.button) && now - pressedPrevious.at >= PRESS_TIMEOUT_MS;
 }
 
 /** How many items GitHub's "Load more" says it still hides ("169 hidden items" beside the button); 0 with none. */
@@ -79,19 +115,24 @@ export function hiddenTimelineItems(root: ParentNode = document): number {
   for (const scope of scopes) {
     total += parseCount(HIDDEN_ITEMS_TEXT.exec(scope.textContent ?? '')?.[1]) ?? 0;
   }
+  // The Overview's counter label is the count alone; while a page loads it is gone, and that reads as 0 like a classic press.
+  const previous = overviewLoadPrevious(root);
+  if (previous !== null) total += parseCount(previous.querySelector('[data-component="CounterLabel"]')?.textContent?.trim()) ?? 0;
   return total;
 }
 
-/** Whether the timeline still ends in a "Load more" that can be pressed. */
+/** Whether the timeline still ends in a "Load more" that can be pressed (the Overview's while it is not already loading). */
 export function hasLoadMore(root: ParentNode = document): boolean {
   const button = root.querySelector<HTMLButtonElement>(LOAD_MORE);
-  return button !== null && !button.disabled;
+  if (button !== null && !button.disabled) return true;
+  const previous = overviewLoadPrevious(root);
+  return previous !== null && !overviewLoading(previous);
 }
 
-export function clickLoadMore(root: ParentNode = document): boolean {
+export function clickLoadMore(root: ParentNode = document, now = Date.now()): boolean {
   if (document.readyState !== 'complete') return false;
   const button = root.querySelector<HTMLButtonElement>(LOAD_MORE);
-  if (button === null || button.disabled) return false;
+  if (button === null || button.disabled) return pressLoadPrevious(root, now);
   const form = button.form;
   // One press per load: the button is not disabled while GitHub fetches, and a page streaming in applies many
   // times a second — pressing on each pass spent the whole budget on one control before its rows had arrived.
@@ -106,6 +147,15 @@ export function clickLoadMore(root: ParentNode = document): boolean {
     });
   }
   // Pressed on Geld's behalf: GitHub must not read it as the reader clicking away from the permalink they opened.
+  quietClick(button);
+  return true;
+}
+
+/** The Overview's "Load previous comments", one press per page: its button stands while the page comes and after. */
+function pressLoadPrevious(root: ParentNode, now: number): boolean {
+  const button = overviewLoadPrevious(root);
+  if (button === null || overviewLoading(button) || previousPending(now)) return false;
+  pressedPrevious = { button, at: now };
   quietClick(button);
   return true;
 }

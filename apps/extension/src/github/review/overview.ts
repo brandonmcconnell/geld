@@ -1460,6 +1460,8 @@ function ingestProgress(): number {
 function timelineIngesting(hidingTimeline: boolean): boolean {
   if (fragmentsInFlight.size > 0) return true;
   if (!hidingTimeline) return false;
+  // A page on its way: the Overview's button reads as no "Load more" while it loads.
+  if (loadMorePending() && !loadMoreStalled()) return true;
   if (visit.autoLoads < MAX_AUTO_LOADS && hasLoadMore() && !loadMoreStalled()) return true;
   if (eagerFragments >= MAX_EAGER_FRAGMENTS) return false;
   return deferredFragments().some(({ fragment, src }) => fragmentWanted(fragment, src));
