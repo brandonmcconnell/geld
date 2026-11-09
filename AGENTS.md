@@ -28,6 +28,8 @@ apps/action/         @geld/action — GitHub Action that upserts one review-summ
 apps/site/           @geld/site — Next.js site for geld.sh (see "Website" below).
 apps/dashboard/      @geld/dashboard — independent Next.js review workspace, Better Auth accounts
                      and Postgres team metadata. Provider authority and privacy are mandatory.
+apps/nightly-installer/ geld-nightly — `npx geld-nightly`, the optional installer for the nightly
+                     build (see "Nightly builds"). `dist/` is built in CI and attached to releases.
 packages/domain/     @geld/domain — provider-neutral contracts, access and billing rules.
 packages/providers/  @geld/providers — provider clients behind token sources.
 packages/ui/         @geld/ui — shared Base UI presentation primitives.
@@ -56,7 +58,8 @@ Credentials and listing assets: `apps/extension/store/PUBLISHING.md`.
 \n\n
 Releases: every push to `main` that touches the extension (apps/extension, apps/action, packages/core, packages/review, assets/brand, the lockfile, or the workflow) publishes a GitHub Release from CI, tagged `v{version}-build.{run}` with one zip per browser plus `-sources.zip` for Firefox review, auto-generated notes (editable afterwards) and marked latest;
 the site's install buttons read `/releases/latest`.
-Each release also carries `-chrome-nightly.zip`, the self-updating nightly build (below), which the store jobs and the site's `-chrome.zip` patterns never pick up.
+Each release also carries a `-<browser>-nightly.zip` per browser, the nightly builds (below), which the store jobs and the site's `-chrome.zip` patterns never pick up.
+Beside each nightly zip is its `.sha256`, and beside them `geld-nightly.mjs` (the installer, bundled) and its `.sha256`, all under one build-provenance attestation (`actions/attest-build-provenance`).
 Bump `apps/extension/package.json` `version` for a new version number;
 the build number keeps tags unique.
 `workflow_dispatch` forces a release.
@@ -1194,7 +1197,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **A nightly build runs exactly like a store build**: never give it a WXT `--mode`.
   A mode other than `production` set `NODE_ENV` to the mode and `import.meta.env.DEV` to true, which turned on WXT's own console logging and changed `error-capture.ts` (it rethrows in development), and dependencies read `NODE_ENV` too.
   With the environment variable instead, every content script and the error-capture and offscreen chunks are byte for byte the store build's (Nov 2026), and the Chrome store build is byte for byte what `main` built before nightly builds existed.
-  What differs: the name "Geld Nightly" (`NIGHTLY_NAME`, mirrored in `build-check.ts`), `version_name`, the `downloads`, `downloads.ui` and `management` permissions, no declared content scripts (below), the two hosts GitHub redirects a release asset to (`release-assets.githubusercontent.com`, `objects.githubusercontent.com`), the nightly page, `nightly-files.json` and the updater in the background and popup.
+  What differs: the name "Geld Nightly" (`NIGHTLY_NAME` in `@geld/core/nightly.ts`, which the installer reads too), `version_name`, the `downloads`, `downloads.ui` and `management` permissions, no declared content scripts (below), the two hosts GitHub redirects a release asset to (`release-assets.githubusercontent.com`, `objects.githubusercontent.com`), the nightly page, `nightly-files.json` and the updater in the background and popup.
   Loaded unpacked, it also has its own extension id, so its `storage.sync` and `storage.local` are not the store install's: settings carry over only through the gist sign-in.
   It replaces its own files and calls `runtime.reload()`, which re-reads an unpacked extension from disk.
   **Every GitHub page load and in-page navigation looks for a build, in Manual and Automatic alike** (`tabs.onUpdated` with `status: 'complete'` or a changed `url`, which GitHub's `history.pushState` navigations fire and the github.com host permission lets the background read), in the background, so the page never waits on it.
@@ -1205,8 +1208,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Unauthenticated, the API allows 60 requests an hour per address, shared by everyone behind it, and a 304 was seen to count against them in Nov 2026, so asking it on every page would run out within minutes.
   **Many tabs, one decision**: every look runs in the one background worker, a look under way is joined rather than repeated (`checkForUpdate`), navigations closer than `NAVIGATION_GAP_MS` (10 s) share one look, an install under way is joined too (`once`), and status writes go one after another (`patchStatus`), so ten tabs finding a build together make one tag lookup, one API request and one install (measured).
   A worker that starts clears an `installing` left by one Chrome stopped mid-install, since no install of its own can be under way yet.
-  The latest release is taken only when it is non-draft and non-prerelease and its `geld-{version}.{run}-chrome-nightly.zip` was uploaded by `github-actions[bot]` from this repository's download path (`parseRelease`).
-  The zip is read by `unzip.ts` (stored and deflated entries, CRC checked, no path may leave the folder) and refused unless its manifest is Geld Nightly at the release's version with `nightly.html` beside it (`buildProblem`).
+  The latest release is taken only when it is non-draft and non-prerelease and its `geld-{version}.{run}-<browser>-nightly.zip` and that zip's `.sha256` were both uploaded by `github-actions[bot]` from this repository's download path (`parseRelease`).
+  The zip must match its SHA-256 (`crypto.subtle`), is read by `readZip` (stored and deflated entries, CRC checked, no path may leave the folder) and is refused unless its manifest is Geld Nightly at the release's version with `nightly.html` beside it (`buildProblem`).
+  **Every one of those checks lives once, in `@geld/core/nightly.ts`**, shared by the extension and the installer, so the two can never disagree about what a good build is: the release rules, the checksum file, the zip reader (inflate and text decoding injected, `DecompressionStream` in the extension, `zlib` in the installer), `buildProblem`, `writeOrder`, `stalePaths`, the install record and the lock.
   Actions artifacts were not used: downloading one needs a token even on a public repository.
   **An install never leaves the reader without a working build** (`install` and `replace` in `updater.ts`): the new zip is downloaded and checked first, then the running build copies itself through its own URL from the list it carries (`nightly-files.json`, written in `build:done`, `copyRunningBuild`) into IndexedDB (`handle-store.ts` `saveBackup`), and only then is anything written.
   The new build is written in `writeOrder`: files the running build lacks first, shared ones next, the manifest last, since Chrome starts whatever the manifest names.
@@ -1228,6 +1232,26 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **The popup carries the updates** (`src/nightly/panel.ts`, `popup.ts`): the panel, its styles injected from the module so the store popup's CSS is untouched, shows the build, the Manual/Automatic toggle and one status line with its action (`nightlyView` in `view.ts`, pure and tested).
   A folder picker or Chrome's permission prompt would close the popup, so connecting the folder and an install that needs Chrome's OK continue on the nightly page, which shows the same panel and the folder.
   The reload fires `onInstalled`, which puts Geld back into open GitHub tabs as after any update.
+  **One folder, one writer** (`acquireLock` in writers.ts, `nightly-update.lock`): anyone may load one folder into several profiles by hand, and two profiles writing a build into it at once would interleave files.
+  Before writing, the updater reads the lock through its own URL, refuses while another token holds it younger than `LOCK_STALE_MS` (3 min), writes its own token (`local:nightlyProfileToken`, one per profile), waits 500 ms and reads it back, and writes the build only when its token is still there, clearing the lock after;
+  the installer takes the same lock under its own token.
+  A profile that finds the release's version already on disk (`versionOnDisk`: another profile wrote it) only reloads (`InstallMethod` `shared`).
+  `stalePaths` never deletes the lock or `nightly-install.json`.
+- **The installer leaves a verified nightly build in a folder that stays put, one per profile** (`apps/nightly-installer`, `npx geld-nightly`, or `curl -fsSL https://www.geld.sh/nightly.sh | sh` and `nightly.ps1` from `apps/site/public/`, which download the release's `geld-nightly.mjs`, check its `.sha256` and run it with Node).
+  The manual zip and Load unpacked stay documented as the self-serve path, and both recommend `~/Geld Nightly`.
+  It is one esbuild bundle with no runtime dependencies (`build.mjs`), so `npx` fetches one file, and it reads `@geld/core/nightly.ts` for every check the extension makes before an update (above).
+  It lists the profiles of Chrome, Chrome Beta, Edge and Brave from each browser's `Local State` (`profile.info_cache`, `profiles.ts`) on macOS, Windows and Linux, by display name, and installs for the ones picked.
+  The folder is `~/Geld Nightly/<profile name>` (on Windows the user's home `Geld Nightly`), one per profile so no two profiles ever update the same folder, and its state (`nightly.json`, downloads while they run) is in `~/.geld`, never in the build folder.
+  The home folder was chosen because the browser's folder picker opens it, nothing empties it, and nothing syncs it by default: `Library`, `Application Support`, `AppData`, `Program Files`, `~/.config` and system folders are refused because the picker will not open them (Connect folder needs it to), temporary folders because the system empties them, and synced folders (iCloud, OneDrive, Dropbox, Google Drive) and Downloads are asked about first (`locationProblems`), since syncing can lock or roll back files mid-update and cleanup tools empty Downloads.
+  Downloads is offered only with `--downloads`: a build folder directly in the profile's download folder needs no picker, as the extension's downloads route writes there.
+  A target that exists is updated in place only when it holds a Geld Nightly build (`inspectTarget`), and anything else is never written over.
+  It writes `nightly-install.json` into the folder (`InstallRecord`: folder, time, version, browser, profile, and the Downloads name when there), which the extension reads through its own URL: the nightly page and popup name the folder to pick, and a folder in Downloads is connected with no picker at all (`adoptInstallerFolder`).
+  Then for each profile it copies the folder's path to the clipboard (`pbcopy`, PowerShell, `wl-copy`, `xclip` or `xsel`), opens the browser in that profile (`--profile-directory`) and prints the steps.
+  Chrome 156 ignores a `chrome://` URL given on its command line and opens a new tab (verified on Linux, Nov 2026), so the installer opens the profile alone and tells the reader to type `chrome://extensions`.
+  Folder access outside Downloads still needs the picker and "Allow on every visit", so the popup still leads through Connect folder.
+  `--verify-attestation` also checks the build's provenance with `gh attestation verify` for readers who have the GitHub CLI.
+  Verified end to end in Nov 2026 against a local stand-in for github.com and its API: two profiles installed from one download, the zip gone, the path on the clipboard, Load unpacked in Chrome 156, and the next build installed by the extension into the installer's folder.
+  Publishing `geld-nightly` to npm is the owner's step.
 - Settings live in `storage.sync` (`src/lib/storage.ts`, writes serialised).
   Categories are opt-in except tests (and the user's own categories, which default on).
   Every built-in category has `groups` (off-switches per pattern group, keyed `category/group`) and `categoryPatterns` (extra lines incl.
