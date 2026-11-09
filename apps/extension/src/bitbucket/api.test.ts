@@ -36,6 +36,27 @@ function setup(handler: (url: URL, init: RequestInit | undefined) => Response | 
 const signal = (): AbortSignal => new AbortController().signal;
 
 describe('Bitbucket Cloud page identity', () => {
+  it('uses the observed supported activity page length', async () => {
+    const { client, requests } = setup((url) => {
+      if (url.pathname !== `${ROOT}/activity`) throw new Error(`Unexpected URL ${url}`);
+      return url.searchParams.get('pagelen') === '50' ? json({ values: [] }) : json({ error: { message: 'Unsupported activity page length.' } }, 400);
+    });
+    expect(await client.activity(signal())).toEqual([]);
+    expect(requests).toEqual([`${ORIGIN}${ROOT}/activity?pagelen=50`]);
+  });
+
+  it('preserves the native Window receiver when calling browser fetch through a client', async () => {
+    const page = describeBitbucketPage(new URL('https://bitbucket.org/acme/widgets/pull-requests/42'));
+    if (page === null) throw new Error('Invalid fixture page');
+    const fetcher: typeof fetch = async function (this: unknown, input) {
+      expect(this).toBe(globalThis);
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      expect(url.pathname).toBe(ROOT);
+      return json(PR);
+    };
+    expect(await new BitbucketClient(page, fetcher).pullRequest(signal())).toMatchObject({ id: 42, headSha: HEAD, baseSha: BASE });
+  });
+
   it('keeps overview, diff and other review tabs distinct', () => {
     const overview = describeBitbucketPage(new URL('https://bitbucket.org/acme/widgets/pull-requests/42'));
     expect(overview).toMatchObject({ provider: 'bitbucket', number: '42', kind: 'overview', headSha: null, version: 'current', repository: { provider: 'bitbucket', origin: 'https://bitbucket.org', path: 'acme/widgets' } });

@@ -10,6 +10,8 @@ interface PendingReveal {
   readonly expires: number;
   readonly clicked: Set<HTMLAnchorElement>;
   readonly expanded: Map<HTMLElement, number>;
+  readonly prepared: Set<HTMLElement>;
+  navigated: boolean;
   attempts: number;
 }
 
@@ -28,7 +30,7 @@ export class ProviderReveal {
   request(path: string): void {
     if (this.stopped || path === '') return;
     this.clear();
-    this.pending = { path, visit: this.visit(), expires: Date.now() + MAX_WAIT_MS, attempts: 0, clicked: new Set(), expanded: new Map() };
+    this.pending = { path, visit: this.visit(), expires: Date.now() + MAX_WAIT_MS, attempts: 0, clicked: new Set(), expanded: new Map(), prepared: new Set(), navigated: false };
     this.refresh();
   }
 
@@ -51,11 +53,17 @@ export class ProviderReveal {
         entry.root.scrollIntoView({ block: 'start', behavior: 'smooth' });
         return;
       }
+      if (!pending.prepared.has(entry.root) && entry.prepareReveal !== undefined) {
+        pending.prepared.add(entry.root);
+        entry.prepareReveal();
+      }
     } else {
       const link = view?.tree.find((item) => item.path === pending.path)?.link;
       if (link !== null && link !== undefined && link.isConnected && !pending.clicked.has(link) && this.sameSelection(link, pending.path)) {
         pending.clicked.add(link);
         link.click();
+      } else if (!pending.navigated && (link === null || link === undefined) && view?.navigateToPath !== undefined) {
+        pending.navigated = view.navigateToPath(pending.path);
       }
     }
     this.schedule(pending);
@@ -81,6 +89,7 @@ export class ProviderReveal {
       const current = new URL(this.doc.location.href);
       const target = new URL(link.href, current);
       if (target.origin !== current.origin || target.username !== '' || target.password !== '' || target.pathname.replace(/\/$/, '') !== current.pathname.replace(/\/$/, '')) return false;
+      if (current.hostname === 'bitbucket.org') return target.search === current.search && decodeURIComponent(target.hash.slice(1)) === `chg-${path}`;
       if (target.searchParams.get('file_path') !== path) return false;
       return SELECTION.every((name) => target.searchParams.get(name) === current.searchParams.get(name));
     } catch { return false; }

@@ -4,6 +4,7 @@ import { buildProviderReviewItems, providerReviewKey } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput, ProviderReviewThread } from '@geld/review';
 import type { ProviderAiState } from './ai';
 import { renderProviderReviewPanel } from './review-panel';
+import type { ProviderReviewPanelEvent } from './review-panel';
 
 const subject = { provider: 'gitlab', origin: 'https://gitlab.com', repository: 'group/subgroup/project', id: '42', headSha: 'a'.repeat(40) } as const;
 const reviewUrl = 'https://gitlab.com/group/subgroup/project/-/merge_requests/42';
@@ -186,5 +187,118 @@ describe('provider conversation digest', () => {
     panel.element.querySelector<HTMLButtonElement>('[data-geld-ai-cancel]')?.click();
     expect(cancel).toHaveBeenCalledTimes(1);
     expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('groups by recorded native pushes, moves edited comments by their actual edit time, and keeps an empty latest push', () => {
+    const original = input([thread('a')]);
+    const edited = { ...comment('2', 'Current edited review text.'), updatedAt: '2026-11-01T14:00:00Z' };
+    const events: readonly ProviderReviewPanelEvent[] = [{ id: 'push-1', url: reviewUrl, author: comment('1').author, body: 'Native push event one', createdAt: '2026-11-01T11:00:00Z', kind: 'push' }, { id: 'push-2', url: reviewUrl, author: comment('1').author, body: 'Native push event two', createdAt: '2026-11-01T13:00:00Z', kind: 'push' }];
+    const options = { reviewGrouping: 'batch', comments: [edited], events } satisfies Parameters<typeof renderProviderReviewPanel>[2];
+    const panel = renderProviderReviewPanel(host(), original, options);
+    const rounds = panel.element.querySelectorAll<HTMLDetailsElement>('[data-geld-review-round]');
+    expect(rounds).toHaveLength(2);
+    expect(rounds[0]?.textContent).toContain(comment('1').body);
+    expect(rounds[0]?.textContent).not.toContain(edited.body);
+    expect(rounds[1]?.textContent).toContain('Latest recorded push');
+    expect(rounds[1]?.textContent).toContain(edited.body);
+    expect(rounds[1]?.textContent).toContain('Edited');
+    const item = rounds[0]?.querySelector<HTMLDetailsElement>('[data-geld-item]');
+    if (item !== null && item !== undefined) item.open = true;
+    panel.update(original, { ...options, reviewGrouping: 'type' });
+    expect(panel.element.querySelector('[data-geld-review-round]')).toBeNull();
+    expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-item]')?.open).toBe(true);
+    panel.update(original, { ...options, comments: [] });
+    expect(panel.element.querySelector('[data-geld-review-round="push-2"]')?.textContent).toContain('No conversation recorded after this push.');
+  });
+
+  it('does not invent push rounds from comment prose or events with unknown kinds', () => {
+    const panel = renderProviderReviewPanel(host(), input([thread('a')]), { reviewGrouping: 'batch', comments: [comment('2', 'I pushed a new commit abc1234.')], events: [{ id: 'unknown', url: reviewUrl, author: comment('1').author, body: 'Added 1 commit', createdAt: '2026-11-01T11:00:00Z', kind: 'activity' }] });
+    expect(panel.element.querySelector('[data-geld-review-round]')).toBeNull();
+    expect(panel.element.querySelector('[data-geld-review-history]')?.textContent).toContain('push boundaries unavailable');
+    expect(panel.element.textContent).toContain('I pushed a new commit');
+  });
+
+  it('reads reports only from actual current check service hosts, without GitHub check-name inference', () => {
+    const panel = renderProviderReviewPanel(host(), { ...input(), checks: [
+      { name: 'codecov/project', sha: subject.headSha, status: 'completed', conclusion: 'success', description: '80.12% (+0.03%) compared to abc1234', detailsUrl: 'https://app.codecov.io/gl/group/project/pull/42' },
+      { name: 'codecov/patch', sha: subject.headSha, status: 'completed', conclusion: 'success', description: '90% covered', detailsUrl: 'https://codecov.io.evil.example/attack' },
+      { name: 'CodeQL', sha: subject.headSha, status: 'completed', conclusion: 'success', description: 'No new alerts in code changed by this pull request', detailsUrl: 'https://gitlab.com/group/project/runs/123' },
+      { name: 'codecov/old', sha: 'b'.repeat(40), status: 'completed', conclusion: 'failure', detailsUrl: 'https://codecov.io/gl/group/project' },
+    ] });
+    expect(panel.element.querySelectorAll('[data-geld-report]')).toHaveLength(1);
+    expect(panel.element.querySelector('[data-geld-report="codecov"]')?.textContent).toContain('80.12% (+0.03%)');
+    expect(panel.element.querySelector('[data-geld-report="codecov"] a')?.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(panel.element.querySelector('[data-geld-review-bot]')).toBeNull();
+  });
+
+  it('attributes preview links to their actual automated source, archives earlier links, and never grants a review vote', () => {
+    const author = { id: '12345', login: 'native-deploy-account', automated: true };
+    const earlier = { ...comment('2', 'Preview ready: [Preview](https://deploy.example/first)'), author, createdAt: '2026-11-01T10:00:00Z' };
+    const latest = { ...comment('3', 'Preview failed: [Preview](https://deploy.example/second)'), author, createdAt: '2026-11-01T11:00:00Z' };
+    const human = { ...comment('4', 'Preview ready: [Preview](https://unverified.example/)'), author: { id: '456', login: 'a-person', automated: false } };
+    const unsafe = { ...comment('5', 'Preview ready: [Preview](javascript:alert(1))'), author };
+    const panel = renderProviderReviewPanel(host(), input(), { comments: [latest, earlier, human, unsafe] });
+    const section = panel.element.querySelector('[data-geld-review-key="previews"]');
+    expect(section?.querySelector('summary')?.textContent).toBe('Preview links · 1');
+    expect(section?.querySelector('[data-geld-preview="note_3"]')?.textContent).toContain('native-deploy-account · Reported status: failed');
+    expect(section?.querySelector('[data-geld-preview="note_3"] > a')?.getAttribute('href')).toBe('https://deploy.example/second');
+    expect(section?.querySelector('[data-geld-review-key="previews:earlier"] [data-geld-preview]')?.getAttribute('data-geld-preview')).toBe('note_2');
+    expect(section?.textContent).not.toContain('a-person');
+    expect(section?.querySelector('a[href^="javascript:"]')).toBeNull();
+    expect(panel.element.querySelector('[data-geld-review-bot]')).toBeNull();
+  });
+
+  it('marks an item reviewed locally without resolving its native thread or erasing bot findings', () => {
+    const author = { id: '12345', login: 'native-review-account', automated: true };
+    const source: ProviderReviewInput = { ...input([thread('a', { comments: [{ ...comment('1', '**Fix the credentials cache.**'), author }] })]), bots: [{ id: 'coderabbit', authorId: author.id }], complete: true };
+    const [native] = buildProviderReviewItems(source);
+    if (native === undefined) throw new Error('Missing native item.');
+    const set = vi.fn();
+    const localReviewed = { ids: new Set([native.id]), pending: new Set<string>(), set };
+    const transformItems = (items: readonly typeof native[]) => items.map((item) => ({ ...item, title: 'AI consolidated cache title', context: 'The native words remain below.', rewritten: true }));
+    const panel = renderProviderReviewPanel(host(), source, { localReviewed, transformItems });
+    expect(set).not.toHaveBeenCalled();
+    expect(panel.element.querySelector('[data-geld-review-group="done"] [data-geld-item] > summary')?.textContent).toContain('AI consolidated cache title');
+    expect(panel.element.querySelector('[data-geld-local-review-notice]')?.textContent).toBe('Reviewed on this device. Native status: Open.');
+    expect(panel.element.querySelector('[data-geld-review-bot="coderabbit"]')?.textContent).toContain('1 open finding');
+    expect(panel.element.querySelector('.geld-provider-review__body')?.textContent).toBe('**Fix the credentials cache.**');
+    expect(source.threads[0]?.resolved).toBe(false);
+    panel.element.querySelector<HTMLButtonElement>('[data-geld-local-reviewed]')?.click();
+    expect(set).toHaveBeenCalledWith(expect.objectContaining({ id: native.id, title: 'AI consolidated cache title' }), false);
+    panel.update(source, { localReviewed: { ...localReviewed, pending: new Set([native.id]) }, transformItems });
+    panel.element.querySelector<HTMLButtonElement>('[data-geld-local-reviewed]')?.click();
+    expect(set).toHaveBeenCalledTimes(1);
+    expect(panel.element.querySelector('[data-geld-local-reviewed]')?.getAttribute('aria-busy')).toBe('true');
+  });
+
+  it('retains native resolved state and includes the distinct local mark in copied digest history', async () => {
+    const source = input([thread('a', { resolved: true })]);
+    const [native] = buildProviderReviewItems(source);
+    if (native === undefined) throw new Error('Missing native item.');
+    let copied = '';
+    const panel = renderProviderReviewPanel(host(), source, { localReviewed: { ids: new Set([native.id]), pending: new Set(), set: () => undefined }, copyText: (text) => { copied = text; }, reviewGrouping: 'batch', events: [{ id: 'native-push', url: reviewUrl, author: comment('1').author, body: 'Actual native push', createdAt: '2026-11-01T11:00:00Z', kind: 'push' }] });
+    expect(panel.element.querySelector('[data-geld-item]')?.getAttribute('data-state')).toBe('resolved');
+    expect(panel.element.querySelector('[data-geld-review-round="native-push"] [data-geld-local-review-notice]')?.textContent).toContain('Native status: Resolved');
+    panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
+    await vi.waitFor(() => expect(copied).toContain('Reviewed on this device. Native status: Resolved.'));
+    expect(copied).toContain(`${reviewUrl}#note_1`);
+  });
+
+  it('keeps keyboard focus with a local review action while its item moves between groups', () => {
+    const source = input([thread('a')]);
+    const [item] = buildProviderReviewItems(source);
+    if (item === undefined) throw new Error('Missing native item.');
+    const set = vi.fn();
+    const panel = renderProviderReviewPanel(host(), source, { localReviewed: { ids: new Set(), pending: new Set(), set } });
+    const button = panel.element.querySelector<HTMLButtonElement>('[data-geld-local-reviewed]');
+    const details = panel.element.querySelector<HTMLDetailsElement>('[data-geld-item]');
+    if (details !== null) details.open = true;
+    button?.focus();
+    panel.update(source, { localReviewed: { ids: new Set(), pending: new Set([item.id]), set } });
+    expect(document.activeElement?.getAttribute('data-geld-local-review-focus')).toBe(item.id);
+    panel.update(source, { localReviewed: { ids: new Set([item.id]), pending: new Set(), set } });
+    expect(document.activeElement?.getAttribute('data-geld-local-reviewed')).toBe(item.id);
+    expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-group="done"]')?.open).toBe(true);
+    expect(panel.element.querySelector<HTMLDetailsElement>('[data-geld-item]')?.open).toBe(true);
   });
 });

@@ -58,6 +58,23 @@ function validRef(ref: string): boolean {
   return ref.length > 0 && ref.length <= 1024 && !/[\\\s\u0000-\u001f?#]/.test(ref) && !ref.includes('..');
 }
 
+function documentReviewVersion(url: URL, doc: Document, repository: string, number: string): Record<string, unknown> | null | false {
+  let current: URL;
+  try { current = new URL(doc.location.href); } catch { return false; }
+  const review = MERGE_REQUEST.exec(current.pathname);
+  if (current.origin !== url.origin || review?.[1] !== repository || review[2] !== number) return false;
+  const version = selectedVersion(doc);
+  const currentParams = selection(current);
+  const targetParams = selection(url);
+  for (const key of ['diff_id', 'start_sha', 'commit_id', 'only_context_commits'] as const) {
+    const target = targetParams.get(key);
+    const displayed = currentParams.get(key) ?? (key === 'diff_id' && typeof version?.id === 'number' ? String(version.id) : null);
+    if (target === null ? currentParams.has(key) : target !== displayed) return false;
+  }
+  if (currentParams.has('diff_id') && typeof version?.id === 'number' && currentParams.get('diff_id') !== String(version.id)) return false;
+  return version;
+}
+
 function standalonePage(url: URL, doc: Document): ProviderStandalonePage | null {
   const repository = describeRepository(url, 'gitlab');
   if (repository === null) return null;
@@ -71,7 +88,7 @@ function standalonePage(url: URL, doc: Document): ProviderStandalonePage | null 
   const commit = /^commit\/([0-9a-f]{7,64})$/i.exec(route);
   if (commit?.[1] !== undefined) {
     const ref = commit[1].toLowerCase();
-    const headSha = SHA.test(ref) ? ref : doc.location?.pathname === url.pathname ? displayedHead(doc, path, url.origin) : null;
+    const headSha = SHA.test(ref) ? ref : doc.location?.origin === url.origin && doc.location.pathname === url.pathname ? displayedHead(doc, path, url.origin) : null;
     const base = `${url.origin}${prefix}commit/${ref}`;
     const query = options.size > 0 ? `?${options}` : '';
     return { provider: 'gitlab', repository, kind: 'commit', ref, headSha, url: base, diffPageUrl: `${base}${query}`, diffUrl: `${base}.diff${query}`, version: `commit:${headSha ?? ref}|${options}` };
@@ -93,7 +110,7 @@ function standalonePage(url: URL, doc: Document): ProviderStandalonePage | null 
   if (project !== null) options.set('from_project_id', project);
   const base = `${url.origin}${prefix}compare/${encodeURIComponent(from)}...${encodeURIComponent(to)}`;
   const query = options.size > 0 ? `?${options}` : '';
-  const headSha = SHA.test(to) ? to.toLowerCase() : doc.location?.pathname === url.pathname ? displayedHead(doc, path, url.origin) : null;
+  const headSha = SHA.test(to) ? to.toLowerCase() : doc.location?.origin === url.origin && doc.location.pathname === url.pathname ? displayedHead(doc, path, url.origin) : null;
   const diff = new URL(`${base}${query}`); diff.searchParams.set('format', 'diff');
   return { provider: 'gitlab', repository, kind: 'compare', from, to, straight, ...(project === null ? {} : { targetProjectId: project }), headSha, url: base, diffPageUrl: `${base}${query}`, diffUrl: diff.href, version: `compare:${from}:${to}:${straight}:${project ?? ''}|${options}` };
 }
@@ -107,9 +124,11 @@ export function describeGitLabPage(url: URL, doc: Document): ProviderPage | null
   if (repository === undefined || number === undefined || repository.split('/').some((part) => !part || part === '.' || part === '..')) return null;
   const base = `${url.origin}/${repository}/-/merge_requests/${number}`;
   const params = selection(url);
-  const version = selectedVersion(doc);
+  const documentVersion = documentReviewVersion(url, doc, repository, number);
+  const version = documentVersion === false ? null : documentVersion;
+  const canReadLatestHead = documentVersion !== false && !params.has('diff_id') && !params.has('start_sha') && !params.has('commit_id');
   if (!params.has('diff_id') && !params.has('commit_id') && typeof version?.id === 'number') params.set('diff_id', String(version.id));
-  const note = jsonAttribute(doc.querySelector('[data-noteable-type="MergeRequest"][data-noteable-data]'), 'data-noteable-data');
+  const note = canReadLatestHead ? jsonAttribute(doc.querySelector('[data-noteable-type="MergeRequest"][data-noteable-data]'), 'data-noteable-data') : null;
   const candidate = params.get('commit_id') ?? (typeof version?.head_sha === 'string' ? version.head_sha : note?.diff_head_sha);
   const headSha = typeof candidate === 'string' && SHA.test(candidate) ? candidate.toLowerCase() : null;
   const query = params.size > 0 ? `?${params}` : '';
