@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyAttachmentLightbox, removeAttachmentLightbox } from './attachment-lightbox';
+import { blockText } from './review/crawler';
 
 const ATTACHMENT = 'https://github.com/user-attachments/assets/abc-123';
 
@@ -258,6 +259,14 @@ describe('attachment video player', () => {
     expect(inline.currentTime).toBe(15);
     expect(document.querySelector('dialog')).toBeNull();
     expect(inline.nextElementSibling).toBeNull();
+  });
+
+  it('keeps the player button out of the comment text Geld reads', () => {
+    const inline = mountVideo();
+    applyAttachmentLightbox();
+    const body = inline.closest('.markdown-body');
+    if (body === null) throw new Error('Missing comment body');
+    expect(blockText(body)).toBe('screen-recording.mp4');
   });
 
   it('removes the player button when the inline video is replaced', () => {
