@@ -511,15 +511,15 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
   },
   {
     id: 'lists',
-    title: 'Pull request lists',
+    title: 'Hidden people',
     intro:
-      'Pull requests opened by these authors are hidden in PR lists and stacks, behind a row that says how many and shows them on click. One login per line; `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).',
+      'People and bots you never want to see. Their pull requests are hidden in PR lists and stacks, behind a row that says how many and shows them on click. Their reviews and comments are left out of the pull request digest, where a closed eye on the Reviews or Review bots row lists them with Peek and Unhide. Anyone GitHub shows with a comment hidden as spam or abuse is left out of the digest too. A reply of theirs in someone else’s review thread stays in that thread. One login per line. `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).',
     fields: [
       {
         kind: 'list',
         key: 'hiddenAuthors',
-        label: 'Hidden authors',
-        description: 'Pull request authors whose PRs are hidden in lists.',
+        label: 'Hidden people',
+        description: 'Logins whose pull requests, reviews and comments Geld hides.',
         popup: false,
         rows: 4,
         placeholder: '*[bot]\nrenovate*',
@@ -528,7 +528,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
           '`*` matches any run of characters: `*[bot]` is every GitHub App, `renovate*` every Renovate account.',
           'Matching ignores case. Lines starting with `#` are comments.',
         ],
-        saveLabel: 'Save authors',
+        saveLabel: 'Save hidden people',
       },
     ],
   },

@@ -19,7 +19,7 @@ import { noteTone } from './note-tone';
 import { botTitle, isOpenStatus, itemThreads, resolveBotId, threadCounts } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
-import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_EXCLAMATION_CIRCLE_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_EXCLAMATION_CIRCLE_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER, ICON_EYE_CLOSED, ICON_BLOCKED } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checkStateOfRun, checksHealth, checksRowTone, checksSummary, checksTotal, pushRowTone, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
 import type { CheckCounts, CheckState, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -33,6 +33,8 @@ import { ATTR_TELEPORTED, reclaimOrphans, restoreAll, teleportedNodes } from './
 import { overviewColumnGap, overviewDescription } from './overview-page';
 import { ATTR_NOTE, ATTR_REPORT, ATTR_WHO, rehostHoverCard } from './hovercard';
 import type { ReviewerCandidate } from './reviewers';
+import type { HiddenPerson } from './hidden-people';
+import type { BlockedBy } from '../blocked-list';
 import { shapeMark } from './mark-shape';
 import { brandMark, syncBrandSelection, watchBrandSelection } from './brand';
 import { inlineText } from './inline-text';
@@ -465,6 +467,12 @@ export interface PanelModel {
   readonly editedFor: (anchor: string) => { readonly editedAt: string; readonly postedAt: string | null; readonly log: string } | null;
   /** Whether GitHub offers Resolve for this item's thread (else the ⋯ menu says "Mark done"). */
   readonly resolvable: (item: ReviewItem) => boolean;
+  /** People and bots left out of the digest (hidden on GitHub, or on the reader's list), for the hidden people menu. */
+  readonly hiddenPeople: readonly HiddenPerson[];
+  /** Who has blocked a person: a blocked person whose content GitHub still shows wears a badge on their picture. */
+  readonly blockedBy: (login: string) => BlockedBy;
+  /** Everyone blocked, lowercased and sorted, so a block list landing redraws the badges. */
+  readonly blockedKey: string;
 }
 
 export interface PanelHandlers {
@@ -495,6 +503,13 @@ export interface PanelHandlers {
   readonly onOpenAnchor: (anchor: string) => void;
   /** Leave compact view for the full timeline and jump to `anchor` there. */
   readonly onShowInTimeline: (anchor: string) => void;
+  /** Show or hide again a hidden person's content in the digest, for this visit. */
+  readonly onPeek: (login: string) => void;
+  /** Undo the hide itself, after the reader confirms: GitHub's own Unhide, or the line on the reader's list. */
+  /** `from` is the menu section clicked: GitHub's own Unhide, or the line on the reader's hidden list in Geld. */
+  readonly onUnhide: (login: string, from: 'github' | 'list') => void;
+  /** Open where a section of hidden people is managed: GitHub's Blocked users pages, or Geld's settings. */
+  readonly onManageHidden: (section: 'org' | 'personal' | 'list') => void;
   /** Open or close a comment inside the Reviews row's list. */
   readonly onToggleSub: (anchor: string) => void;
   /** Show every way an agent's note in the description has read (`id` is the tool's). */
@@ -626,11 +641,29 @@ export function whoAttributes(login: string, bot: boolean): Readonly<Record<stri
   return { 'data-hovercard-type': 'user', 'data-hovercard-url': `/users/${encodeURIComponent(login)}/hovercard` };
 }
 
+const NOT_BLOCKED: BlockedBy = { org: false, personal: false };
+
+/** Who has blocked whom, as the panel being built knows it (`mountPanel` sets it from the model). */
+let blockedOf: (login: string) => BlockedBy = () => NOT_BLOCKED;
+
+/** The words for a block, as everywhere else Geld says it. */
+export function blockedWords(by: BlockedBy): string {
+  if (by.org && by.personal) return 'Blocked by you and this organization';
+  return by.org ? 'Blocked by this organization' : 'Blocked by you';
+}
+
+/** A blocked person whose content GitHub still shows keeps their picture, with GitHub's blocked mark on its corner. */
+function withBlockBadge(picture: HTMLElement, login: string): HTMLElement {
+  const by = login === '' ? NOT_BLOCKED : blockedOf(login);
+  if (!by.org && !by.personal) return picture;
+  return createElement('span', { class: `${PANEL_CLASS}__blocked-avatar`, title: blockedWords(by) }, [picture, createElement('span', { class: `${PANEL_CLASS}__blocked-badge`, 'aria-hidden': 'true' }, [icon(ICON_BLOCKED)]), createElement('span', { class: 'geld-sr-only' }, [blockedWords(by)])]);
+}
+
 function avatarImg(entry: Avatar): HTMLElement {
   const img = createElement('img', { class: `${PANEL_CLASS}__avatar`, 'data-kind': entry.bot ? 'bot' : 'user', src: entry.src, alt: '', width: '20', height: '20', loading: 'lazy', ...whoAttributes(entry.login, entry.bot) });
   // A bot's mark takes the shape of its picture (`shapeMark`), a person's stays GitHub's circle.
   if (entry.bot) shapeMark(img, entry.src, false);
-  return img;
+  return withBlockBadge(img, entry.login);
 }
 
 /** Bots and Apps are rounded squares on GitHub, people are circles; the same pictures the page shows. */
@@ -1540,7 +1573,7 @@ function reviewerPill(status: ReviewerStatus, review: ReviewEntry | undefined, h
   const label = `${status.login}: ${words.join(' · ')}`;
   const children: Node[] = [];
   // Without a picture the login's first letter stands in, so a pill whose name the row has dropped still says who.
-  children.push(status.avatar.src !== '' ? markImg(status.avatar.src, true) : createElement('span', { class: `${PANEL_CLASS}__bot-icon ${PANEL_CLASS}__bot-icon--letter`, 'data-shape': 'round', 'aria-hidden': 'true' }, [status.login.charAt(0).toUpperCase() || '?']));
+  children.push(withBlockBadge(status.avatar.src !== '' ? markImg(status.avatar.src, true) : createElement('span', { class: `${PANEL_CLASS}__bot-icon ${PANEL_CLASS}__bot-icon--letter`, 'data-shape': 'round', 'aria-hidden': 'true' }, [status.login.charAt(0).toUpperCase() || '?']), status.login));
   children.push(createElement('span', { class: `${PANEL_CLASS}__bot-name` }, [status.login]));
   const glyph = (health: Health, glyphIcon: string, count?: number): HTMLElement =>
     createElement('span', { class: `${PANEL_CLASS}__health`, 'data-health': health, 'aria-hidden': 'true' }, [icon(glyphIcon), ...(count === undefined ? [] : [createElement('span', { class: `${PANEL_CLASS}__reviewer-threads` }, [String(count)])])]);
@@ -1701,6 +1734,100 @@ function statusWords(status: ReviewerStatus): { readonly glyphs: readonly string
   }
   const health: Health | null = status.verdict === 'approved' ? 'good' : status.verdict === 'changes_requested' ? 'bad' : status.awaiting ? 'pending' : null;
   return { glyphs, words: parts.join(' · '), health };
+}
+
+/** Which hidden people menu stays open across a rebuild (Show rebuilds the panel). */
+let hiddenMenuOpen: 'people' | 'bots' | null = null;
+
+type HiddenSection = 'pull' | 'org' | 'personal' | 'list';
+
+const HIDDEN_SECTIONS: readonly { readonly id: HiddenSection; readonly title: string; readonly manage: string | null; readonly has: (person: HiddenPerson) => boolean }[] = [
+  { id: 'pull', title: 'Hidden on this pull request', manage: null, has: (person) => person.github !== null && !person.blocked.org && !person.blocked.personal },
+  { id: 'org', title: 'Blocked by this organization', manage: 'Manage organization blocks', has: (person) => person.github !== null && person.blocked.org },
+  { id: 'personal', title: 'Blocked by you', manage: 'Manage your blocks', has: (person) => person.github !== null && person.blocked.personal },
+  { id: 'list', title: 'On your hidden list in Geld', manage: 'Manage your hidden list in Geld', has: (person) => person.rule !== null },
+];
+
+function hiddenRow(person: HiddenPerson, section: HiddenSection, details: HTMLDetailsElement, handlers: PanelHandlers): HTMLElement {
+  const picture = person.avatarSrc !== null ? createElement('img', { class: `${PANEL_CLASS}__bot-icon`, src: person.avatarSrc, alt: '', width: '20', height: '20', ...whoAttributes(person.login, person.bot) }) : createElement('span', { class: `${PANEL_CLASS}__bot-icon ${PANEL_CLASS}__bot-icon--blank`, 'aria-hidden': 'true' });
+  const verdict =
+    person.verdict === null
+      ? []
+      : [createElement('span', { class: `${PANEL_CLASS}__health ${PANEL_CLASS}__hidden-verdict`, 'data-health': REVIEWER_HEALTH[person.verdict], role: 'img', 'aria-label': REVIEWER_GROUP_WORD[person.verdict], title: REVIEWER_GROUP_WORD[person.verdict] }, [icon(ENTRY_GLYPH[person.verdict])])];
+  const show = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__hidden-action`, role: 'menuitem', 'aria-pressed': String(person.peeking), 'aria-label': `${person.peeking ? 'Hide' : 'Show'} ${person.login}`, title: person.peeking ? 'Hide again' : 'Temporarily show', [ATTR_FOCUS]: `hidden:${section}:${person.login}:show` }, [icon(person.peeking ? ICON_EYE_CLOSED : ICON_EYE), person.peeking ? 'Hide' : 'Show']);
+  show.addEventListener('click', (event) => {
+    event.stopPropagation();
+    handlers.onPeek(person.login);
+  });
+  const actions: Node[] = [show];
+  const exactRule = person.rule !== null && person.rule.replace(/^@/, '').toLowerCase() === person.login.toLowerCase();
+  const from = section === 'list' ? 'list' : 'github';
+  const unhideTitle = from === 'list' ? (exactRule ? 'Remove them from your hidden list in Geld' : null) : person.github?.unhide === true ? 'Unhide their content for everyone on GitHub' : null;
+  if (unhideTitle !== null) {
+    const unhide = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__hidden-action`, role: 'menuitem', 'aria-label': `Unhide ${person.login}`, title: unhideTitle, [ATTR_FOCUS]: `hidden:${section}:${person.login}:unhide` }, ['Unhide']);
+    unhide.addEventListener('click', (event) => {
+      event.stopPropagation();
+      details.removeAttribute('open');
+      handlers.onUnhide(person.login, from);
+    });
+    actions.push(unhide);
+  }
+  return createElement('div', { class: `${PANEL_CLASS}__hidden-item`, 'data-login': person.login, ...(person.peeking ? { 'data-peeking': '' } : {}) }, [
+    picture,
+    createElement('span', { class: `${PANEL_CLASS}__hidden-name` }, [person.login]),
+    ...verdict,
+    createElement('span', { class: `${PANEL_CLASS}__hidden-actions` }, actions),
+  ]);
+}
+
+/**
+ * The closed eye at the right of the Reviews row (people) or the Review bots
+ * row (bots), with how many are hidden. It opens to who is hidden, in four
+ * sections from this pull request outward: content GitHub hid here, people
+ * blocked by the organization, people blocked by the reader, and people on the
+ * reader's hidden list in Geld; someone blocked both ways stands in both. A
+ * section's gear opens where it is managed (GitHub's Blocked users pages,
+ * Geld's settings). Each person has one line: picture, login, the verdict their
+ * pill would have shown, Show (their content in the digest for this visit,
+ * then Hide), and Unhide where GitHub, or the reader's list, can undo the hide.
+ */
+function hiddenMenu(model: PanelModel, handlers: PanelHandlers, scope: 'people' | 'bots'): HTMLElement | null {
+  const people = model.hiddenPeople.filter((person) => person.bot === (scope === 'bots'));
+  if (people.length === 0) return null;
+  installMenuDismissal();
+  const peeking = people.filter((person) => person.peeking).length;
+  const noun = scope === 'bots' ? plural(people.length, 'hidden bot') : people.length === 1 ? '1 hidden person' : `${people.length} hidden people`;
+  const details = createElement('details', { class: `${PANEL_CLASS}__menu ${PANEL_CLASS}__hidden` });
+  if (hiddenMenuOpen === scope) details.setAttribute('open', '');
+  details.addEventListener('toggle', () => {
+    if (details.open) hiddenMenuOpen = scope;
+    else if (hiddenMenuOpen === scope) hiddenMenuOpen = null;
+  });
+  const summary = createElement('summary', { class: `${PANEL_CLASS}__hidden-btn`, role: 'button', 'aria-label': `${noun}${peeking > 0 ? `, showing ${peeking}` : ''}. Show who`, title: `${noun} on this pull request`, [ATTR_FOCUS]: `hidden:${scope}` }, [
+    icon(peeking > 0 ? ICON_EYE : ICON_EYE_CLOSED),
+    createElement('span', { class: `${PANEL_CLASS}__hidden-count` }, [String(people.length)]),
+  ]);
+  summary.addEventListener('click', (event) => event.stopPropagation());
+  const list = createElement('div', { class: `${PANEL_CLASS}__menu-list ${PANEL_CLASS}__hidden-list`, role: 'menu' });
+  for (const section of HIDDEN_SECTIONS) {
+    const members = people.filter(section.has);
+    if (members.length === 0) continue;
+    const heading: Node[] = [createElement('span', { class: `${PANEL_CLASS}__hidden-heading-text` }, [section.title])];
+    const manage = section.manage;
+    const id = section.id;
+    if (manage !== null && id !== 'pull') {
+      const gear = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__hidden-manage`, 'aria-label': manage, title: manage, [ATTR_FOCUS]: `hidden:${id}:manage` }, [icon(ICON_GEAR)]);
+      gear.addEventListener('click', (event) => {
+        event.stopPropagation();
+        details.removeAttribute('open');
+        handlers.onManageHidden(id);
+      });
+      heading.push(gear);
+    }
+    list.append(createElement('div', { class: `${PANEL_CLASS}__hidden-section`, 'data-section': id }, [createElement('div', { class: `${PANEL_CLASS}__hidden-heading` }, heading), ...members.map((person) => hiddenRow(person, id, details, handlers))]));
+  }
+  details.append(summary, list);
+  return details;
 }
 
 /**
@@ -2002,7 +2129,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
   // The row stands wherever there is something to say about reviews — or someone to ask: on a pull request with no
   // review, no pending reviewer and no required count, GitHub still offers its reviewer form, and the Request a
   // review menu lives on this row, so without it the first reviewer could not be asked from Geld.
-  if (model.reviews !== null || model.comments.length > 0 || model.reviewerGroups.length > 0 || model.ingesting || model.canRequestReviewers) {
+  if (model.reviews !== null || model.comments.length > 0 || model.reviewerGroups.length > 0 || model.ingesting || model.canRequestReviewers || model.hiddenPeople.some((person) => !person.bot)) {
     const health: Health = model.reviews === null ? 'pending' : reviewsHealth(model.reviews);
     const content: Node[] = [];
     // The words carry only what the reviewer groups cannot: how many approvals the repository asks for. Without
@@ -2032,6 +2159,8 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     ]);
     mainClickToggles(main, () => handlers.onToggle(REVIEWS_KEY));
     const right: Node[] = [];
+    const hiddenPeople = hiddenMenu(model, handlers, 'people');
+    if (hiddenPeople !== null) right.push(hiddenPeople);
     if (model.reviews !== null) right.push(healthGlyph(health, reviewsLabel(model.reviews)));
     const people = reviewersMenu(model, handlers);
     if (people !== null) right.push(people);
@@ -2062,7 +2191,8 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
       ? createElement('button', { type: 'button', class: `${PANEL_CLASS}__main ${PANEL_CLASS}__main--status`, 'aria-expanded': String(open), [ATTR_FOCUS]: `main:${BOTS_KEY}`, 'aria-label': plural(model.botLines.length, 'review bot') }, [createElement('span', { class: `${PANEL_CLASS}__status-content`, ...(chips.length > 0 ? { [ATTR_FIT]: '' } : {}) }, content)])
       : createElement('span', { class: `${PANEL_CLASS}__status-content`, ...(chips.length > 0 ? { [ATTR_FIT]: '' } : {}) }, content);
     if (opens) mainClickToggles(main, toggle);
-    const right: Node[] = menu === null ? [] : [menu];
+    const hiddenBots = hiddenMenu(model, handlers, 'bots');
+    const right: Node[] = [...(hiddenBots === null ? [] : [hiddenBots]), ...(menu === null ? [] : [menu])];
     if (opens) right.push(chevron(open, toggle));
     const row = createElement('li', { class: `${PANEL_CLASS}__row ${PANEL_CLASS}__row--status`, 'data-health': health }, [
       createElement('span', { class: `${PANEL_CLASS}__status ${PANEL_CLASS}__status--muted`, 'aria-hidden': 'true' }, [icon(HEALTH_ICON[health])]),
@@ -3037,6 +3167,8 @@ function signatureOf(model: PanelModel): string {
     comments: model.comments.map((entry) => `${entry.anchor}:${entry.state}:${entry.done ? 'd' : 'o'}:${entry.preview}:${entry.time}:${entry.replies}:${entry.myReaction ?? ''}:${entry.avatarSrc ?? ''}:${entry.parent ?? ''}:${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('|')}`),
     reviewerGroups: model.reviewerGroups.map((group) => `${group.state}:${group.reviewers.map((reviewer) => `${reviewer.login}${reviewer.src}`).join(',')}`),
     reviewerStatuses: model.reviewerStatuses.map((status) => `${status.login}:${status.verdict ?? ''}:${status.awaiting ? 'a' : ''}:${status.anchor ?? ''}`),
+    blocked: model.blockedKey,
+    hiddenPeople: model.hiddenPeople.map((person) => `${person.login}:${person.peeking ? 'p' : ''}:${person.verdict ?? ''}:${person.github === null ? '' : `${person.github.reason}:${person.github.unhide ? 'u' : ''}`}:${person.rule ?? ''}:${person.blocked.org ? 'o' : ''}${person.blocked.personal ? 'y' : ''}:${person.avatarSrc ?? ''}`),
     canRequestReviewers: model.canRequestReviewers,
     canDismissReviews: model.canDismissReviews,
     ingesting: model.ingesting,
@@ -3111,6 +3243,7 @@ export interface MountOptions {
 }
 
 export function mountPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions = {}): MountedPanel | null {
+  blockedOf = model.blockedBy;
   // A rebuild (the reading ending changes the signature) must not drop the bar mid-way: the new panel takes it.
   const bar = document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}] > .${PANEL_CLASS}__reading`);
   const mounted = buildPanel(model, handlers, options);

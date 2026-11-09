@@ -572,6 +572,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   the thread's own updates still arrive meanwhile, since GitHub appends them to the loaned node and `dressArrivals` dresses them (under the chat's ownership too).
   **The Overview's review comments read as the conversation's in a chat** (`placeOverviewControls`): the header grid (`[data-testid="comment-header"]`) is laid out as the author line, its picture in the gutter, the App's "[bot]" dropped from the name as the conversation shows it, the bubble's inner wrappers unpadded and the reply's rule gone.
   The reactions toolbar moves under the bubble, and the picker's button and the ⋯ (`comment-header-hamburger`) into the side slot, as loans, so they are GitHub's React controls throughout.
+  By Nov 2026 that ⋯ had lost its test id and reads "More actions for X's comment, <time>" (`OVERVIEW_MENU`, and in `COMMENT_MENUS` so a round's comment line wears it too): signed in it offers Quote reply, Copy link, Edit, Hide for everyone, Delete and, on someone else's comment, Block user, and a round's line on the Overview had no ⋯ at all until it was matched.
+  The Overview's description box has no ⋯ of its own, only the Edit description pencil.
   The reply row is GitHub's, untouched (see the composer above).
   The head's Resolve watcher writes only when its words change and lives outside the thread: a watcher rewriting the thread's own nodes on every mutation it heard was an endless chain of mutations that froze the page as soon as anything in the thread changed (focusing the ⋯ was enough).
   An Overview review is one box, its words and its threads' boxes together, so `threadHeadOf` takes the box as the thread's source though it holds the thread, and an unfolded strip hides the review's other threads;
@@ -1795,6 +1797,40 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `author:app/<name>` hrefs → `<name>[bot]`);
   matching rows get `data-geld-author="hidden"` and each list gets one note (`.geld-author-note`, a `li` wrapper inside `ul` lists) with a Show that flips the list to `data-geld-authors-shown` for the visit.
   Stack-popover items carry no author and are skipped.
+  The settings section is titled "Hidden people" (its id stays `lists`, the key stays `hiddenAuthors`), since the same list also hides people in the digest.
+- **Hidden people are left out of the digest** (`review/hidden-people.ts`, `HiddenPeople`, `hiddenMenu` in panel.ts).
+  A review requesting changes that GitHub shows hidden as spam still reads as "requested changes" in GitHub's Reviewers sidebar, which used to put a red pill on the Reviews row.
+  Hidden means GitHub shows any of their comments or reviews "marked as spam" or "marked as abuse" (`markedOnGitHub`, read from the hidden comment's header), or their login matches the reader's `hiddenAuthors` list, people and bots alike.
+  GitHub hides one comment at a time and keeps counting the rest, so the digest hides the person: spam and abuse say something about the author, while outdated, duplicate, resolved and off-topic say something about the comment and leave its author in.
+  The pass filters once, right after the crawl: their comments, threads they started, reviews, sidebar verdicts, the Action payload's items, reviewers and bot verdicts (`withoutHidden`), and timeline events that name them ("deleted a comment from X", `namesHidden`), and folds all of their timeline nodes silently (`hidden-people`).
+  The merge box's "Changes requested" sentence names nobody, so it is set aside when only a hidden person requested changes (`hiddenAskedChanges`).
+  A closed eye with a count stands at the right of the Reviews row for people and of the Review bots row for bots (`hiddenMenu`), and opens to who is hidden in four sections, from this pull request outward: "Hidden on this pull request" (content GitHub hid, from someone nobody blocked;
+  no gear), "Blocked by this organization" and "Blocked by you" (content GitHub hid, from someone blocked;
+  a gear to that Blocked users page), and "On your hidden list in Geld" (a gear to Geld's settings at `#lists`, `geld:open-settings` with a `section`).
+  Someone blocked both ways stands in both blocked sections, someone with a line on the reader's list stands under it whatever GitHub hid, and each person has one line: picture, login, the verdict glyph their pill would have shown, Show (their content in the digest for this visit, `visit.peeking`, then Hide;
+  the menu stays open across the rebuild) and Unhide after a `window.confirm`.
+  Unhide does what its section is about: under the reader's list it removes an exact line (a wildcard line offers none), elsewhere it sends GitHub's own Unhide form for each of their hidden comments (`lookUpUnhideForms`, `sendUnhide`, `refreshUnhidden`).
+  A notice quoted inside someone's comment text ("This comment was marked as spam" in a `<details>`) is theirs, not GitHub's, and hides nobody.
+  GitHub keeps that form out of the page: a hidden comment's menu is a lazy fragment (`comment_actions_menu?…&minimized=1`, holding `form.js-comment-unminimize`, which PUTs the comment's node id to `/<owner>/<repo>/community/unminimize-comment`), and a hidden review's content is one fragment further (`/pull/N/reviews/<id>`, whose menu holds `form.js-timeline-comment-unminimize`).
+  Geld reads those fragments once per page, and GitHub serves the form only to someone who may unhide, so Unhide is offered exactly when GitHub would offer it;
+  after the form goes through the comment is replaced from GitHub's own partial (its `data-url`), else the page reloads.
+  Where GitHub offers no form (signed out, or no permission) the action reads "Show in timeline" and leads to the comment.
+  Verified signed in (Nov 2026) on a test pull request: a hidden comment and a hidden review both came back on GitHub from one Unhide, and stayed so after a reload.
+  **GitHub is the source of truth for what is hidden** (`blocked-users.ts`, `blocked-list.ts`): GitHub shows a block nowhere but its "Blocked users" settings pages (not on the pull request, the hover card or the lists, checked signed in, Nov 2026, personal and organisation blocks alike), and a blocked person's content stays on GitHub's page unless it was hidden.
+  Each page embeds its list as JSON (`{"props":{"items":[{"login","blockedAt","expiresAt",…}],"isOrganization":…}}`, `blockedLoginsIn`, expired blocks left out), so the background reads the reader's own (`/settings/blocked_users`) and the repository owner's organisation's (`/organizations/<owner>/settings/blocked_users`) once per page load (`geld:blocked-users`), and the 404 a member who is not a moderator gets stays in the worker's console.
+  So a block alone hides nobody in the digest: a blocked person whose content GitHub shows stays, with GitHub's blocked mark (`circle-slash`) on the corner of their picture (`withBlockBadge`), and a block only places someone GitHub hid in a blocked section;
+  blocked people always leave GitHub's sidebar.
+  The two lists are read on their own (`BlockedBy`: `org`, `personal`), so someone blocked both ways is known as both.
+  Blocking with "Hide this user's comments" marks every comment and review of theirs with the reason picked.
+  What a block stops, tried with a test account in Nov 2026: blocked from the organization, the account could not comment ("You are blocked from the <org> organization and cannot comment because of this content."), reply in a thread (the reply is dropped silently), submit any review ("Failed to submit review") or react;
+  blocked personally by the pull request's author, the same three failed ("You can't perform this action at this time.").
+  What it posted before the block stays, an approval included: GitHub's sidebar keeps "approved these changes" under "Reviewers whose approvals may not affect merge requirements", since a blocked account has no write access and its approval never counts toward merging.
+  **Hidden people leave GitHub's sidebar too** (`sidebar-people.ts`, `syncSidebarPeople`): their row in Reviewers and their picture in Participants get `data-geld-sidebar-hidden` (display none), a group left empty ("1 more reviewer") goes with its rows, the participants heading counts only who is left (a stand-in of Geld's beside GitHub's hidden heading), and a Reviewers section left with nobody reads as GitHub's own empty state, "No reviews" on the conversation (a `span.css-truncate`, the same span GitHub wraps the rows in) and "No reviewers" on the Overview.
+  Participants is never empty on GitHub (the author is always one), so it goes whole when nobody is left;
+  the merge box and the pull request's state are GitHub's and untouched.
+  The eye menu shows each hidden person's review verdict as the pill would have (the approval, changes requested or comment glyph), from GitHub's sidebar first and else their latest review on the timeline.
+  The Overview words a review by someone without write access as "recommended approval", which the crawl reads as an approval (`reviewStateOf`).
+  A reply a hidden person left in someone else's thread still shows: a thread is read as one entry, by whoever started it.
 - **Repositories can configure Geld for everyone reviewing them** (`@geld/core/repo-config.ts`, `src/github/repo-config-source.ts`).
   A committed `.github/geld.yml` (and an org's defaults in `owner/.github`, `geld.yml` at the root or under `.github/`) uses the settings vocabulary — `categories`, `groups`, `categoryPatterns`, `customCategories` — and is checked by the same strict validator plus `collectRepoConfigIssues` (personal keys such as `enabled`/`repoRules` are rejected, unknown keys ignored).
   `.gitattributes` `linguist-generated` lines feed the Generated category via `generatedConfigFrom`.

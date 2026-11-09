@@ -851,7 +851,8 @@ export interface CrawledReview {
 const REVIEW_COMMENT = '.timeline-comment, .js-comment-container, [data-testid="comment-container"]';
 
 function reviewStateOf(text: string): CrawledReviewState {
-  if (/\bapproved\b/i.test(text)) return 'approved';
+  // The Overview words a review by someone without write access as a recommendation ("recommended approval").
+  if (/\bapproved\b|\brecommended approval\b/i.test(text)) return 'approved';
   if (/\brequested changes\b/i.test(text)) return 'changes_requested';
   if (/\bdismissed\b/i.test(text)) return 'dismissed';
   return 'commented';

@@ -3391,6 +3391,140 @@ svg.geld-lucide {
   height: 12px;
 }
 
+/* ---- Hidden people: the closed eye and its count, then who is hidden with Peek and Unhide ---- */
+
+.geld-review__hidden-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 6px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  list-style: none;
+  cursor: pointer;
+}
+
+.geld-review__hidden-btn::-webkit-details-marker {
+  display: none;
+}
+
+.geld-review__hidden-btn:hover,
+.geld-review__hidden[open] > .geld-review__hidden-btn {
+  background: var(--geld-review-hover);
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-review__menu-list.geld-review__hidden-list {
+  min-width: 320px;
+}
+
+.geld-review__hidden-section + .geld-review__hidden-section {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--borderColor-muted, var(--color-border-muted));
+}
+
+.geld-review__hidden-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 0 0 8px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.geld-review__hidden-manage {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--geld-review-muted);
+  cursor: pointer;
+}
+
+.geld-review__hidden-manage:hover,
+.geld-review__hidden-manage:focus-visible {
+  background: var(--geld-review-hover);
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-review__hidden-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 4px;
+  line-height: 20px;
+}
+
+.geld-review__hidden-item > .geld-review__bot-icon {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin-right: 0;
+}
+
+.geld-review__hidden-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-review__hidden-verdict {
+  flex: 0 0 auto;
+}
+
+.geld-review__hidden-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.geld-review__hidden-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* A blocked person whose content GitHub still shows: their picture, with GitHub's blocked mark on its corner. */
+.geld-review__blocked-avatar {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.geld-review__blocked-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: inline-flex;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--bgColor-default, var(--color-canvas-default));
+  color: var(--fgColor-danger, var(--color-danger-fg));
+}
+
+.geld-review__blocked-badge > .octicon {
+  width: 11px;
+  height: 11px;
+}
+
+/* GitHub's own sidebar rows for hidden people (sidebar-people.ts). */
+[data-geld-sidebar-hidden] {
+  display: none !important;
+}
+
 /* The rest of the registry, behind a disclosure in the menu's own type. */
 .geld-review__request-more > summary {
   display: flex;
