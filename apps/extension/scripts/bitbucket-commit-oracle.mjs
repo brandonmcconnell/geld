@@ -145,8 +145,12 @@ export function bitbucketParentCommitSnapshot() {
       if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || style.contentVisibility === 'hidden' || style.opacity === '0') presented = false;
     }
     const hit = typeof document.elementFromPoint === 'function' ? document.elementFromPoint(x, y) : null;
+    const header = hit?.closest('header[data-layout-slot="true"]');
     return { presented, visible: presented && x >= 0 && y >= 0 && x < (view?.innerWidth ?? 0) && y < (view?.innerHeight ?? 0) && hit !== null && (hit === node || node.contains(hit)),
-      bounds: { left: rect.left, top: rect.top, width: rect.width, height: rect.height } };
+      bounds: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      point: { x, y }, hit: hit === null ? null : { tag: hit.tagName, id: hit.id, testid: hit.getAttribute('data-testid'), role: hit.getAttribute('role'), owned: hit.closest('[data-geld-ui]') !== null,
+        nativeHeader: header !== null && header !== undefined && header.closest('[data-geld-ui], form, .ak-renderer-document') === null && header.closest('#unsafe-design-system-page-layout-root') !== null } };
+
   };
   const sidebar = tab.closest('[data-testid="sidebar"]');
   const expandSelector = '[data-testid="sidebar"] button:has([role="img"][aria-label="Click or tap to expand or press the ] (right bracket) key"])';
@@ -157,55 +161,113 @@ export function bitbucketParentCommitSnapshot() {
     details: describeControl(tab, '[data-testid="sidebar-tab-details"][role="tab"]'),
     parents: /^[A-Za-z][A-Za-z0-9_-]*$/.test(body.id) ? describeControl(control, `[data-testid="expanded-CommitCard"] > section > h2 > button[aria-controls="${body.id}"]`) : null,
   };
+  // Observed Atlassian consent banner is a direct native layout slot, never a comment or form.
+  const layout = document.querySelectorAll('#unsafe-design-system-page-layout-root');
+  const excluded = '[data-geld-ui], form, .ak-renderer-document, [data-qa="comment-content"], [data-testid="comment-content"], [data-testid="expanded-CommitCard"]';
+  const dialogSelector = '#unsafe-design-system-page-layout-root > [data-layout-slot="true"] [role="dialog"][aria-labelledby="cookiesTrackingNoticeLink"]';
+  const dialogs = [...document.querySelectorAll(dialogSelector)].filter((node) => node.closest(excluded) === null);
+  let consent = null;
+  if (layout.length === 1 && dialogs.length === 1) {
+    const dialog = dialogs[0];const slot = dialog.closest('[data-layout-slot="true"]');
+    const buttons = [...dialog.querySelectorAll('button[data-testid="only-necessary-button"]')];
+    const legal = [...dialog.querySelectorAll('a[href]')].filter((link) => link.getAttribute('href') === 'https://www.atlassian.com/legal/cookies');
+    const button = buttons.length === 1 ? buttons[0] : null;
+    const selector = `${dialogSelector} button[data-testid="only-necessary-button"]`;
+    if (slot?.parentElement === layout[0] && legal.length > 0 && button?.textContent.trim() === 'Only necessary' && button.type === 'button' && button.closest(excluded) === null && document.querySelectorAll(selector).length === 1) {
+      consent = { selector, label: 'Only necessary', legalUrl: legal[0].href, dialog: presentation(dialog), control: describeControl(button, selector) };
+    }
+  }
+  const headers = [...document.querySelectorAll('header[data-layout-slot="true"]')].filter((node) => node.closest('#unsafe-design-system-page-layout-root') !== null && node.closest(excluded) === null);
+  const nativeLayout = { headers: headers.map((node) => ({ id: node.id, ...presentation(node) })), bannerHeight: layout.length === 1 ? getComputedStyle(layout[0]).getPropertyValue('--n_bnrM') : null, topNavHeight: layout.length === 1 ? getComputedStyle(layout[0]).getPropertyValue('--n_tNvM') : null };
   const links = [...body.querySelectorAll('a[href]')].filter((node) => node.closest('[data-geld-ui]') === null && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/i.test(node.getAttribute('href') ?? '')).map((node) => {
     const url = new URL(node.href, current);
     const raw = node.getAttribute('href');
     if (url.origin !== current.origin || url.pathname !== `/atlassian/bitbucket-upload-file/commits/${raw}` || url.search !== '' || url.hash !== '' || !raw.startsWith(node.textContent.trim()) || !/^[a-f0-9]{7,64}$/i.test(node.textContent.trim())) return null;
     return { href: url.href, raw, sha: raw.toLowerCase(), text: node.textContent.trim(), bodyId: body.id, ...presentation(node) };
   }).filter((value) => value !== null);
-  return { currentUrl: current.href, currentRef: match[1], tabSelected: tab.getAttribute('aria-selected'), parentsExpanded: control.getAttribute('aria-expanded'), controls, links };
+  return { currentUrl: current.href, currentRef: match[1], tabSelected: tab.getAttribute('aria-selected'), parentsExpanded: control.getAttribute('aria-expanded'), controls, links, consent, nativeLayout };
 }
 
-export async function prepareBitbucketParentCommit(page, initial, poll) {
+export async function prepareBitbucketParentCommit(page, initial, poll, onProgress = () => undefined) {
   const actions = [];
+  const progress = { status: 'running', initial, actions, snapshots: [] };onProgress(progress);
   const read = async () => {
     const value = await page.evaluate(bitbucketParentCommitSnapshot);
     if (value === null || value.currentUrl !== initial.currentUrl || value.links.length !== 1 || value.links[0].href !== initial.links[0].href) throw new Error('Native parent identity or document changed during discovery.');
+    progress.native = value;progress.snapshots.push(value);if (progress.snapshots.length > 8) progress.snapshots.shift();
     return value;
   };
   const attempted = new Set();
-  for (let step = 0; step < 4; step += 1) {
+  try {
+    for (let step = 0; step < 5; step += 1) {
+      const native = await read();
+      if (native.links[0].visible) { progress.status = 'ready';return { ...progress, native }; }
+      const kind = native.controls.expandSidebar?.visible && !attempted.has('expandSidebar') ? 'expandSidebar'
+        : native.tabSelected !== 'true' && native.controls.details?.visible && !attempted.has('details') ? 'details'
+        : native.parentsExpanded === 'false' && native.controls.parents?.visible && !attempted.has('parents') ? 'parents'
+        : null;
+      if (kind !== null) {
+        const selector = native.controls[kind].selector;
+        const handle = await page.$(selector);
+        if (handle === null) throw new Error('Observed native parent control disappeared.');
+        try {
+          const latest = await read();
+          if (latest.controls[kind]?.visible !== true || latest.controls[kind].selector !== selector) throw new Error('Observed native parent control is no longer visible.');
+          const connected = await handle.evaluate((node, target, url) => node.isConnected && !node.disabled && node.getAttribute('aria-disabled') !== 'true' && document.URL === url && document.querySelectorAll(target).length === 1 && document.querySelector(target) === node, selector, initial.currentUrl);
+          if (!connected) throw new Error('Observed native parent control changed before its click.');
+          await handle.click();
+        } finally { await handle.dispose(); }
+        attempted.add(kind);actions.push({ kind, selector, input: 'Native control pointer click' });
+        await poll(read, (value) => kind === 'expandSidebar' ? value.controls.details?.visible || value.links[0].visible : kind === 'details' ? value.tabSelected === 'true' : value.parentsExpanded === 'true', `Native parent ${kind} control takes effect`, 5000);
+      } else if (!attempted.has('necessaryCookies') && native.controls.expandSidebar?.presented && !native.controls.expandSidebar.visible
+        && native.controls.expandSidebar.hit?.nativeHeader === true && native.controls.expandSidebar.hit.owned === false
+        && native.consent?.dialog.visible && native.consent.control?.visible) {
+        const selector = native.consent.selector;
+        const sidebarSelector = native.controls.expandSidebar.selector;
+        const sidebarHandle = await page.$(sidebarSelector);const handle = await page.$(selector);
+        const action = { kind: 'necessaryCookies', selector, input: 'Native Only necessary pointer click', before: native };actions.push(action);
+        attempted.add('necessaryCookies');
+        try {
+          if (handle === null || sidebarHandle === null) throw new Error('Observed native consent or sidebar control disappeared.');
+          const latest = await read();
+          if (latest.consent?.selector !== selector || !latest.consent.dialog.visible || !latest.consent.control?.visible || latest.controls.expandSidebar?.selector !== sidebarSelector || latest.controls.expandSidebar.hit?.nativeHeader !== true) throw new Error('Native consent/header obstruction changed before preparation.');
+          const current = await sidebarHandle.evaluate((node, target, url) => node.isConnected && !node.disabled && document.URL === url && document.querySelectorAll(target).length === 1 && document.querySelector(target) === node, sidebarSelector, initial.currentUrl);
+          if (!current) throw new Error('Original native sidebar control changed before consent.');
+          const bound = await handle.evaluate((node, target, url) => {
+            if (!node.isConnected || node.disabled || node.getAttribute('aria-disabled') === 'true' || document.URL !== url || document.querySelectorAll(target).length !== 1 || document.querySelector(target) !== node) return false;
+            const dialog = node.closest('[role="dialog"][aria-labelledby="cookiesTrackingNoticeLink"]');
+            const layout = document.querySelectorAll('#unsafe-design-system-page-layout-root');
+            const slot = dialog?.closest('[data-layout-slot="true"]');
+            if (layout.length !== 1 || slot?.parentElement !== layout[0] || node.type !== 'button' || node.textContent.trim() !== 'Only necessary' || node.getAttribute('data-testid') !== 'only-necessary-button'
+              || node.closest('[data-geld-ui], form, .ak-renderer-document, [data-qa="comment-content"], [data-testid="comment-content"], [data-testid="expanded-CommitCard"]') !== null
+              || ![...dialog.querySelectorAll('a[href]')].some((link) => link.getAttribute('href') === 'https://www.atlassian.com/legal/cookies')) return false;
+            const listener = (event) => { globalThis.__geldParentConsent.event = { trusted: event.isTrusted, detail: event.detail, nativeButton: event.currentTarget === node && node.contains(event.target) }; };
+            globalThis.__geldParentConsent = { node, listener, event: null };node.addEventListener('click', listener, { capture: true, once: true });return true;
+          }, selector, initial.currentUrl);
+          if (!bound) throw new Error('Observed native consent control changed before its click.');
+          await handle.click();
+          action.event = await page.evaluate(() => globalThis.__geldParentConsent?.event ?? null);
+          if (action.event?.trusted !== true || action.event.detail !== 1 || action.event.nativeButton !== true) throw new Error('Consent preparation requires genuine native pointer input');
+          action.after = await poll(read, (value) => (value.consent === null || !value.consent.dialog.presented) && value.controls.expandSidebar?.selector === sidebarSelector && value.controls.expandSidebar.visible, 'Native cookie dismissal restores the original sidebar control visibility', 5000);
+          const retained = await sidebarHandle.evaluate((node, target, url) => node.isConnected && !node.disabled && document.URL === url && document.querySelectorAll(target).length === 1 && document.querySelector(target) === node, sidebarSelector, initial.currentUrl);
+          if (!retained) throw new Error('Original native sidebar control changed after consent.');
+        } finally { await handle?.dispose();await sidebarHandle?.dispose(); }
+      } else if (native.links[0].presented && !attempted.has('scroll')) {
+        const selector = `[data-testid="expanded-CommitCard"] a[href="${native.links[0].raw}"]`;
+        const scrolled = await page.$eval(selector, (node, url) => {
+          if (!node.isConnected || document.URL !== url || node.closest('[data-geld-ui], [hidden], [aria-hidden="true"], [inert]') !== null) return false;
+          node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });return true;
+        }, initial.currentUrl);
+        if (!scrolled) throw new Error('Native parent changed before its scroll.');
+        attempted.add('scroll');actions.push({ kind: 'scroll', selector, input: 'Native parent link scroll' });
+        await poll(read, (value) => value.links[0].visible, 'Actual parent link is unobstructed after native scrolling', 5000);
+      } else throw new Error('Actual native parent link has no supported visible reveal control.');
+    }
     const native = await read();
-    if (native.links[0].visible) return { native, actions };
-    const kind = native.controls.expandSidebar?.visible && !attempted.has('expandSidebar') ? 'expandSidebar'
-      : native.tabSelected !== 'true' && native.controls.details?.visible && !attempted.has('details') ? 'details'
-      : native.parentsExpanded === 'false' && native.controls.parents?.visible && !attempted.has('parents') ? 'parents'
-      : null;
-    if (kind !== null) {
-      const selector = native.controls[kind].selector;
-      const handle = await page.$(selector);
-      if (handle === null) throw new Error('Observed native parent control disappeared.');
-      try {
-        const latest = await read();
-        if (latest.controls[kind]?.visible !== true || latest.controls[kind].selector !== selector) throw new Error('Observed native parent control is no longer visible.');
-        const connected = await handle.evaluate((node, target, url) => node.isConnected && !node.disabled && node.getAttribute('aria-disabled') !== 'true' && document.URL === url && document.querySelectorAll(target).length === 1 && document.querySelector(target) === node, selector, initial.currentUrl);
-        if (!connected) throw new Error('Observed native parent control changed before its click.');
-        await handle.click();
-      } finally { await handle.dispose(); }
-      attempted.add(kind);actions.push({ kind, selector, input: 'Native control pointer click' });
-      await poll(read, (value) => kind === 'expandSidebar' ? value.controls.details?.visible || value.links[0].visible : kind === 'details' ? value.tabSelected === 'true' : value.parentsExpanded === 'true', `Native parent ${kind} control takes effect`, 5000);
-    } else if (native.links[0].presented && !attempted.has('scroll')) {
-      const selector = `[data-testid="expanded-CommitCard"] a[href="${native.links[0].raw}"]`;
-      const scrolled = await page.$eval(selector, (node, url) => {
-        if (!node.isConnected || document.URL !== url || node.closest('[data-geld-ui], [hidden], [aria-hidden="true"], [inert]') !== null) return false;
-        node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });return true;
-      }, initial.currentUrl);
-      if (!scrolled) throw new Error('Native parent changed before its scroll.');
-      attempted.add('scroll');actions.push({ kind: 'scroll', selector, input: 'Native parent link scroll' });
-      await poll(read, (value) => value.links[0].visible, 'Actual parent link is unobstructed after native scrolling', 5000);
-    } else throw new Error('Actual native parent link has no supported visible reveal control.');
+    if (!native.links[0].visible) throw new Error('Actual native parent link did not become visible.');
+    progress.status = 'ready';return { ...progress, native };
+  } catch (error) { progress.status = 'failed';progress.error = String(error);throw error; }
+  finally {
+    if (typeof page.isClosed !== 'function' || !page.isClosed()) await page.evaluate(() => { const observed = globalThis.__geldParentConsent;if (observed !== undefined) observed.node.removeEventListener('click', observed.listener, true);delete globalThis.__geldParentConsent; }).catch(() => undefined);
   }
-  const native = await read();
-  if (!native.links[0].visible) throw new Error('Actual native parent link did not become visible.');
-  return { native, actions };
 }
