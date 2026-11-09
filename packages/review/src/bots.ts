@@ -424,13 +424,33 @@ export function isReviewShaped(parsed: ParsedBotBody): boolean {
  * - Entelligence: the "**Issues found:**" list under its scorecard; a
  *   scorecard with no such list found nothing.
  * - CodeRabbit: "Actionable comments posted: N" counts its inline comments
- *   only; "Outside diff range comments (N)" are findings on top (a review can
- *   hold nothing else, geld#94).
+ *   only; "Outside diff range comments (N)" and failed pre-merge checks are
+ *   findings on top (a review can hold nothing else, geld#94); a review with
+ *   neither count nor finding is 0 (`isCodeRabbitReview`).
  */
 /** CodeRabbit's "Outside diff range comments (N)": findings it could not post as threads. */
 function outsideDiffCount(text: string): number {
   const match = /\boutside diff range comments\s*\((\d+)\)/i.exec(text);
   return match?.[1] === undefined ? 0 : Number.parseInt(match[1], 10);
+}
+
+/**
+ * CodeRabbit's failed pre-merge checks, listed in its review's fix-all prompt ("Failed pre-merge checks:" then one
+ * "- Docstring Coverage:" line per check, its advice under it): findings with no thread to resolve, standing until
+ * CodeRabbit reviews again.
+ */
+function failedPreMergeCount(text: string): number {
+  const block = /\bfailed pre-merge checks:[^\S\n]*\n([\s\S]*?)(?:\bafter applying the fix\b|```|$)/i.exec(text)?.[1] ?? '';
+  return block.split('\n').filter((line) => /^\s*-\s+[^:\n]{1,80}:\s*$/.test(line)).length;
+}
+
+/**
+ * A review CodeRabbit posted, in its own shape whether or not it counts comments: since Nov 2026 a run with no inline
+ * comment carries no "Actionable comments posted" line and no "No actionable comments" either, only its fix-all prompt
+ * (and its nitpicks or additional notes, which are not actionable). Its summary comment and chat replies have neither.
+ */
+function isCodeRabbitReview(text: string): boolean {
+  return /\bprompt to fix all issues\b|\b(?:nitpick|additional) comments:?\s*\(?\d+/i.test(text);
 }
 
 function countShapedBy(botId: string, text: string): number | null {
@@ -486,9 +506,9 @@ function countShapedBy(botId: string, text: string): number | null {
     }
     case 'coderabbit': {
       const actionable = /\bactionable comments posted:[^\S\n]*(\d+)/i.exec(text);
-      const outside = outsideDiffCount(text);
-      if (actionable === null && outside === 0) return null;
-      return (actionable?.[1] === undefined ? 0 : Number.parseInt(actionable[1], 10)) + outside;
+      const unthreaded = outsideDiffCount(text) + failedPreMergeCount(text);
+      if (actionable === null && unthreaded === 0 && !isCodeRabbitReview(text)) return null;
+      return (actionable?.[1] === undefined ? 0 : Number.parseInt(actionable[1], 10)) + unthreaded;
     }
     default:
       return null;
@@ -640,7 +660,7 @@ export function parseBotBody(body: string, botId: string): ParsedBotBody {
   // CodeRabbit scores nothing and states no verdict in words: a "5/5" or "Verdict: …" from it is chat.
   const coderabbit = botId === 'coderabbit';
   const verdict = coderabbit ? {} : needsHuman ? ({ verdict: 'needs-human' } as const) : changesRequested ? ({ verdict: 'changes-requested' } as const) : {};
-  const unthreaded = coderabbit ? outsideDiffCount(text) : 0;
+  const unthreaded = coderabbit ? outsideDiffCount(text) + failedPreMergeCount(text) : 0;
   return { count: Number.isFinite(count) ? count : null, score: !coderabbit && Number.isFinite(score) ? score : null, clean, severity, ...verdict, ...(unthreaded > 0 ? { unthreaded } : {}) };
 }
 

@@ -32007,6 +32007,13 @@ function outsideDiffCount(text) {
   const match = /\boutside diff range comments\s*\((\d+)\)/i.exec(text);
   return match?.[1] === void 0 ? 0 : Number.parseInt(match[1], 10);
 }
+function failedPreMergeCount(text) {
+  const block = /\bfailed pre-merge checks:[^\S\n]*\n([\s\S]*?)(?:\bafter applying the fix\b|```|$)/i.exec(text)?.[1] ?? "";
+  return block.split("\n").filter((line) => /^\s*-\s+[^:\n]{1,80}:\s*$/.test(line)).length;
+}
+function isCodeRabbitReview(text) {
+  return /\bprompt to fix all issues\b|\b(?:nitpick|additional) comments:?\s*\(?\d+/i.test(text);
+}
 function countShapedBy(botId, text) {
   switch (botId) {
     case "claude": {
@@ -32054,9 +32061,9 @@ function countShapedBy(botId, text) {
     }
     case "coderabbit": {
       const actionable = /\bactionable comments posted:[^\S\n]*(\d+)/i.exec(text);
-      const outside = outsideDiffCount(text);
-      if (actionable === null && outside === 0) return null;
-      return (actionable?.[1] === void 0 ? 0 : Number.parseInt(actionable[1], 10)) + outside;
+      const unthreaded = outsideDiffCount(text) + failedPreMergeCount(text);
+      if (actionable === null && unthreaded === 0 && !isCodeRabbitReview(text)) return null;
+      return (actionable?.[1] === void 0 ? 0 : Number.parseInt(actionable[1], 10)) + unthreaded;
     }
     default:
       return null;
@@ -32120,7 +32127,7 @@ function parseBotBody(body, botId) {
   const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(text);
   const coderabbit = botId === "coderabbit";
   const verdict = coderabbit ? {} : needsHuman ? { verdict: "needs-human" } : changesRequested ? { verdict: "changes-requested" } : {};
-  const unthreaded = coderabbit ? outsideDiffCount(text) : 0;
+  const unthreaded = coderabbit ? outsideDiffCount(text) + failedPreMergeCount(text) : 0;
   return { count: Number.isFinite(count) ? count : null, score: !coderabbit && Number.isFinite(score) ? score : null, clean, severity, ...verdict, ...unthreaded > 0 ? { unthreaded } : {} };
 }
 function refusalReason(body) {
