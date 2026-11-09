@@ -421,8 +421,9 @@ export function isReviewShaped(parsed: ParsedBotBody): boolean {
  * - Entelligence: the "**Issues found:**" list under its scorecard; a
  *   scorecard with no such list found nothing.
  * - CodeRabbit: "Actionable comments posted: N" counts its inline comments
- *   only; "Outside diff range comments (N)" are findings on top (a review can
- *   hold nothing else, geld#94).
+ *   only; "Outside diff range comments (N)" and failed pre-merge checks are
+ *   findings on top (a review can hold nothing else, geld#94); a review with
+ *   neither count nor finding is 0 (`isCodeRabbitReview`).
  */
 /** CodeRabbit's "Outside diff range comments (N)": findings it could not post as threads. */
 function outsideDiffCount(text: string): number {
@@ -430,7 +431,49 @@ function outsideDiffCount(text: string): number {
   return match?.[1] === undefined ? 0 : Number.parseInt(match[1], 10);
 }
 
-function countShapedBy(botId: string, text: string): number | null {
+/**
+ * CodeRabbit's failed pre-merge checks, listed in its review's fix-all prompt ("Failed pre-merge checks:" then one
+ * "- Docstring Coverage:" line per check, its advice under it): findings with no thread to resolve, standing until
+ * CodeRabbit reviews again.
+ */
+function failedPreMergeCount(text: string): number {
+  if (!hasHeading(text, FIX_ALL_HEADING)) return 0;
+  const block = /\bfailed pre-merge checks:[^\S\n]*\n([\s\S]*?)(?:\bafter applying the fix\b|```|$)/i.exec(text)?.[1] ?? '';
+  return block.split('\n').filter((line) => /^\s*-\s+[^:\n]{1,80}:\s*$/.test(line)).length;
+}
+
+/**
+ * A review CodeRabbit posted, in its own shape whether or not it counts comments: since Nov 2026 a run with no inline
+ * comment carries no "Actionable comments posted" line and no "No actionable comments" either, only its fix-all prompt
+ * (and its nitpicks or additional notes, which are not actionable). Its summary comment and chat replies have neither,
+ * and a reply that quotes or names one of those headings is still a reply (`hasHeading`).
+ */
+function isCodeRabbitReview(text: string): boolean {
+  return hasHeading(text, FIX_ALL_HEADING) || hasHeading(text, NOTES_HEADING);
+}
+
+const FIX_ALL_HEADING = /^prompt to fix all issues$/i;
+const NOTES_HEADING = /^(?:nitpick|additional) comments:?\s*\(?\d+\)?$/i;
+
+/** Whether a line of the body is the heading alone, its tags, bold marks and emoji aside, outside quotes and code fences. */
+function hasHeading(text: string, heading: RegExp): boolean {
+  let fenced = false;
+  for (const line of text.split('\n')) {
+    if (/^\s*```/.test(line)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced || /^\s*>/.test(line)) continue;
+    const bare = line
+      .replace(/<[^>]*>/g, '')
+      .replace(/[^\p{L}\p{N}():\s]/gu, '')
+      .trim();
+    if (heading.test(bare)) return true;
+  }
+  return false;
+}
+
+function countShapedBy(botId: string, text: string, reviewBody: boolean): number | null {
   switch (botId) {
     case 'claude': {
       const match = /(\d+)[^\S\n]*P1,[^\S\n]*(\d+)[^\S\n]*P2/i.exec(text);
@@ -483,9 +526,9 @@ function countShapedBy(botId: string, text: string): number | null {
     }
     case 'coderabbit': {
       const actionable = /\bactionable comments posted:[^\S\n]*(\d+)/i.exec(text);
-      const outside = outsideDiffCount(text);
-      if (actionable === null && outside === 0) return null;
-      return (actionable?.[1] === undefined ? 0 : Number.parseInt(actionable[1], 10)) + outside;
+      const unthreaded = outsideDiffCount(text) + (reviewBody ? failedPreMergeCount(text) : 0);
+      if (actionable === null && unthreaded === 0 && !(reviewBody && isCodeRabbitReview(text))) return null;
+      return (actionable?.[1] === undefined ? 0 : Number.parseInt(actionable[1], 10)) + unthreaded;
     }
     default:
       return null;
@@ -581,9 +624,11 @@ export function findingSeverity(body: string): FindingSeverity | null {
 
 const SEVERITY_RANK: Readonly<Record<FindingSeverity, number>> = { high: 3, medium: 2, low: 1 };
 
-export function parseBotBody(body: string, botId: string): ParsedBotBody {
+export function parseBotBody(body: string, botId: string, anchor?: string): ParsedBotBody {
   // HTML comments are the bots' own markers (Cursor's automation ids, Greptile's score), never words to weigh.
   const text = body.replace(/\r\n?/g, '\n').replace(/<!--[\s\S]*?-->/g, '').trim();
+  // A review body, where CodeRabbit puts its review's headings; a chat reply quoting them is a comment or a thread reply.
+  const reviewBody = anchor === undefined || anchor.startsWith('pullrequestreview-');
   if (botId === 'macroscope') {
     if (isMacroscopeAgentComment(text)) return { count: null, score: null, clean: false, severity: null };
     const gate = macroscopeApprovability(text);
@@ -604,7 +649,7 @@ export function parseBotBody(body: string, botId: string): ParsedBotBody {
         // (server#9385, where the Bugbot chip read "9377 issues" until its threads settled).
         /(?<![#\w-])(\d+)[^\S\n]+(?:(?:potential|possible|new|actionable|likely|minor|major|critical|significant|remaining|open|existing)[^\S\n]+){0,2}(?:issue|finding|bug|problem)s?\b/i.exec(text));
   let count = countMatch?.[1] !== undefined ? Number.parseInt(countMatch[1], 10) : null;
-  const shaped = countShapedBy(botId, text);
+  const shaped = countShapedBy(botId, text, reviewBody);
   // CodeRabbit counts only in its review's shape: "0 issues remain" in a chat reply is no count of its.
   if (botId === 'coderabbit') count = shaped;
   else if (shaped !== null) count = shaped;
@@ -680,7 +725,7 @@ export function parseBotBody(body: string, botId: string): ParsedBotBody {
   // CodeRabbit scores nothing and states no verdict in words: a "5/5" or "Verdict: …" from it is chat.
   const coderabbit = botId === 'coderabbit';
   const verdict = coderabbit ? {} : needsHuman ? ({ verdict: 'needs-human' } as const) : changesRequested ? ({ verdict: 'changes-requested' } as const) : {};
-  const unthreaded = coderabbit ? outsideDiffCount(text) : 0;
+  const unthreaded = coderabbit ? outsideDiffCount(text) + (reviewBody ? failedPreMergeCount(text) : 0) : 0;
   return { count: Number.isFinite(count) ? count : null, score: !coderabbit && Number.isFinite(score) ? score : null, clean, severity, ...verdict, ...(unthreaded > 0 ? { unthreaded } : {}) };
 }
 
@@ -1509,7 +1554,7 @@ export function verdictsFrom(
       statusOnly.delete(id);
       continue;
     }
-    const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id);
+    const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id, comment.anchor);
     // A coding agent's reply to a person or to another bot is not its review; only a review-shaped comment votes.
     if (botById(id)?.conversational === true && !isReviewShaped(parsed)) continue;
     // A word with nothing to count, after the run's threads, is more of that run, not a new one: Greptile posts
