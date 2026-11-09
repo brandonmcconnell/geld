@@ -205,6 +205,24 @@ describe('provider controller behavior', () => {
     expect(row.hasAttribute('data-geld-provider-author-hidden')).toBe(false);
   });
 
+  it('keeps the newly revealed native file current when temporary search restores the category tree', async () => {
+    const { adapter, view } = fixture('gitlab', FILES);
+    const search = document.createElement('input'); search.type = 'search';
+    if (view.treeHost === null) throw new Error('Missing native tree');
+    view.treeHost.prepend(search);
+    const { controller } = start(adapter);
+    await settle();
+    controller.revealPath('src/first.test.ts');
+    const current = (): string | undefined => document.querySelector('[data-geld-category-path] [aria-current="true"]')?.closest<HTMLElement>('[data-geld-category-path]')?.dataset.geldCategoryPath;
+    expect(current()).toBe('src/first.test.ts');
+    search.value = 'not-mounted'; controller.requestRefresh(); await settle();
+    expect(document.querySelector('.geld-provider-categories')).toBeNull();
+    controller.revealPath('test/not-mounted.test.ts');
+    search.value = ''; controller.requestRefresh(); await settle();
+    expect(current()).toBe('test/not-mounted.test.ts');
+    expect([...document.querySelectorAll('.geld-provider-category-header')].find((button) => button.textContent?.startsWith('Tests'))?.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('switches the active category when a popup reveal targets a file in another category', async () => {
     const files: readonly FileStats[] = [...FILES, { path: 'src/generated.ts', additions: 9, deletions: 1 }];
     const { adapter } = fixture('gitlab', files);
