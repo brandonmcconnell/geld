@@ -5,8 +5,9 @@ import { loadBackup, loadFolderHandle, saveBackup } from './handle-store';
 import type { BuildBackup } from './handle-store';
 import { isNightlyCheckMessage, isNightlyInstallMessage, isNightlyRollbackMessage } from './messages';
 import type { NightlyInstallResult } from './messages';
-import { compareVersions, LATEST_RELEASE_URL, parseRelease } from './release';
-import { AUTOMATIC_CHECK_MS, MANUAL_CHECK_MS, nightlyFolderItem, nightlyPrefsItem, nightlyStatusItem } from './state';
+import { compareVersions, LATEST_RELEASE_PAGE, LATEST_RELEASE_URL, parseRelease, tagFromReleaseUrl } from './release';
+import { BACKGROUND_CHECK_MINUTES, navigationDue, needsDetails } from './schedule';
+import { nightlyFolderItem, nightlyPrefsItem, nightlyStatusItem, nightlyTabCountsItem } from './state';
 import type { NightlyFailure, NightlyStatus, UpdateMode } from './state';
 import { unzip } from './unzip';
 import type { ZipEntry } from './unzip';
@@ -17,6 +18,9 @@ import type { BuildTarget } from './writers';
 
 const ALARM = 'geld:nightly-check';
 const BADGE_COLOR = '#1a7f37';
+const FAILED_COLOR = '#cf222e';
+/** Mirrors the hidden-file badge in background.ts, which hands a nightly build's tab badges to `showTabBadge`. */
+const COUNT_COLOR = '#59636e';
 /** The reply goes out before the reload, which closes every page that asked for it. */
 const RELOAD_DELAY_MS = 300;
 
@@ -34,19 +38,54 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function patchStatus(patch: Partial<NightlyStatus>): Promise<NightlyStatus> {
-  const next = { ...(await nightlyStatusItem.getValue()), ...patch };
-  await nightlyStatusItem.setValue(next);
-  return next;
+let writes: Promise<unknown> | null = null;
+
+/** Writes one after another: a look and an install finishing together must not each write back what the other replaced. */
+function patchStatus(patch: Partial<NightlyStatus>): Promise<NightlyStatus> {
+  const run = (writes ?? Promise.resolve()).then(async () => {
+    const next = { ...(await nightlyStatusItem.getValue()), ...patch };
+    await nightlyStatusItem.setValue(next);
+    return next;
+  });
+  writes = run.catch(() => undefined);
+  return run;
+}
+
+type Mark = '' | '↑' | '!';
+let mark: Mark = '';
+
+function markOf(status: NightlyStatus): Mark {
+  return status.failure?.broken === true ? '!' : isNewer(status) ? '↑' : '';
+}
+
+/**
+ * A tab's own badge (its hidden-file count) hides the global one, so on GitHub, where the reader is, the
+ * mark rides on the count: "3↑". The count's colour stays unless there is a mark.
+ */
+async function paintTab(tabId: number, count: number): Promise<void> {
+  const text = `${count > 0 ? count : ''}${mark}`;
+  await browser.action.setBadgeText({ tabId, text }).catch(() => undefined);
+  if (text === '') return;
+  await browser.action.setBadgeBackgroundColor({ tabId, color: mark === '' ? COUNT_COLOR : mark === '!' ? FAILED_COLOR : BADGE_COLOR }).catch(() => undefined);
+  await browser.action.setBadgeTextColor({ tabId, color: '#ffffff' }).catch(() => undefined);
+}
+
+export function showTabBadge(tabId: number, count: number): void {
+  void paintTab(tabId, count);
+  void nightlyTabCountsItem.getValue().then((counts) => (counts[String(tabId)] === count ? undefined : nightlyTabCountsItem.setValue({ ...counts, [String(tabId)]: count })));
 }
 
 async function showBadge(status: NightlyStatus): Promise<void> {
   const ready = isNewer(status) ? status.latest : null;
-  const failed = status.failure?.broken === true;
-  await browser.action.setBadgeText({ text: failed ? '!' : ready === null ? '' : '↑' }).catch(() => undefined);
-  if (ready !== null || failed) await browser.action.setBadgeBackgroundColor({ color: failed ? '#cf222e' : BADGE_COLOR }).catch(() => undefined);
-  const title = failed ? 'Geld Nightly · an update failed' : ready === null ? 'Geld Nightly' : `Geld Nightly · build ${ready.build} is ready`;
+  const next = markOf(status);
+  const changed = next !== mark;
+  mark = next;
+  await browser.action.setBadgeText({ text: mark }).catch(() => undefined);
+  if (mark !== '') await browser.action.setBadgeBackgroundColor({ color: mark === '!' ? FAILED_COLOR : BADGE_COLOR }).catch(() => undefined);
+  const title = mark === '!' ? 'Geld Nightly · an update failed' : ready === null ? 'Geld Nightly' : `Geld Nightly · build ${ready.build} is ready`;
   await browser.action.setTitle({ title }).catch(() => undefined);
+  if (!changed) return;
+  for (const [tabId, count] of Object.entries(await nightlyTabCountsItem.getValue())) void paintTab(Number(tabId), count);
 }
 
 async function mode(): Promise<UpdateMode> {
@@ -61,32 +100,63 @@ function installsOnItsOwn(status: NightlyStatus): boolean {
   return failure === null || failure.version !== latest.version || (failure.restored !== true && failure.broken !== true);
 }
 
-export async function checkForUpdate(): Promise<NightlyStatus> {
-  const before = await nightlyStatusItem.getValue();
-  const checkedAt = new Date().toISOString();
-  let status: NightlyStatus;
+/** The tag the latest-release redirect lands on: one cheap request to the website, not the rate-limited API. */
+async function latestTag(): Promise<string | null> {
+  try {
+    const response = await fetch(LATEST_RELEASE_PAGE, { method: 'HEAD', cache: 'no-store', credentials: 'omit' });
+    return response.ok ? tagFromReleaseUrl(response.url) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function releaseDetails(before: NightlyStatus, checkedAt: string, tag: string | null): Promise<NightlyStatus> {
+  const asked = { askedTag: tag, askedAt: checkedAt };
   try {
     const headers: Record<string, string> = { Accept: 'application/vnd.github+json' };
     if (before.etag !== null && before.latest !== null) headers['If-None-Match'] = before.etag;
     const response = await fetch(LATEST_RELEASE_URL, { headers, cache: 'no-store' });
-    if (response.status === 304) status = await patchStatus({ checkedAt, checkError: null });
-    else if (response.status === 403 || response.status === 429) status = await patchStatus({ checkedAt, checkError: 'GitHub is limiting requests. Geld checks again later.' });
-    else if (!response.ok) status = await patchStatus({ checkedAt, checkError: `GitHub answered ${response.status}.` });
-    else {
-      const latest = parseRelease(await response.json());
-      status = await patchStatus({
-        checkedAt,
-        latest,
-        etag: response.headers.get('etag'),
-        checkError: latest === null ? 'The latest release has no nightly build.' : null,
-      });
-    }
+    if (response.status === 304) return await patchStatus({ ...asked, checkedAt, checkError: null });
+    if (response.status === 403 || response.status === 429) return await patchStatus({ ...asked, checkedAt, checkError: 'GitHub is limiting requests. Geld checks again later.' });
+    if (!response.ok) return await patchStatus({ ...asked, checkedAt, checkError: `GitHub answered ${response.status}.` });
+    const latest = parseRelease(await response.json());
+    return await patchStatus({
+      ...asked,
+      checkedAt,
+      latest,
+      etag: response.headers.get('etag'),
+      checkError: latest === null ? 'The latest release has no nightly build.' : null,
+    });
   } catch (error) {
-    status = await patchStatus({ checkedAt, checkError: `Could not reach GitHub: ${message(error)}` });
+    return await patchStatus({ ...asked, checkedAt, checkError: `Could not reach GitHub: ${message(error)}` });
   }
+}
+
+async function look(): Promise<NightlyStatus> {
+  const checkedAt = new Date().toISOString();
+  const tag = await latestTag();
+  const before = await nightlyStatusItem.getValue();
+  const status = tag !== null && !needsDetails(before, tag, Date.now())
+    ? await patchStatus({ checkedAt, checkError: null })
+    : await releaseDetails(before, checkedAt, tag);
   await showBadge(status);
   if ((await mode()) === 'automatic' && installsOnItsOwn(status)) void installLatest(false);
   return status;
+}
+
+let looking: Promise<NightlyStatus> | null = null;
+let lastLookAt: number | null = null;
+
+/**
+ * All of Geld's tabs share this one worker, so the first look to find a build is the one that acts on it: a
+ * look under way is joined rather than repeated, and an install under way (`once`) is never started twice.
+ */
+export function checkForUpdate(): Promise<NightlyStatus> {
+  lastLookAt = Date.now();
+  looking ??= look().finally(() => {
+    looking = null;
+  });
+  return looking;
 }
 
 /**
@@ -227,20 +297,14 @@ async function restorePrevious(): Promise<NightlyInstallResult> {
   return { ok: true, version: backup.version };
 }
 
-function isDue(status: NightlyStatus, everyMs: number): boolean {
-  return status.checkedAt === null || Date.now() - new Date(status.checkedAt).getTime() >= everyMs;
-}
-
-/** In Automatic, any GitHub page that finishes loading looks for a build once half an hour has passed since the last look. */
-async function onGitHubLoad(): Promise<void> {
-  if ((await mode()) !== 'automatic') return;
-  if (isDue(await nightlyStatusItem.getValue(), AUTOMATIC_CHECK_MS)) await checkForUpdate();
+/** Every GitHub page load and in-page navigation looks, in the background, so the page never waits on it. */
+function onGitHubNavigation(): void {
+  if (navigationDue(lastLookAt, Date.now())) void checkForUpdate();
 }
 
 async function scheduleChecks(): Promise<void> {
-  const minutes = ((await mode()) === 'automatic' ? AUTOMATIC_CHECK_MS : MANUAL_CHECK_MS) / 60_000;
-  if ((await browser.alarms.get(ALARM))?.periodInMinutes === minutes) return;
-  await browser.alarms.create(ALARM, { periodInMinutes: minutes, delayInMinutes: minutes });
+  if ((await browser.alarms.get(ALARM))?.periodInMinutes === BACKGROUND_CHECK_MINUTES) return;
+  await browser.alarms.create(ALARM, { periodInMinutes: BACKGROUND_CHECK_MINUTES, delayInMinutes: BACKGROUND_CHECK_MINUTES });
 }
 
 function isGitHub(url: string | undefined): boolean {
@@ -257,7 +321,15 @@ export function startNightly(): void {
     if (alarm.name === ALARM) void checkForUpdate();
   });
   browser.tabs.onUpdated.addListener((_tabId, change, tab) => {
-    if (change.status === 'complete' && isGitHub(tab.url)) void onGitHubLoad();
+    // `url` alone is an in-page navigation (GitHub's history.pushState), `complete` a load.
+    if ((change.status === 'complete' || change.url !== undefined) && isGitHub(change.url ?? tab.url)) onGitHubNavigation();
+  });
+  browser.tabs.onRemoved.addListener((tabId) => {
+    void nightlyTabCountsItem.getValue().then((counts) => {
+      if (!(String(tabId) in counts)) return undefined;
+      const { [String(tabId)]: _closed, ...rest } = counts;
+      return nightlyTabCountsItem.setValue(rest);
+    });
   });
   browser.runtime.onMessage.addListener((request: unknown, _sender, sendResponse) => {
     if (isNightlyCheckMessage(request)) {
@@ -274,15 +346,10 @@ export function startNightly(): void {
     }
     return undefined;
   });
-  const onLaunch = (): void => {
-    void patchStatus({ installing: null }).then(() => checkForUpdate());
-  };
-  browser.runtime.onStartup.addListener(onLaunch);
-  browser.runtime.onInstalled.addListener(onLaunch);
-  nightlyPrefsItem.watch(() => {
-    void scheduleChecks();
-    void checkForUpdate();
-  });
+  browser.runtime.onStartup.addListener(() => void checkForUpdate());
+  browser.runtime.onInstalled.addListener(() => void checkForUpdate());
+  nightlyPrefsItem.watch(() => void checkForUpdate());
+  // This worker has only just started, so no install of its own is under way: one marked is left from a worker Chrome stopped mid-install.
+  void patchStatus({ installing: null }).then(showBadge);
   void scheduleChecks();
-  void nightlyStatusItem.getValue().then(showBadge);
 }

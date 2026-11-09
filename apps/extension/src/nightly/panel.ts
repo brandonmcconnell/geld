@@ -27,8 +27,8 @@ const CSS = `
 `;
 
 const MODES: ReadonlyArray<{ readonly mode: UpdateMode; readonly label: string; readonly title: string }> = [
-  { mode: 'manual', label: 'Manual', title: 'Checks every hour and waits for you to install' },
-  { mode: 'automatic', label: 'Automatic', title: 'Checks whenever GitHub loads, at most every half hour, and installs on its own' },
+  { mode: 'manual', label: 'Manual', title: 'Checks on every GitHub page and marks the toolbar icon when a build is ready' },
+  { mode: 'automatic', label: 'Automatic', title: 'Checks on every GitHub page and installs a new build on its own' },
 ];
 
 export type ActionHandler = (kind: NightlyAction) => Promise<string | null>;

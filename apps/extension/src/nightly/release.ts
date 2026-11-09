@@ -5,8 +5,15 @@
  * `geld-{version}.{run}-chrome-nightly.zip` beside the store zips.
  */
 
+/** Plain strings, not templates on NIGHTLY_REPO: a module-level template survives tree-shaking into the store builds. */
 export const NIGHTLY_REPO = 'brandonmcconnell/geld';
-export const LATEST_RELEASE_URL = `https://api.github.com/repos/${NIGHTLY_REPO}/releases/latest`;
+export const LATEST_RELEASE_URL = 'https://api.github.com/repos/brandonmcconnell/geld/releases/latest';
+/**
+ * github.com redirects this to the latest release's tag page. Unlike the REST API, whose 60 unauthenticated
+ * requests an hour are shared by everyone behind one address (and a 304 was seen to count against them in
+ * Nov 2026), the website can be asked on every page load, so the API is asked only when the tag changes.
+ */
+export const LATEST_RELEASE_PAGE = 'https://github.com/brandonmcconnell/geld/releases/latest';
 /** CI's workflow token uploads every release asset, so an asset from anyone else is not a build. */
 export const RELEASE_UPLOADER = 'github-actions[bot]';
 
@@ -86,4 +93,12 @@ export function compareVersions(a: string, b: string): number {
 export function buildOf(version: string): number | null {
   const parts = version.split('.');
   return parts.length === 4 && /^\d+$/.test(parts[3] ?? '') ? Number(parts[3]) : null;
+}
+
+/** The tag the latest-release redirect landed on, or null when it landed anywhere else (a sign-in page, an error). */
+export function tagFromReleaseUrl(url: string): string | null {
+  const prefix = `https://github.com/${NIGHTLY_REPO}/releases/tag/`;
+  if (!url.startsWith(prefix)) return null;
+  const tag = decodeURIComponent(url.slice(prefix.length).split(/[?#]/)[0] ?? '');
+  return TAG.test(tag) ? tag : null;
 }

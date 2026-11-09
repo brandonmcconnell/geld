@@ -23,6 +23,8 @@ const status = (patch: Partial<NightlyStatus>): NightlyStatus => ({
   lastInstall: null,
   skipped: null,
   backup: null,
+  askedTag: null,
+  askedAt: null,
   etag: null,
   ...patch,
 });

@@ -2,14 +2,10 @@ import { storage } from 'wxt/utils/storage';
 import type { NightlyRelease } from './release';
 
 /**
- * Automatic installs a newer build as soon as it finds one, and looks whenever a GitHub page loads once
- * `AUTOMATIC_CHECK_MS` has passed since the last look (and on that clock with no page loading).
- * Manual looks every `MANUAL_CHECK_MS` and only says a build is ready.
+ * Both look on every GitHub page load and navigation (schedule.ts). Automatic installs a newer build as soon
+ * as it is found; Manual marks the toolbar icon and waits for Install.
  */
 export type UpdateMode = 'automatic' | 'manual';
-
-export const AUTOMATIC_CHECK_MS = 30 * 60 * 1000;
-export const MANUAL_CHECK_MS = 60 * 60 * 1000;
 
 export interface NightlyPrefs {
   readonly mode: UpdateMode;
@@ -67,7 +63,10 @@ export interface NightlyStatus {
   readonly skipped: string | null;
   /** The version of the copy in IndexedDB (handle-store.ts) that Roll back writes. */
   readonly backup: string | null;
-  /** GitHub answers a matching `If-None-Match` with a 304, which costs nothing against the hourly API limit. */
+  /** The release tag the API was last asked about, and when: the API is asked again only for a new tag (schedule.ts). */
+  readonly askedTag: string | null;
+  readonly askedAt: string | null;
+  /** Sent back as `If-None-Match`, so an unchanged release comes back as a short 304. */
   readonly etag: string | null;
 }
 
@@ -80,7 +79,12 @@ export const EMPTY_STATUS: NightlyStatus = {
   lastInstall: null,
   skipped: null,
   backup: null,
+  askedTag: null,
+  askedAt: null,
   etag: null,
 };
 
 export const nightlyStatusItem = /* @__PURE__ */ storage.defineItem<NightlyStatus>('local:nightlyStatus', { fallback: EMPTY_STATUS });
+
+/** Each GitHub tab's hidden-file count, kept for the worker's next start so a tab's badge can take the ↑ too. */
+export const nightlyTabCountsItem = /* @__PURE__ */ storage.defineItem<Readonly<Record<string, number>>>('session:nightlyTabCounts', { fallback: {} });
