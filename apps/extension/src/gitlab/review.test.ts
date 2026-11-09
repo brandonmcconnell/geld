@@ -95,7 +95,10 @@ describe('GitLab review acquisition', () => {
         ? json([discussion('b'.repeat(40), [note(12)], { resolved: true })])
         : json([discussion('a'.repeat(40), [note(11)])], 200, { 'x-next-page': '2' });
       if (url.pathname.endsWith('/merge_requests/7/pipelines')) return json([{ id: 50, project_id: 1, sha: 'b'.repeat(40) }]);
-      if (url.pathname.endsWith('/pipelines/50/jobs')) return json([{ id: 100, name: 'test', status: 'running', web_url: `${subject.origin}/group/subgroup/repo/-/jobs/100`, started_at: '2026-10-29T20:00:00Z' }]);
+      if (url.pathname.endsWith('/pipelines/50/jobs')) return json([
+        { id: 100, name: 'test', status: 'running', web_url: `${subject.origin}/group/subgroup/repo/-/jobs/100`, started_at: '2026-10-29T20:00:00Z' },
+        { id: 101, name: 'test', status: 'manual', allow_failure: true, web_url: `${subject.origin}/group/subgroup/repo/-/jobs/101` },
+      ]);
       return json({ iid: 7, sha: SHA, state: 'opened', project_id: 1, head_pipeline: { id: 50, sha: 'b'.repeat(40) } });
     });
     vi.stubGlobal('fetch', fetcher);
@@ -108,7 +111,9 @@ describe('GitLab review acquisition', () => {
       { author: { id: '10', login: 'approver' }, state: 'approved', reviewRequest: 'pending' },
       { author: { id: '11', login: 'changes' }, state: 'changes_requested', reviewRequest: 'not-pending' },
     ]);
-    expect(snapshot.checks[0]).toMatchObject({ id: '100', pipelineId: '50', sha: 'b'.repeat(40), reviewHeadSha: SHA, nativeStatus: 'running', status: 'in_progress', conclusion: null });
+    expect(snapshot.checks[0]).toMatchObject({ id: '100', key: 'job:100', pipelineId: '50', sha: 'b'.repeat(40), reviewHeadSha: SHA, nativeStatus: 'running', status: 'in_progress', conclusion: null });
+    expect(snapshot.input.checksCoverage).toBe('complete');
+    expect(snapshot.checks[1]).toMatchObject({ key: 'job:101', name: 'test', nativeStatus: 'manual', allowFailure: true, status: 'completed', conclusion: 'neutral' });
     expect(snapshot.capabilities.signedIn).toBe(false);
     expect(snapshot.complete).toBe(true);
     expect(snapshot.input.complete).toBe(true);
@@ -130,7 +135,58 @@ describe('GitLab review acquisition', () => {
     expect(snapshot.unavailable).toMatchObject([{ area: 'reviews' }, { area: 'checks' }]);
     expect(snapshot.complete).toBe(false);
     expect(snapshot.input.complete).toBe(false);
+    expect(snapshot.input.checksCoverage).toBe('unavailable');
     expect(snapshot.sourceCoverage).toEqual({ comments: 'complete', threads: 'complete' });
+  });
+
+  it('does not treat unreadable head-pipeline jobs as a complete empty CI result', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+      if (input.includes('/discussions.json') || input.includes('/reviewers?')) return json([]);
+      if (input.endsWith('/approvals')) return json({ approved_by: [] });
+      if (input.includes('/pipelines?')) return json([{ id: 50, project_id: 1, sha: SHA }]);
+      if (input.includes('/pipelines/50/jobs?')) return json({ error: 'Unauthorized' }, 401);
+      return json({ iid: 7, sha: SHA, state: 'opened', project_id: 1, head_pipeline: { id: 50, sha: SHA } });
+    }));
+    const snapshot = await fetchGitLabReview(page, new AbortController().signal);
+    expect(snapshot.input.checks).toEqual([]);
+    expect(snapshot.input.checksCoverage).toBe('unavailable');
+    expect(snapshot.unavailable).toContainEqual(expect.objectContaining({ area: 'checks' }));
+  });
+
+  it.each([
+    { pipelines: [{}], headPipeline: null },
+    { pipelines: ['invalid'], headPipeline: null },
+    { pipelines: [{ id: 50, sha: 'invalid' }], headPipeline: null },
+    { pipelines: [], headPipeline: {} },
+    { pipelines: [], headPipeline: [] },
+    { pipelines: [], headPipeline: 'invalid' },
+    { pipelines: [], headPipeline: { id: 50, sha: 'invalid' } },
+  ])('never treats malformed nonempty pipeline metadata as known empty CI %#', async ({ pipelines, headPipeline }) => {
+    const fetcher = vi.fn(async (input: string) => {
+      if (input.includes('/discussions.json') || input.includes('/reviewers?')) return json([]);
+      if (input.endsWith('/approvals')) return json({ approved_by: [] });
+      if (input.includes('/pipelines?')) return json(pipelines);
+      return json({ iid: 7, sha: SHA, state: 'opened', project_id: 1, head_pipeline: headPipeline });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const snapshot = await fetchGitLabReview(page, new AbortController().signal);
+    expect(snapshot.input.checks).toEqual([]);
+    expect(snapshot.input.checksCoverage).toBe('unavailable');
+    expect(snapshot.unavailable).toContainEqual(expect.objectContaining({ area: 'checks' }));
+    expect(fetcher.mock.calls.some(([input]) => input.includes('/jobs?'))).toBe(false);
+  });
+
+  it('keeps valid job facts partial when another pipeline identity is malformed', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+      if (input.includes('/discussions.json') || input.includes('/reviewers?')) return json([]);
+      if (input.endsWith('/approvals')) return json({ approved_by: [] });
+      if (input.includes('/pipelines?')) return json([{}, { id: 50, sha: SHA }]);
+      if (input.includes('/pipelines/50/jobs?')) return json([{ id: 100, name: 'test', status: 'success', web_url: `${subject.origin}/group/subgroup/repo/-/jobs/100` }]);
+      return json({ iid: 7, sha: SHA, state: 'opened', project_id: 1, head_pipeline: { id: 50, sha: SHA } });
+    }));
+    const snapshot = await fetchGitLabReview(page, new AbortController().signal);
+    expect(snapshot.input.checks?.[0]?.conclusion).toBe('success');
+    expect(snapshot.input.checksCoverage).toBe('partial');
   });
 
   it('never assigns an unrelated older pipeline to the current merge request head', async () => {
@@ -143,6 +199,7 @@ describe('GitLab review acquisition', () => {
     vi.stubGlobal('fetch', fetcher);
     const snapshot = await fetchGitLabReview(page, new AbortController().signal);
     expect(snapshot.checks).toEqual([]);
+    expect(snapshot.input.checksCoverage).toBe('complete');
     expect(fetcher.mock.calls.some(([input]) => input.includes('/pipelines/50/jobs'))).toBe(false);
   });
 
