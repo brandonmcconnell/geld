@@ -1,3 +1,5 @@
+import { COUNT_PATTERN, parseCount } from '@geld/core';
+
 /** Attribute that marks every element Geld creates, so we can ignore our own mutations. */
 export const OWN_UI_ATTRIBUTE = 'data-geld-ui';
 
@@ -29,7 +31,7 @@ export interface LineStats {
   readonly deletions: number;
 }
 
-const STATS_TEXT = /(\d[\d,]*)\s+additions?\s*(?:&|and)\s*(\d[\d,]*)\s+deletions?/i;
+const STATS_TEXT = new RegExp(String.raw`(${COUNT_PATTERN})\s+additions?\s*(?:&|and)\s*(${COUNT_PATTERN})\s+deletions?`, 'i');
 
 /**
  * Parse GitHub's screen-reader summaries, which come in a few flavours:
@@ -41,9 +43,9 @@ export function parseLineStats(text: string | null | undefined): LineStats | nul
   if (text === null || text === undefined) return null;
   const match = STATS_TEXT.exec(text);
   if (match === null) return null;
-  const additions = Number.parseInt((match[1] ?? '').replace(/,/g, ''), 10);
-  const deletions = Number.parseInt((match[2] ?? '').replace(/,/g, ''), 10);
-  if (!Number.isFinite(additions) || !Number.isFinite(deletions)) return null;
+  const additions = parseCount(match[1]);
+  const deletions = parseCount(match[2]);
+  if (additions === null || deletions === null) return null;
   return { additions, deletions };
 }
 
