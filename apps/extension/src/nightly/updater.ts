@@ -167,11 +167,19 @@ export function checkForUpdate(): Promise<NightlyStatus> {
   return looking;
 }
 
+async function installTarget(): Promise<BuildTarget | Failed> {
+  try {
+    return await findTarget();
+  } catch (error) {
+    return { ok: false, reason: `Geld could not use its folder: ${message(error)}`, need: 'folder' };
+  }
+}
+
 /**
  * Folder access comes first: it also removes files a new build dropped, and once the reader chose
  * "Allow on every visit" Chrome keeps it with no Geld page open, across reloads and restarts.
  */
-async function installTarget(): Promise<BuildTarget | Failed> {
+async function findTarget(): Promise<BuildTarget | Failed> {
   const folder = await nightlyFolderItem.getValue();
   const handle = folder === null ? null : await loadFolderHandle().catch(() => null);
   if (folder === null || handle === null) return { ok: false, reason: 'Connect the folder Geld runs from first.', need: 'folder' };
@@ -246,9 +254,15 @@ function reloadSoon(): void {
 let running: Promise<NightlyInstallResult> | null = null;
 
 function once(run: () => Promise<NightlyInstallResult>): Promise<NightlyInstallResult> {
-  running ??= run().finally(() => {
-    running = null;
-  });
+  running ??= run()
+    .catch(async (error: unknown): Promise<NightlyInstallResult> => {
+      await patchStatus({ installing: null }).catch(() => undefined);
+      reportError('background:nightly-update', error);
+      return { ok: false, reason: message(error) };
+    })
+    .finally(() => {
+      running = null;
+    });
   return running;
 }
 
