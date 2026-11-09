@@ -14,10 +14,11 @@ export function extensionAlive(): boolean {
 }
 
 /**
- * A fire-and-forget storage write from a content script. From an orphaned
- * copy the write rejects — wxt/storage words it as "You must add the
- * 'storage' permission to your manifest", meaning `chrome.storage` is gone —
- * and an unhandled rejection is a red line in the page's console.
+ * Fire-and-forget storage work from a content script (a write, or background
+ * work that reads and writes the store). From an orphaned copy it rejects —
+ * wxt/storage words it as "You must add the 'storage' permission to your
+ * manifest", meaning `chrome.storage` is gone — and an unhandled rejection is
+ * a red line in the page's console and an entry on the extension's Errors card.
  */
 export function persist(write: Promise<unknown>): void {
   void write.catch(() => undefined);
