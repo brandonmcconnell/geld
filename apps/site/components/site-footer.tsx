@@ -15,7 +15,7 @@ export function SiteFooter() {
       <div className="container-site grid gap-10 py-12 sm:grid-cols-[1fr_auto_auto_auto] sm:gap-16">
         <div className="flex flex-col gap-3">
           <Logomark height={28} alt="" />
-          <p className="max-w-[17rem] text-sm text-muted-foreground text-pretty">Hides tests and other review noise from GitHub diffs. Open source under the AGPL.</p>
+          <p className="max-w-[17rem] text-sm text-muted-foreground">Code review on GitHub, fixed: one digest for the conversation, a diff that starts with the code. Open source under the AGPL.</p>
           <p className="text-xs text-muted-foreground">
             Version <span className="font-mono">{EXTENSION_VERSION}</span>
           </p>
@@ -53,7 +53,6 @@ export function SiteFooter() {
       </div>
       <div className="container-site flex flex-col gap-2 border-t py-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
         <p>© {AUTHOR.name}. Not affiliated with GitHub.</p>
-        <p>No analytics, no cookies, no tracking on this site either.</p>
       </div>
     </footer>
   );
