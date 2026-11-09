@@ -3566,7 +3566,8 @@ svg.geld-lucide {
 
 /* A blocked or hidden person's comment, folded behind a line shaped like GitHub's own hidden comments (people-presence.ts). */
 /* Doubled to outrank the chat's `.geld-review__chat [data-geld-message] { display: flex !important }`, which comes later. */
-html [data-geld-person-fold][data-geld-person-fold]:not([data-geld-person-fold-open]) {
+html [data-geld-person-fold][data-geld-person-fold]:not([data-geld-person-fold-open], [data-geld-person-fold-own]),
+html [data-geld-person-fold-part][data-geld-person-fold-part] {
   display: none !important;
 }
 

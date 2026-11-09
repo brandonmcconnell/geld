@@ -25,6 +25,11 @@ import { clearSidebarPeople, syncSidebarPeople } from './review/sidebar-people';
 
 const ATTR_FOLD = 'data-geld-person-fold';
 const ATTR_FOLD_OPEN = 'data-geld-person-fold-open';
+/** On a folded card that holds other people's threads (an Overview review, a discussion comment with replies): only its own parts hide. */
+const ATTR_FOLD_OWN = 'data-geld-person-fold-own';
+/** One of those own parts, hidden while its card is folded. */
+const ATTR_FOLD_PART = 'data-geld-person-fold-part';
+const THREADS = 'article, [data-testid="review-thread"], .review-comment, [id^="discussion_r"]:not(a), .nested-discussion-timeline-comment';
 const ATTR_LINE = 'data-geld-person-line';
 const ATTR_LABEL = 'data-geld-blocked-label';
 const ATTR_NOTICE = 'data-geld-blocked-notice';
@@ -89,6 +94,7 @@ function lineFor(card: Element, standing: Standing): HTMLElement {
     const id = idOf(current);
     const nowOpen = !current.hasAttribute(ATTR_FOLD_OPEN);
     current.toggleAttribute(ATTR_FOLD_OPEN, nowOpen);
+    syncParts(current, nowOpen);
     if (id !== '') {
       if (nowOpen) opened.add(id);
       else opened.delete(id);
@@ -97,6 +103,30 @@ function lineFor(card: Element, standing: Standing): HTMLElement {
   });
   card.before(line);
   return line;
+}
+
+/** A card's own parts when threads stand inside it: every branch down to the threads, the threads left out; null when none do. */
+function ownParts(card: Element): readonly Element[] | null {
+  if (card.querySelector(THREADS) === null) return null;
+  const parts: Element[] = [];
+  const walk = (node: Element): void => {
+    for (const child of node.children) {
+      if (child.matches(THREADS) || child.hasAttribute(ATTR_LINE)) continue;
+      if (child.querySelector(THREADS) === null) parts.push(child);
+      else walk(child);
+    }
+  };
+  walk(card);
+  return parts;
+}
+
+/** Hides a folded card's own parts, or with `open` shows them, written only where something changes. */
+function syncParts(card: Element, open: boolean): void {
+  const parts = ownParts(card);
+  if ((parts !== null) !== card.hasAttribute(ATTR_FOLD_OWN)) card.toggleAttribute(ATTR_FOLD_OWN, parts !== null);
+  const hide = new Set(open ? [] : (parts ?? []));
+  for (const node of card.querySelectorAll(`[${ATTR_FOLD_PART}]`)) if (!hide.has(node)) node.removeAttribute(ATTR_FOLD_PART);
+  for (const node of hide) if (!node.hasAttribute(ATTR_FOLD_PART)) node.setAttribute(ATTR_FOLD_PART, '');
 }
 
 /** Inside a comment GitHub minimized: every review card carries `minimized-comment` too, so the class alone is no sign. */
@@ -110,6 +140,8 @@ function insideMinimized(card: Element): boolean {
 function unfold(card: Element): void {
   card.removeAttribute(ATTR_FOLD);
   card.removeAttribute(ATTR_FOLD_OPEN);
+  card.removeAttribute(ATTR_FOLD_OWN);
+  for (const part of card.querySelectorAll(`[${ATTR_FOLD_PART}]`)) part.removeAttribute(ATTR_FOLD_PART);
   const before = card.previousElementSibling;
   if (before?.hasAttribute(ATTR_LINE) === true) before.remove();
 }
@@ -129,6 +161,7 @@ function syncFolds(standingOf: (login: string) => Standing | null): void {
     if (!card.hasAttribute(ATTR_FOLD)) card.setAttribute(ATTR_FOLD, standing.kind);
     const id = idOf(card);
     if (id !== '' && opened.has(id) !== card.hasAttribute(ATTR_FOLD_OPEN)) card.toggleAttribute(ATTR_FOLD_OPEN, opened.has(id));
+    syncParts(card, card.hasAttribute(ATTR_FOLD_OPEN));
     lineFor(card, standing);
   }
   for (const line of document.querySelectorAll(`[${ATTR_LINE}]`)) {
