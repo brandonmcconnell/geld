@@ -270,16 +270,33 @@ export function avatarSrcFor(anchor: string): string | null {
 }
 
 /** Any avatar the page shows for `login` — the reviewers sidebar, another comment, a hovercard link. */
-export function avatarSrcForLogin(login: string): string | null {
+export function avatarSrcForLogin(login: string, now = Date.now()): string | null {
+  const known = avatarsByLogin.get(login);
+  if (known !== undefined) return known;
+  if (now - (avatarMisses.get(login) ?? Number.NEGATIVE_INFINITY) < AVATAR_MISS_MS) return null;
   const bare = login.replace(/\[bot\]$/i, '');
   const selectors = [`img[alt="@${bare}"]`, `a[href="/${bare}"] img`, `a[href$="/${bare}"][data-hovercard-type] img`, `img[alt="${bare}"]`, `a[href="/apps/${bare}"] img`];
   for (const selector of selectors) {
     const img = document.querySelector(selector);
     const src = (img instanceof HTMLImageElement ? img.currentSrc : '') || img?.getAttribute('src') || '';
-    if (src !== '') return normalizeAvatarSrc(src);
+    if (src !== '') {
+      const normalized = normalizeAvatarSrc(src);
+      avatarsByLogin.set(login, normalized);
+      return normalized;
+    }
   }
+  avatarMisses.set(login, now);
   return null;
 }
+
+/**
+ * Pictures found for a login, kept for the page, and when one was last looked for in vain. Every registry bot is asked
+ * for on every build of the panel, and five whole-document queries for each bot the page does not show were most of
+ * a build while GitHub was still rendering the page. A miss is asked again after `AVATAR_MISS_MS`, as the page fills in.
+ */
+const avatarsByLogin = new Map<string, string>();
+const avatarMisses = new Map<string, number>();
+const AVATAR_MISS_MS = 1000;
 
 function pathLineOf(root: Element): { readonly path?: string; readonly line?: number } {
   // The Overview names a thread's file in its heading, linked into the Changes tab and wrapped in direction marks.
