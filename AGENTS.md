@@ -3549,3 +3549,7 @@ GitLab reviewer sidebar rows expose native account IDs, usernames and profile UR
 Only those verified rows participate in local Hidden people folding and visit peeks, using the same reversible display rules as comments.
 Reviewer assignments, approval controls and the provider's assigned-reviewer total remain native and unchanged.
 Display names or initials alone are never enough, so Bitbucket widgets without durable identities remain untouched.
+
+GitLab can prevent native dialog cancellation through page shortcuts, so provider Flow handles Escape inside its own dialog, stops propagation and restores the current trigger without relying only on the browser cancel event.
+Installed fragment acceptance measures GitLab's native discussion container when it wraps the source note;
+the child keeps its own permalink and may have no hidden attribute while its parent is correctly folded.
