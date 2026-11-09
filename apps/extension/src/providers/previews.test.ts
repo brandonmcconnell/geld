@@ -54,3 +54,14 @@ it('uses an explicit Bitbucket native-account binding without inventing an autom
   expect(providerPreviews({ subject, threads: [] }, [source])).toEqual([]);
   expect(providerPreviews({ subject, threads: [], bots: [{ id: 'vercel', authorId: author.id }] }, [source])).toHaveLength(1);
 });
+
+it('does not promote a review finding with a shell pipeline into a linkless deployment preview', () => {
+  const source = comment('8', 'Missing transitive dependency.\nIf the sandbox install script (`curl ... | sudo bash`) does not pass --with plugins-temporary to poetry install, the sandbox deploy will silently break the plugin.', '2026-11-09T12:00:00Z');
+  expect(providerPreviews({ ...input, bots: [{ id: 'greptile', authorId: source.author.id }] }, [source])).toEqual([]);
+});
+
+it('retains linkless deployment status only with an explicit native service binding', () => {
+  const source = comment('9', 'Deploying site with Cloudflare Pages\nStatus: Building', '2026-11-09T12:00:00Z');
+  expect(providerPreviews(input, [source])).toEqual([]);
+  expect(providerPreviews({ ...input, bots: [{ id: 'cloudflare', authorId: source.author.id }] }, [source])).toMatchObject([{ project: 'site', status: 'building' }]);
+});
