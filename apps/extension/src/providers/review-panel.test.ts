@@ -1101,3 +1101,23 @@ describe('empty provider triage control', () => {
     panel.destroy();
   });
 });
+
+
+it('distinguishes severe open bot findings from a completed resolved review', () => {
+  const finding = { ...comment('1', '**High Severity**\nValidate the request before trusting this value.'), author: { id: 'native-bot', login: 'project_bot', automated: true } };
+  const native = { ...input([thread('a', { comments: [finding] })]), complete: true, bots: [{ id: 'coderabbit', authorId: 'native-bot' }] };
+  const panel = renderProviderReviewPanel(host(), native);
+  expect(panel.element.querySelector('[data-geld-review-bot]')?.getAttribute('data-geld-bot-health')).toBe('severe');
+  expect(panel.element.querySelector('.geld-provider-review__bot-health')?.textContent).toBe('Severe findings');
+  panel.update({ ...native, threads: native.threads.map(thread => ({ ...thread, resolved: true })) });
+  expect(panel.element.querySelector('[data-geld-review-bot]')?.getAttribute('data-geld-bot-health')).toBe('good');
+});
+
+it('opens the shared settings UI and explains a failed request without acting after teardown', async () => {
+  const open = vi.fn(async () => { throw new Error('No popup'); });
+  const panel = renderProviderReviewPanel(host(), input(), { onOpenSettings: open });
+  const button = panel.element.querySelector<HTMLButtonElement>('[aria-label="Open Geld settings"]');
+  button?.click();await vi.waitFor(() => expect(button?.disabled).toBe(false));
+  expect(open).toHaveBeenCalledOnce();expect(panel.element.textContent).toContain('Settings could not be opened');
+  panel.destroy();button?.click();expect(open).toHaveBeenCalledOnce();
+});

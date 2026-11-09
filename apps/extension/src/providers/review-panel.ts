@@ -1,5 +1,5 @@
 import type { ProviderCommentRenderContext } from './comment-render';
-import { botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, newestProviderBotSummary, parseInlineMarkdown, previewDocFromMarkdown, previewHostById, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, renderProviderItemMarkdown, sourceLink } from '@geld/review';
+import { botHealth, botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, newestProviderBotSummary, parseInlineMarkdown, previewDocFromMarkdown, previewHostById, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, renderProviderItemMarkdown, sourceLink } from '@geld/review';
 import type { BotVerdictRecord, ProviderPublicationRead, ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, RawCheckRun, ReviewItem, ReviewItemStatus, ReviewerState } from '@geld/review';
 import type { RepositoryIdentity } from '@geld/core';
 import type { ProviderAiState } from './ai';
@@ -59,6 +59,7 @@ export interface ProviderReviewRequirement {
 
 export interface ProviderReviewPanelOptions {
   readonly sourceInput?: ProviderReviewInput;
+  readonly onOpenSettings?: () => Promise<void>;
   readonly originalConversation?: { readonly shown: boolean; readonly toggle: () => void };
 
   readonly reviewerControls?: ProviderReviewSourceAction;
@@ -683,7 +684,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     if (bot.verdict === 'clean') return 'No findings';
     if (bot.verdict === 'running') return 'Review running';
     if (bot.verdict === 'loading') return 'Reading review';
-    if (bot.verdict === 'failed') return 'Review failed';
+    if (bot.verdict === 'failed') return bot.reason === undefined ? 'Review failed' : 'Review unavailable';
     return 'Review result unknown';
   }
 
@@ -697,6 +698,10 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const row = node('div', '', 'geld-provider-review__standing');
       row.dataset.geldReviewBot = id;
       row.dataset.state = verdict?.verdict ?? 'unknown';
+      const health = verdict === undefined ? 'pending' : botHealth(verdict);
+      row.dataset.geldBotHealth = health;
+      const status = node('span', { good: 'Clear', warn: 'Needs attention', severe: 'Severe findings', bad: 'Review failed', pending: 'Pending' }[health], 'geld-provider-review__bot-health');
+      status.dataset.health = health;row.append(status);
       row.append(node('strong', botById(id)?.title ?? id), doc.createTextNode(` · ${verdict === undefined ? 'No verified review result' : verdictLabel(verdict)}`));
       const accounts = (input.bots ?? []).filter((bot) => bot.id === id);
       row.append(node('p', [...new Set(accounts.map((account) => account.login ?? account.authorId))].join(', '), 'geld-provider-review__muted'));
@@ -1241,6 +1246,16 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       header.append(toggle);
     }
     header.append(copy);
+    if (options.onOpenSettings !== undefined) {
+      const settings = node('button', 'Settings', 'geld-provider-toggle geld-provider-review__settings');settings.type = 'button';settings.setAttribute('aria-label', 'Open Geld settings');
+      const status = node('span', '', 'geld-provider-review__muted');status.setAttribute('role', 'status');
+      settings.addEventListener('click', () => {
+        if (destroyed || !settings.isConnected) return;
+        settings.disabled = true;
+        void options.onOpenSettings?.().catch(() => { if (!destroyed) status.textContent = 'Settings could not be opened. Try the extension toolbar.'; }).finally(() => { settings.disabled = false; });
+      });
+      header.append(settings, status);
+    }
     if (activeAi?.enabled === true) {
       const controls = node('div', '', 'geld-provider-review__source-actions');
       const hasOpenItems = items.some((item) => isOpenStatus(item.status));

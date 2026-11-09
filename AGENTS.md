@@ -3483,3 +3483,8 @@ Fold choices survive native body replacement and tab changes within the same rev
 Hidden sections use hidden-until-found and reveal matching ancestors on beforematch, and digest source-reference navigation opens the containing section before focusing the native anchor.
 Long visible descriptions use a 500-pixel cap only after 80 pixels of slack, with resize and image-load updates and an explicit full-description control.
 Description shortening follows its shared setting independently of whether the reader chose the digest, native conversation or combined view.
+
+GitHub and provider digest rows share the bot-health truth table from @geld/review.
+An open finding stays a warning at 5/5, severe open findings are distinct from a failed run, and resolved findings do not retain a severe indicator.
+Provider bot health uses readable labels and native semantic colors, with setup refusals described as unavailable rather than a failed code review.
+The provider digest exposes the shared open-settings message and wraps header controls on narrow pages.
