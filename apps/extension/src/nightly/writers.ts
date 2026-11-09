@@ -41,7 +41,10 @@ export async function copyRunningBuild(version: string): Promise<BuildBackup> {
   return { version, files };
 }
 
-/** Writes a build over the folder Geld runs from, in `writeOrder`. `current` names the files of the build being replaced. */
+/**
+ * Writes a build over the folder Geld runs from, in `writeOrder`. `current` names the files that may be Geld's:
+ * the build being replaced, and any write that broke off. Only those are ever deleted.
+ */
 export interface BuildTarget {
   readonly method: InstallMethod;
   write(entries: readonly ZipEntry[], current: readonly string[]): Promise<void>;
@@ -100,16 +103,6 @@ async function writeFile(root: FileSystemDirectoryHandle, path: string, data: Ui
   }
 }
 
-async function listFiles(dir: FileSystemDirectoryHandle, prefix = ''): Promise<string[]> {
-  const paths: string[] = [];
-  for await (const [name, handle] of dir.entries()) {
-    const path = `${prefix}${name}`;
-    if (handle instanceof FileSystemDirectoryHandle) paths.push(...(await listFiles(handle, `${path}/`)));
-    else paths.push(path);
-  }
-  return paths;
-}
-
 async function removeFile(root: FileSystemDirectoryHandle, path: string): Promise<void> {
   const parts = path.split('/');
   let dir = root;
@@ -137,7 +130,7 @@ export function folderTarget(handle: FileSystemDirectoryHandle): BuildTarget {
     method: 'folder',
     async write(entries, current) {
       for (const entry of writeOrder(entries, current)) await writeFile(handle, entry.path, entry.data);
-      for (const path of stalePaths(await listFiles(handle), entries.map((entry) => entry.path))) {
+      for (const path of stalePaths(current, entries.map((entry) => entry.path))) {
         await removeFile(handle, path).catch(() => undefined);
       }
     },

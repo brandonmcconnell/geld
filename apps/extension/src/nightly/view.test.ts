@@ -27,6 +27,8 @@ const status = (patch: Partial<NightlyStatus>): NightlyStatus => ({
   askedTag: null,
   askedAt: null,
   etag: null,
+  limitedUntil: null,
+  writing: null,
   ...patch,
 });
 

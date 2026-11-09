@@ -207,6 +207,11 @@ describe('stalePaths', () => {
       ['manifest.json', 'chunks/new-456.js'],
     )).toEqual(['chunks/old-123.js']);
   });
+
+  it('removes only files a build owned, never what the reader keeps beside it', () => {
+    expect(stalePaths(['manifest.json', 'chunks/old-123.js', 'chunks/old-123.js'], ['manifest.json'])).toEqual(['chunks/old-123.js']);
+    expect(stalePaths(['manifest.json'], ['manifest.json'])).toEqual([]);
+  });
 });
 
 describe('writeOrder', () => {

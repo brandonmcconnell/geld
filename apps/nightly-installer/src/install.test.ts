@@ -15,18 +15,22 @@ afterEach(async () => {
 });
 
 const entry = (p: string, text: string) => ({ path: p, data: new TextEncoder().encode(text) });
-const build = (version: string, extra: readonly string[] = []) => [
-  entry('manifest.json', JSON.stringify({ name: 'Geld Nightly', version })),
-  entry('nightly.html', ''),
-  ...extra.map((p) => entry(p, p)),
-];
+const build = (version: string, extra: readonly string[] = []) => {
+  const paths = ['manifest.json', 'nightly.html', 'nightly-files.json', ...extra];
+  return [
+    entry('manifest.json', JSON.stringify({ name: 'Geld Nightly', version })),
+    entry('nightly.html', ''),
+    entry('nightly-files.json', JSON.stringify({ files: paths })),
+    ...extra.map((p) => entry(p, p)),
+  ];
+};
 const record = (folder: string): InstallRecord => ({ folder, installedAt: '2026-11-09T12:00:00Z', version: '0.1.2.1', browser: 'chrome', profile: { directory: 'Default', name: 'Work' }, downloadsName: null });
 
 describe('writeBuild', () => {
   it('writes into a new folder with the install record beside the build', async () => {
     const dir = path.join(root, 'Geld Nightly', 'Work');
     await writeBuild(dir, build('0.1.2.1', ['chunks/a.js']), record(dir));
-    expect((await readdir(dir)).sort()).toEqual(['chunks', 'manifest.json', 'nightly-install.json', 'nightly.html']);
+    expect((await readdir(dir)).sort()).toEqual(['chunks', 'manifest.json', 'nightly-files.json', 'nightly-install.json', 'nightly.html']);
     expect(JSON.parse(await readFile(path.join(dir, 'nightly-install.json'), 'utf8')).folder).toBe(dir);
   });
 
@@ -36,6 +40,15 @@ describe('writeBuild', () => {
     await writeBuild(dir, build('0.1.2.2', ['chunks/new.js']), record(dir));
     expect(await readdir(path.join(dir, 'chunks'))).toEqual(['new.js']);
     expect(await inspectTarget(dir)).toBe('nightly');
+  });
+
+  it('leaves files the reader keeps beside the build', async () => {
+    const dir = path.join(root, 'Work');
+    await writeBuild(dir, build('0.1.2.1', ['chunks/old.js']), record(dir));
+    await writeFile(path.join(dir, 'notes.txt'), 'mine');
+    await writeBuild(dir, build('0.1.2.2', ['chunks/new.js']), record(dir));
+    expect(await readFile(path.join(dir, 'notes.txt'), 'utf8')).toBe('mine');
+    expect(await readdir(path.join(dir, 'chunks'))).toEqual(['new.js']);
   });
 
   it('never writes over a folder that is not a nightly build', async () => {

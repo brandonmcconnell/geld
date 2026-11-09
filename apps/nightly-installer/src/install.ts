@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { INSTALL_FILE, isNightlyManifest, LOCK_FILE, lockedOut, parseInstallRecord, parseLock, stalePaths, writeOrder } from '@geld/core/nightly';
+import { FILE_LIST, INSTALL_FILE, isNightlyManifest, LOCK_FILE, lockedOut, parseFileList, parseInstallRecord, parseLock, stalePaths, writeOrder } from '@geld/core/nightly';
 import type { InstallRecord, ZipEntry } from '@geld/core/nightly';
 
 /** Writes a verified build into its folder, and only ever into a folder that is empty or already a nightly build. */
@@ -63,12 +63,13 @@ export async function writeBuild(dir: string, entries: readonly ZipEntry[], reco
   await lock(dir);
   try {
     const current = await listFiles(dir);
+    const owned = parseFileList((await readText(path.join(dir, FILE_LIST))) ?? '') ?? [];
     for (const entry of writeOrder(entries, current)) {
       const file = path.join(dir, ...entry.path.split('/'));
       await mkdir(path.dirname(file), { recursive: true });
       await writeFile(file, entry.data);
     }
-    for (const stale of stalePaths(await listFiles(dir), entries.map((entry) => entry.path))) {
+    for (const stale of stalePaths(owned, entries.map((entry) => entry.path))) {
       await rm(path.join(dir, ...stale.split('/')), { force: true });
     }
     await writeFile(path.join(dir, INSTALL_FILE), `${JSON.stringify(record, null, 2)}\n`);

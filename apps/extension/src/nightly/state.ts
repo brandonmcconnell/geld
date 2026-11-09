@@ -53,6 +53,15 @@ export interface NightlyFailure {
   readonly broken?: true;
 }
 
+/**
+ * A write into the folder that began and has not yet ended whole. Until it does, the folder may hold parts of
+ * two builds, so only the copy in IndexedDB (`whole`) is trusted, and `paths` are the files that may be Geld's.
+ */
+export interface NightlyWrite {
+  readonly version: string;
+  readonly whole: string;
+  readonly paths: readonly string[];
+}
 export interface NightlyStatus {
   readonly checkedAt: string | null;
   /** The latest release with a nightly build, whether or not it is newer than this one. */
@@ -70,6 +79,9 @@ export interface NightlyStatus {
   readonly askedAt: string | null;
   /** Sent back as `If-None-Match`, so an unchanged release comes back as a short 304. */
   readonly etag: string | null;
+  /** The API limited Geld's requests: none is sent before this time. */
+  readonly limitedUntil: string | null;
+  readonly writing: NightlyWrite | null;
 }
 
 export const EMPTY_STATUS: NightlyStatus = {
@@ -84,6 +96,8 @@ export const EMPTY_STATUS: NightlyStatus = {
   askedTag: null,
   askedAt: null,
   etag: null,
+  limitedUntil: null,
+  writing: null,
 };
 
 export const nightlyStatusItem = /* @__PURE__ */ storage.defineItem<NightlyStatus>('local:nightlyStatus', { fallback: EMPTY_STATUS });
