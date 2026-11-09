@@ -29,11 +29,13 @@ export function conversationHeadSha(): string | null {
   if (conversation === null) return null;
   const repo = `/${conversation[1]}/${conversation[2]}`;
   const commits = `${repo}/pull/${conversation[3]}/commits/`;
+  // The Overview's commit rows lead to the commit in the Changes tab instead.
+  const changes = `${repo}/pull/${conversation[3]}/changes/`;
   const compare = `${repo}/compare/`;
-  const commitLink = new RegExp(`^(?:https?://[^/]+)?${escapeRegExp(commits)}([0-9a-f]{40})(?:[/?#]|$)`, 'i');
+  const commitLink = new RegExp(`^(?:https?://[^/]+)?${escapeRegExp(`${repo}/pull/${conversation[3]}/`)}(?:commits|changes)/([0-9a-f]{40})(?:[/?#]|$)`, 'i');
   const compareLink = new RegExp(`^(?:https?://[^/]+)?${escapeRegExp(compare)}[0-9a-f]{40}\\.\\.([0-9a-f]{40})(?:[/?#]|$)`, 'i');
   const pushes: { readonly row: Element; readonly sha: string }[] = [];
-  for (const anchor of document.querySelectorAll<HTMLAnchorElement>(`a[href*="${commits}"], a[href*="${compare}"]`)) {
+  for (const anchor of document.querySelectorAll<HTMLAnchorElement>(`a[href*="${commits}"], a[href*="${changes}"], a[href*="${compare}"]`)) {
     const href = anchor.getAttribute('href') ?? '';
     if (anchor.closest(COMMENT_BODY) !== null) continue;
     const sha = commitLink.exec(href)?.[1];
