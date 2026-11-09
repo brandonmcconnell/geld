@@ -64,6 +64,8 @@ describe('userDataDirs', () => {
     const empty = { platform: 'win32', home: 'C:\\Users\\me', env: { LOCALAPPDATA: '', ProgramFiles: '' } } as const;
     expect(userDataDirs(browser('helium'), empty)).toEqual(['C:\\Users\\me\\AppData\\Local\\imput\\Helium\\User Data']);
     expect(windowsExeCandidates(browser('helium'), empty)).toEqual(['C:\\Users\\me\\AppData\\Local\\imput\\Helium\\Application\\chrome.exe']);
+    expect(userDataDirs(browser('opera'), { ...empty, env: { APPDATA: '' } })).toEqual(['C:\\Users\\me\\AppData\\Roaming\\Opera Software\\Opera Stable']);
+    expect(userDataDirs(browser('chrome'), { platform: 'linux', home: '/home/me', env: { XDG_CONFIG_HOME: '' } })).toEqual(['/home/me/.config/google-chrome']);
   });
 
   it('has nowhere to look on a platform the browser is not made for', () => {
