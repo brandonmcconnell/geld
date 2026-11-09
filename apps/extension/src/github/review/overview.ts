@@ -3371,7 +3371,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       return false;
     }),
   };
-  commentMentions = byMentionTime(crawledDom.comments.flatMap((entry) => entry.mentions));
+  // By each mention's own author: a thread is kept or dropped by who opened it, and its replies may be anyone's.
+  commentMentions = byMentionTime(crawledAll.comments.flatMap((entry) => entry.mentions).filter((mention) => !hidden.hides(mention.author.login, mention.author.bot, mention.avatarSrc)));
   const rawComments: readonly RawComment[] = crawledDom.comments.map((entry) => entry.comment);
   sourceFacts = new Map(
     crawledDom.comments
