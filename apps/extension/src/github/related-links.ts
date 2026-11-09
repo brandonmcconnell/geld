@@ -543,7 +543,7 @@ let requestPass: () => void = () => undefined;
 export function applyRelatedLinks(active: boolean, onChange: () => void = () => undefined): void {
   requestPass = onChange;
   // The Overview's sidebar is React's: no section of Geld's among its nodes before React has hydrated them.
-  const afters = active ? assigneesSections().filter((after) => reactSettled(after.parentElement)) : [];
+  const afters = active ? assigneesSections().filter((after) => reactSettled(placeFor(after))) : [];
   const all = afters.length === 0 ? [] : relatedLinksOnPage(onChange);
   const stack = afters.length === 0 ? null : pageStack(onChange);
   const inStack = new Set((stack?.pulls ?? []).map((pull) => stackMemberKey(location.hostname, pull.path)));

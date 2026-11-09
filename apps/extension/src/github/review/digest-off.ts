@@ -43,7 +43,7 @@ export function syncDigestOffBar(show: boolean): void {
     return;
   }
   // On the Overview the line stands among React's nodes: not before React has hydrated them.
-  if (!reactSettled(card.parentElement)) return;
+  if (!reactSettled(card)) return;
   if (existing !== null && existing.previousElementSibling === card && card.hasAttribute(ATTR_ATTACHED)) return;
   existing?.remove();
   for (const stale of document.querySelectorAll(`[${ATTR_ATTACHED}]`)) {

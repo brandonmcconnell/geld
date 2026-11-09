@@ -327,7 +327,7 @@ export function syncStatusPills(on: boolean, onOpen: (pill: HTMLButtonElement, c
     const next = host.nextElementSibling;
     const existing = next instanceof HTMLButtonElement && next.hasAttribute(ATTR_PILL) ? next : null;
     // Beside a label React has yet to hydrate, the pill would make React throw the page's markup away (`react-hydration.ts`).
-    if (!on || !reactSettled(label)) {
+    if (!on || !reactSettled(host)) {
       existing?.remove();
       host.removeAttribute(ATTR_HIDDEN);
       continue;

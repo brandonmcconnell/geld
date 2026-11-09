@@ -1,6 +1,6 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import type { MergeActions, MergeMethod } from './merge-actions';
-import { reactSettled } from './react-hydration';
+import { subtreeSettled } from './react-hydration';
 import { stackGroups } from './status-pill';
 import { ICON_CHECK, ICON_INFO, ICON_TRIANGLE_DOWN } from './ui/icons';
 
@@ -155,7 +155,7 @@ function isDisabled(button: HTMLButtonElement): boolean {
 export function syncOverviewMerge(merge: OverviewMerge | null, method: MergeMethod, handlers: OverviewMergeHandlers): void {
   const section = document.querySelector(SECTION);
   // Its buttons and Geld's beside them are React's nodes, not to be touched before React has hydrated them (`react-hydration.ts`).
-  if (section !== null && !reactSettled(section)) return;
+  if (section !== null && !subtreeSettled(section)) return;
   const buttons = section === null ? [] : viewStatusButtons(section);
   for (const button of buttons) iconify(button);
   if (section !== null) {

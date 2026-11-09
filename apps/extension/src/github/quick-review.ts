@@ -561,14 +561,14 @@ function measureToolbarStuck(toolbar: Element): boolean {
  * compact pull request header's title row the other tabs show; null while neither is
  * stuck, the group in view in the tab bar.
  */
-function stickyPlace(state: Mounted): { readonly place: Place; readonly put: (root: HTMLElement) => void; readonly placed: (root: HTMLElement) => boolean } | null {
+function stickyPlace(state: Mounted): { readonly place: Place; readonly near: HTMLElement; readonly put: (root: HTMLElement) => void; readonly placed: (root: HTMLElement) => boolean } | null {
   // The bar GitHub now shows over every tab: first among its actions, left of "Merge status", always.
   const bar = persistentBarActions();
-  if (bar !== null) return { place: 'bar', put: (root) => bar.prepend(root), placed: (root) => bar.firstElementChild === root };
+  if (bar !== null) return { place: 'bar', near: bar, put: (root) => bar.prepend(root), placed: (root) => bar.firstElementChild === root };
   const control = document.querySelector<HTMLElement>(STICKY_REVIEW_CONTROL);
   if (control !== null) {
     if (!state.toolbarStuck) return null;
-    return { place: 'toolbar', put: (root) => control.insertAdjacentElement('beforebegin', root), placed: (root) => control.previousElementSibling === root };
+    return { place: 'toolbar', near: control, put: (root) => control.insertAdjacentElement('beforebegin', root), placed: (root) => control.previousElementSibling === root };
   }
   // The Overview's mini header, stuck: first among its actions (before the panel toggles), as the tab bar has it at its end.
   const mini = state.toolbar?.isConnected === true && state.toolbar.matches(OVERVIEW_MINI_HEADER) ? state.toolbar : null;
@@ -577,14 +577,14 @@ function stickyPlace(state: Mounted): { readonly place: Place; readonly put: (ro
     if (!state.toolbarStuck || actions === null) return null;
     // Signed in the header holds "Merge status" and GitHub's own (hidden) review button: the group takes the button's place.
     const own = actions.querySelector<HTMLElement>(`:scope > :is(${GITHUB_REVIEW_CONTROL})`);
-    if (own !== null) return { place: 'mini', put: (root) => own.insertAdjacentElement('beforebegin', root), placed: (root) => own.previousElementSibling === root };
-    return { place: 'mini', put: (root) => actions.prepend(root), placed: (root) => actions.firstElementChild === root };
+    if (own !== null) return { place: 'mini', near: own, put: (root) => own.insertAdjacentElement('beforebegin', root), placed: (root) => own.previousElementSibling === root };
+    return { place: 'mini', near: actions, put: (root) => actions.prepend(root), placed: (root) => actions.firstElementChild === root };
   }
   const header = document.querySelector<HTMLElement>(STICKY_PR_HEADER);
   if (header === null || !isStuck(header)) return null;
   // Inside the title row, after the title (which gives way), so the row's centred width and padding hold it as the page's content edge.
   const row = header.querySelector<HTMLElement>('[class*="TitleArea"]') ?? header;
-  return { place: 'header', put: (root) => row.append(root), placed: (root) => row.lastElementChild === root };
+  return { place: 'header', near: row, put: (root) => row.append(root), placed: (root) => row.lastElementChild === root };
 }
 
 /**
@@ -622,10 +622,10 @@ function followToolbar(state: Mounted): void {
 /** In a stuck header, so it is always to hand while reviewing; otherwise before the tab bar's counts. */
 function place(state: Mounted): void {
   // Nothing to stand beside (GitHub hides the counts on narrow screens, and no bar holds the group): GitHub's own button is the one shown.
-  const bar = persistentBarActions();
-  if (state.anchor === null && bar === null) return;
-  if (!reactSettled(bar ?? state.anchor)) return;
+  if (state.anchor === null && persistentBarActions() === null) return;
   const sticky = stickyPlace(state);
+  // Beside a node React has yet to hydrate, the group would make React throw the page's markup away (`react-hydration.ts`).
+  if (!reactSettled(sticky?.near ?? state.anchor)) return;
   if (sticky !== null) {
     if (!sticky.placed(state.root)) sticky.put(state.root);
   } else if (state.anchor !== null && state.anchor.previousElementSibling !== state.root) {

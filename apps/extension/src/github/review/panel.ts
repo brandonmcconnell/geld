@@ -3177,7 +3177,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   }
   const card = descriptionCard();
   // On the Overview the panel stands among React's nodes: not before React has hydrated them (`react-hydration.ts`).
-  if (card === null || !reactSettled(card.parentElement)) return null;
+  if (card === null || !reactSettled(card)) return null;
   const focusKey = focusKeyOf(existing);
   // The open CI checks slot holds GitHub's own live section: a scroll box with spinners in it, always current on
   // its own. Sending it home and taking it back on every rebuild (the counts tick every few seconds on a busy

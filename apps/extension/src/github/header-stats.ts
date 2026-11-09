@@ -6,7 +6,7 @@ import { hidesAnything } from './breakdown';
 import type { StatsBreakdown } from './breakdown';
 import { hiddenLabel, hiddenNounPlural, statsBreakdown } from './breakdown';
 import { createElement, OWN_UI_ATTRIBUTE, originalText, parseLineStats, queryAll, restoreManagedText, setManagedText } from './dom';
-import { headerReactSettled, reactSettled } from './react-hydration';
+import { headerReactSettled, reactSettled, subtreeSettled } from './react-hydration';
 import { attachBreakdownTooltip, detachBreakdownTooltip } from './ui/tooltip';
 
 /** A "+93 −53" pair somewhere in the page header, plus the element to hang a tooltip on. */
@@ -431,6 +431,8 @@ export function applyHeaderStats(
   /** The diff's file count, when the header's own numbers carry none (a pull request header: lines only). */
   files = 0,
 ): void {
+  // GitHub's server-rendered counts: rewritten before React hydrated them, they made React render the page again.
+  if (!subtreeSettled(group.host)) return;
   // Nothing that could be hidden: GitHub's own numbers are right, so leave the header alone (no "0 hidden").
   if (group.original === null || activeCategories.length === 0) {
     restoreHeaderStats(group);
