@@ -11563,14 +11563,14 @@ var init_settings_schema = __esm({
       },
       {
         id: "lists",
-        title: "Pull request lists",
-        intro: "Pull requests opened by these authors are hidden in PR lists and stacks, behind a row that says how many and shows them on click. One login per line; `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).",
+        title: "Hidden people",
+        intro: "People and bots you never want to see. Their pull requests are hidden in PR lists and stacks, behind a row that says how many and shows them on click. Their reviews and comments are left out of the pull request digest, where a closed eye on the Reviews or Review bots row lists them with Peek and Unhide. Anyone GitHub shows with a comment hidden as spam or abuse is left out of the digest too. A reply of theirs in someone else\u2019s review thread is folded there. One login per line. `*` matches anything, so `*[bot]` hides every GitHub App (dependabot[bot], renovate[bot], github-actions[bot]).",
         fields: [
           {
             kind: "list",
             key: "hiddenAuthors",
-            label: "Hidden authors",
-            description: "Pull request authors whose PRs are hidden in lists.",
+            label: "Hidden people",
+            description: "Logins whose pull requests, reviews and comments Geld hides.",
             popup: false,
             rows: 4,
             placeholder: "*[bot]\nrenovate*",
@@ -11579,7 +11579,7 @@ var init_settings_schema = __esm({
               "`*` matches any run of characters: `*[bot]` is every GitHub App, `renovate*` every Renovate account.",
               "Matching ignores case. Lines starting with `#` are comments."
             ],
-            saveLabel: "Save authors"
+            saveLabel: "Save hidden people"
           }
         ]
       },
@@ -33026,44 +33026,6 @@ function atomFrom(comment, extraLogins) {
     openThreads: comment.isResolved === true ? 0 : 1
   };
 }
-function shouldMerge(a, b) {
-  if (a.path !== void 0 && a.path === b.path && a.line !== void 0 && b.line !== void 0 && Math.abs(a.line - b.line) <= 3) {
-    return true;
-  }
-  if (a.suggestion !== null && a.suggestion === b.suggestion) return true;
-  if (a.ruleId !== null && a.ruleId === b.ruleId && [...a.botIds].some((id) => b.botIds.has(id))) return true;
-  return false;
-}
-function mergeAtom(a, b) {
-  const botIds = new Set(a.botIds);
-  for (const id of b.botIds) botIds.add(id);
-  const seen = new Set(a.sources.map((source) => source.anchor));
-  const sources = [...a.sources];
-  for (const source of b.sources) {
-    if (!seen.has(source.anchor)) {
-      seen.add(source.anchor);
-      sources.push(source);
-    }
-  }
-  const humanLead = a.humanLead || b.humanLead;
-  return {
-    sources,
-    bodies: [...a.bodies, ...b.bodies],
-    title: a.humanLead || !b.humanLead ? a.title : b.title,
-    humanLead,
-    path: a.path ?? b.path,
-    line: a.line ?? b.line,
-    suggestion: a.suggestion ?? b.suggestion,
-    suggestionBy: a.suggestion !== null ? a.suggestionBy : b.suggestionBy,
-    ruleId: a.ruleId ?? b.ruleId,
-    botIds,
-    humanAuthors: [...a.humanAuthors, ...b.humanAuthors.filter((login) => !a.humanAuthors.includes(login))],
-    resolved: a.resolved && b.resolved,
-    outdated: a.outdated || b.outdated,
-    threads: a.threads + b.threads,
-    openThreads: a.openThreads + b.openThreads
-  };
-}
 function severityOf(atom) {
   const human = atom.humanAuthors.length > 0;
   let worst = "suggestion";
@@ -33115,32 +33077,7 @@ function isReviewItemComment(comment, extraLogins = []) {
   return comment.kind === "thread" && comment.body.trim() !== "" && !isTriggerComment(comment.body, extraLogins);
 }
 function clusterComments(comments, extraLogins = []) {
-  const atoms = comments.filter((comment) => isReviewItemComment(comment, extraLogins)).map((comment) => atomFrom(comment, extraLogins));
-  const parent = atoms.map((_, index) => index);
-  const find = (index) => {
-    const current = parent[index] ?? index;
-    if (current === index) return index;
-    const root = find(current);
-    parent[index] = root;
-    return root;
-  };
-  for (let i = 0; i < atoms.length; i += 1) {
-    for (let j = i + 1; j < atoms.length; j += 1) {
-      const left = atoms[i];
-      const right = atoms[j];
-      if (left === void 0 || right === void 0) continue;
-      if (shouldMerge(left, right) && find(i) !== find(j)) parent[find(j)] = find(i);
-    }
-  }
-  const groups = /* @__PURE__ */ new Map();
-  for (let index = 0; index < atoms.length; index += 1) {
-    const atom = atoms[index];
-    if (atom === void 0) continue;
-    const root = find(index);
-    const existing = groups.get(root);
-    groups.set(root, existing === void 0 ? atom : mergeAtom(existing, atom));
-  }
-  return [...groups.values()].map(itemFromAtom);
+  return comments.filter((comment) => isReviewItemComment(comment, extraLogins)).map((comment) => itemFromAtom(atomFrom(comment, extraLogins)));
 }
 function isBotOnly(item) {
   return item.sources.length > 0 && item.sources.every((source) => source.bot !== void 0 || looksLikeBotLogin(source.author));
