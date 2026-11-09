@@ -2,7 +2,7 @@ import { CATEGORIES, TESTS_CATEGORY } from '@geld/core';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { Frame } from '@/components/demo/before-after';
+import { Frame } from '@/components/demo/frame';
 import { FileRow } from '@/components/demo/file-row';
 import { HiddenRow } from '@/components/demo/hidden-row';
 import { PrHeader } from '@/components/demo/pr-header';
@@ -57,7 +57,7 @@ export default function HowItWorksPage() {
       <PageIntro
         eyebrow="How it works"
         title="Everything Geld changes on GitHub, and nothing it doesn't."
-        description="On diffs Geld only inspects file paths, never file contents. It never moves GitHub's DOM around, and can be switched off per repository or organisation."
+        description="Geld reads the diffs and conversations GitHub already serves you, through your own session. File paths and the changed lines decide what folds, anything folded is one click from coming back, and it can be switched off per repository or organisation."
       />
 
       <div className="container-site grid gap-12 pt-4 pb-32 lg:grid-cols-[220px_1fr] lg:gap-20">
@@ -162,7 +162,7 @@ export default function HowItWorksPage() {
                 pull request with hundreds of commits costs nothing to scroll.
               </p>
               <p>
-                Lists can also hide pull requests by author: add logins under <strong>Hidden authors</strong> (<code>*[bot]</code> covers every GitHub
+                Lists can also hide pull requests by author: add logins under <strong>Hidden people</strong> (<code>*[bot]</code> covers every GitHub
                 App such as dependabot[bot] or renovate[bot]) and those rows fold into a line that says how many by whom, with a <em>Show</em> to bring
                 them back for the visit. And when GitHub&apos;s own file filter is active on a diff (by extension, viewed state or <em>only files you
                 own</em> from CODEOWNERS), Geld leaves those files out of its counts too, which GitHub&apos;s header does not.
@@ -214,7 +214,7 @@ export default function HowItWorksPage() {
                         {category.defaultEnabled ? 'on by default' : 'opt-in'}
                       </span>
                     </p>
-                    <p className="mt-1 text-sm text-pretty text-muted-foreground">
+                    <p className="mt-1 text-sm text-muted-foreground">
                       <RichText copy={category.description} />
                     </p>
                   </div>
@@ -374,6 +374,17 @@ reviewBots:                     # offered in Request a review on every PR
                 comments that belong to finished items. Task-list checkboxes on the digest are a feedback channel: ticking one marks that finding
                 done without the extension.
               </p>
+              <p>
+                The same workflow can start review bots through their own APIs, for when a bot is not answering its tag comment. Comment{' '}
+                <code>/geld run greptile</code> on a pull request (or <code>bugbot</code>, <code>devin</code>, several at once) and the workflow asks
+                each bot to review it, in parallel. Each bot keeps its usual tag comment until you store its key as a repository secret and put that secret&apos;s name in
+                the workflow: <code>GELD_GREPTILE_SECRET_NAME</code>, <code>GELD_BUGBOT_SECRET_NAME</code> or <code>GELD_DEVIN_SECRET_NAME</code>, the
+                name only, never the key (the workflow refuses anything shaped like a key). Only people with
+                write access to the repository can start a bot this way, and the run&apos;s log names who asked, since the bots see only the key. The workflow reacts to the
+                comment with 🚀 when every bot was queued and 👎 when one was not, and the run&apos;s log says why. Wherever the workflow names a
+                bot&apos;s secret, Geld&apos;s Rerun posts the command for you instead of the bot&apos;s usual comment, with nothing to turn on. Geld
+                reads only the secret&apos;s name from the workflow, never the key.
+              </p>
             </Prose>
           </Step>
 
@@ -397,7 +408,7 @@ function Step({ id, index, title, children }: { readonly id: string; readonly in
   return (
     <section id={id} aria-labelledby={`${id}-heading`} className="scroll-mt-28">
       <p className="mb-3 font-mono text-base tabular-nums text-muted-foreground">{String(index).padStart(2, '0')}</p>
-      <h2 id={`${id}-heading`} className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
+      <h2 id={`${id}-heading`} className="text-2xl font-semibold tracking-tight sm:text-3xl">
         {title}
       </h2>
       <div className="mt-6">{children}</div>
