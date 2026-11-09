@@ -168,6 +168,10 @@ describe('withLiveRuns', () => {
     const severe: GeldPrMeta['bots'][number] = { ...greptile, count: 2, severity: 'high', sourceId: 'discussion_r1' };
     expect(withLiveRuns([severe], [{ ...greptile, count: 1, severity: 'medium', sourceId: 'discussion_r2' }], true)).toEqual([{ ...greptile, count: 1, severity: 'medium', sourceId: 'discussion_r1' }]);
     expect(withLiveRuns([severe], [{ ...greptile, count: 1, sourceId: 'discussion_r2' }], true)).toEqual([{ ...greptile, count: 1, sourceId: 'discussion_r1' }]);
+    // As many open as the Action counted, graded otherwise: the high one resolved and a medium one posted since.
+    expect(withLiveRuns([severe], [{ ...greptile, count: 2, severity: 'medium', sourceId: 'discussion_r3' }], true)).toEqual([{ ...greptile, count: 2, severity: 'medium', sourceId: 'discussion_r1' }]);
+    // The same grade and count leave the Action's verdict as it is.
+    expect(withLiveRuns([severe], [{ ...greptile, count: 2, severity: 'high', sourceId: 'discussion_r3' }], true)).toEqual([severe]);
     // Not while the timeline is still being read (a thread not loaded yet would count as resolved), and never
     // upward: a count the page has more of than the Action is a run the Action has not written yet.
     expect(withLiveRuns(payload, live)).toEqual(payload);
