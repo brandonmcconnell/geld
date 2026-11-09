@@ -17,7 +17,10 @@ import { isOwnElement } from './dom';
  * - `unknown`: anything else, which gets the full pass as before.
  *
  * Order matters: the timeline is checked before the files containers so a
- * review thread's diff inside it counts as conversation, not files.
+ * review thread's diff inside it counts as conversation, not files. The file
+ * tree is checked before both: the classic files view puts it in a
+ * `.Layout-sidebar`, which reads as the conversation's sidebar, and a filter
+ * typed into it then skipped the files pass.
  */
 export type Region = 'chrome' | 'lists' | 'conversation' | 'files' | 'header' | 'unknown';
 
@@ -28,6 +31,7 @@ const CONVERSATION =
   '.js-discussion, [data-testid="issue-timeline-container"], [data-testid="pull-request-timeline"], .pull-discussion-timeline, #discussion_bucket, [data-testid="issue-viewer-container"], [data-testid="issue-body"], [data-testid="mergebox-border-container"], react-partial[partial-name*="merge" i], [data-testid="mergebox-partial"], #partial-pull-merging, .pull-merging, .js-pull-merging, .mergeability-details, .merge-pr, .js-merge-pr, #partial-discussion-sidebar, [data-testid="issue-viewer-metadata-pane"], .Layout-sidebar, .js-socket-channel';
 const FILES =
   '#files, #diff_file_tree, file-tree, [data-testid="virtualized-diffs-list"], [class*="PullRequestDiffsList"], [class*="DiffFileTree"], [class*="TreeView"], [role="tree"], .js-diff-progressive-container, #toc, .pr-toolbar, [class*="FilesToolbar"], copilot-diff-entry, .diff-view, [data-geld-sidebar]';
+const FILE_TREE = 'file-tree, #diff_file_tree, [data-geld-sidebar]';
 const HEADER = '.gh-header, [data-component="PageHeader"], #partial-discussion-header, .tabnav, .UnderlineNav, #diffstat, .toc-diff-stats, [class*="PullRequestHeader"], [class*="PullRequestTabs"], .pagehead';
 
 /** Batches larger than this are page loads or navigations; they get the full pass without a look. */
@@ -38,6 +42,7 @@ function regionOf(node: Node): Region {
   if (element === null || element === document.documentElement) return element === null ? 'unknown' : 'chrome';
   if (element.closest(CHROME) !== null) return 'chrome';
   if (element.closest(LISTS) !== null) return 'lists';
+  if (element.closest(FILE_TREE) !== null) return 'files';
   if (element.closest(CONVERSATION) !== null) return 'conversation';
   if (element.closest(FILES) !== null) return 'files';
   if (element.closest(HEADER) !== null) return 'header';
