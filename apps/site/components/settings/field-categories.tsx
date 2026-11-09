@@ -1,7 +1,7 @@
 'use client';
 
 import type { AnyCategoryId, BuiltInCategory, CategoriesField, CategoryId, GeldSettings, PatternGroup } from '@geld/core';
-import { CATEGORIES, categoryPatternLines, describeAdvancedSettings, hasAdvancedSettings, isCategoryEnabled, isCategoryInPicker, isGroupEnabled } from '@geld/core';
+import { CATEGORIES, categoryPatternLines, describeAdvancedSettings, hasAdvancedSettings, isAutoViewed, isCategoryEnabled, isCategoryInPicker, isGroupEnabled } from '@geld/core';
 import { ChevronRightIcon } from 'lucide-react';
 import { useId, useState } from 'react';
 
@@ -18,6 +18,7 @@ interface CategoriesProps {
   readonly settings: GeldSettings;
   readonly disabled: boolean;
   readonly onCategory: (id: AnyCategoryId, value: boolean) => void;
+  readonly onAutoViewed: (id: AnyCategoryId, value: boolean) => void;
   readonly onGroup: (categoryId: CategoryId, groupId: string, value: boolean) => void;
   readonly onPatterns: (categoryId: CategoryId, lines: readonly string[]) => Promise<LinesSaveResult>;
 }
@@ -28,7 +29,7 @@ interface CategoriesProps {
  * patterns for the category. The area starts open only when something in it
  * is in use, so the page stays short by default.
  */
-export function CategoriesRows({ field, settings, disabled, onCategory, onGroup, onPatterns }: CategoriesProps) {
+export function CategoriesRows({ field, settings, disabled, onCategory, onAutoViewed, onGroup, onPatterns }: CategoriesProps) {
   return (
     <div>
       <p className="text-sm font-medium">{field.label}</p>
@@ -37,7 +38,7 @@ export function CategoriesRows({ field, settings, disabled, onCategory, onGroup,
       </p>
       <ul className="divide-y border">
         {CATEGORIES.filter(isCategoryInPicker).map((category) => (
-          <CategoryRow key={category.id} category={category} field={field} settings={settings} disabled={disabled} onCategory={onCategory} onGroup={onGroup} onPatterns={onPatterns} />
+          <CategoryRow key={category.id} category={category} field={field} settings={settings} disabled={disabled} onCategory={onCategory} onAutoViewed={onAutoViewed} onGroup={onGroup} onPatterns={onPatterns} />
         ))}
       </ul>
     </div>
@@ -50,16 +51,17 @@ function CategoryRow({
   settings,
   disabled,
   onCategory,
+  onAutoViewed,
   onGroup,
   onPatterns,
 }: {
   readonly category: BuiltInCategory;
 } & Omit<CategoriesProps, 'field'> & { readonly field: CategoriesField }) {
   const helpId = useId();
-  // Decided once per page load: open when a group is off or extra patterns exist.
-  const [open, setOpen] = useState(() => hasAdvancedSettings(settings, category.id));
+  // Decided once per page load: open when a group is off, extra patterns exist or the category marks files viewed.
+  const [open, setOpen] = useState(() => hasAdvancedSettings(settings, category.id) || isAutoViewed(settings, category.id));
   const enabled = isCategoryEnabled(settings, category.id);
-  const customised = describeAdvancedSettings(settings, category.id);
+  const customised = [describeAdvancedSettings(settings, category.id), isAutoViewed(settings, category.id) ? 'marked as viewed' : null].filter((part) => part !== null).join(' · ') || null;
   return (
     <li>
       <details className="group/category" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
@@ -80,6 +82,7 @@ function CategoryRow({
         </summary>
         <div className="flex flex-col gap-5 border-t bg-muted/30 px-4 py-4">
           <p className="text-sm text-muted-foreground">{field.advanced.description}</p>
+          <AutoViewedRow copy={field.autoViewed} checked={isAutoViewed(settings, category.id)} disabled={disabled} onChange={(value) => onAutoViewed(category.id, value)} />
           <div>
             <p className="mb-2 text-sm">
               <span className="font-medium">{field.advanced.groupsLabel}</span> <span className="text-muted-foreground">{field.advanced.groupsDescription}</span>
@@ -102,6 +105,37 @@ function CategoryRow({
         </div>
       </details>
     </li>
+  );
+}
+
+/** The category's "Mark as viewed automatically" checkbox (`autoViewed`), shared with the custom categories' editor. */
+export function AutoViewedRow({
+  copy,
+  checked,
+  disabled,
+  onChange,
+}: {
+  readonly copy: CategoriesField['autoViewed'];
+  readonly checked: boolean;
+  readonly disabled: boolean;
+  readonly onChange: (value: boolean) => void;
+}) {
+  const labelId = useId();
+  const helpId = useId();
+  return (
+    <div className="flex items-start gap-3">
+      <span className="mt-0.5 flex items-center">
+        <Checkbox checked={checked} disabled={disabled} onCheckedChange={onChange} aria-labelledby={labelId} aria-describedby={helpId} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span id={labelId} className="block text-sm font-medium">
+          {copy.label}
+        </span>
+        <span id={helpId} className="block text-sm text-pretty text-muted-foreground">
+          <RichText copy={copy.description} />
+        </span>
+      </span>
+    </div>
   );
 }
 
