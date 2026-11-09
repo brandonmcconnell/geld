@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { afterEach, beforeEach } from 'node:test';
 import { Window } from 'happy-dom';
-import { bitbucketParentCommitSnapshot, createBitbucketCommitOracle, commitHoverTotal } from './bitbucket-commit-oracle.mjs';
+import { bitbucketParentCommitSnapshot, createBitbucketCommitOracle, commitHoverTotal, prepareBitbucketParentCommit } from './bitbucket-commit-oracle.mjs';
 
 const SHA = 'a'.repeat(40);
 const BASE = 'https://api.bitbucket.org/2.0/repositories/atlassian/bitbucket-upload-file';
@@ -142,4 +142,117 @@ test('uses the real relative parent link only within the observed native Details
   link.removeAttribute('data-geld-ui');
   document.getElementById('panel').setAttribute('aria-labelledby', 'other');
   assert.equal(bitbucketParentCommitSnapshot(), null);
+});
+
+function parentRevealFixture({ collapsed = true, selected = true, expanded = true, offscreen = false } = {}) {
+  const parent = '4eded8cb0a4a3cf5f249d1bab75e90078eba2058';
+  // Run41359880788's native64px rail and expanded contents, with explicit unit-only geometry and native-event simulation.
+  document.body.innerHTML = `<div data-testid="sidebar" style="width:64px"><button type="button" id="native-sidebar-toggle"><span role="img" aria-label="Click or tap to expand or press the ] (right bracket) key"></span></button><div id="details" role="tab" data-testid="sidebar-tab-details" aria-selected="${selected}" aria-controls="panel">Details</div><div id="panel" role="tabpanel" aria-labelledby="details"><div data-testid="expanded-CommitCard"><section><h2><button aria-expanded="${expanded}" aria-controls="expanderId-3">1 parent commit</button></h2><div id="expanderId-3" aria-hidden="${!expanded}"><a href="${parent}" target="_self">4eded8c</a></div></section></div></div></div>`;
+  const toggle = document.getElementById('native-sidebar-toggle');
+  const tab = document.getElementById('details');
+  const panel = document.getElementById('panel');
+  const parents = document.querySelector('button[aria-controls="expanderId-3"]');
+  const body = document.getElementById('expanderId-3');
+  const link = body.querySelector('a');
+  const state = { collapsed, offscreen, clicks: [], scrolls: 0 };
+  panel.hidden = !selected;
+  const rect = (shown, top) => ({ left: shown ? 850 : 1600, top, width: 80, height: 20 });
+  toggle.getBoundingClientRect = () => rect(state.collapsed, 100);
+  tab.getBoundingClientRect = () => rect(!state.collapsed, 150);
+  parents.getBoundingClientRect = () => rect(!state.collapsed && !panel.hidden, 200);
+  link.getBoundingClientRect = () => rect(!state.collapsed && !panel.hidden && body.getAttribute('aria-hidden') === 'false', state.offscreen ? 2000 : 250);
+  document.elementFromPoint = (x, y) => [toggle, tab, parents, link].find((node) => { const box = node.getBoundingClientRect();return x >= box.left && x < box.left + box.width && y >= box.top && y < box.top + box.height; }) ?? document.body;
+  toggle.addEventListener('click', () => { state.collapsed = false;toggle.remove(); });
+  tab.addEventListener('click', () => { tab.setAttribute('aria-selected', 'true');panel.hidden = false; });
+  parents.addEventListener('click', () => { parents.setAttribute('aria-expanded', 'true');body.setAttribute('aria-hidden', 'false'); });
+  link.scrollIntoView = () => { state.scrolls += 1;state.offscreen = false; };
+  const page = {
+    evaluate: async (read) => read(),
+    $: async (selector) => { const node = document.querySelector(selector);return node === null ? null : { evaluate: async (read, ...args) => read(node, ...args), click: async () => { state.clicks.push(node);node.click(); }, dispose: async () => {} }; },
+    $eval: async (selector, read, ...args) => read(document.querySelector(selector), ...args),
+  };
+  return { page, state, toggle, tab, panel, parents, body, link };
+}
+
+const immediateParentPoll = async (read, accept, label) => {
+  const value = await read();if (!accept(value)) throw new Error(label);return value;
+};
+
+test('reveals the collapsed native rail before using its already-selected but offscreen Details tab', async () => {
+  const fixture = parentRevealFixture();
+  const initial = bitbucketParentCommitSnapshot();
+  assert.equal(initial.tabSelected, 'true');assert.equal(initial.parentsExpanded, 'true');
+  assert.equal(initial.links[0].visible, false);assert.equal(initial.controls.details.visible, false);
+  assert.equal(initial.controls.expandSidebar.visible, true);
+  const before = fixture.link.outerHTML;
+  const result = await prepareBitbucketParentCommit(fixture.page, initial, immediateParentPoll);
+  assert.deepEqual(result.actions.map((action) => action.kind), ['expandSidebar']);
+  assert.deepEqual(fixture.state.clicks, [fixture.toggle]);
+  assert.equal(result.native.links[0].visible, true);
+  assert.equal(fixture.link.outerHTML, before);assert.equal(document.querySelector('a'), fixture.link);
+});
+
+test('selects only the visible native Details tab and opens only its closed parent section', async () => {
+  const fixture = parentRevealFixture({ collapsed: false, selected: false, expanded: false });
+  const result = await prepareBitbucketParentCommit(fixture.page, bitbucketParentCommitSnapshot(), immediateParentPoll);
+  assert.deepEqual(result.actions.map((action) => action.kind), ['details', 'parents']);
+  assert.deepEqual(fixture.state.clicks, [fixture.tab, fixture.parents]);
+  assert.equal(result.native.links[0].visible, true);
+});
+
+test('scrolls an offscreen parent in an open native sidebar without clicking its selected Details tab', async () => {
+  const fixture = parentRevealFixture({ collapsed: false, offscreen: true });
+  const initial = bitbucketParentCommitSnapshot();
+  assert.equal(initial.links[0].presented, true);assert.equal(initial.links[0].visible, false);
+  const result = await prepareBitbucketParentCommit(fixture.page, initial, immediateParentPoll);
+  assert.deepEqual(result.actions.map((action) => action.kind), ['scroll']);
+  assert.equal(fixture.state.scrolls, 1);assert.deepEqual(fixture.state.clicks, []);
+});
+
+test('does not change an already visible parent, its native identity or its controls', async () => {
+  const fixture = parentRevealFixture({ collapsed: false });
+  const before = document.body.innerHTML;
+  const result = await prepareBitbucketParentCommit(fixture.page, bitbucketParentCommitSnapshot(), immediateParentPoll);
+  assert.deepEqual(result.actions, []);assert.deepEqual(fixture.state.clicks, []);
+  assert.equal(document.body.innerHTML, before);
+});
+
+for (const change of ['navigation', 'identity', 'disabled', 'removed']) test(`refuses a native parent reveal after ${change} changes during control lookup`, async () => {
+  const fixture = parentRevealFixture();
+  const initial = bitbucketParentCommitSnapshot();
+  const lookup = fixture.page.$;
+  fixture.page.$ = async (selector) => {
+    const handle = await lookup(selector);
+    if (change === 'navigation') window.history.replaceState(null, '', '/atlassian/bitbucket-upload-file/commits/' + 'b'.repeat(40));
+    else if (change === 'identity') fixture.link.setAttribute('href', 'c'.repeat(40));
+    else if (change === 'disabled') fixture.toggle.disabled = true;
+    else fixture.toggle.remove();
+    return handle;
+  };
+  await assert.rejects(prepareBitbucketParentCommit(fixture.page, initial, immediateParentPoll), /changed|no longer visible/);
+  assert.deepEqual(fixture.state.clicks, []);
+});
+
+test('does not use a sidebar expansion hint outside the actual Details sidebar or an owned clone', () => {
+  const fixture = parentRevealFixture();
+  fixture.toggle.remove();
+  document.body.insertAdjacentHTML('beforeend', '<div data-testid="sidebar"><button><span role="img" aria-label="Click or tap to expand or press the ] (right bracket) key"></span></button></div>');
+  assert.equal(bitbucketParentCommitSnapshot().controls.expandSidebar, null);
+  fixture.panel.insertAdjacentHTML('beforeend', '<div data-geld-ui><button><span role="img" aria-label="Click or tap to expand or press the ] (right bracket) key"></span></button></div>');
+  assert.equal(bitbucketParentCommitSnapshot().controls.expandSidebar, null);
+});
+
+for (const style of ['opacity:0', 'content-visibility:hidden', 'display:none']) test(`does not claim an invisible native control is presented under ${style}`, () => {
+  const fixture = parentRevealFixture();fixture.toggle.style.cssText = style;
+  const control = bitbucketParentCommitSnapshot().controls.expandSidebar;
+  assert.equal(control.presented, false);assert.equal(control.visible, false);
+});
+
+test('refuses an offscreen parent scroll after URL-only navigation', async () => {
+  const fixture = parentRevealFixture({ collapsed: false, offscreen: true });
+  const initial = bitbucketParentCommitSnapshot();
+  const scroll = fixture.page.$eval;
+  fixture.page.$eval = async (...args) => { window.history.replaceState(null, '', '/atlassian/bitbucket-upload-file/commits/' + 'b'.repeat(40));return scroll(...args); };
+  await assert.rejects(prepareBitbucketParentCommit(fixture.page, initial, immediateParentPoll), /changed before its scroll/);
+  assert.equal(fixture.state.scrolls, 0);
 });
