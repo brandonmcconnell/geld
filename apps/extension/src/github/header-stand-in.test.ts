@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { allCategories, DEFAULT_SETTINGS } from '@geld/core';
 import { EMPTY_BREAKDOWN } from './breakdown';
-import { applyHeaderStats, countsSkeletonStandIn, findHeaderStatGroups, isCountsStandIn, syncCountsStandIn } from './header-stats';
+import { applyHeaderStats, ATTR_COUNTS_STAND_IN, countsSkeletonStandIn, findHeaderStatGroups, isCountsStandIn, syncCountsStandIn } from './header-stats';
 
 /** A pull request header's tab row as GitHub renders it, its counts wrapper empty for a change of binary files only. */
 function header(wrapper: string | null): void {
@@ -129,5 +129,70 @@ describe('applyHeaderStats with nothing hidden', () => {
     // A change of nothing at all has nothing to read: no tooltip.
     applyHeaderStats(group, EMPTY_BREAKDOWN, categories, 0);
     expect(group.host.querySelector('[data-geld-tooltip-anchor]')).toBeNull();
+  });
+});
+
+describe("the counts' narrow-screen copy", () => {
+  it('stands beside the Overview’s status button, never inside it, since Geld hides that button whole', () => {
+    document.body.innerHTML = `
+      <div data-component="PageHeader">
+        <div data-component="PageHeader.Description"><div class="row d-flex"><button type="button" aria-haspopup="true"><span data-component="StateLabel" data-status="pullOpened">Open</span></button></div></div>
+        <div class="prc-PageHeader-Navigation--uLav">${EMPTY_WRAPPER}<div class="flex-auto"><nav class="TabNav__qHkBGx"><a id="prs-files-anchor-tab" href="/o/r/pull/1/changes">Files changed</a></nav></div></div>
+      </div>`;
+    syncCountsStandIn(ZERO);
+    const group = findHeaderStatGroups()[0]!;
+    applyHeaderStats(group, EMPTY_BREAKDOWN, allCategories(DEFAULT_SETTINGS), 1);
+    const mirror = document.querySelector('.geld-header-mirror');
+    expect(mirror?.parentElement?.classList.contains('row')).toBe(true);
+    expect(mirror?.closest('button')).toBeNull();
+  });
+});
+
+/** The Overview's header: GitHub's counts slot is the line beside the branch names, and the tab row's wrapper stays empty. */
+function overview(slot: string): { group: Element; tabs: Element } {
+  document.body.innerHTML = `
+    <div data-component="PageHeader">
+      <div class="branchGroup__x"><div class="branches__x">main ← topic</div>${slot}</div>
+      <div class="prc-PageHeader-Navigation--uLav">
+        ${EMPTY_WRAPPER}
+        <div class="flex-auto"><nav class="TabNav__qHkBGx"><a id="prs-files-anchor-tab" href="/o/r/pull/1/changes">Files changed</a></nav></div>
+      </div>
+    </div>`;
+  return { group: document.querySelector('[class*="branchGroup"]')!, tabs: document.querySelector('[class*="rightContentWrapper"]')! };
+}
+
+describe('syncCountsStandIn on the Overview', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it("waits while GitHub's skeleton stands beside the branch names", () => {
+    overview('<div class="skeleton__c5fLaY" style="width: 96px"></div>');
+    expect(syncCountsStandIn('skeleton')).toBe(false);
+    expect(syncCountsStandIn(ZERO)).toBe(false);
+    expect(document.querySelector(`[${ATTR_COUNTS_STAND_IN}]`)).toBeNull();
+  });
+
+  it('stands after the branch names, never in the tab row, and turns into counts in place', () => {
+    const { group, tabs } = overview('');
+    expect(syncCountsStandIn('skeleton')).toBe(true);
+    const skeleton = countsSkeletonStandIn();
+    expect(skeleton?.parentElement).toBe(group);
+    expect(skeleton?.previousElementSibling?.className).toBe('branches__x');
+    expect(syncCountsStandIn('skeleton')).toBe(false);
+    expect(syncCountsStandIn(ZERO)).toBe(true);
+    const counts = document.querySelector(`[${ATTR_COUNTS_STAND_IN}]`);
+    expect(counts === skeleton).toBe(false);
+    expect(counts?.parentElement).toBe(group);
+    expect(counts?.getAttribute(ATTR_COUNTS_STAND_IN)).toBe('0:0');
+    expect(tabs.querySelector('*')).toBeNull();
+  });
+
+  it("gives way to GitHub's own counts there", () => {
+    const { group } = overview('');
+    syncCountsStandIn(ZERO);
+    group.insertAdjacentHTML('beforeend', REAL_COUNTS);
+    expect(syncCountsStandIn(ZERO)).toBe(true);
+    expect(document.querySelector(`[${ATTR_COUNTS_STAND_IN}]`)).toBeNull();
   });
 });
