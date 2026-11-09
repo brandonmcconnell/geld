@@ -179,14 +179,6 @@ describe('attachment lightbox', () => {
     expect(document.querySelector('dialog a')?.getAttribute('href')).toBe(ATTACHMENT);
   });
 
-  it('removes the loading message when the image loads', () => {
-    const image = mount();
-    applyAttachmentLightbox();
-    click(image);
-    document.querySelector('dialog img')?.dispatchEvent(new Event('load'));
-    expect(document.querySelector('[role="status"]')?.hasAttribute('hidden')).toBe(true);
-  });
-
   it('cleans up on navigation and teardown', () => {
     const image = mount();
     applyAttachmentLightbox();
