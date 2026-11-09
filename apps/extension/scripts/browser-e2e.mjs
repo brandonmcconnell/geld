@@ -2783,6 +2783,46 @@ function compareAuthorPresentation(value) {
   return { covered, uncovered, mismatches };
 }
 
+async function gitLabHiddenPersonEvidence(page, anchor) {
+  const saved = await options.evaluate(async key => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+  const read = () => page.evaluate(async anchor => {
+    const root = document.getElementById(anchor);
+    if (root === null || root.closest('[data-geld-ui]') !== null || !root.matches('[data-testid="noteable-note-container"]')) return null;
+    const author = root.querySelector('.note-header [data-user-id][data-username]');
+    const body = root.querySelector('.note-text');
+    const id = author?.getAttribute('data-user-id'), login = author?.getAttribute('data-username');
+    if (!id || !/^[1-9]\d*$/.test(id) || !login || !/^[a-z0-9_.-]+$/i.test(login) || body === null) return null;
+    const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body.textContent ?? ''));
+    return { id, login, bodyHash: [...new Uint8Array(hash)].map(value => value.toString(16).padStart(2, '0')).join(''), hidden: root.hasAttribute('data-geld-provider-person-hidden'), display: getComputedStyle(root).display, represented: document.querySelector(`.geld-provider-review [data-geld-source="${anchor}"]`) !== null };
+  }, anchor);
+  const evidence = { before: await read() };
+  assert.ok(evidence.before, 'A unique native GitLab author and comment body qualify the hidden-person probe');
+  const { id, login, bodyHash } = evidence.before;
+  try {
+    await patchSettings({ hiddenAuthors: [...(saved?.hiddenAuthors ?? []), `gitlab:${login}`] });
+    evidence.hidden = await poll(read, value => value?.hidden && value.display === 'none' && !value.represented, 'The locally hidden author leaves both the digest and native comment');
+    assert.equal(evidence.hidden.bodyHash, bodyHash, 'Hiding a person leaves the native body untouched');
+    const menu = '.geld-provider-hidden-people > button';
+    const menuState = await page.$eval(menu, button => ({ label: button.textContent.trim(), open: button.getAttribute('aria-expanded') === 'true' }));
+    if (!menuState.open) await clickReviewButton(page, menu, menuState.label);
+    const row = `.geld-provider-hidden-people__row:has([data-geld-person-toggle="${id}"])`;
+    await clickReviewButton(page, `${row} button`, 'Show for this visit');
+    evidence.shown = await poll(read, value => value !== null && !value.hidden && value.display !== 'none' && value.represented, 'A per-person visit peek restores the native comment and digest row');
+    assert.equal(evidence.shown.bodyHash, bodyHash);
+    await clickReviewButton(page, `${row} button`, 'Stop hiding');
+    evidence.unhidden = await poll(read, value => value !== null && !value.hidden && value.represented, 'Removing the exact local author rule restores the person');
+    const rules = await options.evaluate(async key => (await chrome.storage.sync.get(key))[key]?.hiddenAuthors ?? [], SETTINGS_KEY);
+    assert.deepEqual(rules, saved?.hiddenAuthors ?? [], 'Only the exact local author rule was removed');
+    return evidence;
+  } finally {
+    await options.evaluate(async (key, saved) => {
+      if (saved === undefined) await chrome.storage.sync.remove(key);
+      else await chrome.storage.sync.set({ [key]: saved });
+    }, SETTINGS_KEY, saved);
+    assert.deepEqual(await options.evaluate(async key => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY), saved, 'The exact original shared settings are restored after the hidden-person probe');
+  }
+}
+
 async function authorThemeEvidence(page, provider, anchor) {
   const selector = '.geld-provider-view button[data-geld-digest-view]';
   const saved = await options.evaluate(async key => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
@@ -2804,6 +2844,7 @@ async function authorThemeEvidence(page, provider, anchor) {
     await poll(() => page.evaluate(anchor => { const node = document.getElementById(anchor);return node !== null && node.closest('[hidden]') === null && node.getBoundingClientRect().height > 0; }, anchor), Boolean, 'Retained original author is rendered before style comparison');
     const baseline = await authorPresentationProbe(page, provider, anchor);
     evidence.baseline = baseline;
+    if (provider === 'gitlab') evidence.hiddenPerson = await gitLabHiddenPersonEvidence(page, anchor);
     await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
     await pause(300);
     const dark = await authorPresentationProbe(page, provider, anchor);

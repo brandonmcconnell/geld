@@ -3450,3 +3450,12 @@ Count restoration continues to retain the original text nodes, icons and latest 
 Native permission verification normalizes semantic AT-SPI role constants before using role-name fallbacks, including web-document roles that must remain excluded.
 A role-name-only scan can find Geld's native permission alert without identifying its Allow or Cancel controls.
 The bounded native-role census and recognized-label diagnostics distinguish that case without recording arbitrary page or dialog text, and cannot authorize an unknown control.
+
+Provider hidden-person settings are projected after native acquisition and publication verification, before building digest items, reviewer rows, bot verdicts, check rows or attributed activity.
+A hidden thread starter removes the whole thread from the display, while a hidden reply is omitted without hiding the other participants.
+The projection keeps native account IDs and remaps displayed items to their full native item IDs, so copying visible content and marking a thread locally reviewed cannot replace the original source evidence.
+Published or cached aggregate text is not substituted into a filtered display where it could reintroduce a hidden person's content.
+Native person hiding uses individual qualified comment roots, leaves mixed or editor-containing roots alone and restores only Geld's own attributes and notices.
+Per-person visit peeks are independent of the shared settings, and Stop hiding removes only exact matching local rules, never a wildcard or a different provider's qualified rule.
+These controls change Geld's local visibility and do not invoke provider block, moderation or administrator APIs.
+The GitLab public author-style probe exercises hiding, peeking and exact-rule removal against a native account and comment body hash, then restores the exact saved settings.

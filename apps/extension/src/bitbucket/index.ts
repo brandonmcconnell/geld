@@ -8,7 +8,7 @@ import { bitbucketAuthenticated, readBitbucketActions } from './actions';
 import { readBitbucketPendingReview } from './pending-review';
 import { bitbucketListRows } from './list-surfaces';
 import { fetchBitbucketListAuthors } from './list-authors';
-import { bitbucketConversationRoots, syncBitbucketNativeReviewState } from './conversation';
+import { bitbucketConversationRoots, bitbucketPersonRoots, syncBitbucketNativeReviewState } from './conversation';
 import { bitbucketCommentSignature, renderBitbucketComment } from './comment-render';
 import { bitbucketThreadActions } from './thread-actions';
 import { beginBitbucketAuthorPresentation } from './author-presentation';
@@ -45,6 +45,7 @@ export const bitbucketAdapter: ProviderAdapter = {
   reviewHost: bitbucketReviewHost,
   descriptionHost: bitbucketDescriptionHost,
   conversationRoots: bitbucketConversationRoots,
+  personRoots: bitbucketPersonRoots,
   actionHost: bitbucketActionHost,
   fetchReview: async (page, signal, doc) => {
     const presentation = beginBitbucketAuthorPresentation(doc, page, signal);

@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
-import { digestViewPatch, normalizeReviewAccountId, repositoryKey, trustedSummaryPublisherIdsFor, withTrustedReviewAccount } from '@geld/core';
+import { digestViewPatch, normalizeAuthorRule, normalizeReviewAccountId, repositoryKey, trustedSummaryPublisherIdsFor, withTrustedReviewAccount } from '@geld/core';
 import type { GeldSettings } from '@geld/core';
 import { buildProviderReviewItems, providerBotSupport, providerPublicationCandidate, providerReviewKey, readProviderPublication, sourceLink } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput } from '@geld/review';
@@ -236,7 +236,12 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
     snapshot: () => observedReview,
     retired: () => retired,
   });
-  controller = new ProviderController(sourceAdapter, settings, (state) => publish(badge ? state : { ...state, hiddenCount: 0 }), catalog, configs, choices, { saveTrustedBot, saveTrustedPublisher, ...reviewed, chooseDigestView: async (view) => {
+  controller = new ProviderController(sourceAdapter, settings, (state) => publish(badge ? state : { ...state, hiddenCount: 0 }), catalog, configs, choices, { saveTrustedBot, saveTrustedPublisher, ...reviewed, unhidePerson: async (login) => {
+    if (retired) return;
+    const wanted = [login, `${adapter.id}:${login}`].map((value) => value.toLowerCase());
+    const value = await settingsItem.update((current) => ({ hiddenAuthors: current.hiddenAuthors.filter((line) => !wanted.includes(normalizeAuthorRule(line)?.toLowerCase() ?? '')) }));
+    if (!retired) controller?.updateSettings(value);
+  }, chooseDigestView: async (view) => {
     if (retired) return;
     const value = await settingsItem.update((current) => digestViewPatch(current, view, new Date().toISOString()));
     if (retired) return;

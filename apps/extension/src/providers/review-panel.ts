@@ -58,6 +58,7 @@ export interface ProviderReviewRequirement {
 }
 
 export interface ProviderReviewPanelOptions {
+  readonly sourceInput?: ProviderReviewInput;
   readonly originalConversation?: { readonly shown: boolean; readonly toggle: () => void };
 
   readonly reviewerControls?: ProviderReviewSourceAction;
@@ -1171,7 +1172,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       if (sourceLink({ anchor: comment.anchor, kind: 'comment', author: comment.author.login, url: comment.url }, input.subject) === null) return null;
       try { return [comment.anchor, options.commentSignature?.(comment)]; } catch { return [comment.anchor, null]; }
     });
-    const signature = JSON.stringify([input, options.reviewerControls?.available, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature, commentSignatures]);
+    const signature = JSON.stringify([input, options.sourceInput, options.reviewerControls?.available, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature, commentSignatures]);
     if (signature === lastSignature) {
       refreshComments();
       for (const time of panel.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
@@ -1198,7 +1199,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     try {
       key = providerReviewKey(input.subject);
       items = buildProviderReviewItems(input);
-      nativeItems = new Map(items.map((item) => [item.id, item]));
+      const source = options.sourceInput;
+      const native = source !== undefined && providerReviewKey(source.subject) === key && source.subject.headSha === input.subject.headSha ? buildProviderReviewItems(source) : items;
+      nativeItems = new Map(native.map((item) => [item.id, item]));
       items = options.transformItems?.(items) ?? items;
       if (options.localReviewed !== undefined) items = items.map((item) => options.localReviewed?.ids.has(item.id) === true && isOpenStatus(item.status) ? { ...item, status: 'done-manual' } : item);
       bots = buildProviderBotVerdicts(input, options.comments ?? []);
