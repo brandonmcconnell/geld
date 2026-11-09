@@ -650,7 +650,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `hasLoadMore`, `clickLoadMore`, `hiddenTimelineItems` and `loadMorePending` cover it too, so the auto-loading, the reading bar, completeness and permalinks work there as on the conversation.
   Found once, the button is marked `data-geld-load-previous`, which the same stylesheet rule hides while Geld presses it.
   It stays in the page across pages, so a press counts until GitHub has marked it loading (`PREVIOUS_GRACE_MS`, 1 s) and then while it loads, and a load still running after `PRESS_TIMEOUT_MS` is stalled.
+  A page that came between two passes changes its count, which ends the press at once rather than after the grace, and the pass for when a press stops counting is scheduled with the timeline shown too, since a permalink's next press waits for it.
   Since it reads as no "Load more" while it loads, `timelineIngesting` counts a press on its way as reading too, or the bar finished between pages.
+  Completeness asks whether any "Load more" stands, pressable or not (`loadMoreStanding`): a stalled load on the Overview stops the bar and the pressing, as a failed form does on the conversation, but leaves the timeline incomplete, so findings not yet loaded never read as resolved.
   Verified on vercel/next.js#52514: 20 entries, then 45, 78, 115 and 141, the bar at 0, 9, 23 and 36 % before it fills.
   **GitHub minimizes reviews it "marked as resolved" and defers their contents** — the review behind `.minimized-comment include-fragment[loading=lazy]`, and each resolved thread's comments behind `review-thread-collapsible[data-deferred-content-url]` — both loading only when scrolled into view, which a folded row never is;
   `loadMinimizedReviews` fetches them the way the elements would (threads first, twelve at a time (`FRAGMENT_CONCURRENCY`: at four, next.js#52514's 165 fragments took ~44 s;

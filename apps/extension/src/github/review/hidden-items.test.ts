@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ATTR_LOAD_PREVIOUS, clickLoadMore, hasLoadMore, hiddenTimelineItems, loadMorePendingUntil, loadMoreStalled } from './deeplink';
+import { ATTR_LOAD_PREVIOUS, clickLoadMore, hasLoadMore, hiddenTimelineItems, loadMorePendingUntil, loadMoreStalled, loadMoreStanding } from './deeplink';
 
 describe('hiddenTimelineItems', () => {
   it('reads the count GitHub puts beside "Load more", once per form', () => {
@@ -60,10 +60,25 @@ describe("the Overview's Load previous comments", () => {
     expect(presses).toHaveLength(2);
   });
 
-  it('counts as stalled when it is still loading long after the press', () => {
+  it('counts as stalled when it is still loading long after the press, and still stands: the timeline is not complete', () => {
     document.body.innerHTML = overviewComments(false);
     expect(clickLoadMore(document, 50_000)).toBe(true);
     document.querySelector('button')?.setAttribute('data-loading', 'true');
     expect(loadMoreStalled(66_000)).toBe(true);
+    expect(hasLoadMore()).toBe(false);
+    expect(loadMoreStanding()).toBe(true);
+    document.body.innerHTML = '<section><h2 id="overview-comments">Comments</h2><div data-testid="timeline-item"></div></section>';
+    expect(loadMoreStanding()).toBe(false);
+  });
+
+  it('takes a page that landed between two passes as done, so the next press need not wait out the grace', () => {
+    document.body.innerHTML = overviewComments(false);
+    expect(clickLoadMore(document, 80_000)).toBe(true);
+    expect(clickLoadMore(document, 80_300)).toBe(false);
+    // Loading and back within the grace, unseen by any pass: only the count says the page came.
+    const counter = document.querySelector('[data-component="CounterLabel"]');
+    if (counter !== null) counter.textContent = '215';
+    expect(loadMorePendingUntil(80_400)).toBeNull();
+    expect(clickLoadMore(document, 80_400)).toBe(true);
   });
 });

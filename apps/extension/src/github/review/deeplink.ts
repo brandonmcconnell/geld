@@ -34,14 +34,21 @@ function overviewLoading(button: HTMLButtonElement): boolean {
   return button.disabled || button.getAttribute('data-loading') === 'true' || button.getAttribute('aria-disabled') === 'true';
 }
 
-/** The Overview's button pressed and when: it stays in the page, so a press counts only until its page has come. */
-let pressedPrevious: { readonly button: HTMLButtonElement; readonly at: number } | null = null;
+/** The count the Overview's button shows ("237"); empty while a page loads, when GitHub drops its counter label. */
+function previousCount(button: HTMLButtonElement): string {
+  return button.querySelector('[data-component="CounterLabel"]')?.textContent?.trim() ?? '';
+}
+
+/** The Overview's button pressed, when, and the count it showed then: it stays in the page, so a press counts only until its page has come. */
+let pressedPrevious: { readonly button: HTMLButtonElement; readonly at: number; readonly count: string } | null = null;
 /** How long a press counts before GitHub has marked its button loading: React flips it in the press's own render. */
 const PREVIOUS_GRACE_MS = 1000;
 
 function previousPending(now: number): boolean {
   if (pressedPrevious === null || !pressedPrevious.button.isConnected) return false;
-  return now - pressedPrevious.at < PREVIOUS_GRACE_MS || (overviewLoading(pressedPrevious.button) && now - pressedPrevious.at < PRESS_TIMEOUT_MS);
+  if (overviewLoading(pressedPrevious.button)) return now - pressedPrevious.at < PRESS_TIMEOUT_MS;
+  // A page that came between two passes changed the count: the next may be asked for at once, not after the grace.
+  return previousCount(pressedPrevious.button) === pressedPrevious.count && now - pressedPrevious.at < PREVIOUS_GRACE_MS;
 }
 
 export function sourceAnchorFromHash(hash: string): string | null {
@@ -117,8 +124,16 @@ export function hiddenTimelineItems(root: ParentNode = document): number {
   }
   // The Overview's counter label is the count alone; while a page loads it is gone, and that reads as 0 like a classic press.
   const previous = overviewLoadPrevious(root);
-  if (previous !== null) total += parseCount(previous.querySelector('[data-component="CounterLabel"]')?.textContent?.trim()) ?? 0;
+  if (previous !== null) total += parseCount(previousCount(previous)) ?? 0;
   return total;
+}
+
+/**
+ * Whether a "Load more" still stands in the page, pressable or not: the timeline is incomplete while one does. The
+ * Overview's reads as none to press while it loads, and a load that stalls there must not read as everything loaded.
+ */
+export function loadMoreStanding(root: ParentNode = document): boolean {
+  return root.querySelector(LOAD_MORE) !== null || overviewLoadPrevious(root) !== null;
 }
 
 /** Whether the timeline still ends in a "Load more" that can be pressed (the Overview's while it is not already loading). */
@@ -155,7 +170,7 @@ export function clickLoadMore(root: ParentNode = document, now = Date.now()): bo
 function pressLoadPrevious(root: ParentNode, now: number): boolean {
   const button = overviewLoadPrevious(root);
   if (button === null || overviewLoading(button) || previousPending(now)) return false;
-  pressedPrevious = { button, at: now };
+  pressedPrevious = { button, at: now, count: previousCount(button) };
   quietClick(button);
   return true;
 }
