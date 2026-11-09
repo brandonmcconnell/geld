@@ -15,6 +15,7 @@ import { verifyBitbucketHiddenAuthors } from './bitbucket-hidden-authors.mjs';
 import { observeBitbucketShellFixture, verifyBitbucketShell } from './bitbucket-shell-acceptance.mjs';
 import { bitbucketParentCommitSnapshot, commitHoverTotal, observeBitbucketCommitFixture, prepareBitbucketParentCommit } from './bitbucket-commit-oracle.mjs';
 import { gitLabCopyFixOf, verifyGitLabItemCopies } from './item-copy-acceptance.mjs';
+import { observeGreptileCommandRequest, verifyGreptileCommand } from './greptile-command-acceptance.mjs';
 import { BITBUCKET_COMMIT_LIST, commitLinkSettingsScope, verifyBitbucketCommitLinks } from './bitbucket-commit-links.mjs';
 import { GITLAB_FILE_SEARCH, verifyGitLabFileSearch } from './gitlab-file-search.mjs';
 import { CODERABBIT_FIXTURE, observeCodeRabbitFixture, verifyCodeRabbitCommands } from './gitlab-coderabbit-acceptance.mjs';
@@ -1490,10 +1491,17 @@ async function gitLabBinaryCounts(page, item) {
 }
 
 function observeGitLabBotFixture(page, item) {
-  const evidence = { metadata: [], metadataResponses: [], discussions: [], errors: [], providerMutations: [], aiRequests: [] };
+  const evidence = { metadata: [], metadataResponses: [], discussions: [], errors: [], providerMutations: [], aiRequests: [], commandCopyActive: false, commandSourceGets: [], commandOtherGets: [] };
   item.nativeBotFixture = evidence;
   page.on('request', (request) => {
     const url = new URL(request.url());
+    if (evidence.commandCopyActive) {
+      const record = observeGreptileCommandRequest(request, extensionId);
+      if (record !== null) {
+        const records = record.acquisition ? evidence.commandSourceGets : evidence.commandOtherGets;
+        if (records.length < 40) records.push(record);else evidence.commandRequestOverflow = true;
+      }
+    }
     if (/\/(?:chat\/completions|responses|completions)\/?$/.test(url.pathname) && providerOf(url.href) === null) evidence.aiRequests.push(safeUrl(url.href));
     if (providerOf(url.href) !== 'gitlab' || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method())) return;
     const mutation = url.pathname === '/api/graphql' ? /\bmutation\b/.test(request.postData() ?? '') : /\/(?:notes|discussions|draft_notes|approve|unapprove|reviews|merge)(?:\/|$)/.test(url.pathname);
@@ -1559,7 +1567,10 @@ async function gitLabBotDigest(page) {
         native: native === null ? null : { id: native.id, authorId: header?.getAttribute('data-user-id') ?? null, username: header?.getAttribute('data-username') ?? null, body: format(native.querySelector('.note-body .note-text')) } };
     });
     const items = [...panel.querySelectorAll('[data-geld-item]')].map((item) => ({ id: item.getAttribute('data-geld-item'), state: item.getAttribute('data-state'), metadata: item.querySelector(':scope > summary')?.textContent.replace(/\s+/g, ' ').trim(), sources: [...item.querySelectorAll('[data-geld-source]')].map((source) => source.getAttribute('data-geld-source')).filter((anchor) => ids.some((id) => anchor === `note_${id}`)) })).filter((item) => item.sources.length > 0);
-    const bots = [...panel.querySelectorAll('[data-geld-review-bot]')].map((bot) => ({ id: bot.getAttribute('data-geld-review-bot'), state: bot.getAttribute('data-state'), text: bot.textContent.replace(/\s+/g, ' ').trim(), links: [...bot.querySelectorAll('a[href]')].map((link) => link.href) }));
+    const bots = [...panel.querySelectorAll('[data-geld-review-bot]')].map((bot) => {
+      const verdict = bot.cloneNode(true);for (const request of verdict.querySelectorAll('details[data-geld-bot-request]')) request.remove();
+      return { id: bot.getAttribute('data-geld-review-bot'), state: bot.getAttribute('data-state'), text: verdict.textContent.replace(/\s+/g, ' ').trim(), links: [...verdict.querySelectorAll('a[href]')].map((link) => link.href) };
+    });
     let selectedHead = null;
     try {
       const app = JSON.parse(document.querySelector('[data-rapid-diffs][data-app-data]')?.getAttribute('data-app-data') ?? 'null');
@@ -1712,6 +1723,9 @@ async function verifyGitLabBot(page, item) {
   item.trusted = trusted;item.identityInteraction = { openedSummaries, observedIdentity, serviceClick, confirmation, trustClick };
   await gitLabBotBodyEvidence(page, item);item.trustedArtifacts = item.richBody.artifacts;
   await verifyGitLabItemCopies(page, item, { context: browser.defaultBrowserContext(), expectedFix: discussionPage.selected.find((source) => source.id === '3381334872')?.suggestedFix, expectedAuthor: discussionPage.selected.find((source) => source.id === '3381334872')?.author.username, openReviewAncestors, poll, safeUrl });
+  await verifyGreptileCommand(page, item, { context: browser.defaultBrowserContext(), fixture: captured, head: GL_BOT_HEAD,
+    readDigest: () => gitLabBotDigest(page), assertSources: assertGitLabBotSources,
+    readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY), openReviewAncestors, poll, capture });
   await options.bringToFront();
   await poll(() => options.$eval('#trusted-review-accounts', (area) => area.value), (value) => value.trim() === binding, 'Actual options editor observes the new explicit binding');
   await options.click('#trusted-review-accounts');await options.keyboard.down('Control');await options.keyboard.press('KeyA');await options.keyboard.up('Control');await options.keyboard.press('Backspace');

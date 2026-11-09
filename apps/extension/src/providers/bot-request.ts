@@ -64,7 +64,7 @@ export function renderProviderBotRequest(host: HTMLElement, initial: ProviderBot
       button.disabled = pending;button.setAttribute('aria-pressed', String(request.commands[index]?.id === selected));
     }
   };
-  for (const mode of initial.commands) {
+  for (const mode of initial.commands.length > 1 ? initial.commands : []) {
     const button = doc.createElement('button');
     button.type = 'button';button.textContent = mode.label;
     button.addEventListener('click', () => { if (!pending && current()) { selected = mode.id;notice.textContent = '';sync(); } });
@@ -98,7 +98,9 @@ export function renderProviderBotRequest(host: HTMLElement, initial: ProviderBot
   cancel.addEventListener('click', dismiss);
   element.addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.preventDefault();event.stopPropagation();dismiss(); } });
   actions.append(copy, open, cancel);
-  element.append(summary, explanation, source, modes, preview, actions, notice);
+  element.append(summary, explanation, source);
+  if (initial.commands.length > 1) element.append(modes);
+  element.append(preview, actions, notice);
   host.append(element);sync();
   return { element, update(next) { request = next;sync(); }, destroy() { destroyed = true;element.remove(); } };
 }

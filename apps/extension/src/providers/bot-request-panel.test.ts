@@ -10,6 +10,25 @@ beforeEach(() => { document.body.replaceChildren();window.location.href = 'https
 function mount() { const host = document.createElement('div');document.body.append(host);return host; }
 
 describe('bot command panel lifecycle', () => {
+  it('recreates service-specific choices on same-account rebind and suppresses old pending acknowledgement', async () => {
+    let complete!: () => void;let old = true;
+    const copy = vi.fn(() => new Promise<void>((resolve) => { complete = resolve; }));const host = mount();
+    const panel = renderProviderReviewPanel(host, input, { botRequests: [{ ...request(), current: () => old }], copyText: copy });
+    const previous = host.querySelector('[data-geld-bot-request]')!;
+    const previousCopy = previous.querySelector<HTMLButtonElement>('[data-geld-bot-request-action="copy"]')!;previousCopy.click();
+    expect(copy).toHaveBeenCalledExactlyOnceWith('@coderabbitai review');old = false;
+    const next: ProviderBotRequest = { ...request(), key: 'greptile-bound-source-and-full-head', botId: 'greptile', label: 'Greptile', commands: [{ id: 'review', label: 'Review', text: '@greptileai' }] };
+    panel.update({ ...input, bots: [{ id: 'greptile', authorId: '38968537' }] }, { botRequests: [next], copyText: copy });
+    const current = host.querySelector('[data-geld-bot-request]')!;
+    expect(current).not.toBe(previous);expect(previous.isConnected).toBe(false);
+    expect(current.querySelector('summary')?.textContent).toBe('Prepare Greptile request');
+    expect(current.querySelector('code')?.textContent).toBe('@greptileai');
+    expect(current.querySelector('[role="group"][aria-label="Review command mode"]')).toBeNull();
+    previousCopy.click();expect(copy).toHaveBeenCalledOnce();complete();await Promise.resolve();await Promise.resolve();
+    expect(previous.querySelector('[role="status"]')?.textContent).not.toContain('Command copied');
+    expect(current.querySelector('[role="status"]')?.textContent).toBe('');panel.destroy();
+  });
+
   it('retains command picks, disclosure and keyboard focus across harmless refreshes without changing bot state', async () => {
     const host = mount();const copy = vi.fn(async () => undefined);
     const panel = renderProviderReviewPanel(host, input, { botRequests: [request()], copyText: copy });
