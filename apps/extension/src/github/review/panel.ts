@@ -3119,20 +3119,23 @@ interface CardGeometry {
 }
 
 let cardGeometries = new WeakMap<Element, CardGeometry>();
-let watchingResize = false;
+let forgettingGeometry = false;
 
 /**
- * The description card's geometry, read once per card until the window resizes. The panel is rebuilt many times while
- * a page loads, and each read forced a whole-page layout while GitHub was still rendering it.
+ * The description card's geometry, read once per card until the window resizes or the page's stylesheets have all
+ * loaded (the first panel is built while they may still be arriving). The panel is rebuilt many times while a page
+ * loads, and each read forced a whole-page layout while GitHub was still rendering it.
  */
 function cardGeometry(card: HTMLElement): CardGeometry {
   const known = cardGeometries.get(card);
   if (known !== undefined) return known;
-  if (!watchingResize) {
-    watchingResize = true;
-    window.addEventListener('resize', () => {
+  if (!forgettingGeometry) {
+    forgettingGeometry = true;
+    const forget = (): void => {
       cardGeometries = new WeakMap();
-    });
+    };
+    window.addEventListener('resize', forget);
+    if (document.readyState !== 'complete') window.addEventListener('load', forget, { once: true });
   }
   const columnGap = overviewColumnGap(card);
   const style = getComputedStyle(card);
