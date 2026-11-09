@@ -755,7 +755,7 @@ describe('provider conversation digest', () => {
     const unsafe = { ...comment('5', 'Preview ready: [Preview](javascript:alert(1))'), author };
     const panel = renderProviderReviewPanel(host(), input(), { comments: [latest, earlier, human, unsafe] });
     const section = panel.element.querySelector('[data-geld-review-key="previews"]');
-    expect(section?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Preview links · 1');
+    expect(section?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Previews · 1');
     expect(section?.querySelector('[data-geld-preview="note_3"]')?.textContent).toContain('native-deploy-account · Reported status: failed');
     expect(section?.querySelector('[data-geld-preview="note_3"] > a')?.getAttribute('href')).toBe('https://deploy.example/second');
     expect(section?.querySelector('[data-geld-review-key="previews:earlier"] [data-geld-preview]')?.getAttribute('data-geld-preview')).toBe('note_2');

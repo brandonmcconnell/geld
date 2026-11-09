@@ -1,7 +1,8 @@
+import { providerPreviews, providerPreviewDestination } from './previews';
 import { renderProviderAgentNote } from './agent-notes';
 import type { ProviderAgentNote } from './agent-notes';
 import type { ProviderCommentRenderContext } from './comment-render';
-import { botHealth, botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, newestProviderBotSummary, parseInlineMarkdown, previewDocFromMarkdown, previewHostById, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, renderProviderItemMarkdown, sourceLink, threadCounts } from '@geld/review';
+import { botHealth, botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, newestProviderBotSummary, parseInlineMarkdown, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, renderProviderItemMarkdown, sourceLink, threadCounts } from '@geld/review';
 import type { BotVerdictRecord, ProviderPublicationRead, ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, RawCheckRun, ReviewItem, ReviewItemStatus, ReviewerState } from '@geld/review';
 import type { RepositoryIdentity } from '@geld/core';
 import type { ProviderAiState } from './ai';
@@ -1014,28 +1015,29 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   }
 
   function previewsSection(): HTMLElement | null {
-    const generic = previewHostById('generic');
-    if (generic === null) return null;
-    const sources = [...input.threads.flatMap((thread) => thread.comments), ...(options.comments ?? [])].filter((comment) => comment.author.automated === true && sourceLink({ anchor: comment.anchor, kind: 'comment', author: comment.author.login, url: comment.url }, input.subject) !== null);
-    sources.sort((a, b) => Date.parse(a.updatedAt ?? a.createdAt) - Date.parse(b.updatedAt ?? b.createdAt));
-    const previews = sources.flatMap((comment) => generic.parse(previewDocFromMarkdown(comment.author.login, comment.anchor, comment.body, comment.updatedAt ?? comment.createdAt)).filter((preview) => preview.url !== null && safeUrl(preview.url) !== null && new URL(preview.url).origin !== input.subject.origin).map((preview) => ({ ...preview, host: `native-account:${comment.author.id}` })));
+    const sources = [...input.threads.flatMap((thread) => thread.comments), ...(options.comments ?? [])];
+    const previews = providerPreviews(input, options.comments ?? []);
     if (previews.length === 0) return null;
     const grouped = latestPreviews(previews);
-    const section = disclosure('previews', `Preview links · ${grouped.latest.length}`, false);
-    function row(preview: (typeof previews)[number]): HTMLElement {
+    const section = disclosure('previews', `Previews · ${grouped.latest.length}`, false);
+    function row(preview: (typeof previews)[number], latest: boolean): HTMLElement {
       const value = node('div');
       const source = sources.find((comment) => comment.anchor === preview.anchor);
-      if (source === undefined || preview.url === null) return value;
+      if (source === undefined) return value;
       value.dataset.geldPreview = preview.anchor;
-      value.append(link(preview.project, preview.url, '', true), node('p', `Posted by ${source.author.login} · Reported status: ${preview.status}`, 'geld-provider-review__muted'));
-      if (preview.inspectUrl !== null && safeUrl(preview.inspectUrl) !== null) value.append(link('Inspect', preview.inspectUrl, '', true));
+      value.append(node('strong', preview.project), node('p', `Posted by ${source.author.login} · Reported status: ${preview.status}`, 'geld-provider-review__muted'));
+      if (preview.reason !== undefined) value.append(node('p', preview.reason));
+      const destination = providerPreviewDestination(preview, previews, latest);
+      if (destination !== null) value.append(link(destination.label, destination.href, '', true));
+      if (preview.inspectUrl !== null && preview.inspectUrl !== destination?.href) value.append(link('Inspect', preview.inspectUrl, '', true));
+      if (preview.updatedAt !== undefined) { const at = timestamp(preview.updatedAt);if (at !== null) value.append(at); }
       value.append(sourceComment(source));
       return value;
     }
-    for (const preview of grouped.latest) section.append(row(preview));
+    for (const preview of grouped.latest) section.append(row(preview, true));
     if (grouped.archived.length > 0) {
-      const archived = disclosure('previews:earlier', `Earlier preview links · ${grouped.archived.length}`, false);
-      for (const preview of grouped.archived) archived.append(row(preview));
+      const archived = disclosure('previews:earlier', `Earlier previews · ${grouped.archived.length}`, false);
+      for (const preview of grouped.archived) archived.append(row(preview, false));
       section.append(archived);
     }
     return section;
