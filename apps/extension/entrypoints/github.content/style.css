@@ -10053,9 +10053,9 @@ div:has(> [data-geld-overview-merge]) {
   margin-top: 2px !important;
 }
 
-/* The Overview's pills fill a 28px row (the conversation's sit 20px in 24px), so they keep a breath under them too. */
+/* The Overview's pills fill their row from its top, which is the bubble's bottom edge: they keep a gap of their own. */
 .geld-review__chat:not([data-geld-chat='comment']) [data-geld-message] .geld-review__msg-reactions {
-  padding-bottom: 4px !important;
+  padding-top: 6px !important;
 }
 
 /* The Overview's reaction picker, on comments and the description alike: GitHub draws its emoji at the text's 14px. */
