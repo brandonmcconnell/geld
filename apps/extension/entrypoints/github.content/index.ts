@@ -1,11 +1,16 @@
 import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { GeldController, IDLE_STATE } from '../../src/github/controller';
+import { prefetchStatusOptions } from '../../src/github/quick-review';
+import { applyTopCardHint } from '../../src/github/review/top-card';
+import { applyReviewGroupHint, withdrawReviewGroupHint } from '../../src/github/quick-review';
+import { applyDescriptionFoldHint, releaseDescription, stopEarlyDescriptionFold } from '../../src/github/review/description';
 import type { TabState, TabStateMessage } from '../../src/lib/messages';
 import { isGetTabStateMessage, isPerfReportMessage, isRevealFileMessage, isToggleHiddenMessage } from '../../src/lib/messages';
 import type { PerfSnapshot } from '../../src/lib/perf';
 import { mark, snapshot as perfSnapshot } from '../../src/lib/perf';
 import { loadCatalog, watchCatalog } from '../../src/lib/catalog';
+import { installErrorCapture } from '../../src/lib/error-capture';
 import { repoConfigChoicesItem, whitespaceOptOutsItem } from '../../src/lib/local-state';
 import { settingsItem } from '../../src/lib/storage';
 import { redirectEarly } from '../../src/github/whitespace-viewed';
@@ -29,6 +34,11 @@ export default defineContentScript({
     // any older copy still running in the page must step aside first.
     const TAKEOVER = 'geld:takeover';
     mark('script-start');
+    // Before any await: GitHub can paint the Overview's top card before the settings arrive.
+    applyTopCardHint();
+    applyReviewGroupHint();
+    applyDescriptionFoldHint();
+    const stopErrorCapture = installErrorCapture('content');
     document.dispatchEvent(new CustomEvent(TAKEOVER));
     // Listen before the first await: a copy injected while this one still loads its settings
     // would otherwise be missed, and two copies would then fight over the page.
@@ -39,6 +49,13 @@ export default defineContentScript({
     const retireEarly = (why: string): void => {
       retired = true;
       mark(`retired:${why}`);
+      // A takeover's copy decides GitHub's review button itself; an invalidated context leaves nobody to, so the hint goes.
+      if (why === 'invalidated') withdrawReviewGroupHint();
+      // The early fold's handling goes too (its heading listeners, its observer), the description left as shown: a
+      // copy taking over handles it from here, and two copies would each take a heading's click.
+      stopEarlyDescriptionFold();
+      releaseDescription();
+      stopErrorCapture();
     };
     let retire = (why: string): void => retireEarly(why);
     document.addEventListener(TAKEOVER, () => retire('takeover'), { once: true });
@@ -107,6 +124,8 @@ export default defineContentScript({
       mark('redirect-early');
       return;
     }
+    // The status menu's merge box, asked for before the catalog and the controller: GitHub's own menu reads its at load.
+    if (settings.enabled && settings.quickReview && window.top === window) prefetchStatusOptions();
     const catalog = await loadCatalog();
     mark('catalog');
     if (retired) return;
@@ -135,6 +154,8 @@ export default defineContentScript({
     controller = started;
     mark('controller-start');
     started.start();
+    // The controller's own mutation callback folds the description before paint from here on.
+    stopEarlyDescriptionFold();
 
     const unwatchSettings = settingsItem.watch((settings) => {
       showBadge = settings.showBadge;
@@ -165,6 +186,7 @@ export default defineContentScript({
       if (retired) return;
       retired = true;
       mark(`retired:${why}`);
+      stopErrorCapture();
       unwatch();
       // The message listener stays: see `onMessage` above.
       started.stop();
