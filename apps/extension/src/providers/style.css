@@ -36,7 +36,8 @@ html[data-geld-provider] [data-geld-provider-author-hidden] { display: none !imp
 .geld-provider-review__source { margin-block: var(--geld-provider-space-4); }
 .geld-provider-review__byline, .geld-provider-review__muted { font: var(--geld-provider-byline-font); color: var(--geld-provider-text-subtle); }
 .geld-provider-review__byline { display: flex; flex-wrap: wrap; gap: var(--geld-provider-space-3); align-items: baseline; }
-.geld-provider-review__byline strong { font-weight: var(--geld-provider-heading-weight); }
+.geld-provider-review__byline [data-geld-author-name] { font: var(--geld-provider-author-font, var(--geld-provider-byline-font)); font-weight: var(--geld-provider-author-weight, var(--geld-provider-heading-weight)); color: var(--geld-provider-author-text, inherit); }
+.geld-provider-review__avatar-slot { display: inline-flex; position: relative; flex: 0 0 auto; align-self: center; }
 .geld-provider-review__body { padding: var(--geld-provider-space-3); border-inline-start: var(--geld-provider-border-width) solid var(--geld-provider-border); }
 .geld-provider-review__standing, .geld-provider-review__check, .geld-provider-review__event { padding-block: var(--geld-provider-space-2); }
 .geld-provider-review__unavailable, .geld-provider-review [data-state="failed"] { color: var(--geld-provider-danger); }

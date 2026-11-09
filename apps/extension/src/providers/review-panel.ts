@@ -257,7 +257,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     article.dataset.geldSourceUrl = comment.url;
     const byline = node('div', '', 'geld-provider-review__byline');
     const presentation = authorPresentations.get(authorPresentationKey(comment));
-    if (presentation === undefined) byline.append(node('strong', comment.author.login));
+    const name = node('strong', presentation?.displayName ?? comment.author.login);
+    name.dataset.geldAuthorName = '';
+    if (presentation === undefined) byline.append(name);
     else {
       const nativeClasses = (className: string | undefined): string => (className ?? '').split(/\s+/).filter((token) => /^[a-zA-Z0-9_!@:/.-]+$/.test(token) && !token.startsWith('geld-')).join(' ');
       const avatar = presentation.avatar;
@@ -274,11 +276,14 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         image.className = nativeClasses(avatar.className);
         image.style.width = `${avatar.width}px`;
         image.style.height = `${avatar.height}px`;
-        image.style.alignSelf = 'center';
         if (avatar.borderRadius !== undefined) image.style.borderRadius = avatar.borderRadius;
-        byline.append(image);
+        const slot = node('span', '', 'geld-provider-review__avatar-slot');
+        slot.dataset.geldAuthorAvatarSlot = '';
+        slot.style.width = slot.style.inlineSize = `${avatar.width}px`;
+        slot.style.height = slot.style.blockSize = `${avatar.height}px`;
+        slot.append(image);
+        byline.append(slot);
       }
-      const name = node('strong', presentation.displayName);
       const profileUrl = presentation.profileUrl === undefined ? null : safeUrl(presentation.profileUrl, input.subject.origin);
       if (profileUrl === null) byline.append(name);
       else {
