@@ -16,7 +16,7 @@ type HeroState = 'none' | 'showing' | 'covered';
  * mounted but hidden for a while, so the id can exist more than once; only a
  * rendered one counts.
  */
-function visibleHero(): HTMLElement | null {
+export function visibleHero(): HTMLElement | null {
   for (const candidate of document.querySelectorAll<HTMLElement>(`#${HERO_WORDMARK_ID}`)) {
     if (candidate.checkVisibility()) return candidate;
   }
@@ -30,8 +30,8 @@ function visibleHero(): HTMLElement | null {
  *
  * The state is written straight to the link as `data-hero`, synchronously in
  * the effect that follows every route change, so a route transition's new
- * snapshot already shows the right state. Before hydration the CSS in
- * `header-brand` (globals.css) uses `:root:has(#hero-wordmark)` instead.
+ * snapshot already shows the right state. Before hydration a page with a hero
+ * renders a style that hides the link until then (app/page.tsx).
  */
 export function HeaderBrand() {
   const pathname = usePathname();
