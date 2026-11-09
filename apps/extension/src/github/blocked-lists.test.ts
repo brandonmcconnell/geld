@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest';
-import type { BlockScope } from './blocked-list';
+import type { BlockedBy } from './blocked-list';
 import { applyBlockedListHiding, removeBlockedListHiding } from './blocked-lists';
 
 /** A discussions list as GitHub serves it (Nov 2026, names replaced): `li.Box-row`s, each led by its title, then its author. */
@@ -25,7 +25,7 @@ afterEach(() => {
 describe('applyBlockedListHiding', () => {
   it('hides a blocked person’s discussion behind a row at the foot of the list, and shows it under that row', () => {
     const root = discussionsList();
-    const blocked = new Map<string, BlockScope>([['blocked-one', 'personal']]);
+    const blocked = new Map<string, BlockedBy>([['blocked-one', { org: false, personal: true }]]);
     applyBlockedListHiding(blocked, []);
     const rows = [...root.querySelectorAll('li.Box-row')];
     expect(rows.map((row) => row.getAttribute('data-geld-blocked-row'))).toEqual([null, 'hidden']);
@@ -42,7 +42,7 @@ describe('applyBlockedListHiding', () => {
 
   it('puts the list back when nobody on it is blocked', () => {
     const root = discussionsList();
-    applyBlockedListHiding(new Map<string, BlockScope>([['blocked-one', 'org']]), []);
+    applyBlockedListHiding(new Map<string, BlockedBy>([['blocked-one', { org: true, personal: false }]]), []);
     applyBlockedListHiding(new Map(), []);
     expect(root.querySelector('[data-geld-blocked-note]')).toBeNull();
     expect(root.querySelector('[data-geld-blocked-row]')).toBeNull();
