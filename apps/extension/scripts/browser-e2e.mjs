@@ -2216,6 +2216,39 @@ async function gitLabBotBodyEvidence(page, item) {
   } finally { page.off('request', request); }
 }
 
+async function verifyGitLabAttachment(page, item) {
+  const original = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
+  const progress = { status: 'running' };item.attachmentViewer = progress;
+  try {
+    await patchSettings({ attachmentLightbox: true, collapseDescription: false });
+    const selector = '.issuable-discussion [data-testid="description-content"] img[data-geld-provider-lightbox]';
+    await poll(() => page.evaluate((selector) => [...document.querySelectorAll(selector)].some(image => image.getBoundingClientRect().height > 0), selector), Boolean, 'Native public description attachment is visible and qualified');
+    const image = await page.$(selector);assert.ok(image !== null);
+    try {
+      progress.source = await image.evaluate(image => ({ src: image.currentSrc || image.src, href: image.closest('a').href, alt: image.alt }));
+      assert.equal(progress.source.src, progress.source.href);
+      assert.equal(new URL(progress.source.src).pathname, '/-/project/56243493/uploads/0acc0b3514c56d8c6949d7c6aaa9c092/image.png');
+      await image.evaluate(image => image.scrollIntoView({ block: 'center' }));await image.click();
+      await poll(() => page.evaluate(() => document.querySelector('dialog.geld-provider-lightbox')?.open === true), Boolean, 'Real attachment click opens Geld image dialog');
+      const zoom = 'dialog.geld-provider-lightbox [aria-label="Zoom in"]';
+      await poll(() => page.$eval(zoom, button => !button.disabled), Boolean, 'Attachment dimensions load before zoom');
+      await page.click(zoom);
+      assert.equal(await page.$eval('dialog.geld-provider-lightbox [aria-label="Reset zoom"]', button => button.textContent), '150%');
+      progress.dialog = await page.$eval('dialog.geld-provider-lightbox', dialog => ({ font: getComputedStyle(dialog).font, color: getComputedStyle(dialog).color, background: getComputedStyle(dialog).backgroundColor, primerClasses: dialog.querySelector('.btn, .BtnGroup') !== null, original: dialog.querySelector('a').href }));
+      assert.equal(progress.dialog.primerClasses, false);assert.equal(progress.dialog.original, progress.source.href);
+      progress.artifacts = await capture(page, 'gitlab-attachment-viewer');
+      await page.keyboard.press('Escape');
+      await poll(() => page.$('dialog.geld-provider-lightbox'), value => value === null, 'Escape closes image dialog');
+      assert.equal(await image.evaluate(image => document.activeElement === image.closest('a')), true);
+    } finally { await discardHandle(image); }
+    progress.status = 'passed';
+  } catch (error) { progress.status = 'failed';progress.error = errorText(error);throw error; }
+  finally {
+    await page.keyboard.press('Escape');
+    await options.evaluate((key, value) => chrome.storage.sync.set({ [key]: value }), SETTINGS_KEY, original);
+  }
+}
+
 async function verifyGitLabBot(page, item) {
   const captured = await poll(() => item.nativeBotFixture, (value) => value.metadata.length >= 1 && value.discussions.some((page) => page.discussionCount === 36 && page.noteCount === 40 && page.selected.length === 4 && page.nextCursor === null), 'Actual native current MR metadata and complete bot discussion sources');
   for (const metadata of captured.metadata) {
@@ -2292,6 +2325,7 @@ async function verifyGitLabBot(page, item) {
   assert.ok(captured.metadata.every((metadata) => metadata.sha === GL_BOT_HEAD && metadata.diffHead === GL_BOT_HEAD), 'Native head changed during explicit trust verification');
   item.state = await tabState(page);assert.equal(item.state.repository?.path, 'whitebox-aero/whitebox');assert.equal(item.state.repository.provider, 'gitlab');
   await gitLabReferencesEvidence(page, item);
+  await verifyGitLabAttachment(page, item);
   assert.deepEqual(captured.providerMutations, []);assert.deepEqual(captured.aiRequests, []);
   return { featureParity: 'partial', verified: 'Actual installed explicit account trust and withdrawal, native-source clean score, historical resolved source preservation and exact native incoming/outgoing reference identities with guarded original-source reveal. CI warnings remain native; no authenticated provider write is exercised.' };
 }

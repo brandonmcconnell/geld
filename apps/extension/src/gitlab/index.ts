@@ -1,3 +1,4 @@
+import { gitLabAttachmentLink } from './attachment';
 import type { ProviderCommentRenderContext } from '../providers/comment-render';
 import { isProviderReviewPage } from '../providers/types';
 import type { ProviderAdapter } from '../providers/types';
@@ -26,6 +27,7 @@ import { createGitLabDiffSyntax } from './diff-syntax';
 
 export const gitlabAdapter: ProviderAdapter = {
   id: 'gitlab',
+  attachmentLink: gitLabAttachmentLink,
   createNativeView: (doc, changed, choice) => new GitLabNativeWhitespace(doc, changed, choice),
   diffSyntax: createGitLabDiffSyntax(),
   describe: describeGitLabPage,

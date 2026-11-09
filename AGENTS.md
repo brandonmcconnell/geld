@@ -3470,3 +3470,9 @@ Hidden-person rules also apply to bot link sources, and a per-visit peek restore
 Nightly conflict handling includes the granted GitLab and Bitbucket runtime registrations, including Bitbucket's MAIN-world whitespace helper.
 Optional provider registration checks the nightly pause state before registering scripts, and conflict evaluation retires pre-existing provider registrations even when no GitHub registration remains.
 Resuming injects already open granted provider tabs, and conflict notices use each provider's native theme tokens without requesting new host access.
+
+Image attachment gestures are shared by GitHub, GitLab and Bitbucket, while each provider qualifies its own attachment links and styles the dialog with native tokens.
+GitLab upload links can use the canonical project-qualified path while retaining the shorter uploads path in data-canonical-src, so the actual image and link URLs are compared rather than assuming that attribute is the loaded source.
+Only matching HTTPS image and attachment destinations inside known description or comment bodies are intercepted, preserving modified clicks, download links, avatars and unrelated links.
+The shared viewer keeps fitting, pointer-centered zoom, dragging, pinch gestures, keyboard controls, failure fallback and focus restoration without imposing GitHub button classes on other providers.
+The public GitLab bot fixture includes a description screenshot, and its installed acceptance opens the real attachment, zooms, closes with Escape and verifies focus returns to the source link.

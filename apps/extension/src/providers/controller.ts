@@ -1,3 +1,4 @@
+import { ProviderAttachmentLightbox } from './attachment-lightbox';
 import type { Catalog, ChangeTotals, FileStats, GeldSettings } from '@geld/core';
 import { allCategories, BUNDLED_CATALOG, compileRepoRules, createMatcher, decideRepo, formatCount, isAutoViewed, isCategoryEnabled, pluralize, providerRepositoryScope, repositoryKey, settingsEqual, subtractTotals } from '@geld/core';
 import { breakdownFromFiles, hiddenLabel, hiddenNounPlural, statsBreakdown } from '../github/breakdown';
@@ -70,6 +71,7 @@ export class ProviderController {
   private readonly listAuthors: ProviderListAuthors;
   private readonly headerHints = new ProviderHeaderHints();
   private readonly conversation: ProviderConversation;
+  private readonly attachments: ProviderAttachmentLightbox;
   private readonly hover: ProviderHover;
   private readonly reveal: ProviderReveal;
   private readonly hoverCounts = new Map<HTMLElement, HoverCounts>();
@@ -125,6 +127,7 @@ export class ProviderController {
     this.source = new ProviderDiffSource(adapter, () => this.requestRefresh(), undefined, {
       anonymous: () => adapter.id === 'bitbucket' && adapter.eagerListDiffs?.(document) !== true,
     });
+    this.attachments = new ProviderAttachmentLightbox(adapter);
     this.conversation = new ProviderConversation(adapter, () => this.requestRefresh(), services);
     this.reveal = new ProviderReveal(() => this.adapter.readDiff(document), () => this.pageKey);
     this.hover = new ProviderHover(adapter, this.source, () => this.settings, () => this.catalog, {
@@ -291,7 +294,7 @@ export class ProviderController {
     this.reveal.stop();
     this.source.stop();
     this.configs?.stop();
-    this.conversation.clear();
+    this.conversation.clear();this.attachments.clear();
     this.hiddenAuthors.clear();
     this.listAuthors.clear();
     this.restorePage();
@@ -359,7 +362,7 @@ export class ProviderController {
       this.reveal.clear();
       this.source.setActive(false);
       this.configs?.setActive(false);
-      this.conversation.clear();
+      this.conversation.clear();this.attachments.clear();
       this.hiddenAuthors.clear();
       this.restorePage();
       this.state = {
@@ -381,6 +384,7 @@ export class ProviderController {
     this.effectiveSettings = effective;
     const matcher = createMatcher(effective, page === null ? null : providerRepositoryScope(page.repository), this.catalog);
     this.conversation.apply(page !== null && hasPageSurface && isProviderReviewPage(page) ? page : null, effective);
+    this.attachments.update(page !== null && isProviderReviewPage(page) ? page : null, effective.attachmentLightbox);
     if (page === null) {
       this.bindHeaders([], { stats: null, status: 'unavailable' });
       this.state = PROVIDER_IDLE_STATE;
