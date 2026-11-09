@@ -190,7 +190,7 @@ export class ProviderAiTriage {
   async run(input: ProviderReviewInput, comments: readonly ProviderReviewComment[], settings: GeldSettings): Promise<void> {
     await this.load(input, comments, settings);
     const context = this.context;
-    if (context === null || this.value.kind === 'running') return;
+    if (context === null || this.value.kind === 'running' || !context.items.some((item) => isOpenStatus(item.status))) return;
     const generation = this.generation;
     const current = (): boolean => generation === this.generation && this.context === context;
     let next = this.record;

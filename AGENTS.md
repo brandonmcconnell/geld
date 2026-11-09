@@ -3434,3 +3434,7 @@ The stored `github` value means provider-only on either host, preserving the exi
 The selector remains available when both the overview and quick actions are off, without fetching a review solely to show the way back.
 Turning the digest off hides its existing panel for the same visit, so returning preserves open review threads.
 The public author-style acceptance visits all three real view controls before comparing visible native colors and restores the exact saved shared settings afterward.
+
+Provider AI triage uses the shared open-item status predicate before reading a gateway key, checking gateway permission or sending a request.
+Empty and fully resolved conversations expose a disabled Nothing to triage control.
+Outdated unresolved threads remain open work, matching the shared digest counts, even when semantic reply classification skips them.

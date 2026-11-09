@@ -228,3 +228,20 @@ describe('explicit provider AI triage', () => {
     expect(reloaded.state.stale).toBe(true);
   });
 });
+
+
+describe('provider triage with no open work', () => {
+  it.each(['empty', 'resolved'] as const)('does no key, permission, gateway or write work for %s threads', async (state) => {
+    const readKey = vi.fn(async () => 'key');
+    const permission = vi.fn(async () => null);
+    const f = fixture({ readKey, permission });
+    const source = review();
+    const input = { ...source, threads: state === 'empty' ? [] : source.threads.map((thread) => ({ ...thread, resolved: state === 'resolved', outdated: state === 'outdated' })) };
+    await f.triage.run(input, [], settings());
+    expect(readKey).not.toHaveBeenCalled();
+    expect(permission).not.toHaveBeenCalled();
+    expect(f.send).not.toHaveBeenCalled();
+    expect(f.write).not.toHaveBeenCalled();
+    expect(f.states.some((value) => value.kind === 'running')).toBe(false);
+  });
+});

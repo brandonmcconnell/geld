@@ -1240,10 +1240,12 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     header.append(copy);
     if (activeAi?.enabled === true) {
       const controls = node('div', '', 'geld-provider-review__source-actions');
-      const triage = node('button', activeAi.state.kind === 'running' ? 'Triaging…' : activeAi.state.kind === 'ready' && !activeAi.state.stale ? 'Triage is current' : 'Triage with AI');
+      const hasOpenItems = items.some((item) => isOpenStatus(item.status));
+      const triage = node('button', !hasOpenItems ? 'Nothing to triage' : activeAi.state.kind === 'running' ? 'Triaging…' : activeAi.state.kind === 'ready' && !activeAi.state.stale ? 'Triage is current' : 'Triage with AI');
       triage.type = 'button';
       triage.dataset.geldAiRun = '';
-      triage.disabled = activeAi.state.kind === 'running';
+      triage.disabled = !hasOpenItems || activeAi.state.kind === 'running';
+      if (!hasOpenItems) triage.title = 'There are no open review threads to triage.';
       triage.addEventListener('click', () => { if (!destroyed) activeAi.run(); });
       controls.append(triage);
       if (activeAi.state.kind === 'running') {

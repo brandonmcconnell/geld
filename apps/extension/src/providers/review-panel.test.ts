@@ -1086,3 +1086,18 @@ it('binds every batch-history disclosure to its current content and label after 
   }
   panel.destroy();
 });
+
+
+describe('empty provider triage control', () => {
+  it('explains why triage is unavailable and cannot start a request', () => {
+    const run = vi.fn();
+    const panel = renderProviderReviewPanel(host(), input([]), { ai: { enabled: true, state: { kind: 'idle', key: providerReviewKey(subject), pending: new Set(), stale: false }, run, cancel: vi.fn() } });
+    const button = panel.element.querySelector<HTMLButtonElement>('[data-geld-ai-run]');
+    expect(button?.textContent).toBe('Nothing to triage');
+    expect(button?.disabled).toBe(true);
+    expect(button?.title).toContain('no open review threads');
+    button?.click();
+    expect(run).not.toHaveBeenCalled();
+    panel.destroy();
+  });
+});
