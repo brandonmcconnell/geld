@@ -90,6 +90,11 @@ export const SAME_PROBLEM_THRESHOLD = 0.7;
  * no group are singletons: they report their own problem and need no
  * consolidation with anything.
  */
+/** Whether every question was answered: a refused or missing answer is not a "no", and a check left half-answered should not decide. */
+export function answersComplete(request: JevRequest, answers: Readonly<Record<string, JevAnswer>>): boolean {
+  return Object.keys(request.questions).every((id) => answers[id] !== undefined);
+}
+
 export function sameProblemGroups(items: readonly ConsolidateInputItem[], answers: Readonly<Record<string, JevAnswer>>, threshold = SAME_PROBLEM_THRESHOLD): readonly (readonly string[])[] {
   const parent = new Map<string, string>();
   const find = (id: string): string => {
