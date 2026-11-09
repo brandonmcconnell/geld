@@ -3520,6 +3520,39 @@ svg.geld-lucide {
   height: 11px;
 }
 
+/* A blocked or hidden person's comment, folded behind a line shaped like GitHub's own hidden comments (people-presence.ts). */
+/* Doubled to outrank the chat's `.geld-review__chat [data-geld-message] { display: flex !important }`, which comes later. */
+html [data-geld-person-fold][data-geld-person-fold]:not([data-geld-person-fold-open]) {
+  display: none !important;
+}
+
+.geld-person-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--borderColor-default, var(--color-border-default));
+  border-radius: 6px;
+  background: var(--bgColor-muted, var(--color-canvas-subtle));
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.geld-person-line__toggle {
+  flex: 0 0 auto;
+}
+
+.geld-blocked-label {
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.geld-blocked-notice {
+  margin-bottom: 16px;
+}
+
 /* GitHub's own sidebar rows for hidden people (sidebar-people.ts). */
 [data-geld-sidebar-hidden] {
   display: none !important;

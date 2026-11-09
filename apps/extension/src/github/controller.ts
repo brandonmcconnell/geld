@@ -44,6 +44,7 @@ import { applyDiffstatSurfaces } from './diffstat-surfaces';
 import type { ListSurface } from './list-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
+import { applyPeoplePresence, removePeoplePresence } from './people-presence';
 import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
 import { expireHeadChecks } from './review/check-source';
 import { markCrawlDirty, resetCrawlCache } from './review/crawler';
@@ -1148,6 +1149,7 @@ export class GeldController {
       guard('content:related-links', () => applyRelatedLinks(this.settings.relatedLinks && page.kind === 'pull-conversation', () => this.schedule()));
       this.updateFlowSource(page, url, matcher);
       applyReviewOverview(this.settings, this.pageDiffPaths(), this.repoBotsHint(page, repo));
+      guard('content:people', () => applyPeoplePresence({ enabled: page.kind === 'pull-conversation', noun: 'pull request', hiddenAuthors: this.settings.hiddenAuthors, schedule: () => this.schedule() }));
     }
 
     const effectiveHidden = headerHidden ?? hidden;
@@ -1972,6 +1974,7 @@ export class GeldController {
     removePrListStats();
     removeCommitHover();
     removeAuthorHiding();
+    removePeoplePresence();
     removeSurfaceStyles();
     for (const group of findHeaderStatGroups()) restoreHeaderStats(group);
     // Cleared first: the stand-in is not Geld's UI, so its removal is a mutation, and the observer would put it back.
