@@ -138,6 +138,16 @@ export interface ReviewItem {
   /** Merged context from every source that reported this, when it adds something the title does not. */
   readonly context?: string;
   readonly fix?: SuggestedFix;
+  /**
+   * The review threads the item merges, when more than one (two bots, or one bot twice, on the same lines): each is
+   * resolved on its own on GitHub and counted on its own by the bots' chips, so the digest counts threads, not rows.
+   */
+  readonly threads?: ItemThreads;
+}
+
+export interface ItemThreads {
+  readonly total: number;
+  readonly open: number;
 }
 
 /** The short read of the whole review state, written by the model and kept until the open set changes. */
@@ -166,6 +176,8 @@ export interface BotVerdictRecord {
   readonly reason?: string;
   /** The verdict was judged against the bot's check run's known start (`DerivedBotVerdict.runJudged`). */
   readonly runJudged?: true;
+  /** A `findings` verdict that is the bot asking for a person's review rather than a count of findings (`DerivedBotVerdict.needsHuman`). */
+  readonly needsHuman?: true;
 }
 
 export interface ReviewerRecord {
@@ -282,6 +294,7 @@ export const reviewItemSchema = z.object({
   addressed: addressedSchema.optional(),
   context: z.string().min(1).optional(),
   fix: suggestedFixSchema.optional(),
+  threads: z.object({ total: z.number().int().min(2), open: z.number().int().nonnegative() }).optional(),
 });
 
 export const reviewSummarySchema = z.object({
@@ -303,6 +316,7 @@ export const botVerdictSchema = z.object({
   sourceId: z.string().min(1).optional(),
   reason: z.string().min(1).optional(),
   runJudged: z.literal(true).optional(),
+  needsHuman: z.literal(true).optional(),
 });
 
 export const reviewerSchema = z.object({
@@ -393,7 +407,8 @@ export function reviewItemFrom(value: z.infer<typeof reviewItemSchema>): ReviewI
   const numbered = value.line === undefined ? located : { ...located, line: value.line };
   const judged = value.addressed === undefined ? numbered : { ...numbered, addressed: { verdict: value.addressed.verdict, evidence: value.addressed.evidence } };
   const explained = value.context === undefined ? judged : { ...judged, context: value.context };
-  return value.fix === undefined ? explained : { ...explained, fix: { text: value.fix.text, source: value.fix.source } };
+  const fixed = value.fix === undefined ? explained : { ...explained, fix: { text: value.fix.text, source: value.fix.source } };
+  return value.threads === undefined ? fixed : { ...fixed, threads: { total: value.threads.total, open: Math.min(value.threads.open, value.threads.total) } };
 }
 
 function botVerdictFrom(value: z.infer<typeof botVerdictSchema>): BotVerdictRecord {
@@ -410,7 +425,8 @@ function botVerdictFrom(value: z.infer<typeof botVerdictSchema>): BotVerdictReco
   const checked = value.checkSha === undefined ? named : { ...named, checkSha: value.checkSha };
   const sourced = value.sourceId === undefined ? checked : { ...checked, sourceId: value.sourceId };
   const reasoned = value.reason === undefined ? sourced : { ...sourced, reason: value.reason };
-  return value.runJudged === undefined ? reasoned : { ...reasoned, runJudged: true };
+  const judged = value.runJudged === undefined ? reasoned : { ...reasoned, runJudged: true as const };
+  return value.needsHuman === undefined ? judged : { ...judged, needsHuman: true };
 }
 
 function metaFrom(value: z.infer<typeof geldPrMetaSchema>): GeldPrMeta {
@@ -499,6 +515,25 @@ export function doneItemCount(items: readonly ReviewItem[]): number {
   return items.length - openItemCount(items);
 }
 
+/** An item's review threads and how many are open: one thread unless it merges several; none open once the item is done. */
+export function itemThreads(item: ReviewItem): ItemThreads {
+  const total = item.threads?.total ?? 1;
+  if (!isOpenStatus(item.status)) return { total, open: 0 };
+  return { total, open: Math.max(1, Math.min(item.threads?.open ?? 1, total)) };
+}
+
+/** The review threads across `items` (what the bots' chips count, plus people's), and how many are open. */
+export function threadCounts(items: readonly ReviewItem[]): ItemThreads {
+  let total = 0;
+  let open = 0;
+  for (const item of items) {
+    const threads = itemThreads(item);
+    total += threads.total;
+    open += threads.open;
+  }
+  return { total, open };
+}
+
 /** The payload's size as the comment carries it: the JSON with `&`, `'`, `<`, `>` as entities (see `encodePayloadAttribute`). */
 function encodedPayloadLength(meta: GeldPrMeta): number {
   const json = JSON.stringify(meta);
@@ -529,12 +564,13 @@ export function truncateMeta(meta: GeldPrMeta, budget: number = PAYLOAD_BUDGET):
 }
 
 export function deeplinkFrom(meta: GeldPrMeta): GeldDeeplink {
+  const threads = threadCounts(meta.items);
   return {
     v: META_VERSION,
     headSha: meta.headSha,
     generatedAt: meta.generatedAt,
-    open: openItemCount(meta.items),
-    total: meta.items.length,
+    open: threads.open,
+    total: threads.total,
   };
 }
 
