@@ -7,7 +7,7 @@ export const GITLAB_COPY_FIX = 'insta360 = {git = "https://gitlab.com/whitebox-a
 export const GITLAB_COPY_MARKDOWN = [
   '- [x] **Using a branch name as `rev` makes the `pyproject.toml` entry point at a mutable ref.** `backend/pyproject.toml:56` · @group\\_84680077\\_bot\\_800401aaa75115e1bc0c76e02d860b8b',
   '  Source status: resolved.', '  Suggested fix (bot):', '  ```suggestion', `  ${GITLAB_COPY_FIX}`, '  ```',
-  `  Sources: [source](${REVIEW}#note_3381334872) · [source](${REVIEW}#note_3381334884)`,
+  `  Sources: [source](${REVIEW}#note_3381334872)`,
 ].join('\n');
 
 export function gitLabCopyFixOf(body) {
@@ -48,7 +48,7 @@ export async function verifyGitLabItemCopies(page, item, { context, expectedFix,
     }), row);
     proof.before = await readSources();
     assert.equal(proof.before.state, 'resolved');
-    assert.deepEqual(proof.before.sources.map((source) => source.anchor), ['note_3381334872', 'note_3381334884']);
+    assert.deepEqual(proof.before.sources.map((source) => source.anchor), ['note_3381334872']);
     assert.equal(typeof proof.before.nativeSummary, 'string');
     assert.equal(proof.before.sameNative, true);
     permissionAttempted = true;await context.overridePermissions('https://gitlab.com', ['clipboard-read', 'clipboard-write', 'clipboard-sanitized-write']);
