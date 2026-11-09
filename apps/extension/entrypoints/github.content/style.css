@@ -9774,18 +9774,11 @@ dialog.geld-lightbox {
 
 dialog.geld-lightbox[open]:has(.geld-lightbox__stage--large) {
   box-sizing: border-box;
-  width: min(1600px, calc(100vw - 48px));
+  width: min(1120px, 84vw);
   min-width: 0;
   max-width: none;
-  height: min(1100px, calc(100dvh - 48px));
+  height: min(720px, 80dvh);
   max-height: none;
-}
-
-@media (max-width: 600px), (max-height: 480px) {
-  dialog.geld-lightbox[open]:has(.geld-lightbox__stage--large) {
-    width: calc(100vw - 16px);
-    height: calc(100dvh - 16px);
-  }
 }
 
 .geld-lightbox:has(.geld-lightbox__stage--large) .geld-lightbox__body {
