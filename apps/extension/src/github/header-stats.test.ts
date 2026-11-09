@@ -18,7 +18,22 @@ describe('replaceCount', () => {
   });
 });
 
+describe('replaceCount in the reader\'s locale', () => {
+  it('replaces the whole number and keeps the separator GitHub printed', () => {
+    expect(replaceCount('+8.270', 3776)).toBe('+3.776');
+    expect(replaceCount('1.936 deletions', 1288)).toBe('1.288 deletions');
+    expect(replaceCount('8\u202f270 additions', 3776)).toBe('3\u202f776 additions');
+    expect(replaceCount('+8.270', 42)).toBe('+42');
+  });
+});
+
 describe('parseLineStats', () => {
+  it('reads counts grouped for any locale', () => {
+    expect(parseLineStats('Lines changed: 8.270 additions & 1.936 deletions')).toEqual({ additions: 8270, deletions: 1936 });
+    expect(parseLineStats('Lines changed: 8\u202f270 additions & 1\u202f936 deletions')).toEqual({ additions: 8270, deletions: 1936 });
+    expect(parseLineStats('Lines changed: 8270 additions & 1936 deletions')).toEqual({ additions: 8270, deletions: 1936 });
+  });
+
   it('reads every GitHub phrasing', () => {
     expect(parseLineStats('15 changes: 8 additions & 7 deletions')).toEqual({ additions: 8, deletions: 7 });
     expect(parseLineStats('Lines changed: 1 addition & 0 deletions')).toEqual({ additions: 1, deletions: 0 });
