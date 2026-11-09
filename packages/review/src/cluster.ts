@@ -65,12 +65,20 @@ const BADGE_LINE = /^\p{Extended_Pictographic}?\uFE0F?\s*\*\*(critical|high|medi
 /** Macroscope's "#### Approvability" heading as the page reads it (a bare line): the "**Verdict:** …" under it says more. */
 const GATE_HEADING = /^approvability$/i;
 
+/** `change` applied to the text outside code spans: "Escape `<div>` before rendering." keeps its tag. */
+function outsideCodeSpans(line: string, change: (text: string) => string): string {
+  return line
+    .split(/(`+[^`]*`+)/)
+    .map((part, index) => (index % 2 === 1 ? part : change(part)))
+    .join('');
+}
+
 export function firstSentence(body: string): string {
   const withoutCode = body.replace(/```[\s\S]*?```/g, ' ');
   const line = withoutCode
     .split('\n')
     // Codex's raw "**<sub><sub>![P2 Badge](…)</sub></sub>  Resolve reference paths…**": the badge is no words, as on the page.
-    .map((entry) => entry.replace(/<br\s*\/?>/gi, ' ').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/<\/?(?:sub|sup|picture|source|img|span|a|p|div)\b[^>]*>/gi, '').replace(/^(\*\*|__)\s+/, '$1').trim())
+    .map((entry) => outsideCodeSpans(entry, (text) => text.replace(/<br\s*\/?>/gi, ' ').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/<\/?(?:sub|sup|picture|source|img|span|a|p|div)\b[^>]*>/gi, '')).replace(/^(\*\*|__)\s+/, '$1').trim())
     .filter((entry) => entry !== '' && !entry.startsWith('<') && !/^#{1,6}\s/.test(entry) && !/^[-*]\s*$/.test(entry) && !BADGE_LINE.test(entry) && !GATE_HEADING.test(entry))
     .map((entry) => entry.replace(/^\s*[-*]\s+/, ''))
     .find((entry) => entry !== '') ?? '';

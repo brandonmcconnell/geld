@@ -1573,7 +1573,7 @@ export function botRunState(botId: string, model: Pick<PanelModel, 'ranSincePush
   // green check once they are). It is ticked only when the bot has not reported since the latest push: then it has
   // not seen the fixes, while a bot that already reviewed this commit would say the same again.
   const findings = record.verdict === 'findings';
-  const word = record.verdict === 'failed' ? 'Failed' : record.needsHuman === true ? 'Needs human' : findings || health === 'warn' || health === 'bad' ? 'Findings' : 'Passed';
+  const word = record.verdict === 'failed' ? 'Failed' : record.needsHuman === true && record.count === undefined ? 'Needs human' : findings || health === 'warn' || health === 'bad' ? 'Findings' : 'Passed';
   const reviewedThisCommit = model.ranSincePush?.has(botId) ?? true;
   return { health, word, preselect: record.verdict === 'failed' || (findings && !reviewedThisCommit) };
 }

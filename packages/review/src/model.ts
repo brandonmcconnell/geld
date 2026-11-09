@@ -501,12 +501,13 @@ export function truncateMeta(meta: GeldPrMeta, budget: number = PAYLOAD_BUDGET):
 }
 
 export function deeplinkFrom(meta: GeldPrMeta): GeldDeeplink {
+  const threads = threadCounts(meta.items);
   return {
     v: META_VERSION,
     headSha: meta.headSha,
     generatedAt: meta.generatedAt,
-    open: threadCounts(meta.items).open,
-    total: threadCounts(meta.items).total,
+    open: threads.open,
+    total: threads.total,
   };
 }
 

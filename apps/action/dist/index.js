@@ -31663,12 +31663,13 @@ function truncateMeta(meta3, budget = PAYLOAD_BUDGET) {
   return { ...meta3, items: [], truncated: true };
 }
 function deeplinkFrom(meta3) {
+  const threads = threadCounts(meta3.items);
   return {
     v: META_VERSION,
     headSha: meta3.headSha,
     generatedAt: meta3.generatedAt,
-    open: threadCounts(meta3.items).open,
-    total: threadCounts(meta3.items).total
+    open: threads.open,
+    total: threads.total
   };
 }
 var BASE64_TABLE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -32060,6 +32061,9 @@ function countShapedBy(botId, text) {
     default:
       return null;
   }
+}
+function isMacroscopeGate(body) {
+  return macroscopeApprovability(body.replace(/\r\n?/g, "\n").replace(/<!--[\s\S]*?-->/g, "").trim()) !== null;
 }
 function macroscopeApprovability(text) {
   if (!/^\s*(?:#{1,6}\s*)?Approvability\s*$/im.test(text)) return null;
@@ -32546,6 +32550,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       continue;
     }
     if (id === null) continue;
+    if (id === "macroscope" && comment.resolved === void 0 && isMacroscopeAgentComment(comment.body)) continue;
     if (comment.resolved !== void 0) {
       postedThreads.add(id);
       reported(id, comment);
@@ -32602,6 +32607,11 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false, triggered, askedAt: pending === void 0 ? Number.isNaN(at) ? null : at : pending.askedAt ?? pending.at });
       continue;
     }
+    if (id === "macroscope" && checkSkipped.has(id) && !checkCurrent.has(id) && !threadRuns.has(id) && isMacroscopeGate(comment.body)) {
+      reported(id, comment);
+      statusOnly.delete(id);
+      continue;
+    }
     const parsed = parseBotBody(comment.body, id.startsWith("custom:") ? "" : id);
     if (botById(id)?.conversational === true && !isReviewShaped(parsed)) continue;
     if (!isReviewShaped(parsed) && threadRuns.has(id)) {
@@ -32620,7 +32630,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const existing = byId.get(id);
     const login = comment.author;
     if (existing !== void 0) {
-      const verdict2 = parsed.clean && existing.verdict === "failed" && !checkSkipped.has(id) ? "findings" : parsed.clean ? "clean" : parsed.count === 0 ? "clean" : "findings";
+      const verdict2 = parsed.clean && (existing.verdict === "failed" && !checkSkipped.has(id) || checkCounts.has(id)) ? "findings" : parsed.clean ? "clean" : parsed.count === 0 ? "clean" : "findings";
       const { reason: _skipped, ...reviewed } = existing;
       const reviewedSha = shaOver(existing);
       const base = verdict2 === "clean" ? { id: existing.id, login, verdict: verdict2, reviewedSha, ...existing.checkName === void 0 ? {} : { checkName: existing.checkName } } : { ...reviewed, reviewedSha };
@@ -32888,9 +32898,12 @@ function ruleIdOf(body) {
 }
 var BADGE_LINE = /^\p{Extended_Pictographic}?\uFE0F?\s*\*\*(critical|high|medium|low)\*\*(?:\s+`[^`\n]*`)?$/iu;
 var GATE_HEADING = /^approvability$/i;
+function outsideCodeSpans(line, change) {
+  return line.split(/(`+[^`]*`+)/).map((part, index) => index % 2 === 1 ? part : change(part)).join("");
+}
 function firstSentence(body) {
   const withoutCode2 = body.replace(/```[\s\S]*?```/g, " ");
-  const line = withoutCode2.split("\n").map((entry2) => entry2.replace(/<br\s*\/?>/gi, " ").replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/<\/?(?:sub|sup|picture|source|img|span|a|p|div)\b[^>]*>/gi, "").replace(/^(\*\*|__)\s+/, "$1").trim()).filter((entry2) => entry2 !== "" && !entry2.startsWith("<") && !/^#{1,6}\s/.test(entry2) && !/^[-*]\s*$/.test(entry2) && !BADGE_LINE.test(entry2) && !GATE_HEADING.test(entry2)).map((entry2) => entry2.replace(/^\s*[-*]\s+/, "")).find((entry2) => entry2 !== "") ?? "";
+  const line = withoutCode2.split("\n").map((entry2) => outsideCodeSpans(entry2, (text) => text.replace(/<br\s*\/?>/gi, " ").replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/<\/?(?:sub|sup|picture|source|img|span|a|p|div)\b[^>]*>/gi, "")).replace(/^(\*\*|__)\s+/, "$1").trim()).filter((entry2) => entry2 !== "" && !entry2.startsWith("<") && !/^#{1,6}\s/.test(entry2) && !/^[-*]\s*$/.test(entry2) && !BADGE_LINE.test(entry2) && !GATE_HEADING.test(entry2)).map((entry2) => entry2.replace(/^\s*[-*]\s+/, "")).find((entry2) => entry2 !== "") ?? "";
   const cleaned = line.replace(/\s+/g, " ").trim();
   if (cleaned === "") return "Comment";
   const sentence = sentenceOf(cleaned, 160);

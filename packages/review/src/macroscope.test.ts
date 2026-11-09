@@ -116,6 +116,8 @@ describe('Macroscope', () => {
     );
     expect(isReviewShaped(unreviewed)).toBe(false);
     const limited = check('Macroscope - Correctness Check', 'skipped', 'Per-review cost limit exceeded (workspace setting).');
+    // The gate's own "Needs Human Approval" over a refused review says nothing about the code either (t3code#33116).
+    expect(macroscope([limited], [{ author: BOT, body: approvability('Needs Human Approval'), anchor: 'issuecomment-1', createdAt: at(2) }])).toMatchObject({ verdict: 'failed', reason: 'Per-review cost limit exceeded (workspace setting)' });
     expect(macroscope([limited], [{ author: BOT, body: approvability('Would Approve', '\n\n**Needs human approval because:**\n- Per-review cost limit exceeded (workspace setting). Approvability relies on correctness review'), anchor: 'issuecomment-1', createdAt: at(2) }])).toMatchObject({
       verdict: 'failed',
       reason: 'Per-review cost limit exceeded (workspace setting)',
@@ -141,6 +143,26 @@ describe('Macroscope', () => {
     expect(isMacroscopeAgentComment('The change reaches Mac only.\n\nPosted via Macroscope — Visible change evidence')).toBe(true);
     expect(isReviewShaped(parseBotBody(`Found 2 issues in the evidence.\n\n${AGENT_COMMENT}`, 'macroscope'))).toBe(false);
     expect(macroscope([], [thread('discussion_r1', 1, false), { author: BOT, body: `No issues found in the code.\n\n${AGENT_COMMENT}`, anchor: 'issuecomment-2', createdAt: at(3) }])).toMatchObject({ verdict: 'findings', count: 1 });
+  });
+
+  it("keeps the check's count when the gate approves before the threads are read", () => {
+    const counted = check('Macroscope - Correctness Check', 'neutral', '8 issues identified (10 code objects reviewed).');
+    for (const verdict of ['Approved at `b830bd0`', 'Would Approve']) {
+      expect(macroscope([counted], [{ author: BOT, body: approvability(verdict), anchor: 'issuecomment-9', createdAt: at(2) }]), verdict).toMatchObject({ verdict: 'findings', count: 8 });
+    }
+    // With nothing counted, an approval is clean.
+    const clean = check('Macroscope - Correctness Check', 'success', 'No issues identified (3 code objects reviewed).');
+    expect(macroscope([clean], [{ author: BOT, body: approvability('Approved at `b830bd0`'), anchor: 'issuecomment-9', createdAt: at(2) }])?.verdict).toBe('clean');
+  });
+
+  it("never reads an agent's comment as a refusal or a status line", () => {
+    const signed = (words: string): BotComment => ({ author: BOT, body: `${words}\n\n<sup>Posted via Macroscope — <a href="https://github.com/o/r/runs/1">Visible change evidence</a></sup>`, anchor: 'issuecomment-5', createdAt: at(3) });
+    const clean = check('Macroscope - Correctness Check', 'success', 'No issues identified (3 code objects reviewed).', { startedAt: at(1), completedAt: at(2) });
+    for (const words of ['Permission denied.', 'Review started for the evidence.']) {
+      expect(refusalReason(signed(words).body) !== null || isStatusLineComment(signed(words).body), words).toBe(true);
+      expect(macroscope([clean], [signed(words)]), words).toMatchObject({ verdict: 'clean' });
+      expect(macroscope([], [thread('discussion_r1', 1, false), signed(words)]), words).toMatchObject({ verdict: 'findings', count: 1 });
+    }
   });
 
   it('shows a Check Run Agent as a report, and neither the review nor the gate', () => {

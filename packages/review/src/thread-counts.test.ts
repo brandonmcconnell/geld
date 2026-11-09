@@ -74,6 +74,9 @@ describe('thread counts', () => {
   it("titles Codex's raw thread by its words, not its badge", () => {
     expect(firstSentence('**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Resolve reference paths before creating comparison symlinks**\n\nWhen `root` is relative…')).toBe('**Resolve reference paths before creating comparison symlinks**');
     expect(firstSentence('Use `Map<string, number>` here. Then.')).toBe('Use `Map<string, number>` here.');
+    // Markup in a code span is the finding's subject, not a badge.
+    expect(firstSentence('Escape `<div>` and `![x](y)` before rendering.')).toBe('Escape `<div>` and `![x](y)` before rendering.');
+    expect(firstSentence('Escape `<sub>` in <sub>titles</sub>.')).toBe('Escape `<sub>` in titles.');
   });
 });
 

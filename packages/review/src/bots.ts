@@ -500,6 +500,11 @@ function countShapedBy(botId: string, text: string): number | null {
  * "**Verdict:** …". The verdict is the gate's, read from that line alone: the explanation under it talks about
  * findings ("The unresolved finding reports…") that its threads already count.
  */
+/** Macroscope's Approvability comment, in either form. */
+export function isMacroscopeGate(body: string): boolean {
+  return macroscopeApprovability(body.replace(/\r\n?/g, '\n').replace(/<!--[\s\S]*?-->/g, '').trim()) !== null;
+}
+
 function macroscopeApprovability(text: string): ParsedBotBody | null {
   if (!/^\s*(?:#{1,6}\s*)?Approvability\s*$/im.test(text)) return null;
   const verdict = /\bVerdict:?\**\s*:?\s*([^\n]*)/i.exec(text)?.[1]?.replace(/[*_`]/g, '').trim() ?? '';
@@ -1389,6 +1394,8 @@ export function verdictsFrom(
       continue;
     }
     if (id === null) continue;
+    // A Macroscope Check Run Agent's report says nothing about the review, whatever it looks like (a refusal, a status line).
+    if (id === 'macroscope' && comment.resolved === undefined && isMacroscopeAgentComment(comment.body)) continue;
     if (comment.resolved !== undefined) {
       // The run the bot announced has reported: its findings are these threads.
       postedThreads.add(id);
@@ -1454,6 +1461,12 @@ export function verdictsFrom(
       statusOnly.set(id, { login: comment.author, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: true, acknowledged: false, triggered, askedAt: pending === undefined ? (Number.isNaN(at) ? null : at) : (pending.askedAt ?? pending.at) });
       continue;
     }
+    // The gate judged a head whose review was refused (a spend limit): it says nothing about the code, the skip does.
+    if (id === 'macroscope' && checkSkipped.has(id) && !checkCurrent.has(id) && !threadRuns.has(id) && isMacroscopeGate(comment.body)) {
+      reported(id, comment);
+      statusOnly.delete(id);
+      continue;
+    }
     const parsed = parseBotBody(comment.body, id.startsWith('custom:') ? '' : id);
     // A coding agent's reply to a person or to another bot is not its review; only a review-shaped comment votes.
     if (botById(id)?.conversational === true && !isReviewShaped(parsed)) continue;
@@ -1479,7 +1492,9 @@ export function verdictsFrom(
     const login = comment.author;
     if (existing !== undefined) {
       // A clean word over a failed check is findings; over a skipped one it is clean (the skip is a run not made).
-      const verdict = parsed.clean && existing.verdict === 'failed' && !checkSkipped.has(id) ? 'findings' : parsed.clean ? 'clean' : parsed.count === 0 ? 'clean' : 'findings';
+      // ...and over a check that counted findings it is findings still: Macroscope approves with findings open (its
+      // blocking severity off), and the count stands until the threads say.
+      const verdict = parsed.clean && ((existing.verdict === 'failed' && !checkSkipped.has(id)) || checkCounts.has(id)) ? 'findings' : parsed.clean ? 'clean' : parsed.count === 0 ? 'clean' : 'findings';
       // A clean run says nothing about counts: the earlier run's number and severity belong to that run, not this one.
       // A skipped check's reason is about a run not made; the comment is a review, so it does not carry over.
       const { reason: _skipped, ...reviewed } = existing;
