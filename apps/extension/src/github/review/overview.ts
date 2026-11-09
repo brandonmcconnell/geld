@@ -59,7 +59,7 @@ import { hideHoverCard, setHoverProvider, setNoteProvider, setReportProvider, se
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
 import { knownMarkShape } from './mark-shape';
 import { loginOfLink, showLogins } from './login';
-import { allResolved, checkCountsFrom, checkCountsOfRuns, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, standingReviewers } from './panel-model';
+import { allResolved, isSevere, checkCountsFrom, checkCountsOfRuns, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, standingReviewers } from './panel-model';
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
@@ -559,6 +559,7 @@ function botCommentsOf(crawled: Crawled, settings: GeldSettings): readonly BotCo
       ...(reactions === undefined ? {} : { reactions }),
       ...(edited === null ? {} : { editedAt: edited }),
       ...(comment.kind === 'thread' && comment.isResolved !== undefined ? { resolved: comment.isResolved } : {}),
+      ...(comment.grade === undefined ? {} : { grade: comment.grade }),
     };
   });
 }
@@ -1980,8 +1981,9 @@ function botCardLine(record: BotVerdictRecord): string {
   if (record.verdict === 'clean') return scored === '' ? 'Found nothing on this pull request' : `${scored} and found nothing`;
   if (allResolved(record)) return scored === '' ? 'Everything it found on this pull request is resolved' : `${scored}, everything it found is resolved`;
   const issues = record.count === undefined ? null : `${record.count} issue${record.count === 1 ? '' : 's'}`;
-  if (scored !== '') return issues === null ? scored : `${scored}, ${issues} still open`;
-  if (issues !== null) return `Reported ${issues} on this pull request`;
+  const severe = isSevere(record) && record.severity === 'high' ? ', at least one marked high severity' : '';
+  if (scored !== '') return issues === null ? `${scored}${severe}` : `${scored}, ${issues} still open${severe}`;
+  if (issues !== null) return `Reported ${issues} on this pull request${severe}`;
   if (record.needsHuman === true) return 'Found nothing to count but recommends a person review this pull request';
   return 'Reported findings on this pull request';
 }

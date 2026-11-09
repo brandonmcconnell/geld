@@ -7,6 +7,7 @@
 import type { FixSource, ReviewItem, ReviewSeverity, ReviewSource, SourceKind } from './model';
 import { itemIdFor } from './model';
 import { isTriggerComment, looksLikeBotLogin, resolveBotId } from './bots';
+import type { FindingSeverity } from './bots';
 
 export interface RawComment {
   readonly anchor: string;
@@ -24,6 +25,11 @@ export interface RawComment {
   readonly reactedBy?: readonly string[];
   /** The same reactions with what each was, as GitHub names it ("rocket", "thumbs down", "thumbs up"). */
   readonly reactions?: readonly CommentReaction[];
+  /**
+   * How a thread's finding grades itself (`findingSeverity`), read by the page from its markup with the badges' alt
+   * text, which its words alone lose ("P1", "![high]"); unset where the body is the Markdown (the Action).
+   */
+  readonly grade?: FindingSeverity;
 }
 
 export interface CommentReaction {

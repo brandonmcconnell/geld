@@ -65,8 +65,6 @@ export interface ReviewBot {
    * whatever run posted it, so neither a new run, nor a summary, nor a reply sets the open threads aside.
    */
   readonly resolvesThreads?: true;
-  /** Each thread opens with the bot's severity badge (`🟠 **High** \`path:line\``), read by `badgeSeverity`. */
-  readonly threadSeverity?: 'badge';
 }
 
 /** A bot that acknowledges triggers with a reaction has this long to do so; past it an unreacted trigger is not a run. */
@@ -289,7 +287,6 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     configFiles: ['.macroscope/'],
     conversational: true,
     resolvesThreads: true,
-    threadSeverity: 'badge',
   },
   {
     // Korbit (korbit.ai, `korbit-ai[bot]`): a review headed "### Review by Korbit AI" with a table of issues and
@@ -529,14 +526,57 @@ export function isMacroscopeAgentComment(body: string): boolean {
 }
 
 /**
- * The severity badge a finding opens with — "🔴 **Critical**", "🟠 **High**", "🟡 **Medium**", "🟢 **Low**" before the
- * finding's `path:line` (Macroscope) — as Geld's three levels; null for a comment with none.
+ * How a finding grades itself, read from its opening (the first two lines, HTML comments off), as Geld's three
+ * levels; null for a finding that does not. Surveyed on public pull requests, Nov 2026: each bot has its own scale,
+ * and the top of it (and anything named "High") is `high`.
+ *
+ * - Words: "**High Severity**" (Bugbot, Capy), "Severity: HIGH" (Cursor's Agentic Security Review), a bold level
+ *   alone or before "·" ("🟠 **High**" Macroscope, "**🟡 Medium · …**" Sourcery, "**<img> Major** · …" CodeRabbit),
+ *   an image or shields badge labelled by level ("![high]" Gemini, "![MAJOR]" Entelligence, "badge/High-…" Qodo).
+ *   Critical, High and Major are high; Medium and Minor medium; Low, Trivial and Nit low.
+ * - Priorities: "P1 Badge" (Codex), `alt="P1"` (Greptile), "P1:" (cubic), "badge/P1-…" (Qodo). P0 and P1 are high, P2
+ *   medium, P3 and P4 low.
+ * - Colour alone, where the bot grades by it or words it in another language: 🔴 and 🟠 high ("🔴 …" Claude, Devin;
+ *   "🟠 高" Sourcery), 🟡 medium, 🟢 low; 🛑 high (Amazon Q's defects).
  */
-export function badgeSeverity(body: string): FindingSeverity | null {
-  const first = body.replace(/<!--[\s\S]*?-->/g, '').trim().split('\n')[0] ?? '';
-  const match = /^\s*\p{Extended_Pictographic}?\uFE0F?\s*\*\*(critical|high|medium|low)\*\*/iu.exec(first);
-  const level = match?.[1]?.toLowerCase();
-  return level === undefined ? null : level === 'critical' || level === 'high' ? 'high' : level === 'medium' ? 'medium' : 'low';
+export function findingSeverity(body: string): FindingSeverity | null {
+  const opening = body
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+    .slice(0, 2)
+    .join('\n');
+  const level = (word: string): FindingSeverity | null => {
+    const lower = word.toLowerCase();
+    if (/^(?:critical|high|major|important|p0|p1)$/.test(lower)) return 'high';
+    if (/^(?:medium|minor|p2)$/.test(lower)) return 'medium';
+    if (/^(?:low|trivial|nit|nitpick|p3|p4)$/.test(lower)) return 'low';
+    return null;
+  };
+  const LEVEL = 'critical|high|major|medium|minor|low|trivial|nit|nitpick';
+  // Qodo says what a finding asks for in its badge's alt, over the label ("P1" with "Remediation recommended").
+  const asks = /(?:alt="|!\[)(action required|remediation recommended)["\]]/i.exec(opening)?.[1]?.toLowerCase();
+  if (asks !== undefined) return asks === 'action required' ? 'high' : 'medium';
+  // The explicit grades first; "High Severity" counts only as a label of its own, never inside a sentence.
+  const words =
+    // A level in a badge: an image's alt or a shields.io label ("![high](…)", "badge/High-634FD1", alt="P1").
+    new RegExp(`(?:!\\[|alt="|/badge/)(${LEVEL}|p[0-4])(?:[\\]"\\s-]|\\s+badge)`, 'i').exec(opening) ??
+    // A bold level alone, or before "·", leading its line, with a colour mark or a CodeRabbit icon before it.
+    new RegExp(`^[\\s>]*(?:\\p{Extended_Pictographic}\\uFE0F?\\s*)?(?:\\*\\*|__)\\s*(?:<[^>]+>\\s*)*(?:\\p{Extended_Pictographic}\\uFE0F?\\s*)?(${LEVEL})\\s*(?:\\*\\*|__|·)`, 'imu').exec(opening) ??
+    // A priority leading the finding ("P1: …", cubic).
+    /^\W{0,3}(p[0-4])\s*:/im.exec(opening) ??
+    // "**High Severity**" (Bugbot), "**Medium Severity · Investigate**" (Capy), "Severity: HIGH" (Cursor's security review).
+    new RegExp(`(?:^|\\*\\*|__)\\s*(${LEVEL})\\s+severity\\s*(?:\\*\\*|__|·|$)`, 'im').exec(opening) ??
+    new RegExp(`^\\W{0,3}severity:?\\W{0,3}(${LEVEL})\\b`, 'im').exec(opening) ??
+    // A colour mark with its level anywhere on the line ("… — 🟡 Minor · Correctness", "K1 · 🟢 `[nit]` ·", Claude).
+    new RegExp(`(?:🔴|🟠|🟡|🟢|⚪)\\s*\`?\\[?(${LEVEL}|important)\\]?\`?(?![A-Za-z0-9-])`, 'iu').exec(opening);
+  const read = words?.[1] === undefined ? null : level(words[1]);
+  if (read !== null) return read;
+  // A colour mark leading the finding (through bold marks): 🔴/🟠 high, 🟡 medium, 🟢 low, 🛑 high.
+  const mark = /^[*_\s]*(🔴|🟠|🟡|🟢|🛑|:stop_sign:)/u.exec(opening)?.[1];
+  if (mark === undefined) return null;
+  return mark === '🔴' || mark === '🟠' || mark === '🛑' || mark === ':stop_sign:' ? 'high' : mark === '🟡' ? 'medium' : 'low';
 }
 
 const SEVERITY_RANK: Readonly<Record<FindingSeverity, number>> = { high: 3, medium: 2, low: 1 };
@@ -1099,6 +1139,8 @@ export interface BotComment {
    * the only sign the run it was asked for has ended.
    */
   readonly editedAt?: string;
+  /** A thread's grade as the page read it with its badges (`RawComment.grade`); else its body is read (`findingSeverity`). */
+  readonly grade?: FindingSeverity;
 }
 
 /**
@@ -1120,7 +1162,7 @@ interface ThreadRun {
   readonly lastAt: number | null;
   /** Findings the run's summary holds with no thread to resolve (`ParsedBotBody.unthreaded`), and that summary. */
   readonly unthreaded?: { readonly count: number; readonly anchor: string };
-  /** The worst badge among the open threads, for a bot whose threads wear one (`ReviewBot.threadSeverity`). */
+  /** The worst grade among the open threads (`findingSeverity`), when any of them grades itself. */
   readonly severity?: FindingSeverity;
 }
 
@@ -1408,7 +1450,7 @@ export function verdictsFrom(
       const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
       const lastAt = Number.isNaN(at) ? (run?.lastAt ?? null) : Math.max(at, run?.lastAt ?? Number.NEGATIVE_INFINITY);
       const unthreaded = run === undefined ? unthreadedBy.get(id) : run.unthreaded;
-      const badge = !comment.resolved && botById(id)?.threadSeverity === 'badge' ? badgeSeverity(comment.body) : null;
+      const badge = comment.resolved ? null : (comment.grade ?? findingSeverity(comment.body));
       const severity = badge === null || (run?.severity !== undefined && SEVERITY_RANK[run.severity] >= SEVERITY_RANK[badge]) ? run?.severity : badge;
       threadRuns.set(id, { login: comment.author, open, openAnchor, lastAnchor: comment.anchor, lastAt, ...(unthreaded === undefined ? {} : { unthreaded }), ...(severity === undefined ? {} : { severity }) });
       continue;

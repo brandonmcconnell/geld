@@ -204,6 +204,15 @@ export const ICON_TRIANGLE_DOWN = octicon(
 
 export const ICON_DOT_FILL = octicon('<path d="M8 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z"></path>', 'octicon-dot-fill');
 
+/**
+ * A finding the bot marks severe: `x-circle-fill`'s circle with Octicons' `exclamation` cut out of it at 60% (GitHub
+ * ships no filled exclamation circle), so it stands beside the check and the cross with the same weight.
+ */
+export const ICON_EXCLAMATION_CIRCLE_FILL = octicon(
+  '<path fill-rule="evenodd" d="M2.343 13.657A8 8 0 1 1 13.658 2.343 8 8 0 0 1 2.343 13.657ZM8 9.8a1.2 1.2 0 1 1 .0006 2.3994A1.2 1.2 0 0 1 8 9.8ZM8 3.8a.9.9 0 0 1 .9.9v3.6a.9.9 0 0 1-1.8 0V4.7A.9.9 0 0 1 8 3.8Z"></path>',
+  'octicon-exclamation-circle-fill',
+);
+
 export const ICON_X_CIRCLE_FILL = octicon(
   '<path d="M2.343 13.657A8 8 0 1 1 13.658 2.343 8 8 0 0 1 2.343 13.657ZM6.03 4.97a.751.751 0 0 0-1.042.018.751.751 0 0 0-.018 1.042L6.94 8 4.97 9.97a.749.749 0 0 0 .326 1.275.749.749 0 0 0 .734-.215L8 9.06l1.97 1.97a.749.749 0 0 0 1.275-.326.749.749 0 0 0-.215-.734L9.06 8l1.97-1.97a.749.749 0 0 0-.326-1.275.749.749 0 0 0-.734.215L8 6.94Z"></path>',
   'octicon-x-circle-fill',

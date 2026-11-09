@@ -19,7 +19,7 @@ import { noteTone } from './note-tone';
 import { botTitle, isOpenStatus, itemThreads, resolveBotId, threadCounts } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import type { RevisionMarker } from './crawler';
-import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_EXCLAMATION_CIRCLE_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checkStateOfRun, checksHealth, checksRowTone, checksSummary, checksTotal, pushRowTone, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
 import type { CheckCounts, CheckState, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -1447,9 +1447,13 @@ function plural(count: number, noun: string, nounPlural = `${noun}s`): string {
 const HEALTH_ICON: Readonly<Record<Health, string>> = {
   good: ICON_CHECK_CIRCLE_FILL,
   warn: ICON_DOT_FILL,
+  severe: ICON_EXCLAMATION_CIRCLE_FILL,
   bad: ICON_X_CIRCLE_FILL,
   pending: ICON_DOT_FILL,
 };
+
+/** The Review bots row wears its worst bot's light: a broken run, then severe findings, findings, a run under way. */
+const HEALTH_RANK: Readonly<Record<Health, number>> = { good: 0, pending: 1, warn: 2, severe: 3, bad: 4 };
 
 function healthGlyph(health: Health, label: string, glyph: string = HEALTH_ICON[health]): HTMLElement {
   return createElement('span', { class: `${PANEL_CLASS}__health`, 'data-health': health, role: 'img', 'aria-label': label, title: label }, [icon(glyph)]);
@@ -2044,7 +2048,7 @@ function statusRows(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     if (open) rows.append(slotRow(REVIEWS_KEY, null, 'list'));
   }
   if (model.meta.bots.length > 0 || model.requestable.length > 0) {
-    const worst: Health = model.meta.bots.map(botHealth).reduce<Health>((acc, health) => (acc === 'bad' || health === 'bad' ? 'bad' : acc === 'warn' || health === 'warn' ? 'warn' : acc === 'pending' || health === 'pending' ? 'pending' : 'good'), 'good');
+    const worst: Health = model.meta.bots.map(botHealth).reduce<Health>((acc, health) => (HEALTH_RANK[health] > HEALTH_RANK[acc] ? health : acc), 'good');
     const health: Health = model.meta.bots.length === 0 ? 'pending' : worst;
     const chips = model.meta.bots.map((bot) => botChip(bot, model, handlers));
     const menu = requestMenu(model, handlers);
