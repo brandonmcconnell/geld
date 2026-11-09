@@ -58,6 +58,36 @@ describe('applyPeoplePresence on an issue', () => {
   });
 });
 
+describe('applyPeoplePresence around other people’s threads', () => {
+  it('folds a hidden reviewer’s own words on the Overview and leaves the threads inside their review', () => {
+    document.body.innerHTML = `
+      <article id="pullrequestreview-5"><div class="header"><a data-testid="avatar-link" href="/hidden-one">hidden-one</a></div><div class="body"><p>Their review</p></div>
+        <article><div data-testid="review-thread"><div id="discussion_r7"><a data-testid="avatar-link" href="/someone">someone</a><p>Someone else's finding</p></div></div></article>
+      </article>`;
+    apply('pull request');
+    const review = document.querySelector('#pullrequestreview-5');
+    expect(review?.hasAttribute('data-geld-person-fold-own')).toBe(true);
+    expect(review?.querySelector('.body')?.hasAttribute('data-geld-person-fold-part')).toBe(true);
+    expect(review?.querySelector('article')?.hasAttribute('data-geld-person-fold-part')).toBe(false);
+    expect(folded('#discussion_r7')).toBe(false);
+    review?.previousElementSibling?.querySelector('button')?.click();
+    expect(review?.querySelector('[data-geld-person-fold-part]')).toBeNull();
+  });
+
+  it('folds a hidden person’s discussion comment and leaves someone else’s reply under it', () => {
+    document.body.innerHTML = `
+      <div id="discussion-2" class="timeline-comment"><a class="author" href="/someone">someone</a><p>The opening post</p></div>
+      <div id="discussioncomment-20" class="timeline-comment"><a class="author" href="/hidden-one">hidden-one</a><p class="words">Their comment</p>
+        <div id="discussioncomment-21" class="timeline-comment nested-discussion-timeline-comment"><a class="author" href="/someone">someone</a><p>A reply</p></div>
+      </div>`;
+    apply('discussion');
+    const comment = document.querySelector('#discussioncomment-20');
+    expect(comment?.querySelector('.words')?.hasAttribute('data-geld-person-fold-part')).toBe(true);
+    expect(document.querySelector('#discussioncomment-21')?.hasAttribute('data-geld-person-fold-part')).toBe(false);
+    expect(folded('#discussioncomment-21')).toBe(false);
+  });
+});
+
 describe('applyPeoplePresence on a discussion', () => {
   it('leaves the opening post, and folds their comments and nested replies each on its own', () => {
     document.body.innerHTML = DISCUSSION;
