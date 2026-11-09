@@ -72,7 +72,7 @@ Every release also carries a nightly build for each browser, `geld-<version>-<br
 
 Geld Nightly does not run while Geld from a store is on in the same profile. It pauses, marks Geld's bar on GitHub with the conflict and a button to turn Geld off, and starts on its own once Geld is off or removed.
 
-For Chrome and Edge (and Brave, with the Chrome zip), the installer is the easy way in:
+For Chrome, Edge and the other Chromium browsers (Brave, Helium, Arc, Dia, Comet, Vivaldi, Opera, Thorium and more, with the Chrome zip), the installer is the easy way in:
 
 ```sh
 npx geld-nightly@latest
@@ -82,7 +82,7 @@ curl -fsSL https://www.geld.sh/nightly.sh | sh
 irm https://www.geld.sh/nightly.ps1 | iex
 ```
 
-It lists your browser profiles by name and lets you pick one or more. It downloads the latest nightly zip, checks its SHA-256 checksum and its manifest, and unzips it into `~/Geld Nightly/<profile>` (on Windows, `Geld Nightly` in your user folder), one folder per profile, then deletes the zip. For each profile it copies the folder's path to the clipboard, opens the browser in that profile and prints the steps: go to `chrome://extensions`, turn on Developer mode, click _Load unpacked_ and paste the path. Run it again any time to repair a folder. It never writes over a folder that is not Geld Nightly, refuses folders the browser's picker will not open or the system empties, and asks before using a synced folder (iCloud, OneDrive, Dropbox, Google Drive). Its own state is kept in `~/.geld`.
+It lists your browser profiles by name and lets you pick one or more. It downloads the latest nightly zip, checks its SHA-256 checksum and its manifest, and unzips it into `~/Geld Nightly/<profile>` (on Windows, `Geld Nightly` in your user folder), one folder per profile, then deletes the zip. For each profile it copies the folder's path to the clipboard, opens the browser in that profile and prints the steps: go to the browser's extensions page (`chrome://extensions` and the like), turn on Developer mode, click _Load unpacked_ and paste the path. Run it again any time to repair a folder. It never writes over a folder that is not Geld Nightly, refuses folders the browser's picker will not open or the system empties, and asks before using a synced folder (iCloud, OneDrive, Dropbox, Google Drive). Its own state is kept in `~/.geld`.
 
 To do the same by hand:
 

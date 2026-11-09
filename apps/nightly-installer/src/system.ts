@@ -42,7 +42,7 @@ export interface Launch {
  * reader to type, and the installer prints its address.
  */
 export function launchFor(browser: BrowserInfo, directory: string, environment: Environment): Launch | null {
-  const args = [`--profile-directory=${directory}`];
+  const args = browser.rootProfile === true ? [] : [`--profile-directory=${directory}`];
   if (environment.platform === 'darwin') return { command: 'open', args: ['-na', browser.macApp, '--args', ...args], exits: true };
   if (environment.platform === 'win32') {
     const exe = windowsExeCandidates(browser, environment).find((candidate) => existsSync(candidate));

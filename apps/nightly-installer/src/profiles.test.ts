@@ -1,4 +1,5 @@
-import { BROWSERS, userDataDir } from './browsers';
+import { BROWSERS, userDataDirs } from './browsers';
+import type { BrowserInfo } from './browsers';
 import { downloadDirectory, parseLocalState } from './profiles';
 
 const chrome = BROWSERS.find((browser) => browser.id === 'chrome');
@@ -32,12 +33,42 @@ describe('parseLocalState', () => {
   });
 });
 
-describe('userDataDir', () => {
+describe('userDataDirs', () => {
+  const browser = (id: string): BrowserInfo => {
+    const found = BROWSERS.find((info) => info.id === id);
+    if (found === undefined) throw new Error(`no ${id}`);
+    return found;
+  };
+  const mac = { platform: 'darwin', home: '/Users/me', env: {} } as const;
+  const windows = { platform: 'win32', home: 'C:\\Users\\me', env: { LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local', APPDATA: 'C:\\Users\\me\\AppData\\Roaming' } } as const;
+  const linux = { platform: 'linux', home: '/home/me', env: {} } as const;
+
   it('finds each browser where it keeps its profiles', () => {
     if (chrome === undefined || edge === undefined) throw new Error('browsers missing');
-    expect(userDataDir(chrome, { platform: 'darwin', home: '/Users/me', env: {} })).toBe('/Users/me/Library/Application Support/Google/Chrome');
-    expect(userDataDir(edge, { platform: 'win32', home: 'C:\\Users\\me', env: { LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local' } })).toBe('C:\\Users\\me\\AppData\\Local\\Microsoft\\Edge\\User Data');
-    expect(userDataDir(chrome, { platform: 'linux', home: '/home/me', env: {} })).toBe('/home/me/.config/google-chrome');
+    expect(userDataDirs(chrome, mac)).toEqual(['/Users/me/Library/Application Support/Google/Chrome']);
+    expect(userDataDirs(edge, windows)).toEqual(['C:\\Users\\me\\AppData\\Local\\Microsoft\\Edge\\User Data']);
+    expect(userDataDirs(chrome, linux)).toEqual(['/home/me/.config/google-chrome']);
+  });
+
+  it('knows browsers that keep it under their bundle id, under User Data, or in Roaming', () => {
+    expect(userDataDirs(browser('helium'), mac)).toEqual(['/Users/me/Library/Application Support/net.imput.helium']);
+    expect(userDataDirs(browser('helium'), windows)).toEqual(['C:\\Users\\me\\AppData\\Local\\imput\\Helium\\User Data']);
+    expect(userDataDirs(browser('helium'), linux)).toEqual(['/home/me/.config/net.imput.helium']);
+    expect(userDataDirs(browser('arc'), mac)).toEqual(['/Users/me/Library/Application Support/Arc/User Data']);
+    expect(userDataDirs(browser('opera'), windows)).toEqual(['C:\\Users\\me\\AppData\\Roaming\\Opera Software\\Opera Stable']);
+    expect(userDataDirs(browser('edge-canary'), windows)).toEqual(['C:\\Users\\me\\AppData\\Local\\Microsoft\\Edge SxS\\User Data']);
+  });
+
+  it('has nowhere to look on a platform the browser is not made for', () => {
+    expect(userDataDirs(browser('arc'), linux)).toEqual([]);
+  });
+
+  it('gives every browser a distinct id and, per platform, a distinct folder', () => {
+    expect(new Set(BROWSERS.map((info) => info.id)).size).toBe(BROWSERS.length);
+    for (const environment of [mac, windows, linux]) {
+      const dirs = BROWSERS.flatMap((info) => userDataDirs(info, environment));
+      expect(new Set(dirs).size).toBe(dirs.length);
+    }
   });
 });
 

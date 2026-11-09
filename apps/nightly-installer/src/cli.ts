@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import type { InstallRecord, NightlyBrowser, NightlyRelease, ZipEntry } from '@geld/core/nightly';
-import { BROWSERS, pathApi, userDataDir } from './browsers';
+import { BROWSER_IDS, BROWSERS, pathApi, userDataDirs } from './browsers';
 import type { BrowserInfo, Environment, Platform } from './browsers';
 import { folderRecord, inspectTarget, readInstalls, recordInstall, sameProfile, writeBuild } from './install';
 import { defaultRoot, folderNames, locationProblems, profileKey, ROOT_NAME } from './location';
@@ -18,13 +18,13 @@ import { copyToClipboard, launchFor, open } from './system';
 
 declare const INSTALLER_VERSION: string;
 
-const HELP = `geld-nightly: installs Geld Nightly for the Chrome, Chrome Beta, Edge or Brave profiles you pick.
+const HELP = `geld-nightly: installs Geld Nightly for the Chromium browser profiles you pick.
 
 Usage: npx geld-nightly@latest [options]
 
   --profile <name>       A profile to install for, by name or folder (repeatable). Default: ask.
   --all                  Every profile found.
-  --browser <id>         Only chrome, chrome-beta, edge or brave (repeatable).
+  --browser <id>         Only this browser (repeatable). Ids are listed below.
   --dir <folder>         Where the build folders go. Default: ~/${ROOT_NAME}.
   --downloads            Put them in the profile's Downloads folder instead, where updates
                          need no folder picker but cleanup tools may empty the folder.
@@ -32,6 +32,9 @@ Usage: npx geld-nightly@latest [options]
   --no-open              Do not open the browser or wait between profiles.
   --verify-attestation   Also check GitHub's build attestation (needs the gh CLI, signed in).
   --help, --version
+
+Browsers:
+${BROWSERS.map((browser) => `  ${browser.id.padEnd(21)}  ${browser.label}`).join('\n')}
 `;
 
 interface Options {
@@ -74,7 +77,7 @@ export function parseArgs(argv: readonly string[]): Options | 'help' | 'version'
     } else return `Unknown option ${arg}. See --help.`;
   }
   const unknown = browsers.find((id) => !BROWSERS.some((browser) => browser.id === id));
-  if (unknown !== undefined) return `Unknown browser ${unknown}. Use chrome, chrome-beta, edge or brave.`;
+  if (unknown !== undefined) return `Unknown browser ${unknown}. Use one of: ${BROWSER_IDS.join(', ')}.`;
   return { ...flags, profiles, browsers, dir };
 }
 
@@ -109,12 +112,16 @@ async function findProfiles(environment: Environment, browsers: readonly string[
   const api = pathApi(environment.platform);
   for (const info of BROWSERS) {
     if (browsers.length > 0 && !browsers.includes(info.id)) continue;
-    const root = userDataDir(info, environment);
-    const state = await readText(api.join(root, 'Local State'));
-    if (state === null) continue;
-    for (const profile of parseLocalState(state, info.id)) {
-      const preferences = await readText(api.join(root, profile.directory, 'Preferences'));
-      found.push({ ...profile, info, downloads: downloadDirectory(preferences, api.join(environment.home, 'Downloads')) });
+    for (const root of userDataDirs(info, environment)) {
+      const state = await readText(api.join(root, 'Local State'));
+      if (state === null) continue;
+      const listed = parseLocalState(state, info.id);
+      const profiles = listed.length > 0 || info.rootProfile !== true ? listed : [{ browser: info.id, directory: 'Default', name: 'Default', email: null }];
+      for (const profile of profiles) {
+        const preferences = await readText(info.rootProfile === true ? api.join(root, 'Preferences') : api.join(root, profile.directory, 'Preferences'));
+        found.push({ ...profile, info, downloads: downloadDirectory(preferences, api.join(environment.home, 'Downloads')) });
+      }
+      break;
     }
   }
   return found;
@@ -181,7 +188,7 @@ function steps(profile: Found, dir: string, copied: boolean, opened: boolean, pl
     '  2. Click Load unpacked.',
     copied ? `  3. Pick this folder. Its path is on your clipboard, so ${pickHint}:` : '  3. Pick this folder:',
     `     ${dir}`,
-    ...(inDownloads ? [] : ['  4. Click the Geld Nightly toolbar icon, then Connect folder, and pick the same folder when Chrome asks.']),
+    ...(inDownloads ? [] : ['  4. Click the Geld Nightly toolbar icon, then Connect folder, and pick the same folder when the browser asks.']),
     ...(last ? [] : ['']),
   ];
 }
@@ -205,7 +212,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 
   const found = await findProfiles(environment, options.browsers);
   if (found.length === 0) {
-    console.error('No Chrome, Chrome Beta, Edge or Brave profiles were found. Open the browser once, then run this again.');
+    console.error('No Chromium browser profiles were found. Open the browser once, then run this again. See --help for the browsers Geld knows.');
     return 1;
   }
   const chosen = await choose(found, options);
@@ -279,7 +286,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       if (!last) await ask('Press Enter for the next profile. ', '');
     }
   }
-  console.log('\nDo not move or rename these folders after loading them: Chrome ties the extension to its folder path.');
+  console.log('\nDo not move or rename these folders after loading them: the browser ties the extension to its folder path.');
   console.log('Run npx geld-nightly@latest again any time to repair a folder. Updates after this install themselves.');
   return 0;
 }
