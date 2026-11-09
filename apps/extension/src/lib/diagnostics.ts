@@ -10,7 +10,8 @@ import { describeRepository, providerForHost } from '@geld/core';
  */
 export interface DiagnosticEvent {
   readonly at: number;
-  readonly kind: 'fetch' | 'worker-start' | 'rate-limit' | 'busy' | 'cache-clear' | 'inject';
+  /** `error`: one of Geld's own errors (`error-capture.ts`); `subject` is where it happened, `outcome` its scrubbed message. */
+  readonly kind: 'fetch' | 'worker-start' | 'rate-limit' | 'busy' | 'cache-clear' | 'inject' | 'error' | 'error-report';
   readonly subject?: string | undefined;
   /**
    * `ok`, `memory-hit`, `queued`, `rate-limited`, `signed-out`, `not-a-diff`, `http-NNN`, `too-large`, or an error
