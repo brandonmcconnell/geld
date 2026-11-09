@@ -1,4 +1,4 @@
-import { clusterComments } from './cluster';
+import { groupOverlappingThreads } from './cluster';
 import type { RawComment } from './cluster';
 import type { ReviewItem } from './model';
 import { botByLogin, isReviewShaped, parseBotBody } from './bots';
@@ -94,7 +94,7 @@ export function providerFindings(threads: readonly Thread[], comments: readonly 
       createdAt: comment.createdAt ?? '',
     });
   }
-  return { items: clusterComments(raw), raw, sources, omitted };
+  return { items: groupOverlappingThreads(raw), raw, sources, omitted };
 }
 export function sourceThreads(draft: FindingDraft, item: ReviewItem): readonly string[] {
   const anchors = new Set(item.sources.map((source) => source.anchor));

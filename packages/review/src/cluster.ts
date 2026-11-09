@@ -1,7 +1,9 @@
 /**
- * Deterministic grouping of review comments into one item per concern:
- * same thread, file + line overlap (±3), identical suggestion blocks, or
- * the same bot rule id.
+ * Review comments as review items, deterministically: one item per review
+ * thread for the digest and the Action (`clusterComments`), or one per concern
+ * for the dashboard's consolidated findings (`groupOverlappingThreads`: same
+ * thread, file + line overlap (±3), identical suggestion blocks, or the same
+ * bot rule id).
  */
 
 import type { FixSource, ReviewItem, ReviewSeverity, ReviewSource, SourceKind } from './model';
@@ -300,10 +302,6 @@ export function sourceExcerpts(comments: readonly RawComment[], item: ReviewItem
   });
 }
 
-/**
- * Group comments into review items. Threads are already one atom; atoms then
- * merge when they share a location, suggestion, or bot rule.
- */
 /** A bot's top-level comment is its run summary (a verdict, folded away), not a review finding. */
 export function isBotSummaryComment(comment: RawComment, extraLogins: readonly string[] = []): boolean {
   return comment.kind !== 'thread' && (resolveBotId(comment.author, extraLogins) !== null || looksLikeBotLogin(comment.author));
@@ -319,7 +317,21 @@ export function isReviewItemComment(comment: RawComment, extraLogins: readonly s
   return comment.kind === 'thread' && comment.body.trim() !== '' && !isTriggerComment(comment.body, extraLogins);
 }
 
+/**
+ * Review items, one per review thread: its opening comment and its replies. Threads are never merged here, even on
+ * the same lines or with the same suggestion: each is resolved on its own on GitHub, so a digest row that held two
+ * said "1 of 2 threads resolved" and opened two conversations, and on the Overview (where every thread names its
+ * line) a finding absorbed another reviewer's thread a few lines away.
+ */
 export function clusterComments(comments: readonly RawComment[], extraLogins: readonly string[] = []): readonly ReviewItem[] {
+  return comments.filter((comment) => isReviewItemComment(comment, extraLogins)).map((comment) => itemFromAtom(atomFrom(comment, extraLogins)));
+}
+
+/**
+ * Every thread together with the threads it overlaps (same lines, the same suggestion, or one bot's rule): the
+ * dashboard's consolidated findings, where one finding resolves all of its source threads at once.
+ */
+export function groupOverlappingThreads(comments: readonly RawComment[], extraLogins: readonly string[] = []): readonly ReviewItem[] {
   const atoms = comments.filter((comment) => isReviewItemComment(comment, extraLogins)).map((comment) => atomFrom(comment, extraLogins));
   const parent = atoms.map((_, index) => index);
   const find = (index: number): number => {
