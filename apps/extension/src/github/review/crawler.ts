@@ -10,6 +10,8 @@ import type { CommentReaction, PreviewDoc, RawCheckRun, RawComment, ReviewerReco
 import { appAvatarForLogin, findingSeverity, looksLikeSummaryBody } from '@geld/review';
 import { loginOfLink } from './login';
 import { OVERVIEW_ITEM, OVERVIEW_THREAD_FRAME, overviewCommentsSection } from './overview-page';
+import type { ReferenceLink } from './references';
+import { referenceLinksIn } from './references';
 import { closestAtHome, compareHome, homeOf, wornPiecesOf } from './teleport';
 import { count as perfCount } from '../../lib/perf';
 
@@ -270,16 +272,33 @@ export function avatarSrcFor(anchor: string): string | null {
 }
 
 /** Any avatar the page shows for `login` — the reviewers sidebar, another comment, a hovercard link. */
-export function avatarSrcForLogin(login: string): string | null {
+export function avatarSrcForLogin(login: string, now = Date.now()): string | null {
+  const known = avatarsByLogin.get(login);
+  if (known !== undefined) return known;
+  if (now - (avatarMisses.get(login) ?? Number.NEGATIVE_INFINITY) < AVATAR_MISS_MS) return null;
   const bare = login.replace(/\[bot\]$/i, '');
   const selectors = [`img[alt="@${bare}"]`, `a[href="/${bare}"] img`, `a[href$="/${bare}"][data-hovercard-type] img`, `img[alt="${bare}"]`, `a[href="/apps/${bare}"] img`];
   for (const selector of selectors) {
     const img = document.querySelector(selector);
     const src = (img instanceof HTMLImageElement ? img.currentSrc : '') || img?.getAttribute('src') || '';
-    if (src !== '') return normalizeAvatarSrc(src);
+    if (src !== '') {
+      const normalized = normalizeAvatarSrc(src);
+      avatarsByLogin.set(login, normalized);
+      return normalized;
+    }
   }
+  avatarMisses.set(login, now);
   return null;
 }
+
+/**
+ * Pictures found for a login, kept for the page, and when one was last looked for in vain. Every registry bot is asked
+ * for on every build of the panel, and five whole-document queries for each bot the page does not show were most of
+ * a build while GitHub was still rendering the page. A miss is asked again after `AVATAR_MISS_MS`, as the page fills in.
+ */
+const avatarsByLogin = new Map<string, string>();
+const avatarMisses = new Map<string, number>();
+const AVATAR_MISS_MS = 1000;
 
 function pathLineOf(root: Element): { readonly path?: string; readonly line?: number } {
   // The Overview names a thread's file in its heading, linked into the Changes tab and wrapped in direction marks.
@@ -349,6 +368,22 @@ export interface CrawledComment {
   readonly avatarSrc: string | null;
   /** The comment's rendered body as text, links and images — what the preview parser reads. */
   readonly previewDoc: PreviewDoc;
+  /** The issues, pull requests and discussions it links to; for a review thread, every comment's. */
+  readonly mentions: readonly CommentMention[];
+}
+
+/** A reference a comment makes, with who made it and when. */
+export interface CommentMention extends ReferenceLink {
+  readonly anchor: string;
+  readonly author: Author;
+  readonly avatarSrc: string | null;
+  readonly at: string;
+}
+
+function mentionsOf(node: Element, author: Author): readonly CommentMention[] {
+  const avatarSrc = avatarSrcOf(node);
+  const at = createdAtOf(node);
+  return referenceLinksIn(bodyElementOf(node)).map((link) => ({ ...link, anchor: node.id, author, avatarSrc, at }));
 }
 
 /**
@@ -515,10 +550,12 @@ function readThread(container: Element): ThreadReading {
     };
   }
   const peers: ThreadPeer[] = [];
+  const mentions: CommentMention[] = [];
   for (const node of nodes) {
     const author = authorOf(node);
     if (author === null) continue;
     peers.push({ anchor: node.id, kind: 'thread', author: author.login, body: textOf(bodyElementOf(node)) });
+    mentions.push(...mentionsOf(node, author));
   }
   const author = authorOf(first);
   const lead = peers[0];
@@ -546,6 +583,7 @@ function readThread(container: Element): ThreadReading {
       author,
       avatarSrc: avatarSrcOf(first),
       previewDoc: previewDocOf(first, author.login, first.id),
+      mentions,
     },
   };
   for (const key of threadKeys(container, ids)) rememberedThreads.set(key, read);
@@ -568,7 +606,7 @@ function readComment(node: Element): CommentReading {
     createdAt: createdAtOf(node),
     ...(reactions.length === 0 ? {} : { reactedBy: reactors, reactions }),
   };
-  return { usable: true, crawled: { comment: withLocation(base, pathLineOf(node)), root: timelineRootOf(node), author, avatarSrc: avatarSrcOf(node), previewDoc: previewDocOf(node, author.login, node.id) } };
+  return { usable: true, crawled: { comment: withLocation(base, pathLineOf(node)), root: timelineRootOf(node), author, avatarSrc: avatarSrcOf(node), previewDoc: previewDocOf(node, author.login, node.id), mentions: mentionsOf(node, author) } };
 }
 
 /**

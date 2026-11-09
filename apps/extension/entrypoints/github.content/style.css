@@ -10053,6 +10053,17 @@ div:has(> [data-geld-overview-merge]) {
   margin-top: 2px !important;
 }
 
+/* The Overview's pills fill their row from its top, which is the bubble's bottom edge: they keep a gap of their own. */
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-message] .geld-review__msg-reactions--overview {
+  padding-top: 6px !important;
+}
+
+/* The Overview's reaction picker, on comments and the description alike: GitHub draws its emoji at the text's 14px. */
+html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.Item.Label'] {
+  font-size: 20px;
+  line-height: 24px;
+}
+
 .geld-review__chat [data-geld-mine] .geld-review__msg-reactions [role='toolbar'] {
   justify-content: flex-end;
 }

@@ -32006,7 +32006,30 @@ function outsideDiffCount(text) {
   const match = /\boutside diff range comments\s*\((\d+)\)/i.exec(text);
   return match?.[1] === void 0 ? 0 : Number.parseInt(match[1], 10);
 }
-function countShapedBy(botId, text) {
+function failedPreMergeCount(text) {
+  if (!hasHeading(text, FIX_ALL_HEADING)) return 0;
+  const block = /\bfailed pre-merge checks:[^\S\n]*\n([\s\S]*?)(?:\bafter applying the fix\b|```|$)/i.exec(text)?.[1] ?? "";
+  return block.split("\n").filter((line) => /^\s*-\s+[^:\n]{1,80}:\s*$/.test(line)).length;
+}
+function isCodeRabbitReview(text) {
+  return hasHeading(text, FIX_ALL_HEADING) || hasHeading(text, NOTES_HEADING);
+}
+var FIX_ALL_HEADING = /^prompt to fix all issues$/i;
+var NOTES_HEADING = /^(?:nitpick|additional) comments:?\s*\(?\d+\)?$/i;
+function hasHeading(text, heading) {
+  let fenced = false;
+  for (const line of text.split("\n")) {
+    if (/^\s*```/.test(line)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced || /^\s*>/.test(line)) continue;
+    const bare = line.replace(/<[^>]*>/g, "").replace(/[^\p{L}\p{N}():\s]/gu, "").trim();
+    if (heading.test(bare)) return true;
+  }
+  return false;
+}
+function countShapedBy(botId, text, reviewBody) {
   switch (botId) {
     case "claude": {
       const match = /(\d+)[^\S\n]*P1,[^\S\n]*(\d+)[^\S\n]*P2/i.exec(text);
@@ -32053,9 +32076,9 @@ function countShapedBy(botId, text) {
     }
     case "coderabbit": {
       const actionable = /\bactionable comments posted:[^\S\n]*(\d+)/i.exec(text);
-      const outside = outsideDiffCount(text);
-      if (actionable === null && outside === 0) return null;
-      return (actionable?.[1] === void 0 ? 0 : Number.parseInt(actionable[1], 10)) + outside;
+      const unthreaded = outsideDiffCount(text) + (reviewBody ? failedPreMergeCount(text) : 0);
+      if (actionable === null && unthreaded === 0 && !(reviewBody && isCodeRabbitReview(text))) return null;
+      return (actionable?.[1] === void 0 ? 0 : Number.parseInt(actionable[1], 10)) + unthreaded;
     }
     default:
       return null;
@@ -32104,8 +32127,9 @@ function findingSeverity(body) {
   return mark === "\u{1F534}" || mark === "\u{1F7E0}" || mark === "\u{1F6D1}" || mark === ":stop_sign:" ? "high" : mark === "\u{1F7E1}" ? "medium" : "low";
 }
 var SEVERITY_RANK = { high: 3, medium: 2, low: 1 };
-function parseBotBody(body, botId) {
+function parseBotBody(body, botId, anchor2) {
   const text = body.replace(/\r\n?/g, "\n").replace(/<!--[\s\S]*?-->/g, "").trim();
+  const reviewBody = anchor2 === void 0 || anchor2.startsWith("pullrequestreview-");
   if (botId === "macroscope") {
     if (isMacroscopeAgentComment(text)) return { count: null, score: null, clean: false, severity: null };
     const gate = macroscopeApprovability(text);
@@ -32117,7 +32141,7 @@ function parseBotBody(body, botId) {
   // (server#9385, where the Bugbot chip read "9377 issues" until its threads settled).
   /(?<![#\w-])(\d+)[^\S\n]+(?:(?:potential|possible|new|actionable|likely|minor|major|critical|significant|remaining|open|existing)[^\S\n]+){0,2}(?:issue|finding|bug|problem)s?\b/i.exec(text);
   let count = countMatch?.[1] !== void 0 ? Number.parseInt(countMatch[1], 10) : null;
-  const shaped = countShapedBy(botId, text);
+  const shaped = countShapedBy(botId, text, reviewBody);
   if (botId === "coderabbit") count = shaped;
   else if (shaped !== null) count = shaped;
   if (botId === "greptile" && count === null && /\bconfidence score\b/i.test(text)) {
@@ -32139,7 +32163,7 @@ function parseBotBody(body, botId) {
   const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(text);
   const coderabbit = botId === "coderabbit";
   const verdict = coderabbit ? {} : needsHuman ? { verdict: "needs-human" } : changesRequested ? { verdict: "changes-requested" } : {};
-  const unthreaded = coderabbit ? outsideDiffCount(text) : 0;
+  const unthreaded = coderabbit ? outsideDiffCount(text) + (reviewBody ? failedPreMergeCount(text) : 0) : 0;
   return { count: Number.isFinite(count) ? count : null, score: !coderabbit && Number.isFinite(score) ? score : null, clean, severity, ...verdict, ...unthreaded > 0 ? { unthreaded } : {} };
 }
 function refusalReason(body) {
@@ -32631,7 +32655,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       statusOnly.delete(id);
       continue;
     }
-    const parsed = parseBotBody(comment.body, id.startsWith("custom:") ? "" : id);
+    const parsed = parseBotBody(comment.body, id.startsWith("custom:") ? "" : id, comment.anchor);
     if (botById(id)?.conversational === true && !isReviewShaped(parsed)) continue;
     if (!isReviewShaped(parsed) && threadRuns.has(id)) {
       reported(id, comment);

@@ -8,10 +8,11 @@
 
 import { createElement, svgFromString } from '../dom';
 import type { RefDetails, RefState } from './refs';
-import { ICON_CHECK, ICON_GIT_COMPARE, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_LINK, ICON_SKIP, ICON_X } from '../ui/icons';
+import { ICON_CHECK, ICON_COMMENT_DISCUSSION, ICON_GIT_COMPARE, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_LINK, ICON_SKIP, ICON_X } from '../ui/icons';
 import { openMinimized } from './chat';
 import { commitDate } from './commit-dates';
 import { compareHome, onRestore, teleportInto } from './teleport';
+import { referenceLinksIn } from './references';
 import { relativeTimeElement } from './time';
 
 /**
@@ -348,6 +349,7 @@ const REF_ICON: Readonly<Record<RefState, string>> = {
   'issue-open': ICON_ISSUE_OPENED,
   'issue-closed': ICON_ISSUE_CLOSED,
   'issue-not-planned': ICON_SKIP,
+  discussion: ICON_COMMENT_DISCUSSION,
   unknown: ICON_LINK,
 };
 
@@ -408,6 +410,7 @@ const STATE_LABEL: Readonly<Record<RefState, string>> = {
   'issue-open': 'Open issue',
   'issue-closed': 'Closed issue',
   'issue-not-planned': 'Closed as not planned',
+  discussion: 'Discussion',
   unknown: 'Issue or pull request',
 };
 
@@ -420,8 +423,9 @@ function completeLine(line: MentionLine, lookup: RefLookup): MentionLine {
 
 /** Who mentioned it first (their avatar, or its space), then one link of state glyph, `owner/repo#N` and title, then the time. */
 function mentionRow(line: MentionLine): HTMLElement {
+  const discussion = line.state === 'discussion' || line.href.includes('/discussions/');
   const isPull = line.state === 'unknown' ? line.href.includes('/pull/') : !line.state.startsWith('issue');
-  const anchor = createElement('a', { class: 'geld-review__mention-link', href: line.href, 'data-hovercard-type': isPull ? 'pull_request' : 'issue', 'data-hovercard-url': `${line.href.replace(/[#?].*$/, '')}/hovercard` }, [
+  const anchor = createElement('a', { class: 'geld-review__mention-link', href: line.href, 'data-hovercard-type': discussion ? 'discussion' : isPull ? 'pull_request' : 'issue', 'data-hovercard-url': `${line.href.replace(/[#?].*$/, '')}/hovercard` }, [
     createElement('span', { class: 'geld-review__mention-state', role: 'img', 'aria-label': STATE_LABEL[line.state], title: STATE_LABEL[line.state] }, [svgFromString(REF_ICON[line.state])]),
     ...(line.ref === '' ? [] : [createElement('span', { class: 'geld-review__mention-ref' }, [line.ref])]),
     createElement('span', { class: 'geld-review__mention-title' }, [line.title]),
@@ -471,7 +475,6 @@ export interface MentionAuthor {
  */
 export function outgoingMentions(description: Element | null, author: MentionAuthor | null = null): readonly MentionLine[] {
   if (description === null) return [];
-  const seen = new Set<string>();
   const lines: MentionLine[] = [];
   const who = (): HTMLElement | null =>
     author === null
@@ -479,13 +482,8 @@ export function outgoingMentions(description: Element | null, author: MentionAut
       : createElement('a', { class: 'geld-review__mention-who', href: `/${author.login}`, 'data-hovercard-type': 'user', 'data-hovercard-url': `/users/${encodeURIComponent(author.login)}/hovercard` }, [
           createElement('img', { class: 'geld-review__avatar', 'data-kind': 'user', src: author.avatarSrc, alt: `@${author.login}`, width: '20', height: '20' }),
         ]);
-  for (const link of description.querySelectorAll<HTMLAnchorElement>('a.issue-link[href], a[data-hovercard-type="pull_request"][href], a[data-hovercard-type="issue"][href]')) {
-    const href = link.getAttribute('href') ?? '';
-    const match = /\/([^/]+)\/([^/]+)\/(pull|issues)\/(\d+)/.exec(href);
-    if (match === null || seen.has(href)) continue;
-    seen.add(href);
-    const title = (link.getAttribute('title') ?? link.getAttribute('aria-label') ?? link.textContent ?? '').replace(/\s+/g, ' ').trim();
-    lines.push({ href, ref: `${match[1]}/${match[2]}#${match[4]}`, title: title === '' || /^#?\d+$/.test(title) ? '' : title, state: 'unknown', avatar: who(), time: '' });
+  for (const link of referenceLinksIn(description)) {
+    lines.push({ href: link.href, ref: link.ref, title: link.title, state: link.discussion ? 'discussion' : 'unknown', avatar: who(), time: '' });
   }
   return lines;
 }

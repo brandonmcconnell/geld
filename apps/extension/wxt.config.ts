@@ -16,10 +16,10 @@ const buildNumber = process.env.GELD_BUILD_NUMBER?.trim() ?? '';
 const manifestVersion = /^\d+$/.test(buildNumber) ? `${baseVersion}.${buildNumber}` : baseVersion;
 
 /**
- * `GELD_CHANNEL=nightly` (scripts/nightly.mjs) builds the self-updating
- * Chromium build CI attaches to every release beside the store zips
- * (src/nightly/). Loaded unpacked, it checks GitHub for a newer release and
- * writes it into its own folder. It is a production build like the store
+ * `GELD_CHANNEL=nightly` (scripts/nightly.mjs) builds the nightly builds CI
+ * attaches to every release beside the store zips (src/nightly/). Loaded
+ * unpacked, Chrome's and Edge's check GitHub for a newer release and write it
+ * into their own folder. It is a production build like the store
  * ones: a WXT `--mode` would also set NODE_ENV and `import.meta.env.DEV`,
  * which change how WXT, Geld's error capture and dependencies run. The store
  * builds compile all of the updater away and leave out the nightly page.
@@ -83,9 +83,6 @@ export default defineConfig({
         'storage',
         // Daily check for a newer signed pattern catalog (no install warning).
         'alarms',
-        // Chrome/Edge: an offscreen document watches prefers-color-scheme so the
-        // toolbar icon can switch between the black and white marks.
-        ...(mv === 3 && (browser === 'chrome' || browser === 'edge') ? ['offscreen'] : []),
         // MV3: registers the content script on GitHub Enterprise hosts the user adds.
         ...(mv === 3 ? ['scripting'] : []),
         // Nightly: writes an update into the unpacked folder when that folder sits in Downloads,
@@ -145,6 +142,10 @@ export default defineConfig({
       }
     },
     'build:manifestGenerated': (wxt, manifest) => {
+      // Chrome and Edge cannot tell a light toolbar from a dark one, so they get the framed mark, which reads on both.
+      if ((wxt.config.browser === 'chrome' || wxt.config.browser === 'edge') && manifest.action !== undefined) {
+        manifest.action.default_icon = Object.fromEntries(ACTION_ICON_SIZES.map((size) => [String(size), actionIconPath('framed', size)]));
+      }
       if (selfUpdating(wxt.config.browser)) {
         // src/nightly/pause.ts registers these only while no Geld Stable is on: declared, they would start beside it.
         nightlyContentScripts = manifest.content_scripts ?? [];

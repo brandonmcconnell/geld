@@ -1,6 +1,7 @@
 import type { MergeBox, MergeOffer, Stack, StackMember, StatusAction } from './merge-actions';
 import { METHOD_LABEL } from './merge-actions';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
+import { reactSettled } from './react-hydration';
 import { ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_TRIANGLE_DOWN } from './ui/icons';
 
 /**
@@ -325,7 +326,8 @@ export function syncStatusPills(on: boolean, onOpen: (pill: HTMLButtonElement, c
     const host = hostOf(label);
     const next = host.nextElementSibling;
     const existing = next instanceof HTMLButtonElement && next.hasAttribute(ATTR_PILL) ? next : null;
-    if (!on) {
+    // Beside a label React has yet to hydrate, the pill would make React throw the page's markup away (`react-hydration.ts`).
+    if (!on || !reactSettled(host)) {
       existing?.remove();
       host.removeAttribute(ATTR_HIDDEN);
       continue;

@@ -126,7 +126,7 @@ export function agentStructure(draft: FindingDraft): readonly {
   return draft.raw.flatMap((comment) => {
     const bot = botByLogin(comment.author);
     if (!bot) return [];
-    const parsed = parseBotBody(comment.body, bot.id);
+    const parsed = parseBotBody(comment.body, bot.id, comment.anchor);
     return [
       {
         agent: bot.id,
