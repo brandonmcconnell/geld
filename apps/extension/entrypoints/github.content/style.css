@@ -5920,11 +5920,15 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   display: none !important;
 }
 
-/* An Overview thread's box in a chat: the chat is the box, and its head names the file GitHub's header repeats. */
+/*
+ * An Overview thread's box in a chat: the chat is the box, and its head names the file GitHub's header repeats. Its
+ * foot is the chat's, so it takes the chat's inner bottom corners (6px less the 1px border): GitHub's reply row is an
+ * inset band to the box's edge, and square, it stood over the chat's rounded border. The box clips its own content.
+ */
 .geld-review__chat-body > article[data-geld-teleported] {
   margin: 0 !important;
   border: 0 !important;
-  border-radius: 0 !important;
+  border-radius: 0 0 5px 5px !important;
   box-shadow: none !important;
 }
 
