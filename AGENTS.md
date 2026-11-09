@@ -3529,3 +3529,7 @@ Offline helper extraction stops at the next top-level function declaration so ne
 GitLab and Bitbucket install the shared content-script error capture after retiring an earlier injected copy and dispose it with their provider runtime.
 Only extension-owned errors enter that capture, and the background's existing reporting preference governs remote submission.
 Shared Related links settings describe issues and pull or merge requests without promising GitHub-only sidebar placement or a stack on providers that do not expose one.
+
+Provider CI status colors are confined to the observed status text and native glyph, rather than tinting the whole check row.
+A failed check or allow_failure=false does not independently prove that the check is a required merge gate.
+Earlier-head checks keep neutral status text, while the provider's separate verified merge requirements remain authoritative.

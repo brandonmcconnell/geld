@@ -640,6 +640,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         first = false;
         const part = node('span', '', 'geld-provider-review__check-part');
         const source = current.find((check) => providerCheckPresentation(check, input.subject.provider).label === label);
+        if (source !== undefined) part.dataset.geldCheckState = providerCheckPresentation(source, input.subject.provider).state;
         const glyph = source === undefined ? null : providerCheckIcon(input.subject.provider, source, doc);
         if (glyph !== null) part.append(glyph);
         part.append(doc.createTextNode(`${count} ${label.toLowerCase()}`));
@@ -658,6 +659,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const url = check.detailsUrl === undefined ? null : safeUrl(check.detailsUrl);
       row.append(url === null ? node('span', check.name) : link(check.name, url, '', true));
       const status = node('span', '', 'geld-provider-review__check-part');
+      status.dataset.geldCheckState = currentCheck(check, input.subject.headSha) ? presentation.state : 'previous';
       const glyph = providerCheckIcon(input.subject.provider, check, doc);
       if (glyph !== null) status.append(glyph);
       status.append(doc.createTextNode(currentCheck(check, input.subject.headSha) ? presentation.label : `Earlier commit · ${presentation.label}`));
