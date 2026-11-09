@@ -9,7 +9,7 @@ import { refDetails } from './review/refs';
 import type { RefState } from './review/refs';
 import { forgetPageStack, pageStack } from './stack';
 import type { PageStack } from './stack';
-import { attachStackCard, hideStackCard, syncStackCard } from './ui/stack-card';
+import { attachStackPopover, releaseStackPopover, syncStackPopover } from './ui/stack-popover';
 import {
   ICON_ALERT,
   ICON_COMMENT_DISCUSSION,
@@ -29,8 +29,9 @@ import {
 /**
  * "Related links" in the pull request's sidebar, under Reviewers: the tickets, chat threads, agent sessions, review
  * tools and docs the description links to (and Linear's linkback comment), read by `@geld/review`'s registry. Under it
- * "Related work": the stack the pull request is in, as one row, and the issues and pull requests its description links
- * to, leaving out the stack's own; every reference either way is the digest's Mentions row, which it links to.
+ * "Related work": the stack the pull request is in, as one row opening GitHub's own stack popover beside it, and the
+ * issues and pull requests its description links to, leaving out the stack's own. Every reference either way is the
+ * digest's Mentions row.
  */
 
 const SECTION_CLASS = 'geld-related';
@@ -302,10 +303,7 @@ type Group = 'related' | 'work';
 
 const TITLES: Readonly<Record<Group, string>> = { related: 'Related links', work: 'Related work' };
 
-/** The stack the page's pull request is in, for its row's card to read when it opens. */
-let currentStack: PageStack | null = null;
-
-/** The stack as one row: its glyph, "Stack #193" and where this pull request stands in it, the card on hover. */
+/** The stack as one row: its glyph, "Stack #193" and where this pull request stands in it, opening GitHub's stack popover. */
 function stackRowOf(stack: PageStack): HTMLElement {
   const glyph = svgFromString(ICON_STACK);
   glyph.classList.add(`${SECTION_CLASS}__mark`, 'fgColor-muted');
@@ -313,7 +311,7 @@ function stackRowOf(stack: PageStack): HTMLElement {
   const anchor = createElement('a', {
     class: `${SECTION_CLASS}__link`,
     href: stack.path,
-    'aria-label': `Stack #${stack.number}${place === null ? '' : `, this pull request ${place}`}. Open stack on GitHub`,
+    'aria-label': `Stack #${stack.number}${place === null ? '' : `, this pull request ${place}`}`,
   }, [
     glyph,
     createElement('span', { class: `${SECTION_CLASS}__text` }, [
@@ -321,40 +319,8 @@ function stackRowOf(stack: PageStack): HTMLElement {
       ...(place === null ? [] : [' ', createElement('span', { class: `${SECTION_CLASS}__ref` }, [place])]),
     ]),
   ]);
-  attachStackCard(anchor, () => currentStack);
+  attachStackPopover(anchor);
   return createElement('li', { class: `${SECTION_CLASS}__item`, 'data-kind': 'stack' }, [anchor]);
-}
-
-/** The digest's Mentions row: where every reference to and from the pull request is listed. */
-const MENTIONS_ROW = '.geld-review [data-geld-fold="mentions"]';
-
-/** Opens the digest's Mentions row, its Activity group first when that is folded, and brings it into view. */
-function openDigestMentions(): void {
-  const row = document.querySelector<HTMLElement>(MENTIONS_ROW);
-  if (row === null) return;
-  const group = row.getAttribute('data-geld-in-group');
-  const heading = group === null ? null : document.querySelector<HTMLButtonElement>(`.geld-review [data-group="${CSS.escape(group)}"] button[aria-expanded="false"]`);
-  heading?.click();
-  const open = (): void => {
-    const current = document.querySelector<HTMLElement>(MENTIONS_ROW);
-    const main = current?.querySelector<HTMLButtonElement>('.geld-review__main');
-    if (current === null || main === null || main === undefined) return;
-    current.scrollIntoView({ block: 'center' });
-    if (main.getAttribute('aria-expanded') !== 'true') main.click();
-    main.focus({ preventScroll: true });
-  };
-  // Unfolding the group rebuilds nothing, but a row hidden a moment ago lays out only on the next frame.
-  if (heading === null || heading === undefined) open();
-  else requestAnimationFrame(open);
-}
-
-function allMentionsLink(): HTMLElement {
-  const link = createElement('a', { class: `${SECTION_CLASS}__all`, href: '#geld-mentions' }, ['See all mentions']);
-  link.addEventListener('click', (event) => {
-    event.preventDefault();
-    openDigestMentions();
-  });
-  return createElement('li', { class: `${SECTION_CLASS}__item ${SECTION_CLASS}__item--all` }, [link]);
 }
 
 const ATTR_GROUP = 'data-geld-section';
@@ -368,7 +334,6 @@ const showAll = new Set<Group>();
 function listOf(links: readonly RelatedRow[], group: Group, stack: PageStack | null = null): HTMLElement {
   const rows = links.map(rowOf);
   const list = createElement('ul', { class: `${SECTION_CLASS}__list` }, [...(stack === null ? [] : [stackRowOf(stack)]), ...rows]);
-  if (group === 'work') list.append(allMentionsLink());
   const extra = rows.slice(SHOWN_LINKS);
   if (extra.length === 0 || showAll.has(group)) return list;
   for (const row of extra) row.hidden = true;
@@ -379,10 +344,7 @@ function listOf(links: readonly RelatedRow[], group: Group, stack: PageStack | n
     more.parentElement?.remove();
     requestPass();
   });
-  const footer = list.querySelector(`.${SECTION_CLASS}__item--all`);
-  const moreItem = createElement('li', { class: `${SECTION_CLASS}__item` }, [more]);
-  if (footer === null) list.append(moreItem);
-  else footer.before(moreItem);
+  list.append(createElement('li', { class: `${SECTION_CLASS}__item` }, [more]));
   return list;
 }
 
@@ -478,9 +440,8 @@ function standsAfter(place: HTMLElement, sections: readonly HTMLElement[]): bool
 
 export function removeRelatedLinks(): void {
   removeSections();
-  hideStackCard();
+  releaseStackPopover();
   forgetPageStack();
-  currentStack = null;
   authors.clear();
   orderSidebars([]);
 }
@@ -561,7 +522,6 @@ export function applyRelatedLinks(active: boolean, onChange: () => void = () => 
   const afters = active ? assigneesSections() : [];
   const all = afters.length === 0 ? [] : relatedLinksOnPage(onChange);
   const stack = afters.length === 0 ? null : pageStack(onChange);
-  currentStack = stack;
   const inStack = new Set((stack?.pulls ?? []).map((pull) => stackMemberKey(location.hostname, pull.path)));
   const work = all.filter((link) => link.kind === 'github' && !inStack.has(link.key));
   const groups = ([
@@ -570,7 +530,7 @@ export function applyRelatedLinks(active: boolean, onChange: () => void = () => 
   ] as const).filter(([, rows, lead]) => rows.length > 0 || lead !== null);
   if (groups.length === 0) {
     if (mounted.size > 0 || document.querySelector(`.${SECTION_CLASS}[${OWN_UI_ATTRIBUTE}]`) !== null) removeSections();
-    syncStackCard();
+    syncStackPopover();
     orderSidebars(afters);
     return;
   }
@@ -594,6 +554,6 @@ export function applyRelatedLinks(active: boolean, onChange: () => void = () => 
   const ours = new Set([...next.values()].flatMap(({ sections }) => sections));
   for (const stray of document.querySelectorAll(`.${SECTION_CLASS}[${OWN_UI_ATTRIBUTE}]`)) if (!(stray instanceof HTMLElement) || !ours.has(stray)) stray.remove();
   mounted = next;
-  syncStackCard();
+  syncStackPopover();
   orderSidebars(afters);
 }

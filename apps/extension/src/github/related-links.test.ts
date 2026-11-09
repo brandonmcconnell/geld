@@ -61,6 +61,10 @@ afterEach(() => {
 
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
+// A stack of three, top first, with this pull request (#7) second, as GitHub embeds it in the page.
+const stackPull = (number: number, state: string, branch: string): string => `{"number":${number},"title":"Step ${number}","state":"${state}","url":"/acme/web/pull/${number}","headBranch":"${branch}"}`;
+const STACKED = `<script type="application/json" data-target="react-app.embeddedData">{"payload":{"pullRequestsLayoutRoute":{"pullRequest":{"number":7},"stack":{"id":1,"number":193,"position":2,"size":3,"repositoryOwnerLogin":"acme","repositoryName":"web","pulls":[${stackPull(8, 'OPEN', 'step/3')},${stackPull(7, 'OPEN', 'step/2')},${stackPull(6, 'MERGED', 'step/1')}]}}}}</script>`;
+
 const titled = (): (string | null)[][] => [...document.querySelectorAll('.geld-related')].map((section) => [section.getAttribute('data-geld-section'), section.querySelector('h3, h4')?.textContent ?? null]);
 
 describe('related links in the sidebar', () => {
@@ -339,7 +343,6 @@ describe('related links in the sidebar', () => {
     expect(work?.nextElementSibling?.textContent).toContain('Assignees');
     expect([...(related?.querySelectorAll('.geld-related__text') ?? [])].map((text) => text.textContent)).toEqual(['DOC-77 Sdk nav overview', 'Open thread in Slack', 'View workspace in Replicas']);
     expect([...(work?.querySelectorAll('.geld-related__text') ?? [])].map((text) => text.textContent)).toEqual([expect.stringMatching(/^#12\b/)]);
-    expect(work?.querySelector('.geld-related__all')?.textContent).toBe('See all mentions');
     applyRelatedLinks(true);
     expect(document.querySelectorAll('.geld-related')[1]).toBe(work);
     removeRelatedLinks();
@@ -361,14 +364,10 @@ describe('related links in the sidebar', () => {
     expect(titled()).toEqual([['work', 'Related work']]);
   });
 
-  it('leads Related work with the stack as one row, leaving its pull requests out, its card listing them on hover', () => {
-    vi.useFakeTimers();
+  it('leads Related work with the stack as one row, leaving its pull requests out, whether linked as /pull or /issues', () => {
     history.replaceState(null, '', '/acme/web/pull/7');
-    const pull = (number: number, state: string, branch: string): string => `{"number":${number},"title":"Step ${number}","state":"${state}","url":"/acme/web/pull/${number}","headBranch":"${branch}"}`;
-    const stack = `{"id":1,"number":193,"position":2,"size":3,"repositoryOwnerLogin":"acme","repositoryName":"web","pulls":[${pull(8, 'OPEN', 'step/3')},${pull(7, 'OPEN', 'step/2')},${pull(6, 'MERGED', 'step/1')}]}`;
-    const embedded = `<script type="application/json" data-target="react-app.embeddedData">{"payload":{"pullRequestsLayoutRoute":{"pullRequest":{"number":7},"stack":${stack}}}}</script>`;
     document.body.innerHTML =
-      embedded +
+      STACKED +
       '<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>After <a class="issue-link js-issue-link" href="https://github.com/acme/web/pull/6">#6</a>, before <a class="issue-link js-issue-link" href="https://github.com/acme/web/issues/8">#8</a>, see <a class="issue-link js-issue-link" href="https://github.com/acme/web/issues/12">#12</a>.</p></div></div>' +
       railsSidebar();
     applyRelatedLinks(true);
@@ -377,66 +376,74 @@ describe('related links in the sidebar', () => {
     expect(rows.map((row) => [row.getAttribute('data-kind'), row.querySelector('.geld-related__text')?.textContent ?? row.textContent])).toEqual([
       ['stack', 'Stack #193 2 of 3'],
       ['github', expect.stringMatching(/^#12\b/)],
-      [null, 'See all mentions'],
     ]);
     const stackLink = work?.querySelector<HTMLAnchorElement>('[data-kind="stack"] a');
     expect(stackLink?.getAttribute('href')).toBe('/acme/web/stack/193');
-    stackLink?.dispatchEvent(new MouseEvent('mouseenter'));
-    vi.advanceTimersByTime(400);
-    const card = document.querySelector('.geld-stack-card');
-    expect(card?.querySelector('.geld-stack-card__title')?.getAttribute('href')).toBe('/acme/web/stack/193');
-    expect([...(card?.querySelectorAll('.geld-stack-card__link') ?? [])].map((link) => [link.getAttribute('href'), link.textContent, link.getAttribute('aria-current')])).toEqual([
-      ['/acme/web/pull/8', 'Step 8#8 · step/3', null],
-      ['/acme/web/pull/7', 'Step 7#7 · step/2', 'page'],
-      ['/acme/web/pull/6', 'Step 6#6 · step/1', null],
-    ]);
-    expect(card?.querySelector('[data-state="merged"]')).not.toBeNull();
-    card?.querySelector('.geld-stack-card__list')?.dispatchEvent(new Event('scroll'));
-    expect(document.querySelector('.geld-stack-card')).toBe(card);
-    stackLink?.dispatchEvent(new MouseEvent('mouseleave'));
-    vi.advanceTimersByTime(300);
-    expect(document.querySelector('.geld-stack-card')).toBeNull();
-
-    // From the keyboard: Down moves into the card, to this pull request; Escape closes it and leaves focus on the row.
-    stackLink?.focus();
-    expect(document.querySelector('.geld-stack-card')).not.toBeNull();
-    stackLink?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-    expect(document.activeElement?.getAttribute('href')).toBe('/acme/web/pull/7');
-    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-    expect(document.activeElement?.getAttribute('href')).toBe('/acme/web/pull/6');
-    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    expect(document.querySelector('.geld-stack-card')).toBeNull();
-    expect(document.activeElement).toBe(stackLink);
-
-    // A redrawn sidebar takes the opener away, and its card with it.
-    stackLink?.dispatchEvent(new MouseEvent('mouseenter'));
-    vi.advanceTimersByTime(400);
-    expect(document.querySelector('.geld-stack-card')).not.toBeNull();
-    stackLink?.closest('.geld-related')?.remove();
-    applyRelatedLinks(true);
-    expect(document.querySelectorAll('.geld-stack-card')).toHaveLength(0);
+    // No stack badge on the page: the row is the stack page's link, nothing more.
+    expect(stackLink?.hasAttribute('aria-haspopup')).toBe(false);
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    stackLink?.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(false);
   });
 
-  it('opens the digest’s Mentions row from See all mentions', () => {
+  it('opens GitHub’s own stack popover beside the row by lending the row its anchor name, and gives it back on close', () => {
     history.replaceState(null, '', '/acme/web/pull/7');
-    document.body.innerHTML =
-      '<div class="geld-review"><ul><li class="geld-review__group" data-group="activity"><button type="button" aria-expanded="true">Other activity</button></li>' +
-      '<li class="geld-review__row" data-geld-fold="mentions" data-geld-in-group="activity"><button type="button" class="geld-review__main" aria-expanded="false">2 mentions</button></li></ul></div>' +
-      `<div class="js-comment-container"><div class="js-comment-body markdown-body"><p>After <a href="https://github.com/acme/web/pull/5">#5</a>.</p></div></div>${railsSidebar()}`;
-    const main = document.querySelector<HTMLButtonElement>('.geld-review__main');
-    let clicks = 0;
-    main?.addEventListener('click', () => {
-      clicks += 1;
-      main.setAttribute('aria-expanded', 'true');
+    // GitHub's header badge and the Primer overlay it opens in the portal, anchored by name (as seen on geld#157, Nov 2026).
+    const badge = Object.assign(document.createElement('button'), { className: 'prc-Button stackBadge__CXihl8', textContent: '2/3' });
+    badge.setAttribute('aria-haspopup', 'true');
+    badge.setAttribute('aria-expanded', 'false');
+    let returnsFocus = false;
+    badge.addEventListener('click', () => {
+      const open = badge.getAttribute('aria-expanded') === 'true';
+      if (open) {
+        document.querySelector('[data-component="AnchoredOverlay"]')?.remove();
+        badge.setAttribute('aria-expanded', 'false');
+        if (returnsFocus) badge.focus();
+        return;
+      }
+      badge.style.setProperty('anchor-name', '--anchored-overlay-anchor-x');
+      const overlay = document.createElement('div');
+      overlay.setAttribute('data-component', 'AnchoredOverlay');
+      overlay.style.setProperty('position-anchor', '--anchored-overlay-anchor-x');
+      document.body.append(overlay);
+      badge.setAttribute('aria-expanded', 'true');
     });
-    const scroll = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => undefined);
+    document.body.innerHTML = STACKED + railsSidebar();
+    document.body.prepend(badge);
     applyRelatedLinks(true);
-    document.querySelector<HTMLAnchorElement>('.geld-related__all')?.click();
-    expect(clicks).toBe(1);
-    expect(scroll).toHaveBeenCalled();
-    document.querySelector<HTMLAnchorElement>('.geld-related__all')?.click();
-    expect(clicks).toBe(1);
-    scroll.mockRestore();
+    const row = document.querySelector<HTMLAnchorElement>('[data-kind="stack"] a');
+    expect(row?.getAttribute('aria-haspopup')).toBe('dialog');
+    const press = (init: MouseEventInit = {}): MouseEvent => {
+      row?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, ...init });
+      row?.dispatchEvent(event);
+      return event;
+    };
+    expect(press().defaultPrevented).toBe(true);
+    expect(badge.getAttribute('aria-expanded')).toBe('true');
+    expect(row?.style.getPropertyValue('anchor-name')).toBe('--anchored-overlay-anchor-x');
+    expect(row?.getAttribute('aria-expanded')).toBe('true');
+
+    // Escape: Primer hands focus back to the badge, which would scroll to the header. It lands on the row instead.
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
+    returnsFocus = true;
+    badge.click();
+    expect(document.activeElement).toBe(row);
+    expect(scrollTo).toHaveBeenCalled();
+    expect(row?.style.getPropertyValue('anchor-name')).toBe('');
+    expect(row?.getAttribute('aria-expanded')).toBe('false');
+    scrollTo.mockRestore();
+    returnsFocus = false;
+
+    // A second press while it is open from here closes it.
+    press();
+    expect(badge.getAttribute('aria-expanded')).toBe('true');
+    press();
+    expect(badge.getAttribute('aria-expanded')).toBe('false');
+
+    // A modified click is the stack page's link.
+    expect(press({ metaKey: true }).defaultPrevented).toBe(false);
+    expect(badge.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('looks up only the rows that show, the rest once Show N more opens them', async () => {
