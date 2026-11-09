@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clusterComments, firstSentence, guessSeverity, isBotOnly, suggestionOf } from './cluster';
+import { clusterComments, groupOverlappingThreads, firstSentence, guessSeverity, isBotOnly, suggestionOf } from './cluster';
 import { botByCheckName, botByTrigger, isTriggerComment } from './bots';
 import type { RawComment } from './cluster';
 
@@ -35,7 +35,7 @@ describe('clusterComments', () => {
     expect(isBotOnly(first)).toBe(false);
   });
 
-  it('merges two bot comments on nearby lines of the same file', () => {
+  it('keeps two threads on nearby lines of the same file apart', () => {
     const items = clusterComments([
       comment({
         anchor: 'discussion_r10',
@@ -52,22 +52,38 @@ describe('clusterComments', () => {
         line: 44,
       }),
     ]);
-    expect(items).toHaveLength(1);
-    expect(items[0]?.sources).toHaveLength(2);
+    expect(items.map((item) => item.sources.map((source) => source.anchor))).toEqual([['discussion_r10'], ['discussion_r11']]);
+    expect(items.every((item) => item.threads === undefined)).toBe(true);
     const first = items[0];
     expect(first).toBeDefined();
     if (first === undefined) return;
     expect(isBotOnly(first)).toBe(true);
   });
 
-  it('merges identical suggestion blocks', () => {
+  it('keeps threads with identical suggestion blocks apart, each with its fix', () => {
     const body = 'Please use const.\n```suggestion\nconst x = 1;\n```';
     const items = clusterComments([
       comment({ anchor: 'discussion_r20', author: 'coderabbitai[bot]', body, path: 'a.ts', line: 1 }),
       comment({ anchor: 'discussion_r21', author: 'copilot[bot]', body, path: 'b.ts', line: 99 }),
     ]);
-    expect(items).toHaveLength(1);
+    expect(items).toHaveLength(2);
+    expect(items.map((item) => item.fix?.text)).toEqual(['const x = 1;', 'const x = 1;']);
     expect(suggestionOf(body)).toBe('const x = 1;');
+  });
+
+  it('groups overlapping threads for the dashboard: nearby lines, identical suggestions', () => {
+    const near = groupOverlappingThreads([
+      comment({ anchor: 'discussion_r10', author: 'greptile-apps[bot]', body: 'Null check missing in parseDiff.', path: 'src/diff.ts', line: 42 }),
+      comment({ anchor: 'discussion_r11', author: 'cursor[bot]', body: 'parseDiff can throw on null input.', path: 'src/diff.ts', line: 44 }),
+    ]);
+    expect(near).toHaveLength(1);
+    expect(near[0]?.threads).toEqual({ total: 2, open: 2 });
+    const body = 'Please use const.\n```suggestion\nconst x = 1;\n```';
+    const same = groupOverlappingThreads([
+      comment({ anchor: 'discussion_r20', author: 'coderabbitai[bot]', body, path: 'a.ts', line: 1 }),
+      comment({ anchor: 'discussion_r21', author: 'copilot[bot]', body, path: 'b.ts', line: 99 }),
+    ]);
+    expect(same).toHaveLength(1);
   });
 
   it('titles a bot-led thread by the bot concern, not the human reply, and skips bot run summaries', () => {
@@ -130,6 +146,16 @@ describe('firstSentence / severity', () => {
   it('strips headings and code fences', () => {
     expect(firstSentence('## Bug\n\nNull check missing in `parseDiff`.\n```ts\nx\n```')).toBe('Null check missing in `parseDiff`.');
     expect(firstSentence('Rename `config.resolve` to **resolveConfig** first')).toBe('Rename `config.resolve` to **resolveConfig** first');
+  });
+
+  it('ends a sentence only where a terminator ends a word, not inside a URL or a version', () => {
+    expect(firstSentence('Link to Devin session: https://app.devin.ai/sessions/1 opened')).toBe('Link to Devin session: https://app.devin.ai/sessions/1 opened');
+    expect(firstSentence('Bumps Node to 20.11 for the runner. Also fixes CI.')).toBe('Bumps Node to 20.11 for the runner.');
+    expect(firstSentence('See https://example.com/?_ga=123 for details. Next.')).toBe('See https://example.com/?_ga=123 for details.');
+    expect(firstSentence('Use e.g. Node 20 for this job. Then rerun.')).toBe('Use e.g. Node 20 for this job.');
+    expect(firstSentence('Covers lists, tables, etc. in the preview. More.')).toBe('Covers lists, tables, etc. in the preview.');
+    expect(firstSentence('Covers lists, etc. Then rerun.')).toBe('Covers lists, etc.');
+    expect(firstSentence('Fix this.<br>Then retry.')).toBe('Fix this.');
   });
 
   it('classifies blocking vs nit vs question', () => {
