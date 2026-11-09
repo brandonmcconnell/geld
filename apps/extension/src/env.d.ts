@@ -4,7 +4,7 @@ interface ImportMetaEnv {
   readonly WXT_GELD_APP_CLIENT_ID?: string;
 }
 
-/** True only in `--mode nightly` builds (wxt.config.ts); store builds compile every use away. */
+/** True only in the self-updating nightly builds (`GELD_CHANNEL=nightly`, Chrome and Edge, wxt.config.ts); store builds compile every use away. */
 declare const __GELD_NIGHTLY__: boolean;
 
 /** Chromium's File System Access additions that TypeScript's DOM library does not ship; nightly builds only. */
