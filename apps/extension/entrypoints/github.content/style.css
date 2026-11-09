@@ -2759,7 +2759,7 @@ html[data-geld-top-card='folded'] div[role='group'][aria-label='Checks'] {
  * sight, the reading bar standing for it. Pressed with click(), which a hidden control still takes. Back as soon as
  * Geld stops pressing (done, or at its limit), so the reader can load the rest.
  */
-html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='load-more-timeline'], .ajax-pagination-btn, button.js-ajax-pagination-btn) {
+html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='load-more-timeline'], .ajax-pagination-btn, button.js-ajax-pagination-btn, button[data-geld-load-previous]) {
   display: none !important;
 }
 

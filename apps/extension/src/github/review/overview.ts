@@ -29,7 +29,7 @@ import { crawlConversation } from './crawler';
 import type { Deployment, DeploymentEntry } from './deployments';
 import { deploymentEntries, deploymentOf, deploymentsOfPreview, environmentLabel, pinnedToBuild, previewLinks } from './deployments';
 import { threadFragmentOf } from './thread-fragment';
-import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, sourceAnchorFromHash } from './deeplink';
+import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, loadMoreStanding, sourceAnchorFromHash } from './deeplink';
 import { commitTimes, isRewritten } from './commit-dates';
 import { editedAt, editsVersion, editTimesOf, refreshEditTimes, resetEditTimes, revisionAsOf, revisionTimesOf } from './edit-times';
 import type { SameRunCandidate } from './revisions';
@@ -1491,6 +1491,8 @@ function ingestProgress(): number {
 function timelineIngesting(hidingTimeline: boolean): boolean {
   if (fragmentsInFlight.size > 0) return true;
   if (!hidingTimeline) return false;
+  // A page on its way: the Overview's button reads as no "Load more" while it loads.
+  if (loadMorePending() && !loadMoreStalled()) return true;
   if (visit.autoLoads < MAX_AUTO_LOADS && hasLoadMore() && !loadMoreStalled()) return true;
   if (eagerFragments >= MAX_EAGER_FRAGMENTS) return false;
   return deferredFragments().some(({ fragment, src }) => fragmentWanted(fragment, src));
@@ -3400,7 +3402,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // Every thread is on the page: nothing on its way, and no "Load more" GitHub still folds older items behind (an
   // open thread is never deferred — GitHub minimizes only reviews whose threads are all resolved — so a thread the
   // crawl cannot see is a resolved one, or one past that fold).
-  const complete = !partial && !hasLoadMore();
+  const complete = !partial && !loadMoreStanding();
   // And every thread's comments too: a resolved thread's stay behind its fragment until fetched, which the full timeline,
   // the fetch limit or a failed fetch leave unread, so a bot's resolved thread may be there unseen. Coverage is what the
   // page holds (each fragment's fetched markup standing in it), not what is still worth asking for.
@@ -3472,8 +3474,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // While a press is on its way GitHub disables the button ("Loading…"), so that counts too, or the next page's bar flashed.
   setAutoLoading(hidingTimeline && !stalled && ((visit.autoLoads < MAX_AUTO_LOADS && hasLoadMore()) || loadMorePending()));
   // A load that fails leaves its form standing: a pass when the press stops counting gives the bar back to the reader.
+  // With the timeline shown too: a permalink's next press waits for this one, and nothing else may run a pass then.
   const pressUntil = loadMorePendingUntil();
-  if (hidingTimeline && pressUntil !== null) reapplyAt(pressUntil);
+  if (pressUntil !== null) reapplyAt(pressUntil);
   if (hidingTimeline) {
     loadMinimizedReviews();
     if (openCollapsedThreads() > 0) reapplySoon();
@@ -3633,7 +3636,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     sidebar: sidebar.filter((reviewer) => !reviewer.bot).map((reviewer) => ({ login: reviewer.login, verdict: sidebarVerdict(reviewer), awaiting: reviewer.state === 'awaiting' })),
     timeline: latestReviewers(reviews),
     onTimeline: reviews.filter((review) => !review.author.bot).map((review) => ({ login: review.author.login, latestAt: review.createdAt })),
-    timelineComplete: !hasLoadMore() && !ingesting,
+    timelineComplete: !loadMoreStanding() && !ingesting,
     payload: composed.freshness === 'local' ? [] : meta.reviewers,
     payloadAt: composed.freshness === 'local' ? null : meta.generatedAt,
     payloadCurrent: composed.freshness === 'fresh' || composed.freshness === 'partial',
