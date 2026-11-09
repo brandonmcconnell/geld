@@ -1798,8 +1798,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   matching rows get `data-geld-author="hidden"` and each list gets one note (`.geld-author-note`, a `li` wrapper inside `ul` lists) with a Show that flips the list to `data-geld-authors-shown` for the visit.
   Stack-popover items carry no author and are skipped.
   The settings section is titled "Hidden people" (its id stays `lists`, the key stays `hiddenAuthors`), since the same list also hides people in the digest.
-- **Hidden people are left out of the digest** (`review/hidden-people.ts`, `HiddenPeople`, `hiddenMenu` in panel.ts), asked for by Theo on pingdotgg/t3code#32945 in Nov 2026.
-  There a person's one review, requesting changes, was hidden as spam, and the Reviews row still showed his red pill, read from the sidebar's "Wladefant requested changes".
+- **Hidden people are left out of the digest** (`review/hidden-people.ts`, `HiddenPeople`, `hiddenMenu` in panel.ts).
+  A review requesting changes that GitHub shows hidden as spam still reads as "requested changes" in GitHub's Reviewers sidebar, which used to put a red pill on the Reviews row.
   Hidden means GitHub shows any of their comments or reviews "marked as spam" or "marked as abuse" (`markedOnGitHub`, read from the hidden comment's header), or their login matches the reader's `hiddenAuthors` list, people and bots alike.
   GitHub hides one comment at a time and keeps counting the rest, so the digest hides the person: spam and abuse say something about the author, while outdated, duplicate, resolved and off-topic say something about the comment and leave its author in.
   The pass filters once, right after the crawl: their comments, threads they started, reviews, sidebar verdicts, the Action payload's items, reviewers and bot verdicts (`withoutHidden`), and timeline events that name them ("deleted a comment from X", `namesHidden`), and folds all of their timeline nodes silently (`hidden-people`).

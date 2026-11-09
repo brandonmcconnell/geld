@@ -4,16 +4,16 @@ import { compileAuthorRules } from '@geld/core';
 import { exactRulesFor, HiddenPeople, hideReasonOf, markedOnGitHub } from './hidden-people';
 
 /**
- * Markup reduced from pingdotgg/t3code#32945 signed out (Nov 2026): Wladefant's
- * review, requesting changes, was hidden as spam, and the sidebar still said
- * "Wladefant requested changes".
+ * Markup reduced from a public pull request signed out (Nov 2026), with the
+ * names and ids replaced: a review requesting changes, hidden as spam, while
+ * the sidebar still said "requested changes".
  */
 const SPAM_REVIEW = `
-<div class="js-timeline-item js-timeline-progressive-focus-container" data-gid="PRR_kwDORLtfbc8AAAABWt-QAQ">
+<div class="js-timeline-item js-timeline-progressive-focus-container" data-gid="PRR_test">
   <div class="">
-    <div id="pullrequestreview-5819568129" class="js-comment js-updatable-content js-socket-channel js-targetable-element js-minimize-container">
+    <div id="pullrequestreview-1000001" class="js-comment js-updatable-content js-socket-channel js-targetable-element js-minimize-container">
       <div class="TimelineItem">
-        <a href="/Wladefant" class="TimelineItem-avatar mt-n1 avatar circle lh-0 Link"><img data-hovercard-type="user" data-hovercard-url="/users/Wladefant/hovercard" src="https://avatars.githubusercontent.com/u/79611093?s=60&amp;v=4" alt="Wladefant" /></a>
+        <a href="/Spam-User" class="TimelineItem-avatar mt-n1 avatar circle lh-0 Link"><img data-hovercard-type="user" data-hovercard-url="/users/Spam-User/hovercard" src="https://example.test/spam-user.png" alt="Spam-User" /></a>
         <div class="TimelineItem-body">
           <details class="js-comment Details-element details-reset width-full">
             <summary class="rounded-2 py-0 px-2">
@@ -22,7 +22,7 @@ const SPAM_REVIEW = `
                 <div class="color-fg-muted text-small"><a rel="nofollow" class="Link--secondary" href="/login?return_to=x">Sign in to view</a></div>
               </div>
             </summary>
-            <div class="minimized-comment"><include-fragment loading="lazy" src="/pingdotgg/t3code/pull/32945/reviews/5819568129"></include-fragment></div>
+            <div class="minimized-comment"><include-fragment loading="lazy" src="/acme/widgets/pull/7/reviews/1000001"></include-fragment></div>
           </details>
         </div>
       </div>
@@ -67,7 +67,7 @@ describe('markedOnGitHub', () => {
   it('finds a review hidden as spam and whose it is, not the sign-in link beside it', () => {
     const found = markedOnGitHub(page(SPAM_REVIEW));
     expect(found).toHaveLength(1);
-    expect(found[0]).toMatchObject({ login: 'Wladefant', bot: false, reason: 'spam', anchor: 'pullrequestreview-5819568129', unhide: null });
+    expect(found[0]).toMatchObject({ login: 'Spam-User', bot: false, reason: 'spam', anchor: 'pullrequestreview-1000001', unhide: null });
     expect(found[0]?.root.classList.contains('js-timeline-item')).toBe(true);
   });
 
@@ -86,13 +86,13 @@ describe('HiddenPeople', () => {
   it('hides a person GitHub marked as spam everywhere, until the reader peeks', () => {
     const marked = markedOnGitHub(page(SPAM_REVIEW));
     const hidden = new HiddenPeople(marked, compileAuthorRules([]), new Set());
-    expect(hidden.hides('wladefant', false)).toBe(true);
+    expect(hidden.hides('spam-user', false)).toBe(true);
     expect(hidden.hides('octocat', false)).toBe(false);
     expect(hidden.markedRoots()).toHaveLength(1);
-    expect(hidden.people()).toEqual([expect.objectContaining({ login: 'Wladefant', peeking: false, why: expect.objectContaining({ by: 'github', reason: 'spam', anchors: ['pullrequestreview-5819568129'] }) })]);
+    expect(hidden.people()).toEqual([expect.objectContaining({ login: 'Spam-User', peeking: false, why: expect.objectContaining({ by: 'github', reason: 'spam', anchors: ['pullrequestreview-1000001'] }) })]);
 
-    const peeking = new HiddenPeople(marked, compileAuthorRules([]), new Set(['wladefant']));
-    expect(peeking.hides('Wladefant', false)).toBe(false);
+    const peeking = new HiddenPeople(marked, compileAuthorRules([]), new Set(['spam-user']));
+    expect(peeking.hides('Spam-User', false)).toBe(false);
     expect(peeking.markedRoots()).toEqual([]);
     expect(peeking.people()[0]?.peeking).toBe(true);
   });
@@ -112,18 +112,18 @@ describe('HiddenPeople', () => {
 
 describe('namesHidden', () => {
   it('finds timeline events about a hidden person, until the reader peeks', () => {
-    const event = page(`<div class="TimelineItem"><a href="/pingdotgg" data-hovercard-type="organization">pingdotgg</a> deleted a comment from <a class="Link--primary text-bold" data-hovercard-type="user" data-hovercard-url="/users/Wladefant/hovercard" href="/Wladefant">Wladefant</a></div>`);
-    const other = page(`<div class="TimelineItem"><a class="author" href="/t3dotgg" data-hovercard-type="user">t3dotgg</a> force-pushed</div>`);
+    const event = page(`<div class="TimelineItem"><a href="/acme" data-hovercard-type="organization">acme</a> deleted a comment from <a class="Link--primary text-bold" data-hovercard-type="user" data-hovercard-url="/users/Spam-User/hovercard" href="/Spam-User">Spam-User</a></div>`);
+    const other = page(`<div class="TimelineItem"><a class="author" href="/octocat" data-hovercard-type="user">octocat</a> force-pushed</div>`);
     const marked = markedOnGitHub(page(SPAM_REVIEW));
     const hidden = new HiddenPeople(marked, compileAuthorRules([]), new Set());
     expect(hidden.namesHidden(event)).toBe(true);
     expect(hidden.namesHidden(other)).toBe(false);
-    expect(new HiddenPeople(marked, compileAuthorRules([]), new Set(['wladefant'])).namesHidden(event)).toBe(false);
+    expect(new HiddenPeople(marked, compileAuthorRules([]), new Set(['spam-user'])).namesHidden(event)).toBe(false);
   });
 });
 
 describe('exactRulesFor', () => {
   it('finds only the lines naming that login, never a wildcard', () => {
-    expect(exactRulesFor(['*[bot]', '@Wladefant', 'wladefant', 'wlad*'], 'Wladefant')).toEqual(['@Wladefant', 'wladefant']);
+    expect(exactRulesFor(['*[bot]', '@Spam-User', 'spam-user', 'spam*'], 'Spam-User')).toEqual(['@Spam-User', 'spam-user']);
   });
 });
