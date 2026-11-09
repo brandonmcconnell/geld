@@ -4,9 +4,26 @@
  * A terminal cell is about twice as tall as it is wide, and every diagonal a font can draw runs corner to corner
  * of a cell, so a true 45° cut cannot be drawn in text. The mark keeps its cuts smooth instead: it is the brand's
  * grid mark with each cut moved onto a cell diagonal (all of them still parallel), drawn cell by cell with
- * whichever of █ ▀ ▄ ◢ ◣ ◤ ◥ matches. The word is a small pixel rendering of the wordmark, three lines tall with
- * one-pixel strokes, so its letters stand to the mark about as they do in the logo.
+ * whichever of █ ▀ ▄ and the four cell triangles matches. The word is a small pixel rendering of the wordmark,
+ * three lines tall with one-pixel strokes, so its letters stand to the mark about as they do in the logo.
+ *
+ * A triangle meets the blocks only where the terminal draws it to the cell itself, which no font can promise:
+ * `TriangleGlyphs` names the code points a terminal draws, and with none the mark is stepped half blocks, which
+ * every terminal fits to the cell.
  */
+
+/**
+ * Which triangles a terminal draws to the cell itself: the Powerline ones (U+E0B8 to U+E0BF; xterm.js in VS Code
+ * and Cursor, Ghostty, kitty, WezTerm), the Geometric Shapes ones (U+25E2 to U+25E5; VTE terminals such as GNOME
+ * Terminal and xfce4-terminal, and kitty), or none (macOS Terminal, iTerm2 by default, the Windows consoles).
+ */
+export type TriangleGlyphs = 'powerline' | 'geometric' | null;
+
+/** In the order ◢ ◣ ◤ ◥: lower right, lower left, upper left, upper right. */
+const TRIANGLES: Readonly<Record<'powerline' | 'geometric', readonly [string, string, string, string]>> = {
+  powerline: ['\u{E0BA}', '\u{E0B8}', '\u{E0BC}', '\u{E0BE}'],
+  geometric: ['◢', '◣', '◤', '◥'],
+};
 
 /** Mirrors `assets/brand/geld-logomark-grid.svg` (logo.test.ts checks it): change `CELL_MARK_PATH` with it. */
 export const MARK_PATH = 'M14 0H3L0 3V14H11L14 11V4H5L4 5V10H9L10 9V8H6V6H12V10L10 12H2V4L4 2H14Z';
@@ -132,9 +149,13 @@ export function halfBlocks(rows: readonly string[]): string[] {
   return lines;
 }
 
-/** The mark with smooth cuts, or, where the font lacks the triangles (the old Windows console), in half blocks. */
-export function mark(shapes = true): string[] {
-  if (shapes) return cells(CELL_MARK_PATH, 14, 14);
+/** The mark with smooth cuts in the triangles the terminal draws itself, else in half blocks, stepped. */
+export function mark(triangles: TriangleGlyphs = 'geometric'): string[] {
+  if (triangles !== null) {
+    const [lowerRight, lowerLeft, upperLeft, upperRight] = TRIANGLES[triangles];
+    const swap: Readonly<Record<string, string>> = { '◢': lowerRight, '◣': lowerLeft, '◤': upperLeft, '◥': upperRight };
+    return cells(CELL_MARK_PATH, 14, 14).map((line) => [...line].map((glyph) => swap[glyph] ?? glyph).join(''));
+  }
   const rows = Array.from({ length: 14 }, (_, y) =>
     Array.from({ length: 14 }, (_, x) => (filled(outlines(MARK_PATH), x + 0.5, y + 0.5) ? '#' : '.')).join(''),
   );
@@ -147,8 +168,8 @@ export function word(): string[] {
 }
 
 /** The mark with the word beside it, centred on it, and the caption under both; the mark and caption alone where the word does not fit. */
-export function banner(columns: number, caption: string, shapes = true): string[] {
-  const left = mark(shapes);
+export function banner(columns: number, caption: string, triangles: TriangleGlyphs = 'geometric'): string[] {
+  const left = mark(triangles);
   const right = word();
   const width = (left[0]?.length ?? 0) + MARK_GAP + (right[0]?.length ?? 0);
   const top = Math.floor((left.length - right.length) / 2);

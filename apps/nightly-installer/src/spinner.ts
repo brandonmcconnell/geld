@@ -1,3 +1,5 @@
+import type { TriangleGlyphs } from './logo';
+
 /**
  * A one-character spinner beside each step: the logomark's cut corner going round. It runs only in a terminal
  * that can draw it; piped output, CI and `TERM=dumb` get the step's line once, as before.
@@ -14,9 +16,25 @@ export interface Terminal {
   readonly columns: number;
   readonly color: boolean;
   readonly frames: readonly string[];
-  /** Whether the font draws the triangles (◢ ◣ ◤ ◥) the spinner and the logo's cuts use. */
-  readonly shapes: boolean;
+  /** The triangles this terminal draws to the cell itself, for the logo's cuts (logo.ts). */
+  readonly triangles: TriangleGlyphs;
   write(text: string): void;
+}
+
+const LOGO_STYLES: Readonly<Record<string, TriangleGlyphs>> = { powerline: 'powerline', geometric: 'geometric', blocks: null };
+
+/**
+ * Read from what the terminal says about itself. `GELD_LOGO` (`powerline`, `geometric` or `blocks`) overrides it,
+ * for a terminal set to draw them that cannot be told apart, such as iTerm2 with built-in Powerline glyphs on.
+ */
+export function trianglesFor(env: NodeJS.ProcessEnv): TriangleGlyphs {
+  const chosen = env['GELD_LOGO'];
+  if (chosen !== undefined && Object.hasOwn(LOGO_STYLES, chosen)) return LOGO_STYLES[chosen] ?? null;
+  const program = env['TERM_PROGRAM'] ?? '';
+  const term = env['TERM'] ?? '';
+  if (['vscode', 'ghostty', 'WezTerm'].includes(program) || term === 'xterm-kitty' || term === 'xterm-ghostty' || env['KITTY_WINDOW_ID'] !== undefined) return 'powerline';
+  if (env['VTE_VERSION'] !== undefined) return 'geometric';
+  return null;
 }
 
 export function terminalOf(stream: NodeJS.WriteStream, env: NodeJS.ProcessEnv, platform: NodeJS.Platform): Terminal {
@@ -27,7 +45,7 @@ export function terminalOf(stream: NodeJS.WriteStream, env: NodeJS.ProcessEnv, p
     columns: stream.columns ?? 80,
     color: isTTY && env['NO_COLOR'] === undefined && (stream.hasColors?.() ?? false),
     frames: platform === 'win32' && !modernWindows ? PLAIN_FRAMES : FRAMES,
-    shapes: !(platform === 'win32' && !modernWindows),
+    triangles: trianglesFor(env),
     write: (text) => void stream.write(text),
   };
 }

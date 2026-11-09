@@ -201,7 +201,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   const api = pathApi(platform);
   const stateDir = api.join(environment.home, '.geld');
   const terminal = terminalOf(process.stdout, process.env, process.platform);
-  if (terminal.isTTY) console.log(`\n${banner(terminal.columns, `Geld Nightly installer ${INSTALLER_VERSION}`, terminal.shapes).join('\n')}\n`);
+  if (terminal.isTTY) console.log(`\n${banner(terminal.columns, `Geld Nightly installer ${INSTALLER_VERSION}`, terminal.triangles).join('\n')}\n`);
 
   const found = await findProfiles(environment, options.browsers);
   if (found.length === 0) {

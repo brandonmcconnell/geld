@@ -30,9 +30,15 @@ describe('logo', () => {
     ]);
   });
 
-  it('keeps the stepped mark where the font has no triangles', () => {
-    expect(mark(false).join('')).not.toMatch(/[◢◣◤◥]/);
-    expect(mark(false)).toHaveLength(7);
+  it('draws the same cuts with the Powerline triangles, which terminals fit to the cell', () => {
+    expect(mark('powerline').slice(0, 2)).toEqual([' \u{E0BA}████████████', '\u{E0BA}█\u{E0BC}           ']);
+    expect(mark('powerline')[5]).toBe('██         \u{E0BA}█\u{E0BC}');
+    expect(mark('powerline').join('')).not.toMatch(/[◢◣◤◥]/);
+  });
+
+  it('keeps the stepped mark where the terminal draws no triangle itself', () => {
+    expect(mark(null).join('')).not.toMatch(/[◢◣◤◥\u{E0B8}-\u{E0BF}]/u);
+    expect(mark(null)).toHaveLength(7);
   });
 
   it('sets the word in three lines of one-pixel strokes', () => {

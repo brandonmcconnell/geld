@@ -1337,7 +1337,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The logo (`logo.ts`) is the mark, 7 lines by 14 columns, beside a three-line pixel wordmark with one-pixel strokes, so the letters stand to the mark about as they do in the logo.
   A cell is about twice as tall as it is wide and every glyph diagonal runs corner to corner of a cell, so a true 45° cut cannot be drawn in text: the mark is the brand grid mark (`MARK_PATH`, checked against `assets/brand/` by its test) with each cut moved onto a cell diagonal, all still parallel (`CELL_MARK_PATH`), and each cell is the glyph of `█ ▀ ▄ ◢ ◣ ◤ ◥` that matches it best, so every cut is one straight edge.
   The Legacy Computing wedges would come nearer 45°, but most fonts lack them and a terminal that does not draw them itself shows boxes.
-  The old Windows console's fonts lack the triangles too, and get the mark in half blocks, stepped.
+  **A triangle meets the blocks only where the terminal draws it to the cell itself**: a font's `◢` sits on the baseline with room around it, and a program cannot choose the font its output is drawn in.
+  So the glyphs follow the terminal (`trianglesFor`, from its environment): the Powerline triangles (U+E0B8 to U+E0BF) where it draws those itself (VS Code and Cursor through xterm.js, Ghostty, kitty, WezTerm), the Geometric Shapes ones in VTE terminals (GNOME Terminal, xfce4-terminal), which stretch them to the cell, and elsewhere (macOS Terminal, iTerm2 by default, the Windows consoles) the mark in half blocks, stepped, which every terminal fits to the cell.
+  `GELD_LOGO=powerline`, `geometric` or `blocks` overrides it, for iTerm2 with its built-in Powerline glyphs on.
+  xterm.js draws the Powerline triangles only in its WebGL and canvas renderers (VS Code's default), so VS Code with GPU acceleration off would show boxes there.
   Narrower than 46 columns it shows the mark alone with its caption, and piped output, CI and `TERM=dumb` get plain lines with no logo or escape codes.
   Verified end to end in Nov 2026 against a local stand-in for github.com and its API: two profiles installed from one download, the zip gone, the path on the clipboard, Load unpacked in Chrome 156, and the next build installed by the extension into the installer's folder.
   Publishing `geld-nightly` to npm is the owner's step.
