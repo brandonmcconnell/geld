@@ -85,7 +85,7 @@ import { stopWatchingBrandSelection } from './brand';
 import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrphanedLoans, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 import { rememberTopCard, setTopCard } from './top-card';
-import { closeOverviewChecks, isOverviewPage, OVERVIEW_FOR_YOU, openCollapsedThreads, openOverviewChecks, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, showAllOverviewComments } from './overview-page';
+import { closeOverviewChecks, isOverviewPage, OVERVIEW_FOR_YOU, OVERVIEW_ITEM, openCollapsedThreads, openOverviewChecks, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, showAllOverviewComments } from './overview-page';
 import { pageFetch } from '../page-fetch';
 import { closeFlow, openFlowDialog } from './flow';
 
@@ -2382,6 +2382,16 @@ const botLineMemo = new Map<string, { readonly anchor: string; readonly at: numb
  * (`ChatSource.revision`): bots edit their summaries between runs, and the
  * page's node may by now report a later run.
  */
+/**
+ * A summary comment's card, as a thread's pinned strip lends it: the classic comment card, or on the Overview the
+ * `article` the comment's id is on (its header, its words and its reactions), which none of the classic classes name.
+ */
+function summaryCardOf(summary: HTMLElement): HTMLElement | null {
+  const card = summary.closest<HTMLElement>('.timeline-comment, .js-comment-container, [data-testid="comment-container"]');
+  if (card !== null) return card;
+  return summary.tagName === 'ARTICLE' && closestAtHome(summary, OVERVIEW_ITEM) !== null ? summary : null;
+}
+
 function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta: GeldPrMeta, reapply: () => void): ChatSource | null {
   // An item can merge two bots' findings (cluster.ts unions their ids), so the source read is this thread's own,
   // not the item's first: that one may be the other bot's, and its name, summary and Rerun would be the wrong bot's.
@@ -2428,7 +2438,7 @@ function threadSourceOf(thread: HTMLElement, item: ReviewItem | undefined, meta:
   // "summary", and that is a thread, not a source.
   const summaryEl = document.getElementById(head.anchor);
   if (summaryEl !== null && closestAtHome(summaryEl, THREAD_SELECTOR) !== null) return null;
-  const summary = entryNodes.get(head.anchor) ?? summaryEl?.closest<HTMLElement>('.timeline-comment, .js-comment-container, [data-testid="comment-container"]') ?? null;
+  const summary = entryNodes.get(head.anchor) ?? (summaryEl === null ? null : summaryCardOf(summaryEl));
   if (summary !== null && !summary.contains(thread)) return describe(summary, head.anchor, (who) => `${who}'s run summary`);
   return null;
 }
