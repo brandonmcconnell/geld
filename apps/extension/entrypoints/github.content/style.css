@@ -782,6 +782,26 @@ html[data-geld-quick-review] details.js-reviews-container {
   padding-left: 16px;
 }
 
+/* In GitHub's bar over every tab, first among its actions: 8px before a button of GitHub's that shows ("Merge status"),
+ * none before its divider, which spaces itself. */
+.geld-quick-review[data-geld-place='bar'] {
+  align-self: center;
+}
+
+.geld-quick-review[data-geld-place='bar']:has(+ button:not([class*='ReviewMenuButton'])) {
+  margin-right: 8px;
+}
+
+/* In the Overview's stuck mini header, before its divider and panel toggles. */
+.geld-quick-review[data-geld-place='mini'] {
+  align-self: center;
+}
+
+/* After "Merge status", spaced as GitHub spaces its own review button there (`tmp-ml-2`). */
+.geld-quick-review[data-geld-place='mini']:not(:first-child) {
+  margin-left: 8px;
+}
+
 .geld-quick-review[data-geld-place] .geld-quick-review__segment.btn {
   height: 28px;
 }
@@ -860,9 +880,20 @@ html[data-geld-quick-review] details.js-reviews-container {
   color: var(--fgColor-default, #1f2328);
 }
 
+/*
+ * Pressed sinks in both themes. Primer's dark active/selected surfaces are lighter than rest (elevation), which read
+ * as raised here, so dark mode mixes the rest surface toward the theme's inset colour instead.
+ */
+.geld-quick-review__segment.btn {
+  --geld-pressed-bg: light-dark(
+    var(--button-default-bgColor-active, #e6eaef),
+    color-mix(in srgb, var(--button-default-bgColor-rest, #212830) 55%, var(--bgColor-inset, #010409))
+  );
+}
+
 /* The segment whose comment box is open reads as pressed. */
 .geld-quick-review__segment.btn[aria-expanded='true'] {
-  background: var(--button-default-bgColor-active, #e6eaef);
+  background: var(--geld-pressed-bg);
 }
 
 /*
@@ -903,8 +934,8 @@ html[data-geld-quick-review] details.js-reviews-container {
  * verdict's colour. Still a button: pressing it again leaves a new review.
  */
 .geld-quick-review__segment.btn[data-current] {
-  background: var(--button-default-bgColor-selected, var(--button-default-bgColor-active, #e6eaef));
-  box-shadow: inset 0 1px 2px rgba(31, 35, 40, 0.15);
+  background: light-dark(var(--button-default-bgColor-selected, var(--button-default-bgColor-active, #e6eaef)), var(--geld-pressed-bg));
+  box-shadow: inset 0 1px 2px light-dark(rgba(31, 35, 40, 0.15), rgba(1, 4, 9, 0.6));
 }
 
 .geld-quick-review__segment.btn[data-event='approve'][data-current] .geld-quick-review__glyph > svg {
@@ -1669,10 +1700,6 @@ button.geld-status-pill[data-geld-instant-merge]:hover {
   filter: none;
 }
 
-button.geld-status-pill[aria-haspopup]:is(:hover, [aria-expanded='true']) {
-  filter: brightness(0.92);
-}
-
 /* Merged (`showMergedPills`): no menu, so GitHub's plain label, no pointer, no hover, no caret, until the reload. */
 button.geld-status-pill:not([aria-haspopup]) {
   cursor: default;
@@ -1683,9 +1710,12 @@ button.geld-status-pill[aria-busy='true'] {
   opacity: 0.7;
 }
 
-/* The status glyph, with the caret laid over it: shown in its place while the pill is hovered, focused or open. */
+/*
+ * The status glyph, the words, then the caret, as GitHub draws its own status menu's label on the Overview (Nov 2026):
+ * the caret 4px after the words and 4px into the pill's padding (`ml-1 mr-n1`), in the label's colour, whatever the pill's
+ * state. GitHub's label does not change under the pointer, so neither does the pill.
+ */
 .geld-status-pill__lead {
-  position: relative;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -1697,11 +1727,10 @@ button.geld-status-pill[aria-busy='true'] {
 }
 
 .geld-status-pill__caret {
-  position: absolute;
-  inset: 0;
-  display: none;
+  display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  justify-content: center;
+  margin: 0 -4px 0 4px;
 }
 
 .geld-status-pill__caret > svg {
@@ -1711,19 +1740,38 @@ button.geld-status-pill[aria-busy='true'] {
   fill: currentColor;
 }
 
-button.geld-status-pill[aria-haspopup]:is(:hover, :focus-visible, [aria-expanded='true']) .geld-status-pill__lead > svg {
-  visibility: hidden;
+/* A merged pill is GitHub's plain label until the reload: nothing to open, no caret. */
+button.geld-status-pill:not([aria-haspopup]) .geld-status-pill__caret {
+  display: none;
 }
 
-button.geld-status-pill[aria-haspopup]:is(:hover, :focus-visible, [aria-expanded='true']) .geld-status-pill__caret {
-  display: inline-flex;
-}
-
-/* GitHub's action menu: one line per action, its glyph in the status's colour, which accessible themes redefine. */
+/*
+ * GitHub's action menu, as its own status menu on the Overview draws it (Primer's ActionList in an AnchoredOverlay):
+ * the overlay's floating shadow with no border of its own, 8px around the items, each 32px tall with 6px corners, its
+ * glyph 16px and its words 14px. An action's words take its glyph's colour, as Primer's danger items do: Close in the
+ * danger colours, the others in their status's own (open, done, attention), Convert to draft in the default text with
+ * its glyph in draft's, as GitHub's own item. Each hovers to its colour's muted surface, the neutral one for draft.
+ */
 .geld-quick-review__status-menu {
   gap: 0;
   min-width: 192px;
   padding: 8px;
+  border: 0;
+  box-shadow: var(--shadow-floating-small, 0 0 0 1px #d1d9e080, 0 6px 12px -3px #25292e0a, 0 6px 18px 0 #25292e1f);
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-item:hover {
+  background: var(--control-transparent-bgColor-hover, #818b981a);
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-item:active {
+  background: var(--control-transparent-bgColor-active, #818b9826);
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-item:focus-visible {
+  background: transparent;
+  outline: 2px solid var(--focus-outlineColor, #0969da);
+  outline-offset: 0;
 }
 
 .geld-quick-review__status-menu .geld-quick-review__menu-item {
@@ -1748,10 +1796,9 @@ button.geld-status-pill[aria-haspopup]:is(:hover, :focus-visible, [aria-expanded
   padding-top: 0;
 }
 
-/* A step up from the comment-kind menu's 16px glyph and 14px words: the statuses are the menu, read at a glance. */
 .geld-quick-review__status-menu .geld-quick-review__menu-visual > svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 /*
@@ -1790,30 +1837,89 @@ button.geld-status-pill[aria-haspopup]:is(:hover, :focus-visible, [aria-expanded
 }
 
 .geld-quick-review__status-menu .geld-quick-review__menu-label {
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 22px;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
   white-space: nowrap;
-}
-
-.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='open'] .geld-quick-review__menu-visual {
-  color: var(--fgColor-open, #1a7f37);
 }
 
 .geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='draft'] .geld-quick-review__menu-visual {
   color: var(--fgColor-draft, var(--fgColor-muted, #59636e));
 }
 
-.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='queued'] .geld-quick-review__menu-visual {
-  color: var(--fgColor-attention, #9a6700);
+.geld-quick-review__status-menu :is(.geld-quick-review__menu-item, .geld-quick-review__status-submenu)[data-status='open'] {
+  --geld-status-fg: var(--fgColor-open, #1a7f37);
+  --geld-status-hover: var(--bgColor-open-muted, #dafbe1);
 }
 
-.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='merged'] .geld-quick-review__menu-visual {
-  color: var(--fgColor-done, #8250df);
+.geld-quick-review__status-menu :is(.geld-quick-review__menu-item, .geld-quick-review__status-submenu)[data-status='queued'] {
+  --geld-status-fg: var(--fgColor-attention, #9a6700);
+  --geld-status-hover: var(--bgColor-attention-muted, #fff8c5);
 }
 
-.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status='closed'] .geld-quick-review__menu-visual {
-  color: var(--fgColor-closed, #d1242f);
+.geld-quick-review__status-menu :is(.geld-quick-review__menu-item, .geld-quick-review__status-submenu)[data-status='merged'] {
+  --geld-status-fg: var(--fgColor-done, #8250df);
+  --geld-status-hover: var(--bgColor-done-muted, #fbefff);
+}
+
+.geld-quick-review__status-menu :is(.geld-quick-review__menu-item, .geld-quick-review__status-submenu)[data-status='closed'] {
+  --geld-status-fg: var(--control-danger-fgColor-rest, #d1242f);
+  --geld-status-fg-hover: var(--control-danger-fgColor-hover, #d1242f);
+  --geld-status-hover: var(--control-danger-bgColor-hover, #ffebe9);
+  --geld-status-active: var(--control-danger-bgColor-active, #ffebe966);
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status]:not([data-status='draft']) :is(.geld-quick-review__menu-visual, .geld-quick-review__menu-label) {
+  color: var(--geld-status-fg);
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status]:not([data-status='draft']):is(:hover, [aria-expanded='true']) {
+  background: var(--geld-status-hover);
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status]:not([data-status='draft']):is(:hover, [aria-expanded='true']) :is(.geld-quick-review__menu-visual, .geld-quick-review__menu-label, .geld-quick-review__menu-trail) {
+  color: var(--geld-status-fg-hover, var(--geld-status-fg));
+}
+
+/* A type's choices take its tint under the pointer, so the submenu says which change it makes. */
+.geld-quick-review__status-submenu[data-status]:not([data-status='draft']) .geld-quick-review__menu-item:hover {
+  background: var(--geld-status-hover);
+}
+
+.geld-quick-review__status-submenu[data-status]:not([data-status='draft']) .geld-quick-review__menu-item:hover :is(.geld-quick-review__menu-label, .geld-quick-review__menu-counter) {
+  color: var(--geld-status-fg-hover, var(--geld-status-fg));
+}
+
+.geld-quick-review__status-submenu[data-status]:not([data-status='draft']) .geld-quick-review__menu-item:active {
+  background: var(--geld-status-active, var(--geld-status-hover));
+}
+
+/* "Entire stack 4": a translucent counter, a circle for one digit and a pill for more, so it reads on every tint. */
+.geld-quick-review__status-menu .geld-quick-review__menu-counter {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  margin-inline-start: auto;
+  border-radius: 999px;
+  background: var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12));
+  color: var(--fgColor-default, #1f2328);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-counter[data-wide] {
+  width: auto;
+  padding: 0 7px;
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-item[data-status]:not([data-status='draft']):active {
+  background: var(--geld-status-active, var(--geld-status-hover));
 }
 
 /*
@@ -1841,6 +1947,10 @@ button.geld-status-pill[aria-haspopup]:is(:hover, :focus-visible, [aria-expanded
 
 .geld-quick-review__status-menu .geld-quick-review__menu-parent[aria-expanded='true'] {
   background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
+}
+
+.geld-quick-review__status-menu .geld-quick-review__menu-parent[data-status='draft']:is(:hover, [aria-expanded='true']) .geld-quick-review__menu-trail {
+  color: var(--fgColor-default, #1f2328);
 }
 
 .geld-quick-review__menu.geld-quick-review__status-submenu {
@@ -2409,6 +2519,50 @@ tr[data-geld-test-fold='hidden'] {
   text-decoration: underline;
 }
 
+/* Items opened by blocked users, out of lists (blocked-lists.ts) ----------- */
+
+[data-geld-blocked-list] {
+  display: flex !important;
+  flex-direction: column;
+}
+
+[data-geld-blocked-row='hidden'] {
+  display: none !important;
+}
+
+[data-geld-blocked-note] {
+  order: 1;
+  list-style: none;
+}
+
+[data-geld-blocked-row='shown'] {
+  order: 2;
+}
+
+.geld-blocked-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-top: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.geld-blocked-note__toggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fgColor-accent, var(--color-accent-fg));
+  font: inherit;
+  cursor: pointer;
+}
+
+.geld-blocked-note__toggle:hover {
+  text-decoration: underline;
+}
+
 /* ------------------------------------------------------------------------ */
 /* PR conversation: review digest, hidden activity, quick view              */
 /* ------------------------------------------------------------------------ */
@@ -2429,6 +2583,23 @@ tr[data-geld-test-fold='hidden'] {
  * `content-visibility: hidden` skips the contents (rail pseudo-elements
  * included), and without padding or borders nothing of the row remains.
  */
+/*
+ * In Primer's own layer: GitHub declares `[hidden][hidden] { display: none !important }` inside
+ * `@layer primer-css-base`, and a layered !important beats any unlayered one whatever its specificity, so this
+ * rule unlayered lost and folded rows were `display: none`, out of find-in-page's reach. In the same layer the
+ * more specific rule wins, and should the layer go, a layered !important still beats an unlayered one.
+ */
+@layer primer-css-base {
+  /* Only where `until-found` is findable (`data-geld-findable`, fold.ts): elsewhere it is plain hidden and must stay so. */
+  [data-geld-folded='hidden'][data-geld-findable][hidden='until-found'] {
+    display: block !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+}
+
 [data-geld-folded='hidden'] {
   display: block !important;
   min-height: 0 !important;
@@ -2448,16 +2619,103 @@ html[data-geld-timeline='full'] [data-geld-folded] {
  * stamps `data-geld-seen` on everything present when a pass ends), so the
  * time between arrival and fold never paints it. Only once the panel is up,
  * so the first paint of the page is GitHub's own; items on loan to the
- * panel are exempt.
+ * panel are exempt. Never `display: none`: a Mermaid diagram GitHub renders in
+ * that window has no layout in its iframe, fails with "svg element not in
+ * render tree" and stays failed when the item shows.
  */
 html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-timeline-item, .TimelineItem, [data-testid='timeline-row']):not([data-geld-seen]):not(.geld-review *) {
-  display: none !important;
+  content-visibility: hidden !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+/* The Overview's Comments entries: the same wait for the pass that reads them, once the digest stands above the description. */
+html[data-geld-timeline='compact']:has(.geld-review[data-geld-overview]) [data-component='Stack'] > [data-testid='timeline-item']:not([data-geld-seen]):not(.geld-review *) {
+  content-visibility: hidden !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+/* They stand in a column with a gap between them, which each folded entry would keep: the gap goes while folding. */
+html[data-geld-timeline='compact'] [data-component='Stack']:has(> [data-testid='timeline-item'][data-geld-folded]) {
+  gap: 0 !important;
+}
+
+html[data-geld-timeline='compact'] [data-component='Stack']:has(> [data-testid='timeline-item'][data-geld-folded]) > [data-testid='timeline-item']:not([data-geld-folded]) + [data-testid='timeline-item']:not([data-geld-folded]) {
+  margin-top: 16px;
+}
+
+/* The Comments section keeps room for its entries while they load: with its heading folded it holds nothing to wait for. */
+html[data-geld-timeline='compact'] section:has(> [data-geld-folded] #overview-comments) {
+  min-height: 0 !important;
 }
 
 /* The description card the panel grows out of: one box, shared border. */
 [data-geld-attached] {
   border-bottom-left-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
+}
+
+/*
+ * The Overview's status row heads the description: one box, the card's bottom border the line between them, the
+ * column's gap taken back (`--geld-overview-gap`, measured; GitHub's 24px until then). Keyed on `<html>`
+ * (`data-geld-top-card`, set before paint) and the page's own markup, so it holds from GitHub's first frame and
+ * through the re-render that swaps the server-rendered boxes for React's, where attributes on the boxes were lost.
+ */
+html[data-geld-top-card] [class*='CondensedForYouContainer']:has(> section[aria-label='Recommended action']):has(+ section[aria-label='Description']) {
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+html[data-geld-top-card] [class*='CondensedForYouContainer']:has(> section[aria-label='Recommended action']) + section[aria-label='Description'] {
+  margin-top: calc(-1px - var(--geld-overview-gap, 24px)) !important;
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
+
+html[data-geld-top-card] section[aria-label='Description']:has(+ .geld-review) {
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+/* Comments and Approvals repeat the digest's threads meter and Reviews row, and Checks is the CI row's. */
+html[data-geld-top-card='folded'] [class*='CondensedForYouContainer'] > [class*='MiniStatusGrid'] {
+  display: none !important;
+}
+
+/*
+ * GitHub drops the status row when it has nothing to say (no checks, nothing to do): the card then holds only the
+ * folded mini statuses and would stand as its own two borders over the description, so it goes, and the description
+ * keeps its own top edge (the join above needs the row).
+ */
+html[data-geld-top-card='folded'] [class*='CondensedForYouContainer']:not(:has(> section[aria-label='Recommended action'])) {
+  display: none !important;
+}
+
+/* GitHub's loading row is one line (70px), the row it becomes a title and a line of subtext (72px): the same height, so nothing under it moves. */
+html[data-geld-top-card] [class*='CondensedForYouContainer'] [data-testid='for-you-item-row'][data-item-id='loading'] {
+  min-height: 72px;
+}
+
+/* While GitHub streams the card a `<template>` leads it, so its status row is not `:first-child` and takes a second top border. */
+html[data-geld-top-card] [class*='CondensedForYouContainer'] > template:first-child + section {
+  border-top-width: 0 !important;
+}
+
+/*
+ * GitHub's checks overlay under the top card stays open while the digest folds the card's mini statuses, its list lent
+ * to the CI row: the empty overlay, and the list for the moment before it is lent (after Escape reopens it), never show.
+ */
+html[data-geld-top-card='folded'] [class*='OverlayPortalRoot']:has([role='group'][aria-label='Checks']),
+html[data-geld-top-card='folded'] div[role='group'][aria-label='Checks'] {
+  visibility: hidden !important;
+  /* Primer's overlay sets `visibility: visible` on itself, which beats what it inherits; nothing inside undoes an opacity. */
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 .geld-review [hidden] {
@@ -2501,7 +2759,7 @@ html[data-geld-timeline='compact'] .js-discussion:has(.geld-review) :is(.js-time
  * sight, the reading bar standing for it. Pressed with click(), which a hidden control still takes. Back as soon as
  * Geld stops pressing (done, or at its limit), so the reader can load the rest.
  */
-html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='load-more-timeline'], .ajax-pagination-btn, button.js-ajax-pagination-btn) {
+html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='load-more-timeline'], .ajax-pagination-btn, button.js-ajax-pagination-btn, button[data-geld-load-previous]) {
   display: none !important;
 }
 
@@ -2557,8 +2815,34 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   gap: 10px;
 }
 
+/* The strip sits on the status rows' columns: the emblem in the 16px glyph column, "Geld" in the 88px label column,
+   the meter where a row's content starts. The 14px grid emblem is centred in the glyph's 16px, at 1px per unit. */
 .geld-review__brand {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.geld-review__brand svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.geld-review__label.geld-review__brand-name {
+  color: inherit;
   font-weight: 600;
+  line-height: 20px;
+}
+
+/* `::selection` never paints the emblem, so while selected (`syncBrandSelection`) it wears the colours the browser
+   gives selected text on GitHub, which sets no selection style of its own. */
+.geld-review__brand[data-geld-selected] {
+  background-color: Highlight;
+  color: HighlightText;
 }
 
 .geld-review__progress {
@@ -2716,6 +3000,11 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   cursor: progress;
 }
 
+.geld-review__ai-btn[data-state='nothing'] {
+  color: var(--geld-review-muted);
+  cursor: default;
+}
+
 .geld-review__ai-btn[data-state='running'] .octicon {
   animation: geld-ai-pulse 1.2s ease-in-out infinite;
 }
@@ -2796,6 +3085,25 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   background: var(--geld-review-hover);
 }
 
+/* Lucide's marks are outlines: GitHub's `.octicon { fill: currentColor }` would fill their shapes solid (the Flow mark's two boxes rendered as blobs). */
+svg.geld-lucide {
+  fill: none !important;
+}
+
+/* The Flow control: the same icon button as the grouping control, its mark and its name. */
+.geld-review__icon.geld-review__flow-btn {
+  width: auto;
+  gap: 5px;
+  padding: 0 8px 0 7px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.geld-review__flow-btn .octicon {
+  width: 16px;
+  height: 16px;
+}
+
 /* The grouping control: an icon button like the copy button beside it, widened by the current choice's name. */
 .geld-review__grouping {
   position: relative;
@@ -2812,6 +3120,202 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 .geld-review__grouping-btn .octicon {
   width: 16px;
   height: 16px;
+}
+
+/* The View control: how pull requests look, the grouping control's shape with the eye for its mark. */
+.geld-review__view {
+  position: relative;
+}
+
+.geld-review__icon.geld-review__view-btn {
+  width: auto;
+  gap: 5px;
+  padding: 0 8px 0 7px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.geld-review__view-btn .octicon {
+  width: 16px;
+  height: 16px;
+}
+
+/* A Geld row too narrow for its words (`fit-chips.ts`): every button is its mark alone, the copy button's square. */
+.geld-review__head[data-geld-fit-tools='icons'] :is(.geld-review__grouping-label, .geld-review__view-label, .geld-review__flow-label, .geld-review__ai-label, .geld-review__since-visit-label) {
+  display: none;
+}
+
+.geld-review__head[data-geld-fit-tools='icons'] .geld-review__icon:is(.geld-review__grouping-btn, .geld-review__view-btn, .geld-review__flow-btn, .geld-review__ai-btn) {
+  width: 28px;
+  padding: 0;
+}
+
+/* ---- how pull requests look: the three views ----------------------------- */
+
+/* Primer's small segmented control: a track with the chosen view raised on it. Inside the digest and on the line
+   that stands for it while it is off, so GitHub's tokens directly, not the panel's variables. */
+.geld-view-choice {
+  display: inline-flex;
+  flex: 0 0 auto;
+  max-width: 100%;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--controlTrack-bgColor-rest, var(--color-segmented-control-bg, #eff2f5));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* Sizes here are mirrored in view-fit.ts, which measures the control before it is laid out. */
+.geld-view-choice__option {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.geld-view-choice__option:not([aria-pressed='true']):hover {
+  background: var(--controlTrack-bgColor-hover, var(--color-segmented-control-button-hover-bg, #e6eaef));
+}
+
+.geld-view-choice__option[aria-pressed='true'] {
+  border-color: var(--controlKnob-borderColor-rest, var(--color-segmented-control-button-selected-border, #818b98));
+  background: var(--controlKnob-bgColor-rest, var(--color-segmented-control-button-bg, #fff));
+  font-weight: 600;
+}
+
+.geld-view-choice__option:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, var(--color-accent-fg, #0969da));
+  outline-offset: -2px;
+}
+
+/* A view named by marks and a word: Geld's emblem for the digest, GitHub's mark for its timeline. */
+.geld-view-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.geld-view-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+}
+
+.geld-view-mark svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+/* Once, under the Geld row, until the reader picks a view: what this panel is, and the three ways the page can look. */
+.geld-review__intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 12px 10px 16px;
+  border-bottom: 1px solid var(--geld-review-border-muted);
+  background: light-dark(var(--bgColor-accent-muted, var(--color-accent-subtle, #ddf4ff)), color-mix(in srgb, var(--geld-review-accent) 14%, var(--geld-review-bg)));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.geld-review__intro-text {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.geld-review__intro-actions {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.geld-review__intro-dismiss {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--geld-review-border);
+  border-radius: 6px;
+  background: var(--geld-review-bg);
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.geld-review__intro-dismiss:hover {
+  background: var(--geld-review-hover);
+}
+
+/* While the digest is off: one line grown out of the description card, as the digest would, saying so and offering the views. */
+.geld-digest-off {
+  display: flex;
+  position: relative;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: -1px 0 0;
+  padding: 8px 8px 8px 16px;
+  border: 1px solid var(--borderColor-default, var(--color-border-default, #d1d9e0));
+  border-radius: 0 0 6px 6px;
+  background: var(--bgColor-muted, var(--color-canvas-subtle, #f6f8fa));
+  color: var(--fgColor-muted, var(--color-fg-muted, #59636e));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.geld-digest-off__brand {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-digest-off__brand svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.geld-digest-off__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The subtitle only while the whole line fits on one row (`view-fit.ts`). */
+.geld-digest-off[data-geld-view-subtitle='hide'] .geld-digest-off__subtitle {
+  display: none;
+}
+
+.geld-digest-off__text strong {
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-weight: 600;
 }
 
 .geld-review__menu-list > .geld-review__menu-item--choice {
@@ -2914,6 +3418,10 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   color: var(--geld-review-danger-fg);
 }
 
+.geld-review__request-state[data-health='severe'] {
+  color: var(--geld-review-danger-fg);
+}
+
 .geld-review__request-state[data-health='warn'] {
   color: var(--geld-review-attention-fg);
 }
@@ -2925,6 +3433,202 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 .geld-review__request-state > .geld-review__health > .octicon {
   width: 12px;
   height: 12px;
+}
+
+/* ---- Hidden people: the closed eye and its count, then who is hidden with Peek and Unhide ---- */
+
+.geld-review__hidden-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 6px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  list-style: none;
+  cursor: pointer;
+}
+
+.geld-review__hidden-btn::-webkit-details-marker {
+  display: none;
+}
+
+.geld-review__hidden-btn:hover,
+.geld-review__hidden[open] > .geld-review__hidden-btn {
+  background: var(--geld-review-hover);
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-review__menu-list.geld-review__hidden-list {
+  min-width: 320px;
+}
+
+.geld-review__hidden-section + .geld-review__hidden-section {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--borderColor-muted, var(--color-border-muted));
+}
+
+.geld-review__hidden-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 0 0 8px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.geld-review__hidden-manage {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--geld-review-muted);
+  cursor: pointer;
+}
+
+.geld-review__hidden-manage:hover,
+.geld-review__hidden-manage:focus-visible {
+  background: var(--geld-review-hover);
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-review__hidden-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 4px;
+  line-height: 20px;
+}
+
+.geld-review__hidden-item > .geld-review__bot-icon {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin-right: 0;
+}
+
+.geld-review__hidden-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-review__hidden-verdict {
+  flex: 0 0 auto;
+}
+
+.geld-review__hidden-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.geld-review__hidden-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* A blocked person whose content GitHub still shows: their picture, with GitHub's blocked mark on its corner. */
+.geld-review__blocked-avatar {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.geld-review__blocked-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: inline-flex;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--bgColor-default, var(--color-canvas-default));
+  color: var(--fgColor-danger, var(--color-danger-fg));
+}
+
+.geld-review__blocked-badge > .octicon {
+  width: 11px;
+  height: 11px;
+}
+
+/* A blocked or hidden person's comment, folded behind a line shaped like GitHub's own hidden comments (people-presence.ts). */
+/* Doubled to outrank the chat's `.geld-review__chat [data-geld-message] { display: flex !important }`, which comes later. */
+html [data-geld-person-fold][data-geld-person-fold]:not([data-geld-person-fold-open], [data-geld-person-fold-own]),
+html [data-geld-person-fold-part][data-geld-person-fold-part] {
+  display: none !important;
+}
+
+.geld-person-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--borderColor-default, var(--color-border-default));
+  border-radius: 6px;
+  background: var(--bgColor-muted, var(--color-canvas-subtle));
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.geld-person-line__toggle {
+  flex: 0 0 auto;
+}
+
+/* A blocked or hidden person's hovercard (person-hovercard.ts): why, and what GitHub lets the reader do. */
+.geld-person-card {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  font-size: 12px;
+}
+
+.geld-person-card__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fgColor-danger, var(--color-danger-fg));
+  font-weight: 600;
+}
+
+.geld-person-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.geld-person-card__picker {
+  display: contents;
+}
+
+.geld-blocked-label {
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.geld-blocked-notice {
+  margin-bottom: 16px;
+}
+
+/* GitHub's own sidebar rows for hidden people (sidebar-people.ts). */
+[data-geld-sidebar-hidden] {
+  display: none !important;
 }
 
 /* The rest of the registry, behind a disclosure in the menu's own type. */
@@ -3129,6 +3833,11 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 
 .geld-review__rows--status {
   border-bottom: 1px solid var(--geld-review-border-muted);
+}
+
+/* Nothing under it yet (the digest still reading): the panel's own border ends the box, not a second line on it. */
+.geld-review__rows--status:is(:last-child, :has(+ .geld-review__rows:empty:last-child)) {
+  border-bottom-width: 0;
 }
 
 /* One hairline between neighbours: the head already draws the line above the first status row, and the
@@ -3336,6 +4045,10 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   color: var(--geld-review-danger-fg);
 }
 
+.geld-review__status--verdict[data-health='severe'] {
+  color: var(--geld-review-danger-fg);
+}
+
 .geld-review__status--verdict[data-health='pending'] {
   color: var(--geld-review-muted);
 }
@@ -3458,20 +4171,10 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   white-space: nowrap;
 }
 
+/* A status row's own glyph keeps the muted colour whatever the row says: only a tinted row (`data-tone`, the CI row
+   with a required check failing) colours it, below. The pills and lights in the row carry their states. */
 .geld-review__row--status .geld-review__status--muted {
   color: var(--geld-review-muted);
-}
-
-.geld-review__row--status[data-health='good'] .geld-review__status--muted {
-  color: var(--geld-review-done-fg);
-}
-
-.geld-review__row--status[data-health='warn'] .geld-review__status--muted {
-  color: var(--geld-review-attention-fg);
-}
-
-.geld-review__row--status[data-health='bad'] .geld-review__status--muted {
-  color: var(--geld-review-danger-fg);
 }
 
 /* A bot: icon · name · detail · traffic light, in one outlined pill whose corners follow the icon's. */
@@ -3494,7 +4197,8 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   white-space: nowrap;
 }
 
-.geld-review__bot:is(a):hover {
+/* Every pill that goes somewhere, a link (a bot's summary, a preview) or a button (a comment report, an agent's note). */
+.geld-review__bot:is(a, button):is(:hover, :focus-visible) {
   border-color: var(--geld-review-muted);
   background: var(--geld-review-subtle);
   text-decoration: none;
@@ -3589,6 +4293,10 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 }
 
 .geld-review__health[data-health='bad'] {
+  color: var(--geld-review-danger-fg);
+}
+
+.geld-review__health[data-health='severe'] {
   color: var(--geld-review-danger-fg);
 }
 
@@ -3689,6 +4397,28 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   margin-bottom: 6px;
 }
 
+/* View and Rerun (or See latest) on a bot comment's card, on the head's right as on the chat's byline. The card is
+   outside the panel, so the colours Rerun's box reads from the panel are set here. */
+.geld-review-hovercard__controls {
+  --geld-review-border: var(--borderColor-default, var(--color-border-default, #d1d9e0));
+  --geld-review-muted: var(--fgColor-muted, var(--color-fg-muted, #59636e));
+  --geld-review-bg: var(--bgColor-default, var(--color-canvas-default, #fff));
+  --geld-review-subtle: var(--bgColor-muted, var(--color-canvas-subtle, #f6f8fa));
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin-left: auto;
+}
+
+.geld-review-hovercard__controls > .geld-review__rerun-wrap {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.geld-review-hovercard__controls > .geld-review__rerun-wrap ~ .geld-review__rerun-wrap {
+  margin-left: 6px;
+}
+
 .geld-review-hovercard__avatar {
   width: 20px;
   height: 20px;
@@ -3744,6 +4474,11 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 .geld-review-hovercard__body > * {
   padding: 0 !important;
   margin: 0 !important;
+  font-size: 13px;
+}
+
+/* A note's copy is a bare `.markdown-body`, whose 16px GitHub's stylesheet would win with at the same specificity. */
+.geld-review-hovercard__body > .markdown-body {
   font-size: 13px;
 }
 
@@ -3835,7 +4570,7 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   margin-bottom: 2px;
 }
 
-.geld-review-hovercard--report .geld-review-hovercard__avatar[data-shape='round'] {
+.geld-review-hovercard__avatar[data-shape='round'] {
   border-radius: 50%;
 }
 
@@ -3877,6 +4612,13 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 
 .geld-review-hovercard--report a.geld-review-hovercard__open:hover {
   text-decoration: underline;
+}
+
+/* Under the Overview's digest there is no rail to clear: the line stands at the digest's end, a little in from its corner. */
+.geld-review[data-geld-overview] + .geld-review-nudge {
+  margin-bottom: 0;
+  padding-right: 12px;
+  text-align: right;
 }
 
 .geld-review-nudge a {
@@ -4289,6 +5031,70 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 /* A bot's mark that is itself a disc (read from its pixels, see mark-shape.ts): framed as a circle, ring and all. */
 .geld-review__avatar[data-shape='round'] {
   border-radius: 50%;
+}
+
+/* A bot's mark that is a glyph on a transparent ground (see mark-shape.ts) is its own shape: no ring, no fill.
+ * Near-black or near-white ink keeps the tile on a ground of its own tone, where it would otherwise vanish. */
+.geld-review__avatar[data-shape='cutout'],
+.geld-review__bot-icon[data-shape='cutout'],
+.geld-review-hovercard__avatar[data-shape='cutout'] {
+  border-radius: 4px;
+  background: none;
+  outline-color: transparent;
+}
+
+.geld-review__avatar[data-shape='cutout'][data-ink='dark'],
+.geld-review__bot-icon[data-shape='cutout'][data-ink='dark'],
+.geld-review-hovercard__avatar[data-shape='cutout'][data-ink='dark'] {
+  /* Hover cards sit outside `.geld-review`, where `--geld-review-hover` is not defined. */
+  background: light-dark(transparent, var(--geld-review-hover, var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(175, 184, 193, 0.2)))));
+  outline-color: light-dark(transparent, rgb(128 128 128 / 15%));
+}
+
+.geld-review__avatar[data-shape='cutout'][data-ink='light'],
+.geld-review__bot-icon[data-shape='cutout'][data-ink='light'],
+.geld-review-hovercard__avatar[data-shape='cutout'][data-ink='light'] {
+  background: light-dark(var(--geld-review-hover, var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(175, 184, 193, 0.2)))), transparent);
+  outline-color: light-dark(rgb(128 128 128 / 15%), transparent);
+}
+
+/* A cutout that is a solid blob with a one-colour edge falls just short of a tile: its own colour fills it out to one. */
+.geld-review__avatar[data-shape='cutout'][data-ground],
+.geld-review__bot-icon[data-shape='cutout'][data-ground],
+.geld-review-hovercard__avatar[data-shape='cutout'][data-ground] {
+  background: var(--geld-mark-ground);
+  outline-color: rgb(128 128 128 / 15%);
+}
+
+/*
+ * Overlapping marks need a ground of their own, or a cutout floats over its neighbour. It gets a white tile in both
+ * schemes, as a picture would, with the tiles' ring, and art that comes near the edge is padded in to a tenth of
+ * the tile (`--geld-mark-inset`, from mark-shape.ts). White ink gets a dark tile instead.
+ */
+.geld-review__avatar + .geld-review__avatar[data-shape='cutout']:not([data-ground]),
+.geld-review__avatar[data-shape='cutout']:not([data-ground]):has(+ .geld-review__avatar),
+.geld-review__deploy-sum .geld-review__bot-icon + .geld-review__bot-icon[data-shape='cutout']:not([data-ground]),
+.geld-review__deploy-sum .geld-review__bot-icon[data-shape='cutout']:not([data-ground]):has(+ .geld-review__bot-icon) {
+  box-sizing: border-box;
+  padding: calc(var(--geld-mark-inset, 0) * var(--geld-mark-size));
+  background: #fff;
+  object-fit: contain;
+  outline-color: rgb(128 128 128 / 15%);
+}
+
+.geld-review__avatar + .geld-review__avatar[data-shape='cutout'][data-ink='light']:not([data-ground]),
+.geld-review__avatar[data-shape='cutout'][data-ink='light']:not([data-ground]):has(+ .geld-review__avatar),
+.geld-review__deploy-sum .geld-review__bot-icon + .geld-review__bot-icon[data-shape='cutout'][data-ink='light']:not([data-ground]),
+.geld-review__deploy-sum .geld-review__bot-icon[data-shape='cutout'][data-ink='light']:not([data-ground]):has(+ .geld-review__bot-icon) {
+  background: #1f2328;
+}
+
+.geld-review__avatar {
+  --geld-mark-size: 20px;
+}
+
+.geld-review__bot-icon {
+  --geld-mark-size: var(--geld-bot-icon, 16px);
 }
 
 .geld-review__row {
@@ -5047,7 +5853,7 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   overflow: visible;
 }
 
-/* ---- the head: file path, copy, GitHub's link to the diff ---- */
+/* ---- the head: file path and lines, copy, jump to the comment in the diff, resolve ---- */
 
 /* The 28px icons in a 32px head leave 2px above and below; the same 2px on the right keeps the margin square. */
 .geld-review__chat-head {
@@ -5074,16 +5880,61 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   height: 14px;
 }
 
-/* Takes the space the actions leave, whatever its text: the fit is computed against that space (path-fit.ts). */
-.geld-review__chat-path {
+/* The path and its lines take the space the actions leave; the path, fitted to what the lines leave of it (path-fit.ts),
+ * runs only as long as its text so the lines follow it, as the Overview's heading has "Lines 845 - 853". */
+.geld-review__chat-where {
+  display: flex;
   flex: 1 1 0;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.geld-review__chat-path {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
   white-space: nowrap;
 }
 
+.geld-review__chat-lines {
+  flex: 0 0 auto;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* ---- the body: GitHub's thread, laid out as messages ---- */
+
+/* The Overview fades a comment's box in as it mounts, and a move restarts the fade: in the panel it simply shows. */
+.geld-review article[data-geld-teleported],
+.geld-review [data-geld-teleported] article {
+  animation: none !important;
+}
+
+/* An Overview review's box holds its threads' boxes too: opened as the review's words (or pinned over one of its threads), its threads are rows of their own. */
+.geld-review__chat-context article[data-geld-teleported] article,
+.geld-review__chat[data-geld-chat='comment'] article[data-geld-teleported] article {
+  display: none !important;
+}
+
+/*
+ * An Overview thread's box in a chat: the chat is the box, and its head names the file GitHub's header repeats. Its
+ * foot is the chat's, so it takes the chat's inner bottom corners (6px less the 1px border): GitHub's reply row is an
+ * inset band to the box's edge, and square, it stood over the chat's rounded border. The box clips its own content.
+ */
+.geld-review__chat-body > article[data-geld-teleported] {
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 0 5px 5px !important;
+  box-shadow: none !important;
+}
+
+.geld-review__chat-body > article[data-geld-teleported] > :first-child:has(h2 a[href*='/changes']) {
+  display: none !important;
+}
 
 /* GitHub's own thread header (chevron, path, "Show resolved") and its collapsed-thread controls: the chat's head says it. */
 .geld-review__chat-body review-thread-collapsible > .d-flex:first-child,
@@ -5149,12 +6000,10 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   display: none !important;
 }
 
-/* The line range and the diff hunk the thread is about, under the head, in the diff's own type. */
+/* GitHub's "Comment on lines +3331 to +3335": the head says it ("3331-3335"). */
 .geld-review__chat-body .f6.border-bottom:has(> * > .js-multi-line-preview-start),
 .geld-review__chat-body .f6.border-bottom:has(> .js-multi-line-preview-start) {
-  padding: 6px 12px !important;
-  border-bottom: 1px solid var(--geld-review-border-muted) !important;
-  font-size: 11px;
+  display: none !important;
 }
 
 .geld-review__chat-body .blob-wrapper {
@@ -5452,6 +6301,19 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 .geld-review__chat [data-geld-part='edit'] {
   align-self: stretch;
   margin: 0 !important;
+}
+
+/* The Overview edits a comment inside its bubble, and its editor has no width of its own (a message is as wide as
+ * its bubble, so the editor shrank to a sliver): while it is open the message takes the row and the bubble its tint. */
+.geld-review__chat [data-geld-message]:has(> [data-geld-part='bubble'] textarea),
+.geld-review__chat [data-geld-message] > [data-geld-part='bubble']:has(textarea) {
+  align-self: stretch;
+}
+
+.geld-review__chat [data-geld-message] > [data-geld-part='bubble']:has(textarea) {
+  padding: 0 !important;
+  border-color: transparent;
+  background: none;
 }
 
 /*
@@ -5929,13 +6791,14 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 /* ---- the composer: GitHub's reply control, always at the bottom ---- */
 
 /*
- * The reply area holds GitHub's editor (collapsed to its "Reply…" field until
- * pressed) and, for a reader who can resolve, GitHub's Resolve form, moved
- * by chat.ts into the side slot at the area's end. Collapsed, the field and
- * the side share one line, the field taking the width. Open, the editor
- * takes the whole width and the side sits at the bottom left, on the
- * editor's own action row across from Cancel and Comment (the area's bottom
- * padding is the row's, `bottom` matches it).
+ * The classic page's reply area, drawn as the Overview draws its own reply
+ * row (which the chat leaves as GitHub renders it): on the inset surface,
+ * GitHub's "Reply…" as a plain field and, for a reader who can resolve,
+ * GitHub's Resolve form, moved by chat.ts into the side slot at the area's
+ * end. Collapsed, the field and the side share one line, the field taking
+ * the width. Open, the editor takes the whole width and the side sits at the
+ * bottom left, on the editor's own action row across from Cancel and
+ * Comment (the area's bottom padding is the row's, `bottom` matches it).
  */
 .geld-review__chat-body .review-thread-reply {
   position: relative;
@@ -5944,11 +6807,11 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   align-items: center;
   gap: 8px;
   margin: 0 !important;
-  padding: 8px 12px 10px !important;
+  padding: 8px !important;
   border: 0 !important;
   border-top: 1px solid var(--geld-review-border-muted) !important;
   border-radius: 0 0 5px 5px;
-  background: var(--geld-review-bg);
+  background: var(--bgColor-inset, var(--color-canvas-inset, #f6f8fa));
 }
 
 .geld-review__chat-body .review-thread-reply > .js-inline-comment-form-container {
@@ -5967,8 +6830,22 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 
 .geld-review__chat-body .review-thread-reply:has(> .js-inline-comment-form-container.open) > .geld-review__composer-side {
   position: absolute;
-  bottom: 10px;
-  left: 12px;
+  bottom: 8px;
+  left: 8px;
+}
+
+/* The Overview's row once resolved: Geld's Unresolve where GitHub's Resolve stood, the same medium default button. */
+.geld-review__composer-unresolve.btn {
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.geld-review__composer-unresolve[hidden] {
+  display: none !important;
 }
 
 .geld-review__composer-side > form {
@@ -5984,33 +6861,17 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   font-size: 0 !important;
 }
 
+/* Primer's medium default button, as the Overview's Resolve. */
 .geld-review__composer-side button {
   height: 32px !important;
   min-height: 32px !important;
+  padding: 0 12px !important;
+  border-radius: 6px !important;
 }
 
 .geld-review__composer-label {
   font-size: 14px;
   font-weight: 500;
-}
-
-/* "[picture] marked resolved" */
-.geld-review__composer-resolved {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--geld-review-muted);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.geld-review__composer-resolved > .geld-review__avatar {
-  width: 20px;
-  height: 20px;
-}
-
-.geld-review__composer-resolved-name {
-  font-weight: 600;
 }
 
 /* Open, the field gives way to the editor (GitHub's own rule, kept whatever order the stylesheets load in). */
@@ -6040,27 +6901,23 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   min-width: 0;
 }
 
-.geld-review__chat-body .review-thread-reply .avatar {
-  width: var(--geld-chat-avatar) !important;
-  height: var(--geld-chat-avatar) !important;
+/* The Overview's row has no picture beside its field. */
+.geld-review__chat-body .review-thread-reply .d-table-cell:has(> .avatar) {
+  display: none !important;
 }
 
-/* The collapsed "Reply…" is GitHub's; here it is drawn as the chat's field. */
+/* The collapsed "Reply…" is GitHub's; here it is drawn as the Overview's "Write a reply" field. */
 .geld-review__chat-body .review-thread-reply .review-thread-reply-button {
   min-height: 32px !important;
-  /* GitHub spaces it from the avatar with a margin on top of its full width; the row's gap does that here. */
   margin: 0 !important;
-  padding: 0 12px !important;
-  border: 1px solid var(--geld-review-border) !important;
-  border-radius: 16px !important;
-  background: var(--geld-review-bg) !important;
-  color: var(--geld-review-muted) !important;
-  font-size: 13px !important;
+  padding: 1px 8px !important;
+  border: 1px solid var(--borderColor-default, var(--color-border-default, #d1d9e0)) !important;
+  border-radius: 6px !important;
+  background: var(--bgColor-default, var(--color-canvas-default, #fff)) !important;
+  color: var(--fgColor-muted, var(--color-fg-muted, #59636e)) !important;
+  font-size: 14px !important;
+  line-height: 21px !important;
   box-shadow: none !important;
-}
-
-.geld-review__chat-body .review-thread-reply .review-thread-reply-button:hover {
-  border-color: var(--geld-review-muted) !important;
 }
 
 .geld-review__chat-body .review-thread-reply .inline-comment-form-box {
@@ -6217,6 +7074,11 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   margin-left: -5px;
 }
 
+/* The history menu and its tooltip, side by side: no box of its own, so the menu stands in the byline as before. */
+.geld-review__edited-pair {
+  display: contents;
+}
+
 .geld-review__edited {
   display: inline-flex;
   align-items: center;
@@ -6233,17 +7095,6 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
 .geld-review__edited svg {
   width: 12px;
   height: 12px;
-}
-
-/* An edited comment's time in a row: the edit's, then the clock, on the time's own line. */
-.geld-review__time--edited {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.geld-review__time--edited > .geld-review__edited-wrap {
-  margin-left: 0;
 }
 
 /* The clock that opens GitHub's edit history is GitHub's dropdown: a summary, so no marker and the pointer. */
@@ -6264,7 +7115,10 @@ summary.geld-review__edited--menu:hover,
   color: var(--fgColor-accent, var(--color-accent-fg));
 }
 
+/* GitHub's `dropdown-menu-sw` caret sits about 15px in from the menu's right edge, centred on its own wider "edited ▾"
+ * control. Ours is a 12px clock whose centre is 6px in, so the menu moves 9px right to put the caret's tip on it. */
 .geld-review__edited-wrap > details-menu {
+  right: -9px;
   font-size: 12px;
   font-weight: 400;
   text-align: left;
@@ -6349,9 +7203,12 @@ summary.geld-review__edited--menu:hover,
 }
 
 /* A bot's own badges inside its comment: Geld's Rerun stands for its re-trigger badge (chat.ts,
-   `AGENT_RERUN_CONTROLS`) and View for its "View in <bot>" badge (`AGENT_VIEW_LINKS`). */
+   `AGENT_RERUN_CONTROLS`) and View for its "View in <bot>" badge (`AGENT_VIEW_LINKS`), in the chat and in a row's
+   hover card alike. */
 .geld-review__chat [data-geld-agent-rerun],
-.geld-review__chat [data-geld-agent-view] {
+.geld-review__chat [data-geld-agent-view],
+.geld-review-hovercard__body [data-geld-agent-rerun],
+.geld-review-hovercard__body [data-geld-agent-view] {
   display: none !important;
 }
 
@@ -6363,6 +7220,43 @@ summary.geld-review__edited--menu:hover,
 
 a.geld-review__rerun {
   text-decoration: none;
+}
+
+/* "Run" on the CI row (GitHub's "Approve workflows to run"): Rerun's box beside the gear, its alert glyph in
+   GitHub's attention colour. Pressed, it fades until the pass after GitHub's own button has gone. */
+.geld-review__approve-run-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
+}
+
+/* The row's other controls (⋯, the gear, the chevron) are 28px squares; Run stands as tall, not at Rerun's 24px. */
+.geld-review__approve-run {
+  height: 28px;
+  padding: 0 8px;
+}
+
+.geld-review__approve-run .octicon {
+  color: var(--fgColor-attention, var(--color-attention-fg));
+}
+
+/* Mona Sans at line-height 1 sits its letters 1.5px above the box's middle: the word's box is trimmed to its cap height
+   and baseline, so centring the box centres the letters. Without `text-box` the word is nudged down instead. */
+.geld-review__approve-run > span {
+  text-box: trim-both cap alphabetic;
+}
+
+@supports not (text-box: trim-both cap alphabetic) {
+  .geld-review__approve-run > span {
+    position: relative;
+    top: 1.5px;
+  }
+}
+
+.geld-review__approve-run:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 a.geld-review__rerun:hover {
@@ -6735,7 +7629,7 @@ a.geld-review__rerun:hover {
   list-style: none;
 }
 
-/* On the commits list's grid: glyph at the row's edge, a 20px avatar column 10px on, text 16px after that; 29px rows, 12px type. */
+/* Who mentioned it first, at the row's edge (a 20px avatar column), then the reference led by its state glyph; 29px rows, 12px type. */
 .geld-review__mention {
   display: flex;
   align-items: center;
@@ -6744,19 +7638,21 @@ a.geld-review__rerun:hover {
   font-size: 12px;
 }
 
+/* Sized to the 12px text it leads, 4px from the reference. */
 .geld-review__mention-state {
   display: inline-flex;
   flex: 0 0 auto;
+  align-self: center;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  margin-right: 10px;
+  width: 12px;
+  margin-right: -2px;
   color: var(--geld-review-muted);
 }
 
 .geld-review__mention-state .octicon {
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
 }
 
 .geld-review__mention[data-state='open'] .geld-review__mention-state,
@@ -6781,7 +7677,7 @@ a.geld-review__rerun:hover {
   flex: 0 0 auto;
   width: 20px;
   height: 20px;
-  margin-right: 16px;
+  margin-right: 10px;
 }
 
 .geld-review__mention-link {
@@ -6954,6 +7850,23 @@ a.geld-review__rerun:hover {
   text-overflow: clip;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* The "…" never wraps onto a line of its own. An inline-block may break on either side whatever the whitespace, so
+ * the subject's last link reserves the button's room after its last word (an inline's end padding sits on its last
+ * line only) and the button, pulled back by its own width, takes no room of its own: it lands in that space, as far
+ * from the word as GitHub sets it (its 5px margin and the space before it). */
+.geld-review__qv .TimelineItem .js-details-container.Details--on .pr-1.flex-auto.min-width-0 {
+  --geld-expander-width: 22px;
+}
+
+.geld-review__qv .TimelineItem .js-details-container.Details--on .pr-1.flex-auto.min-width-0 > code > a:last-of-type {
+  padding-right: calc(var(--geld-expander-width) + 5px);
+}
+
+.geld-review__qv .TimelineItem .js-details-container.Details--on .pr-1.flex-auto.min-width-0:has(> code > a) > .hidden-text-expander {
+  width: var(--geld-expander-width);
+  margin-left: calc(-1 * var(--geld-expander-width));
 }
 
 /* A message body that was only the subject's tail (quick-view.ts: joinCommitSubjects) has nothing left to show. */
@@ -7275,32 +8188,383 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   text-decoration: underline;
 }
 
-/* ---- description collapse (minimal mode) ---------------------------------- */
+/* ---- comment text wraps pretty ------------------------------------------- */
 
-[data-geld-desc='collapsed'] > :not(:first-child) {
-  display: none;
+/*
+ * Rendered comment text (the description, comments, review threads, and the same nodes on loan to the digest's chats)
+ * avoids a lone last word. The longhand only: the `text-wrap` shorthand also sets the wrap mode, which a code cell
+ * matched here would lose. The style is inherited, so code keeps its own wrapping. Browsers without `pretty` ignore it.
+ */
+:is(.comment-body, .js-comment-body, [data-testid='comment-body'], [data-testid='issue-body'], [data-testid='review-thread-comment'])
+  :is(p, h1, h2, h3, h4, h5, h6, li, blockquote, td, th, dt, dd, summary, figcaption) {
+  text-wrap-style: pretty;
 }
 
-.geld-review-desc {
-  display: inline-block;
-  margin: 4px 0 12px;
+:is(.comment-body, .js-comment-body, [data-testid='comment-body'], [data-testid='issue-body'], [data-testid='review-thread-comment'])
+  :is(pre, .highlight, .blob-code, .blob-num) {
+  text-wrap-style: auto;
+}
+
+/*
+ * GitHub sets inline code to `white-space: break-spaces`, and Chrome turns `pretty` off for any paragraph holding
+ * one, which is most of them. `pre-wrap` keeps the code's spaces as `break-spaces` does and leaves `pretty` working.
+ */
+:is(.comment-body, .js-comment-body, [data-testid='comment-body'], [data-testid='issue-body'], [data-testid='review-thread-comment'])
+  :is(code, tt):not(pre *) {
+  white-space: pre-wrap;
+}
+
+/* ---- description outline and cap (description.ts) ------------------------- */
+
+/*
+ * A folded block carries `hidden="until-found"` so find-in-page still searches it. As with timeline folds, Primer's
+ * layered `[hidden] { display: none !important }` is undone in its own layer and the box zeroed: the UA's
+ * `content-visibility: hidden` skips the contents, and with no margin, padding or border nothing of the block remains.
+ */
+@layer primer-css-base {
+  [data-geld-desc] > [data-geld-desc-fold][data-geld-findable][hidden='until-found'] {
+    display: block !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+}
+
+/*
+ * Headings are slimmed as the chat view slims them, and every block sits a
+ * level in per open section, with a rail from each open heading's chevron to
+ * the end of its section. A block's rails are custom properties description.ts
+ * writes (one line per open section around it), painted by its ::before, which
+ * runs on through the block's bottom margin so a section's rail has no gaps.
+ * INDENT (24px) and the chevron centre (10px) are mirrored in description.ts.
+ */
+[data-geld-desc] {
+  --geld-desc-rail: var(--borderColor-default, var(--color-border-default, #d0d7de));
+}
+
+[data-geld-desc] > * {
+  --geld-desc-after: 16px;
+}
+
+[data-geld-desc] > :last-child {
+  --geld-desc-after: 0px;
+}
+
+[data-geld-desc] :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0 !important;
+  padding: 8px 0 0 !important;
+  border-bottom: 0 !important;
+  line-height: 24px !important;
+}
+
+[data-geld-desc] :is(h1, h2) {
+  font-size: 16px !important;
+}
+
+[data-geld-desc] :is(h3, h4, h5, h6) {
+  font-size: 14px !important;
+}
+
+[data-geld-desc] > :is(h1, h2, h3, h4, h5, h6, .markdown-heading) {
+  --geld-desc-after: 8px;
+  /*
+   * The chevron's box spans 10px to 30px (`.geld-desc-toggle`): its rail starts a pixel below the box's edge, so its
+   * hover background never covers the line, and a pixel off on some screen leaves a gap rather than an overlap.
+   */
+  --geld-desc-chevron-y: 31px;
+  margin-top: 0 !important;
+  margin-bottom: 8px !important;
+}
+
+/* A heading used only for its thin rule: the slimmer headings above drop the rule, so it would be an empty gap. */
+[data-geld-desc] > [data-geld-desc-blank] {
+  display: none !important;
+}
+
+/*
+ * What tools appended, gathered at the foot under "Agent notes" (description.ts `dressAgents`), one folding h3 of
+ * Geld's per tool with its logo before its name. GitHub's nodes stay where they are: the body becomes a column and the
+ * tools' headings and blocks take a later `order` (`--geld-desc-order`, mirrored in description.ts).
+ */
+[data-geld-desc][data-geld-desc-agents] {
+  display: flex !important;
+  flex-direction: column;
+}
+
+/*
+ * On the Overview the description's "Edited" menu floats beside it, and a column beside a float is narrowed for its
+ * whole height: the menu stands in the box's corner instead, the first block keeping room beside it (description.ts).
+ */
+section[aria-label='Description']:has([data-geld-desc-agents]) {
+  position: relative;
+}
+
+section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-desc-agents]) {
+  position: absolute;
+  top: 16px;
+  inset-inline-end: 16px;
+  float: none;
+  margin: 0;
+}
+
+[data-geld-desc][data-geld-desc-agents] > :first-child {
+  padding-inline-end: var(--geld-desc-meta-room, 0px);
+}
+
+/* 1 is "Show full description", between the author's cut text and the agents' (mirrored in description.ts). */
+[data-geld-desc-agents] > .geld-desc-agents {
+  order: 2;
+}
+
+[data-geld-desc-agents] > [data-geld-desc-agent] {
+  order: var(--geld-desc-order, 3);
+}
+
+/* A tool's own title ("Summary by CodeRabbit") and the rule above its content: its injected heading stands for them. */
+[data-geld-desc-agents] > [data-geld-desc-agent-hidden] {
+  display: none !important;
+}
+
+/*
+ * The band over the agents is a label, not a section: it stands at the chevrons' edge, as top-level text does, and one
+ * step above the agents' 14px names, below the author's 16px headings.
+ */
+[data-geld-desc][data-geld-desc-agents] > h2.geld-desc-agents {
+  padding-left: 0 !important;
+  font-size: 15px !important;
+  /* Ample room above (with the reactions row's own 16px under it), so the agents never read as the author's text. */
+  margin-top: 16px !important;
+}
+
+/*
+ * The box ends as far below the last block shown as the text stands from its left edge: the body's own 16px padding.
+ * A block the cut runs through keeps its margin, since Show full description follows it.
+ */
+[data-geld-desc] > [data-geld-desc-last]:not([data-geld-desc-cut-edge]) {
+  --geld-desc-after: 0px;
+  margin-bottom: 0 !important;
+}
+
+/*
+ * GitHub's reactions row (outside the body) and the agents' summaries (the body's end) trade places on screen, so the
+ * reactions stay with the author's text (description.ts `liftReactions`): relative offsets, which lay nothing out again.
+ */
+[data-geld-desc-lifted] {
+  position: relative;
+  top: var(--geld-desc-lift, 0px);
+}
+
+[data-geld-desc-agents] > :is(.geld-desc-agents, [data-geld-desc-agent]) {
+  position: relative;
+  top: var(--geld-desc-drop, 0px);
+}
+
+.geld-desc-agent__logo {
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+  border-radius: 4px;
+  vertical-align: -4px;
+}
+
+/* What tools appended, while the digest's Agent notes row shows it (description.ts `flagAway`). */
+[data-geld-desc-tools] > [data-geld-desc-tool] {
+  display: none !important;
+}
+
+[data-geld-desc] > [data-geld-desc-depth] {
+  position: relative;
+  margin-left: calc(var(--geld-desc-depth, 0) * 24px) !important;
+}
+
+[data-geld-desc] > [data-geld-desc-depth]::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  /* 1px past the gap: blocks start on fractional pixels, and two rail pieces meeting edge to edge leave a light seam. */
+  bottom: calc(-1 * var(--geld-desc-after) - 1px);
+  /* `--geld-desc-edge` is the block's own left border (description.ts `dressRails`): the ::before starts inside it. */
+  left: calc(var(--geld-desc-depth, 0) * -24px - var(--geld-desc-edge, 0px));
+  width: calc((var(--geld-desc-depth, 0) + 1) * 24px);
+  background-image: var(--geld-desc-rails, none);
+  background-position: var(--geld-desc-rail-pos, 0 0);
+  background-size: var(--geld-desc-rail-size, auto);
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+[data-geld-desc-heading] {
+  cursor: pointer;
+}
+
+/* The description's header: author, time and the edit menu. Loose words ("commented") vanish with the font, and the
+ * line's gap goes with them, since each loose word is a flex item of its own. Two classes deep to outrank
+ * GitHub's `.gap-1`, which is `!important` too. */
+.timeline-comment-header [data-geld-desc-byline] {
+  gap: 0 !important;
+  font-size: 0 !important;
+}
+
+[data-geld-desc-byline] > :not([data-geld-desc-keep]) {
+  display: none !important;
+}
+
+[data-geld-desc-byline] > [data-geld-desc-keep] {
+  font-size: var(--text-body-size-medium, 14px);
+}
+
+/* The name stands alone on the left; the time and the edit menu stand at the line's far end, left of the badge and ⋯. */
+[data-geld-desc-byline] > a.js-timestamp {
+  margin-left: auto;
+}
+
+[data-geld-desc-byline] > .js-comment-edit-history {
+  margin-left: 8px;
+}
+
+[data-geld-desc-byline] > .js-comment-edit-history > .color-fg-muted {
+  display: none !important;
+}
+
+/* GitHub pads the badge-and-⋯ group 16px off the line, and the edit menu's caret carries 4px of its own after it. */
+.timeline-comment-header:has(> h3 [data-geld-desc-byline]) > :last-child {
+  padding-left: 4px !important;
+}
+/* The heading's own text, links and code stay in GitHub's inline flow. The chevron stands in the indent beside it. */
+/* Every top-level heading, foldable or not, so titles line up: but only in a description that has a chevron at all. */
+[data-geld-desc]:has(> [data-geld-desc-heading]) > :is(h1, h2, h3, h4, h5, h6),
+[data-geld-desc]:has(> [data-geld-desc-heading]) > .markdown-heading > :is(h1, h2, h3, h4, h5, h6) {
+  position: relative;
+  padding-left: 24px !important;
+}
+
+.geld-desc-toggle {
+  position: absolute;
+  top: 10px;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  cursor: pointer;
+}
+
+.geld-desc-toggle:hover {
+  background: var(--bgColor-neutral-muted, rgba(175, 184, 193, 0.2));
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+/* Its own layer from the start, so the turn runs on the compositor whatever the page lays out meanwhile. */
+.geld-desc-toggle .octicon {
+  transition: transform 120ms ease;
+  will-change: transform;
+}
+
+[data-geld-desc-heading='closed'] .geld-desc-toggle .octicon {
+  transform: rotate(-90deg);
+}
+
+/*
+ * The cut runs through the author's text only (description.ts `measure`): blocks wholly past it are hidden
+ * `until-found`, the one it crosses is clipped here, and the agents' summaries below stay whole. GitHub's
+ * `.comment-body .highlight` keeps a code block's overflow visible with `!important`, so the clip needs it too.
+ */
+[data-geld-desc-cap][data-geld-desc-long] > [data-geld-desc-cut-edge] {
+  max-height: var(--geld-desc-cut-height);
+  /* CUT_GAP_PX in description.ts: the fade below is solid over this gap, so the text ends at 0%. */
+  margin-bottom: 16px !important;
+  overflow: hidden !important;
+}
+
+/* An image GitHub left unwrapped is an inline `<a>` straight in the body, and an inline box clips only as a block. */
+[data-geld-desc-cap][data-geld-desc-long] > a[data-geld-desc-cut-edge] {
+  display: block;
+  width: fit-content;
+}
+
+/* Inside the body, after the author's blocks: its ::before fades the text above it out, to nothing at the cut. */
+.geld-desc-more {
+  display: none;
+  position: relative;
+  order: 1;
+  width: 100%;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 16px;
   padding: 0;
   border: 0;
   background: none;
   color: var(--fgColor-accent, var(--color-accent-fg));
   font: inherit;
   font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
 }
 
-.geld-review-desc:hover {
+[data-geld-desc-cap][data-geld-desc-long] > .geld-desc-more {
+  display: flex;
+}
+
+[data-geld-desc-cap][data-geld-desc-long] > .geld-desc-more::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  height: 96px;
+  background: linear-gradient(to bottom, transparent, var(--bgColor-default, var(--color-canvas-default, #fff)));
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* A block clipped above it: solid over that block's fixed 16px margin, so its text ends at nothing where it is cut. */
+[data-geld-desc-cap][data-geld-desc-long]:has(> [data-geld-desc-cut-edge]) > .geld-desc-more::before {
+  height: calc(96px + 16px);
+  background: linear-gradient(to bottom, transparent, var(--bgColor-default, var(--color-canvas-default, #fff)) calc(100% - 16px));
+}
+
+/*
+ * The rails of the block the cut runs through (description.ts `carryRails`): that block clips its overflow, which
+ * clips the rails it hangs to its left, so the button draws them from the block's top down to itself, under the fade
+ * as the text is. Its left edge is the body's content edge, which is where the block's own rails start too.
+ */
+[data-geld-desc-cap][data-geld-desc-long] > .geld-desc-more[data-geld-desc-carry]::after {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  height: var(--geld-desc-carry-height, 0px);
+  background-image: var(--geld-desc-rails, none);
+  background-position: var(--geld-desc-rail-pos, 0 0);
+  background-size: var(--geld-desc-rail-size, auto);
+  background-repeat: no-repeat;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* With nothing of an agent's after it, the button ends the body, whose own padding is below it. */
+[data-geld-desc] > .geld-desc-more:last-child {
+  margin-bottom: 0;
+}
+
+.geld-desc-more:hover span {
   text-decoration: underline;
 }
+
 
 @media (prefers-reduced-motion: reduce) {
   .geld-review__meter > i,
   .geld-review__group-btn .octicon,
-  .geld-review__chevron .octicon {
+  .geld-review__chevron .octicon,
+  .geld-desc-toggle .octicon {
     transition: none;
   }
 
@@ -7415,6 +8679,143 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   font-size: 13px;
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+/*
+ * Agent notes (panel.ts `agentNotesRow`): what agents and review bots wrote into the description. A note the
+ * description no longer has (it is only in its edit history) wears a dashed mark, as a pill with nothing to open is
+ * dashed, and its line says so in place of a preview.
+ */
+/* A note's pill is a button (it opens the row to its line), so the dashed border of a pill with nothing to open is asked for by hand. */
+.geld-review__bot.geld-review__note-pill[data-past] {
+  border-style: dashed;
+}
+
+.geld-review__avatar[data-past] {
+  outline: 1px dashed var(--geld-review-muted);
+  outline-offset: 1px;
+  opacity: 0.75;
+}
+
+.geld-review__row--note[data-past] .geld-review__preview {
+  font-style: italic;
+}
+
+/* The note as the description has it: GitHub's own rendering, at the size of a comment in a chat. */
+/* GitHub's `.markdown-body` sets 16px, a size the panel never uses: the note reads at a comment's 14px. */
+.geld-review .geld-review__note-body.markdown-body {
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.geld-review__note-body > :first-child {
+  margin-top: 0 !important;
+}
+
+.geld-review__note-body > :last-child {
+  margin-bottom: 0 !important;
+}
+
+/* The note stands inside the panel's own lists, which the browser counts as outer levels: its bullets start over. */
+.geld-review__note-body ul {
+  list-style-type: disc;
+}
+
+.geld-review__note-body ul ul {
+  list-style-type: circle;
+}
+
+.geld-review__note-body ul ul ul {
+  list-style-type: square;
+}
+
+.geld-review__note-gone {
+  margin: 0;
+  color: var(--geld-review-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.geld-review__note-past {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fgColor-accent, var(--color-accent-fg, #0969da));
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* The history window (note-history.ts): the readings down the side, the chosen one beside them. */
+.geld-review__note-dialog-body {
+  display: flex;
+  gap: 16px;
+  min-height: 240px;
+  max-height: 70vh;
+}
+
+.geld-review__note-nav {
+  flex: none;
+  width: 200px;
+  overflow-y: auto;
+}
+
+.geld-review__note-versions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.geld-review__note-version-btn {
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.geld-review__note-version-btn:hover {
+  background: var(--bgColor-muted, var(--color-canvas-subtle, #f6f8fa));
+}
+
+.geld-review__note-version-btn[aria-current='true'] {
+  background: var(--bgColor-muted, var(--color-canvas-subtle, #f6f8fa));
+  font-weight: 600;
+}
+
+.geld-review__note-status {
+  margin: 8px 0 0;
+  padding: 0 8px;
+  color: var(--fgColor-muted, var(--color-fg-muted, #59636e));
+  font-size: 12px;
+}
+
+.geld-review__note-version.markdown-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+@media (max-width: 543px) {
+  .geld-review__note-dialog-body {
+    flex-direction: column;
+  }
+
+  .geld-review__note-nav {
+    width: auto;
+    max-height: 30vh;
+  }
 }
 
 /* A skipped deployment with nothing to visit: the pill fades and says so on hover; the line below keeps its Inspect.
@@ -7555,6 +8956,18 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
   cursor: default;
 }
 
+/* Except one that opens to its host's comment (overview.ts): that line is a control, as a report's is. */
+.geld-review__row--preview[data-opens]:hover,
+.geld-review__row--preview[data-opens][data-open] {
+  --geld-row-bg: var(--geld-review-subtle);
+  background: var(--geld-review-subtle);
+}
+
+.geld-review__row--preview[data-opens],
+.geld-review__row--preview[data-opens] .geld-review__main {
+  cursor: pointer;
+}
+
 /* The push's CI, beside the round's progress glyph. */
 .geld-review__health[data-ci='success'] {
   color: var(--geld-review-done-fg);
@@ -7649,58 +9062,79 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
     padding: 0 4px !important;
   }
 
-  /* The grouping and AI controls are their marks alone, the copy button's square. */
-  .geld-review__grouping-label,
-  .geld-review__ai-label {
-    display: none;
-  }
-
-  .geld-review__icon.geld-review__grouping-btn,
-  .geld-review__icon.geld-review__ai-btn {
-    width: 28px;
-    padding: 0;
-  }
-
   .geld-review__ai-notice {
     flex-wrap: wrap;
   }
 }
 
 
-/* Embedded shell in workflow run blocks, without replacing GitHub's diff nodes. */
-::highlight(geld-shell-plain),
-::highlight(geld-shell-subst) {
-  color: var(--fgColor-default);
-}
-
-::highlight(geld-shell-keyword) {
+/* GitHub's global stylesheet owns these token colors. Zero specificity lets it take over when it loads. */
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) .pl-k) {
   color: var(--color-prettylights-syntax-keyword);
 }
 
-::highlight(geld-shell-built_in),
-::highlight(geld-shell-title) {
-  color: var(--color-prettylights-syntax-entity);
-}
-
-::highlight(geld-shell-literal),
-::highlight(geld-shell-number),
-::highlight(geld-shell-attr) {
-  color: var(--color-prettylights-syntax-constant);
-}
-
-::highlight(geld-shell-string) {
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) :is(.pl-s, .pl-pds, .pl-sr)) {
   color: var(--color-prettylights-syntax-string);
 }
 
-::highlight(geld-shell-comment) {
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) .pl-c) {
   color: var(--color-prettylights-syntax-comment);
 }
 
-::highlight(geld-shell-variable) {
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) .pl-c1) {
+  color: var(--color-prettylights-syntax-constant);
+}
+
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) :is(.pl-e, .pl-en)) {
+  color: var(--color-prettylights-syntax-entity);
+}
+
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) .pl-ent) {
+  color: var(--color-prettylights-syntax-entity-tag);
+}
+
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) :is(.pl-v, .pl-smw)) {
   color: var(--color-prettylights-syntax-variable);
 }
 
-::highlight(geld-shell-meta) {
+:where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) .pl-s .pl-v) {
+  color: var(--color-prettylights-syntax-constant);
+}
+
+/* Diff syntax colors on GitHub's original text nodes. */
+::highlight(geld-syntax-plain),
+::highlight(geld-syntax-subst) {
+  color: var(--fgColor-default);
+}
+
+::highlight(geld-syntax-keyword) {
+  color: var(--color-prettylights-syntax-keyword);
+}
+
+::highlight(geld-syntax-built_in),
+::highlight(geld-syntax-title) {
+  color: var(--color-prettylights-syntax-entity);
+}
+
+::highlight(geld-syntax-literal),
+::highlight(geld-syntax-number),
+::highlight(geld-syntax-attr) {
+  color: var(--color-prettylights-syntax-constant);
+}
+
+::highlight(geld-syntax-string) {
+  color: var(--color-prettylights-syntax-string);
+}
+
+::highlight(geld-syntax-comment) {
+  color: var(--color-prettylights-syntax-comment);
+}
+
+::highlight(geld-syntax-variable) {
+  color: var(--color-prettylights-syntax-variable);
+}
+
+::highlight(geld-syntax-meta) {
   color: var(--color-prettylights-syntax-comment);
 }
 
@@ -7710,3 +9144,936 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
 .geld-links-row a { display: inline-flex; align-items: center; gap: 5px; }
 .geld-tracker-icon { display: inline-flex; width: 16px; height: 16px; overflow: hidden; }
 .geld-tracker-icon svg { width: 16px; height: 16px; flex: none; }
+
+/* Related links: a sidebar section under Assignees, one line per ticket, thread, session or doc. */
+.geld-related__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.geld-related__item {
+  margin: 0;
+  min-width: 0;
+}
+
+.geld-related__link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 0;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--fgColor-default, #1f2328) !important;
+  text-decoration: none !important;
+}
+
+/* Hovered, the whole line is the link: identifier, space and title underlined as one, all in the link colour. */
+.geld-related__link:hover .geld-related__text,
+.geld-related__link:focus-visible .geld-related__text,
+.geld-related__link:hover .geld-related__ref,
+.geld-related__link:focus-visible .geld-related__ref {
+  color: var(--fgColor-accent, #0969da);
+  text-decoration: underline;
+}
+
+.geld-related__mark {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.geld-related__mark[data-tone='open'] {
+  color: var(--fgColor-open, #1a7f37);
+}
+
+.geld-related__mark[data-tone='done'] {
+  color: var(--fgColor-done, #8250df);
+}
+
+.geld-related__mark[data-tone='closed'] {
+  color: var(--fgColor-closed, #d1242f);
+}
+
+.geld-related__mark[data-tone='draft'],
+.geld-related__mark[data-tone='muted'],
+.geld-related__mark[data-tone='unknown'] {
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-related__mark--app {
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px var(--avatar-borderColor, rgb(31 35 40 / 15%));
+}
+
+/* One line whatever it holds: the identifier, the title and what follows them run on and are cut at the end. */
+.geld-related__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-related__ref {
+  color: var(--fgColor-muted, #59636e);
+}
+
+/*
+ * The Overview sidebar in Geld's order (`orderSidebars`): Reviewers, Related links, Related work, Activity, then GitHub's. GitHub's
+ * line above every section but the first in page order becomes a line above every section but the first shown.
+ * Its rule (`.sidebar > [data-overview-sidebar-item] ~ [data-overview-sidebar-item]`) weighs three; the first's must outweigh it.
+ */
+/* GitHub's line between classic items needs them adjacent (`.discussion-sidebar-item + .discussion-sidebar-item`), and a hidden fragment can stand between. */
+.discussion-sidebar-item ~ .geld-related.discussion-sidebar-item {
+  margin-top: var(--base-size-16, 16px);
+  border-top: var(--borderWidth-thin, 1px) solid var(--borderColor-muted, var(--color-border-muted));
+}
+
+[data-geld-sidebar-order] > * {
+  order: 10;
+}
+
+[data-geld-sidebar-order] > [data-geld-order='reviewers'] {
+  order: 1;
+}
+
+[data-geld-sidebar-order] > [data-geld-order='related'] {
+  order: 2;
+}
+
+[data-geld-sidebar-order] > [data-geld-order='work'] {
+  order: 3;
+}
+
+[data-geld-sidebar-order] > [data-geld-order='activity'] {
+  order: 4;
+}
+
+[data-geld-sidebar-order] > [data-overview-sidebar-item] {
+  border-top: var(--borderWidth-thin, 1px) solid var(--borderColor-muted, #d1d9e0b3);
+  padding-top: var(--base-size-12, 12px);
+}
+
+[data-geld-sidebar-order][data-geld-sidebar-order] > [data-overview-sidebar-item][data-geld-order-first] {
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* Under the rows' text, past the 16px mark and its 8px gap. */
+.geld-related__more {
+  padding: 2px 0 2px 24px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+
+/* Flow: the changed files as cards, linked from each file to what it imports. */
+.geld-flow.Overlay {
+  display: flex;
+  flex-direction: column;
+  width: min(1240px, calc(100vw - 48px));
+  max-width: none;
+  height: min(880px, calc(100vh - 48px));
+  max-height: none;
+  padding: 0;
+}
+
+.geld-flow::backdrop {
+  background-color: var(--overlay-backdrop-bgColor, rgba(31, 35, 40, 0.5));
+}
+
+.geld-flow__header {
+  border-bottom: 1px solid var(--borderColor-muted, var(--color-border-muted));
+}
+
+/*
+ * Primer's header leaves its bottom padding to the body below, which here is the diagram: even it out so the title
+ * and the buttons sit centred in the bar. Prefixed with the dialog: GitHub's `.Overlay-header .Overlay-headerContentWrap`
+ * has the same weight and loads after the extension's sheet, so an equal selector loses.
+ */
+dialog.geld-flow .geld-flow__header > .Overlay-headerContentWrap {
+  align-items: center;
+  padding: 8px;
+}
+
+dialog.geld-flow .geld-flow__actions {
+  align-self: center;
+}
+
+dialog.geld-flow .geld-flow__header .Overlay-titleWrap {
+  align-self: center;
+  padding: 0 0 0 8px;
+}
+
+dialog.geld-flow .geld-flow__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  line-height: 20px;
+}
+
+.geld-flow__title .octicon {
+  color: var(--fgColor-muted, var(--color-fg-muted));
+}
+
+.geld-flow__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Primer's close button is 32px; here it stands beside a `btn-sm` (28px), so it takes that height as a square. */
+dialog.geld-flow .geld-flow__actions .Overlay-closeButton {
+  width: 28px;
+  height: 28px;
+}
+
+/* The stage holds the scrolling diagram and the controls that float over its corner. */
+.geld-flow__stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 !important;
+  overflow: hidden;
+  background-color: var(--bgColor-muted, var(--color-canvas-subtle));
+  background-image: radial-gradient(var(--borderColor-default, var(--color-border-default)) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+.geld-flow__scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  padding: 8px 0 72px;
+}
+
+.geld-flow__canvas {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: max-content;
+  min-width: 100%;
+}
+
+.geld-flow__canvas > .geld-flow__loose,
+.geld-flow__canvas > .geld-flow__note {
+  align-self: stretch;
+}
+
+.geld-flow__graph {
+  position: relative;
+  flex: 0 0 auto;
+  margin: 0 auto 16px;
+}
+
+.geld-flow__links {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.geld-flow__link {
+  fill: none;
+  stroke: var(--borderColor-emphasis, var(--color-border-default));
+  stroke-width: 1.5;
+  transition: opacity 120ms ease, stroke 120ms ease;
+}
+
+.geld-flow__arrow {
+  fill: var(--borderColor-emphasis, var(--color-border-default));
+}
+
+.geld-flow__link[data-removed] {
+  stroke: var(--fgColor-danger, var(--color-danger-fg));
+  stroke-dasharray: 4 4;
+}
+
+.geld-flow__graph[data-focus] .geld-flow__link {
+  opacity: 0.2;
+}
+
+.geld-flow__graph[data-focus] .geld-flow__link[data-lit] {
+  opacity: 1;
+  stroke: var(--fgColor-accent, var(--color-accent-fg));
+}
+
+.geld-flow__node {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 224px;
+  height: 58px;
+  padding: 8px 12px;
+  border: 1px solid var(--borderColor-default, var(--color-border-default));
+  border-radius: 8px;
+  background: var(--bgColor-default, var(--color-canvas-default));
+  box-shadow: var(--shadow-resting-small, 0 1px 1px rgba(31, 35, 40, 0.04));
+  color: var(--fgColor-default, var(--color-fg-default));
+  text-decoration: none !important;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.geld-flow__node:hover {
+  border-color: var(--borderColor-accent-emphasis, var(--color-accent-emphasis));
+  box-shadow: var(--shadow-floating-small, 0 3px 6px rgba(140, 149, 159, 0.15));
+}
+
+.geld-flow__node:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, var(--color-accent-fg));
+  outline-offset: 2px;
+}
+
+.geld-flow__node[data-status='added'] {
+  border-color: var(--borderColor-success-muted, var(--color-success-muted));
+}
+
+.geld-flow__node[data-status='deleted'] {
+  border-color: var(--borderColor-danger-muted, var(--color-danger-muted));
+}
+
+.geld-flow__node[data-status='renamed'] {
+  border-color: var(--borderColor-attention-muted, var(--color-attention-muted));
+}
+
+.geld-flow__node[data-hidden] {
+  border-style: dashed;
+}
+
+.geld-flow__meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+/* GitHub's file-tree icons, at the size of the line they lead (the svg's own box, so it centres on the text). */
+.geld-flow__status-icon {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  vertical-align: middle !important;
+}
+
+.geld-flow__status {
+  flex: 0 0 auto;
+}
+
+.geld-flow__dir {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.geld-flow__tag {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 6px;
+  border: 1px solid var(--borderColor-muted, var(--color-border-muted));
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.geld-flow__name-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.geld-flow__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-flow__node[data-status='deleted'] .geld-flow__name {
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  text-decoration: line-through;
+}
+
+.geld-flow__counts {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+}
+
+.geld-flow__add {
+  color: var(--fgColor-success, var(--color-success-fg));
+}
+
+.geld-flow__del {
+  color: var(--fgColor-danger, var(--color-danger-fg));
+}
+
+.geld-flow__loose {
+  padding: 8px 28px 0;
+}
+
+.geld-flow__loose-title {
+  margin: 8px 0 10px;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.geld-flow__loose-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 224px);
+  gap: 12px;
+}
+
+.geld-flow__loose-grid > .geld-flow__node {
+  position: relative;
+}
+
+.geld-flow__note {
+  margin: 12px 28px 0;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font-size: 12px;
+}
+
+.geld-flow__message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  align-self: stretch;
+  margin: 48px 28px;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font-size: 14px;
+  text-align: center;
+}
+
+.geld-flow__message > p {
+  max-width: 44ch;
+  margin: 0;
+}
+
+.geld-flow__controls[hidden] {
+  display: none;
+}
+
+/* Floating over the diagram's lower right corner: the legend and zoom. */
+.geld-flow__controls {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.geld-flow__ctl {
+  box-sizing: border-box;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--button-default-borderColor-rest, var(--color-btn-border));
+  border-radius: var(--borderRadius-medium, 6px);
+  background: var(--button-default-bgColor-rest, var(--color-btn-bg));
+  box-shadow: var(--button-default-shadow-resting, var(--color-btn-shadow));
+  color: var(--button-default-fgColor-rest, var(--color-btn-text));
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 22px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.geld-flow__ctl:hover:not(:disabled) {
+  border-color: var(--button-default-borderColor-hover, var(--color-btn-hover-border));
+  background: var(--button-default-bgColor-hover, var(--color-btn-hover-bg));
+}
+
+.geld-flow__ctl:active:not(:disabled) {
+  background: var(--button-default-bgColor-active, var(--color-btn-active-bg));
+}
+
+.geld-flow__ctl:disabled {
+  color: var(--fgColor-disabled, var(--color-primer-fg-disabled));
+  cursor: default;
+}
+
+.geld-flow__ctl:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, var(--color-accent-fg));
+  outline-offset: 1px;
+  position: relative;
+  z-index: 1;
+}
+
+.geld-flow__ctl--square {
+  width: 24px;
+  padding: 0;
+}
+
+.geld-flow__zoom {
+  display: inline-flex;
+}
+
+.geld-flow__zoom > .geld-flow__ctl {
+  box-shadow: none;
+}
+
+.geld-flow__zoom > .geld-flow__ctl:not(:first-child) {
+  margin-left: -1px;
+}
+
+.geld-flow__zoom > .geld-flow__ctl:not(:first-child, :last-child) {
+  border-radius: 0;
+}
+
+.geld-flow__zoom > .geld-flow__ctl:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.geld-flow__zoom > .geld-flow__ctl:last-child {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.geld-flow__zoom-level {
+  min-width: 56px;
+}
+
+/* The legend opens upward, as wide as the whole control row (the legend button's left to zoom's right), in two columns, as one of GitHub's small overlays. */
+.geld-flow__legend {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  border-radius: var(--borderRadius-large, 12px);
+  background: var(--overlay-bgColor, var(--color-canvas-overlay));
+  box-shadow: var(--shadow-floating-small, 0 0 0 1px rgba(209, 217, 224, 0.5), 0 6px 12px -3px rgba(37, 41, 46, 0.04), 0 6px 18px 0 rgba(37, 41, 46, 0.12));
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.geld-flow__legend[hidden] {
+  display: none;
+}
+
+.geld-flow__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Open, only the border says so: the button keeps GitHub's own face. */
+.geld-flow__legend-btn[aria-expanded='true'],
+.geld-flow__legend-btn[aria-expanded='true']:hover {
+  border-color: var(--borderColor-accent-emphasis, var(--color-accent-emphasis));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .geld-flow__link,
+  .geld-flow__node {
+    transition: none;
+  }
+}
+
+/* The legend button's chevron points the way the legend opens (up), and turns over once it is open. */
+.geld-flow__legend-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 6px;
+}
+
+.geld-flow__chevron {
+  width: 12px;
+  height: 12px;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  transform: rotate(180deg);
+}
+
+.geld-flow__legend-btn[aria-expanded='true'] .geld-flow__chevron {
+  transform: none;
+}
+
+.markdown-body img[data-geld-lightbox-image] {
+  cursor: zoom-in;
+}
+
+dialog.geld-lightbox {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  width: fit-content;
+  min-width: min(320px, calc(100vw - 32px));
+  height: fit-content;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  color: var(--fgColor-default, #1f2328);
+  background: var(--overlay-bgColor, var(--bgColor-default, #fff));
+  border: var(--borderWidth-thin, 1px) solid var(--borderColor-default, #d1d9e0);
+  border-radius: var(--borderRadius-large, 12px);
+  box-shadow: var(--shadow-floating-large, 0 0 0 1px #d1d9e0, 0 40px 80px 0 #25292e3d);
+  font: 14px/1.5 var(--fontStack-system, sans-serif);
+}
+
+.geld-lightbox::backdrop {
+  background: var(--overlay-backdrop-bgColor, rgb(31 35 40 / 50%));
+}
+
+.geld-lightbox__header {
+  /* The image sets the dialog's width, and a long title ellipsizes inside it rather than widening it. */
+  contain: inline-size;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: var(--borderWidth-thin, 1px) solid var(--borderColor-default, #d1d9e0);
+}
+
+.geld-lightbox__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 8px;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.geld-lightbox__close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--fgColor-muted, #59636e);
+  background: transparent;
+  border: 0;
+  border-radius: var(--borderRadius-medium, 6px);
+  cursor: pointer;
+}
+
+.geld-lightbox__close:hover {
+  color: var(--fgColor-default, #1f2328);
+  background: var(--control-transparent-bgColor-hover, var(--bgColor-neutral-muted, #818b981f));
+}
+
+.geld-lightbox__close svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.geld-lightbox__body {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  background: var(--bgColor-muted, #f6f8fa);
+}
+
+.geld-lightbox__stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.geld-lightbox__image {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: contain;
+  transform-origin: center;
+  user-select: none;
+  cursor: zoom-in;
+}
+
+.geld-lightbox__stage[data-zoomed] .geld-lightbox__image {
+  cursor: grab;
+}
+
+.geld-lightbox__stage[data-dragging] .geld-lightbox__image {
+  cursor: grabbing;
+}
+
+.geld-lightbox__status {
+  grid-area: 1 / 1;
+  width: min(320px, calc(100vw - 64px));
+  margin: 0;
+  padding: 16px;
+  color: var(--fgColor-muted, #59636e);
+  text-align: center;
+}
+
+.geld-lightbox [hidden] {
+  display: none;
+}
+
+.geld-lightbox__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 16px;
+  border-top: var(--borderWidth-thin, 1px) solid var(--borderColor-default, #d1d9e0);
+}
+
+.geld-lightbox__zoom {
+  display: flex;
+  flex: none;
+}
+
+.geld-lightbox .geld-lightbox__tool svg {
+  margin: 0;
+}
+
+.geld-lightbox__reset {
+  min-width: 56px;
+  font-variant-numeric: tabular-nums;
+}
+
+.geld-lightbox .geld-lightbox__original {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.geld-lightbox .geld-lightbox__original svg {
+  margin: 0;
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-lightbox :focus-visible {
+  outline: 2px solid var(--focus-outlineColor, #0969da);
+  outline-offset: -2px;
+}
+
+/* The Overview's recommended action: GitHub's "View merge status" as an info button, and Geld's merge beside it. */
+/* GitHub's button is a grid laid out for its label: with the label hidden the mark is centred in a flex box instead. */
+button[data-geld-merge-info][data-geld-merge-info] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  padding: 0;
+}
+
+button[data-geld-merge-info] > [data-component='buttonContent'] {
+  display: none;
+}
+
+.geld-overview-merge__info {
+  display: flex;
+  color: var(--fgColor-muted, #59636e);
+}
+
+div:has(> [data-geld-overview-merge]) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* GitHub's `.BtnGroup` rule comes later and makes the group a block of floats, where the caret took its mark's height. */
+.geld-overview-merge.BtnGroup {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+/* GitHub's `.BtnGroup-item` floats, which makes the caret a block, so the mark is centred by flex with GitHub's rules outranked. */
+.geld-overview-merge .geld-overview-merge__caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  padding: 0;
+}
+
+.geld-overview-merge .geld-overview-merge__caret .octicon {
+  margin: 0;
+}
+
+/* GitHub's `.BtnGroup-item` hover rules move the divider from the caret's left to the button's right, which in this flex
+   row widened the button by a pixel under the pointer: the divider is the button's right border, at rest and on hover. */
+.geld-overview-merge.BtnGroup .geld-overview-merge__main.BtnGroup-item {
+  border-right-width: 1px;
+}
+
+.geld-overview-merge.BtnGroup .geld-overview-merge__caret.BtnGroup-item {
+  border-left-width: 0;
+}
+
+.geld-overview-merge__button--danger.btn {
+  border-color: var(--button-danger-borderColor-hover, var(--borderColor-danger-emphasis, #cf222e));
+  background: var(--button-danger-bgColor-hover, var(--bgColor-danger-emphasis, #cf222e));
+  color: var(--button-danger-fgColor-hover, var(--fgColor-onEmphasis, #ffffff));
+  box-shadow: none;
+}
+
+.geld-overview-merge__button--danger.btn:hover {
+  border-color: var(--button-danger-borderColor-active, var(--borderColor-danger-emphasis, #cf222e));
+  background: var(--button-danger-bgColor-active, #a40e26);
+}
+
+.geld-overview-merge__menu {
+  width: 300px;
+}
+
+.geld-overview-merge__menu .geld-quick-review__menu-note {
+  white-space: normal;
+}
+
+/*
+ * The Overview's review comments in a chat, laid out as the conversation's (its markup differs: a header grid of
+ * picture, name and time, actions and badges; the body and the reactions toolbar in one wrapper). The picture stands
+ * in the gutter up and to the left of the bubble, the name and the time on one line above it; the ⋯ and the picker
+ * are moved beside the bubble and the pills under it by chat.ts (`placeOverviewControls`).
+ */
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'],
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'] > div {
+  display: flex !important;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'] [class*='AvatarContainer'] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  margin: 0 !important;
+}
+
+.geld-review__chat [data-geld-mine] > [data-geld-part='meta'] [data-testid='comment-header'] [class*='AvatarContainer'] {
+  right: 0;
+  left: auto;
+}
+
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'] [class*='AvatarContainer'] img {
+  width: var(--geld-chat-avatar) !important;
+  height: var(--geld-chat-avatar) !important;
+}
+
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header-left-side-items'],
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header-left-side-items'] > * {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 !important;
+  padding: 0 !important;
+  white-space: nowrap;
+}
+
+.geld-review__chat [data-geld-mine] > [data-geld-part='meta'] [data-testid='comment-header-left-side-items'] {
+  flex-direction: row-reverse !important;
+}
+
+.geld-review__chat [data-geld-part='meta'] a[data-testid='avatar-link'] {
+  color: var(--fgColor-default, var(--color-fg-default, #1f2328)) !important;
+  font-size: 13px !important;
+  font-weight: 600;
+}
+
+/* Badges ("Author", "Bot") and whatever is left of the actions holder once its ⋯ is beside the bubble. */
+.geld-review__chat [data-geld-part='meta'] [data-testid='comment-header-right-side-items'] {
+  display: none !important;
+}
+
+.geld-review__chat [data-geld-run='mid'] > [data-geld-part='meta'] [data-testid='comment-header'],
+.geld-review__chat [data-geld-run='last'] > [data-geld-part='meta'] [data-testid='comment-header'] {
+  display: none !important;
+}
+
+/* The bubble's inner wrappers keep no padding of their own, and the line GitHub draws down a reply's left goes. */
+.geld-review__chat [data-geld-part='bubble'] [class*='BodyHTMLContainer'] {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.geld-review__chat [data-geld-part='bubble'] > [class*='ReplyWrapper'] {
+  display: none !important;
+}
+
+.geld-review__chat [data-geld-message][class*='isReply'] {
+  border: 0 !important;
+}
+
+/* The pills under the bubble: GitHub's toolbar, 2px down, mirrored on the reader's own side. */
+.geld-review__chat .geld-review__msg-reactions [role='toolbar'],
+.geld-review__chat .geld-review__msg-reactions [role='toolbar'] ~ *,
+.geld-review__chat .geld-review__msg-reactions > div,
+.geld-review__chat .geld-review__msg-reactions > div > div {
+  margin: 0 !important;
+}
+
+.geld-review__chat .geld-review__msg-reactions > div:not(:has(button)) {
+  display: none !important;
+}
+
+.geld-review__chat .geld-review__msg-reactions [role='toolbar'] {
+  margin-top: 2px !important;
+}
+
+/* The Overview's pills fill their row from its top, which is the bubble's bottom edge: they keep a gap of their own. */
+.geld-review__chat:not([data-geld-chat='comment']) [data-geld-message] .geld-review__msg-reactions--overview {
+  padding-top: 6px !important;
+}
+
+/* The Overview's reaction picker, on comments and the description alike: GitHub draws its emoji at the text's 14px. */
+html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.Item.Label'] {
+  font-size: 20px;
+  line-height: 24px;
+}
+
+.geld-review__chat [data-geld-mine] .geld-review__msg-reactions [role='toolbar'] {
+  justify-content: flex-end;
+}
+
+/* The Overview's tooltips moved with their buttons stay out of the side slot's flow. */
+.geld-review__msg-actions > [role='tooltip'],
+.geld-review__msg-actions > [data-component='Tooltip'] {
+  position: absolute;
+}

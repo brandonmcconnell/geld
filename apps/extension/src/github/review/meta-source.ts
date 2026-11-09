@@ -4,7 +4,8 @@
  */
 
 import type { GeldPrMeta, ParseResult } from '@geld/review';
-import { ALLOWED_SUMMARY_AUTHORS, isAllowedSummaryAuthor, parseSummaryElement, PAYLOAD_CARRIER_SELECTOR, SUMMARY_HEADING } from '@geld/review';
+import { isAllowedSummaryAuthor, parseSummaryElement, PAYLOAD_CARRIER_SELECTOR, SUMMARY_HEADING } from '@geld/review';
+import { markOnce, count as perfCount } from '../../lib/perf';
 import { detectHeadSha } from '../head-sha';
 import { authorOf as crawlAuthor } from './crawler';
 
@@ -54,7 +55,8 @@ export function findSummaryComment(doc: Document = document): FoundSummary | nul
     const author = authorOf(root);
     if (!isAllowedSummaryAuthor(author)) {
       if (author !== '' && headingLooksLikeSummary(root)) {
-        console.warn('[geld] Ignoring review summary from', author, '— allowed:', ALLOWED_SUMMARY_AUTHORS.join(', '));
+        perfCount('summary:foreign-author');
+        markOnce(`summary:foreign-author:${author}`);
       }
       continue;
     }
@@ -116,9 +118,19 @@ export function withLiveRuns(payload: readonly GeldPrMeta['bots'][number][], cra
     if (now === undefined) return bot;
     if (now.verdict === 'running' && bot.verdict !== 'running') return now;
     if (bot.verdict === 'running' && now.runJudged === true && now.verdict !== 'running' && now.verdict !== 'loading') return now;
-    if (complete && bot.verdict === 'findings' && now.verdict === 'findings' && now.count !== undefined && (bot.count === undefined || now.count < bot.count)) {
+    if (complete && bot.verdict === 'findings' && now.verdict === 'findings' && now.count !== undefined) {
       const onThread = now.sourceId?.startsWith('discussion_r') === true;
-      return onThread || now.sourceId === bot.sourceId ? { ...bot, count: now.count } : now;
+      const sameRun = onThread || now.sourceId === bot.sourceId;
+      // The same run with fewer open, or as many open graded otherwise (the high one resolved, a medium one since): its
+      // threads' grade is the page's too. A count the page has more of is a run the Action has not written yet.
+      const fewer = bot.count === undefined || now.count < bot.count;
+      const regraded = now.count === bot.count && now.severity !== bot.severity && sameRun;
+      if (fewer || regraded) {
+        const { severity: _saved, ...rest } = bot;
+        // The page's thread anchor is the finding still open (the saved one may be the thread just resolved).
+        const anchored = onThread && now.sourceId !== undefined ? { sourceId: now.sourceId } : {};
+        return sameRun ? { ...rest, count: now.count, ...(now.severity === undefined ? {} : { severity: now.severity }), ...anchored } : now;
+      }
     }
     return bot;
   });
@@ -152,7 +164,8 @@ export function mergeWithCrawler(payload: GeldPrMeta, crawled: GeldPrMeta, compl
 export function usableMeta(found: Pick<FoundSummary, 'meta' | 'missingAnchors'>): GeldPrMeta {
   if (found.missingAnchors.length === 0) return found.meta;
   const missing = new Set(found.missingAnchors);
-  for (const anchor of missing) console.warn('[geld] Summary item refers to missing anchor', anchor);
+  perfCount('summary:missing-anchors', missing.size);
+  markOnce(`summary:missing-anchor:${found.missingAnchors[0]}`);
   return {
     ...found.meta,
     items: found.meta.items.filter((item) => item.sources.every((source) => !missing.has(source.anchor))),
