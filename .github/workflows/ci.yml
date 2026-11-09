@@ -10,7 +10,7 @@ on:
 jobs:
   # Same-repository pull requests only (a fork's gets no secrets anyway): the
   # pattern catalog is built from the branch here, in a job that holds no
-  # secret, and signed in the next one, which checks out the default branch
+  # signing key, and signed in the next one, which checks out the default branch
   # and runs none of the branch's code. The signing key never shares a runner
   # with pull request code: anything that runs there — the build, pnpm's
   # scripts, a process left behind, a `node` put on $GITHUB_PATH — could read a
@@ -31,6 +31,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        env:
+          FONTAWESOME_PACKAGE_TOKEN: ${{ secrets.FONTAWESOME_PACKAGE_TOKEN }}
       - run: pnpm catalog:build --auto-version
       - uses: actions/upload-artifact@v7
         with:
@@ -113,6 +115,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        env:
+          FONTAWESOME_PACKAGE_TOKEN: ${{ secrets.FONTAWESOME_PACKAGE_TOKEN }}
       # Pattern catalog: when a push changes the built-in patterns, regenerate
       # catalog/patterns.json (bumping CATALOG_VERSION if the author did not),
       # sign it with the key in GELD_CATALOG_PRIVATE_KEY, verify, and commit it
@@ -200,12 +204,23 @@ jobs:
         env:
           WXT_GELD_APP_CLIENT_ID: ${{ vars.WXT_GELD_APP_CLIENT_ID }}
           GELD_BUILD_NUMBER: ${{ github.event_name == 'pull_request' && '' || github.run_number }}
+      # Each nightly zip and the installer travel with a SHA-256: the extension's updater and the installer
+      # refuse a nightly zip without one, and geld.sh/nightly.sh refuses an installer without one.
+      - name: Nightly checksums and installer
+        run: |
+          pnpm --filter geld-nightly build
+          cp apps/nightly-installer/dist/geld-nightly.mjs apps/extension/.output/
+          cd apps/extension/.output
+          for f in *-nightly.zip geld-nightly.mjs; do sha256sum "$f" > "$f.sha256"; done
       - id: version
         run: echo "version=$(node -p "require('./apps/extension/package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
         with:
           name: geld-extension-zips
-          path: apps/extension/.output/*.zip
+          path: |
+            apps/extension/.output/*.zip
+            apps/extension/.output/*.sha256
+            apps/extension/.output/geld-nightly.mjs
           # `.output` is a dot-directory, which upload-artifact skips by default.
           include-hidden-files: true
           if-no-files-found: error
@@ -231,6 +246,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Build provenance for the nightly zips and the installer (`gh attestation verify`).
+      id-token: write
+      attestations: write
     concurrency:
       group: release-main
       cancel-in-progress: false
@@ -247,7 +265,7 @@ jobs:
           if [ "$EVENT" = "workflow_dispatch" ] || [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
             echo "release=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          if git diff --name-only "$BEFORE" "$GITHUB_SHA" | grep -Eq '^(apps/extension/|apps/action/|packages/core/|packages/review/|packages/github/|assets/brand/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)'; then
+          if git diff --name-only "$BEFORE" "$GITHUB_SHA" | grep -Eq '^(apps/extension/|apps/action/|apps/nightly-installer/|packages/core/|packages/review/|packages/github/|assets/brand/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)'; then
             echo "release=true" >> "$GITHUB_OUTPUT"
           else
             echo "Only the site changed; no release."
@@ -258,6 +276,18 @@ jobs:
         with:
           name: geld-extension-zips
           path: dist
+      # Provenance names the commit that started this run. When the catalog step committed signed patterns,
+      # the zips were built from that newer commit instead, so this release goes out unattested rather than
+      # attested to the wrong source.
+      - name: Note a release built from the catalog commit
+        if: steps.changed.outputs.release == 'true' && needs.check-and-pack.outputs.sha != github.sha
+        run: echo "::notice title=Provenance::Built from the catalog commit ${{ needs.check-and-pack.outputs.sha }}, not ${{ github.sha }}, so this release has no build attestation."
+      - uses: actions/attest-build-provenance@v2
+        if: steps.changed.outputs.release == 'true' && needs.check-and-pack.outputs.sha == github.sha
+        with:
+          subject-path: |
+            dist/*-nightly.zip
+            dist/geld-nightly.mjs
       - name: Publish release
         if: steps.changed.outputs.release == 'true'
         env:
@@ -272,7 +302,7 @@ jobs:
           tag="v${VERSION}-build.${RUN}"
           title="Geld ${VERSION}.${RUN}"
           ls -1 dist
-          gh release create "$tag" dist/*.zip \
+          gh release create "$tag" dist/*.zip dist/*.sha256 dist/geld-nightly.mjs \
             --target "$TARGET_SHA" \
             --title "$title" \
             --generate-notes \

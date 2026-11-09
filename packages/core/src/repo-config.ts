@@ -70,6 +70,7 @@ const PERSONAL_KEYS = [
   'shortcutEnabled',
   'showBadge',
   'autoUpdatePatterns',
+  'errorReports',
   'enterpriseHosts',
   'repoConfigs',
   'hideTests',
@@ -77,14 +78,18 @@ const PERSONAL_KEYS = [
   'customPatterns',
   'prOverview',
   'compactTimeline',
+  'digestViewChosenAt',
   'reviewGrouping',
   'collapseDescription',
   'aiBaseUrl',
   'aiModel',
+  'aiDecisionModel',
   'suggestedFixes',
   'autoViewed',
   'testOutline',
   'testSyntaxes',
+  'attachmentLightbox',
+  'relatedLinks',
 ] as const;
 
 /**
@@ -158,7 +163,8 @@ function reviewBotsOf(value: Record<string, unknown>): readonly string[] {
  * {@link collectRepoConfigIssues}).
  */
 export function parseRepoConfig(text: string, catalog: Catalog = BUNDLED_CATALOG, knownBots: readonly string[] | null = null): RepoConfigParse {
-  const doc = parseDocument(text, { prettyErrors: true, uniqueKeys: true });
+  // `logLevel: 'error'`: yaml would otherwise console.warn about odd keys, which in the extension lands on its Errors card.
+  const doc = parseDocument(text, { prettyErrors: true, uniqueKeys: true, logLevel: 'error' });
   if (doc.errors.length > 0) {
     return {
       ok: false,
