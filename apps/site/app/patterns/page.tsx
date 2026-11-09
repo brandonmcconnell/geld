@@ -79,7 +79,7 @@ export default function PatternsPage() {
                 </h2>
                 <span className="border px-2.5 py-0.5 text-xs leading-5 text-muted-foreground">{category.defaultEnabled ? 'on by default' : 'opt-in'}</span>
               </div>
-              <p className="mt-2 max-w-2xl text-pretty text-muted-foreground">
+              <p className="mt-2 max-w-2xl text-muted-foreground">
                 <RichText copy={category.description} />
               </p>
               <p className="mt-1.5 text-sm text-muted-foreground">
