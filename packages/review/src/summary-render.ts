@@ -16,11 +16,10 @@ import { providerReviewUrl, sourceLink } from './provider-review';
 import {
   SUMMARY_HEADING,
   SUMMARY_MARKER,
-  doneItemCount,
   geldPrUrl,
   howItWorksUrl,
   isOpenStatus,
-  openItemCount,
+  threadCounts,
 } from './model';
 import { botTitle } from './bots';
 import { parseInlineMarkdown } from './inline-markdown';
@@ -137,6 +136,7 @@ function botPhrase(bot: BotVerdictRecord, headSha: string): string {
   if (bot.verdict === 'clean') return `${title} clean (${tag})`;
   if (bot.score !== undefined) return `${title} ${bot.score}/5 (${tag})`;
   if (bot.count !== undefined) return `${title} ${bot.count} issue${bot.count === 1 ? '' : 's'} (${tag})`;
+  if (bot.needsHuman === true) return `${title} needs a human review (${tag})`;
   return `${title} findings (${tag})`;
 }
 
@@ -148,10 +148,10 @@ function reviewerPhrase(reviewer: ReviewerRecord): string {
 }
 
 function headerLine(meta: GeldPrMeta): string {
-  const open = openItemCount(meta.items);
-  const done = doneItemCount(meta.items);
-  const total = meta.items.length;
-  const parts = [`**${done} of ${total} done**`];
+  const threads = threadCounts(meta.items);
+  const open = threads.open;
+  const total = threads.total;
+  const parts = [`**${total - open} of ${total} done**`];
   for (const bot of meta.bots) parts.push(botPhrase(bot, meta.headSha));
   if (open > 0 && total > 0) {
     // The counts already lead; bots follow.
