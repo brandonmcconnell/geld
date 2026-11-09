@@ -54,13 +54,12 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
   const name = element('span', 'geld-nightly__name', 'Nightly');
   name.append(element('span', 'geld-nightly__build', buildLabel(version)));
   const modes = element('div', 'geld-nightly__modes');
-  modes.setAttribute('role', 'radiogroup');
+  modes.setAttribute('role', 'group');
   modes.setAttribute('aria-label', 'Updates');
   const modeButtons = MODES.map(({ mode, label, title }) => {
     const button = element('button', 'geld-button geld-button--small', label);
     button.type = 'button';
     button.title = title;
-    button.setAttribute('role', 'radio');
     button.addEventListener('click', () => void nightlyPrefsItem.setValue({ mode }));
     modes.append(button);
     return { mode, button };
@@ -88,7 +87,6 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
     const [state, folder, prefs, conflict] = await Promise.all([readNightlyStatus(), nightlyFolderItem.getValue(), nightlyPrefsItem.getValue(), nightlyConflictItem.getValue()]);
     blocker = conflict?.id ?? null;
     for (const { mode, button } of modeButtons) {
-      button.setAttribute('aria-checked', String(prefs.mode === mode));
       button.setAttribute('aria-pressed', String(prefs.mode === mode));
     }
     const view = nightlyView(state, folder, version, Date.now(), conflict);
