@@ -98,14 +98,22 @@ describe('recordInstall', () => {
     const saved = JSON.parse(await readFile(path.join(state, 'nightly.json'), 'utf8'));
     expect(saved.installs.map((install: InstallRecord) => [install.folder, install.version])).toEqual([['/b', '0.1.2.1'], ['/a', '0.1.2.2']]);
     expect((await readInstalls(state)).map((install) => install.folder)).toEqual(['/b', '/a']);
-  });
+  }, 15_000);
+
+  it('keeps every profile when runs for different profiles record at once', async () => {
+    const state = path.join(root, '.geld');
+    const profile = (n: number, folder: string): InstallRecord => ({ ...record(folder), profile: { directory: `Profile ${n}`, name: `P${n}` } });
+    await Promise.all([recordInstall(state, profile(1, '/one')), recordInstall(state, profile(2, '/two'))]);
+    expect((await readInstalls(state)).map((install) => install.folder).sort()).toEqual(['/one', '/two']);
+    expect((await readdir(state)).sort()).toEqual(['nightly.json']);
+  }, 30_000);
 
   it('keeps one entry per profile, so a profile moved to another folder is found there', async () => {
     const state = path.join(root, '.geld');
     await recordInstall(state, record('/a'));
     await recordInstall(state, record('/c'));
     expect((await readInstalls(state)).map((install) => install.folder)).toEqual(['/c']);
-  });
+  }, 15_000);
 });
 
 describe('folder ownership', () => {

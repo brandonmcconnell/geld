@@ -47,8 +47,8 @@ async function listFiles(dir: string, prefix = ''): Promise<string[]> {
  * may another installer run, so the installer takes the extension's lock (`claimLock`) under a token of its own
  * per run. A claim is written beside the lock and renamed over it, so a reader never sees half of one.
  */
-function folderLock(dir: string): LockIo {
-  const file = path.join(dir, LOCK_FILE);
+function folderLock(dir: string, name = LOCK_FILE): LockIo {
+  const file = path.join(dir, name);
   return {
     read: () => readText(file),
     async write(text) {
@@ -126,10 +126,27 @@ export function sameProfile(a: Pick<InstallRecord, 'browser' | 'profile'>, b: Pi
   return a.browser === b.browser && a.profile.directory === b.profile.directory;
 }
 
-/** One entry per profile and per folder: the latest install of either replaces the one before. */
+/** How long a run waits for another to finish writing `nightly.json`, which takes moments. */
+const STATE_WAIT_MS = 30_000;
+
+/**
+ * One entry per profile and per folder: the latest install of either replaces the one before. Runs for different
+ * profiles share the file, so its read and write happen under a lock of its own, or one run's entry would be lost.
+ */
 export async function recordInstall(stateDir: string, record: InstallRecord): Promise<void> {
-  const installs = (await readInstalls(stateDir)).filter((known) => known.folder !== record.folder && !sameProfile(known, record));
   await mkdir(stateDir, { recursive: true });
-  const state: InstallerState = { installs: [...installs, record] };
-  await writeFile(path.join(stateDir, 'nightly.json'), `${JSON.stringify(state, null, 2)}\n`);
+  const lock = folderLock(stateDir, 'nightly.json.lock');
+  const token = `geld-nightly-installer-${randomUUID()}`;
+  const giveUpAt = Date.now() + STATE_WAIT_MS;
+  while (!(await claimLock(lock, token))) {
+    if (Date.now() > giveUpAt) throw new Error(`Another geld-nightly run is still writing ${path.join(stateDir, 'nightly.json')}. Run this again once it is done.`);
+    await new Promise((resolve) => setTimeout(resolve, 250 + Math.random() * 500));
+  }
+  try {
+    const installs = (await readInstalls(stateDir)).filter((known) => known.folder !== record.folder && !sameProfile(known, record));
+    const state: InstallerState = { installs: [...installs, record] };
+    await writeWhole(path.join(stateDir, 'nightly.json'), `${JSON.stringify(state, null, 2)}\n`);
+  } finally {
+    await releaseLock(lock, token);
+  }
 }
