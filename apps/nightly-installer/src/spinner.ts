@@ -14,6 +14,8 @@ export interface Terminal {
   readonly columns: number;
   readonly color: boolean;
   readonly frames: readonly string[];
+  /** Whether the font draws the triangles (◢ ◣ ◤ ◥) the spinner and the logo's cuts use. */
+  readonly shapes: boolean;
   write(text: string): void;
 }
 
@@ -25,6 +27,7 @@ export function terminalOf(stream: NodeJS.WriteStream, env: NodeJS.ProcessEnv, p
     columns: stream.columns ?? 80,
     color: isTTY && env['NO_COLOR'] === undefined && (stream.hasColors?.() ?? false),
     frames: platform === 'win32' && !modernWindows ? PLAIN_FRAMES : FRAMES,
+    shapes: !(platform === 'win32' && !modernWindows),
     write: (text) => void stream.write(text),
   };
 }

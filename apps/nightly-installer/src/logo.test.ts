@@ -1,39 +1,53 @@
 import { readFileSync } from 'node:fs';
-import { banner, MARK_PATH, mark, wordmark, WORDMARK_PATHS } from './logo';
+import { banner, CELL_MARK_PATH, MARK_PATH, mark, outlines, word } from './logo';
 
 const brand = (name: string): string[] =>
   [...readFileSync(new URL(`../../../assets/brand/${name}`, import.meta.url), 'utf8').matchAll(/\sd="([^"]+)"/g)].map((match) => match[1] ?? '');
 
 describe('logo', () => {
-  it('draws from the brand files themselves', () => {
+  it('starts from the brand grid mark', () => {
     expect(brand('geld-logomark-grid.svg')).toEqual([MARK_PATH]);
-    expect(brand('geld-logo.svg').slice(1)).toEqual(WORDMARK_PATHS);
   });
 
-  it('draws the grid mark on whole cells, 45° cuts included', () => {
+  it('moves only the cuts: the same corners in the same order, each within a unit or two of the brand', () => {
+    const [brandShape = []] = outlines(MARK_PATH);
+    const [cellShape = []] = outlines(CELL_MARK_PATH);
+    expect(cellShape).toHaveLength(brandShape.length - 1);
+    for (const [x, y] of cellShape) {
+      expect(brandShape.some(([bx, by]) => Math.abs(bx - x) <= 1 && Math.abs(by - y) <= 1)).toBe(true);
+    }
+  });
+
+  it('draws every cut as one straight diagonal, parallel to the others', () => {
     expect(mark()).toEqual([
-      ' ▄████████████',
-      '██▀           ',
-      '██  ██████████',
+      ' ◢████████████',
+      '◢█◤           ',
+      '██  ◢█████████',
       '██  ██      ██',
-      '██  █████▀  ██',
-      '██        ▄██▀',
-      '███████████▀  ',
+      '██  █████◤  ██',
+      '██         ◢█◤',
+      '████████████◤ ',
     ]);
   });
 
-  it('draws the wordmark at the mark height, holes open', () => {
-    const lines = wordmark();
-    expect(lines).toHaveLength(7);
-    expect(lines[0]).toBe('▄█████████▄       ███████████      ██              ██████████▄ ');
-    expect(lines[3]).toBe('██   ▄▄▄▄▄▄▄      ██████████       ██              ██        ██');
+  it('keeps the stepped mark where the font has no triangles', () => {
+    expect(mark(false).join('')).not.toMatch(/[◢◣◤◥]/);
+    expect(mark(false)).toHaveLength(7);
   });
 
-  it('puts the word beside the mark when there is room, and only the mark with its caption when not', () => {
-    expect(banner(80, 'Geld Nightly')).toHaveLength(9);
-    expect(banner(80, 'Geld Nightly')[0]).toBe(` ▄████████████   ${wordmark()[0] ?? ''}`);
-    const narrow = banner(40, 'Geld Nightly');
-    expect(narrow).toHaveLength(7);
-    expect(narrow[3]).toBe('██  ██      ██   Geld Nightly');
+  it('sets the word in three lines of one-pixel strokes', () => {
+    expect(word()).toEqual([
+      '▄▀▀▀▄   █▀▀▀▀   █      █▀▀▀▄',
+      '█ ▄▄▄   █▄▄▄    █      █   █',
+      '▀▄▄▄▀   █▄▄▄▄   █▄▄▄   █▄▄▄▀',
+    ]);
+  });
+
+  it('centres the word on the mark when it fits, and shows the mark alone when not', () => {
+    const wide = banner(80, 'Geld Nightly');
+    expect(wide).toHaveLength(9);
+    expect(wide[3]).toBe('██  ██      ██    █ ▄▄▄   █▄▄▄    █      █   █');
+    expect(wide[8]).toBe('Geld Nightly');
+    expect(banner(30, 'Geld Nightly').join('')).not.toContain('▄▀▀▀▄');
   });
 });

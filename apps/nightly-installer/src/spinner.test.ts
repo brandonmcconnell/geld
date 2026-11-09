@@ -3,7 +3,7 @@ import type { Terminal } from './spinner';
 
 function fake(isTTY: boolean): Terminal & { readonly output: () => string } {
   let text = '';
-  return { isTTY, columns: 80, color: false, frames: FRAMES, write: (chunk) => void (text += chunk), output: () => text };
+  return { isTTY, columns: 80, color: false, frames: FRAMES, shapes: true, write: (chunk) => void (text += chunk), output: () => text };
 }
 
 describe('step', () => {
