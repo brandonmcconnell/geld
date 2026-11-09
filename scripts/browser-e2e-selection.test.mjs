@@ -133,3 +133,16 @@ test('only selected installed jobs enter the shared queue', () => {
   assert.match(browser, /concurrency:\n      group: geld-installed-browser-public-providers\n      cancel-in-progress: false/);
   assert.match(browser, /GELD_BROWSER_FOCUS: \$\{\{ needs\.select-public-verification\.outputs\.focus \}\}/);
 });
+
+test('literal Bitbucket author-only focus selects one stats-off case without repeating count acquisition', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);
+  const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
+  assert.deepEqual(Array.from(cases['bitbucket-authors']), ['bitbucket-list-authors']);
+  assert.deepEqual(select({ body: marker('bitbucket-authors'), from: marker('github') }), { focus: 'bitbucket-authors', run: 'true', failures: [] });
+  assert.equal(cases.regression.includes('bitbucket-list-authors'), false);
+  const body = harness.slice(harness.indexOf("await runCase('bitbucket-list-authors'"), harness.indexOf("await runCase('bitbucket-comment-digest'"));
+  assert.match(body, /assert\.equal\(authorSettings\.showListStats, false/);assert.match(body, /verifyBitbucketHiddenAuthors/);assert.doesNotMatch(body, /bitbucketListCounts\(/);
+  assert.match(harness, /if \(name === 'bitbucket-list-counts' \|\| name === 'bitbucket-list-authors'\)/);
+  assert.match(harness, /name === 'bitbucket-list-authors' && focus === 'all'/);
+  assert.match(harness, /conservativeObservedRequestBudget: 40/);
+});
