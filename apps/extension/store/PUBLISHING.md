@@ -78,7 +78,7 @@ Read only by the publish workflow.
 
 ### Safari — signing secrets plus physical-device review evidence
 
-**Automatic Safari submissions are paused.** Each run withdrew the build Apple was about to review and submitted the newest one in its place, twice a day, so no review ever finished. Until the first approval, the scheduled and post-CI runs skip Safari. To submit a build, run the workflow from the Actions tab and add `safari` to its channels (the default leaves it out, so a manual run for the other stores cannot withdraw a Safari review). That one stays in review until Apple decides, because nothing replaces it. Once Safari reviews go through in reasonable time, set the repository variable `SAFARI_AUTO_PUBLISH` to `true` to put it back on the schedule.
+**Safari is submitted on the schedule, and never withdraws a submission.** Until the first approval (Nov 9, 2026) each run withdrew the build Apple was about to review and submitted the newest one in its place, twice a day, so no review ever finished, and Safari was paused. The job now asks App Store Connect first and skips while a submission is waiting for review or in review; the next run after the review ends submits the newest build. Apple releases each App Store version once, so new code needs a new `version` in `apps/extension/package.json` (and a new review recording, below). Set the repository variable `SAFARI_AUTO_PUBLISH` to `false` to keep Safari to manual runs.
 
 Secrets: `APPLE_TEAM_ID`, `APPLE_ASC_KEY_ID`, `APPLE_ASC_ISSUER_ID`, `APPLE_ASC_PRIVATE_KEY`, `APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD`.
 
