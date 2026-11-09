@@ -11,6 +11,7 @@ import type { MergeActions, MergeBox, MergeMethod, StatusAction } from './merge-
 import { actionErrorText, autoMergeRequest, awaitMergedState, closeRequest, draftRequest, fetchMergeBox, isStackRequest, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, methodHint, partialMayWait, prefetchMergeBox, readMergeActions, queueRequest, readyRequest, rememberMethod, reopenRequest, settleStackMerge, stackQueueRequest, viewerVerdict } from './merge-actions';
 import type { PageInfo } from './page';
 import { pullRequestStateWords } from './page';
+import { headerReactSettled, reactSettled } from './react-hydration';
 import type { PendingComment } from './pending-review';
 import { discardPendingReview, fetchPendingComments, linkOnFilesTab, pendingCountOnPage } from './pending-review';
 import { inlineText } from './review/inline-text';
@@ -471,6 +472,8 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
     removeQuickReview();
     return;
   }
+  // A node of Geld's in React's header before React has hydrated it makes React throw the page's markup away and render it again.
+  if (!headerReactSettled()) return;
   // The controls' state lives on the pull request page whether or not the review group has somewhere to stand: the
   // status pill in the header needs it, and on narrow screens (GitHub hides the counts) the group stands aside alone.
   const counted = anchorOf(context.groups);
@@ -558,14 +561,14 @@ function measureToolbarStuck(toolbar: Element): boolean {
  * compact pull request header's title row the other tabs show; null while neither is
  * stuck, the group in view in the tab bar.
  */
-function stickyPlace(state: Mounted): { readonly place: Place; readonly put: (root: HTMLElement) => void; readonly placed: (root: HTMLElement) => boolean } | null {
+function stickyPlace(state: Mounted): { readonly place: Place; readonly near: HTMLElement; readonly put: (root: HTMLElement) => void; readonly placed: (root: HTMLElement) => boolean } | null {
   // The bar GitHub now shows over every tab: first among its actions, left of "Merge status", always.
   const bar = persistentBarActions();
-  if (bar !== null) return { place: 'bar', put: (root) => bar.prepend(root), placed: (root) => bar.firstElementChild === root };
+  if (bar !== null) return { place: 'bar', near: bar, put: (root) => bar.prepend(root), placed: (root) => bar.firstElementChild === root };
   const control = document.querySelector<HTMLElement>(STICKY_REVIEW_CONTROL);
   if (control !== null) {
     if (!state.toolbarStuck) return null;
-    return { place: 'toolbar', put: (root) => control.insertAdjacentElement('beforebegin', root), placed: (root) => control.previousElementSibling === root };
+    return { place: 'toolbar', near: control, put: (root) => control.insertAdjacentElement('beforebegin', root), placed: (root) => control.previousElementSibling === root };
   }
   // The Overview's mini header, stuck: first among its actions (before the panel toggles), as the tab bar has it at its end.
   const mini = state.toolbar?.isConnected === true && state.toolbar.matches(OVERVIEW_MINI_HEADER) ? state.toolbar : null;
@@ -574,14 +577,14 @@ function stickyPlace(state: Mounted): { readonly place: Place; readonly put: (ro
     if (!state.toolbarStuck || actions === null) return null;
     // Signed in the header holds "Merge status" and GitHub's own (hidden) review button: the group takes the button's place.
     const own = actions.querySelector<HTMLElement>(`:scope > :is(${GITHUB_REVIEW_CONTROL})`);
-    if (own !== null) return { place: 'mini', put: (root) => own.insertAdjacentElement('beforebegin', root), placed: (root) => own.previousElementSibling === root };
-    return { place: 'mini', put: (root) => actions.prepend(root), placed: (root) => actions.firstElementChild === root };
+    if (own !== null) return { place: 'mini', near: own, put: (root) => own.insertAdjacentElement('beforebegin', root), placed: (root) => own.previousElementSibling === root };
+    return { place: 'mini', near: actions, put: (root) => actions.prepend(root), placed: (root) => actions.firstElementChild === root };
   }
   const header = document.querySelector<HTMLElement>(STICKY_PR_HEADER);
   if (header === null || !isStuck(header)) return null;
   // Inside the title row, after the title (which gives way), so the row's centred width and padding hold it as the page's content edge.
   const row = header.querySelector<HTMLElement>('[class*="TitleArea"]') ?? header;
-  return { place: 'header', put: (root) => row.append(root), placed: (root) => row.lastElementChild === root };
+  return { place: 'header', near: row, put: (root) => row.append(root), placed: (root) => row.lastElementChild === root };
 }
 
 /**
@@ -621,6 +624,8 @@ function place(state: Mounted): void {
   // Nothing to stand beside (GitHub hides the counts on narrow screens, and no bar holds the group): GitHub's own button is the one shown.
   if (state.anchor === null && persistentBarActions() === null) return;
   const sticky = stickyPlace(state);
+  // Beside a node React has yet to hydrate, the group would make React throw the page's markup away (`react-hydration.ts`).
+  if (!reactSettled(sticky?.near ?? state.anchor)) return;
   if (sticky !== null) {
     if (!sticky.placed(state.root)) sticky.put(state.root);
   } else if (state.anchor !== null && state.anchor.previousElementSibling !== state.root) {
@@ -1448,11 +1453,12 @@ function showMerged(state: Mounted, pullPath: string): void {
  * (re)rendered gets Geld's pill in the same frame, so its label never shows
  * first and is then pushed aside by the caret. With the controls mounted the
  * merge box decides; before that (the tab bar's counts can render after the
- * header's label) the repository's hint does.
+ * header's label) the repository's hint does. Not before React has hydrated
+ * the header: GitHub's label shows until then (`react-hydration.ts`).
  */
 export function reassertStatusPills(): void {
   const pullPath = pullPathOf(window.location.pathname);
-  if (pullPath === null) return;
+  if (pullPath === null || !headerReactSettled()) return;
   if (mounted !== null && mounted.pullPath === pullPath) {
     showStatus(mounted);
     // GitHub re-renders its bar (on load, between tabs): the group goes back in the same frame.

@@ -1,4 +1,5 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
+import { watchReactHydration } from '../src/github/react-hydration';
 import { LIVE_CATCH_UP_EVENT, liveRegionMessages } from '../src/github/review/live-regions';
 
 /**
@@ -25,13 +26,17 @@ import { LIVE_CATCH_UP_EVENT, liveRegionMessages } from '../src/github/review/li
 
  *
  * It also sends GitHub's live regions the socket messages a hidden tab
- * missed, when the content script asks (`src/github/review/live-regions.ts`).
+ * missed, when the content script asks (`src/github/review/live-regions.ts`),
+ * and marks each `<react-app>` once React has hydrated it, which the content
+ * script waits for before putting nodes among React's (`src/github/react-hydration.ts`).
  */
 export default defineContentScript({
   matches: ['https://github.com/*'],
   world: 'MAIN',
   runAt: 'document_start',
   main() {
+    // Before the one-copy guard: a page that kept an older portal across an update still gets a watcher.
+    watchReactHydration();
     // One copy per page: the background may inject this again into a tab that already has it.
     const html = document.documentElement;
     if (html.hasAttribute('data-geld-portal')) return;

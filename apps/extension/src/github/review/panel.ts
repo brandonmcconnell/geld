@@ -18,6 +18,7 @@ import { deploymentHref, deploymentMark, environmentLabel } from './deployments'
 import { noteTone } from './note-tone';
 import { botTitle, isOpenStatus, itemThreads, resolveBotId, threadCounts } from '@geld/review';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
+import { reactSettled } from '../react-hydration';
 import type { RevisionMarker } from './crawler';
 import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_EXCLAMATION_CIRCLE_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER, ICON_EYE_CLOSED, ICON_BLOCKED } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checkStateOfRun, checksHealth, checksRowTone, checksSummary, checksTotal, pushRowTone, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
@@ -3312,7 +3313,8 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     if (existing.querySelector(`.${PANEL_CLASS}__edited-wrap[open]`) !== null) return { root: existing, slot };
   }
   const card = descriptionCard();
-  if (card === null) return null;
+  // On the Overview the panel stands among React's nodes: not before React has hydrated them (`react-hydration.ts`).
+  if (card === null || !reactSettled(card)) return null;
   const focusKey = focusKeyOf(existing);
   // The open CI checks slot holds GitHub's own live section: a scroll box with spinners in it, always current on
   // its own. Sending it home and taking it back on every rebuild (the counts tick every few seconds on a busy

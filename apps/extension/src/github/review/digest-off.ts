@@ -8,6 +8,7 @@
 import type { DigestView } from '@geld/core';
 import { digestViewPatch } from '@geld/core';
 import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
+import { reactSettled } from '../react-hydration';
 import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
 import { brandMark } from './brand';
@@ -41,6 +42,8 @@ export function syncDigestOffBar(show: boolean): void {
     removeDigestOffBar();
     return;
   }
+  // On the Overview the line stands among React's nodes: not before React has hydrated them.
+  if (!reactSettled(card)) return;
   if (existing !== null && existing.previousElementSibling === card && card.hasAttribute(ATTR_ATTACHED)) return;
   existing?.remove();
   for (const stale of document.querySelectorAll(`[${ATTR_ATTACHED}]`)) {

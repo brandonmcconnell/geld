@@ -52,6 +52,7 @@ import { expireHeadChecks } from './review/check-source';
 import { markCrawlDirty, resetCrawlCache } from './review/crawler';
 import type { RepoBotsHint } from './review/panel-model';
 import { LIVE_CATCH_UP_EVENT, liveCatchUpDue } from './review/live-regions';
+import { REACT_HYDRATED_EVENT } from './react-hydration';
 import { catchUpTimeline } from './review/timeline-catchup';
 import { applyReviewOverview, dressOverviewNow, foldDescriptionNow, onReviewBeforeMatch, onReviewHashChange, refreshReviewTimes, reviewSignature, takeReviewDeferred, teardownReviewOverview } from './review/overview';
 import { setFlowSource } from './review/flow';
@@ -446,6 +447,8 @@ export class GeldController {
     window.addEventListener('hashchange', this.onHashChange);
     // Find-in-page reaching into a folded timeline item (`hidden="until-found"`).
     document.addEventListener('beforematch', this.onBeforeMatch, true);
+    // What waited for React to hydrate the page (the header's controls, the Overview's digest) goes in now.
+    document.addEventListener(REACT_HYDRATED_EVENT, this.onReactHydrated);
     // A copy that starts on a page already open a while (an update or reload of the extension retired the one before,
     // and this one was injected) cannot know what GitHub's quiet socket missed meanwhile, so the page's age counts as
     // time away: caught up now when the tab is in view, on the first return when it is not.
@@ -524,6 +527,7 @@ export class GeldController {
     document.removeEventListener('keydown', this.onUserKey, true);
     window.removeEventListener('hashchange', this.onHashChange);
     document.removeEventListener('beforematch', this.onBeforeMatch, true);
+    document.removeEventListener(REACT_HYDRATED_EVENT, this.onReactHydrated);
     this.observer?.disconnect();
     this.observer = null;
     if (this.timer !== null) clearTimeout(this.timer);
@@ -1955,6 +1959,8 @@ export class GeldController {
     // A link into a folded test's body: the pass opens its fold (`ui/test-folds.ts`).
     if (this.settings.testOutline) this.schedule();
   };
+
+  private readonly onReactHydrated = (): void => this.schedule();
 
   private readonly onBeforeMatch = (event: Event): void => {
     onReviewBeforeMatch(event, this.settings);
