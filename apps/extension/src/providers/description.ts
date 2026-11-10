@@ -1,3 +1,4 @@
+import type { ProviderAgentNote } from './agent-notes';
 import { headingElementOf, headingLevelOf, hiddenBlocks, outlineOf } from '../ui/description-outline';
 import type { OutlineHeading } from '../ui/description-outline';
 import { element } from './dom';
@@ -14,6 +15,10 @@ export class ProviderDescription {
   private key = '';
   private readonly choices = new Map<string, boolean>();
   private expanded = false;
+  private tools = new Map<Element, string>();
+  private toolsAway = false;
+  private shorten = true;
+  private readonly shownTools = new Set<string>();
   private readonly folded = new Map<Element, string | null>();
   private headings: Heading[] = [];
   private blocks: Element[] = [];
@@ -21,8 +26,8 @@ export class ProviderDescription {
   private observer: ResizeObserver | null = null;
   private frame: number | null = null;
 
-  update(host: HTMLElement | null, key: string): void {
-    if (key !== this.key) { this.clear();this.choices.clear();this.expanded = false;this.key = key; }
+  update(host: HTMLElement | null, key: string, notes: readonly ProviderAgentNote[] = [], toolsAway = false, shorten = true): void {
+    if (key !== this.key) { this.clear();this.choices.clear();this.shownTools.clear();this.expanded = false;this.key = key; }
     if (host !== this.host) {
       this.clear();this.host = host;
       if (host !== null) {
@@ -35,9 +40,11 @@ export class ProviderDescription {
       }
     }
     if (host === null) return;
+    this.tools = new Map(notes.flatMap(note => note.blocks.map(block => [block, note.id] as const)));this.toolsAway = toolsAway;this.shorten = shorten;
     const blocks = [...host.children].filter((block) => !block.hasAttribute('data-geld-ui'));
-    const levels = blocks.map((block) => this.label(block) === '' ? null : headingLevelOf(block));
-    const outline = outlineOf(blocks, new Set(), levels);
+    const levels = blocks.map((block) => !shorten || this.tools.has(block) || this.label(block) === '' ? null : headingLevelOf(block));
+    const resets = new Set(blocks.flatMap((block, index) => this.tools.has(block) !== this.tools.has(blocks[index - 1] ?? block) ? [index] : []));
+    const outline = outlineOf(blocks, resets, levels);
     const counts = new Map<string, number>();
     const previous = this.headings;
     this.headings = outline.flatMap((entry) => {
@@ -63,6 +70,7 @@ export class ProviderDescription {
     if (this.host === null || !this.host.contains(target)) return;
     const index = this.blocks.findIndex((block) => block === target || block.contains(target));
     for (const item of this.headings) if (item.outline.index < index && index < item.outline.end) this.choices.set(item.key, true);
+    const block = this.blocks[index];const tool = block === undefined ? undefined : this.tools.get(block);if (tool !== undefined) this.shownTools.add(tool);
     this.expanded = true;this.apply();this.measure();
   }
 
@@ -92,7 +100,8 @@ export class ProviderDescription {
   private apply(): void {
     const hidden = hiddenBlocks(this.headings.map((item) => item.outline), (outline) => { const item = this.headings.find((item) => item.outline === outline);return item !== undefined && this.open(item); });
     this.blocks.forEach((block, index) => {
-      if (hidden.has(index)) {
+      const tool = this.tools.get(block);
+      if (hidden.has(index) || tool !== undefined && this.toolsAway && !this.shownTools.has(tool)) {
         if (!this.folded.has(block)) this.folded.set(block, block.getAttribute('hidden'));
         if (!block.hasAttribute('hidden')) block.setAttribute('hidden', 'until-found');
         if (!block.hasAttribute(FOLD)) block.setAttribute(FOLD, '');
@@ -120,7 +129,7 @@ export class ProviderDescription {
   private readonly schedule = (): void => { if (this.frame === null) this.frame = requestAnimationFrame(() => { this.frame = null;this.measure(); }); };
   private measure(): void {
     const host = this.host;if (host === null || !host.isConnected) return;
-    const long = host.scrollHeight > 580;
+    const long = this.shorten && (this.toolsAway || this.tools.size === 0) && host.scrollHeight > 580;
     if (long && this.more === null) {
       this.more = element('button', '', 'geld-provider-toggle geld-provider-description-toggle');this.more.type = 'button';
       this.more.addEventListener('click', () => { this.expanded = !this.expanded;host.removeAttribute(CAP);this.measure(); });host.after(this.more);

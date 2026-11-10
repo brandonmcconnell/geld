@@ -1,3 +1,4 @@
+import { providerAgentNotes } from './agent-notes';
 import { ProviderDescription } from './description';
 import type { DigestView, GeldSettings } from '@geld/core';
 import { compileAuthorRules, repositoryKey, trustedReviewAccountFor } from '@geld/core';
@@ -133,7 +134,10 @@ export class ProviderConversation {
       this.resetReviewed(); this.hiddenPeople.clear();
     }
     this.related.update(page, settings, document, this.snapshot === null ? undefined : { ...this.snapshot, input: providerReviewWithTrustedAccounts(this.snapshot.input, this.snapshot.comments, settings, this.snapshot.complete) }, this.shownPeople);
-    this.description.update(page.kind === 'overview' && settings.collapseDescription ? this.adapter.descriptionHost?.(document) ?? null : null, JSON.stringify([repositoryKey(page.repository), page.number]));
+    const descriptionHost = page.kind === 'overview' ? this.adapter.descriptionHost?.(document) ?? null : null;
+    const agentNotes = providerAgentNotes(descriptionHost);
+    const descriptionKey = JSON.stringify([repositoryKey(page.repository), page.number]);
+    this.description.update(descriptionHost, descriptionKey, agentNotes, settings.prOverview && this.snapshot !== null && this.panel?.element.hidden === false && this.panel.element.dataset.state !== 'unavailable', settings.collapseDescription);
     const wantsPeople = !compileAuthorRules(settings.hiddenAuthors).isEmpty;
     const viewHost = page.kind === 'overview' ? this.adapter.reviewHost?.(document) ?? null : null;
     this.updateViewChoice(viewHost, settings);
@@ -205,6 +209,17 @@ export class ProviderConversation {
       const references = (this.adapter.readReferences?.(page, document, people.events, [...input.threads.flatMap((thread) => thread.comments), ...comments]) ?? []).filter((reference) => (reference.source.anchor === null || !people.hiddenAnchors.has(reference.source.anchor)) && (reference.source.eventId === undefined || !people.hiddenEvents.has(reference.source.eventId)) && (reference.source.author === undefined || !hiddenIds.has(reference.source.author.id)));
       const reviewerControls = snapshot.reviewerControls;
       const options = {
+        agentNotes,
+        onRevealAgentNote: (note: (typeof agentNotes)[number]): void => {
+          const target = note.blocks[0];
+          if (this.generation !== actionGeneration || this.key !== actionKey || target === undefined || !target.isConnected || !descriptionHost?.contains(target)) return;
+          this.description.reveal(target);target.scrollIntoView({ block: 'center', behavior: 'auto' });
+          if (target instanceof HTMLElement) {
+            const tabIndex = target.getAttribute('tabindex');target.tabIndex = -1;
+            target.addEventListener('blur', () => { if (target.getAttribute('tabindex') === '-1') { if (tabIndex === null) target.removeAttribute('tabindex');else target.setAttribute('tabindex', tabIndex); } }, { once: true });
+            target.focus({ preventScroll: true });
+          }
+        },
         ...(this.services.openSettings === undefined ? {} : { onOpenSettings: this.services.openSettings }),
         ...(hidden ? { sourceInput: originalInput } : {}),
         ...(reviewerControls === undefined ? {} : { reviewerControls: { ...reviewerControls, activate: async (context?: ProviderSourceActionContext): Promise<boolean> => {
@@ -352,6 +367,7 @@ export class ProviderConversation {
         this.panel = renderProviderReviewPanel(host, input, options);
       } else this.panel.update(input, options);
       this.panel.element.hidden = false;
+      if (this.panel.element.dataset.state !== 'unavailable') this.description.update(descriptionHost, descriptionKey, agentNotes, true, settings.collapseDescription);
       if (this.panel.element.dataset.state === 'unavailable') { this.restoreCompact(); }
       else this.compact(snapshot, settings);
     } else if (host !== null) {

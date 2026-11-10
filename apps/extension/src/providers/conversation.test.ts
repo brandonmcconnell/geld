@@ -905,3 +905,15 @@ it('retains the panel and open thread while a new-head snapshot is loading', asy
   expect(f.host.querySelector('.geld-provider-review')).toBe(panel);expect(panel.hidden).toBe(false);
   expect(panel.querySelector<HTMLElement & { open: boolean }>('.geld-provider-review__item')?.open).toBe(true);
 });
+
+it('seats current tool summaries in the digest and restores them in native-only mode even when shortening is off', async () => {
+  const description = document.createElement('div');description.innerHTML = '<p>Author words.</p><h2>Summary by CodeRabbit</h2><p>Generated review summary.</p>';
+  document.body.append(description);
+  const source = description.lastElementChild!;
+  const f = fixture(snapshot(), {}, { aiEnabled: false, collapseDescription: false }, { descriptionHost: () => description });
+  await vi.waitFor(() => expect(f.host.querySelector('[data-geld-agent-note="coderabbit"]')).not.toBeNull());
+  expect(f.host.querySelector('[data-geld-agent-note]')?.textContent).toContain('Generated review summary.');
+  expect(source.getAttribute('hidden')).toBe('until-found');expect(description.firstElementChild?.hasAttribute('hidden')).toBe(false);
+  f.apply(page, { ...DEFAULT_SETTINGS, prOverview: false, quickReview: false, collapseDescription: false });
+  expect(source.hasAttribute('hidden')).toBe(false);
+});
