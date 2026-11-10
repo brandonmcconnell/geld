@@ -98,7 +98,7 @@ afterEach(() => {
 });
 
 describe('provider commit hover intent', () => {
-  it('leaves the review's own tabs to the counts in the tab bar while another review's link still counts', async () => {
+  it("leaves the review's own tabs to the counts in the tab bar while another review's link still counts", async () => {
     window.location.href = `${ROOT}/-/merge_requests/7`;
     const get = vi.fn(() => ready());
     create(get);
