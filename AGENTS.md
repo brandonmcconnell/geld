@@ -3581,7 +3581,7 @@ They reuse the installed-browser permission, request budget and cooldown handlin
 Titles, captions and voiceover are post-production overlays and never replace native controls or manufacture provider state.
 
 Bitbucket walkthroughs use the original Files link for same-document navigation, because a full reload repeats native metadata demand.
-A Files-only continuation waits for every carried anonymous request timestamp to leave the existing hourly window before opening a provider page, preserving the existing request cap.
+Files-only recording and Bitbucket UI acceptance wait for every carried anonymous request timestamp to leave the existing hourly window before opening a provider page, preserving the existing request cap.
 Rendering joins completed scene receipts from the same public pull request and requires the digest, counts, categories and settings sections before publishing a complete walkthrough package.
 
 ### Provider digest layout and tab-bar geometry
@@ -3589,6 +3589,7 @@ Rendering joins completed scene receipts from the same public pull request and r
 GitLab and Bitbucket use Geld's compact digest structure with the provider's own font, surface, border and interaction tokens.
 The toolbar contains a conditional resolved-thread meter, Flow, grouping, View, copy and settings controls rather than a separate metric dashboard.
 Reviewer summaries stay inline with the Reviews row while conversation details remain inside its disclosure, and an unknown pending-request state is not presented as a review verdict.
+Merge checks use a short row label and inline native-state totals, keeping long rule names inside the disclosure instead of wrapping the label into several lines.
 The combined view uses the Geld and provider marks with a plus sign and an accessible full label.
 View changes restore focus to the selected native timeline option when the digest is off and to its View control when it returns.
 Browser checks wait for the selected view to finish changing before checking focus or switching again, since the clicked option already has focus while its settings save is pending.

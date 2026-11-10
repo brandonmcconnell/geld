@@ -942,7 +942,8 @@ describe('provider conversation digest', () => {
       ],
     });
     const section = panel.element.querySelector('[data-geld-review-key="requirements"]');
-    expect(section?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Merge requirements · 2 shown');
+    expect(section?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('Merge requirements · 2 passed');
+    expect(section?.querySelector('.geld-provider-review__row-preview')?.textContent).toBe('2 passed');
     expect(section?.querySelectorAll('[data-geld-native-requirement]')).toHaveLength(2);
     expect(section?.textContent).toContain('1+ approval from default reviewers');
     expect(panel.element.querySelector('[data-geld-review-key="reviewers"] .geld-provider-review__reviewer-summary')?.textContent).toBe('Reviews · 1 approval');

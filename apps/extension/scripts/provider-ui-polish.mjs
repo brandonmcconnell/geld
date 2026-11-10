@@ -88,22 +88,38 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
     assert.ok(files.totals.x >= files.tabs.right - 1, 'Totals sit on the right of tabs');
     assert.ok(files.totals.y >= files.tabs.y - 1 && files.totals.bottom <= files.tabs.bottom + 1, 'Totals share the tab row');
   }
-  await page.evaluate(() => scrollBy({ top: 650, behavior: 'instant' }));
+  const tests = await page.$('.geld-provider-category .geld-provider-category-header');assert.ok(tests);await tests.click();await tests.dispose();
+  await poll(() => page.$eval('.geld-provider-category .geld-provider-category-header', el => el.getAttribute('aria-expanded')), value => value === 'true', 'Tests expanded');
+  await frame('tests');
+  const scroll = await page.evaluate(() => {
+    let pane = null;
+    for (let el = document.querySelector('article[data-qa="branch-diff-file"], [data-file-path]')?.parentElement; el; el = el.parentElement) {
+      if (/^(auto|scroll|overlay)$/.test(getComputedStyle(el).overflowY) && el.scrollHeight > el.clientHeight + 1) pane = el;
+    }
+    pane ??= document.scrollingElement;
+    const before = pane.scrollTop;
+    pane.scrollTo({ top: 650, behavior: 'instant' });
+    return { tag: pane.tagName, before, after: pane.scrollTop, range: pane.scrollHeight - pane.clientHeight };
+  });
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const sticky = await page.evaluate(() => {
     const header = document.querySelector('#sticky-header-content');
     if (!header || header.getBoundingClientRect().height === 0 || getComputedStyle(header).visibility === 'hidden' || header.getAttribute('aria-hidden') === 'true') return null;
-    const b = header.getBoundingClientRect(), x = b.left + b.width / 2, y = Math.max(0, b.top) + Math.min(20, b.height / 2);
-    const front = document.elementFromPoint(x, y);
-    return { top: b.top, bottom: b.bottom, headerInFront: !!front && header.contains(front) };
+    const b = header.getBoundingClientRect();
+    const hits = [.2, .5, .8].flatMap(x => [.2, .5, .8].map(y => {
+      const front = document.elementFromPoint(b.left + b.width * x, b.top + b.height * y);
+      return { x, y, headerInFront: !!front && header.contains(front) };
+    }));
+    return { top: b.top, bottom: b.bottom, hits, headerInFront: hits.every(hit => hit.headerInFront) };
   });
-  console.log(`PROVIDER_UI_STAGE ${JSON.stringify({ provider, stage: 'sticky', sticky })}`);
+  console.log(`PROVIDER_UI_STAGE ${JSON.stringify({ provider, stage: 'sticky', scroll, sticky })}`);
   await frame('scrolled');
+  if (provider === 'bitbucket') {
+    assert.ok(scroll.after > 0, 'Bitbucket native content pane was scrolled');
+    assert.ok(sticky !== null, 'Bitbucket sticky header is visible after scrolling');
+  }
   if (sticky !== null) assert.equal(sticky.headerInFront, true, 'Native sticky header paints in front of the diff');
-  const tests = await page.$('.geld-provider-category .geld-provider-category-header');assert.ok(tests);await tests.click();await tests.dispose();
-  await poll(() => page.$eval('.geld-provider-category .geld-provider-category-header', el => el.getAttribute('aria-expanded')), value => value === 'true', 'Tests expanded');
-  await frame('tests');
-  item.uiAcceptance = { digest, combined, focus, focusError, files, sticky, frames };
+  item.uiAcceptance = { digest, combined, focus, focusError, files, scroll, sticky, frames };
   console.log(`PROVIDER_UI_META ${JSON.stringify({ provider, ...item.uiAcceptance })}`);
   assert.equal(focusError, undefined, 'View changes restore keyboard focus');
   return { verified: 'Installed digest toolbar, disclosure, icon view choice, counts, categories and sticky header', uiAcceptance: item.uiAcceptance };

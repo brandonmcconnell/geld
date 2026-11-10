@@ -701,7 +701,20 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function requirementsSection(): HTMLElement | null {
     const requirements = options.requirements;
     if (requirements === undefined || requirements === null) return null;
-    const section = disclosure('requirements', `Merge requirements · ${requirements.length} shown`, false);
+    const section = disclosure('requirements', 'Merge checks', false);
+    const summary = section.querySelector('[data-geld-review-toggle]');
+    const preview = node('span', '', 'geld-provider-review__row-preview');
+    for (const state of ['failed', 'pending', 'unknown', 'passed'] as const) {
+      const count = requirements.filter(requirement => requirement.state === state).length;
+      if (count === 0) continue;
+      if (preview.childNodes.length > 0) preview.append(doc.createTextNode(' · '));
+      const part = node('span', `${count} ${REQUIREMENT_STATE[state].toLowerCase()}`, 'geld-provider-review__check-part');
+      part.dataset.geldCheckState = state;
+      preview.append(part);
+    }
+    if (requirements.length === 0) preview.textContent = 'None supplied';
+    summary?.setAttribute('aria-label', `Merge requirements · ${preview.textContent}`);
+    summary?.append(preview);
     if (requirements.length === 0) section.append(node('p', 'No merge requirement details were supplied.'));
     const list = node('ul');
     for (const requirement of requirements) {

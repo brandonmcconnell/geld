@@ -196,7 +196,7 @@ jobs:
       group: geld-installed-browser-public-providers
       cancel-in-progress: false
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ needs.select-public-verification.outputs.focus == 'bitbucket-walkthrough-files' && 75 || 15 }}
+    timeout-minutes: ${{ contains(fromJSON('["bitbucket-walkthrough-files", "bitbucket-ui-polish"]'), needs.select-public-verification.outputs.focus) && 75 || 15 }}
     env:
       GELD_BROWSER_ARTIFACTS: ${{ github.workspace }}/artifacts/browser-e2e
       GELD_BROWSER_PREVIOUS_REPORT: ${{ github.workspace }}/.browser-previous-evidence/report.json
@@ -277,8 +277,8 @@ jobs:
           run-id: ${{ steps.cooldowns.outputs.run-id }}
           github-token: ${{ github.token }}
           path: .browser-previous-evidence
-      - name: Wait for the carried Bitbucket recording budget
-        if: needs.select-public-verification.outputs.focus == 'bitbucket-walkthrough-files'
+      - name: Wait for the carried Bitbucket browser budget
+        if: contains(fromJSON('["bitbucket-walkthrough-files", "bitbucket-ui-polish"]'), needs.select-public-verification.outputs.focus)
         run: |
           python3 - <<'PY'
           import json, os, time
