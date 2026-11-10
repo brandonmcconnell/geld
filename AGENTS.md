@@ -2257,6 +2257,17 @@ No getter, private store, token-shaped DOM, settings draft or saved result suppl
 The retained public PR242 native-off expansion produced 22 owned ranges, including 13 plain ranges, so both disabled and unknown regressions must clear that exact visible-source projection without recreating cached ranges until a new positive observation.
 Positive native Syntax-on and palette acceptance remain unverified publicly;
 the installed unknown branch reports unavailability and the known-off branch requires zero owned ranges, a pre-paint witness, preserved source/Viewed state, empty invalid ranges and exact context/count/head checks before and after capture.
+The separate bitbucket-pipeline-syntax-on focus is an explicit-only anonymous characterization, excluded from default, regression and all, and requires an entirely free 40-request rolling window because the first native Save/restore cost is unmeasured.
+It reuses the existing Off acceptance before any preference change, then operates only the original native Syntax checkbox and unique same-form submit Save, preserving the other 12 controls including hidden tabSize.
+The current form has 13 controls rather than the 12 visible fields alone, and its original modal heading is Global diff view settings.
+After native Save, source row/code/Text replacement is permitted only while the exact semantic source vector, original file root/anchor/Viewed, raw anonymous bootstrap actor/workspace, selected URL and already-observed full comparison identity remain unchanged.
+Fresh pristine On-form initial state, zero owned colors and native-On Text-node references are captured before trusted Cancel qualifies production's passive observer;
+later owned ranges must preserve that new baseline, native links/IDs/fonts and foreign highlights through real text selection and viewport capture.
+All native HTTP traffic remains separately recorded with query values redacted and bounded allowlisted preference primitives, without inferring a settings endpoint, authenticated success or server persistence.
+The original currentBitbucketShellHead still rejects errors and every mutation, while the characterization uses the same extracted immutable identity conditions plus its unfiltered traffic and exact native form-write windows, never a fabricated empty mutation array.
+Only that dedicated focus opts both observers into a shared WeakMap HTTPRequest identity, including response.request references, so standard API mutation association requires the exact request object, method, form window and source-backed setting body rather than URL/timing proximity or absence of an extension stack.
+Restoration always freshly reads the native field vector, uses original checkbox/Save only if On, then freshly reads Off and trusted-Cancels before profile closure, retaining original, traffic and restoration failures separately.
+Synthetic trust/layout/orchestration fixtures are unit-only and do not establish a public native-On, unselected-theme or native Bash-renderer palette pass.
 The existing GitHub18 regressions plus native-fixture unit checks do not prove installed Bitbucket highlighting, exact native Bash-scope palette mapping or actual Bitbucket dark-theme selection.
 Keep D25 partial until those are verified publicly.
 The dedicated bitbucket-native-bash browser focus is native discovery only and is excluded from regression and all.
