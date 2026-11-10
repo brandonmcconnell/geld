@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { nativeBashOnProbe } from './bitbucket-native-bash-on-probe.mjs';
 
 /** Only observation references live here. Unknown DOM/values never leave this probe. */
 export function nativeSettingsReadinessProbe(action = 'read', kind = null, opener = null, environment = {}) {
@@ -35,7 +36,7 @@ export function nativeSettingsReadinessProbe(action = 'read', kind = null, opene
     if (store.form !== null && (forms.length !== 1 || forms[0] !== store.form || store.form.parentElement !== store.formParent)) store.invalid ??= 'form_replaced';
     const controls = store.form === null ? [] : [...store.form.querySelectorAll('input,select,textarea,button')];
     const vector = () => controls.map((n) => ({ node: n, parent: n.parentElement, id: n.id, name: n.name, type: n.type, value: n.value, checked: 'checked' in n ? n.checked : null, disabled: n.disabled, readOnly: 'readOnly' in n ? n.readOnly : false }));
-    if (store.known !== null && (controls.length !== store.known.length || controls.some((n, i) => n !== store.known[i].node || n.parentElement !== store.known[i].parent))) store.invalid ??= 'known_controls_or_vector_changed';
+    if (store.known !== null && (controls.length !== store.known.length || controls.some((n, i) => n !== store.known[i].node || n.parentElement !== store.known[i].parent || n.id !== store.known[i].id || n.name !== store.known[i].name || n.type !== store.known[i].type))) store.invalid ??= 'known_controls_or_vector_changed';
     const snapshot = (action === 'capture-known' || store.known !== null) && store.invalid === null ? vector() : [];const equal = (a, b) => a.length === b.length && a.every((r, i) => Object.keys(r).every((key) => r[key] === b[i][key]));
     if (store.known !== null && !equal(snapshot, store.known)) store.invalid ??= 'known_controls_or_vector_changed';
     const safe = (s) => /^[a-zA-Z0-9_-]{0,80}$/.test(s ?? '') ? s : '[omitted]';const seen = dialog === null ? [] : [...dialog.querySelectorAll('input,select,textarea')];
@@ -51,7 +52,8 @@ export function nativeSettingsReadinessProbe(action = 'read', kind = null, opene
   return value.state;
 }
 
-export async function waitNativeSettingsCandidate(page, { readCurrent, read, bind, pause, progress, timeoutMs = 4000, maxSamples = 40, unitOnly }) {
+export async function waitNativeSettingsCandidate(page, { readCurrent, read, bind, pause, progress, timeoutMs = 4000, maxSamples = 40, tabWitness = null, unitOnly }) {
+  assert.ok(tabWitness === null || tabWitness === 'bitbucket-native-tab');
   const now = unitOnly?.now ?? Date.now;const until = now() + timeoutMs;progress.status = 'waiting';progress.limits = { timeoutMs, maxCandidateSamples: maxSamples, retainedSamples: 8, stableFrames: 2 };progress.samples = [];progress.sampleCount = 0;
   const retain = (value) => { progress.sampleCount++;progress.samples.push(value);if (progress.samples.length > 8) progress.samples.shift(); };
   let timer;const deadline = new Error('Native Settings readiness deadline');
@@ -67,6 +69,7 @@ export async function waitNativeSettingsCandidate(page, { readCurrent, read, bin
       assert.equal(sample?.same, true, `Native Settings candidate ownership invalid: ${sample?.reason ?? 'missing'}`);assert.equal(source?.same, true);assert.deepEqual(source.earlyEvents, [], 'Input preceded strict form qualification');
       if (source.formAvailable && sample.clicked && sample.presentation?.eligible && sample.formPinned) {
         assert.equal((await bounded(() => page.evaluate(nativeSettingsReadinessProbe, 'capture-known')))?.same, true);
+        if (tabWitness === 'bitbucket-native-tab') assert.equal((await bounded(() => page.evaluate(nativeBashOnProbe, 'capture-tab-witness')))?.current, true, 'Source-qualified private tab witness required');
         for (let frame = 0; frame < 2; frame++) {
           const next = await bounded(() => page.evaluate(nativeSettingsReadinessProbe, 'frame'));retain(next);if (next?.expired) { progress.status = 'unavailable';progress.reason = 'frame_readiness_deadline';return null; }assert.ok(next?.same && next.presentation?.eligible, 'Original form/control/vector changed or presentation became ineligible during frame readiness');await bounded(readCurrent);const current = await bounded(read);assert.ok(current?.same && current.formAvailable);assert.deepEqual(current.earlyEvents, []);
         }
@@ -80,7 +83,11 @@ export async function waitNativeSettingsCandidate(page, { readCurrent, read, bin
     progress.status = 'failed';progress.error = String(error);throw error;
   } finally {
     clearTimeout(timer);
+    const failures = [];
     try { if (!page.isClosed()) await page.evaluate(nativeSettingsReadinessProbe, 'cleanup');progress.cleanup = 'removed'; }
-    catch (error) { progress.cleanup = 'failed';progress.cleanupError = String(error);progress.status = 'failed';throw error; }
+    catch (error) { progress.cleanup = 'failed';progress.cleanupError = String(error);progress.status = 'failed';failures.push(error); }
+    if (tabWitness === 'bitbucket-native-tab' && progress.status !== 'ready') try { if (!page.isClosed()) await page.evaluate(nativeBashOnProbe, 'release-tab-witness');progress.tabWitnessCleanup = 'released'; }
+    catch (error) { progress.tabWitnessCleanup = 'failed';progress.status = 'failed';failures.push(error); }
+    if (failures.length > 0) throw tabWitness === 'bitbucket-native-tab' ? new Error('Native Settings tab-witness cleanup failed') : failures[0];
   }
 }

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { nativeBashOnProbe } from './bitbucket-native-bash-on-probe.mjs';
 import { Window } from 'happy-dom';
 import { nativeSettingsReadinessProbe as probe, waitNativeSettingsCandidate as wait } from './native-settings-readiness.mjs';
 
@@ -44,3 +45,15 @@ test('cleanup rejection is a failed case, never successful readiness',async()=>w
 test('late read timeout cannot schedule a later binding',async()=>withDOM(async f=>{f.begin();f.open();const p=protocol(f);let finish;p.deps.timeoutMs=15;delete p.deps.unitOnly;p.deps.readCurrent=()=>new Promise(resolve=>{finish=resolve;});assert.equal(await p.run(),null);assert.equal(p.progress.reason,'bounded_readiness_deadline');finish();await Promise.resolve();assert.equal(p.binds(),0);assert.equal(probe(),null);}));
 
 test('unknown hidden values are not even read before a source-backed schema qualifies',async()=>withDOM(async f=>{f.begin();const d=f.open();const input=d.querySelector('input');input.name='auth';let reads=0;Object.defineProperty(input,'value',{get(){reads++;throw Error('Unknown value must not be read');}});const p=protocol(f);assert.equal(await p.run(),null);assert.equal(reads,0);assert.equal(p.binds(),0);}));
+
+for(const failed of[false,true])test(`fixed standalone witness capability${failed?' releases on refusal':' remains active after valid bind'}`,async()=>withDOM(async f=>{
+ f.begin();f.open();const p=protocol(f);const evaluate=p.page.evaluate;const actions=[];p.page.evaluate=async(fn,action)=>{if(fn===nativeBashOnProbe){actions.push(action);return action==='capture-tab-witness'?(failed?null:{current:true}):{released:true};}return evaluate(fn,action);};p.deps.tabWitness='bitbucket-native-tab';if(failed){await assert.rejects(p.run());assert.deepEqual(actions,['capture-tab-witness','release-tab-witness']);assert.equal(p.progress.tabWitnessCleanup,'released');}else{assert.deepEqual(await p.run(),{vector:'unit-known'});assert.deepEqual(actions,['capture-tab-witness']);}
+}));
+test('pipeline/default readiness never requests a standalone witness, and arbitrary capability names are refused',async()=>withDOM(async f=>{f.begin();f.open();const p=protocol(f);const evaluate=p.page.evaluate;p.page.evaluate=async(fn,...args)=>{assert.notEqual(fn,nativeBashOnProbe);return evaluate(fn,...args);};assert.deepEqual(await p.run(),{vector:'unit-known'});const bad=protocol(f);bad.deps.tabWitness='arbitrary-action';await assert.rejects(bad.run());}));
+
+for(const attribute of['id','name','type'])test(`known control${attribute} drift is rejected before unknown value getters in direct and awaited readiness`,async()=>withDOM(async f=>{
+ f.begin();const d=f.open();assert.equal(probe('capture-known').same,true);const input=d.querySelector('input');if(attribute==='type')input.type='text';else input[attribute]='unknown_auth';let reads=0;Object.defineProperty(input,'value',{get(){reads++;throw Error('DO_NOT_RETAIN_AUTH');}});const state=probe();assert.equal(state.same,false);assert.equal(state.reason,'known_controls_or_vector_changed');assert.equal(reads,0);assert.doesNotMatch(JSON.stringify(state),/DO_NOT_RETAIN_AUTH/);probe('cleanup');
+}));
+for(const attribute of['id','name','type'])test(`frame readiness records fixed structural refusal without unknown${attribute} getter text`,async()=>withDOM(async f=>{
+ f.begin();const d=f.open();let reads=0;const p=protocol(f,{changeFrame:frame=>{if(frame!==1)return;const input=d.querySelector('input');if(attribute==='type')input.type='text';else input[attribute]='unknown_auth';Object.defineProperty(input,'value',{get(){reads++;throw Error('DO_NOT_RETAIN_AUTH');}});}});await assert.rejects(p.run());assert.equal(p.progress.status,'failed');assert.equal(p.binds(),0);assert.equal(reads,0);assert.doesNotMatch(JSON.stringify(p.progress),/DO_NOT_RETAIN_AUTH/);assert.equal(p.progress.cleanup,'removed');
+}));
