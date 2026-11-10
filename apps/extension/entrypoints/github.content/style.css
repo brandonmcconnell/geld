@@ -8415,33 +8415,55 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
 
 /*
  * An image GitHub left unwrapped is an inline `<a>` straight in the body, and an inline box is only its line's text, so
- * its rails stopped at the picture's foot: an inline-block spans the picture and keeps its line. One that follows it
- * stands on that line, inside its rails, and would draw its own between the two pictures.
+ * its rails stopped at the picture's foot: an inline-block spans the picture and keeps its line. One that stands on the
+ * line of the one before it (description.ts `markBeside`) is inside that one's rails, and its own would stand between.
  */
 [data-geld-desc] > a[data-geld-desc-depth] {
   display: inline-block;
 }
 
-[data-geld-desc] > a[data-geld-desc-depth] + a[data-geld-desc-depth]::before {
+[data-geld-desc] > a[data-geld-desc-depth][data-geld-desc-beside]::before {
   content: none;
 }
 
 /*
- * A block that scrolls of itself (a bare `<pre>`, whose lines must scroll) is left unpositioned, so it is not its
- * rails' containing block and neither clips them nor scrolls them. They stand at their static place, the block's
- * content corner, taken back by its padding and offset, and run as tall as description.ts `measureScrollers` read.
+ * A block that scrolls of itself (a bare `<pre>`) would clip its rails and scroll the run past its bottom, so Geld's
+ * carrier just before it draws them (description.ts `dressCarrier`, placed by `measureCarriers`). The cut's clip keeps
+ * the block's own, which Show full description carries.
  */
-[data-geld-desc] > [data-geld-desc-depth][data-geld-desc-scroller]:not([data-geld-desc-cut-edge]) {
-  position: static;
+[data-geld-desc] > [data-geld-desc-scroller]:not([data-geld-desc-cut-edge])::before {
+  content: none;
 }
 
-[data-geld-desc] > [data-geld-desc-depth][data-geld-desc-scroller]:not([data-geld-desc-cut-edge])::before {
-  top: auto;
-  bottom: auto;
-  left: auto;
-  height: calc(var(--geld-desc-scroller-height, 0px) + var(--geld-desc-after) + 1px);
-  margin-top: calc(-1 * var(--geld-desc-inset-top, 0px));
-  margin-left: calc(-1 * var(--geld-desc-inset-left, 0px) - var(--geld-desc-depth, 0) * 24px - var(--geld-desc-edge, 0px));
+.geld-desc-carrier {
+  display: none;
+}
+
+[data-geld-desc] > .geld-desc-carrier:has(+ [data-geld-desc-scroller]:not([hidden], [data-geld-desc-cut-edge])) {
+  display: block;
+  position: relative;
+  height: 0;
+  margin: 0 !important;
+  padding: 0;
+  border: 0;
+}
+
+[data-geld-desc-agents] > .geld-desc-carrier[data-geld-desc-carrier-agent] {
+  top: var(--geld-desc-drop, 0px);
+}
+
+[data-geld-desc] > .geld-desc-carrier::before {
+  content: '';
+  position: absolute;
+  top: var(--geld-desc-carry-top, 0px);
+  left: 0;
+  width: calc((var(--geld-desc-depth, 0) + 1) * 24px);
+  height: calc(var(--geld-desc-carry-height, 0px) + var(--geld-desc-after) + 1px);
+  background-image: var(--geld-desc-rails, none);
+  background-position: var(--geld-desc-rail-pos, 0 0);
+  background-size: var(--geld-desc-rail-size, auto);
+  background-repeat: no-repeat;
+  pointer-events: none;
 }
 
 [data-geld-desc-heading] {
