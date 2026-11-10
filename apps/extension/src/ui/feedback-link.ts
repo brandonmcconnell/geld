@@ -1,6 +1,7 @@
 import { browser } from 'wxt/browser';
 import type { PageKind } from '../github/page';
 import { describePage } from '../github/page';
+import type { FeedbackOpenMessage } from '../lib/messages';
 
 /** "Chrome 148 on macOS", from the user agent, for the form's Browser field; blank when it cannot be told. */
 export function describeBrowser(userAgent: string, platform: string): string {
@@ -48,7 +49,11 @@ export function feedbackPageUrl(opening: FeedbackOpening = {}): string {
   return url.toString();
 }
 
+/** Bring the open feedback page forward when there is one, so two tabs never share and clear one draft; else open it. */
 export async function openFeedback(opening: FeedbackOpening = {}): Promise<void> {
+  const message: FeedbackOpenMessage = { type: 'geld:feedback-open', ...opening };
+  const answered: unknown = await browser.runtime.sendMessage(message).catch(() => false);
+  if (answered === true) return;
   await browser.tabs.create({ url: feedbackPageUrl(opening) });
 }
 

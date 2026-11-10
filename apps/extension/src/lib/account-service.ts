@@ -6,7 +6,7 @@ import { browser } from 'wxt/browser';
 import type { AuthFlowState, GitHubAccount, RemoteInvalid, SyncState } from './account';
 import { accountItem, authFlowItem, effectiveClientId, EMPTY_SYNC_STATE, syncStateItem, tokensOf, withTokens } from './account';
 import { loadCatalog } from './catalog';
-import { FEEDBACK_REPO, parseCreatedIssue, refusalMessage } from './feedback';
+import { FEEDBACK_REPO, ISSUE_BODY_LIMIT, parseCreatedIssue, refusalMessage } from './feedback';
 import type { AccountActionMessage, AccountActionResponse, FeedbackSubmitMessage, FeedbackSubmitResponse } from './messages';
 import { settingsItem } from './storage';
 
@@ -380,6 +380,7 @@ async function submitFeedback(message: FeedbackSubmitMessage): Promise<FeedbackS
   // An OAuth App token only carries the gist scope.
   if (account.auth !== 'app') return refuse('Sign in with GitHub again to send feedback.');
   if (message.title.trim() === '' || message.body.trim() === '') return refuse('Add a title and some details first.');
+  if (message.body.length > ISSUE_BODY_LIMIT) return refuse('The details are too long for one GitHub issue. Shorten them and send again.');
   try {
     return await withToken((token) => createIssue(token, message.title, message.body));
   } catch (error) {

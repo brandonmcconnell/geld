@@ -192,6 +192,13 @@ export interface FeedbackSubmitMessage {
   readonly body: string;
 }
 
+/** A Feedback link → an open feedback page: come to the front with this context. Answered `true` by the page. */
+export interface FeedbackOpenMessage {
+  readonly type: 'geld:feedback-open';
+  readonly tabId?: number;
+  readonly diagnostics?: boolean;
+}
+
 export type FeedbackSubmitResponse =
   | { readonly ok: true; readonly number: number; readonly url: string }
   | { readonly ok: false; readonly message: string };
@@ -330,6 +337,15 @@ export function isCatalogCheckMessage(value: unknown): value is CatalogCheckMess
 
 export function isFeedbackSubmitMessage(value: unknown): value is FeedbackSubmitMessage {
   return isRecord(value) && value.type === 'geld:feedback-submit' && typeof value.title === 'string' && typeof value.body === 'string';
+}
+
+export function isFeedbackOpenMessage(value: unknown): value is FeedbackOpenMessage {
+  return (
+    isRecord(value) &&
+    value.type === 'geld:feedback-open' &&
+    (value.tabId === undefined || typeof value.tabId === 'number') &&
+    (value.diagnostics === undefined || typeof value.diagnostics === 'boolean')
+  );
 }
 
 export function isFeedbackSubmitResponse(value: unknown): value is FeedbackSubmitResponse {

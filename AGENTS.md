@@ -1145,12 +1145,15 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The preview shows the exact title and body (`feedbackIssue`), rendered by default and as Markdown source behind "Show markdown".
   It is rendered on the device (`src/ui/issue-markdown.ts`: `marked` with GitHub-flavoured Markdown and line breaks, then DOMPurify), never by GitHub's Markdown API, so the draft goes nowhere before it is sent.
   happy-dom cannot run DOMPurify faithfully (it keeps event handlers and `<script>`), so the sanitizer is checked in Chrome, not in the unit tests.
-  A required checkbox names the account and the repository, and the draft is kept in `local:feedbackDraft` until it is sent, so closing the tab or signing in loses nothing.
+  A required checkbox names the account and the repository, and the draft is kept in `local:feedbackDraft` until it is sent, saved on every edit, so closing the tab or signing in loses nothing.
+  There is one feedback tab: a Feedback link first asks an open feedback page to come forward (`geld:feedback-open`, answered `true`, carrying the link's tab and diagnostics), and opens a new tab only when nothing answers.
+  Sending clears the draft only when the stored one is still the draft that was sent, and the title, details and kind are read-only while the request is out.
   The background opens the issue on `brandonmcconnell/geld` with the reader's own Geld App user token (`submitFeedback` in `account-service.ts`, `POST /repos/…/issues` through `withToken`), so it is the reader's issue, marked by GitHub as made with the App, and no bot account posts on anyone's behalf.
   That needs the reader signed in with GitHub (the same device flow as settings sync, which signing in also turns on) and the Geld App installed on Geld's own repository, which user tokens can only write to where the App is installed;
   without it GitHub answers "Resource not accessible by integration" and the form says the App cannot open issues there yet.
   Only `feedback.html` may send `geld:feedback-submit`: the background checks `sender.url`, so a content script on a GitHub page can never post as the reader.
   A long report loses its oldest lines to fit GitHub's 65,536-character body, and the reader's words are never cut.
+  When the words alone run over (`FeedbackIssue.overBy`), the form says by how much and sends nothing, and the background refuses such a body too.
   Images are not supported: GitHub has no API for issue attachments.
 - **Test files read as their titles** (`testOutline`, on by default, and `testSyntaxes`, the reader's own declarations;
   the "Test files" card on the options page and geld.sh, not the popup;

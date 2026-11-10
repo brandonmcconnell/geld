@@ -47,6 +47,8 @@ export type ContextChoice = Readonly<Record<ContextKey, boolean>>;
 export interface FeedbackIssue {
   readonly title: string;
   readonly body: string;
+  /** How far the body runs past GitHub's limit when the reader's own words do not fit; 0 when it fits. */
+  readonly overBy: number;
 }
 
 export function parseDraft(value: unknown): FeedbackDraft | null {
@@ -98,7 +100,8 @@ function inline(value: string): string {
 /**
  * The issue as it will be opened: the reader's words, then what they chose to
  * attach. A long diagnostics report loses its oldest lines so the body fits
- * GitHub's limit, and the reader's own words are never cut.
+ * GitHub's limit. The reader's own words are never cut: when they alone do not
+ * fit, `overBy` says by how much and the form refuses to send.
  */
 export function feedbackIssue(draft: FeedbackDraft, context: FeedbackContext, choice: ContextChoice): FeedbackIssue {
   const prefix = FEEDBACK_KINDS.find((kind) => kind.id === draft.kind)?.prefix ?? 'Feedback';
@@ -117,7 +120,8 @@ export function feedbackIssue(draft: FeedbackDraft, context: FeedbackContext, ch
     const block = whole.length <= room ? whole : room > 200 ? diagnosticsBlock(trimReport(context.diagnostics, room)) : null;
     if (block !== null) parts.push(block);
   }
-  return { title, body: [...parts, footer].join('\n\n').slice(0, ISSUE_BODY_LIMIT) };
+  const body = [...parts, footer].join('\n\n');
+  return { title, body, overBy: Math.max(0, body.length - ISSUE_BODY_LIMIT) };
 }
 
 export interface CreatedIssue {

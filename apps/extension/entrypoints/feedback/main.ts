@@ -7,8 +7,8 @@ import { formatDiagnostics, readDiagnostics } from '../../src/lib/diagnostics';
 import { installErrorCapture } from '../../src/lib/error-capture';
 import type { ContextChoice, ContextKey, FeedbackContext, FeedbackDraft } from '../../src/lib/feedback';
 import { draftIsEmpty, EMPTY_DRAFT, FEEDBACK_KINDS, FEEDBACK_REPO, feedbackIssue, parseDraft } from '../../src/lib/feedback';
-import type { FeedbackSubmitMessage } from '../../src/lib/messages';
-import { isFeedbackSubmitResponse } from '../../src/lib/messages';
+import type { FeedbackOpenMessage, FeedbackSubmitMessage } from '../../src/lib/messages';
+import { isFeedbackOpenMessage, isFeedbackSubmitResponse } from '../../src/lib/messages';
 import { collectTabPerf } from '../../src/lib/perf-report';
 import { settingsItem } from '../../src/lib/storage';
 import { mountAccountWidget } from '../../src/ui/account-widget';
@@ -50,6 +50,8 @@ let showMarkdown = false;
 let previewFrame: number | null = null;
 let context: FeedbackContext = { environment: null, where: null, page: null, diagnostics: null };
 const choice: Record<ContextKey, boolean> = { environment: true, where: true, page: false, diagnostics: query.get('diagnostics') === '1' };
+const tabParam = Number(query.get('tab') ?? NaN);
+let openingTab: number | null = Number.isInteger(tabParam) && tabParam >= 0 ? tabParam : null;
 
 function say(message: string, tone: 'success' | 'error' | null = null): void {
   status.textContent = message;
@@ -151,6 +153,10 @@ previewMode.addEventListener('click', () => {
 
 function renderAccount(): void {
   const ready = account !== null && account.auth === 'app';
+  // Locked while sending: the request already holds the words, so a correction typed now would be lost.
+  titleInput.readOnly = sending;
+  textInput.readOnly = sending;
+  for (const radio of kinds.querySelectorAll('input')) radio.disabled = sending;
   consent.disabled = !ready || sending;
   if (!ready) consent.checked = false;
   consentWords.textContent = ready
@@ -166,16 +172,15 @@ function renderSend(): void {
   send.textContent = sending ? 'Sending…' : 'Send feedback';
 }
 
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
-
 function update(patch: Partial<FeedbackDraft>): void {
   draft = { ...draft, ...patch };
   renderPreview();
-  if (saveTimer !== null) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    void draftItem.setValue(draftIsEmpty(draft) ? null : draft);
-  }, 300);
+  // Saved on every edit, not after a pause: a tab closed during the pause would lose its last words.
+  void draftItem.setValue(draftIsEmpty(draft) ? null : draft);
+}
+
+function sameDraft(a: FeedbackDraft | null, b: FeedbackDraft): boolean {
+  return a !== null && a.kind === b.kind && a.title === b.title && a.text === b.text;
 }
 
 titleInput.addEventListener('input', () => update({ title: titleInput.value }));
@@ -204,6 +209,12 @@ async function submit(): Promise<void> {
     return;
   }
   const issue = feedbackIssue(draft, context, currentChoice());
+  if (issue.overBy > 0) {
+    say(`That is ${issue.overBy.toLocaleString()} characters more than one GitHub issue can hold. Shorten the details to send it.`, 'error');
+    textInput.focus();
+    return;
+  }
+  const sentDraft = draft;
   sending = true;
   renderAccount();
   say('Opening the issue on GitHub…');
@@ -216,9 +227,8 @@ async function submit(): Promise<void> {
   }
   sending = false;
   if (isFeedbackSubmitResponse(answer) && answer.ok) {
-    if (saveTimer !== null) clearTimeout(saveTimer);
-    saveTimer = null;
-    await draftItem.setValue(null);
+    // Another feedback tab may have saved different words since: only the draft that was sent is cleared.
+    if (sameDraft(parseDraft(await draftItem.getValue()), sentDraft)) await draftItem.setValue(null);
     sentLink.href = answer.url;
     sentLink.textContent = `Open issue #${answer.number}`;
     form.hidden = true;
@@ -232,7 +242,7 @@ async function submit(): Promise<void> {
   renderAccount();
 }
 
-again.addEventListener('click', () => {
+function startOver(): void {
   draft = EMPTY_DRAFT;
   titleInput.value = '';
   textInput.value = '';
@@ -243,13 +253,34 @@ again.addEventListener('click', () => {
   renderPreview();
   renderAccount();
   titleInput.focus();
+}
+
+again.addEventListener('click', startOver);
+
+/** Another Feedback link was followed while this page is open: come to the front with that context instead of a second tab. */
+async function reopen(opening: FeedbackOpenMessage): Promise<void> {
+  const tab = await browser.tabs.getCurrent();
+  if (tab?.id !== undefined) await browser.tabs.update(tab.id, { active: true });
+  if (tab?.windowId !== undefined) await browser.windows.update(tab.windowId, { focused: true });
+  if (!sent.hidden) startOver();
+  if (opening.tabId !== undefined) openingTab = opening.tabId;
+  if (opening.diagnostics === true) choice.diagnostics = true;
+  context = await gatherContext();
+  renderChoices();
+  renderPreview();
+}
+
+browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+  if (!isFeedbackOpenMessage(message)) return undefined;
+  sendResponse(true);
+  void reopen(message);
+  return undefined;
 });
 
 async function pageOfTab(hosts: readonly string[]): Promise<URL | null> {
-  const id = Number(query.get('tab'));
-  if (!Number.isInteger(id) || id < 0) return null;
+  if (openingTab === null) return null;
   try {
-    const tab = await browser.tabs.get(id);
+    const tab = await browser.tabs.get(openingTab);
     if (tab.url === undefined) return null;
     const url = new URL(tab.url);
     return hosts.includes(url.hostname) ? url : null;

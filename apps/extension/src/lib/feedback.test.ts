@@ -53,6 +53,15 @@ describe('feedbackIssue', () => {
     expect(body).not.toContain('line 0 ');
     expect(body.endsWith('</sub>')).toBe(true);
   });
+
+  it('never cuts the reader\'s words, and says how far they run over instead', () => {
+    const text = 'z'.repeat(ISSUE_BODY_LIMIT + 10);
+    const issue = feedbackIssue({ kind: 'bug', title: 't', text }, CONTEXT, ALL);
+    expect(issue.body).toContain(text);
+    expect(issue.body).not.toContain('<details>');
+    expect(issue.overBy).toBe(issue.body.length - ISSUE_BODY_LIMIT);
+    expect(feedbackIssue({ kind: 'bug', title: 't', text: 'short' }, CONTEXT, ALL).overBy).toBe(0);
+  });
 });
 
 describe('parseDraft', () => {
