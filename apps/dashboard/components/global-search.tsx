@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Dialog } from '@base-ui/react/dialog';
-import { pullPath, repositoryPath } from '@geld/domain';
+import { pullPath, repositoryPath, organisationPath } from '@geld/domain';
 import { useDashboard } from '@/lib/dashboard-context';
 import { useRepositoryOptions } from '@/lib/use-repository-options';
 import { Search, X } from './icons';
@@ -32,6 +32,9 @@ export function GlobalSearch() {
     { label: 'Account', href: '/settings/account', type: 'Settings' },
     { label: 'AI providers', href: '/settings/providers', type: 'Settings' },
     ...teams.map((team) => ({ label: team.name, href: `/teams/${team.id}`, type: 'Team' })),
+    ...[...new Map(repos.repositories.map((repo) => [organisationPath(repo.ref), repo.ref])).values()].map(
+      (ref) => ({ label: ref.owner, href: organisationPath(ref), type: 'Organization' }),
+    ),
     ...repos.repositories.map((repo) => ({
       label: `${repo.ref.owner}/${repo.ref.repo}`,
       href: repositoryPath(repo.ref),

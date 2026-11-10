@@ -13,7 +13,7 @@ import { GlobalSearch } from './global-search';
 import { Plus } from './icons';
 import { SidebarTrigger, useSidebar } from './ui/sidebar';
 
-export function WorkspaceHeader() {
+export function WorkspaceHeader({ search = true }: { readonly search?: boolean }) {
   const pathname = usePathname();
   const route = parseDashboardPathname(pathname);
   const { assistantOpen, setAssistantOpen } = useDashboard();
@@ -43,7 +43,7 @@ export function WorkspaceHeader() {
     <header className="workspace-header" aria-label="Workspace toolbar">
       <div className="workspace-header-start">
         {(isMobile || !open) && <SidebarTrigger className="workspace-sidebar-trigger" />}
-        <GlobalSearch />
+        {search && <GlobalSearch />}
         <RepositoryPicker />
       </div>
       {queue ? (

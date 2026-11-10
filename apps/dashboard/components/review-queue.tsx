@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
   ArrowDownWideNarrow,
   ChevronDown,
@@ -94,8 +95,10 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
         const rightSize = right ? right.essential.additions + right.essential.deletions : Infinity;
         if (leftSize !== rightSize) return leftSize < rightSize ? -1 : 1;
       }
-      return Number(stars.includes(pullPath(b.ref))) - Number(stars.includes(pullPath(a.ref))) ||
-        b.updatedAt.localeCompare(a.updatedAt);
+      return (
+        Number(stars.includes(pullPath(b.ref))) - Number(stars.includes(pullPath(a.ref))) ||
+        b.updatedAt.localeCompare(a.updatedAt)
+      );
     });
   const visible = filtered.slice(0, limit);
   const visiblePaths = visible.map((pull) => pullPath(pull.ref));
@@ -320,7 +323,8 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
                 />
                 <div className="pull-row-content">
                   <Link href={path} className="pull-title">
-                    {pull.title}
+                    <span className="row-pr-number">#{pull.ref.number}</span>
+                    <span>{pull.title}</span>
                   </Link>
                   <div className="pull-row-meta">
                     <span>
@@ -329,11 +333,22 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
                     <span>#{pull.ref.number}</span>
                     <span>by {pull.author}</span>
                     {pull.draft && <span className="draft-badge">Draft</span>}
-                    {pull.labels.slice(0, 1).map((label) => (
+                    {pull.labels.slice(0, 3).map((label) => (
                       <span className="label-badge" key={label}>
                         {label}
                       </span>
                     ))}
+                    {pull.authorAvatar && (
+                      <Image
+                        width={18}
+                        height={18}
+                        unoptimized
+                        className="row-author-avatar"
+                        src={pull.authorAvatar}
+                        alt={pull.author}
+                        title={pull.author}
+                      />
+                    )}
                     <QueueDigestSummary digest={insights[path]?.digest} href={path} />
                   </div>
                 </div>
