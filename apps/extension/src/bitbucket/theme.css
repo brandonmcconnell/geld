@@ -108,6 +108,7 @@ html[data-geld-provider="bitbucket"] tr[data-qa="pull-request-row"] div:has(> di
 ::highlight(geld-bitbucket-shell-title) { color: var(--ds-text-code-functions); }
 ::highlight(geld-bitbucket-shell-number), ::highlight(geld-bitbucket-shell-literal) { color: var(--ds-text-code-numbers); }
 ::highlight(geld-bitbucket-shell-string) { color: var(--ds-text-accent-orange, var(--ds-text-code-strings)); }
-::highlight(geld-bitbucket-shell-comment), ::highlight(geld-bitbucket-shell-meta) { color: var(--ds-text-code-comments); }
+::highlight(geld-bitbucket-shell-comment) { color: var(--ds-comment-refreshed, var(--ds-text-code-comments)); }
+::highlight(geld-bitbucket-shell-meta) { color: var(--ds-text-code-comments); }
 ::highlight(geld-bitbucket-shell-variable) { color: var(--ds-text-accent-blue-bolder, var(--ds-text-code-accent-1)); }
 ::highlight(geld-bitbucket-shell-attr) { color: var(--ds-text-code-tags); }
