@@ -181,3 +181,21 @@ it('watches effective stylesheet media and releases its listener on clear',()=>{
   Object.defineProperty(effective,'matches',{configurable:true,value:true});effective.dispatchEvent(new Event('change'));expect(registry.size).toBeGreaterThan(0);
   syntax.clear();expect(remove).toHaveBeenCalledWith('change',expect.any(Function));effective.dispatchEvent(new Event('change'));expect(registry.size).toBe(0);
 });
+
+it('supplies missing TypeScript tokens without changing native source nodes', () => {
+  const f = fixture('export const answer: number = 42;\n', 'src/answer.ts');theme();
+  const text = f.text.firstChild;const before = f.text.textContent;run();
+  expect(texts('keyword')).toContain('export');expect(texts('number')).toContain('42');
+  expect(f.text.firstChild).toBe(text);expect(f.text.textContent).toBe(before);expect(fetch).not.toHaveBeenCalled();
+});
+it('retires the plain-script fallback when native syntax tokens arrive', () => {
+  const f = fixture('export const answer = 42;\n', 'src/answer.js');theme();const syntax = run();
+  expect(registry.size).toBeGreaterThan(0);
+  const token = document.createElement('span');token.className = 'k';token.textContent = f.text.textContent;f.text.replaceChildren(token);
+  syntax.apply(required(readGitLabDiff(document)));expect(registry.size).toBe(0);
+});
+
+it('does not continue a JavaScript token across an unrendered hunk gap', () => {
+  fixture('/* incomplete comment\nexport const value = 1;', 'src/value.js', { gap: 1 });theme();run();
+  expect(texts('keyword')).toContain('export');
+});

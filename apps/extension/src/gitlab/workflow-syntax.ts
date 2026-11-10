@@ -1,6 +1,6 @@
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import type { Scalar, YAMLMap } from 'yaml';
-import { SHELL_SCOPES, paintBlock, sameLines, textNodes } from '../lib/shell-highlight';
+import { SHELL_SCOPES, contiguousLines, paintBlock, sameLines, scriptLanguage, textNodes } from '../lib/shell-highlight';
 import type { ShellLine, ShellRanges, SourceText } from '../lib/shell-highlight';
 import { providerFullSha, providerNativeSourceElement, providerSourcePath } from '../providers/source-facts';
 import type { ProviderDiffEntry, ProviderDiffSyntax, ProviderDiffView } from '../providers/types';
@@ -14,6 +14,7 @@ interface Painted { readonly beforeCount: number; readonly lines: readonly Shell
 const reserved = new Set(['include', 'stages', 'types', 'variables', 'workflow', 'default', 'spec', 'image', 'services', 'cache', 'before_script', 'after_script']);
 let next = 0;
 
+function eligiblePath(value: unknown): boolean { return ciPath(value) || scriptLanguage(value) !== null; }
 function ciPath(value: unknown): boolean { return providerSourcePath(value) && value.split('/').at(-1) === '.gitlab-ci.yml'; }
 function key(value: unknown): string | null { return isScalar(value) && typeof value.value === 'string' ? value.value : null; }
 function field(map: YAMLMap, name: string): unknown { return map.items.find((pair) => key(pair.key) === name)?.value; }
@@ -123,7 +124,7 @@ function readCapture(view: ProviderDiffView, entry: ProviderDiffEntry): Capture 
   if (witness === null || witness.subject.repository.provider !== 'gitlab' || witness.repository.origin !== 'https://gitlab.com' || witness.path !== entry.path
     || !record(data?.diff_refs) || !providerFullSha(data.diff_refs.head_sha) || !providerFullSha(data.diff_refs.base_sha) || !providerFullSha(data.diff_refs.start_sha)
     || data.diff_refs.head_sha.toLowerCase() !== witness.headSha || !providerNativeSourceElement(entry.root)) return null;
-  const before = ciPath(data.old_path) ? linesOf(entry, 'old') : [], after = ciPath(entry.path) ? linesOf(entry, 'new') : [];
+  const before = eligiblePath(data.old_path) ? linesOf(entry, 'old') : [], after = eligiblePath(entry.path) ? linesOf(entry, 'new') : [];
   if (before === null || after === null || before.length + after.length === 0) return null;
   const tables = [...entry.root.querySelectorAll<HTMLTableElement>('table.rd-text-view-root.code-syntax-highlight-theme')].filter(providerNativeSourceElement);
   const table = tables[0], text = table?.querySelector<HTMLElement>('.rd-line-text');
@@ -160,17 +161,19 @@ export function createGitLabWorkflowSyntax(): ProviderDiffSyntax {
       current = view;watch(view.container.ownerDocument);
       const roots = new Set<HTMLElement>();let changed = false;
       for (const entry of view.entries) {
-        if (!ciPath(entry.path) && !ciPath(jsonAttribute(entry.root, 'data-file-data')?.old_path)) continue;
+        if (!eligiblePath(entry.path) && !eligiblePath(jsonAttribute(entry.root, 'data-file-data')?.old_path)) continue;
         const source = capture(view, entry);
         if (source === null) continue;
-        const before = programs(source.before), after = programs(source.after);if (before.length + after.length === 0) continue;
+        const oldLanguage = scriptLanguage(jsonAttribute(entry.root, 'data-file-data')?.old_path), language = scriptLanguage(entry.path);
+        if ((oldLanguage !== null || language !== null) && (entry.root.querySelector('.rd-line-text span[class]') !== null || [...source.before, ...source.after].reduce((size, line) => size + line.text.length, 0) > 100_000)) continue;
+        const before = oldLanguage === null ? programs(source.before) : contiguousLines(source.before), after = language === null ? programs(source.after) : contiguousLines(source.after);if (before.length + after.length === 0) continue;
         const palette = readGitLabShellPalette(source.table, source.text);if (palette === null) continue;
         const fresh = capture(view, entry);if (fresh === null || fresh.identity !== source.identity || !sameLines(source.before, fresh.before) || !sameLines(source.after, fresh.after)) continue;
         roots.add(entry.root);const lines = [...source.before, ...source.after], signature = JSON.stringify(palette), cached = painted.get(entry.root);
         if (cached !== undefined && cached.identity === source.identity && cached.palette === signature && cached.beforeCount === source.before.length && sameLines(cached.lines, lines)) continue;
         remove(entry.root);const ranges: ShellRanges = new Map(), skipped = new Set(source.after.flatMap((line) => line.nodes.map((part) => part.node)));
-        for (const program of before) paintBlock(program, ranges, skipped);
-        for (const program of after) paintBlock(program, ranges, new Set());
+        for (const program of before) paintBlock(program, ranges, skipped, oldLanguage ?? 'bash');
+        for (const program of after) paintBlock(program, ranges, new Set(), language ?? 'bash');
         const names: string[] = [], rules: string[] = [], id = next++;
         for (const scope of SHELL_SCOPES) {
           const values = ranges.get(scope);if (values === undefined || values.length === 0) continue;

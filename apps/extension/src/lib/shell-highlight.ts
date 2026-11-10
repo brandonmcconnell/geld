@@ -1,7 +1,27 @@
 import hljs from 'highlight.js/lib/core';
 import bash from 'highlight.js/lib/languages/bash';
+import javascript from 'highlight.js/lib/languages/javascript';
+import typescript from 'highlight.js/lib/languages/typescript';
+import xml from 'highlight.js/lib/languages/xml';
 
 hljs.registerLanguage('bash', bash);
+hljs.registerLanguage('javascript', javascript);
+hljs.registerLanguage('typescript', typescript);
+hljs.registerLanguage('xml', xml);
+
+export function scriptLanguage(path: unknown): 'javascript' | 'typescript' | null {
+  return typeof path !== 'string' ? null : /\.(?:ts|tsx|mts|cts)$/i.test(path) ? 'typescript' : /\.(?:js|jsx|mjs|cjs)$/i.test(path) ? 'javascript' : null;
+}
+
+export function contiguousLines(lines: readonly ShellLine[]): readonly (readonly ShellLine[])[] {
+  const groups: ShellLine[][] = [];
+  for (const line of lines) {
+    let group = groups.at(-1);
+    if (group === undefined || group.at(-1)?.number !== line.number - 1) { group = [];groups.push(group); }
+    group.push(line);
+  }
+  return groups;
+}
 
 export const SHELL_SCOPES = ['plain', 'keyword', 'built_in', 'literal', 'number', 'string', 'comment', 'variable', 'subst', 'title', 'meta', 'attr'] as const;
 export type ShellScope = (typeof SHELL_SCOPES)[number];
@@ -33,12 +53,12 @@ function scopeOf(node: Node): ShellScope {
   return 'plain';
 }
 
-export function paintBlock(lines: readonly ShellLine[], ranges: ShellRanges, skipNodes: ReadonlySet<Text>): void {
+export function paintBlock(lines: readonly ShellLine[], ranges: ShellRanges, skipNodes: ReadonlySet<Text>, language: 'bash' | 'javascript' | 'typescript' = 'bash'): void {
   const source = lines.map((line) => line.text).join('\n');
   if (source.length > 100_000) return;
   // Only highlight.js's escaped output is parsed in a detached template. Native source nodes stay untouched.
   const template = document.createElement('template');
-  template.innerHTML = hljs.highlight(source, { language: 'bash', ignoreIllegals: true }).value;
+  template.innerHTML = hljs.highlight(source, { language, ignoreIllegals: true }).value;
   const sourceNodes: { readonly node: Text; readonly start: number; readonly end: number; readonly offset: number }[] = [];
   let offset = 0;
   for (const line of lines) {
@@ -58,7 +78,7 @@ export function paintBlock(lines: readonly ShellLine[], ranges: ShellRanges, ski
       if (original === undefined || original.start >= end) break;
       const start = Math.max(offset, original.start);
       const stop = Math.min(end, original.end);
-      if (start < stop && !skipNodes.has(original.node)) {
+      if (start < stop && !skipNodes.has(original.node) && (language === 'bash' || scope !== 'plain')) {
         const range = new StaticRange({
           startContainer: original.node, startOffset: original.offset + start - original.start,
           endContainer: original.node, endOffset: original.offset + stop - original.start,
