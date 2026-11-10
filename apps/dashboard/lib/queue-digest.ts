@@ -15,6 +15,7 @@ export function queueDigest(ref: PullRef, head: string, comments: readonly Provi
     state: 'current',
     open: active.length,
     needsReply: active.filter((item) => item.status === 'needs-reply').length,
+    approvedBy: meta.reviewers.filter(reviewer => reviewer.state === 'approved').map(reviewer => reviewer.login),
     approvals: meta.reviewers.filter((reviewer) => reviewer.state === 'approved').length,
     changesRequested: meta.reviewers.filter((reviewer) => reviewer.state === 'changes_requested').length,
     partial: !!meta.truncated,

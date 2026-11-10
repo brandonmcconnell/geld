@@ -171,6 +171,7 @@ let browser;
       .click();
     await shot(page, 'queue-hidden-counts', 'Hidden change counts', group);
     await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Search workspace', exact: true }).click();
     await page.getByRole('button', { name: 'Open a pull request by URL', exact: true }).click();
     await shot(page, 'open-review', 'Open a pull request by URL', group);
     await page.keyboard.press('Escape');

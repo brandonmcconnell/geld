@@ -17,11 +17,12 @@ async function readGET(request: Request): Promise<Response> {
     const client = await providerClient(ref.data.provider, ref.data.host, ref.data.owner);
     const pull = await client.pull(ref.data);
     if (!pull.ok) return json({ error: pull.reason }, 503);
-    const [diff, settings, requests, comments] = await Promise.all([
+    const [diff, settings, requests, comments, threads] = await Promise.all([
       client.diff(ref.data),
       reviewSettings(ref.data),
       client.reviewRequesters?.(ref.data),
       ref.data.provider === 'github' ? client.comments(ref.data).catch(() => null) : null,
+      client.threads?.(ref.data).catch(() => null),
     ]);
     if (!diff.ok) return json({ error: diff.reason }, 503);
     const current = await client.pull(ref.data);
@@ -64,9 +65,26 @@ async function readGET(request: Request): Promise<Response> {
         categories.set(category.id, group);
       }
     }
+    const summary = comments?.ok ? queueDigest(ref.data, pull.value.headSha, comments.value) : null;
+    const unresolvedThreads = threads?.ok
+      ? new Set(threads.value.filter((thread) => !thread.resolved).map((thread) => thread.id)).size
+      : null;
+    const digest =
+      summary ??
+      (threads?.ok
+        ? {
+            state: 'current' as const,
+            open: 0,
+            needsReply: 0,
+            approvals: 0,
+            changesRequested: 0,
+            partial: false,
+            bots: [],
+          }
+        : null);
     return json({
       headSha: pull.value.headSha,
-      digest: comments?.ok ? queueDigest(ref.data, pull.value.headSha, comments.value) : null,
+      digest: digest?.state === 'current' ? { ...digest, unresolvedThreads } : digest,
       essential,
       hidden,
       categories: [...categories.values()],

@@ -226,8 +226,10 @@ async function configure(context, state = {}) {
               ? { state: 'stale' }
               : {
                   state: 'current',
+                  unresolvedThreads: pull.ref.number === 127 ? 0 : 2,
                   open: pull.ref.number === 127 ? 0 : 2,
                   needsReply: pull.ref.number === 128 ? 1 : 0,
+                  approvedBy: pull.ref.number === 124 ? [] : ['sam'],
                   approvals: pull.ref.number === 124 ? 0 : 1,
                   changesRequested: pull.ref.number === 124 ? 1 : 0,
                   partial: !!state.queueDigestPartial,

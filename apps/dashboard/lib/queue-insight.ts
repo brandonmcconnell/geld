@@ -6,6 +6,8 @@ export const queueDigestSchema = z.discriminatedUnion('state', [
     state: z.literal('current'),
     open: z.number().int().nonnegative(),
     needsReply: z.number().int().nonnegative(),
+    unresolvedThreads: z.number().int().nonnegative().nullable().optional(),
+    approvedBy: z.array(z.string()).optional(),
     approvals: z.number().int().nonnegative(),
     changesRequested: z.number().int().nonnegative(),
     partial: z.boolean(),

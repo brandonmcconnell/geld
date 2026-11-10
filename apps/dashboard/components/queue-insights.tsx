@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useDashboard } from '@/lib/dashboard-context';
-import { Check, Flag, RefreshCw } from './icons';
+import { Check, Flag, RefreshCw, MessagesSquare } from './icons';
 import { useEffect, useState } from 'react';
 import { Popover } from '@base-ui/react/popover';
 import type { PullSummary } from '@geld/domain';
@@ -112,6 +112,18 @@ export function ChangeCounts({ insight }: { readonly insight: QueueInsight | nul
   );
 }
 
+function SignalAvatar({ src, name }: { readonly src: string; readonly name: string }) {
+  const [failed, setFailed] = useState(false);
+  return failed ? (
+    <span className="signal-avatar signal-initial" aria-hidden="true">
+      {name.slice(0, 1)}
+    </span>
+  ) : (
+    /* eslint-disable-next-line @next/next/no-img-element */
+    <img className="signal-avatar" src={src} alt="" onError={() => setFailed(true)} />
+  );
+}
+
 export function QueueDigestSummary({
   digest,
   href,
@@ -127,74 +139,68 @@ export function QueueDigestSummary({
         Digest outdated
       </Link>
     );
-  const bots = [...digest.bots].sort((a, b) => {
-    const rank = { failed: 0, findings: 1, running: 2, earlier: 3, skipped: 4, unknown: 5, clean: 6 };
-    return rank[a.verdict] - rank[b.verdict];
-  });
-  if (!digest.open && !digest.approvals && !digest.changesRequested && !bots.length) return null;
-  const prefix = digest.partial ? '≥' : '';
   return (
     <span className="queue-digest-summary" role="group" aria-label="Review digest">
-      {digest.open > 0 && (
-        <Link href={href} className="queue-digest-link" data-tone="attention">
-          <Flag size={12} />
-          {prefix}
-          {digest.open} open{digest.needsReply > 0 ? ` · ${prefix}${digest.needsReply} needs reply` : ''}
-        </Link>
-      )}
-      {digest.changesRequested > 0 ? (
-        <Link href={href} className="queue-digest-link" data-tone="attention">
-          Changes requested
-        </Link>
-      ) : digest.approvals > 0 ? (
-        <Link
-          href={href}
-          className="queue-digest-link"
-          data-tone="success"
-          data-mobile-secondary={digest.open > 0 || undefined}
+      {(digest.approvedBy ?? []).map((login) => (
+        <span
+          className="review-signal"
+          key={login}
+          title={`${login} approved`}
+          aria-label={`${login} approved`}
         >
-          <Check size={12} />
-          {digest.approvals} {digest.approvals === 1 ? 'approval' : 'approvals'}
-        </Link>
-      ) : null}
-      {bots.slice(0, 2).map((bot, index) => (
-        <Link
-          key={bot.id}
-          data-mobile-secondary={(digest.open > 0 && index > 0) || undefined}
-          href={href}
-          className="queue-digest-link"
-          data-tone={
-            bot.verdict === 'clean'
-              ? 'success'
-              : bot.verdict === 'findings' || bot.verdict === 'failed'
-                ? 'attention'
-                : undefined
-          }
-          title={`${bot.name}: ${bot.verdict === 'earlier' ? 'reviewed an earlier commit' : bot.verdict}${bot.score !== undefined ? `, ${bot.score}/5` : ''}`}
-        >
-          {bot.verdict === 'clean' ? (
-            <Check size={12} />
-          ) : bot.verdict === 'running' ? (
-            <RefreshCw size={12} />
-          ) : bot.verdict === 'findings' || bot.verdict === 'failed' ? (
-            <Flag size={12} />
-          ) : null}
-          {bot.name} {bot.score !== undefined ? `${bot.score}/5` : bot.verdict}
-        </Link>
+          <SignalAvatar name={login} src={`https://github.com/${encodeURIComponent(login)}.png?size=40`} />
+          <Check size={11} />
+        </span>
       ))}
-      {digest.open > 0 && bots.length > 1 && (
-        <Link
-          className="queue-digest-more-mobile"
-          href={href}
-          aria-label={`${bots.length - 1} more bot reviews`}
-        >
-          +{bots.length - 1}
-        </Link>
+      {!digest.approvedBy?.length && digest.approvals > 0 && (
+        <span className="review-signal" aria-label={`${digest.approvals} approvals`}>
+          <Check size={11} />
+          {digest.approvals}
+        </span>
       )}
-      {bots.length > 2 && (
-        <Link className="queue-digest-link" data-mobile-secondary={digest.open > 0 || undefined} href={href}>
-          +{bots.length - 2} bots
-        </Link>
+      {digest.changesRequested > 0 && (
+        <span className="review-signal" title="Changes requested">
+          <Flag size={11} />
+          {digest.changesRequested}
+        </span>
+      )}
+      {digest.bots.map((bot) => (
+        <span
+          key={bot.id}
+          className="review-signal"
+          data-tone={bot.verdict}
+          title={`${bot.name}: ${bot.verdict}${bot.score !== undefined ? `, ${bot.score}/5` : ''}`}
+          aria-label={`${bot.name} ${bot.score !== undefined ? `${bot.score}/5` : bot.verdict}`}
+        >
+          {['coderabbit', 'greptile'].includes(bot.id) ? (
+            <SignalAvatar
+              name={bot.name}
+              src={`https://avatars.githubusercontent.com/in/${bot.id === 'coderabbit' ? '347564' : '867647'}?s=40`}
+            />
+          ) : (
+            <span className="signal-avatar signal-initial">{bot.name.slice(0, 1)}</span>
+          )}
+          {bot.score !== undefined && <span>{bot.score}/5</span>}
+          {bot.verdict === 'clean' ? (
+            <Check size={11} />
+          ) : ['findings', 'failed'].includes(bot.verdict) ? (
+            <i className="signal-ember" />
+          ) : bot.verdict === 'running' ? (
+            <RefreshCw size={11} />
+          ) : (
+            <span className="signal-revision">{bot.verdict}</span>
+          )}
+        </span>
+      ))}
+      {digest.unresolvedThreads != null && digest.unresolvedThreads > 0 && (
+        <span
+          className="review-signal signal-threads"
+          aria-label={`${digest.unresolvedThreads} unresolved threads`}
+          title="Unresolved review threads"
+        >
+          <MessagesSquare size={13} />
+          {digest.unresolvedThreads}
+        </span>
       )}
     </span>
   );

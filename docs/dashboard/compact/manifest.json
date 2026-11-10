@@ -1,0 +1,287 @@
+[
+  {
+    "group": "desktop",
+    "name": "queue",
+    "file": "desktop-queue.png"
+  },
+  {
+    "group": "desktop",
+    "name": "repositories",
+    "file": "desktop-repositories.png"
+  },
+  {
+    "group": "desktop",
+    "name": "search",
+    "file": "desktop-search.png"
+  },
+  {
+    "group": "desktop",
+    "name": "search-empty",
+    "file": "desktop-search-empty.png"
+  },
+  {
+    "group": "desktop",
+    "name": "organization",
+    "file": "desktop-organization.png"
+  },
+  {
+    "group": "desktop",
+    "name": "providers",
+    "file": "desktop-providers.png"
+  },
+  {
+    "group": "desktop",
+    "name": "provider-dialog",
+    "file": "desktop-provider-dialog.png"
+  },
+  {
+    "group": "desktop",
+    "name": "account",
+    "file": "desktop-account.png"
+  },
+  {
+    "group": "desktop",
+    "name": "billing",
+    "file": "desktop-billing.png"
+  },
+  {
+    "group": "desktop",
+    "name": "models",
+    "file": "desktop-models.png"
+  },
+  {
+    "group": "desktop",
+    "name": "security",
+    "file": "desktop-security.png"
+  },
+  {
+    "group": "desktop",
+    "name": "preferences",
+    "file": "desktop-preferences.png"
+  },
+  {
+    "group": "desktop",
+    "name": "teams",
+    "file": "desktop-teams.png"
+  },
+  {
+    "group": "desktop",
+    "name": "not-found",
+    "file": "desktop-not-found.png"
+  },
+  {
+    "group": "desktop",
+    "name": "review",
+    "file": "desktop-review.png"
+  },
+  {
+    "group": "desktop",
+    "name": "timeline",
+    "file": "desktop-timeline.png"
+  },
+  {
+    "group": "desktop",
+    "name": "diff",
+    "file": "desktop-diff.png"
+  },
+  {
+    "group": "desktop",
+    "name": "guide",
+    "file": "desktop-guide.png"
+  },
+  {
+    "group": "desktop",
+    "name": "sign-in",
+    "file": "desktop-sign-in.png"
+  },
+  {
+    "group": "mobile",
+    "name": "queue",
+    "file": "mobile-queue.png"
+  },
+  {
+    "group": "mobile",
+    "name": "repositories",
+    "file": "mobile-repositories.png"
+  },
+  {
+    "group": "mobile",
+    "name": "search",
+    "file": "mobile-search.png"
+  },
+  {
+    "group": "mobile",
+    "name": "search-empty",
+    "file": "mobile-search-empty.png"
+  },
+  {
+    "group": "mobile",
+    "name": "organization",
+    "file": "mobile-organization.png"
+  },
+  {
+    "group": "mobile",
+    "name": "providers",
+    "file": "mobile-providers.png"
+  },
+  {
+    "group": "mobile",
+    "name": "provider-dialog",
+    "file": "mobile-provider-dialog.png"
+  },
+  {
+    "group": "mobile",
+    "name": "account",
+    "file": "mobile-account.png"
+  },
+  {
+    "group": "mobile",
+    "name": "billing",
+    "file": "mobile-billing.png"
+  },
+  {
+    "group": "mobile",
+    "name": "models",
+    "file": "mobile-models.png"
+  },
+  {
+    "group": "mobile",
+    "name": "security",
+    "file": "mobile-security.png"
+  },
+  {
+    "group": "mobile",
+    "name": "preferences",
+    "file": "mobile-preferences.png"
+  },
+  {
+    "group": "mobile",
+    "name": "teams",
+    "file": "mobile-teams.png"
+  },
+  {
+    "group": "mobile",
+    "name": "not-found",
+    "file": "mobile-not-found.png"
+  },
+  {
+    "group": "mobile",
+    "name": "review",
+    "file": "mobile-review.png"
+  },
+  {
+    "group": "mobile",
+    "name": "timeline",
+    "file": "mobile-timeline.png"
+  },
+  {
+    "group": "mobile",
+    "name": "diff",
+    "file": "mobile-diff.png"
+  },
+  {
+    "group": "mobile",
+    "name": "guide",
+    "file": "mobile-guide.png"
+  },
+  {
+    "group": "mobile",
+    "name": "sign-in",
+    "file": "mobile-sign-in.png"
+  },
+  {
+    "group": "dark",
+    "name": "queue",
+    "file": "dark-queue.png"
+  },
+  {
+    "group": "dark",
+    "name": "repositories",
+    "file": "dark-repositories.png"
+  },
+  {
+    "group": "dark",
+    "name": "search",
+    "file": "dark-search.png"
+  },
+  {
+    "group": "dark",
+    "name": "search-empty",
+    "file": "dark-search-empty.png"
+  },
+  {
+    "group": "dark",
+    "name": "organization",
+    "file": "dark-organization.png"
+  },
+  {
+    "group": "dark",
+    "name": "providers",
+    "file": "dark-providers.png"
+  },
+  {
+    "group": "dark",
+    "name": "provider-dialog",
+    "file": "dark-provider-dialog.png"
+  },
+  {
+    "group": "dark",
+    "name": "account",
+    "file": "dark-account.png"
+  },
+  {
+    "group": "dark",
+    "name": "billing",
+    "file": "dark-billing.png"
+  },
+  {
+    "group": "dark",
+    "name": "models",
+    "file": "dark-models.png"
+  },
+  {
+    "group": "dark",
+    "name": "security",
+    "file": "dark-security.png"
+  },
+  {
+    "group": "dark",
+    "name": "preferences",
+    "file": "dark-preferences.png"
+  },
+  {
+    "group": "dark",
+    "name": "teams",
+    "file": "dark-teams.png"
+  },
+  {
+    "group": "dark",
+    "name": "not-found",
+    "file": "dark-not-found.png"
+  },
+  {
+    "group": "dark",
+    "name": "review",
+    "file": "dark-review.png"
+  },
+  {
+    "group": "dark",
+    "name": "timeline",
+    "file": "dark-timeline.png"
+  },
+  {
+    "group": "dark",
+    "name": "diff",
+    "file": "dark-diff.png"
+  },
+  {
+    "group": "dark",
+    "name": "guide",
+    "file": "dark-guide.png"
+  },
+  {
+    "group": "dark",
+    "name": "sign-in",
+    "file": "dark-sign-in.png"
+  }
+]

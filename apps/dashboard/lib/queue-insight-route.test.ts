@@ -87,6 +87,11 @@ beforeEach(() => {
   fixture.commentsFail = false;
 });
 describe('queue change counts', () => {
+  it('counts unique unresolved provider threads even without a summary comment', async () => {
+    const open = {id: 'thread-1', path: 'src/main.ts', line: 1, resolved: false, outdated: false, comments: []};
+    vi.spyOn(client, 'threads').mockResolvedValueOnce({ok: true, value: [open, open, {...open, id: 'thread-2', resolved: true}]});
+    expect(await (await GET(request())).json()).toMatchObject({digest: {state: 'current', unresolvedThreads: 1}});
+  });
   it('uses the actual matcher and current pending requests without sharing a public cache', async () => {
     const response = await GET(request());
     expect(response.status).toBe(200);
