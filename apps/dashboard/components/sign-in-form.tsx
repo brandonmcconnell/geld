@@ -11,7 +11,7 @@ import { authClient } from '@/lib/auth-client';
 import { Brand } from './brand';
 import { useDashboard } from './app-shell';
 export function SignInForm() {
-  const { session, refresh } = useDashboard();
+  const { session, refresh, loading } = useDashboard();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -122,7 +122,7 @@ export function SignInForm() {
         <Brand />
         <h1>Your next review starts here.</h1>
         <p>Bring your repositories together. Keep the change in focus.</p>
-        {!session.configured && (
+        {!loading && !session.configured && (
           <div className="status-message" role="status">
             Sign-in is not configured in this environment.
           </div>

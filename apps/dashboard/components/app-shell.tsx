@@ -2,7 +2,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { Dialog } from '@base-ui/react/dialog';
 import { cn } from 'cn';
 import {
@@ -58,8 +58,9 @@ export function useDashboard() {
   return useContext(context);
 }
 
-export function AppShell({ children }: { readonly children: ReactNode }) {
+export function AppShell({ children, navigation = true }: { readonly children: ReactNode; readonly navigation?: boolean }) {
   const pathname = usePathname();
+  const router = useRouter();
   const queueOwner = useRef<string | null>(null);
   const route = parseDashboardPathname(pathname);
   const repository = route?.kind === 'repository' ? route.ref : null;
@@ -79,19 +80,23 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
     const abort = new AbortController();
-    fetch('/api/teams', { signal: abort.signal })
-      .then(async (r) => {
-        const value: unknown = await r.json();
-        const parsed = teamListSchema.safeParse(value);
-        if (parsed.success) setTeams(parsed.data.teams);
-      })
-      .catch(() => undefined);
+    if (navigation) {
+      fetch('/api/teams', { signal: abort.signal })
+        .then(async (r) => {
+          const value: unknown = await r.json();
+          const parsed = teamListSchema.safeParse(value);
+          if (parsed.success) setTeams(parsed.data.teams);
+        })
+        .catch(() => undefined);
+    }
     Promise.all([
       fetch('/api/session', { signal: abort.signal }).then(async (r): Promise<unknown> => r.json()),
-      fetch(
-        `/api/queue?team=${encodeURIComponent(activeTeam)}&repository=${encodeURIComponent(repositoryKey)}&cursor=${queuePage}`,
-        { signal: abort.signal },
-      ).then(async (r) => ({ ok: r.ok, status: r.status, data: await r.json() })),
+      navigation
+        ? fetch(
+            `/api/queue?team=${encodeURIComponent(activeTeam)}&repository=${encodeURIComponent(repositoryKey)}&cursor=${queuePage}`,
+            { signal: abort.signal },
+          ).then(async (r) => ({ ok: r.ok, status: r.status, data: await r.json() }))
+        : Promise.resolve({ ok: true, status: 200, data: emptyQueue }),
     ])
       .then(([sessionValue, result]) => {
         if (abort.signal.aborted) return;
@@ -148,7 +153,10 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
         }
       });
     return () => abort.abort();
-  }, [revision, activeTeam, repositoryKey, queuePage, queueKey]);
+  }, [revision, activeTeam, repositoryKey, queuePage, queueKey, navigation]);
+  useEffect(() => {
+    if (navigation && !loading && !error && !session.user && !session.demo) router.replace('/sign-in');
+  }, [navigation, loading, error, session.user, session.demo, router]);
   const data = {
     queue,
     session,
@@ -170,37 +178,46 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   };
   return (
     <context.Provider value={data}>
-      <div className="app-shell" data-collapsed={collapsed}>
-        <a href="#main" className="skip-link">
-          Skip to content
-        </a>
-        <aside className="desktop-sidebar">
-          <Sidebar collapsed={collapsed} onCollapse={() => setCollapsed((value) => !value)} />
-        </aside>
-        <div className="mobile-navigation">
-          <Dialog.Root key={pathname}>
-            <Dialog.Trigger className="icon-button" aria-label="Open navigation">
-              <Menu size={20} />
-            </Dialog.Trigger>
-            <Link href="/" aria-label="Geld home">
-              <Brand compact />
-            </Link>
-            <Dialog.Portal>
-              <Dialog.Backdrop className="dialog-backdrop" />
-              <Dialog.Popup className="mobile-sidebar">
-                <Dialog.Title className="sr-only">Navigation</Dialog.Title>
-                <Dialog.Close className="icon-button mobile-close" aria-label="Close navigation">
-                  <X size={18} />
-                </Dialog.Close>
-                <Sidebar collapsed={false} />
-              </Dialog.Popup>
-            </Dialog.Portal>
-          </Dialog.Root>
-        </div>
-        <main id="main" className="main-content">
-          {children}
+      {!navigation ? (
+        <main id="main">{children}</main>
+      ) : !session.user && !session.demo ? (
+        <main id="main" className="page" role="status">
+          <p>{error ?? 'Loading your workspace...'}</p>
+          {error && <button type="button" className="button" onClick={data.refresh}>Try again</button>}
         </main>
-      </div>
+      ) : (
+        <div className="app-shell" data-collapsed={collapsed}>
+          <a href="#main" className="skip-link">
+            Skip to content
+          </a>
+          <aside className="desktop-sidebar">
+            <Sidebar collapsed={collapsed} onCollapse={() => setCollapsed((value) => !value)} />
+          </aside>
+          <div className="mobile-navigation">
+            <Dialog.Root key={pathname}>
+              <Dialog.Trigger className="icon-button" aria-label="Open navigation">
+                <Menu size={20} />
+              </Dialog.Trigger>
+              <Link href="/" aria-label="Geld home">
+                <Brand compact />
+              </Link>
+              <Dialog.Portal>
+                <Dialog.Backdrop className="dialog-backdrop" />
+                <Dialog.Popup className="mobile-sidebar">
+                  <Dialog.Title className="sr-only">Navigation</Dialog.Title>
+                  <Dialog.Close className="icon-button mobile-close" aria-label="Close navigation">
+                    <X size={18} />
+                  </Dialog.Close>
+                  <Sidebar collapsed={false} />
+                </Dialog.Popup>
+              </Dialog.Portal>
+            </Dialog.Root>
+          </div>
+          <main id="main" className="main-content">
+            {children}
+          </main>
+        </div>
+      )}
     </context.Provider>
   );
 }

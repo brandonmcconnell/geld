@@ -24,6 +24,8 @@ Read the architecture and data inventory in `docs/dashboard` before adding persi
 
 The `dreamthinkbuild/geld-dashboard` Vercel project serves `https://app.geld.sh` behind Vercel Authentication during testing.
 The website's sign-in and settings links remain on the legacy website flow until the dashboard rollout is explicitly approved.
+Workspace pages require an authenticated actor before rendering.
+Sign-in, password recovery and privacy pages remain public and do not show workspace navigation.
 
 Use a new, isolated Neon database for this deployment.
 Connect its pooled URL as `DATABASE_URL` and verify the database is empty before the initial migration.
