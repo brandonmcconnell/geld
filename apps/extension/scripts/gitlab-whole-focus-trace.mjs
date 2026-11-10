@@ -19,7 +19,22 @@ export function standaloneWholeFocusTrace(action = 'read', argument = null) {
     const staticIds = new Set(['content-body', 'diffs', 'js-diffs']);
     const tags = new Set(['HTML', 'BODY', 'DIV', 'SECTION', 'ARTICLE', 'MAIN', 'HEADER', 'FOOTER', 'NAV', 'FORM', 'BUTTON', 'INPUT', 'TEXTAREA', 'A', 'SPAN', 'P', 'UL', 'LI', 'TABLE', 'TBODY', 'THEAD', 'TR', 'TH', 'TD', 'SUMMARY', 'DETAILS', 'DIFF-FILE', 'STREAMING-ELEMENT']);
     const identity = (node) => node instanceof Element ? { objectId: ids(node), tag: tags.has(node.tagName) ? node.tagName : 'OTHER_ELEMENT', domId: staticIds.has(node.id) ? node.id : null, domIdPresent: node.hasAttribute('id'), connected: node.isConnected, owned: node.closest('[data-geld-ui]') !== null, classes: [...node.classList].filter((name) => classes.has(name)).slice(0, 8), sameArmedButton: node === button, sameArmedRow: node === row, sameNativeRoot: node === root } : node instanceof Node ? { objectId: ids(node), nodeType: node.nodeType, connected: node.isConnected } : null;
-    const describe = (node) => node instanceof Node ? { ...identity(node), parent: identity(node.parentNode) } : null;
+    const coordinate = (node) => {
+      if (!(node instanceof Element) || !node.matches('a.rd-line-link[data-line-number]') || !node.isConnected || node.closest('[data-geld-ui],.note,.note-text,.md,form,[contenteditable],dialog') !== null) return null;
+      const latest = current(), cell = node.parentElement, line = cell?.parentElement;
+      if (!latest.file || node.closest('diff-file') !== latest.file || !cell?.matches('td.rd-line-number[data-position]') || !line?.matches('tr.rd-hunk-lines-inline,tr.rd-hunk-lines-parallel') || line.closest('diff-file') !== latest.file || !line.parentElement?.matches('tbody.rd-text-view-content') || !line.parentElement.parentElement?.matches('table.rd-text-view-root')) return null;
+      const values = { old: null, new: null };let side = null;
+      for (const position of ['old', 'new']) {
+        const cells = [...line.children].filter((child) => child.matches(`td.rd-line-number[data-position="${position}"]`));if (cells.length > 1) return null;
+        const held = cells[0];if (!held) continue;const anchors = [...held.querySelectorAll('a[data-line-number]')];if (anchors.length === 0) continue;
+        if (anchors.length !== 1 || anchors[0].parentElement !== held || !anchors[0].matches('a.rd-line-link')) return null;
+        const raw = anchors[0].getAttribute('data-line-number');if (!/^[1-9]\d*$/.test(raw ?? '') || !Number.isSafeInteger(Number(raw))) return null;
+        values[position] = Number(raw);if (anchors[0] === node) side = position;
+      }
+      if (side === null || line.querySelectorAll('td.rd-line-number').length !== [...line.children].filter((child) => child.matches('td.rd-line-number[data-position="old"],td.rd-line-number[data-position="new"]')).length) return null;
+      return { side, old: values.old, new: values.new, rowObjectId: ids(line), cellObjectId: ids(cell), nativeRootObjectId: ids(latest.file), currentRootMember: true, sameArmedRoot: latest.file === root };
+    };
+    const describe = (node) => node instanceof Node ? { ...identity(node), parent: identity(node.parentNode), nativeCodeAnchor: coordinate(node) } : null;
     const chain = (node) => { const nodes = [];for (let at = node; at instanceof Element && nodes.length < DEPTH; at = at.parentElement) nodes.push(at);return nodes; };
     const originalChain = chain(button);let latestChain = [], previousChain = [], watched = new Set(originalChain);
     const watch = (nodes) => { if (nodes.length !== latestChain.length || nodes.some((node, index) => node !== latestChain[index])) { previousChain = latestChain;latestChain = nodes; }watched = new Set([...originalChain, ...latestChain, ...previousChain]);trace.watchedNodes = watched.size;trace.maxWatchedNodes = Math.max(trace.maxWatchedNodes ?? 0, watched.size); };
