@@ -8404,6 +8404,15 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
   pointer-events: none;
 }
 
+/*
+ * A code block with no language is `.snippet-clipboard-content.overflow-auto` around its `pre`: a scroll container
+ * would clip the rails it hangs to its left and scroll the run past its bottom. Its `pre` scrolls on its own, as
+ * GitHub's `.comment-body .highlight` (a block with a language) is already visible. The cut's clip still wins.
+ */
+[data-geld-desc] > [data-geld-desc-depth].snippet-clipboard-content:not([data-geld-desc-cut-edge]) {
+  overflow: visible !important;
+}
+
 [data-geld-desc-heading] {
   cursor: pointer;
 }
