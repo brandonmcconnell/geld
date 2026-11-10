@@ -2962,6 +2962,18 @@ The default raw collector remains pinned to its original exact URL, and no eligi
   Only the owned comment highlight and its declared-model oracle prefer this variable, while meta, native YAML styles, grammar, plain ranges and eligibility retain their prior behavior.
   Current embedded-element availability and enabled comment equality remain unverified, and master-off native Bash evidence does not establish live YAML, dark or complete palette equivalence.
 
+- **First-use Pipeline source qualification is an explicit harness read, not a native full-head witness**: master-disabled native comparison URLs may retain only abbreviated commits and omit the PR pin query.
+  The initial-On case preserves the default passive observer guard and separately records its own public, browser-observed GET IDs, response hashes and purpose.
+  After exact anonymous actor, route, metadata and native comparison HTTP200 receipts, at most four no-store reads resolve the two prefixes and acquire one complete full-reference patch and diffstat page.
+  The independently retained NativeOn210 full base is a rejecting fixture constant for the old-context oracle, never a replacement for resolving the observed base prefix.
+  This qualification happens before selecting the original Pipeline file, so it does not require its lazy article to have mounted first.
+  Every supplied pinned hunk row must match the expanded original native coordinates, kind and text, while extra native context is explicitly checked against the retained native fixture rather than claimed as API raw content.
+  Before the sole master enable, one PR read and two fresh resolutions must preserve the exact tuple after the pristine native-On form has closed.
+  No helper reads occur inside readiness polls, and the seven-read ceiling reserves eight restoration slots plus eight slots for cold product demand under the existing40 cap, full-window admission and immediate native-Save reserve.
+  Standard no-newline EOF annotations follow actual hunk content without adding code rows or advancing line coordinates, and orphan or duplicate annotations decline.
+  Only this case redacts passive response-parser failures to fixed text while retaining error entries and the unchanged identity refusal.
+  These API facts never authorize product PR whole-file source, promote an abbreviated native ref or substitute for the installed product's own counts, source demand and paint.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
