@@ -3477,6 +3477,13 @@ Only matching HTTPS image and attachment destinations inside known description o
 The shared viewer keeps fitting, pointer-centered zoom, dragging, pinch gestures, keyboard controls, failure fallback and focus restoration without imposing GitHub button classes on other providers.
 The public GitLab bot fixture includes a description screenshot, and its installed acceptance opens the real attachment, zooms, closes with Escape and verifies focus returns to the source link.
 
+Provider description shortening shares GitHub's heading-range calculation but preserves the provider's original heading and body nodes.
+The first heading section starts open, nested heading containers start open, leading prose remains visible and later leaf sections fold behind native-themed controls.
+Fold choices survive native body replacement and tab changes within the same review, while new reviews start with independent choices.
+Hidden sections use hidden-until-found and reveal matching ancestors on beforematch, and digest source-reference navigation opens the containing section before focusing the native anchor.
+Long visible descriptions use a 500-pixel cap only after 80 pixels of slack, with resize and image-load updates and an explicit full-description control.
+Description shortening follows its shared setting independently of whether the reader chose the digest, native conversation or combined view.
+
 Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
 Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
 

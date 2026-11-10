@@ -1,0 +1,20 @@
+[data-geld-provider-description-hidden][hidden="until-found"] { content-visibility: hidden; }
+[data-geld-provider-description-capped] { max-height: 500px; overflow: hidden; mask-image: linear-gradient(to bottom, black calc(100% - 96px), transparent); }
+.geld-provider-description-section {
+  display: inline-grid;
+  place-items: center;
+  vertical-align: middle;
+  margin-inline-end: var(--geld-provider-space-2);
+  width: var(--geld-provider-space-6);
+  height: var(--geld-provider-space-6);
+  border: 0;
+  border-radius: var(--geld-provider-radius);
+  padding: 0;
+  background: transparent;
+  color: var(--geld-provider-text-subtle);
+  cursor: pointer;
+}
+.geld-provider-description-section svg { width: 16px; height: 16px; fill: currentColor; }
+.geld-provider-description-section[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.geld-provider-description-section:hover { background: var(--geld-provider-button-hover-bg); color: var(--geld-provider-text); }
+.geld-provider-description-section:focus-visible { outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); box-shadow: var(--geld-provider-focus-ring); }

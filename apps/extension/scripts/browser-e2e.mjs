@@ -2407,7 +2407,22 @@ async function gitLabReferencesEvidence(page, item) {
         text: anchor.textContent, html: anchor.innerHTML, href: anchor.href, project: anchor.getAttribute('data-project'), nativeId: anchor.getAttribute('data-merge-request'), number: anchor.getAttribute('data-iid'), repository: anchor.getAttribute('data-project-path'),
         bounds: { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom, width: bounds.width, height: bounds.height }, attributes: Object.fromEntries([...anchor.attributes].map((attribute) => [attribute.name, attribute.value])) };
     }, parentHandle);
-    progress.nativeBefore = await poll(readNative, (value) => value.hiddenByGeldDescription, 'Real compact settings hide the existing native description reference before reveal', 8000);
+    if (!(await readNative()).hiddenByGeldDescription) {
+      const sectionHandle = await native.evaluateHandle(anchor => {
+        const root = anchor.closest('[data-testid="description-content"] > .md');
+        if (root === null) return null;
+        let block = anchor;while (block.parentElement !== root && block.parentElement !== null) block = block.parentElement;
+        for (let previous = block.previousElementSibling; previous !== null; previous = previous.previousElementSibling) {
+          const button = previous.querySelector('.geld-provider-description-section[aria-expanded="true"]');
+          if (button !== null) return button;
+        }
+        return null;
+      });
+      const section = sectionHandle.asElement();assert.ok(section !== null, 'Native reference has an actual Geld section fold control');
+      try { await section.evaluate(button => button.scrollIntoView({ block: 'center' }));await section.click(); }
+      finally { await discardHandle(sectionHandle); }
+    }
+    progress.nativeBefore = await poll(readNative, (value) => value.hiddenByGeldDescription, 'Real section control folds the existing native description reference before reveal', 8000);
     const button = await page.$(`${rowSelector} button`);assert.ok(button !== null);
     try {
       assert.equal(await button.evaluate((node) => node.textContent), 'View in conversation');

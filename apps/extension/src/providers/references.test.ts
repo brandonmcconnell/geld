@@ -93,7 +93,7 @@ it('keeps canonical navigation and reports unavailable original sources without 
 
 async function conversationFixture() {
   const anchorHtml = '<a class="gfm gfm-merge_request" data-reference-type="merge_request" data-project="56211886" data-project-path="whitebox-aero/insta360" data-iid="34" data-merge-request="488556842" href="/whitebox-aero/insta360/-/merge_requests/34" title="Speed up camera downloads with parallel HTTP range requests">insta360!34 (merged)</a>';
-  document.body.innerHTML = `<div class="issuable-discussion"><main></main><div data-testid="description-content"><div class="md"><p>Summary</p><p>${anchorHtml}</p></div></div></div>`;
+  document.body.innerHTML = `<div class="issuable-discussion"><main></main><div data-testid="description-content"><div class="md"><p>Summary</p><h2>Related work</h2><p>${anchorHtml}</p></div></div></div>`;
   const mount = document.querySelector('main');if (mount === null) throw new Error('Missing host.');
   const reference = document.querySelector<HTMLAnchorElement>('a.gfm');if (reference === null) throw new Error('Missing original.');
   vi.spyOn(reference, 'getBoundingClientRect').mockReturnValue(new DOMRect(10, 10, 100, 20));

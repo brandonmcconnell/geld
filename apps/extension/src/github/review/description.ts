@@ -1,3 +1,7 @@
+import { headingElementOf, headingLevelOf, hiddenBlocks, outlineOf } from '../../ui/description-outline';
+import type { OutlineHeading } from '../../ui/description-outline';
+export { headingLevelOf, hiddenBlocks, outlineOf } from '../../ui/description-outline';
+export type { OutlineHeading } from '../../ui/description-outline';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { ICON_CHEVRON_DOWN } from '../ui/icons';
 import { botAppAvatar, botById } from '@geld/review';
@@ -77,32 +81,6 @@ const MORE_CLASS = 'geld-desc-more';
 const AGENTS_CLASS = 'geld-desc-agents';
 /** A tool's injected heading. */
 const AGENT_CLASS = 'geld-desc-agent';
-
-export interface OutlineHeading {
-  /** Index of the heading among the body's blocks. */
-  readonly index: number;
-  readonly level: number;
-  /** Index of the first block after this heading's section. */
-  readonly end: number;
-  /** The section holds headings of its own (it is open by default, so the tree shows). */
-  readonly hasSubheadings: boolean;
-}
-
-/**
- * The heading level of a top-level block of rendered Markdown, or null. GitHub renders a heading either bare
- * (`<h2>`) or, on current github.com, wrapped with its anchor (`<div class="markdown-heading"><h2 class="heading-element">`).
- */
-export function headingLevelOf(block: Element): number | null {
-  const heading = headingElementOf(block);
-  return heading === null ? null : Number(heading.tagName.slice(1));
-}
-
-function headingElementOf(block: Element): HTMLElement | null {
-  const isHeading = (element: Element | null): element is HTMLElement => element instanceof HTMLElement && /^H[1-6]$/.test(element.tagName);
-  if (isHeading(block)) return block;
-  if (block.classList.contains('markdown-heading') && isHeading(block.firstElementChild)) return block.firstElementChild;
-  return null;
-}
 
 const BLANK_TEXT = /^[\s\u200b-\u200d\u2060\ufeff]*$/;
 
@@ -220,39 +198,6 @@ function layoutOf(body: HTMLElement): Layout {
   const inTool = new Set(groups.flatMap((group) => group.content));
   const levels = blocks.map((block) => (inTool.has(block) ? null : headingLevelOf(block)));
   return { blocks, outline: outlineOf(blocks, resets, levels), groups, away: new Map() };
-}
-
-/**
- * Every heading that has something under it, with the blocks its section runs to: up to the next heading of the
- * same or a higher level, or to the first of `resets` after it, where every section ends. A heading with nothing
- * under it has nothing to fold and is left out. `levels` says each block's heading level, by default its own.
- */
-export function outlineOf(blocks: readonly Element[], resets: ReadonlySet<number> = new Set(), levels: readonly (number | null)[] = blocks.map(headingLevelOf)): OutlineHeading[] {
-  const outline: OutlineHeading[] = [];
-  levels.forEach((level, index) => {
-    if (level === null) return;
-    let end = index + 1;
-    let hasSubheadings = false;
-    for (; end < levels.length; end++) {
-      if (resets.has(end)) break;
-      const next = levels[end];
-      if (next === null || next === undefined) continue;
-      if (next <= level) break;
-      hasSubheadings = true;
-    }
-    if (end > index + 1) outline.push({ index, level, end, hasSubheadings });
-  });
-  return outline;
-}
-
-/** The blocks hidden when the headings `isOpen` says are closed are folded: everything inside a closed section. */
-export function hiddenBlocks(outline: readonly OutlineHeading[], isOpen: (heading: OutlineHeading) => boolean): Set<number> {
-  const hidden = new Set<number>();
-  for (const heading of outline) {
-    if (isOpen(heading)) continue;
-    for (let index = heading.index + 1; index < heading.end; index++) hidden.add(index);
-  }
-  return hidden;
 }
 
 /**
