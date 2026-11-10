@@ -222,6 +222,15 @@ function account(author: ProviderReviewAuthor, bots: ReadonlySet<string>): Diges
   return { id: author.id, login: author.login, kind: author.automated === true || bots.has(author.id) ? 'bot' : 'person' };
 }
 
+// Mirrors the labels GitLab and Bitbucket readers give a source they could not read; null labels describe no area.
+const AREA_ALIASES: ReadonlyMap<string, { readonly area: DigestArea; readonly state: CoverageState } | null> = new Map([
+  ['thread state', { area: 'threads', state: 'partial' }],
+  ['CI checks', { area: 'checks', state: 'unavailable' }],
+  ['approval requirements', null],
+  ['Published summary', null],
+  ['Refresh', null],
+]);
+
 /** GitLab and Bitbucket fill the document from what their adapters already read. */
 export function digestFromProvider(parts: ProviderDigestParts): DigestDocument {
   const { input } = parts;
@@ -229,7 +238,11 @@ export function digestFromProvider(parts: ProviderDigestParts): DigestDocument {
   const bots = new Set((input.bots ?? []).map((bot) => bot.authorId));
   const unavailable = parts.unavailable ?? [];
   const coverage = coverageFrom([
-    ...unavailable.map((entry) => ({ area: entry.area, state: 'unavailable' as const, reason: entry.reason })),
+    ...unavailable.flatMap((entry) => {
+      const alias = AREA_ALIASES.get(entry.area);
+      if (alias === null) return [];
+      return [{ area: alias?.area ?? entry.area, state: alias?.state ?? 'unavailable', reason: entry.reason }];
+    }),
     ...(input.checksCoverage === undefined ? [] : [{ area: 'checks', state: input.checksCoverage }]),
     ...(parts.sourceCoverage === undefined ? [] : [{ area: 'comments', state: parts.sourceCoverage.comments }, { area: 'threads', state: parts.sourceCoverage.threads }]),
   ]);

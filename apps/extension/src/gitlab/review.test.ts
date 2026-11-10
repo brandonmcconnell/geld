@@ -2,6 +2,7 @@
 import type { ProviderReviewSubject } from '@geld/review';
 import type { ProviderReviewPage } from '../providers/types';
 import { renderProviderReviewPanel } from '../providers/review-panel';
+import { readProviderDigest } from '../providers/digest-conformance';
 import { botAccounts, fetchGitLabReview, gitLabReviewCapabilities, parseGitLabDiscussions } from './review';
 
 const SHA = 'a'.repeat(40);
@@ -160,6 +161,29 @@ describe('GitLab review acquisition', () => {
     expect(snapshot.input.closed).toBe(false);
     expect(fetcher.mock.calls.some(([input]) => String(input).includes('/api/v4/projects/group%2Fsubgroup%2Frepo/merge_requests/7'))).toBe(true);
     expect(fetcher.mock.calls.some(([input]) => String(input).includes('/merge_requests/7/discussions?'))).toBe(false);
+  });
+
+  it('meets the digest adapter contract for a full read and a read with sources missing', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input : input.url);
+      if (url.pathname.endsWith('/approvals')) return json({ approved_by: [{ user: { id: 10, username: 'approver' } }], approvals_required: 2, approvals_left: 1 });
+      if (url.pathname.endsWith('/reviewers')) return json([{ user: { id: 11, username: 'changes' }, state: 'requested_changes' }]);
+      if (url.pathname.endsWith('/discussions.json')) return json([discussion('a'.repeat(40), [note(11)]), discussion('c'.repeat(40), [note(14, 'pushed 1 commit', { system: true, system_note_icon_name: 'commit' })], { resolvable: false })]);
+      if (url.pathname.endsWith('/merge_requests/7/pipelines')) return json([]);
+      return json({ iid: 7, sha: SHA, state: 'opened', project_id: 1 });
+    }));
+    const full = readProviderDigest(await fetchGitLabReview(page, new AbortController().signal), 'open');
+    expect(full.issues).toEqual([]);
+    expect(full.document?.reviewers.map((reviewer) => [reviewer.account.login, reviewer.standing])).toEqual([['approver', 'approved'], ['changes', 'changes_requested']]);
+    expect(full.document?.requirement).toMatchObject({ approvalsRequired: 2, approvalsLeft: 1 });
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+      if (input.endsWith('/approvals') || input.includes('/pipelines?')) return json({ error: 'Unauthorized' }, 401);
+      if (input.includes('/reviewers?') || input.includes('/discussions.json')) return json([]);
+      return json({ iid: 7, sha: SHA, state: 'opened' });
+    }));
+    const partial = readProviderDigest(await fetchGitLabReview(page, new AbortController().signal), 'open');
+    expect(partial.issues).toEqual([]);
+    expect(partial.document?.coverage.checks?.state).toBe('unavailable');
   });
 
   it('reports optional forbidden sources as unavailable without calling them empty', async () => {

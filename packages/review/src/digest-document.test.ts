@@ -56,6 +56,8 @@ describe('digest document', () => {
 
   it('refuses an area name it does not know and counts that do not add up', () => {
     expect(() => digestFromProvider({ input: input(), unavailable: [{ area: 'approvals', reason: 'x' }] })).toThrow(/Unknown digest area/);
+    const labelled = digestFromProvider({ input: input(), unavailable: [{ area: 'thread state', reason: 'a' }, { area: 'CI checks', reason: 'b' }, { area: 'approval requirements', reason: 'c' }] });
+    expect([coverageOf(labelled, 'threads').state, coverageOf(labelled, 'checks').state, labelled.requirement]).toEqual(['partial', 'unavailable', null]);
     expect(() => digestFromProvider({ input: input(), approvalsRequired: 1, approvalsLeft: 2 })).toThrow(/Approvals left/);
     expect(() => digestFromProvider({ input: input({ reviewers: [{ author: { id: '1', login: 'alice' }, state: 'approved' }, { author: { id: '1', login: 'alice' }, state: 'commented' }] }) })).toThrow(/listed twice/);
   });
