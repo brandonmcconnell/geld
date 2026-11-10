@@ -1,3 +1,4 @@
+import { readGitLabStandaloneSourceFrame } from './standalone-source-witness';
 import { readGitLabPageFrame, jsonAttribute, record, SHA } from './page';
 import { providerSourceId, providerSourcePath, providerSourceSubject, providerSourceSubjectKey, providerNativeSourceElement } from '../providers/source-facts';
 import type { ProviderGitLabTarget, ProviderNativeSourceFrame } from '../providers/source-facts';
@@ -24,12 +25,13 @@ export function readGitLabSourceFrame(doc: Document, appRoot: HTMLElement): Prov
   const frame = readGitLabPageFrame(doc, appRoot);
   if (frame === null) return null;
   const { page, appData: app, sourceVersion: source, url, serialized } = frame;
+  const standalone = page.kind === 'commit' || page.kind === 'compare';
+  if ((page.kind === 'commit' || page.kind === 'compare') && !Object.hasOwn(app, 'project_path')) return readGitLabStandaloneSourceFrame(doc, appRoot, { ...frame, page });
   if (app.project_path !== page.repository.path) return null;
   const versions = record(app.versions) ? app.versions : null;
   const target = selected(versions?.target_versions);
   const subject = providerSourceSubject(page);
   const owner = page.repository;
-  const standalone = page.kind === 'commit' || page.kind === 'compare';
   if (!standalone) {
     if (typeof app.mr_path !== 'string') return null;
     try { if (new URL(app.mr_path, owner.origin).href !== page.url) return null; } catch { return null; }
