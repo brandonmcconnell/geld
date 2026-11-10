@@ -2323,6 +2323,8 @@ Retained public MR253 source supplies the positive lexical fixture, but offline 
 
 Where each host stands against GitHub's digest, the shared document and layout model that should drive all three, and the decisions still open are in `docs/digest-parity.md`.
 Keep that matrix current when a row or behaviour changes on any host.
+`@geld/review`'s `DigestDocument` (`digest-document.ts`) is the one set of facts every host fills and every digest row reads: GitLab and Bitbucket through `digestFromProvider`, GitHub's Action payload through `digestFromMeta`.
+An area a host could not read is marked in `coverage` and lists nothing, so a row says how much it saw instead of reading an empty list as none (`knownEmpty`).
 The cloud content scripts live in `entrypoints/gitlab.content/` and `entrypoints/bitbucket.content/`, with provider adapters in `src/gitlab/` and `src/bitbucket/` behind `src/providers/` interfaces.
 The first pass targets gitlab.com and Bitbucket Cloud, with self-hosted variants requiring separate adapter verification and host permissions.
 GitLab and Bitbucket cloud access is optional, including their content-script registration, so upgrading a GitHub-only installation does not introduce required site access.
