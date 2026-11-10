@@ -22,10 +22,12 @@ import { readGitLabOpenReview } from './open-review';
 import { ProviderHttpAdmission } from '../providers/http-admission';
 import { createGitLabWholeTestAdapter } from './whole-test-context';
 import { GitLabNativeWhitespace } from './native-whitespace';
+import { createGitLabDiffSyntax } from './diff-syntax';
 
 export const gitlabAdapter: ProviderAdapter = {
   id: 'gitlab',
   createNativeView: (doc, changed, choice) => new GitLabNativeWhitespace(doc, changed, choice),
+  diffSyntax: createGitLabDiffSyntax(),
   describe: describeGitLabPage,
   readDiff: readGitLabDiff,
   headerTargets: gitLabHeaderTargets,
