@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import type { FileStats } from '@geld/core';
 import { BUNDLED_CATALOG, createMatcher, DEFAULT_SETTINGS } from '@geld/core';
 import { breakdownFromFiles } from '../github/breakdown';
@@ -49,6 +50,27 @@ it('projects complete compact Essential/category trees without moving native rec
   expect(category.hidden).toBe(true);
   expect([...category.querySelectorAll<HTMLElement>('[data-geld-category-path]')].map((node) => node.dataset.geldCategoryPath)).toEqual(['spec/unit.test.ts', 'test/lazy.test.ts']);
   expect(category.textContent).toContain('lazy.test.ts'); // Full inventory despite an unmounted native row.
+});
+
+it.each(['gitlab', 'bitbucket'])('accommodates native row outsets only on GitLab without altering original rows or nested indentation (%s)', (provider) => {
+  document.documentElement.dataset.geldProvider = provider;
+  const { host, row, link, update } = fixture();
+  const style = document.createElement('style');
+  style.textContent = `:root { --gl-spacing-scale-3: 8px; } .file-row { margin-left: -8px; padding: 4px 8px; } .geld-provider-category-list { padding: 0; } ${readFileSync('src/providers/categories.css', 'utf8')}`;
+  document.body.append(style);
+  link.classList.add('file-row');
+  const original = row.outerHTML;
+  update();
+  const roots = host.querySelectorAll<HTMLElement>('.geld-provider-essential-content > ul, .geld-provider-category-content > ul');
+  expect(roots).toHaveLength(2);
+  for (const root of roots) {
+    expect(getComputedStyle(root).paddingLeft).toBe(provider === 'gitlab' ? '8px' : '0px');
+    for (const nested of root.querySelectorAll('ul')) expect(getComputedStyle(nested).paddingLeft).toBe('0px');
+  }
+  expect(row.outerHTML).toBe(original);
+  const clone = required(host.querySelector<HTMLElement>('.geld-provider-category-content a.file-row'));
+  expect(getComputedStyle(clone).marginLeft).toBe('-8px');
+  expect(getComputedStyle(clone).padding).toBe('4px 8px');
 });
 
 it.each(['absent', 'closed', 'collapsed-width', 'virtual-list-absent'] as const)('keeps an accessible category switch above the diff when the native tree is %s', (reason) => {
