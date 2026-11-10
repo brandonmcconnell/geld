@@ -1,5 +1,5 @@
-import type { TrackerReference } from '@geld/core';
-import { TRACKER_LABELS } from '@geld/core';
+import type { TrackerReference } from '@geld/core/trackers';
+import { TRACKER_LABELS } from '@geld/core/trackers';
 /**
  * GeldPrMeta → the one PR comment body. Deterministic; snapshot-tested.
  * The JSON rides in the footer as an empty `<span title="geld:…">`

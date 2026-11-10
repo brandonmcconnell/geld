@@ -14,14 +14,44 @@ No public CI component address, named Pipe version or published Geld image is su
 ## Build
 
 Run `pnpm --filter @geld/action build` to generate both standalone CommonJS bundles: the GitHub Action at `dist/index.js` and the provider runner at `dist/provider.cjs`.
-The standalone bundle is copied by `Dockerfile.providers`.
-Use `apps/action` as the Docker build context and `Dockerfile.providers` as the Dockerfile.
-Supply a reviewed Node 20 or newer image pinned by immutable digest as the required `NODE_IMAGE` build argument.
-Build and inspect the image, then put its real literal `image@sha256:<64 hex characters>` reference in the trusted copied GitLab template.
-Do not obtain that GitLab image from `GELD_TRUSTED_IMAGE` or any trigger/project variable.
-The Bitbucket custom-pipeline example separately uses `GELD_TRUSTED_IMAGE`.
-Both use the prebuilt runner and disable source checkout.
-The image's default command runs `/geld/provider.cjs`, while both job templates invoke it explicitly after their provider checks.
+Review and commit those exact bytes with the packaging sources before preparing a context.
+The context preparer reads that full commit, not the working tree, independently rebuilds its bundle, and requires byte-identical output.
+
+```sh
+pnpm --filter @geld/action prepare:provider-image \
+  --repository /path/to/reviewed-checkout \
+  --commit <full-reviewed-commit> \
+  --node-image docker.io/library/node@sha256:<reviewed-base-manifest> \
+  --output /absolute/new/context
+```
+
+Review an official supported Node LTS base and its actual immutable platform manifest before supplying `NODE_IMAGE`; a digest-shaped argument alone does not establish version support.
+The output directory must be new and outside the checkout, with no symlink ancestors.
+Build with that generated directory as the only Docker context, using the same reviewed base pin:
+
+```sh
+docker build --network=none \
+  --build-arg NODE_IMAGE=docker.io/library/node@sha256:<reviewed-base-manifest> \
+  -f /absolute/new/context/Dockerfile.providers /absolute/new/context
+```
+
+The allowlisted context includes the exact bundle, unchanged root LICENSE and verified Zod MIT notice, runtime corresponding-source archives, the raw commit object and provenance with their hashes.
+The tracked Zod archive is bound to the frozen lockfile and its original notice; new bundled dependencies require explicit review.
+The Git source archive contains tracked files only, with no `.git` directory or untracked checkout files.
+The preparer does not copy host credential/config files or serialize environment values.
+Repository object reads explicitly disable Git lazy fetching and remote protocols, and missing promisor objects fail offline.
+The repository archive uses fixed `tar.umask=0022` and no host `core.attributesFile`; independent tree verification still rejects source omissions or substitutions.
+The reader accepts only USTAR magic/version and the required initial global Git comment or interpreted local path PAX record, refusing size, link, sparse and other semantic overrides.
+Its one reviewed `.cursor/skills/github-surface` alias remains inert in the authentic tar and Git-tree hash and is never materialized or followed during rebuilding; other archive links are rejected.
+The raw commit object and independently reconstructed Git tree also verify delivered source without Git history, and `/geld/source/README.md` documents that rebuild path.
+Offline preparation requires the declared frozen build dependencies already installed or cached; the complete build toolchain is not bundled.
+No dependency install, Docker invocation, network request or provider write occurs inside the preparer.
+
+Inspect the actual built image, bundle, notices and source hashes and run token-free startup checks with `--network=none` before any release request.
+Keep USER `node` and the default command `/geld/provider.cjs`.
+Only after an approved registry publication can its actual registry manifest digest become `GELD_TRUSTED_IMAGE`; a local Docker image ID is not that published reference.
+The GitLab job and Bitbucket custom pipeline use the prebuilt trusted image and disable source checkout.
+Both job templates invoke the runner explicitly after their provider checks.
 
 ## Inputs
 
