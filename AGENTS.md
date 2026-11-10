@@ -3203,6 +3203,10 @@ It saves a report before browser shutdown and bounds that shutdown, terminating 
 Cleanup remains bounded and restores raw settings only after confirmed page closure and completion of any earlier settings write;
 an unconfirmed write or restoration is reported as failure.
 
+The public Bitbucket app asset can change while an acceptance session is running.
+A strict native-request source allowlist must be refreshed from the actual page and its bounded static source capture before a new app hash is trusted.
+The static source collector remains a single fixed CDN GET with no provider API request or executed vendor code.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
