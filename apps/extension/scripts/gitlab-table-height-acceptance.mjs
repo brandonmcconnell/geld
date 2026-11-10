@@ -84,7 +84,9 @@ export function tableHeightProbe(anchor) {
       button: button ? { id: button.id, label: button.textContent, expanded: button.getAttribute('aria-expanded'), target: target.id, targetCount: document.querySelectorAll(`[id="${target.id}"]`).length, controlCount: document.querySelectorAll(`[id="${button.id}"]`).length, focused: document.activeElement === button, enabled: !button.disabled, presented: visible(button), rect: rect(button), hit: hit(button), same: !saved.button || saved.button === button } : null,
       scrollClip, lastRow: lastBounds, lastRowPresented: visible(lastRow), lastCellPresented: visible(lastCell), lastCellHit, sameTarget: saved.target ? target === saved.target && ownTable === saved.table && button === saved.button : null }];
   });
-  return { head: panel?.dataset.geldReviewHead, sameSource: note === saved.note && note?.parentElement === saved.noteParent && note?.querySelector('.note-body .note-text') === saved.nativeBody,
+  const active = document.activeElement;const safe = (value, limit) => typeof value === 'string' && /^[a-zA-Z0-9_!@:/ .-]*$/.test(value) && value.length <= limit ? value : null;
+  const activeElement = active ? { tag: active.tagName, id: safe(active.id, 128), classes: [...active.classList].slice(0, 16).map((value) => safe(value, 96)).filter((value) => value !== null), classesTruncated: active.classList.length > 16, isConnected: active.isConnected, insideCurrentButton: !!saved.button && (saved.button === active || saved.button.contains(active)), insideOwnedSource: !!owned && owned.contains(active) } : null;
+  return { activeElement, head: panel?.dataset.geldReviewHead, sameSource: note === saved.note && note?.parentElement === saved.noteParent && note?.querySelector('.note-body .note-text') === saved.nativeBody,
     sameOwned: owned === saved.owned && owned?.parentElement === saved.ownedParent, nativeBody: saved.nativeBody?.outerHTML, ownedBody: owned?.outerHTML,
     preference: localStorage.getItem('markdown_table_expanded'), height: innerHeight, width: innerWidth, candidates, summaries, mappingErrors, events: saved.events ?? [], nativeEvents: saved.nativeEvents ?? [] };
 }
@@ -99,15 +101,15 @@ export function tableHeightAuthority(row, viewport) {
 }
 
 export function assertTableHeightSource(value, before) {
-  assert.ok(value && value.sameSource && value.sameOwned, 'Original table note/body ownership changed.');
-  assert.equal(value.head, before.head);assert.equal(value.nativeBody, before.nativeBody);assert.equal(value.preference, before.preference);assert.deepEqual(value.nativeEvents, []);assert.deepEqual(value.mappingErrors, [], 'Native and owned table source rows must match unambiguously.');
+  assert.ok(value, 'Table source measurement is unavailable.');assert.equal(value.sameSource, true, 'Original native table note/body ownership changed.');assert.equal(value.sameOwned, true, 'Original owned table note/body ownership changed.');
+  assert.equal(value.head, before.head, 'Current table source head changed.');assert.equal(value.nativeBody, before.nativeBody, 'Original native table body changed.');assert.equal(value.preference, before.preference, 'Native table preference changed.');assert.deepEqual(value.nativeEvents, [], 'Native table events were emitted.');assert.deepEqual(value.mappingErrors, [], 'Native and owned table source rows must match unambiguously.');
 }
 export function assertTableHeightAction(value, before, nativeId, expanded) {
   assertTableHeightSource(value, before);
   const row = value.candidates.find((candidate) => candidate.nativeId === nativeId);const original = before.candidates.find((candidate) => candidate.nativeId === nativeId);
   assert.ok(row && original && row.sameTarget && row.sameNativeControl, 'Original native intent or owned table/control was replaced.');assert.equal(row.ownedAuthority, tableHeightAuthority(row, value.height));assert.notEqual(row.ownedAuthority, null);assert.deepEqual(row.cells, original.cells);const { rect: _currentPosition, ...currentNative } = row.native;const { rect: _originalPosition, ...originalNative } = original.native;assert.deepEqual(currentNative, originalNative);assert.deepEqual(row.nativeControls, original.nativeControls);
-  assert.equal(row.button?.label, expanded ? 'Collapse table' : 'Show full table');assert.equal(row.button.expanded, String(expanded));assert.equal(row.button.targetCount, 1);assert.equal(row.button.controlCount, 1);assert.equal(row.button.focused, true);
-  assert.equal(row.owned.className.split(/\s+/).includes('gl-max-h-[70vh]'), !expanded);
+  assert.equal(row.button?.label, expanded ? 'Collapse table' : 'Show full table');assert.equal(row.button.expanded, String(expanded));assert.equal(row.button.targetCount, 1);assert.equal(row.button.controlCount, 1);assert.equal(row.button.focused, true, 'Actual owned table control lost focus.');
+  assert.equal(row.owned.className.split(/\s+/).includes('gl-max-h-[70vh]'), !expanded, 'Owned table height-cap class disagrees with its requested expanded state.');
   if (expanded) {
     assert.equal(row.owned.maxHeight, 'none', 'Expanded table retains a computed height cap.');
     assert.ok(row.owned.presented && row.owned.clientHeight > 0 && row.owned.tableHeight > 0 && row.owned.scrollHeight > 0
@@ -202,7 +204,7 @@ export async function verifyGitLabTableHeights(page, proof, { anchor, head, poll
       await trustedKeyboard('Space');value = await read();assertTableHeightAction(value, before, selected, true);progress.actions.push({ input: 'keyboard Space', expanded: true, snapshot: value });
       await trustedPointer(buttonHandle, 'collapse');value = await read();assertTableHeightAction(value, before, selected, false);assert.equal(value.ownedBody, before.ownedBody);progress.actions.push({ input: 'pointer', expanded: false, snapshot: value });
       assert.equal(value.events.filter((event) => event.type === 'click').length, 4);assert.ok(value.events.every((event) => event.trusted));
-      progress.artifacts = await capture(page, 'gitlab-coderabbit-table-height');const afterCapture = await read();assertTableHeightAction(afterCapture, before, selected, false);assert.equal(afterCapture.ownedBody, before.ownedBody);assert.deepEqual(progress.sourceGets, [], 'Table interaction issued a recognized source or extension-attributed GET; other GET traffic is recorded separately.');progress.status = 'passed';
+      progress.artifacts = await capture(page, 'gitlab-coderabbit-table-height');progress.afterCapture = await read();assertTableHeightAction(progress.afterCapture, before, selected, false);assert.equal(progress.afterCapture.ownedBody, before.ownedBody, 'Owned table body changed after capture.');assert.deepEqual(progress.sourceGets, [], 'Table interaction issued a recognized source or extension-attributed GET; other GET traffic is recorded separately.');progress.status = 'passed';
     } finally { await buttonHandle.dispose(); }
   } catch (error) { primary = error;progress.status = 'failed';progress.error = String(error);throw error; }
   finally {
