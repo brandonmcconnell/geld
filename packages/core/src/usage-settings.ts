@@ -125,6 +125,12 @@ export function hidCounterFor(categoryId: string): UsageCounter {
   return isUsageCounter(counter) ? counter : 'hid_custom';
 }
 
+/** A line that is a pattern: not blank, not a `#` note, and not a `[owner/repo]` scope header, which only says where the patterns after it apply. */
+function isPatternLine(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed !== '' && !trimmed.startsWith('#') && !/^\[.*\]$/.test(trimmed);
+}
+
 function capped(count: number): number {
   return Math.min(Math.max(0, Math.floor(count)), USAGE_COUNT_CAP);
 }
@@ -136,7 +142,7 @@ export function usageSettingsOf(settings: GeldSettings): UsageSettings {
   for (const id of CATEGORY_IDS) categories[id] = isCategoryEnabled(settings, id);
   const builtInOn = CATEGORY_IDS.filter((id) => isCategoryEnabled(settings, id)).length;
   const customOn = settings.customCategories.filter((custom) => isCategoryEnabled(settings, custom.id)).length;
-  const extraPatterns = Object.values(settings.categoryPatterns).reduce((sum, lines) => sum + (lines?.filter((line) => line.trim() !== '' && !line.trim().startsWith('#')).length ?? 0), 0);
+  const extraPatterns = Object.values(settings.categoryPatterns).reduce((sum, lines) => sum + (lines?.filter(isPatternLine).length ?? 0), 0);
   const autoViewed = [...CATEGORY_IDS, ...settings.customCategories.map((custom) => custom.id)].filter((id) => isAutoViewed(settings, id)).length;
   const counts: Record<UsageCount, number> = {
     customCategories: capped(settings.customCategories.length),

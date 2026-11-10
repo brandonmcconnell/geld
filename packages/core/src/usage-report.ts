@@ -220,7 +220,7 @@ export function usageCaptures(payload: UsagePayload, receivedAt: number): UsageC
               first_of_week: event.firstOfWeek,
               first_of_month: event.firstOfMonth,
               ...(event.settings === undefined ? {} : usageSettingsProperties(event.settings)),
-              ...(event.counts === undefined ? {} : usageCountProperties(event.counts)),
+              ...usageCountProperties(event.counts ?? {}),
             },
           },
         ];

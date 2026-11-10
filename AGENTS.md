@@ -1978,13 +1978,14 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   they belong in the dreamthinkbuild PostHog organisation, never Mintlify's.
   **The day's ping carries feature counts and the week's first a settings summary** (`@geld/core/usage-settings.ts`).
   `countUsage(counter)` (`src/lib/usage-count.ts`, any page) sends `geld:usage-count` to the background, which adds it to `local:usageState.counts` while the setting is on and hands the lot to the next ping (`addUsageCount`), so a ping's counts cover the time since the install's ping before.
-  Counters are a fixed list (`USAGE_COUNTERS`, a new one is added there first): diff pages read and those hiding files, `hid_<category>` once per page per category that hid something (`hid_custom` for every custom one), hidden files shown and one opened, the digest shown (once per conversation visit), copied, its view changed, Flow, AI triage, bot reviews requested, the review group's reviews and comments, and each status-pill action.
+  Counters are a fixed list (`USAGE_COUNTERS`, a new one is added there first): diff pages read and those hiding files, `hid_<category>` once per visit to a diff page per category that hid something (`hid_custom` for every custom one;
+  a visit ends with a pass on another path, so the Files tab after the conversation counts again, `usageVisit` in the controller), hidden files shown and one opened, the digest shown (once per conversation visit), copied, its view changed, Flow, AI triage, bot reviews requested, the review group's reviews and comments, and each status-pill action.
   Settings go only on the week's first ping: sent daily, an unusual combination would act as an id linking an install's pings.
   `usageSettingsOf` names only what Geld offers (every boolean switch but `usageStats`, `USAGE_TOGGLES` with a test that it covers them all;
   the built-in categories by id;
-  the fixed option lists) and reduces what the reader typed to counts capped at `USAGE_COUNT_CAP` (10): custom categories and how many are on, groups off, extra pattern lines, repository rules, hidden people, Enterprise hosts, test syntaxes, review bots.
+  the fixed option lists) and reduces what the reader typed to counts capped at `USAGE_COUNT_CAP` (10): custom categories and how many are on, groups off, extra pattern lines (not `[owner/repo]` scope headers), repository rules, hidden people, Enterprise hosts, test syntaxes, review bots.
   Never send a custom category's name or patterns, or any typed value, however it is hashed.
-  The site parses both again (`parseUsageSettings`, `parseUsageCounts`) and flattens them to `setting_<switch>`, `category_<id>`, the options and counts in snake case, `has_custom_categories` and `used_<counter>` (every counter, 0 when unused, so averages count quiet days).
+  The site parses both again (`parseUsageSettings`, `parseUsageCounts`) and flattens them to `setting_<switch>`, `category_<id>`, the options and counts in snake case, `has_custom_categories` and `used_<counter>` (every counter on every daily ping, 0 when unused, so averages count quiet days).
   The "Geld · Settings & features" dashboard reads those names from core (`CATEGORY_IDS`, `USAGE_TOGGLES`, `usageToggleProperty`), so a new switch or category shows there with no edit.
   The privacy policy's extension section and the Safari review notes say what is sent: keep them in step with `UsagePayload` and `UsageSettings`.
 - **A diff that could not be had is never cached, and the row says so.**

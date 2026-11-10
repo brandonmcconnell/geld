@@ -9,7 +9,7 @@ const personal: GeldSettings = {
   ...DEFAULT_SETTINGS,
   categories: { generated: true, docs: true },
   customCategories: Array.from({ length: 12 }, (_, index) => ({ id: `custom:secret-${index}`, title: `Secret project ${index}`, icon: 'code', patterns: ['internal/acme/**'] })),
-  categoryPatterns: { tests: ['# a note', 'e2e/**', '', '!e2e/keep.ts'] },
+  categoryPatterns: { tests: ['# a note', '[acme/private]', 'e2e/**', '', '!e2e/keep.ts', '[*]'] },
   groups: { 'tests/snapshots': false },
   repoRules: ['acme/private'],
   hiddenAuthors: ['someone'],
@@ -65,7 +65,7 @@ describe('parsing and properties', () => {
     expect(usageCountProperties({ flow_opened: 2 })).toMatchObject({ used_flow_opened: 2, used_digest_shown: 0 });
   });
 
-  it('carries settings only on a week’s first ping, through to the captures', () => {
+  it('carries settings only on a week’s first ping, and every count on every ping, zero on a quiet day', () => {
     const settings = usageSettingsOf(DEFAULT_SETTINGS);
     const payload = parseUsagePayload({
       v: 1,
@@ -81,7 +81,7 @@ describe('parsing and properties', () => {
     const [weekly, daily] = usageCaptures(payload, 3);
     expect(weekly?.properties).toMatchObject({ category_tests: true, setting_enabled: true, used_digest_shown: 4, used_flow_opened: 0 });
     expect(daily?.properties).not.toHaveProperty('category_tests');
-    expect(daily?.properties).not.toHaveProperty('used_digest_shown');
+    expect(daily?.properties).toMatchObject({ used_digest_shown: 0, used_flow_opened: 0 });
   });
 });
 
