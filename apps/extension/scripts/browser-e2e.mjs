@@ -2278,7 +2278,13 @@ async function verifyProviderFlow(page, item) {
   await poll(() => page.evaluate(() => document.querySelectorAll('.geld-provider-flow [data-geld-flow-path]').length), value => value === before.all.files, 'Flow includes categorized files on demand');
   progress.artifacts = await capture(page, 'gitlab-file-flow');
   await page.keyboard.press('Escape');
-  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('geld-provider-flow-button')), true);
+  progress.closed = await poll(() => page.evaluate(() => ({
+    dialogCount: document.querySelectorAll('dialog.geld-provider-flow').length,
+    focused: document.activeElement?.classList.contains('geld-provider-flow-button') === true,
+    activeTag: document.activeElement?.tagName ?? null,
+    activeClass: document.activeElement?.getAttribute('class') ?? null,
+    buttonCount: document.querySelectorAll('.geld-provider-flow-button').length,
+  })), value => value.dialogCount === 0 && value.focused, 'Escape closes Flow and restores its current trigger focus', 8000);
   assert.deepEqual((await tabState(page)).visible, before.visible, 'Flow toggles do not change diff filtering');
   progress.status = 'passed';
 }
@@ -2634,14 +2640,17 @@ async function nativeFragmentEvidence(page, anchor, assertSourcesUnchanged, reco
   assert.match(anchor, /^note_[1-9]\d*$/, 'Fragment evidence requires an actual native human source anchor');
   const previousUrl = page.url();
   const settings = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
-  const controlSelector = `.geld-provider-original:has(+ [id="${anchor}"]) button`;
+  const controlSelector = `.geld-provider-original:has(+ [id="${anchor}"]) button, .geld-provider-original:has(+ li.note-discussion [id="${anchor}"]) button`;
   const read = () => page.evaluate((anchor) => {
-    const root = document.getElementById(anchor);
-    if (root === null) return null;
+    const source = document.getElementById(anchor);
+    if (source === null) return null;
+    // GitLab folds the native discussion when it contains represented replies.
+    // The permalink remains on its child note; measure the actual folded box.
+    const root = source.closest('li.note-discussion') ?? source;
     const button = root.previousElementSibling?.matches('.geld-provider-original') ? root.previousElementSibling.querySelector('button') : null;
     const rect = root.getBoundingClientRect();const style = getComputedStyle(root);
-    return { nativeId: root.id, name: root.querySelector('[data-testid="author-name"]')?.textContent.trim() ?? null, body: root.querySelector('.note-body .note-text')?.textContent.trim() ?? null,
-      nativePermalinks: [...root.querySelectorAll('a[href]')].filter((node) => node.getAttribute('href') === `#${anchor}`).map((node) => node.getAttribute('href')),
+    return { nativeId: source.id, foldedRoot: root === source ? 'note' : 'discussion', name: source.querySelector('[data-testid="author-name"]')?.textContent.trim() ?? null, body: source.querySelector('.note-body .note-text')?.textContent.trim() ?? null,
+      nativePermalinks: [...source.querySelectorAll('a[href]')].filter((node) => node.getAttribute('href') === `#${anchor}`).map((node) => node.getAttribute('href')),
       hidden: root.getAttribute('hidden'), owner: root.getAttribute('data-geld-provider-native-find'), oldHiddenFlag: root.hasAttribute('data-geld-provider-compact-hidden'),
       box: { height: rect.height, display: style.display, contentVisibility: style.contentVisibility, marginTop: style.marginTop, marginBottom: style.marginBottom, paddingTop: style.paddingTop, paddingBottom: style.paddingBottom, borderTop: style.borderTopWidth, borderBottom: style.borderBottomWidth },
       control: button === null ? null : { label: button.textContent.trim(), expanded: button.getAttribute('aria-expanded') }, hash: location.hash };
