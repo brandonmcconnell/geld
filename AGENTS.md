@@ -2509,6 +2509,8 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Provider settings refreshes preserve explicit category expansion and inline file ownership when only testOutline changes or the full settings values are structurally identical, including reordered object keys.
   The displayed-outline harness captures the still-visible source before its strict first-control hit assertion, preserving actual center-hit and button ancestor chains, clipping and scroll metrics when the check fails.
   Each chain is bounded to eight nodes with safe metadata only, and a covered line-103 control remains a failure rather than being replaced by another outline or a guessed CSS workaround.
+  Rapid Diffs renders its native table and tbody as blocks, so only the owned fold row and its owned cell use full-width block layout inside that exact native structure to avoid an intrinsic anonymous table shrinking the control.
+  Keep native source rows, legacy and Bitbucket table layout, colors, fonts, padding and heights untouched, and verify each owned row and button against its original Rapid body and native hunk bounds within one CSS pixel.
   Every other settings change keeps the existing expansion invalidation, including classification, layout, defaults and master toggles, so outline presentation cannot silently replace a selected Tests category with Essential.
   Automatic large-diff loading requires an adapter capability that verifies the current native size-only loader, and GitLab Rapid and Bitbucket do not advertise that capability until their native size-placeholder behavior is verified.
 - **CI presentation preserves provider source facts.**
