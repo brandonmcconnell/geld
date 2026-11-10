@@ -48,21 +48,31 @@ import {
   useSidebar,
 } from './ui/sidebar';
 
-const teamListSchema = z.object({ teams: z.array(z.object({ id: z.string(), name: z.string() })) });
+const teamListSchema = z.object({
+  teams: z.array(z.object({ id: z.string(), name: z.string() })),
+});
 const emptyQueue: QueueData = { pulls: [], repositories: [] };
 export { useDashboard } from '@/lib/dashboard-context';
 
-export function AppShell({ children }: { readonly children: ReactNode }) {
+export function AppShell({
+  children,
+  navigation = true,
+}: {
+  readonly children: ReactNode;
+  readonly navigation?: boolean;
+}) {
   const pathname = usePathname();
-  const authPage =
-    ['/sign-in', '/sign-up', '/forgot-password'].includes(pathname) || pathname.endsWith('/reset-password');
+  const router = useRouter();
   const queueOwner = useRef<string | null>(null);
   const route = parseDashboardPathname(pathname);
   const repository = route?.kind === 'repository' ? route.ref : null;
   const repositoryKey = repository ? JSON.stringify(repository) : '';
   const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
   const routeTeam = /^\/teams\/([^/]+)/.exec(pathname)?.[1] ?? '';
-  const [teamScope, setTeamScope] = useState({ routeTeam, selected: routeTeam });
+  const [teamScope, setTeamScope] = useState({
+    routeTeam,
+    selected: routeTeam,
+  });
   if (routeTeam && routeTeam !== teamScope.routeTeam) setTeamScope({ routeTeam, selected: routeTeam });
   const activeTeam = teamScope.selected;
   const setActiveTeam = (selected: string) => setTeamScope({ routeTeam, selected });
@@ -70,9 +80,16 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   const [pageState, setPageState] = useState({ key: '', page: '1' });
   if (pageState.key !== queueKey) setPageState({ key: queueKey, page: '1' });
   const queuePage = pageState.key === queueKey ? pageState.page : '1';
-  const [queueState, setQueueState] = useState<{ key: string; data: QueueData }>({ key: '', data: emptyQueue });
+  const [queueState, setQueueState] = useState<{
+    key: string;
+    data: QueueData;
+  }>({ key: '', data: emptyQueue });
   const queue = queueState.key === queueKey ? queueState.data : emptyQueue;
-  const [session, setSession] = useState<SessionData>({ user: null, configured: false, demo: false });
+  const [session, setSession] = useState<SessionData>({
+    user: null,
+    configured: false,
+    demo: false,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
@@ -81,13 +98,21 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
     const abort = new AbortController();
     Promise.all([
       fetch('/api/session', { signal: abort.signal }).then(async (r): Promise<unknown> => r.json()),
-      fetch(
-        `/api/queue?team=${encodeURIComponent(activeTeam)}&repository=${encodeURIComponent(repositoryKey)}&cursor=${queuePage}`,
-        { signal: abort.signal },
-      ).then(async (r) => ({ ok: r.ok, status: r.status, data: await r.json() })),
-      fetch('/api/teams', { signal: abort.signal })
-        .then(async (response): Promise<unknown> => (response.ok ? response.json() : null))
-        .catch(() => null),
+      navigation
+        ? fetch(
+            `/api/queue?team=${encodeURIComponent(activeTeam)}&repository=${encodeURIComponent(repositoryKey)}&cursor=${queuePage}`,
+            { signal: abort.signal },
+          ).then(async (r) => ({
+            ok: r.ok,
+            status: r.status,
+            data: await r.json(),
+          }))
+        : Promise.resolve({ ok: true, status: 200, data: emptyQueue }),
+      navigation
+        ? fetch('/api/teams', { signal: abort.signal })
+            .then(async (response): Promise<unknown> => (response.ok ? response.json() : null))
+            .catch(() => null)
+        : Promise.resolve(null),
     ])
       .then(([sessionValue, result, teamValue]) => {
         if (abort.signal.aborted) return;
@@ -149,14 +174,15 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
           if (!routeTeam) setTeamScope((previous) => (previous.selected ? { routeTeam, selected: '' } : previous));
           setQueueState({ key: queueKey, data: emptyQueue });
           setSession({ user: null, configured: false, demo: false });
-          setTeams([]);
-          if (!routeTeam) setTeamScope((previous) => (previous.selected ? { routeTeam, selected: '' } : previous));
           setError('The dashboard could not connect. Try again.');
           setLoading(false);
         }
       });
     return () => abort.abort();
-  }, [revision, activeTeam, repositoryKey, queuePage, queueKey, routeTeam]);
+  }, [revision, activeTeam, repositoryKey, queuePage, queueKey, routeTeam, navigation]);
+  useEffect(() => {
+    if (navigation && !loading && !error && !session.user && !session.demo) router.replace('/sign-in');
+  }, [navigation, loading, error, session.user, session.demo, router]);
   const data = {
     assistantOpen: assistant.path === pathname && assistant.open,
     setAssistantOpen: (open: boolean) => setAssistant({ path: pathname, open }),
@@ -169,7 +195,10 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
     setActiveTeam,
     loadMore: () => {
       setLoading(true);
-      setPageState({ key: queueKey, page: queue.nextCursor ?? String(Number(queuePage) + 1) });
+      setPageState({
+        key: queueKey,
+        page: queue.nextCursor ?? String(Number(queuePage) + 1),
+      });
     },
     refresh: () => {
       setPageState({ key: queueKey, page: '1' });
@@ -180,12 +209,21 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   };
   return (
     <DashboardContext.Provider value={data}>
-      {authPage ? (
+      {!navigation ? (
         <div className="auth-shell isolate">
           <main id="main" className="main-content">
             {children}
           </main>
         </div>
+      ) : !session.user && !session.demo ? (
+        <main id="main" className="page" role="status">
+          <p>{error ?? 'Loading your workspace...'}</p>
+          {error && (
+            <button type="button" className="button" onClick={data.refresh}>
+              Try again
+            </button>
+          )}
+        </main>
       ) : (
         <SidebarProvider className="app-shell isolate" navigationKey={pathname}>
           <WorkspaceChrome>{children}</WorkspaceChrome>
@@ -273,12 +311,32 @@ function AppSidebar() {
     : (teamPath ?? '/');
   const teamLinks = teamPath
     ? [
-        { href: teamPath + '?view=repositories', name: 'Repositories', icon: Layers },
+        {
+          href: teamPath + '?view=repositories',
+          name: 'Repositories',
+          icon: Layers,
+        },
         { href: teamPath + '?view=members', name: 'Members', icon: Users },
-        { href: teamPath + '?view=access', name: 'Access and permissions', icon: Settings },
-        { href: teamPath + '/settings', name: 'Review defaults', icon: GitPullRequest },
-        { href: teamPath + '?view=sso', name: 'Single sign-on', icon: Settings },
-        { href: teamPath + '?view=activity', name: 'Grant ledger', icon: Layers },
+        {
+          href: teamPath + '?view=access',
+          name: 'Access and permissions',
+          icon: Settings,
+        },
+        {
+          href: teamPath + '/settings',
+          name: 'Review defaults',
+          icon: GitPullRequest,
+        },
+        {
+          href: teamPath + '?view=sso',
+          name: 'Single sign-on',
+          icon: Settings,
+        },
+        {
+          href: teamPath + '?view=activity',
+          name: 'Grant ledger',
+          icon: Layers,
+        },
         { href: teamPath + '?view=advanced', name: 'Advanced', icon: Settings },
       ]
     : [];

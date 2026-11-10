@@ -18,7 +18,7 @@ const signInMethods: readonly { id: SignInMethod; label: string }[] = [
   { id: 'sso', label: 'SSO' },
 ];
 export function SignInForm({ intent = 'signin' }: { readonly intent?: 'signin' | 'signup' }) {
-  const { session, refresh } = useDashboard();
+  const { session, refresh, loading } = useDashboard();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -73,7 +73,11 @@ export function SignInForm({ intent = 'signin' }: { readonly intent?: 'signin' |
           if (target.protocol === 'https:') window.location.assign(target.href);
         } else setMessage(error.success ? error.data.error : 'SSO could not connect.');
       } else if (method === 'password') {
-        const result = await authClient.signIn.email({ email, password, callbackURL: '/connect' });
+        const result = await authClient.signIn.email({
+          email,
+          password,
+          callbackURL: '/connect',
+        });
         if (result.error) setMessage('Email or password could not be verified.');
         else {
           setPassword('');
@@ -81,7 +85,10 @@ export function SignInForm({ intent = 'signin' }: { readonly intent?: 'signin' |
           router.push('/connect');
         }
       } else if (method === 'magic') {
-        const result = await authClient.signIn.magicLink({ email, callbackURL: '/connect' });
+        const result = await authClient.signIn.magicLink({
+          email,
+          callbackURL: '/connect',
+        });
         setMessage(
           result.error ? 'The sign-in link could not be sent. Try again.' : 'Check your email for a sign-in link.',
         );
@@ -118,7 +125,7 @@ export function SignInForm({ intent = 'signin' }: { readonly intent?: 'signin' |
             ? 'Your code, your providers, one clear workspace.'
             : 'Sign in to your workspace. Pick up where you left off.'}
         </p>
-        {!session.configured && (
+        {!loading && !session.configured && (
           <div className="status-message" role="status">
             Sign-in is not configured in this environment.
           </div>
