@@ -234,3 +234,15 @@ test('standalone native Bash On is a separate explicit literal and never broaden
   assert.match(harness, /name === 'bitbucket-native-bash-on' && focus !== 'bitbucket-native-bash-on'/);
   assert.match(harness, /nativeBashOnPreflight\(active, report.quotaPolicy.conservativeObservedRequestBudget\)/);
 });
+
+test('first-use native On has one literal focus, no default/all/regression navigation and no marker-edit churn', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];const cases = new vm.Script(`(${literal})`).runInNewContext();
+  assert.deepEqual(Array.from(cases['bitbucket-pipeline-initial-on']), ['bitbucket-pipeline-initial-on']);
+  for (const [focus, selected] of Object.entries(cases)) if (focus !== 'bitbucket-pipeline-initial-on') assert.equal(selected.includes('bitbucket-pipeline-initial-on'), false);
+  assert.deepEqual(select({ body: marker('bitbucket-pipeline-initial-on'), from: marker('github') }), { focus: 'bitbucket-pipeline-initial-on', run: 'true', failures: [] });
+  assert.equal(select({ body: marker('bitbucket-pipeline-initial-on') + '\nUpdated prose', from: marker('bitbucket-pipeline-initial-on') }).run, 'false');
+  assert.deepEqual(select({ fork: true, body: marker('bitbucket-pipeline-initial-on'), from: marker('github') }), { focus: 'regression', run: 'false', failures: [] });
+  assert.match(harness, /name === 'bitbucket-pipeline-initial-on' && focus !== 'bitbucket-pipeline-initial-on'/);
+  assert.ok(harness.indexOf('await firstUseSettings.prepare()') < harness.indexOf('page = await browser.newPage()'));
+  assert.match(harness, /await firstUseSettings.restore\(page === undefined \|\| page.isClosed\(\)\)/);
+});

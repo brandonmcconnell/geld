@@ -22,6 +22,7 @@ on:
           - bitbucket-diff
           - bitbucket-pipeline-shell
           - bitbucket-pipeline-syntax-on
+          - bitbucket-pipeline-initial-on
           - bitbucket-list
           - bitbucket-authors
           - bitbucket-native-bash
@@ -60,7 +61,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const choices = new Set(['regression', 'bitbucket-diff', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'bitbucket-list', 'bitbucket-authors', 'bitbucket-native-bash', 'bitbucket-native-bash-on', 'bitbucket-comment', 'bitbucket-commit', 'bitbucket-commit-links', 'bitbucket-list-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-file-search', 'gitlab-standalone-whole', 'gitlab-review', 'gitlab-bot', 'gitlab-coderabbit', 'gitlab-references', 'gitlab-binary', 'github', 'cross-provider-settings', 'all']);
+            const choices = new Set(['regression', 'bitbucket-diff', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'bitbucket-pipeline-initial-on', 'bitbucket-list', 'bitbucket-authors', 'bitbucket-native-bash', 'bitbucket-native-bash-on', 'bitbucket-comment', 'bitbucket-commit', 'bitbucket-commit-links', 'bitbucket-list-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-file-search', 'gitlab-standalone-whole', 'gitlab-review', 'gitlab-bot', 'gitlab-coderabbit', 'gitlab-references', 'gitlab-binary', 'github', 'cross-provider-settings', 'all']);
             const parseFocus = (body) => {
               const text = typeof body === 'string' ? body : '';
               const prefixes = text.match(/<!-- geld-browser-focus:/g) ?? [];
