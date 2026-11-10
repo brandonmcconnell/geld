@@ -64,7 +64,7 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
   const explicitState = tokens.some(
     (token) => token.key === 'is' && ['draft', 'closed', 'merged'].includes(token.value),
   );
-  const ready = scoped.filter(pull => pull.state === 'open');
+  const ready = scoped.filter((pull) => pull.state === 'open');
   const filtered = scoped
     .filter((pull) => {
       if (!explicitState && pull.state !== 'open') return false;
@@ -72,31 +72,37 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
       const viewer = providerViewer(session.viewers, pull.ref);
       if (tab === 'incoming' && (!viewer || !pull.reviewers.includes(viewer))) return false;
       if (tab === 'mine' && (!viewer || pull.author !== viewer)) return false;
-      if (tab === 'outgoing' && (!viewer || !insights[pullPath(pull.ref)]?.requesters?.includes(viewer))) return false;
+      if (tab === 'outgoing' && (!viewer || !insights[pullPath(pull.ref)]?.requesters?.includes(viewer)))
+        return false;
       return tokens.every((token) => {
         const value = token.value.toLowerCase();
         if (token.key === 'repo') return `${pull.ref.owner}/${pull.ref.repo}`.toLowerCase() === value;
         if (token.key === 'author') return pull.author.toLowerCase() === value;
         if (token.key === 'label') return pull.labels.some((label) => label.toLowerCase() === value);
-        if (token.key === 'is') return value === 'draft' ? pull.draft : value === 'pr' ? true : pull.state === value;
+        if (token.key === 'is')
+          return value === 'draft' ? pull.draft : value === 'pr' ? true : pull.state === value;
         return `${pull.title} ${pull.ref.owner}/${pull.ref.repo} ${pull.ref.number} ${pull.author}`
           .toLowerCase()
           .includes(value);
       });
     })
-    .sort(
-      (a, b) =>
-        Number(stars.includes(pullPath(b.ref))) - Number(stars.includes(pullPath(a.ref))) ||
-        (sort === 'size'
-          ? (insights[pullPath(a.ref)] ? insights[pullPath(a.ref)]!.essential.additions + insights[pullPath(a.ref)]!.essential.deletions : Number.POSITIVE_INFINITY) - (insights[pullPath(b.ref)] ? insights[pullPath(b.ref)]!.essential.additions + insights[pullPath(b.ref)]!.essential.deletions : Number.POSITIVE_INFINITY)
-          : b.updatedAt.localeCompare(a.updatedAt)),
-    );
+    .sort((a, b) => {
+      if (sort === 'size') {
+        const left = insights[pullPath(a.ref)];
+        const right = insights[pullPath(b.ref)];
+        const leftSize = left ? left.essential.additions + left.essential.deletions : Infinity;
+        const rightSize = right ? right.essential.additions + right.essential.deletions : Infinity;
+        if (leftSize !== rightSize) return leftSize < rightSize ? -1 : 1;
+      }
+      return Number(stars.includes(pullPath(b.ref))) - Number(stars.includes(pullPath(a.ref))) ||
+        b.updatedAt.localeCompare(a.updatedAt);
+    });
   const visible = filtered.slice(0, limit);
   const visiblePaths = visible.map((pull) => pullPath(pull.ref));
   const selection = selected.filter((path) => visiblePaths.includes(path));
   const allSelected = visiblePaths.length > 0 && selection.length === visiblePaths.length;
   return (
-    <div className="page queue-page">
+    <div className="page queue-page" aria-busy={loading}>
       {session.demo && <p className="demo-notice">Sample workspace · Provider writes are disabled</p>}
       <div className="queue-tabs" role="tablist" aria-label="Review queue views">
         {tabs.map((item) => (
@@ -179,7 +185,11 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
           Showing verified requests. Request history may be unavailable for some Git connections.
         </p>
       )}
-      {error && scoped.length > 0 && <p role="status" className="inline-note">{error} Cached results remain visible.</p>}
+      {error && scoped.length > 0 && (
+        <p role="status" className="inline-note">
+          {error} Cached results remain visible.
+        </p>
+      )}
       <section className="pull-list" aria-label="Pull requests" aria-busy={loading}>
         {visible.length > 0 && (
           <div className="pull-list-heading">
@@ -290,7 +300,9 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
                   checked={selection.includes(path)}
                   onChange={() =>
                     setSelected(
-                      selection.includes(path) ? selection.filter((item) => item !== path) : [...selection, path],
+                      selection.includes(path)
+                        ? selection.filter((item) => item !== path)
+                        : [...selection, path],
                     )
                   }
                 />
@@ -344,13 +356,17 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
       {(filtered.length > limit || !!queue.nextCursor) && (
         <div className="queue-footer">
           <span>
-            {visible.length} shown{filtered.length > visible.length ? ` of ${filtered.length} loaded` : ''}{queue.nextCursor ? ' · More available' : ''}
+            {visible.length} shown{filtered.length > visible.length ? ` of ${filtered.length} loaded` : ''}
+            {queue.nextCursor ? ' · More available' : ''}
           </span>
           <Button
             size="sm"
             variant="outline"
             disabled={loading}
-            onClick={() => { setLimit(limit + 20); if (filtered.length <= limit) loadMore(); }}
+            onClick={() => {
+              setLimit(limit + 20);
+              if (filtered.length <= limit) loadMore();
+            }}
           >
             Load more
           </Button>

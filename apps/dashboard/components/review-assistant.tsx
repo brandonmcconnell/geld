@@ -1,4 +1,5 @@
 'use client';
+import { Markdown } from './markdown';
 import { measure } from '@/lib/measurement';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -15,7 +16,6 @@ interface Turn {
 }
 export function AssistantPanel({
   reference,
-  data,
   plan,
   currentStep,
   teamId,
@@ -96,17 +96,13 @@ export function AssistantPanel({
       <header>
         <span>
           <Sparkles size={15} />
-          Review assistant
+          Assistant
         </span>
         <button type="button" className="icon-button" onClick={onClose} aria-label="Close assistant">
           <X size={16} />
           <span className="touch-target" aria-hidden="true" />
         </button>
       </header>
-      <div className="assistant-context">
-        <span className="live-dot" />
-        <span>{currentStep ? currentStep.title : data.pull.title}</span>
-      </div>
       <div className="assistant-conversation">
         {turns.length === 0 && (
           <div className="assistant-intro">
@@ -128,7 +124,7 @@ export function AssistantPanel({
         {turns.map((turn, index) => (
           <article className={`assistant-turn ${turn.role}`} key={index}>
             <span>{turn.role === 'user' ? 'You' : 'Assistant'}</span>
-            <p>{turn.content || (busy ? 'Thinking...' : '')}</p>
+            <Markdown streaming={turn.role === 'assistant' && busy}>{turn.content || (busy ? 'Thinking…' : '')}</Markdown>
             {turn.role === 'assistant' && turn.content && (
               <div className="assistant-turn-meta">
                 <small>{model}</small>

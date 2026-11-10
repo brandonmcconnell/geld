@@ -47,7 +47,9 @@ export function useRepositoryOptions(open: boolean) {
                   ).values(),
                 ],
           nextCursor: parsed.data.nextCursor ?? null,
-          error: parsed.data.sources?.some((source) => source.error) ? 'Some connections could not be loaded.' : null,
+          error: parsed.data.sources?.some((source) => source.error)
+            ? 'Some connections could not be loaded.'
+            : null,
         }));
       })
       .catch(() => {
@@ -64,7 +66,11 @@ export function useRepositoryOptions(open: boolean) {
     return () => abort.abort();
   }, [open, owner, activeTeam, scope, cursor, revision, cached]);
   return {
-    repositories: current?.repositories ?? repositories,
+    repositories: [
+      ...new Map(
+        [...repositories, ...(current?.repositories ?? [])].map((repo) => [repositoryPath(repo.ref), repo]),
+      ).values(),
+    ],
     loading: open && !!owner && !cached,
     error: current?.error,
     nextCursor: current?.nextCursor,

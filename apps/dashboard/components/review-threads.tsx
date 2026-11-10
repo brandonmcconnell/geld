@@ -1,4 +1,5 @@
 'use client';
+import { Markdown } from './markdown';
 import { useEffect, useRef, useState } from 'react';
 import { Check, MessageSquare, MessagesSquare, Send } from '@/components/icons';
 import { z } from 'zod';
@@ -113,7 +114,7 @@ function Thread({
         {thread.comments.map((comment) => (
           <article key={comment.id}>
             <strong>{comment.author}</strong>
-            <p>{comment.body}</p>
+            <Markdown>{comment.body}</Markdown>
           </article>
         ))}
         {replyOpen ? (

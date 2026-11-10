@@ -51,7 +51,6 @@ import {
   faXmark as regularX,
   faFolder as regularFolder,
   faEllipsis as regularMoreHorizontal,
-  faSort as regularChevronsUpDown,
   faArrowRightFromBracket as regularLogOut,
 } from '@awesome.me/kit-2e791c163e/icons/sharp/regular';
 import {
@@ -105,7 +104,6 @@ import {
   faXmark as solidX,
   faFolder as solidFolder,
   faEllipsis as solidMoreHorizontal,
-  faSort as solidChevronsUpDown,
   faArrowRightFromBracket as solidLogOut,
 } from '@awesome.me/kit-2e791c163e/icons/sharp/solid';
 
@@ -196,5 +194,9 @@ export const Users = glyph(regularUsers, solidUsers);
 export const X = glyph(regularX, solidX);
 export const Folder = glyph(regularFolder, solidFolder);
 export const MoreHorizontal = glyph(regularMoreHorizontal, solidMoreHorizontal);
-export const ChevronsUpDown = glyph(regularChevronsUpDown, solidChevronsUpDown);
+export const ChevronsUpDown: AppIcon = ({ size = 16, active = false, className }) => (
+  <span className={cn('scope-chevrons', className)} style={{ width: size, height: size }} aria-hidden="true">
+    <ChevronDown size={8} active={active} className="rotate-180" /><ChevronDown size={8} active={active} />
+  </span>
+);
 export const LogOut = glyph(regularLogOut, solidLogOut);

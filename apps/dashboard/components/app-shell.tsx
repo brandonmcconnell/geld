@@ -24,7 +24,6 @@ import { Popover } from '@base-ui/react/popover';
 import { useRepositoryOptions } from '@/lib/use-repository-options';
 import { settingsLinks } from './settings-navigation';
 import { workspaceCache, queueData, updateQueuePages } from '@/lib/workspace-cache';
-import { readyForReview } from '@/lib/queue';
 import { z } from 'zod';
 import { parseDashboardPathname, repositoryPath } from '@geld/domain';
 import { queueSchema, sessionSchema } from '@/lib/contracts';
@@ -32,6 +31,7 @@ import type { QueueData, SessionData } from '@/lib/contracts';
 import { InboxPopover } from './inbox';
 import { DashboardContext, useDashboard } from '@/lib/dashboard-context';
 import { WorkspaceHeader } from './workspace-header';
+import { WorkspaceLoading } from './workspace-loading';
 import {
   Sidebar,
   SidebarProvider,
@@ -86,10 +86,16 @@ export function AppShell({
   const [session, setSession] = useState<SessionData>({ user: null, configured: false, demo: false });
   const owner = session.user?.id ?? (session.demo ? 'demo' : 'anonymous');
   const cacheKey = `${owner}:${queueKey}`;
-  const [queueState, setQueueState] = useState<{ key: string; data: QueueData }>({ key: '', data: emptyQueue });
+  const [queueState, setQueueState] = useState<{ key: string; data: QueueData }>({
+    key: '',
+    data: emptyQueue,
+  });
   const snapshot = cache.queues.get(cacheKey);
   const queue = queueState.key === cacheKey ? queueState.data : snapshot ? queueData(snapshot) : emptyQueue;
-  const [directory, setDirectory] = useState<{ scope: string; items: QueueData['repositories'] }>({ scope: '', items: [] });
+  const [directory, setDirectory] = useState<{ scope: string; items: QueueData['repositories'] }>({
+    scope: '',
+    items: [],
+  });
   const directoryKey = `${owner}:${activeTeam}`;
   const repositories = directory.scope === directoryKey ? directory.items : queue.repositories;
   const [loading, setLoading] = useState(true);
@@ -101,49 +107,87 @@ export function AppShell({
     const abort = new AbortController();
     const refreshing = lastRevision.current !== revision;
     lastRevision.current = revision;
+    let verified = false;
+    function clearPrivateState() {
+      cache.queues.clear();
+      cache.insights.clear();
+      cache.reviews.clear();
+      setDirectory({ scope: '', items: [] });
+      setQueueState({ key: '', data: emptyQueue });
+      setTeams([]);
+    }
     async function read() {
       setLoading(true);
       setError(null);
-      const account = sessionSchema.parse(await (await fetch('/api/session', { signal: abort.signal })).json());
+      const account = sessionSchema.parse(
+        await (await fetch('/api/session', { signal: abort.signal })).json(),
+      );
       if (abort.signal.aborted) return;
+      verified = true;
       const currentOwner = account.user?.id ?? (account.demo ? 'demo' : null);
       if (currentOwner !== queueOwner.current) {
-        cache.queues.clear(); cache.insights.clear(); cache.reviews.clear();
-        setDirectory({ scope: '', items: [] });
-        setQueueState({ key: '', data: emptyQueue });
-        setTeams([]);
+        clearPrivateState();
       }
       queueOwner.current = currentOwner;
       setSession(account);
       if (!currentOwner || !navigation) return;
       const currentKey = `${currentOwner}:${queueKey}`;
       const cached = cache.queues.get(currentKey);
-      const cursors = refreshing && cached ? cached.pages.map(page => page.cursor) : [queuePage];
-      const pages = await Promise.all(cursors.map(async cursor => {
-        const response = await fetch(`/api/queue?${new URLSearchParams({ team: activeTeam, repository: repositoryKey, cursor })}`, { signal: abort.signal });
-        if (!response.ok) {
-          if (response.status === 401 || response.status === 403) {
-            cache.queues.clear(); cache.insights.clear(); cache.reviews.clear();
-            setQueueState({ key: '', data: emptyQueue }); setDirectory({ scope: '', items: [] });
+      const cursors = refreshing && cached ? cached.pages.map((page) => page.cursor) : [queuePage];
+      const pages = await Promise.all(
+        cursors.map(async (cursor) => {
+          const response = await fetch(
+            `/api/queue?${new URLSearchParams({ team: activeTeam, repository: repositoryKey, cursor })}`,
+            { signal: abort.signal },
+          );
+          if (!response.ok) {
+            if (response.status === 401 || response.status === 403) {
+              cache.queues.clear();
+              cache.insights.clear();
+              cache.reviews.clear();
+              setQueueState({ key: '', data: emptyQueue });
+              setDirectory({ scope: '', items: [] });
+            }
+            throw new Error('The review queue could not be loaded. Try again.');
           }
-          throw new Error('The review queue could not be loaded. Try again.');
-        }
-        return { cursor, data: queueSchema.parse(await response.json()) };
-      }));
+          return { cursor, data: queueSchema.parse(await response.json()) };
+        }),
+      );
       if (abort.signal.aborted) return;
       const next = updateQueuePages(cached, pages, refreshing);
       const result = queueData(next);
       cache.queues.set(currentKey, next);
       setQueueState({ key: currentKey, data: result });
       const scope = `${currentOwner}:${activeTeam}`;
-      setDirectory(previous => ({ scope, items: [...new Map([...(previous.scope === scope ? previous.items : []), ...result.repositories].map(repo => [repositoryPath(repo.ref), repo])).values()] }));
+      setDirectory((previous) => ({
+        scope,
+        items: [
+          ...new Map(
+            [...(previous.scope === scope ? previous.items : []), ...result.repositories].map((repo) => [
+              repositoryPath(repo.ref),
+              repo,
+            ]),
+          ).values(),
+        ],
+      }));
       const teamsResponse = await fetch('/api/teams', { signal: abort.signal });
       const teamList = teamListSchema.safeParse(await teamsResponse.json());
       if (!abort.signal.aborted && teamList.success) setTeams(teamList.data.teams);
     }
-    void read().catch(() => {
-      if (!abort.signal.aborted) setError('The dashboard could not connect. Try again.');
-    }).finally(() => { if (!abort.signal.aborted) setLoading(false); });
+    void read()
+      .catch(() => {
+        if (!abort.signal.aborted) {
+          if (!verified) {
+            clearPrivateState();
+            queueOwner.current = null;
+            setSession({ user: null, configured: false, demo: false });
+          }
+          setError('The dashboard could not connect. Try again.');
+        }
+      })
+      .finally(() => {
+        if (!abort.signal.aborted) setLoading(false);
+      });
     return () => abort.abort();
   }, [revision, activeTeam, repositoryKey, queuePage, queueKey, navigation, cache]);
   useEffect(() => {
@@ -174,18 +218,22 @@ export function AppShell({
   return (
     <DashboardContext.Provider value={data}>
       {!navigation ? (
-        <div className="auth-shell isolate">
+        <div className="auth-shell isolate" aria-busy={loading}>
           <main id="main" className="main-content">
             {children}
           </main>
         </div>
       ) : !session.user && !session.demo ? (
-        <main id="main" className="page" role="status">
-          <p>{error ?? 'Loading your workspace...'}</p>
-          {error && (
-            <button type="button" className="button" onClick={data.refresh}>
-              Try again
-            </button>
+        <main id="main">
+          {error ? (
+            <div className="page" role="status">
+              <p>{error}</p>
+              <button type="button" className="button" onClick={data.refresh}>
+                Try again
+              </button>
+            </div>
+          ) : (
+            <WorkspaceLoading />
           )}
         </main>
       ) : (
@@ -228,7 +276,7 @@ function NavigationLink({
   readonly href: string;
   readonly icon: AppIcon;
   readonly children: ReactNode;
-  readonly count?: number;
+  readonly count?: number | undefined;
 }) {
   const pathname = usePathname();
   const params = useSearchParams();
@@ -354,8 +402,12 @@ function AppSidebar() {
             <>
               <SidebarGroup>
                 <SidebarMenu>
-                  <NavigationLink href="/" icon={GitPullRequest} count={queue.pulls.filter(readyForReview).length}>
-                    Review queue
+                  <NavigationLink
+                    href="/"
+                    icon={route ? ArrowLeft : GitPullRequest}
+                    count={route ? undefined : queue.pulls.filter((pull) => pull.state === 'open').length}
+                  >
+                    {route ? 'All reviews' : 'Review queue'}
                   </NavigationLink>
                   <NavigationLink href="/repositories" icon={Layers}>
                     Repositories
@@ -400,7 +452,16 @@ function AppSidebar() {
                     </SidebarMenuItem>
                   ))}
                   {options.nextCursor && (
-                    <SidebarMenuItem><button type="button" className="button" disabled={options.loading} onClick={options.loadMore}>Load more repositories</button></SidebarMenuItem>
+                    <SidebarMenuItem>
+                      <button
+                        type="button"
+                        className="button"
+                        disabled={options.loading}
+                        onClick={options.loadMore}
+                      >
+                        Load more repositories
+                      </button>
+                    </SidebarMenuItem>
                   )}
                   {!orgs.length && (
                     <NavigationLink href="/connect" icon={Plus}>
@@ -454,7 +515,11 @@ function TeamSwitcher() {
         <span className="workspace-name" title={name}>
           {name}
         </span>
-        <Popover.Trigger className="icon-button team-switcher-trigger" aria-label="Switch team" title="Switch team">
+        <Popover.Trigger
+          className="icon-button team-switcher-trigger"
+          aria-label="Switch team"
+          title="Switch team"
+        >
           <ChevronsUpDown size={16} />
           <span className="touch-target" aria-hidden="true" />
         </Popover.Trigger>
@@ -488,13 +553,17 @@ function TeamSwitcher() {
                       if (scoped && (scoped.kind === 'pull' || !scoped.settings)) router.push('/');
                       else if (currentTeam)
                         router.push(
-                          team.id ? pathname.replace(currentTeam, '/teams/' + encodeURIComponent(team.id)) : '/',
+                          team.id
+                            ? pathname.replace(currentTeam, '/teams/' + encodeURIComponent(team.id))
+                            : '/',
                         );
                       setOpen(false);
                     }}
                     aria-pressed={team.id === activeTeam}
                   >
-                    <span className="workspace-avatar">{team.id ? team.name.slice(0, 1) : <Users size={15} />}</span>
+                    <span className="workspace-avatar">
+                      {team.id ? team.name.slice(0, 1) : <Users size={15} />}
+                    </span>
                     <span>{team.name}</span>
                     {team.id === activeTeam && <Check size={15} />}
                   </button>

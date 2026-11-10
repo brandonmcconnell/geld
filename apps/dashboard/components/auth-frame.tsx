@@ -9,16 +9,16 @@ export function AuthFrame({ children }: { readonly children: ReactNode }) {
     <div className="auth-layout">
       <div className="auth-main">
         <header className="auth-header">
-          <Link href="/" aria-label="Geld home">
+          <Link href="https://www.geld.sh" aria-label="Geld home">
             <Brand />
           </Link>
-          <Link href="/" className="auth-back">
-            <ArrowLeft size={14} /> Back to workspace
+          <Link href="https://www.geld.sh" className="auth-back">
+            <ArrowLeft size={14} /> Back to website
           </Link>
         </header>
         <div className="auth-content">{children}</div>
         <footer className="auth-footer">
-          <ShieldCheck size={14} /> Your code stays yours. <Link href="/privacy">Privacy policy</Link>
+          <ShieldCheck size={14} /> Your code stays yours. <Link href="https://www.geld.sh/privacy">Privacy policy</Link>
           <PrivacySettingsButton />
         </footer>
       </div>
@@ -34,7 +34,7 @@ export function AuthFrame({ children }: { readonly children: ReactNode }) {
           <li>
             <span>01</span>
             <div>
-              <strong>Bring the work into focus</strong>
+              <strong>Know what needs your review</strong>
               <p>One queue across GitHub, GitLab and Bitbucket.</p>
             </div>
           </li>
@@ -48,15 +48,11 @@ export function AuthFrame({ children }: { readonly children: ReactNode }) {
           <li>
             <span>03</span>
             <div>
-              <strong>Keep moving with confidence</strong>
-              <p>Less noise. Clear decisions. Your progress, preserved.</p>
+              <strong>Pick up where you left off</strong>
+              <p>Your review progress stays with you.</p>
             </div>
           </li>
         </ol>
-        <div className="auth-story-footer">
-          <span>GitHub · GitLab · Bitbucket</span>
-          <span>One clear workspace.</span>
-        </div>
       </aside>
     </div>
   );

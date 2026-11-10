@@ -14,6 +14,7 @@ Controls, panels and navigation states use square corners. Brand buttons retain 
 The dashboard uses Font Awesome Sharp Regular. Selected controls and navigation switch to Sharp Solid. Private repositories use a lock, and discussion threads use square message icons.
 
 Queue rows show current Digest findings, replies needed, approvals and bot results. Earlier summaries are marked outdated, and partial summaries use lower-bound counts.
+Navigation, pagination and refresh retain cached rows and change counts. Descriptions, discussion and assistant messages render Markdown. The diff offers revision-bound source links and expandable context.
 
 ## Screenshots
 
@@ -44,7 +45,6 @@ Queue rows show current Digest findings, replies needed, approvals and bot resul
 | Audit log | `/settings/security` | [View](./screenshots/desktop/security.png) | [View](./screenshots/mobile/security.png) | — |
 | Enterprise instances | `/settings/enterprise` | [View](./screenshots/desktop/enterprise.png) | [View](./screenshots/mobile/enterprise.png) | — |
 | Review preferences | `/settings/review` | [View](./screenshots/desktop/preferences.png) | [View](./screenshots/mobile/preferences.png) | — |
-| Privacy information | `/privacy` | [View](./screenshots/desktop/privacy.png) | [View](./screenshots/mobile/privacy.png) | — |
 | Page not found | `/not-a-dashboard-page` | [View](./screenshots/desktop/not-found.png) | [View](./screenshots/mobile/not-found.png) | [View](./screenshots/dark/not-found.png) |
 | queue digest stale | `/` | [View](./screenshots/desktop/queue-digest-stale.png) | [View](./screenshots/mobile/queue-digest-stale.png) | — |
 | queue digest missing | `/` | [View](./screenshots/desktop/queue-digest-missing.png) | [View](./screenshots/mobile/queue-digest-missing.png) | — |
@@ -77,6 +77,7 @@ Queue rows show current Digest findings, replies needed, approvals and bot resul
 | Advanced preferences | `/settings/review` | [View](./screenshots/desktop/advanced-preferences.png) | [View](./screenshots/mobile/advanced-preferences.png) | — |
 | Guided review start | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/guide-start.png) | [View](./screenshots/mobile/guide-start.png) | — |
 | Diff with Geld categories | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/changes.png) | [View](./screenshots/mobile/changes.png) | [View](./screenshots/dark/changes.png) |
+| Expanded source context | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/changes-context.png) | [View](./screenshots/mobile/changes-context.png) | — |
 | Wrapped code lines | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/changes-wrap.png) | [View](./screenshots/mobile/changes-wrap.png) | — |
 | Submit review composer | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/review-submit.png) | [View](./screenshots/mobile/review-submit.png) | — |
 | Comment on a changed line | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/line-comment.png) | [View](./screenshots/mobile/line-comment.png) | — |
@@ -84,6 +85,7 @@ Queue rows show current Digest findings, replies needed, approvals and bot resul
 | Pull request actions | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/provider-actions.png) | [View](./screenshots/mobile/provider-actions.png) | — |
 | Repository action controls | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/repository-actions.png) | [View](./screenshots/mobile/repository-actions.png) | — |
 | Pull request digest | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/conversation.png) | [View](./screenshots/mobile/conversation.png) | — |
+| Pull request description and discussion | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/discussion.png) | [View](./screenshots/mobile/discussion.png) | — |
 | Review assistant | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/assistant.png) | [View](./screenshots/mobile/assistant.png) | — |
 | Assistant response in context | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/assistant-response.png) | [View](./screenshots/mobile/assistant-response.png) | — |
 | Privacy preferences | `/` | [View](./screenshots/desktop/privacy-dialog.png) | [View](./screenshots/mobile/privacy-dialog.png) | — |
@@ -103,7 +105,7 @@ Queue rows show current Digest findings, replies needed, approvals and bot resul
 | Password recovery sent | `/forgot-password` | [View](./screenshots/desktop/reset-link-sent.png) | [View](./screenshots/mobile/reset-link-sent.png) | — |
 | Set new password | `/settings/account/reset-password?token=synthetic-only` | [View](./screenshots/desktop/reset-password.png) | [View](./screenshots/mobile/reset-password.png) | — |
 | Password reset success | `/settings/account/reset-password?token=synthetic-only` | [View](./screenshots/desktop/reset-password-saved.png) | [View](./screenshots/mobile/reset-password-saved.png) | — |
-| Public review before sign-in | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/review-signed-out.png) | [View](./screenshots/mobile/review-signed-out.png) | — |
+| Protected review redirects to sign-in | `/sign-in` | [View](./screenshots/desktop/review-signed-out.png) | [View](./screenshots/mobile/review-signed-out.png) | — |
 | Digest with bot reviews from an earlier commit | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/digest-stale.png) | [View](./screenshots/mobile/digest-stale.png) | — |
 | Team admin permission state | `/teams/00000000-0000-4000-8000-000000000001?view=advanced` | [View](./screenshots/desktop/team-permission.png) | [View](./screenshots/mobile/team-permission.png) | — |
 | Empty queue | `/` | [View](./screenshots/desktop/queue-empty.png) | [View](./screenshots/mobile/queue-empty.png) | — |
@@ -116,13 +118,12 @@ Queue rows show current Digest findings, replies needed, approvals and bot resul
 | Invalid email code | `/sign-in` | [View](./screenshots/desktop/auth-error.png) | [View](./screenshots/mobile/auth-error.png) | — |
 | Empty inbox | `/` | [View](./screenshots/desktop/inbox-empty.png) | [View](./screenshots/mobile/inbox-empty.png) | — |
 | Inbox connection error | `/` | [View](./screenshots/desktop/inbox-error.png) | [View](./screenshots/mobile/inbox-error.png) | — |
-| Inbox before sign-in | `/` | [View](./screenshots/desktop/inbox-signed-out.png) | [View](./screenshots/mobile/inbox-signed-out.png) | — |
 | Changed file navigation | `/github/acme/platform/pull/128` | — | [View](./screenshots/mobile/files-menu.png) | — |
 | Mobile workspace navigation | `/` | — | [View](./screenshots/mobile/navigation.png) | — |
 
 ## Reproduce
 
-Start a local production build on port 3001.
+Start the dashboard locally on port 3001.
 Run the capture script from the repository root with Playwright available to Node.
 The script intercepts API requests with the included fixtures and verifies that screenshots have no page overflow or browser runtime errors.
 
@@ -131,6 +132,7 @@ export GELD_PLAYWRIGHT_MODULE=/path/to/playwright
 export GELD_CHROMIUM_PATH=/path/to/chromium
 node apps/dashboard/scripts/design-icons-verify.mjs
 node apps/dashboard/scripts/design-verify.mjs
+node apps/dashboard/scripts/queue-continuity-verify.mjs
 node apps/dashboard/scripts/design-capture.mjs
 node apps/dashboard/scripts/design-gallery.mjs
 ```
@@ -142,3 +144,4 @@ Review actions, sign-in operations and billing interactions in these captures ne
 
 Projects and roadmap remain disabled feature stubs and are not part of the enabled dashboard views.
 Git provider and identity-provider pages outside Geld are not included.
+The app’s `/privacy` route redirects to the [website privacy policy](https://www.geld.sh/privacy).

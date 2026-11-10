@@ -12,6 +12,7 @@ const output = path.resolve(__dirname, '../../../docs/dashboard/design/screensho
 const entries = [];
 const errors = [];
 const browserWarnings = [];
+const fixtureStates = new WeakMap();
 const pull = '/github/acme/platform/pull/128';
 async function create(browser, state = {}, viewport = { width: 1440, height: 1000 }, scheme = 'light') {
   const context = await browser.newContext({
@@ -24,6 +25,7 @@ async function create(browser, state = {}, viewport = { width: 1440, height: 100
   context.setDefaultTimeout(10000);
   const writes = await configure(context, state);
   const page = await context.newPage();
+  fixtureStates.set(page, state);
   page.on('pageerror', (e) => errors.push(e.message));
   return { context, page, writes };
 }
@@ -33,6 +35,12 @@ async function go(page, url) {
   } catch (error) {
     if (!String(error).includes('ERR_ABORTED')) throw error;
     await page.goto(base + url, { waitUntil: 'networkidle', timeout: 30000 });
+  }
+  await page.locator('.workspace-main, .auth-content, .error-page').first().waitFor();
+  if (await page.locator('.auth-shell').count()) await page.locator('.auth-shell[aria-busy=false]').waitFor();
+  if (!fixtureStates.get(page)?.queueLoading && await page.locator('.queue-page').count()) {
+    await page.locator('.queue-page[aria-busy=false]').waitFor();
+    await page.locator('.change-count-placeholder[title="Loading change counts"]').first().waitFor({ state: 'hidden' });
   }
   const cancel = page.getByRole('button', { name: 'Decline optional', exact: true });
   if (await page.getByRole('region', { name: 'Privacy choices' }).count()) await cancel.first().click();
@@ -63,7 +71,8 @@ async function shot(page, name, label, group) {
   }
   const file = `${group}/${name}.png`;
   fs.mkdirSync(path.join(output, group), { recursive: true });
-  await page.screenshot({ path: path.join(output, file), fullPage: true });
+  const dialogOpen = await page.getByRole('dialog').filter({ visible: true }).count();
+  await page.screenshot({ path: path.join(output, file), fullPage: dialogOpen === 0 });
   entries.push({
     name,
     label,
@@ -109,7 +118,6 @@ let browser;
       ['security', 'Audit log', '/settings/security'],
       ['enterprise', 'Enterprise instances', '/settings/enterprise'],
       ['preferences', 'Review preferences', '/settings/review'],
-      ['privacy', 'Privacy information', '/privacy'],
       ['not-found', 'Page not found', '/not-a-dashboard-page'],
     ];
     for (const [name, label, url] of routes) {
@@ -160,7 +168,7 @@ let browser;
       .click();
     await shot(page, 'queue-hidden-counts', 'Hidden change counts', group);
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Open a review', exact: true }).click();
+    await page.getByRole('button', { name: 'Open a pull request by URL', exact: true }).click();
     await shot(page, 'open-review', 'Open a pull request by URL', group);
     await page.keyboard.press('Escape');
     await go(page, '/settings/billing');
@@ -232,6 +240,11 @@ let browser;
     await shot(page, 'guide-start', 'Guided review start', group);
     await page.getByRole('tab', { name: 'Diff', exact: true }).click();
     await shot(page, 'changes', 'Diff with Geld categories', group);
+    await page.locator('.diff-file').first().getByRole('button', { name: 'Expand below', exact: true }).first().click();
+    await page.getByText('// Unchanged context, line', { exact: false }).first().waitFor();
+    await shot(page, 'changes-context', 'Expanded source context', group);
+    await go(page, pull);
+    await page.getByRole('tab', { name: 'Diff', exact: true }).click();
     await page.getByRole('button', { name: 'Wrap lines', exact: true }).click();
     await shot(page, 'changes-wrap', 'Wrapped code lines', group);
     if (group === 'mobile') {
@@ -258,6 +271,9 @@ let browser;
     await page.keyboard.press('Escape');
     await page.getByRole('tab', { name: 'Digest', exact: true }).click();
     await shot(page, 'conversation', 'Pull request digest', group);
+    await page.getByRole('button', { name: 'Discussion', exact: true }).click();
+    await shot(page, 'discussion', 'Pull request description and discussion', group);
+    await page.getByRole('button', { name: 'Digest', exact: true }).click();
     await page.getByRole('button', { name: 'Toggle assistant', exact: true }).click();
     await shot(page, 'assistant', 'Review assistant', group);
     await page
@@ -345,7 +361,7 @@ let browser;
     await shot(auth.page, 'reset-password-saved', 'Password reset success', group);
     await auth.context.close();
     for (const [name, label, url, state] of [
-      ['review-signed-out', 'Public review before sign-in', pull, { signedOut: true }],
+      ['review-signed-out', 'Protected review redirects to sign-in', pull, { signedOut: true }],
       ['digest-stale', 'Digest with bot reviews from an earlier commit', pull, { staleBot: true }],
       ['team-permission', 'Team admin permission state', '/teams/' + teamId + '?view=advanced', { member: true }],
       ['queue-empty', 'Empty queue', '/', { emptyQueue: true }],
@@ -378,24 +394,15 @@ let browser;
     for (const [name, state] of [
       ['inbox-empty', { emptyInbox: true }],
       ['inbox-error', { inboxError: true }],
-      ['inbox-signed-out', { signedOut: true }],
     ]) {
       const inbox = await create(browser, state, viewport);
       await go(inbox.page, '/');
       if (group === 'mobile') await inbox.page.getByRole('button', { name: 'Open navigation', exact: true }).click();
       await inbox.page.getByRole('button', { name: 'Open inbox', exact: true }).click();
       const label =
-        name === 'inbox-empty'
-          ? 'Empty inbox'
-          : name === 'inbox-error'
-            ? 'Inbox connection error'
-            : 'Inbox before sign-in';
+        name === 'inbox-empty' ? 'Empty inbox' : 'Inbox connection error';
       const wait =
-        name === 'inbox-empty'
-          ? 'You’re up to date'
-          : name === 'inbox-error'
-            ? 'Inbox could not be loaded.'
-            : 'Sign in to view your inbox';
+        name === 'inbox-empty' ? 'You’re up to date' : 'Inbox could not be loaded.';
       await inbox.page.getByText(wait, { exact: true }).filter({ visible: true }).waitFor();
       await shot(inbox.page, name, label, group);
       await inbox.context.close();

@@ -131,6 +131,7 @@ export interface ProviderClient {
   reviewRequesters?(
     ref: PullRef,
   ): Promise<ProviderResult<readonly { readonly reviewer: string; readonly requester: string }[]>>;
+  fileContent?(ref: RepositoryRef, path: string, revision: string): Promise<ProviderResult<string>>;
   diff(ref: PullRef): Promise<ProviderResult<string>>;
   comments(ref: PullRef): Promise<ProviderResult<readonly ProviderComment[]>>;
   comment(ref: PullRef, body: string): Promise<ProviderResult<string>>;
