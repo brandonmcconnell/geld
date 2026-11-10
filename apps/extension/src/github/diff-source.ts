@@ -164,6 +164,7 @@ export class DiffSource {
       if (cached !== null) {
         const ready: DiffFetchState = { status: 'ready', files: cached };
         this.memory.set(key, ready);
+        if (sha !== null) this.refreshHeadless(diffUrl, key, cached);
         // Stale-while-revalidate for list rows: show the old counts now,
         // refresh them in the background; the chip updates when that lands.
         // An entry with no files at all is refreshed too: older builds cached
@@ -189,6 +190,14 @@ export class DiffSource {
     // had come back (a 20 MB download called too large, or a 503). Whichever lands first shows; the diff wins.
     if (priority === 'page') this.askSummaries(diffUrl, key);
     return this.stateOf(key);
+  }
+
+  /**
+   * The head-less state (a list row, kept for the tab's life across soft navigations) is the same pull request's diff
+   * as of an earlier moment: the head the page names replaces it, from the network or from disk, as on disk.
+   */
+  private refreshHeadless(diffUrl: string, key: string, files: readonly FileStats[]): void {
+    if (key !== diffUrl && this.memory.get(diffUrl)?.status === 'ready') this.memory.set(diffUrl, { status: 'ready', files });
   }
 
   private keyFor(diffUrl: string, sha: string | null): string {
@@ -221,9 +230,7 @@ export class DiffSource {
       const response: unknown = await browser.runtime.sendMessage(request);
       if (isFetchDiffResponse(response) && response.ok) {
         this.memory.set(key, { status: 'ready', files: response.files });
-        // The head-less state (a list row, kept for the tab's life across soft navigations) is the same pull request's
-        // diff as of an earlier moment: the newest head's replaces it, as on disk.
-        if (sha !== null && key !== diffUrl && this.memory.get(diffUrl)?.status === 'ready') this.memory.set(diffUrl, { status: 'ready', files: response.files });
+        if (sha !== null) this.refreshHeadless(diffUrl, key, response.files);
         this.provisional.delete(diffUrl);
         this.retryAttempts.delete(key);
         this.busyWaits.delete(key);

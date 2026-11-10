@@ -415,6 +415,8 @@ export class GeldController {
    * page's embedded payload, head included, so a head read from the page after such a move may be from before a push.
    */
   private navigatedInDocument = documentNavigatedSinceLoad();
+  /** The page state whose head is still to be asked of GitHub (`askHeadOnArrival`). */
+  private headAskFor: string | null = null;
   /** Header counts wait for GitHub to name the head of a pull request reached in-document, at most until `until`. */
   private headHold: { readonly stateKey: string; readonly until: number } | null = null;
 
@@ -1146,6 +1148,7 @@ export class GeldController {
       this.publish({ ...IDLE_STATE, repo, allowed: false, rule: decision.rule?.raw ?? null });
       return;
     }
+    this.askHeadOnArrival(page);
 
     if (!document.documentElement.hasAttribute(ATTR_DRESSED)) document.documentElement.setAttribute(ATTR_DRESSED, '');
     applyAttachmentLightbox(this.settings.attachmentLightbox);
@@ -1837,7 +1840,11 @@ export class GeldController {
   private syncCountsStandIn(page: PageInfo, sha: string | null, groups: readonly HeaderStatGroup[], url: URL): boolean {
     let want: StandIn | null = null;
     const pullPath = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(url.pathname)?.[0] ?? null;
-    if (page.kind.startsWith('pull') && page.diffUrl !== null && pullPath !== null && groups.every((group) => isCountsStandIn(group.host))) {
+    const standsIn = page.kind.startsWith('pull') && page.diffUrl !== null && pullPath !== null && groups.every((group) => isCountsStandIn(group.host));
+    if (standsIn && this.headHeld(page)) {
+      // The head GitHub names is still to come: the payload's may be from before a push, so its counts wait with it.
+      want = 'skeleton';
+    } else if (standsIn && page.diffUrl !== null && pullPath !== null) {
       // GitHub's totals are the whole pull request's, so a Files tab narrowed to a commit or range counts its own diff.
       const github = page.commits === undefined ? headerDiffstat(pullPath, sha, () => this.onCountsStandInChanged()) : null;
       const state = this.diffSource.request(page.diffUrl, sha, 'page');
@@ -1876,6 +1883,7 @@ export class GeldController {
     if (repo !== null && !decideRepo(this.repoRules, repo).allowed) return;
     this.enterPage(page);
     this.currentPage = page;
+    this.askHeadOnArrival(page);
     phase('header-now', () => this.applyHeaderTotals(page, url, this.matcherFor(repo), null, 0, null));
     this.observer?.takeRecords();
   }
@@ -1938,7 +1946,7 @@ export class GeldController {
    */
   private onFilesRefresh(): void {
     const page = this.currentPage;
-    if (page === null || !page.kind.startsWith('pull')) return;
+    if (page === null || !page.kind.startsWith('pull') || !this.mayDressPage()) return;
     this.askHead(page, false);
   }
 
@@ -1958,7 +1966,14 @@ export class GeldController {
     this.headHold = null;
     this.headAsks += 1;
     forgetAskedHead();
-    if (this.navigatedInDocument && page.kind.startsWith('pull') && page.commits === undefined) this.askHead(page, true);
+    this.headAskFor = this.navigatedInDocument && page.kind.startsWith('pull') && page.commits === undefined ? page.stateKey : null;
+  }
+
+  /** The ask `enterPage` wanted, once the page is one Geld dresses: a sign-in page or a repository left out asks nothing. */
+  private askHeadOnArrival(page: PageInfo): void {
+    if (this.headAskFor !== page.stateKey || !this.mayDressPage()) return;
+    this.headAskFor = null;
+    this.askHead(page, true);
   }
 
   private headHeld(page: PageInfo): boolean {
