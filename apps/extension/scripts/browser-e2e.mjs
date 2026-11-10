@@ -526,7 +526,7 @@ async function runCase(name, url, body, discovery = false) {
       }
       if (response.status() < 400) return;
       const resourceProvider = providerOf(response.url());
-      const failure = fileMenuPrivacy ? { url: '[native_resource_omitted]', status: response.status(), observedAt: new Date().toISOString(), expectedAnonymousRestriction: response.status() === 401 || response.status() === 403 } : whitespacePrivacy ? { url: whitespaceReceiptURL(response.url()), status: response.status(), observedAt: new Date().toISOString(), expectedAnonymousRestriction: response.status() === 401 || response.status() === 403 }
+      const failure = fileMenuPrivacy ? { url: '[native_resource_omitted]', provider: ['bitbucket','gitlab','github'].includes(resourceProvider) ? resourceProvider : 'unclassified', api: bitbucketApi(response.url()) ? 'bitbucket_standard' : 'not_bitbucket_standard', status: response.status(), observedAt: new Date().toISOString(), expectedAnonymousRestriction: response.status() === 401 || response.status() === 403 } : whitespacePrivacy ? { url: whitespaceReceiptURL(response.url()), status: response.status(), observedAt: new Date().toISOString(), expectedAnonymousRestriction: response.status() === 401 || response.status() === 403 }
         : { url: safeUrl(response.url()), status: response.status(), retryAfter: headers['retry-after'] ?? null, quotaHeaders: quota, observedAt: new Date().toISOString(), expectedAnonymousRestriction: response.status() === 401 || response.status() === 403 };
       if (item.sourceFailures.length < 100) item.sourceFailures.push(failure);
       if (response.status() === 429 && resourceProvider !== null) {

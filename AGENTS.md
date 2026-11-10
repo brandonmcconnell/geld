@@ -2992,6 +2992,11 @@ The default raw collector remains pinned to its original exact URL, and no eligi
   First-use current checks retain only bounded phase, last and first-failure projections of their existing guard read before asserting, without extra DOM/API reads or raw code, bootstrap or field values.
   Actual293 remains failed with native Off restoration unverified, and this arming correction adds no post-Save wait or mixed-renderer permission.
 
+- **Bounding-box corners are not guaranteed rounded-button hit targets**: an actual offline Chromium synthetic32px button with4px radius rejects the old corner predicate even when unobscured, without establishing the unmeasured295 native failure cause.
+  File-menu arming keeps mandatory original center ownership and bounded cardinal inset hits, with center and edge overlays still rejected, while legacy corner flags and normalized radius numbers are diagnostic only.
+  Fixed operation phases, handle/asElement and actual arm/hit results are retained before assertions, and handle/listener cleanup cannot replace the primary rejected stage.
+  URL-omitted response failures report only safe known-provider and standard-Bitbucket-API enums, without retroactively identifying295's unclassified429 or claiming all HTTP mutations are observed.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
