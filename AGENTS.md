@@ -3024,6 +3024,9 @@ The installed300 session case preserved corrected counts and the known test cate
 That report did not retain layout ownership or positioning, so visible-root observations alone do not identify an adapter or controller cause.
 Native-presentation diagnostics retain only bounded known layout enums, Geld grouping and hiding markers, mount state and at most four ancestors per known file within the existing read.
 The independent observer reports its bounded count when its existing history limit rejects a session, without relaxing the limit or granting source authority.
+The anonymous session witness must remain visible and retain its original node, parent and destination, but unrelated ancestor class or style updates do not themselves change the actor.
+The independent harness rejects actual concealment, removed witnesses, changed destinations and signed-in contradictions while permitting current visible witnesses through benign styling updates.
+Witness-mutation failures retain only a fixed attribute and target kind, current visibility and whether the recorded old value matches the current value, never raw attribute values.
 
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
