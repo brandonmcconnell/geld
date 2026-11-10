@@ -3549,3 +3549,12 @@ GitLab reviewer sidebar rows expose native account IDs, usernames and profile UR
 Only those verified rows participate in local Hidden people folding and visit peeks, using the same reversible display rules as comments.
 Reviewer assignments, approval controls and the provider's assigned-reviewer total remain native and unchanged.
 Display names or initials alone are never enough, so Bitbucket widgets without durable identities remain untouched.
+
+Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
+Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
+
+Malformed GitLab approval or reviewer rows are isolated individually and mark reviews partial without discarding valid standings, discussion evidence or native required/remaining counts.
+An all-malformed source supplies no known empty reviewer list.
+
+Bitbucket hidden-people matching and exact-rule removal use the same canonical `bitbucket.org/uuid/<uuid>` identity as PR lists, normalized from the native account UUID.
+Keep display logins separate, leave malformed account identities visible, and never remove a wildcard during a per-person unhide.
