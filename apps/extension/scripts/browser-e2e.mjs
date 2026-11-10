@@ -25,6 +25,7 @@ import { BITBUCKET_COMMIT_LIST, commitLinkSettingsScope, verifyBitbucketCommitLi
 import { GITLAB_FILE_SEARCH, verifyGitLabFileSearch } from './gitlab-file-search.mjs';
 import { verifyGitLabDisplayedOutline } from './gitlab-displayed-outline.mjs';
 import { verifyGitLabWholeTestContext } from './gitlab-whole-test-context.mjs';
+import { observeStandaloneWhole, standaloneWholeURL, verifyStandaloneWhole } from './gitlab-standalone-whole.mjs';
 import { observeGitLabComparisons } from './gitlab-comparison-observer.mjs';
 import { CODERABBIT_FIXTURE, observeCodeRabbitFixture, verifyCodeRabbitCommands } from './gitlab-coderabbit-acceptance.mjs';
 import { verifyGitLabTableHeights } from './gitlab-table-height-acceptance.mjs';
@@ -54,6 +55,7 @@ const FOCUSED_CASES = {
   'gitlab-lists': ['gitlab-project-mr-list', 'gitlab-group-mr-list'],
   'gitlab-diff': ['gitlab-mixed', 'gitlab-all-tests'],
   'gitlab-file-search': ['gitlab-file-search'],
+  'gitlab-standalone-whole': ['gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'],
   'gitlab-review': ['gitlab-overview-digest'],
   'gitlab-bot': ['gitlab-bot-digest'],
   'gitlab-coderabbit': ['gitlab-coderabbit-digest'],
@@ -69,6 +71,7 @@ const codeRabbitSources = new WeakMap();
 const syntaxOnObservers = new WeakMap();
 const nativeBashSources = new WeakMap();
 const gitLabComparisonSources = new WeakMap();
+const gitLabStandaloneSources = new WeakMap();
 const GL_MIXED = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs?diff_id=2158520123';
 const GL_OVERVIEW = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334';
 const GL_BOT = 'https://gitlab.com/whitebox-aero/whitebox/-/merge_requests/272';
@@ -337,6 +340,7 @@ async function runCase(name, url, body, discovery = false) {
   let pipelineSettings;
   let pipelineMainAsset;
   let gitLabComparisonObserver;
+  let standaloneObserver;
   let syntaxOnTraffic;
   const abort = new AbortController();
   try {
@@ -358,6 +362,9 @@ async function runCase(name, url, body, discovery = false) {
     }
     if (name === 'gitlab-file-search' && focus !== 'gitlab-file-search') {
       item.status = 'not_selected';item.reason = 'Native file-search acceptance requires its explicit literal focus, excluding all and default. No navigation or browser Ctrl+F claim.';return;
+    }
+    if (['gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'].includes(name) && focus !== 'gitlab-standalone-whole') {
+      item.status = 'not_selected';item.reason = 'Standalone whole-file and native-context acceptance requires its explicit literal focus, excluding all/default/regression. No navigation or source acquisition.';return;
     }
     if (name === 'gitlab-coderabbit-digest' && focus === 'all') {
       item.status = 'not_selected';item.reason = 'CodeRabbit native-source and clipboard acceptance is explicit-focus only; no extra corpus navigation in all/default slices.';return;
@@ -449,6 +456,7 @@ async function runCase(name, url, body, discovery = false) {
     });
     if (name === 'gitlab-bot-digest') observeGitLabBotFixture(page, item);
     if (name === 'gitlab-mixed') { gitLabComparisonObserver=observeGitLabComparisons(page,item,{extensionId});gitLabComparisonSources.set(page,gitLabComparisonObserver); }
+    if (['gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'].includes(name)) { item.standaloneTraffic = {};standaloneObserver = observeStandaloneWhole(page, item.standaloneTraffic, { kind: name.endsWith('-commit') ? 'commit' : 'compare', extensionId, safeUrl });gitLabStandaloneSources.set(page, standaloneObserver); }
     if (name === 'gitlab-coderabbit-digest') codeRabbitSources.set(page, observeCodeRabbitFixture(page, item, extensionId));
     if (name === 'bitbucket-pipeline-shell') {
       item.nativeMainAsset = {};pipelineMainAsset = observeBitbucketPipelineMainAsset(page, item.nativeMainAsset, { writeArtifact: (file, bytes, signal) => writeFile(resolve(artifacts, file), bytes, { signal }) });
@@ -469,7 +477,7 @@ async function runCase(name, url, body, discovery = false) {
     const result = await body(page, item);
     Object.assign(item, result);
     item.auth = await authObservation(page, provider);
-    item.artifacts = name === 'bitbucket-native-bash-style' ? item.nativeBashStyle.artifacts : await capture(page, name, { fullPage: !['bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on'].includes(name) });
+    item.artifacts = name === 'bitbucket-native-bash-style' ? item.nativeBashStyle.artifacts : await capture(page, name, { fullPage: !['bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'].includes(name) });
     item.status = result?.status ?? (discovery ? 'discovery' : 'passed');
   } catch (error) {
     item.status = discovery ? item.rateLimitedUntil === undefined ? 'unavailable' : 'rate_limited' : 'failed';
@@ -479,7 +487,7 @@ async function runCase(name, url, body, discovery = false) {
       item.error = `${item.holdReason === 'conservative_anonymous_api_budget' ? 'Conservative anonymous API budget hold' : item.navigationSuppressedByCooldown ? 'Inherited provider cooldown' : 'Provider HTTP429 cooldown'} until ${item.rateLimitedUntil}. Native demand stopped and no retry was attempted.`;
     }
     if (page !== undefined && !page.isClosed()) {
-      try { item.artifacts = await capture(page, `${name}-failed`, { fullPage: !['bitbucket-native-bash-style', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on'].includes(name) }); } catch (captureError) { item.captureError = errorText(captureError); }
+      try { item.artifacts = await capture(page, `${name}-failed`, { fullPage: !['bitbucket-native-bash-style', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'].includes(name) }); } catch (captureError) { item.captureError = errorText(captureError); }
     }
   } finally {
     currentCaseAbort = undefined;
@@ -492,6 +500,11 @@ async function runCase(name, url, body, discovery = false) {
       try { await gitLabComparisonObserver.dispose(); }
       catch { item.gitLabComparisonObservations.status='unavailable';item.gitLabComparisonObservations.cleanup={status:'failed',code:'OBSERVER_CLEANUP_UNAVAILABLE'}; }
       if (page !== undefined) gitLabComparisonSources.delete(page);
+    }
+    if (standaloneObserver !== undefined) {
+      try { await standaloneObserver.dispose(); }
+      catch (error) { item.status = 'failed';item.cleanupError = errorText(error); }
+      if (page !== undefined) gitLabStandaloneSources.delete(page);
     }
     if (page !== undefined && !page.isClosed()) {
       try { await page.close(); }
@@ -3033,6 +3046,18 @@ try {
     item.featureParity = 'partial';
     return { status: 'passed', verified: 'The actual immutable standalone GitLab commit filters2/+12−0 to1/+2−0, hides its real test file, and restores native counts/visibility through actual category and master settings with source IDs/links retained.' };
   });
+  for (const kind of ['commit', 'compare']) {
+    await runCase(`gitlab-standalone-whole-${kind}`, standaloneWholeURL(kind), async (page, item) => {
+      item.standaloneWhole = {};
+      await verifyStandaloneWhole(page, item.standaloneWhole, { kind, observer: gitLabStandaloneSources.get(page), poll, capture,
+        readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY),
+        writeSettings: (value) => options.evaluate(async (key, saved) => { await chrome.storage.sync.set({ [key]: saved }); }, SETTINGS_KEY, value),
+        readState: async () => ({ runtime: await tabState(page), native: await gitLabDom(page) }),
+      });
+      item.featureParity = 'partial';
+      return { status: item.standaloneWhole.status, verified: item.standaloneWhole.status === 'passed' ? 'Actual absent-owner standalone source branch: trusted Find, one exact13215 immutable whole-body response, original UP/BOTH context expansion for two qualified tests, preserved source/counts/Viewed/settings/theme and cleanup.' : undefined };
+    });
+  }
 
   for (const [name, url] of [['gitlab-project-mr-list', GL_PROJECT_LIST], ['gitlab-group-mr-list', GL_GROUP_LIST]]) {
     await runCase(name, url, async (page, item) => {
