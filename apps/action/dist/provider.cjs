@@ -21172,6 +21172,7 @@ var BitbucketCiAdapter = class {
         name: text(status.name),
         sha: commit.hash,
         status: state === "INPROGRESS" ? "in_progress" : "completed",
+        ...typeof status.description === "string" && status.description !== "" ? { description: status.description } : {},
         conclusion: state === "INPROGRESS" ? null : state === "SUCCESSFUL" ? "success" : state === "FAILED" ? "failure" : "cancelled",
         startedAt: time3(status.created_on),
         ...state === "INPROGRESS" ? {} : { completedAt: updatedAt }

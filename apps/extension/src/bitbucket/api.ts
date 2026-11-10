@@ -80,6 +80,7 @@ export interface BitbucketTask {
 }
 
 export interface BitbucketStatus {
+  readonly description?: string;
   readonly key: string;
   readonly name: string;
   readonly state: 'SUCCESSFUL' | 'FAILED' | 'INPROGRESS' | 'STOPPED';
@@ -241,7 +242,7 @@ function parseStatus(value: unknown, repositoryPath: string): BitbucketStatus {
   if (self !== null) { try { selfUrl = canonicalBitbucketApiUrl(self); } catch { selfUrl = null; } }
   const selfSha = selfUrl?.origin === API_ORIGIN && selfUrl.pathname.startsWith(`${repositoryPath}/commit/`) ? /\/commit\/((?:[a-f0-9]{40}|[a-f0-9]{64}))\/statuses(?:\/|$)/i.exec(selfUrl.pathname)?.[1] ?? null : null;
   const sha = optionalCommit(status) ?? selfSha;
-  return { key: string(status.key), name: string(status.name), state, createdAt: timestamp(status.created_on), updatedAt: timestamp(status.updated_on), url: webUrl(status.url), sha };
+  return { ...(typeof status.description === 'string' && status.description !== '' ? { description: status.description } : {}), key: string(status.key), name: string(status.name), state, createdAt: timestamp(status.created_on), updatedAt: timestamp(status.updated_on), url: webUrl(status.url), sha };
 }
 
 function parseActivity(value: unknown): BitbucketActivity {

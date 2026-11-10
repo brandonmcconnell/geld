@@ -3132,6 +3132,17 @@ Native context inputs require three remaining observed slots for at most two con
 A cached owned fold may omit that request reserve only after a fresh qualified source snapshot proves every leaf line already mounted and source-equal, with the exact closed fold still present.
 The after-request hard stop remains active during cached toggles and every other phase.
 
+
+### Provider bot quota refusals
+
+A CodeRabbit warning alert headed exactly `Review limit reached` describes a refused run even when its explanation is long.
+Completed neutral or successful checks whose actual description says the run was rate limited, paused or skipped also preserve the earlier real review instead of manufacturing a clean result.
+Native provider bot checks still require the existing bound publisher, configured check key and current-head association;
+a description does not supply identity.
+Keep provider code-link evidence guards when sharing the refusal parser, and retain Bitbucket build-status descriptions in both extension and CI normalization without inventing a bot author.
+GitLab pipeline jobs do not provide an equivalent free-text check description;
+do not substitute job names or failure enums.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 

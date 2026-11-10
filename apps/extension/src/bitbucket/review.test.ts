@@ -124,7 +124,7 @@ describe('Bitbucket review normalization from documented API fixtures', () => {
   });
 
   it('keeps only explicitly current-head statuses and reports missing provenance', async () => {
-    const status = { key: 'ci', name: 'CI', state: 'SUCCESSFUL', created_on: DATE, updated_on: LATER, url: 'https://builds.example.com/1' };
+    const status = { key: 'ci', name: 'CI', description: 'Review rate limited', state: 'SUCCESSFUL', created_on: DATE, updated_on: LATER, url: 'https://builds.example.com/1' };
     const { page, client } = setup({ statuses: [
       { ...status, links: { self: { href: `https://api.bitbucket.org/2.0/repositories/acme/widgets/commit/${HEAD}/statuses/build/ci` } } },
       { ...status, name: 'Old CI', links: { self: { href: `https://api.bitbucket.org/2.0/repositories/acme/widgets/commit/${BASE}/statuses/build/ci` } } },
@@ -135,7 +135,16 @@ describe('Bitbucket review normalization from documented API fixtures', () => {
     expect(snapshot.input.checks).toEqual([expect.objectContaining({ name: 'CI', sha: HEAD, status: 'completed', conclusion: 'success', startedAt: DATE, completedAt: LATER })]);
     expect(snapshot.unavailable.filter((item) => item.area === 'CI checks')).toHaveLength(2);
     expect(snapshot.input.checksCoverage).toBe('partial');
-    expect(snapshot.input.checks?.[0]).toMatchObject({ key: 'ci', nativeStatus: 'SUCCESSFUL' });
+    expect(snapshot.input.checks?.[0]).toMatchObject({ key: 'ci', nativeStatus: 'SUCCESSFUL', description: 'Review rate limited' });
+  });
+
+  it('omits absent or malformed status descriptions without inventing a bot publisher', async () => {
+    for (const description of [undefined, null, 42, {}]) {
+      const { page, client } = setup({ statuses: [{ key: 'ci', name: 'CI', state: 'SUCCESSFUL', description, created_on: DATE, updated_on: LATER, commit: { hash: HEAD } }] });
+      const snapshot = await fetchBitbucketReview(page, new AbortController().signal, client);
+      expect(snapshot.input.checks?.[0]).not.toHaveProperty('description');
+      expect(snapshot.input.checks?.[0]).not.toHaveProperty('authorId');
+    }
   });
 
   it('renders only explicit source and state changes as timeline events', async () => {
