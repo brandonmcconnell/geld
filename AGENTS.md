@@ -3443,6 +3443,10 @@ GitHub, GitLab and Bitbucket choose the gateway decision model through the same 
 A saved model choice applies only when the current gateway advertises or inherently supports decision models, so another gateway's cached model list cannot authorize a stale choice.
 Provider addressed-state caches include the selected decision setting and are reconsidered when that choice changes, while native resolved and outdated states remain authoritative.
 
+Provider native count rewrites use the shared count grammar and preserve the native grouping separator in visible text and accessibility labels.
+GitLab's combined Added and Removed label is identified with the same grammar, so dotted, apostrophe and no-break-space grouping cannot split one count into several or leave stale totals.
+Count restoration continues to retain the original text nodes, icons and latest native wording.
+
 Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
 Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
 

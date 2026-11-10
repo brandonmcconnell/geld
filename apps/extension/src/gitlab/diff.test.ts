@@ -318,3 +318,9 @@ it('finds real MR list rows and author login without confusing issues or externa
   expect(rows).toHaveLength(1);
   expect(rows[0]).toMatchObject({ url: 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266882', author: 'mdangelo6' });
 });
+
+it.each(['.', '’', '\u202f'])('recognizes a combined native count label grouped with %s', (separator) => {
+  document.body.innerHTML = `<div class="diff-stats inline-parallel-buttons"><div class="diff-stats-contents"><div aria-label="Added 12${separator}345 lines. Removed 6${separator}789 lines."><span data-testid="js-file-addition-line">12${separator}345</span><span data-testid="js-file-deletion-line">6${separator}789</span></div></div></div>`;
+  const wrapper = document.querySelector<HTMLElement>('[aria-label]');
+  expect(gitLabHeaderTargets(document)[0]?.labels).toEqual([{ host: wrapper, attribute: 'aria-label', count: 'lines' }]);
+});

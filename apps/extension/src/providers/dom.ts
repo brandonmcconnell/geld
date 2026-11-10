@@ -1,4 +1,4 @@
-import { pluralize } from '@geld/core';
+import { COUNT_PATTERN, formatCountLike, pluralize } from '@geld/core';
 import type { ChangeTotals } from '@geld/core';
 
 export function element<K extends keyof HTMLElementTagNameMap>(tag: K, text = '', className = ''): HTMLElementTagNameMap[K] {
@@ -17,8 +17,18 @@ interface ManagedCount {
 
 interface ManagedAttribute { original: string; last: string }
 
+const COUNT = new RegExp(COUNT_PATTERN);
+const COUNTS = new RegExp(COUNT_PATTERN, 'g');
+const ADDED_LINES = new RegExp(String.raw`\bAdded\s+${COUNT_PATTERN}\s+lines?\b`, 'i');
+const REMOVED_LINES = new RegExp(String.raw`\bRemoved\s+${COUNT_PATTERN}\s+lines?\b`, 'i');
+const LINE_TOTAL = new RegExp(String.raw`\b(Added|Removed)\s+${COUNT_PATTERN}\s+lines?\b`, 'gi');
+
+export function isCombinedLineLabel(text: string): boolean {
+  return (text.match(COUNTS)?.length ?? 0) === 2 && ADDED_LINES.test(text) && REMOVED_LINES.test(text);
+}
+
 function countText(original: string, count: number): string {
-  return original.replace(/\d[\d,\u00a0\u202f]*/, new Intl.NumberFormat('en-US').format(count))
+  return original.replace(COUNT, (value) => formatCountLike(value, count))
     .replace(/\b(files?|additions?|deletions?|lines?)\b/gi, (word) => {
       const singular = word.replace(/s$/i, '');
       return count === 1 ? singular : `${singular}s`;
@@ -65,15 +75,14 @@ export class ProviderCounts {
 
   writeAttribute(host: HTMLElement, attribute: 'aria-label' | 'title', count: number): void {
     const current = host.getAttribute(attribute);
-    if (current === null || (current.match(/\d[\d,\u00a0\u202f]*/g)?.length ?? 0) !== 1) return;
+    if (current === null || (current.match(COUNTS)?.length ?? 0) !== 1) return;
     this.writeManagedAttribute(host, attribute, (original) => countText(original, count));
   }
 
   writeLineAttribute(host: HTMLElement, attribute: 'aria-label' | 'title', totals: Pick<ChangeTotals, 'additions' | 'deletions'>): void {
     const current = host.getAttribute(attribute);
-    if (current === null || (current.match(/\d[\d,\u00a0\u202f]*/g)?.length ?? 0) !== 2
-      || !/\bAdded\s+\d[\d,\u00a0\u202f]*\s+lines?\b/i.test(current) || !/\bRemoved\s+\d[\d,\u00a0\u202f]*\s+lines?\b/i.test(current)) return;
-    this.writeManagedAttribute(host, attribute, (original) => original.replace(/\b(Added|Removed)\s+\d[\d,\u00a0\u202f]*\s+lines?\b/gi, (phrase, verb: string) => countText(phrase, verb.toLowerCase() === 'added' ? totals.additions : totals.deletions)));
+    if (current === null || !isCombinedLineLabel(current)) return;
+    this.writeManagedAttribute(host, attribute, (original) => original.replace(LINE_TOTAL, (phrase, verb: string) => countText(phrase, verb.toLowerCase() === 'added' ? totals.additions : totals.deletions)));
   }
 
   private writeManagedAttribute(host: HTMLElement, attribute: 'aria-label' | 'title', format: (original: string) => string): void {
