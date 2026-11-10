@@ -2410,6 +2410,13 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Bitbucket reviewer membership does not establish a separate pending request, so its request state remains explicitly unknown until a native source proves otherwise.
   State-only legacy inputs retain their existing labels, while an explicitly unknown request never becomes Review requested or a pending count.
   Login-only CI reviewer payloads remain non-authoritative and cannot supply these independent native facts to the extension.
+- **Bots are told from people by the host's own account marks, wherever they appear.**
+  Every automated account goes to the Review bots row and never to Reviews, registered or not.
+  GitLab's REST approval and reviewer lists carry no `bot` or `user_type`, so an account that only approved (GitLab Duo on triage-ops!4544, Nov 2026) read as a person.
+  When some approver or reviewer is not already known to be automated from their own notes, one GraphQL query (`approvedBy`/`reviewers` with `bot`, a GET, answered signed out) marks the bots by numeric id and username (`botAccounts` in `gitlab/review.ts`);
+  it is skipped when nobody approved or reviewed, its failure leaves reviewers as people, and a 429 stands.
+  Bitbucket marks its Connect and Forge app accounts `type: "app_user"` (`BitbucketAuthor.automated`).
+  A bot's approval reads "approved" on its pill with no note on whether a rule counts it: the Reviews fraction is the host's own and already counts a bot approval wherever a rule does.
 - **Review bot trust is scoped to native account identity.**
   A GitLab numeric account ID or Bitbucket account UUID is bound to a documented service only after explicit confirmation for that exact provider/origin/repository.
   User-selected PAT, group-token and service accounts have per-install identities, so GitHub logins, display names, comment markers and configuration files never establish account trust on another provider.

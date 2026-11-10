@@ -17,7 +17,7 @@ interface Unavailable {
 }
 
 function reviewAuthor(author: BitbucketAuthor): ProviderReviewAuthor {
-  return { id: author.id, login: author.login };
+  return { id: author.id, login: author.login, ...(author.automated === true ? { automated: true } : {}) };
 }
 
 function canonicalUrl(value: string | null, page: ProviderReviewPage): URL | null {

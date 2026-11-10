@@ -299,6 +299,31 @@ async function jsonResponse(url: string, origin: string, signal: AbortSignal, ca
   }
 }
 
+const BOT_ACCOUNTS_QUERY = 'query($p:ID!,$i:String!){project(fullPath:$p){mergeRequest(iid:$i){approvedBy{nodes{id username bot}} reviewers{nodes{id username bot}}}}}';
+
+function botAccountsUrl(origin: string, path: string, iid: string): string {
+  const url = new URL('/api/graphql', origin);
+  url.searchParams.set('query', BOT_ACCOUNTS_QUERY);
+  url.searchParams.set('variables', JSON.stringify({ p: path, i: iid }));
+  return url.href;
+}
+
+/** Numeric account id → username for every approver or reviewer GitLab's GraphQL marks as a bot. */
+export function botAccounts(value: unknown): ReadonlyMap<string, string> {
+  const bots = new Map<string, string>();
+  const mergeRequest = record(value) && record(value.data) && record(value.data.project) ? value.data.project.mergeRequest : null;
+  if (!record(mergeRequest)) return bots;
+  for (const list of [mergeRequest.approvedBy, mergeRequest.reviewers]) {
+    const nodes = record(list) && Array.isArray(list.nodes) ? list.nodes : [];
+    for (const node of nodes) {
+      if (!record(node) || node.bot !== true || typeof node.username !== 'string' || typeof node.id !== 'string') continue;
+      const id = /^gid:\/\/gitlab\/User\/([1-9]\d*)$/.exec(node.id)?.[1];
+      if (id !== undefined) bots.set(id, node.username);
+    }
+  }
+  return bots;
+}
+
 async function listResponse(url: string, origin: string, signal: AbortSignal): Promise<readonly unknown[]> {
   const items: unknown[] = [];
   const endpoint = new URL(url);
@@ -482,6 +507,19 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
   }
   const automated = new Map([...parsed.threads.flatMap(thread => thread.comments), ...parsed.comments, ...parsed.events]
     .filter(entry => entry.author.automated === true).map(entry => [entry.author.id, entry.author]));
+  // The REST approval and reviewer lists carry no bot flag, so an approval-only bot (GitLab Duo) read as a person;
+  // GraphQL is asked only when some reviewer's kind is not already known from their own notes.
+  if ([...reviewerMap.keys()].some(id => !automated.has(id))) {
+    try {
+      for (const [id, login] of botAccounts((await jsonResponse(botAccountsUrl(origin, page.repository.path, page.number), origin, signal)).value)) {
+        const reviewer = reviewerMap.get(id);
+        if (reviewer !== undefined && reviewer.author.login === login && !automated.has(id)) automated.set(id, { ...reviewer.author, automated: true });
+      }
+    } catch (error) {
+      signal.throwIfAborted();
+      if (error instanceof GitLabReviewError && error.status === 429) throw error;
+    }
+  }
   for (const [id, reviewer] of reviewerMap) {
     const author = automated.get(id);
     if (author?.login === reviewer.author.login) reviewerMap.set(id, { ...reviewer, author });

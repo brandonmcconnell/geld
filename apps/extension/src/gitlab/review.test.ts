@@ -2,7 +2,7 @@
 import type { ProviderReviewSubject } from '@geld/review';
 import type { ProviderReviewPage } from '../providers/types';
 import { renderProviderReviewPanel } from '../providers/review-panel';
-import { fetchGitLabReview, gitLabReviewCapabilities, parseGitLabDiscussions } from './review';
+import { botAccounts, fetchGitLabReview, gitLabReviewCapabilities, parseGitLabDiscussions } from './review';
 
 const SHA = 'a'.repeat(40);
 const subject: ProviderReviewSubject = { provider: 'gitlab', origin: 'https://gitlab.com', repository: 'group/subgroup/repo', id: '7', headSha: SHA };
@@ -548,7 +548,8 @@ describe('review availability from independent native endpoints', () => {
     expect(Object.hasOwn(snapshot.input, 'reviewers')).toBe(known);
     expect(snapshot.complete).toBe(complete);
     expect(snapshot.input.checksCoverage).toBe('complete');
-    expect(fetcher).toHaveBeenCalledTimes(6);
+    // GitLab's GraphQL is asked for bot flags only when someone approved or reviewed.
+    expect(fetcher).toHaveBeenCalledTimes(snapshot.input.reviewers?.length ? 7 : 6);
     const host = document.createElement('div'); document.body.append(host);
     const panel = renderProviderReviewPanel(host, snapshot.input, { unavailable: snapshot.unavailable, complete: snapshot.complete, approvalsRequired: snapshot.approvalsRequired, approvalsLeft: snapshot.approvalsLeft });
     const section = panel.element.querySelector('[data-geld-review-key="reviewers"]');
@@ -580,6 +581,30 @@ it('keeps discussion evidence and required approval facts when optional reviewer
   expect(snapshot.approvalsRequired).toBe(2);expect(snapshot.approvalsLeft).toBe(1);
   expect(snapshot.complete).toBe(false);
   expect(snapshot.unavailable).toEqual([expect.objectContaining({ area: 'reviews' }), expect.objectContaining({ area: 'reviews' })]);
+});
+
+it('reads an approval-only bot from GitLab GraphQL, which the REST approval list does not mark (triage-ops!4544)', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (value: string | URL | Request) => {
+    const url = new URL(typeof value === 'string' ? value : value instanceof URL ? value.href : value.url);
+    // As served on triage-ops!4544, Nov 2026: REST names GitLabDuo with no bot fields, GraphQL says bot.
+    if (url.pathname.endsWith('/approvals')) return json({ approvals_required: 2, approvals_left: 2, approved_by: [{ user: { id: 21826781, username: 'GitLabDuo', name: 'GitLab Duo' } }] });
+    if (url.pathname.endsWith('/reviewers')) return json([{ user: { id: 21826781, username: 'GitLabDuo' }, state: 'approved' }, { user: { id: 30, username: 'person' }, state: 'unreviewed' }]);
+    if (url.pathname === '/api/graphql') return json({ data: { project: { mergeRequest: {
+      approvedBy: { nodes: [{ id: 'gid://gitlab/User/21826781', username: 'GitLabDuo', bot: true }] },
+      reviewers: { nodes: [{ id: 'gid://gitlab/User/21826781', username: 'GitLabDuo', bot: true }, { id: 'gid://gitlab/User/30', username: 'person', bot: false }] } } } } });
+    if (url.pathname.endsWith('/discussions.json')) return json([]);
+    if (url.pathname.endsWith('/pipelines')) return json([]);
+    return json({ iid: 7, sha: SHA, state: 'opened', project_id: 1 });
+  }));
+  const result = await fetchGitLabReview(page, new AbortController().signal);
+  expect(result.input.reviewers?.find(reviewer => reviewer.author.login === 'GitLabDuo')?.author.automated).toBe(true);
+  expect(result.input.reviewers?.find(reviewer => reviewer.author.login === 'person')?.author.automated).toBeUndefined();
+  expect(result.approvalsRequired).toBe(2);expect(result.approvalsLeft).toBe(2);
+});
+
+it('keeps reviewers as people when GraphQL is unavailable or names a different account', () => {
+  expect(botAccounts({ message: 'Forbidden' }).size).toBe(0);
+  expect([...botAccounts({ data: { project: { mergeRequest: { approvedBy: { nodes: [{ id: 'gid://gitlab/User/5', username: 'x', bot: true }, { id: 'gid://gitlab/Group/6', username: 'y', bot: true }] } } } } })]).toEqual([['5', 'x']]);
 });
 
 it('preserves automated identity across reviewer endpoints and uses MR assignments when detailed states are unavailable', async () => {
