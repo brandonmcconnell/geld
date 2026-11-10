@@ -184,10 +184,15 @@ export function gitLabHeaderTargets(doc: Document): readonly ProviderHeaderTarge
   const page = describeGitLabPage(current, doc);
   if (page === null) return [];
   const neutral = (node: HTMLElement): boolean => node.closest('[data-geld-ui], [hidden], [aria-hidden="true"], a, button, [role="tab"], [role="tablist"]') === null;
-  const counts = [...doc.querySelectorAll<HTMLElement>('.diff-stats.inline-parallel-buttons .diff-stats-contents')].filter((root) => root.closest('[data-geld-ui]') === null).map((root) => {
+  const review = isProviderReviewPage(page);
+  // The tab bar's right-hand slot holds the review's counts on every tab, as on GitHub, so the Changes toolbar's own totals are only rewritten.
+  const actions = review ? [...doc.querySelectorAll<HTMLElement>('.merge-request-tabs-container > .merge-request-tabs-actions')].find((root) => neutral(root)
+    && root.querySelector(':scope > #discussionCounter [data-testid="discussions-counter-text"], :scope > #js-vue-discussion-counter, :scope > #js-submit-review-button') !== null) : undefined;
+  const counts = [...doc.querySelectorAll<HTMLElement>('.diff-stats.inline-parallel-buttons .diff-stats-contents')].filter((root) => root.closest('[data-geld-ui]') === null).map((root): ProviderHeaderTarget => {
     const additions = root.querySelector<HTMLElement>('[data-testid="js-file-addition-line"]');
     const deletions = root.querySelector<HTMLElement>('[data-testid="js-file-deletion-line"]');
     const files = root.querySelector<HTMLElement>(':scope > .diff-stats-group > span');
+    if (actions !== undefined) return { additions, deletions, files, labels: countLabels(root), passive: true };
     let before = (additions ?? deletions)?.parentElement ?? null;
     while (before !== null && before.parentElement !== root) before = before.parentElement;
     if (before === null) before = root.querySelector<HTMLElement>(':scope > .diff-stats-group');
@@ -195,11 +200,9 @@ export function gitLabHeaderTargets(doc: Document): readonly ProviderHeaderTarge
       ...(neutral(root) && (additions !== null || deletions !== null || files !== null) ? { hintHost: root, hintBefore: before } : {}),
     };
   });
-  if (!isProviderReviewPage(page)) return counts;
-  const actions = [...doc.querySelectorAll<HTMLElement>('.merge-request-tabs-container > .merge-request-tabs-actions')].find((root) => neutral(root)
-    && root.querySelector(':scope > #discussionCounter [data-testid="discussions-counter-text"]') !== null);
-  let fallback = page.kind === 'overview' && !counts.some((target) => target.hintHost !== undefined) && actions !== undefined;
-  const tabs = [...doc.querySelectorAll<HTMLElement>('[data-testid="diffs-tab"] .js-changes-tab-count')].flatMap((files) => {
+  if (!review) return counts;
+  let fallback = actions !== undefined;
+  const tabs = [...doc.querySelectorAll<HTMLElement>('[data-testid="diffs-tab"] .js-changes-tab-count')].flatMap((files): ProviderHeaderTarget[] => {
     if (files.closest('[data-geld-ui]') !== null) return [];
     const tab = files.closest<HTMLAnchorElement>('a[data-action="diffs"][data-toggle="tabvue"]');
     if (tab === null) return [];
@@ -208,9 +211,10 @@ export function gitLabHeaderTargets(doc: Document): readonly ProviderHeaderTarge
     if (target.origin !== current.origin || target.username !== '' || target.password !== '') return [];
     const linked = describeGitLabPage(target, doc);
     if (linked === null || !isProviderReviewPage(linked) || linked.url !== page.url || linked.kind !== 'diff') return [];
-    const hint = fallback && actions !== undefined ? { hintHost: actions, hintBefore: actions.querySelector<HTMLElement>(':scope > #discussionCounter') } : {};
+    const hint = fallback && actions !== undefined
+      ? { hintHost: actions, hintBefore: actions.querySelector<HTMLElement>(':scope > #discussionCounter, :scope > #js-vue-discussion-counter') } : {};
     fallback = false;
-    return [{ files, additions: null, deletions: null, hoverHosts: [tab], ...hint }];
+    return [{ files, additions: null, deletions: null, passive: true, ...hint }];
   });
   return [...counts, ...tabs];
 }

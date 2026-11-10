@@ -140,7 +140,9 @@ it('rewrites only count text and restores native counts, badge nodes, and tab ac
   const badge = required(targets[0]?.files);
   const counts = new ProviderCounts();
   expect(targets).toHaveLength(2);
-  expect(targets[0]?.hoverHosts).toEqual([tab]);
+  expect(targets[0]?.hoverHosts).toBeUndefined();
+  expect(targets[0]?.passive).toBe(true);
+  expect(tab.contains(badge)).toBe(true);
   const stats = required(targets[1]?.additions?.parentElement?.parentElement?.parentElement);
   expect(targets[1]?.keyboardHoverHosts).toEqual([stats]);
   expect(targets[1]?.accessibleSummaryHost).toBe(stats);
@@ -281,7 +283,8 @@ it('reads the actual standalone commit diff and both native file-count surfaces'
   const slot = required(targets[0]?.files?.parentElement?.nextElementSibling);
   expect(targets[0]?.hintHost).toBe(slot);
   expect(targets[0]?.hintBefore).toBeNull();
-  expect(targets[1]?.hoverHosts).toEqual([document.querySelector('[data-testid="sidebar-tab-files"]')]);
+  expect(targets[1]?.hoverHosts).toBeUndefined();
+  expect(targets[1]?.passive).toBe(true);
   const counts = new ProviderCounts();
   for (const target of targets) counts.write(target.files, 0);
   expect(targets.map((target) => target.files?.textContent)).toEqual(['0 files', '0']);

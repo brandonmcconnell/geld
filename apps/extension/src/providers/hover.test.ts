@@ -98,6 +98,22 @@ afterEach(() => {
 });
 
 describe('provider commit hover intent', () => {
+  it("leaves the review's own tabs to the counts in the tab bar while another review's link still counts", async () => {
+    window.location.href = `${ROOT}/-/merge_requests/7`;
+    const get = vi.fn(() => ready());
+    create(get);
+    const own = document.createElement('a'); own.href = `${ROOT}/-/merge_requests/7/diffs`; own.textContent = 'Changes';
+    const other = document.createElement('a'); other.href = `${ROOT}/-/merge_requests/8/diffs`; other.textContent = '!8';
+    document.body.append(own, other); geometry(own); geometry(other);
+    hover(own);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(get).not.toHaveBeenCalled();
+    expect(tooltip()?.hidden ?? true).toBe(true);
+    hover(other);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(get).toHaveBeenCalledOnce();
+  });
+
   it('does not fetch delegated link counts when list statistics are off and closes them when disabled', async () => {
     settings = { ...DEFAULT_SETTINGS, showListStats: false };
     const get = vi.fn(() => ready());
@@ -331,6 +347,25 @@ describe('count tooltip ownership and lifecycle', () => {
     instance.stop();
     expect(host.hasAttribute('tabindex')).toBe(false);
     expect(host.hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it('closes on leave after a click focuses the host, since only keyboard focus holds it open', async () => {
+    const instance = create(vi.fn(() => ready()));
+    const host = document.createElement('span');
+    host.setAttribute('data-geld-ui', '');
+    document.body.append(host);
+    geometry(host);
+    const { all, hidden } = breakdownFromFiles([], createMatcher(DEFAULT_SETTINGS));
+    instance.bindBreakdown(host, () => statsBreakdown(all, hidden, 'test files'));
+    hover(host);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(tooltip()?.hidden).toBe(false);
+    const matches = host.matches.bind(host);
+    vi.spyOn(host, 'matches').mockImplementation((selector: string) => selector === ':focus-visible' ? false : matches(selector));
+    host.focus();
+    leave(host);
+    expect(tooltip()?.hidden).toBe(true);
+    instance.stop();
   });
 
   it('backs off from existing and newly mounted native popovers, including parent-owned descriptions', async () => {

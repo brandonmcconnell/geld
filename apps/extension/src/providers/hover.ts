@@ -5,6 +5,7 @@ import { breakdownFromFiles, hiddenNounPlural, statsBreakdown } from '../github/
 import { lineIndex, mergeLineRects } from '../github/ui/tooltip';
 import type { ProviderDiffSource, ProviderDiffState } from './diff-source';
 import type { ProviderAdapter, ProviderPage } from './types';
+import { isProviderReviewPage } from './types';
 
 export interface ProviderHoverOptions {
   readonly document?: Document;
@@ -253,6 +254,9 @@ export class ProviderHover {
       if (url.origin !== current.origin || url.pathname === current.pathname || url.protocol !== 'https:' || url.username !== '' || url.password !== '') return null;
       const page = this.adapter.describe(url, this.doc);
       if (page === null || page.provider !== this.adapter.id || page.kind === 'other') return null;
+      // The review's own tabs link to it under other paths; its counts already stand in the tab bar.
+      const own = this.adapter.describe(current, this.doc);
+      if (own !== null && isProviderReviewPage(own) && isProviderReviewPage(page) && own.url === page.url) return null;
       const settings = this.settings();
       if (!settings.enabled || !settings.showListStats || !decideRepo(compileRepoRules(settings.repoRules), providerRepositoryScope(page.repository)).allowed) return null;
       return { host: anchor, page };
@@ -521,6 +525,8 @@ export class ProviderHover {
   };
 
   private readonly onFocusIn = (event: FocusEvent): void => {
+    // A click focuses what it lands on; only keyboard focus holds the breakdown open, so a click never pins it.
+    if (!keyboardFocus(elementOf(event.target))) return;
     const candidate = this.candidate(event.target);
     this.focusHost = candidate?.host ?? null;
     if (candidate !== null) this.begin(candidate.host, candidate.page, null);
@@ -544,4 +550,9 @@ export class ProviderHover {
   private readonly onVisibility = (): void => { if (this.doc.hidden) this.close(); };
   private readonly onPosition = (): void => { if (this.active !== null) this.valid(this.active) ? this.position() : this.close(); };
   private readonly onNavigation = (): void => { this.dismissed = null; this.close(); };
+}
+
+function keyboardFocus(target: Element | null): boolean {
+  if (target === null) return false;
+  try { return target.matches(':focus-visible'); } catch { return true; }
 }

@@ -2535,7 +2535,11 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   GitLab popover body padding is 8px vertically and 12px horizontally in the observed default density, and its small text is 12px/18px.
   Rapid diff fold rows inherit the selected code theme's `--code-*` colors and `--rd-body-font-size`/line-height with the native monospace font, rather than the surrounding UI's Sans font or surface palette.
   Define code-theme overrides at the fold row, since variables scoped below the document root cannot resolve in a bridge computed on `html`.
-  GitLab's Changes badge can be pointer-transparent, so bind its surrounding native tab link as the hover and keyboard target while retaining the count span for text updates.
+  The review's counts stand on the right of the tab bar on every tab, as GitHub's do: on GitLab in `.merge-request-tabs-actions` before the thread counter (`#discussionCounter`, or `#js-vue-discussion-counter` until Vue mounts it), on Overview and Changes alike.
+  Only those counts open the breakdown: the Changes tab, its badge and the Changes toolbar's own totals are rewritten in place but never bound (`ProviderHeaderTarget.passive`), since a popover opened from a tab and anchored at the counts read as belonging to neither (triage-ops!4544, Nov 2026).
+  Bitbucket's Files tab and its commit sidebar's Files tab are passive the same way.
+  The provider's link hover also passes over links to the review being read (`candidate` in `providers/hover.ts`): on Overview the Changes tab links to the same review under its `/diffs` path, and read as another review's link it opened the breakdown at the tab.
+  Only keyboard focus (`:focus-visible`) holds the breakdown open: a click that focused a host used to keep it open until focus moved, so switching tabs left it pinned.
   Bitbucket's verified pull-request navigation provides a neutral count slot after its direct native tablist, keeping owned overview line counts outside tab badges and hidden sticky headers.
   The native line-count `aria-label` lives on a wrapper outside the numeric span, so update its count alongside the visible text and restore the latest native wording during teardown.
   Atlassian typography tokens are complete font shorthands, with semantic font weights, shape, spacing, surface and focus tokens supplied by the host.

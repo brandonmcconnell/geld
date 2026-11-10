@@ -777,9 +777,9 @@ export class ProviderController {
       anchors.set(hint, hint);
       if (target.presentationRoot !== undefined) presentations.set(hint, target.presentationRoot);
       else if (!(target.keyboardHoverHosts ?? []).some((host) => host.contains(hint))) keyboard.add(hint);
-      for (const host of [target.additions, target.deletions, target.files, ...(target.hoverHosts ?? []), ...(target.keyboardHoverHosts ?? [])]) if (host !== null) anchors.set(host, hint);
+      for (const host of hoverHostsOf(target)) if (host !== null) anchors.set(host, hint);
     }
-    const current = new Set(targets.flatMap((target) => [target.additions, target.deletions, target.files, ...(target.hoverHosts ?? []), ...(target.keyboardHoverHosts ?? [])]).filter((host): host is HTMLElement => host !== null && host.closest('[aria-hidden="true"], [inert]') === null));
+    const current = new Set(targets.flatMap(hoverHostsOf).filter((host): host is HTMLElement => host !== null && host.closest('[aria-hidden="true"], [inert]') === null));
     for (const host of anchors.values()) current.add(host);
     for (const host of this.headerHosts) {
       if (current.has(host)) continue;
@@ -814,4 +814,8 @@ export class ProviderController {
     this.collapsed.clear();
     this.shownInline = new WeakMap();
   }
+}
+
+function hoverHostsOf(target: ProviderHeaderTarget): readonly (HTMLElement | null)[] {
+  return target.passive ? [] : [target.additions, target.deletions, target.files, ...(target.hoverHosts ?? []), ...(target.keyboardHoverHosts ?? [])];
 }
