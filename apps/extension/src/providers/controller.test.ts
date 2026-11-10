@@ -241,7 +241,7 @@ describe('provider controller behavior', () => {
     await settle();
     expect(controller.getTabState()).toMatchObject({ expanded: true, visible: { files: 0, additions: 0, deletions: 0 } });
     expect(node('#hidden').getAttribute('data-geld-provider-hidden')).toBe('open');
-    expect(document.querySelector('.geld-provider-toggle')?.textContent).toBe('Hide 1 test');
+    expect(document.querySelector('.geld-provider-hidden .geld-provider-toggle')?.textContent).toBe('Hide 1 test');
     controller.toggleHidden();
     controller.requestRefresh();
     await settle();

@@ -3489,6 +3489,14 @@ An open finding stays a warning at 5/5, severe open findings are distinct from a
 Provider bot health uses readable labels and native semantic colors, with setup refusals described as unavailable rather than a failed code review.
 The provider digest exposes the shared open-settings message and wraps header controls on narrow pages.
 
+Provider Flow shows changed files and imports with the shared @geld/core graph algorithms, without moving native diff nodes.
+Surviving source reads start only when the dialog opens and require the exact acquired comparison, full head commit and listed new path.
+Bitbucket Flow follows the explicit source repository from PR metadata, never inferring the target repository for a missing fork identity.
+Source reads reuse the provider admission and cooldown rules, run serially and are bounded to 32 files, 400,000 bytes each and a 15-second per-file deadline.
+Partial inventories and unavailable import sources remain explicit, while removed links come only from the diff's removedImports and a known surviving source or deleted file.
+Category inclusion is local to Flow and never changes the native diff filter, and each card exposes its dependencies as accessible text.
+The GitLab UI public probe checks Flow card counts, category inclusion and focus restoration without treating zero observed edges as proof that every dependency was read.
+
 Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
 Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
 
