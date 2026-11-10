@@ -30,7 +30,7 @@ function host(): HTMLElement {
 beforeEach(() => { document.body.replaceChildren();window.location.href = reviewUrl; });
 
 describe('provider conversation digest', () => {
-  it('shows individual reviewer identities and independent request markers in the collapsed row', () => {
+  it('keeps compact reviewer summaries inline and details behind the closed row', () => {
     const native = { ...input([thread('a')]), reviewers: [
       { author: { id: 'user-1', login: 'alice' }, state: 'approved', reviewRequest: 'pending', url: `${reviewUrl}#note_1`, anchor: 'note_1' },
       { author: { id: 'user-2', login: 'bob' }, state: 'changes_requested', reviewRequest: 'unknown' },
@@ -43,12 +43,13 @@ describe('provider conversation digest', () => {
     const section = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="reviewers"]');
     expect(section?.open).toBe(false);
     const chips = section?.querySelectorAll('.geld-provider-review__reviewer');expect(chips).toHaveLength(2);
-    expect(chips?.[0]?.closest('[data-geld-review-preview]')).not.toBeNull();
+    expect(chips?.[0]?.closest('.geld-provider-review__section-content')).not.toBeNull();
+    expect(section?.querySelectorAll('[data-geld-review-toggle] .geld-provider-review__status-chip')).toHaveLength(2);
     expect(chips?.[0]?.querySelector('img')?.getAttribute('alt')).toBe('');
     expect(chips?.[0]?.getAttribute('aria-label')).toBe('alice: Approved · Review requested');
     expect(chips?.[1]?.querySelector('.geld-provider-review__reviewer-avatar')?.textContent).toBe('B');
     expect(chips?.[1]?.querySelector('.geld-provider-review__reviewer-request')).toBeNull();
-    expect(chips?.[1]?.textContent).toContain('Request state unavailable');
+    expect(section?.textContent).not.toContain('Request state unavailable');
     section?.querySelector<HTMLAnchorElement>('a.geld-provider-review__reviewer')?.click();expect(opened).toHaveBeenCalledWith(`${reviewUrl}#note_1`, 'note_1', expect.any(MouseEvent));
     expect(section?.open).toBe(false);
   });
@@ -392,7 +393,7 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector('[data-geld-review-group="open"]')).toBeNull();
     expect(panel.element.textContent).toContain('Automated account');
     expect(panel.element.textContent).not.toMatch(/Bugbot|Clean|Findings|running review/i);
-    expect([...panel.element.querySelectorAll('button')].filter((button) => !button.hasAttribute('data-geld-item-copy') && !button.hasAttribute('data-geld-review-toggle')).map((button) => button.textContent)).toEqual(['Copy digest']);
+    expect([...panel.element.querySelectorAll('button')].filter((button) => !button.hasAttribute('data-geld-item-copy') && !button.hasAttribute('data-geld-review-toggle')).map((button) => button.getAttribute('aria-label'))).toEqual(['Copy digest']);
   });
 
   it('distinguishes a known empty review, an unavailable source and malformed data', () => {
@@ -402,7 +403,7 @@ describe('provider conversation digest', () => {
     panel.update(input(), { complete: false, unavailable: [{ area: 'Discussions', reason: 'Sign in is required.' }] });
     expect(panel.element.dataset.state).toBe('partial');
     expect(panel.element.textContent).toContain('No review threads in the available data.');
-    expect(panel.element.querySelector('[data-geld-review-coverage="partial"]')?.textContent).toBe('Partial review · Some review data is unavailable.');
+    expect(panel.element.querySelector('[data-geld-review-coverage="partial"]')?.textContent).toBe('Partial review');
     expect(panel.element.textContent).not.toContain('Discussions: Sign in is required.');
     panel.update(input([thread('a', { comments: [{ ...comment('1'), url: 'https://evil.example/comment' }] })]), {});
     expect(panel.element.dataset.state).toBe('unavailable');
@@ -422,7 +423,7 @@ describe('provider conversation digest', () => {
     const status = panel.element.querySelector('[data-geld-review-coverage="partial"]');
     expect(panel.element.dataset.state).toBe('partial');
     expect(panel.element.querySelectorAll('[data-geld-review-coverage="partial"]')).toHaveLength(1);
-    expect(status?.textContent).toBe('Partial review · Some review data is unavailable.');
+    expect(status?.textContent).toBe('Partial review');
     expect(status?.getAttribute('role')).toBe('status');
     expect(status?.classList.contains('geld-provider-review__muted')).toBe(true);
     expect(status?.classList.contains('geld-provider-review__unavailable')).toBe(false);
@@ -436,7 +437,7 @@ describe('provider conversation digest', () => {
     expect(panel.element.dataset.state).toBe('ready');
     expect(panel.element.querySelector('[data-geld-review-coverage]')).toBeNull();
     panel.update(input(), { complete: false });
-    expect(panel.element.querySelector('[data-geld-review-coverage="partial"]')?.textContent).toBe('Partial review · Some review data is unavailable.');
+    expect(panel.element.querySelector('[data-geld-review-coverage="partial"]')?.textContent).toBe('Partial review');
   });
 
   it('shows native reviewer standings and counts only CI on the current commit', () => {
@@ -457,7 +458,7 @@ describe('provider conversation digest', () => {
     expect(panel.element.textContent).toContain('1/2 required approvals · 1 change request');
     expect(panel.element.textContent).toContain('Review requested');
     const checks = panel.element.querySelector('[data-geld-review-key="checks"]');
-    expect(checks?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('CI checks · 1 passed · 1 running · 1 unknown');
+    expect(checks?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('CI checks · 1 passed · 1 running · 1 unknown');
     expect(checks?.textContent).toContain('Earlier commit · Failed');
     expect(checks?.querySelector('a')?.rel).toBe('noopener noreferrer');
   });
@@ -471,7 +472,7 @@ describe('provider conversation digest', () => {
       { key: 'job:4', name: 'All checks passed', sha: subject.headSha, status: 'completed', conclusion: 'success', nativeStatus: 'unsupported' },
     ] }, { copyText: (text) => { copied = text; } });
     const checks = panel.element.querySelector('[data-geld-review-key="checks"]');
-    expect(checks?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('CI checks · Partial · 1 pending · 1 running · 1 manual · 1 unknown');
+    expect(checks?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('CI checks · Partial · 1 pending · 1 running · 1 manual · 1 unknown');
     expect(checks?.querySelector('[data-state="manual"]')?.textContent).toContain('ManualAllowed to fail');
     expect(checks?.querySelector('[data-state="manual"] svg')).toBeNull();
     expect(checks?.querySelector('[data-state="passed"]')).toBeNull();
@@ -498,7 +499,7 @@ describe('provider conversation digest', () => {
       { key: 'job:1', name: 'Tests', sha: subject.headSha, status: 'completed', conclusion: 'success' },
     ] });
     const checks = panel.element.querySelector('[data-geld-review-key="checks"]');
-    expect(checks?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('CI checks · Partial · 1 passed');
+    expect(checks?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('CI checks · Partial · 1 passed');
     expect(checks?.textContent).toContain('Some CI checks could not be read.');
     expect(checks?.getAttribute('data-state')).toBeNull();
   });
@@ -547,12 +548,12 @@ describe('provider conversation digest', () => {
     expect(section?.querySelector('[data-state="approved"] .geld-provider-review__reviewer')?.getAttribute('aria-label')).toBe('alice: Approved · Review requested');
     expect(section?.querySelector('[data-state="approved"] .geld-provider-review__reviewer-request')?.textContent).toBe('Review requested');
     expect(section?.querySelector('[data-state="changes_requested"] .geld-provider-review__reviewer')?.getAttribute('aria-label')).toBe('bob: Changes requested · Review requested');
-    expect(section?.querySelector('[data-state="pending"] .geld-provider-review__reviewer')?.getAttribute('aria-label')).toBe('carol: Reviewer · Request state unavailable');
+    expect(section?.querySelector('[data-state="pending"] .geld-provider-review__reviewer')?.getAttribute('aria-label')).toBe('carol: Reviewer');
     expect(section?.querySelector('a')?.href).toBe(`${reviewUrl}#note_1`);
     panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
     await vi.waitFor(() => expect(copied).toContain('- alice: Approved · Review requested'));
     expect(copied).toContain('- bob: Changes requested · Review requested');
-    expect(copied).toContain('- carol: Reviewer · Request state unavailable');
+    expect(copied).toContain('- carol: Reviewer');
     expect(copied).not.toMatch(/asked again|latest push/i);
     expect(native.reviewers?.[0]?.state).toBe('approved');
     panel.update(native, { approvalsRequired: 2, approvalsLeft: 0 });
@@ -572,8 +573,8 @@ describe('provider conversation digest', () => {
     const section = panel.element.querySelector('[data-geld-review-key="reviewers"]');
     expect(section?.querySelector('.geld-provider-review__reviewer-summary')?.textContent).toBe('Reviews · 1 approval · 1 pending review');
     expect(section?.querySelectorAll('.geld-provider-review__reviewer')[0]?.getAttribute('aria-label')).toBe('legacy: Review requested');
-    expect(section?.querySelectorAll('.geld-provider-review__reviewer')[1]?.getAttribute('aria-label')).toBe('assigned: Reviewer · Request state unavailable');
-    expect(section?.querySelectorAll('.geld-provider-review__reviewer')[2]?.getAttribute('aria-label')).toBe('approver: Approved · Request state unavailable');
+    expect(section?.querySelectorAll('.geld-provider-review__reviewer')[1]?.getAttribute('aria-label')).toBe('assigned: Reviewer');
+    expect(section?.querySelectorAll('.geld-provider-review__reviewer')[2]?.getAttribute('aria-label')).toBe('approver: Approved');
   });
 
   it('copies native source links and leaves navigation to the provider callback', async () => {
@@ -946,7 +947,7 @@ describe('provider conversation digest', () => {
     expect(section?.textContent).toContain('1+ approval from default reviewers');
     expect(panel.element.querySelector('[data-geld-review-key="reviewers"] .geld-provider-review__reviewer-summary')?.textContent).toBe('Reviews · 1 approval');
     expect(panel.element.textContent).not.toContain('/2 required approvals');
-    expect(panel.element.querySelector('[data-geld-review-key="checks"]')?.textContent).toContain('CI checks · Unavailable');
+    expect(panel.element.querySelector('[data-geld-review-key="checks"] [data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('CI checks · Unavailable');
     expect(panel.element.textContent).not.toContain('Authentication is required.');
     expect(panel.element.textContent).not.toContain('The API did not supply approval requirements.');
     expect(panel.element.dataset.state).toBe('partial');
@@ -980,7 +981,7 @@ describe('review standing availability', () => {
     panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
     await vi.waitFor(() => expect(copied).toContain('Reviews · Partial · 1 observed approval'));
     expect(copied).toContain('Reviews source unavailable: The reviewer endpoint returned403.');
-    expect(copied).toContain('- known-approver: Approved · Request state unavailable');
+    expect(copied).toContain('- known-approver: Approved');
     expect(native.reviewers?.[0]?.state).toBe('approved');
     panel.destroy();
   });
@@ -989,12 +990,12 @@ describe('review standing availability', () => {
     let copied = '';
     const unread: ProviderReviewInput = { subject, threads: [], checks: [] };
     const panel = renderProviderReviewPanel(host(), unread, { copyText: (text) => { copied = text; } });
-    expect(panel.element.querySelector('[data-geld-review-key="reviewers"]')?.textContent).toBe('Reviews · UnavailableReview standings could not be read.');
+    expect(panel.element.querySelector('[data-geld-review-key="reviewers"] [data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('Reviews · Unavailable');
     panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
     await vi.waitFor(() => expect(copied).toContain('Reviews · Unavailable'));
     expect(copied).not.toContain('0 approvals');
     panel.update(input(), { unavailable: [{ area: 'checks', reason: 'CI unread' }] });
-    expect(panel.element.querySelector('[data-geld-review-key="reviewers"]')?.textContent).toBe('Reviews · 0 approvalsNo reviewer standings.');
+    expect(panel.element.querySelector('[data-geld-review-key="reviewers"] [data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('Reviews · 0 approvals');
     panel.destroy();
   });
 
@@ -1009,7 +1010,7 @@ describe('review standing availability', () => {
   ])('retains guarded required/left facts in partial sources: $required/$left', ({ required, left, tally }) => {
     const panel = renderProviderReviewPanel(host(), input(), { unavailable: [{ area: 'reviews', reason: 'Reviewers unread' }], approvalsRequired: required, approvalsLeft: left });
     const section = panel.element.querySelector('[data-geld-review-key="reviewers"]');
-    expect(section?.querySelector('[data-geld-review-toggle]')?.textContent).toBe(`Reviews · Partial${tally === null ? '' : ` · ${tally}`}`);
+    expect(section?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe(`Reviews · Partial${tally === null ? '' : ` · ${tally}`}`);
     expect(section?.textContent).not.toContain('0 approvals'); expect(section?.textContent).not.toContain('No reviewer standings.');
     panel.destroy();
   });
@@ -1031,8 +1032,10 @@ it('renders an owned dashboard with button-controlled sections and preserves dis
   expect(description.parentElement).toBe(mount);
   expect(panel.element.nextElementSibling).toBe(description);
   expect(panel.element.querySelector('details[data-geld-review-key]')).toBeNull();
-  expect(panel.element.querySelector('[data-geld-review-metric="open"]')?.textContent).toBe('1Open items');
-  expect(panel.element.querySelector('[data-geld-review-metric="comments"]')?.textContent).toBe('2Comments');
+  expect(panel.element.querySelector('[data-geld-review-metric]')).toBeNull();
+  expect(panel.element.querySelector('progress')?.max).toBe(1);
+  expect(panel.element.querySelector('progress')?.value).toBe(0);
+  expect(panel.element.querySelector('.geld-provider-review__header h2')?.textContent).toBe('Geld');
   const section = panel.element.querySelector<HTMLElement>('[data-geld-review-group="open"]');
   const toggle = section?.querySelector<HTMLButtonElement>(':scope > [data-geld-review-toggle]');
   if (section === null || section === undefined || toggle === null || toggle === undefined) throw new Error('Missing dashboard section');
@@ -1156,7 +1159,8 @@ it('keeps a user-folded destination group closed when an opened thread becomes r
 it('uses native-thread totals for an older grouped publication', () => {
   const native = input([thread('a')]);
   const panel = renderProviderReviewPanel(host(), native, { transformItems: items => items.map(item => ({ ...item, threads: { total: 3, open: 2 } })) });
-  expect(panel.element.querySelector('[data-geld-review-metric="open"] strong')?.textContent).toBe('2');
+  expect(panel.element.querySelector('progress')?.max).toBe(3);
+  expect(panel.element.querySelector('progress')?.value).toBe(1);
   expect(panel.element.querySelector('[data-geld-review-group="open"] [data-geld-review-toggle]')?.textContent).toContain('3');
 });
 

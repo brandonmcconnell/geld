@@ -69,8 +69,13 @@ export async function recordProviderWalkthrough(page, item, { provider, artifact
       const selector = '.geld-provider-review > [data-geld-review-key] > [data-geld-review-toggle]';
       await move(selector, null, true);await pause(1800);await move(selector, null, true);
     });
-    await optional('original', 'The original conversation is retained', 'The combined view brings the original conversation back alongside the digest. Geld keeps those original entries available.', async () => move('.geld-provider-view button[data-geld-digest-view="digest-timeline"]', null, true));
-    await optional('digest-return', 'Return to the focused digest', 'Switch back to the digest to reduce the amount of conversation on screen.', async () => move('.geld-provider-view button[data-geld-digest-view="digest"]', null, true));
+    await optional('original', 'The original conversation is retained', 'The combined view brings the original conversation back alongside the digest. Geld keeps those original entries available.', async () => { await move('.geld-provider-review__menu:has([data-geld-view-slot]) > summary', null, true);await move('.geld-provider-view button[data-geld-digest-view="digest-timeline"]', null, true); });
+    await optional('digest-return', 'Return to the focused digest', 'Switch back to the digest to reduce the amount of conversation on screen.', async () => { await move('.geld-provider-review__menu:has([data-geld-view-slot]) > summary', null, true);await move('.geld-provider-view button[data-geld-digest-view="digest"]', null, true); });
+    if (provider === 'gitlab') await optional('flow', 'Explore changed-file dependencies', 'Flow provides a graph of the changed files and their dependencies. Close it to return to the same digest.', async () => {
+      await move('.geld-provider-flow-button', null, true);
+      await poll(() => page.$('dialog.geld-provider-flow[open]'), Boolean, 'Visible Flow dialog', 8000);await pause(2500);
+      await page.keyboard.press('Escape');
+    });
     if (provider === 'bitbucket') {
       await move(`a[href="${changes}"]`, null, true);
       await poll(() => page.url(), url => url === changes, 'Native Files navigation');
@@ -90,11 +95,6 @@ export async function recordProviderWalkthrough(page, item, { provider, artifact
       await poll(() => page.evaluate(() => [...document.querySelectorAll('.geld-provider-category-header')].some(n => n.textContent.trim().startsWith('Tests') && n.getAttribute('aria-expanded') === 'true')), Boolean, 'Expanded Tests category', 8000);
     });
     await optional('essential', 'Return to essential files', 'Switch back to Essential to focus on the main change. The category controls let you move between these groups without leaving the review.', async () => move('.geld-provider-category-header', 'Essential', true));
-    if (provider === 'gitlab') await optional('flow', 'Explore changed-file dependencies', 'Flow provides a graph of the changed files and their dependencies. Close it to return to the same diff.', async () => {
-      await move('.geld-provider-flow-button', null, true);
-      await poll(() => page.$('dialog.geld-provider-flow[open]'), Boolean, 'Visible Flow dialog', 8000);await pause(2500);
-      await page.keyboard.press('Escape');
-    });
     await scene('restore', 'Restore the full native diff', 'Turn Geld off to restore the original full diff and counts. Turn it back on to return to the same categorised review.', async () => {
       await patchSettings({ enabled: false });await pause(2200);await patchSettings({ enabled: true });await pause(1500);
     });

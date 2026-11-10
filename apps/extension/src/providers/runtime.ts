@@ -245,6 +245,10 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
     const wanted = [login, `${adapter.id}:${login}`].map((value) => value.toLowerCase());
     const value = await settingsItem.update((current) => ({ hiddenAuthors: current.hiddenAuthors.filter((line) => !wanted.includes(normalizeAuthorRule(line)?.toLowerCase() ?? '')) }));
     if (!retired) controller?.updateSettings(value);
+  }, chooseReviewGrouping: async (reviewGrouping) => {
+    if (retired) return;
+    const value = await settingsItem.update(() => ({ reviewGrouping }));
+    if (!retired) controller?.updateSettings(value);
   }, chooseDigestView: async (view) => {
     if (retired) return;
     const value = await settingsItem.update((current) => digestViewPatch(current, view, new Date().toISOString()));

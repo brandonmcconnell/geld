@@ -35,15 +35,15 @@ export function providerDigestViewChoice(provider: 'gitlab' | 'bitbucket', setti
     button.setAttribute('aria-pressed', String(option.view === current));
     button.title = option.hint;
     button.append(icon(option.view === 'github' ? 'provider' : 'geld'));
-    button.append(element('span', option.label));
-    if (option.view === 'digest-timeline') button.append(icon('provider'));
+    if (option.view === 'digest-timeline') button.append(element('span', '+'), icon('provider'));
+    else button.append(element('span', option.label));
     button.addEventListener('click', () => {
       if (pending || !group.isConnected) return;
       pending = true;
       group.setAttribute('aria-busy', 'true');
       for (const control of group.querySelectorAll('button')) control.disabled = true;
       status.textContent = '';
-      void choose(option.view).catch(() => { status.textContent = 'The view could not be saved. Try again.'; }).finally(() => {
+      void choose(option.view).then(() => { const menu = group.closest('details');if (menu !== null) menu.open = false; }).catch(() => { status.textContent = 'The view could not be saved. Try again.'; }).finally(() => {
         pending = false;
         group.removeAttribute('aria-busy');
         for (const control of group.querySelectorAll('button')) control.disabled = false;

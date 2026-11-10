@@ -116,7 +116,7 @@ it('keeps a still-loading stream box intact, then groups when all eleven unique 
   expect(node('#native-image-0').hasAttribute('data-geld-provider-inline')).toBe(true);
   expect(document.querySelector('.geld-provider-hidden')).toBeNull();
   expect(document.querySelector('.geld-provider-categories')).not.toBeNull();
-  expect([...document.querySelectorAll('.geld-provider-category-header')].map((header) => header.textContent)).toEqual(['Essential (9 files)', 'Tests (2 tests)']);
+  expect([...document.querySelectorAll('.geld-provider-category-header')].map((header) => header.getAttribute('aria-label'))).toEqual(['Essential (9 files)', 'Tests (2 tests)']);
   const headers = [...document.querySelectorAll<HTMLButtonElement>('.geld-provider-category-header')];
   headers[1]?.click();
   expect(controller.getTabState().expanded).toBe(true);
@@ -215,7 +215,7 @@ it('retains category navigation in genuine file-by-file mode while reveal preser
   expect(document.querySelector('[data-geld-provider-flow-wrapper]')).toBeNull();
   expect(document.querySelector('.geld-provider-hidden')).toBeNull();
   const categories = [...document.querySelectorAll<HTMLButtonElement>('.geld-provider-category-header')];
-  expect(categories.map((button) => button.textContent)).toEqual(['Essential (9 files)', 'Tests (2 tests)']);
+  expect(categories.map((button) => button.getAttribute('aria-label'))).toEqual(['Essential (9 files)', 'Tests (2 tests)']);
   categories[1]?.click();
   const row = document.querySelector<HTMLElement>(`[data-geld-category-path="${PATHS[0]}"] .geld-provider-category-native-row`);
   if (row === null) throw new Error('Missing projected category file control.');

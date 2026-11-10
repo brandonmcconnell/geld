@@ -64,6 +64,23 @@ html[data-geld-provider="bitbucket"] {
   --geld-provider-space-6: var(--ds-space-300);
 }
 
+/* Keep the added totals within the native tab bar's measured sticky height. */
+html[data-geld-provider="bitbucket"] nav[aria-label="Pull request"]:has(> .geld-provider-header-stats) {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-150);
+}
+html[data-geld-provider="bitbucket"] nav[aria-label="Pull request"]:has(> .geld-provider-header-stats) > [role="tablist"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+}
+html[data-geld-provider="bitbucket"] nav[aria-label="Pull request"] > .geld-provider-header-stats {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  padding-inline-end: var(--ds-space-100);
+}
+
 /* Atlaskit draws the default button border without adding to its box size. */
 html[data-geld-provider="bitbucket"] :is(.geld-provider-toggle, .geld-provider-review__copy, .geld-provider-actions button, .geld-provider-review__source-actions button) {
   position: relative;

@@ -29,6 +29,7 @@ export interface ProviderConversationServices {
   readonly openSettings?: () => Promise<void>;
   readonly unhidePerson?: (login: string) => Promise<void>;
   readonly chooseDigestView?: (view: DigestView) => Promise<void>;
+  readonly chooseReviewGrouping?: (grouping: 'type' | 'batch') => Promise<void>;
   readonly saveTrustedBot?: (input: ProviderReviewInput, comment: ProviderReviewComment, botId: string) => Promise<void>;
   readonly saveTrustedPublisher?: (input: ProviderReviewInput, comment: ProviderReviewComment) => Promise<void>;
   readonly aiDependencies?: Partial<ProviderAiDependencies>;
@@ -221,6 +222,8 @@ export class ProviderConversation {
           }
         },
         ...(this.services.openSettings === undefined ? {} : { onOpenSettings: this.services.openSettings }),
+        ...(this.services.chooseReviewGrouping === undefined ? {} : { onGrouping: this.services.chooseReviewGrouping }),
+        hasViewChoice: this.services.chooseDigestView !== undefined,
         ...(hidden ? { sourceInput: originalInput } : {}),
         ...(reviewerControls === undefined ? {} : { reviewerControls: { ...reviewerControls, activate: async (context?: ProviderSourceActionContext): Promise<boolean> => {
           const current = (): boolean => {
@@ -367,6 +370,7 @@ export class ProviderConversation {
         this.panel = renderProviderReviewPanel(host, input, options);
       } else this.panel.update(input, options);
       this.panel.element.hidden = false;
+      this.updateViewChoice(viewHost, settings);
       if (this.panel.element.dataset.state !== 'unavailable') this.description.update(descriptionHost, descriptionKey, agentNotes, true, settings.collapseDescription);
       if (this.panel.element.dataset.state === 'unavailable') { this.restoreCompact(); }
       else this.compact(snapshot, settings);
@@ -424,6 +428,9 @@ export class ProviderConversation {
   private updateViewChoice(host: HTMLElement | null, settings: GeldSettings): void {
     const choose = this.services.chooseDigestView;
     if (host === null || choose === undefined) { this.viewControls?.remove(); this.viewControls = null; this.viewSignature = ''; return; }
+    if (settings.prOverview && this.panel?.element.isConnected && this.panel.element.parentElement === host) {
+      host = this.panel.element.querySelector<HTMLElement>('[data-geld-view-slot]') ?? host;
+    }
     const signature = JSON.stringify([this.key, settings.prOverview, settings.compactTimeline]);
     if (signature === this.viewSignature && this.viewControls?.parentElement === host) return;
     const focused = this.viewControls?.contains(document.activeElement) === true ? document.activeElement?.getAttribute('data-geld-digest-view') : null;

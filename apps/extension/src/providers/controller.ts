@@ -405,10 +405,8 @@ export class ProviderController {
       return;
     }
     const result = this.source.get(page, true, true, true);
-    if (isProviderReviewPage(page)) {
-      const host = page.kind === 'overview'
-        ? this.adapter.reviewHost?.(document) ?? this.adapter.actionHost?.(document) ?? null
-        : this.adapter.diffFlowHost?.(document) ?? this.adapter.actionHost?.(document) ?? view?.container ?? null;
+    if (isProviderReviewPage(page) && page.kind === 'overview' && effective.prOverview) {
+      const host = this.adapter.reviewHost?.(document)?.querySelector<HTMLElement>('[data-geld-flow-slot]') ?? null;
       this.fileFlow.update(page, host, result.status === 'ready' && result.provisional !== true ? result.result : null, matcher, view,
         result.status === 'failed' ? `Changed files are unavailable: ${result.reason}` : 'Loading verified changed files…');
     } else this.fileFlow.clear();

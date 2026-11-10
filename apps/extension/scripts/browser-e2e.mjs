@@ -4,6 +4,7 @@ import { enableOptionalProviders, optionalProvidersForCases, verifyOptionalProvi
 import { BITBUCKET_UI_PR, BITBUCKET_UI_PATH, bitbucketUiSourceCache, verifyBitbucketUiContinuity } from './bitbucket-ui-continuity.mjs';
 /** Live installed-extension smoke. Run only where unpacked extensions are permitted by policy. */
 import assert from 'node:assert/strict';
+import { verifyProviderUi } from './provider-ui-polish.mjs';
 import { recordProviderWalkthrough } from './provider-walkthrough.mjs';
 import { isDeepStrictEqual } from 'node:util';
 import { createHash } from 'node:crypto';
@@ -59,6 +60,8 @@ const SETTINGS_KEY = 'settings'; // @geld/core SETTINGS_STORAGE_KEY = sync:setti
 const WAIT_MS = 90_000;
 const BITBUCKET_ANONYMOUS_COOLDOWN_MS = 62 * 60 * 1000; // Documented rolling-hour quota, plus a conservative two-minute margin.
 const FOCUSED_CASES = {
+  'gitlab-ui-polish': ['gitlab-ui-polish'],
+  'bitbucket-ui-polish': ['bitbucket-ui-polish'],
   'provider-access': [],
   'walkthrough-render': [],
   'gitlab-walkthrough': ['gitlab-walkthrough'],
@@ -3370,6 +3373,11 @@ try {
   report.providerAccess = [];
   await enableOptionalProviders(options, optionalProvidersForCases(selected), { poll, readState: readPermissionState, confirmPermission, progress: report.providerAccess });
   await prepareInstalledBrowserSettings();
+
+  if (focus === 'gitlab-ui-polish' || focus === 'bitbucket-ui-polish') {
+    const provider = focus.startsWith('gitlab-') ? 'gitlab' : 'bitbucket';
+    await runCase(focus, provider === 'gitlab' ? GL_OVERVIEW : BITBUCKET_UI_PR, (page, item) => verifyProviderUi(page, item, { provider, poll, patchSettings }));
+  }
 
   if (focus.endsWith('-walkthrough') || focus === 'bitbucket-walkthrough-files') {
     const provider = focus.startsWith('gitlab-') ? 'gitlab' : 'bitbucket';

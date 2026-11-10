@@ -1,86 +1,78 @@
-.geld-provider-review[data-provider] {
-  padding: 0;
-  overflow-wrap: anywhere;
-}
+.geld-provider-review[data-provider] { padding: 0; overflow-wrap: anywhere; }
 .geld-provider-review > .geld-provider-review__header {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
-  padding: var(--geld-provider-space-4);
-  gap: var(--geld-provider-space-3);
-  border-bottom: var(--geld-provider-border-width) solid var(--geld-provider-border);
-}
-.geld-provider-review__header h2 { margin-inline-end: auto; }
-.geld-provider-review__overview {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--geld-provider-space-3) var(--geld-provider-space-5);
+  padding: var(--geld-provider-space-4) var(--geld-provider-space-5);
   background: var(--geld-provider-bg-subtle);
-  border-bottom: var(--geld-provider-border-width) solid var(--geld-provider-border);
+  border-radius: var(--geld-provider-radius) var(--geld-provider-radius) 0 0;
 }
-.geld-provider-review__metric {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: center;
-  gap: var(--geld-provider-space-2);
-  padding: var(--geld-provider-space-4) var(--geld-provider-space-3);
-  font: var(--geld-provider-font);
-  color: var(--geld-provider-text-subtle);
-}
-.geld-provider-review__metric + .geld-provider-review__metric { border-inline-start: var(--geld-provider-border-width) solid var(--geld-provider-border); }
-.geld-provider-review__metric strong { font: inherit; font-weight: var(--geld-provider-heading-weight); color: var(--geld-provider-text); }
-.geld-provider-review .geld-provider-review__section {
-  margin: 0;
-  border-top: var(--geld-provider-border-width) solid var(--geld-provider-border);
-  min-inline-size: 0;
-}
-.geld-provider-review__section-toggle {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--geld-provider-space-3);
+.geld-provider-review__brand, .geld-provider-review__progress, .geld-provider-review__tools,
+.geld-provider-review__tool, .geld-provider-review__flow-slot { display: inline-flex; align-items: center; gap: var(--geld-provider-space-3); }
+.geld-provider-review__brand { flex: 0 0 auto; }
+.geld-provider-review__brand h2 { margin: 0; font: inherit; font-weight: var(--geld-provider-heading-weight); }
+.geld-provider-review__progress { color: var(--geld-provider-text-subtle); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.geld-provider-review__progress progress { appearance: none; border: 0; width: 72px; height: 6px; border-radius: 6px; overflow: hidden; background: var(--geld-provider-border); color: var(--geld-provider-success); }
+.geld-provider-review__progress progress::-webkit-progress-bar { background: var(--geld-provider-border); }
+.geld-provider-review__progress progress::-webkit-progress-value { background: var(--geld-provider-success); border-radius: 6px; }
+.geld-provider-review__progress progress::-moz-progress-bar { background: var(--geld-provider-success); border-radius: 6px; }
+.geld-provider-review__tools { margin-inline-start: auto; flex-wrap: wrap; gap: var(--geld-provider-space-2); }
+.geld-provider-digest-icon { display: block; flex: 0 0 auto; width: 16px; height: 16px; }
+.geld-provider-review .geld-provider-review__tool {
   box-sizing: border-box;
-  inline-size: 100%;
   min-block-size: var(--geld-provider-button-min-height);
-  padding: var(--geld-provider-space-3) var(--geld-provider-space-4);
+  padding: var(--geld-provider-space-2);
   border: 0;
-  border-radius: 0;
-  color: var(--geld-provider-text);
+  border-radius: var(--geld-provider-button-radius);
+  color: var(--geld-provider-text-subtle);
   background: transparent;
-  font: var(--geld-provider-font);
-  font-weight: var(--geld-provider-heading-weight);
-  text-align: start;
+  font: inherit;
+  font-weight: var(--geld-provider-button-weight);
   cursor: pointer;
+  list-style: none;
 }
-.geld-provider-review__section-toggle::before {
-  content: '';
-  flex: 0 0 auto;
-  inline-size: .4em;
-  block-size: .4em;
-  border-inline-end: 1.5px solid currentColor;
-  border-block-end: 1.5px solid currentColor;
-  transform: rotate(-45deg);
+.geld-provider-review .geld-provider-review__tool::after { display: none; }
+.geld-provider-review__tool::-webkit-details-marker { display: none; }
+.geld-provider-review .geld-provider-review__tool:hover { color: var(--geld-provider-text); background: var(--geld-provider-button-hover-bg); }
+.geld-provider-review .geld-provider-review__tool:focus-visible, .geld-provider-review__menu-list button:focus-visible {
+  box-shadow: var(--geld-provider-focus-ring); outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset);
 }
-.geld-provider-review__section-toggle[aria-expanded='true']::before { transform: rotate(45deg); }
+.geld-provider-review__menu { position: relative; }
+.geld-provider-review__menu-list {
+  position: absolute; inset-block-start: 100%; inset-inline-end: 0; z-index: var(--geld-provider-overlay-z-index);
+  min-inline-size: 180px; max-inline-size: min(300px, 80vw); padding: var(--geld-provider-space-2);
+  background: var(--geld-provider-overlay-bg); color: var(--geld-provider-text);
+  border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: var(--geld-provider-radius); box-shadow: var(--geld-provider-overlay-shadow);
+}
+.geld-provider-review__menu-list > button { display: block; width: 100%; text-align: start; padding: var(--geld-provider-space-3); border: 0; border-radius: var(--geld-provider-button-radius); background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.geld-provider-review__menu-list > button:hover, .geld-provider-review__menu-list > button[aria-pressed='true'] { background: var(--geld-provider-button-hover-bg); }
+.geld-provider-review .geld-provider-review__section { margin: 0; border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); min-inline-size: 0; }
+.geld-provider-review__section-toggle {
+  display: flex; align-items: center; gap: var(--geld-provider-space-4); box-sizing: border-box;
+  inline-size: 100%; min-block-size: var(--geld-provider-button-min-height); padding: var(--geld-provider-space-4) var(--geld-provider-space-5);
+  border: 0; border-radius: 0; color: var(--geld-provider-text); background: transparent; font: var(--geld-provider-font); font-weight: var(--geld-provider-heading-weight); text-align: start; cursor: pointer;
+}
+.geld-provider-review__section-toggle::after {
+  content: ''; flex: 0 0 auto; margin-inline-start: auto; inline-size: .4em; block-size: .4em;
+  border-inline-end: 1.5px solid currentColor; border-block-end: 1.5px solid currentColor; transform: rotate(45deg);
+}
+.geld-provider-review__section-toggle[aria-expanded='true']::after { transform: rotate(225deg); }
 .geld-provider-review__section-toggle:hover { background: var(--geld-provider-button-hover-bg); }
-.geld-provider-review__section-toggle:focus-visible {
-  position: relative;
-  z-index: 1;
-  box-shadow: var(--geld-provider-focus-ring);
-  outline: var(--geld-provider-focus-outline);
-  outline-offset: var(--geld-provider-focus-offset);
-}
+.geld-provider-review__section-toggle:focus-visible { position: relative; z-index: 1; box-shadow: var(--geld-provider-focus-ring); outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); }
+[data-geld-status-row] > .geld-provider-review__section-toggle { color: var(--geld-provider-text-subtle); }
+[data-geld-status-row] > .geld-provider-review__section-toggle > .geld-provider-review__section-label { flex: 0 0 120px; }
+.geld-provider-review__row-preview { display: flex; flex: 1 1 auto; align-items: center; flex-wrap: wrap; gap: var(--geld-provider-space-3); min-width: 0; font-weight: var(--geld-provider-font-weight); }
+.geld-provider-review__status-chip { display: inline-flex; align-items: center; gap: var(--geld-provider-space-2); padding: var(--geld-provider-space-2) var(--geld-provider-space-3); border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: var(--geld-provider-radius); background: var(--geld-provider-bg); color: var(--geld-provider-text); max-width: 100%; }
+.geld-provider-review__status-chip[data-state='approved'] > svg, .geld-provider-review__status-chip[data-geld-bot-health='good'] > svg { color: var(--geld-provider-success); }
 .geld-provider-review__section[data-geld-review-open='false'] > .geld-provider-review__section-content { display: none; }
-.geld-provider-review__section-content { padding: 0 var(--geld-provider-space-4) var(--geld-provider-space-3); }
-.geld-provider-review__section > [data-geld-review-preview] {
-  display: flex;
-  padding: 0 var(--geld-provider-space-4) var(--geld-provider-space-3);
-}
+.geld-provider-review__section-content { padding: var(--geld-provider-space-3) var(--geld-provider-space-5) var(--geld-provider-space-4); }
+.geld-provider-review__section[data-geld-review-group] > .geld-provider-review__section-toggle { background: var(--geld-provider-bg-subtle); }
 .geld-provider-review .geld-provider-review__item { padding-block: 0; }
 .geld-provider-review__item > .geld-provider-review__section-toggle { font-weight: var(--geld-provider-font-weight); }
-.geld-provider-review > p,
-.geld-provider-review > .geld-provider-review__unavailable,
-.geld-provider-review > .geld-provider-review__publication { margin: var(--geld-provider-space-4); }
+.geld-provider-review > p, .geld-provider-review > .geld-provider-review__unavailable, .geld-provider-review > .geld-provider-review__publication { margin: var(--geld-provider-space-4); }
+.geld-provider-review__brand [data-geld-review-coverage] { margin: 0; max-inline-size: 20ch; font: var(--geld-provider-font-small); }
 .geld-provider-review .geld-provider-review__source {
   margin-block: var(--geld-provider-space-3);
   padding: var(--geld-provider-space-3);
@@ -92,12 +84,12 @@
 .geld-provider-review__reference { border-bottom: var(--geld-provider-border-width) solid var(--geld-provider-border); }
 .geld-provider-review__item > .geld-provider-review__section-toggle {
   display: grid;
-  grid-template-columns: 1em minmax(0, 1.5fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.5fr) auto minmax(0, 1fr) 1em;
 }
 .geld-provider-review__item > .geld-provider-review__section-toggle > .geld-provider-review__section-label:empty { display: none; }
 .geld-provider-review__item-title { min-inline-size: 0; }
 @media (max-width: 640px) {
-  .geld-provider-review__item > .geld-provider-review__section-toggle { grid-template-columns: 1em minmax(0, 1fr) auto; }
+  .geld-provider-review__item > .geld-provider-review__section-toggle { grid-template-columns: minmax(0, 1fr) auto 1em; }
   .geld-provider-review__item > .geld-provider-review__section-toggle > .geld-provider-review__muted { grid-column: 2 / -1; }
 }
 
@@ -131,3 +123,13 @@
 .geld-provider-view__mark { inline-size: 16px; block-size: 16px; flex: none; }
 .geld-provider-view__status { color: var(--geld-provider-text-subtle); }
 .geld-provider-review[hidden] { display: none !important; }
+
+.geld-provider-review__menu-list .geld-provider-view { margin: 0; flex-direction: column; align-items: stretch; }
+.geld-provider-review__menu-list .geld-provider-view__option { justify-content: flex-start; border: 0; }
+@media (max-width: 700px) {
+  [data-geld-status-row] > .geld-provider-review__section-toggle { flex-wrap: wrap; gap: var(--geld-provider-space-3); }
+  [data-geld-status-row] > .geld-provider-review__section-toggle > .geld-provider-review__section-label { flex-basis: auto; }
+  .geld-provider-review__row-preview { flex-basis: 50%; }
+  .geld-provider-review__tool-label { display: none; }
+  .geld-provider-review__progress progress { width: 48px; }
+}

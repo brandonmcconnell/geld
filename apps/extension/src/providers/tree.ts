@@ -397,15 +397,14 @@ export class ProviderCategoryTree {
   };
 
   private headerLabel(button: HTMLButtonElement, text: string, icon: CategoryIconName | 'essential'): void {
-    const signature = `${this.provider ?? ''}:${icon}`;
-    const label = button.querySelector('.geld-provider-category-label');
-    if (button.dataset.geldCategoryIconSignature === signature && label !== null) {
-      if (label.textContent !== text) label.textContent = text;
-      return;
-    }
+    const signature = `${this.provider ?? ''}:${icon}:${text}`;
+    if (button.dataset.geldCategoryIconSignature === signature) return;
     button.dataset.geldCategoryIconSignature = signature;
-    const nextLabel = element('span', text, 'geld-provider-category-label');
+    const parts = /^(.*) \(([\d,]+) .+\)$/.exec(text);
+    const nextLabel = element('span', parts?.[1] ?? text, 'geld-provider-category-label');
+    button.setAttribute('aria-label', text);
     button.replaceChildren(...(this.provider === null ? [] : [nativeTreeIcon(this.provider, icon)]), nextLabel);
+    if (parts?.[2] !== undefined) button.append(element('span', parts[2], 'geld-provider-category-count'));
   }
 
   private render(dir: Directory, category: string, stats: ReadonlyMap<string, FileStats>, depth = 0): HTMLElement {

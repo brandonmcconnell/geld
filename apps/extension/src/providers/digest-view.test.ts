@@ -16,6 +16,9 @@ describe('provider conversation view choice', () => {
     await vi.waitFor(() => expect(choose).toHaveBeenCalledWith('digest-timeline'));
     expect(control.textContent).not.toContain('GitHub');
     expect(control.querySelectorAll('svg')).toHaveLength(4);
+    const combined = control.querySelector('[data-geld-digest-view="digest-timeline"]');
+    expect(combined?.textContent?.trim()).toBe('+');
+    expect(combined?.getAttribute('aria-label')).toBe(`Geld + ${provider === 'gitlab' ? 'GitLab' : 'Bitbucket'}`);
   });
 
   it('prevents duplicate writes and keeps a failed choice recoverable', async () => {

@@ -116,10 +116,11 @@ html[data-geld-provider] [data-geld-provider-author-hidden] { display: none !imp
 [data-geld-provider-category-row] { display: none !important; }
 [data-geld-provider-category-body] { order: 1; min-block-size: 0; overflow: auto; flex: 1 1 auto; }
 [data-geld-provider-category-body="native"] { display: none !important; }
-.geld-provider-category-header { display: flex; align-items: center; gap: var(--geld-provider-space-2); flex: 0 0 auto; inline-size: 100%; border: 0; border-block-start: var(--geld-provider-border-width) solid var(--geld-provider-border); padding: var(--geld-provider-space-3) var(--geld-provider-space-2); text-align: start; color: var(--geld-provider-text); background: var(--geld-provider-bg); font: var(--geld-provider-font); font-weight: var(--geld-provider-heading-weight); cursor: pointer; }
+.geld-provider-category-header { display: flex; align-items: center; gap: var(--geld-provider-space-3); flex: 0 0 auto; inline-size: 100%; min-block-size: var(--geld-provider-button-min-height); border: 0; border-block-start: var(--geld-provider-border-width) solid var(--geld-provider-border); padding: var(--geld-provider-space-4) var(--geld-provider-space-3); text-align: start; color: var(--geld-provider-text); background: var(--geld-provider-bg); font: var(--geld-provider-font); font-weight: var(--geld-provider-heading-weight); cursor: pointer; }
+.geld-provider-category-count { margin-inline-start: auto; min-inline-size: 1.5em; padding-inline: var(--geld-provider-space-2); border-radius: var(--geld-provider-radius); background: var(--geld-provider-bg-subtle); color: var(--geld-provider-text-subtle); font: var(--geld-provider-font-small); font-variant-numeric: tabular-nums; text-align: center; }
 .geld-provider-category-header:hover, .geld-provider-category-folder:hover { background: var(--geld-provider-bg-subtle); }
 .geld-provider-category-header:focus-visible, .geld-provider-category-folder:focus-visible { outline: var(--geld-provider-focus-outline); box-shadow: var(--geld-provider-focus-ring); outline-offset: var(--geld-provider-focus-offset); }
-.geld-provider-category-header[aria-expanded="true"] { color: var(--geld-provider-link); }
+.geld-provider-category-header[aria-expanded="true"] { color: var(--geld-provider-text); }
 [data-geld-provider-category-host] > .geld-provider-categories { order: 2; display: flex; flex-direction: column; min-block-size: 0; padding: 0; border: 0; }
 .geld-provider-category { display: flex; flex-direction: column; min-block-size: 0; flex: 0 0 auto; }
 .geld-provider-category[data-active="true"] { flex: 1 1 auto; }

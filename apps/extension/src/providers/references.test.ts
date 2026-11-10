@@ -37,7 +37,7 @@ it('shows separate reference groups with canonical native labels, titles and sou
   const row = panel.element.querySelector('[data-geld-reference]');
   expect(row?.getAttribute('data-geld-reference-native-id')).toBe(target.nativeId);expect(row?.getAttribute('data-geld-reference-project')).toBe(target.projectId);
   expect(row?.hasAttribute('data-geld-reference-identity')).toBe(false);
-  expect(panel.element.querySelector('[data-state="merged"],.gl-badge,svg,[data-reference-type],[data-popover-mounted]')).toBeNull();
+  expect(panel.element.querySelector('[data-state="merged"],.gl-badge,svg:not(.geld-provider-digest-icon),[data-reference-type],[data-popover-mounted]')).toBeNull();
   expect(panel.element.querySelector('time')?.dateTime).toBe(event.createdAt);
   expect(panel.element.textContent).toContain('avilabss');
 });

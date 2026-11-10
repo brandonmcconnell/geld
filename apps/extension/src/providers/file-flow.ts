@@ -3,6 +3,7 @@ import { repositoryKey } from '@geld/core';
 import { canReadImports, flowLinks, importSpecifiers, layoutFlow } from '@geld/core/file-flow';
 import type { FlowComponent, FlowEdge } from '@geld/core/file-flow';
 import { element } from './dom';
+import { digestIcon } from './digest-icons';
 import { providerFlowRevision } from './file-flow-source';
 import type { ProviderAdapter, ProviderDiffResult, ProviderDiffView, ProviderReviewPage } from './types';
 import { isProviderReviewPage } from './types';
@@ -47,7 +48,8 @@ export class ProviderFileFlow {
     if (host !== this.host || this.button?.parentElement !== host) {
       this.button?.remove();this.host = host;this.button = null;
       if (host !== null) {
-        const button = element('button', 'Flow', 'geld-provider-toggle geld-provider-flow-button');button.type = 'button';button.title = 'Explore dependencies between changed files';
+        const button = element('button', '', 'geld-provider-review__tool geld-provider-flow-button');button.type = 'button';button.title = 'Flow: how the changed files connect';button.setAttribute('aria-label', button.title);
+        button.append(digestIcon('flow'), element('span', 'Flow', 'geld-provider-review__tool-label'));
         button.addEventListener('click', () => this.open());host.append(button);this.button = button;
       }
     }
