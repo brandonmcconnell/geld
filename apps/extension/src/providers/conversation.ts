@@ -10,6 +10,7 @@ import { element } from './dom';
 import { providerDigestViewChoice } from './digest-view';
 import { projectProviderPeople } from './hidden-people';
 import { ProviderHiddenPeopleView } from './hidden-people-view';
+import { ProviderRelatedContext } from './related-context';
 import { renderProviderReviewPanel } from './review-panel';
 import type { ProviderReviewPanel, ProviderSourceActionContext } from './review-panel';
 import type { ProviderAdapter, ProviderReviewPage, ProviderReviewSnapshot } from './types';
@@ -79,6 +80,7 @@ export class ProviderConversation {
   private viewSignature = '';
   private readonly shownPeople = new Set<string>();
   private readonly hiddenPeople: ProviderHiddenPeopleView;
+  private readonly related: ProviderRelatedContext;
   private generation = 0;
   private abort: AbortController | null = null;
   private snapshot: ProviderReviewSnapshot | null = null;
@@ -109,6 +111,7 @@ export class ProviderConversation {
   private reviewedError = '';
 
   constructor(private readonly adapter: ProviderAdapter, private readonly changed: () => void, private readonly services: ProviderConversationServices = {}) {
+    this.related = new ProviderRelatedContext(adapter);
     this.hiddenPeople = new ProviderHiddenPeopleView((id, shown) => { if (shown) this.shownPeople.add(id); else this.shownPeople.delete(id); this.changed(); }, services.unhidePerson);
     this.ai = new ProviderAiTriage(() => this.changed(), services.aiDependencies);
     this.publication = new ProviderPublishedReview(() => this.changed());
@@ -132,6 +135,7 @@ export class ProviderConversation {
       this.restoreCompact(); this.restoreDescription();
       this.resetReviewed(); this.hiddenPeople.clear();
     }
+    this.related.update(page, settings, document, this.snapshot === null ? undefined : { ...this.snapshot, input: providerReviewWithTrustedAccounts(this.snapshot.input, this.snapshot.comments, settings, this.snapshot.complete) }, this.shownPeople);
     const wantsPeople = !compileAuthorRules(settings.hiddenAuthors).isEmpty;
     const viewHost = page.kind === 'overview' ? this.adapter.reviewHost?.(document) ?? null : null;
     this.updateViewChoice(viewHost, settings);
@@ -200,7 +204,7 @@ export class ProviderConversation {
       const actionKey = this.key;
       const actionHead = input.subject.headSha;
       this.status?.remove(); this.status = null;
-      const references = (this.adapter.readReferences?.(page, document, snapshot.events) ?? []).filter((reference) => (reference.source.anchor === null || !people.hiddenAnchors.has(reference.source.anchor)) && (reference.source.eventId === undefined || !people.hiddenEvents.has(reference.source.eventId)) && (reference.source.author === undefined || !hiddenIds.has(reference.source.author.id)));
+      const references = (this.adapter.readReferences?.(page, document, people.events, [...input.threads.flatMap((thread) => thread.comments), ...comments]) ?? []).filter((reference) => (reference.source.anchor === null || !people.hiddenAnchors.has(reference.source.anchor)) && (reference.source.eventId === undefined || !people.hiddenEvents.has(reference.source.eventId)) && (reference.source.author === undefined || !hiddenIds.has(reference.source.author.id)));
       const reviewerControls = snapshot.reviewerControls;
       const options = {
         ...(hidden ? { sourceInput: originalInput } : {}),
@@ -234,7 +238,7 @@ export class ProviderConversation {
           };
           const active = current();
           if (active === null) return false;
-          const target = this.adapter.referenceAnchor?.(reference, active, document, snapshot.events);
+          const target = this.adapter.referenceAnchor?.(reference, active, document, people.events, [...input.threads.flatMap((thread) => thread.comments), ...comments]);
           if (target === undefined || target === null || target.closest('[data-geld-ui]') !== null) return false;
           if (reference.source.anchor !== null) this.revealOriginal(reference.source.anchor);
           else if (this.description?.host.contains(target)) { this.descriptionShown = true; this.updateDescription(); }
@@ -620,7 +624,7 @@ export class ProviderConversation {
 
   clear(): void {
     this.viewControls?.remove(); this.viewControls = null; this.viewSignature = '';
-    this.hiddenPeople.clear(); this.shownPeople.clear();
+    this.hiddenPeople.clear(); this.shownPeople.clear(); this.related.clear();
     this.restoreCompact();
     this.restoreDescription();
     this.originalsShown.clear();

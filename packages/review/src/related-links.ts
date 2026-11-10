@@ -50,6 +50,7 @@ export interface LinkCandidate {
    * is the service's own bot (`officialSources`): Linear's linkback naming its issue, not a person pasting one.
    */
   readonly author?: string | null;
+  readonly authorId?: string;
 }
 
 interface Match {
@@ -929,6 +930,7 @@ function matchSpec(spec: LinkSpec, url: URL, text: string, official: boolean): R
 
 /** What the page tells the registry about where it is, for GitHub's own references. */
 export interface RelatedOptions {
+  readonly isOfficialSource?: (specId: string, candidate: LinkCandidate) => boolean;
   /** Hosts that are GitHub on this page: github.com, and an Enterprise page's own host. */
   readonly githubHosts?: readonly string[];
   /** The repository the page is in (`owner/repo`), whose references read `#N` as GitHub writes them. */
@@ -1036,6 +1038,10 @@ export function officialSourceOf(specId: string, author: string): boolean {
   return logins.some((login) => login.toLowerCase() === author.toLowerCase());
 }
 
+export function officialSourceForBot(specId: string, botId: string): boolean {
+  return linkSpecs.some((spec) => spec.id === specId && spec.bot === botId);
+}
+
 interface ReadLink {
   readonly link: RelatedLink;
   readonly rank: number;
@@ -1053,7 +1059,7 @@ function readLink(candidate: LinkCandidate, options: RelatedOptions = {}): ReadL
   if (url.protocol !== 'https:' || url.username !== '' || url.password !== '' || url.port !== '') return null;
   const author = candidate.author ?? null;
   for (const spec of linkSpecs) {
-    const official = author !== null && officialSourceOf(spec.id, author);
+    const official = author !== null && (options.isOfficialSource === undefined ? officialSourceOf(spec.id, author) : options.isOfficialSource(spec.id, candidate));
     const link = matchSpec(spec, url, candidate.text, official);
     if (link === null) continue;
     if (author !== null && !official) return null;

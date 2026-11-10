@@ -2305,7 +2305,9 @@ function assertGitLabReferenceIndex(index) {
   for (const direction of ['outgoing', 'incoming']) {
     const expected = direction === 'outgoing' ? targets : [targets[0], targets[2]];
     const entries = index[direction] ?? [];
-    assert.equal(entries.length, expected.length, `Actual ${direction} reference count differs from the retained native fixture`);
+    if (direction === 'incoming') assert.equal(entries.length, expected.length, `Actual ${direction} reference count differs from the retained native fixture`);
+    else assert.ok(entries.length >= expected.length, 'All retained description references remain present');
+    assert.equal(new Set(entries.map(entry => `${entry.project}:${entry.nativeId}:${entry.kind}`)).size, entries.length, 'Native reference identities are unique');
     for (const target of expected) {
       const entry = entries.find((entry) => entry.href === target.href);
       assert.ok(entry !== undefined, `Missing canonical ${direction} target ${target.href}`);
@@ -2313,6 +2315,12 @@ function assertGitLabReferenceIndex(index) {
       assert.ok(entry.native !== null && entry.label === entry.native.label && entry.title === entry.native.title, 'Reference must preserve the actual native label and cached title');
       assert.equal(entry.source, direction === 'outgoing' ? 'description' : target.number === '34' ? 'note_3381331989' : 'note_3381332675');
       assert.equal(entry.initializationHooks, false, 'Owned reference link must not copy native initialization hooks');
+    }
+    for (const entry of entries.filter(entry => !expected.some(target => target.href === entry.href))) {
+      assert.ok(entry.native !== null && entry.label === entry.native.label && entry.title === entry.native.title, 'Additional references retain native presentation');
+      assert.ok(entry.source === 'description' || /^note_[1-9]\d*$/.test(entry.source), 'Additional references have a native source');
+      for (const key of ['repository', 'project', 'nativeId', 'number', 'kind', 'href']) assert.equal(entry[key], entry.native[key], `Additional reference ${key} is independently present in its native anchor`);
+      assert.equal(entry.initializationHooks, false);
     }
   }
 }
@@ -2337,19 +2345,21 @@ async function gitLabReferencesEvidence(page, item) {
         const link = row.querySelector('.geld-provider-review__reference-link');
         const source = row.getAttribute('data-geld-reference-source');
         const root = source === 'description' ? document.querySelector('.issuable-discussion [data-testid="description-content"] > .md') : document.getElementById(source);
-        const scope = source === 'description' ? root : root?.querySelector('[data-testid="system-note-content"]');
+        const scope = source === 'description' ? root : root?.querySelector('[data-testid="system-note-content"], .note-text');
         const native = [...scope?.querySelectorAll('a.gfm[href]') ?? []].find((anchor) => anchor.closest('[data-geld-ui]') === null && anchor.href === link?.href);
         return { href: link?.href, label: row.querySelector('.geld-provider-review__reference-label')?.textContent, title: row.querySelector('.geld-provider-review__reference-title')?.textContent ?? null,
           repository: row.getAttribute('data-geld-reference-repository'), project: row.getAttribute('data-geld-reference-project'), nativeId: row.getAttribute('data-geld-reference-native-id'), number: row.getAttribute('data-geld-reference-number'), kind: row.getAttribute('data-geld-reference-kind'), source,
-          native: native === undefined ? null : { label: native.textContent.replace(/\s+/g, ' ').trim(), title: (native.getAttribute('title') ?? native.getAttribute('data-geld-hover-title'))?.trim() || null },
+          native: native === undefined ? null : { label: native.textContent.replace(/\s+/g, ' ').trim(), title: (native.getAttribute('title') ?? native.getAttribute('data-geld-hover-title'))?.trim() || null, href: native.href, repository: native.getAttribute('data-project-path'), project: native.getAttribute('data-project'), nativeId: native.getAttribute('data-merge-request') ?? native.getAttribute('data-issue') ?? native.getAttribute('data-work-item'), number: native.getAttribute('data-iid'), kind: native.getAttribute('data-reference-type') === 'merge_request' ? 'merge-request' : 'issue' },
           initializationHooks: link?.hasAttribute('data-reference-type') || link?.hasAttribute('data-popover-mounted') || link?.hasAttribute('data-popover-listener-added') };
       });
       return { outgoing: readDirection('outgoing'), incoming: readDirection('incoming') };
     });
     progress.before = await pollStable(async () => {
       const value = await read();progress.snapshots.push(value);if (progress.snapshots.length > 4) progress.snapshots.shift();return value;
-    }, (value) => value.outgoing.length === 3 && value.incoming.length === 2, 'Exact retained native reference groups appear without fetching a new fixture', 8000, (value) => JSON.stringify(value));
+    }, (value) => value.outgoing.length >= 3 && value.incoming.length === 2, 'Exact retained native reference groups appear without fetching a new fixture', 8000, (value) => JSON.stringify(value));
     assertGitLabReferenceIndex(progress.before);
+    progress.relatedWork = await page.evaluate(() => [...document.querySelectorAll('[data-geld-related="work"] a')].map(anchor => ({ href: anchor.href, label: anchor.textContent.trim(), visible: anchor.getBoundingClientRect().height > 0, placement: anchor.closest('aside') === null ? 'description' : 'sidebar' })));
+    for (const reference of progress.before.outgoing.filter(reference => reference.source === 'description')) assert.ok(progress.relatedWork.some(link => link.href === reference.href && link.visible), 'Related work shows each native description reference');
     const href = 'https://gitlab.com/whitebox-aero/insta360/-/merge_requests/34';
     const rowSelector = `[data-geld-review-key="references:outgoing"] [data-geld-reference-native-id="488556842"]`;
     progress.openedSummaries = await openReviewAncestors(page, rowSelector);

@@ -375,3 +375,14 @@ describe('slugTitle', () => {
     expect(slugTitle('0123456789abcdef')).toBeNull();
   });
 });
+
+describe('provider-specific related link authority', () => {
+  it('allows a caller to reject GitHub-looking aliases on other providers', () => {
+    const link = { href: 'https://app.coderabbit.ai/change-stack/project/42', text: 'Review', author: 'coderabbitai[bot]', authorId: 'unverified' };
+    expect(relatedLinksFrom([link], { isOfficialSource: () => false })).toEqual([]);
+  });
+  it('uses a verified native account mapping without requiring a GitHub bot login', () => {
+    const link = { href: 'https://app.coderabbit.ai/change-stack/project/42', text: 'Review', author: 'project_123_bot', authorId: 'verified' };
+    expect(relatedLinksFrom([link], { isOfficialSource: (spec, candidate) => spec === 'coderabbit' && candidate.authorId === 'verified' })[0]?.service).toBe('CodeRabbit');
+  });
+});

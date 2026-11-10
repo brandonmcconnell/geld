@@ -224,8 +224,8 @@ export interface ProviderAdapter {
   fetchDiff(page: ProviderPage, signal: AbortSignal): Promise<ProviderDiffResult>;
   readonly fetchConfig?: ProviderConfigFetcher;
   reviewHost?(doc: Document): HTMLElement | null;
-  readReferences?(page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[]): readonly ProviderReviewReference[];
-  referenceAnchor?(reference: ProviderReviewReference, page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[]): HTMLAnchorElement | null;
+  readReferences?(page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[], comments?: readonly ProviderReviewComment[]): readonly ProviderReviewReference[];
+  referenceAnchor?(reference: ProviderReviewReference, page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[], comments?: readonly ProviderReviewComment[]): HTMLAnchorElement | null;
   conversationRoots?(doc: Document, snapshot?: ProviderReviewSnapshot): readonly ProviderConversationRoot[];
   personRoots?(doc: Document, snapshot?: ProviderReviewSnapshot): readonly ProviderConversationRoot[];
   descriptionHost?(doc: Document): HTMLElement | null;

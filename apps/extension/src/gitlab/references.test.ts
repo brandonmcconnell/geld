@@ -148,3 +148,19 @@ it('retains valid trailing-slash native target URLs through extraction, shared v
     expect(gitLabReferenceAnchor(reference, page, document, events)?.href).toBe(reference.target.url);
   }
 });
+
+it('attributes a comment-only reference to its first chronological native source', () => {
+  const target = mr.replaceAll('488556842', '900').replaceAll('/34', '/99').replaceAll('!34', '!99').replace('data-iid="34"', 'data-iid="99"');
+  const comments = [
+    { id: '701', anchor: 'note_701', url: `${url}#note_701`, author: { id: '11', login: 'later' }, body: '!99', createdAt: '2026-06-01T00:00:00Z' },
+    { id: '702', anchor: 'note_702', url: `${url}#note_702`, author: { id: '12', login: 'earlier' }, body: '!99', createdAt: '2026-05-01T00:00:00Z' },
+  ];
+  const discussion = document.querySelector('.issuable-discussion');
+  for (const comment of comments) discussion?.insertAdjacentHTML('beforeend', `<div data-testid="noteable-note-container" id="${comment.anchor}"><div class="note-header-info"><a class="author-name-link" data-user-id="${comment.author.id}" data-username="${comment.author.login}">Author</a></div><div class="note-text">${target}</div></div>`);
+  const entries = readGitLabReferences(page, document, events, comments).filter((reference) => reference.direction === 'outgoing' && reference.target.number === '99');
+  expect(entries).toHaveLength(1);
+  expect(entries[0]?.source).toEqual({ reviewUrl: url, anchor: 'note_702', author: comments[1]?.author, createdAt: comments[1]?.createdAt });
+  expect(entries[0] === undefined ? null : gitLabReferenceAnchor(entries[0], page, document, events, comments)?.closest('[id]')?.id).toBe('note_702');
+  document.querySelector('#note_702 .author-name-link')?.setAttribute('data-user-id', 'another-account');
+  expect(readGitLabReferences(page, document, events, comments).find((reference) => reference.target.number === '99')?.source.anchor).toBe('note_701');
+});

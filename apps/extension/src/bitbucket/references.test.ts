@@ -144,3 +144,19 @@ it.each(['route', 'removed', 'hidden', 'replaced'])('shared source reveal refuse
   if (kind === 'replaced') fixture.reference.replaceWith(fixture.reference.cloneNode(true));
   fixture.button.click();expect(fixture.scroll).not.toHaveBeenCalled();expect(fetch).not.toHaveBeenCalled();
 });
+
+it('reads comment-only references without a description and attributes the first native source', () => {
+  const comments = [
+    { id: '701', anchor: 'comment-701', url: `${url}#comment-701`, author: { id: 'later', login: 'later' }, body: `[Related](${target})`, createdAt: '2026-06-01T00:00:00Z' },
+    { id: '702', anchor: 'comment-702', url: `${url}#comment-702`, author: { id: 'earlier', login: 'earlier' }, body: `[Related](${target})`, createdAt: '2026-05-01T00:00:00Z' },
+  ];
+  document.body.innerHTML = nativeHeader + comments.map((comment) => `<article data-testid="comment" id="${comment.anchor}"><header data-testid="comment-header"><a href="${comment.url}">Comment</a></header><div data-testid="comment-content"><p><a href="${target}">Related PR22</a></p></div></article>`).join('');
+  const references = readBitbucketReferences(page(), document, [], comments);
+  expect(references).toHaveLength(1);
+  expect(references[0]?.source).toEqual({ reviewUrl: url, anchor: 'comment-702', author: comments[1]?.author, createdAt: comments[1]?.createdAt });
+  if (references[0] === undefined) throw new Error('Missing comment reference');
+  expect(referenceForSubject(references[0], subject)).toBe(true);
+  expect(bitbucketReferenceAnchor(references[0], page(), document)?.closest('[data-testid="comment"]')?.id).toBe('comment-702');
+  document.querySelector('#comment-702 [data-testid="comment-header"] a')?.setAttribute('href', target);
+  expect(bitbucketReferenceAnchor(references[0], page(), document)).toBeNull();
+});

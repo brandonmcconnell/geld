@@ -3460,6 +3460,13 @@ Per-person visit peeks are independent of the shared settings, and Stop hiding r
 These controls change Geld's local visibility and do not invoke provider block, moderation or administrator APIs.
 The GitLab public author-style probe exercises hiding, peeking and exact-rule removal against a native account and comment body hash, then restores the exact saved settings.
 
+GitLab and Bitbucket related context uses the shared link registry with native sidebar styling and local service icons.
+Description links are read without additional API requests, and official bot links require verified provider account IDs rather than a GitHub-style login.
+Related work contains only outgoing native references in the description, while comment references stay in the digest and retain their native source anchor, author and timestamp.
+GitLab comment references require the native account ID and GFM target identity, while Bitbucket references require a qualified comment permalink and canonical target URL.
+Description references win over later comment mentions, and comment mentions are ordered chronologically so the first verified source remains stable.
+Hidden-person rules also apply to bot link sources, and a per-visit peek restores those links without altering shared settings.
+
 Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
 Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
 
@@ -3468,3 +3475,6 @@ An all-malformed source supplies no known empty reviewer list.
 
 Bitbucket hidden-people matching and exact-rule removal use the same canonical `bitbucket.org/uuid/<uuid>` identity as PR lists, normalized from the native account UUID.
 Keep display logins separate, leave malformed account identities visible, and never remove a wildcard during a per-person unhide.
+
+Provider related-link sources use the same hidden-people projection as the digest, including canonical Bitbucket UUID rules, hidden starter-owned threads and visit peeking.
+Keep description-owned related links independent of comment-author filtering.
