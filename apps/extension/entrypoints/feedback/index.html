@@ -41,11 +41,17 @@
           <div class="feedback__choices" id="choices"></div>
         </fieldset>
 
-        <details class="feedback__preview">
-          <summary>Preview the issue</summary>
-          <p class="feedback__preview-title" id="preview-title"></p>
-          <pre class="feedback__preview-body" id="preview-body"></pre>
-        </details>
+        <section class="feedback__preview" aria-labelledby="preview-heading">
+          <div class="feedback__preview-head">
+            <h2 class="geld-label" id="preview-heading">Preview</h2>
+            <button class="geld-button geld-button--small" id="preview-mode" type="button" aria-controls="preview-rendered preview-body">Show markdown</button>
+          </div>
+          <div class="feedback__issue">
+            <p class="feedback__preview-title" id="preview-title"></p>
+            <div class="feedback__rendered" id="preview-rendered"></div>
+            <pre class="feedback__preview-body" id="preview-body" hidden></pre>
+          </div>
+        </section>
 
         <label class="feedback__consent">
           <input class="geld-checkbox" id="consent" type="checkbox" required />

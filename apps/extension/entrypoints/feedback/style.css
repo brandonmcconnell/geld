@@ -138,32 +138,175 @@ body {
   font-size: 12.5px;
 }
 
-.feedback__preview > summary {
-  cursor: pointer;
-  font-weight: 500;
-  list-style: disclosure-closed inside;
+.feedback__preview-head h2 {
+  font-size: inherit;
 }
 
-.feedback__preview[open] > summary {
-  list-style-type: disclosure-open;
+.feedback__preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
 }
 
-.feedback__preview-title {
-  margin: 12px 0 8px;
-  font-weight: 600;
-}
-
-.feedback__preview-body {
-  max-height: 320px;
-  margin: 0;
-  padding: 12px;
+.feedback__issue {
+  max-height: 480px;
   overflow: auto;
   border: 1px solid var(--border);
   background: var(--background);
+}
+
+.feedback__preview-title {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.feedback__preview-body {
+  margin: 0;
+  padding: 12px 16px;
   font-family: var(--font-mono);
   font-size: 12px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.feedback__preview-body[hidden],
+.feedback__rendered[hidden] {
+  display: none;
+}
+
+/* The rendered issue body, set close to GitHub's Markdown. */
+.feedback__rendered {
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.feedback__rendered > :first-child {
+  margin-top: 0;
+}
+
+.feedback__rendered > :last-child {
+  margin-bottom: 0;
+}
+
+.feedback__rendered :is(p, ul, ol, blockquote, pre, table, details) {
+  margin: 0 0 12px;
+}
+
+.feedback__rendered :is(h1, h2, h3, h4, h5, h6) {
+  margin: 20px 0 12px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.feedback__rendered h1 {
+  font-size: 1.6em;
+}
+
+.feedback__rendered h2 {
+  font-size: 1.35em;
+}
+
+.feedback__rendered h3 {
+  font-size: 1.15em;
+}
+
+.feedback__rendered :is(ul, ol) {
+  padding-left: 2em;
+}
+
+.feedback__rendered ul {
+  list-style: disc;
+}
+
+.feedback__rendered ol {
+  list-style: decimal;
+}
+
+.feedback__rendered li + li {
+  margin-top: 4px;
+}
+
+.feedback__rendered a {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.feedback__rendered strong {
+  font-weight: 600;
+}
+
+.feedback__rendered em {
+  font-style: italic;
+}
+
+.feedback__rendered code {
+  padding: 0.15em 0.35em;
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 85%;
+}
+
+.feedback__rendered pre {
+  padding: 12px;
+  overflow: auto;
+  background: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.feedback__rendered pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+  white-space: pre;
+}
+
+.feedback__rendered blockquote {
+  padding: 0 1em;
+  border-left: 3px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+.feedback__rendered hr {
+  height: 1px;
+  margin: 16px 0;
+  border: 0;
+  background: var(--border);
+}
+
+.feedback__rendered table {
+  border-collapse: collapse;
+}
+
+.feedback__rendered :is(th, td) {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+}
+
+.feedback__rendered img {
+  max-width: 100%;
+}
+
+.feedback__rendered summary {
+  cursor: pointer;
+  list-style: disclosure-closed inside;
+}
+
+.feedback__rendered details[open] > summary {
+  margin-bottom: 8px;
+  list-style-type: disclosure-open;
+}
+
+.feedback__rendered sub {
+  color: var(--muted-foreground);
+  font-size: 12px;
 }
 
 .feedback__consent:has(:disabled) {

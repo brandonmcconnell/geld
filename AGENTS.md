@@ -1142,7 +1142,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The reader picks a kind (`FEEDBACK_KINDS`, the title's `[Bug]`/`[Idea]`/`[Question]`/`[Feedback]` prefix), writes a title and details, and ticks what to attach (`ContextChoice`): Geld's version and `version_name` with the browser, the kind of page (`whereWords`), the page's address, and the Copy diagnostics report.
   Version and page kind start ticked, the address never does (the issue is public and the repository may be private), and diagnostics only when Report with diagnostics opened the form.
   The page is the GitHub tab the popup was opened on (`?tab=<id>`, read with `tabs.get`, only on a GitHub host Geld runs on).
-  The preview shows the exact title and body (`feedbackIssue`), a required checkbox names the account and the repository, and the draft is kept in `local:feedbackDraft` until it is sent, so closing the tab or signing in loses nothing.
+  The preview shows the exact title and body (`feedbackIssue`), rendered by default and as Markdown source behind "Show markdown".
+  It is rendered on the device (`src/ui/issue-markdown.ts`: `marked` with GitHub-flavoured Markdown and line breaks, then DOMPurify), never by GitHub's Markdown API, so the draft goes nowhere before it is sent.
+  happy-dom cannot run DOMPurify faithfully (it keeps event handlers and `<script>`), so the sanitizer is checked in Chrome, not in the unit tests.
+  A required checkbox names the account and the repository, and the draft is kept in `local:feedbackDraft` until it is sent, so closing the tab or signing in loses nothing.
   The background opens the issue on `brandonmcconnell/geld` with the reader's own Geld App user token (`submitFeedback` in `account-service.ts`, `POST /repos/…/issues` through `withToken`), so it is the reader's issue, marked by GitHub as made with the App, and no bot account posts on anyone's behalf.
   That needs the reader signed in with GitHub (the same device flow as settings sync, which signing in also turns on) and the Geld App installed on Geld's own repository, which user tokens can only write to where the App is installed;
   without it GitHub answers "Resource not accessible by integration" and the form says the App cannot open issues there yet.

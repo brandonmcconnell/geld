@@ -15,6 +15,7 @@ import { mountAccountWidget } from '../../src/ui/account-widget';
 import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { describeBrowser, whereWords } from '../../src/ui/feedback-link';
 import { requireElement } from '../../src/ui/switch';
+import { renderIssueMarkdown } from '../../src/ui/issue-markdown';
 
 installErrorCapture('options');
 polyfillCornerShape();
@@ -29,6 +30,8 @@ const textInput = requireElement('text', HTMLTextAreaElement);
 const choicesHost = requireElement('choices', HTMLDivElement);
 const previewTitle = requireElement('preview-title', HTMLParagraphElement);
 const previewBody = requireElement('preview-body', HTMLPreElement);
+const previewRendered = requireElement('preview-rendered', HTMLDivElement);
+const previewMode = requireElement('preview-mode', HTMLButtonElement);
 const consent = requireElement('consent', HTMLInputElement);
 const consentWords = requireElement('consent-words', HTMLSpanElement);
 const status = requireElement('status', HTMLSpanElement);
@@ -43,6 +46,8 @@ const query = new URLSearchParams(location.search);
 let draft: FeedbackDraft = EMPTY_DRAFT;
 let account: GitHubAccount | null = null;
 let sending = false;
+let showMarkdown = false;
+let previewFrame: number | null = null;
 let context: FeedbackContext = { environment: null, where: null, page: null, diagnostics: null };
 const choice: Record<ContextKey, boolean> = { environment: true, where: true, page: false, diagnostics: query.get('diagnostics') === '1' };
 
@@ -116,14 +121,33 @@ function currentChoice(): ContextChoice {
 }
 
 function renderPreview(): void {
-  const issue = feedbackIssue(
-    { ...draft, title: draft.title.trim() === '' ? '(title)' : draft.title, text: draft.text.trim() === '' ? '(details)' : draft.text },
-    context,
-    currentChoice(),
-  );
-  previewTitle.textContent = issue.title;
-  previewBody.textContent = issue.body;
+  if (previewFrame !== null) return;
+  // Coalesced to a frame: typing re-renders the whole body, diagnostics included.
+  previewFrame = requestAnimationFrame(() => {
+    previewFrame = null;
+    const issue = feedbackIssue(
+      { ...draft, title: draft.title.trim() === '' ? '(title)' : draft.title, text: draft.text.trim() === '' ? '(details)' : draft.text },
+      context,
+      currentChoice(),
+    );
+    previewTitle.textContent = issue.title;
+    previewRendered.hidden = showMarkdown;
+    previewBody.hidden = !showMarkdown;
+    previewMode.textContent = showMarkdown ? 'Show preview' : 'Show markdown';
+    if (showMarkdown) {
+      previewBody.textContent = issue.body;
+      previewRendered.replaceChildren();
+    } else {
+      previewRendered.replaceChildren(renderIssueMarkdown(issue.body));
+      previewBody.textContent = '';
+    }
+  });
 }
+
+previewMode.addEventListener('click', () => {
+  showMarkdown = !showMarkdown;
+  renderPreview();
+});
 
 function renderAccount(): void {
   const ready = account !== null && account.auth === 'app';
