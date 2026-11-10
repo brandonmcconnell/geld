@@ -6,7 +6,7 @@ export const BITBUCKET_LOCAL_REVIEW = 'https://bitbucket.org/atlassian/bitbucket
 const KEY = 'bitbucket@https://bitbucket.org:atlassian%2Fbitbucket-upload-file!22';
 const SHA = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i;
 const REF = /^[a-f0-9]{7,64}$/i;
-const SETTINGS = { enabled: true, prOverview: true, compactTimeline: 'off', reviewGrouping: 'type', collapseDescription: false, repoConfigs: 'never', aiEnabled: false };
+const SETTINGS = { enabled: true, prOverview: true, compactTimeline: 'off', reviewGrouping: 'type', collapseDescription: false, repoConfigs: 'never', aiEnabled: false, quickReview: false, showListStats: false };
 
 function resource(value) {
   let url;try { url = new URL(value); } catch { return null; }
@@ -185,10 +185,11 @@ export async function verifyBitbucketLocalReview(page, item, { observer, readSto
   const proof = { status: 'pending', scope: 'Local review persistence for one actual anonymous native outdated comment, not provider resolution or authenticated review submission' };
   item.localReviewed = proof;
   const read = () => page.evaluate(localReviewProbe);
-  const ready = (value) => value !== null && value.itemId !== null && /^[a-zA-Z0-9_-]{1,180}$/.test(value.itemId) && !value.disabled && value.native.outdated && value.state === 'outdated';
+  const ready = (value) => value !== null && value.itemId !== null && /^[a-zA-Z0-9_-]{1,180}$/.test(value.itemId) && !value.disabled && value.native.outdated;
   await poll(read, ready, 'Actual Bitbucket inline item and local review control', 15000);
   const original = await page.evaluate(localReviewProbe, 'install');assert.ok(ready(original));proof.original = original;
   assert.equal(original.nativeUnchanged, true);assert.equal(original.pressed, 'false');assert.equal(original.notice, null);
+  assert.equal(original.state, 'outdated');assert.equal(original.group, 'outdated');
   assert.match(original.native.text, /Internal maintenance: Update tests to access token auth\./);
   assert.equal(original.native.path, '.changes/next-release/patch-20240213112019723332.json');
   assert.equal(original.body, original.native.text);assert.equal(new URL(original.native.link).hash, '#comment-471253038');
@@ -202,23 +203,25 @@ export async function verifyBitbucketLocalReview(page, item, { observer, readSto
     assert.ok(value !== null);assert.equal(value.nativeUnchanged, true);assert.deepEqual(value.native, original.native);
     assert.equal(value.itemId, original.itemId);assert.equal(value.body, original.body);assert.deepEqual(value.links, original.links);
     assert.deepEqual(value.checks, original.checks);assert.deepEqual(value.bots, original.bots);assert.equal(value.quickActions, 0);assert.equal(value.aiControls, 0);
-    assert.equal(value.state, 'outdated');assert.equal(value.group, original.group);assert.equal(value.untrustedClicks, 0);
+    assert.equal(value.untrustedClicks, 0);
   };
   await openReviewAncestors(page, selector);await page.click(selector);
-  proof.marked = await poll(read, (value) => value?.pressed === 'true' && !value.disabled && value.notice === 'Reviewed on this device. Native status: Outdated.', 'Local review mark is visible', 8000);
+  proof.marked = await poll(read, (value) => value?.pressed === 'true' && !value.disabled && value.state === 'done-manual' && value.group === 'done' && value.notice === 'Reviewed on this device. Native status: Outdated.', 'Local review mark is visible', 8000);
   unchanged(proof.marked);assert.equal(proof.marked.trustedClicks, 1);
   const fingerprint = localReviewRecord(await readStorage(), original.itemId, identity.headSha);assert.match(fingerprint, /^[a-f0-9]{64}$/);proof.fingerprint = fingerprint;
   await observer.flush();assert.equal(item.localReviewTraffic.providerWrites, 0);assert.ok(budget().available, 'Insufficient remaining Bitbucket budget for reload');
   await page.evaluate(localReviewProbe, 'dispose');observer.oracle.reset();
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
-  await poll(read, (value) => ready(value) && value.pressed === 'true', 'Local review mark survives a real document reload', 15000);
+  await poll(read, (value) => ready(value) && value.pressed === 'true' && value.state === 'done-manual' && value.group === 'done', 'Local review mark survives a real document reload', 15000);
   proof.reloaded = await page.evaluate(localReviewProbe, 'install');unchanged(proof.reloaded);
+  assert.ok(ready(proof.reloaded));assert.equal(proof.reloaded.pressed, 'true');
+  assert.equal(proof.reloaded.state, 'done-manual');assert.equal(proof.reloaded.group, 'done');
   assert.equal(proof.reloaded.notice, 'Reviewed on this device. Native status: Outdated.');
   const afterIdentity = await poll(() => observer.oracle.snapshot(), (value) => value.status === 'ready', 'Reloaded Bitbucket review identity', 8000);
   assert.equal(afterIdentity.headSha, identity.headSha);assert.equal(afterIdentity.state, identity.state);proof.reloadedIdentity = afterIdentity;
   assert.equal(localReviewRecord(await readStorage(), original.itemId, identity.headSha), fingerprint);
   await openReviewAncestors(page, selector);await page.click(selector);
-  proof.undone = await poll(read, (value) => value?.pressed === 'false' && !value.disabled && value.notice === null, 'Undo clears only the local review mark', 8000);
+  proof.undone = await poll(read, (value) => value?.pressed === 'false' && !value.disabled && value.notice === null && value.state === original.state && value.group === original.group, 'Undo clears only the local review mark', 8000);
   unchanged(proof.undone);assert.equal(proof.undone.trustedClicks, 1);
   assert.equal(localReviewRecord(await readStorage(), original.itemId, identity.headSha), null);
   await observer.flush();assert.equal(item.localReviewTraffic.providerWrites, 0);

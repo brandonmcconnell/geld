@@ -2,14 +2,52 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
+import { registerHooks } from 'node:module';
+import { tsImport } from 'tsx/esm/api';
 import { Window } from 'happy-dom';
 import { BITBUCKET_LOCAL_REVIEW, createLocalReviewOracle, localReviewProbe, localReviewRecord, localReviewStorageScope, localReviewWrite, observeLocalReview, verifyBitbucketLocalReview } from './bitbucket-local-reviewed.mjs';
+
+const { buildProviderReviewItems, isOpenStatus } = await tsImport('@geld/review', import.meta.url);
+// Node has no stylesheet renderer; this test uses the real shared panel's state and controls.
+const styles = registerHooks({ load(url, context, next) {
+  return new URL(url).pathname.endsWith('.css') ? { format: 'module', source: '', shortCircuit: true } : next(url, context);
+} });
+let renderProviderReviewPanel;
+try { ({ renderProviderReviewPanel } = await tsImport('../src/providers/review-panel.ts', import.meta.url)); }
+finally { styles.deregister(); }
 
 const HEAD = 'a'.repeat(40);const FINGERPRINT = '1'.repeat(64);
 const REVIEW_KEY = 'bitbucket@https://bitbucket.org:atlassian%2Fbitbucket-upload-file!22';
 const API = 'https://api.bitbucket.org/2.0/repositories/atlassian/bitbucket-upload-file/';
 const metadata = (ref = HEAD) => ({ id: 22, state: 'MERGED', source: { repository: { full_name: 'atlassian/bitbucket-upload-file' }, commit: { hash: ref } }, destination: { repository: { full_name: 'atlassian/bitbucket-upload-file' } } });
 function readyOracle() { const value = createLocalReviewOracle();value.observe(`${API}pullrequests/22`, metadata());value.observe(`${API}pullrequests/22`, metadata());return value; }
+
+test('the actual shared review model moves an outdated local mark to done and Undo preserves native outdated state', () => {
+  const window = new Window({ url: BITBUCKET_LOCAL_REVIEW, settings: { enableCSSFileLoading: false, enableJavaScriptEvaluation: false, enableImageFileLoading: false } });
+  const globals = { document: window.document, window, location: window.location, HTMLElement: window.HTMLElement, HTMLDetailsElement: window.HTMLDetailsElement, HTMLImageElement: window.HTMLImageElement, Element: window.Element, Node: window.Node, getComputedStyle: window.getComputedStyle.bind(window) };
+  const previous = new Map(Object.keys(globals).map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  let panel;
+  try {
+    for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { configurable: true, value });
+    const comment = { id: '471253038', anchor: 'comment-471253038', url: `${BITBUCKET_LOCAL_REVIEW}/_/diff#comment-471253038`, author: { id: 'native-user', login: 'reviewer' }, body: 'A retained outdated review comment', createdAt: '2024-02-13T12:00:00Z' };
+    const input = { subject: { provider: 'bitbucket', origin: 'https://bitbucket.org', repository: 'atlassian/bitbucket-upload-file', id: '22', headSha: HEAD }, threads: [{ id: '471253038', anchor: comment.anchor, url: comment.url, resolved: false, outdated: true, stateKnown: true, comments: [comment] }], checks: [], reviewers: [] };
+    const [native] = buildProviderReviewItems(input);assert.equal(native.status, 'outdated');assert.equal(isOpenStatus(native.status), true);
+    const sourceBefore = JSON.stringify(input);const host = document.createElement('section');document.body.append(host);
+    const options = (reviewed) => ({ localReviewed: { ids: new Set(reviewed ? [native.id] : []), pending: new Set(), set: () => undefined } });
+    panel = renderProviderReviewPanel(host, input, options(false));
+    const item = () => panel.element.querySelector('[data-geld-item]');
+    assert.equal(item().dataset.state, 'outdated');assert.equal(item().closest('[data-geld-review-group]').dataset.geldReviewGroup, 'outdated');
+    panel.update(input, options(true));
+    assert.equal(item().dataset.state, 'done-manual');assert.equal(item().closest('[data-geld-review-group]').dataset.geldReviewGroup, 'done');
+    assert.equal(item().querySelector('[data-geld-local-reviewed]').getAttribute('aria-pressed'), 'true');
+    assert.equal(item().querySelector('[data-geld-local-review-notice]').textContent, 'Reviewed on this device. Native status: Outdated.');
+    panel.update(input, options(false));
+    assert.equal(item().dataset.state, 'outdated');assert.equal(item().closest('[data-geld-review-group]').dataset.geldReviewGroup, 'outdated');
+    assert.equal(item().querySelector('[data-geld-local-review-notice]'), null);assert.equal(JSON.stringify(input), sourceBefore);
+  } finally {
+    panel?.destroy();for (const [key, descriptor] of previous) { if (descriptor === undefined) delete globalThis[key];else Object.defineProperty(globalThis, key, descriptor); }window.happyDOM.abort();
+  }
+});
 
 test('the source oracle needs repeated current-visit metadata and actual full commit resolution', () => {
   const oracle = createLocalReviewOracle();const prefix = HEAD.slice(0, 12);
@@ -58,7 +96,7 @@ function stored(present = false) { return { settings: { present: true, value: { 
 for (const present of [false, true]) test(`storage scope restores exact original ${present ? 'present' : 'absent'} raw local value after close`, async () => {
   let current = stored(present);const original = structuredClone(current);const progress = {};
   const scope = localReviewStorageScope({ read: async () => structuredClone(current), write: async (value) => { current = structuredClone(value); }, progress });
-  await scope.prepare();assert.equal(current.settings.value.enabled, true);assert.deepEqual(current.marks, { present: false });assert.deepEqual(current.settings.value.custom, { keep: 1 });
+  await scope.prepare();assert.equal(current.settings.value.enabled, true);assert.equal(current.settings.value.prOverview, true);assert.equal(current.settings.value.quickReview, false);assert.equal(current.settings.value.showListStats, false);assert.deepEqual(current.marks, { present: false });assert.deepEqual(current.settings.value.custom, { keep: 1 });
   await assert.rejects(scope.restore(false), /Close/);assert.equal(progress.restored, undefined);
   await scope.restore(true);assert.deepEqual(current, original);assert.equal(progress.restored, true);
 });
@@ -139,9 +177,13 @@ test('response observer makes no source request and disposes its listeners', asy
 function protocol(failure) {
   let pressed = false;let clicked = 0;let installs = 0;let reloads = 0;const calls = [];const oracle = readyOracle();
   const native = { id: 'comment-471253038', text: 'Internal maintenance: Update tests to access token auth.', link: `${BITBUCKET_LOCAL_REVIEW}#comment-471253038`, path: '.changes/next-release/patch-20240213112019723332.json', outdated: true };
-  const sample = () => ({ native: { ...native }, nativeUnchanged: failure !== 'source-change' || !pressed, itemId: 'ri_a', pressed: String(pressed), disabled: false, state: 'outdated', group: 'outdated', notice: pressed ? 'Reviewed on this device. Native status: Outdated.' : null, body: native.text, links: [`${BITBUCKET_LOCAL_REVIEW}/_/diff#comment-471253038`], checks: [], bots: [], quickActions: 0, aiControls: 0, trustedClicks: clicked, untrustedClicks: 0 });
+  const sample = () => ({ native: { ...native }, nativeUnchanged: failure !== 'source-change' || !pressed, itemId: 'ri_a', pressed: String(pressed), disabled: false, state: pressed && failure !== 'stale-owned-state' ? 'done-manual' : 'outdated', group: pressed && failure !== 'stale-owned-state' ? 'done' : 'outdated', notice: pressed ? 'Reviewed on this device. Native status: Outdated.' : null, body: native.text, links: [`${BITBUCKET_LOCAL_REVIEW}/_/diff#comment-471253038`], checks: [], bots: [], quickActions: 0, aiControls: 0, trustedClicks: clicked, untrustedClicks: 0 });
   const page = {
-    evaluate: async (fn, operation) => { assert.equal(fn, localReviewProbe);calls.push(operation ?? 'read');if (operation === 'install') installs++;return sample(); },
+    evaluate: async (fn, operation) => {
+      assert.equal(fn, localReviewProbe);calls.push(operation ?? 'read');if (operation === 'install') installs++;
+      const value = sample();if (failure === 'reload-install-state' && operation === 'install' && installs === 2) { value.state = 'outdated';value.group = 'outdated'; }
+      return value;
+    },
     click: async () => { pressed = !pressed;clicked++; },
     reload: async () => { calls.push('reload');reloads++;clicked = 0;if (failure === 'lost-reload') pressed = false;oracle.observe(`${API}pullrequests/22`, metadata());oracle.observe(`${API}pullrequests/22`, metadata()); },
   };
@@ -157,9 +199,10 @@ function protocol(failure) {
 test('actual orchestration verifies both trusted inputs, persisted fingerprint, reload and native status separately', async () => {
   const fixture = protocol();const result = await fixture.run();assert.equal(result.status, 'passed');assert.equal(fixture.item.localReviewed.status, 'passed');
   assert.deepEqual(fixture.counts(), { installs: 2, reloads: 1 });assert.equal(fixture.item.localReviewed.undone.state, 'outdated');
+  assert.equal(fixture.item.localReviewed.marked.state, 'done-manual');assert.equal(fixture.item.localReviewed.reloaded.group, 'done');
   assert.equal(fixture.item.localReviewed.reloaded.pressed, 'true');assert.equal(fixture.item.localReviewed.undone.pressed, 'false');assert.equal(fixture.calls.filter((call) => call === 'dispose').length, 2);
 });
-for (const failure of ['source-change', 'lost-reload', 'write', 'budget']) test(`orchestration cannot pass after ${failure}`, async () => {
+for (const failure of ['source-change', 'lost-reload', 'write', 'budget', 'stale-owned-state', 'reload-install-state']) test(`orchestration cannot pass after ${failure}`, async () => {
   const fixture = protocol(failure);await assert.rejects(fixture.run());assert.notEqual(fixture.item.localReviewed.status, 'passed');
 });
 
