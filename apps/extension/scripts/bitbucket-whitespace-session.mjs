@@ -284,19 +284,62 @@ export function qualifyBitbucketWhitespace(records, phase, mode, { own = true, e
 export function bitbucketWhitespaceProbe(action = 'read', argument = null) {
   const KEY = '__geldBitbucketWhitespaceAcceptance';let saved = globalThis[KEY];
   if (action === 'dispose') { saved?.stop();delete globalThis[KEY];return { released: true }; }
+  const native = node => node instanceof Element && node.isConnected && !node.closest('[data-geld-ui],.ak-renderer-document,[contenteditable]');
+  const visible = node => { if (!native(node) || node.closest('[hidden],[inert],[aria-hidden="true"]')) return false;const r = node.getBoundingClientRect();return r.width > 0 && r.height > 0 && getComputedStyle(node).display !== 'none'; };
+  const passiveCookie = dialog => {
+    const label = 'cookiesTrackingNoticeLink', excluded = '[data-geld-ui],form,input,textarea,select,[contenteditable],.ak-renderer-document,.md,[data-testid="comment"],[data-testid="comment-content"],[data-qa="pr-activity"],[data-qa="pull-request-description"]';
+    const safe = node => node instanceof Element && node.isConnected && node.closest(excluded) === null;
+    const roots = document.querySelectorAll('#unsafe-design-system-page-layout-root'), root = roots[0], parent = dialog.parentElement, slot = parent?.parentElement;
+    if (dialog.tagName !== 'DIV' || dialog.getAttribute('aria-labelledby') !== label || dialog.getAttribute('role') !== 'dialog' || !safe(dialog)
+      || document.querySelectorAll(`[aria-labelledby="${label}"]`).length !== 1 || roots.length !== 1 || !safe(root)
+      || parent?.tagName !== 'DIV' || !safe(parent) || parent.closest('dialog,[role="dialog"]') !== null || [...parent.attributes].some(a => !['class', 'style'].includes(a.name))
+      || [...parent.childNodes].some(n => n !== dialog && (n.nodeType !== 3 || n.textContent.trim() !== ''))
+      || slot?.tagName !== 'DIV' || !safe(slot) || slot.getAttribute('data-layout-slot') !== 'true' || slot.parentElement !== root) return false;
+    const layoutStyle = node => node instanceof Element && node.tagName === 'STYLE' && node.attributes.length === 0 && [...node.childNodes].every(n => n.nodeType === 3)
+      && node.textContent.length <= 256 && (() => { const match = /^\s*#unsafe-design-system-page-layout-root\s*\{\s*--n_bnrM:\s*(\d{1,4}(?:\.\d{1,3})?)px\s*;?\s*\}\s*$/.exec(node.textContent);return match !== null && Number(match[1]) <= 4096; })();
+    if ([...slot.childNodes].filter(layoutStyle).length > 1 || [...slot.childNodes].some(n => n !== parent && !layoutStyle(n) && (n.nodeType !== 3 || n.textContent.trim() !== ''))
+      || dialog.querySelector('form,input,textarea,select,[contenteditable],[role="textbox"],[role="checkbox"],[role="switch"],dialog,[role="dialog"]') !== null || dialog.querySelector(excluded) !== null) return false;
+    const buttons = [...dialog.querySelectorAll('button')], links = [...dialog.querySelectorAll('a')], expected = [['preferences-button', 'Preferences'], ['only-necessary-button', 'Only necessary'], ['accept-all-button', 'Accept all']];
+    if (buttons.length !== 3 || links.length !== 2 || buttons.some((b, i) => b.type !== 'button' || b.disabled || b.getAttribute('aria-live') !== 'polite' || b.getAttribute('data-testid') !== expected[i][0] || b.textContent.trim() !== expected[i][1])
+      || links.some(a => a.id !== label || a.getAttribute('href') !== 'https://www.atlassian.com/legal/cookies' || a.getAttribute('target') !== '_blank' || !a.textContent.startsWith('Atlassian cookies and tracking notice')) || dialog.querySelectorAll(`[id="${label}"]`).length !== 2) return false;
+    const tags = ['DIV', 'SPAN', 'A', 'BUTTON', 'SVG', 'PATH'], attributes = ['class', 'style', 'id', 'role', 'aria-labelledby', 'aria-hidden', 'aria-live', 'href', 'target', 'type', 'data-testid', 'fill', 'viewbox', 'd'];
+    const nodes = [dialog], walker = document.createTreeWalker(dialog);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) { if (nodes.length >= 100) return false;nodes.push(node); }
+    if (nodes.some(node => node.nodeType !== 3 && (!(node instanceof Element) || !tags.includes(node.tagName.toUpperCase()) || node !== dialog && node.hasAttribute('role') && node.getAttribute('role') !== 'presentation' || [...node.attributes].some(a => !attributes.includes(a.name.toLowerCase()))))) return false;
+    const narrative = 'Atlassian uses cookies to improve your browsing experience, perform analytics and research, and conduct advertising. Accept all cookies to indicate that you agree to our use of cookies on your device.';
+    const noticeText = `${narrative} Atlassian cookies and tracking notice , (opens new window) ${narrative} Atlassian cookies and tracking notice , (opens new window) Preferences Only necessary Accept all`;
+    const actualText = nodes.filter(node => node.nodeType === 3).map(node => node.textContent).join(' ').replace(/\s+/g, ' ').trim();
+    if (actualText.length > 2048 || actualText !== noticeText) return false;
+    const signature = JSON.stringify(nodes.map(node => node.nodeType === 3 ? node.textContent : [node.tagName, [...node.attributes].filter(a => !['class', 'style'].includes(a.name)).map(a => [a.name, a.value])]));
+    const old = saved?.cookieNotice;
+    if (old && (old.root !== root || old.slot !== slot || old.parent !== parent || old.dialog !== dialog || old.signature !== signature || old.nodes.length !== nodes.length || nodes.some((node, i) => node !== old.nodes[i]))) return false;
+    if (saved && !old) saved.cookieNotice = { root, slot, parent, dialog, signature, nodes };
+    return true;
+  };
+  const settingsDialog = dialog => {
+    const fields = dialog ? [...dialog.querySelectorAll('input#diff-settings-ignore-whitespace-toggle')].filter(native) : [];
+    const field = fields.length === 1 ? fields[0] : null;
+    const labels = field ? [...new Set(field.labels ?? [])] : [];
+    const checkbox = field && field.type === 'checkbox' && field.name === 'shouldIgnoreWhitespace' && field.getAttribute('value') === 'shouldIgnoreWhitespace' && !field.disabled && labels.length === 1 && labels[0].id === 'diff-settings-ignore-whitespace-toggle-label' && labels[0].textContent.trim() === 'Whitespace changes' && visible(labels[0]) ? { checked: field.checked, defaultChecked: field.defaultChecked, type: field.type, id: field.id } : null;
+    const cancels = dialog ? [...dialog.querySelectorAll('button[type="button"]')].filter(n => visible(n) && !n.disabled && n.textContent.trim() === 'Cancel') : [];
+    return { checkbox, cancels };
+  };
+  const inspectDialogs = () => {
+    const total = [...document.querySelectorAll('[role="dialog"]')].filter(visible), passive = total.filter(passiveCookie), actionable = total.filter(dialog => !passive.includes(dialog));
+    const settingsMatches = actionable.filter(dialog => { const state = settingsDialog(dialog);return state.checkbox !== null && state.cancels.length === 1; }).length;
+    return { actionable, counts: { total: Math.min(total.length, 101), passiveCookie: Math.min(passive.length, 101), actionable: Math.min(actionable.length, 101), settingsMatches: Math.min(settingsMatches, 101) } };
+  };
   if (action === 'diagnostic') {
-    const bounded = selector => Math.min(document.querySelectorAll(selector).length, 101);
+    const bounded = selector => Math.min(document.querySelectorAll(selector).length, 101), dialogs = inspectDialogs();
     return { exactURL: location.href === 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22/diff',
       panelCount: bounded('#pull-request-tabs-1-tab[role="tabpanel"]'), openerCount: bounded('#pull-request-tabs-1-tab button[aria-live="polite"][type="button"]'),
       fileAnchorCount: bounded('[role="region"][aria-label="Diff"] > div > div[id^="chg-"]'), articleCount: bounded('article[data-qa="branch-diff-file"]'),
       placeholderCount: bounded('[data-testid="pr-diff-placeholder-wrapper"]'), progressCount: bounded('[role="progressbar"]'),
       busy: document.querySelector('#pull-request-tabs-1-tab[aria-busy="true"]') !== null,
-      dialogCount: bounded('[role="dialog"]'), checkboxCount: bounded('input#diff-settings-ignore-whitespace-toggle'),
+      dialogCount: dialogs.counts.actionable, dialogCounts: dialogs.counts, checkboxCount: bounded('input#diff-settings-ignore-whitespace-toggle'),
       bound: saved !== undefined, generation: saved?.generation ?? null, transition: saved?.transition?.phase ?? null };
   }
   if (location.href !== 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22/diff') return null;
-  const native = node => node instanceof Element && node.isConnected && !node.closest('[data-geld-ui],.ak-renderer-document,[contenteditable]');
-  const visible = node => { if (!native(node) || node.closest('[hidden],[inert],[aria-hidden="true"]')) return false;const r = node.getBoundingClientRect();return r.width > 0 && r.height > 0 && getComputedStyle(node).display !== 'none'; };
   const panels = [...document.querySelectorAll('#pull-request-tabs-1-tab[role="tabpanel"]')].filter(native);
   const actors = [...document.head.querySelectorAll('meta#bb-bootstrap[data-current-user]')].filter(native);
   if (panels.length !== 1 || actors.length !== 1) return null;
@@ -331,13 +374,9 @@ export function bitbucketWhitespaceProbe(action = 'read', argument = null) {
     globalThis[KEY] = saved;
   }
   if (!saved || saved.panel !== panel || saved.actor !== actors[0] || saved.actorValue !== actors[0].getAttribute('data-current-user') || saved.opener !== opener) return null;
-  const dialogs = [...document.querySelectorAll('[role="dialog"]')].filter(visible);
+  const inspected = inspectDialogs(), dialogs = inspected.actionable;
   const dialog = dialogs.length === 1 ? dialogs[0] : null;
-  const fields = dialog ? [...dialog.querySelectorAll('input#diff-settings-ignore-whitespace-toggle')].filter(native) : [];
-  const field = fields.length === 1 ? fields[0] : null;
-  const labels = field ? [...new Set(field.labels ?? [])] : [];
-  const checkbox = field && field.type === 'checkbox' && field.name === 'shouldIgnoreWhitespace' && field.getAttribute('value') === 'shouldIgnoreWhitespace' && !field.disabled && labels.length === 1 && labels[0].id === 'diff-settings-ignore-whitespace-toggle-label' && labels[0].textContent.trim() === 'Whitespace changes' && visible(labels[0]) ? { checked: field.checked, defaultChecked: field.defaultChecked, type: field.type, id: field.id } : null;
-  const cancels = dialog ? [...dialog.querySelectorAll('button[type="button"]')].filter(n => visible(n) && !n.disabled && n.textContent.trim() === 'Cancel') : [];
+  const { checkbox, cancels } = settingsDialog(dialog);
   if (action === 'target') {
     const target = argument === 'opener' && dialogs.length === 0 ? opener : argument === 'cancel' && cancels.length === 1 ? cancels[0] : null;
     if (!target || !visible(target)) return null;saved.expected = target;return target;
@@ -381,7 +420,7 @@ export function bitbucketWhitespaceProbe(action = 'read', argument = null) {
   const leaves = [...(heading?.parentElement?.parentElement?.querySelectorAll('span') ?? [])].filter(n => n.children.length === 0);
   return { anonymous, originalPage: true, generation: saved.generation, transition: saved.transition?.phase ?? null, samePaths, viewedSemanticsPreserved, settledMounted, busy: panel.getAttribute('aria-busy') === 'true', originalsPreserved, rowsPreserved, viewedPreserved, files: files.map(f => ({ path: f.path, mounted: f.article !== null, viewed: f.viewed.map(v => ({ checked: v.checked, disabled: v.disabled })) })),
     totals: { files: number(tab?.querySelector(':scope > div > span > span')), additions: number(leaves.find(n => /^\+\s*[\d,]+$/.test(n.textContent.trim()))), deletions: number(leaves.find(n => /^[-−]\s*[\d,]+$/.test(n.textContent.trim()))) },
-    dialogCount: dialogs.length, checkbox, cancelAvailable: cancels.length === 1, events: [...saved.events], forbiddenInputs: saved.forbiddenInputs, overflow: saved.overflow };
+    dialogCount: dialogs.length, dialogCounts: inspected.counts, checkbox, cancelAvailable: cancels.length === 1, events: [...saved.events], forbiddenInputs: saved.forbiddenInputs, overflow: saved.overflow };
 }
 
 /** Public scope intentionally ends with Settings open; Cancel/re-disable is unit-only until separately budgeted. */
@@ -392,7 +431,7 @@ export async function verifyBitbucketWhitespace(page, { settings, observer, prog
   const read = () => run(() => page.evaluate(bitbucketWhitespaceProbe));
   const current = async () => {
     await settings.current();const value = await read();
-    progress.lastNative = value === null ? { available: false } : Object.fromEntries(['originalPage', 'generation', 'transition', 'samePaths', 'viewedSemanticsPreserved', 'settledMounted', 'busy', 'originalsPreserved', 'rowsPreserved', 'viewedPreserved', 'dialogCount', 'forbiddenInputs', 'overflow'].map(key => [key, value[key]]));
+    progress.lastNative = value === null ? { available: false } : Object.fromEntries(['originalPage', 'generation', 'transition', 'samePaths', 'viewedSemanticsPreserved', 'settledMounted', 'busy', 'originalsPreserved', 'rowsPreserved', 'viewedPreserved', 'dialogCount', 'dialogCounts', 'forbiddenInputs', 'overflow'].map(key => [key, value[key]]));
     check(value?.originalPage && !value.forbiddenInputs && !value.overflow, 'NATIVE_SOURCE_CHANGED');
     if (transition === null) check(value.viewedPreserved && value.originalsPreserved && value.rowsPreserved, 'SETTLED_NATIVE_CHANGED');
     return value;
