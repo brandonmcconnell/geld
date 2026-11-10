@@ -64,7 +64,7 @@ export class ProviderHiddenPeopleView {
         remove.addEventListener('click', () => {
           if (this.bar !== bar || !remove.isConnected) return;
           remove.disabled = true;
-          void this.unhide?.(person.login).catch(() => { remove.textContent = 'Could not save. Try again.'; }).finally(() => { remove.disabled = false; });
+          void this.unhide?.(person.ruleIdentity).catch(() => { remove.textContent = 'Could not save. Try again.'; }).finally(() => { remove.disabled = false; });
         });row.append(remove);
       }
       list.append(row);
