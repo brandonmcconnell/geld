@@ -3207,6 +3207,10 @@ The public Bitbucket app asset can change while an acceptance session is running
 A strict native-request source allowlist must be refreshed from the actual page and its bounded static source capture before a new app hash is trusted.
 The static source collector remains a single fixed CDN GET with no provider API request or executed vendor code.
 
+The November 2 native app refresh from `6ea3303` to `5ff3a9b` changed the bundle URL while preserving all five audited metadata POST factories byte for byte.
+The acceptance guard allows both exact audited URLs and records at most four validated native app paths with match, extension-frame and truncation flags when rejecting an initiator.
+It never records arbitrary stack URLs, function names or request bodies.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
