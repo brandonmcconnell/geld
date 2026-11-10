@@ -231,7 +231,10 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
     snapshot: () => observedReview,
     retired: () => retired,
   });
-  controller = new ProviderController(sourceAdapter, settings, (state) => publish(badge ? state : { ...state, hiddenCount: 0 }), catalog, configs, choices, { saveTrustedBot, saveTrustedPublisher, ...reviewed });
+  controller = new ProviderController(sourceAdapter, settings, (state) => publish(badge ? state : { ...state, hiddenCount: 0 }), catalog, configs, choices, { saveTrustedBot, saveTrustedPublisher, ...reviewed }, (url, show) => {
+    whitespace.nativeChoice(url, show);
+    links.refresh();
+  });
   const started = controller;
   unwatchSettings = settingsItem.watch((value) => {
     badge = value.showBadge;

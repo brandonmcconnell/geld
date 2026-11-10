@@ -18,7 +18,7 @@ describe('provider whitespace preference', () => {
     const planner = new ProviderWhitespace(settings, {}, save);
     expect(planner.navigation(new URL(`${path}?w=0`))).toBeNull();
     const restored = new ProviderWhitespace(settings, save.mock.calls[0]?.[0] ?? {}, () => undefined);
-    expect(restored.navigation(new URL(path))).toBeNull();
+    expect(restored.navigation(new URL(path))).toBe(`${path}?w=0`);
     expect(restored.navigation(new URL(path.replace('/42/', '/43/')))).toBe(`${path.replace('/42/', '/43/')}?w=1`);
     const bitbucket = new URL('https://bitbucket.org/group/repo/pull-requests/42/diff');
     expect(restored.navigation(bitbucket)).toBeNull();
@@ -48,7 +48,7 @@ describe('provider whitespace preference', () => {
     const save = vi.fn();
     const planner = new ProviderWhitespace(settings, {}, save);
     planner.navigation(new URL(`${path}?w=0`));
-    expect(planner.link(new URL(path))).toBe(path);
+    expect(planner.link(new URL(path))).toBe(`${path}?w=0`);
     expect(planner.navigation(new URL(`${path}?w=1`))).toBeNull();
     expect(save.mock.calls).toHaveLength(2);
     expect(save.mock.calls[1]?.[0]).toEqual({});
@@ -72,5 +72,43 @@ describe('provider whitespace preference', () => {
   it('merges opt-in deletions without losing another tab’s opt-outs', () => {
     expect(mergeWhitespaceOptOuts({ a: 1, b: 2 }, { b: 2 }, { a: 1, b: 3, c: 4 })).toEqual({ b: 3, c: 4 });
     expect(mergeWhitespaceOptOuts({}, { a: 1 }, { c: 4 })).toEqual({ a: 1, c: 4 });
+  });
+
+  it.each(['0', '1'])('preserves a trusted native choice over the same stale w=%s URL and settings callbacks', (literal) => {
+    const save = vi.fn();const planner = new ProviderWhitespace(settings, {}, save);
+    const current = new URL(`${path}?diff_id=812&w=${literal}`);
+    planner.navigation(current);
+    planner.nativeChoice(current, literal === '1');
+    const count = save.mock.calls.length;
+    planner.update({ ...settings, hideWhitespace: false });expect(planner.navigation(current)).toBeNull();
+    planner.update(settings);expect(planner.navigation(new URL(`${current.href}#native-file`))).toBeNull();
+    expect(save).toHaveBeenCalledTimes(count);
+    expect(planner.link(new URL(path))).toBe(`${path}?w=${literal === '1' ? '0' : '1'}`);
+    expect(planner.navigation(new URL(`${path}?diff_id=913&w=${literal}`))).toBeNull();
+    expect(planner.link(new URL(path))).toBe(`${path}?w=${literal}`);
+  });
+
+  it('retains a known native Show during disabled policy and honors it when defaults are enabled', () => {
+    const planner = new ProviderWhitespace({ ...settings, enabled: false }, {}, () => undefined);
+    const current = new URL(`${path}?w=1`);planner.nativeChoice(current, true);
+    planner.update(settings);expect(planner.navigation(current)).toBeNull();
+    expect(planner.link(new URL(path))).toBe(`${path}?w=0`);
+  });
+
+  it('bounds explicit Show redirects if the site strips w=0 without erasing the local choice', () => {
+    const data = new Map<string, string>();const memory = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); } };
+    const save = vi.fn();const initial = new ProviderWhitespace(settings, {}, save, { memory, now: () => 10000, navigationStart: () => 9000 });
+    initial.nativeChoice(new URL(path), true);
+    const next = new ProviderWhitespace(settings, save.mock.calls[0]?.[0] ?? {}, () => undefined, { memory, now: () => 10001, navigationStart: () => 10000 });
+    expect(next.navigation(new URL(path))).toBe(`${path}?w=0`);
+    const stripped = new ProviderWhitespace(settings, save.mock.calls[0]?.[0] ?? {}, () => undefined, { memory, now: () => 10002, navigationStart: () => 10002 });
+    expect(stripped.navigation(new URL(path))).toBeNull();expect(stripped.link(new URL(path))).toBe(`${path}?w=0`);
+  });
+
+  it('treats a genuine leave and return as a new explicit URL choice, even through a non-diff page', () => {
+    const planner = new ProviderWhitespace(settings, {}, () => undefined);const current = new URL(`${path}?w=1`);
+    planner.navigation(current);planner.nativeChoice(current, true);
+    planner.navigation(new URL(path.replace('/diffs', '')));
+    expect(planner.navigation(current)).toBeNull();expect(planner.link(new URL(path))).toBe(`${path}?w=1`);
   });
 });
