@@ -2714,6 +2714,8 @@ Owner-scoped toggle and beforematch observations schedule measurements when pres
 API-rendered note HTML never gains live height controls, even if it imitates native table attributes.
 Use the comment render owner's mount/dispose/current namespace and exact comment/head/native-table identity for frames, size observations, state and unique owned ARIA targets.
 The owned button changes only its own height cap and restores its exact class order, never native table nodes, native global expansion events, provider preferences, rows or sorting.
+After owned collapse, center that same focused owned button with inline nearest and automatic scrolling, because nearest-only vertical scrolling can place it behind GitLab's native sticky header.
+Keep the installed Space preinput hit guard unchanged so an occluded focused control remains a product failure rather than being hidden by harness recentering.
 The CodeRabbit height phase uses genuine owned pointer and keyboard input, records actual height and last-row reachability, and restores owned body bytes and disclosures before freezing the command baseline.
 Expanded acceptance requires an absent computed cap, client height covering table and scroll height, and an unobscured actual last cell inside the owned scroll clip, ancestor clips and viewport.
 Recheck exact source/head/control ownership and the actual visible center hit chain before pointer inputs, require the same focused button before keyboard inputs, and retain all phase HTTP GETs with recognized source/extension reads separated from other traffic.

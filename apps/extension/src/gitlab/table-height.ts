@@ -183,7 +183,7 @@ export function mountGitLabTableHeights(source: HTMLElement, comment: ProviderRe
       if (mode === null || (!expanded && !clipped(entry.target.owned, entry.table, win!.innerHeight))) { schedule();return; }
       controls.dataset.geldTableHeightAuthority = mode;
       expanded = !expanded;context.state.set(entry.key, expanded);paint();button.focus({ preventScroll: true });
-      if (!expanded) button.scrollIntoView?.({ block: 'nearest', behavior: 'auto' });
+      if (!expanded) button.scrollIntoView?.({ block: 'center', inline: 'nearest', behavior: 'auto' });
       if (expanded) demonstrated = true;
     }
     const observer = typeof win.ResizeObserver === 'function' ? new win.ResizeObserver(schedule) : null;
