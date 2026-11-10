@@ -3442,3 +3442,9 @@ Outdated unresolved threads remain open work, matching the shared digest counts,
 GitHub, GitLab and Bitbucket choose the gateway decision model through the same `gatewayDecisionModel` helper.
 A saved model choice applies only when the current gateway advertises or inherently supports decision models, so another gateway's cached model list cannot authorize a stale choice.
 Provider addressed-state caches include the selected decision setting and are reconsidered when that choice changes, while native resolved and outdated states remain authoritative.
+
+Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
+Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
+
+Malformed GitLab approval or reviewer rows are isolated individually and mark reviews partial without discarding valid standings, discussion evidence or native required/remaining counts.
+An all-malformed source supplies no known empty reviewer list.
