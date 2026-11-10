@@ -214,3 +214,9 @@ export function gitLabHeaderTargets(doc: Document): readonly ProviderHeaderTarge
   });
   return [...counts, ...tabs];
 }
+
+
+export function gitLabFlowHost(doc: Document): HTMLElement | null {
+  const toolbars = [...doc.querySelectorAll<HTMLElement>('[data-rapid-diffs][data-app-data] > header .rd-app-settings')].filter(node => node.closest('[data-geld-ui], .md, .note-text') === null && node.querySelector('.diff-stats.inline-parallel-buttons .diff-stats-contents') !== null);
+  return toolbars.length === 1 ? toolbars[0] ?? null : null;
+}
