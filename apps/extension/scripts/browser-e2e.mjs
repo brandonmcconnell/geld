@@ -182,12 +182,6 @@ function safeUrl(value) {
   } catch { return String(value).slice(0, 1000); }
 }
 function errorText(error) { return error instanceof Error ? `${error.name}: ${error.message}` : String(error); }
-// An assertion without a message reads only "false == true", so name the harness line that threw.
-function errorWhere(error) {
-  if (!(error instanceof Error) || typeof error.stack !== 'string') return undefined;
-  const frame = error.stack.split('\n').map((line) => line.match(/\/scripts\/([\w.-]+\.mjs):(\d+):\d+\)?$/)).find((match) => match !== null);
-  return frame ? `${frame[1]}:${frame[2]}` : undefined;
-}
 function providerOf(value) {
   try {
     const host = new URL(value).hostname;
@@ -816,7 +810,10 @@ async function runCase(name, url, body, discovery = false) {
   } catch (error) {
     item.status = item.rateLimitedUntil !== undefined && item.holdReason === 'provider_http429' ? 'rate_limited' : item.budgetHold !== undefined ? 'unavailable' : wholePrivacy ? (item.bitbucketWhole?.status==='failed'?'failed':item.rateLimitedUntil!==undefined?'rate_limited':'unavailable') : shellPrivacy ? (item.gitLabShell?.status === 'failed' ? 'failed' : item.rateLimitedUntil !== undefined ? 'rate_limited' : 'unavailable') : fileMenuPrivacy && item.rateLimitedUntil !== undefined ? 'rate_limited' : fileMenuPrivacy && (item.nativeFileMenu?.status === 'failed' || item.nativeFileMenuContract === 'invalid_result' || item.nativeFileMenuTraffic?.forbiddenWrites > 0 || item.nativeFileMenuTraffic?.positiveExtensionRequests > 0) ? 'failed' : whitespacePrivacy && item.nativeWhitespace?.status === 'failed' ? 'failed' : name === 'bitbucket-native-settings-diagnostic' && item.nativeSettingsDiagnostic?.status === 'failed' ? 'failed' : name === 'bitbucket-native-bash-on' && item.nativeBashOn?.status === 'failed' ? 'failed' : discovery ? item.rateLimitedUntil === undefined ? 'unavailable' : 'rate_limited' : 'failed';
     item.error = wholePrivacy ? 'Bitbucket whole-context acceptance unavailable or failed. See fixed stage diagnostics.' : localReviewOnly ? 'Bitbucket local review acceptance failed. See bounded stage evidence.' : shellPrivacy ? 'GitLab shell acceptance unavailable or failed. See fixed phase and cleanup diagnostics.' : fileMenuPrivacy ? 'Native file-menu diagnostic unavailable or guard failed. See fixed progress and cleanup codes.' : whitespacePrivacy ? 'Native whitespace characterization unavailable or failed. See fixed stage and cleanup codes.' : errorText(error);
-    if (!(wholePrivacy || localReviewOnly || shellPrivacy || fileMenuPrivacy || whitespacePrivacy) && item.budgetHold === undefined && item.rateLimitedUntil === undefined) item.where = errorWhere(error);
+    // An assertion without a message reads only "false == true", so a real failure names the harness line that threw.
+    const frame = !(wholePrivacy || localReviewOnly || shellPrivacy || fileMenuPrivacy || whitespacePrivacy) && item.budgetHold === undefined && item.rateLimitedUntil === undefined && error instanceof Error && typeof error.stack === 'string'
+      ? error.stack.split('\n').map((line) => line.match(/\/scripts\/([\w.-]+\.mjs):(\d+):\d+\)?$/)).find((match) => match !== null) : undefined;
+    if (frame) item.where = `${frame[1]}:${frame[2]}`;
     if (item.budgetHold !== undefined && item.rateLimitedUntil === undefined) item.error = `Conservative anonymous API budget hold until ${item.budgetHold.availableAt}. No provider HTTP429 is implied; native demand stopped and no retry was attempted.`;
     if (item.rateLimitedUntil !== undefined) {
       item.interruptedError = item.error;
