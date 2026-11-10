@@ -3574,3 +3574,7 @@ Keep display logins separate, leave malformed account identities visible, and ne
 
 Provider related-link sources use the same hidden-people projection as the digest, including canonical Bitbucket UUID rules, hidden starter-owned threads and visit peeking.
 Keep description-owned related links independent of comment-author filtering.
+
+Installed public walkthrough focuses record the actual Chrome page through Puppeteer screencast, with a timed receipt for each completed scene.
+They reuse the installed-browser permission, request budget and cooldown handling rather than bypassing local browser policy.
+Titles, captions and voiceover are post-production overlays and never replace native controls or manufacture provider state.

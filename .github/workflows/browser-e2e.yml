@@ -19,6 +19,8 @@ on:
         type: choice
         options:
           - regression
+          - gitlab-walkthrough
+          - bitbucket-walkthrough
           - provider-evidence
           - provider-access-evidence
           - provider-access
@@ -77,7 +79,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const choices = new Set(['regression', 'provider-evidence', 'provider-access-evidence', 'provider-access', 'bitbucket-diff', 'bitbucket-ui', 'gitlab-ui', 'bitbucket-whitespace-session', 'bitbucket-whitespace-source', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'bitbucket-pipeline-initial-on', 'bitbucket-list', 'bitbucket-authors', 'bitbucket-native-bash', 'bitbucket-native-bash-on', 'bitbucket-native-settings-diagnostic', 'bitbucket-native-file-menu', 'bitbucket-local-reviewed', 'bitbucket-comment', 'bitbucket-commit', 'bitbucket-commit-links', 'bitbucket-list-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-file-search', 'gitlab-whitespace-viewed', 'gitlab-whitespace-session', 'bitbucket-pr-whole-context', 'bitbucket-whole-context', 'gitlab-shell', 'gitlab-standalone-whole', 'gitlab-review', 'gitlab-local-reviewed', 'gitlab-bot', 'gitlab-coderabbit', 'gitlab-references', 'gitlab-binary', 'github', 'cross-provider-settings', 'all']);
+            const choices = new Set(['gitlab-walkthrough', 'bitbucket-walkthrough', 'regression', 'provider-evidence', 'provider-access-evidence', 'provider-access', 'bitbucket-diff', 'bitbucket-ui', 'gitlab-ui', 'bitbucket-whitespace-session', 'bitbucket-whitespace-source', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'bitbucket-pipeline-initial-on', 'bitbucket-list', 'bitbucket-authors', 'bitbucket-native-bash', 'bitbucket-native-bash-on', 'bitbucket-native-settings-diagnostic', 'bitbucket-native-file-menu', 'bitbucket-local-reviewed', 'bitbucket-comment', 'bitbucket-commit', 'bitbucket-commit-links', 'bitbucket-list-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-file-search', 'gitlab-whitespace-viewed', 'gitlab-whitespace-session', 'bitbucket-pr-whole-context', 'bitbucket-whole-context', 'gitlab-shell', 'gitlab-standalone-whole', 'gitlab-review', 'gitlab-local-reviewed', 'gitlab-bot', 'gitlab-coderabbit', 'gitlab-references', 'gitlab-binary', 'github', 'cross-provider-settings', 'all']);
             const parseFocus = (body) => {
               const text = typeof body === 'string' ? body : '';
               const prefixes = text.match(/<!-- geld-browser-focus:/g) ?? [];
@@ -212,7 +214,7 @@ jobs:
         if: needs.select-public-verification.outputs.focus != 'provider-evidence' && needs.select-public-verification.outputs.focus != 'provider-access-evidence'
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y xvfb xauth dbus-x11 at-spi2-core python3-pyatspi libglib2.0-bin
+          sudo apt-get install --no-install-recommends -y xvfb xauth dbus-x11 at-spi2-core python3-pyatspi libglib2.0-bin ffmpeg
       - name: Locate the runner's Chrome
         if: needs.select-public-verification.outputs.focus != 'provider-evidence' && needs.select-public-verification.outputs.focus != 'provider-access-evidence'
         shell: bash
