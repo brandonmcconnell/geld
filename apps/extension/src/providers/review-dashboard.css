@@ -1,4 +1,4 @@
-.geld-provider-review[data-provider] { padding: 0; overflow-wrap: anywhere; }
+.geld-provider-review[data-provider] { padding: 0; overflow-wrap: anywhere; isolation: isolate; position: relative; z-index: 0; }
 .geld-provider-review > .geld-provider-review__header {
   box-sizing: border-box;
   min-block-size: calc(var(--geld-provider-button-min-height) + var(--geld-provider-space-3));
@@ -131,8 +131,10 @@ svg.geld-provider-digest-icon[data-geld-outline], svg.geld-provider-digest-icon[
 .geld-provider-review__menu-list .geld-provider-view { margin: 0; flex-direction: column; align-items: stretch; }
 .geld-provider-review__menu-list[data-geld-view-slot] { inline-size: max-content; }
 .geld-provider-review__menu-list .geld-provider-view__option { justify-content: flex-start; border: 0; white-space: nowrap; }
-.geld-provider-view__position { border: 0; border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); margin-block-start: var(--geld-provider-space-2); padding: var(--geld-provider-space-3); background: transparent; color: var(--geld-provider-text-subtle); font: var(--geld-provider-font-small); text-align: start; cursor: pointer; }
-.geld-provider-view__position:hover { background: var(--geld-provider-button-hover-bg); }
+.geld-provider-view__status:empty { display: none; }
+.geld-provider-view__separator { margin: 0; border: 0; border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); }
+.geld-provider-view__position { border: 0; border-radius: var(--geld-provider-radius); margin: 0; padding: var(--geld-provider-space-2) var(--geld-provider-space-3); min-block-size: var(--geld-provider-button-min-height); background: transparent; color: var(--geld-provider-text-subtle); font: var(--geld-provider-font-small); text-align: start; cursor: pointer; }
+.geld-provider-view__position:hover { background: var(--geld-provider-bg-subtle); }
 .geld-provider-view__position:focus-visible { outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); }
 @media (max-width: 700px) {
   [data-geld-status-row] > .geld-provider-review__section-toggle { flex-wrap: wrap; gap: var(--geld-provider-space-3); }
@@ -140,4 +142,24 @@ svg.geld-provider-digest-icon[data-geld-outline], svg.geld-provider-digest-icon[
   .geld-provider-review__row-preview { flex-basis: 50%; }
   .geld-provider-review__tool-label { display: none; }
   .geld-provider-review__progress progress { width: 48px; }
+}
+
+.geld-provider-review__entry > .geld-provider-review__section-toggle {
+  display: grid;
+  grid-template-columns: 16px 20px minmax(5em, auto) minmax(0, 1fr) auto 1em;
+  gap: var(--geld-provider-space-3);
+  font-weight: var(--geld-provider-font-weight);
+}
+.geld-provider-review__entry > .geld-provider-review__section-toggle::after { grid-column: -2 / -1; }
+.geld-provider-review__entry-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 0; color: var(--geld-provider-text-subtle); }
+.geld-provider-review__entry time { color: var(--geld-provider-text-subtle); font: var(--geld-provider-font-small); white-space: nowrap; }
+.geld-provider-review__entry[data-state='pending'] > .geld-provider-review__section-toggle > svg { color: var(--geld-provider-warning); }
+.geld-provider-review__status-chip[data-state='pending'] { border-style: dashed; }
+.geld-provider-review__status-chip[data-state='pending']::before { content: ''; inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--geld-provider-warning); }
+.geld-provider-review .geld-provider-review__reviewers { display: block; }
+.geld-provider-review .geld-provider-review__reviewers > .geld-provider-review__standing { display: block; }
+@media (max-width: 640px) {
+  .geld-provider-review__entry > .geld-provider-review__section-toggle { grid-template-columns: 16px 20px minmax(0, 1fr) 1em; }
+  .geld-provider-review__entry-preview { grid-row: 2; grid-column: 3; }
+  .geld-provider-review__entry time { display: none; }
 }

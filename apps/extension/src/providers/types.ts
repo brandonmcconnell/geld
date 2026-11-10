@@ -191,6 +191,7 @@ export interface ProviderReviewSnapshot {
   readonly botRequests?: (input: ProviderReviewInput, comments: readonly ProviderReviewComment[], current: () => boolean) => readonly ProviderBotRequest[];
   readonly sourceCoverage?: ProviderSourceCoverage;
   readonly sourceActions?: (comment: ProviderReviewComment) => readonly ProviderReviewSourceAction[];
+  readonly renderEvent?: (event: ProviderReviewPanelEvent, host: HTMLElement) => boolean;
   readonly renderComment?: (comment: ProviderReviewComment, host: HTMLElement, context?: ProviderCommentRenderContext) => boolean;
   readonly commentSignature?: (comment: ProviderReviewComment) => string | null;
   readonly authorPresentation?: (comment: ProviderReviewComment) => ProviderReviewAuthorPresentation | null;

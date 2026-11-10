@@ -61,3 +61,31 @@ it('caps long rendered content at 500px and preserves the explicit full-descript
   expect(body.hasAttribute('data-geld-provider-description-capped')).toBe(false);
   view.clear();expect(document.querySelector('.geld-provider-description-toggle')).toBeNull();
 });
+
+it('lets heading text toggle sections and immediately lifts the description cap', async () => {
+  body.innerHTML = '<h2>Summary <a href="#link">Link</a></h2><p>Intro</p><h2><span>Testing</span></h2><p>Result</p>';
+  Object.defineProperty(body, 'scrollHeight', { configurable: true, value: 900 });
+  view.update(body, 'mr');
+  await vi.waitFor(() => expect(body.hasAttribute('data-geld-provider-description-capped')).toBe(true));
+  body.querySelector<HTMLSpanElement>('h2 span')?.click();
+  expect(body.lastElementChild?.hasAttribute('hidden')).toBe(false);
+  expect(body.hasAttribute('data-geld-provider-description-capped')).toBe(false);
+  expect(body.children[1]?.getAttribute('data-geld-provider-description-depth')).toBe('1');
+  expect(body.children[3]?.getAttribute('data-geld-provider-description-depth')).toBe('1');
+  const heading = body.firstElementChild;
+  expect(heading?.getAttribute('style')).toContain('--geld-provider-description-rails');
+  body.querySelector<HTMLAnchorElement>('a')?.click();
+  expect(toggle('Collapse Summary Link')).toBeDefined();
+  view.clear();
+  expect(body.querySelector('[data-geld-provider-description-depth], [data-geld-provider-description-heading]')).toBeNull();
+  expect(heading?.getAttribute('style') ?? '').not.toContain('--geld-provider-description-');
+});
+
+it('lifts the cap before opening or closing a native details section', async () => {
+  body.innerHTML = '<details open><summary>Native section</summary><p>Content</p></details>';
+  Object.defineProperty(body, 'scrollHeight', { configurable: true, value: 900 });
+  view.update(body, 'mr');
+  await vi.waitFor(() => expect(body.hasAttribute('data-geld-provider-description-capped')).toBe(true));
+  body.querySelector('summary')?.click();
+  expect(body.hasAttribute('data-geld-provider-description-capped')).toBe(false);
+});

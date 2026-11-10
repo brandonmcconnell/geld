@@ -1,3 +1,4 @@
+import { readGitLabMergeChecks } from './merge-checks';
 import { gitLabSidebarPeople } from './sidebar-people';
 import { gitLabAttachmentLink } from './attachment';
 import type { ProviderCommentRenderContext } from '../providers/comment-render';
@@ -59,6 +60,8 @@ export const gitlabAdapter: ProviderAdapter = {
     }
     return {
       ...snapshot,
+      get requirements() { return readGitLabMergeChecks(doc, snapshot.input.subject); },
+      renderEvent: (event, host) => renderGitLabComment({ ...event, anchor: `note_${event.id}` }, host, doc, undefined, undefined, true),
       botRequests: (input, comments, current) => readGitLabBotRequests(doc, input, comments, snapshot.capabilities.signedIn, current),
       get input() { return syncGitLabNativeReviewState(snapshot.input, doc); },
       get reviewerControls() { return readGitLabReviewerControls(doc, snapshot.reviewerScope, { ...actionVisit, url: doc.URL.split('#')[0] ?? doc.URL }, snapshot.complete); },

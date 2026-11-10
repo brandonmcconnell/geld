@@ -349,6 +349,7 @@ describe('provider conversation digest', () => {
     item.open = true;
     const before = panel.element.querySelector<HTMLButtonElement>(`[data-geld-copy-kind="${kind}"]`);
     if (before === null) throw new Error('Missing copy control');
+    for (let row = before.parentElement; row !== null; row = row.parentElement) if ('open' in row) Reflect.set(row, 'open', true);
     before.focus();
     panel.update(source, { ...options, version: 2, updating: true });
     const after = panel.element.querySelector(`[data-geld-copy-kind="${kind}"]`);
@@ -759,7 +760,8 @@ describe('provider conversation digest', () => {
     const impostor = { ...comment('1', 'CodeRabbit review completed'), author: { id: 'ordinary-user', login: 'coderabbit', automated: true } };
     const panel = renderProviderReviewPanel(host(), input([thread('a', { comments: [impostor] })]));
     expect(panel.element.querySelector('.geld-provider-review__bot-icon')).toBeNull();
-    expect(panel.element.querySelector('[data-geld-review-key="bots"]')).toBeNull();
+    expect(panel.element.querySelector('[data-geld-review-key="bots"]')).not.toBeNull();
+    expect(panel.element.querySelector('[data-geld-review-bot]')).toBeNull();
     panel.destroy();
   });
 
@@ -1048,7 +1050,7 @@ describe('provider conversation digest', () => {
     expect(badge?.textContent).toBe(markup);
     expect(badge?.getAttribute('title')).toBe(markup);
     expect(panel.element.querySelector('script,[onerror],[onclick],#forged')).toBeNull();
-    expect(panel.element.querySelectorAll('img')).toHaveLength(1);
+    expect(panel.element.querySelectorAll('img[data-geld-author-avatar]')).toHaveLength(1);
     expect(panel.element.querySelector('[data-geld-author-avatar]')?.classList.contains('geld-provider-hidden')).toBe(false);
     expect(badge?.classList.contains('badge-neutral')).toBe(true);
   });
@@ -1334,4 +1336,32 @@ it('suspends old digest clipboard controls until a current snapshot resumes the 
   await Promise.resolve();expect(write).not.toHaveBeenCalled();
   panel.update(native);panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
   await vi.waitFor(() => expect(write).toHaveBeenCalledOnce());
+});
+
+it('gives automated reviewers their own nested rows without service branding or duplicate comments', () => {
+  const bot = { id: 'duo', login: 'GitLabDuo', automated: true };
+  const first = { ...comment('1', ':wave: Please check'), author: bot };
+  const native: ProviderReviewInput = { ...input([thread('a', { comments: [first] })]), reviewers: [
+    { author: { id: 'duo', login: 'GitLabDuo' }, state: 'approved' },
+    { author: { id: 'human', login: 'reviewer' }, state: 'pending', reviewRequest: 'pending' },
+  ] };
+  const panel = renderProviderReviewPanel(host(), native, { renderComment: (_comment, host) => { host.innerHTML = '<p>👋 Please check</p>';return true; } });
+  const bots = panel.element.querySelector('[data-geld-review-key="bots"]');
+  expect(bots?.querySelector('[data-geld-automated-reviewer="duo"] [data-geld-review-toggle]')?.textContent).toContain('Approved');
+  expect(bots?.querySelector('[data-geld-item]')?.textContent).not.toContain(':wave:');
+  expect(bots?.querySelector('[data-geld-comment-row="1"]')).not.toBeNull();
+  expect(panel.element.querySelectorAll('[data-geld-source="note_1"]')).toHaveLength(1);
+  expect(panel.element.querySelector('[data-geld-review-key="reviewers"]')?.textContent).not.toContain('GitLabDuo');
+  expect(panel.element.querySelector('[data-geld-reviewer="human"]')?.textContent).toContain('Review requested');
+  expect(panel.element.querySelector('[data-geld-review-bot]')).toBeNull();
+});
+
+it('groups human comments into nested push rounds and separates activity types', () => {
+  const panel = renderProviderReviewPanel(host(), input(), { comments: [comment('1'), comment('2')], events: [
+    { id: 'push', url: `${reviewUrl}#note_3`, author: comment('3').author, body: 'added a commit', createdAt: '2026-11-01T11:00:00Z', kind: 'push' },
+    { id: 'assignment', url: `${reviewUrl}#note_4`, author: comment('4').author, body: 'assigned to @alice', createdAt: '2026-11-01T11:01:00Z' },
+  ] });
+  expect(panel.element.querySelector('[data-geld-review-key="comments:round:push"]')?.querySelectorAll('[data-geld-comment-row]')).toHaveLength(2);
+  expect(panel.element.querySelector('[data-geld-review-key="activity:Commits"] [data-geld-event="push"]')).not.toBeNull();
+  expect(panel.element.querySelector('[data-geld-review-key="activity:Assignments"] [data-geld-event="assignment"]')).not.toBeNull();
 });

@@ -67,7 +67,7 @@ export function providerDigestViewChoice(provider: 'gitlab' | 'bitbucket', setti
       pending = true;position.setAttribute('aria-disabled', 'true');
       void choosePosition(!options.aboveDescription).catch(() => { status.textContent = 'The position could not be saved. Try again.'; }).finally(() => { pending = false;position.removeAttribute('aria-disabled'); });
     });
-    group.append(position);
+    group.append(element('hr', '', 'geld-provider-view__separator'), position);
   }
   group.append(status);
   return group;

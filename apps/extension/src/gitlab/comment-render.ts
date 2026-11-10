@@ -27,14 +27,14 @@ function safeUrl(value: string | null, base: string): string | null {
   }
 }
 
-function nativeBody(comment: ProviderReviewComment, doc: Document): { readonly kind: 'absent' | 'invalid' } | { readonly kind: 'native'; readonly body: HTMLElement } {
+function nativeBody(comment: ProviderReviewComment, doc: Document, system = false): { readonly kind: 'absent' | 'invalid' } | { readonly kind: 'native'; readonly body: HTMLElement } {
   if (!/^[1-9]\d*$/.test(comment.id) || comment.anchor !== `note_${comment.id}`) return { kind: 'invalid' };
   const roots = doc.querySelectorAll(`[id="${comment.anchor}"]`);
   if (roots.length === 0) return { kind: 'absent' };
   const source = roots[0];
-  if (roots.length !== 1 || !(source instanceof HTMLElement) || !source.matches('[data-testid="noteable-note-container"]')
+  if (roots.length !== 1 || !(source instanceof HTMLElement) || !source.matches(system ? 'li.js-timeline-entry.system-note' : '[data-testid="noteable-note-container"]')
     || source.closest('[data-geld-ui], .note-body, [data-testid="description-content"]') !== null) return { kind: 'invalid' };
-  const authors = source.querySelectorAll<HTMLAnchorElement>(':scope > .timeline-entry-inner > .timeline-content > .note-header > .note-header-info > a.author-name-link[data-user-id][data-username]');
+  const authors = source.querySelectorAll<HTMLAnchorElement>(system ? ':scope > .timeline-entry-inner > div > div > .note-header-info > a.author-name-link[data-user-id][data-username]' : ':scope > .timeline-entry-inner > .timeline-content > .note-header > .note-header-info > a.author-name-link[data-user-id][data-username]');
   const bodies = source.querySelectorAll<HTMLElement>('.note-body .note-text');
   const body = bodies[0];
   return authors.length === 1 && authors[0]?.dataset.userId === comment.author.id && authors[0].dataset.username === comment.author.login
@@ -84,8 +84,8 @@ function nativeSortableHeader(button: Element, source: HTMLElement): Element | n
       || child.matches('svg[data-sort-icon][aria-hidden="true"]') && !child.textContent?.trim())) ? label : null;
 }
 
-export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLElement, doc: Document = document, evidence?: GitLabRenderedNote, context?: ProviderCommentRenderContext): boolean {
-  const native = nativeBody(comment, doc);
+export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLElement, doc: Document = document, evidence?: GitLabRenderedNote, context?: ProviderCommentRenderContext, system = false): boolean {
+  const native = nativeBody(comment, doc, system);
   const commentUrl = safeUrl(comment.url, doc.URL);
   if (native.kind === 'invalid' || commentUrl === null) return false;
   const documentUrl = new URL(doc.URL);
@@ -207,7 +207,7 @@ export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLEl
       ...context,
       current: () => {
         if (!context.current()) return false;
-        const current = nativeBody(comment, doc);
+        const current = nativeBody(comment, doc, system);
         return current.kind === 'native' && current.body === source && source.parentElement === parent && source.closest(`[id="${comment.anchor}"]`) === root;
       },
     });

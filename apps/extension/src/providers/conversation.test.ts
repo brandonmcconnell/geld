@@ -966,3 +966,19 @@ it('seats current tool summaries in the digest and restores them in native-only 
   f.apply(page, { ...DEFAULT_SETTINGS, prOverview: false, quickReview: false, collapseDescription: false });
   expect(source.hasAttribute('hidden')).toBe(false);
 });
+
+
+it('folds revealed originals again when Digest is explicitly selected', async () => {
+  const human = { ...comment(), author: { id: 'human', login: 'alice' } };
+  const native = document.createElement('article');native.id = human.anchor;native.textContent = human.body;document.body.append(native);
+  const source = { ...snapshot([human]), input: { ...snapshot().input, threads: [] } };
+  const f = fixture(source, { chooseDigestView: async () => undefined }, { aiEnabled: false, compactTimeline: 'compact' }, {
+    conversationRoots: () => [{ root: native, anchors: [native.id], kind: 'comment' }],
+  });
+  await vi.waitFor(() => expect(native.getAttribute('hidden')).toBe('until-found'));
+  native.dispatchEvent(new Event('beforematch'));
+  await vi.waitFor(() => expect(native.hasAttribute('hidden')).toBe(false));
+  f.host.querySelector<HTMLButtonElement>('[data-geld-digest-view="digest"]')?.click();
+  await vi.waitFor(() => expect(native.getAttribute('hidden')).toBe('until-found'));
+  expect(f.host.querySelector('[data-geld-digest-view="digest"]')?.getAttribute('aria-pressed')).toBe('true');
+});

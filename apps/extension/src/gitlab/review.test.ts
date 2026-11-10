@@ -581,3 +581,20 @@ it('keeps discussion evidence and required approval facts when optional reviewer
   expect(snapshot.complete).toBe(false);
   expect(snapshot.unavailable).toEqual([expect.objectContaining({ area: 'reviews' }), expect.objectContaining({ area: 'reviews' })]);
 });
+
+it('preserves automated identity across reviewer endpoints and uses MR assignments when detailed states are unavailable', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (value: string | URL | Request) => {
+    const url = new URL(typeof value === 'string' ? value : value instanceof URL ? value.href : value.url);
+    if (url.pathname.endsWith('/approvals')) return json({ approved_by: [{ user: { id: 23, username: 'GitLabDuo' } }] });
+    if (url.pathname.endsWith('/reviewers')) return json({ message: 'Forbidden' }, 403);
+    if (url.pathname.endsWith('/discussions.json')) return json([discussion('a'.repeat(40), [note(1, 'Review complete', { author: { id: 23, username: 'GitLabDuo', bot: true } })], { resolvable: false })]);
+    if (url.pathname.endsWith('/pipelines')) return json([]);
+    return json({ iid: 7, sha: SHA, state: 'opened', project_id: 1, reviewers: [{ id: 23, username: 'GitLabDuo' }, { id: 24, username: 'requested-reviewer' }], assignees: [{ id: 25, username: 'assignee-only' }] });
+  }));
+  const result = await fetchGitLabReview(page, new AbortController().signal);
+  expect(result.input.reviewers).toEqual([
+    { author: { id: '23', login: 'GitLabDuo', automated: true }, state: 'approved', reviewRequest: 'unknown' },
+    { author: { id: '24', login: 'requested-reviewer' }, state: 'pending', reviewRequest: 'pending' },
+  ]);
+  expect(result.unavailable.some(entry => entry.area === 'reviews')).toBe(true);
+});

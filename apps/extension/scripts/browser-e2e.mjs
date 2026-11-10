@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { EXPANDED_DIGEST_MR, verifyExpandedGitLabDigest } from './gitlab-expanded-digest.mjs';
 import { confirmNativeProviderPermission, prepareNativeAccessibilityBus, nativeAccessibilityEnvironment, probeNativeChromeAccessibility } from './provider-native-permission.mjs';
 import { enableOptionalProviders, optionalProvidersForCases, verifyOptionalProviderRegistration, readOptionsProviderAccess } from './provider-access-acceptance.mjs';
 import { BITBUCKET_UI_PR, BITBUCKET_UI_PATH, bitbucketUiSourceCache, verifyBitbucketUiContinuity } from './bitbucket-ui-continuity.mjs';
@@ -65,6 +66,7 @@ const FOCUSED_CASES = {
   'gitlab-ui-polish': ['gitlab-ui-polish'],
   'bitbucket-ui-polish': ['bitbucket-ui-polish'],
   'gitlab-open-review': ['gitlab-open-review'],
+  'gitlab-expanded-digest': ['gitlab-expanded-digest'],
   'bitbucket-open-review': ['bitbucket-open-review'],
   'gitlab-summary-preview': ['gitlab-summary-preview'],
   'gitlab-refinements': ['gitlab-ui-polish', 'gitlab-open-review', 'gitlab-summary-preview'],
@@ -3390,6 +3392,7 @@ try {
     const provider = focus.startsWith('gitlab-') ? 'gitlab' : 'bitbucket';
     await runCase(`${provider}-open-review`, OPEN_REVIEW_SOURCES[provider][0].url, (page, item) => verifyOpenProviderReview(page, item, { provider, poll, patchSettings, artifacts }));
   }
+  await runCase('gitlab-expanded-digest', EXPANDED_DIGEST_MR, (page, item) => verifyExpandedGitLabDigest(page, item, { poll, patchSettings, artifacts }));
   await runCase('gitlab-summary-preview', GL_BOT, (page, item) => verifyProviderSummaryPreview(page, item, { poll, patchSettings, artifacts }));
 
   if (focus.endsWith('-walkthrough') || focus === 'bitbucket-walkthrough-files') {

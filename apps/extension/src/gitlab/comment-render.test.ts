@@ -293,3 +293,16 @@ describe('GitLab native Markdown cloning', () => {
     expect(host.textContent).toBe('Safe raw fallback');
   });
 });
+
+it('renders system-note activity through the same sanitizer without trusting API HTML', () => {
+  const host = fixture('placeholder');
+  const source = document.getElementById('note_11')!;
+  source.className = 'js-timeline-entry system-note';source.removeAttribute('data-testid');
+  source.innerHTML = '<div class="timeline-entry-inner"><div><div><div class="note-header-info"><a class="author-name-link" data-user-id="23" data-username="author">Author</a></div></div><div class="note-body"><div class="note-text md"><p>requested review from <a href="/reviewer" onclick="steal()">Reviewer</a> <gl-emoji>👋</gl-emoji></p><script>steal()</script></div></div></div></div>';
+  expect(renderGitLabComment(comment, host, document, undefined, undefined, true)).toBe(true);
+  expect(host.textContent).toBe('requested review from Reviewer 👋');
+  expect(host.querySelector('a')?.href).toBe('https://gitlab.com/reviewer');
+  expect(host.querySelector('script,[onclick]')).toBeNull();
+  source.querySelector('a')?.setAttribute('data-user-id', '99');
+  expect(renderGitLabComment(comment, host, document, undefined, undefined, true)).toBe(false);
+});

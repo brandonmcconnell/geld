@@ -202,7 +202,7 @@ export function parseGitLabDiscussions(value: unknown, subject: ProviderReviewSu
         if (id === null) throw new GitLabReviewError('GitLab returned an invalid activity identity.');
         events.push({
           id,
-          url: sameOriginUrl(note.noteable_note_url, subject.origin) ?? `${subject.origin}/${subject.repository}/-/merge_requests/${subject.id}`,
+          url: sameOriginUrl(note.noteable_note_url, subject.origin) ?? `${subject.origin}/${subject.repository}/-/merge_requests/${subject.id}${note.noteable_note_url == null ? `#note_${id}` : ''}`,
           author: authorOf(note.author),
           body: note.note,
           createdAt: time(note.created_at),
@@ -472,6 +472,20 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
       } catch (error) { areaError('reviews', error); }
     }
   } else if (reviewerResult?.status === 'rejected') areaError('reviews', reviewerResult.reason);
+  // The MR includes assigned reviewers even when the detailed review-state endpoint is unavailable.
+  if (Array.isArray(mr.reviewers)) for (const value of mr.reviewers) {
+    try {
+      const author = authorOf(value);
+      if (!reviewerMap.has(author.id)) reviewerMap.set(author.id, { author, state: 'pending', reviewRequest: 'pending' });
+      reviewersKnown = true;
+    } catch (error) { areaError('reviews', error); }
+  }
+  const automated = new Map([...parsed.threads.flatMap(thread => thread.comments), ...parsed.comments, ...parsed.events]
+    .filter(entry => entry.author.automated === true).map(entry => [entry.author.id, entry.author]));
+  for (const [id, reviewer] of reviewerMap) {
+    const author = automated.get(id);
+    if (author?.login === reviewer.author.login) reviewerMap.set(id, { ...reviewer, author });
+  }
   for (const [id, reviewer] of reviewerMap) {
     const wording = reviewer.state === 'approved' ? 'approved this merge request' : reviewer.state === 'changes_requested' ? 'requested changes' : null;
     if (wording === null) continue;
