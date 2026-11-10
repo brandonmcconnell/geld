@@ -2,16 +2,17 @@ import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BITBUCKET_MODULE_FILES, extractBitbucketModule } from './bitbucket-main-asset-module-worker.mjs';
+import { BITBUCKET_MODULE_FILES, BITBUCKET_MAX_SOURCE_LIMIT, extractBitbucketModule } from './bitbucket-main-asset-module-worker.mjs';
 
 export const BITBUCKET_WHITESPACE_ASSET = 'https://bbc-frontbucket-static.prod-east.frontend.public.atl-paas.net/assets/app.6ea3303b1b2659fcb5ca5dc82e17933a815f4108.js';
-export const BITBUCKET_WHITESPACE_BODY_LIMIT = 6 * 1024 * 1024;
-const reasons = new Set(['aborted', 'body_size', 'worker_deadline', 'worker_failed', 'worker_exit', 'worker_result', 'syntax', 'registration', 'snippet_size', 'utf8', 'module_id']);
+export const BITBUCKET_WHITESPACE_BODY_LIMIT = BITBUCKET_MAX_SOURCE_LIMIT;
+export const BITBUCKET_WHITESPACE_WORKER_DEADLINE = 10_000;
+const reasons = new Set(['aborted', 'body_size', 'worker_deadline', 'worker_failed', 'worker_exit', 'worker_result', 'syntax', 'registration', 'snippet_size', 'utf8', 'module_id', 'source_limit']);
 
 /** Exactly one fixed public CDN GET; parsed factories are data and are never executed. */
 export async function collectBitbucketWhitespaceFactories({ fetcher = fetch, extractModule = extractBitbucketModule, writeArtifact, timeoutMs = 30_000, now = () => new Date().toISOString() } = {}) {
   const report = { schema: 1, kind: 'public_static_source_research', status: 'unavailable', featureAcceptance: false, executed: false, browserNavigations: 0, providerApiRequests: 0,
-    request: { url: BITBUCKET_WHITESPACE_ASSET, method: 'GET', startedAt: now(), attempts: 0, credentials: 'omit', redirects: 'manual', byteLimit: BITBUCKET_WHITESPACE_BODY_LIMIT }, modules: {} };
+    request: { url: BITBUCKET_WHITESPACE_ASSET, method: 'GET', startedAt: now(), attempts: 0, credentials: 'omit', redirects: 'manual', byteLimit: BITBUCKET_WHITESPACE_BODY_LIMIT, declaredLength: null, bytesSeen: 0, bytesSeenCapped: false }, modules: {} };
   const controller = new AbortController();const timer = setTimeout(() => controller.abort(), Math.min(30_000, Math.max(1, timeoutMs)));
   let reader;
   try {
@@ -23,17 +24,23 @@ export async function collectBitbucketWhitespaceFactories({ fetcher = fetch, ext
     const mime = /^(?:application|text)\/(?:x-)?(?:javascript|ecmascript)(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '');
     report.request.mime = mime ? 'javascript' : 'unsupported';
     const declared = response.headers.get('content-length');
-    if (!mime || declared !== null && (!/^\d+$/.test(declared) || Number(declared) > BITBUCKET_WHITESPACE_BODY_LIMIT) || reader === undefined) { report.reason = 'body_contract';return report; }
+    const declaredValid = declared === null || /^\d+$/.test(declared) && Number.isSafeInteger(Number(declared));
+    report.request.declaredLength = declared !== null && declaredValid ? Number(declared) : null;
+    report.request.declaredLengthStatus = declared === null ? 'absent' : declaredValid ? 'valid' : 'invalid';
+    if (!mime || !declaredValid || reader === undefined) { report.reason = 'body_contract';return report; }
+    if (report.request.declaredLength !== null && report.request.declaredLength > BITBUCKET_WHITESPACE_BODY_LIMIT) { report.reason = 'body_size';return report; }
     const chunks = [];let length = 0;
     for (;;) {
       controller.signal.throwIfAborted();const chunk = await reader.read();if (chunk.done) break;
-      if (!(chunk.value instanceof Uint8Array) || length + chunk.value.byteLength > BITBUCKET_WHITESPACE_BODY_LIMIT) { report.reason = 'body_size';return report; }
+      if (!(chunk.value instanceof Uint8Array)) { report.reason = 'body_size';return report; }
+      const seen = length + chunk.value.byteLength;report.request.bytesSeen = Math.min(seen, BITBUCKET_WHITESPACE_BODY_LIMIT + 1);report.request.bytesSeenCapped = seen > BITBUCKET_WHITESPACE_BODY_LIMIT + 1;
+      if (seen > BITBUCKET_WHITESPACE_BODY_LIMIT) { report.reason = 'body_size';return report; }
       chunks.push(chunk.value);length += chunk.value.byteLength;
     }
     if (length === 0) { report.reason = 'body_size';return report; }
     const bytes = Buffer.concat(chunks);report.asset = { bytes: length, sha256: createHash('sha256').update(bytes).digest('hex') };
     for (const moduleId of ['fozrM', 'h43l2']) {
-      controller.signal.throwIfAborted();const result = await extractModule(bytes, { signal: controller.signal, moduleId });
+      controller.signal.throwIfAborted();const result = await extractModule(bytes, { signal: controller.signal, moduleId, sourceLimitBytes: BITBUCKET_WHITESPACE_BODY_LIMIT, deadlineMs: BITBUCKET_WHITESPACE_WORKER_DEADLINE });
       if (result.status !== 'extracted') { report.modules[moduleId] = { status: 'unavailable', reason: reasons.has(result.reason) ? result.reason : 'worker_result' };continue; }
       const file = BITBUCKET_MODULE_FILES[moduleId];
       await writeArtifact(file, result.bytes, controller.signal);
