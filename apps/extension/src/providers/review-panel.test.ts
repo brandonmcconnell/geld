@@ -764,6 +764,13 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector('[data-geld-review-bot]')).toBeNull();
   });
 
+  it('keeps deployment advice in one finding instead of duplicating it as a preview', () => {
+    const source = { ...comment('7', 'Missing dependency.\nIf the sandbox install script (`curl ... | sudo bash`) does not pass --with plugins-temporary to poetry install, the sandbox deploy will break.'), author: { id: 'native-review-bot', login: 'project-reviewer', automated: true } };
+    const panel = renderProviderReviewPanel(host(), { ...input([thread('a', { comments: [source] })]), bots: [{ id: 'greptile', authorId: source.author.id }] });
+    expect(panel.element.querySelectorAll('[data-geld-source="note_7"]')).toHaveLength(1);
+    expect(panel.element.querySelector('[data-geld-review-key="previews"]')).toBeNull();
+  });
+
   it('marks an item reviewed locally without resolving its native thread or erasing bot findings', () => {
     const author = { id: '12345', login: 'native-review-account', automated: true };
     const source: ProviderReviewInput = { ...input([thread('a', { comments: [{ ...comment('1', '**Fix the credentials cache.**'), author }] })]), bots: [{ id: 'coderabbit', authorId: author.id }], complete: true };

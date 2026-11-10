@@ -2448,7 +2448,7 @@ async function gitLabReferencesEvidence(page, item) {
   try {
     await patchSettings({ compactTimeline: 'minimal', collapseDescription: true });
     const read = () => page.evaluate(() => {
-      const readDirection = (direction) => [...document.querySelectorAll(`[data-geld-review-key="references:${direction}"] > [data-geld-reference]`)].map((row) => {
+      const readDirection = (direction) => [...document.querySelectorAll(`[data-geld-review-key="references:${direction}"] [data-geld-reference]`)].map((row) => {
         const link = row.querySelector('.geld-provider-review__reference-link');
         const source = row.getAttribute('data-geld-reference-source');
         const root = source === 'description' ? document.querySelector('.issuable-discussion [data-testid="description-content"] > .md') : document.getElementById(source);

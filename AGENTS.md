@@ -3554,6 +3554,10 @@ GitLab can prevent native dialog cancellation through page shortcuts, so provide
 Installed fragment acceptance measures GitLab's native discussion container when it wraps the source note;
 the child keeps its own permalink and may have no hidden attribute while its parent is correctly folded.
 
+Provider preview parsers need an actual preview or inspector URL, a recognized failure explanation, or an explicit matching native service binding before a parsed row is shown.
+Review advice containing shell pipes and deployment words is not a linkless Cloudflare deployment;
+keep that comment in its native finding instead of duplicating it under Previews.
+
 Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
 Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
 

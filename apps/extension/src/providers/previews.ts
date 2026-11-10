@@ -18,7 +18,9 @@ export function providerPreviews(input: ProviderReviewInput, comments: readonly 
   return sources.flatMap(comment => {
     const doc = previewDocFromMarkdown(comment.author.login, comment.anchor, comment.body, comment.updatedAt ?? comment.createdAt);
     for (const host of PREVIEW_HOSTS) {
-      const previews = host.parse(doc).filter(preview => safe(preview.url, input.subject.origin) && safe(preview.inspectUrl, input.subject.origin));
+      const bound = (input.bots ?? []).some(bot => bot.authorId === comment.author.id && bot.id === host.id);
+      const previews = host.parse(doc).filter(preview => safe(preview.url, input.subject.origin) && safe(preview.inspectUrl, input.subject.origin)
+        && (preview.url !== null || preview.inspectUrl !== null || preview.reason !== undefined || bound));
       if (previews.length > 0) return previews.map(preview => ({ ...preview, host: `native-account:${comment.author.id}:${host.id}` }));
     }
     return [];
