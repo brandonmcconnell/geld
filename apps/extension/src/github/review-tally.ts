@@ -1,6 +1,7 @@
 import type { SidebarReviewer } from './review/crawler';
 import { crawlSidebarReviewers } from './review/crawler';
 import type { ReviewVerdict } from './merge-actions';
+import { pageFetch } from './page-fetch';
 
 /**
  * How the pull request's reviews stand, as the sidebar's Reviewers block
@@ -67,7 +68,7 @@ export async function fetchReviewers(pullPath: string): Promise<readonly Sidebar
   const url = reviewersPartialUrl(pullPath);
   if (url === null) return null;
   try {
-    const response = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'text/html', 'X-Requested-With': 'XMLHttpRequest' } });
+    const response = await pageFetch(url, { credentials: 'same-origin', headers: { Accept: 'text/html', 'X-Requested-With': 'XMLHttpRequest' } });
     if (!response.ok) return null;
     const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
     // Awaiting reviewers stay in: one asked again keeps the verdict the merge box still counts (`standingReviewers`).

@@ -100,6 +100,8 @@ export interface GeldSettings {
    * shipped with this build are used.
    */
   readonly autoUpdatePatterns: boolean;
+  /** Send Geld's own errors, scrubbed of anything naming a page, repository or person, to geld.sh. Opt-in. */
+  readonly errorReports: boolean;
   /** GitHub Enterprise Server hostnames Geld also runs on (permission granted by the user). */
   readonly enterpriseHosts: readonly string[];
   /**
@@ -116,23 +118,41 @@ export interface GeldSettings {
   /**
    * How far to fold the PR timeline. `off` only shows the panel. `compact`
    * (default) folds bot review comments and low-signal events. `minimal` also
-   * folds human comments that belong to done items, and may collapse the
-   * description when {@link collapseDescription} is on.
+   * folds human comments that belong to done items.
    */
   readonly compactTimeline: CompactTimelineMode;
+  /**
+   * When the reader last chose how pull requests look (`DigestView`, from the
+   * digest's intro, its View menu or the line shown while it is off), as an
+   * ISO time. Empty until then, which is what shows the digest's intro once.
+   */
+  readonly digestViewChosenAt: string;
   /**
    * How the digest's main list is arranged: by `type` (bots, CI, reviews,
    * rounds, activity — the default) or by `batch` (every push as one row
    * holding what landed since the previous one).
    */
   readonly reviewGrouping: ReviewGrouping;
-  /** In `minimal` mode, collapse the PR description to its first paragraph. */
+  /**
+   * Shorten the PR description above the digest: fold each section under its
+   * heading (innermost sections closed), and cut a long description with no
+   * headings to 500px behind a "Show full description" control.
+   */
   readonly collapseDescription: boolean;
+  readonly attachmentLightbox: boolean;
+  /** A "Related links" section in the conversation sidebar: the tickets, chat threads, agent sessions and docs the description links to. */
+  readonly relatedLinks: boolean;
   /**
    * Put a "Submit review" button in the pull request's tab bar, beside the
    * line counts, on every tab (the Files changed tab's own button gives way to it).
    */
   readonly quickReview: boolean;
+  /**
+   * Holding ⌘ (Ctrl off a Mac) turns the header's status pill into a 1-click
+   * merge where GitHub would merge the pull request now. Off, the pill only
+   * opens its menu of statuses.
+   */
+  readonly holdToMerge: boolean;
   /**
    * Extra bot logins to treat as review bots (one per line). Built-in bots
    * (Bugbot, Greptile, Copilot, …) are always recognised.
@@ -150,12 +170,15 @@ export interface GeldSettings {
   readonly aiModel: string;
   readonly issueTracker:IssueTrackerConfig|null;
   /**
-   * Use TypeSafe's Jev (a System One evaluation model: typed, probabilistic
-   * answers, no prose) for the decisions in front of the prose model - which
+   * Use a decision model (typed, probabilistic answers, no prose; TypeSafe's
+   * Jev by default) for the decisions in front of the prose model - which
    * items report the same problem, what a folded comment is. Through the
-   * gateway when it offers Jev, else with the user's own TypeSafe key.
+   * gateway when it serves one, else Jev with the user's own TypeSafe key.
+   * The key keeps its old name: settings ids are permanent.
    */
   readonly aiJev: boolean;
+  /** Decision model at the gateway for those decisions. Empty means automatic: Jev where the gateway offers it, else the gateway's own. */
+  readonly aiDecisionModel: string;
   /**
    * Suggested fixes on review items. `bots`: show the fix a review bot
    * attached (a ```suggestion block). `ai`: only fixes the consolidation
@@ -192,6 +215,27 @@ export function isCompactTimelineMode(value: unknown): value is CompactTimelineM
   return typeof value === 'string' && COMPACT_TIMELINE_MODES.some((mode) => mode === value);
 }
 
+/**
+ * How a pull request's conversation looks, as the reader picks it: Geld's
+ * digest with GitHub's timeline folded into it, the digest above GitHub's
+ * whole timeline, or GitHub's page alone. Stored as `prOverview` and
+ * `compactTimeline`, which the settings pages still offer on their own.
+ */
+export const DIGEST_VIEWS = ['digest', 'digest-timeline', 'github'] as const;
+export type DigestView = (typeof DIGEST_VIEWS)[number];
+
+export function digestViewOf(settings: Pick<GeldSettings, 'prOverview' | 'compactTimeline'>): DigestView {
+  if (!settings.prOverview) return 'github';
+  return settings.compactTimeline === 'off' ? 'digest-timeline' : 'digest';
+}
+
+/** The settings that make `view`, chosen at `at` (ISO). A folded timeline keeps its depth (`minimal` stays). */
+export function digestViewPatch(settings: Pick<GeldSettings, 'compactTimeline'>, view: DigestView, at: string): Pick<GeldSettings, 'prOverview' | 'compactTimeline' | 'digestViewChosenAt'> {
+  const folded: CompactTimelineMode = settings.compactTimeline === 'off' ? 'compact' : settings.compactTimeline;
+  if (view === 'github') return { prOverview: false, compactTimeline: settings.compactTimeline, digestViewChosenAt: at };
+  return { prOverview: true, compactTimeline: view === 'digest' ? folded : 'off', digestViewChosenAt: at };
+}
+
 export const DEFAULT_SETTINGS: GeldSettings = {
   enabled: true,
   categories: {},
@@ -213,19 +257,25 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   shortcutEnabled: true,
   showBadge: true,
   autoUpdatePatterns: true,
+  errorReports: false,
   enterpriseHosts: [],
   repoConfigs: 'ask',
   prOverview: true,
   compactTimeline: 'compact',
+  digestViewChosenAt: '',
   reviewGrouping: 'type',
-  collapseDescription: false,
+  collapseDescription: true,
+  attachmentLightbox: true,
+  relatedLinks: true,
   quickReview: true,
+  holdToMerge: false,
   reviewBots: [],
   aiEnabled: false,
   aiBaseUrl: '',
   aiModel: '',
   issueTracker:null,
   aiJev: false,
+  aiDecisionModel: '',
   suggestedFixes: 'bots',
 };
 
@@ -237,8 +287,10 @@ export const DEFAULT_SETTINGS: GeldSettings = {
  * `https://openrouter.ai/api/v1` both become usable bases.
  */
 export function normalizeAiBaseUrl(value: string): string {
-  return value
-    .trim()
+  const trimmed = value.trim();
+  // A bare host ("api.openai.com") is https; saved without a scheme, every request would be a relative URL.
+  const withScheme = trimmed === '' || /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  return withScheme
     .replace(/\/+$/, '')
     .replace(/\/(?:v\d+|typesafe)$/i, '')
     .replace(/\/+$/, '');
@@ -378,6 +430,19 @@ export function isAutoViewed(settings: GeldSettings, id: AnyCategoryId): boolean
   return settings.autoViewed[id] === true;
 }
 
+/** Whether every category that is on marks its hidden files as viewed (false while none is on). */
+export function isAutoViewedForAll(settings: GeldSettings, ids: readonly AnyCategoryId[]): boolean {
+  const on = ids.filter((id) => isCategoryEnabled(settings, id));
+  return on.length > 0 && on.every((id) => isAutoViewed(settings, id));
+}
+
+/** Sets {@link isAutoViewed} for every category in `ids`, on or off, so one turned on later already follows. */
+export function withAutoViewedForAll(settings: GeldSettings, ids: readonly AnyCategoryId[], value: boolean): GeldSettings {
+  const autoViewed: Partial<Record<AnyCategoryId, boolean>> = { ...settings.autoViewed };
+  for (const id of ids) autoViewed[id] = value;
+  return { ...settings, autoViewed };
+}
+
 /** Extra user patterns for a built-in category (possibly empty). */
 export function categoryPatternLines(settings: GeldSettings, categoryId: CategoryId): readonly string[] {
   return settings.categoryPatterns[categoryId] ?? [];
@@ -453,21 +518,27 @@ export function normalizeSettings(value: unknown): GeldSettings {
     shortcutEnabled: bool(record, 'shortcutEnabled', DEFAULT_SETTINGS.shortcutEnabled),
     showBadge: bool(record, 'showBadge', DEFAULT_SETTINGS.showBadge),
     autoUpdatePatterns: bool(record, 'autoUpdatePatterns', DEFAULT_SETTINGS.autoUpdatePatterns),
+    errorReports: bool(record, 'errorReports', DEFAULT_SETTINGS.errorReports),
     enterpriseHosts: isStringArray(record.enterpriseHosts)
       ? record.enterpriseHosts.map(normalizeHost).filter((host): host is string => host !== null)
       : DEFAULT_SETTINGS.enterpriseHosts,
     repoConfigs: isRepoConfigMode(record.repoConfigs) ? record.repoConfigs : DEFAULT_SETTINGS.repoConfigs,
     prOverview: bool(record, 'prOverview', DEFAULT_SETTINGS.prOverview),
     compactTimeline: isCompactTimelineMode(record.compactTimeline) ? record.compactTimeline : DEFAULT_SETTINGS.compactTimeline,
+    digestViewChosenAt: typeof record.digestViewChosenAt === 'string' ? record.digestViewChosenAt : DEFAULT_SETTINGS.digestViewChosenAt,
     reviewGrouping: isReviewGrouping(record.reviewGrouping) ? record.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
     collapseDescription: bool(record, 'collapseDescription', DEFAULT_SETTINGS.collapseDescription),
+    attachmentLightbox: bool(record, 'attachmentLightbox', DEFAULT_SETTINGS.attachmentLightbox),
+    relatedLinks: bool(record, 'relatedLinks', DEFAULT_SETTINGS.relatedLinks),
     quickReview: bool(record, 'quickReview', DEFAULT_SETTINGS.quickReview),
+    holdToMerge: bool(record, 'holdToMerge', DEFAULT_SETTINGS.holdToMerge),
     reviewBots: isStringArray(record.reviewBots) ? record.reviewBots : DEFAULT_SETTINGS.reviewBots,
     aiEnabled: bool(record, 'aiEnabled', DEFAULT_SETTINGS.aiEnabled),
     aiBaseUrl: typeof record.aiBaseUrl === 'string' ? normalizeAiBaseUrl(record.aiBaseUrl) : DEFAULT_SETTINGS.aiBaseUrl,
     issueTracker:parseIssueTracker(record.issueTracker),
     aiModel: typeof record.aiModel === 'string' ? record.aiModel.trim() : DEFAULT_SETTINGS.aiModel,
     aiJev: bool(record, 'aiJev', DEFAULT_SETTINGS.aiJev),
+    aiDecisionModel: typeof record.aiDecisionModel === 'string' ? record.aiDecisionModel.trim() : DEFAULT_SETTINGS.aiDecisionModel,
     suggestedFixes: isSuggestedFixMode(record.suggestedFixes) ? record.suggestedFixes : DEFAULT_SETTINGS.suggestedFixes,
   };
 }

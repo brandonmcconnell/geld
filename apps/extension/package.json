@@ -1,6 +1,6 @@
 {
   "name": "@geld/extension",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Browser extension that hides test files (and other noise) from GitHub diffs.",
   "private": true,
   "type": "module",
@@ -15,23 +15,27 @@
     "build:edge": "wxt build -b edge",
     "build:safari": "wxt build -b safari --mv3",
     "build:all": "pnpm run build:chrome && pnpm run build:firefox && pnpm run build:edge && pnpm run build:safari",
+    "build:nightly": "node scripts/nightly.mjs build",
     "zip": "wxt zip",
     "zip:chrome": "wxt zip -b chrome",
     "zip:firefox": "wxt zip -b firefox",
     "zip:edge": "wxt zip -b edge",
     "zip:safari": "wxt zip -b safari --mv3",
-    "typecheck": "wxt prepare && tsc --noEmit",
+    "zip:nightly": "node scripts/nightly.mjs zip -b chrome && node scripts/nightly.mjs zip -b edge && node scripts/nightly.mjs zip -b firefox && node scripts/nightly.mjs zip -b safari --mv3",
+    "typecheck": "node scripts/nightly.mjs prepare && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "pnpm run typecheck && pnpm run test",
-    "postinstall": "wxt prepare",
-    "zip:all": "pnpm run zip:chrome && pnpm run zip:firefox && pnpm run zip:edge && pnpm run zip:safari",
+    "postinstall": "node scripts/nightly.mjs prepare",
+    "zip:all": "pnpm run zip:chrome && pnpm run zip:firefox && pnpm run zip:edge && pnpm run zip:safari && pnpm run zip:nightly",
     "safari:project": "pnpm run build:safari && xcrun safari-web-extension-converter .output/safari-mv3 --project-location safari --app-name Geld --bundle-identifier sh.geld.safari --no-open --copy-resources",
     "safari:sync": "bash scripts/safari-sync.sh",
-    "safari:open": "open safari/Geld/Geld.xcodeproj"
+    "safari:open": "open safari/Geld/Geld.xcodeproj",
+    "zip:nightly:chrome": "node scripts/nightly.mjs zip -b chrome"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
+    "dom-accessibility-api": "^0.7.1",
     "happy-dom": "^21.0.1",
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
@@ -44,6 +48,7 @@
     "@geld/github": "workspace:*",
     "@geld/review": "workspace:*",
     "highlight.js": "^11.12.0",
-    "hyperellipse": "^1.0.5"
+    "hyperellipse": "^1.0.5",
+    "video.js": "8.24.2"
   }
 }

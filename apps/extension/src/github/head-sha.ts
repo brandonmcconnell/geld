@@ -1,4 +1,5 @@
 import { compareHome } from './review/teleport';
+import { pageFetch } from './page-fetch';
 
 const SHA = /^[0-9a-f]{40}$/i;
 
@@ -28,11 +29,13 @@ export function conversationHeadSha(): string | null {
   if (conversation === null) return null;
   const repo = `/${conversation[1]}/${conversation[2]}`;
   const commits = `${repo}/pull/${conversation[3]}/commits/`;
+  // The Overview's commit rows lead to the commit in the Changes tab instead.
+  const changes = `${repo}/pull/${conversation[3]}/changes/`;
   const compare = `${repo}/compare/`;
-  const commitLink = new RegExp(`^(?:https?://[^/]+)?${escapeRegExp(commits)}([0-9a-f]{40})(?:[/?#]|$)`, 'i');
+  const commitLink = new RegExp(`^(?:https?://[^/]+)?${escapeRegExp(`${repo}/pull/${conversation[3]}/`)}(?:commits|changes)/([0-9a-f]{40})(?:[/?#]|$)`, 'i');
   const compareLink = new RegExp(`^(?:https?://[^/]+)?${escapeRegExp(compare)}[0-9a-f]{40}\\.\\.([0-9a-f]{40})(?:[/?#]|$)`, 'i');
   const pushes: { readonly row: Element; readonly sha: string }[] = [];
-  for (const anchor of document.querySelectorAll<HTMLAnchorElement>(`a[href*="${commits}"], a[href*="${compare}"]`)) {
+  for (const anchor of document.querySelectorAll<HTMLAnchorElement>(`a[href*="${commits}"], a[href*="${changes}"], a[href*="${compare}"]`)) {
     const href = anchor.getAttribute('href') ?? '';
     if (anchor.closest(COMMENT_BODY) !== null) continue;
     const sha = commitLink.exec(href)?.[1];
@@ -46,9 +49,17 @@ export function conversationHeadSha(): string | null {
     const row = anchor.closest(FORCE_PUSH_ROW);
     if (row !== null && /\bforce-pushed\b/i.test(row.textContent ?? '')) pushes.push({ row, sha: target.toLowerCase() });
   }
-  let newest: { readonly row: Element; readonly sha: string } | null = null;
-  for (const push of pushes) if (newest === null || compareHome(newest.row, push.row) < 0) newest = push;
-  return newest?.sha ?? null;
+  if (pushes.length === 0) return null;
+  const ordered = [...pushes].sort((a, b) => compareHome(a.row, b.row));
+  const newest = ordered[ordered.length - 1]?.sha ?? null;
+  // The page names its head before the timeline has streamed in, and the timeline shows older commits first: the newest
+  // row read then is an older commit, and every pass re-keyed the diff, the checks and the header's counts to it as it
+  // moved (vitest#10554 read 0619ed2, then 2a9f6e2, then the head). The page's own head stands until a push lands after
+  // its row, which is a push since the page loaded.
+  const loaded = loadedHeadSha();
+  if (loaded === null) return newest;
+  const at = ordered.findIndex((push) => push.sha === loaded);
+  return at >= 0 && at < ordered.length - 1 ? newest : loaded;
 }
 
 /**
@@ -56,25 +67,36 @@ export function conversationHeadSha(): string | null {
  * network request. Both GitHub UIs leak it in a few stable places.
  */
 export function detectHeadSha(): string | null {
-  const fromRows = conversationHeadSha();
-  if (fromRows !== null) return fromRows;
+  return conversationHeadSha() ?? loadedHeadSha();
+}
+
+/**
+ * `embeddedHeadSha` for this page, kept while the element that named it is in the document: the regex runs over
+ * GitHub's embedded payload, and this is asked every pass.
+ */
+let loadedHead: { readonly source: Element; readonly sha: string } | null = null;
+function loadedHeadSha(): string | null {
+  if (loadedHead !== null && loadedHead.source.isConnected) return loadedHead.sha;
+  loadedHead = embeddedHeadSha();
+  return loadedHead?.sha ?? null;
+}
+
+/** The head the page itself was rendered for, from the hooks its markup carries, not from the timeline's rows. */
+function embeddedHeadSha(): { readonly source: Element; readonly sha: string } | null {
   // Legacy files view: progressive diff loaders carry `sha2=<head>`.
   for (const element of document.querySelectorAll('[data-fragment-url*="sha2="]')) {
-    const url = element.getAttribute('data-fragment-url') ?? '';
-    const match = /[?&]sha2=([0-9a-f]{40})/i.exec(url);
-    if (match?.[1] !== undefined) return match[1].toLowerCase();
+    const match = /[?&]sha2=([0-9a-f]{40})/i.exec(element.getAttribute('data-fragment-url') ?? '');
+    if (match?.[1] !== undefined) return { source: element, sha: match[1].toLowerCase() };
   }
   // Stale-comparison poller (both views): `end_commit_oid=<head>`.
   for (const element of document.querySelectorAll('[data-url*="end_commit_oid="]')) {
-    const url = element.getAttribute('data-url') ?? '';
-    const match = /[?&]end_commit_oid=([0-9a-f]{40})/i.exec(url);
-    if (match?.[1] !== undefined) return match[1].toLowerCase();
+    const match = /[?&]end_commit_oid=([0-9a-f]{40})/i.exec(element.getAttribute('data-url') ?? '');
+    if (match?.[1] !== undefined) return { source: element, sha: match[1].toLowerCase() };
   }
   // React views embed their initial payload as JSON.
   for (const script of document.querySelectorAll('script[type="application/json"]')) {
-    const text = script.textContent ?? '';
-    const match = /"(?:headSha|headRefOid|headOid)"\s*:\s*"([0-9a-f]{40})"/i.exec(text);
-    if (match?.[1] !== undefined) return match[1].toLowerCase();
+    const match = /"(?:headSha|headRefOid|headOid)"\s*:\s*"([0-9a-f]{40})"/i.exec(script.textContent ?? '');
+    if (match?.[1] !== undefined) return { source: script, sha: match[1].toLowerCase() };
   }
   return null;
 }
@@ -148,7 +170,7 @@ function newestCommit(value: unknown, best: { oid: string; at: number } | null, 
  */
 export async function fetchHeadSha(pullPath: string): Promise<string | null> {
   try {
-    const response = await fetch(new URL(`${pullPath}/commits`, location.href), {
+    const response = await pageFetch(`${pullPath}/commits`, {
       credentials: 'same-origin',
       headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     });

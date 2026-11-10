@@ -2,7 +2,9 @@ name: Store listings
 
 # Uploads the listing screenshots in apps/extension/store/assets/ to the stores
 # whose APIs allow it: Firefox (AMO previews) and the Mac App Store (fastlane
-# deliver screenshots). Chrome Web Store and Edge Add-ons have no API for
+# deliver screenshots). Firefox's summary and description are set from
+# apps/extension/store/listing/ too; the App Store's text goes with each Safari
+# submission (publish.yml), since Apple only takes it with a new version. Chrome Web Store and Edge Add-ons have no API for
 # listing assets; theirs are uploaded once by hand (see PUBLISHING.md → Store
 # listing assets). Run on demand after changing an asset; every step is
 # idempotent, so a re-run uploads nothing new.
@@ -21,7 +23,7 @@ concurrency:
 
 jobs:
   firefox:
-    name: Firefox Add-ons (AMO) previews
+    name: Firefox Add-ons (AMO) listing
     if: contains(inputs.channels, 'firefox')
     runs-on: ubuntu-latest
     steps:
@@ -32,12 +34,16 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        env:
+          FONTAWESOME_PACKAGE_TOKEN: ${{ secrets.FONTAWESOME_PACKAGE_TOKEN }}
       # The script reads the add-on id from a built manifest.
       - run: pnpm --filter @geld/extension build:firefox
       - env:
           WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
           WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
+          node apps/extension/scripts/publish/amo-listing.mjs apps/extension/.output/firefox-mv2 \
+            apps/extension/store/listing/summary.txt apps/extension/store/listing/description.txt
           node apps/extension/scripts/publish/amo-previews.mjs apps/extension/.output/firefox-mv2 \
             apps/extension/store/assets/chrome-edge/screenshots/*.jpg
 

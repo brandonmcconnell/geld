@@ -6,10 +6,12 @@
  * bot trigger. None of these scroll the page; focus uses `preventScroll`.
  */
 
-import { THREAD_SELECTOR, timelineRootOf as rowOf } from './crawler';
+import { THREAD_SELECTOR, TIMELINE_ROW, timelineRootOf as rowOf } from './crawler';
+import { OVERVIEW_ITEM, OVERVIEW_THREAD_FRAME } from './overview-page';
 import { closestAtHome, wornPiecesOf } from './teleport';
 import { catchUpAfterPost } from './timeline-catchup';
 import { fetchNonce, pullPathOf, timelineCommentRequest } from '../timeline-comment';
+import { pageFetch } from '../page-fetch';
 
 export function timelineRootOf(anchor: string): HTMLElement | null {
   const node = document.getElementById(anchor);
@@ -20,7 +22,10 @@ export function timelineRootOf(anchor: string): HTMLElement | null {
 export function threadRootOf(anchor: string): HTMLElement | null {
   const node = document.getElementById(anchor);
   if (node === null) return null;
-  const thread = closestAtHome(node, THREAD_SELECTOR) ?? closestAtHome(node, '.js-timeline-item, .TimelineItem, [data-testid="timeline-row"]');
+  const container = closestAtHome(node, THREAD_SELECTOR);
+  // On the Overview the thread's comments sit in a box that also holds its file, its diff lines, its state and Resolve.
+  const frame = container !== null && closestAtHome(container, OVERVIEW_ITEM) !== null ? closestAtHome(container, OVERVIEW_THREAD_FRAME) : null;
+  const thread = frame ?? container ?? closestAtHome(node, TIMELINE_ROW);
   return thread instanceof HTMLElement ? thread : node;
 }
 
@@ -142,7 +147,7 @@ export async function postTopLevelComments(bodies: readonly string[]): Promise<n
   for (const body of bodies) {
     const { url, init } = timelineCommentRequest(pullPath, body, fetchNonce());
     try {
-      const response = await fetch(url, init);
+      const response = await pageFetch(url, init);
       if (!response.ok) break;
     } catch {
       break;

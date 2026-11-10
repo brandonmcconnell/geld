@@ -4,7 +4,7 @@ const wordmark = {
 };
 export function Brand({ compact = false }: { readonly compact?: boolean }) {
   const height = compact ? 16 : 24;
-  const width = (height * 141.91) / 36.31;
+  const width = (height * 95) / 25;
   return (
     <span className="brand" aria-label="Geld">
       {/* Static SVG assets are shared with the marketing site. */}

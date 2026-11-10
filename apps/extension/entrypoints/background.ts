@@ -3,15 +3,17 @@ import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
 import { parseUnifiedDiff } from '@geld/core';
-import { completeChat, evaluateJev, listModels, TYPESAFE_API } from '@geld/review';
+import { completeChat, decisionModelsPath, evaluateDecision, listModels, servesDecisions, TYPESAFE_API } from '@geld/review';
 import { handleAccountMessage, startAccountSync } from '../src/lib/account-service';
-import { actionIconPaths } from '../src/lib/action-icon';
 import { checkCatalog, startCatalogUpdates } from '../src/lib/catalog';
 import { syncEnterpriseHosts } from '../src/lib/enterprise';
 import { hasGatewayPermission } from '../src/lib/ai-gateway';
 import { settingsItem } from '../src/lib/storage';
 import { diagnosticSubject, recordDiagnostic } from '../src/lib/diagnostics';
-import type { FetchDiffResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
+import { installErrorCapture } from '../src/lib/error-capture';
+import { queueErrorReports, startErrorReports } from '../src/lib/error-uplink';
+import type { BlockedUsersResponse, FetchDiffResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
+import { blockedLoginsIn } from '../src/github/blocked-list';
 import type { EnsureContentResponse } from '../src/lib/messages';
 import {
   isAccountActionMessage,
@@ -19,17 +21,22 @@ import {
   isAiEvaluateRequest,
   isAiModelsRequest,
   isCatalogCheckMessage,
-  isColorSchemeMessage,
   isEnsureContentMessage,
+  isErrorReportMessage,
   isFetchDiffRequest,
+  isBlockedUsersRequest,
   isFetchFileRequest,
   isClearDiffCacheMessage,
+  isOpenSettingsMessage,
   isTabStateMessage,
 } from '../src/lib/messages';
 import type { DiffPriority } from '../src/lib/messages';
 import { ensureContentScript, hostOf, tabsOnHosts } from '../src/lib/inject';
 import { grantedHosts } from '../src/lib/enterprise';
 import { looksLikeHtml } from '../src/lib/http';
+import { retireDashboardSession } from '../src/lib/dashboard-session';
+import { showTabBadge, startNightly } from '../src/nightly/updater';
+import { isNightlyPaused } from '../src/nightly/state';
 
 /** Refuse to parse diffs larger than this; GitHub's UI is unusable there anyway. */
 const MAX_DIFF_BYTES = 20 * 1024 * 1024;
@@ -406,6 +413,22 @@ async function fetchFile(url: string): Promise<FetchFileResponse> {
   }
 }
 
+const BLOCKED_USERS_PAGE = /^https:\/\/github\.com\/(?:settings|organizations\/[A-Za-z0-9-]+\/settings)\/blocked_users$/;
+
+/** The logins on a GitHub "Blocked users" page; none when the reader may not see it (404) or is signed out. */
+async function fetchBlockedUsers(url: string): Promise<BlockedUsersResponse> {
+  if (!BLOCKED_USERS_PAGE.test(url)) return { ok: false, reason: 'disallowed-url' };
+  try {
+    const response = await fetch(url, { credentials: 'include', cache: 'no-store', redirect: 'follow' });
+    if (response.status === 404) return { ok: true, logins: [] };
+    if (!response.ok) return { ok: false, reason: `http-${response.status}` };
+    if (new URL(response.url).pathname !== new URL(url).pathname) return { ok: false, reason: 'signed-out' };
+    return { ok: true, logins: blockedLoginsIn(await response.text()) };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : 'fetch-failed' };
+  }
+}
+
 async function readWithLimit(response: Response, limit: number): Promise<string> {
   if (response.body === null) return response.text();
   const reader = response.body.getReader();
@@ -426,39 +449,24 @@ async function readWithLimit(response: Response, limit: number): Promise<string>
 }
 
 /**
- * Toolbar icon theming. Chrome/Edge MV3 service workers have no `matchMedia`,
- * so an offscreen document (reason MATCH_MEDIA) watches the colour scheme and
- * reports back; we then swap between the black and white marks. Firefox uses
- * `theme_icons` from the manifest and Safari tints template icons itself, so
- * neither needs this.
+ * The digest's gear: the toolbar popup over the tab that asked, else the options page. Chrome and Edge open the popup
+ * from here; Firefox opens it only from the extension's own user actions (and its MV2 build has no `action`), and
+ * Safari may not offer it, so a refusal falls back.
  */
-const USES_OFFSCREEN_THEME_PROBE = import.meta.env.MANIFEST_VERSION === 3 && (import.meta.env.CHROME || import.meta.env.EDGE);
-
-let offscreenCreation: Promise<void> | null = null;
-
-async function ensureThemeProbe(): Promise<void> {
-  if (!USES_OFFSCREEN_THEME_PROBE) return;
-  if (offscreenCreation !== null) return offscreenCreation;
-  offscreenCreation = (async () => {
+async function openSettings(windowId: number | undefined, section?: string): Promise<void> {
+  if (section !== undefined && /^[a-z-]+$/.test(section)) {
+    await browser.tabs.create({ url: `${browser.runtime.getURL('/options.html')}#${section}` }).catch(() => undefined);
+    return;
+  }
+  if (import.meta.env.MANIFEST_VERSION === 3 && typeof browser.action.openPopup === 'function') {
     try {
-      const contexts = await browser.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
-      if (contexts.length > 0) return;
-      await browser.offscreen.createDocument({
-        url: browser.runtime.getURL('/offscreen.html'),
-        reasons: ['MATCH_MEDIA'],
-        justification: 'Detect the light/dark colour scheme to pick a legible toolbar icon.',
-      });
+      await browser.action.openPopup(windowId === undefined ? undefined : { windowId });
+      return;
     } catch {
-      // Already exists or unsupported; the manifest's default icon stays in place.
-    } finally {
-      offscreenCreation = null;
+      // Not allowed here: the full page instead.
     }
-  })();
-  return offscreenCreation;
-}
-
-function applyToolbarIcon(dark: boolean): void {
-  void browser.action.setIcon({ path: actionIconPaths(dark ? 'white' : 'black') }).catch(() => undefined);
+  }
+  await browser.runtime.openOptionsPage().catch(() => undefined);
 }
 
 /** The subset of the action API we use, shared by MV3 `action` and MV2 `browserAction`. */
@@ -478,6 +486,10 @@ function swallow(result: Promise<void> | void): void {
 
 /** Show the hidden-file count for a tab on the toolbar icon. */
 function updateBadge(tabId: number, state: TabState): void {
+  if (__GELD_NIGHTLY__) {
+    showTabBadge(tabId, state.hiddenCount);
+    return;
+  }
   const api = badgeApi();
   if (api === undefined) return;
   const text = state.hiddenCount > 0 ? String(state.hiddenCount) : '';
@@ -490,6 +502,7 @@ function updateBadge(tabId: number, state: TabState): void {
 
 /** Hosts the content script may run on: github.com plus granted Enterprise hosts. */
 async function contentHosts(): Promise<Set<string>> {
+  if (__GELD_NIGHTLY__ && (await isNightlyPaused())) return new Set();
   const settings = await settingsItem.getValue();
   return new Set(['github.com', ...(await grantedHosts(settings.enterpriseHosts))]);
 }
@@ -514,12 +527,14 @@ async function toggleHiddenInActiveTab(): Promise<void> {
 }
 
 export default defineBackground(() => {
+  installErrorCapture('background', (reports) => void queueErrorReports(reports).catch(() => undefined));
+  startErrorReports();
   // Each start is a previous stop: a run of these around failing fetches says the worker is being killed mid-request.
   recordDiagnostic({ kind: 'worker-start' });
   browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
     if(isTrackerStatusRequest(message)){void readTrackerStatuses(message,sender.url??sender.tab?.url).then(sendResponse);return true;}
-    if (isColorSchemeMessage(message)) {
-      applyToolbarIcon(message.dark);
+    if (isErrorReportMessage(message)) {
+      void queueErrorReports(message.errors).catch(() => undefined);
       return undefined;
     }
     if (isClearDiffCacheMessage(message)) {
@@ -530,6 +545,10 @@ export default defineBackground(() => {
     }
     if (isTabStateMessage(message)) {
       if (sender.tab?.id !== undefined) updateBadge(sender.tab.id, message.state);
+      return undefined;
+    }
+    if (isOpenSettingsMessage(message)) {
+      void openSettings(sender.tab?.windowId, message.section);
       return undefined;
     }
     if (isAccountActionMessage(message)) {
@@ -552,12 +571,24 @@ export default defineBackground(() => {
       void fetchFile(message.url).then(sendResponse);
       return true;
     }
+    if (isBlockedUsersRequest(message)) {
+      void fetchBlockedUsers(message.url).then(sendResponse);
+      return true;
+    }
     if (isAiModelsRequest(message)) {
       void (async () => {
         const denied = await hasGatewayPermission(message.baseUrl);
         if (denied !== null) return { ok: false as const, reason: denied };
         if (message.apiKey.trim() === '') return { ok: false as const, reason: 'No API key.' };
-        return listModels(fetch, message.baseUrl, message.apiKey);
+        const listed = await listModels(fetch, message.baseUrl, message.apiKey);
+        const decisionsPath = decisionModelsPath(message.baseUrl);
+        if (!listed.ok || decisionsPath === null) return listed;
+        // OpenRouter keeps its decision models out of the chat list; they join it typed, as Vercel lists them.
+        const decisions = await listModels(fetch, message.baseUrl, message.apiKey, decisionsPath);
+        if (!decisions.ok) return listed;
+        const known = new Set(listed.models.map((model) => model.id));
+        const served = decisions.models.filter((model) => !known.has(model.id) && servesDecisions(model));
+        return { ok: true as const, models: [...listed.models, ...served.map((model) => ({ ...model, type: 'decision' }))] };
       })().then(sendResponse);
       return true;
     }
@@ -566,7 +597,7 @@ export default defineBackground(() => {
         const denied = await hasGatewayPermission(message.baseUrl);
         if (denied !== null) return { ok: false as const, reason: denied };
         if (message.apiKey.trim() === '') return { ok: false as const, reason: message.baseUrl === TYPESAFE_API ? 'No TypeSafe key.' : 'No API key.' };
-        return evaluateJev({ fetch, baseUrl: message.baseUrl, apiKey: message.apiKey, request: message.request, timeoutMs: 20_000 });
+        return evaluateDecision({ fetch, baseUrl: message.baseUrl, apiKey: message.apiKey, request: message.request, timeoutMs: 20_000 });
       })().then(sendResponse);
       return true;
     }
@@ -626,14 +657,13 @@ export default defineBackground(() => {
 
   // GitHub account: keep settings in the user's secret gist when signed in.
   startAccountSync();
+  // Until the Geld sign-in returns with the dashboard, a Geld session saved by an earlier build is dropped on update.
+  browser.runtime.onInstalled.addListener(() => void retireDashboardSession().catch(() => undefined));
 
   // Pattern catalog: fetch the signed catalog/patterns.json from the repository
   // daily so patterns can improve without a store release.
   startCatalogUpdates();
 
-  if (USES_OFFSCREEN_THEME_PROBE) {
-    browser.runtime.onInstalled.addListener(() => void ensureThemeProbe());
-    browser.runtime.onStartup.addListener(() => void ensureThemeProbe());
-    void ensureThemeProbe();
-  }
+  // Store builds compile this away: only a self-updating nightly build ships the updater (see wxt.config.ts).
+  if (__GELD_NIGHTLY__) startNightly();
 });

@@ -23,7 +23,8 @@ export const STATUS_CONTEXT = 'CLA';
 export const MARKER = '<!-- geld:cla -->';
 
 const ALLOWED_LOGINS = new Set(['brandonmcconnell', 'cursoragent']);
-// Agents that co-author commits under a shared address no account can sign for.
+// Agents co-author commits under a shared address no person can sign for, whatever account GitHub links it to
+// (noreply@anthropic.com is @claude's), so these addresses are skipped before an account is looked up.
 const ALLOWED_EMAILS = new Set(['brandon@dreamthinkbuild.com', 'cursoragent@cursor.com', 'noreply@anthropic.com']);
 const NOREPLY = /^(?:(\d+)\+)?([^@]+)@users\.noreply\.github\.com$/i;
 
@@ -69,8 +70,7 @@ export function signs(body) {
 }
 
 export function isAllowed(person) {
-  if (person.login) return ALLOWED_LOGINS.has(person.login) || person.login.endsWith('[bot]') || person.type === 'Bot';
-  return ALLOWED_EMAILS.has((person.email ?? '').toLowerCase());
+  return Boolean(person.login) && (ALLOWED_LOGINS.has(person.login) || person.login.endsWith('[bot]') || person.type === 'Bot');
 }
 
 /** A commit author or co-author as GitHub resolves them: an account, or a name and an email no account claims. */
@@ -85,12 +85,12 @@ function personOf(actor) {
 /**
  * Who a pull request needs a signature from: its opener, unless exempt, and every author and co-author of its
  * commits (`actors`, GraphQL `Commit.authors`, which reads the `Co-authored-by` trailers), as accounts and as
- * emails no account claims.
+ * emails no account claims. An exempt address exempts only that author, never the opener.
  */
 export function signersOf(actors, opener) {
   const accounts = new Map();
   const unlinked = new Map();
-  const people = actors.map(personOf);
+  const people = actors.filter((actor) => !ALLOWED_EMAILS.has((actor.email ?? '').toLowerCase())).map(personOf);
   if (opener) people.unshift({ login: opener.login, id: opener.id, type: opener.type });
   for (const person of people) {
     if (isAllowed(person)) continue;

@@ -1,4 +1,3 @@
-import { DASHBOARD_ORIGIN } from '@/lib/dashboard';
 import type { GeldSettings, SettingsIssue } from '@geld/core';
 import { DEFAULT_SETTINGS, findSettingsGist, readRemoteValidated, sectionsFor, SignedOutError } from '@geld/core';
 import type { Metadata } from 'next';
@@ -38,8 +37,7 @@ function isAuthNotice(value: unknown): value is AuthNotice {
 const SECTIONS = sectionsFor('site');
 
 export default async function SettingsPage({ searchParams }: PageProps<'/settings'>) {
-  const { auth,legacy } = await searchParams;
-  if(legacy!=='1'&&process.env.GELD_LEGACY_SITE_AUTH!=='true')redirect(`${DASHBOARD_ORIGIN}/settings/review`);
+  const { auth } = await searchParams;
   const notice = isAuthNotice(auth) ? NOTICES[auth] : null;
 
   const config = authConfig();

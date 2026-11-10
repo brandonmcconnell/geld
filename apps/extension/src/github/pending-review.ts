@@ -1,3 +1,5 @@
+import { pageFetch } from './page-fetch';
+
 /**
  * The reader's pending review on a pull request: the comments left with
  * "Start a review", waiting to go out with it. GitHub's own dialog lists them
@@ -84,7 +86,7 @@ function jsonHeaders(): Record<string, string> {
 /** The reader's pending comments on `/owner/repo/pull/N`; null when GitHub could not say. */
 export async function fetchPendingComments(pullPath: string): Promise<readonly PendingComment[] | null> {
   try {
-    const response = await fetch(`${pullPath}/page_data/thread_previews`, { credentials: 'same-origin', headers: jsonHeaders() });
+    const response = await pageFetch(`${pullPath}/page_data/thread_previews`, { credentials: 'same-origin', headers: jsonHeaders() });
     if (!response.ok) return null;
     const payload: unknown = await response.json();
     return parsePendingComments(payload);
@@ -96,7 +98,7 @@ export async function fetchPendingComments(pullPath: string): Promise<readonly P
 /** Discard the pending review and its comments, as GitHub's "Discard review" does. */
 export async function discardPendingReview(pullPath: string): Promise<boolean> {
   try {
-    const response = await fetch(`${pullPath}/page_data/abandon_review`, { method: 'DELETE', credentials: 'same-origin', headers: { ...jsonHeaders(), 'Content-Type': 'application/json' } });
+    const response = await pageFetch(`${pullPath}/page_data/abandon_review`, { method: 'DELETE', credentials: 'same-origin', headers: { ...jsonHeaders(), 'Content-Type': 'application/json' } });
     return response.ok;
   } catch {
     return false;

@@ -16,34 +16,37 @@
     <main class="popup">
       <header class="geld-brand popup__header">
         <h1 class="popup__brand-text">
-          <img class="geld-brand__logo" src="../../../../assets/brand/geld-logo.svg" alt="Geld" width="70" height="18" />
-          <span class="geld-brand__tagline" id="context-repo">Hide tests from GitHub diffs</span>
+          <picture><source media="(prefers-color-scheme: dark)" srcset="../../../../assets/brand/geld-logo-white.svg" /><img class="geld-brand__logo" src="../../../../assets/brand/geld-logo.svg" alt="Geld" width="68" height="18" /></picture>
+          <span class="geld-brand__tagline" id="context-repo">Less noise. More shipping.</span>
         </h1>
         <div class="geld-account" id="account"></div>
       </header>
-      <div id="account-prompt"></div>
+      <!-- The only part that scrolls: the header and footer stay put above and below it. -->
+      <div class="popup__body" id="popup-body">
+        <div id="account-prompt"></div>
 
-      <section class="popup__section popup__context" id="context">
-        <p class="popup__context-line" id="context-summary">Open a GitHub repo to see what Geld is doing.</p>
-        <details class="popup__files" id="context-files" hidden>
-          <summary class="popup__stats" id="context-stats">
-            <span class="geld-chevron" aria-hidden="true"></span>
-            <span class="popup__stat popup__stat--hidden" id="context-hidden"></span>
-            <span class="popup__stat popup__stat--add" id="context-add"></span>
-            <span class="popup__stat popup__stat--del" id="context-del"></span>
-          </summary>
-          <ul class="popup__file-list geld-code" id="context-file-list"></ul>
-        </details>
-        <div class="popup__quick" id="context-actions" hidden>
-          <button id="toggle-repo" class="geld-button geld-button--small" type="button"></button>
-          <button id="toggle-org" class="geld-button geld-button--small" type="button"></button>
-        </div>
-        <!-- Repository-provided config (.github/geld.yml, org defaults, .gitattributes); see repo-config-source.ts. -->
-        <div class="popup__repo-config" id="repo-config" hidden></div>
-      </section>
+        <section class="popup__section popup__context" id="context">
+          <p class="popup__context-line" id="context-summary">Open a GitHub repo to see what Geld is doing.</p>
+          <details class="popup__files" id="context-files" hidden>
+            <summary class="popup__stats" id="context-stats">
+              <span class="geld-chevron" aria-hidden="true"></span>
+              <span class="popup__stat popup__stat--hidden" id="context-hidden"></span>
+              <span class="popup__stat popup__stat--add" id="context-add"></span>
+              <span class="popup__stat popup__stat--del" id="context-del"></span>
+            </summary>
+            <ul class="popup__file-list geld-code" id="context-file-list"></ul>
+          </details>
+          <div class="popup__quick" id="context-actions" hidden>
+            <button id="toggle-repo" class="geld-button geld-button--small" type="button"></button>
+            <button id="toggle-org" class="geld-button geld-button--small" type="button"></button>
+          </div>
+          <!-- Repository-provided config (.github/geld.yml, org defaults, .gitattributes); see repo-config-source.ts. -->
+          <div class="popup__repo-config" id="repo-config" hidden></div>
+        </section>
 
-      <!-- Rendered from @geld/core's SETTINGS_SCHEMA (fields flagged `popup`). -->
-      <div id="popup-settings"></div>
+        <!-- Rendered from @geld/core's SETTINGS_SCHEMA (fields flagged `popup`). -->
+        <div id="popup-settings"></div>
+      </div>
 
       <footer class="popup__footer">
         <div class="popup__footer-links">

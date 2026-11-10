@@ -1,3 +1,5 @@
+import { pageFetch } from './page-fetch';
+
 /**
  * GitHub's own comment writer (the conversation's "Add a comment" box:
  * Write and Preview, the Markdown toolbar, mentions, references, saved
@@ -28,7 +30,9 @@ let copies = 0;
 
 async function fetchTemplate(pullPath: string): Promise<Element | null> {
   try {
-    const response = await fetch(pullPath, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
+    // A reader in the Overview's preview is served the Overview, whose composer is React's: the conversation, asked
+    // for by name (for this one request, nothing is kept), holds the server-rendered writer.
+    const response = await pageFetch(`${pullPath}?overview=false`, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
     if (!response.ok) return null;
     return new DOMParser().parseFromString(await response.text(), 'text/html').querySelector(WRITER);
   } catch {

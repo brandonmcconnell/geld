@@ -12,8 +12,8 @@
     <main class="options">
       <header class="geld-brand options__header">
         <h1 class="options__brand-text">
-          <img class="geld-brand__logo" src="../../../../assets/brand/geld-logo.svg" alt="Geld" width="94" height="24" />
-          <span class="geld-brand__tagline">Hide the files that don't need review so the ones that do stand out.</span>
+          <picture><source media="(prefers-color-scheme: dark)" srcset="../../../../assets/brand/geld-logo-white.svg" /><img class="geld-brand__logo" src="../../../../assets/brand/geld-logo.svg" alt="Geld" width="91" height="24" /></picture>
+          <span class="geld-brand__tagline">Code review is broken. Geld fixes it.</span>
         </h1>
         <div class="geld-account" id="account"></div>
       </header>
@@ -93,19 +93,19 @@ big-corp
         <div id="repository-choices"></div>
       </section>
 
-      <section class="options__card" data-section="lists">
-        <h2 class="options__title">Pull request lists</h2>
+      <section class="options__card" data-section="lists" id="lists">
+        <h2 class="options__title">Hidden people</h2>
         <p class="geld-help options__intro"></p>
         <textarea
           id="hidden-authors"
           class="geld-textarea geld-code options__textarea"
           rows="4"
           spellcheck="false"
-          aria-label="Hidden authors"
+          aria-label="Hidden people"
         ></textarea>
         <div class="geld-row options__actions">
           <span class="geld-status" id="authors-status" aria-live="polite"></span>
-          <button id="save-authors" class="geld-button geld-button--primary" type="button">Save authors</button>
+          <button id="save-authors" class="geld-button geld-button--primary" type="button">Save hidden people</button>
         </div>
       </section>
 

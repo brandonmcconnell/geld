@@ -24,7 +24,7 @@ export const STORE_URLS: Readonly<Partial<Record<BrowserId, string>>> = {
   chrome: 'https://chromewebstore.google.com/detail/geld/nfbkhldmnfgeeldfafojajnfanikbhia',
   edge: 'https://microsoftedge.microsoft.com/addons/detail/geld/bdakebdlgaomkblemgabkoofoiellhmi',
   firefox: 'https://addons.mozilla.org/firefox/addon/geld/',
-  // safari: 'https://apps.apple.com/app/<id>',
+  safari: 'https://apps.apple.com/app/geld-for-safari/id6809295007',
 };
 
 export type InstallSource = 'store' | 'release-asset' | 'release-page';

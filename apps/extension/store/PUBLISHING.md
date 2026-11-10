@@ -12,7 +12,7 @@ Two things reach users, through two separate, fully automated paths. Nothing is 
 
 - **submits** the latest release when the store has an older version and nothing under review;
 - **skips** when the store already has this version (repeated runs are idempotent). Firefox and Safari check this with a read-only API call *before* uploading anything, so a re-run costs no AMO quota and no macOS runner time;
-- **skips with a warning** when a submission is under review, or when Firefox's daily quota is used up (the warning says roughly when it frees up). Chrome and Edge have no API to cancel a review, so the newest release is picked up by the next scheduled run once the review clears. Apple can withdraw a submission that is still *waiting* for review, and the Safari job does, so there the newest build replaces the pending one. **Safari is therefore paused on the schedule and after CI** (see below).
+- **skips with a warning** when a submission is under review, or when Firefox's daily quota is used up (the warning says roughly when it frees up). The newest release is picked up by the next scheduled run once the review clears. Chrome and Edge have no API to cancel a review; Apple can withdraw a submission still *waiting* for review, but the Safari job never does (see below), so every store's review runs to the end.
 
 Nothing fails silently: a skipped store is a warning annotation on the run, and the next scheduled run retries it with the newest release. The only recurring task is glancing at the "Publish to stores" run summary now and then: it names any store that skipped or failed, and a bad credential shows up there.
 
@@ -21,7 +21,7 @@ Nothing fails silently: a skipped store is a warning annotation on the run, and 
 | Chrome Web Store | uploads the zip, publishes to the default (public) target | hours–days |
 | Edge Add-ons | uploads to the draft, submits it with the notes | 1–7 days |
 | Firefox AMO | `web-ext sign --channel listed` with the sources zip | usually minutes (auto-approval) |
-| Safari | macOS runner: `safari:sync` (build number = CI run number), `xcodebuild archive` + export with cloud signing, then `fastlane deliver` uploads the `.pkg`, attaches it to the version, sets the release notes and **submits for review** (withdrawing a submission still *waiting* for review; one already *in* review cannot be replaced and is reported as skipped) | 1–2 days |
+| Safari | macOS runner: `safari:sync` (build number = CI run number), `xcodebuild archive` + export with cloud signing, then `fastlane deliver` uploads the `.pkg`, attaches it to the version, sets the release notes and the listing text from `store/listing/` and **submits for review**; skipped while a submission is waiting for or in review (checked with a read-only API call first), never withdrawing it | 1–2 days |
 
 ## One-time setup
 
@@ -78,7 +78,7 @@ Read only by the publish workflow.
 
 ### Safari — signing secrets plus physical-device review evidence
 
-**Automatic Safari submissions are paused.** Each run withdrew the build Apple was about to review and submitted the newest one in its place, twice a day, so no review ever finished. Until the first approval, the scheduled and post-CI runs skip Safari. To submit a build, run the workflow from the Actions tab and add `safari` to its channels (the default leaves it out, so a manual run for the other stores cannot withdraw a Safari review). That one stays in review until Apple decides, because nothing replaces it. Once Safari reviews go through in reasonable time, set the repository variable `SAFARI_AUTO_PUBLISH` to `true` to put it back on the schedule.
+**Safari is submitted on the schedule, and never withdraws a submission.** Until the first approval (Nov 9, 2026) each run withdrew the build Apple was about to review and submitted the newest one in its place, twice a day, so no review ever finished, and Safari was paused. The job now asks App Store Connect first and skips while a submission is waiting for review or in review; the next run after the review ends submits the newest build. Apple releases each App Store version once, so new code needs a new `version` in `apps/extension/package.json` (and a new review recording, below). Set the repository variable `SAFARI_AUTO_PUBLISH` to `false` to keep Safari to manual runs.
 
 Secrets: `APPLE_TEAM_ID`, `APPLE_ASC_KEY_ID`, `APPLE_ASC_ISSUER_ID`, `APPLE_ASC_PRIVATE_KEY`, `APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD`.
 
@@ -107,6 +107,19 @@ When App Review asks for more information:
 
 The publish workflow keeps future notes in sync through fastlane’s `app_review_information`. It will not submit Safari until the three review-evidence variables are set (`SAFARI_REVIEW_VIDEO_URL`, `SAFARI_REVIEW_VIDEO_VERSION`, `SAFARI_REVIEW_TEST_DEVICE`), and skips it while the recorded version differs from the release.
 
+## Store listing text
+
+`store/listing/` holds the listing copy, so it changes in a pull request like everything else:
+
+| File | Used for |
+| --- | --- |
+| `description.txt` | Chrome Web Store and Edge description (pasted by hand), Firefox description, App Store description |
+| `summary.txt` | Firefox summary (250 characters at most) |
+| `subtitle.txt` | App Store subtitle (30 characters at most) |
+| `promotional-text.txt` | App Store promotional text (170 characters at most) |
+
+The `Store listings` workflow sets Firefox's summary and description from these through AMO's API (its edit page asks for a CAPTCHA on every load in automated browsers). The App Store's text goes with each Safari submission in `publish.yml`, since Apple only takes a new subtitle or description with a new version. Chrome's one-line summary is the extension manifest's `description` (`wxt.config.ts`), so it changes with a release.
+
 ## Store listing assets
 
 `store/assets/` holds what the listings need. Chrome/Edge promotional art is rendered from `store/assets/raw/*.html` (headless Chrome, downscaled with sharp). Mac App Store screenshots are captured from the real containing app and Safari extension on a physical Mac; title art is not a valid substitute under App Review Guideline 2.3.3.
@@ -118,7 +131,7 @@ The publish workflow keeps future notes in sync through fastlane’s `app_review
 | Marquee promo tile 1400×560 | `chrome-edge/promo/marquee-1400x560.{jpg,png}` | Chrome Web Store → Store listing → Marquee promo tile |
 | Small promo tile 440×280 | `chrome-edge/promo/small-440x280.{jpg,png}` | Chrome Web Store → Store listing → Small promo tile |
 
-**Getting them onto the stores.** Only two stores accept listing assets through an API, and the `Store listings` workflow (Actions → Store listings → Run workflow) handles those, idempotently: Firefox (the 1280×800 marquee becomes AMO preview 0) and the Mac App Store (`fastlane deliver` uploads the physical captures in `safari/screenshots/` to the current App Store Connect version). With no physical captures committed, the Safari job skips instead of replacing real screenshots with title art. Run it after changing an asset. **Chrome and Edge have no API for listing assets**, so theirs are set once by hand:
+**Getting them onto the stores.** Only two stores accept listing assets through an API, and the `Store listings` workflow (Actions → Store listings → Run workflow) handles those, idempotently: Firefox (the committed screenshots become AMO's first previews, in order, recognised by their pixels so a re-run uploads nothing; earlier previews keep their order after them) and the Mac App Store (`fastlane deliver` uploads the physical captures in `safari/screenshots/` to the current App Store Connect version). With no physical captures committed, the Safari job skips instead of replacing real screenshots with title art. Run it after changing an asset. **Chrome and Edge have no API for listing assets**, so theirs are set once by hand:
 
 - Chrome Web Store: [developer dashboard](https://chrome.google.com/webstore/devconsole) → Geld → *Store listing*: upload `chrome-edge/screenshots/00-marquee-1280x800.jpg` as the **first** screenshot (the listing page's carousel shows screenshots only; promo tiles appear in store discovery, not on the listing), `chrome-edge/promo/small-440x280.png` as the small promo tile and `chrome-edge/promo/marquee-1400x560.png` as the marquee promo tile, then *Save draft* → *Submit for review* (listing-only changes are reviewed quickly and do not touch the published package).
 - Edge Add-ons: [Partner Center](https://partner.microsoft.com/dashboard/microsoftedge) → Geld → *Store listings* → English: `00-marquee-1280x800.jpg` as the first screenshot, `small-440x280.png` under *Promotional tiles* (small), `marquee-1400x560.png` (large), then *Save* and *Publish*.
