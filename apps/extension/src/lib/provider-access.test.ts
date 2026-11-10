@@ -6,6 +6,8 @@ const api = vi.hoisted(() => ({
   register: vi.fn(async (_value: unknown) => undefined),
   unregister: vi.fn(async (_value: unknown) => undefined),
 }));
+const pause = vi.hoisted(() => ({ read: vi.fn(async () => false) }));
+vi.mock('../nightly/state', () => ({ isNightlyPaused: pause.read }));
 vi.mock('wxt/browser', () => ({ browser: {
   permissions: { contains: api.contains, request: api.request },
   runtime: { sendMessage: api.send },
@@ -14,7 +16,7 @@ vi.mock('wxt/browser', () => ({ browser: {
 import { enableProviderAccess, grantedProviderHosts, syncOptionalProviders } from './provider-access';
 import { OPTIONAL_PROVIDER_ORIGINS, withoutRequiredProviderOrigins } from './provider-access-spec';
 
-beforeEach(() => { vi.clearAllMocks(); api.contains.mockResolvedValue(false); api.request.mockResolvedValue(false); });
+beforeEach(() => { vi.clearAllMocks(); vi.stubGlobal('__GELD_NIGHTLY__', false); pause.read.mockResolvedValue(false); api.contains.mockResolvedValue(false); api.request.mockResolvedValue(false); });
 
 describe('optional cloud provider access', () => {
   it('keeps existing GitHub access and strips only the new cloud origins from required access', () => {
@@ -70,3 +72,16 @@ describe('optional cloud provider access', () => {
     expect(api.register).not.toHaveBeenCalled();
   });
 });
+
+ it('removes both provider worlds while Nightly is paused and restores granted scripts on resume', async () => {
+   vi.stubGlobal('__GELD_NIGHTLY__', true);
+   api.contains.mockResolvedValue(true);
+   pause.read.mockResolvedValue(true);
+   await syncOptionalProviders(3);
+   expect(api.unregister).toHaveBeenCalledTimes(4);
+   expect(api.register).not.toHaveBeenCalled();
+   pause.read.mockResolvedValue(false);
+   await syncOptionalProviders(3);
+   expect(api.register).toHaveBeenCalledTimes(2);
+   expect(api.request).not.toHaveBeenCalled();
+ });

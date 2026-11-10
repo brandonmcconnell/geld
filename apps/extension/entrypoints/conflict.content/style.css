@@ -43,3 +43,23 @@ html[data-geld-nightly-paused] .geld-review__summary {
 .geld-nightly-conflict__button {
   flex-shrink: 0;
 }
+
+html[data-geld-nightly-paused][data-geld-provider] .geld-provider-review > :not(.geld-provider-review__header),
+html[data-geld-nightly-paused][data-geld-provider] .geld-provider-review__header > :not(h2, .geld-nightly-conflict),
+html[data-geld-nightly-paused][data-geld-provider] .geld-provider-view > :not(.geld-nightly-conflict) { display: none !important; }
+html[data-geld-nightly-paused][data-geld-provider] .geld-nightly-conflict {
+  color: var(--geld-provider-text);
+  font: var(--geld-provider-font);
+  gap: var(--geld-provider-space-2);
+}
+html[data-geld-nightly-paused][data-geld-provider] .geld-nightly-conflict__text { color: inherit; }
+html[data-geld-nightly-paused][data-geld-provider] .geld-nightly-conflict > .octicon { color: var(--geld-provider-danger); }
+html[data-geld-nightly-paused][data-geld-provider] .geld-nightly-conflict__button {
+  color: var(--geld-provider-text);
+  background: var(--geld-provider-button-bg);
+  border: var(--geld-provider-border-width) solid var(--geld-provider-border);
+  border-radius: var(--geld-provider-radius);
+  font: inherit;
+  padding: var(--geld-provider-space-1) var(--geld-provider-space-3);
+}
+html[data-geld-nightly-paused][data-geld-provider] .geld-nightly-conflict__button:focus-visible { outline: 2px solid var(--geld-provider-link); outline-offset: 2px; }

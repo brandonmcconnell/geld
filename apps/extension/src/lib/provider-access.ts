@@ -1,4 +1,5 @@
 import { browser } from 'wxt/browser';
+import { isNightlyPaused } from '../nightly/state';
 import { OPTIONAL_PROVIDER_ORIGINS } from './provider-access-spec';
 import type { OptionalProvider } from './provider-access-spec';
 
@@ -22,15 +23,20 @@ export async function grantedProviderHosts(): Promise<string[]> {
   return hosts;
 }
 
+export function isOptionalProviderScript(id: string): boolean {
+  return /^(?:geld-gitlab|geld-bitbucket)(?:-main)?$/.test(id);
+}
+
 let queue: Promise<void> = Promise.resolve();
 
 export function syncOptionalProviders(manifestVersion = import.meta.env.MANIFEST_VERSION): Promise<void> {
   const sync = async (): Promise<void> => {
+    const paused = __GELD_NIGHTLY__ && await isNightlyPaused();
     for (const provider of ['gitlab', 'bitbucket'] as const) {
       const id = `geld-${provider}`, mainId = `${id}-main`, granted = await hasProviderAccess(provider, manifestVersion);
       const matches = [OPTIONAL_PROVIDER_ORIGINS[provider][0] ?? ''];
       for (const scriptId of [id, mainId]) await browser.scripting.unregisterContentScripts({ ids: [scriptId] }).catch(() => undefined);
-      if (!granted) continue;
+      if (!granted || paused) continue;
       const scripts: Parameters<typeof browser.scripting.registerContentScripts>[0] = [];
       if (provider === 'bitbucket') scripts.push({ id: mainId, matches, js: ['content-scripts/bitbucket-whitespace.js'], runAt: 'document_start', world: 'MAIN', persistAcrossSessions: true });
       scripts.push({ id, matches, js: [`content-scripts/${provider}.js`], css: [`content-scripts/${provider}.css`], runAt: 'document_start', persistAcrossSessions: true });
