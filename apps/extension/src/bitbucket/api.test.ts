@@ -59,6 +59,14 @@ describe('Bitbucket Cloud page identity', () => {
     expect(await new BitbucketClient(page, fetcher).pullRequest(signal())).toMatchObject({ id: 42, headSha: HEAD, baseSha: BASE });
   });
 
+  it('marks Bitbucket app accounts as automated and leaves people as they are', async () => {
+    const app = { type: 'app_user', uuid: '{app-uuid}', nickname: 'review-app', display_name: 'Review app' };
+    const person = { type: 'user', ...USER };
+    const { client } = setup(() => json({ ...PR, participants: [{ user: app, role: 'REVIEWER', approved: true, state: 'approved' }, { user: person, role: 'REVIEWER', approved: false, state: null }] }));
+    const pr = await client.pullRequest(new AbortController().signal);
+    expect(pr.participants.map(participant => participant.author.automated)).toEqual([true, undefined]);
+  });
+
   it('keeps overview, diff and other review tabs distinct', () => {
     const overview = describeBitbucketPage(new URL('https://bitbucket.org/acme/widgets/pull-requests/42'));
     expect(overview).toMatchObject({ provider: 'bitbucket', number: '42', kind: 'overview', headSha: null, version: 'current', repository: { provider: 'bitbucket', origin: 'https://bitbucket.org', path: 'acme/widgets' } });

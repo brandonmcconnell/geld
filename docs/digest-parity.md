@@ -313,7 +313,10 @@ Answered by the owner on Nov 10, 2026.
    Parity covers more than the digest: header counts and their breakdown, the Changes-tab categories, the sidebar's Related links and Related work, collapsible description headings and the cut, hidden and blocked people, and Flow.
    Each is checked against GitHub's implementation as the work reaches it, and the matrix grows a section for each.
 
-## 8. Open questions
+## 8. Decided after the first answers
 
-1. A bot that approved: on GitLab !4544 Duo approved and GitLab counts it toward no rule, so Reviews reads 0 of 2.
-   Proposed: Duo's pill reads "approved", and its hover card and accessible name add "does not count toward the 2 required approvals"; where a rule does count a bot's approval, the card says "counts toward the code owner rule" and the Reviews fraction names it too.
+1. **A bot that approved reads "approved" on its pill, with no note about whether the approval counts.**
+   The Reviews fraction is the host's own (GitLab's `approvals_required` and `approvals_left`), which already counts a bot approval wherever a rule does.
+2. **Bots are recognised from the host's own marks, not only the registry.**
+   GitLab: a note author's `bot`/`user_type`, and for approvers and reviewers GitLab's GraphQL `bot` flag, since the REST approval and reviewer lists carry none (GitLab Duo on triage-ops!4544).
+   Bitbucket: an `app_user` account.

@@ -32,6 +32,8 @@ export interface BitbucketAuthor {
   readonly id: string;
   readonly login: string;
   readonly name: string;
+  /** Bitbucket's app accounts (`type: "app_user"`), the bots of Connect and Forge apps. */
+  readonly automated?: true;
 }
 
 export interface BitbucketParticipant {
@@ -152,7 +154,7 @@ function author(value: unknown): BitbucketAuthor | null {
   const user = record(value);
   const id = typeof user.uuid === 'string' && user.uuid !== '' ? user.uuid : typeof user.account_id === 'string' && user.account_id !== '' ? user.account_id : invalid('Bitbucket returned an author without an identity.');
   const name = string(user.display_name);
-  return { id, login: typeof user.nickname === 'string' && user.nickname !== '' ? user.nickname : id, name };
+  return { id, login: typeof user.nickname === 'string' && user.nickname !== '' ? user.nickname : id, name, ...(user.type === 'app_user' ? { automated: true } : {}) };
 }
 
 function content(value: unknown, optional = false): string {
