@@ -11,7 +11,9 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && node --test db/migrate.test.mjs",
+    "db:initialize": "node --env-file-if-exists=.env.local db/migrate.mjs --require-empty",
+    "db:migrate": "node --env-file-if-exists=.env.local db/migrate.mjs",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run build"
   },
   "dependencies": {

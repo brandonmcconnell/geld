@@ -36,8 +36,10 @@ Use independent authentication and encryption secrets for each environment.
 The GitHub identity App must retain the website callbacks and additionally allow `/api/auth/callback/github` at both dashboard origins.
 Preview deployments intentionally disable sign-in; the protected custom domain uses Vercel's Production target for live account testing.
 
-After configuring a new database, apply `db/migrate.mjs` with its connection string supplied through the environment.
-The migration runner records applied files and runs schema changes in one transaction.
+After configuring a new database, run `corepack pnpm --filter @geld/dashboard db:initialize` with its connection string supplied through the environment or the ignored `.env.local`.
+Initialization refuses a database with existing public tables, views or sequences, before creating the migration ledger.
+The migration runner records applied files and runs schema changes in one transaction, preferring `DATABASE_URL_UNPOOLED` when available.
+Use `db:migrate` for subsequent, reviewed migrations; neither command runs automatically during normal builds or application startup.
 Verify sign-in, automatic personal workspace creation, sign-out, and repository authorization before testing review writes on a disposable repository.
 Add email delivery for codes, password recovery and invitations, then configure AI and Stripe test mode for guide testing.
 The background runner needs `CRON_SECRET` and a scheduler that can reach the protected deployment.
