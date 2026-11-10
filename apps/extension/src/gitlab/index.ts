@@ -18,6 +18,8 @@ import { createGitLabAuthorPresentationReader } from './author-presentation';
 import { gitLabReferenceAnchor, readGitLabReferences } from './references';
 import { readGitLabBotRequests } from './bot-request';
 import { readGitLabReviewerControls } from './reviewer-controls';
+import { ProviderHttpAdmission } from '../providers/http-admission';
+import { createGitLabWholeTestAdapter } from './whole-test-context';
 
 export const gitlabAdapter: ProviderAdapter = {
   id: 'gitlab',
@@ -74,3 +76,7 @@ export const gitlabAdapter: ProviderAdapter = {
     };
   },
 };
+
+export function createGitLabAdapter(admission = new ProviderHttpAdmission()): ProviderAdapter {
+  return { ...gitlabAdapter, wholeTests: createGitLabWholeTestAdapter(admission), fetchDiff: (page, signal) => isProviderReviewPage(page) ? fetchGitLabDiff(page, signal, admission) : fetchGitLabStandaloneDiff(page, signal, admission) };
+}

@@ -2730,6 +2730,20 @@ Temporary owned hiding also restores the cap and requires fresh overflow proof b
 A visit without supported native authority and measured owned clipping is explicitly unavailable for height acceptance, while command preparation retains its separate scope.
 
 
+GitLab Rapid whole-test context is an explicit per-file `Find test boundaries` action, never an effect of the default-on test-outline setting or a programmatic button click.
+Only a current exact new-side source witness joined to complete acquisition facts grants the file intent, and each queued dispatch, completion and original native context click rebuilds the current provider page, diff view and source binding instead of trusting a held frame.
+The acquired source head and native rendered target head remain distinct, including the observed D03 source versus C871 merge-result comparison, and an unknown or mismatching rendered base leaves whole context unavailable.
+The first implementation supports same-project GitLab Rapid new sources only, with no default-branch, fork, deleted-file, old-side or Bitbucket raw fallback.
+Participating runtime GitLab diff and raw reads share per-origin HTTP admission with priority, cancellation and Retry-After cooldown, separate from the existing logical diff permits, while direct source-unit callers can omit admission without global timers.
+Raw bodies are streamed as fatal UTF-8, bounded to 512 KiB and 10,000 lines per file, coalesced by exact repository/head/path and held only in a 16-file, 4 MiB memory cache with cancellation when the final consumer leaves.
+Finding exact test boundaries does not expand GitLab or assert that the whole test is shown, and visible new-side text must agree with the immutable body before the shared outline parser may use it.
+A trusted Show action may relay only the original verified Rapid expandLines controls across ordered TBODY boundaries, with a fresh source lease before each click, at most four progressing activations and a 30-second deadline.
+No-progress, changed source, canceled input, stale controls, text disagreement and exhausted bounds leave the displayed-only disclosure intact without creating source rows or writing Viewed/count/server state.
+The shown-lines disclosure remains until every required new-side line exists on the native page, and an original fragment reveals only mounted native content without initiating raw acquisition or context expansion.
+Owned outline keyboard focus can follow its exact control across a native TBODY remount only while the same test/revision remains open and no unrelated reader focus or new trusted input intervenes.
+The installed whole-context phase requalifies the complete observed immutable response against its retained fixture digest and actual current native head, records unavailable authority explicitly, and never turns a retained D03 snapshot into proof about an unseen target.
+
+
 `pnpm --filter @geld/extension test:browser` runs the installed Chrome extension against public provider pages after `build:chrome`.
 The `Installed browser tests` workflow uses a separate standard GitHub-hosted runner, read-only repository permissions and no provider credentials or publishing steps.
 Set `GELD_BROWSER_EXECUTABLE` to the Chrome executable and `GELD_BROWSER_ARTIFACTS` to the evidence directory when running it in an extension-enabled test environment.

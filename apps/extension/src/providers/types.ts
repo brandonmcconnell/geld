@@ -6,6 +6,7 @@ import type { ProviderConfigFetcher } from './repo-config';
 import type { ProviderReviewReference } from './references';
 import type { ProviderBotRequest } from './bot-request';
 import type { ProviderDiffSourceFacts, ProviderNativeSourceFrame } from './source-facts';
+import type { ProviderWholeTestAdapter } from './whole-test-context';
 
 export type ReviewProvider = 'gitlab' | 'bitbucket';
 
@@ -179,6 +180,7 @@ export interface ProviderDiffSyntax {
 }
 
 export interface ProviderAdapter {
+  readonly wholeTests?: ProviderWholeTestAdapter;
   readonly id: ReviewProvider;
   readonly diffSyntax?: ProviderDiffSyntax;
   describe(url: URL, doc: Document): ProviderPage | null;
