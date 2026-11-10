@@ -253,6 +253,7 @@ export async function verifyCodeRabbitCommands(page, item, { fixture, context, p
       return { sample, stable, apiFingerprint: api.sourceSignature };
     }, (value) => value.stable, 'Two frame-separated byte-stable native CodeRabbit readiness samples');
     if (tableHeights !== undefined) {
+      proof.tableAncestors = await openReviewAncestors(page, `[data-geld-source="note_${CODERABBIT_FIXTURE.note}"]`);
       await tableHeights(page, proof, { anchor: `note_${CODERABBIT_FIXTURE.note}`, head: snapshot.metadata.sha, poll, openReviewAncestors, capture });
       assert.equal(fixture.snapshot().sourceSignature, snapshot.sourceSignature);
       const restored = await read();assertCodeRabbitSource(restored, snapshot, settled.sample);settled.sample = restored;

@@ -123,7 +123,7 @@ for (const id of ['', 0, '0', '03436654383', '3.436654383e9', '3436654383 ', Num
 
 // Offline browser/storage protocol doubles exercise failure cleanup and call ordering only.
 // These are not an installed CodeRabbit result and do not replace the real UI/clipboard assertions.
-function commandFlow({ permissionFailure = false, captureFailure = false, sourceFailure = false, materializeSettings = false, originalTrustAbsent = false, corruptCleanupPresence = false, verdictFailureAfterCopy = false, sourceFailureAfterCopy = false, readinessBodies, unstableReadiness = false, readinessCaptureFailure = false, readinessApiChange = false, readinessContentChange = false, readinessNodeChange = false, readinessOwnedChange = false, readinessHeadChange = false, finalCaptureBodyChange = false } = {}) {
+function commandFlow({ tableCheck = false, permissionFailure = false, captureFailure = false, sourceFailure = false, materializeSettings = false, originalTrustAbsent = false, corruptCleanupPresence = false, verdictFailureAfterCopy = false, sourceFailureAfterCopy = false, readinessBodies, unstableReadiness = false, readinessCaptureFailure = false, readinessApiChange = false, readinessContentChange = false, readinessNodeChange = false, readinessOwnedChange = false, readinessHeadChange = false, finalCaptureBodyChange = false } = {}) {
   const initial = { aiEnabled: false, trustedReviewAccounts: [], trustedSummaryPublishers: [], categoryPatterns: { tests: ['**/*.spec.ts'] }, aiModel: 'original-model' };if (originalTrustAbsent) delete initial.trustedReviewAccounts;let settings = structuredClone(initial);
   let trusted = false;let held = false;let commandHeld = false;let mode = 'Incremental review';let clipboard = 'Original clipboard';let status = '';let input = null;let granted = false;let cleared = false;let disposed = false;let withdrew = false;let readinessCaptured = false;let frames = 0;let finalCaptured = false;const captures = [];
   const oracle = ready();const snapshot = oracle.snapshot();const fixture = { ...oracle, snapshot() { const value = oracle.snapshot();return readinessApiChange && readinessCaptured ? { ...value, sourceSignature: 'changed-observed-source' } : value; }, copyPhase() {}, dispose() { disposed = true; } };
@@ -148,21 +148,26 @@ function commandFlow({ permissionFailure = false, captureFailure = false, source
     keyboard: { press: async (key) => { assert.equal(key, 'Enter');copy(0); } }, bringToFront: async () => {},
   };
   const poll = async (read, valid, label) => { for (let attempt = 0; attempt < 6; attempt += 1) { const value = await read();if (valid(value)) return value; }throw new Error(label); };
-  const item = {};
+  const item = {};const ancestors = [];let tablesChecked = false;
   const run = () => verifyCodeRabbitCommands(page, item, { fixture,
     context: { overridePermissions: async (origin, permissions) => { assert.equal(origin, 'https://gitlab.com');assert.ok(permissions.includes('clipboard-write'));granted = true;if (permissionFailure) throw new Error('Clipboard permission denied'); }, clearPermissionOverrides: async () => { cleared = true; } },
-    poll, openReviewAncestors: async () => [],
+    poll, openReviewAncestors: async (_page, selector) => { ancestors.push(selector);return []; },
+    ...(tableCheck ? { tableHeights: async () => { assert.equal(ancestors.at(-1), `[data-geld-source="note_${F.note}"]`);tablesChecked = true; } } : {}),
     clickReviewButton: async (_page, _selector, label) => { if (label === 'Trust') { trusted = true;settings.trustedReviewAccounts = [`gitlab.com/ark-bitcoin/bark coderabbit ${F.author}`];if (materializeSettings) settings = normalizeSettings(settings); } else if (label.endsWith('review')) { mode = label;status = ''; }return { label }; },
     readSettings: async () => structuredClone(settings), withdrawTrust: async () => { withdrew = true;trusted = false;settings.trustedReviewAccounts = [];return { bindingRemoved: true }; },
     restoreTrust: async (original) => { if (Object.hasOwn(original, 'trustedReviewAccounts')) settings.trustedReviewAccounts = original.trustedReviewAccounts;else if (corruptCleanupPresence) settings.trustedReviewAccounts = [];else delete settings.trustedReviewAccounts;trusted = false; },
     capture: async (_page, name) => { captures.push(name);if (name === 'gitlab-coderabbit-readiness') { readinessCaptured = true;if (readinessCaptureFailure) throw new Error('Readiness screenshot failed'); }else { finalCaptured = true;if (captureFailure) throw new Error('Screenshot failed'); }return { screenshot: 'offline-protocol-only.png' }; },
   });
-  return { run, item, initial, settings: () => settings, clipboard: () => clipboard, cleanup: () => ({ granted, cleared, disposed, withdrew }), frames: () => frames, captures: () => captures };
+  return { run, item, initial, tablesChecked: () => tablesChecked, settings: () => settings, clipboard: () => clipboard, cleanup: () => ({ granted, cleared, disposed, withdrew }), frames: () => frames, captures: () => captures };
 }
 test('offline orchestration preserves both exact previews/trusted input modes and clears clipboard permissions/settings', async () => {
   const flow = commandFlow();await flow.run();assert.equal(flow.item.codeRabbitCommands.status, 'passed');
   assert.deepEqual(flow.item.codeRabbitCommands.actions.map(({ expected, input, event }) => ({ expected, input, detail: event.detail })), [{ expected: '@coderabbitai review', input: 'pointer', detail: 1 }, { expected: '@coderabbitai full review', input: 'keyboard', detail: 0 }]);
   assert.deepEqual(flow.settings(), flow.initial);assert.equal(flow.clipboard(), 'Original clipboard');assert.deepEqual(flow.cleanup(), { granted: true, cleared: true, disposed: true, withdrew: true });
+});
+test('table interaction opens the source dashboard ancestors before testing nested native disclosures', async () => {
+  const flow = commandFlow({ tableCheck: true });await flow.run();
+  assert.equal(flow.tablesChecked(), true);assert.equal(flow.item.codeRabbitCommands.status, 'passed');
 });
 test('a product/native-head mismatch after confirmed fixture still throws and marks failed', async () => {
   const flow = commandFlow({ sourceFailure: true });await assert.rejects(flow.run());
