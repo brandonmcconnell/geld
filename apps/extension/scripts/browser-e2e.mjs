@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { enableOptionalProviders, optionalProvidersForCases, verifyOptionalProviderRegistration } from './provider-access-acceptance.mjs';
+import { confirmNativeProviderPermission, prepareNativeAccessibilityBus, nativeAccessibilityEnvironment, probeNativeChromeAccessibility } from './provider-native-permission.mjs';
+import { enableOptionalProviders, optionalProvidersForCases, verifyOptionalProviderRegistration, readWorkerProviderAccess } from './provider-access-acceptance.mjs';
 import { BITBUCKET_UI_PR, BITBUCKET_UI_PATH, bitbucketUiSourceCache, verifyBitbucketUiContinuity } from './bitbucket-ui-continuity.mjs';
 /** Live installed-extension smoke. Run only where unpacked extensions are permitted by policy. */
 import assert from 'node:assert/strict';
@@ -3095,7 +3096,12 @@ try {
   const manifest = JSON.parse(manifestText);
   try { report.gitHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: extensionRoot, encoding: 'utf8' }).trim(); } catch { report.gitHead = null; }
   report.manifest = { sha256: createHash('sha256').update(manifestText).digest('hex'), version: manifest.version, manifestVersion: manifest.manifest_version };
-  browser = await puppeteer.launch({ executablePath, headless: true, enableExtensions: true, pipe: true, args: ['--enable-unsafe-extension-debugging', '--no-sandbox', ...(focus === 'provider-access' ? ['--host-resolver-rules=MAP * ~NOTFOUND'] : [])] });
+  const nativeAccessibility = process.env.GELD_BROWSER_NATIVE_DIALOGS === '1';
+  if (nativeAccessibility) {
+    report.nativeAccessibilityBus = await prepareNativeAccessibilityBus();
+    console.log(`NATIVE_AX_BUS: ${JSON.stringify(report.nativeAccessibilityBus)}`);
+  }
+  browser = await puppeteer.launch({ executablePath, headless: !nativeAccessibility, env: nativeAccessibility ? nativeAccessibilityEnvironment(process.env) : process.env, enableExtensions: true, pipe: true, args: ['--enable-unsafe-extension-debugging', '--no-sandbox', ...(process.env.GELD_BROWSER_NATIVE_DIALOGS === '1' ? ['--lang=en-US', '--force-renderer-accessibility', '--window-size=1920,1280'] : []), ...(focus === 'provider-access' ? ['--host-resolver-rules=MAP * ~NOTFOUND'] : [])] });
   report.browserVersion = await browser.version();
   report.browserUserAgent = await browser.userAgent();
   extensionId = await browser.installExtension(extensionPath);
@@ -3110,14 +3116,25 @@ try {
   assert.equal(installed.storageAvailable, true);
   console.log(`INSTALLED: ${extensionId}, ${report.browserVersion}, service worker ${worker.url()}`);
   report.installation = { extensionId, serviceWorker: worker.url(), optionsUrl: options.url(), verifiedActualChromeStorage: true, installedManifestVersion: installed.manifest.version };
+  if (nativeAccessibility) {
+    await options.bringToFront();
+    report.nativeAccessibilityProbe = await probeNativeChromeAccessibility(browser.process()?.pid);
+    console.log(`NATIVE_AX_PROBE: ${JSON.stringify(report.nativeAccessibilityProbe)}`);
+    assert.equal(report.nativeAccessibilityProbe.status, 'ready', 'Owned Chrome native accessibility is unavailable before permission input');
+  }
+  const runtime = await worker.worker();
+  assert.ok(runtime !== null, 'The installed extension worker is required for registration evidence');
+  const readPermissionState = () => readWorkerProviderAccess(runtime);
+  const confirmPermission = process.env.GELD_BROWSER_NATIVE_DIALOGS === '1'
+    ? provider => confirmNativeProviderPermission(provider, browser.process()?.pid, readPermissionState) : undefined;
   if (focus === 'provider-access') {
-    const runtime = await worker.worker();
-    assert.ok(runtime !== null, 'The installed extension worker is required for registration evidence');
-    report.providerAccessVerification = await verifyOptionalProviderRegistration(options, runtime, { poll });
+    report.providerAccessVerification = { status: 'running' };
+    report.providerAccessVerification = await verifyOptionalProviderRegistration(options, runtime, { poll, confirmPermission, progress: report.providerAccessVerification });
     console.log(`PROVIDER_ACCESS: ${JSON.stringify(report.providerAccessVerification)}`);
   } else {
   const selected = focus === 'all' ? Object.values(FOCUSED_CASES).flat() : FOCUSED_CASES[focus] ?? [];
-  report.providerAccess = await enableOptionalProviders(options, optionalProvidersForCases(selected), { poll });
+  report.providerAccess = [];
+  await enableOptionalProviders(options, optionalProvidersForCases(selected), { poll, readState: readPermissionState, confirmPermission, progress: report.providerAccess });
   await prepareInstalledBrowserSettings();
 
   await runBitbucketWhitespaceCase();

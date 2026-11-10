@@ -9,6 +9,10 @@ import { pathToFileURL } from 'node:url';
 export const EVIDENCE_FILES = Object.freeze([
   'gitlab-dashboard-native-hidden.html', 'gitlab-dashboard-native-hidden.png',
   'gitlab-overview-digest-failed.html', 'gitlab-overview-digest-failed.png',
+  'bitbucket-dashboard-native-hidden.html', 'bitbucket-dashboard-native-hidden.png',
+  'bitbucket-dashboard-native-dark.html', 'bitbucket-dashboard-native-dark.png',
+  'bitbucket-ui-continuity-failed.html', 'bitbucket-ui-continuity-failed.png',
+  'bitbucket-comment-digest-failed.html', 'bitbucket-comment-digest-failed.png',
 ]);
 export const EVIDENCE_LIMITS = Object.freeze({ report: 2 * 1024 * 1024, html: 4 * 1024 * 1024, png: 4 * 1024 * 1024, gzip: 1024 * 1024, totalGzip: 3 * 1024 * 1024, chunk: 12 * 1024 });
 const sha = value => createHash('sha256').update(value).digest('hex');
@@ -45,7 +49,7 @@ const count = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
 const timestamp = value => typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value ? value : null;
 export function summarizeProviderEvidence(report, raw) {
   if (report?.schema !== 1 || !Array.isArray(report.cases) || report.cases.length > 100) fail('EVIDENCE_REPORT');
-  const names = new Set(['gitlab-mixed', 'gitlab-overview-digest']);
+  const names = new Set(['gitlab-mixed', 'gitlab-overview-digest', 'bitbucket-ui-continuity', 'bitbucket-comment-digest']);
   const statuses = new Set(['passed', 'failed', 'unavailable', 'rate_limited', 'not_selected', 'running']);
   return {
     schema: 1, reportSha256: sha(raw), reportBytes: raw.length, startedAt: timestamp(report.startedAt), finishedAt: timestamp(report.finishedAt),

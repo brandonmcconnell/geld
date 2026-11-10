@@ -20,6 +20,7 @@ on:
         options:
           - regression
           - provider-evidence
+          - provider-access-evidence
           - provider-access
           - bitbucket-diff
           - bitbucket-ui
@@ -76,7 +77,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const choices = new Set(['regression', 'provider-evidence', 'provider-access', 'bitbucket-diff', 'bitbucket-ui', 'gitlab-ui', 'bitbucket-whitespace-session', 'bitbucket-whitespace-source', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'bitbucket-pipeline-initial-on', 'bitbucket-list', 'bitbucket-authors', 'bitbucket-native-bash', 'bitbucket-native-bash-on', 'bitbucket-native-settings-diagnostic', 'bitbucket-native-file-menu', 'bitbucket-local-reviewed', 'bitbucket-comment', 'bitbucket-commit', 'bitbucket-commit-links', 'bitbucket-list-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-file-search', 'gitlab-whitespace-viewed', 'gitlab-whitespace-session', 'bitbucket-pr-whole-context', 'bitbucket-whole-context', 'gitlab-shell', 'gitlab-standalone-whole', 'gitlab-review', 'gitlab-local-reviewed', 'gitlab-bot', 'gitlab-coderabbit', 'gitlab-references', 'gitlab-binary', 'github', 'cross-provider-settings', 'all']);
+            const choices = new Set(['regression', 'provider-evidence', 'provider-access-evidence', 'provider-access', 'bitbucket-diff', 'bitbucket-ui', 'gitlab-ui', 'bitbucket-whitespace-session', 'bitbucket-whitespace-source', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'bitbucket-pipeline-initial-on', 'bitbucket-list', 'bitbucket-authors', 'bitbucket-native-bash', 'bitbucket-native-bash-on', 'bitbucket-native-settings-diagnostic', 'bitbucket-native-file-menu', 'bitbucket-local-reviewed', 'bitbucket-comment', 'bitbucket-commit', 'bitbucket-commit-links', 'bitbucket-list-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-file-search', 'gitlab-whitespace-viewed', 'gitlab-whitespace-session', 'bitbucket-pr-whole-context', 'bitbucket-whole-context', 'gitlab-shell', 'gitlab-standalone-whole', 'gitlab-review', 'gitlab-local-reviewed', 'gitlab-bot', 'gitlab-coderabbit', 'gitlab-references', 'gitlab-binary', 'github', 'cross-provider-settings', 'all']);
             const parseFocus = (body) => {
               const text = typeof body === 'string' ? body : '';
               const prefixes = text.match(/<!-- geld-browser-focus:/g) ?? [];
@@ -136,7 +137,7 @@ jobs:
         with:
           script: |
             const repository = context.repo;
-            const artifactName = 'geld-installed-browser-e2e';
+            const artifactName = process.env.GELD_BROWSER_FOCUS === 'provider-access-evidence' ? 'geld-provider-access' : 'geld-installed-browser-e2e';
             const current = (await github.rest.actions.getWorkflowRun({ ...repository, run_id: context.runId })).data;
             const expectedRepository = `${repository.owner}/${repository.repo}`;
             if (current.id !== context.runId || !Number.isSafeInteger(current.workflow_id) || current.head_repository?.full_name !== expectedRepository) throw Error('Current cooldown history repository is unqualified');
@@ -193,30 +194,40 @@ jobs:
         if: steps.cooldowns.outputs.run-id != ''
         uses: actions/download-artifact@v7
         with:
-          name: geld-installed-browser-e2e
+          name: ${{ needs.select-public-verification.outputs.focus == 'provider-access-evidence' && 'geld-provider-access' || 'geld-installed-browser-e2e' }}
           run-id: ${{ steps.cooldowns.outputs.run-id }}
           github-token: ${{ github.token }}
           path: .browser-previous-evidence
       - name: Export retained provider evidence without browser navigation
         if: needs.select-public-verification.outputs.focus == 'provider-evidence'
         run: node scripts/provider-evidence.mjs
-      - if: needs.select-public-verification.outputs.focus != 'provider-evidence'
+      - name: Export retained optional-provider access state
+        if: needs.select-public-verification.outputs.focus == 'provider-access-evidence'
+        run: node scripts/provider-access-evidence.mjs
+      - if: needs.select-public-verification.outputs.focus != 'provider-evidence' && needs.select-public-verification.outputs.focus != 'provider-access-evidence'
         run: pnpm install --frozen-lockfile
-      - if: needs.select-public-verification.outputs.focus != 'provider-evidence'
+      - if: needs.select-public-verification.outputs.focus != 'provider-evidence' && needs.select-public-verification.outputs.focus != 'provider-access-evidence'
         run: pnpm --filter @geld/extension build:chrome
+      - name: Install native browser dialog accessibility
+        if: needs.select-public-verification.outputs.focus != 'provider-evidence' && needs.select-public-verification.outputs.focus != 'provider-access-evidence'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y xvfb xauth dbus-x11 at-spi2-core python3-pyatspi libglib2.0-bin
       - name: Locate the runner's Chrome
-        if: needs.select-public-verification.outputs.focus != 'provider-evidence'
+        if: needs.select-public-verification.outputs.focus != 'provider-evidence' && needs.select-public-verification.outputs.focus != 'provider-access-evidence'
         shell: bash
         run: |
           browser_executable="$(command -v google-chrome-stable || command -v google-chrome)"
           "$browser_executable" --version
           echo "GELD_BROWSER_EXECUTABLE=$browser_executable" >> "$GITHUB_ENV"
       - name: Test the installed extension on public pages
-        if: needs.select-public-verification.outputs.focus != 'provider-evidence'
+        if: needs.select-public-verification.outputs.focus != 'provider-evidence' && needs.select-public-verification.outputs.focus != 'provider-access-evidence'
         timeout-minutes: ${{ needs.select-public-verification.outputs.focus == 'provider-access' && 3 || needs.select-public-verification.outputs.focus == 'bitbucket-whitespace-session' && 5 || 15 }}
-        run: pnpm --filter @geld/extension test:browser
+        env:
+          GELD_BROWSER_NATIVE_DIALOGS: '1'
+        run: env -u NO_AT_BRIDGE dbus-run-session -- xvfb-run -a --server-args='-screen 0 2000x1400x24' pnpm --filter @geld/extension test:browser
       - name: Save browser evidence
-        if: always() && needs.select-public-verification.outputs.focus != 'provider-evidence'
+        if: always() && needs.select-public-verification.outputs.focus != 'provider-evidence' && needs.select-public-verification.outputs.focus != 'provider-access-evidence'
         uses: actions/upload-artifact@v7
         with:
           name: ${{ needs.select-public-verification.outputs.focus == 'provider-access' && 'geld-provider-access' || 'geld-installed-browser-e2e' }}
