@@ -18,6 +18,7 @@ import { createGitLabAuthorPresentationReader } from './author-presentation';
 import { gitLabReferenceAnchor, readGitLabReferences } from './references';
 import { readGitLabBotRequests } from './bot-request';
 import { readGitLabReviewerControls } from './reviewer-controls';
+import { readGitLabOpenReview } from './open-review';
 import { ProviderHttpAdmission } from '../providers/http-admission';
 import { createGitLabWholeTestAdapter } from './whole-test-context';
 
@@ -48,7 +49,12 @@ export const gitlabAdapter: ProviderAdapter = {
       botRequests: (input, comments, current) => readGitLabBotRequests(doc, input, comments, snapshot.capabilities.signedIn, current),
       get input() { return syncGitLabNativeReviewState(snapshot.input, doc); },
       get reviewerControls() { return readGitLabReviewerControls(doc, snapshot.reviewerScope, { ...actionVisit, url: doc.URL.split('#')[0] ?? doc.URL }, snapshot.complete); },
-      get actions() { return readGitLabActions(doc, snapshot.capabilities, { ...actionVisit, url: doc.URL.split('#')[0] ?? doc.URL, headSha: snapshot.input.subject.headSha, reviewUrl: page.url }); },
+      get actions() {
+        const visit = { ...actionVisit, url: doc.URL.split('#')[0] ?? doc.URL, headSha: snapshot.input.subject.headSha, reviewUrl: page.url };
+        const actions = readGitLabActions(doc, snapshot.capabilities, visit);
+        const open = readGitLabOpenReview(doc, snapshot.reviewerScope, visit, snapshot.complete && snapshot.capabilities.signedIn, snapshot);
+        return open === null ? actions : [...actions, open];
+      },
       renderComment: (comment: ProviderReviewComment, host: HTMLElement, context?: ProviderCommentRenderContext) => renderGitLabComment(comment, host, doc, snapshot.renderedNotes.get(comment.id), context === undefined ? undefined : {
         ...context,
         current: () => {

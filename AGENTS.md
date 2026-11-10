@@ -2336,6 +2336,10 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   An SSR signed-in flag establishes only flag continuity when mounted current-user metadata is absent, not authenticated account identity or successful native writes.
   A fresh reader on another tab of the same MR retains its fetched account, canonical review and head ceiling without refetching, while an older descriptor remains bound to the route where it was offered.
   Request changes remains unavailable until its exact enabled native outcome establishes support, and readonly, hidden, disabled or ambiguous forms and writers never become substitute controls.
+  GitLab's separate Open your review action relays one click to the original enabled review-drawer-toggle button without selecting an outcome, focusing a writer, changing drafts, submitting or discarding.
+  The native trigger can exist for an assigned reviewer with zero drafts, so its availability establishes neither a pending count nor approval or reviewer-management permission.
+  This navigation-only relay requires the original numeric viewer, complete exact full-head MR/project/noteable snapshot and generation, native source/control lifetime and current caller, with every guard rechecked after focus and before the click.
+  The relay reports only a native open intent, with no managed hydration wait, authenticated success claim or zero-request promise.
   Native discussion and comment nodes remain at home, with only sanitized display copies shown in the digest and source links leading to original controls.
   GitLab Quote reply maps a selected digest excerpt to exact character offsets in the original native body only when both complete texts and source identities still agree, including repeated words and inline markup.
   A nonempty excerpt with a changed, disconnected or different-source body fails after revealing the original instead of silently quoting the whole comment.
