@@ -4,6 +4,7 @@ import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import { prepareBitbucketPipelineConsent } from './bitbucket-pipeline-consent.mjs';
 import { observeBitbucketSyntaxSettings } from './bitbucket-syntax-settings.mjs';
 import { assertBitbucketPipelineURL, bitbucketPipelineVisitProbe, prepareBitbucketPipelineVisit } from './bitbucket-pipeline-visit.mjs';
+import { classifySyntaxOnLines } from './bitbucket-syntax-on-probe.mjs';
 
 const REVIEW = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27/diff';
 const REPO = 'atlassian/bitbucket-upload-file';
@@ -238,9 +239,13 @@ export function bitbucketShellProbe(action = 'read', expected = null) {
 function keyOf(node) { return isScalar(node) && typeof node.value === 'string' ? node.value : null; }
 function field(node, key) { return isMap(node) ? node.items.find((pair) => keyOf(pair.key) === key)?.value : undefined; }
 export function verifyBitbucketShellContext(probe, expectedURL = REVIEW) {
+  return verifyShellContextLines(probe, expectedURL, probe.rows, probe.newSource, probe.actualStep);
+}
+
+function verifyShellContextLines(probe, expectedURL, rows, newSource, actualStep) {
   assertBitbucketPipelineURL(probe.url, expectedURL);assert.equal(probe.file, 'chg-' + FILE);assert.equal(probe.heading, FILE);
-  assert.ok(probe.prefixOld >= 32 && probe.prefixNext >= 37 && probe.actualStep === true, 'Actual continuous native prefix and following declaration boundary required');
-  const source = probe.newSource.map((row) => row.text).join('\n') + '\n';
+  assert.ok(probe.prefixOld >= 32 && probe.prefixNext >= 37 && actualStep === true, 'Actual continuous native prefix and following declaration boundary required');
+  const source = newSource.map((row) => row.text).join('\n') + '\n';
   const parsed = parseDocument(source, { uniqueKeys: true });
   assert.deepEqual(parsed.errors.map((error) => error.message), [], 'Expanded actual YAML is incomplete');assert.deepEqual(parsed.warnings, []);
   const declaration = field(parsed.contents, 'check-next-release');const step = field(declaration, 'step');const script = field(step, 'script');
@@ -248,7 +253,7 @@ export function verifyBitbucketShellContext(probe, expectedURL = REVIEW) {
   assert.ok(field(step, 'runs-on') === undefined && field(step, '<<') === undefined, 'This fixture must retain its actual declared hosted shell context');
   assert.equal(script.items.length, 1);const command = script.items[0];
   assert.ok(isScalar(command) && command.type === 'PLAIN');assert.equal(command.value, COMMAND);
-  assert.equal(probe.rows.find((row) => row.next === 34)?.text, '    - ' + COMMAND);
+  assert.equal(rows.find((row) => row.next === 34)?.text, '    - ' + COMMAND);
   return source;
 }
 
@@ -266,7 +271,21 @@ export function verifyBitbucketShellUnpainted(preference, probe, baseline, expec
 }
 
 export function verifyBitbucketShellSource(probe, expectedURL = REVIEW, baseline = probe) {
-  const source = verifyBitbucketShellContext(probe, expectedURL);
+  let rows = probe.rows;let oldSource = probe.oldSource;let newSource = probe.newSource;let actualStep = probe.actualStep;let codeLineEvidence;
+  if (baseline !== probe) {
+    const record = baseline.record;const current = baseline.currentNative;const captured = classifySyntaxOnLines(record?.originalLines, record?.renderedLines, 'on');const now = classifySyntaxOnLines(record?.originalLines, current?.renderedLines, 'on');
+    assert.equal(captured.valid, true, captured.reason);assert.equal(now.valid, true, now.reason);assert.deepEqual(record.lineModel, captured);assert.deepEqual(current.lineModel, now);assert.deepEqual(now, captured, 'Native On formatting/source changed after its own baseline');
+    const rawRows = probe.rows.map((r) => ({ text: r.text, kind: r.kind, numbers: [[r.old === null ? null : String(r.old), r.next === null ? null : String(r.next)]], ids: r.ids, links: r.links }));
+    assert.deepEqual(rawRows, record.renderedLines.map((r) => r.semantic), 'Actual raw source differs from the captured native renderer');
+    rows = probe.rows.map((r, i) => ({ old: r.old, next: r.next, rowId: r.rowId, kind: r.kind, ids: r.ids, links: r.links, text: now.rows[i].originalCode }));
+    const byId = new Map(rows.map((r) => [r.rowId, r]));assert.equal(byId.size, rows.length, 'Original code line mapping has duplicate source rows');
+    const prefix = (values) => values.map((r) => { const index = probe.rows.findIndex((v) => v.rowId === r.rowId);assert.ok(index >= 0);assert.deepEqual(r, probe.rows[index], 'Raw prefix differs from actual native rows');return rows[index]; });
+    oldSource = prefix(probe.oldSource);newSource = prefix(probe.newSource);
+    actualStep = rows.find((r) => r.next === 30)?.text === 'check-next-release: &check-next-release' && rows.find((r) => r.next === 34)?.text.startsWith('    - if [ ! -d ".changes/next-release" ]; then echo ') === true && rows.find((r) => r.next === 37)?.text === 'release-dev: &release-dev';
+    for (const range of probe.ranges) { const row = byId.get(range.rowId);assert.ok(row && Number.isSafeInteger(range.start) && Number.isSafeInteger(range.end) && range.start >= 0 && range.end > range.start && range.end <= row.text.length, 'Owned range touches renderer LF or escapes original code');assert.equal(range.text, row.text.slice(range.start, range.end), 'Actual owned Text range differs from exact original code characters'); }
+    codeLineEvidence = { origin: now.origin, groups: now.groups, rows: now.rows, rawActualStep: probe.actualStep, originalCodeActualStep: actualStep, offsets: 'Actual raw Text offsets, bounded by exact original code length; no renderer LF is code' };
+  }
+  const source = verifyShellContextLines(probe, expectedURL, rows, newSource, actualStep);
   assert.deepEqual(probe.invalidRanges, []);
   let baselineEvidence;
   if (baseline === probe) {
@@ -274,26 +293,26 @@ export function verifyBitbucketShellSource(probe, expectedURL = REVIEW, baseline
   } else {
     assert.equal(baseline.origin, 'fresh-native-on-form-open');const record = baseline.record;const current = baseline.currentNative;
     assert.equal(record?.origin, baseline.origin);assert.match(record?.id ?? '', /^native-on-[1-9]\d*$/);assert.match(record.formId ?? '', /^native-form-[1-9]\d*$/);assert.equal(record.formControls, 13);assert.equal(record.dialogs, 1);assert.equal(record.checked, true);assert.equal(record.ownedCount, 0);assert.deepEqual(record.events, []);
-    assertBitbucketPipelineURL(record.url, expectedURL);assert.ok(current?.same && current.sameScope && current.sameSemantic && current.sameContainer && current.onBaseline && current.onPreserved && current.foreignPreserved, 'Current native-On nodes/source/foreign highlights no longer match their own pristine baseline');
+    assertBitbucketPipelineURL(record.url, expectedURL);assert.ok(current?.same && current.sameScope && current.sameCodeCharacters && current.sameContainer && current.onBaseline && current.onPreserved && current.foreignPreserved, 'Current native-On nodes/source/foreign highlights no longer match their own pristine baseline');
     assert.equal(current.baselineEvidence?.id, record.id);assert.equal(current.baselineEvidence.formId, record.formId);assert.deepEqual(current.semanticRows, record.semanticRows);
-    const rows = probe.rows.map((r) => ({ text: r.text, kind: r.kind, numbers: [[r.old === null ? null : String(r.old), r.next === null ? null : String(r.next)]], ids: r.ids, links: r.links }));
-    assert.deepEqual(rows, record.semanticRows, 'Raw range source differs from the native-On baseline');
+    const rawRows = probe.rows.map((r) => ({ text: r.text, kind: r.kind, numbers: [[r.old === null ? null : String(r.old), r.next === null ? null : String(r.next)]], ids: r.ids, links: r.links }));
+    assert.deepEqual(rawRows, record.semanticRows, 'Raw range source differs from the native-On baseline');
     for (const subject of [baseline.subject, baseline.currentSubject]) { assert.ok(subject && HEAD.test(subject.head) && HEAD.test(subject.base));assert.equal(typeof subject.sourceRepo, 'string'); }
     assert.deepEqual([baseline.subject.sourceRepo, baseline.subject.head, baseline.subject.base], [baseline.currentSubject.sourceRepo, baseline.currentSubject.head, baseline.currentSubject.base], 'Native-On baseline full comparison changed');
     baselineEvidence = { origin: baseline.origin, id: record.id, formId: record.formId, source: 'Raw bitbucketShellProbe rows/ranges', preservation: 'Separate syntaxOnProbe original native-On node baseline', comparison: { sourceRepo: baseline.subject.sourceRepo, head: baseline.subject.head, base: baseline.subject.base } };
   }
   assert.ok(probe.nativeIds.includes('Lbitbucket-pipelines.ymlT34'));
-  const row = probe.rows.find((value) => value.next === 34);assert.ok(row.links.some((link) => link[0] === '#Lbitbucket-pipelines.ymlT34' && link[1] === 'To line 34'));const ranges = probe.ranges.filter((range) => range.rowId === row.rowId);
+  const row = rows.find((value) => value.next === 34);assert.ok(row.links.some((link) => link[0] === '#Lbitbucket-pipelines.ymlT34' && link[1] === 'To line 34'));const ranges = probe.ranges.filter((range) => range.rowId === row.rowId);
   const covered = (scope, start, end) => { for (let offset = start; offset < end; offset += 1) if (!ranges.some((range) => range.scope === scope && range.start <= offset && range.end > offset)) return false;return true; };
   for (const [scope, word, index] of [['keyword', 'if', 0], ['keyword', 'then', COMMAND.indexOf('then')], ['keyword', 'fi', COMMAND.length - 2], ['built_in', 'echo', COMMAND.indexOf('echo')], ['built_in', 'exit', COMMAND.indexOf('exit')]]) {
     assert.equal(covered(scope, 6 + index, 6 + index + word.length), true, `Actual new34 ${word} has missing native Text StaticRange coverage`);
   }
   assert.ok(ranges.every((range) => range.start >= 6 && range.end <= row.text.length), 'YAML command prefix acquired shell ranges');
   for (const range of probe.ranges) {
-    const target = probe.rows.find((value) => value.rowId === range.rowId);assert.ok(target !== undefined);
+    const target = rows.find((value) => value.rowId === range.rowId);assert.ok(target !== undefined);
     assert.doesNotMatch(target.text, /^\s*(?:-\s+)?(?:script|after-script|pipe|variables|runs-on):/, 'YAML/Pipe configuration acquired shell ranges');
   }
-  for (const [side, sourceRows] of [['old', probe.oldSource], ['next', probe.newSource]]) {
+  for (const [side, sourceRows] of [['old', oldSource], ['next', newSource]]) {
     const text = sourceRows.map((row) => row.text).join('\n') + '\n';const syntax = parseDocument(text, { uniqueKeys: true });
     assert.deepEqual(syntax.errors.map((error) => error.message), []);assert.deepEqual(syntax.warnings, []);
     const allowed = [];const protectedSpans = [];
@@ -313,7 +332,7 @@ export function verifyBitbucketShellSource(probe, expectedURL = REVIEW, baseline
     walk(syntax.contents);
     const starts = new Map();let offset = 0;for (const row of sourceRows) { starts.set(row[side], offset);offset += row.text.length + 1; }
     for (const range of probe.ranges) {
-      const target = probe.rows.find((row) => row.rowId === range.rowId);const number = target[side];if (number === null) continue;
+      const target = rows.find((row) => row.rowId === range.rowId);const number = target[side];if (number === null) continue;
       assert.ok(starts.has(number), 'Owned range escaped the actual continuous native source prefix');
       const start = starts.get(number) + range.start;const end = starts.get(number) + range.end;
       assert.ok(allowed.some((span) => start >= span[0] && end <= span[1]), 'Owned range touches YAML instead of an actual supported command scalar');
@@ -327,7 +346,7 @@ export function verifyBitbucketShellSource(probe, expectedURL = REVIEW, baseline
     assert.equal(value.pseudoNormalized, value.nativeNormalized, `Actual ${scope} pseudo-highlight differs from native ADS code token`);
   }
   return { prefixOld: probe.prefixOld, prefixNext: probe.prefixNext, declaredAnchor: 'check-next-release', command: COMMAND, sourceFingerprint: createHash('sha256').update(source).digest('hex'), rangeCount: ranges.length,
-    colors: probe.colors, theme: probe.theme, ...(baselineEvidence === undefined ? {} : { baselineEvidence }), shell: 'Actual declared hosted /bin/sh context only; later anchor callsite overrides and a native Bash-renderer palette comparison are not inferred.' };
+    colors: probe.colors, theme: probe.theme, ...(baselineEvidence === undefined ? {} : { baselineEvidence, codeLineEvidence }), shell: 'Actual declared hosted /bin/sh context only; later anchor callsite overrides and a native Bash-renderer palette comparison are not inferred.' };
 }
 
 export function assertBitbucketShellCounts(beforeCounts, beforeState, afterCounts, afterState) {

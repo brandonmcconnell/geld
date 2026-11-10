@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { assertBitbucketShellCounts, bitbucketShellProbe, flushObservedBitbucketShell, observedBitbucketShellIdentity, verifyBitbucketShell, verifyBitbucketShellSource } from './bitbucket-shell-acceptance.mjs';
 import { assertBitbucketPipelineURL } from './bitbucket-pipeline-visit.mjs';
+import { syntaxOnProbe } from './bitbucket-syntax-on-probe.mjs';
+export { syntaxOnProbe } from './bitbucket-syntax-on-probe.mjs';
 
 const SYNTAX = 'diff-settings-syntax-highlighting-toggle';
 const SETTINGS = new Set(['pullRequestDefaultTab', 'diffViewMode', 'fileViewMode', 'tabSize', 'isWordDiffEnabled', 'shouldIgnoreWhitespace', 'isColorBlindModeEnabled', 'isSyntaxHighlightingEnabled', 'isAnnotationsEnabled', 'isSingleFileModeEnabled']);
@@ -96,115 +98,6 @@ export function assertSyntaxOnlyVector(before, after, checked) {
   assert.equal(before.length, 13);assert.equal(after.length, 13);assert.equal(before.filter((v) => v.id === SYNTAX).length, 1);
   const expected = before.map((v) => v.id === SYNTAX ? { ...v, checked } : v);
   assert.deepEqual(after, expected, 'Only native Syntax may change; preserve the other12 controls including hidden tabSize');
-}
-
-/** References and diagnostics only. Native input, Save and Cancel always use real browser handles. */
-export function syntaxOnProbe(action = 'read', target = null) {
-  const KEY = '__geldBitbucketSyntaxOnCharacterization';let store = globalThis[KEY];
-  const forbidden = '[data-geld-ui],[data-testid="comment"],[data-qa="pr-activity"],[data-qa="pull-request-description"]';
-  const native = (n) => n !== null && n.isConnected && n.closest(forbidden) === null;
-  const visible = (n) => {
-    if (!native(n) || n.closest('[hidden],[inert],[aria-hidden="true"]')) return false;
-    for (let p = n; p; p = p.parentElement) { const s = getComputedStyle(p);if (s.display === 'none' || ['hidden', 'collapse'].includes(s.visibility) || s.contentVisibility === 'hidden' || s.opacity === '0' && !(p === n && n.tagName === 'INPUT' && n.type === 'checkbox')) return false; }
-    const r = n.getBoundingClientRect();return r.width > 0 && r.height > 0;
-  };
-  const enabled = (n) => native(n) && !n.disabled && !n.readOnly && !n.closest('[hidden],[inert],[aria-hidden="true"],[aria-disabled="true"],[aria-readonly="true"],fieldset[disabled]');
-  const actor = () => {
-    const metas = [...document.head.querySelectorAll('meta#bb-bootstrap[data-current-user][data-target-workspace-uuid]')].filter(native);if (metas.length !== 1) return null;
-    const node = metas[0];const user = node.getAttribute('data-current-user');const workspace = node.getAttribute('data-target-workspace-uuid');
-    try { if (user.length > 16_384 || JSON.parse(user)?.isAuthenticated !== false || !workspace) return null; } catch { return null; }
-    return { node, user, workspace };
-  };
-  const source = () => {
-    const anchors = [...document.querySelectorAll('[id="chg-bitbucket-pipelines.yml"]')].filter(native);if (anchors.length !== 1) return null;
-    const anchor = anchors[0];const root = anchor.parentElement;const articles = [...root.querySelectorAll('article[data-qa="branch-diff-file"]')].filter(native);if (articles.length !== 1) return null;const article = articles[0];
-    if (article.querySelector('h2[data-qa="bk-filepath"]')?.textContent.trim() !== 'bitbucket-pipelines.yml') return null;
-    const elements = [...article.querySelectorAll('[data-qa="code-line"]')].filter(native);if (elements.length === 0 || elements.length > 500) return null;
-    let total = 0;const rows = elements.map((row) => { const code = row.querySelector('[data-line-type]');if (!native(code)) return null;
-      const nodes = [];const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);for (let n = walker.nextNode(); n; n = walker.nextNode()) { if (++total > 4000) return null;nodes.push(n); }
-      return { row, code, nodes, values: nodes.map((n) => n.data), font: getComputedStyle(code).font, idNodes: [...row.querySelectorAll('[id]')], linkNodes: [...row.querySelectorAll('a[href]')],
-        semantic: { text: code.textContent, kind: code.getAttribute('data-line-type'), numbers: [...row.querySelectorAll('[data-key="code-line-number"]')].map((n) => [n.getAttribute('data-old-line-number'), n.getAttribute('data-new-line-number')]), ids: [...row.querySelectorAll('[id]')].map((n) => n.id), links: [...row.querySelectorAll('a[href]')].map((n) => [n.getAttribute('href'), n.getAttribute('aria-label')]) } }; });
-    if (rows.some((r) => r === null)) return null;
-    const viewed = [...root.querySelectorAll('label')].filter((n) => n.textContent.trim() === 'Viewed').map((n) => n.querySelector('input[type="checkbox"]'));
-    if (viewed.length !== 1 || !native(viewed[0])) return null;
-    return { anchor, root, parent: root.parentElement, article, articleParent: article.parentElement, rows, viewed: viewed[0], checked: viewed[0].checked, disabled: viewed[0].disabled };
-  };
-  const dialogs = () => [...document.querySelectorAll('[role="dialog"]')].filter(native);
-  const settings = () => {
-    const ds = dialogs();if (ds.length !== 1 || !visible(ds[0])) return null;const dialog = ds[0];const heading = dialog.getAttribute('aria-labelledby');if (!heading || document.getElementById(heading)?.textContent.trim() !== 'Global diff view settings' || !dialog.contains(document.getElementById(heading))) return null;
-    const forms = [...dialog.querySelectorAll('form')];if (forms.length !== 1) return null;const form = forms[0];
-    const fields = [...form.querySelectorAll('input,select,textarea')];if (fields.length !== 13 || fields.some((f) => !native(f) || f.disabled || f.readOnly)) return null;
-    const shape = fields.map((f) => [f.id, f.name, f.type, f.type === 'radio' ? f.value : null]);
-    if (JSON.stringify(shape) !== JSON.stringify([
-      ['', 'diffViewMode', 'radio', 'UNIFIED'], ['', 'diffViewMode', 'radio', 'SIDE_BY_SIDE'],
-      ['diff-settings-syntax-highlighting-toggle', 'enableSyntaxHighlighting', 'checkbox', null], ['diff-settings-ignore-whitespace-toggle', 'shouldIgnoreWhitespace', 'checkbox', null],
-      ['diff-settings-word-diff-toggle', 'enableWordDiff', 'checkbox', null], ['diff-settings-color-blind-mode-toggle', 'enableColorBlindMode', 'checkbox', null], ['diff-settings-annotations-toggle', 'enableAnnotations', 'checkbox', null],
-      ['', 'isSingleFileModeEnabled', 'radio', 'ALL_FILES_MODE'], ['', 'isSingleFileModeEnabled', 'radio', 'SINGLE_FILE_MODE'], ['tab-size-pref', '', 'text', null], ['', 'tabSize', 'hidden', null],
-      ['', 'fileViewMode', 'radio', 'TREE'], ['', 'fileViewMode', 'radio', 'LIST'],
-    ])) return null;
-    const syntax = fields.filter((f) => f.id === 'diff-settings-syntax-highlighting-toggle');if (syntax.length !== 1) return null;const field = syntax[0];
-    if (field.type !== 'checkbox' || field.name !== 'enableSyntaxHighlighting' || field.value !== 'enableSyntaxHighlighting' || !enabled(field) || ![...field.labels ?? []].some((l) => l.textContent.trim() === 'Syntax highlighting' && visible(l))) return null;
-    if (fields.filter((f) => f.type === 'hidden').length !== 1 || fields.find((f) => f.type === 'hidden')?.name !== 'tabSize') return null;
-    const buttons = [...form.querySelectorAll('button')].filter(native);const saves = buttons.filter((b) => b.type === 'submit' && b.textContent.trim() === 'Save' && enabled(b) && visible(b));const cancels = buttons.filter((b) => b.type === 'button' && b.textContent.trim() === 'Cancel' && enabled(b) && visible(b));
-    if (saves.length !== 1 || cancels.length !== 1) return null;
-    const vector = fields.map((f) => ({ id: f.id, name: f.name, type: f.type, value: f.value, checked: 'checked' in f ? f.checked : null, disabled: f.disabled, readOnly: 'readOnly' in f ? f.readOnly : false }));
-    return { dialog, form, field, save: saves[0], cancel: cancels[0], fields, vector };
-  };
-  if (action === 'cleanup') { if (store) for (const type of ['click', 'input', 'change', 'submit']) document.removeEventListener(type, store.listen, true);delete globalThis[KEY];return null; }
-  if (action === 'events') return store ? [...store.events] : [];
-  const a = actor();const s = source();const u = new URL(location.href);
-  if (!a || !s || u.origin !== 'https://bitbucket.org' || u.pathname !== '/atlassian/bitbucket-upload-file/pull-requests/27/diff' || u.search || u.hash !== '#chg-bitbucket-pipelines.yml' || u.username || u.password) return null;
-  if (action === 'setup') {
-    if (store || dialogs().length) return null;
-    store = { url: location.href, actor: a, source: s, expectedSource: s, allowReplacement: false, on: null, baselineEvidence: null, nextBaseline: 0, nextForm: 0, foreign: [], opener: null, form: null, events: [], earlyEvents: [], expected: null, last: null };
-    store.listen = (e) => {
-      if (!(e.target instanceof Element)) return;const form = store.form;
-      if (e.type === 'click' && store.expected?.contains(e.target)) { store.last = { trusted: e.isTrusted === true, type: 'click', control: store.expected.tagName, url: location.href };if (store.expected === store.opener) store.earlyEvents = []; }
-      if (!form || !form.form.contains(e.target)) { const dialog = e.target.closest('[role="dialog"]');if (dialog && native(dialog) && dialog.querySelector('input[id="diff-settings-syntax-highlighting-toggle"]')) store.earlyEvents.push({ type: e.type, trusted: e.isTrusted === true });return; }
-      const button = e.target.closest('button');const control = e.target === form.field ? 'syntax' : button === form.save ? 'save' : button === form.cancel ? 'cancel' : e.type === 'submit' && e.target === form.form ? 'form' : 'other';
-      const event = { type: e.type, trusted: e.isTrusted === true, control, ...(control === 'syntax' ? { checked: form.field.checked } : {}), ...(e.type === 'submit' ? { sameForm: e.target === form.form, sameSubmitter: e.submitter === form.save } : {}) };
-      store.events.push(event);
-    };
-    for (const type of ['click', 'input', 'change', 'submit']) document.addEventListener(type, store.listen, true);globalThis[KEY] = store;
-  }
-  if (!store) return null;
-  const b = store.source;const sameScope = store.url === location.href && store.actor.node === a.node && store.actor.user === a.user && store.actor.workspace === a.workspace;
-  const sameSemantic = JSON.stringify(s.rows.map((r) => r.semantic)) === JSON.stringify(b.rows.map((r) => r.semantic));
-  const sameContainer = s.anchor === b.anchor && s.root === b.root && s.parent === b.parent && s.article === b.article && s.articleParent === b.articleParent && s.viewed === b.viewed && s.checked === b.checked && s.disabled === b.disabled;
-  const preserved = (baseline) => baseline !== null && s.rows.length === baseline.rows.length && s.rows.every((r, i) => { const old = baseline.rows[i];return r.row === old.row && r.code === old.code && r.font === old.font && r.nodes.length === old.nodes.length && r.nodes.every((n, j) => n === old.nodes[j] && n.data === old.values[j]) && r.idNodes.length === old.idNodes.length && r.idNodes.every((n, j) => n === old.idNodes[j]) && r.linkNodes.length === old.linkNodes.length && r.linkNodes.every((n, j) => n === old.linkNodes[j]); });
-  const same = sameScope && sameSemantic && sameContainer && (store.allowReplacement || preserved(store.expectedSource));const form = settings();
-  if (action === 'bind') { if (!same || !form || store.earlyEvents.length || store.form?.dialog === form.dialog) return null;store.form = { ...form, id: `native-form-${++store.nextForm}` };store.events = [];store.last = null;return form.vector; }
-  const sameForm = form !== null && store.form !== null && form.dialog === store.form.dialog && form.form === store.form.form && form.field === store.form.field && form.save === store.form.save && form.cancel === store.form.cancel && form.fields.every((f, i) => f === store.form.fields[i]);
-  if (action === 'begin-native-save') {
-    const allowed = same && sameForm && form.field.checked === target && store.events.length === 3 && store.events.every((e, i) => e.trusted && e.control === 'syntax' && e.type === ['click', 'input', 'change'][i] && e.checked === target);
-    if (allowed) store.allowReplacement = true;return allowed;
-  }
-  if (action === 'finish-native-restore') {
-    if (!same || !sameForm || form.field.checked || store.events.length) return null;store.expectedSource = s;store.allowReplacement = false;
-  }
-  if (action === 'ready-frames') {
-    if (!same || !sameForm) return null;
-    return new Promise((resolve) => { let frames = 0;let pending;const timeout = setTimeout(() => { cancelAnimationFrame(pending);resolve(null); }, 3000);
-      const sample = () => { const current = syntaxOnProbe();if (!current?.same || !current.ready || current.events.length) { clearTimeout(timeout);resolve(null);return; }frames += 1;if (frames === 2) { clearTimeout(timeout);resolve({ frames, same: true, ready: true }); }else pending = requestAnimationFrame(sample); };pending = requestAnimationFrame(sample);
-    });
-  }
-  if (action === 'event') return store.last;
-  if (action === 'opener' || action === 'arm-opener') {
-    const list = [...document.querySelectorAll('button[aria-live="polite"]')].filter((n) => n.textContent.trim() === 'Global diff settings' && !n.hasAttribute('aria-label') && !n.hasAttribute('aria-labelledby') && n.type === 'button' && n.tabIndex >= 0 && enabled(n) && visible(n) && n.closest('[role="tabpanel"]')?.id === 'pull-request-tabs-1-tab');const chosen = same && dialogs().length === 0 && list.length === 1 && (store.opener === null || store.opener === list[0]) ? list[0] : null;
-    if (action === 'opener') { store.opener ??= chosen;return chosen; }store.expected = chosen;store.last = null;return chosen !== null && chosen === target;
-  }
-  if (action.startsWith('arm-')) { const kind = action.slice(4);const chosen = same && sameForm && ['syntax', 'save', 'cancel'].includes(kind) ? form[kind === 'syntax' ? 'field' : kind] : null;store.expected = chosen;store.last = null;return chosen !== null && chosen === target; }
-  if (['syntax', 'save', 'cancel'].includes(action)) return same && sameForm ? form[action === 'syntax' ? 'field' : action] : null;
-  if (action === 'hit') { if (target !== store.expected || !same || !native(target) || !enabled(target) || !visible(target)) return false;const r = target.getBoundingClientRect();return target.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); }
-  if (action === 'baseline-on') {
-    const owned = [...CSS.highlights ?? []].filter(([key]) => key.startsWith('geld-bitbucket-shell-'));const ownedCount = owned.reduce((sum, [, ranges]) => sum + [...ranges].length, 0);
-    if (!same || !sameForm || !form.field.checked || store.events.length || owned.length) return null;store.on = s;store.foreign = [...CSS.highlights ?? []].map(([key, highlight]) => ({ key, highlight, ranges: [...highlight] }));
-    store.expectedSource = s;store.allowReplacement = false;store.baselineEvidence = { origin: 'fresh-native-on-form-open', id: `native-on-${++store.nextBaseline}`, formId: store.form.id, formControls: form.fields.length, url: location.href, dialogs: dialogs().length, checked: form.field.checked, ownedCount, events: [...store.events], semanticRows: s.rows.map((r) => r.semantic), vector: form.vector };
-  }
-  const foreignPreserved = store.foreign.every((p) => CSS.highlights?.get(p.key) === p.highlight && [...p.highlight].length === p.ranges.length && [...p.highlight].every((range, i) => range === p.ranges[i]));
-  return { same, sameScope, sameSemantic, sameContainer, offPreserved: preserved(b), onBaseline: store.on !== null, onPreserved: preserved(store.on), dialogs: dialogs().length,
-    ready: same && sameForm, formAvailable: same && form !== null && store.earlyEvents.length === 0, vector: sameForm ? form.vector : null, events: [...store.events], earlyEvents: [...store.earlyEvents], sourceRows: s.rows.length, semanticRows: s.rows.map((r) => r.semantic), checked: sameForm ? form.field.checked : null, foreignPreserved, baselineEvidence: store.baselineEvidence,
-    lifecycle: { originalCodeRows: s.rows.filter((r, i) => r.row === b.rows[i].row).length, originalTextNodes: s.rows.reduce((sum, r, i) => sum + r.nodes.filter((n) => b.rows[i].nodes.includes(n)).length, 0) } };
 }
 
 export async function characterizeBitbucketSyntaxOn(page, item, deps) {
