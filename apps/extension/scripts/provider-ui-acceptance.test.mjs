@@ -7,8 +7,8 @@ let window;
 let saved;
 beforeEach(() => {
   window = new Window({ url: 'https://gitlab.com/example/repo/-/merge_requests/1/diffs' });
-  saved = Object.fromEntries(['document', 'location', 'getComputedStyle', 'innerWidth', 'innerHeight'].map((key) => [key, globalThis[key]]));
-  Object.assign(globalThis, { document: window.document, location: window.location, getComputedStyle: window.getComputedStyle.bind(window), innerWidth: 1440, innerHeight: 1000 });
+  saved = Object.fromEntries(['document', 'location', 'getComputedStyle', 'innerWidth', 'innerHeight', 'requestAnimationFrame'].map((key) => [key, globalThis[key]]));
+  Object.assign(globalThis, { document: window.document, location: window.location, getComputedStyle: window.getComputedStyle.bind(window), innerWidth: 1440, innerHeight: 1000, requestAnimationFrame: window.requestAnimationFrame.bind(window) });
   document.head.innerHTML = '<style>[hidden]{display:none}[hidden="until-found"]{display:block;content-visibility:hidden}</style>';
   window.Element.prototype.getBoundingClientRect = function () {
     const left = Number(this.getAttribute('data-left') ?? 20);
@@ -19,6 +19,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   providerDashboardProbe('cleanup');
+  delete globalThis.__geldDashboardPointerReceipt;
   for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete globalThis[key];else globalThis[key] = value; }
   window.happyDOM.abort();
 });
@@ -150,7 +151,7 @@ test('fixed result shape does not serialize arbitrary source text, attributes or
 
 function dashboard() {
   document.body.style.cssText = 'font-family:Arial;font-size:14px;color:rgb(23,23,23);background-color:rgb(255,255,255)';
-  document.body.innerHTML = '<div class="issuable-discussion"><article id="note_1" data-testid="noteable-note-container" data-geld-provider-native-find="folded" hidden="until-found"><div class="timeline-content" style="background-color:rgb(255,255,255)">Native comment text</div></article></div><section class="geld-provider-review" data-provider="gitlab"><article data-geld-source="note_1">Digest copy</article><header data-geld-review-overview><span data-geld-review-metric="open">1</span><span data-geld-review-metric="comments">1</span><span data-geld-review-metric="activity">1</span></header><button data-geld-original-conversation>Show original conversation</button><section data-geld-review-key="reviewers"><button id="reviewer-toggle" data-geld-review-toggle aria-controls="reviewers" aria-expanded="false">Reviews</button><div id="reviewers" class="geld-provider-review__section-content" aria-labelledby="reviewer-toggle" hidden></div></section><section data-geld-review-key="checks"><button id="checks-toggle" data-geld-review-toggle aria-controls="checks" aria-expanded="true">CI checks</button><div id="checks" class="geld-provider-review__section-content" aria-labelledby="checks-toggle"></div></section></section>';
+  document.body.innerHTML = '<div class="issuable-discussion"><article id="note_1" data-testid="noteable-note-container" data-geld-provider-native-find="folded" hidden="until-found"><div class="timeline-content" style="background-color:rgb(255,255,255)">Native comment text</div></article></div><section class="geld-provider-review" data-provider="gitlab"><article data-geld-source="note_1">Digest copy</article><header data-geld-review-overview><span data-geld-review-metric="open">1</span><span data-geld-review-metric="comments">1</span><span data-geld-review-metric="activity">1</span></header><button data-geld-original-conversation>Show original conversation</button><section id="section-reviewers" data-geld-review-key="reviewers"><button id="reviewer-toggle" data-geld-review-toggle aria-controls="reviewers" aria-expanded="false">Reviews</button><div id="reviewers" class="geld-provider-review__section-content" aria-labelledby="reviewer-toggle" hidden></div></section><section id="section-checks" data-geld-review-key="checks"><button id="checks-toggle" data-geld-review-toggle aria-controls="checks" aria-expanded="true">CI checks</button><div id="checks" class="geld-provider-review__section-content" aria-labelledby="checks-toggle"></div></section></section>';
 }
 test('dashboard proof includes actual native suppression and exact original-node custody across restore', () => {
   dashboard();assertProviderDashboard(providerDashboardProbe('bind'));
@@ -172,6 +173,41 @@ test('native timestamps and status/control labels may update while the original 
   document.querySelector('.note-text p').textContent = 'PRIVATE_CHANGED_BODY';
   const changed = providerDashboardProbe();assert.equal(changed.custody.bodyMismatches, 1);assert.equal(changed.sameOriginals, false);
   assert.throws(() => assertProviderDashboard(changed), /bodyMismatches/);assert.doesNotMatch(JSON.stringify(changed), /PRIVATE_CHANGED_BODY/);
+});
+test('body mismatch diagnostics identify bounded structural changes without exposing source values', () => {
+  semanticDashboard();providerDashboardProbe('bind');
+  document.querySelector('.note-text p').setAttribute('data-rendered', 'PRIVATE_ATTRIBUTE_VALUE');
+  const changed = providerDashboardProbe();
+  assert.equal(changed.sameOriginals, false);
+  assert.equal(changed.bodyChanges.length, 1);
+  assert.equal(changed.bodyChanges[0].source, 'note_1');
+  assert.equal(changed.bodyChanges[0].difference.kind, 'attribute');
+  assert.equal(changed.bodyChanges[0].difference.name, 'data-rendered');
+  assert.deepEqual(changed.bodyChanges[0].beforeText, changed.bodyChanges[0].afterText);
+  assert.doesNotMatch(JSON.stringify(changed), /PRIVATE_ATTRIBUTE_VALUE|Native stable comment body/);
+});
+test('GitLab may hydrate its verified table-height control without changing the retained table payload', () => {
+  semanticDashboard();
+  const body = document.querySelector('.note-text');
+  body.innerHTML = '<div><div data-testid="table-shadow-overlay"><div id="table-scroll" data-sticky-header><table data-markdown-table-applied="true"><tbody><tr><td>Original table text</td></tr></tbody></table></div></div><!----></div>';
+  providerDashboardProbe('bind');
+  const wrapper = body.firstElementChild;
+  wrapper.lastChild.replaceWith(document.createElement('div'));
+  wrapper.lastChild.className = 'gl-order-1 gl-mt-2';
+  wrapper.lastChild.innerHTML = '<button data-testid="markdown-table-height-toggle" aria-controls="table-scroll" aria-expanded="false">Show full table</button>';
+  assertProviderDashboard(providerDashboardProbe());
+  wrapper.querySelector('button').setAttribute('aria-expanded', 'true');
+  wrapper.querySelector('button').textContent = 'Show less';
+  assertProviderDashboard(providerDashboardProbe());
+  wrapper.querySelector('td').textContent = 'Changed table text';
+  assert.equal(providerDashboardProbe().sameOriginals, false);
+});
+test('a lookalike or incorrectly bound height control remains strict native payload', () => {
+  semanticDashboard();
+  document.querySelector('.note-text').innerHTML = '<div><div data-testid="table-shadow-overlay"><div id="table-scroll" data-sticky-header><table data-markdown-table-applied="true"><tbody><tr><td>Original table</td></tr></tbody></table></div></div><!----></div>';
+  providerDashboardProbe('bind');
+  document.querySelector('.note-text > div').insertAdjacentHTML('beforeend', '<div class="gl-order-1"><button data-testid="markdown-table-height-toggle" aria-controls="wrong-table" aria-expanded="false">Changed content</button></div>');
+  assert.equal(providerDashboardProbe().sameOriginals, false);
 });
 test('native root replacement, reparenting, id changes and semantic body changes still fail custody', () => {
   for (const [kind, mutate] of [
@@ -278,37 +314,72 @@ for (const failure of [false, true]) test(`native sidebar fallback ${failure ? '
 });
 
 
-for (const failure of [false, true]) test(`visible-original callback ${failure ? 'restores originals and propagates failure' : 'runs between the existing show and hide clicks'}`, async () => {
+for (const scenario of ['success', 'callback-failure', 'layout-shift', 'reordered-sections', 'missed-click', 'replaced-control', 'invalid-expanded']) test(`dashboard pointer lifecycle: ${scenario}`, async () => {
   dashboard();
   const original = document.querySelector('#note_1');
   const order = [];
   let target;
+  let shifted = false;
+  let reordered = false;
   document.elementFromPoint = () => target;
   for (const toggle of document.querySelectorAll('[data-geld-review-toggle]')) toggle.addEventListener('click', () => {
     const open = toggle.getAttribute('aria-expanded') !== 'true';
     toggle.setAttribute('aria-expanded', String(open));
     document.getElementById(toggle.getAttribute('aria-controls')).hidden = !open;
+    if (scenario === 'invalid-expanded') { toggle.removeAttribute('aria-expanded');document.getElementById(toggle.getAttribute('aria-controls')).hidden = true; }
+    if (scenario === 'reordered-sections' && !reordered) {
+      reordered = true;
+      const reviews = document.querySelector('[data-geld-review-key="reviewers"]');
+      reviews.before(document.querySelector('[data-geld-review-key="checks"]'));
+    }
   });
   document.querySelector('[data-geld-original-conversation]').addEventListener('click', () => {
     const shown = original.hasAttribute('hidden');order.push(shown ? 'show' : 'hide');
     if (shown) original.removeAttribute('hidden');else original.setAttribute('hidden', 'until-found');
   });
   const page = {
-    evaluate: async (fn, value) => fn(value), isClosed: () => false,
+    evaluate: async (fn, value) => {
+      if (scenario === 'layout-shift' && fn === providerDashboardProbe && value === 'read' && target && !shifted) { target.setAttribute('data-top', '100');shifted = true; }
+      return fn(value);
+    }, isClosed: () => false,
     $$: async selector => [...document.querySelectorAll(selector)].map(node => ({
       evaluate: async fn => { target = node;node.scrollIntoView = () => {};return fn(node); }, dispose: async () => {},
     })),
-    mouse: { click: async () => target.click() }, emulateMediaFeatures: async () => {},
+    mouse: { click: async (x, y) => {
+      if (scenario === 'missed-click') return;
+      if (scenario === 'replaced-control') { target.replaceWith(target.cloneNode(true));return; }
+      const box = target.getBoundingClientRect();
+      if (x < box.left || x > box.right || y < box.top || y > box.bottom) return;
+      const event = new window.MouseEvent('click', { bubbles: true, clientX: x, clientY: y });
+      Object.defineProperty(event, 'isTrusted', { value: true }); // Unit protocol only; Chromium replay supplies actual trusted input.
+      target.dispatchEvent(event);
+    } }, emulateMediaFeatures: async () => {},
   };
   const progress = {};
   const promise = verifyProviderDashboardUi(page, progress, {
     poll: async (read, accepts) => { const value = await read();assert.ok(accepts(value));return value; }, capture: async () => 'fixture.png',
     onOriginalsShown: async snapshot => {
       order.push('callback');assert.equal(snapshot.originalVisible, 1);assert.equal(original.hasAttribute('hidden'), false);
-      if (failure) throw Error('Author comparison failed');
+      if (scenario === 'callback-failure') throw Error('Author comparison failed');
     },
   });
-  if (failure) await assert.rejects(promise, /Author comparison failed/);else await promise;
-  assert.deepEqual(order, ['show', 'callback', 'hide']);
-  assert.equal(original.getAttribute('hidden'), 'until-found');assert.equal(progress.originalsHidden.originalVisible, 0);
+  if (scenario === 'callback-failure') await assert.rejects(promise, /Author comparison failed/);
+  else if (scenario === 'missed-click' || scenario === 'replaced-control') await assert.rejects(promise, /must receive the trusted click/);
+  else if (scenario === 'invalid-expanded') await assert.rejects(promise);
+  else await promise;
+  const missed = scenario === 'missed-click' || scenario === 'replaced-control' || scenario === 'invalid-expanded';
+  assert.deepEqual(order, missed ? [] : ['show', 'callback', 'hide']);
+  assert.equal(original.getAttribute('hidden'), 'until-found');
+  if (!missed) assert.equal(progress.originalsHidden.originalVisible, 0);
+  assert.equal(progress.clicks.length, missed ? 1 : 4);
+  if (!missed) {
+    const first = progress.clicks[0];
+    assert.equal(first.point.sectionKey, 'reviewers');
+    assert.equal(first.receipt.controlId, 'reviewer-toggle');
+    assert.equal(first.receipt.trustedTargetCount, 1);
+    assert.equal(first.receipt.before.target, 'false');
+    assert.equal(first.receipt.immediate.current, 'true');
+    assert.equal(first.receipt.microtask.current, 'true');
+  }
+  assert.equal(globalThis.__geldDashboardPointerReceipt, undefined);
 });

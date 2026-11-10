@@ -402,11 +402,41 @@ describe('provider conversation digest', () => {
     panel.update(input(), { complete: false, unavailable: [{ area: 'Discussions', reason: 'Sign in is required.' }] });
     expect(panel.element.dataset.state).toBe('partial');
     expect(panel.element.textContent).toContain('No review threads in the available data.');
-    expect(panel.element.textContent).toContain('Discussions: Sign in is required.');
+    expect(panel.element.querySelector('[data-geld-review-coverage="partial"]')?.textContent).toBe('Partial review · Some review data is unavailable.');
+    expect(panel.element.textContent).not.toContain('Discussions: Sign in is required.');
     panel.update(input([thread('a', { comments: [{ ...comment('1'), url: 'https://evil.example/comment' }] })]), {});
     expect(panel.element.dataset.state).toBe('unavailable');
     expect(panel.element.textContent).toContain('The review source could not be read.');
     expect(panel.element.textContent).not.toContain('No review threads.');
+  });
+
+  it('shows one compact partial status while retaining every technical reason in the copied digest', async () => {
+    let copied = '';
+    const unavailable = [
+      { area: 'thread state', reason: 'Bitbucket did not supply the native resolution of thread 12.' },
+      { area: 'thread state', reason: 'Bitbucket did not supply the native resolution of thread 13.' },
+      { area: 'approval requirements', reason: 'The API did not supply repository approval requirements.' },
+      { area: 'reviews', reason: 'The reviewer endpoint returned403.' },
+    ];
+    const panel = renderProviderReviewPanel(host(), input(), { unavailable, copyText: (text) => { copied = text; } });
+    const status = panel.element.querySelector('[data-geld-review-coverage="partial"]');
+    expect(panel.element.dataset.state).toBe('partial');
+    expect(panel.element.querySelectorAll('[data-geld-review-coverage="partial"]')).toHaveLength(1);
+    expect(status?.textContent).toBe('Partial review · Some review data is unavailable.');
+    expect(status?.getAttribute('role')).toBe('status');
+    expect(status?.classList.contains('geld-provider-review__muted')).toBe(true);
+    expect(status?.classList.contains('geld-provider-review__unavailable')).toBe(false);
+    expect(status?.children).toHaveLength(0);
+    for (const source of unavailable) expect(panel.element.textContent).not.toContain(source.reason);
+    panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
+    await Promise.resolve();
+    for (const source of unavailable) expect(copied).toContain(source.reason);
+    expect(copied).toContain('Reviews source unavailable: The reviewer endpoint returned403.');
+    panel.update(input(), {});
+    expect(panel.element.dataset.state).toBe('ready');
+    expect(panel.element.querySelector('[data-geld-review-coverage]')).toBeNull();
+    panel.update(input(), { complete: false });
+    expect(panel.element.querySelector('[data-geld-review-coverage="partial"]')?.textContent).toBe('Partial review · Some review data is unavailable.');
   });
 
   it('shows native reviewer standings and counts only CI on the current commit', () => {
@@ -910,8 +940,8 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector('[data-geld-review-key="reviewers"] .geld-provider-review__reviewer-summary')?.textContent).toBe('Reviews · 1 approval');
     expect(panel.element.textContent).not.toContain('/2 required approvals');
     expect(panel.element.querySelector('[data-geld-review-key="checks"]')?.textContent).toContain('CI checks · Unavailable');
-    expect(panel.element.textContent).toContain('Authentication is required.');
-    expect(panel.element.textContent).toContain('The API did not supply approval requirements.');
+    expect(panel.element.textContent).not.toContain('Authentication is required.');
+    expect(panel.element.textContent).not.toContain('The API did not supply approval requirements.');
     expect(panel.element.dataset.state).toBe('partial');
     expect(panel.element.querySelector('[data-geld-review-bot]')).toBeNull();
   });

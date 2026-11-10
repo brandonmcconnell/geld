@@ -47,6 +47,18 @@ export async function readEvidenceFile(directory, name, limit) {
 }
 const count = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
 const timestamp = value => typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value ? value : null;
+function errorKind(item) {
+  if (item.holdReason === 'provider_http429') return 'http429';
+  const error = typeof item.error === 'string' ? item.error : '';
+  const custodyFailure = ['baseline', 'sectionToggled', 'originalsShown', 'originalsHidden', 'dark'].some(stage =>
+    ['identityMismatches', 'parentMismatches', 'idMismatches', 'bodyMismatches', 'payloadOrderMismatches', 'unqualifiedPayloads']
+      .some(key => (count(item.dashboardUi?.[stage]?.custody?.[key]) ?? 0) > 0));
+  if (custodyFailure || /Original conversation (?:nodes and content must be retained|changed before the real pointer input)/.test(error)) return 'conversation_custody';
+  if (/Real custom dashboard disclosure changes its body timed out/.test(error)) return 'dashboard_disclosure';
+  if (/owned panel/.test(error)) return 'category_geometry';
+  if (/Adjusted additions/.test(error)) return 'visible_counts';
+  return error === '' ? null : 'other';
+}
 export function summarizeProviderEvidence(report, raw) {
   if (report?.schema !== 1 || !Array.isArray(report.cases) || report.cases.length > 100) fail('EVIDENCE_REPORT');
   const names = new Set(['gitlab-mixed', 'gitlab-overview-digest', 'bitbucket-ui-continuity', 'bitbucket-comment-digest']);
@@ -57,7 +69,7 @@ export function summarizeProviderEvidence(report, raw) {
     bitbucketRequests: count(report.observedBitbucketApiRequests), rollingRequestCount: Array.isArray(report.bitbucketAnonymousRequestTimes) ? report.bitbucketAnonymousRequestTimes.length : null,
     cases: report.cases.filter(item => names.has(item.name)).map(item => ({
       name: item.name, status: statuses.has(item.status) ? item.status : 'unknown', startedAt: timestamp(item.startedAt), finishedAt: timestamp(item.finishedAt),
-      errorKind: item.holdReason === 'provider_http429' ? 'http429' : /body|Original conversation/.test(item.error ?? '') ? 'conversation_custody' : /owned panel/.test(item.error ?? '') ? 'category_geometry' : /Adjusted additions/.test(item.error ?? '') ? 'visible_counts' : item.error ? 'other' : null,
+      errorKind: errorKind(item),
       custody: Object.fromEntries(['identityMismatches', 'parentMismatches', 'idMismatches', 'bodyMismatches', 'unqualifiedPayloads'].map(key => [key, count(item.dashboardUi?.baseline?.custody?.[key])])),
     })),
   };
