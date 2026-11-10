@@ -2332,7 +2332,7 @@ async function verifyProviderAgentNotes(page, item) {
 async function verifyProviderFlow(page, item) {
   const progress = { status: 'running', scope: 'Overview digest toolbar only (Flow is never in the Files changed toolbar). Public card counts, category inclusion and focus restoration. Dependency parsing and immutable fork selection have separate unit coverage.' };item.fileFlow = progress;
   const before = await tabState(page);
-  if (await page.$('.geld-provider-flow-button') === null) {
+  if (!await page.evaluate(() => [...document.querySelectorAll('.geld-provider-flow-button')].some(button => button.checkVisibility()))) {
     const overview = await page.evaluateHandle(() => [...document.querySelectorAll('.merge-request-tabs-container a[href]')].find(link => /\/-\/merge_requests\/\d+$/.test(new URL(link.href).pathname)) ?? null);
     assert.ok(await overview.evaluate(link => link !== null), 'Native Overview tab link');
     await overview.click();
