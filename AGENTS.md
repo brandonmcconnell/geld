@@ -2890,6 +2890,10 @@ The harness labels this prior-success requirement ROOT-MANUAL and unverified by 
   Its separate read-only budget forecast uses two actual ten-request opener visits plus the existing minimum-five reserve under the unchanged40 cap and429 abort, while every NativeOn full40/immediate-eight gate remains unchanged.
   A diagnostic-complete result is a report, not Syntax-On, native Bash palette, server-persistence or provider-parity acceptance.
 
+- **An ARIA-blocked tab field is not automatically a read-only combobox**: opener-only diagnostics split self and ancestor aria-disabled/aria-readonly booleans and exact tab id/name/type/role/inputmode/listbox matches without relaxing any eligibility guard.
+  Fixed label association and hidden-companion ancestry checks contain only booleans/counts, with no arbitrary attributes, label text, field values or checkbox state.
+  Historical native13-field PR captures show a self aria-readonly non-searchable tab combobox, but the later12-field standalone rejection reports only a combined ARIA blocker until its own precise diagnostics are observed.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
