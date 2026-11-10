@@ -31,7 +31,10 @@ vi.mock('wxt/browser', () => ({
     },
   },
 }));
-vi.mock('./storage', () => ({ settingsItem: { getValue: async () => settings, watch: () => () => undefined } }));
+vi.mock('./storage', async () => {
+  const { DEFAULT_SETTINGS } = await import('@geld/core');
+  return { settingsItem: { getValue: async () => ({ ...DEFAULT_SETTINGS, ...settings }), watch: () => () => undefined } };
+});
 vi.mock('./diagnostics', () => ({ recordDiagnostic: () => undefined }));
 
 const sent: UsagePayload[] = [];
@@ -80,7 +83,7 @@ describe('usage statistics', () => {
     expect(names().sort()).toEqual(['extension_active', 'extension_installed']);
     expect(sent[0]).toMatchObject({ v: 1, version: '0.9.3.412', channel: 'stable' });
     const active = sent.flatMap((payload) => payload.events).find((event) => event.name === 'extension_active');
-    expect(active).toMatchObject({ firstOfWeek: true, firstOfMonth: true });
+    expect(active).toMatchObject({ firstOfWeek: true, firstOfMonth: true, settings: { toggles: { enabled: true }, categories: { tests: true } } });
   });
 
   it('reports an update the browser announces with the version before it, once', async () => {
@@ -105,6 +108,25 @@ describe('usage statistics', () => {
     await start();
     await vi.advanceTimersByTimeAsync(6_000);
     expect(sent[0]?.events).toEqual([{ name: 'extension_active', at: expect.any(Number), version: '0.9.3.412', firstOfWeek: false, firstOfMonth: false }]);
+  });
+
+  it('hands the day’s feature counts to the next ping and starts again', async () => {
+    stored.set('local:usageState', { version, day: '2026-11-09', week: '2026-W46', month: '2026-11', queue: [] });
+    const { addUsageCount } = await import('./usage-uplink');
+    await addUsageCount('flow_opened', 1);
+    await addUsageCount('flow_opened', 2);
+    await addUsageCount('digest_shown', 1);
+    await start();
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(sent[0]?.events).toEqual([{ name: 'extension_active', at: expect.any(Number), version: '0.9.3.412', firstOfWeek: false, firstOfMonth: false, counts: { flow_opened: 3, digest_shown: 1 } }]);
+    expect(stored.get('local:usageState')).toMatchObject({ counts: {} });
+  });
+
+  it('keeps no counts while off', async () => {
+    settings.usageStats = false;
+    const { addUsageCount } = await import('./usage-uplink');
+    await addUsageCount('flow_opened', 1);
+    expect(stored.has('local:usageState')).toBe(false);
   });
 
   it('sends nothing while off, and drops what it noted', async () => {

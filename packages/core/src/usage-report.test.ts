@@ -80,7 +80,7 @@ describe('usageCaptures', () => {
     if (payload === null) throw new Error('payload refused');
     const [update, active] = usageCaptures(payload, now);
     expect(update?.properties).toMatchObject({ update_trigger: 'store', from_build: null, build_delta: null, version_jump: 'patch' });
-    expect(active?.properties).toEqual({ version: '0.9.3.412', build: 412, channel: 'stable', browser: 'chrome', first_of_week: true, first_of_month: true });
+    expect(active?.properties).toMatchObject({ version: '0.9.3.412', build: 412, channel: 'stable', browser: 'chrome', first_of_week: true, first_of_month: true, used_digest_shown: 0 });
   });
 
   it('keeps each event’s own version and date, drops what is too old and re-dates a clock ahead', () => {

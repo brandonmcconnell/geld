@@ -1,5 +1,5 @@
-import type { AnyCategoryId, ChangeTotals, ErrorReport, FileStats, RepoConfigMode, SettingsIssue } from '@geld/core';
-import { parseErrorReports } from '@geld/core';
+import type { AnyCategoryId, ChangeTotals, ErrorReport, FileStats, RepoConfigMode, SettingsIssue, UsageCounter } from '@geld/core';
+import { isUsageCounter, parseErrorReports } from '@geld/core';
 import type { JevRequest, JevResult, ModelInfo } from '@geld/review';
 
 /** Messages exchanged between the content script, popup and background. */
@@ -70,6 +70,13 @@ export interface OpenSettingsMessage {
 export interface ErrorReportMessage {
   readonly type: 'geld:error-report';
   readonly errors: readonly ErrorReport[];
+}
+
+/** Any page → background: a feature was used, for the next usage ping's counts. */
+export interface UsageCountMessage {
+  readonly type: 'geld:usage-count';
+  readonly counter: UsageCounter;
+  readonly by: number;
 }
 
 /** Background → content script: the keyboard shortcut was pressed. */
@@ -255,6 +262,10 @@ export function isOpenSettingsMessage(value: unknown): value is OpenSettingsMess
 
 export function isErrorReportMessage(value: unknown): value is ErrorReportMessage {
   return isRecord(value) && value.type === 'geld:error-report' && parseErrorReports(value.errors) !== null;
+}
+
+export function isUsageCountMessage(value: unknown): value is UsageCountMessage {
+  return isRecord(value) && value.type === 'geld:usage-count' && isUsageCounter(value.counter) && typeof value.by === 'number' && Number.isInteger(value.by) && value.by > 0;
 }
 
 export function isToggleHiddenMessage(value: unknown): value is ToggleHiddenMessage {

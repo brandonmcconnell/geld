@@ -2,7 +2,7 @@ import { applyTrackerLinks,removeTrackerLinks } from './tracker-links';
 import { applyAttachmentLightbox, removeAttachmentLightbox } from './attachment-lightbox';
 import { applyRelatedLinks, removeRelatedLinks } from './related-links';
 import type { Catalog, HiddenCategory } from '@geld/core';
-import { BUNDLED_CATALOG, CATEGORY_IDS, isAutoViewed, testSyntaxesFrom } from '@geld/core';
+import { BUNDLED_CATALOG, CATEGORY_IDS, hidCounterFor, isAutoViewed, testSyntaxesFrom } from '@geld/core';
 import type { TestSyntax } from '@geld/core';
 import type { ChangeTotals } from '@geld/core';
 import { subtractTotals } from '@geld/core';
@@ -80,6 +80,7 @@ import {
 import { legacyAdapter } from './views/legacy';
 import { activateTreeItem, ATTR_WRAP, isSelectedTreeItem, liveEntryRoot, reactAdapter } from './views/react';
 import { activateControl, findViewedControls, rewriteFilesLinksForWhitespace, WhitespaceRedirector } from './whitespace-viewed';
+import { countUsage } from '../lib/usage-count';
 
 /** Away at least this long and the tab is brought up to date on return (checks read again, the timeline caught up). */
 const CATCH_UP_AFTER_MS = 15_000;
@@ -309,6 +310,12 @@ export class GeldController {
   private observer: MutationObserver | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly diffExpanded = new Map<string, boolean>();
+  /**
+   * The page the usage statistics last saw and what they counted on this visit to it: a pass on another page ends
+   * the visit (the Files tab and the conversation share a state key, so the path tells them apart), and coming back
+   * counts again, while the many passes of one visit count once.
+   */
+  private usageVisit: { readonly path: string; readonly counted: Set<string>; diffCounted: boolean } | null = null;
   /** The sidebar accordion panel the reader chose per page ("changes" or a category id). */
   private readonly activePanel = new Map<string, string>();
   /** The panel actually shown per page: the chosen one, or the one a search in GitHub's file filter opened instead. */
@@ -1095,6 +1102,7 @@ export class GeldController {
   }
 
   private setDiffExpanded(key: string, expanded: boolean): void {
+    if (expanded && this.diffExpanded.get(key) !== true) countUsage('hidden_files_shown');
     this.diffExpanded.set(key, expanded);
     // A deliberate show/hide-all overrides files the user toggled one by one.
     this.inlineTouched.delete(key);
@@ -1230,6 +1238,7 @@ export class GeldController {
     }
 
     const effectiveHidden = headerHidden ?? hidden;
+    this.countDiffPage(view !== null, (effectiveHidden?.categories ?? []).filter((entry) => entry.totals.files > 0).map((entry) => entry.category.id));
     this.publish({
       repo,
       repoConfig: this.tabRepoConfig(repo),
@@ -1253,6 +1262,25 @@ export class GeldController {
     });
 
     this.observer?.takeRecords();
+  }
+
+  /** Once per visit to a diff page: that it was read, and once per category that hid files on it (the diff streams in, so a category can join later). */
+  private countDiffPage(onDiff: boolean, hiding: readonly string[]): void {
+    const path = location.pathname;
+    if (this.usageVisit?.path !== path) this.usageVisit = { path, counted: new Set(), diffCounted: false };
+    if (!onDiff) return;
+    const visit = this.usageVisit;
+    if (!visit.diffCounted) {
+      visit.diffCounted = true;
+      countUsage('diff_pages');
+    }
+    for (const id of hiding) {
+      const counter = hidCounterFor(id);
+      if (visit.counted.has(counter)) continue;
+      if (visit.counted.size === 0) countUsage('diff_pages_hiding');
+      visit.counted.add(counter);
+      countUsage(counter);
+    }
   }
 
   /** `+N −M` chips on every PR row of the page (lists, stack popover, merge-box stack list). */
@@ -1599,6 +1627,7 @@ export class GeldController {
   private reveal(path: string, stateKey: string): void {
     const view = this.currentView;
     if (view === null) return;
+    countUsage('hidden_file_revealed');
     this.cancelAlign?.();
     this.cancelAlign = null;
     if (this.settings.groupHidden && !this.isDiffExpanded(stateKey, false)) this.setDiffExpanded(stateKey, true);

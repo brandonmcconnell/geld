@@ -26,6 +26,8 @@ import { pageFetch } from './page-fetch';
 import { reportError } from '../lib/error-capture';
 import { isOverviewPage } from './review/overview-page';
 import { overviewMergeOf, removeOverviewMerge, syncOverviewMerge } from './overview-merge';
+import { countUsage } from '../lib/usage-count';
+import type { UsageCounter } from '@geld/core';
 
 /**
  * The review controls in the pull request's tab bar, left of the line
@@ -2097,6 +2099,17 @@ function showCommentKind(state: Mounted): void {
  * the comments just published as pending until it does. Elsewhere the
  * button says what went through for a moment.
  */
+const REVIEW_COUNTER: Readonly<Record<ReviewEvent, UsageCounter>> = { approve: 'review_approve', 'request changes': 'review_request_changes', comment: 'review_comment' };
+const STATUS_COUNTER: Readonly<Record<StatusAction, UsageCounter>> = {
+  merge: 'status_merge',
+  queue: 'status_queue',
+  auto: 'status_auto',
+  close: 'status_close',
+  ready: 'status_ready',
+  draft: 'status_draft',
+  reopen: 'status_reopen',
+};
+
 async function sendReview(state: Mounted, event: ReviewEvent, body: string): Promise<string | null> {
   const headSha = state.context.headSha() ?? detectHeadSha();
   if (headSha === null) return 'Could not read the pull request’s head commit. Reload the page and try again.';
@@ -2119,6 +2132,7 @@ async function sendReview(state: Mounted, event: ReviewEvent, body: string): Pro
       return reviewErrorText(response.status, payload);
     }
     // The review is in: a failure from here on only leaves the controls behind, and must not be reported as a refusal.
+    countUsage(REVIEW_COUNTER[event]);
     afterSent('review', () => showSubmitted(state, pullPath, event, body));
     return null;
   } finally {
@@ -2191,6 +2205,7 @@ async function sendComment(state: Mounted, text: string): Promise<string | null>
       const said = messageOf(payload);
       return said === null ? `GitHub could not post the comment (HTTP ${response.status}).` : `GitHub could not post the comment: ${said}`;
     }
+    countUsage('comment_posted');
     afterSent('comment', () => showCommented(state, pullPath, text));
     return null;
   } finally {
@@ -2622,6 +2637,7 @@ async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Ste
       }
     }
     if (!here()) return null;
+    countUsage(STATUS_COUNTER[kind]);
     done();
     if (inPlace === undefined) {
       if (kind === 'merge' && steps.some((step) => isStackRequest(step.request.url))) await awaitMergedState(state.pullPath, here);

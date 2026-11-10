@@ -17,6 +17,7 @@ import { ATTR_ATTACHED, ATTR_PANEL, PANEL_CLASS, descriptionCard } from './panel
 import { overviewColumnGap } from './overview-page';
 import { ATTR_VIEW_SUBTITLE, fitOffLineOnResize, OFF_SUBTITLE, OFF_TITLE } from './view-fit';
 import { requestViewFocus, takeViewFocus } from './view-focus';
+import { countUsage } from '../../lib/usage-count';
 
 const BAR_CLASS = 'geld-digest-off';
 
@@ -25,6 +26,7 @@ const BAR_CLASS = 'geld-digest-off';
  * and focus follows to what stands for the view once it mounts: the off line for Timeline, else the panel.
  */
 export function chooseDigestView(view: DigestView): void {
+  countUsage('digest_view_changed');
   const at = new Date().toISOString();
   const withdraw = requestViewFocus(view === 'github' ? 'off-line' : 'panel');
   persist(

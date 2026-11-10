@@ -88,6 +88,7 @@ import { rememberTopCard, setTopCard } from './top-card';
 import { closeOverviewChecks, isOverviewPage, OVERVIEW_FOR_YOU, OVERVIEW_ITEM, openCollapsedThreads, openOverviewChecks, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, showAllOverviewComments } from './overview-page';
 import { pageFetch } from '../page-fetch';
 import { closeFlow, openFlowDialog } from './flow';
+import { countUsage } from '../../lib/usage-count';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
 const ZERO_SHA = '0000000000000000000000000000000000000000';
@@ -2562,6 +2563,7 @@ function rerunFor(id: string, author: string, meta: GeldPrMeta, reapply: () => v
       requests.set(id, { at, posted: null, before: triggersOnPage.get(id) ?? new Set() });
       // Read at the click: the repository's workflow may have been found since this control was drawn.
       void postTopLevelComments([triggerFor(id, repoBots) ?? trigger]).then((posted) => {
+        if (posted > 0) countUsage('bot_review_requested', posted);
         const request = requests.get(id);
         if (request?.at === at) requests.set(id, { ...request, posted: posted > 0 });
         reapplySoon();
@@ -3311,6 +3313,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   if (visit.pageKey !== page.stateKey) {
     restoreAll();
     resetTriggerReactions();
+    countUsage('digest_shown');
     visit.pageKey = page.stateKey;
     visit.generatedAt = new Date().toISOString();
     visit.openKey = null;
@@ -3831,6 +3834,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       quoteReply(anchor);
     },
     onCopy: () => {
+      countUsage('digest_copied');
       const bodies = new Map(crawledDom.comments.map((entry) => [entry.comment.anchor, entry.comment.body]));
       const status: string[] = [];
       if (model.checks !== null) status.push(`CI: ${checksSummary(model.checks)}`);
@@ -3871,6 +3875,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       const at = Date.now();
       for (const { id } of requested) requests.set(id, { at, posted: null, before: triggersOnPage.get(id) ?? new Set() });
       void postTopLevelComments(requested.map(({ trigger }) => trigger)).then((posted) => {
+        if (posted > 0) countUsage('bot_review_requested', posted);
         // The posts stop at the first refusal: the bots after it were never asked, and their pills say so.
         requested.forEach(({ id }, index) => {
           const request = requests.get(id);

@@ -1,7 +1,7 @@
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
-import type { GeldSettings, UpdateMethod, UpdateMode, UsageBrowser, UsageEvent, UsagePayload } from '@geld/core';
-import { MAX_USAGE_EVENTS, USAGE_MAX_AGE_MS, USAGE_PAYLOAD_VERSION, usagePeriods } from '@geld/core';
+import type { GeldSettings, UpdateMethod, UpdateMode, UsageBrowser, UsageCounter, UsageEvent, UsagePayload } from '@geld/core';
+import { MAX_USAGE_EVENTS, USAGE_COUNTER_CAP, USAGE_MAX_AGE_MS, USAGE_PAYLOAD_VERSION, usagePeriods, usageSettingsOf } from '@geld/core';
 import { recordDiagnostic } from './diagnostics';
 import { settingsItem } from './storage';
 
@@ -9,9 +9,12 @@ import { settingsItem } from './storage';
  * Anonymous usage statistics (`usageStats`, on by default): an event when Geld
  * is installed, one when the running version changes (with the version before),
  * and one ping per UTC day while the browser runs. Nothing identifies the
- * install: the events carry the version, channel and browser and nothing else,
- * and the queue lives in local storage only until geld.sh has taken it (events
- * older than 30 days are dropped unsent). Development
+ * install: the events carry the version, channel and browser, the day's ping
+ * how often features were used since the one before (`countUsage`), and the
+ * week's first ping a summary of the settings (`usageSettingsOf`, choices Geld
+ * offers and capped counts, never what the reader typed). The queue lives in
+ * local storage only until geld.sh has taken it (events older than 30 days
+ * are dropped unsent). Development
  * builds never send, and neither does Firefox, which wants its own
  * data-collection permission for this (not yet requested).
  */
@@ -37,9 +40,11 @@ interface UsageState {
   readonly week: string | null;
   readonly month: string | null;
   readonly queue: readonly UsageEvent[];
+  /** Feature uses since the last ping, handed to the next one. */
+  readonly counts?: Readonly<Partial<Record<UsageCounter, number>>>;
 }
 
-const EMPTY: UsageState = { version: null, day: null, week: null, month: null, queue: [] };
+const EMPTY: UsageState = { version: null, day: null, week: null, month: null, queue: [], counts: {} };
 const stateItem = storage.defineItem<UsageState>('local:usageState', { fallback: EMPTY });
 
 let chain: Promise<unknown> = Promise.resolve();
@@ -129,10 +134,30 @@ async function reconcileVersion(nightly: NightlyUsageSource | null): Promise<voi
 async function ping(): Promise<void> {
   const now = Date.now();
   const periods = usagePeriods(now);
+  const settings = await settingsItem.getValue();
   await serially(async (state) => {
     if (state.day === periods.day) return { next: state, result: undefined };
-    const event: UsageEvent = { name: 'extension_active', at: now, version: currentVersion(), firstOfWeek: state.week !== periods.week, firstOfMonth: state.month !== periods.month };
-    return { next: { ...enqueue(state, event), day: periods.day, week: periods.week, month: periods.month }, result: undefined };
+    const firstOfWeek = state.week !== periods.week;
+    const counts = state.counts ?? {};
+    const event: UsageEvent = {
+      name: 'extension_active',
+      at: now,
+      version: currentVersion(),
+      firstOfWeek,
+      firstOfMonth: state.month !== periods.month,
+      ...(firstOfWeek ? { settings: usageSettingsOf(settings) } : {}),
+      ...(Object.keys(counts).length > 0 ? { counts } : {}),
+    };
+    return { next: { ...enqueue(state, event), day: periods.day, week: periods.week, month: periods.month, counts: {} }, result: undefined };
+  });
+}
+
+/** One more use of a feature for the next ping; nothing is kept while the statistics are off. */
+export async function addUsageCount(counter: UsageCounter, by: number): Promise<void> {
+  if (!sendsUsage(await settingsItem.getValue())) return;
+  await serially(async (state) => {
+    const counts = state.counts ?? {};
+    return { next: { ...state, counts: { ...counts, [counter]: Math.min((counts[counter] ?? 0) + by, USAGE_COUNTER_CAP) } }, result: undefined };
   });
 }
 
@@ -156,7 +181,7 @@ async function send(payload: UsagePayload): Promise<SendOutcome> {
 async function flush(nightly: NightlyUsageSource | null): Promise<void> {
   const settings = await settingsItem.getValue();
   if (!sendsUsage(settings)) {
-    if ((await stateItem.getValue()).queue.length > 0) await serially(async (state) => ({ next: { ...state, queue: [] }, result: undefined }));
+    if ((await stateItem.getValue()).queue.length > 0) await serially(async (state) => ({ next: { ...state, queue: [], counts: {} }, result: undefined }));
     return;
   }
   const oldest = Date.now() - USAGE_MAX_AGE_MS;
@@ -228,6 +253,6 @@ export function startUsageReports(nightly: NightlyUsageSource | null): void {
       .catch(() => undefined);
   }, RECONCILE_DELAY_MS);
   settingsItem.watch((settings) => {
-    if (!sendsUsage(settings)) void serially(async (state) => ({ next: { ...state, queue: [] }, result: undefined })).catch(() => undefined);
+    if (!sendsUsage(settings)) void serially(async (state) => ({ next: { ...state, queue: [], counts: {} }, result: undefined })).catch(() => undefined);
   });
 }

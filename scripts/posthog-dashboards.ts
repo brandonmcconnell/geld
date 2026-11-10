@@ -12,28 +12,28 @@
  * https://eu.posthog.com for an EU project. `--dry-run` prints the queries.
  */
 import { DASHBOARDS } from './posthog/dashboards';
-import type { DashboardSpec, Tile } from './posthog/dashboards';
+import type { DashboardSpec, EventFilter, Tile } from './posthog/dashboards';
 
 const TAG = 'geld-usage';
 
 type Json = string | number | boolean | null | readonly Json[] | { readonly [key: string]: Json };
 
+function propertyFilter(filter: EventFilter): Json {
+  const value = typeof filter.value === 'boolean' ? [String(filter.value)] : typeof filter.value === 'string' ? [filter.value] : [...filter.value];
+  return { type: 'event', key: filter.key, operator: 'exact', value };
+}
+
 function queryFor(tile: Tile): Json {
   if (tile.kind === 'sql') return { kind: 'DataVisualizationNode', source: { kind: 'HogQLQuery', query: tile.query } };
-  const series: Json = [
-    {
-      kind: 'EventsNode',
-      event: tile.event,
-      name: tile.event,
-      ...(tile.math === undefined ? { math: 'total' } : { math: tile.math.kind, math_property: tile.math.property }),
-    },
-  ];
-  const properties: Json = (tile.where ?? []).map((filter) => ({
-    type: 'event',
-    key: filter.key,
-    operator: 'exact',
-    value: typeof filter.value === 'boolean' ? [String(filter.value)] : typeof filter.value === 'string' ? [filter.value] : [...filter.value],
+  const series: Json = tile.series.map((one) => ({
+    kind: 'EventsNode',
+    event: one.event,
+    name: one.event,
+    ...(one.label === undefined ? {} : { custom_name: one.label }),
+    ...(one.math === undefined ? { math: 'total' } : { math: one.math.kind, math_property: one.math.property }),
+    ...(one.where === undefined ? {} : { properties: one.where.map(propertyFilter) }),
   }));
+  const properties: Json = (tile.where ?? []).map(propertyFilter);
   return {
     kind: 'InsightVizNode',
     source: {
@@ -44,7 +44,7 @@ function queryFor(tile: Tile): Json {
       properties,
       filterTestAccounts: false,
       ...(tile.breakdown === undefined ? {} : { breakdownFilter: { breakdown: tile.breakdown, breakdown_type: 'event', breakdown_limit: 25 } }),
-      trendsFilter: { display: tile.display },
+      trendsFilter: { display: tile.display, ...(tile.formula === undefined ? {} : { formula: tile.formula }) },
     },
   };
 }

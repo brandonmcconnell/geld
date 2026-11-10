@@ -10,6 +10,9 @@
  * installs, and the ones flagged `first_of_week` are the week's.
  */
 
+import type { UsageCounter, UsageSettings } from './usage-settings';
+import { parseUsageCounts, parseUsageSettings, usageCountProperties, usageSettingsProperties } from './usage-settings';
+
 export const USAGE_PAYLOAD_VERSION = 1;
 export const MAX_USAGE_EVENTS = 50;
 
@@ -52,6 +55,10 @@ export interface ActiveEvent extends Noted {
   readonly firstOfWeek: boolean;
   /** Its first ping of the calendar month (UTC). */
   readonly firstOfMonth: boolean;
+  /** The settings, on the week's first ping only: repeated daily, an unusual combination would link an install's pings. */
+  readonly settings?: UsageSettings;
+  /** Feature uses since the install's previous ping. */
+  readonly counts?: Readonly<Partial<Record<UsageCounter, number>>>;
 }
 
 export type UsageEvent = InstalledEvent | UpdatedEvent | ActiveEvent;
@@ -91,9 +98,19 @@ function parseEvent(value: unknown): UsageEvent | null {
   switch (value.name) {
     case 'extension_installed':
       return { name: 'extension_installed', ...noted };
-    case 'extension_active':
+    case 'extension_active': {
       if (typeof value.firstOfWeek !== 'boolean' || typeof value.firstOfMonth !== 'boolean') return null;
-      return { name: 'extension_active', ...noted, firstOfWeek: value.firstOfWeek, firstOfMonth: value.firstOfMonth };
+      const settings = value.firstOfWeek && value.settings !== undefined ? parseUsageSettings(value.settings) : null;
+      const counts = value.counts === undefined ? null : parseUsageCounts(value.counts);
+      return {
+        name: 'extension_active',
+        ...noted,
+        firstOfWeek: value.firstOfWeek,
+        firstOfMonth: value.firstOfMonth,
+        ...(settings === null ? {} : { settings }),
+        ...(counts === null ? {} : { counts }),
+      };
+    }
     case 'extension_updated': {
       if (typeof value.from !== 'string' || !VERSION.test(value.from)) return null;
       const trigger = oneOf(MODES, value.trigger);
@@ -194,7 +211,19 @@ export function usageCaptures(payload: UsagePayload, receivedAt: number): UsageC
       case 'extension_installed':
         return [{ event: event.name, timestamp, properties: common }];
       case 'extension_active':
-        return [{ event: event.name, timestamp, properties: { ...common, first_of_week: event.firstOfWeek, first_of_month: event.firstOfMonth } }];
+        return [
+          {
+            event: event.name,
+            timestamp,
+            properties: {
+              ...common,
+              first_of_week: event.firstOfWeek,
+              first_of_month: event.firstOfMonth,
+              ...(event.settings === undefined ? {} : usageSettingsProperties(event.settings)),
+              ...usageCountProperties(event.counts ?? {}),
+            },
+          },
+        ];
       case 'extension_updated': {
         const fromBuild = usageBuildOf(event.from);
         return [{
