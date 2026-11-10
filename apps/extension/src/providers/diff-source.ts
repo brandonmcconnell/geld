@@ -11,7 +11,7 @@ export type ProviderDiffState =
 
 interface Request {
   readonly key: string;
-  readonly page: ProviderPage;
+  page: ProviderPage;
   state: ProviderDiffState;
   at: number;
   retryAt: number;
@@ -97,12 +97,13 @@ export class ProviderDiffSource {
   }
 
   get(page: ProviderPage, priority = false, allowFetch = true, requireExact = false): ProviderDiffState {
-    if (this.stopped || this.clearing) return { status: 'loading' };
+    if (this.stopped || this.clearing || page.diffMode?.current() === false) return { status: 'loading' };
     const key = providerDiffKey(page);
     let request = this.requests.get(key);
     if (request === undefined) {
       request = { key, page, state: allowFetch ? { status: 'loading' } : { status: 'deferred', reason: 'Hover to count changes' }, at: 0, retryAt: 0, attempts: 0, abort: null, queued: false, hydrated: false, hydrating: false, priority, requireExact, visit: this.visit, demandedAt: 0, allowFetch };
     }
+    request.page = page;
     this.requests.delete(key);
     this.requests.set(key, request);
     this.prune();
@@ -249,19 +250,20 @@ export class ProviderDiffSource {
       this.lanes.set(laneId, lane);
       this.running += 1;
       const signal = request.abort.signal;
+      const page = request.page;
       void Promise.resolve().then(() => {
-        if (this.stopped || this.visit !== visit || this.requests.get(request.key) !== request) throw new DOMException('Aborted', 'AbortError');
-        return this.adapter.fetchDiff(request.page, signal);
+        if (this.stopped || this.visit !== visit || this.requests.get(request.key) !== request || page.diffMode?.current() === false) throw new DOMException('Aborted', 'AbortError');
+        return this.adapter.fetchDiff(page, signal);
       }).then((result) => {
-        if (this.stopped || this.visit !== visit || this.requests.get(request.key) !== request) return;
+        if (this.stopped || this.visit !== visit || this.requests.get(request.key) !== request || page.diffMode?.current() === false) return;
         if (!result.complete) throw new Error('The provider returned an incomplete diff');
         request.state = { status: 'ready', result };
         request.at = Date.now();
         request.attempts = 0;
         request.retryAt = 0;
-        this.cache.set(request.page, result);
+        this.cache.set(page, result);
       }).catch((error: unknown) => {
-        if (this.stopped || this.visit !== visit || this.requests.get(request.key) !== request) return;
+        if (this.stopped || this.visit !== visit || this.requests.get(request.key) !== request || page.diffMode?.current() === false) return;
         request.attempts += 1;
         const retryAfter = providerRetryAfter(error);
         const message = error instanceof Error ? error.message : 'Diff unavailable';

@@ -2043,6 +2043,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
 - **Repositories can configure Geld for everyone reviewing them** (`@geld/core/repo-config.ts`, `src/github/repo-config-source.ts`).
   A committed `.github/geld.yml` (and an org's defaults in `owner/.github`, `geld.yml` at the root or under `.github/`) uses the settings vocabulary — `categories`, `groups`, `categoryPatterns`, `customCategories` — and is checked by the same strict validator plus `collectRepoConfigIssues` (personal keys such as `enabled`/`repoRules` are rejected, unknown keys ignored).
   `.gitattributes` `linguist-generated` lines feed the Generated category via `generatedConfigFrom`.
+  Unresolved YAML aliases return a validation issue instead of escaping the parser, including for provider repository configs.
   **A sign-in page at a repository URL gets nothing** (`isSignInInterstitial`, `page.ts`: GitHub marks its login, organisation SSO and 2FA pages with `session-authentication` on `<body>`;
   `runPass` and the pre-paint header path stand down there, since every request for the repository's data would answer 401 in the console).
   **No lookup may 404 in the page** — the browser prints every failed `fetch` as a red console error attributed to Geld, and most repositories have none of these files.
@@ -3142,6 +3143,49 @@ a description does not supply identity.
 Keep provider code-link evidence guards when sharing the refusal parser, and retain Bitbucket build-status descriptions in both extension and CI normalization without inventing a bot author.
 GitLab pipeline jobs do not provide an equivalent free-text check description;
 do not substitute job names or failure enums.
+
+### Bitbucket whitespace acceptance
+
+The literal installed `bitbucket-whitespace-session` focus uses one public PR22 visit and observes native and extension diff requests independently of the product bridge acknowledgement.
+Its bounded public sequence starts with Geld disabled and activates Geld with its synchronized whitespace setting, reads the original native Settings checkbox after a genuine opener click, and closes the page before restoring exact raw settings;
+it never clicks Save or changes a native form field.
+The eight-request own snapshot and sixteen-request PR22 baseline are retained observations;
+subtracting them to forecast eight requests with Geld disabled is an inference, so the harness measures that baseline and checks remaining room before activation.
+The complete Cancel and disable sequence remains offline protocol coverage until separately admitted within the existing rolling request cap.
+A Bitbucket whitespace acceptance transition may adopt replaced native file nodes only after independent fresh mode-matched diff and diffstat responses, with the original page frame, source references, file paths and Viewed values preserved.
+After that bounded rebind, another unannounced native node or row-text change fails the settled-phase check rather than being silently adopted.
+Fixed native readiness counts and the last source-qualification code are retained on failure without reading a private application store or treating the bridge acknowledgement as proof.
+
+### Browser cooldown attribution
+
+Browser verification keeps observed request-budget holds separate from actual provider cooldowns.
+An unclassified429 does not acquire the containing page's provider, and imported Bitbucket timestamps remain in the global ledger without blocking unrelated provider cases.
+An explicit retained provider deadline, including an expired one, takes precedence over the legacy missing-Retry-After fallback so redacted source receipts cannot extend or revive it.
+A real provider429 retains its rate-limited classification even when the same request reached an internal40- or47-request cap.
+
+### Bitbucket ephemeral whitespace mode
+
+Bitbucket Cloud stores its diff whitespace preference in the native Redux `diffSettings` slice, and the form's checkbox means show whitespace, the inverse of `globalShouldIgnoreWhitespace`.
+The supported cloud PR All changes adapter applies only the audited `UPDATE_GLOBAL_SHOULD_IGNORE_WHITESPACE_SUCCESS` boolean action to the current native store.
+It never dispatches `UPDATE_SETTINGS_REQUEST` or invokes the account preference writer.
+The loaded native `global.locale` field qualifies global preference hydration before acquiring a lease.
+The original Global diff settings button restores Geld's leased value before its native click handler initializes the form.
+Cancel reapplies the Geld choice, while a trusted checkbox change followed by a completed native Save records the native choice for this review visit.
+An independent same-value native state replacement relinquishes ownership instead of being undone by Geld.
+Unrelated native diff settings remain untouched, and disable, navigation, source failure, or store replacement restores only a still-owned whitespace scalar.
+Native Atlaskit alerts can expose additional Settings openers, including retry and file-mode onboarding actions.
+A native alert prevents acquisition, and one appearing during a lease restores the scalar and suspends reacquisition for that visit before an alert action can initialize a form.
+Unknown settings controls, partial comparisons, unqualified stores, and unsupported hosts retain the existing provider behavior.
+The bridge accepts fixed boolean commands and returns only comparison identity, readiness, mode and generation, with no store object or account data crossing worlds.
+Native refetch is debounced, so acknowledgement waits for both native loading cycles and replacement diff/diffstat arrays rather than accepting an older request's completion.
+Already-selected native modes require a quiet interval before acknowledgement.
+Own raw diff and diffstat requests use the same acknowledged `ignore_whitespace` flag, and stale generations cannot populate the source cache.
+The cache key includes both native comparison refs and the source repository, so a target change cannot reuse an old same-head snapshot.
+Native abbreviated refs stay abbreviated and do not make a review immutable.
+The existing API independently resolves full refs and verifies both native prefixes and the source repository before accepting counts.
+This native lease is limited to cloud PR diff pages with the observed All changes and original Settings controls.
+Lists, standalone commits, other tabs, and unsupported browsers keep their existing policy.
+The whole-context acceptance harness explicitly sets `hideWhitespace:false` to preserve its raw source fixture.
 
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.

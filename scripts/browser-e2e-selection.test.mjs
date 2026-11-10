@@ -307,3 +307,29 @@ test('static whitespace-source focus selects no browser job and retains its own 
   assert.doesNotMatch(source,/test:browser|build:chrome|google-chrome|geld-installed-browser-e2e|GELD_BROWSER_PREVIOUS_REPORT/);
   assert.doesNotMatch(harness,/bitbucket-whitespace-source/);
 });
+
+
+test('Bitbucket whitespace is a separate literal with no default/all/regression activation', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];
+  const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
+  assert.deepEqual(Array.from(cases['bitbucket-whitespace-session']), ['bitbucket-whitespace-session']);
+  for (const [key, selected] of Object.entries(cases)) if (key !== 'bitbucket-whitespace-session') assert.equal(selected.includes('bitbucket-whitespace-session'), false);
+  assert.deepEqual(select({ body: marker('bitbucket-whitespace-session'), from: marker('github') }), { focus: 'bitbucket-whitespace-session', run: 'true', failures: [] });
+  assert.equal(select({ body: marker('bitbucket-whitespace-session'), from: marker('bitbucket-whitespace-session') }).run, 'false');
+});
+
+test('whitespace first activation declines before page creation when its carried forecast does not fit', async () => {
+  const start = harness.indexOf('async function runBitbucketWhitespaceCase()');const end = harness.indexOf('\nasync function crossSettingsDom(', start);
+  const body = harness.slice(start, end);assert.ok(body.includes('scope.prepare()'));
+  for (const scenario of ['not-selected', 'held', 'budget']) {
+    let created = 0, writes = 0;const report = { cases: [] };
+    const globals = { assert, report, focus: scenario === 'not-selected' ? 'regression' : 'bitbucket-whitespace-session', BITBUCKET_WHITESPACE_URL: 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22/diff',
+      AbortController, Date, cooldowns: new Map(scenario === 'held' ? [['bitbucket', Date.now() + 10000]] : []), bitbucketRequestTimes: [],
+      bitbucketWhitespaceBudget: () => ({ available: false }), currentCaseAbort: undefined, saveReport: async () => {},
+      browser: { newPage: async () => { created++;throw Error('Unexpected page'); } }, options: { evaluate: async () => { writes++; } },
+    };
+    await new vm.Script(body + ';runBitbucketWhitespaceCase()').runInNewContext(globals);
+    assert.equal(created, 0);assert.equal(writes, 0);assert.equal(report.cases[0].status, scenario === 'not-selected' ? 'not_selected' : 'unavailable');
+    if (scenario === 'budget') assert.equal(report.cases[0].navigationSuppressedByBudget, true);
+  }
+});

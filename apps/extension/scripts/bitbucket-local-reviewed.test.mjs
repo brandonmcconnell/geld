@@ -219,7 +219,7 @@ test('the literal local-reviewed focus is isolated and cleanup follows page clos
 
 test('actual runCase redacts unknown failures and console data while restoring private raw values after closure', async () => {
   const source = readFileSync(new URL('./browser-e2e.mjs', import.meta.url), 'utf8');
-  const code = source.slice(source.indexOf('async function runCase('), source.indexOf('\nasync function crossSettingsDom('));
+  const code = source.slice(source.indexOf('async function runCase('), source.indexOf('\nasync function runBitbucketWhitespaceCase('));
   const canary = 'UNTRUSTED_PRIVATE_CANARY';const events = [];const handlers = new Map();let closed = false;
   let storage = { ...stored(true), marks: { present: true, value: { untouched: canary } } };const original = structuredClone(storage);
   const page = { on: (key, fn) => { const values = handlers.get(key) ?? [];values.push(fn);handlers.set(key, values); },
@@ -228,7 +228,7 @@ test('actual runCase redacts unknown failures and console data while restoring p
     close: async () => { events.push('close');closed = true; },
     goto: async () => { for (const fn of handlers.get('console') ?? []) fn({ type: () => 'log', text: () => canary });for (const fn of handlers.get('pageerror') ?? []) fn(new Error(canary));return { status: () => 200 }; }, url: () => BITBUCKET_LOCAL_REVIEW };
   const report = { cases: [], infrastructureErrors: [], quotaPolicy: { conservativeObservedRequestBudget: 40 } };
-  const context = {
+  const context = { bitbucketBudgetHold: vm.runInNewContext('(' + source.slice(source.indexOf('function bitbucketBudgetHold('), source.indexOf('async function inheritCooldowns(')) + ')'),
     assert, AbortController, Date, Set, Map, WeakMap, focus: 'bitbucket-local-reviewed', FOCUSED_CASES: { 'bitbucket-local-reviewed': ['bitbucket-local-reviewed'] }, report, cooldowns: new Map(), bitbucketRequestTimes: [], localReviewCases: new WeakMap(), currentCaseAbort: undefined,
     providerOf: () => 'bitbucket', options: { evaluate: async (_fn, value) => { if (value === undefined) return structuredClone(storage);events.push(closed ? 'restore' : 'prepare');storage = structuredClone(value); } },
     localReviewStorageScope, observeLocalReview, browser: { newPage: async () => page }, observeBitbucketBudget: () => undefined,

@@ -19,10 +19,10 @@ test('only a proven cached owned fold may omit request reserve, never past hard 
 });
 test('PR preparation disables both review consumers and default and real429 guards stay intact',()=>{
   const code=readFileSync(new URL('./browser-e2e.mjs',import.meta.url),'utf8');
-  assert.match(code,/preparePatch:prWhole\?\{prOverview:false,quickReview:false,showListStats:false,repoConfigs:'never',aiEnabled:false\}/);
+  assert.match(code,/preparePatch:prWhole\?\{hideWhitespace:false,prOverview:false,quickReview:false,showListStats:false,repoConfigs:'never',aiEnabled:false\}/);
   assert.match(code,/conservativeObservedRequestBudget: 40/);assert.match(code,/active \+ 4 < budget/);
   assert.match(code,/response\.status\(\) === 429/);assert.match(code,/holdReason = 'provider_http429'/);
-  assert.match(code,/focus !== 'bitbucket-pr-whole-context' && bitbucketRequestTimes.length >=/);
+  assert.match(code,/const inheritedBudgetHold = bitbucketBudgetHold/);
   assert.match(code,/guardBudget:guardBitbucketPrContextBudget/);
 });
 test('cached request exemption comes from complete qualified leaf rows, never boundary source acquisition',()=>{
@@ -36,7 +36,8 @@ function observed(focus,count) {
   const start=code.indexOf('function observeBitbucketBudget('),end=code.indexOf('async function runCase(',start);assert.ok(start>=0&&end>start);
   const now=1_000_000,policyValue={conservativeObservedRequestBudget:40,...policy(focus)},times=[],cooldowns=new Map(),report={quotaPolicy:policyValue};
   const context={Date:class extends Date{static now(){return now;}},bitbucketApi:()=>true,bitbucketApiRequests:0,bitbucketRequestTimes:times,report,cooldowns,BITBUCKET_ANONYMOUS_COOLDOWN_MS:62*60*1000};
-  const observe=new vm.Script(code.slice(start,end)+';observeBitbucketBudget').runInNewContext(context);
+  const helper=code.slice(code.indexOf('function bitbucketBudgetHold('),code.indexOf('async function inheritCooldowns('));
+  const observe=new vm.Script(helper+code.slice(start,end)+';observeBitbucketBudget').runInNewContext(context);
   const page=new EventEmitter();let closed=0;page.close=async()=>{closed++;};const abort=new AbortController(),item={name:focus};observe(page,item,abort);
   for(let i=0;i<count;i++)page.emit('request',{url:()=>'/!api/2.0/test'});
   return{times,cooldowns,report,item,aborted:abort.signal.aborted,closed};
@@ -45,9 +46,9 @@ test('actual request observer stops the PR-only47th request without fabricating 
   const before=observed('bitbucket-pr-whole-context',46);assert.equal(before.aborted,false);
   const after=observed('bitbucket-pr-whole-context',47);assert.equal(after.aborted,true);assert.equal(after.closed,1);assert.equal(after.cooldowns.size,0);assert.equal(after.times.length,47);assert.equal(after.item.budgetHold.externalReserve,3);assert.equal(after.item.rateLimitedUntil,undefined);
 });
-test('actual legacy request observer keeps40 and original62minute hold',()=>{
+test('actual ordinary request observer keeps40 with a budget hold instead of a server cooldown',()=>{
   const before=observed('bitbucket-pipeline-initial-on',39);assert.equal(before.aborted,false);
-  const after=observed('bitbucket-pipeline-initial-on',40);assert.equal(after.aborted,true);assert.equal(after.cooldowns.get('bitbucket'),1_000_000+62*60*1000);assert.ok(after.item.rateLimitedUntil);
+  const after=observed('bitbucket-pipeline-initial-on',40);assert.equal(after.aborted,true);assert.equal(after.cooldowns.size,0);assert.equal(after.item.budgetHold.observedLimit,40);assert.equal(after.item.rateLimitedUntil,undefined);
 });
 const fixture={leaves:[{start:2,end:3,title:'test'}]},source=['header','one','two'];
 function sample(){return{same:true,viewedSame:true,countsSame:true,overflow:false,intent:{status:'ready'},rows:[{next:2,text:'one'},{next:3,text:'two'}],folds:[{start:2,title:'test',expanded:'false'}]};}

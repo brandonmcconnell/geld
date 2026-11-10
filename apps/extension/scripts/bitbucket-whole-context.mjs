@@ -10,7 +10,7 @@ const requireValue=(value,code)=>{if(!value)fail(code);};
 export function bitbucketWholeSettings({read,write,progress,preparePatch={}}) {
   let original,expected,restored;
   const current=async()=>requireValue(isDeepStrictEqual(await read(),expected),'SETTINGS_CHANGED');
-  return { async prepare(){original=await read();requireValue(original&&typeof original.present==='boolean'&&(!original.present||original.value&&typeof original.value==='object'&&!Array.isArray(original.value)),'SETTINGS_UNQUALIFIED');expected={present:true,value:{...(original.present?original.value:{}),...preparePatch,enabled:true,testOutline:false}};await write(expected);await current();progress.prepared=true;},current,
+  return { async prepare(){original=await read();requireValue(original&&typeof original.present==='boolean'&&(!original.present||original.value&&typeof original.value==='object'&&!Array.isArray(original.value)),'SETTINGS_UNQUALIFIED');expected={present:true,value:{...(original.present?original.value:{}),...preparePatch,enabled:true,hideWhitespace:false,testOutline:false}};await write(expected);await current();progress.prepared=true;},current,
     async outline(on){await current();expected={present:true,value:{...expected.value,testOutline:on}};await write(expected);await current();},
     restore(closed){return restored??=(async()=>{requireValue(closed,'CLOSE_BEFORE_RESTORE');if(original===undefined)return;await write(original);requireValue(isDeepStrictEqual(await read(),original),'SETTINGS_RESTORE_FAILED');progress.restored=true;})();} };
 }
