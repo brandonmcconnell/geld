@@ -1,9 +1,28 @@
 import argparse,json,re,subprocess,textwrap,base64
 from pathlib import Path
-p=argparse.ArgumentParser();p.add_argument('evidence');p.add_argument('provider',choices=['gitlab','bitbucket']);p.add_argument('--out',default='/workspace/artifacts/provider-walkthroughs');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('evidence');p.add_argument('provider',choices=['gitlab','bitbucket']);p.add_argument('--continuation');p.add_argument('--out',default='/workspace/artifacts/provider-walkthroughs');a=p.parse_args()
 source=Path(a.evidence).resolve();out=Path(a.out).resolve();out.mkdir(parents=True,exist_ok=True);work=out/('.'+a.provider);work.mkdir(exist_ok=True)
 data=json.loads((source/f'{a.provider}-walkthrough.json').read_text());raw=source/data['file']
 assert data['scenes'], 'No completed scenes to render'
+for scene in data['scenes']:scene['source_path']=str(raw)
+if a.continuation:
+ extra_source=Path(a.continuation).resolve();extra=json.loads((extra_source/f'{a.provider}-walkthrough.json').read_text())
+ for scene in extra['scenes']:scene['source_path']=str(extra_source/extra['file'])
+ data['scenes'].extend(extra['scenes']);data['omitted'].extend(extra.get('omitted',[]))
+
+required={'orientation','digest','counts','tests','settings','finish'}
+assert required.issubset({scene['id'] for scene in data['scenes']}), 'Walkthrough capture is incomplete'
+edited=[]
+for scene in data['scenes']:
+ if scene['id']=='tests':
+  scene={**scene,'narration':'The Tests category brings hidden test files back into the file tree. Their original diffs are available below the essential files.'}
+ if scene['id']=='flow' and scene['end']-scene['start']>5:
+  scene={**scene,'end':scene['end']-4.15,'narration':'Flow opens a graph of the changed files and their dependencies.'}
+ if scene['id']=='restore' and scene['end']-scene['start']>5:
+  edited.append({**scene,'id':'native-diff','end':scene['start']+2.1,'narration':'Turning Geld off restores the original full diff and native counts.'})
+  edited.append({**scene,'id':'restore','start':scene['start']+2.7,'title':'Return to the categorised review','narration':'Turning Geld back on returns to the same categorised review.'})
+ else:edited.append(scene)
+data['scenes']=edited
 def run(args):
  result=subprocess.run(args,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
  if result.returncode:raise RuntimeError(result.stderr.decode(errors='replace')[-4000:])
@@ -15,6 +34,7 @@ def ass_time(t):return f'{int(t//3600)}:{int(t%3600//60):02}:{t%60:05.2f}'
 font='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';bold='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
 segments=[];cues=[];chapters=[];cursor=0
 for i,scene in enumerate(data['scenes']):
+ raw=Path(scene['source_path'])
  phrases=re.split(r'(?<=[.!?])\s+',scene['narration'].strip());audio_files=[];local=[];offset=.5
  for j,phrase in enumerate(phrases):
   text=work/f'{i:02}-{j:02}.txt';text.write_text(phrase);wav=work/f'{i:02}-{j:02}.wav'

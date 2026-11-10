@@ -3578,3 +3578,7 @@ Keep description-owned related links independent of comment-author filtering.
 Installed public walkthrough focuses record the actual Chrome page through Puppeteer screencast, with a timed receipt for each completed scene.
 They reuse the installed-browser permission, request budget and cooldown handling rather than bypassing local browser policy.
 Titles, captions and voiceover are post-production overlays and never replace native controls or manufacture provider state.
+
+Bitbucket walkthroughs use the original Files link for same-document navigation, because a full reload repeats native metadata demand.
+A Files-only continuation waits for every carried anonymous request timestamp to leave the existing hourly window before opening a provider page, preserving the existing request cap.
+Rendering joins completed scene receipts from the same public pull request and requires the digest, counts, categories and settings sections before publishing a complete walkthrough package.

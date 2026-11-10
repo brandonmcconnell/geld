@@ -4,7 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const pause = ms => new Promise(done => setTimeout(done, ms));
-export async function recordProviderWalkthrough(page, item, { provider, artifacts, poll, patchSettings, tabState, optionsUrl }) {
+export async function recordProviderWalkthrough(page, item, { provider, artifacts, poll, patchSettings, tabState, optionsUrl, filesOnly = false }) {
   assert.ok(['gitlab', 'bitbucket'].includes(provider));
   const scenes = [], omitted = [];
   const origin = provider === 'gitlab' ? 'https://gitlab.com' : 'https://bitbucket.org';
@@ -50,11 +50,17 @@ export async function recordProviderWalkthrough(page, item, { provider, artifact
     try { await scene(id, title, narration, action); }
     catch (error) { omitted.push({ id, reason: error instanceof Error ? error.message : String(error) }); }
   };
-  await patchSettings({ enabled: true, digestView: 'digest', reviewOverview: true, categories: { tests: true }, groupHidden: true, hideCommentLines: false, hideWhitespace: false, repoConfigs: 'never', aiEnabled: false });
-  await poll(() => page.$$eval('.geld-provider-review [data-geld-review-key]', nodes => nodes.length), count => count > 1, 'Installed conversation digest for walkthrough');
+  await patchSettings({ enabled: true, digestView: 'digest', reviewOverview: !filesOnly, reviewQuickActions: false, categories: { tests: true }, groupHidden: true, hideCommentLines: false, hideWhitespace: false, repoConfigs: 'never', aiEnabled: false });
+  if (filesOnly) await poll(() => page.$('.geld-provider-category-header'), Boolean, 'Native file category controls');
+  else await poll(() => page.$$eval('.geld-provider-review [data-geld-review-key]', nodes => nodes.length), count => count > 1, 'Installed conversation digest for walkthrough');
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));await pause(1000);
+  if (provider === 'bitbucket' && filesOnly) {
+    const consent = await handle('button', 'Only necessary');
+    if (consent) { await consent.dispose();await move('button', 'Only necessary', true);await pause(500); }
+  }
   recorder = await page.screencast({ path: resolve(artifacts, file), fps: 24 });start = performance.now();
   try {
+    if (!filesOnly) {
     await scene('orientation', `${provider === 'gitlab' ? 'GitLab' : 'Bitbucket'} · Getting oriented`, provider === 'gitlab'
       ? 'GitLab calls a pull request a merge request. This is a real public merge request with the Geld extension enabled.'
       : 'This is a real public Bitbucket pull request. Geld adds review tools while keeping the native page and its styling.');
@@ -65,7 +71,11 @@ export async function recordProviderWalkthrough(page, item, { provider, artifact
     });
     await optional('original', 'The original conversation is retained', 'The combined view brings the original conversation back alongside the digest. Geld keeps those original entries available.', async () => move('.geld-provider-view button[data-geld-digest-view="digest-timeline"]', null, true));
     await optional('digest-return', 'Return to the focused digest', 'Switch back to the digest to reduce the amount of conversation on screen.', async () => move('.geld-provider-view button[data-geld-digest-view="digest"]', null, true));
-    await page.goto(changes, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    if (provider === 'bitbucket') {
+      await move(`a[href="${changes}"]`, null, true);
+      await poll(() => page.url(), url => url === changes, 'Native Files navigation');
+    } else await page.goto(changes, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    }
     await poll(() => page.$('.geld-provider-category-header'), Boolean, 'Native file category controls');
     await poll(() => tabState(page), value => value.status === 'ready' || value.files !== undefined || value.visible !== undefined, 'Complete diff state for recording', 45000).catch(() => undefined);
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));await pause(1200);

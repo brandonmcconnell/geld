@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 export function optionalProvidersForCases(cases) {
   const providers = new Set();
   for (const name of cases) {
-    if (name === 'gitlab-walkthrough' || name === 'bitbucket-walkthrough') { providers.add('gitlab');providers.add('bitbucket'); }
+    if (name === 'gitlab-walkthrough' || name === 'bitbucket-walkthrough' || name === 'bitbucket-walkthrough-files') { providers.add('gitlab');providers.add('bitbucket'); }
     if (name.startsWith('gitlab-') || name === 'cross-provider-settings' || name === 'bitbucket-commit-counts') providers.add('gitlab');
     if (name.startsWith('bitbucket-')) providers.add('bitbucket');
   }

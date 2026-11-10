@@ -21,6 +21,7 @@ on:
           - regression
           - gitlab-walkthrough
           - bitbucket-walkthrough
+          - bitbucket-walkthrough-files
           - walkthrough-render
           - provider-evidence
           - provider-access-evidence
@@ -70,8 +71,8 @@ permissions:
 # Maintainer-labelled restacks defer public traffic; skipped jobs are not feature passes.
 jobs:
   render-provider-walkthroughs:
-    needs: select-public-verification
-    if: needs.select-public-verification.outputs.run == 'true' && needs.select-public-verification.outputs.focus == 'walkthrough-render'
+    needs: [select-public-verification, installed-extension]
+    if: ${{ !cancelled() && needs.select-public-verification.outputs.run == 'true' && (needs.select-public-verification.outputs.focus == 'walkthrough-render' || (needs.select-public-verification.outputs.focus == 'bitbucket-walkthrough-files' && needs.installed-extension.result == 'success')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -100,6 +101,11 @@ jobs:
           run-id: '42738358843'
           github-token: ${{ github.token }}
           path: artifacts/raw-bitbucket
+      - uses: actions/download-artifact@v7
+        if: needs.select-public-verification.outputs.focus == 'bitbucket-walkthrough-files'
+        with:
+          name: geld-installed-browser-e2e
+          path: artifacts/raw-bitbucket-files
       - name: Install media tools
         run: |
           sudo apt-get update
@@ -107,7 +113,11 @@ jobs:
       - name: Render titles, narration and timed captions
         run: |
           python3 apps/extension/scripts/render-walkthrough.py artifacts/raw-gitlab gitlab --out "$GITHUB_WORKSPACE/artifacts/finished"
-          python3 apps/extension/scripts/render-walkthrough.py artifacts/raw-bitbucket bitbucket --out "$GITHUB_WORKSPACE/artifacts/finished"
+          if [ -d artifacts/raw-bitbucket-files ]; then
+            python3 apps/extension/scripts/render-walkthrough.py artifacts/raw-bitbucket bitbucket --continuation artifacts/raw-bitbucket-files --out "$GITHUB_WORKSPACE/artifacts/finished"
+          else
+            python3 apps/extension/scripts/render-walkthrough.py artifacts/raw-bitbucket bitbucket --out "$GITHUB_WORKSPACE/artifacts/finished"
+          fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -144,7 +154,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const choices = new Set(['walkthrough-render', 'gitlab-walkthrough', 'bitbucket-walkthrough', 'regression', 'provider-evidence', 'provider-access-evidence', 'provider-access', 'bitbucket-diff', 'bitbucket-ui', 'gitlab-ui', 'bitbucket-whitespace-session', 'bitbucket-whitespace-source', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'bitbucket-pipeline-initial-on', 'bitbucket-list', 'bitbucket-authors', 'bitbucket-native-bash', 'bitbucket-native-bash-on', 'bitbucket-native-settings-diagnostic', 'bitbucket-native-file-menu', 'bitbucket-local-reviewed', 'bitbucket-comment', 'bitbucket-commit', 'bitbucket-commit-links', 'bitbucket-list-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-file-search', 'gitlab-whitespace-viewed', 'gitlab-whitespace-session', 'bitbucket-pr-whole-context', 'bitbucket-whole-context', 'gitlab-shell', 'gitlab-standalone-whole', 'gitlab-review', 'gitlab-local-reviewed', 'gitlab-bot', 'gitlab-coderabbit', 'gitlab-references', 'gitlab-binary', 'github', 'cross-provider-settings', 'all']);
+            const choices = new Set(['bitbucket-walkthrough-files', 'walkthrough-render', 'gitlab-walkthrough', 'bitbucket-walkthrough', 'regression', 'provider-evidence', 'provider-access-evidence', 'provider-access', 'bitbucket-diff', 'bitbucket-ui', 'gitlab-ui', 'bitbucket-whitespace-session', 'bitbucket-whitespace-source', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'bitbucket-pipeline-initial-on', 'bitbucket-list', 'bitbucket-authors', 'bitbucket-native-bash', 'bitbucket-native-bash-on', 'bitbucket-native-settings-diagnostic', 'bitbucket-native-file-menu', 'bitbucket-local-reviewed', 'bitbucket-comment', 'bitbucket-commit', 'bitbucket-commit-links', 'bitbucket-list-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-file-search', 'gitlab-whitespace-viewed', 'gitlab-whitespace-session', 'bitbucket-pr-whole-context', 'bitbucket-whole-context', 'gitlab-shell', 'gitlab-standalone-whole', 'gitlab-review', 'gitlab-local-reviewed', 'gitlab-bot', 'gitlab-coderabbit', 'gitlab-references', 'gitlab-binary', 'github', 'cross-provider-settings', 'all']);
             const parseFocus = (body) => {
               const text = typeof body === 'string' ? body : '';
               const prefixes = text.match(/<!-- geld-browser-focus:/g) ?? [];
@@ -184,7 +194,7 @@ jobs:
       group: geld-installed-browser-public-providers
       cancel-in-progress: false
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: ${{ needs.select-public-verification.outputs.focus == 'bitbucket-walkthrough-files' && 75 || 15 }}
     env:
       GELD_BROWSER_ARTIFACTS: ${{ github.workspace }}/artifacts/browser-e2e
       GELD_BROWSER_PREVIOUS_REPORT: ${{ github.workspace }}/.browser-previous-evidence/report.json
@@ -265,6 +275,25 @@ jobs:
           run-id: ${{ steps.cooldowns.outputs.run-id }}
           github-token: ${{ github.token }}
           path: .browser-previous-evidence
+      - name: Wait for the carried Bitbucket recording budget
+        if: needs.select-public-verification.outputs.focus == 'bitbucket-walkthrough-files'
+        run: |
+          python3 - <<'PY'
+          import json, os, time
+          from datetime import datetime
+          with open(os.environ['GELD_BROWSER_PREVIOUS_REPORT']) as source:
+              previous = json.load(source)
+          assert previous.get('schema') == 1
+          times = previous.get('bitbucketAnonymousRequestTimes', [])
+          assert isinstance(times, list) and len(times) <= 1000
+          values = [datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp() for value in times]
+          target = max(values, default=0) + 3605
+          assert target - time.time() < 3700
+          while time.time() < target:
+              remaining = int(target - time.time())
+              print(f'Honoring carried request window: {remaining}s remaining; no provider navigation.', flush=True)
+              time.sleep(min(45, max(0, target - time.time())))
+          PY
       - name: Export retained provider evidence without browser navigation
         if: needs.select-public-verification.outputs.focus == 'provider-evidence'
         run: node scripts/provider-evidence.mjs

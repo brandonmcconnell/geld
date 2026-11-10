@@ -63,6 +63,7 @@ const FOCUSED_CASES = {
   'walkthrough-render': [],
   'gitlab-walkthrough': ['gitlab-walkthrough'],
   'bitbucket-walkthrough': ['bitbucket-walkthrough'],
+  'bitbucket-walkthrough-files': ['bitbucket-walkthrough-files'],
   regression: ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'gitlab-local-reviewed', 'github-regression', 'bitbucket-diff'],
   'bitbucket-diff': ['bitbucket-diff'],
   'bitbucket-ui': ['bitbucket-ui-continuity'],
@@ -3370,10 +3371,10 @@ try {
   await enableOptionalProviders(options, optionalProvidersForCases(selected), { poll, readState: readPermissionState, confirmPermission, progress: report.providerAccess });
   await prepareInstalledBrowserSettings();
 
-  if (focus.endsWith('-walkthrough')) {
+  if (focus.endsWith('-walkthrough') || focus === 'bitbucket-walkthrough-files') {
     const provider = focus.startsWith('gitlab-') ? 'gitlab' : 'bitbucket';
-    const url = provider === 'gitlab' ? GL_OVERVIEW : BITBUCKET_UI_PR;
-    await runCase(focus, url, (page, item) => recordProviderWalkthrough(page, item, { provider, artifacts, poll, patchSettings, tabState, optionsUrl: options.url() }));
+    const url = provider === 'gitlab' ? GL_OVERVIEW : focus === 'bitbucket-walkthrough-files' ? `${BITBUCKET_UI_PR}/diff` : BITBUCKET_UI_PR;
+    await runCase(focus, url, (page, item) => recordProviderWalkthrough(page, item, { provider, artifacts, poll, patchSettings, tabState, optionsUrl: options.url(), filesOnly: focus === 'bitbucket-walkthrough-files' }));
   }
 
   await runBitbucketWhitespaceCase();
