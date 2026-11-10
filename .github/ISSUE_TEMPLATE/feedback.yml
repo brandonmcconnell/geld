@@ -1,5 +1,5 @@
 name: Feedback
-description: Something Geld got wrong, or something you wish it did. Opened from the extension's Feedback link with the context filled in.
+description: Something Geld got wrong, or something you wish it did. The extension's Feedback form opens these from your account, or file one here by hand.
 title: '[Feedback] '
 labels: [feedback]
 body:

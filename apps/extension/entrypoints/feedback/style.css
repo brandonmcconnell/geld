@@ -1,0 +1,194 @@
+body {
+  padding: 40px 20px 64px;
+}
+
+.feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.feedback__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 0 12px;
+}
+
+.feedback__brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.feedback__card {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px 24px;
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+
+.feedback__card[hidden] {
+  display: none;
+}
+
+.feedback fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.feedback legend {
+  padding: 0;
+}
+
+.feedback__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.feedback__field .geld-help {
+  margin-top: -4px;
+}
+
+.feedback__text {
+  min-height: 160px;
+  resize: vertical;
+}
+
+.feedback__kind-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.feedback__kind {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border: 1px solid var(--input);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.feedback__kind:has(:checked) {
+  border-color: var(--foreground);
+  background: var(--accent);
+  font-weight: 500;
+}
+
+.feedback__kind:has(:focus-visible) {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);
+}
+
+.feedback__kind-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.feedback__context .geld-help {
+  margin-bottom: 10px;
+}
+
+.feedback__choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.feedback__choice,
+.feedback__consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.feedback__choice .geld-checkbox,
+.feedback__consent .geld-checkbox {
+  margin-top: 2px;
+}
+
+.feedback__choice-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.feedback__choice-label {
+  font-weight: 500;
+}
+
+.feedback__choice-value {
+  overflow-wrap: anywhere;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.feedback__preview > summary {
+  cursor: pointer;
+  font-weight: 500;
+  list-style: disclosure-closed inside;
+}
+
+.feedback__preview[open] > summary {
+  list-style-type: disclosure-open;
+}
+
+.feedback__preview-title {
+  margin: 12px 0 8px;
+  font-weight: 600;
+}
+
+.feedback__preview-body {
+  max-height: 320px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  background: var(--background);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.feedback__consent:has(:disabled) {
+  cursor: default;
+  color: var(--muted-foreground);
+}
+
+.feedback__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.feedback__actions--start {
+  justify-content: flex-start;
+}
+
+.feedback__actions .geld-status {
+  flex: 1;
+}
+
+.feedback__sent-title {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}

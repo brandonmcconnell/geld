@@ -185,6 +185,17 @@ export type AccountAction =
 
 export type AccountActionResponse = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
+/** Feedback page → background: open this issue on Geld's repository as the signed-in reader. */
+export interface FeedbackSubmitMessage {
+  readonly type: 'geld:feedback-submit';
+  readonly title: string;
+  readonly body: string;
+}
+
+export type FeedbackSubmitResponse =
+  | { readonly ok: true; readonly number: number; readonly url: string }
+  | { readonly ok: false; readonly message: string };
+
 /**
  * Options → background: look for a newer pattern catalog right now. The
  * outcome is also published through `local:catalogStatus`, which the options
@@ -315,6 +326,16 @@ export function isAccountActionMessage(value: unknown): value is AccountActionMe
 
 export function isCatalogCheckMessage(value: unknown): value is CatalogCheckMessage {
   return isRecord(value) && value.type === 'geld:catalog-check';
+}
+
+export function isFeedbackSubmitMessage(value: unknown): value is FeedbackSubmitMessage {
+  return isRecord(value) && value.type === 'geld:feedback-submit' && typeof value.title === 'string' && typeof value.body === 'string';
+}
+
+export function isFeedbackSubmitResponse(value: unknown): value is FeedbackSubmitResponse {
+  if (!isRecord(value)) return false;
+  if (value.ok === true) return typeof value.number === 'number' && typeof value.url === 'string';
+  return value.ok === false && typeof value.message === 'string';
 }
 
 export function isAccountActionResponse(value: unknown): value is AccountActionResponse {
