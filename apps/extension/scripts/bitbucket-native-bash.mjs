@@ -14,7 +14,7 @@ export const BITBUCKET_NATIVE_BASH = {
 };
 
 /** Observe already-issued native demand only, never fetch an oracle or execute provider code. */
-export function observeNativeBashSources(page, item, { safeUrl, extensionId }) {
+export function observeNativeBashSources(page, item, { safeUrl, extensionId, identifyRequest }) {
   const evidence = { requests: [], mutations: [], metadata: [], errors: [], requestCount: 0, mutationCount: 0, extensionFrameCount: 0, truncated: false };
   const pending = new Set();
   item.nativeBashRequests = evidence;
@@ -29,7 +29,7 @@ export function observeNativeBashSources(page, item, { safeUrl, extensionId }) {
     if (apiPath(value.url()) === null) return;
     const frames = [];let stack = value.initiator?.()?.stack;
     for (let depth = 0; stack != null && depth < 8; depth += 1) { frames.push(...(stack.callFrames ?? []).map((frame) => frame.url));stack = stack.parent; }
-    const record = { url: safeUrl(value.url()), method: value.method(), extensionFrameObserved: frames.some((frame) => frame?.startsWith(`chrome-extension://${extensionId}/`)) };
+    const record = { ...(identifyRequest === undefined ? {} : { requestId: identifyRequest(value) }), url: safeUrl(value.url()), method: value.method(), extensionFrameObserved: frames.some((frame) => frame?.startsWith(`chrome-extension://${extensionId}/`)) };
     evidence.requestCount += 1;if (record.extensionFrameObserved) evidence.extensionFrameCount += 1;
     if (evidence.requests.length < 80) evidence.requests.push(record);else evidence.truncated = true;
     if (!['GET', 'HEAD', 'OPTIONS'].includes(record.method)) { evidence.mutationCount += 1;if (evidence.mutations.length < 8) evidence.mutations.push(record); }
@@ -149,31 +149,37 @@ export function nativeBashStyleSnapshot(fixture) {
     classification: 'Source roles identify Git-proven source examples only. Native span classes and matching custom-highlight names/pseudo-colors are observations, with no invented semantic mapping. Offscreen DOM styles do not establish viewport paint.' };
 }
 
+export async function revealNativeBashTarget(page, evidence, { poll, tabState, read = () => page.evaluate(nativeBashStyleSnapshot, BITBUCKET_NATIVE_BASH) }) {
+  const scope = () => { const current = new URL(page.url());return current.origin + current.pathname === BITBUCKET_NATIVE_BASH.url && current.search === ''; };
+  evidence.disabledState = await poll(() => tabState(page), (value) => value.allowed === false && value.hasDiff === false, 'Actual installed master-disabled native Bash discovery', 10000);
+  evidence.initial = await poll(read, (value) => value.status === 'observed', 'One exact native pipe/pipe.sh wrapper on the immutable commit', 15000);
+  const selector = '[role="region"][aria-label="Diff"] > div:has(> [id="chg-pipe/pipe.sh"])';
+  assert.ok(scope(), 'Native Bash source route changed before reveal');
+  if (evidence.initial.treeMatches === 1 && evidence.initial.treeLinkPresented) {
+    const link = await page.$('#file-tree a[href="#chg-pipe/pipe.sh"]');
+    try { assert.ok(link !== null);await link.evaluate((node) => node.scrollIntoView({ block: 'center', behavior: 'auto' }));await link.click();evidence.actions.push('Trusted pointer click on the one original pipe/pipe.sh file-tree link'); }
+    finally { await link?.dispose(); }
+  }
+  await page.$eval(selector, (node) => node.scrollIntoView({ block: 'center', behavior: 'auto' }));
+  evidence.actions.push('One native target-wrapper scroll, limited to pipe/pipe.sh');
+  const hydrated = await poll(read, (value) => value.status === 'observed' && value.header !== null, 'Native target file header hydrates after bounded reveal', 10000);
+  assert.ok(scope(), 'Native Bash source route changed during reveal');
+  if (!hydrated.contentExpanded) {
+    assert.equal(hydrated.header.canToggle, true, 'Unknown native collapsed-file control');
+    const header = await page.$(`${selector} article[data-qa="branch-diff-file"] [data-qa="bk-file__header"][data-testid="file-header"]`);
+    try { assert.ok(header !== null);await header.click();evidence.actions.push('Trusted pointer click on the verified target file header to expand'); }
+    finally { await header?.dispose(); }
+  }
+  return selector;
+}
+
 export async function discoverNativeBash(page, item, { poll, tabState, capture, source }) {
   const evidence = { status: 'reading', actions: [], samples: [], source: BITBUCKET_NATIVE_BASH, interpretation: 'Native discovery only, never a Geld feature pass or proof of classifier equivalence.' };
   item.nativeBashStyle = evidence;
   const read = () => page.evaluate(nativeBashStyleSnapshot, BITBUCKET_NATIVE_BASH);
   const scope = () => { const current = new URL(page.url());return current.origin + current.pathname === BITBUCKET_NATIVE_BASH.url && current.search === ''; };
   try {
-    evidence.disabledState = await poll(() => tabState(page), (value) => value.allowed === false && value.hasDiff === false, 'Actual installed master-disabled native Bash discovery', 10000);
-    evidence.initial = await poll(read, (value) => value.status === 'observed', 'One exact native pipe/pipe.sh wrapper on the immutable commit', 15000);
-    const selector = '[role="region"][aria-label="Diff"] > div:has(> [id="chg-pipe/pipe.sh"])';
-    assert.ok(scope(), 'Native Bash source route changed before reveal');
-    if (evidence.initial.treeMatches === 1 && evidence.initial.treeLinkPresented) {
-      const link = await page.$('#file-tree a[href="#chg-pipe/pipe.sh"]');
-      try { assert.ok(link !== null);await link.evaluate((node) => node.scrollIntoView({ block: 'center', behavior: 'auto' }));await link.click();evidence.actions.push('Trusted pointer click on the one original pipe/pipe.sh file-tree link'); }
-      finally { await link?.dispose(); }
-    }
-    await page.$eval(selector, (node) => node.scrollIntoView({ block: 'center', behavior: 'auto' }));
-    evidence.actions.push('One native target-wrapper scroll, limited to pipe/pipe.sh');
-    const hydrated = await poll(read, (value) => value.status === 'observed' && value.header !== null, 'Native target file header hydrates after bounded reveal', 10000);
-    assert.ok(scope(), 'Native Bash source route changed during reveal');
-    if (!hydrated.contentExpanded) {
-      assert.equal(hydrated.header.canToggle, true, 'Unknown native collapsed-file control');
-      const header = await page.$(`${selector} article[data-qa="branch-diff-file"] [data-qa="bk-file__header"][data-testid="file-header"]`);
-      try { assert.ok(header !== null);await header.click();evidence.actions.push('Trusted pointer click on the verified target file header to expand'); }
-      finally { await header?.dispose(); }
-    }
+    const selector = await revealNativeBashTarget(page, evidence, { poll, tabState, read });
     const complete = (value) => value.status === 'observed' && value.samples.length === BITBUCKET_NATIVE_BASH.sourceSamples.length && value.samples.every((sample) => sample.status === 'matched_original');
     evidence.before = await poll(async () => { const value = await read();evidence.samples.push(value);if (evidence.samples.length > 3) evidence.samples.shift();return value; }, complete, 'Exact Git-proven original new-side Bash source samples', 10000);
     assert.deepEqual(evidence.before.ownership.ownedHighlights, []);assert.equal(evidence.before.ownership.ownedUi, 0);

@@ -2827,6 +2827,17 @@ the flag is what makes `Extensions.loadUnpacked` available;
 the pipe is required for it), and bring a tab to the front before interacting with it (background tabs stall element handles).
 The full launch recipe, with a service-worker sanity check, is in `.claude/skills/github-surface/SKILL.md` §4.
 
+Standalone native Bash Syntax-On characterization uses its own explicit focus, saved master-off settings and immutable ssh-run commit fixture, with no default or all-slice navigation.
+The source-backed non-PR Settings candidates contain thirteen controls or twelve without Annotations, but remain unverified until the actual original standalone form qualifies.
+An unknown form exposes only bounded field names and types, with no checkbox, Save, Cancel, Escape or generic DOM/AX capture, and page closure precedes exact master/settings restoration.
+Native Syntax Save may rebuild formatter rowgroups, rows, code and line-link nodes only after the exact trusted checkbox, original Save click and same-form submit sequence, with unchanged immutable file/header ownership and complete logical row vectors.
+Fresh pristine On and restoration forms re-lock current group, row, ID, link, code, Text and font identities, and formatter remounts outside that trusted Save transition fail.
+Native On without measured token or native-highlight paint is an unavailable or partial Bash reference, with per-role comparisons retained as diagnostics.
+Bash rowgroup delimiters are observed on that exact file and never inherit the PR YAML token whitelist or row counts.
+Native source-fragment span/highlight colors and installed owned pseudo rules are compared separately from design-system variables, with plain, ambiguous, inaccessible, occluded and unselected-theme coverage explicitly limited.
+Before selecting standalone native-On, root must independently verify and cite the actual prior PR NativeOn run, artifact and report hashes, successful restoration and observed costs in its admission note.
+The harness labels this prior-success requirement ROOT-MANUAL and unverified by the case, while machine-enforcing a fully free forty-request window, eight free before native Save and the existing global quota/cleanup guards.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
