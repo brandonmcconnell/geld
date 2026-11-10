@@ -3476,3 +3476,12 @@ GitLab upload links can use the canonical project-qualified path while retaining
 Only matching HTTPS image and attachment destinations inside known description or comment bodies are intercepted, preserving modified clicks, download links, avatars and unrelated links.
 The shared viewer keeps fitting, pointer-centered zoom, dragging, pinch gestures, keyboard controls, failure fallback and focus restoration without imposing GitHub button classes on other providers.
 The public GitLab bot fixture includes a description screenshot, and its installed acceptance opens the real attachment, zooms, closes with Escape and verifies focus returns to the source link.
+
+Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
+Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
+
+Malformed GitLab approval or reviewer rows are isolated individually and mark reviews partial without discarding valid standings, discussion evidence or native required/remaining counts.
+An all-malformed source supplies no known empty reviewer list.
+
+Bitbucket hidden-people matching and exact-rule removal use the same canonical `bitbucket.org/uuid/<uuid>` identity as PR lists, normalized from the native account UUID.
+Keep display logins separate, leave malformed account identities visible, and never remove a wildcard during a per-person unhide.
