@@ -228,3 +228,23 @@ for (const fault of ['actor', 'route', 'code', 'rowgroup']) test(`bounded native
   if (fault === 'rowgroup') document.querySelector('[role="rowgroup"]').removeAttribute('role');
   assert.equal(syntaxOnProbe()?.same ?? false, false);assert.equal(syntaxOnProbe('save'), null);assert.equal(syntaxOnProbe('begin-native-save', false) ?? false, false);
 });
+
+
+test('arming Off Save preserves the already-valid unchanged On source before any pristine-On baseline or native Save', () => {
+  fixture(true);unitOnTransition();assert.equal(syntaxOnProbe().onBaseline, false);
+  const field = document.getElementById(syntax);field.checked = false;for (const type of ['click', 'input', 'change']) unitEvent(field, type);
+  const before = document.body.innerHTML;assert.equal(syntaxOnProbe().same, true);assert.equal(syntaxOnProbe('begin-native-save', false), true);assert.equal(document.body.innerHTML, before, 'Arming only captures validated source references');
+  const current = syntaxOnProbe();assert.equal(current.same, true);assert.equal(current.sameCodeCharacters, true);assert.equal(current.lineModel.mode, 'on');assert.equal(current.onBaseline, false, 'The arming snapshot is not the pristine-On capability baseline');
+  const save = document.querySelector('form button[type="submit"]');assert.equal(syntaxOnProbe('save'), save);assert.equal(syntaxOnProbe('arm-save', save), true);
+});
+for (const when of ['before-arm', 'after-arm']) for (const fault of ['actor', 'text', 'article-owner', 'Viewed', 'unknown-form', 'control-replacement']) test(`Save arming preserves strict ${fault} refusal ${when}`, () => {
+  fixture(true);unitOnTransition();const field = document.getElementById(syntax);field.checked = false;for (const type of ['click', 'input', 'change']) unitEvent(field, type);
+  const save = document.querySelector('form button[type="submit"]');if (when === 'after-arm') assert.equal(syntaxOnProbe('begin-native-save', false), true);
+  if (fault === 'actor') document.getElementById('bb-bootstrap').setAttribute('data-current-user', '{"isAuthenticated":true}');
+  if (fault === 'text') document.querySelector('[data-line-type] span span').textContent += 'changed';
+  if (fault === 'article-owner') { const node = document.querySelector('article');node.replaceWith(node.cloneNode(true)); }
+  if (fault === 'Viewed') document.querySelector('article input').checked = true;
+  if (fault === 'unknown-form') document.querySelector('form').append(document.createElement('input'));
+  if (fault === 'control-replacement') save.replaceWith(save.cloneNode(true));
+  assert.notEqual(syntaxOnProbe('begin-native-save', false), true);assert.equal(syntaxOnProbe('save'), null);assert.notEqual(syntaxOnProbe('arm-save', save), true);
+});

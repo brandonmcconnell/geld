@@ -2986,6 +2986,12 @@ The default raw collector remains pinned to its original exact URL, and no eligi
   Reports contain only bounded relation/count primitives, fixed label enums and exact same-provider/repository known-file source candidates with explicit abbreviated or full hexadecimal precision, with no native full-head or whole-source authority, arbitrary text/URLs/queries, field values, HTML, AX or PNG.
   Unknown popups are closed only by page closure before exact raw extension settings restoration, while native prefs and product source bindings remain untouched.
 
+- **Arming a native Save preserves its current validated source**: the first-use cleanup can reach a valid On renderer before it has established a pristine-On baseline.
+  Switching the armed target to Off must snapshot that already-valid native source, or the guard can disable its own original Save with no DOM change.
+  The immutable original-Off code model, actor, source container, Viewed state, links, same form and three trusted checkbox events remain required, and this snapshot grants no pristine-On or product capability.
+  First-use current checks retain only bounded phase, last and first-failure projections of their existing guard read before asserting, without extra DOM/API reads or raw code, bootstrap or field values.
+  Actual293 remains failed with native Off restoration unverified, and this arming correction adds no post-Save wait or mixed-renderer permission.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
