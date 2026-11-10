@@ -16,19 +16,20 @@ const PATH = 'spec/graphql/mutations/boards/issues/issue_move_list_spec.rb';
 const URL = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334';
 
 // Reduced original native fields from installed runs 41370784127 (merge head) and 41375273914 (source head).
-function gitlab(renderedHead = MERGE) {
+function gitlab(renderedHead = MERGE, native?: { readonly id: string; readonly base: string; readonly start: string }) {
   window.location.href = `${URL}/diffs?diff_id=2158520123`;
-  const targetId = renderedHead === HEAD ? '2158520123' : '2159233785';
-  const target = { id: targetId, headSha: renderedHead, startSha: START, mergeHead: renderedHead !== HEAD };
+  const targetId = native?.id ?? (renderedHead === HEAD ? '2158520123' : '2159233785');
+  const targetStart = native?.start ?? START;
+  const target = { id: targetId, headSha: renderedHead, startSha: targetStart, mergeHead: renderedHead !== HEAD };
   const app = document.createElement('article');app.setAttribute('data-rapid-diffs', '');
   const appData = { project_path: 'gitlab-org/gitlab', mr_path: '/gitlab-org/gitlab/-/merge_requests/266334', is_fork: 'false', versions: {
     source_versions: [{ id: 2158520123, selected: true, head_sha: HEAD, base_sha: BASE, start_sha: START }],
-    target_versions: [{ id: Number(targetId), selected: true, head_sha: renderedHead, start_sha: START, is_merge_head: target.mergeHead }],
+    target_versions: [{ id: Number(targetId), selected: true, head_sha: renderedHead, start_sha: targetStart, is_merge_head: target.mergeHead }],
   } };
   app.setAttribute('data-app-data', JSON.stringify(appData));
   const list = document.createElement('div');list.setAttribute('data-diffs-list', '');
   const root = document.createElement('diff-file');root.id = 'native-file';
-  const data = { new_path: PATH, old_path: PATH, diff_refs: { base_sha: BASE, start_sha: START, head_sha: renderedHead },
+  const data = { new_path: PATH, old_path: PATH, diff_refs: { base_sha: native?.base ?? BASE, start_sha: targetStart, head_sha: renderedHead },
     blob_raw_path: `/gitlab-org/gitlab/-/raw/${renderedHead}/${PATH}`, diff_lines_path: `/gitlab-org/gitlab/-/blob/${renderedHead}/${PATH}/diff_lines` };
   root.setAttribute('data-file-data', JSON.stringify(data));list.append(root);app.append(list);document.body.append(app);
   const page = describeGitLabPage(new globalThis.URL(window.location.href), document);
@@ -43,6 +44,39 @@ function gitlab(renderedHead = MERGE) {
 afterEach(() => { document.body.replaceChildren();vi.restoreAllMocks();vi.unstubAllGlobals(); });
 
 describe('exact rendered new-side binding', () => {
+  // Original native target/resource fields from run41387372601; a matching acquired target is projected, not a retained HTTP response.
+  const latestHead = '8a882c3325b0e851b859d78ad11486aa3a24112c';
+  const latestStart = '3ac6e8921566e0ea84d6313b43b1582a46493d1a';
+  const latestNative = { id: '2159449928', base: latestStart, start: latestStart };
+
+  it('binds the original full native merge tree independently of the acquired diff old base', () => {
+    const fetch = vi.fn();vi.stubGlobal('fetch', fetch);
+    const file = gitlab(latestHead, latestNative);
+    expect(file.sourceFacts.comparison).toMatchObject({ headSha: HEAD, baseSha: BASE });
+    expect(file.data.diff_refs.base_sha).not.toBe(BASE);
+    const before = JSON.stringify(file.result);
+    const context = providerOutlineContext(file.page, file.result, file.view);
+    expect(context.newSources.get(file.root)).toMatchObject({ repository: file.page.repository, path: PATH, headSha: latestHead });
+    expect(context.newSources.get(file.root)?.headSha).not.toBe(HEAD);
+    expect(context.commentCoordinateMismatches?.has(file.root)).toBe(true);
+    expect(JSON.stringify(file.result)).toBe(before);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(['target', 'raw', 'context', 'source', 'owner'])('still rejects contradictory %s identity for the same base-divergent native merge tree', (kind) => {
+    const file = gitlab(latestHead, latestNative);
+    const comparison = file.sourceFacts.comparison;
+    if (comparison.kind !== 'gitlab-review' || comparison.target === null) throw new Error('Expected selected GitLab target');
+    const sourceFacts = { ...file.sourceFacts, comparison: { ...comparison,
+      ...(kind === 'target' ? { target: { ...comparison.target, headSha: HEAD } } : {}),
+      ...(kind === 'source' ? { diffId: '2151401827' } : {}),
+    } };
+    if (kind === 'raw') file.root.setAttribute('data-file-data', JSON.stringify({ ...file.data, blob_raw_path: file.data.blob_raw_path.replace(latestHead, HEAD) }));
+    if (kind === 'context') file.root.setAttribute('data-file-data', JSON.stringify({ ...file.data, diff_lines_path: file.data.diff_lines_path.replace(latestHead, HEAD) }));
+    if (kind === 'owner') file.app.setAttribute('data-app-data', JSON.stringify({ ...file.appData, project_path: 'other/fork' }));
+    expect(providerOutlineContext(file.page, { ...file.result, sourceFacts }, file.view).newSources.size).toBe(0);
+  });
+
   it.each([HEAD, MERGE])('binds the actual native %s, keeping acquired source D03 distinct', (head) => {
     const fetch = vi.fn();vi.stubGlobal('fetch', fetch);
     const file = gitlab(head);

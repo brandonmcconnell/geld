@@ -2377,6 +2377,7 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   The presentation target never replaces a running verdict's request provenance or a settled finding or refusal's own source.
 - **Provider diff caching and throttling have their own boundaries.**
   Whole-test source facts distinguish the selected acquisition head from the actual native rendered new-side tree, whose owner, full 40- or 64-character SHA and authoritative new path require a current original file witness.
+  Immutable new-file identity is independent of a comparison's old base when the original raw/context resources, current full project/source-version identity and exact selected target still agree, without granting old-side or comment-coordinate equivalence.
   Comment DOM folds decline numeric source coordinates when the same batched native frame and acquired same-project merge-request subject prove a different rendered new-side head, without changing source statistics, semantic counts or test outlines.
   Missing or legacy provenance retains the existing unprotected comment-coordinate behavior, and no Bitbucket topic destination or old-side file authority is inferred from this negative guard.
   A retired line-fold control must still belong to the current file state and connected owned row before its callback can change source visibility.

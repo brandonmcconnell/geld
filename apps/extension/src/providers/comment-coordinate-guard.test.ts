@@ -63,6 +63,23 @@ describe('comment coordinates across native comparison trees', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('keeps the comment-coordinate veto when the actual249 target projection now grants immutable new-file authority', () => {
+    const file = fixture(true);const native = file.witness.comparison;const acquired = file.facts.comparison;
+    if (native.kind !== 'gitlab-review' || acquired.kind !== 'gitlab-review') throw new Error('Expected review comparison');
+    // Real target fields; the shifted line coordinates remain a protocol counterexample, not an observed249 row mapping.
+    const target = { id: '2159449928', headSha: '8a882c3325b0e851b859d78ad11486aa3a24112c', startSha: '3ac6e8921566e0ea84d6313b43b1582a46493d1a', mergeHead: true };
+    file.read.mockReturnValue({ ...file.witness, headSha: target.headSha, comparison: { ...native, target, baseSha: target.startSha, startSha: target.startSha } });
+    const result = { ...file.result, sourceFacts: { ...file.facts, comparison: { ...acquired, target } } };
+    const context = providerOutlineContext(file.page, result, file.view);
+    expect(context.newSources.get(file.root)?.headSha).toBe(target.headSha);
+    expect(context.commentCoordinateMismatches?.has(file.root)).toBe(true);
+    const before = JSON.stringify(result);const semantic = breakdownFromFiles(result.files, createMatcher(settings), true);
+    expect(applyProviderLineFolds(file.view, result.files, settings, context)).toEqual({ hiddenAdditions: 0, hiddenDeletions: 0 });
+    expect(file.hidden()).toEqual([false, false]);expect(file.button()).toBeNull();
+    expect(JSON.stringify(result)).toBe(before);
+    expect(breakdownFromFiles(result.files, createMatcher(settings), true)).toEqual(semantic);
+  });
+
   it('retains the explicit legacy unknown policy when complete source facts disappear, then releases it on renewed mismatch proof', () => {
     const file = fixture(true);
     file.apply();expect(file.hidden()).toEqual([false, false]);
