@@ -1,8 +1,11 @@
 'use client';
 import { createContext, useContext } from 'react';
+import type { WorkspaceCache } from './workspace-cache';
 import type { QueueData, SessionData } from './contracts';
 export interface DashboardContext {
   readonly queue: QueueData;
+  readonly cache: WorkspaceCache | null;
+  readonly repositories: QueueData['repositories'];
   readonly session: SessionData;
   readonly loading: boolean;
   readonly error: string | null;
@@ -16,6 +19,8 @@ export interface DashboardContext {
 }
 export const DashboardContext = createContext<DashboardContext>({
   queue: { pulls: [], repositories: [] },
+  cache: null,
+  repositories: [],
   session: { user: null, configured: false, demo: false },
   loading: true,
   error: null,
