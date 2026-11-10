@@ -25,9 +25,28 @@ export function gitLabWhitespaceSessionPresentation(paths) {
     return { files: parsed.files.value, additions: parsed.additions.value, deletions: parsed.deletions.value, parsed };
   });
   const nativeFiles = [...document.querySelectorAll('diff-file[data-file-data]')];
+  const layout = (node) => {
+    if (node === null) return null;
+    const known = (value, choices) => choices.includes(value) ? value : 'other';
+    const style = getComputedStyle(node);
+    return {
+      kind: node.matches('[data-diffs-list]') ? 'diff_list' : node.matches('[data-stream-remaining-diffs]') ? 'stream_holder' : node.tagName === 'STREAMING-ELEMENT' ? 'stream' : known(node.localName, ['diff-file', 'div', 'article', 'section', 'main', 'body', 'html']),
+      display: known(style.display, ['none', 'contents', 'block', 'inline', 'inline-block', 'flex', 'inline-flex', 'grid', 'inline-grid', 'table', 'table-row', 'table-cell']),
+      position: known(style.position, ['', 'static', 'relative', 'absolute', 'fixed', 'sticky']),
+      inlinePosition: known(node.style.position, ['', 'static', 'relative', 'absolute', 'fixed', 'sticky']),
+      transformed: node.style.transform !== '' && node.style.transform !== 'none',
+      grouped: node.classList.contains('geld-provider-diffs'),
+      flowWrapper: node.hasAttribute('data-geld-provider-flow-wrapper'),
+    };
+  };
   const files = nativeFiles.slice(0, paths.length + 1).map((root) => {
     let data;try { const raw = root.getAttribute('data-file-data');if (raw !== null && raw.length <= 16384) data = JSON.parse(raw); } catch { /* Only a known slot is returned. */ }
-    const slot = paths.indexOf(data?.new_path);return { slot: slot < 0 ? null : slot, hidden: getComputedStyle(root).display === 'none' };
+    const slot = paths.indexOf(data?.new_path);
+    const mode = root.getAttribute('data-geld-provider-hidden');
+    const ancestors = [];for (let node = root.parentElement; node !== null && ancestors.length < 4; node = node.parentElement) ancestors.push(layout(node));
+    return { slot: slot < 0 ? null : slot, hidden: getComputedStyle(root).display === 'none',
+      hiddenMode: mode === null ? 'absent' : ['open', 'closed'].includes(mode) ? mode : 'other', inline: root.hasAttribute('data-geld-provider-inline'),
+      mounted: root.lastElementChild?.tagName === 'DIFF-FILE-MOUNTED', groupedAncestor: root.closest('.geld-provider-diffs') !== null, layout: layout(root), ancestors };
   });
   return { headers, headerOverflow: roots.length > 4, files, fileCount: Math.min(nativeFiles.length, paths.length + 1), fileOverflow: nativeFiles.length > paths.length,
     exactKnownPaths: files.length === paths.length && files.every(({ slot }) => slot !== null) && new Set(files.map(({ slot }) => slot)).size === paths.length };
@@ -109,7 +128,7 @@ export async function gitLabWhitespaceSessionProbe(action, fixture) {
   const key = '__geldNativeWhitespaceSessionProof';
   if (action === 'cleanup') { const prior = globalThis[key];prior?.stop?.();delete globalThis[key];return { released: true }; }
   if (action === 'frame') { await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));action = 'read'; }
-  const bad = (code) => ({ qualified: false, code });
+  const bad = (code) => ({ qualified: false, code, ...(code === 'SESSION_HISTORY_BOUND' ? { history: { observed: Math.min(globalThis[key]?.records ?? 0, 4097), limit: 4096 } } : {}) });
   const excluded = '[data-geld-ui],.note,.md,[data-testid="noteable-note-container"],[data-testid="description-content"],form,[contenteditable],dialog,[role="dialog"]';
   const native = (node) => node?.isConnected === true && node.closest(excluded) === null;
   const sha = (value) => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
