@@ -4,12 +4,13 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Popover } from '@base-ui/react/popover';
-import { parseDashboardPathname, repositoryPath } from '@geld/domain';
+import { parseDashboardPathname, repositoryPath, organisationPath } from '@geld/domain';
 import { useDashboard } from '@/lib/dashboard-context';
 import { useRepositoryOptions } from '@/lib/use-repository-options';
 import { Check, ChevronsUpDown, FolderGit2, Lock, Layers, Search, Settings, Sparkles } from './icons';
 import { settingsLinks } from './settings-navigation';
-import { OpenReview } from './open-review';
+import { GlobalSearch } from './global-search';
+import { Plus } from './icons';
 import { SidebarTrigger, useSidebar } from './ui/sidebar';
 
 export function WorkspaceHeader() {
@@ -35,15 +36,31 @@ export function WorkspaceHeader() {
             ? 'Teams'
             : pathname === '/inbox'
               ? 'Inbox'
-              : 'Workspace';
+              : route?.kind === 'organisation'
+                ? route.owner
+                : 'Workspace';
   return (
     <header className="workspace-header" aria-label="Workspace toolbar">
       <div className="workspace-header-start">
         {(isMobile || !open) && <SidebarTrigger className="workspace-sidebar-trigger" />}
+        <GlobalSearch />
         <RepositoryPicker />
       </div>
-      {queue ? <h1 className="workspace-header-title">{title}</h1> : <p className="workspace-header-title">{title}</p>}
+      {queue ? (
+        <h1 className="workspace-header-title">{title}</h1>
+      ) : (
+        <p className="workspace-header-title">{title}</p>
+      )}
       <div className="workspace-header-actions">
+        {route?.kind === 'organisation' && !route.settings && (
+          <Link
+            href={`${organisationPath(route)}/~settings`}
+            className="icon-button"
+            aria-label="Organization settings"
+          >
+            <Settings size={14} />
+          </Link>
+        )}
         {route?.kind === 'repository' && !route.settings && (
           <Link
             href={`${repositoryPath(route.ref)}/~settings`}
@@ -55,7 +72,12 @@ export function WorkspaceHeader() {
             <span className="touch-target" aria-hidden="true" />
           </Link>
         )}
-        {!settings && <OpenReview />}
+        {!settings && (
+          <Link href="/connect" aria-label="Connect repository" className="workspace-action">
+            <Plus size={14} />
+            <span className="workspace-action-label">Connect repository</span>
+          </Link>
+        )}
         {route?.kind === 'pull' && (
           <button
             type="button"
@@ -167,7 +189,9 @@ function RepositoryPicker() {
                 </div>
               )}
               {!options.loading && !repositories.length && (
-                <p className="menu-empty">{query ? 'No matching repositories' : 'No connected repositories'}</p>
+                <p className="menu-empty">
+                  {query ? 'No matching repositories' : 'No connected repositories'}
+                </p>
               )}
               {options.nextCursor && (
                 <button type="button" disabled={options.loading} onClick={options.loadMore}>

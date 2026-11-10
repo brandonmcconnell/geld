@@ -52,7 +52,7 @@ function SidebarProvider({
   const setOpenMobile = React.useCallback((open: boolean) => setMobile({ key: navigationKey, open }), [navigationKey]);
   const [internalOpen, setInternalOpen] = React.useState(defaultOpen);
   const open = openProp ?? internalOpen;
-  const [width, setWidth] = React.useState(256);
+  const [width, setWidth] = React.useState(224);
   const [resizing, setResizing] = React.useState(false);
   const setOpen = React.useCallback(
     (value: boolean) => {
@@ -189,7 +189,7 @@ function SidebarResizeHandle() {
       aria-valuetext={open ? `${width} pixels. Drag left to collapse.` : 'Collapsed'}
       tabIndex={open ? 0 : -1}
       className="sidebar-resize-handle"
-      onDoubleClick={() => setWidth(256)}
+      onDoubleClick={() => setWidth(224)}
       onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();

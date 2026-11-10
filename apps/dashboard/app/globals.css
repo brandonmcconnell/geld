@@ -5100,3 +5100,42 @@ html {
 .digest-findings summary {
   cursor: pointer;
 }
+/* Compact workspace controls and shared icon viewports. */
+.app-icon > svg[data-icon-weight] { width: 100% !important; height: 100% !important; overflow: visible; }
+[data-sidebar='sidebar'] .app-icon { width: 14px; height: 14px; }
+.cn-sidebar-menu { gap: 1px; }
+.cn-sidebar-group { padding: 5px 8px; }
+.cn-sidebar-content { gap: 4px; }
+.cn-sidebar-menu-button-size-default { height: 29px; font-size: 12px; }
+.cn-sidebar-menu-button { padding: 5px 7px; gap: 7px; }
+.cn-sidebar-menu-sub-button { min-height: 27px; height: 27px; font-size: 12px; gap: 6px; }
+.cn-sidebar-group-label { height: 26px; font-size: 10px; }
+.cn-sidebar-footer { padding: 5px 8px; }
+.workspace-header { height: 44px; padding-inline: 16px; gap: 8px; }
+.repository-index .settings-row { padding: 11px 12px; gap: 10px; }
+.repository-index .settings-row > .app-icon { width: 14px; height: 14px; }
+.repository-index .settings-row h3 { font-size: 12px; }
+.repository-index .settings-row p { font-size: 11px; margin-top: 2px; }
+.review-signal { display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; font-size: 10px; color: var(--muted-foreground); }
+.signal-avatar { width: 16px; height: 16px; object-fit: contain; flex-shrink: 0; }
+.signal-initial { display: grid; place-items: center; background: var(--muted); }
+.review-signal[data-tone='clean'], .review-signal:has(> .app-icon[data-icon='check']) { color: var(--green); }
+.signal-ember { width: 5px; height: 5px; border-radius: 50%; background: #db8b31; box-shadow: 0 0 0 2px #db8b3114; }
+.signal-threads { margin-left: 2px; }
+.queue-digest-summary { gap: 10px; border: 0; padding-left: 2px; }
+.command-search { width: min(580px, calc(100vw - 32px)); padding: 0; }
+.command-input { display: flex; gap: 10px; align-items: center; padding: 12px; border-bottom: 1px solid var(--border); }
+.command-input input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; font-size: 13px; }
+.command-results { max-height: min(420px,55dvh); overflow: auto; padding: 5px; }
+.command-results button { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 12px; padding: 9px 10px; font-size: 12px; text-align: left; }
+.command-results button[aria-selected='true'] { background: var(--muted); }
+.command-results small { color: var(--muted-foreground); font-size: 10px; flex-shrink: 0; }
+.command-results button > span { overflow-wrap: anywhere; }
+.command-empty, .command-more { font-size: 12px; padding: 14px; color: var(--muted-foreground); }
+.command-search > footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border); font-size: 10px; color: var(--muted-foreground); }
+@media(max-width:700px){.workspace-header {padding-inline:8px;}.workspace-header-title{font-size:11px;}.repository-picker{font-size:12px;padding-inline:3px;}.workspace-header .icon-button{width:26px;height:26px;}.review-signal{font-size:10px;}.queue-digest-summary{gap:8px;}}
+[data-slot='sidebar'] .app-icon { width: 13px; height: 13px; }
+.cn-sidebar-menu-sub { margin-block: 0; padding-block: 1px; }
+.repository-index { padding: 16px; }
+.repository-index .settings-card { margin-block: 0; }
+.repository-index .settings-row { min-height: 46px; padding-block: 8px; }

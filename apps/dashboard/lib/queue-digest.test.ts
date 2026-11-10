@@ -56,6 +56,7 @@ describe('queue digest signals', () => {
       state: 'current',
       open: 2,
       needsReply: 1,
+      approvedBy: ['alex'],
       approvals: 1,
       changesRequested: 0,
       partial: false,
