@@ -5,7 +5,8 @@ export { pullPathOf, timelineCommentRequest };
 import { loadWriter, prefetchWriter, writerNow } from './comment-writer';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import type { HeaderStatGroup } from './header-stats';
-import { countsSkeletonStandIn, countsWrapperBusy, isCountsStandIn } from './header-stats';
+import { ATTR_COUNTS_STAND_IN, countsSkeletonStandIn, countsWrapperBusy, isCountsStandIn } from './header-stats';
+import { persistentBarActions, persistentBarStuck } from './persistent-bar';
 import { detectHeadSha } from './head-sha';
 import type { MergeActions, MergeBox, MergeMethod, StatusAction } from './merge-actions';
 import { actionErrorText, autoMergeRequest, awaitMergedState, closeRequest, draftRequest, fetchMergeBox, isStackRequest, METHOD_CONFIRM, METHOD_LABEL, mergeRequest, methodHint, partialMayWait, prefetchMergeBox, readMergeActions, queueRequest, readyRequest, rememberMethod, reopenRequest, settleStackMerge, stackQueueRequest, viewerVerdict } from './merge-actions';
@@ -86,15 +87,6 @@ const STICKY_PR_HEADER = '[class*="prHeader"][class*="stickyHeader"]';
 const OVERVIEW_MINI_HEADER = '[data-testid="diff-comparison-viewer-sticky-header-slot"]';
 /** The headers that stay put as the page scrolls, React's and the classic one: a box under a pill there is fixed. */
 const STICKY_HEADERS = '[class*="stickyHeader"], .gh-header-sticky';
-/**
- * GitHub's bar over every tab of the new pull request page (Overview, Commits, Checks, Files changed; Nov 2026), now
- * always shown: the number and title, then its actions ("Merge status", GitHub's review button, the panel toggles).
- */
-const PERSISTENT_BAR_ACTIONS = '[data-testid="diff-comparison-viewer-sticky-header-slot"][class*="Persistent"] [data-testid="diff-comparison-viewer-sticky-header-bar"] [class*="miniHeaderInner"] > [class*="actions"]';
-
-function persistentBarActions(): HTMLElement | null {
-  return document.querySelector<HTMLElement>(PERSISTENT_BAR_ACTIONS);
-}
 
 /**
  * Whether the group stood in each repository's pages last time, for the next load's first frame (`applyReviewGroupHint`):
@@ -307,9 +299,10 @@ function anchorOf(groups: readonly HeaderStatGroup[]): HTMLElement | null {
     // GitHub hides the header's counts on narrow screens: placed there, the button would be hidden with them while
     // GitHub's own was hidden for it, leaving no way to review.
     if (!isShown(host)) continue;
-    // The Overview writes the counts beside the branches, under the title: the group still belongs at the tab bar's end.
+    // The new page writes the counts beside the branches, under the title: the group still belongs at the tab bar's end.
     if (host.closest('[data-component="PageHeader.Description"]') !== null) continue;
-    if (host.id === 'diffstat' || host.closest('[data-component="PageHeader"], .gh-header, #partial-discussion-header') !== null) return host;
+    // Geld's own counts ride GitHub's bar while the tabs are scrolled under it, and the group with them.
+    if (host.id === 'diffstat' || host.closest(`[data-component="PageHeader"], .gh-header, #partial-discussion-header, ${OVERVIEW_MINI_HEADER}`) !== null) return host;
   }
   return null;
 }
@@ -338,9 +331,10 @@ function standAnchor(): HTMLElement | null {
     removeStand();
     return null;
   }
-  // Geld's skeleton holding the counts' place: the group stands before it, and the counts take its very place.
+  // Geld's skeleton holding the counts' place (in the tab row, or in GitHub's bar with the tabs scrolled under it): the
+  // group stands before it, and the counts take its very place.
   const skeleton = countsSkeletonStandIn();
-  if (skeleton !== null && row.contains(skeleton)) {
+  if (skeleton !== null && (row.contains(skeleton) || skeleton.closest(OVERVIEW_MINI_HEADER) !== null)) {
     document.querySelector(`.${MARK_CLASS}`)?.remove();
     return isShown(skeleton) ? skeleton : null;
   }
@@ -501,11 +495,9 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
   if (!headerReactSettled()) return;
   // The controls' state lives on the pull request page whether or not the review group has somewhere to stand: the
   // status pill in the header needs it, and on narrow screens (GitHub hides the counts) the group stands aside alone.
-  // GitHub's always-shown bar holds the group whatever the tab bar shows, so it needs no anchor there, nor a stand of Geld's.
-  const inBar = persistentBarActions() !== null;
-  const counted = inBar ? null : anchorOf(context.groups);
-  if (counted !== null || inBar) removeStand();
-  const anchor = inBar ? null : (counted ?? standAnchor());
+  const counted = anchorOf(context.groups);
+  if (counted !== null) removeStand();
+  const anchor = counted ?? standAnchor();
   if (mounted === null) mounted = createControls(pullPath, context);
   if (mounted.pullPath !== pullPath) {
     closePanel();
@@ -544,7 +536,7 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
     const pill = mounted.pills.includes(clicked) ? clicked : (mounted.pills.find((each) => pillPlace(each) === pillPlace(clicked)) ?? null);
     if (pill !== null && mounted.statusMenu === null) toggleStatusMenu(mounted, pill);
   }
-  // GitHub's always-shown bar holds the group whatever the tab bar shows; without it, the counts are its anchor.
+  // The counts are its anchor; with none to stand beside (a narrow header), GitHub's always-shown bar holds it.
   if (anchor === null && persistentBarActions() === null) {
     // Nowhere to stand: GitHub's own review button shows, and so it does from the next load's first frame.
     rememberReviewGroup(repoOf(pullPath), false);
@@ -554,7 +546,8 @@ export function applyQuickReview(enabled: boolean, context: QuickReviewContext):
   mounted.anchor = anchor;
   watchSticky(mounted);
   place(mounted);
-  const host = anchor?.parentElement ?? null;
+  // Counts riding GitHub's bar leave the tab row's box as it is, so the header keeps its height under the bar.
+  const host = anchor !== null && anchor.closest(OVERVIEW_MINI_HEADER) !== null ? mounted.host : (anchor?.parentElement ?? null);
   if (mounted.host !== host) {
     mounted.host?.removeAttribute(ATTR_HOST);
     mounted.host = host;
@@ -589,16 +582,22 @@ function measureToolbarStuck(toolbar: Element): boolean {
  * stuck, the group in view in the tab bar.
  */
 function stickyPlace(state: Mounted): { readonly place: Place; readonly near: HTMLElement; readonly put: (root: HTMLElement) => void; readonly placed: (root: HTMLElement) => boolean } | null {
-  // The bar GitHub now shows over every tab: first among its actions, left of "Merge status", always.
+  // The bar GitHub shows over every tab of the new page, once it stands for the header (its tabs scrolled under it), or
+  // whenever the tab row has no counts to stand beside: first among its actions, before Geld's counts riding there too.
   const bar = persistentBarActions();
-  if (bar !== null) return { place: 'bar', near: bar, put: (root) => bar.prepend(root), placed: (root) => bar.firstElementChild === root };
+  if (bar !== null && (state.anchor === null || persistentBarStuck())) {
+    const counts = bar.querySelector<HTMLElement>(`:scope > [${ATTR_COUNTS_STAND_IN}]`);
+    if (counts !== null) return { place: 'bar', near: counts, put: (root) => counts.insertAdjacentElement('beforebegin', root), placed: (root) => counts.previousElementSibling === root };
+    return { place: 'bar', near: bar, put: (root) => bar.prepend(root), placed: (root) => bar.firstElementChild === root };
+  }
   const control = document.querySelector<HTMLElement>(STICKY_REVIEW_CONTROL);
   if (control !== null) {
     if (!state.toolbarStuck) return null;
     return { place: 'toolbar', near: control, put: (root) => control.insertAdjacentElement('beforebegin', root), placed: (root) => control.previousElementSibling === root };
   }
-  // The Overview's mini header, stuck: first among its actions (before the panel toggles), as the tab bar has it at its end.
-  const mini = state.toolbar?.isConnected === true && state.toolbar.matches(OVERVIEW_MINI_HEADER) ? state.toolbar : null;
+  // The Overview's mini header, stuck: first among its actions (before the panel toggles), as the tab bar has it at its
+  // end. Only where it is not GitHub's always-shown bar, which sticks well before the tabs have scrolled under it.
+  const mini = bar === null && state.toolbar?.isConnected === true && state.toolbar.matches(OVERVIEW_MINI_HEADER) ? state.toolbar : null;
   if (mini !== null) {
     const actions = mini.querySelector<HTMLElement>('[class*="miniHeaderInner"] > [class*="actions"]');
     if (!state.toolbarStuck || actions === null) return null;
@@ -1488,9 +1487,9 @@ export function reassertStatusPills(): void {
   if (pullPath === null || !headerReactSettled()) return;
   if (mounted !== null && mounted.pullPath === pullPath) {
     showStatus(mounted);
-    // GitHub re-renders its bar (on load, between tabs): the group goes back in the same frame.
-    const bar = persistentBarActions();
-    if (bar !== null && bar.firstElementChild !== mounted.root) place(mounted);
+    // GitHub re-renders its bar (on load, between tabs) and adds its tabs to it once they scroll under it: the group
+    // goes back, or follows the counts between the tab row and the bar, in the same frame.
+    if (persistentBarActions() !== null && (mounted.root.isConnected || mounted.anchor !== null)) place(mounted);
     return;
   }
   const repo = repoOf(pullPath);
