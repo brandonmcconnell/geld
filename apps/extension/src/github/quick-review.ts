@@ -266,18 +266,18 @@ function authorLogin(): string | null {
   return login === '' ? null : login;
 }
 
-let shownElements = new WeakMap<Element, boolean>();
+let shownElements = new WeakMap<Element, { readonly parent: Element | null; readonly visible: boolean }>();
 let forgettingShown = false;
 
 /**
- * Whether `element` is rendered, asked once per element until the window resizes or the page's stylesheets have all
- * loaded. GitHub hides the tab bar's counts with a container query, so the answer needs a layout, and asked on every
- * pass it forced a whole-page layout each time while GitHub was still rendering the page; a container's width only
- * moves with the window's.
+ * Whether `element` is rendered, asked once per element and parent until the window resizes or the page's stylesheets
+ * have all loaded. GitHub hides the tab bar's counts with a container query, so the answer needs a layout, and asked on
+ * every pass it forced a whole-page layout each time while GitHub was still rendering the page; a container's width only
+ * moves with the window's. Geld's counts move between GitHub's bar and the tab row, which a narrow header hides.
  */
 function isShown(element: Element): boolean {
   const known = shownElements.get(element);
-  if (known !== undefined) return known;
+  if (known !== undefined && known.parent === element.parentElement) return known.visible;
   if (!forgettingShown) {
     forgettingShown = true;
     const forget = (): void => {
@@ -287,7 +287,7 @@ function isShown(element: Element): boolean {
     if (document.readyState !== 'complete') window.addEventListener('load', forget, { once: true });
   }
   const visible = element.checkVisibility();
-  shownElements.set(element, visible);
+  shownElements.set(element, { parent: element.parentElement, visible });
   return visible;
 }
 
@@ -585,7 +585,10 @@ function stickyPlace(state: Mounted): { readonly place: Place; readonly near: HT
   // The bar GitHub shows over every tab of the new page, once it stands for the header (its tabs scrolled under it), or
   // whenever the tab row has no counts to stand beside: first among its actions, before Geld's counts riding there too.
   const bar = persistentBarActions();
-  if (bar !== null && (state.anchor === null || persistentBarStuck())) {
+  // An anchor no longer shown (the counts back in a narrow header's hidden tab row) is none, before the pass says so. One
+  // GitHub or Geld just replaced (the skeleton turning into counts) waits for the pass, so the group never jumps meanwhile.
+  const hidden = state.anchor !== null && state.anchor.isConnected && !isShown(state.anchor);
+  if (bar !== null && (state.anchor === null || hidden || persistentBarStuck())) {
     const counts = bar.querySelector<HTMLElement>(`:scope > [${ATTR_COUNTS_STAND_IN}]`);
     if (counts !== null) return { place: 'bar', near: counts, put: (root) => counts.insertAdjacentElement('beforebegin', root), placed: (root) => counts.previousElementSibling === root };
     return { place: 'bar', near: bar, put: (root) => bar.prepend(root), placed: (root) => bar.firstElementChild === root };

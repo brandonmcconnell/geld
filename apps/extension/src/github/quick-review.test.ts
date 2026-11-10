@@ -234,6 +234,29 @@ describe('the review group on the new pull request page', () => {
     expect(group()?.hasAttribute('data-geld-place')).toBe(false);
   });
 
+  it('stays in GitHub’s bar on a narrow header loaded past the tabs when the counts go back to the hidden tab row', () => {
+    const wrapper = document.querySelector<HTMLElement>('[class*="rightContentWrapper"]');
+    if (wrapper === null) throw new Error('fixture');
+    // A narrow header hides the tab row's counts; in the bar they show.
+    wrapper.checkVisibility = () => false;
+    counts().checkVisibility = function (this: HTMLElement) {
+      return this.parentElement !== wrapper;
+    };
+    stick(true);
+    syncCountsStandIn({ additions: 3, deletions: 1 });
+    applyQuickReview(true, { page, groups: [groupAt(counts())], headSha: () => SHA });
+    const bar = document.querySelector('[class*="actions"]');
+    expect(bar?.firstElementChild).toBe(group());
+    stick(false);
+    syncCountsStandIn({ additions: 3, deletions: 1 });
+    reassertStatusPills();
+    expect(counts().parentElement).toBe(wrapper);
+    expect(bar?.firstElementChild).toBe(group());
+    applyQuickReview(true, { page, groups: [groupAt(counts())], headSha: () => SHA });
+    expect(bar?.firstElementChild).toBe(group());
+    expect(group()?.getAttribute('data-geld-place')).toBe('bar');
+  });
+
   it('stays in GitHub’s bar when the tab row has no counts to stand beside (a narrow header)', () => {
     const wrapper = document.querySelector<HTMLElement>('[class*="rightContentWrapper"]');
     if (wrapper === null) throw new Error('fixture');
