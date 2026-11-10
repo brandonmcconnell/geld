@@ -1322,6 +1322,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const list = node('div', '', 'geld-provider-review__menu-list');
       for (const grouping of ['type', 'batch'] as const) {
         const button = node('button', grouping === 'type' ? 'Type' : 'Push');button.type = 'button';
+        button.dataset.geldToolbarControl = 'filter';
         button.setAttribute('aria-pressed', String((options.reviewGrouping ?? 'type') === grouping));
         button.addEventListener('click', () => {
           if (destroyed || !button.isConnected) return;

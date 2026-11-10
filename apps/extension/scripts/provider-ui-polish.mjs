@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import { resolve } from 'node:path';
 
-export async function verifyProviderUi(page, item, { provider, poll, patchSettings }) {
+export async function verifyProviderUi(page, item, { provider, poll, patchSettings, artifacts }) {
   const frames = [];
   const frame = async name => {
-    const png = await page.screenshot({ encoding: 'base64', fullPage: false });
+    const png = await page.screenshot({ path: resolve(artifacts, `${provider}-ui-${name}.png`), encoding: 'base64', fullPage: false });
     console.log(`PROVIDER_UI_IMAGE ${JSON.stringify({ provider, name, png })}`);
     frames.push(name);
   };
@@ -25,19 +26,27 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
       hasRequestWarning: panel.textContent.includes('Request state unavailable'),
       settingsLabel: settings?.getAttribute('aria-label'), settingsText: settings?.textContent,
       hasCopyIcon: !!header.querySelector('.geld-provider-review__copy svg'),
+      outlineIcons: [...panel.querySelectorAll('svg[data-geld-outline]')].map(svg => ({ fill: getComputedStyle(svg).fill, shapes: [...svg.children].map(shape => getComputedStyle(shape).fill) })),
       closed: closed.length, allClosed: closed.every(el => getComputedStyle(el).display === 'none'),
       family: getComputedStyle(panel).fontFamily, size: getComputedStyle(panel).fontSize,
     };
   });
+  console.log(`PROVIDER_UI_STAGE ${JSON.stringify({ provider, stage: 'digest', digest })}`);
   assert.equal(digest.title, 'Geld');assert.equal(digest.hasMetrics, false);assert.equal(digest.hasRequestWarning, false);
   assert.equal(digest.settingsLabel, 'Open Geld settings');assert.equal(digest.settingsText, '');assert.ok(digest.hasCopyIcon);
   assert.ok(digest.closed > 0 && digest.allClosed, 'Collapsed rows must conceal their details');
+  assert.ok(digest.outlineIcons.length > 0 && digest.outlineIcons.every(icon => icon.fill === 'none' && icon.shapes.every(fill => fill === 'none')), 'Provider CSS must not fill Geld outline icons');
   await page.$eval('.geld-provider-review__header', el => el.scrollIntoView({ block: 'center', behavior: 'instant' }));await frame('digest');
   await click('.geld-provider-review__menu:has([data-geld-view-slot]) > summary');
   const combined = await page.$eval('[data-geld-digest-view="digest-timeline"]', el => ({ text: el.textContent.trim(), label: el.getAttribute('aria-label'), icons: el.querySelectorAll('svg').length }));
   assert.equal(combined.text, '+');assert.equal(combined.icons, 2);assert.ok(combined.label.includes(provider === 'gitlab' ? 'GitLab' : 'Bitbucket'));
   await frame('view-menu');await page.keyboard.press('Escape');
   assert.equal(await page.$eval('.geld-provider-review__menu:has([data-geld-view-slot])', el => el.open), false);
+  await click('.geld-provider-review__menu:has([data-geld-view-slot]) > summary');
+  await click('[data-geld-digest-view="github"]');
+  await poll(() => page.evaluate(() => document.activeElement?.getAttribute('data-geld-digest-view')), value => value === 'github', 'Focus on the native timeline choice');
+  await click('[data-geld-digest-view="digest"]');
+  await poll(() => page.evaluate(() => document.activeElement?.getAttribute('data-geld-toolbar-control')), value => value === 'eye', 'Focus returns to the digest View control');
   const overview = page.url();
   const changes = provider === 'gitlab' ? `${overview.split('?')[0]}/diffs?diff_id=2158520123` : `${overview.replace(/\/$/, '')}/diff`;
   if (provider === 'bitbucket') {
@@ -55,6 +64,8 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
       ...(nav ? { nav: rect(nav), tabs: rect(nav.querySelector('[role="tablist"]')), totals: rect(nav.querySelector('.geld-provider-header-stats')) } : {}),
     };
   });
+  console.log(`PROVIDER_UI_STAGE ${JSON.stringify({ provider, stage: 'files', files })}`);
+  await frame('files');
   assert.equal(files.flowCount, 0);assert.ok(files.categories.length > 1);
   assert.ok(files.categories.every(el => el.count && el.box.height >= 32));
   if (provider === 'bitbucket') {
@@ -62,7 +73,6 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
     assert.ok(files.totals.x >= files.tabs.right - 1, 'Totals sit on the right of tabs');
     assert.ok(files.totals.y >= files.tabs.y - 1 && files.totals.bottom <= files.tabs.bottom + 1, 'Totals share the tab row');
   }
-  await frame('files');
   await page.evaluate(() => scrollBy({ top: 650, behavior: 'instant' }));
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const sticky = await page.evaluate(() => {
@@ -72,8 +82,9 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
     const front = document.elementFromPoint(x, y);
     return { top: b.top, bottom: b.bottom, headerInFront: !!front && header.contains(front) };
   });
-  if (sticky !== null) assert.equal(sticky.headerInFront, true, 'Native sticky header paints in front of the diff');
+  console.log(`PROVIDER_UI_STAGE ${JSON.stringify({ provider, stage: 'sticky', sticky })}`);
   await frame('scrolled');
+  if (sticky !== null) assert.equal(sticky.headerInFront, true, 'Native sticky header paints in front of the diff');
   const tests = await page.$('.geld-provider-category .geld-provider-category-header');assert.ok(tests);await tests.click();await tests.dispose();
   await poll(() => page.$eval('.geld-provider-category .geld-provider-category-header', el => el.getAttribute('aria-expanded')), value => value === 'true', 'Tests expanded');
   await frame('tests');

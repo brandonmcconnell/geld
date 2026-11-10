@@ -20,6 +20,8 @@
 .geld-provider-review__progress progress::-moz-progress-bar { background: var(--geld-provider-success); border-radius: 6px; }
 .geld-provider-review__tools { margin-inline-start: auto; flex-wrap: wrap; gap: var(--geld-provider-space-2); }
 .geld-provider-digest-icon { display: block; flex: 0 0 auto; width: 16px; height: 16px; }
+/* Host styles can override SVG presentation attributes; keep our outline marks hollow. */
+svg.geld-provider-digest-icon[data-geld-outline], svg.geld-provider-digest-icon[data-geld-outline] > * { fill: none; stroke: currentColor; }
 .geld-provider-review .geld-provider-review__tool {
   box-sizing: border-box;
   min-block-size: var(--geld-provider-button-min-height);

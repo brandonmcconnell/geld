@@ -10,7 +10,7 @@ describe('provider conversation view choice', () => {
     const control = providerDigestViewChoice(provider, { prOverview: false, compactTimeline: 'compact' }, choose);
     document.body.append(control);
     const native = control.querySelector<HTMLButtonElement>('[data-geld-digest-view="github"]');
-    expect(native?.getAttribute('aria-label')).toBe(provider === 'gitlab' ? 'GitLab' : 'Bitbucket');
+    expect(native?.getAttribute('aria-label')).toBe(provider === 'gitlab' ? 'GitLab Timeline' : 'Bitbucket Timeline');
     expect(native?.getAttribute('aria-pressed')).toBe('true');
     control.querySelector<HTMLButtonElement>('[data-geld-digest-view="digest-timeline"]')?.click();
     await vi.waitFor(() => expect(choose).toHaveBeenCalledWith('digest-timeline'));
@@ -18,7 +18,7 @@ describe('provider conversation view choice', () => {
     expect(control.querySelectorAll('svg')).toHaveLength(4);
     const combined = control.querySelector('[data-geld-digest-view="digest-timeline"]');
     expect(combined?.textContent?.trim()).toBe('+');
-    expect(combined?.getAttribute('aria-label')).toBe(`Geld + ${provider === 'gitlab' ? 'GitLab' : 'Bitbucket'}`);
+    expect(combined?.getAttribute('aria-label')).toBe(`Geld Digest + ${provider === 'gitlab' ? 'GitLab' : 'Bitbucket'} Timeline`);
   });
 
   it('prevents duplicate writes and keeps a failed choice recoverable', async () => {

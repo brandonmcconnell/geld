@@ -1,7 +1,7 @@
 import { providerAgentNotes } from './agent-notes';
 import { ProviderDescription } from './description';
 import type { DigestView, GeldSettings } from '@geld/core';
-import { compileAuthorRules, repositoryKey, trustedReviewAccountFor } from '@geld/core';
+import { compileAuthorRules, digestViewOf, repositoryKey, trustedReviewAccountFor } from '@geld/core';
 import { botById, buildProviderReviewItems, PROVIDER_BOT_CAPABILITIES, providerBotSupport } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput, ReviewItem } from '@geld/review';
 import { ProviderAiTriage } from './ai';
@@ -78,6 +78,7 @@ export class ProviderConversation {
   private key = '';
   private viewControls: HTMLElement | null = null;
   private viewSignature = '';
+  private viewFocus: { readonly key: string; readonly view: DigestView; readonly from: Element } | null = null;
   private readonly shownPeople = new Set<string>();
   private readonly hiddenPeople: ProviderHiddenPeopleView;
   private readonly related: ProviderRelatedContext;
@@ -432,13 +433,28 @@ export class ProviderConversation {
       host = this.panel.element.querySelector<HTMLElement>('[data-geld-view-slot]') ?? host;
     }
     const signature = JSON.stringify([this.key, settings.prOverview, settings.compactTimeline]);
-    if (signature === this.viewSignature && this.viewControls?.parentElement === host) return;
+    if (signature === this.viewSignature && this.viewControls?.parentElement === host) { this.restoreViewFocus(settings);return; }
     const focused = this.viewControls?.contains(document.activeElement) === true ? document.activeElement?.getAttribute('data-geld-digest-view') : null;
     this.viewControls?.remove();
-    this.viewControls = providerDigestViewChoice(this.adapter.id, settings, choose);
+    this.viewControls = providerDigestViewChoice(this.adapter.id, settings, async view => {
+      const from = document.activeElement;
+      if (from !== null && this.viewControls?.contains(from)) this.viewFocus = { key: this.key, view, from };
+      try { await choose(view); } catch (error) { this.viewFocus = null;throw error; }
+    });
     this.viewSignature = signature;
     host.prepend(this.viewControls);
     if (focused !== null) this.viewControls.querySelector<HTMLButtonElement>(`[data-geld-digest-view="${focused}"]`)?.focus();
+    this.restoreViewFocus(settings);
+  }
+
+  private restoreViewFocus(settings: GeldSettings): void {
+    const pending = this.viewFocus;
+    if (pending === null || pending.view !== digestViewOf(settings)) return;
+    if (pending.key !== this.key || document.activeElement !== document.body && document.activeElement !== pending.from && this.viewControls?.contains(document.activeElement) !== true) { this.viewFocus = null;return; }
+    const target = pending.view === 'github' ? this.viewControls?.querySelector<HTMLButtonElement>('[data-geld-digest-view="github"]')
+      : this.panel?.element.querySelector<HTMLElement>('[data-geld-toolbar-control="eye"]');
+    if (target == null || !target.isConnected || target.closest('[hidden], [inert]') !== null) return;
+    target.focus({ preventScroll: true });this.viewFocus = null;
   }
 
   private compact(snapshot: ProviderReviewSnapshot, settings: GeldSettings): void {
@@ -603,6 +619,7 @@ export class ProviderConversation {
 
   clear(): void {
     this.viewControls?.remove(); this.viewControls = null; this.viewSignature = '';
+    this.viewFocus = null;
     this.hiddenPeople.clear(); this.shownPeople.clear(); this.related.clear();
     this.restoreCompact();
 

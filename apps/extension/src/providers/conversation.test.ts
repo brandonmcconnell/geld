@@ -809,6 +809,18 @@ it('folds represented human comments in the digest and restores originals on req
 });
 
 describe('persistent provider conversation views', () => {
+  it('returns keyboard focus to the native-view choice and back to the digest View control', async () => {
+    const f = fixture(snapshot(), { chooseDigestView: async view => {
+      f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, quickReview: false, prOverview: view !== 'github', compactTimeline: view === 'digest-timeline' ? 'off' : 'compact' });
+    } }, { aiEnabled: false, quickReview: false, prOverview: true });
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-view-slot]')).not.toBeNull());
+    const menu = f.host.querySelector<HTMLDetailsElement>('details:has([data-geld-view-slot])')!;menu.open = true;
+    const native = f.host.querySelector<HTMLButtonElement>('[data-geld-digest-view="github"]')!;native.focus();native.click();
+    await vi.waitFor(() => expect(document.activeElement).toBe(f.host.querySelector('[data-geld-digest-view="github"]')));
+    const digest = f.host.querySelector<HTMLButtonElement>('[data-geld-digest-view="digest"]')!;digest.focus();digest.click();
+    await vi.waitFor(() => expect(document.activeElement).toBe(f.host.querySelector('[data-geld-toolbar-control="eye"]')));
+  });
+
   it('offers re-entry without fetching while off and preserves open threads across all three views', async () => {
     const native = document.createElement('article');native.id = 'note_1';document.body.append(native);
     const choose = vi.fn(async () => undefined);

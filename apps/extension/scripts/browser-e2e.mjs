@@ -3376,7 +3376,7 @@ try {
 
   if (focus === 'gitlab-ui-polish' || focus === 'bitbucket-ui-polish') {
     const provider = focus.startsWith('gitlab-') ? 'gitlab' : 'bitbucket';
-    await runCase(focus, provider === 'gitlab' ? GL_OVERVIEW : BITBUCKET_UI_PR, (page, item) => verifyProviderUi(page, item, { provider, poll, patchSettings }));
+    await runCase(focus, provider === 'gitlab' ? GL_OVERVIEW : BITBUCKET_UI_PR, (page, item) => verifyProviderUi(page, item, { provider, poll, patchSettings, artifacts }));
   }
 
   if (focus.endsWith('-walkthrough') || focus === 'bitbucket-walkthrough-files') {

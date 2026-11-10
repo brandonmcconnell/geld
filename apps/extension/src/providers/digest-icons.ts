@@ -24,6 +24,7 @@ export function digestIcon(name: DigestIcon | 'geld', doc: Document = document):
   const svg = template.content.querySelector('svg');
   if (svg === null) throw new Error('Missing digest icon');
   svg.setAttribute('class', 'geld-provider-digest-icon');
+  if (name !== 'geld') svg.setAttribute('data-geld-outline', '');
   svg.setAttribute('width', '16');svg.setAttribute('height', '16');
   svg.setAttribute('aria-hidden', 'true');svg.setAttribute('focusable', 'false');
   return svg;
