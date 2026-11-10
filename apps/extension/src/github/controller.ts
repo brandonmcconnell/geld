@@ -27,7 +27,7 @@ import { DiffSource, retriesLater } from './diff-source';
 import type { ResolvedRepoConfig } from './repo-config-source';
 import { RepoConfigSource, validConfigs } from './repo-config-source';
 import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManagedText, svgFromString, writeAttribute } from './dom';
-import { conversationHeadSha, detectHeadSha, fetchHeadSha, shaFromCommitUrl, watchFilesRefresh } from './head-sha';
+import { conversationHeadSha, detectHeadSha, documentNavigatedSinceLoad, fetchHeadSha, forgetAskedHead, rememberAskedHead, shaFromCommitUrl, watchFilesRefresh } from './head-sha';
 import { applyQuickReview, quickReviewStandBusy, reassertStatusPills, rememberReviewGroup, removeQuickReview } from './quick-review';
 import type { HeaderStatGroup } from './header-stats';
 import { applyHeaderStats, findHeaderStatGroups, holdsHeaderStats, isCountsStandIn, isSrOnlyText, removeCountsStandIn, restoreHeaderStats, syncCountsStandIn } from './header-stats';
@@ -83,6 +83,8 @@ import { activateControl, findViewedControls, rewriteFilesLinksForWhitespace, Wh
 
 /** Away at least this long and the tab is brought up to date on return (checks read again, the timeline caught up). */
 const CATCH_UP_AFTER_MS = 15_000;
+/** The longest a pull request reached in-document keeps GitHub's header counts while GitHub is asked for its head. */
+const HEAD_HOLD_MS = 2000;
 const ATTR_CONTAINER = 'data-geld-container';
 const ATTR_EXPANDED = 'data-geld-expanded';
 const ATTR_ENTRY = 'data-geld';
@@ -404,8 +406,19 @@ export class GeldController {
   private readonly autoViewedFiles = new Map<string, { head: string; tries: number; at: number; took: boolean }>();
   /** Stops watching for the files view's in-place refresh (head-sha.ts `watchFilesRefresh`). */
   private unwatchFilesRefresh: (() => void) | null = null;
-  /** The refresh the files view is on, so an answer to an earlier ask is not taken for the latest. */
-  private filesRefreshes = 0;
+  /** The ask for the head (`askHead`) that is current, so an answer to an earlier one is not taken for the latest. */
+  private headAsks = 0;
+  /** The page state the head and the settled header were read for: another one starts them afresh. */
+  private enteredKey: string | null = null;
+  /**
+   * Whether this document has moved to another page without a load since it began. GitHub's router keeps the first
+   * page's embedded payload, head included, so a head read from the page after such a move may be from before a push.
+   */
+  private navigatedInDocument = documentNavigatedSinceLoad();
+  /** The page state whose head is still to be asked of GitHub (`askHeadOnArrival`). */
+  private headAskFor: string | null = null;
+  /** Header counts wait for GitHub to name the head of a pull request reached in-document, at most until `until`. */
+  private headHold: { readonly stateKey: string; readonly until: number } | null = null;
 
   constructor(
     settings: GeldSettings,
@@ -1115,6 +1128,7 @@ export class GeldController {
 
     const url = new URL(window.location.href);
     const page = describePage(url);
+    this.enterPage(page);
     this.currentPage = page;
     const repo = repoFromPathname(url.pathname);
     // A sign-in page at a repository URL (an organisation's SSO prompt, a 2FA check): nothing here is the
@@ -1134,6 +1148,7 @@ export class GeldController {
       this.publish({ ...IDLE_STATE, repo, allowed: false, rule: decision.rule?.raw ?? null });
       return;
     }
+    this.askHeadOnArrival(page);
 
     if (!document.documentElement.hasAttribute(ATTR_DRESSED)) document.documentElement.setAttribute(ATTR_DRESSED, '');
     applyAttachmentLightbox(this.settings.attachmentLightbox);
@@ -1783,8 +1798,8 @@ export class GeldController {
 
     let headerHidden: HiddenBreakdown | null = null;
     let allTotals: ChangeTotals | null = groups.find((group) => group.original !== null)?.original ?? null;
-    if (this.configPending(repoFromPathname(url.pathname))) {
-      // Settle once, with the repository's config included, rather than twice.
+    if (this.configPending(repoFromPathname(url.pathname)) || this.headHeld(page)) {
+      // Settle once, with the repository's config included and for the head GitHub names, rather than twice.
       this.headerGroups = [];
     } else if (page.diffUrl !== null && groups.length > 0 && (sha !== null || !domIsComplete)) {
       // The page's own diff: first in line whether or not its head SHA has been read yet.
@@ -1825,7 +1840,11 @@ export class GeldController {
   private syncCountsStandIn(page: PageInfo, sha: string | null, groups: readonly HeaderStatGroup[], url: URL): boolean {
     let want: StandIn | null = null;
     const pullPath = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(url.pathname)?.[0] ?? null;
-    if (page.kind.startsWith('pull') && page.diffUrl !== null && pullPath !== null && groups.every((group) => isCountsStandIn(group.host))) {
+    const standsIn = page.kind.startsWith('pull') && page.diffUrl !== null && pullPath !== null && groups.every((group) => isCountsStandIn(group.host));
+    if (standsIn && this.headHeld(page)) {
+      // The head GitHub names is still to come: the payload's may be from before a push, so its counts wait with it.
+      want = 'skeleton';
+    } else if (standsIn && page.diffUrl !== null && pullPath !== null) {
       // GitHub's totals are the whole pull request's, so a Files tab narrowed to a commit or range counts its own diff.
       const github = page.commits === undefined ? headerDiffstat(pullPath, sha, () => this.onCountsStandInChanged()) : null;
       const state = this.diffSource.request(page.diffUrl, sha, 'page');
@@ -1862,7 +1881,9 @@ export class GeldController {
     if (page.diffUrl === null || isSignInInterstitial()) return;
     const repo = repoFromPathname(url.pathname);
     if (repo !== null && !decideRepo(this.repoRules, repo).allowed) return;
+    this.enterPage(page);
     this.currentPage = page;
+    this.askHeadOnArrival(page);
     phase('header-now', () => this.applyHeaderTotals(page, url, this.matcherFor(repo), null, 0, null));
     this.observer?.takeRecords();
   }
@@ -1925,14 +1946,66 @@ export class GeldController {
    */
   private onFilesRefresh(): void {
     const page = this.currentPage;
-    if (page === null || !page.kind.startsWith('pull')) return;
-    const match = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(window.location.pathname);
-    if (match === null) return;
-    const generation = (this.filesRefreshes += 1);
+    if (page === null || !page.kind.startsWith('pull') || !this.mayDressPage()) return;
+    this.askHead(page, false);
+  }
+
+  /**
+   * A new page state: the head, the header settled for it and the head GitHub named belong to the page left, even
+   * when this is the same pull request again (`/pulls` and back, after a push). Reached in-document, the page's own
+   * payload may be the document's first page's, so GitHub is asked for the head and the header waits for it.
+   */
+  private enterPage(page: PageInfo): void {
+    if (page.stateKey === this.enteredKey) return;
+    const first = this.enteredKey === null;
+    this.enteredKey = page.stateKey;
+    if (!first) this.navigatedInDocument = true;
+    this.headShaCache = null;
+    this.settledHeader = null;
+    this.headerDirty = true;
+    this.headHold = null;
+    this.headAsks += 1;
+    forgetAskedHead();
+    this.headAskFor = this.navigatedInDocument && page.kind.startsWith('pull') && page.commits === undefined ? page.stateKey : null;
+  }
+
+  /** The ask `enterPage` wanted, once the page is one Geld dresses: a sign-in page or a repository left out asks nothing. */
+  private askHeadOnArrival(page: PageInfo): void {
+    if (this.headAskFor !== page.stateKey || !this.mayDressPage()) return;
+    this.headAskFor = null;
+    this.askHead(page, true);
+  }
+
+  private headHeld(page: PageInfo): boolean {
+    const hold = this.headHold;
+    return hold !== null && hold.stateKey === page.stateKey && page.commits === undefined && Date.now() < hold.until;
+  }
+
+  /** Ask GitHub's Commits data for the head; a different one than the page read re-keys the diff, and the header follows. */
+  private askHead(page: PageInfo, hold: boolean): void {
+    const pullPath = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(window.location.pathname)?.[0];
+    if (pullPath === undefined) return;
+    const generation = (this.headAsks += 1);
     const stateKey = page.stateKey;
-    void fetchHeadSha(match[0]).then((sha) => {
-      if (sha === null || generation !== this.filesRefreshes || this.currentPage?.stateKey !== stateKey) return;
-      if (this.headShaCache?.stateKey === stateKey && this.headShaCache.sha === sha) return;
+    if (hold) {
+      const held = { stateKey, until: Date.now() + HEAD_HOLD_MS };
+      this.headHold = held;
+      setTimeout(() => {
+        if (this.headHold !== held) return;
+        this.headHold = null;
+        this.schedule();
+      }, HEAD_HOLD_MS);
+    }
+    void fetchHeadSha(pullPath).then((sha) => {
+      if (generation !== this.headAsks || this.currentPage?.stateKey !== stateKey) return;
+      const held = this.headHold !== null;
+      this.headHold = null;
+      if (sha === null || (this.headShaCache?.stateKey === stateKey && this.headShaCache.sha === sha)) {
+        if (sha !== null) rememberAskedHead(pullPath, sha);
+        if (held) this.schedule();
+        return;
+      }
+      rememberAskedHead(pullPath, sha);
       this.headShaCache = { stateKey, sha };
       // Header counts come from the diff of that head and nothing else; the settled value belongs to the old one.
       this.settledHeader = null;

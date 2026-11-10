@@ -77,7 +77,7 @@ export function retriesLater(state: { readonly reason: string; readonly attempts
 export class DiffSource {
   /** Keyed by cache key when the commit is known (so a new push is a new entry), else by URL. */
   private readonly memory = new Map<string, DiffFetchState>();
-  private readonly queue: Array<{ readonly url: string; readonly key: string; readonly persistKey: string | null; readonly revalidate: boolean; readonly priority: DiffPriority }> = [];
+  private readonly queue: Array<{ readonly url: string; readonly key: string; readonly sha: string | null; readonly persistKey: string | null; readonly revalidate: boolean; readonly priority: DiffPriority }> = [];
   private readonly persistent = new DiffCache();
   /** Keys whose stale on-disk entry is on screen while a fresh copy is fetched. */
   private readonly revalidating = new Set<string>();
@@ -164,6 +164,7 @@ export class DiffSource {
       if (cached !== null) {
         const ready: DiffFetchState = { status: 'ready', files: cached };
         this.memory.set(key, ready);
+        if (sha !== null) this.refreshHeadless(diffUrl, key, cached);
         // Stale-while-revalidate for list rows: show the old counts now,
         // refresh them in the background; the chip updates when that lands.
         // An entry with no files at all is refreshed too: older builds cached
@@ -171,7 +172,7 @@ export class DiffSource {
         // devices until they are replaced.
         if ((!this.persistent.isFresh(persistKey) || cached.length === 0) && !this.revalidating.has(key)) {
           this.revalidating.add(key);
-          this.queue.push({ url: diffUrl, key, persistKey, revalidate: true, priority: 'background' });
+          this.queue.push({ url: diffUrl, key, sha, persistKey, revalidate: true, priority: 'background' });
           this.pump();
         }
         return ready;
@@ -180,7 +181,7 @@ export class DiffSource {
 
     const loading: DiffFetchState = { status: 'loading' };
     this.memory.set(key, loading);
-    const item = { url: diffUrl, key, persistKey, revalidate: false, priority };
+    const item = { url: diffUrl, key, sha, persistKey, revalidate: false, priority };
     if (priority === 'page') this.queue.unshift(item);
     else this.queue.push(item);
     this.pump();
@@ -189,6 +190,14 @@ export class DiffSource {
     // had come back (a 20 MB download called too large, or a 503). Whichever lands first shows; the diff wins.
     if (priority === 'page') this.askSummaries(diffUrl, key);
     return this.stateOf(key);
+  }
+
+  /**
+   * The head-less state (a list row, kept for the tab's life across soft navigations) is the same pull request's diff
+   * as of an earlier moment: the head the page names replaces it, from the network or from disk, as on disk.
+   */
+  private refreshHeadless(diffUrl: string, key: string, files: readonly FileStats[]): void {
+    if (key !== diffUrl && this.memory.get(diffUrl)?.status === 'ready') this.memory.set(diffUrl, { status: 'ready', files });
   }
 
   private keyFor(diffUrl: string, sha: string | null): string {
@@ -205,15 +214,15 @@ export class DiffSource {
       const next = this.queue.shift();
       if (next === undefined) return;
       this.inFlight += 1;
-      void this.load(next.url, next.key, next.persistKey, next.revalidate, next.priority).finally(() => {
+      void this.load(next.url, next.key, next.sha, next.persistKey, next.revalidate, next.priority).finally(() => {
         this.inFlight -= 1;
         this.pump();
       });
     }
   }
 
-  private async load(diffUrl: string, key: string, persistKey: string | null, revalidate: boolean, priority: DiffPriority): Promise<void> {
-    const request: FetchDiffRequest = { type: 'geld:fetch-diff', url: diffUrl, priority };
+  private async load(diffUrl: string, key: string, sha: string | null, persistKey: string | null, revalidate: boolean, priority: DiffPriority): Promise<void> {
+    const request: FetchDiffRequest = { type: 'geld:fetch-diff', url: diffUrl, priority, ...(sha === null ? {} : { sha }) };
     const attempts = (this.retryAttempts.get(key) ?? 0) + 1;
     let reason: string;
     let retryAfterMs: number | null = null;
@@ -221,6 +230,7 @@ export class DiffSource {
       const response: unknown = await browser.runtime.sendMessage(request);
       if (isFetchDiffResponse(response) && response.ok) {
         this.memory.set(key, { status: 'ready', files: response.files });
+        if (sha !== null) this.refreshHeadless(diffUrl, key, response.files);
         this.provisional.delete(diffUrl);
         this.retryAttempts.delete(key);
         this.busyWaits.delete(key);

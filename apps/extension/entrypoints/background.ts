@@ -245,7 +245,7 @@ function writeCache(url: string, response: FetchDiffResponse): void {
  * the extension's host permissions. Cookies are included so private
  * repositories work for signed-in users.
  */
-async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiffResponse> {
+async function fetchDiff(url: string, priority: DiffPriority, sha: string | null): Promise<FetchDiffResponse> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -257,15 +257,17 @@ async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiff
   }
 
   const subject = diagnosticSubject(parsed.toString()) ?? undefined;
-  const cached = readCache(parsed.toString());
+  // A pull request's `.diff` URL serves whatever its head is now: an answer kept by URL alone was handed out for the
+  // next head after a push, and the page stored it on disk under that head's key, where it is never asked again.
+  const memoryKey = sha === null ? parsed.toString() : `${parsed.toString()}@${sha.toLowerCase()}`;
+  const cached = readCache(memoryKey);
   if (cached !== null) {
     recordDiagnostic({ kind: 'fetch', subject, outcome: cached.ok ? 'memory-hit' : `memory-hit:${cached.reason}` });
     return cached;
   }
-  // A diff this worker already found too large stays too large (a pull request's `.diff` URL serves its current
-  // head, so it is asked again only on a new push, and a page revisited within the session asks again anyway):
-  // answer from memory rather than download the limit again on every pass. Session storage outlives the worker.
-  if (await knownTooLarge(parsed.toString())) {
+  // A diff this worker already found too large stays too large for that head: answer from memory rather than
+  // download the limit again on every pass. Session storage outlives the worker.
+  if (await knownTooLarge(memoryKey)) {
     recordDiagnostic({ kind: 'fetch', subject, outcome: 'memory-hit:too-large' });
     return { ok: false, reason: 'too-large' };
   }
@@ -346,13 +348,13 @@ async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiff
   // as much as its pages), so it is not held either: signed in, the next
   // request must succeed at once.
   if (result.ok || result.reason === 'too-large' || (result.reason.startsWith('http-4') && result.reason !== 'http-404')) {
-    writeCache(parsed.toString(), result);
+    writeCache(memoryKey, result);
   }
-  if (!result.ok && result.reason === 'too-large') await rememberTooLarge(parsed.toString());
+  if (!result.ok && result.reason === 'too-large') await rememberTooLarge(memoryKey);
   return result;
 }
 
-/** Diff URLs this session found too large, with when: a pull request's `.diff` is its head's, asked again after a push. */
+/** Diffs this session found too large (by URL and head when the page named one), with when. */
 const tooLargeItem = storage.defineItem<Record<string, number>>('session:diffTooLarge', { fallback: {} });
 const TOO_LARGE_TTL_MS = 60 * 60 * 1000;
 
@@ -620,7 +622,7 @@ export default defineBackground(() => {
       return true;
     }
     if (!isFetchDiffRequest(message)) return undefined;
-    void fetchDiff(message.url, message.priority ?? 'background').then(sendResponse);
+    void fetchDiff(message.url, message.priority ?? 'background', message.sha ?? null).then(sendResponse);
     // Returning true keeps the message channel open for the async response.
     return true;
   });
