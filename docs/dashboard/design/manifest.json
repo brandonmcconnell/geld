@@ -365,6 +365,17 @@
       "route": "/"
     },
     {
+      "name": "queue-starred",
+      "label": "Selected and unselected Sharp icons",
+      "file": "desktop/queue-starred.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/"
+    },
+    {
       "name": "queue-selection",
       "label": "Selected review and indeterminate checkbox",
       "file": "desktop/queue-selection.png",
@@ -1410,6 +1421,17 @@
       "route": "/not-a-dashboard-page"
     },
     {
+      "name": "queue-starred",
+      "label": "Selected and unselected Sharp icons",
+      "file": "mobile/queue-starred.png",
+      "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/"
+    },
+    {
       "name": "queue-incoming",
       "label": "Review requests received",
       "file": "mobile/queue-incoming.png",
@@ -2216,6 +2238,17 @@
       "name": "queue-selection",
       "label": "Dark mode · queue-selection",
       "file": "dark/queue-selection.png",
+      "group": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/"
+    },
+    {
+      "name": "queue-starred",
+      "label": "Dark mode · queue-starred",
+      "file": "dark/queue-starred.png",
       "group": "dark",
       "viewport": {
         "width": 1440,
