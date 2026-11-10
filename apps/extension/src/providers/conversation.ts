@@ -128,7 +128,7 @@ export class ProviderConversation {
       if (this.ai.state.key !== null) this.ai.reset();
       this.snapshot = null;
       this.publication.reset();
-      this.panel?.destroy(); this.panel = null;
+      this.panel?.suspend();
       this.restoreCompact();
       this.resetReviewed(); this.hiddenPeople.clear();
     }

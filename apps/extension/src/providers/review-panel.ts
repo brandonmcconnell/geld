@@ -1,5 +1,5 @@
 import type { ProviderCommentRenderContext } from './comment-render';
-import { botHealth, botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, newestProviderBotSummary, parseInlineMarkdown, previewDocFromMarkdown, previewHostById, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, renderProviderItemMarkdown, sourceLink } from '@geld/review';
+import { botHealth, botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, newestProviderBotSummary, parseInlineMarkdown, previewDocFromMarkdown, previewHostById, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, renderProviderItemMarkdown, sourceLink, threadCounts } from '@geld/review';
 import type { BotVerdictRecord, ProviderPublicationRead, ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, RawCheckRun, ReviewItem, ReviewItemStatus, ReviewerState } from '@geld/review';
 import type { RepositoryIdentity } from '@geld/core';
 import type { ProviderAiState } from './ai';
@@ -120,6 +120,7 @@ export interface ProviderReviewSourceAction {
 export interface ProviderReviewPanel {
   readonly element: HTMLElement;
   update(input: ProviderReviewInput, options?: ProviderReviewPanelOptions): void;
+  suspend(): void;
   destroy(): void;
 }
 
@@ -190,6 +191,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   const doc = host.ownerDocument;
   const panelId = `geld-provider-review-${++nextPanelId}`;
   const expanded = new Map<string, boolean>();
+  const touched = new Set<string>();
   const sourceDetails = new Map<string, boolean>();
   let input = initialInput;
   let options = initialOptions;
@@ -276,18 +278,19 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     toggle.id = `${id}-toggle`;
     toggle.setAttribute('aria-controls', `${id}-content`);
     toggle.append(node('span', label, 'geld-provider-review__section-label'));
-    const setOpen = (open: boolean): void => {
+    const setOpen = (open: boolean, chosen = false): void => {
+      if (chosen) touched.add(key);
       section.dataset.geldReviewOpen = String(open);
       toggle.setAttribute('aria-expanded', String(open));
       expanded.set(key, open);
     };
     Object.defineProperty(section, 'open', {
       get: () => section.dataset.geldReviewOpen === 'true',
-      set: setOpen,
+      set: (open: boolean) => setOpen(open, true),
     });
     toggle.addEventListener('click', () => { section.open = !section.open; });
     section.append(toggle);
-    section.open = expanded.get(key) ?? initiallyOpen;
+    setOpen(expanded.get(key) ?? initiallyOpen);
     return section;
   }
 
@@ -731,10 +734,14 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return section;
   }
 
-  function itemSection(item: ReviewItem, comments: ReadonlyMap<string, ProviderReviewComment>): ReviewDisclosure {
+  function itemDisclosureKey(item: ReviewItem): string {
     const anchors = new Set(item.sources.map((source) => source.anchor));
     const threads = input.threads.filter((thread) => thread.comments.some((comment) => anchors.has(comment.anchor))).map((thread) => thread.id).sort();
-    const details = disclosure(`item:${threads.join(':') || item.id}`, '', false);
+    return `item:${threads.join(':') || item.id}`;
+  }
+
+  function itemSection(item: ReviewItem, comments: ReadonlyMap<string, ProviderReviewComment>): ReviewDisclosure {
+    const details = disclosure(itemDisclosureKey(item), '', false);
     details.classList.add('geld-provider-review__item');
     details.dataset.geldItem = item.id;
     details.dataset.state = item.status;
@@ -941,8 +948,20 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const rounds: HTMLElement[] = [];
     for (const [index, boundary] of boundaries.entries()) {
       const next = boundaries[index + 1]?.at ?? Infinity;
-      const section = disclosure(`history:push:${boundary.pushes.map((push) => push.id).join(':')}`, `Push round ${index + 1}${index === boundaries.length - 1 ? ' · Latest recorded push' : ''}`, index === boundaries.length - 1);
-      section.dataset.geldReviewRound = boundary.pushes.map((push) => push.id).join(':');
+      const ids = boundary.pushes.map((push) => push.id);
+      const roundKey = `history:push:${ids.join(':')}`;
+      if (!expanded.has(roundKey)) {
+        const previous = [...panel.querySelectorAll<HTMLElement>('[data-geld-review-round][data-geld-round-events]')].filter((round) => {
+          try { const events: unknown = JSON.parse(round.dataset.geldRoundEvents ?? '[]');return Array.isArray(events) && events.some((id: unknown) => typeof id === 'string' && ids.includes(id)); }
+          catch { return false; }
+        });
+        if (previous.length === 1 && previous[0] !== undefined) {
+          expanded.set(roundKey, previous[0].dataset.geldReviewOpen === 'true');
+          if (touched.has(previous[0].dataset.geldReviewKey ?? '')) touched.add(roundKey);
+        }
+      }
+      const section = disclosure(roundKey, `Push round ${index + 1}${index === boundaries.length - 1 ? ' · Latest recorded push' : ''}`, index === boundaries.length - 1);
+      section.dataset.geldReviewRound = ids.join(':');section.dataset.geldRoundEvents = JSON.stringify(ids);
       for (const push of boundary.pushes) section.append(eventRow(push));
       const members = entries.filter((entry) => Number.isFinite(entry.at) && entry.at >= boundary.at && entry.at < next);
       for (const entry of members) section.append(entry.render());
@@ -1119,7 +1138,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     summary.dataset.geldReviewOverview = '';
     summary.setAttribute('aria-label', 'Conversation overview');
     const comments = new Set([...input.threads.flatMap((thread) => thread.comments), ...(options.comments ?? [])].map((comment) => comment.anchor));
-    const open = items.filter((item) => isOpenStatus(item.status)).length;
+    const open = threadCounts(items).open;
     const metrics = [
       { key: 'open', label: 'Open items', value: open },
       { key: 'comments', label: 'Comments', value: comments.size },
@@ -1142,9 +1161,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const requestFocus = focused instanceof HTMLElement && panel.contains(focused) && focused.closest('[data-geld-bot-request]') !== null ? focused : null;
     const dashboardFocus = focused instanceof HTMLElement && panel.contains(focused)
       ? focused.hasAttribute('data-geld-original-conversation')
-        ? { scope: renderScope, section: null }
+        ? { scope: checksScope, section: null }
         : focused.hasAttribute('data-geld-review-toggle')
-          ? { scope: renderScope, section: focused.parentElement?.dataset.geldReviewKey ?? null }
+          ? { scope: checksScope, section: focused.parentElement?.dataset.geldReviewKey ?? null }
           : null
       : null;
     const focusedCheck = focused?.matches('a[href]') === true && panel.contains(focused) ? focused.closest<HTMLElement>('[data-geld-check-key]') : null;
@@ -1188,7 +1207,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     }
     lastSignature = signature;
     disposeComments();
-    const nextRenderScope = JSON.stringify(input.subject);
+    const nextRenderScope = JSON.stringify([input.subject.provider, input.subject.origin, input.subject.repository, input.subject.id]);
     if (renderScope !== nextRenderScope) { renderScope = nextRenderScope;clearRenderStates();sourceSlots.clear(); }
     for (const details of panel.querySelectorAll<HTMLDetailsElement>('details[data-geld-body-disclosure]')) {
       const key = details.dataset.geldBodyDisclosure;
@@ -1215,7 +1234,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       panel.replaceChildren(node('h2', 'Geld review'), node('p', 'The review source could not be read.'));
       return;
     }
-    if (identity !== key) { expanded.clear(); sourceDetails.clear(); }
+    if (identity !== key) { expanded.clear(); touched.clear(); sourceDetails.clear(); }
     identity = key;
     const activeAi = ai?.state.key === key ? ai : undefined;
     panel.dataset.provider = input.subject.provider;
@@ -1231,6 +1250,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const copy = node('button', 'Copy digest', 'geld-provider-review__copy');
     copy.type = 'button';
     copy.addEventListener('click', () => {
+      if (destroyed || panel.inert || !copy.isConnected) return;
       copy.disabled = true;
       const write = options.copyText ?? ((text: string): Promise<void> => navigator.clipboard.writeText(text));
       const text = digestText();
@@ -1317,7 +1337,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     else for (const group of GROUPS) {
       const members = items.filter((item) => group.statuses.includes(item.status));
       if (members.length === 0) continue;
-      const section = disclosure(`group:${group.id}`, `${group.label} · ${members.length}`, group.open);
+      const groupKey = `group:${group.id}`;
+      if (!touched.has(groupKey) && members.some(item => expanded.get(itemDisclosureKey(item)) === true)) expanded.set(groupKey, true);
+      const section = disclosure(groupKey, `${group.label} · ${threadCounts(members).total}`, group.open);
       section.dataset.geldReviewGroup = group.id;
       for (const item of members) section.append(itemSection(item, comments));
       children.push(section);
@@ -1357,7 +1379,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       }
     }
     panel.replaceChildren(...children);
-    if (copyFocus !== undefined && copyFocus.subject === nextRenderScope && (doc.activeElement === doc.body || doc.activeElement === focused)) {
+    if (copyFocus !== undefined && copyFocus.subject === JSON.stringify(input.subject) && (doc.activeElement === doc.body || doc.activeElement === focused)) {
       const route = new URL(doc.URL);route.hash = '';
       const candidates = [...panel.querySelectorAll<HTMLButtonElement>('[data-geld-item-copy]')].filter((button) => {
         const target = copyFocusTargets.get(button);
@@ -1371,7 +1393,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     for (const [key, control] of botRequests) {
       if (!panel.contains(control.element)) { control.destroy();botRequests.delete(key); }
     }
-    if (dashboardFocus !== null && dashboardFocus.scope === nextRenderScope && (doc.activeElement === doc.body || doc.activeElement === focused)) {
+    if (dashboardFocus !== null && dashboardFocus.scope === nextChecksScope && (doc.activeElement === doc.body || doc.activeElement === focused)) {
       const section = dashboardFocus.section === null ? null : [...panel.querySelectorAll<HTMLElement>('[data-geld-review-key]')].find((entry) => entry.dataset.geldReviewKey === dashboardFocus.section);
       const control = dashboardFocus.section === null ? panel.querySelector<HTMLElement>('[data-geld-original-conversation]') : section?.querySelector<HTMLElement>(':scope > [data-geld-review-toggle]');
       const hiddenParent = section?.parentElement?.closest('[data-geld-review-open="false"]');
@@ -1430,9 +1452,15 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   return {
     element: panel,
     update(nextInput, nextOptions = options) {
+      panel.inert = false;
+      panel.hidden = false;
       input = nextInput;
       options = nextOptions;
       render();
+    },
+    suspend() {
+      if (destroyed) return;
+      panel.inert = true;panel.hidden = true;disposeComments();lastSignature = '';
     },
     destroy() {
       destroyed = true;
@@ -1441,7 +1469,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       for (const control of botRequests.values()) control.destroy();
       botRequests.clear();
       identities = [];
-      expanded.clear();
+      expanded.clear();touched.clear();
       sourceDetails.clear();
       authorPresentations.clear();
       panel.remove();

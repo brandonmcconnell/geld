@@ -3503,6 +3503,12 @@ The fallback uses CSS Highlight ranges over original text nodes, skips files wit
 GitLab colors come from its active qualified syntax stylesheet, while Bitbucket script tokens use ADS code-role variables separately from the specialized Bash palette.
 Script source is bounded to 100,000 visible characters per file, and no extra source request is made for highlighting.
 
+Provider digest head changes suspend the existing panel and retire its old controls while acquiring a current snapshot, preserving open groups and threads for the same review.
+Source-renderer state is keyed by review identity and native comment identity rather than the head commit, while action and focus guards retain their full-head scope.
+An opened thread moving into a previously untouched resolved group opens that group, but an explicitly folded group stays folded.
+Push-round choices follow a shared native event when another event joins the same boundary.
+Provider aggregate and group counts use shared native-thread totals, including older published items that combined several threads.
+
 Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
 Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
 
