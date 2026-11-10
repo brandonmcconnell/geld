@@ -322,3 +322,111 @@ describe('GitLab native quick action relay', () => {
     expect(form.querySelectorAll('textarea')).toHaveLength(2);
   });
 });
+
+describe('GitLab approval widget fallback', () => {
+  const noDrawerPermissions = { ...permissions, canReview: false };
+  function mountWidget(label = 'Approve'): HTMLButtonElement {
+    mount(`<main class="merge-request" data-url="/group/repo/-/merge_requests/7.json">
+      <div data-noteable-type="MergeRequest" data-noteable-data='{"diff_head_sha":"${'a'.repeat(40)}"}'></div>
+      <div id="widget-state" class="mr-state-widget"><div class="js-mr-approvals mr-section-container">
+      <button type="button" data-testid="approve-button">${label}</button></div></div>
+      <textarea id="note-body">Unsent main comment</textarea></main>`);
+    const button = document.querySelector<HTMLButtonElement>('[data-testid="approve-button"]');
+    if (button === null) throw new Error('Missing native approval widget');
+    return button;
+  }
+  const read = () => readGitLabActions(document, noDrawerPermissions, gitLabActionVisit(document, 'a'.repeat(40)));
+
+  it.each(['Approve', 'Approve additionally'])('relays the source-verified %s widget after explicit confirmation without requiring a review drawer', async label => {
+    const button = mountWidget(label);
+    const clicked = vi.fn();button.addEventListener('click', clicked);
+    const [approve, request, comment] = read();
+    expect(approve?.available).toBe(true);
+    expect(approve?.requiresConfirmation).toBe(true);
+    expect(approve?.confirmationLabel).toBe('Approve in GitLab');
+    expect(approve?.confirmationNote).toContain('pending review comments');
+    expect(approve?.instant).toBeUndefined();
+    expect(request?.available).toBe(false);
+    expect(comment?.commentKinds).toEqual(['comment']);
+    expect(await comment?.activate({ current: () => true, commentKind: 'comment' })).toBe(true);
+    expect(clicked).not.toHaveBeenCalled();
+    expect(await approve?.activate({ current: () => true })).toBe(true);
+    expect(clicked).toHaveBeenCalledOnce();
+    expect(document.querySelector<HTMLTextAreaElement>('#note-body')?.value).toBe('Unsent main comment');
+  });
+
+  it.each(['Revoke approval', 'Approve with SAML', 'Approve additionally with SAML', 'Unknown action'])('does not misidentify the shared native testid for %s', label => {
+    mountWidget(label);
+    expect(read()[0]?.available).toBe(false);
+  });
+
+  it.each(['disabled', 'aria-disabled', 'aria-busy', 'readonly', 'hidden', 'css-hidden', 'inert', 'unfocusable', 'submit', 'form', 'authored', 'duplicate-button', 'duplicate-widget', 'missing-owner', 'wrong-owner', 'wrong-aria'])('does not grant approval through a %s widget', condition => {
+    const button = mountWidget();
+    if (condition === 'disabled') button.disabled = true;
+    if (condition === 'aria-disabled') button.setAttribute('aria-disabled', 'true');
+    if (condition === 'aria-busy') button.setAttribute('aria-busy', 'true');
+    if (condition === 'readonly') button.setAttribute('readonly', '');
+    if (condition === 'hidden') button.hidden = true;
+    if (condition === 'css-hidden') button.style.display = 'none';
+    if (condition === 'inert') button.setAttribute('inert', '');
+    if (condition === 'unfocusable') button.tabIndex = -1;
+    if (condition === 'submit') button.type = 'submit';
+    if (condition === 'form') { const form = document.createElement('form');button.before(form);form.append(button); }
+    if (condition === 'authored') button.parentElement?.classList.add('note');
+    if (condition === 'duplicate-button') button.after(button.cloneNode(true));
+    if (condition === 'duplicate-widget') { const widget = document.querySelector('.js-mr-approvals');widget?.after(widget.cloneNode(true)); }
+    if (condition === 'missing-owner') document.querySelector('.merge-request')?.removeAttribute('data-url');
+    if (condition === 'wrong-owner') document.querySelector('.merge-request')?.setAttribute('data-url', '/group/repo/-/merge_requests/8.json');
+    if (condition === 'wrong-aria') button.setAttribute('aria-label', 'Revoke approval');
+    expect(read()[0]?.available).toBe(false);
+  });
+
+  it('keeps the fetched approval ceiling and does not bypass a disabled drawer or native outcome', () => {
+    mountWidget();
+    expect(readGitLabActions(document, { ...noDrawerPermissions, canApprove: false })[0]?.available).toBe(false);
+    expect(readGitLabActions(document, { ...noDrawerPermissions, signedIn: false })[0]?.available).toBe(false);
+    document.body.insertAdjacentHTML('beforeend', '<button data-testid="review-drawer-toggle" disabled>Your review</button>');
+    expect(read()[0]?.available).toBe(false);
+    document.querySelector('[data-testid="review-drawer-toggle"]')?.remove();
+    document.body.insertAdjacentHTML('beforeend', writer(true));
+    expect(read()[0]?.available).toBe(false);
+  });
+
+  it('prefers the native optional-summary drawer whenever it is available', () => {
+    mountWidget();
+    document.body.insertAdjacentHTML('beforeend', '<button data-testid="review-drawer-toggle">Your review</button>');
+    expect(read()[0]?.available).toBe(true);
+    expect(read()[0]?.requiresConfirmation).toBeUndefined();
+    expect(read()[0]?.confirmationNote).toBeUndefined();
+  });
+
+  it.each(['actor', 'head', 'button', 'parent', 'root', 'route', 'drawer', 'revoke', 'context'])('retires retained widget approval after its %s changes', async condition => {
+    const button = mountWidget();
+    const clicked = vi.fn();button.addEventListener('click', clicked);
+    const approval = read()[0];
+    if (condition === 'actor') document.querySelector('#js-vue-mr-discussions')?.setAttribute('data-current-user-data', '{"id":11}');
+    if (condition === 'head') document.querySelector('[data-noteable-data]')?.setAttribute('data-noteable-data', JSON.stringify({ diff_head_sha: 'b'.repeat(40) }));
+    if (condition === 'button') button.replaceWith(button.cloneNode(true));
+    if (condition === 'parent') { const next = document.createElement('div');button.before(next);next.append(button); }
+    if (condition === 'root') { const root = document.querySelector('#widget-state');root?.replaceWith(root.cloneNode(true)); }
+    if (condition === 'route') window.history.replaceState(null, '', '/group/repo/-/merge_requests/8');
+    if (condition === 'drawer') document.body.insertAdjacentHTML('beforeend', '<button data-testid="review-drawer-toggle">Your review</button>');
+    if (condition === 'revoke') button.textContent = 'Revoke approval';
+    expect(await approval?.activate({ current: () => condition !== 'context' })).toBe(false);
+    expect(clicked).not.toHaveBeenCalled();
+  });
+
+  it('keeps widget scopes stable while the native owner is unchanged and rejects focus-time permission changes', async () => {
+    const button = mountWidget();
+    const original = read()[0];
+    expect(original?.scopeKey).toBeTruthy();
+    expect(read()[0]?.scopeKey).toBe(original?.scopeKey);
+    const clicked = vi.fn();button.addEventListener('click', clicked);
+    button.addEventListener('focus', () => { button.disabled = true; });
+    expect(await original?.activate({ current: () => true })).toBe(false);
+    expect(clicked).not.toHaveBeenCalled();
+    expect(read()[0]?.available).toBe(false);
+    button.disabled = false;
+    expect(read()[0]?.scopeKey).not.toBe(original?.scopeKey);
+  });
+});

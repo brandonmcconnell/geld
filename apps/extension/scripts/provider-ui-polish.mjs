@@ -44,8 +44,9 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
   assert.ok(digest.rowHeights.length > 1 && Math.max(...digest.rowHeights) - Math.min(...digest.rowHeights) <= 2, 'Single-line status rows share one height');
   await page.$eval('.geld-provider-review__header', el => el.scrollIntoView({ block: 'center', behavior: 'instant' }));await frame('digest');
   await click('.geld-provider-review__menu:has([data-geld-view-slot]) > summary');
-  const combined = await page.$eval('[data-geld-digest-view="digest-timeline"]', el => ({ text: el.textContent.trim(), label: el.getAttribute('aria-label'), icons: el.querySelectorAll('svg').length }));
+  const combined = await page.$eval('[data-geld-digest-view="digest-timeline"]', el => ({ text: el.textContent.trim(), label: el.getAttribute('aria-label'), icons: el.querySelectorAll('svg').length, height: el.getBoundingClientRect().height, overflow: el.scrollWidth > el.clientWidth }));
   assert.equal(combined.text.replace(/\s+/g, ''), 'Digest+Timeline');assert.equal(combined.icons, 2);assert.ok(combined.label.includes(provider === 'gitlab' ? 'GitLab' : 'Bitbucket'));
+  assert.ok(combined.height <= 40 && !combined.overflow, 'The combined view label fits on one line');
   await frame('view-menu');
   const afterDescription = () => page.evaluate(() => {
     const description = document.querySelector('.issuable-discussion [data-testid="description-content"] > .md, [data-qa="pull-request-description"] .ak-renderer-document');

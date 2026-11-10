@@ -2,22 +2,33 @@ import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 
 export const OPEN_REVIEW_SOURCES = {
-  gitlab: 'https://gitlab.com/api/v4/projects/gitlab-org%2Fquality%2Ftriage-ops/merge_requests?state=opened&per_page=5',
-  bitbucket: 'https://api.bitbucket.org/2.0/repositories/atlassian/aws-s3-deploy/pullrequests?state=OPEN&pagelen=5',
+  gitlab: ['gitlab-org/quality/triage-ops', 'gitlab-org/gitlab'].map(repository => ({ repository, url: `https://gitlab.com/api/v4/projects/${encodeURIComponent(repository)}/merge_requests?state=opened&per_page=5` })),
+  bitbucket: ['blaze-lib/blaze', 'fenics-project/dolfin', 'multicoreware/x265_git', 'atlassian/bitbucket-upload-file'].map(repository => ({ repository, url: `https://api.bitbucket.org/2.0/repositories/${repository}/pullrequests?state=OPEN&pagelen=5` })),
 };
 
 export async function verifyOpenProviderReview(page, item, { provider, poll, patchSettings, artifacts }) {
-  const listing = await page.evaluate(() => JSON.parse(document.body.innerText));
-  const candidates = provider === 'gitlab' ? listing : listing.values;
-  assert.ok(Array.isArray(candidates), 'Native API returned a request list');
-  const request = candidates.find(candidate => candidate.state === (provider === 'gitlab' ? 'opened' : 'OPEN'));
+  let request, repository;
+  item.openDiscovery = [];
+  for (const [index, source] of OPEN_REVIEW_SOURCES[provider].entries()) {
+    if (index > 0) {
+      const response = await page.goto(source.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      if (response?.status() === 404) { item.openDiscovery.push({ repository: source.repository, status: 404 });continue; }
+      assert.equal(response?.status(), 200, 'Public request discovery succeeds');
+    }
+    const listing = await page.evaluate(() => JSON.parse(document.body.innerText));
+    const candidates = provider === 'gitlab' ? listing : listing.values;
+    assert.ok(Array.isArray(candidates), 'Native API returned a request list');
+    item.openDiscovery.push({ repository: source.repository, candidates: candidates.length });
+    request = candidates.find(candidate => candidate.state === (provider === 'gitlab' ? 'opened' : 'OPEN'));
+    if (request) { repository = source.repository;break; }
+  }
   assert.ok(request, 'The public repository has an open request');
   const href = provider === 'gitlab' ? request.web_url : request.links?.html?.href;
   const url = new URL(href);
   assert.equal(url.origin, provider === 'gitlab' ? 'https://gitlab.com' : 'https://bitbucket.org');
-  assert.ok(provider === 'gitlab'
-    ? /^\/gitlab-org\/quality\/triage-ops\/-\/merge_requests\/\d+$/.test(url.pathname)
-    : /^\/atlassian\/aws-s3-deploy\/pull-requests\/\d+\/?$/.test(url.pathname));
+  const id = provider === 'gitlab' ? request.iid : request.id;
+  assert.ok(Number.isSafeInteger(id) && id > 0);
+  assert.equal(url.pathname.replace(/\/$/, ''), provider === 'gitlab' ? `/${repository}/-/merge_requests/${id}` : `/${repository}/pull-requests/${id}`);
   await patchSettings({ enabled: true, prOverview: true, quickReview: true, compactTimeline: 'compact', digestAboveDescription: false, aiEnabled: false, repoConfigs: 'never' });
   await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await poll(() => page.$('.geld-provider-review__header'), Boolean, 'Open request digest', 45000);

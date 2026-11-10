@@ -3592,6 +3592,7 @@ Reviewer summaries stay inline with the Reviews row while conversation details r
 Merge checks use a short row label and inline native-state totals, keeping long rule names inside the disclosure instead of wrapping the label into several lines.
 The inline combined view uses the Geld and provider marks with a plus sign and an accessible full label, while its View menu option also spells out Digest and Timeline.
 View changes restore focus to the selected native timeline option when the digest is off and to its View control when it returns.
+Restore this focus after the frame's placement and native click handlers have settled, while checking that the reader has not focused a different control.
 Browser checks wait for the selected view to finish changing before checking focus or switching again, since the clicked option already has focus while its settings save is pending.
 While review sources load, keep the native conversation visible and mount view choices only in the ready digest toolbar so a temporary standalone button strip does not flash above it.
 GitLab's global SVG fill overrides presentation attributes, so owned outline glyphs explicitly keep `fill: none` in CSS while brand marks retain their fills.
@@ -3617,6 +3618,8 @@ GitLab's Your review trigger appears only for assigned reviewers or pending draf
 Provider status buttons retain the native badge classes and open the current native permission-filtered More menu.
 Bitbucket Declined never gains an invented reopen action.
 GitLab instant verdicts require an empty native summary and the exact native No pending comments heading, plus current viewer/head/form authority, to avoid publishing existing drafts.
+GitLab's separate approval widget can publish pending review comments, so its fallback uses an explicit native approval confirmation and never promises a comment-free modifier shortcut without a verified empty review.
+The widget reuses its approve-button test ID for revoke and SAML controls, so only actual Approve and Approve additionally variants qualify.
 Bitbucket ordinary verdict clicks offer the native comment writer before explicit no-comment submission, and no relay is reported as acknowledged server success.
 Public open-request acceptance discovers a current open request and checks anonymous permission gating without submitting a review or changing status.
 
@@ -3628,6 +3631,10 @@ Metadata-only provider review refreshes keep the digest mounted, while CI/review
 Native source node identity and markup must remain unchanged to reuse bindings, so same-text React replacements still retire old table/media controls.
 Registered bot chip marks use bound native avatars, otherwise the shared registry's app mark, and the shared shape sampler honors native circles and cutouts.
 Actual comment, head, grouping or AI changes still rebuild safely.
+Verified bot-summary previews use sibling buttons beside the status-row toggle, never nested buttons.
+The preview copies a bounded inert version of the already-rendered body, drops IDs and live controls or media, and performs no source request on hover.
+Only a registered provider account with a verified summary format can supply a preview, and unknown Bitbucket formats remain non-preview chips.
+Adjacent previews cancel the previous close timer, while Escape, source replacement and digest disposal retire the open card.
 
 Provider image lightboxes fit against the measured enlarged stage, and pointer zoom uses that canvas rather than the letterboxed image dimensions.
 Provider video launch controls bind to a live native video with a qualified same-origin attachment or raw URL, never a copied control attribute or URL guessed from comment text.

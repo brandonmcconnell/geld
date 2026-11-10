@@ -39,6 +39,23 @@ it('ordinary Bitbucket verdict clicks offer a native comment handoff before any 
   expect(activate).toHaveBeenLastCalledWith(approve, false, undefined);
 });
 
+it('does not promise comment-free approval or infer an instant shortcut for a native widget that can publish drafts', () => {
+  const approve = action('approve', {
+    requiresConfirmation: true,
+    confirmationLabel: 'Approve in GitLab',
+    confirmationNote: 'GitLab may also publish any pending review comments when you approve.',
+  });
+  const { root, activate } = mount([approve]);
+  const trigger = button(root, '[data-geld-review-action="approve"]');
+  trigger.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true, ctrlKey: true }));
+  expect(activate).not.toHaveBeenCalled();
+  expect(root.querySelector('[role="dialog"]')?.textContent).toContain(approve.confirmationNote);
+  expect(root.querySelector('[role="dialog"]')?.textContent).not.toContain('without comment');
+  expect(button(root, '[role="dialog"] button').textContent).toBe('Approve in GitLab');
+  button(root, '[role="dialog"] button').click();
+  expect(activate).toHaveBeenCalledExactlyOnceWith(approve, false, undefined);
+});
+
 it.each(['MacIntel', 'Linux x86_64'])('only the matching instant modifier submits without opening choices on %s', async platform => {
   vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue(platform);
   const approve = action('approve', { requiresConfirmation: true, instant: async () => true });

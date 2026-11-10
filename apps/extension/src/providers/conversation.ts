@@ -94,6 +94,7 @@ export class ProviderConversation {
   private actions: HTMLElement | null = null;
   private actionControls: ProviderActionControls | null = null;
   private readonly statusControls = new ProviderStatusControls();
+  private viewFocusFrame: number | null = null;
   private status: HTMLElement | null = null;
   private nextRefresh = 0;
   private error = '';
@@ -396,7 +397,7 @@ export class ProviderConversation {
     if (actionHost !== null && snapshot !== null) {
       const available = snapshot.actions.filter((action) => action.available);
       const sourceSubject = actionSubject(snapshot.input);
-      const signature = JSON.stringify([this.key, sourceSubject, available.map((action) => [action.kind, action.scopeKey ?? null, action.instant !== undefined, action.requiresConfirmation, action.commentKinds])]);
+      const signature = JSON.stringify([this.key, sourceSubject, available.map((action) => [action.kind, action.scopeKey ?? null, action.instant !== undefined, action.requiresConfirmation, action.confirmationLabel, action.confirmationNote, action.commentKinds])]);
       if (signature !== this.signature || this.actions?.isConnected !== true || this.actions.parentElement !== actionHost) {
         this.clearActions();
         this.signature = signature;
@@ -457,13 +458,20 @@ export class ProviderConversation {
     this.restoreViewFocus(settings);
   }
 
-  private restoreViewFocus(settings: GeldSettings): void {
+  private restoreViewFocus(settings: GeldSettings, afterPaint = false): void {
     const pending = this.viewFocus;
     if (pending === null || pending.view !== digestViewOf(settings)) return;
     if (pending.key !== this.key || document.activeElement !== document.body && document.activeElement !== pending.from && this.viewControls?.contains(document.activeElement) !== true) { this.viewFocus = null;return; }
     const target = pending.view === 'github' ? this.viewControls?.querySelector<HTMLButtonElement>('[data-geld-digest-view="github"]')
       : this.panel?.element.querySelector<HTMLElement>('[data-geld-toolbar-control="eye"]');
     if (target == null || !target.isConnected || target.closest('[hidden], [inert]') !== null) return;
+    if (!afterPaint) {
+      if (this.viewFocusFrame === null) this.viewFocusFrame = requestAnimationFrame(() => {
+        this.viewFocusFrame = null;
+        if (this.viewFocus === pending && this.latestSettings !== null) this.restoreViewFocus(this.latestSettings, true);
+      });
+      return;
+    }
     target.focus({ preventScroll: true });
     if (document.activeElement === target) this.viewFocus = null;
   }
@@ -645,6 +653,8 @@ export class ProviderConversation {
     this.abort = null;
     this.panel?.destroy(); this.panel = null;
     this.clearActions();this.statusControls.clear();
+    if (this.viewFocusFrame !== null) cancelAnimationFrame(this.viewFocusFrame);
+    this.viewFocusFrame = null;
     this.status?.remove(); this.status = null;
     this.snapshot = null;
     this.publication.reset();

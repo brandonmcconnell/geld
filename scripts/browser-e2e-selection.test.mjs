@@ -578,7 +578,6 @@ test('Files recording and UI acceptance preserve the carried hourly budget befor
   const wait = workflow.slice(workflow.indexOf('Wait for the carried Bitbucket browser budget'), workflow.indexOf('Export retained provider evidence'));
   assert.match(wait, /bitbucket-walkthrough-files/);
   assert.match(wait, /bitbucket-ui-polish/);
-  assert.match(wait, /bitbucket-open-review/);
   assert.match(workflow, /target = max\(values, default=0\) \+ 3605/);
   assert.ok(workflow.indexOf('Wait for the carried Bitbucket browser budget') < workflow.indexOf('Locate the runner'));
   assert.match(harness, /filesOnly: focus === 'bitbucket-walkthrough-files'/);

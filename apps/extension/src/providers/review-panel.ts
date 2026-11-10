@@ -7,6 +7,7 @@ import type { BotVerdictRecord, ProviderPublicationRead, ProviderReviewAuthor, P
 import type { RepositoryIdentity } from '@geld/core';
 import type { ProviderAiState } from './ai';
 import { captureProviderSourceSelection } from './source-selection';
+import { ProviderSummaryPreviews } from './summary-preview';
 import type { ProviderSourceActionContext, ProviderSourceSelection } from './source-selection';
 
 export type { ProviderSourceActionContext } from './source-selection';
@@ -275,7 +276,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
 
   function availableFocus(target: HTMLElement): boolean {
     if (target.closest('[hidden], [inert], [aria-hidden="true"], details:not([open])') !== null) return false;
-    const parent = target.hasAttribute('data-geld-review-toggle') ? target.parentElement?.parentElement : target;
+    const preview = target.closest('[data-geld-review-preview]');
+    const parent = target.hasAttribute('data-geld-review-toggle') ? target.parentElement?.parentElement : preview?.parentElement?.parentElement ?? target;
     return parent?.closest('[data-geld-review-open="false"]') == null;
   }
 
@@ -344,6 +346,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   }
 
   function disposeComments(): void {
+    summaryPreviews.clear();
     renderGeneration += 1;
     if (commentFocusFrame !== null) doc.defaultView?.cancelAnimationFrame(commentFocusFrame);
     commentFocusFrame = null;
@@ -367,6 +370,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   }
 
   const panel = node('section', '', 'geld-provider-review');
+  const summaryPreviews = new ProviderSummaryPreviews(panel);
   panel.setAttribute('aria-label', 'Geld review digest');
   host.prepend(panel);
   const dismissMenus = (event: Event): void => {
@@ -838,8 +842,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const bound = [...new Set((input.bots ?? []).map((bot) => bot.id))];
     if (bound.length === 0) return null;
     const section = disclosure('bots', 'Review bots', false);
+    section.classList.add('geld-provider-review__section--bot-previews');
     const preview = node('span', '', 'geld-provider-review__row-preview');
-    section.querySelector('[data-geld-review-toggle]')?.append(preview);
+    preview.dataset.geldReviewPreview = '';section.append(preview);
     const comments = [...input.threads.flatMap((thread) => thread.comments), ...(options.comments ?? [])];
     for (const id of bound) {
       const accounts = (input.bots ?? []).filter(bot => bot.id === id);
@@ -853,7 +858,24 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       row.dataset.geldReviewBot = id;
       row.dataset.state = verdict?.verdict ?? 'unknown';
       const health = verdict === undefined ? 'pending' : botHealth(verdict);
-      const compact = node('span', '', 'geld-provider-review__status-chip');
+      const summary = newestProviderBotSummary(input, options.comments ?? [], id);
+      const summaryUrl = summary === null ? null : sourceLink({ anchor: summary.anchor, kind: 'comment', author: summary.author.login, url: summary.url }, input.subject);
+      const compact = summary !== null && summaryUrl !== null ? node('button', '', 'geld-provider-review__status-chip') : node('span', '', 'geld-provider-review__status-chip');
+      if (compact instanceof HTMLButtonElement && summary !== null && summaryUrl !== null) {
+        compact.type = 'button';
+        const generation = renderGeneration, subject = JSON.stringify(input.subject);
+        let signature: string | null = null;
+        try { signature = options.commentSignature?.(summary) ?? null; } catch { /* A replaced source fails the preview's current check. */ }
+        summaryPreviews.bind(compact, {
+          label: `${registered?.title ?? id} review`, url: summaryUrl, fallback: summary.body,
+          current: () => !destroyed && generation === renderGeneration && subject === JSON.stringify(input.subject)
+            && (options.commentSignature?.(summary) ?? null) === signature,
+          body: () => [...panel.querySelectorAll<HTMLElement>('.geld-provider-review__source')]
+            .find(source => source.dataset.geldSourceId === summary.id && source.dataset.geldSource === summary.anchor && source.dataset.geldSourceUrl === summary.url)
+            ?.querySelector<HTMLElement>('.geld-provider-review__body') ?? null,
+          open: event => options.onOpenSource?.(summaryUrl, summary.anchor, event),
+        });
+      }
       compact.dataset.geldBotHealth = health;
       if (avatarUrl !== null) {
         const image = node('img', '', 'geld-provider-review__bot-icon');
@@ -863,6 +885,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         compact.append(image);
       }
       compact.append(node('span', botById(id)?.title ?? id), node('span', verdict === undefined ? 'No result' : verdict.score === undefined ? verdictLabel(verdict) : `${verdict.score}/5`, 'geld-provider-review__muted'));
+      if (compact instanceof HTMLButtonElement) compact.setAttribute('aria-label', `Preview ${registered?.title ?? id} review: ${verdict?.score === undefined ? '' : `${verdict.score}/5, `}${verdict === undefined ? 'No result' : verdictLabel(verdict)}`);
       if (health === 'good') compact.append(digestIcon('check', doc));
       preview.append(compact);
       row.dataset.geldBotHealth = health;
@@ -1694,6 +1717,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     },
     destroy() {
       destroyed = true;
+      summaryPreviews.destroy();
       doc.removeEventListener('pointerdown', dismissMenus);
       disposeComments();clearRenderStates();sourceSlots.clear();
       for (const control of identities) control.destroy();

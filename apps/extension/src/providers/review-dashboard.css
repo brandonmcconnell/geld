@@ -129,7 +129,8 @@ svg.geld-provider-digest-icon[data-geld-outline], svg.geld-provider-digest-icon[
 .geld-provider-review[hidden] { display: none !important; }
 
 .geld-provider-review__menu-list .geld-provider-view { margin: 0; flex-direction: column; align-items: stretch; }
-.geld-provider-review__menu-list .geld-provider-view__option { justify-content: flex-start; border: 0; }
+.geld-provider-review__menu-list[data-geld-view-slot] { inline-size: max-content; }
+.geld-provider-review__menu-list .geld-provider-view__option { justify-content: flex-start; border: 0; white-space: nowrap; }
 .geld-provider-view__position { border: 0; border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); margin-block-start: var(--geld-provider-space-2); padding: var(--geld-provider-space-3); background: transparent; color: var(--geld-provider-text-subtle); font: var(--geld-provider-font-small); text-align: start; cursor: pointer; }
 .geld-provider-view__position:hover { background: var(--geld-provider-button-hover-bg); }
 .geld-provider-view__position:focus-visible { outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); }

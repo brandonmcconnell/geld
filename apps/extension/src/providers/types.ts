@@ -172,6 +172,8 @@ export interface ProviderReviewAction {
   readonly available: boolean;
   readonly reason?: string;
   readonly requiresConfirmation?: boolean;
+  readonly confirmationLabel?: string;
+  readonly confirmationNote?: string;
   readonly commentKinds?: readonly ('comment' | 'review')[];
   readonly instant?: (context?: ProviderReviewActionContext) => Promise<boolean>;
   activate(context?: ProviderReviewActionContext): Promise<boolean>;

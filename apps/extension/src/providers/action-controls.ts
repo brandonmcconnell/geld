@@ -91,11 +91,14 @@ export function renderProviderActionControls(doc: Document, provider: string, ac
       if (action.requiresConfirmation) {
         const menu = open(button, label);
         const title = doc.createElement('strong');title.textContent = label;menu.append(title);
+        if (action.confirmationNote !== undefined) {
+          const note = doc.createElement('p');note.textContent = action.confirmationNote;menu.append(note);
+        }
         if (comment !== undefined) {
           const note = doc.createElement('p');note.textContent = `To include a comment, write it in ${provider}, then return here to ${kind === 'approve' ? 'approve' : 'request changes'}.`;menu.append(note);
           menu.append(choice('Write a comment', () => { void run(comment, false, 'comment'); }));
         }
-        menu.append(choice(`${label} without comment`, () => { void run(action, false); }));
+        menu.append(choice(action.confirmationLabel ?? `${label} without comment`, () => { void run(action, false); }));
         menu.querySelector('button')?.focus();return;
       }
       void run(action, false, kind === 'comment' ? action.commentKinds?.[0] ?? 'comment' : undefined);
