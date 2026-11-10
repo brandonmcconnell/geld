@@ -3562,3 +3562,12 @@ The provider image viewer also handles Escape inside its dialog before native pa
 
 A settled public MR can verify preserved round boundaries and source identities without containing unresolved work;
 report the Needs attention interaction as unverified in that case, never fabricate open items to satisfy browser acceptance.
+
+Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
+Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
+
+Malformed GitLab approval or reviewer rows are isolated individually and mark reviews partial without discarding valid standings, discussion evidence or native required/remaining counts.
+An all-malformed source supplies no known empty reviewer list.
+
+Bitbucket hidden-people matching and exact-rule removal use the same canonical `bitbucket.org/uuid/<uuid>` identity as PR lists, normalized from the native account UUID.
+Keep display logins separate, leave malformed account identities visible, and never remove a wildcard during a per-person unhide.
